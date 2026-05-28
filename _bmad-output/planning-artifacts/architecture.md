@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3]
+stepsCompleted: [1, 2, 3, 4]
 workflowType: 'architecture'
 project_name: 'Project Vault'
 user_name: 'Nestor'
@@ -227,3 +227,235 @@ Turborepo caching for incremental builds; Vitest for fast unit tests;
 **Note:** Project initialization using the command above should be the first implementation
 story. Manual package additions (api, db, crypto, shared) should follow immediately as the
 second story before any feature implementation begins.
+
+## Core Architectural Decisions
+
+### Decision Priority Analysis
+
+**Critical Decisions (Block Implementation):**
+- Real-time transport: SSE with injected EventEmitter, Last-Event-ID replay, polling fallback
+- Password hashing: Argon2id (memoryCost: 65536, timeCost: 3, parallelism: 4)
+- Session/token revocation: Database-backed (`sessions` table, indexed jti)
+- ORM + database enforcement: Drizzle + PostgreSQL RLS via `SET LOCAL` in `db.transaction()`
+- Background jobs: pg-boss (PostgreSQL-backed); CPU-bound handlers via `worker_threads`
+- Crypto versioning structure: versioned ciphertext format from first commit
+
+**Important Decisions (Shape Architecture):**
+- Component library: shadcn-svelte
+- State management: Svelte 5 Runes + module-level state
+- API client pattern: Shared Zod schemas + openapi-typescript + openapi-fetch
+- MFA library: otpauth
+- Logging: pino (Fastify native)
+- Email: nodemailer + SMTP
+- Graceful shutdown sequence: explicit SIGTERM → SSE close → pgBoss.stop() → fastify.close()
+
+**Deferred Decisions (Post-v1):**
+- Error monitoring: Sentry (v1.1 — structured logs + Prometheus sufficient for v1)
+- Horizontal scaling / shared cache: in-memory LRU tier cache is a single-instance constraint; Redis or DB-backed cache required before multi-container deployment
+- WebSocket upgrade: SSE covers all server-push use cases in v1
+
+### Data Architecture
+
+**Database:** PostgreSQL (latest stable) with connection pooling via `postgres.js`
+
+**ORM:** Drizzle ORM 0.45.x
+- SQL-like DSL maps cleanly to RLS-heavy schema
+- drizzle-kit for migration generation
+- `packages/db` is the single source of truth for database schema and RLS policy definitions
+- No separate type generation step — types inferred from schema at compile time
+
+**Row-Level Security:**
+- PostgreSQL RLS enforced at database level — not application layer
+- Every table has `org_id` column; RLS policy filters all queries by `current_setting('app.current_org_id')`
+- **All database operations use `db.transaction()` to ensure `SET LOCAL app.current_org_id = '...'` is transaction-scoped** — `SET LOCAL` resets automatically on transaction end, eliminating connection pool race conditions where a pooled connection carries a previous request's org context
+- Bare `db.select()` / `db.insert()` calls outside a transaction are forbidden; enforced by a custom ESLint rule that flags direct Drizzle calls not wrapped in `db.transaction()`
+- Background job workers open their own transaction per job execution, setting org context from the job payload
+- Drizzle migrations include RLS policy DDL alongside schema changes
+
+**Session/Token Revocation:**
+- Database-backed `sessions` table: `(jti, user_id, expires_at, revoked_at)`
+- Index on `(jti, expires_at)` for fast per-request lookup
+- pg-boss cleanup job purges expired sessions on schedule (daily)
+- Adds one indexed query per request to auth middleware — acceptable at target scale
+
+**Tier Limit Cache:**
+- In-memory LRU cache (no Redis) per process; TTL ≤60 seconds
+- Invalidated on subscription tier change event
+- **Architectural constraint: incompatible with horizontal scaling.** Multiple API containers maintain independent caches; quota enforcement becomes inconsistent between processes during the TTL window. Any deployment with more than one API container requires replacing this with a shared cache layer (Redis or database-backed). This constraint must be documented in the deployment guide. v1 single-instance Docker Compose deployment is the only supported topology.
+
+**Full-text Search:**
+- PostgreSQL `tsvector` for cross-project search (FR80)
+- Sufficient for v1 at target scale (10,000 secrets); no external search engine needed
+
+**Email:**
+- `nodemailer` with SMTP transport
+- SMTP configuration via admin UI (FR86)
+- Self-hosted operators provide their own SMTP credentials
+
+### Authentication & Security
+
+**Password hashing:** Argon2id via `argon2` npm package
+- Parameters: `memoryCost: 65536` (64MB), `timeCost: 3`, `parallelism: 4`
+- OWASP 2024 recommended configuration
+- Applied to all human user passwords and vault master password derivation
+
+**MFA:** TOTP via `otpauth`
+- RFC 6238 compliant
+- Recovery codes: 8x 16-character codes, bcrypt-hashed at storage
+- MFA enrollment generates codes; codes are one-time-use, invalidated on use
+
+**JWT architecture:**
+- Web session JWTs: ≤15 min TTL, signed with HMAC-SHA256 (`@fastify/jwt`)
+- Machine user exchange JWTs: ≤1h TTL, issued via API key token exchange
+- Both carry `jti` (JWT ID) for revocation lookup
+- Revocation checked on every authenticated request via indexed DB query
+
+**Encryption:**
+- `packages/crypto`: AES-256-GCM for secrets at rest; HKDF for key derivation
+- Master key: env var (default) or mounted file path (stronger default — separate volume/permissions domain)
+- Audit log encryption key: HKDF-derived from master with distinct info string
+- Per-entry key version stored in audit log for independent rotation lifecycle
+- **Every encrypted field stores the encryption scheme version alongside the ciphertext from the first commit.** Format: `{ version: 1, iv: ..., ciphertext: ..., tag: ... }`. Retrofitting versioning onto stored data later requires a full re-encryption migration. Cryptographic agility (per PRD) depends on this being in place from day one.
+- Node.js built-in `crypto` module — no external crypto library needed
+
+**RBAC + tier authorization:**
+- Unified `AuthContext` object: `{ userId, orgId, projectRole, tierLimits }`
+- Populated by Fastify auth middleware on every authenticated request
+- `tierLimits` fetched from in-memory LRU cache (≤60s TTL)
+- Sealed `SecureRoute` handler abstraction — all routes use it; concerns are opt-out not opt-in
+
+### API & Communication Patterns
+
+**REST API:** Fastify v5, versioned at `/api/v1/`
+
+**OpenAPI spec:** Auto-generated by `@fastify/swagger` from route definitions
+- Published at `/api/v1/docs` (dev) and as static artifact at build time
+- Single source of truth for API contract
+
+**OpenAPI type generation pipeline (Turborepo task dependency):**
+- `apps/api/scripts/generate-spec.ts` — initializes Fastify with mocked I/O dependencies (no live DB, no pg-boss), registers all routes and plugins, exports the OpenAPI spec to `packages/shared/openapi.json`, exits
+- `openapi-typescript` runs against `packages/shared/openapi.json` to generate `packages/shared/api-types.ts`
+- `turbo.json` task dependencies:
+  ```json
+  {
+    "generate-spec": { "dependsOn": ["^build"], "outputs": ["../../packages/shared/openapi.json"] },
+    "typecheck": { "dependsOn": ["generate-spec"] }
+  }
+  ```
+- `web#typecheck` implicitly depends on `api#generate-spec`; stale types are a CI error, not silent drift
+
+**Validation:** `@fastify/type-provider-zod` — Zod schemas from `packages/shared` validate requests
+- `openapi-fetch` provides typed HTTP client in SvelteKit
+
+**Error handling standard:**
+```typescript
+{
+  error: string,       // machine-readable code (e.g. "SECRET_NOT_FOUND")
+  message: string,     // human-readable description
+  statusCode: number,
+  requestId: string    // Fastify request ID for log correlation
+}
+```
+
+**Rate limiting:** `@fastify/rate-limit`
+- Human users: 120 req/min per authenticated account
+- Machine users: 120 req/min per API key (separate pool)
+- Unauthenticated: 60 req/min per IP
+- SSE connections counted separately (not against request rate limit)
+
+**Real-time transport:** Server-Sent Events (SSE)
+- Server pushes: service health status, expiry alert changes, rotation progress, notification events
+- Scoped per user: only events for projects the user can access (org_id + RBAC filtered)
+- pg-boss job completions publish to an **injected `EventEmitter` instance** — not a module-level singleton; created at app startup and passed to both the Fastify SSE route and pg-boss worker registration; tests receive isolated instances without shared listener state
+- Fastify route: `GET /api/v1/stream` — authenticated, returns `text/event-stream`
+- **SSE reconnection and event replay:** server assigns monotonic `id` to every SSE event; client sends `Last-Event-ID` header on reconnect; server replays events since that ID from a short in-memory ring buffer (last 100 events, max 60 seconds); client refreshes full state via REST on reconnect if beyond buffer
+- **Polling fallback (required, not optional):** SvelteKit SSE consumer detects connection drop via `EventSource` `onerror`; after 3 failed reconnection attempts (5s intervals), switches to 30-second polling against `GET /api/v1/projects/{id}/status`; visual indicator shown in monitoring surface when in polling mode; SSE reconnection attempted every 60 seconds in background
+
+**Graceful shutdown sequence:**
+1. Stop accepting new HTTP connections
+2. Send `event: reconnect` to all active SSE connections, then close them
+3. `pgBoss.stop({ graceful: true })` — waits for active job handlers to complete
+4. `fastify.close()` — drains in-flight requests, closes DB pool
+5. Exit 0
+
+Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for active pg-boss jobs).
+
+**Background worker constraints:**
+- I/O-bound pg-boss handlers (health checks, notifications, expiry queries) run directly in main thread
+- **CPU-bound handlers (backup encryption, audit log hash chain verification, bulk re-encryption) must offload to `worker_threads`** to prevent event loop blocking and latency spikes on the p95 ≤100ms secret fetch path
+
+**Self-hosted upgrade notification:**
+- In-app notification when newer image available (checked against GHCR API on startup, cached 24h)
+- Upgrade procedure: `docker compose pull && docker compose up -d` with documented in-place runbook (FR50)
+
+### Frontend Architecture
+
+**Framework:** SvelteKit 2 + Svelte 5 (runes-first)
+
+**Styling:** Tailwind CSS v4 — utility-first; monitoring-mode density via tight spacing scale
+
+**Component library:** shadcn-svelte
+- Unstyled primitives (bits-ui); copy-paste model; components owned by project
+- Lives in `apps/web/src/lib/components/ui/`
+- Dependencies: `bits-ui`, `tailwind-variants`, `clsx`, `lucide-svelte`
+
+**State management:** Svelte 5 Runes + module-level state
+- Local state: `$state` within components
+- Shared state: module-level `$state` exports from `src/lib/state/`
+- SSE events update module-level state; components derive via `$derived`
+- No external state library
+
+**API client:** `openapi-fetch` typed against spec from `openapi-typescript`
+- `packages/shared` Zod schemas importable in SvelteKit for client-side validation
+- SvelteKit `load` functions for SSR data fetching; typed fetch for client mutations
+
+**Routing:** SvelteKit file-based
+- `(auth)/` — unauthenticated routes
+- `(app)/` — authenticated routes
+- `(app)/projects/[projectId]/` — project-scoped routes
+
+### Infrastructure & Deployment
+
+**Deployment:** Docker / Docker Compose (self-hosted primary)
+- Single `docker-compose.yml`: `api` (Node.js), `web` (SvelteKit/Node adapter), `db` (PostgreSQL)
+- `stop_grace_period: 30s` on `api` service
+- Health/readiness endpoint: `GET /health` on API (FR81)
+- Multi-arch builds: AMD64 + ARM64 via GitHub Actions matrix
+
+**Logging:** pino (Fastify native)
+- Structured JSON; log level via env var; request ID in all entries
+- Operational logs only — separate from security audit log
+
+**Metrics:** `prom-client` — Prometheus-compatible `/metrics` endpoint
+- Default Node.js metrics + custom: secret fetch latency, rotation count, SSE connection count, pg-boss queue depth
+- Localhost-only by default; configurable for external scraping
+
+**CI/CD:** GitHub Actions
+- On PR: lint, typecheck (after `generate-spec`), Vitest, build
+- On merge to main: above + Docker multi-arch build + push to GHCR
+- Turborepo remote cache via GitHub Actions cache
+- `pnpm audit` on every CI run; Dependabot for dependency updates
+
+**Environment configuration:** 12-factor; all config via environment variables
+
+### Decision Impact Analysis
+
+**Implementation Sequence (order matters):**
+1. Monorepo scaffold + shared packages — **crypto versioning structure in place from this step**
+2. PostgreSQL schema + RLS policies + Drizzle migrations — **`db.transaction()` wrapper established as the only permitted DB access pattern from this step; ESLint rule added**
+3. `packages/crypto` — AES-256-GCM + HKDF + Argon2id; versioned ciphertext format; worker_threads wrapper for CPU-bound operations
+4. Fastify auth foundation — registration, login, session, MFA, JWT, revocation table; **graceful shutdown wired from this step**
+5. Sealed `SecureRoute` abstraction + RBAC + org_id middleware chain
+6. pg-boss worker registration + job types; **injected EventEmitter created at startup; CPU-bound handlers use worker_threads**
+7. SvelteKit auth flows + SSE consumer with reconnection, Last-Event-ID, and polling fallback
+8. Core credential CRUD + encryption integration
+9. SSE stream endpoint + ring buffer for event replay; `generate-spec` script + Turborepo task wiring
+10. Dashboard + monitoring surface (SSE consumer + polling fallback visual indicator)
+
+**Cross-Component Dependencies:**
+- `packages/db` ← depended on by `apps/api` and `packages/crypto` (schema types for encrypted fields)
+- `packages/shared` ← depended on by `apps/api` (validation) and `apps/web` (client types + Zod schemas)
+- `packages/crypto` ← depended on by `apps/api` only (server-side only)
+- pg-boss workers ← depend on `packages/db` for job payload types and `packages/crypto` for secret operations
+- SSE stream ← depends on injected EventEmitter shared between HTTP handlers and pg-boss workers
+- `apps/web` typecheck ← depends on `api#generate-spec` via Turborepo task graph
