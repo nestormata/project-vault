@@ -1,9 +1,13 @@
 ---
-stepsCompleted: ["step-01-init", "step-02-discovery", "step-02b-vision", "step-02c-executive-summary", "step-03-success", "step-04-journeys", "step-05-domain", "step-06-innovation", "step-07-project-type", "step-08-scoping", "step-09-functional", "step-10-nonfunctional", "step-11-polish"]
+stepsCompleted: ["step-01-init", "step-02-discovery", "step-02b-vision", "step-02c-executive-summary", "step-03-success", "step-04-journeys", "step-05-domain", "step-06-innovation", "step-07-project-type", "step-08-scoping", "step-09-functional", "step-10-nonfunctional", "step-11-polish", "step-e-01-discovery", "step-e-02-review", "step-e-03-edit"]
 inputDocuments:
   - "_bmad-output/planning-artifacts/product-brief-Project-Vault.md"
   - "_bmad-output/planning-artifacts/product-brief-Project-Vault-distillate.md"
 workflowType: 'prd'
+lastEdited: '2026-05-28'
+editHistory:
+  - date: '2026-05-28'
+    changes: 'Post-validation pass: closed FR31/FR37/FR71/FR73 threshold defaults; fixed TLS inbound/outbound split in Domain Requirements; updated MVP scope list (webhooks v1.1, wiki v1.1); added FR13/FR30 gap notes; moved v1 sustainability paragraph to Executive Summary; added machine user onboarding acceptance criterion; replaced axe-core tool name with tool-agnostic description in Accessibility NFR'
 classification:
   projectType: "Data-sensitive infrastructure platform — web UI + REST API primary, self-hosted Docker as primary trust path, SaaS convenience tier (v2). Two funnels: OSS (indie/solo) and commercial (mid-size teams)."
   domain: "Project Infrastructure Management — secrets lifecycle, operational visibility, credential automation"
@@ -36,6 +40,8 @@ Engineering teams have moved from monoliths to constellations — distributed ar
 Target users span all project scales — from solo indie developers managing multiple projects (OSS tier) to mid-size engineering teams of 5–50 engineers (commercial tier) who have outgrown ad hoc tooling. Machine users (CI/CD pipelines, microservices, cron jobs, serverless functions) are first-class citizens with scoped identities, offline/cache fallback, deploy-time secret versioning, drift detection, and full audit trails. For Engineering Managers and CTOs, Project Vault reduces credential-related incidents, eliminates manual rotation overhead, accelerates engineer onboarding, and delivers audit-ready logs — without vendor lock-in. The self-hosted open-core tier is free; commercial tiers add managed hosting, enterprise SSO, and compliance reporting.
 
 The product ships as a self-hosted Docker deployment with a commercial SaaS tier in v2. Start with visibility. Automate as you grow.
+
+**Business model note:** Project Vault has no commercial revenue in v1 (open-core, self-hosted). v2 SaaS is the revenue model. The development plan must address the gap between v1 launch and v2 commercial revenue — whether through funding, a paid self-hosted license tier, or consulting. This is a business continuity risk that affects whether v2 ships.
 
 *Run complex projects. Miss nothing.*
 
@@ -130,10 +136,10 @@ The smallest version that proves the core concept: a project has a single operat
 - Project dashboard — single-pane visibility across all projects
 - Multi-user support with roles and access groups
 - Machine user support with scoped API keys, offline/cache fallback, deploy-time versioning
-- Event triggers and notifications (webhooks, email)
+- Event triggers and notifications (email + Slack; webhooks: v1.1)
 - Immutable audit logs with edge-case verified completeness
 - Import from `.env` and JSON
-- Built-in project documentation (wiki, runbooks, service notes)
+- Project notes and description fields (full wiki: v1.1)
 - Self-hosted Docker / Docker Compose deployment
 - Open-source core published
 - Plugin interface defined and documented (provider implementations in v2)
@@ -266,7 +272,7 @@ Long-term: provider integration marketplace with community plugins for any syste
 ### Technical Constraints
 
 - **Encryption at rest:** AES-256 minimum for all stored secrets and credentials
-- **Encryption in transit:** TLS 1.3 minimum for all API and UI traffic; no fallback to older TLS versions
+- **Encryption in transit:** TLS 1.3 required for all inbound API and UI connections; TLS 1.2 minimum / 1.3 preferred for outbound plugin connections to target systems
 - **Key unsealing — user's choice at initialization:**
   - *Option A: Master password* — single administrator password unseals the vault on startup; simplest, suitable for small teams
   - *Option B: Shamir's Secret Sharing* — root key is split into N shares distributed among M admins; vault requires a threshold of M shares to unseal; no single person can unseal alone; suitable for security-conscious teams
@@ -362,6 +368,8 @@ The closest competitor is Infisical — open-source, modern UX, growing fast —
 Must ship as an interactive guided setup, not a text screen. Engineers trained on environment-centric tools have deep muscle memory. The paradigm shift requires active re-education in the first 60 seconds. The wizard must walk through adding a first real project with real credentials and explicitly explain: "A project is everything for one product — not one environment. Add all your environments, services, and credentials for this product here."
 
 **Onboarding wizard acceptance criterion:** ≥80% of first-time users (tested pre-launch with 5+ participants) correctly place a second credential into the right project without prompting after completing the wizard. Any result below this threshold triggers a redesign before launch — not a post-launch fix.
+
+**Machine user onboarding acceptance criterion:** A developer with no prior Project Vault experience can complete API key creation, first secret retrieval, and offline fallback verification within 15 minutes using only the published documentation, with ≥95% success rate in pre-launch developer testing.
 
 **Fallback:** If paradigm isn't resonating by week 4 (retention below 60%), ship project-type starter templates (web app, microservice, API) that pre-populate structure and show what a well-organized project looks like.
 
@@ -482,15 +490,17 @@ Fallback strategy is split by deployment context, since ephemeral environments (
 
 **Fallback rules (all environments):**
 - **Scope controls:** Fallback eligibility is configurable per-secret; high-sensitivity secrets can be explicitly excluded
-- **Key derivation trade-off (must be decided before implementation):**
+- **Key derivation — DECIDED: Option B (Vault-assisted KDF)**
+
+  The fallback cache encryption key is derived with vault participation — the vault seeds the KDF on first connection; subsequent offline access uses the derived key. The vault never needs to be reachable again until the cache TTL expires or is explicitly invalidated.
 
   | Option | Security | Availability | Notes |
   |---|---|---|---|
-  | **A — Pure offline KDF** | Lower (offline-crackable with API key on same machine) | Full (no vault needed) | Simpler; risk accepted explicitly; short TTL + scope controls are primary mitigations |
-  | **B — Vault-assisted KDF** | Higher (offline crack impossible without vault) | Requires vault reachability to first seed cache | Cache populated on connection; fails if vault never reached |
-  | **C — Hardware-backed (where available)** | Highest | Full | TPM/Secure Enclave; not universally available |
+  | **A — Pure offline KDF** | Lower (offline-crackable with API key on same machine) | Full (no vault needed) | Not selected |
+  | **✅ B — Vault-assisted KDF** | Higher (offline crack impossible without vault) | Requires vault reachability to first seed cache | **Selected for v1** |
+  | **C — Hardware-backed (where available)** | Highest | Full | TPM/Secure Enclave; deferred to future version |
 
-  *Recommended default for v1: Option A with explicit risk documentation, short TTL enforcement, and scope controls limiting which secrets are fallback-eligible. Option B as an opt-in for high-security deployments. Decision must be documented before implementation begins.*
+  *Decision rationale: Option B provides meaningfully stronger security (offline crack requires compromising the vault, not just the local machine) at the cost of requiring vault reachability on first deployment. This trade-off is acceptable — machines that have never reached the vault have no business using a fallback. Option A remains available as a documented downgrade path for environments with strict network isolation requirements.*
 
 - **TTL:** Short default (e.g., 4–24 hours, configurable); maximum TTL capped per tier
 - **Rotation grace period awareness:** Fallback cache honors the credential grace period during rotation — old credential remains valid until grace period expires, preventing outages during the rotation window
@@ -660,7 +670,6 @@ Marketing must not claim certifications that don't exist. "Built for compliance"
 - BAA (HIPAA) and DPA (GDPR) required before v2 SaaS launch
 - **Deployment security boundary explicitly documented:** Project Vault's security model depends on the host's security posture — auditors will ask about this boundary
 - **Compliance and auth features require UX design treatment:** MFA enrollment and recovery, machine user token management, fallback cache status visibility, account deletion flows, org admin vs. project admin distinctions — each is a potential complexity leak. These flows must be inputs to the UX design step.
-- **v1 sustainability:** Project Vault has no commercial revenue in v1 (open-core, self-hosted). v2 SaaS is the revenue model. The development plan must address the gap between v1 launch and v2 commercial revenue — whether through funding, a paid self-hosted license tier, or consulting. This is a business continuity risk that affects whether v2 ships.
 
 ## Project Scoping & Phased Development
 
@@ -854,6 +863,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR10:** Users can store a secret with a name, value, description, tags, expiry date, and linked dependent systems within a project
 - **FR11:** Users can retrieve the current version of any secret they are authorized to access
 - **FR12:** The system maintains a complete immutable version history for every secret
+- *(FR13 intentionally reserved — merged into FR12 during consolidation)*
 - **FR14:** Users can search and filter credentials within a project by name, tag, status, and expiry
 - **FR15:** Users can set expiry dates and rotation schedules on individual credentials
 - **FR16:** Users can record which external systems and services depend on each credential
@@ -886,7 +896,8 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR27:** The system monitors registered HTTP endpoints for availability and alerts when they become unreachable
 - **FR28:** Users can configure alert thresholds and lead times for expiry notifications on any tracked asset
 - **FR29:** The system sends proactive alerts before credentials, certificates, domains, or service records reach their configured alert threshold
-- **FR31:** The system alerts Organization Admins when anomalous access patterns exceed configured thresholds
+- *(FR30 intentionally reserved — merged into FR29 during consolidation)*
+- **FR31:** The system alerts Organization Admins when anomalous access patterns exceed configured thresholds (default: 5 accesses to credentials outside the account's normal role pattern within one hour)
 - **FR67:** Users can dismiss or snooze an expiry alert for a specific asset, with the dismissal recorded in the audit log
 - **FR76:** Users can view a cross-project health status page showing the live availability status of all monitored services and endpoints across every project they can access — distinct from the per-project dashboard, which shows all asset types for one project
 - **FR77:** Project Owners can enable an optional public-facing status page for a project — a shareable URL that displays the current health status of selected services to external stakeholders without requiring an account
@@ -900,7 +911,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR34:** Machine users can authenticate to the REST API using API key credentials
 - **FR35:** Machine users can retrieve the current version of secrets they are authorized to access by stable name, always receiving the current version without requiring knowledge of internal identifiers
 - **FR36:** The system maintains a separate, complete audit trail for all machine user access events, including credential version served
-- **FR37:** The system maintains a local cache of authorized secrets that persists for the duration of the consuming process and activates automatically when the vault is temporarily unreachable
+- **FR37:** The system maintains a local cache of authorized secrets that persists for the duration of the consuming process and activates automatically when the vault is temporarily unreachable (default trigger: 3 consecutive failed connection attempts within 30 seconds)
 - **FR38:** The system records fallback cache usage events in the audit log and alerts administrators when the fallback activates
 - **FR39:** The system provides native integrations that allow CI/CD pipelines to retrieve secrets directly within GitHub Actions and GitLab CI workflows
 - **FR68:** Administrators can configure expiry dates on machine user API keys and receive alerts before a key expires
@@ -917,7 +928,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR45:** Organization Admins can deactivate user accounts with immediate revocation of all associated credentials and access
 - **FR69:** Organization Admins can generate a point-in-time access report showing all users, their roles, and their project memberships across the organization
 - **FR70:** Organization Admins can configure audit log retention periods within the limits set by their subscription tier
-- **FR71:** The system detects user accounts that have been inactive beyond a configurable threshold and alerts Organization Admins
+- **FR71:** The system detects user accounts that have been inactive beyond a configurable threshold and alerts Organization Admins (default: 90 days)
 - **FR78:** Administrators can verify audit log integrity against the last recorded checkpoint
 
 ---
@@ -948,7 +959,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR57:** The system enforces MFA enrollment for Owner and Admin roles in Team and Small Company tier organizations before those roles may invite additional members
 - **FR60:** The system supports configurable vault unsealing via a master password on startup
 - **FR61:** The system enforces organization-scoped data isolation such that users in one organization cannot access data belonging to another organization
-- **FR73:** The system logs all failed authentication attempts and alerts Organization Admins when failed attempts exceed a configurable threshold for a single account or IP address
+- **FR73:** The system logs all failed authentication attempts and alerts Organization Admins when failed attempts exceed a configurable threshold for a single account or IP address (default: 10 failed attempts within 5 minutes)
 - **FR83:** Users can view all their currently active sessions and revoke any individual session
 - **FR84:** Organization Admins can revoke all active sessions for any user in their organization
 - **FR85:** The system enforces configurable idle session timeout
@@ -1039,7 +1050,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 ### Accessibility
 
 - WCAG 2.1 AA compliance for all UI components
-- Automated: axe-core integrated as CI gate (blocks merge on violations)
+- Automated: automated accessibility testing tool integrated as CI gate (blocks merge on violations)
 - Manual: top-5 user flows audited before launch
 
 ### Data Integrity
