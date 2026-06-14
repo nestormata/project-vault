@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.svelte-kit/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Stryker
+.stryker-tmp/
+reports/
+
+# Environment files
+.env*
+!.env.example
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local assistant artifacts
+.claude/
+prompts.md
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+*.tmp

@@ -1,0 +1,11 @@
+{
+  // High and critical vulnerabilities fail CI
+  // Each acknowledged vulnerability MUST have:
+  //   "expires": "2026-MM-DD" (max 90 days from acknowledgement)
+  //   "reason": "Short justification string"
+  "high": [],
+  "critical": [],
+  "moderate": [],
+  "low": [],
+  "allowlist": []
+}

@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Setup Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm turbo typecheck
+
+      - name: Lint
+        run: pnpm turbo lint
+
+      - name: Test (with coverage)
+        run: pnpm turbo test
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+
+      - name: Check for duplicate code
+        run: pnpm jscpd
+
+      - name: Check .trivyignore entries
+        run: |
+          if grep -qE "^CVE" .trivyignore 2>/dev/null; then
+            TODAY=$(date +%Y-%m-%d)
+            while IFS= read -r line; do
+              if [[ "$line" =~ ^#\ exp:\ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+                EXP="${BASH_REMATCH[1]}"
+                if [[ "$EXP" < "$TODAY" ]]; then
+                  echo "ERROR: Expired .trivyignore entry: exp $EXP"
+                  exit 1
+                fi
+              fi
+            done < .trivyignore
+          fi
+          echo ".trivyignore check passed"
+
+      - name: Check audit-ci baseline
+        run: pnpm tsx scripts/check-audit-baseline.ts
+
+      - name: Check .env.example parity
+        run: pnpm tsx scripts/check-env-example.ts
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Validate commitlint (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          pnpm commitlint --from origin/${{ github.base_ref }} --to HEAD --verbose
+
+      - name: Generate spec and check freshness
+        run: |
+          pnpm generate-spec
+          git diff --exit-code packages/shared/openapi.json || \
+            (echo "ERROR: openapi.json is stale - run pnpm generate-spec and commit" && exit 1)
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          tags: project-vault-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore

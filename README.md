@@ -74,9 +74,71 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 ## Getting Started
 
-> **Not yet available.** Installation instructions will be published when v1 reaches public release.
->
-> If you'd like to follow progress, watch this repository or check back for release announcements.
+### Minimum Tooling Versions
+
+| Tool | Minimum Version |
+|---|---|
+| Node.js | 24 LTS |
+| pnpm | 9.x or later |
+| Docker | 24+ with Buildx |
+| Docker Compose | v2 |
+
+**Supported platforms:** macOS and Linux natively. Windows requires WSL2.
+
+### Docker Quickstart
+
+```bash
+cp .env.example .env          # configure environment variables
+docker compose up --build     # start all services
+```
+
+Services will be available at:
+- Web: http://localhost:5173
+- API: http://localhost:3000
+- API health: http://localhost:3000/health
+
+### Local Development
+
+```bash
+pnpm install                  # install dependencies
+pnpm turbo dev                # start all dev servers
+```
+
+### CI Quality Gates
+
+Each gate runs on every PR:
+
+| Gate | Command | What it checks |
+|---|---|---|
+| TypeScript | `pnpm turbo typecheck` | strict TS, noUncheckedIndexedAccess |
+| Lint | `pnpm turbo lint` | ESLint flat config with security rules |
+| Tests | `pnpm turbo test` | Vitest with ≥80% coverage |
+| Duplication | `pnpm jscpd` | Zero code duplication |
+| Secrets | ESLint no-secrets | Entropy-based secret detection |
+| Audit | `pnpm audit --audit-level=high` | Zero high/critical CVEs |
+| Docker | CI only | Multi-arch build validation |
+
+Nightly gates (runs at 02:00 UTC):
+- **Mutation testing** (Stryker) — score ≥60% (target ≥80% after Epic 2)
+- **Docker image scan** (Trivy) — zero high/critical CVEs
+
+### Pre-PR Checklist
+
+```bash
+pnpm turbo typecheck lint test  # all must pass
+pnpm jscpd                      # zero duplicates
+pnpm docker:smoke               # end-to-end Docker health check
+```
+
+### Base Image Update Procedure
+
+Run `scripts/update-base-image.sh` weekly to get fresh digests for pinned Docker base images. Update the `FROM` lines in Dockerfiles with the output digest. Document quarterly in the operations checklist.
+
+### Production Usage
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+```
 
 ---
 

@@ -1,0 +1,24 @@
+{
+  "name": "@project-vault/eslint-config",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-security": "^3.0.0",
+    "eslint-plugin-sonarjs": "^3.0.0",
+    "eslint-plugin-no-secrets": "^1.1.2",
+    "eslint-plugin-svelte": "^2.46.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "extends": "@project-vault/tsconfig/svelte.json",
+  "compilerOptions": {
+    "paths": {
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"]
+    },
+    "rootDirs": [".", ".svelte-kit/types"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", ".svelte-kit/ambient.d.ts", ".svelte-kit/types/**/*.d.ts"],
+  "exclude": ["node_modules", "src/**/*.test.ts", "src/**/*.spec.ts"]
+}

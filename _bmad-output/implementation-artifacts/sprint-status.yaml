@@ -1,0 +1,123 @@
+# generated: 2026-05-31
+# last_updated: 2026-06-01
+# project: Project Vault
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-05-31
+last_updated: 2026-06-01
+project: Project Vault
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: Vault Foundation — Deployment, Authentication & Core Platform
+  epic-1: in-progress
+  1-1-initialize-turborepo-monorepo-with-full-quality-gate-suite: review
+  1-2-configure-backend-package-structure: backlog
+  1-3-docker-deployment-and-health-endpoints: backlog
+  1-4-database-foundation-with-postgresql-rls-and-core-schema: backlog
+  1-5-vault-initialization-and-master-key-management: backlog
+  1-6-user-registration-and-password-authentication: backlog
+  1-7-jwt-session-management-and-security-controls: backlog
+  1-8-totp-mfa-enrollment-and-recovery-codes: backlog
+  1-9-mfa-role-enforcement-and-failed-authentication-detection: backlog
+  1-10-structured-operational-logging-and-metrics: backlog
+  1-11-secureroute-framework-and-drizzle-rls-middleware: backlog
+  1-12-mfa-login-verification-flow: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Secret & Credential Management — Store, Retrieve, Search & Import
+  epic-2: backlog
+  2-1-project-creation-and-cross-project-dashboard: backlog
+  2-2-credential-storage-and-retrieval-with-version-history: backlog
+  2-3-credential-search-filter-and-tag-management: backlog
+  2-4-dependent-system-recording-and-expiry-rotation-schedules: backlog
+  2-5-credential-bulk-import-from-env-and-json: backlog
+  2-6-onboarding-wizard: backlog
+  2-7-cross-project-global-search: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Notification Infrastructure — Alert Delivery, Routing & In-App Inbox
+  epic-3: backlog
+  3-1-email-and-slack-notification-delivery: backlog
+  3-2-notification-preferences-and-per-alert-type-routing: backlog
+  3-3-in-product-notification-inbox: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Team & Organization Management — Roles, Invitations, Access & Lifecycle
+  epic-4: backlog
+  4-1-team-invitations-and-role-assignment: backlog
+  4-2-organization-user-management: backlog
+  4-3-account-deactivation-and-recovery: backlog
+  4-4-project-archival: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Credential Rotation — Safe, Trackable Rotation Workflows
+  epic-5: backlog
+  5-1-rotation-initiation-and-checklist-generation: backlog
+  5-2-rotation-checklist-confirmation-and-completion: backlog
+  5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Operational Monitoring & Status — Services, Certificates, Domains & Mobile
+  epic-6: backlog
+  6-1-service-certificate-and-domain-record-management: backlog
+  6-2-http-endpoint-monitoring-and-availability-alerts: backlog
+  6-3-cross-project-health-dashboard-and-public-status-page: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: Machine User Access & CI/CD Integration
+  epic-7: backlog
+  7-1-machine-user-identity-and-api-key-management: backlog
+  7-2-machine-user-authentication-and-programmatic-secret-retrieval: backlog
+  7-3-github-actions-cicd-integration: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: Compliance, Audit & Governance
+  epic-8: backlog
+  8-1-tamper-evident-audit-log-with-hmac-integrity: backlog
+  8-2-audit-log-search-export-and-external-forwarding: backlog
+  8-3-access-reports-dormant-users-and-audit-pii-management: backlog
+  8-4-data-subject-erasure-request-handling: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9: Platform Operations, API & Self-Hosting
+  epic-9: backlog
+  9-1-encrypted-backup-and-restore: backlog
+  9-2-system-settings-multi-org-and-resource-monitoring: backlog
+  9-3-in-place-version-upgrades-and-api-parity-verification: backlog
+  9-4-platform-operator-audit-log: backlog
+  9-5-operational-runbook-and-deployment-guide: backlog
+  epic-9-retrospective: optional

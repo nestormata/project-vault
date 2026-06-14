@@ -1,0 +1,5 @@
+# CVE-YYYY-NNNNN
+# exp: YYYY-MM-DD (max 30 days out from today)
+# Justification: one-line reason
+# This file is initially empty.
+# CI step .trivyignore-check validates all entries on every run.

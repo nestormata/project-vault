@@ -1,0 +1,17 @@
+{
+  "$comment": "Drizzle schema column definitions are intentionally repetitive by design.",
+  "minLines": 5,
+  "minTokens": 50,
+  "threshold": 0,
+  "ignore": [
+    "packages/db/src/schema/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.svelte-kit/**",
+    "**/coverage/**",
+    "**/.stryker-tmp/**",
+    "node_modules/**",
+    "*/node_modules/**"
+  ]
+}
