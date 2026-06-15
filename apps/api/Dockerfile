@@ -22,8 +22,11 @@ COPY packages/db ./packages/db
 COPY packages/crypto ./packages/crypto
 COPY packages/eslint-config ./packages/eslint-config
 
-WORKDIR /app/apps/api
-RUN pnpm build
+WORKDIR /app
+RUN pnpm --filter @project-vault/shared build \
+ && pnpm --filter @project-vault/db build \
+ && pnpm --filter @project-vault/crypto build \
+ && pnpm --filter @project-vault/api build
 
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
 
@@ -42,10 +45,9 @@ COPY --from=builder /app/packages/db/package.json ./packages/db/
 COPY --from=builder /app/packages/crypto/package.json ./packages/crypto/
 COPY --from=builder /app/packages/eslint-config/package.json ./packages/eslint-config/
 
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/packages/tsconfig/dist ./packages/tsconfig/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/crypto/dist ./packages/crypto/dist

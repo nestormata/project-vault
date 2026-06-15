@@ -5,6 +5,7 @@ RUN npm install -g pnpm@11.5.0
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml ./
+COPY pnpm-lock.yaml ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
@@ -21,16 +22,18 @@ RUN pnpm build
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
 
 RUN npm install -g pnpm@11.5.0
+RUN apk add --no-cache curl
 
 WORKDIR /app
 
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/apps/web/package.json ./apps/web/
 COPY --from=builder /app/packages/tsconfig/package.json ./packages/tsconfig/
 COPY --from=builder /app/packages/eslint-config/package.json ./packages/eslint-config/
 
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 
 COPY --from=builder /app/apps/web/build ./apps/web/build
 
