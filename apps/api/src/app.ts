@@ -1,9 +1,16 @@
 import Fastify from 'fastify'
+import swagger from '@fastify/swagger'
 import helmet from '@fastify/helmet'
 import cors from '@fastify/cors'
+import {
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler,
+} from '@fastify/type-provider-zod'
 import { healthRoutes } from './routes/health.js'
 import { metricsRoutes } from './routes/metrics.js'
 import { env } from './config/env.js'
+import type { FastifyApp } from './lib/fastify-app.js'
 
 type DbPool = {
   query: (sql: string) => Promise<unknown>
@@ -15,8 +22,6 @@ export type AppOptions = {
   metricsBindHost?: string
 }
 
-export type FastifyApp = ReturnType<typeof Fastify>
-
 export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   const logger =
     options.logger === false
@@ -27,7 +32,21 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
             level: env.LOG_LEVEL,
           }
 
-  const fastify = Fastify({ logger })
+  const fastify: FastifyApp = Fastify({ logger }) as unknown as FastifyApp
+
+  fastify.setValidatorCompiler(validatorCompiler)
+  fastify.setSerializerCompiler(serializerCompiler)
+
+  await fastify.register(swagger, {
+    openapi: {
+      openapi: '3.0.0',
+      info: {
+        title: 'Project Vault API',
+        version: '0.0.1',
+      },
+    },
+    transform: jsonSchemaTransform,
+  })
 
   await fastify.register(helmet, {
     contentSecurityPolicy: {
