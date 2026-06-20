@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { ApiErrorSchema, ApiResponseSchema } from './api.js'
-import { z } from 'zod'
+import { z } from 'zod/v4'
 
 describe('ApiResponse', () => {
   it('validates a successful response', () => {
@@ -45,6 +45,14 @@ describe('ApiError', () => {
 
   it('rejects error missing code', () => {
     const result = ApiErrorSchema.safeParse({ message: 'Oops' })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects codes that are not lower snake_case', () => {
+    const result = ApiErrorSchema.safeParse({
+      code: 'ValidationError',
+      message: 'Validation failed',
+    })
     expect(result.success).toBe(false)
   })
 })

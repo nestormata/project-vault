@@ -1,9 +1,9 @@
-import Fastify from 'fastify'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { FastifyApp } from '../lib/fastify-app.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8')) as {
@@ -13,8 +13,6 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'u
 type DbPool = {
   query: (sql: string) => Promise<unknown>
 }
-
-type FastifyApp = ReturnType<typeof Fastify>
 
 export async function healthRoutes(
   fastify: FastifyApp,

@@ -1,6 +1,4 @@
-import Fastify from 'fastify'
-
-type FastifyApp = ReturnType<typeof Fastify>
+import type { FastifyApp } from './fastify-app.js'
 
 export function registerShutdown(fastify: FastifyApp): void {
   const shutdown = async (signal: string): Promise<void> => {

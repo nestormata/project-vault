@@ -1,7 +1,7 @@
-import Fastify from 'fastify'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import { collectDefaultMetrics, register, Counter, Histogram, Gauge } from 'prom-client'
+import type { FastifyApp } from '../lib/fastify-app.js'
 
 collectDefaultMetrics()
 
@@ -25,8 +25,6 @@ export const processUptimeSeconds = new Gauge({
     this.set(process.uptime())
   },
 })
-
-type FastifyApp = ReturnType<typeof Fastify>
 
 function isLoopbackRemoteAddress(remoteAddress: string): boolean {
   return (
