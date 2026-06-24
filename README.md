@@ -101,7 +101,45 @@ Services will be available at:
 
 ```bash
 pnpm install                  # install dependencies
-pnpm turbo dev                # start all dev servers
+cp .env.example .env          # configure environment variables (see below)
+```
+
+Most local tasks need a real PostgreSQL connection. The repo uses **two** DB roles:
+
+| Role | Used for | Why |
+|---|---|---|
+| `postgres` (superuser) | running migrations only | migrations bootstrap the `vault_app` role and the RLS policies/triggers in `packages/db/src/migrations/` |
+| `vault_app` | everything else — the app itself, tests, RLS checks | the `postgres` **superuser bypasses Row-Level Security entirely**. If anything other than a migration connects as `postgres`, RLS/isolation tests will pass even when policies are broken or missing — they're silently not being checked |
+
+Steps to get a working local DB:
+
+```bash
+docker compose up -d db                       # start just the Postgres container
+DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault \
+  pnpm db:migrate                             # bootstraps vault_app + RLS (superuser only)
+```
+
+From here on, **export `DATABASE_URL` using `vault_app`**, not `postgres`, for dev/test/lint work:
+
+```bash
+export DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+pnpm turbo dev                                # start all dev servers
+pnpm turbo test                               # run tests
+pnpm check-rls                                # verify RLS coverage
+```
+
+`turbo.json` passes `DATABASE_URL` through to every task once it's set in your shell — but **nothing auto-loads `.env`** for you (no dotenv wiring in `turbo.json` or package scripts). If a task complains about missing rows, RLS isolation, or unexpected privileges, the most likely cause is `DATABASE_URL` not being exported, or still pointing at `postgres`.
+
+A [`Makefile`](./Makefile) wraps all of this so you don't have to remember the roles or re-export `DATABASE_URL` by hand:
+
+```bash
+make help          # list all available tasks
+make db-up          # start just the Postgres container
+make db-migrate      # run migrations as postgres (bootstraps vault_app + RLS)
+make test           # run tests as vault_app
+make check-rls      # verify RLS coverage as vault_app
+make ci             # run the full local quality-gate sequence
+make docker-up       # build + start the full stack
 ```
 
 ### CI Quality Gates
@@ -112,7 +150,7 @@ Each gate runs on every PR:
 |---|---|---|
 | TypeScript | `pnpm turbo typecheck` | strict TS, noUncheckedIndexedAccess |
 | Lint | `pnpm turbo lint` | ESLint flat config with security rules |
-| Tests | `pnpm turbo test` | Vitest with ≥80% coverage |
+| Tests | `pnpm turbo test` (as `vault_app`) | Vitest with ≥80% coverage |
 | Duplication | `pnpm jscpd` | Zero code duplication |
 | Secrets | ESLint no-secrets | Entropy-based secret detection |
 | Audit | `pnpm audit --audit-level=high` | Zero high/critical CVEs |
@@ -125,9 +163,19 @@ Nightly gates (runs at 02:00 UTC):
 ### Pre-PR Checklist
 
 ```bash
-pnpm turbo typecheck lint test  # all must pass
-pnpm jscpd                      # zero duplicates
-pnpm docker:smoke               # end-to-end Docker health check
+make ci              # typecheck, lint, migrate, RLS check, test, jscpd, audit, spec freshness
+make docker-smoke     # end-to-end Docker health check
+```
+
+Equivalent without `make`:
+
+```bash
+pnpm turbo typecheck lint
+DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm db:migrate
+DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm check-rls
+DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm turbo test
+pnpm jscpd
+pnpm docker:smoke
 ```
 
 ### Base Image Update Procedure
