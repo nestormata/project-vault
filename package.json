@@ -16,7 +16,7 @@
     "generate-spec": "turbo generate-spec",
     "jscpd": "jscpd apps packages scripts",
     "db:migrate": "pnpm --filter @project-vault/db db:migrate",
-    "docker:smoke": "bash -c 'set -euo pipefail; trap \"docker compose down\" EXIT; docker compose up --build -d; curl --retry 15 --retry-delay 3 --retry-connrefused -f http://localhost:3000/health; curl -f http://localhost:3000/ready'",
+    "docker:smoke": "bash -c 'set -euo pipefail; trap \"docker compose down\" EXIT; docker compose up --build -d; curl --retry 15 --retry-delay 3 --retry-all-errors -f http://localhost:3000/health; curl -f http://localhost:3000/ready'",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -34,6 +34,6 @@
     "tsx": "^4.22.3",
     "turbo": "latest",
     "typescript": "^5.7.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   }
 }

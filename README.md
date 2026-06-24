@@ -137,7 +137,7 @@ Run `scripts/update-base-image.sh` weekly to get fresh digests for pinned Docker
 ### Production Usage
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ---

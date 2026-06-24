@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-15
+last_updated: 2026-06-24
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -46,8 +46,8 @@ development_status:
   epic-1: in-progress
   1-1-initialize-turborepo-monorepo-with-full-quality-gate-suite: review
   1-2-configure-backend-package-structure: review
-  1-3-docker-deployment-and-health-endpoints: backlog
-  1-4-database-foundation-with-postgresql-rls-and-core-schema: backlog
+  1-3-docker-deployment-and-health-endpoints: review
+  1-4-database-foundation-with-postgresql-rls-and-core-schema: ready-for-dev
   1-5-vault-initialization-and-master-key-management: backlog
   1-6-user-registration-and-password-authentication: backlog
   1-7-jwt-session-management-and-security-controls: backlog

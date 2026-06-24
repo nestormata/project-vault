@@ -214,6 +214,11 @@ so that every subsequent story is written, tested, and merged against a real, au
 - [x] [Review][Patch] `CORS_ALLOWED_ORIGINS` schema accepts wildcard `*`, violating the no-wildcard requirement [apps/api/src/config/env.ts:7]
 - [x] [Review][Patch] `.gitignore` does not include broad `.env*` handling (with `.env.example` exception) or `reports/` as required [.gitignore:16]
 - [x] [Review][Patch] jscpd schema exclusion rationale comment requirement is not represented in the active jscpd config [/.jscpd.json:5]
+- [ ] [Review][Patch] Both Dockerfiles run the container process as root — no `USER` directive in either runner stage. Add `USER node` before the final `CMD` in `apps/api/Dockerfile` and `apps/web/Dockerfile`; ensure `/app` ownership is set for the `node` user (e.g. `COPY --chown=node:node`) before switching, then re-verify both images still start and pass their `HEALTHCHECK`. [apps/api/Dockerfile; apps/web/Dockerfile]
+- [ ] [Review][Patch] `docker-compose.yml` exposes Postgres on the host's public interface (`"5432:5432"`, binds `0.0.0.0`), and `docker-compose.prod.yml` never overrides or removes this — production deployments expose the database directly, bypassing the API entirely. Override in `docker-compose.prod.yml` to remove the `db` service's `ports:` mapping (the `api` service reaches `db` over the internal Docker network by service name) or bind it to loopback only (`"127.0.0.1:5432:5432"`). [docker-compose.yml:16-17; docker-compose.prod.yml]
+- [ ] [Review][Patch] No `.dockerignore` exists — the full build context (including any local `.env` with real secrets and `.git/` history) is transmitted to the Docker daemon on every `docker build`, even though current Dockerfiles only `COPY` specific paths. Add a `.dockerignore` excluding at minimum `.git`, `.env*` (except `.env.example`), `node_modules`, `dist`, `build`, `coverage`, `.turbo`, `.stryker-tmp`. [repo root]
+- [ ] [Review][Patch] `.github/workflows/ci.yml` and `.github/workflows/nightly.yml` declare no explicit `permissions:` block, so jobs run with default (potentially broader-than-needed) token permissions. Add `permissions: contents: read` at the workflow level in both files; none of the current jobs need write access. [.github/workflows/ci.yml; .github/workflows/nightly.yml]
+- [ ] [Review][Patch] Dependabot is not configured, despite the architecture document explicitly deciding on it: "`pnpm audit` on every CI run; Dependabot for dependency updates." Add `.github/dependabot.yml` with a `npm`/`pnpm` package-ecosystem entry covering the workspace root (and `github-actions` ecosystem for workflow action version bumps). [Source: _bmad-output/planning-artifacts/architecture.md#Infrastructure--Deployment]
 
 ## Dev Notes
 
@@ -606,6 +611,8 @@ export default [...baseRules, ...secretsRules, ...apiEnforcement]
 import { baseRules } from '@project-vault/eslint-config'
 export default [...baseRules]
 ```
+**Rejected alternative:** a single monolithic default-export array shared by every package — rejected because it cannot differentiate `packages/db`'s legitimate Drizzle access from `apps/api`'s ban on bare Drizzle calls.
+**Known gap:** none of the current rule groups forbid `apps/web` from importing `@project-vault/crypto`, even though architecture mandates crypto is server-only. Story 1.11 (or sooner) should add a rule banning `@project-vault/crypto` imports outside `apps/api/src/**`.
 
 ### ADR-2: Vitest Shared Base Lives in packages/tsconfig
 No new `packages/vitest-config` package. The shared Vitest base is exported from `packages/tsconfig`:
@@ -623,6 +630,8 @@ import { mergeConfig } from 'vitest/config'
 import { baseVitestConfig } from '@project-vault/tsconfig/vitest.base'
 export default mergeConfig(baseVitestConfig, { test: { /* package-specific */ } })
 ```
+**Rejected alternative:** a dedicated `packages/vitest-config` package — rejected to avoid maintaining a whole package for a few lines of config.
+**Accepted naming debt:** `packages/tsconfig` now holds Vitest config too, so its name is technically misleading. This is intentional, not an oversight — do not "fix" it by extracting a new package mid-epic.
 
 ### ADR-3: openapi.json and api-types.ts ARE Committed (not gitignored)
 `packages/shared/openapi.json` and `packages/shared/api-types.ts` must **NOT** be in `.gitignore`. They are committed contract artifacts. Rationale: `web#typecheck` in Turborepo depends on `api#generate-spec`; a fresh checkout needs a baseline spec for CI to typecheck against before generate-spec runs.
@@ -634,6 +643,8 @@ pnpm generate-spec
 git diff --exit-code packages/shared/openapi.json packages/shared/api-types.ts
 # Fails if the committed spec doesn't match what generate-spec would produce
 ```
+**Rejected alternative:** gitignore `openapi.json`/`api-types.ts` and always regenerate — rejected because it breaks fresh-checkout `web#typecheck` ordering (no baseline spec exists before `generate-spec` runs).
+**Known risk:** committing generated files creates merge conflicts when parallel branches touch routes. Resolve `openapi.json`/`api-types.ts` conflicts by re-running `pnpm generate-spec` post-merge, not by hand-merging the diff.
 
 ### ADR-4: TypeScript Config Inheritance Per Package Type
 ```
@@ -651,6 +662,8 @@ packages/tsconfig/tsconfig.json → extends: "@project-vault/tsconfig/node.json"
 packages/eslint-config/tsconfig.json → extends: "@project-vault/tsconfig/node.json"
 ```
 ⚠️ Do NOT use `base.json` directly in any app or package `tsconfig.json` — always use the node or svelte variant.
+**Rejected alternatives:** one universal tsconfig for all packages (breaks SvelteKit's own module resolution — see Tailwind/SvelteKit notes above); fully independent per-package tsconfigs with no shared base (drift risk).
+**Extension rule:** a future 4th variant (e.g., a worker-thread package needing a different `lib` target) must extend `base.json`, never duplicate it.
 
 ### ADR-5: 80% Branch Coverage Requires Sad-Path Tests From Day One
 With real logic in `apps/api/src/routes/health.ts`, the 80% branch threshold will FAIL without explicit sad-path coverage. Required tests for GET /ready:
@@ -661,6 +674,7 @@ With real logic in `apps/api/src/routes/health.ts`, the 80% branch threshold wil
 // Use vi.mock or inject a mock DB pool via the createApp({ dbPool }) factory
 // Both branches must exist in Story 1.1 or coverage gate will fail
 ```
+**Follow-on risk:** once Story 1.4 introduces a real Drizzle/postgres pool type, this hand-rolled mock pool shape may drift from the real interface and silently stop testing what it claims to. Story 1.4 must re-verify the mock pool still structurally matches the real pool type, or replace it with a typed test double.
 
 ### ADR-6: Docker Service Names and DATABASE_URL Variants
 Docker service names: `api`, `web`, `db` (these become DNS hostnames inside the Docker network).
@@ -677,6 +691,25 @@ POSTGRES_PASSWORD=password
 POSTGRES_DB=project_vault
 ```
 The `docker-compose.yml` api service sets `DATABASE_URL=postgresql://postgres:password@db:5432/project_vault` (using `db` hostname) regardless of what's in `.env.example`.
+**Documentation gap:** this override-behavior is only stated here in Dev Notes, not in `.env.example` itself — a contributor reading just `.env.example` won't know the Docker-context line is purely informational. Add a comment directly in `.env.example`: `# Note: docker compose up ignores this file's DATABASE_URL for the api/web services — see docker-compose.yml`.
+
+### Security Hardening Notes (Red Team Findings)
+
+Two unresolved findings from a red-team pass on the Docker/CORS/Helmet/env surface — see new unchecked items in **Review Findings** above:
+
+1. **Containers run as root** — neither Dockerfile drops privileges via `USER`. Fix before this story moves to `done`.
+2. **Postgres host-port exposure in production** — `docker-compose.prod.yml` inherits `"5432:5432"` from the base file unchanged, exposing the database directly on production hosts. Fix before this story moves to `done`.
+
+Two landmines flagged for **future** stories (no action needed now, document only):
+
+3. **`/metrics` loopback check (`req.ip`) is spoofable the moment a reverse proxy is introduced** with `trustProxy: true` and no IP/CIDR restriction — any story that fronts the stack with Nginx/Caddy/Traefik must set `trustProxy` to the specific trusted proxy address, never bare `true`.
+4. **CORS is not CSRF protection.** Story 1.6 (registration/auth) must not rely on the `CORS_ALLOWED_ORIGINS` allow-list to stop cross-site request forgery on cookie-based sessions — use `SameSite=Strict/Lax` cookies and/or CSRF tokens instead.
+
+Three more unresolved findings from a security-audit pass (hacker/defender/auditor personas) — see new unchecked items in **Review Findings** above:
+
+5. **No `.dockerignore`** — full build context (including any local `.env`, `.git/`) is sent to the Docker daemon on every build. Fix before this story moves to `done`.
+6. **No explicit `permissions:` block in GitHub Actions workflows** — jobs run with default token permissions instead of least-privilege `contents: read`. Fix before this story moves to `done`.
+7. **Dependabot is not configured**, despite the architecture document explicitly deciding on it (`architecture.md#Infrastructure--Deployment`: *"pnpm audit on every CI run; Dependabot for dependency updates"*). This is the most material of the three — it's a documented architectural decision that was never implemented, not a hypothetical risk. Fix before this story moves to `done`.
 
 ### Project Structure Notes
 

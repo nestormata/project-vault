@@ -30,7 +30,7 @@ RUN pnpm --filter @project-vault/shared build \
 
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
 
-RUN npm install -g pnpm@11.5.0
+RUN npm install -g pnpm@11.5.0 && npm cache clean --force
 RUN apk add --no-cache curl
 
 WORKDIR /app
@@ -45,7 +45,8 @@ COPY --from=builder /app/packages/db/package.json ./packages/db/
 COPY --from=builder /app/packages/crypto/package.json ./packages/crypto/
 COPY --from=builder /app/packages/eslint-config/package.json ./packages/eslint-config/
 
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
+ && rm -rf /root/.cache/pnpm /root/.local/share/pnpm /root/.npm
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
