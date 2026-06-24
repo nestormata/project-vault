@@ -1,6 +1,6 @@
 # Story 1.3: Docker Deployment & Health Endpoints
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -141,6 +141,19 @@ so that I can run a production-grade vault without installing Node.js or build t
   - [x] `pnpm docker:smoke`
   - [x] Confirm Stryker mutation score on any new non-trivial logic added by this story (e.g., an image-size check script, new CORS test file) meets the current ≥60% nightly gate threshold.
   - [x] Confirm `pnpm audit --audit-level=high`, Trivy filesystem scan, and Trivy Docker image scan are unaffected by these changes.
+
+### Review Findings
+
+- [x] [Review][Decision] `docker:smoke`'s curl retry flag was widened from `--retry-connrefused` to `--retry-all-errors`, which now also retries on HTTP error responses (4xx/5xx), not just connection failures — could mask a genuinely broken `/health` endpoint behind 15 retries instead of failing fast. **Resolved:** narrowed to retry only on the connection-reset/timeout exit codes (52, 56); other failures now fail fast. [package.json#docker:smoke]
+- [x] [Review][Decision] Story's own Dev Notes flagged `.github/workflows/nightly.yml`'s `trivy-image` job as sharing the same single-arch/API-only gap as `ci.yml`, but only `ci.yml` was fixed in this diff — `nightly.yml` still only builds/scans `apps/api/Dockerfile`, leaving the `apps/web` image without a security scan. **Resolved:** added a web image build + Trivy scan step to `nightly.yml`, mirroring the API image's steps. [.github/workflows/nightly.yml]
+- [x] [Review][Patch] `apps/api/src/lib/cors.test.ts` calls `await app.close()` at the end of each test body but not in a `finally` block — if an assertion above it throws, the Fastify instance is never closed, leaking listeners across test runs. **Fixed:** wrapped assertions in `try/finally`. [apps/api/src/lib/cors.test.ts:21-25,38-44]
+- [x] [Review][Patch] `scripts/check-image-size.ts` calls `execFileSync('docker', ['image', 'inspect', ...])` with no error handling — if the image doesn't exist locally or the Docker daemon is unreachable, the script throws an uncaught exception with a raw stack trace instead of the script's own clean `ERROR:` message. **Fixed:** wrapped in try/catch. [scripts/check-image-size.ts:14-17]
+- [x] [Review][Patch] `scripts/check-image-size.ts` treats a zero or negative size value (e.g. malformed `docker image inspect` output) as passing the size check rather than flagging it as an error. **Fixed:** validity check now rejects `size <= 0`. [scripts/check-image-size.ts:18-24]
+- [x] [Review][Patch] `.github/workflows/ci.yml`'s inline image-size-check bash step has no guard for `docker image inspect` failing — `$SIZE` would be empty and the subsequent `-gt` comparison throws a bash integer-expression error that obscures the real failure cause. **Fixed:** added explicit `set -euo pipefail` to the step. [.github/workflows/ci.yml]
+- [x] [Review][Defer] `apps/api/src/lib/cors.test.ts` only covers one disallowed-origin case; no test for a missing `Origin` header or substring/case-sensitivity allow-list bypass variants (e.g. `http://localhost:5173.evil.com`) — deferred, pre-existing test-coverage gap beyond AC #14's literal scope. [apps/api/src/lib/cors.test.ts]
+- [x] [Review][Defer] CORS rejection in `apps/api/src/app.ts` returns HTTP 500 instead of a proper 4xx; the new test correctly asserts this actual behavior per AC #14, but the underlying error-handling design (pre-existing, untouched by this diff) is arguably a defect a future story should fix. [apps/api/src/app.ts]
+- [x] [Review][Defer] No `.dockerignore` exists despite multi-arch and image-size-sensitive builds — pre-existing condition not introduced by this story, flagged for awareness. [repo root]
+- [x] [Review][Defer] AC #14's illustrative code block in this story file still shows `403`, but the shipped test asserts `500` per the AC's own "assert actual behavior" instruction — minor spec-hygiene drift, left as historical record. [_bmad-output/implementation-artifacts/1-3-docker-deployment-and-health-endpoints.md#Acceptance-Criteria]
 
 ## Dev Notes
 

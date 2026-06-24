@@ -1,2 +1,10 @@
-// Empty schema — tables added in Story 1.4
-// Note: Drizzle schema column definitions are intentionally repetitive by design
+// Drizzle schema column definitions are intentionally repetitive by design
+export * from './helpers.js'
+export * from './organizations.js'
+export * from './users.js'
+export * from './org-memberships.js'
+export * from './user-identity-tokens.js'
+export * from './sessions.js'
+export * from './audit-log-entries.js'
+export * from './security-alerts.js'
+export * from './api-instances.js'

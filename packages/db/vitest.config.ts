@@ -5,9 +5,9 @@ export default mergeConfig(baseVitestConfig, {
   test: {
     include: ['src/**/*.test.ts'],
     coverage: {
-      // Only count coverage for files that are directly tested in Story 1.1
-      // (index.ts and schema stubs will be covered in Story 1.4)
-      include: ['src/test-helpers.ts'],
+      // Schema files are declarative table definitions with no branch logic —
+      // excluded same as packages/db/src/migrations (see .jscpd.json rationale).
+      include: ['src/index.ts', 'src/test-helpers.ts', 'src/check-rls-coverage.ts'],
       thresholds: {
         lines: 80,
         branches: 80,

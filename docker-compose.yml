@@ -16,13 +16,29 @@ services:
     ports:
       - "5432:5432"
 
+  # One-shot migration runner: creates the vault_app role, RLS policies, and triggers
+  # (see packages/db/src/migrations/0001_rls_and_triggers.sql) before `api` starts, so
+  # `api` never has to connect as the postgres superuser (AC-1b — superuser bypasses RLS).
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: builder
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
+    command: ["pnpm", "--filter", "@project-vault/db", "db:migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
+      # vault_app, not postgres — the postgres superuser bypasses RLS entirely (AC-1b).
+      DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@db:5432/${POSTGRES_DB:-project_vault}
       API_PORT: 3000
       CORS_ALLOWED_ORIGINS: http://localhost:5173
       METRICS_BIND_HOST: 127.0.0.1
@@ -32,6 +48,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]

@@ -40,6 +40,9 @@ importers:
       lint-staged:
         specifier: ^17.0.6
         version: 17.0.6
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
       prettier:
         specifier: ^3.0.0
         version: 3.8.4
@@ -228,6 +231,9 @@ importers:
       eslint:
         specifier: ^9.0.0
         version: 9.39.4(jiti@2.7.0)
+      tsx:
+        specifier: ^4.19.3
+        version: 4.22.3
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

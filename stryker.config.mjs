@@ -22,6 +22,11 @@ export default {
     'apps/api/src/services/**/*.ts',
     'apps/api/src/domain/**/*.ts',
     'packages/db/src/repositories/**/*.ts',
+    // Story 1.4: foundational RLS security layer — held to the ≥80% mutation
+    // requirement regardless of the epic-wide 60% nightly gate.
+    'packages/db/src/index.ts',
+    'packages/db/src/test-helpers.ts',
+    'packages/db/src/check-rls-coverage.ts',
     '!**/*.config.{js,ts,mjs}',
     '!**/migrations/**',
     '!**/*.d.ts',

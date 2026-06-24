@@ -16,7 +16,8 @@
     "generate-spec": "turbo generate-spec",
     "jscpd": "jscpd apps packages scripts",
     "db:migrate": "pnpm --filter @project-vault/db db:migrate",
-    "docker:smoke": "bash -c 'set -euo pipefail; trap \"docker compose down\" EXIT; docker compose up --build -d; curl --retry 15 --retry-delay 3 --retry-all-errors -f http://localhost:3000/health; curl -f http://localhost:3000/ready'",
+    "check-rls": "tsx scripts/check-rls-coverage.ts",
+    "docker:smoke": "bash -c 'set -euo pipefail; trap \"docker compose down\" EXIT; docker compose up --build -d; for i in $(seq 1 15); do code=0; curl -sf http://localhost:3000/health > /dev/null || code=$?; [ \"$code\" -eq 0 ] && break; if [ \"$code\" -ne 52 ] && [ \"$code\" -ne 56 ]; then exit \"$code\"; fi; sleep 3; done; curl -f http://localhost:3000/health; curl -f http://localhost:3000/ready'",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -29,6 +30,7 @@
     "husky": "^9.1.7",
     "jscpd": "^4.0.5",
     "lint-staged": "^17.0.6",
+    "postgres": "^3.4.5",
     "prettier": "^3.0.0",
     "prettier-plugin-svelte": "^4.1.0",
     "tsx": "^4.22.3",

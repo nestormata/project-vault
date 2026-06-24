@@ -18,28 +18,34 @@ describe('CORS', () => {
   it('rejects requests from an unlisted origin', async () => {
     const app = await createApp({ logger: false })
 
-    const response = await app.inject({
-      method: 'GET',
-      url: '/health',
-      headers: { origin: 'http://evil.example.com' },
-    })
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/health',
+        headers: { origin: 'http://evil.example.com' },
+      })
 
-    expect(response.statusCode).toBe(500)
-    expect(response.json<{ message: string }>().message).toBe('Not allowed by CORS')
-    await app.close()
+      expect(response.statusCode).toBe(500)
+      expect(response.json<{ message: string }>().message).toBe('Not allowed by CORS')
+    } finally {
+      await app.close()
+    }
   })
 
   it('allows requests from an allow-listed origin', async () => {
     const app = await createApp({ logger: false })
 
-    const response = await app.inject({
-      method: 'GET',
-      url: '/health',
-      headers: { origin: ALLOWED_ORIGIN },
-    })
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/health',
+        headers: { origin: ALLOWED_ORIGIN },
+      })
 
-    expect(response.statusCode).toBe(200)
-    expect(response.headers['access-control-allow-origin']).toBe(ALLOWED_ORIGIN)
-    await app.close()
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['access-control-allow-origin']).toBe(ALLOWED_ORIGIN)
+    } finally {
+      await app.close()
+    }
   })
 })

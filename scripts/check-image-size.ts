@@ -12,12 +12,19 @@ if (images.length === 0) {
 let failed = false
 
 for (const image of images) {
-  const output = execFileSync('docker', ['image', 'inspect', image, '--format={{.Size}}'], {
-    encoding: 'utf-8',
-  }).trim()
+  let output: string
+  try {
+    output = execFileSync('docker', ['image', 'inspect', image, '--format={{.Size}}'], {
+      encoding: 'utf-8',
+    }).trim()
+  } catch {
+    process.stderr.write(`ERROR: docker image inspect failed for ${image}\n`)
+    failed = true
+    continue
+  }
   const size = Number(output)
 
-  if (!Number.isFinite(size)) {
+  if (!Number.isFinite(size) || size <= 0) {
     process.stderr.write(`ERROR: could not determine size of image ${image}\n`)
     failed = true
     continue
