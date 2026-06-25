@@ -43,7 +43,7 @@ export async function withAdminAccess<T>(
   fn: (tx: Tx) => Promise<T>
 ): Promise<T> {
   // TODO Story 1.11: full admin authorization validation lives here
-  if (authCtx.role !== 'admin') {
+  if (!authCtx || authCtx.role !== 'admin') {
     throw new Error('withAdminAccess: caller is not an admin')
   }
   return getDb().transaction((tx) => fn(tx as unknown as Tx))

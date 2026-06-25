@@ -30,6 +30,12 @@ describe('withAdminAccess', () => {
     )
   })
 
+  it('throws a clear error (not a TypeError) when authCtx is undefined', async () => {
+    await expect(withAdminAccess(undefined as never, async () => 'never')).rejects.toThrow(
+      /not an admin/
+    )
+  })
+
   it('runs fn when authCtx.role is admin', async () => {
     const result = await withAdminAccess({ role: 'admin' }, async () => 'admin-ok')
     expect(result).toBe('admin-ok')

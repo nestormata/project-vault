@@ -15,6 +15,10 @@ jobs:
     name: Quality Gates
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Derived from the postgres: service block below — keep in sync if it changes.
+      SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+      VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
     services:
       postgres:
         image: postgres:16-alpine
@@ -76,12 +80,12 @@ jobs:
       - name: Run database migrations
         run: pnpm db:migrate
         env:
-          DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+          DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
       - name: Check RLS policy coverage
         run: pnpm check-rls
         env:
-          DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
 
       - name: Test (with coverage)
         run: pnpm turbo test
@@ -89,7 +93,10 @@ jobs:
           # Must use vault_app, not postgres — the postgres superuser bypasses RLS
           # entirely, which would make the RLS isolation tests pass even if policies
           # were broken or missing.
-          DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+          # check-rls-coverage.test.ts needs superuser access to create/drop its
+          # throwaway test database and manage RLS policies directly.
+          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
       - name: Upload RLS isolation coverage (SOC2 Type II evidence)
         if: always()

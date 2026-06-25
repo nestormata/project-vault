@@ -66,13 +66,14 @@ describe('checkRlsCoverage', () => {
 
   it('throws when no tables exist in the target database', async () => {
     const emptyDbName = `check_rls_empty_${Date.now()}`
-    await adminSql.unsafe(`CREATE DATABASE ${emptyDbName}`)
-    const emptySql = postgres(`postgresql://postgres:password@localhost:5432/${emptyDbName}`)
+    let emptySql: ReturnType<typeof postgres> | undefined
     try {
+      await adminSql.unsafe(`CREATE DATABASE ${emptyDbName}`)
+      emptySql = postgres(`postgresql://postgres:password@localhost:5432/${emptyDbName}`)
       await expect(checkRlsCoverage(emptySql)).rejects.toThrow(/No tables found/)
     } finally {
-      await emptySql.end()
-      await adminSql.unsafe(`DROP DATABASE ${emptyDbName}`)
+      await emptySql?.end()
+      await adminSql.unsafe(`DROP DATABASE IF EXISTS ${emptyDbName}`)
     }
   })
 })
