@@ -1,6 +1,6 @@
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS builder
 
-RUN npm install -g pnpm@11.5.0
+RUN npm install -g pnpm@11.9.0
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN pnpm build
 
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
 
-RUN npm install -g pnpm@11.5.0 && npm cache clean --force
+RUN npm install -g pnpm@11.9.0 && npm cache clean --force
 RUN apk add --no-cache curl
 
 WORKDIR /app

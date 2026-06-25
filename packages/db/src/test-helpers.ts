@@ -1,6 +1,27 @@
 import { sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from './index.js'
 
+// audit_log_entries is append-only — blocked by both the prevent_audit_log_mutation()
+// trigger and (since 0002_audit_log_revoke.sql) a grant-layer REVOKE on vault_app,
+// which fires first since PostgreSQL checks table privileges before triggers. A test
+// org that wrote audit log rows can never have them purged — that is correct,
+// intentional behavior (same as production), not a cleanup bug. Drizzle wraps the
+// real Postgres error as `error.cause`; `.message` is just "Failed query: ...".
+function isAppendOnlyViolation(error: unknown): boolean {
+  const cause = error instanceof Error ? error.cause : undefined
+  return cause instanceof Error && /append-only|permission denied/.test(cause.message)
+}
+
+// When the audit_log_entries delete above was blocked, its row still FK-references
+// this organization (no ON DELETE CASCADE), so the organizations delete fails with a
+// standard Postgres foreign_key_violation (SQLSTATE 23503) — also expected.
+function isForeignKeyViolation(error: unknown): boolean {
+  const cause = error instanceof Error ? error.cause : undefined
+  return (
+    Boolean(cause) && typeof cause === 'object' && (cause as { code?: string }).code === '23503'
+  )
+}
+
 export async function withTestOrg<T>(
   fn: (ctx: { orgId: string; tx: Tx }) => Promise<T>
 ): Promise<T> {
@@ -20,22 +41,24 @@ export async function withTestOrg<T>(
     // app.current_org_id set, so the RLS policy silently filters the DELETE to zero
     // rows (no error, just a no-op) instead of actually removing the row.
     //
-    // audit_log_entries is also append-only (AC-5 trigger blocks ALL deletes, even
-    // this one). A test org that wrote audit log rows can never be fully purged —
-    // that is correct, intentional behavior (same as production), not a cleanup bug.
-    // Swallow the expected failure here so it doesn't mask the test's actual
-    // pass/fail result, and skip the organizations delete too since the FK would
-    // block it anyway.
+    // Each step has its own try/catch so an expected append-only failure on
+    // audit_log_entries doesn't skip the unrelated security_alerts/organizations
+    // cleanup, and any *unexpected* failure (e.g. a dropped connection) still
+    // propagates instead of being silently swallowed.
     try {
       await withOrg(orgId, (tx) =>
         tx.execute(sql`DELETE FROM audit_log_entries WHERE org_id = ${orgId}`)
       )
-      await withOrg(orgId, (tx) =>
-        tx.execute(sql`DELETE FROM security_alerts WHERE org_id = ${orgId}`)
-      )
+    } catch (error) {
+      if (!isAppendOnlyViolation(error)) throw error
+    }
+    await withOrg(orgId, (tx) =>
+      tx.execute(sql`DELETE FROM security_alerts WHERE org_id = ${orgId}`)
+    )
+    try {
       await getDb().execute(sql`DELETE FROM organizations WHERE id = ${orgId}`)
-    } catch {
-      // Expected when this test org wrote append-only audit log rows; org row remains.
+    } catch (error) {
+      if (!isForeignKeyViolation(error)) throw error
     }
   }
 }

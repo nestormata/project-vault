@@ -12,7 +12,7 @@ const envSchema = z.object({
       } catch {
         return false
       }
-    }, "DATABASE_URL must not use the 'postgres' superuser — RLS enforcement requires a non-superuser role. Use 'vault_app' or another application role. See .env.example."),
+    }, "FATAL: DATABASE_URL must not use the 'postgres' superuser — RLS enforcement requires a non-superuser role.\nUse 'vault_app' or another application role. See .env.example."),
   CORS_ALLOWED_ORIGINS: z
     .string()
     .min(1)

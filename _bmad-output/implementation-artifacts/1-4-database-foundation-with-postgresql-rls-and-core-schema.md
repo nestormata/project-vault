@@ -1,6 +1,6 @@
 # Story 1.4: Database Foundation with PostgreSQL RLS & Core Schema
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -701,9 +701,27 @@ export const orgMemberships = pgTable(
 
 ---
 
-## Dev Notes
+### Review Findings
 
-### Story Intent & What Already Exists
+- [x] [Review][Decision] `check-rls-coverage.test.ts` drops live RLS policies (`sessions_isolation`, `audit_log_isolation`) against the shared Postgres instance with only an `afterEach` restoration and no file-level sequential isolation guarantee — a real race risk if vitest runs test files in parallel against `rls-isolation.test.ts` or other suites touching the same tables. — Resolved: serialize via `fileParallelism: false` in `packages/db/vitest.config.ts`. [packages/db/src/__tests__/check-rls-coverage.test.ts]
+- [x] [Review][Decision] `vault_app` is granted `UPDATE, DELETE` on `audit_log_entries`, relying solely on the `prevent_audit_log_mutation()` trigger to block mutation — no `REVOKE` at the grant layer for defense-in-depth, unlike the analogous `REVOKE DELETE ON api_instances` pattern already used elsewhere. — Resolved: added `0002_audit_log_revoke.sql` (`REVOKE UPDATE, DELETE ON audit_log_entries FROM vault_app`); updated `audit-log-immutability.test.ts` since permission checks now fire before the trigger. [packages/db/src/migrations/0001_rls_and_triggers.sql]
+
+- [x] [Review][Patch] `withAdminAccess()` throws a raw `TypeError` instead of a clear authorization error when `authCtx` is `null`/`undefined` [packages/db/src/index.ts:41-49] — fixed: `if (!authCtx || authCtx.role !== 'admin')`
+- [x] [Review][Patch] AC-1b startup-validation error message is missing the required `FATAL:` prefix and exact two-line format mandated by the spec [apps/api/src/config/env.ts] — fixed: message now starts with `FATAL:` and matches the spec's two-line format
+- [x] [Review][Patch] Dev Agent Record claims a "production hardening note for vault_app password added to .env.example," but no such note was actually present — added the AC-1b hardening guidance (`ALTER ROLE ... PASSWORD` / `scram-sha-256`/`peer` auth) to `.env.example`
+- [x] [Review][Patch] `withTestOrg()` cleanup `catch` block swallows all errors, not just the documented append-only case — fixed: each delete now has its own try/catch classifying the expected error (append-only/permission-denied or FK violation) and rethrows anything else; added `test-helpers.cleanup-errors.test.ts` to cover the rethrow branches [packages/db/src/test-helpers.ts]
+- [x] [Review][Patch] `seed-test.ts` has no error handling around the sequential inserts — fixed: wrapped `seed()` in try/catch with a clear stderr message and `process.exit(1)` on failure [packages/db/src/seed-test.ts]
+- [x] [Review][Patch] `check-rls-coverage.test.ts`'s throwaway-database test calls `CREATE DATABASE` before entering the `try` block — fixed: moved inside `try`/`finally` with `DROP DATABASE IF EXISTS` [packages/db/src/__tests__/check-rls-coverage.test.ts]
+- [x] [Review][Patch] RLS policies declare only `USING`, relying on undocumented PostgreSQL default behavior for `WITH CHECK` on `ALL`-command policies — fixed: added a clarifying comment above the `CREATE POLICY` block [packages/db/src/migrations/0001_rls_and_triggers.sql]
+- [x] [Review][Patch] CI workflow duplicates the Postgres connection string inline in multiple places — fixed: hoisted to job-level `env: SUPERUSER_DATABASE_URL` / `VAULT_APP_DATABASE_URL`; also added the previously-missing `ADMIN_DATABASE_URL` to the Test step [.github/workflows/ci.yml]
+
+- [x] [Review][Defer] `check-rls-coverage.ts` infers "org-scoped" purely from a column literally named `org_id` — brittle naming-convention heuristic with no positive table registry [packages/db/src/check-rls-coverage.ts] — deferred, this is how AC-10 is explicitly specified; changing it is a spec-level decision beyond this story
+- [x] [Review][Defer] `withOrgReadScope()` is functionally identical to `withOrg()` — no real read/write distinction despite the name [packages/db/src/index.ts] — deferred, explicitly acknowledged in this story's own Dev Notes as "differentiated in a later story"
+- [x] [Review][Defer] `GRANT CREATE ON DATABASE project_vault TO vault_app` is a broad, database-wide grant added for pg-boss's schema bootstrap rather than scoped to a dedicated schema [packages/db/src/migrations/0001_rls_and_triggers.sql] — deferred, already documented and user-approved as a scope deviation in the Dev Agent Record
+- [x] [Review][Defer] `docker-compose.yml`'s `migrate` service rebuilds the full `api` builder stage on every cold start just to run one migration command [docker-compose.yml] — deferred, pre-existing tradeoff from the documented scope deviation; an optimization, not a defect
+- [x] [Review][Defer] `getDb()` singleton in `packages/db/src/index.ts` has no recovery path if the underlying connection pool dies [packages/db/src/index.ts] — deferred, pre-existing connection-management architecture beyond this story's scope; broader resilience work is a future concern
+
+
 
 This story builds the foundational database layer that all subsequent stories depend on. The starting state is:
 
@@ -1057,13 +1075,14 @@ Claude Sonnet 4.6
 - `packages/db/src/schema/api-instances.ts` (new)
 - `packages/db/src/schema/index.ts` (modified) — re-exports all tables
 - `packages/db/src/migrations/0000_initial_schema.sql` (new, generated)
-- `packages/db/src/migrations/0001_rls_and_triggers.sql` (new, manual)
-- `packages/db/src/migrations/meta/_journal.json`, `meta/0000_snapshot.json` (new, generated)
+- `packages/db/src/migrations/0001_rls_and_triggers.sql` (new, manual; review fix: added a `WITH CHECK` clarifying comment above the policy block)
+- `packages/db/src/migrations/0002_audit_log_revoke.sql` (new, manual — review fix: defense-in-depth `REVOKE UPDATE, DELETE ON audit_log_entries FROM vault_app`)
+- `packages/db/src/migrations/meta/_journal.json`, `meta/0000_snapshot.json` (new, generated; `_journal.json` updated for 0002)
 
 **Application logic:**
-- `packages/db/src/index.ts` (modified) — real `withOrg()`/`withOrgReadScope()`/`withAdminAccess()`, `getDb()` exported, UUID validation
-- `packages/db/src/test-helpers.ts` (modified) — real `withTestOrg()`
-- `packages/db/src/seed-test.ts` (new)
+- `packages/db/src/index.ts` (modified) — real `withOrg()`/`withOrgReadScope()`/`withAdminAccess()`, `getDb()` exported, UUID validation; review fix: `withAdminAccess()` guards against a null/undefined `authCtx`
+- `packages/db/src/test-helpers.ts` (modified) — real `withTestOrg()`; review fix: per-step error classification in cleanup (append-only/permission-denied vs. FK violation) instead of a bare swallow-all catch
+- `packages/db/src/seed-test.ts` (new; review fix: wrapped in try/catch with a clear stderr message and `process.exit(1)` on failure)
 - `packages/db/src/check-rls-coverage.ts` (new) — testable RLS coverage logic
 - `scripts/check-rls-coverage.ts` (new) — CLI wrapper
 - `packages/db/package.json` (modified) — `generate`, `db:seed:test` scripts; `tsx` devDependency
@@ -1073,17 +1092,18 @@ Claude Sonnet 4.6
 - `packages/db/src/index.test.ts` (new) — `getDb()`, `withOrg()` UUID guard, `withOrgReadScope()`, `withAdminAccess()`
 - `packages/db/src/test-helpers.test.ts` (renamed from `index.test.ts`, rewritten)
 - `packages/db/src/__tests__/rls-isolation.test.ts` (new)
-- `packages/db/src/__tests__/audit-log-immutability.test.ts` (new)
+- `packages/db/src/__tests__/audit-log-immutability.test.ts` (new; review fix: UPDATE/DELETE assertions updated to `/permission denied/` since the 0002 REVOKE now fires before the trigger)
 - `packages/db/src/__tests__/pseudonym-immutability.test.ts` (new)
 - `packages/db/src/__tests__/api-instances-privileges.test.ts` (new)
-- `packages/db/src/__tests__/check-rls-coverage.test.ts` (new)
-- `packages/db/vitest.config.ts` (modified) — coverage `include` list
+- `packages/db/src/__tests__/check-rls-coverage.test.ts` (new; review fix: `CREATE DATABASE`/`DROP DATABASE` now fully wrapped in try/finally)
+- `packages/db/src/test-helpers.cleanup-errors.test.ts` (new — review fix: mocked unit coverage for `withTestOrg()`'s unexpected-error rethrow branches)
+- `packages/db/vitest.config.ts` (modified) — coverage `include` list; review fix: `fileParallelism: false` to prevent a race between `check-rls-coverage.test.ts`'s live policy drop/restore and other suites
 
 **Infra/CI:**
 - `docker-compose.yml` (modified) — `migrate` service, `api` DATABASE_URL → `vault_app` (scope deviation, user-approved)
-- `.github/workflows/ci.yml` (modified) — `postgres` service block, migrate/check-rls steps, vault_app test DATABASE_URL, coverage artifact upload
-- `.env.example` (modified) — `vault_app` DATABASE_URL examples
-- `apps/api/src/config/env.ts` (modified) — AC-1b postgres-superuser rejection
+- `.github/workflows/ci.yml` (modified) — `postgres` service block, migrate/check-rls steps, vault_app test DATABASE_URL, coverage artifact upload; review fix: hoisted connection strings to job-level `env:`, added missing `ADMIN_DATABASE_URL` for the Test step
+- `.env.example` (modified) — `vault_app` DATABASE_URL examples; review fix: added the AC-1b production-hardening guidance block
+- `apps/api/src/config/env.ts` (modified) — AC-1b postgres-superuser rejection; review fix: error message now has the required `FATAL:` prefix and two-line format
 - `apps/api/src/config/env.test.ts` (new)
 - `.jscpd.json` (modified) — added `packages/db/src/migrations/**` exclusion (unrelated pre-existing jscpd finding fixed opportunistically during this story's regression pass)
 - `stryker.config.mjs` (modified) — added `packages/db/src/index.ts`, `test-helpers.ts`, `check-rls-coverage.ts` to `mutate`
@@ -1091,3 +1111,4 @@ Claude Sonnet 4.6
 ## Change Log
 
 - 2026-06-24: Implemented Story 1.4. Built the full Drizzle schema (9 tables), a two-file migration (generated DDL + manual RLS/triggers/grants), real `withOrg()`/`withOrgReadScope()`/`withAdminAccess()`/`withTestOrg()` with transaction-scoped RLS context and UUID validation, the append-only and pseudonymization-immutability triggers, the `vault_app` role with a `REVOKE DELETE` DoS mitigation on `api_instances`, `db:seed:test`, and a testable `check-rls-coverage.ts` CI guard wired into `.github/workflows/ci.yml` with a 90-day coverage-artifact upload. Resolved a real conflict between AC-1b (reject `postgres`-user `DATABASE_URL`) and the existing `docker-compose.yml` (api connected as `postgres`) by adding a one-shot `migrate` service, with explicit user sign-off given it required touching files Dev Notes had flagged as out of scope. Found and fixed a silent RLS bug in `withTestOrg()`'s own cleanup (bare deletes with no org context were no-ops, not actual deletes). Full quality-gate regression passed cold (`docker compose down -v` → up → `docker:smoke` exit 0); Stryker mutation score on the three required files: 100%/96%/86.67%, all above the ≥80% gate. Status: ready-for-dev → review.
+- 2026-06-24: Code review (3-layer adversarial review: Blind Hunter, Edge Case Hunter, Acceptance Auditor against the full story spec) found 2 decision-needed and 8 patch findings, plus 5 pre-existing/spec-acknowledged items deferred to `deferred-work.md`. Both decisions resolved by the user: serialize `check-rls-coverage.test.ts` (`fileParallelism: false`) to close a race with concurrent RLS-policy mutation; add `0002_audit_log_revoke.sql` as defense-in-depth (`REVOKE UPDATE, DELETE ON audit_log_entries FROM vault_app`) alongside the existing trigger. All 10 patches applied: `withAdminAccess()` null-guard, AC-1b `FATAL:` message format, missing `.env.example` production-hardening note, `withTestOrg()` per-step error classification (replacing a bare swallow-all catch that also skipped unrelated cleanup steps), `seed-test.ts` error handling, a `check-rls-coverage.test.ts` resource-leak fix, an RLS-policy `WITH CHECK` clarifying comment, and CI connection-string deduplication (which also surfaced and fixed a real gap: `ADMIN_DATABASE_URL` was never set in CI, silently relying on a hardcoded test fallback). The new REVOKE required updating `audit-log-immutability.test.ts`'s two assertions from `/append-only/` to `/permission denied/`, since PostgreSQL checks grants before firing triggers. Added `test-helpers.cleanup-errors.test.ts` (mocked) to cover the new rethrow branches, keeping `test-helpers.ts` branch coverage at 94.44% (was 86.67%). Full regression re-run cold and green: lint, typecheck, build, 30/30 db tests + 27/28 api tests (1 pre-existing skip), jscpd 0 clones, `docker compose down -v` → up --build → `docker:smoke` exit 0. Status: review → done.

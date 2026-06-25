@@ -44,5 +44,12 @@ async function seed(): Promise<void> {
   process.stdout.write('db:seed:test: fixture seeded (2 orgs, 2 users, 2 memberships)\n')
 }
 
-await seed()
-process.exit(0)
+try {
+  await seed()
+  process.exit(0)
+} catch (error) {
+  process.stderr.write(
+    `db:seed:test: failed — ${error instanceof Error ? error.message : String(error)}\n`
+  )
+  process.exit(1)
+}

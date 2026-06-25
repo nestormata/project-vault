@@ -35,6 +35,12 @@ describe('audit_log_entries immutability', () => {
     })
   })
 
+  // 0002_audit_log_revoke.sql revokes UPDATE/DELETE on audit_log_entries from vault_app
+  // as defense-in-depth alongside the append-only trigger. PostgreSQL checks table-level
+  // privileges before firing row-level triggers, so the grant-layer REVOKE is what
+  // actually blocks these statements now — "permission denied", not "append-only".
+  // Either layer alone satisfies AC-5 (UPDATE/DELETE always throws); this asserts the
+  // grant layer specifically, since it now fires first.
   it('throws on UPDATE', async () => {
     await withTestOrg(async ({ orgId }) => {
       const id = await insertAuditLogRow(orgId, 'test-hmac-update')
@@ -43,7 +49,7 @@ describe('audit_log_entries immutability', () => {
         withOrg(orgId, (tx) =>
           tx.update(auditLogEntries).set({ hmac: 'tampered' }).where(eq(auditLogEntries.id, id))
         )
-      ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/append-only/) } })
+      ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/permission denied/) } })
     })
   })
 
@@ -53,7 +59,7 @@ describe('audit_log_entries immutability', () => {
 
       await expect(
         withOrg(orgId, (tx) => tx.delete(auditLogEntries).where(eq(auditLogEntries.id, id)))
-      ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/append-only/) } })
+      ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/permission denied/) } })
     })
   })
 })

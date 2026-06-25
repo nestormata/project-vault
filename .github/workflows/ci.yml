@@ -15,6 +15,10 @@ jobs:
     name: Quality Gates
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Derived from the postgres: service block below — keep in sync if it changes.
+      SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+      VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
     services:
       postgres:
         image: postgres:16-alpine
@@ -42,7 +46,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.5.0
+          version: 11.9.0
 
       - name: Get pnpm store directory
         shell: bash
@@ -76,12 +80,12 @@ jobs:
       - name: Run database migrations
         run: pnpm db:migrate
         env:
-          DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+          DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
       - name: Check RLS policy coverage
         run: pnpm check-rls
         env:
-          DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
 
       - name: Test (with coverage)
         run: pnpm turbo test
@@ -89,7 +93,10 @@ jobs:
           # Must use vault_app, not postgres — the postgres superuser bypasses RLS
           # entirely, which would make the RLS isolation tests pass even if policies
           # were broken or missing.
-          DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+          # check-rls-coverage.test.ts needs superuser access to create/drop its
+          # throwaway test database and manage RLS policies directly.
+          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
       - name: Upload RLS isolation coverage (SOC2 Type II evidence)
         if: always()
@@ -143,7 +150,10 @@ jobs:
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # linux/arm64 is QEMU-emulated on ubuntu-latest runners — pnpm install/build under
+    # emulation is materially slower than native amd64, so this job needs more headroom
+    # than the other 10-minute jobs.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -159,6 +169,10 @@ jobs:
           file: apps/api/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
+          # No image output is consumed here (push: false, load is impossible for a
+          # multi-platform build) — provenance/SBOM attestation has nothing to attach
+          # to and just adds extra emulated build time for no benefit.
+          provenance: false
           tags: project-vault-api:ci
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
@@ -170,6 +184,7 @@ jobs:
           file: apps/web/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
+          provenance: false
           tags: project-vault-web:ci
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web

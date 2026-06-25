@@ -1,9 +1,11 @@
 # Cryptographic Architecture — Project Vault
 
-**Version:** 1.0  
-**Date:** 2026-04-09  
-**Status:** Research-complete; pending ADR sign-off on three open decisions  
+**Version:** 1.1  
+**Date:** 2026-06-24  
+**Status:** Research-complete; v1 implementation spec available for vault init/seal  
 **Source:** Technical research document `_bmad-output/planning-artifacts/research/technical-cryptographic-architecture-secrets-vault-research-2026-04-08.md`
+
+> **v1 implementation (Node.js / Story 1.5):** The running codebase uses PostgreSQL + `packages/crypto` (AES-256-GCM, HKDF, Argon2id) with manual seal/unseal — not Shamir/Raft from this research doc. See **[specs/vault-initialization-and-key-management.md](vault-initialization-and-key-management.md)** for operational details: custody models (passphrase, envelope, file), API endpoints, Docker wiring, and operator runbook.
 
 ---
 
@@ -295,6 +297,8 @@ Without `IPC_LOCK`, Vault/OpenBao emit `WARNING! mlock not supported` at startup
 |---|---|---|---|
 | ADR-01 | Per-secret vs. per-project DEKs | Per-secret (lower blast radius, higher overhead) vs. per-project (Infisical pattern, simpler) | Fundamental to the data model |
 | ADR-02 | Default seal mode | Shamir manual (recommended for v1) vs. KMS auto-unseal | Operational complexity and availability |
+
+**v1 resolution (2026-06-24):** Manual unseal with three custody models — passphrase (Argon2id), envelope (split env+file), file (downgraded). Shamir and KMS deferred. Documented in `specs/vault-initialization-and-key-management.md`.
 | ADR-03 | AES-GCM-SIV in v1 | Ship in v1 for distributed node safety vs. defer to v1.1 | Only relevant if multiple encrypt nodes exist |
 
 ---

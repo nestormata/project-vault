@@ -43,6 +43,9 @@ ALTER TABLE audit_log_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE security_alerts   ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 
+-- WITH CHECK is intentionally omitted: these are command-less (ALL) policies, and
+-- PostgreSQL defaults WITH CHECK to the same expression as USING when omitted, so
+-- inserts/updates are checked against the same org_id condition as reads.
 CREATE POLICY org_memberships_isolation   ON org_memberships   USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
 --> statement-breakpoint
 CREATE POLICY sessions_isolation          ON sessions          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
