@@ -9,7 +9,10 @@ import {
 } from '@fastify/type-provider-zod'
 import { healthRoutes } from './routes/health.js'
 import { metricsRoutes } from './routes/metrics.js'
+import { vaultRoutes } from './modules/vault/routes.js'
+import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { env } from './config/env.js'
+import { AppError } from './lib/errors.js'
 import type { FastifyApp } from './lib/fastify-app.js'
 
 type DbPool = {
@@ -20,6 +23,7 @@ export type AppOptions = {
   dbPool?: DbPool
   logger?: boolean | object
   metricsBindHost?: string
+  vaultGuardEnabled?: boolean
 }
 
 export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
@@ -32,10 +36,42 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
             level: env.LOG_LEVEL,
           }
 
-  const fastify: FastifyApp = Fastify({ logger }) as unknown as FastifyApp
+  // ignoreTrailingSlash: Fastify's router treats "/health" and "/health/" as distinct
+  // routes by default, which would 404 before the vault guard's own normalizePath() ever
+  // runs (AC-5 requires /health/ to behave identically to /health while sealed).
+  const fastify: FastifyApp = Fastify({
+    logger,
+    routerOptions: { ignoreTrailingSlash: true },
+  }) as unknown as FastifyApp
 
   fastify.setValidatorCompiler(validatorCompiler)
   fastify.setSerializerCompiler(serializerCompiler)
+
+  fastify.setErrorHandler(
+    (
+      error: Error & { statusCode?: number },
+      _req: unknown,
+      reply: { status: (code: number) => { send: (body: unknown) => unknown } }
+    ) => {
+      if (error instanceof AppError) {
+        return reply.status(error.statusCode).send({
+          error: error.code.toLowerCase(), // e.g. 'unseal_failed' — match epics snake_case convention
+          message: error.message,
+        })
+      }
+      // Preserve Fastify/Zod validation errors (statusCode already set)
+      if (typeof error.statusCode === 'number') {
+        return reply.status(error.statusCode).send({
+          error: 'validation_error',
+          message: error.message,
+        })
+      }
+      fastify.log.error(error)
+      return reply
+        .status(500)
+        .send({ error: 'internal_error', message: 'An unexpected error occurred' })
+    }
+  )
 
   await fastify.register(swagger, {
     openapi: {
@@ -77,10 +113,16 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     },
   })
 
+  if (options.vaultGuardEnabled) {
+    await fastify.register(vaultGuardPlugin)
+  }
+
   await fastify.register(healthRoutes, { dbPool: options.dbPool })
   await fastify.register(metricsRoutes, {
     metricsBindHost: options.metricsBindHost ?? env.METRICS_BIND_HOST,
   })
+  // Registered always (regardless of guard) so vault endpoints appear in the OpenAPI spec.
+  await fastify.register(vaultRoutes)
 
   return fastify
 }

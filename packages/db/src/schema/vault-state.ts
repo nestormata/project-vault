@@ -1,0 +1,53 @@
+// SINGLE ROW TABLE: platform-level state; no org_id; no RLS; exempt from check-rls-coverage
+import { pgTable, smallint, integer, text, timestamp, check } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+
+/**
+ * vault_state: exactly one row, enforced by id=1 primary key + CHECK constraint.
+ * Platform-level table — NOT org-scoped, NOT subject to RLS.
+ *
+ * key_version and audit_key_version start at 1 and increment independently on rotation.
+ * Old key versions must be retained in a key_history store (Story 9.x) for decrypting
+ * audit log entries written under previous key versions.
+ */
+export const vaultState = pgTable(
+  'vault_state',
+  {
+    // Single-row sentinel: only id=1 is permitted
+    id: smallint('id')
+      .primaryKey()
+      .default(sql`1`),
+
+    // Primary encryption key lifecycle
+    keyVersion: integer('key_version').notNull().default(1),
+
+    // Encrypted test sentinel — verifies key correctness at unseal time
+    // Stored as JSON.stringify(EncryptedValue): {"version":1,"iv":"...","ciphertext":"...","tag":"..."}
+    encryptedSentinel: text('encrypted_sentinel').notNull(),
+
+    // Audit log encryption key lifecycle — independent rotation from primary key
+    auditKeyVersion: integer('audit_key_version').notNull().default(1),
+
+    // Key custody model — see Product Decisions section
+    // 'passphrase' = Argon2id KDF (recommended for small teams)
+    // 'envelope'   = split key: env half + file half (recommended for production)
+    // 'file'       = raw binary key file (downgraded — requires explicit ack)
+    kmsType: text('kms_type').notNull(),
+
+    // Passphrase mode only: Argon2id salt + params for re-derivation at unseal.
+    // NULL for envelope/file modes. Never contains the passphrase itself.
+    keyDerivationParams: text('key_derivation_params'),
+
+    initializedAt: timestamp('initialized_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('vault_state_single_row', sql`${table.id} = 1`),
+    check(
+      'vault_state_kms_type_check',
+      sql`${table.kmsType} IN ('passphrase', 'envelope', 'file', 'kms')`
+    ),
+  ]
+)
+
+export type VaultState = typeof vaultState.$inferSelect
+export type NewVaultState = typeof vaultState.$inferInsert

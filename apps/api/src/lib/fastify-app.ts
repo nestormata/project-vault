@@ -6,6 +6,7 @@ export type FastifyInjectResponse = {
 
 type FastifyLogger = {
   info: (payload: unknown, message?: string) => void
+  warn: (payload: unknown, message?: string) => void
   error: (payload: unknown, message?: string) => void
 }
 
@@ -13,6 +14,7 @@ export type FastifyApp = {
   log: FastifyLogger
   setValidatorCompiler: (compiler: unknown) => FastifyApp
   setSerializerCompiler: (compiler: unknown) => FastifyApp
+  setErrorHandler: (handler: unknown) => FastifyApp
   register: (plugin: unknown, opts?: unknown) => Promise<unknown>
   get: (path: string, handler: unknown) => FastifyApp
   route: (options: unknown) => FastifyApp

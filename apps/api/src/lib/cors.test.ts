@@ -26,7 +26,9 @@ describe('CORS', () => {
       })
 
       expect(response.statusCode).toBe(500)
-      expect(response.json<{ message: string }>().message).toBe('Not allowed by CORS')
+      // Story 1.5 AC-15: the global error handler masks unexpected error messages
+      // to avoid leaking internal details — only AppError/validation messages pass through.
+      expect(response.json<{ error: string; message: string }>().error).toBe('internal_error')
     } finally {
       await app.close()
     }

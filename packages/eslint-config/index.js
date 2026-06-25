@@ -117,7 +117,22 @@ export const apiEnforcement = [
     },
     rules: {
       'no-bare-drizzle/no-bare-call': 'error',
-      'no-bare-decrypt/no-bare-call': 'error',
+      // no-bare-decrypt: block both decrypt and bootstrapDecrypt everywhere in the API
+      // (bootstrapDecrypt is the re-exported alias; same security constraint applies)
+      'no-bare-decrypt/no-bare-call': ['error', { blockedNames: ['decrypt', 'bootstrapDecrypt'] }],
+    },
+  },
+  // Exception: vault key-service bootstrap is the sole permitted caller of bootstrapDecrypt
+  // — it cannot use withSecret() because the module-level key isn't set yet during unseal.
+  // (Only the rule options are overridden here — the plugin itself is registered once above;
+  // ESLint flat config errors if the same plugin name is registered twice for overlapping files.)
+  {
+    files: ['src/modules/vault/key-service.ts'],
+    rules: {
+      'no-bare-decrypt/no-bare-call': [
+        'error',
+        { blockedNames: ['decrypt'], allowNames: ['bootstrapDecrypt'] },
+      ],
     },
   },
 ]

@@ -12,6 +12,12 @@ vi.mock('../config/env.js', () => ({
   },
 }))
 
+// These tests exercise the DB-connectivity branch of /ready, which only runs once the
+// vault is unsealed (Story 1.5) — mock vault status so the DB branch is reachable.
+vi.mock('../modules/vault/key-service.js', () => ({
+  getVaultStatus: () => 'unsealed',
+}))
+
 describe('GET /health', () => {
   it('returns 200 with status ok and version', async () => {
     const app = await createApp({ logger: false })

@@ -17,6 +17,9 @@
     "test": "vitest run --coverage",
     "build": "tsc"
   },
+  "dependencies": {
+    "argon2": "^0.41.1"
+  },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",

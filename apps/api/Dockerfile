@@ -1,6 +1,9 @@
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS builder
 
 RUN npm install -g pnpm@11.9.0
+# argon2 (packages/crypto) is a native module — build deps needed if no matching
+# prebuilt binary is bundled for this platform (Story 1.5 AC-30).
+RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
@@ -31,7 +34,7 @@ RUN pnpm --filter @project-vault/shared build \
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
 
 RUN npm install -g pnpm@11.9.0 && npm cache clean --force
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl python3 make g++
 
 WORKDIR /app
 
@@ -45,8 +48,13 @@ COPY --from=builder /app/packages/db/package.json ./packages/db/
 COPY --from=builder /app/packages/crypto/package.json ./packages/crypto/
 COPY --from=builder /app/packages/eslint-config/package.json ./packages/eslint-config/
 
+# --ignore-scripts skips the root "prepare" (husky) script, which isn't available in a
+# --prod install. argon2's native binary still needs its own install script to run, so
+# `pnpm rebuild argon2` triggers just that one afterward (Story 1.5 AC-30).
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
- && rm -rf /root/.cache/pnpm /root/.local/share/pnpm /root/.npm
+ && pnpm rebuild argon2 \
+ && rm -rf /root/.cache/pnpm /root/.local/share/pnpm /root/.npm \
+ && apk del python3 make g++
 
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist

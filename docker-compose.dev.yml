@@ -15,6 +15,9 @@ services:
     environment:
       NODE_ENV: development
       LOG_LEVEL: debug
+      # Dev-only convenience: skip the bootstrap-token requirement for vault init.
+      # NEVER set this in production (docker-compose.prod.yml does not set it — defaults to false).
+      VAULT_ALLOW_REMOTE_INIT: 'true'
     command: ["pnpm", "dev"]
 
   web:

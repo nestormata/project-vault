@@ -22,6 +22,11 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+    volumes:
+      - vault_keys:/run/secrets:ro
+    environment:
+      VAULT_KEY_DIR: /run/secrets
+      VAULT_ENVELOPE_KEY_HALF: ${VAULT_ENVELOPE_KEY_HALF:?VAULT_ENVELOPE_KEY_HALF required for envelope mode}
 
   web:
     mem_limit: 256m
@@ -35,4 +40,4 @@ services:
 
 volumes:
   db_data:
-  vault_keys: # reserved for Story 1.5 (Vault Initialization & Master Key Management) — not yet mounted into any service
+  vault_keys: # Vault Initialization & Master Key Management (Story 1.5) — envelope/file key halves
