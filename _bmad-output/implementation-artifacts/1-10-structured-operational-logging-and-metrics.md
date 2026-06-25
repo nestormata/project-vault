@@ -121,7 +121,7 @@ scripts/check-env-example.ts       # VERIFY: LOG_LEVEL, METRICS_BIND_HOST docume
 |---|---|---|---|
 | `LOG_LEVEL` | enum | `info` (prod/dev), **`silent` when `NODE_ENV=test`** | `fatal\|error\|warn\|info\|debug\|trace\|silent` |
 | `METRICS_BIND_HOST` | string | `127.0.0.1` | Document: set `0.0.0.0` to allow non-loopback scrape (sidecar) |
-| `SERVICE_NAME` | string | `api` | Emitted as `service` field on every log line |
+| `SERVICE_NAME` | string | `api` | Emitted as `service` field on every log line. **Validation:** must match `/^[a-z][a-z0-9_-]{0,63}$/` — lowercase alphanumeric, hyphens, underscores, max 64 chars. Reject startup with a fatal env error if invalid. Prevents special characters reaching log aggregator index names, Prometheus label values, and Grafana selectors. |
 
 **Production guards:**
 
@@ -161,8 +161,11 @@ SERVICE_NAME=api
 import { randomUUID } from 'node:crypto'
 import type { Env } from '../config/env.js'
 
-export function createLoggerConfig(env: Env) {
-  return {
+export function createLoggerConfig(
+  env: Env,
+  destination?: pino.DestinationStream
+) {
+  const config = {
     level: env.NODE_ENV === 'test' ? 'silent' : env.LOG_LEVEL,
     timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
     messageKey: 'message',
@@ -180,6 +183,11 @@ export function createLoggerConfig(env: Env) {
       return { eventType: 'system.untyped' } // overridden by callers
     },
   }
+  // destination is optional: undefined → Pino uses process.stdout (synchronous, may block under
+  // log-driver backpressure). Tests pass createLogCaptureStream().stream. Future production
+  // deployments can pass pino.transport({ target: 'pino/file', options: { destination: 1 } })
+  // for non-blocking worker-thread I/O. The interface must support this without refactoring.
+  return destination ? pino(config, destination) : config
 }
 
 // apps/api/src/app.ts — Fastify factory options
@@ -189,7 +197,10 @@ const fastify = Fastify({
   genReqId(req) {
     const header = req.headers['x-request-id']
     const value = Array.isArray(header) ? header[0] : header
-    if (value && UUID_RE.test(value)) return value
+    // RFC 4122 UUID v4: version nibble = 4, variant nibble ∈ {8,9,a,b}
+    // Do NOT substitute a looser regex — nil UUID and non-v4 formats are intentionally rejected.
+    const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (value && UUID_V4_RE.test(value)) return value
     return randomUUID()
   },
   disableRequestLogging: true, // we emit custom http.request — AC-5
@@ -455,6 +466,8 @@ for (const forbidden of ['password', 'secret', 'masterKeyPath', 'value']) {
 
 **Known Limitation — wildcard depth:** Pino `redact.paths` wildcards (e.g. `*.password`) are **single-level only** — they match `body.password` but not `data.body.password` or any object nested two or more levels deep. Future routes that wrap request bodies in an envelope (e.g. `{ data: { password: '...' } }`) must add explicit deep paths to `PINO_REDACT_PATHS` before merging.
 
+**Known Limitation — array-indexed fields:** Pino's `*` wildcard is an object-key wildcard, not an array-index wildcard. A body like `{ "credentials": [{ "value": "secret" }] }` is **not** covered by `*.value` or `req.body.credentials[0].value` unless explicitly added. Any route accepting arrays of objects with sensitive fields must either: (a) add explicit Pino array-wildcard paths (verify support in installed Pino version), or (b) reject array credential payloads at the schema validation layer. **Audit new routes against this limitation before merging.**
+
 **Nested-body redaction test:**
 
 ```typescript
@@ -519,15 +532,18 @@ export const httpRequestDurationSeconds = new Histogram({
 export const vaultSealed = new Gauge({
   name: 'vault_sealed',
   help: '1 if vault is sealed or uninitialized, 0 if unsealed',
+  // Use collect() callback — fires on every scrape, always reflects current state.
+  // Do NOT call vaultSealed.set() manually from state-change hooks; that pattern
+  // introduces TOCTOU staleness between transitions and push/pull consistency gaps.
+  collect() {
+    this.set(getVaultStatus() !== 'unsealed' ? 1 : 0)
+  },
 })
 
 export const dbPoolConnectionsActive = new Gauge({
   name: 'db_pool_connections_active',
   help: 'Number of in-flight database queries',
 })
-
-// Update vaultSealed when vault status changes (key-service.ts hooks or on each /metrics collect())
-vaultSealed.set(getVaultStatus() !== 'unsealed' ? 1 : 0)
 ```
 
 **DB pool instrumentation (`db-pool-metrics.ts`):**
@@ -669,6 +685,8 @@ export async function withJobLogging<T>(
 
 **On failure — rethrow** after log so pg-boss retry/DLQ behavior unchanged (Story 1.7 AC).
 
+**Log sensitivity note:** `jobName` values (e.g. `'security:check-failed-auth-threshold'`) reveal internal security mechanism names to anyone with log read access, including third-party aggregator accounts. Log aggregator ACL is the primary mitigation. If the aggregator is a third-party SaaS, consider logging only a category label (e.g. `'security'`) at `info` level and the full `jobName` at `debug` level only.
+
 **`serializeError()` guard:** Wrap serialization defensively — if `err` is not an `Error` instance (e.g. a string throw, `undefined`, or a pg-boss internal object), `serializeError()` may produce `{}` or throw itself. Always fall back:
 
 ```typescript
@@ -718,7 +736,8 @@ operationalLog(logger, 'info', OperationalEvent.STARTUP_COMPLETE, 'API startup c
   vaultStatus: getVaultStatus(),
   dbConnected: true,
   port: env.API_PORT,
-  metricsBindHost: env.METRICS_BIND_HOST,
+  // NOTE: do NOT include metricsBindHost here — it reveals security posture to all log readers.
+  // METRICS_BIND_HOST=0.0.0.0 is already surfaced via the separate startup.metrics_exposed warn (AC-2).
 })
 ```
 
@@ -755,6 +774,18 @@ operationalLog(logger, 'error', OperationalEvent.DB_ERROR, 'Database query faile
 ```
 
 **Example — `/ready` DB failure produces `eventType: 'db.error'` at error level **and** returns `503` to client (no connection string in either).
+
+**Critical — static message strings only:** Never pass `err.message` or any error-derived string as the `message` parameter to `operationalLog()`. ORM and database driver error messages may contain SQL fragments, query parameters, or partial row values. Always use a static string for `message`; place all error detail in `fields` via `serializeError(err)`:
+
+```typescript
+// WRONG — may leak SQL fragments from driver error:
+operationalLog(logger, 'error', OperationalEvent.DB_ERROR, err.message, {})
+
+// CORRECT — static message; structured detail in fields:
+operationalLog(logger, 'error', OperationalEvent.DB_ERROR, 'Database query failed', {
+  err: serializeError(err),
+})
+```
 
 ---
 
@@ -848,12 +879,18 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
 | JWT in logs | Redact `authorization`, `cookie` headers | AC-6 |
 | Trace ID injection / log forging | Accept `X-Request-ID` only if valid UUID | genReqId validation |
 | Metrics expose internal state | Loopback-only default | AC-9 |
-| `METRICS_BIND_HOST=0.0.0.0` in prod | Startup warning log | AC-2 |
+| `METRICS_BIND_HOST=0.0.0.0` in prod | Startup warning log (AC-2); **not** in `startup.complete` payload | AC-2 + AC-11 |
 | Operational vs audit log confusion | Separate `OperationalEvent` vs `AuditEvent` | Code review |
-| Email PII in logs (Story 1.9) | Redact `attemptedEmail` paths | AC-6 |
+| Email PII in logs (Story 1.9) — structured field | Redact `attemptedEmail` paths | AC-6 |
+| **Email PII interpolated into message string** (bypasses Pino redact) | **Never** interpolate user values into log `message` — template literals bypass redaction; structured fields only | Manual code review of all `req.log.*` calls in Stories 1.6–1.9 before merge |
+| `metricsBindHost` in startup log reveals security posture | Exclude from `startup.complete`; handled by `startup.metrics_exposed` warn | AC-11 |
+| `err.message` passed as log `message` leaks SQL/ORM fragments | Static message strings only; error detail via `serializeError(err)` in `fields` | AC-12 + Anti-Patterns |
+| `jobName` reveals internal security mechanism names to log readers | Log sensitivity documented; log aggregator ACL is primary control; use `debug` level for full name if needed | AC-10 |
+| Log flooding masks security events | pg-boss retry backoff limits burst; aggregator-side rate alerting (Epic 9 scope) | Architecture review |
 | High-cardinality metric labels | Use route template (`routeOptions.url`), not raw URLs with UUIDs | metrics onResponse |
 | Log injection via `X-Request-ID` | UUID regex validation | Unit test |
 | Error object circular refs | `serializeError()` safe JSON | job-logging |
+| Caller trace ID enables attacker self-correlation | Intentional by design; security boundary is log aggregator ACL — documented in ADR-1.10-01 | ADR |
 
 ---
 
@@ -865,7 +902,7 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
 |---|---|
 | **Context** | AC-E1b lists snake_case; Stories 1.6–1.9 use camelCase in code. Non-request logs need a `traceId` value that satisfies FR82 "required fields" without claiming a UUID correlation. |
 | **Decision** | JSON output uses camelCase; log aggregators map if needed. Non-request logs use the exported constant `SYSTEM_TRACE_ID = 'system'` injected automatically by `operationalLog()` — callers cannot override it. Request-scoped code must use `request.log`, never `operationalLog()`. |
-| **Consequences** | Consistent with TypeScript codebase; differs from AC-E1b summary text. Aggregator UUID filters must allowlist `'system'`. Enforces clean separation between request and non-request log paths. |
+| **Consequences** | Consistent with TypeScript codebase; differs from AC-E1b summary text. Aggregator UUID filters must allowlist `'system'`. Enforces clean separation between request and non-request log paths. Caller-provided `X-Request-ID` UUIDs are accepted by design for distributed tracing — an attacker can use a known UUID to self-correlate their log entries if they gain aggregator read access. The security boundary for trace correlation data is the log aggregator access control layer, not the application. |
 
 #### ADR-1.10-02: Rename `http_request_duration_ms` → `http_request_duration_seconds`
 
@@ -984,6 +1021,9 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
 - Add high-cardinality labels (user ID, org ID) to Prometheus metrics in v1
 - Emit logs without `message` string (breaks FR82 human readability)
 - Use `process.stderr.write` after logger initialized (except fatal env parse)
+- Pass `err.message` or any error-derived string as the `message` parameter to `operationalLog()` — ORM/driver errors may contain SQL fragments or partial data values; use a static string and put error detail in `fields`
+- Interpolate user-supplied values (email, username, IP, user ID) into log message strings via template literals — template literals bypass Pino redaction; always use structured fields
+- Include `metricsBindHost` / `METRICS_BIND_HOST` value in `startup.complete` log — reveals security posture to all log readers; the `startup.metrics_exposed` warn (AC-2) is the correct signal
 
 ---
 

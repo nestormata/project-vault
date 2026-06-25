@@ -135,7 +135,9 @@ function readKeyMaterialFile(
   const stat = statRegularFile(resolved)
   assertExpectedSize(stat.size, expectedBytes)
 
-  // O_NOFOLLOW prevents TOCTOU symlink swap between stat and read (Linux)
+  // O_NOFOLLOW prevents an attacker from swapping the file for a symlink between stat and
+  // read (Linux). It does NOT prevent a regular-file content swap in that same window —
+  // production deployments mitigate that via read-only secrets mounts (see Dev Notes).
   const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const buf = Buffer.alloc(stat.size)
@@ -224,7 +226,12 @@ function parseVaultStateRow(state: {
 }): { sentinel: EncryptedValue; kdfParams: KeyDerivationParams | null } {
   try {
     const sentinel = JSON.parse(state.encryptedSentinel) as EncryptedValue
-    if (!sentinel?.version || !sentinel.iv || !sentinel.ciphertext || !sentinel.tag) {
+    if (
+      typeof sentinel?.version !== 'number' ||
+      !sentinel.iv ||
+      !sentinel.ciphertext ||
+      !sentinel.tag
+    ) {
       throw new Error('invalid EncryptedValue shape')
     }
     let kdfParams: KeyDerivationParams | null = null

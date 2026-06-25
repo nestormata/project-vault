@@ -12,6 +12,10 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
     method: 'POST',
     url: '/api/v1/vault/init',
     schema: { tags: ['vault'] },
+    // Exempt from rate limiting: init is protected by the bootstrap-token gate
+    // instead (AC-23). The rate-limit plugin's config.rateLimit: false opts a route
+    // out when the plugin is registered globally in the encapsulation context.
+    config: { rateLimit: false },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const parsed = VaultInitRequestSchema.safeParse(req.body)
       if (!parsed.success) {
@@ -44,16 +48,16 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
+  // Scope rate limiting to this encapsulation context (vaultRoutes only), applying
+  // to all routes here except those explicitly opted out via config.rateLimit: false
+  // (the /vault/init route above). AC-24 requires rate limiting ONLY on unseal.
+  // Note: @fastify/rate-limit v10's errorResponseBuilder has a status-code regression
+  // when used with per-route config; the 429 response body shape is handled in app.ts's
+  // global setErrorHandler instead (where the rate-limit error correctly carries statusCode 429).
   await fastify.register(rateLimit, {
     max: 5,
     timeWindow: '1 minute',
-    hook: 'preHandler',
     keyGenerator: (req: FastifyRequest) => req.ip,
-    errorResponseBuilder: (_req: FastifyRequest, context: { ttl: number }) => ({
-      error: 'rate_limited',
-      message: 'Too many unseal attempts',
-      retryAfter: Math.ceil(context.ttl / 1000),
-    }),
   })
 
   fastify.route({

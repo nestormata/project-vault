@@ -1,6 +1,6 @@
 # Story 1.5: Vault Initialization & Master Key Management
 
-Status: review
+Status: done
 
 <!-- Red Team + FMEA hardening 2026-06-24: AC-23–30 (bootstrap, rate limit, log redaction, state sync, fail-fast, vault_corrupted, pg-boss defer, argon2 validation). -->
 
@@ -2236,6 +2236,21 @@ export function validateKeyDerivationParams(params: KeyDerivationParams): void {
   - [x] `pnpm lint` — no ESLint errors (especially `no-bare-decrypt` rule)
   - [x] `pnpm build` — monorepo builds successfully
   - [x] `pnpm jscpd` — no duplication threshold exceeded
+
+### Review Findings
+
+_Code review performed 2026-06-25 via the bmad-code-review workflow (Blind Hunter, Edge Case Hunter, Acceptance Auditor — three parallel adversarial layers) against commit `9abe2e1`._
+
+- [x] [Review][Patch] Rate limiter applies to `POST /vault/init` as well as `/vault/unseal`, violating AC-24's "ONLY on unseal route" requirement — `@fastify/rate-limit`'s default `global: true` scopes the hook to the whole `vaultRoutes` encapsulation context regardless of route registration order [apps/api/src/modules/vault/routes.ts:11-57]
+- [x] [Review][Patch] `readKeyMaterialFile`'s TOCTOU comment overstates what `O_NOFOLLOW` actually prevents (symlink-swap only, not a full regular-file replace race) — clarify the comment wording [apps/api/src/modules/vault/key-service.ts:138]
+- [x] [Review][Patch] `parseVaultStateRow`'s truthy check `!sentinel?.version` would incorrectly reject a legitimate future `version: 0` — use an explicit `typeof sentinel.version !== 'number'` check instead [apps/api/src/modules/vault/key-service.ts:~228]
+- [x] [Review][Patch] Dockerfile comment claims native build tools are only needed "if no matching prebuilt binary" but `pnpm rebuild argon2` runs unconditionally — reword the comment to match actual behavior [apps/api/Dockerfile]
+- [x] [Review][Defer] `GRANT` on `vault_state` omits `UPDATE`, making the `vault_state_no_update` trigger currently unreachable (Postgres blocks UPDATE at the grant layer first) — harmless defense-in-depth redundancy, not a functional bug [packages/db/src/migrations/0003_vault_state.sql] — deferred, pre-existing design choice (matches the `audit_log_entries` REVOKE-based pattern established in Story 1.4)
+- [x] [Review][Defer] CHECK-constraint violation on `vault_state` insert (e.g. malformed `kms_type`) is not mapped to a typed `AppError` — currently unreachable since Zod validates `kmsType` before `initVault()` is ever called [apps/api/src/modules/vault/key-service.ts] — deferred, no known trigger path today
+- [x] [Review][Defer] Several "zero key material on throw" gaps in `deriveIkmForInit`/`initVault` lack `try/finally` (envelope-half buffers, `ikm`, sentinel) — unreachable today given pre-validated buffer lengths, but cheap defensive hardening for future changes [apps/api/src/modules/vault/key-service.ts] — deferred, theoretical only
+- [x] [Review][Defer] `parseEnvelopeEnvHalf` throws a plain `Error` (not `AppError`) if `VAULT_ENVELOPE_KEY_HALF` becomes malformed after startup, surfacing as generic 500 — direct consequence of the already-disclosed live-`process.env`-read deviation [apps/api/src/modules/vault/key-service.ts] — deferred, pre-existing disclosed tradeoff
+- [x] [Review][Defer] `app.ts`'s global error handler treats `statusCode === 0` as a valid numeric status (`reply.status(0)` would be called) — no known code path produces this today; a `>= 100` guard would close the theoretical gap [apps/api/src/app.ts] — deferred, no known trigger path today
+- [x] [Review][Defer] Dockerfile's argon2 native-build toolchain has no automated post-rebuild smoke test in CI (only manually verified this session via a one-off `docker run` check) — a `node -e "require('argon2')..."` smoke step would catch a broken rebuild before deploy [apps/api/Dockerfile] — deferred, manual verification done, automation is a nice-to-have
 
 ---
 

@@ -59,6 +59,16 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
           message: error.message,
         })
       }
+      // Rate-limit 429 errors from @fastify/rate-limit — map to canonical API shape (AC-24)
+      if (error.statusCode === 429) {
+        return reply.status(429).send({
+          error: 'rate_limited',
+          message: 'Too many unseal attempts',
+          retryAfter: (error as unknown as { ttl?: number }).ttl
+            ? Math.ceil((error as unknown as { ttl: number }).ttl / 1000)
+            : undefined,
+        })
+      }
       // Preserve Fastify/Zod validation errors (statusCode already set)
       if (typeof error.statusCode === 'number') {
         return reply.status(error.statusCode).send({

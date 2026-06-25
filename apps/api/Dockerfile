@@ -1,8 +1,9 @@
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS builder
 
 RUN npm install -g pnpm@11.9.0
-# argon2 (packages/crypto) is a native module — build deps needed if no matching
-# prebuilt binary is bundled for this platform (Story 1.5 AC-30).
+# argon2 (packages/crypto) is a native module. node-gyp-build falls back to compiling
+# from source when no bundled prebuild matches this platform, so these tools are
+# installed unconditionally rather than detected at build time (Story 1.5 AC-30).
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
