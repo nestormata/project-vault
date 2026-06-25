@@ -1,8 +1,8 @@
 # Vault Initialization & Master Key Management — Project Vault
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** 2026-06-24  
-**Status:** Story 1.5 ready-for-dev (includes Red Team hardening AC-23–25)  
+**Status:** Story 1.5 ready-for-dev (includes Red Team AC-23–25 + FMEA AC-26–30)  
 **Story:** `_bmad-output/implementation-artifacts/1-5-vault-initialization-and-master-key-management.md`  
 **FR:** FR60  
 **Related:** `specs/cryptographic-architecture.md` (research baseline), `specs/multi-tenancy-data-model.md` (`vault_app` role)
@@ -54,6 +54,8 @@ API start (no vault_state row)
 - In-memory keys are zeroed on SIGTERM/SIGINT before `fastify.close()`.
 - `GET /health` and `GET /health/` (trailing slash normalized) always return 200 — liveness probes work while sealed.
 - `GET /ready` reflects vault + DB state — use for readiness probes.
+- If PostgreSQL is unreachable at startup, the API **exits before listening** — no HTTP with unknown vault state (AC-27).
+- `pg-boss` starts only after vault is unsealed via `setOnVaultUnsealed()` callback (AC-29).
 
 ---
 
@@ -221,11 +223,17 @@ Server reads stored `kms_type`; client sends **one** credential field:
 
 Wrong credentials → `401 {"error":"unseal_failed",...}` (same message for all modes — no oracle).
 
+Corrupt `encrypted_sentinel` or tampered `key_derivation_params` → `503 {"error":"vault_corrupted",...}` (not 500).
+
+Rate limit: **5 requests/minute/IP** on unseal → `429 {"error":"rate_limited","retryAfter":N}`.
+
+Passphrase mode: always run full Argon2id before returning 401 (no early-exit timing oracle).
+
 ### Error format (canonical)
 
 JSON `error` field: **lowercase snake_case**. Internal `AppError.code`: SCREAMING_SNAKE.
 
-Examples: `unseal_failed`, `already_initialized`, `invalid_passphrase`, `envelope_env_half_missing`
+Examples: `unseal_failed`, `already_initialized`, `invalid_passphrase`, `bootstrap_forbidden`, `rate_limited`, `vault_corrupted`
 
 ---
 
@@ -235,14 +243,19 @@ Examples: `unseal_failed`, `already_initialized`, `invalid_passphrase`, `envelop
 |---|---|---|---|
 | `DATABASE_URL` | Yes | — | Must use `vault_app` (not `postgres` superuser) |
 | `VAULT_KEY_DIR` | No | `/run/secrets` | Allowed directory for envelope/file key halves |
-| `VAULT_ENVELOPE_KEY_HALF` | Envelope mode | — | 32 lowercase hex chars (16-byte env half) |
+| `VAULT_ENVELOPE_KEY_HALF` | Envelope mode | — | 32 hex chars (16-byte env half); prefer file mount in prod |
+| `VAULT_ENVELOPE_KEY_HALF_FILE` | No | `/run/secrets/envelope-env-half` | Fallback file read if env var unset |
+| `VAULT_BOOTSTRAP_TOKEN` | Prod init | — | First-init auth; header `X-Vault-Bootstrap-Token` |
+| `VAULT_ALLOW_REMOTE_INIT` | No | `false` | Dev-only: skip bootstrap token |
 
 `.env.example` snippet:
 
 ```bash
 DATABASE_URL=postgresql://vault_app:change-me@localhost:5432/project_vault
 VAULT_KEY_DIR=/run/secrets
-# VAULT_ENVELOPE_KEY_HALF=$(openssl rand -hex 16)  # envelope mode only
+# VAULT_BOOTSTRAP_TOKEN=$(openssl rand -base64 32)   # required for prod init
+# VAULT_ALLOW_REMOTE_INIT=true                        # dev only — NEVER in production
+# VAULT_ENVELOPE_KEY_HALF=$(openssl rand -hex 16)     # envelope mode
 ```
 
 ---
@@ -290,6 +303,7 @@ Volume `vault_keys` was reserved in Story 1.3; Story 1.5 mounts it into the API 
 | `packages/crypto/src/secret-value.ts` | `withSecret()`, `setVaultKey()`, buffer zeroing |
 | `apps/api/src/modules/vault/key-service.ts` | State machine, init/unseal |
 | `apps/api/src/modules/vault/routes.ts` | HTTP handlers |
+| `apps/api/src/plugins/redact-secrets.ts` | Log redaction for passphrase/paths |
 | `apps/api/src/plugins/vault-guard.ts` | Sealed middleware |
 | `apps/api/src/routes/health.ts` | `/ready` vault awareness |
 | `packages/db/src/schema/vault-state.ts` | Drizzle schema |
@@ -300,14 +314,22 @@ Volume `vault_keys` was reserved in Story 1.3; Story 1.5 mounts it into the API 
 
 | Control | Implementation |
 |---|---|
-| Path confinement | `readKeyFile()` rejects paths outside `VAULT_KEY_DIR` |
-| File size limit | `statSync` before read; max 4096 bytes |
+| Init squatting | `VAULT_BOOTSTRAP_TOKEN` + `X-Vault-Bootstrap-Token` (or dev `VAULT_ALLOW_REMOTE_INIT`) |
+| Path confinement | Key files must be under `VAULT_KEY_DIR` |
+| Symlink hardening | `lstatSync` (no follow) + `O_NOFOLLOW` open; regular files only |
+| File size limit | Max 4096 bytes before read |
 | Memory zeroing | `keyMaterial.fill(0)`, `withSecret()` zeros plaintext in `finally` |
 | Shutdown | `zeroKeys()` before `fastify.close()` on SIGTERM/SIGINT |
-| No secrets in logs | Never log passphrase, key paths, or key bytes |
+| Log redaction | `redactBodyForLog()` — never log `passphrase`; paths redacted |
 | Bare decrypt ban | ESLint `no-bare-decrypt`; exception: `bootstrapDecrypt` in `key-service.ts` only |
-| Network exposure | Init/unseal reachable only on trusted network (v1) |
-| Rate limiting | Reverse proxy on `/api/v1/vault/unseal` (recommended ≤5 req/min/IP) |
+| Unseal rate limit | `@fastify/rate-limit`: 5 req/min/IP on unseal route |
+| vault_state integrity | PostgreSQL trigger blocks UPDATE/DELETE after insert |
+| Corrupt vault_state | `503 vault_corrupted` — parse/validation failure on sentinel or Argon2 params |
+| Startup DB failure | Fail-fast exit 1 before HTTP listen — no sealed/unsealed guesswork |
+| pg-boss deferral | Job queue starts only after unseal via `setOnVaultUnsealed()` |
+| Argon2 native module | Dockerfile builder: `python3`, `make`, `g++`; CI tests passphrase path |
+| Argon2 param tampering | `validateKeyDerivationParams()` rejects non-canonical costs on read |
+| Network exposure | Firewall/VLAN for init/unseal in production (defense in depth) |
 
 **Sentinel is not secret** — GCM auth tag prevents key guessing. **DB write access to `vault_state`** is equivalent to vault compromise if an attacker can replace the sentinel.
 
@@ -320,9 +342,10 @@ Volume `vault_keys` was reserved in Story 1.3; Story 1.5 mounts it into the API 
 **Recommended isolation strategy:**
 
 1. `describe.sequential` — tests depend on init order (409 after first init).
-2. `beforeEach(resetVaultForTest())` — `zeroKeys()` + `DELETE FROM vault_state`.
-3. Primary fixture: **passphrase mode** (`"test-passphrase-12chars"`) — no filesystem setup.
-4. CI: ephemeral Postgres per job (`.github/workflows/ci.yml`) — safe to truncate `vault_state`.
+2. `beforeEach(resetVaultForTest())` — `zeroKeys()` + `DELETE FROM vault_state` + **`loadInitialVaultState()`** to resync in-memory `_status` (AC-26).
+3. Primary fixture: **passphrase mode** — set `VAULT_ALLOW_REMOTE_INIT=true` or pass bootstrap header.
+4. CI: ephemeral Postgres per job — safe to truncate `vault_state`.
+5. Log redaction test: assert test passphrase never appears in captured pino output.
 
 **Avoid:** global truncate in shared setup (breaks parallel workers); transaction rollback (in-memory vault state cannot roll back with PG).
 
@@ -347,7 +370,12 @@ curl -s http://localhost:3000/health/
 # 4. Check readiness (503 until initialized + unsealed)
 curl -s http://localhost:3000/ready | jq .
 
-# 5. Initialize (pick one custody model — see API section above)
+# 5. Initialize (requires bootstrap token in prod)
+export VAULT_BOOTSTRAP_TOKEN=$(openssl rand -base64 32)
+curl -s -X POST http://localhost:3000/api/v1/vault/init \
+  -H 'Content-Type: application/json' \
+  -H "X-Vault-Bootstrap-Token: $VAULT_BOOTSTRAP_TOKEN" \
+  -d '{"kmsType":"passphrase","passphrase":"correct-horse-battery-staple"}'
 
 # 6. After restart, unseal with matching credentials
 docker compose restart api
@@ -364,10 +392,36 @@ curl -s -X POST http://localhost:3000/api/v1/vault/unseal \
 |---|---|
 | Master key input | Passphrase + Argon2id KDF as primary UX; file mode retained as downgraded |
 | Envelope encryption | Minimal envelope mode in v1 (env half + file half) |
-| Init/unseal auth | Firewall/network restriction sufficient for v1 |
+| Init/unseal auth | Bootstrap token for first init + firewall/network restriction |
 | Trailing slash | `/health/` allowed — normalized before allowlist check |
 | Test DB reset | `describe.sequential` + `beforeEach(resetVaultForTest())` |
 | API error codes | Lowercase snake_case in JSON |
+| Init squatting (Red Team) | Bootstrap token required for first init |
+| Unseal brute force | Server-side 5 req/min/IP rate limit |
+| Key file symlinks | lstat + O_NOFOLLOW |
+| vault_state tampering | Append-only DB trigger |
+| Test state desync (FMEA) | `resetVaultForTest()` calls `loadInitialVaultState()` after truncate |
+| DB down at startup (FMEA) | Fail-fast exit 1 — no HTTP without known vault state |
+| Corrupt vault_state (FMEA) | `503 vault_corrupted` for bad sentinel/params |
+| pg-boss while sealed (FMEA) | Defer `boss.start()` until unsealed |
+| argon2 native / tampered params (FMEA) | Docker build deps + `validateKeyDerivationParams()` |
+
+---
+
+## Failure Mode Analysis (FMEA Summary)
+
+| Component | Failure | Effect | Mitigation |
+|---|---|---|---|
+| `loadInitialVaultState` | DB down at startup | Crash loop | AC-27 fail-fast; fix DB before restart |
+| `zeroKeys` + test reset | `_status` desync | Wrong `/ready` message | AC-26 reload after truncate |
+| `encrypted_sentinel` | Corrupt JSON | 500 → ops confusion | AC-28 `503 vault_corrupted` |
+| `key_derivation_params` | Tampered low Argon2 cost | Faster brute-force | AC-30 validate on read |
+| `argon2` native module | Missing in Docker | Crash on passphrase op | AC-30 builder deps + CI test |
+| Argon2id CPU | Event loop blocked ~1s | Request latency spike | *Accepted v1* — rate limit unseal |
+| `pg-boss` | Starts while sealed | Future worker crypto errors | AC-29 defer until unsealed |
+| SIGKILL | No `zeroKeys()` | Keys in memory until GC | *Accepted v1* — restart seals vault |
+| Envelope env half | Missing after restart | Unseal 503 | AC-29 stderr warning at startup |
+| Dual postgres pools | `main.ts` + `getDb()` | Connection pressure | *Accepted v1* — consolidate later |
 
 ---
 
@@ -379,7 +433,11 @@ curl -s -X POST http://localhost:3000/api/v1/vault/unseal \
 4. **Envelope requires both halves at every unseal** — losing either half is unrecoverable.
 5. **File mode newline trap** — `readFileSync` includes trailing newline if present; use binary writes (`openssl rand -out ...`).
 6. **RS256 JWT at init** — Story 1.6 uses HMAC-SHA256 via `@fastify/jwt`; no JWT keys generated at vault init.
-7. **`generate-spec.ts`** — currently stub; vault routes still register Zod schemas for future OpenAPI dump.
+8. **Init squatting:** Without bootstrap token, anyone on the network can own a fresh vault — always set `VAULT_BOOTSTRAP_TOKEN` in prod.
+9. **Envelope env half in process env:** Prefer file mount at `/run/secrets/envelope-env-half` over `VAULT_ENVELOPE_KEY_HALF` — visible via `docker exec` / `/proc/self/environ`.
+10. **Test truncate without reload:** Deleting `vault_state` without `loadInitialVaultState()` leaves in-memory `_status` stale — always call reload in `resetVaultForTest()`.
+11. **Corrupt sentinel looks like 500:** Operators cannot distinguish infra failure from data corruption — use `vault_corrupted` (503).
+12. **argon2 in Alpine/slim images:** Missing `python3`/`g++` causes native module load failure at runtime — add builder deps in Dockerfile.
 
 ---
 
@@ -387,7 +445,7 @@ curl -s -X POST http://localhost:3000/api/v1/vault/unseal \
 
 - Shamir's Secret Sharing unseal ceremony
 - Cloud KMS auto-unseal (AWS/GCP/Azure)
-- Application-layer init token (`VAULT_INIT_TOKEN`)
+- Application-layer init token (superseded by `VAULT_BOOTSTRAP_TOKEN` in v1)
 - Dedicated management port for vault routes
 - Key history table for rotation (Story 9.x)
 - `kms_type: 'kms'` implementation
@@ -398,4 +456,6 @@ curl -s -X POST http://localhost:3000/api/v1/vault/unseal \
 
 | Date | Change |
 |---|---|
-| 2026-06-24 | Initial operational spec from Story 1.5 product decisions and architecture alignment |
+| 2026-06-24 | FMEA hardening: test state sync, startup fail-fast, vault_corrupted, pg-boss defer, argon2 validation |
+| 2026-06-24 | Red Team hardening: bootstrap token, unseal rate limit, O_NOFOLLOW key reads, vault_state immutable trigger, log redaction |
+| 2026-06-24 | Initial operational spec from Story 1.5 product decisions |

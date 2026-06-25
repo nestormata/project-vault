@@ -46,7 +46,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.5.0
+          version: 11.9.0
 
       - name: Get pnpm store directory
         shell: bash
@@ -150,7 +150,10 @@ jobs:
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # linux/arm64 is QEMU-emulated on ubuntu-latest runners — pnpm install/build under
+    # emulation is materially slower than native amd64, so this job needs more headroom
+    # than the other 10-minute jobs.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -166,6 +169,10 @@ jobs:
           file: apps/api/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
+          # No image output is consumed here (push: false, load is impossible for a
+          # multi-platform build) — provenance/SBOM attestation has nothing to attach
+          # to and just adds extra emulated build time for no benefit.
+          provenance: false
           tags: project-vault-api:ci
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
@@ -177,6 +184,7 @@ jobs:
           file: apps/web/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
+          provenance: false
           tags: project-vault-web:ci
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web

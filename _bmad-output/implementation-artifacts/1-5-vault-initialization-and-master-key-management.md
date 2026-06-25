@@ -2,7 +2,7 @@
 
 Status: ready-for-dev
 
-<!-- Red Team hardening applied 2026-06-24: AC-23 bootstrap token, AC-24 rate limit, AC-25 log redaction, O_NOFOLLOW key reads, vault_state immutable trigger. -->
+<!-- Red Team + FMEA hardening 2026-06-24: AC-23–30 (bootstrap, rate limit, log redaction, state sync, fail-fast, vault_corrupted, pg-boss defer, argon2 validation). -->
 
 ## Story
 
@@ -783,12 +783,19 @@ let _auditKey: Buffer | null = null   // separate from _activeKey in packages/cr
 export function getVaultStatus(): VaultStatus { return _status }
 export function isSealed(): boolean { return _status !== 'unsealed' }
 
-/** Call once at API startup to determine initial vault state from DB. */
+/** Call at API startup and after any vault_state truncate — syncs _status with DB. */
 export async function loadInitialVaultState(): Promise<VaultStatus> {
-  const db = getDb()
-  const rows = await db.select().from(vaultState).limit(1)
-  _status = rows.length === 0 ? 'uninitialized' : 'sealed'
-  return _status
+  try {
+    const db = getDb()
+    const rows = await db.select().from(vaultState).limit(1)
+    _status = rows.length === 0 ? 'uninitialized' : 'sealed'
+    return _status
+  } catch (err) {
+    process.stderr.write(
+      '[vault] FATAL: cannot read vault_state — verify DATABASE_URL and PostgreSQL connectivity.\n'
+    )
+    throw err
+  }
 }
 
 const MAX_KEY_FILE_BYTES = 4096  // no legitimate key file needs more than this
@@ -1083,7 +1090,7 @@ import { createEventEmitter } from './lib/events.js'
 import { createApp } from './app.js'
 import { BossService } from './lib/boss.js'
 import { registerShutdown } from './lib/shutdown.js'
-import { loadInitialVaultState } from './modules/vault/key-service.js'
+import { loadInitialVaultState, setOnVaultUnsealed, getVaultStatus } from './modules/vault/key-service.js'
 import { env } from './config/env.js'
 import postgres from 'postgres'
 
@@ -1093,8 +1100,7 @@ async function main(): Promise<void> {
 
   const sql = postgres(env.DATABASE_URL)
 
-  // Check vault state from DB before starting server
-  // Sets _status to 'uninitialized' or 'sealed' — never throws
+  // Check vault state from DB before starting server — throws if DB unreachable (AC-27)
   const initialVaultStatus = await loadInitialVaultState()
   process.stderr.write(`[vault] Initial status: ${initialVaultStatus}\n`)
 
@@ -1104,7 +1110,11 @@ async function main(): Promise<void> {
   })
 
   const boss = new BossService(env.DATABASE_URL)
-  fastify.addHook('onReady', async () => { await boss.start() })
+  setOnVaultUnsealed(async () => { await boss.start() })  // AC-29
+
+  fastify.addHook('onReady', async () => {
+    if (getVaultStatus() === 'unsealed') await boss.start()  // edge: already unsealed
+  })
   fastify.addHook('onClose', async () => {
     await boss.stop()
     await sql.end()
@@ -1316,6 +1326,7 @@ const TEST_PASSPHRASE = 'test-passphrase-12chars'
 
 describe.sequential('Vault lifecycle (passphrase mode)', () => {
   beforeEach(async () => {
+    process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'  // test bootstrap bypass — prod uses token
     await resetVaultForTest()
   })
 
@@ -1501,6 +1512,7 @@ fastify.setErrorHandler((error, _req, reply) => {
 | Wrong credentials at unseal | 401 | `unseal_failed` | `UNSEAL_FAILED` |
 | Bootstrap token missing/wrong on init | 403 | `bootstrap_forbidden` | `BOOTSTRAP_FORBIDDEN` |
 | Unseal rate limit exceeded | 429 | `rate_limited` | (rate-limit plugin) |
+| Corrupt/tampered vault_state | 503 | `vault_corrupted` | `VAULT_CORRUPTED` |
 
 **Canonical API error format (product decision):** lowercase snake_case in JSON `error` field; `AppError.code` remains SCREAMING_SNAKE internally.
 
@@ -1736,9 +1748,10 @@ describe.sequential('Vault lifecycle', () => {
 ```typescript
 // apps/api/src/__tests__/helpers/vault-test-cleanup.ts
 export async function resetVaultForTest(): Promise<void> {
-  const { zeroKeys } = await import('../modules/vault/key-service.js')
+  const { zeroKeys, loadInitialVaultState } = await import('../modules/vault/key-service.js')
   zeroKeys()
-  await getDb().delete(vaultState)  // safe: no FK dependents on vault_state in Story 1.5
+  await getDb().delete(vaultState)
+  await loadInitialVaultState()  // AC-26: sync _status — empty DB → 'uninitialized'
 }
 ```
 
@@ -1940,6 +1953,178 @@ req.log.info({ event: 'vault.init', kmsType: body.kmsType, body: redactBodyForLo
 
 ---
 
+### AC-26: State Sync After Test Reset and DB Truncate
+
+**FMEA finding:** `zeroKeys()` sets `_status = 'sealed'`. After `DELETE FROM vault_state`, module state says "sealed" but DB says "no row" — `/ready` returns wrong message ("manual unseal" vs "not initialized") and tests become flaky.
+
+**Given** integration tests call `resetVaultForTest()`,
+**When** the helper completes,
+**Then** `_status` reflects the **database**, not a stale in-memory guess:
+
+```typescript
+// apps/api/src/__tests__/helpers/vault-test-cleanup.ts
+export async function resetVaultForTest(): Promise<void> {
+  const { zeroKeys, loadInitialVaultState } = await import('../modules/vault/key-service.js')
+  zeroKeys()  // clears keys; temporarily sets _status = 'sealed'
+  await getDb().delete(vaultState)
+  await loadInitialVaultState()  // RE-SYNC: no row → 'uninitialized'; row exists → 'sealed'
+}
+```
+
+**And** any production code path that deletes or truncates `vault_state` must call `loadInitialVaultState()` afterward.
+
+---
+
+### AC-27: Startup Fail-Fast When Database Is Unreachable
+
+**FMEA finding:** AC-10 claimed `loadInitialVaultState()` "never throws" — but `getDb().select()` throws if PostgreSQL is down. Starting HTTP with unknown vault state is unsafe.
+
+**Given** the API process starts,
+**When** `loadInitialVaultState()` cannot query `vault_state` (connection refused, auth failure, timeout),
+**Then** the process **exits with code 1** before `fastify.listen()` — HTTP server must not accept traffic.
+
+```typescript
+export async function loadInitialVaultState(): Promise<VaultStatus> {
+  try {
+    const db = getDb()
+    const rows = await db.select().from(vaultState).limit(1)
+    _status = rows.length === 0 ? 'uninitialized' : 'sealed'
+    warnIfEnvelopeMisconfigured(rows[0])  // AC-29 stderr warning
+    return _status
+  } catch (err) {
+    process.stderr.write(
+      '[vault] FATAL: cannot read vault_state — verify DATABASE_URL and that PostgreSQL is reachable.\n'
+    )
+    throw err  // main().catch → process.exit(1)
+  }
+}
+```
+
+**And** remove any documentation claiming load "never throws" — fail-fast is intentional.
+
+---
+
+### AC-28: Corrupted `vault_state` Handling
+
+**FMEA finding:** Malformed `encrypted_sentinel` JSON or tampered `key_derivation_params` causes uncaught throws → **500 Internal Server Error** with no operator guidance.
+
+**Given** a `vault_state` row exists,
+**When** unseal loads state and encounters:
+- `JSON.parse(encrypted_sentinel)` failure
+- `EncryptedValue` missing required fields or unsupported `version`
+- `key_derivation_params` with Argon2 params outside allowed range (see AC-30)
+
+**Then** return `503 { error: "vault_corrupted", message: "vault_state data is corrupt or tampered — restore from backup or re-initialize" }` — **not** 500.
+
+```typescript
+function parseVaultStateRow(state: VaultState): { sentinel: EncryptedValue; kdfParams: KeyDerivationParams | null } {
+  try {
+    const sentinel = JSON.parse(state.encryptedSentinel) as EncryptedValue
+    if (!sentinel?.version || !sentinel.iv || !sentinel.ciphertext || !sentinel.tag) {
+      throw new Error('invalid EncryptedValue shape')
+    }
+    let kdfParams: KeyDerivationParams | null = null
+    if (state.kmsType === 'passphrase') {
+      kdfParams = JSON.parse(state.keyDerivationParams ?? '') as KeyDerivationParams
+      validateKeyDerivationParams(kdfParams)  // AC-30
+    }
+    return { sentinel, kdfParams }
+  } catch {
+    throw new AppError(
+      'VAULT_CORRUPTED',
+      'vault_state data is corrupt or tampered — restore from backup or re-initialize',
+      503
+    )
+  }
+}
+```
+
+**And** structured log: `{ event: 'vault.unseal.failed', error: 'vault_corrupted' }` — no sentinel bytes in log.
+
+---
+
+### AC-29: Defer `pg-boss` Start Until Vault Is Unsealed
+
+**FMEA finding:** `BossService.start()` runs in unconditional `onReady` hook. Future workers (Story 1.11+) calling `withSecret()` would throw while vault is sealed. HTTP vault guard does not protect background jobs.
+
+**Given** the API starts with vault `sealed` or `uninitialized`,
+**When** Fastify fires `onReady`,
+**Then** `boss.start()` is **NOT** called.
+
+**Given** vault transitions to `unsealed` (via init or unseal),
+**When** transition completes successfully,
+**Then** `boss.start()` is called exactly once (idempotent).
+
+```typescript
+// apps/api/src/main.ts
+const boss = new BossService(env.DATABASE_URL)
+
+setOnVaultUnsealed(async () => {
+  await boss.start()
+})
+
+fastify.addHook('onReady', async () => {
+  // Restart case: already unsealed (e.g. dev hot-reload edge) — start immediately
+  if (getVaultStatus() === 'unsealed') await boss.start()
+})
+
+fastify.addHook('onClose', async () => {
+  await boss.stop()
+  await sql.end()
+})
+```
+
+```typescript
+// key-service.ts — call after successful initVault() and unsealVault()
+let _onUnsealed: (() => Promise<void>) | null = null
+export function setOnVaultUnsealed(fn: () => Promise<void>): void { _onUnsealed = fn }
+
+async function notifyUnsealed(): Promise<void> {
+  await _onUnsealed?.()
+}
+```
+
+**And** on sealed startup with `kms_type === 'envelope'` but missing `VAULT_ENVELOPE_KEY_HALF` (and no file fallback), write stderr warning:
+
+```
+[vault] WARN: vault is sealed (envelope mode) but VAULT_ENVELOPE_KEY_HALF is not configured — unseal will fail until set
+```
+
+---
+
+### AC-30: Argon2 Native Dependency and Parameter Validation
+
+**FMEA finding:** `argon2` npm package requires native bindings — Docker/CI build fails silently until first passphrase operation. Tampered low-cost Argon2 params in DB enable fast offline cracking.
+
+**Docker / CI requirement:**
+
+```dockerfile
+# apps/api/Dockerfile builder stage — argon2 native compile deps
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+```
+
+**And** CI must run `pnpm --filter @project-vault/crypto test` (loads argon2) before merge.
+
+**Parameter validation** (`packages/crypto/src/passwords.ts`):
+
+```typescript
+const ALLOWED_ARGON2 = { memoryCost: 65536, timeCost: 3, parallelism: 4 } as const
+
+export function validateKeyDerivationParams(params: KeyDerivationParams): void {
+  if (params.type !== 'argon2id') throw new Error('unsupported KDF type')
+  if (params.memoryCost < ALLOWED_ARGON2.memoryCost) throw new Error('memoryCost below minimum')
+  if (params.timeCost < ALLOWED_ARGON2.timeCost) throw new Error('timeCost below minimum')
+  if (params.parallelism < 1 || params.parallelism > 4) throw new Error('parallelism out of range')
+  if (!/^[0-9a-f]{32}$/.test(params.salt)) throw new Error('invalid salt')
+}
+```
+
+**And** reject params strictly **below** canonical minimums (allows future increases, blocks tampering downward).
+
+**Event loop note (accepted v1 risk):** Argon2id ~1s blocks the Node event loop during init/unseal. Document in Dev Notes; `worker_threads` wrapper deferred to Story 1.11+.
+
+---
+
 ## Tasks / Subtasks
 
 - [ ] **Task 1: Implement `packages/crypto` core primitives** (AC: 1a–1h)
@@ -2034,6 +2219,14 @@ req.log.info({ event: 'vault.init', kmsType: body.kmsType, body: redactBodyForLo
   - [ ] Add `redact-secrets.ts` plugin; vault routes use `redactBodyForLog()`; add log redaction test
   - [ ] Integration tests: set `VAULT_ALLOW_REMOTE_INIT=true` OR pass `X-Vault-Bootstrap-Token`
 
+- [ ] **Task 18: FMEA hardening** (AC: 26, 27, 28, 29, 30)
+  - [ ] `resetVaultForTest()` calls `loadInitialVaultState()` after DELETE (AC-26)
+  - [ ] `loadInitialVaultState()` fail-fast on DB error — no HTTP without known state (AC-27)
+  - [ ] `parseVaultStateRow()` + `503 vault_corrupted` for bad sentinel/params (AC-28)
+  - [ ] `setOnVaultUnsealed()` + defer `boss.start()` until unsealed (AC-29)
+  - [ ] `validateKeyDerivationParams()` + Dockerfile native build deps for `argon2` (AC-30)
+  - [ ] Envelope misconfiguration stderr warning on sealed startup (AC-29)
+
 - [ ] **Task 16: Quality gates**
   - [ ] `pnpm --filter @project-vault/crypto build` — zero TypeScript errors
   - [ ] `pnpm --filter @project-vault/crypto test` — all unit tests pass
@@ -2127,6 +2320,27 @@ Recent work on this branch establishes patterns Story 1.5 must follow:
 - Single-row vault_state: [Source: _bmad-output/planning-artifacts/epics.md, line 790]
 - Sealed state / manual unseal: [Source: _bmad-output/planning-artifacts/epics.md, lines 792–794]
 - Memory zeroing on SIGTERM: [Source: _bmad-output/planning-artifacts/epics.md, line 796]
+
+---
+
+---
+
+### Failure Mode Analysis (FMEA Summary — 2026-06-24)
+
+Reference matrix for operators and dev agents. Mitigations AC-26–30 unless marked *accepted v1*.
+
+| Component | Failure | Effect | Mitigation |
+|---|---|---|---|
+| `loadInitialVaultState` | DB down at startup | Crash loop | AC-27 fail-fast; fix DB before restart |
+| `zeroKeys` + test reset | `_status` desync | Wrong `/ready` message | AC-26 `loadInitialVaultState()` after truncate |
+| `encrypted_sentinel` | Corrupt JSON | 500 → ops confusion | AC-28 `503 vault_corrupted` |
+| `key_derivation_params` | Tampered low Argon2 cost | Faster brute-force | AC-30 validate on read; UPDATE trigger |
+| `argon2` native module | Missing in Docker | Crash on passphrase op | AC-30 builder deps + CI test |
+| Argon2id CPU | Event loop blocked ~1s | Request latency spike | *Accepted v1* — rate limit unseal |
+| `pg-boss` | Starts while sealed | Future worker crypto errors | AC-29 defer until unsealed |
+| SIGKILL | No `zeroKeys()` | Keys in memory until GC | *Accepted v1* — restart seals vault |
+| Envelope env half | Missing after restart | Unseal 503 | AC-29 stderr warning at startup |
+| Dual postgres pools | `main.ts` + `getDb()` | Connection pressure | *Accepted v1* — consolidate later |
 
 ---
 
@@ -2537,6 +2751,7 @@ Note: `sessions` and `org_memberships` **do** have `org_id` and **must** have RL
 | `apps/api/src/__tests__/vault-log-redaction.test.ts` | CREATE | Assert passphrase never in logs |
 | `apps/api/src/__tests__/helpers/vault-test-cleanup.ts` | CREATE | DB reset helper for integration tests |
 | `apps/api/package.json` | MODIFY | Add `@fastify/rate-limit` dependency |
+| `apps/api/Dockerfile` | MODIFY | Native build deps for `argon2` (AC-30) |
 
 ---
 
@@ -2546,7 +2761,7 @@ Note: `sessions` and `org_memberships` **do** have `org_id` and **must** have RL
 |---|---|---|
 | 1 | Master key input format | **Passphrase + Argon2id KDF** as primary mode (`kms_type: 'passphrase'`). File mode retained as downgraded option. |
 | 2 | Envelope encryption | **Include minimal envelope mode** in Story 1.5 — env half (`VAULT_ENVELOPE_KEY_HALF`) + file half (`envelopeKeyPath`). Recommended for production. |
-| 3 | Vault endpoint auth | **Firewall/network restriction sufficient** for v1 — no separate management port in this story. Document in operator runbook. |
+| 3 | Vault endpoint auth | **Bootstrap token for first init** + firewall/network restriction (defense in depth) |
 | 4 | Trailing slash on `/health/` | **Allow** — `normalizePath()` strips trailing slash before allowlist lookup. |
 | 5 | Integration test DB reset | **`describe.sequential` + `beforeEach(resetVaultForTest())`** in vault-lifecycle.test.ts only. See AC-20. |
 | 6 | Error code casing | **Lowercase snake_case** in JSON `error` field — canonical for all API errors going forward. |
@@ -2555,6 +2770,11 @@ Note: `sessions` and `org_memberships` **do** have `org_id` and **must** have RL
 | 9 | Key file symlinks | **`lstatSync` + `O_NOFOLLOW`** — regular files only |
 | 10 | `vault_state` tampering | **PostgreSQL trigger** blocks UPDATE/DELETE after insert |
 | 11 | Passphrase in logs | **`redactBodyForLog()`** + integration test |
+| 12 | FMEA: test state desync | **`loadInitialVaultState()` after truncate** (AC-26) |
+| 13 | FMEA: DB down at startup | **Fail-fast exit 1** (AC-27) |
+| 14 | FMEA: corrupt vault_state | **`503 vault_corrupted`** (AC-28) |
+| 15 | FMEA: pg-boss while sealed | **Defer start until unsealed** (AC-29) |
+| 16 | FMEA: argon2 native / tampered params | **Docker build deps + validateKeyDerivationParams** (AC-30) |
 
 ---
 
@@ -2614,7 +2834,12 @@ Note: `sessions` and `org_memberships` **do** have `org_id` and **must** have RL
 - [ ] `readKeyMaterialFile()` uses `lstatSync` + `O_NOFOLLOW` — rejects symlinks (AC-7)
 - [ ] `vault_state` UPDATE/DELETE triggers in migration (append-only)
 - [ ] `redactBodyForLog()` used in vault routes; log redaction test passes (AC-25)
-- [ ] Integration tests set `VAULT_ALLOW_REMOTE_INIT=true` or bootstrap header
+- [ ] `resetVaultForTest()` calls `loadInitialVaultState()` after DELETE (AC-26)
+- [ ] `loadInitialVaultState()` throws on DB unreachable — process exits before listen (AC-27)
+- [ ] Corrupt sentinel/params return `503 vault_corrupted` not 500 (AC-28)
+- [ ] `pg-boss` starts only after vault unsealed via `setOnVaultUnsealed` (AC-29)
+- [ ] `validateKeyDerivationParams()` rejects tampered Argon2 params (AC-30)
+- [ ] Dockerfile builder includes native deps for `argon2` package (AC-30)
 - [ ] `GET /health` returns 200 regardless of vault state; only `GET /ready` reflects vault state
 - [ ] RS256 key pair NOT generated in this story — HMAC-SHA256 is the architecture-authoritative JWT signing method
 
