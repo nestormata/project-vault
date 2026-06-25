@@ -3,7 +3,16 @@ import { z } from 'zod/v4'
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().default(3000),
-  DATABASE_URL: z.string().min(1),
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .refine((value) => {
+      try {
+        return new URL(value).username !== 'postgres'
+      } catch {
+        return false
+      }
+    }, "DATABASE_URL must not use the 'postgres' superuser — RLS enforcement requires a non-superuser role. Use 'vault_app' or another application role. See .env.example."),
   CORS_ALLOWED_ORIGINS: z
     .string()
     .min(1)

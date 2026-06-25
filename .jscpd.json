@@ -5,6 +5,7 @@
   "threshold": 0,
   "ignore": [
     "packages/db/src/schema/**",
+    "packages/db/src/migrations/**",
     "**/node_modules/**",
     "**/dist/**",
     "**/build/**",

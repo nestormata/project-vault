@@ -2,6 +2,18 @@ version: "3.9"
 
 services:
   db:
+    mem_limit: 1g
+    cpu_shares: 512
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
     mem_limit: 512m
     cpu_shares: 512
     restart: unless-stopped
@@ -9,30 +21,18 @@ services:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "3"
-    volumes:
-      - db_data:/var/lib/postgresql/data
-
-  api:
-    mem_limit: 256m
-    cpu_shares: 512
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+        max-file: "5"
 
   web:
-    mem_limit: 128m
+    mem_limit: 256m
     cpu_shares: 256
     restart: unless-stopped
     logging:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "3"
+        max-file: "5"
 
 volumes:
   db_data:
-  vault_keys:
+  vault_keys: # reserved for Story 1.5 (Vault Initialization & Master Key Management) — not yet mounted into any service

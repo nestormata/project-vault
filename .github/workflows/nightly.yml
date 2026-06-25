@@ -51,10 +51,23 @@ jobs:
       - name: Build API image
         run: docker build -f apps/api/Dockerfile -t project-vault-api:nightly .
 
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t project-vault-web:nightly .
+
       - name: Run Trivy scan on API image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: project-vault-api:nightly
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Run Trivy scan on web image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: project-vault-web:nightly
           format: table
           exit-code: '1'
           ignore-unfixed: true

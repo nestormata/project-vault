@@ -15,6 +15,20 @@ jobs:
     name: Quality Gates
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: project_vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,10 +73,31 @@ jobs:
       - name: Lint
         run: pnpm turbo lint
 
+      - name: Run database migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+
+      - name: Check RLS policy coverage
+        run: pnpm check-rls
+        env:
+          DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+
       - name: Test (with coverage)
         run: pnpm turbo test
         env:
-          DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+          # Must use vault_app, not postgres — the postgres superuser bypasses RLS
+          # entirely, which would make the RLS isolation tests pass even if policies
+          # were broken or missing.
+          DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+
+      - name: Upload RLS isolation coverage (SOC2 Type II evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-coverage-${{ github.run_id }}
+          path: packages/db/coverage/
+          retention-days: 90
 
       - name: Check for duplicate code
         run: pnpm jscpd
@@ -114,16 +149,61 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
 
-      - name: Build API image
+      - name: Build API image (multi-arch validation)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: false
           tags: project-vault-api:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build web image (multi-arch validation)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: project-vault-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Build API image (load for size check)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          load: true
+          tags: project-vault-api:size-check
+          cache-from: type=gha,scope=api
+
+      - name: Build web image (load for size check)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          load: true
+          tags: project-vault-web:size-check
+          cache-from: type=gha,scope=web
+
+      - name: Check image size
+        run: |
+          set -euo pipefail
+          MAX_BYTES=$((300 * 1024 * 1024))
+          for IMAGE in project-vault-api:size-check project-vault-web:size-check; do
+            SIZE=$(docker image inspect "$IMAGE" --format='{{.Size}}')
+            if [ "$SIZE" -gt "$MAX_BYTES" ]; then
+              echo "FATAL: $IMAGE is ${SIZE} bytes, exceeds 300MB limit"
+              exit 1
+            fi
+            echo "$IMAGE is ${SIZE} bytes — OK"
+          done
 
   security:
     name: Security Scan
