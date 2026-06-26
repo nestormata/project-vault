@@ -7,5 +7,7 @@ overrides:
   vite: ^6.4.3
 onlyBuiltDependencies:
   - esbuild
+  - argon2
 allowBuilds:
+  argon2: true
   esbuild: true

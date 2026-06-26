@@ -45,3 +45,7 @@ prompts.md
 
 # Misc
 *.tmp
+
+# Vault key material (envelope/file mode halves) — never commit secrets
+dev-secrets/*
+!dev-secrets/.gitkeep

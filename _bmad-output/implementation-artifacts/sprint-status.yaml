@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-24
+last_updated: 2026-06-25 # code review complete
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -48,12 +48,12 @@ development_status:
   1-2-configure-backend-package-structure: review
   1-3-docker-deployment-and-health-endpoints: done
   1-4-database-foundation-with-postgresql-rls-and-core-schema: done
-  1-5-vault-initialization-and-master-key-management: ready-for-dev
-  1-6-user-registration-and-password-authentication: backlog
-  1-7-jwt-session-management-and-security-controls: backlog
-  1-8-totp-mfa-enrollment-and-recovery-codes: backlog
-  1-9-mfa-role-enforcement-and-failed-authentication-detection: backlog
-  1-10-structured-operational-logging-and-metrics: backlog
+  1-5-vault-initialization-and-master-key-management: done
+  1-6-user-registration-and-password-authentication: ready-for-dev
+  1-7-jwt-session-management-and-security-controls: ready-for-dev
+  1-8-totp-mfa-enrollment-and-recovery-codes: ready-for-dev
+  1-9-mfa-role-enforcement-and-failed-authentication-detection: ready-for-dev
+  1-10-structured-operational-logging-and-metrics: ready-for-dev
   1-11-secureroute-framework-and-drizzle-rls-middleware: backlog
   1-12-mfa-login-verification-flow: backlog
   epic-1-retrospective: optional

@@ -148,12 +148,19 @@ jobs:
             (echo "ERROR: openapi.json is stale - run pnpm generate-spec and commit" && exit 1)
 
   docker-build:
-    name: Docker Build
-    runs-on: ubuntu-latest
-    # linux/arm64 is QEMU-emulated on ubuntu-latest runners — pnpm install/build under
-    # emulation is materially slower than native amd64, so this job needs more headroom
-    # than the other 10-minute jobs.
+    name: Docker Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -162,52 +169,54 @@ jobs:
         with:
           driver: docker-container
 
-      - name: Build API image (multi-arch validation)
+      - name: Build API image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: false
-          # No image output is consumed here (push: false, load is impossible for a
-          # multi-platform build) — provenance/SBOM attestation has nothing to attach
-          # to and just adds extra emulated build time for no benefit.
           provenance: false
           tags: project-vault-api:ci
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,mode=max,scope=api
+          cache-from: type=gha,scope=api-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=api-${{ matrix.arch }}
 
-      - name: Build web image (multi-arch validation)
+      - name: Build web image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/web/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: false
           provenance: false
           tags: project-vault-web:ci
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
+          cache-from: type=gha,scope=web-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=web-${{ matrix.arch }}
 
-      - name: Build API image (load for size check)
+      # docker load only works for the host platform, so size check runs on amd64 only.
+      # amd64 is the primary deployment target; arm64 build success is the validation.
+      - name: Load API image for size check
+        if: matrix.arch == 'amd64'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
           load: true
           tags: project-vault-api:size-check
-          cache-from: type=gha,scope=api
+          cache-from: type=gha,scope=api-${{ matrix.arch }}
 
-      - name: Build web image (load for size check)
+      - name: Load web image for size check
+        if: matrix.arch == 'amd64'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/web/Dockerfile
           load: true
           tags: project-vault-web:size-check
-          cache-from: type=gha,scope=web
+          cache-from: type=gha,scope=web-${{ matrix.arch }}
 
       - name: Check image size
+        if: matrix.arch == 'amd64'
         run: |
           set -euo pipefail
           MAX_BYTES=$((300 * 1024 * 1024))

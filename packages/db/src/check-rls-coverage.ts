@@ -1,7 +1,7 @@
 import type postgres from 'postgres'
 
 // Platform-level tables that intentionally have no org_id column and need no RLS policy.
-const EXCLUDED_TABLES = new Set(['api_instances'])
+const EXCLUDED_TABLES = new Set(['api_instances', 'vault_state'])
 
 export class RlsCoverageGapError extends Error {
   constructor(public readonly gaps: string[]) {

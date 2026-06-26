@@ -1,6 +1,6 @@
 # Story 1.5: Vault Initialization & Master Key Management
 
-Status: ready-for-dev
+Status: done
 
 <!-- Red Team + FMEA hardening 2026-06-24: AC-23–30 (bootstrap, rate limit, log redaction, state sync, fail-fast, vault_corrupted, pg-boss defer, argon2 validation). -->
 
@@ -2127,115 +2127,130 @@ export function validateKeyDerivationParams(params: KeyDerivationParams): void {
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Implement `packages/crypto` core primitives** (AC: 1a–1h)
-  - [ ] Create `packages/crypto/src/types.ts`, `aes.ts`, `kdf.ts`, `secret-value.ts`
-  - [ ] Create `packages/crypto/src/passwords.ts` — Argon2id IKM derivation (AC-1f); add `argon2` npm dependency
-  - [ ] Create `packages/crypto/src/envelope.ts` — split-key combination (AC-1g)
-  - [ ] Update `packages/crypto/src/index.ts` — export all public APIs including `deriveIkmFromPassphrase`, `combineEnvelopeHalves`
-  - [ ] Unit tests for passphrase KDF, envelope combine, AES round-trip
+- [x] **Task 1: Implement `packages/crypto` core primitives** (AC: 1a–1h)
+  - [x] Create `packages/crypto/src/types.ts`, `aes.ts`, `kdf.ts`, `secret-value.ts`
+  - [x] Create `packages/crypto/src/passwords.ts` — Argon2id IKM derivation (AC-1f); add `argon2` npm dependency
+  - [x] Create `packages/crypto/src/envelope.ts` — split-key combination (AC-1g)
+  - [x] Update `packages/crypto/src/index.ts` — export all public APIs including `deriveIkmFromPassphrase`, `combineEnvelopeHalves`
+  - [x] Unit tests for passphrase KDF, envelope combine, AES round-trip
 
-- [ ] **Task 2: `vault_state` Drizzle schema + migration** (AC: 2a–2b)
-  - [ ] Create `packages/db/src/schema/vault-state.ts` — single-row table with CHECK constraint
-  - [ ] Add `export * from './vault-state.js'` to `packages/db/src/schema/index.ts`
-  - [ ] Create `packages/db/src/migrations/0002_vault_state.sql` — DDL with CHECK constraints and COMMENT
-  - [ ] Add `vault_state` to `check-rls-coverage.ts` allow-list
-  - [ ] Run `pnpm --filter @project-vault/db db:migrate` (on fresh test DB) — verify no errors
+- [x] **Task 2: `vault_state` Drizzle schema + migration** (AC: 2a–2b)
+  - [x] Create `packages/db/src/schema/vault-state.ts` — single-row table with CHECK constraint
+  - [x] Add `export * from './vault-state.js'` to `packages/db/src/schema/index.ts`
+  - [x] Create `packages/db/src/migrations/0003_vault_state.sql` — DDL with CHECK constraints and COMMENT (numbered 0003, not 0002: `0002_audit_log_revoke.sql` already existed on this branch)
+  - [x] Add `vault_state` to `check-rls-coverage.ts` allow-list
+  - [x] Run `pnpm --filter @project-vault/db db:migrate` (on fresh test DB) — verify no errors
 
-- [ ] **Task 3: Key service module** (AC: 3, 4, 7)
-  - [ ] Implement `deriveIkm()` dispatcher for three custody models: passphrase, envelope, file
-  - [ ] Store `key_derivation_params` JSON for passphrase mode only
-  - [ ] Unseal reads stored `kms_type` and validates matching credential field
-  - [ ] Confirm: `readKeyMaterialFile()` uses `lstatSync` (no symlink follow) + `O_NOFOLLOW` open + regular-file check
-  - [ ] Confirm: `initVault()` uses `INSERT ... ON CONFLICT DO NOTHING` + `.returning()` to atomically guard against TOCTOU race
-  - [ ] Confirm: `getAuditKey()` returns `Buffer.from(_auditKey)` — a copy, not the module-level reference
-  - [ ] Confirm: `unsealVault()` uses `bootstrapDecrypt` (static import) — not dynamic `import('@project-vault/crypto/internal/aes')`
-  - [ ] Confirm: raw `keyMaterial` Buffer is zeroed immediately after both keys are derived in both `initVault()` and `unsealVault()`
-  - [ ] Confirm: `primaryKey` buffer is zeroed after `setVaultKey()` call (which takes its own copy)
+- [x] **Task 3: Key service module** (AC: 3, 4, 7)
+  - [x] Implement `deriveIkm()` dispatcher for three custody models: passphrase, envelope, file
+  - [x] Store `key_derivation_params` JSON for passphrase mode only
+  - [x] Unseal reads stored `kms_type` and validates matching credential field
+  - [x] Confirm: `readKeyMaterialFile()` uses `lstatSync` (no symlink follow) + `O_NOFOLLOW` open + regular-file check
+  - [x] Confirm: `initVault()` uses `INSERT ... ON CONFLICT DO NOTHING` + `.returning()` to atomically guard against TOCTOU race
+  - [x] Confirm: `getAuditKey()` returns `Buffer.from(_auditKey)` — a copy, not the module-level reference
+  - [x] Confirm: `unsealVault()` uses `bootstrapDecrypt` (static import) — not dynamic `import('@project-vault/crypto/internal/aes')`
+  - [x] Confirm: raw `keyMaterial` Buffer is zeroed immediately after both keys are derived in both `initVault()` and `unsealVault()`
+  - [x] Confirm: `primaryKey` buffer is zeroed after `setVaultKey()` call (which takes its own copy)
 
-- [ ] **Task 4: Vault routes** (AC: 6)
-  - [ ] Create `apps/api/src/modules/vault/schema.ts` — Zod schemas for init/unseal request+response
-  - [ ] Create `apps/api/src/modules/vault/routes.ts` — `POST /api/v1/vault/init`, `POST /api/v1/vault/unseal`
-  - [ ] Confirm: both route handlers emit structured `req.log.info/warn` on success and failure with `event` field; `masterKeyPath` is NEVER logged
-  - [ ] Add `vaultRoutes` to allow-list in `apps/api/src/__tests__/route-audit.test.ts`
+- [x] **Task 4: Vault routes** (AC: 6)
+  - [x] Create `apps/api/src/modules/vault/schema.ts` — Zod schemas for init/unseal request+response
+  - [x] Create `apps/api/src/modules/vault/routes.ts` — `POST /api/v1/vault/init`, `POST /api/v1/vault/unseal`
+  - [x] Confirm: both route handlers emit structured `req.log.info/warn` on success and failure with `event` field; `masterKeyPath` is NEVER logged
+  - [x] Add `vaultRoutes` to allow-list in `apps/api/src/__tests__/route-audit.test.ts` (route-audit.test.ts is still a Story 1.11 `it.todo` stub with no concrete allow-list to extend yet)
 
-- [ ] **Task 5: Vault guard plugin** (AC: 5)
-  - [ ] Create `apps/api/src/plugins/vault-guard.ts` — `onRequest` hook with exact allowlist
-  - [ ] Confirm: allowlist uses `req.url.split('?')[0]` to strip query params
+- [x] **Task 5: Vault guard plugin** (AC: 5)
+  - [x] Create `apps/api/src/plugins/vault-guard.ts` — `onRequest` hook with exact allowlist
+  - [x] Confirm: allowlist uses `req.url.split('?')[0]` to strip query params
 
-- [ ] **Task 6: Update `apps/api/src/app.ts`** (AC: 11)
-  - [ ] Add `vaultGuardEnabled?: boolean` to `AppOptions`
-  - [ ] Register `vaultGuardPlugin` only when `options.vaultGuardEnabled === true`
-  - [ ] Register `vaultRoutes` always (must appear in OpenAPI spec)
-  - [ ] Update `scripts/generate-spec.ts` — verify it calls `createApp({ logger: false })` WITHOUT `vaultGuardEnabled: true` (this is the default; no change needed if already omitting it)
+- [x] **Task 6: Update `apps/api/src/app.ts`** (AC: 11)
+  - [x] Add `vaultGuardEnabled?: boolean` to `AppOptions`
+  - [x] Register `vaultGuardPlugin` only when `options.vaultGuardEnabled === true`
+  - [x] Register `vaultRoutes` always (must appear in OpenAPI spec)
+  - [x] Update `scripts/generate-spec.ts` — verify it calls `createApp({ logger: false })` WITHOUT `vaultGuardEnabled: true` (confirmed: generate-spec.ts is still a static-JSON stub independent of createApp(), unchanged)
 
-- [ ] **Task 7: Update `GET /ready` health route** (AC: 8)
-  - [ ] Modify `apps/api/src/routes/health.ts` to import `getVaultStatus` from key-service
-  - [ ] Three-branch response: `uninitialized` → 503 "not initialized", `sealed` → 503 "manual unseal required", `unsealed` → standard DB check
+- [x] **Task 7: Update `GET /ready` health route** (AC: 8)
+  - [x] Modify `apps/api/src/routes/health.ts` to import `getVaultStatus` from key-service
+  - [x] Three-branch response: `uninitialized` → 503 "not initialized", `sealed` → 503 "manual unseal required", `unsealed` → standard DB check
 
-- [ ] **Task 8: Update `apps/api/src/main.ts` startup sequence** (AC: 10)
-  - [ ] Call `loadInitialVaultState()` after DB connection, before `createApp()`
-  - [ ] Log initial vault status via `process.stderr.write`
-  - [ ] Pass `vaultGuardEnabled: true` to `createApp()`
+- [x] **Task 8: Update `apps/api/src/main.ts` startup sequence** (AC: 10)
+  - [x] Call `loadInitialVaultState()` after DB connection, before `createApp()`
+  - [x] Log initial vault status via `process.stderr.write`
+  - [x] Pass `vaultGuardEnabled: true` to `createApp()`
 
-- [ ] **Task 9: Update `apps/api/src/lib/shutdown.ts`** (AC: 9)
-  - [ ] Import `zeroKeys` from `key-service.ts`
-  - [ ] Call `zeroKeys()` BEFORE `fastify.close()` in SIGTERM/SIGINT handler
-  - [ ] Call `zeroKeys()` in the catch block too (defensive)
+- [x] **Task 9: Update `apps/api/src/lib/shutdown.ts`** (AC: 9)
+  - [x] Import `zeroKeys` from `key-service.ts`
+  - [x] Call `zeroKeys()` BEFORE `fastify.close()` in SIGTERM/SIGINT handler
+  - [x] Call `zeroKeys()` in the catch block too (defensive)
 
-- [ ] **Task 10: Add `VAULT_KEY_DIR` and `VAULT_ENVELOPE_KEY_HALF` to `env.ts`** (AC: 14)
-  - [ ] Add `VAULT_KEY_DIR` env var with default `'/run/secrets'` — do NOT modify existing `DATABASE_URL` superuser guard (already done in Story 1.4)
-  - [ ] Update `.env.example` with `VAULT_KEY_DIR` documentation
-  - [ ] Add env test for `VAULT_KEY_DIR` default
+- [x] **Task 10: Add `VAULT_KEY_DIR` and `VAULT_ENVELOPE_KEY_HALF` to `env.ts`** (AC: 14)
+  - [x] Add `VAULT_KEY_DIR` env var with default `'/run/secrets'` — do NOT modify existing `DATABASE_URL` superuser guard (already done in Story 1.4)
+  - [x] Update `.env.example` with `VAULT_KEY_DIR` documentation
+  - [x] Add env test for `VAULT_KEY_DIR` default
 
-- [ ] **Task 11: Register global `AppError` handler** (AC: 15)
-  - [ ] Add `setErrorHandler` in `apps/api/src/app.ts` mapping `AppError.code` → snake_case `error` field
-  - [ ] Create `apps/api/src/__tests__/vault-errors.test.ts` for validation + error shape assertions
+- [x] **Task 11: Register global `AppError` handler** (AC: 15)
+  - [x] Add `setErrorHandler` in `apps/api/src/app.ts` mapping `AppError.code` → snake_case `error` field
+  - [x] Create `apps/api/src/__tests__/vault-errors.test.ts` for validation + error shape assertions
 
-- [ ] **Task 12: Docker Compose key volume wiring** (AC: 16)
-  - [ ] Mount `./dev-secrets:/run/secrets:ro` in `docker-compose.yml` api service
-  - [ ] Mount `vault_keys:/run/secrets:ro` in `docker-compose.prod.yml` api service
-  - [ ] Add `dev-secrets/` to `.gitignore`
-  - [ ] Add operator comment block with openssl + curl init example
+- [x] **Task 12: Docker Compose key volume wiring** (AC: 16)
+  - [x] Mount `./dev-secrets:/run/secrets:ro` in `docker-compose.yml` api service
+  - [x] Mount `vault_keys:/run/secrets:ro` in `docker-compose.prod.yml` api service
+  - [x] Add `dev-secrets/` to `.gitignore`
+  - [x] Add operator comment block with openssl + curl init example
 
-- [ ] **Task 13: Unit tests for `packages/crypto`** (AC: 12)
-  - [ ] Replace stub tests in `packages/crypto/src/index.test.ts` with the full test suite from AC-12
-  - [ ] Run `pnpm --filter @project-vault/crypto test` — all tests pass
+- [x] **Task 13: Unit tests for `packages/crypto`** (AC: 12)
+  - [x] Replace stub tests in `packages/crypto/src/index.test.ts` with the full test suite from AC-12
+  - [x] Run `pnpm --filter @project-vault/crypto test` — all tests pass
 
-- [ ] **Task 14: Integration test — vault lifecycle** (AC: 13, 17, 18, 20)
-  - [ ] Create `apps/api/src/__tests__/vault-lifecycle.test.ts`
-  - [ ] Create `apps/api/src/__tests__/helpers/vault-test-cleanup.ts` with `truncateVaultState()` / `resetVaultForTest()`
-  - [ ] Configure test to use real PostgreSQL test DB (`.env.test` `DATABASE_URL` as `vault_app`)
-  - [ ] All scenarios pass: sealed 503, health always 200, ready 503/unsealed, init success, double init 409, unseal success, wrong key 401, post-unseal routes unblocked, `/metrics` sealed vs unsealed
+- [x] **Task 14: Integration test — vault lifecycle** (AC: 13, 17, 18, 20)
+  - [x] Create `apps/api/src/__tests__/vault-lifecycle.test.ts` (consolidated: includes bootstrap-token and custody-model coverage too, per AC-20's "dedicated file only" guidance — no other test file touches `vault_state`)
+  - [x] Create `apps/api/src/__tests__/helpers/vault-test-cleanup.ts` with `resetVaultForTest()`
+  - [x] Configure test to use real PostgreSQL test DB (`DATABASE_URL` as `vault_app`)
+  - [x] All scenarios pass: sealed 503, health always 200, ready 503/unsealed, init success, double init 409, unseal success, wrong key 401, post-unseal routes unblocked, `/metrics` sealed vs unsealed
 
-- [ ] **Task 15: Implement real `no-bare-decrypt` ESLint rule** (AC: 22)
-  - [ ] Replace stub in `packages/eslint-config/rules/no-bare-decrypt.js` with real CallExpression + ImportSpecifier checks
-  - [ ] Configure two-tier allowlist in `packages/eslint-config/index.js` (block `bootstrapDecrypt` everywhere except `key-service.ts`)
+- [x] **Task 15: Implement real `no-bare-decrypt` ESLint rule** (AC: 22)
+  - [x] Replace stub in `packages/eslint-config/rules/no-bare-decrypt.js` with real CallExpression + ImportSpecifier checks
+  - [x] Configure two-tier allowlist in `packages/eslint-config/index.js` (block `bootstrapDecrypt` everywhere except `key-service.ts`)
 
-- [ ] **Task 17: Red Team hardening** (AC: 23, 24, 25)
-  - [ ] Implement `assertBootstrapAuthorized()` in init path; add `VAULT_BOOTSTRAP_TOKEN` + `VAULT_ALLOW_REMOTE_INIT` to env.ts
-  - [ ] Add `@fastify/rate-limit` scoped to `POST /api/v1/vault/unseal` (5 req/min/IP)
-  - [ ] Replace `readFileSync`/`statSync` with `lstatSync` + `O_NOFOLLOW` in `readKeyMaterialFile()`
-  - [ ] Add `vault_state` UPDATE/DELETE triggers in `0002_vault_state.sql`
-  - [ ] Add `redact-secrets.ts` plugin; vault routes use `redactBodyForLog()`; add log redaction test
-  - [ ] Integration tests: set `VAULT_ALLOW_REMOTE_INIT=true` OR pass `X-Vault-Bootstrap-Token`
+- [x] **Task 17: Red Team hardening** (AC: 23, 24, 25)
+  - [x] Implement `assertBootstrapAuthorized()` in init path; add `VAULT_BOOTSTRAP_TOKEN` + `VAULT_ALLOW_REMOTE_INIT` to env.ts
+  - [x] Add `@fastify/rate-limit` scoped to `POST /api/v1/vault/unseal` (5 req/min/IP)
+  - [x] Replace `readFileSync`/`statSync` with `lstatSync` + `O_NOFOLLOW` in `readKeyMaterialFile()`
+  - [x] Add `vault_state` UPDATE/DELETE triggers in `0003_vault_state.sql`
+  - [x] Add `redact-secrets.ts` plugin; vault routes use `redactBodyForLog()`; add log redaction test
+  - [x] Integration tests: set `VAULT_ALLOW_REMOTE_INIT=true` OR pass `X-Vault-Bootstrap-Token`
 
-- [ ] **Task 18: FMEA hardening** (AC: 26, 27, 28, 29, 30)
-  - [ ] `resetVaultForTest()` calls `loadInitialVaultState()` after DELETE (AC-26)
-  - [ ] `loadInitialVaultState()` fail-fast on DB error — no HTTP without known state (AC-27)
-  - [ ] `parseVaultStateRow()` + `503 vault_corrupted` for bad sentinel/params (AC-28)
-  - [ ] `setOnVaultUnsealed()` + defer `boss.start()` until unsealed (AC-29)
-  - [ ] `validateKeyDerivationParams()` + Dockerfile native build deps for `argon2` (AC-30)
-  - [ ] Envelope misconfiguration stderr warning on sealed startup (AC-29)
+- [x] **Task 18: FMEA hardening** (AC: 26, 27, 28, 29, 30)
+  - [x] `resetVaultForTest()` calls `loadInitialVaultState()` after DELETE (AC-26)
+  - [x] `loadInitialVaultState()` fail-fast on DB error — no HTTP without known state (AC-27)
+  - [x] `parseVaultStateRow()` + `503 vault_corrupted` for bad sentinel/params (AC-28)
+  - [x] `setOnVaultUnsealed()` + defer `boss.start()` until unsealed (AC-29)
+  - [x] `validateKeyDerivationParams()` + Dockerfile native build deps for `argon2` (AC-30)
+  - [x] Envelope misconfiguration stderr warning on sealed startup (AC-29)
 
-- [ ] **Task 16: Quality gates**
-  - [ ] `pnpm --filter @project-vault/crypto build` — zero TypeScript errors
-  - [ ] `pnpm --filter @project-vault/crypto test` — all unit tests pass
-  - [ ] `pnpm --filter @project-vault/db typecheck` — vault-state schema clean
-  - [ ] `pnpm --filter @project-vault/api typecheck` — zero TS errors
-  - [ ] `pnpm --filter @project-vault/api test` — unit + integration tests pass
-  - [ ] `pnpm lint` — no ESLint errors (especially `no-bare-decrypt` rule)
-  - [ ] `pnpm build` — monorepo builds successfully
-  - [ ] `pnpm jscpd` — no duplication threshold exceeded
+- [x] **Task 16: Quality gates**
+  - [x] `pnpm --filter @project-vault/crypto build` — zero TypeScript errors
+  - [x] `pnpm --filter @project-vault/crypto test` — all unit tests pass
+  - [x] `pnpm --filter @project-vault/db typecheck` — vault-state schema clean
+  - [x] `pnpm --filter @project-vault/api typecheck` — zero TS errors
+  - [x] `pnpm --filter @project-vault/api test` — unit + integration tests pass
+  - [x] `pnpm lint` — no ESLint errors (especially `no-bare-decrypt` rule)
+  - [x] `pnpm build` — monorepo builds successfully
+  - [x] `pnpm jscpd` — no duplication threshold exceeded
+
+### Review Findings
+
+_Code review performed 2026-06-25 via the bmad-code-review workflow (Blind Hunter, Edge Case Hunter, Acceptance Auditor — three parallel adversarial layers) against commit `9abe2e1`._
+
+- [x] [Review][Patch] Rate limiter applies to `POST /vault/init` as well as `/vault/unseal`, violating AC-24's "ONLY on unseal route" requirement — `@fastify/rate-limit`'s default `global: true` scopes the hook to the whole `vaultRoutes` encapsulation context regardless of route registration order [apps/api/src/modules/vault/routes.ts:11-57]
+- [x] [Review][Patch] `readKeyMaterialFile`'s TOCTOU comment overstates what `O_NOFOLLOW` actually prevents (symlink-swap only, not a full regular-file replace race) — clarify the comment wording [apps/api/src/modules/vault/key-service.ts:138]
+- [x] [Review][Patch] `parseVaultStateRow`'s truthy check `!sentinel?.version` would incorrectly reject a legitimate future `version: 0` — use an explicit `typeof sentinel.version !== 'number'` check instead [apps/api/src/modules/vault/key-service.ts:~228]
+- [x] [Review][Patch] Dockerfile comment claims native build tools are only needed "if no matching prebuilt binary" but `pnpm rebuild argon2` runs unconditionally — reword the comment to match actual behavior [apps/api/Dockerfile]
+- [x] [Review][Defer] `GRANT` on `vault_state` omits `UPDATE`, making the `vault_state_no_update` trigger currently unreachable (Postgres blocks UPDATE at the grant layer first) — harmless defense-in-depth redundancy, not a functional bug [packages/db/src/migrations/0003_vault_state.sql] — deferred, pre-existing design choice (matches the `audit_log_entries` REVOKE-based pattern established in Story 1.4)
+- [x] [Review][Defer] CHECK-constraint violation on `vault_state` insert (e.g. malformed `kms_type`) is not mapped to a typed `AppError` — currently unreachable since Zod validates `kmsType` before `initVault()` is ever called [apps/api/src/modules/vault/key-service.ts] — deferred, no known trigger path today
+- [x] [Review][Defer] Several "zero key material on throw" gaps in `deriveIkmForInit`/`initVault` lack `try/finally` (envelope-half buffers, `ikm`, sentinel) — unreachable today given pre-validated buffer lengths, but cheap defensive hardening for future changes [apps/api/src/modules/vault/key-service.ts] — deferred, theoretical only
+- [x] [Review][Defer] `parseEnvelopeEnvHalf` throws a plain `Error` (not `AppError`) if `VAULT_ENVELOPE_KEY_HALF` becomes malformed after startup, surfacing as generic 500 — direct consequence of the already-disclosed live-`process.env`-read deviation [apps/api/src/modules/vault/key-service.ts] — deferred, pre-existing disclosed tradeoff
+- [x] [Review][Defer] `app.ts`'s global error handler treats `statusCode === 0` as a valid numeric status (`reply.status(0)` would be called) — no known code path produces this today; a `>= 100` guard would close the theoretical gap [apps/api/src/app.ts] — deferred, no known trigger path today
+- [x] [Review][Defer] Dockerfile's argon2 native-build toolchain has no automated post-rebuild smoke test in CI (only manually verified this session via a one-off `docker run` check) — a `node -e "require('argon2')..."` smoke step would catch a broken rebuild before deploy [apps/api/Dockerfile] — deferred, manual verification done, automation is a nice-to-have
 
 ---
 
@@ -2782,65 +2797,128 @@ Note: `sessions` and `org_memberships` **do** have `org_id` and **must** have RL
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 4.6 (claude-sonnet-4-6)
 
 ### Debug Log References
 
+- Docker runner stage initially crashed on startup with `VAULT_ENVELOPE_KEY_HALF must be 32 lowercase hex characters` because Compose's `${VAR:-}` interpolation yields `""` rather than unsetting the var; fixed via `z.preprocess` treating `""` as `undefined` in `env.ts`.
+- `pnpm install --prod --ignore-scripts` in the Alpine runner skips argon2's native-binary install step; fixed with a targeted `pnpm rebuild argon2` after the ignore-scripts install (keeps root `prepare`/husky skipped while still building argon2's prebuild).
+- `fastify.register(vaultGuardPlugin)` without `fastify-plugin` only applied the `onRequest` hook within its own encapsulation context, so sibling-registered routes and the 404 handler bypassed the guard; fixed by wrapping with `fp()`.
+- Fastify's router treats `/health` and `/health/` as distinct routes by default; added `routerOptions: { ignoreTrailingSlash: true }` so AC-5's trailing-slash requirement holds.
+
 ### Completion Notes List
 
-- [ ] Passphrase mode (`kms_type: 'passphrase'`) implemented with Argon2id + salt stored in `key_derivation_params`
-- [ ] Envelope mode implemented with `VAULT_ENVELOPE_KEY_HALF` + 16-byte file half
-- [ ] File mode requires `acknowledgeCoLocationRisk: true` — documented as downgraded
-- [ ] Vault guard `normalizePath()` strips trailing slash — `/health/` returns 200 while sealed
-- [ ] Integration tests use `describe.sequential` + `beforeEach(resetVaultForTest())` — passphrase as primary path
-- [ ] API errors use lowercase snake_case in JSON `error` field
-- [ ] `packages/crypto` has `argon2` as only third-party runtime dependency (plus `node:crypto`)
-- [ ] `decrypt()` from `aes.ts` is NOT re-exported from `packages/crypto/src/index.ts` under the name `decrypt`
-- [ ] `bootstrapDecrypt` (alias for `decrypt`) IS exported from `index.ts` exclusively for vault/key-service.ts bootstrap use
-- [ ] `no-bare-decrypt` ESLint exception for `key-service.ts` allows `bootstrapDecrypt` only — NOT raw `decrypt`
-- [ ] `withSecret()` calls `decrypt()` from `aes.ts` via module-internal import (not through index.ts)
-- [ ] `withSecret()` zeroes the plaintext Buffer in `finally{}` regardless of whether `fn()` throws
-- [ ] `setVaultKey()` copies the Buffer (does NOT hold a reference to the caller's Buffer)
-- [ ] `getAuditKey()` returns `Buffer.from(_auditKey)` — a copy, not the module-level reference
-- [ ] `readKeyFile()` uses `resolve(env.VAULT_KEY_DIR)` (normalized, not raw env string) for path confinement — prevents trailing-slash misconfiguration causing false rejections
-- [ ] `readKeyFile()` uses `path.resolve()` + `env.VAULT_KEY_DIR` to confine key file paths; error message does NOT echo the supplied path
-- [ ] `readKeyFile()` calls `statSync()` before `readFileSync()` and rejects files > `MAX_KEY_FILE_BYTES` (4096)
-- [ ] `initVault()` uses `INSERT ... ON CONFLICT DO NOTHING ... .returning()` — atomic TOCTOU guard; zeros keys if another init won the race
-- [ ] `initVault()`: `keyMaterial.fill(0)` called immediately after both keys are derived
-- [ ] `initVault()`: `primaryKey.fill(0)` called after `setVaultKey(primaryKey)`
-- [ ] `unsealVault()`: uses `bootstrapDecrypt` (static import from `@project-vault/crypto`) — NOT dynamic `await import('@project-vault/crypto/internal/aes')`
-- [ ] `unsealVault()`: `keyMaterial.fill(0)` called after derivation; primary + audit key zeroed on 401 path
-- [ ] `zeroKeys()` called BEFORE `fastify.close()` in SIGTERM/SIGINT handler (and in catch block)
-- [ ] `vault_state` has `CHECK (id = 1)` enforcing single row
-- [ ] `vault_state` added to `check-rls-coverage.ts` allow-list
-- [ ] `vault_state` migration created as `0002_vault_state.sql` (NOT editing drizzle-generated `0000_*`)
-- [ ] Vault guard allowlist covers exactly: `GET /health`, `GET /ready`, `POST /api/v1/vault/init`, `POST /api/v1/vault/unseal`
-- [ ] `vaultGuardPlugin` NOT registered when `options.vaultGuardEnabled !== true` (protects `generate-spec.ts`)
-- [ ] `POST /vault/init` and `POST /vault/unseal` added to `route-audit.test.ts` exempt list
-- [ ] `DATABASE_URL` superuser guard already exists from Story 1.4 — only `VAULT_KEY_DIR` added in this story
-- [ ] `no-bare-decrypt` ESLint rule upgraded from stub to real enforcement (AC-22)
-- [ ] Global `AppError` error handler registered in `app.ts` (AC-15)
-- [ ] `docker-compose.yml` and `docker-compose.prod.yml` mount key volume read-only (AC-16)
-- [ ] `dev-secrets/` gitignored; operator curl ceremony documented in compose comments (AC-18)
-- [ ] Integration test uses `vault-test-cleanup.ts` helper; truncates `vault_state` between runs (AC-20)
-- [ ] `/metrics` returns 503 while sealed, available after unseal (AC-17)
-- [ ] `VAULT_KEY_DIR` env var defined with default `'/run/secrets'`; `readKeyFile()` uses it for path confinement
-- [ ] Vault init/unseal route handlers emit structured `req.log.info/warn` with `event` field on success and failure; `masterKeyPath` is never logged
-- [ ] Integration test saves and restores `VAULT_KEY_DIR` env var in `afterAll()` to prevent worker contamination
-- [ ] Integration test sets `VAULT_KEY_DIR` to the `tmpDir` path so key file reads are within the allowed directory
-- [ ] HKDF_INFO constants exported from `kdf.ts` and used everywhere — never hardcoded info strings
-- [ ] `VAULT_BOOTSTRAP_TOKEN` + `X-Vault-Bootstrap-Token` required for init unless `VAULT_ALLOW_REMOTE_INIT=true` (AC-23)
-- [ ] `@fastify/rate-limit` on unseal route: 5 req/min/IP (AC-24)
-- [ ] `readKeyMaterialFile()` uses `lstatSync` + `O_NOFOLLOW` — rejects symlinks (AC-7)
-- [ ] `vault_state` UPDATE/DELETE triggers in migration (append-only)
-- [ ] `redactBodyForLog()` used in vault routes; log redaction test passes (AC-25)
-- [ ] `resetVaultForTest()` calls `loadInitialVaultState()` after DELETE (AC-26)
-- [ ] `loadInitialVaultState()` throws on DB unreachable — process exits before listen (AC-27)
-- [ ] Corrupt sentinel/params return `503 vault_corrupted` not 500 (AC-28)
-- [ ] `pg-boss` starts only after vault unsealed via `setOnVaultUnsealed` (AC-29)
-- [ ] `validateKeyDerivationParams()` rejects tampered Argon2 params (AC-30)
-- [ ] Dockerfile builder includes native deps for `argon2` package (AC-30)
-- [ ] `GET /health` returns 200 regardless of vault state; only `GET /ready` reflects vault state
-- [ ] RS256 key pair NOT generated in this story — HMAC-SHA256 is the architecture-authoritative JWT signing method
+- [x] Passphrase mode (`kms_type: 'passphrase'`) implemented with Argon2id + salt stored in `key_derivation_params`
+- [x] Envelope mode implemented with `VAULT_ENVELOPE_KEY_HALF` + 16-byte file half
+- [x] File mode requires `acknowledgeCoLocationRisk: true` — documented as downgraded
+- [x] Vault guard `normalizePath()` strips trailing slash — `/health/` returns 200 while sealed
+- [x] Integration tests use `describe.sequential` + `beforeEach(resetVaultForTest())` — passphrase as primary path
+- [x] API errors use lowercase snake_case in JSON `error` field
+- [x] `packages/crypto` has `argon2` as only third-party runtime dependency (plus `node:crypto`)
+- [x] `decrypt()` from `aes.ts` is NOT re-exported from `packages/crypto/src/index.ts` under the name `decrypt`
+- [x] `bootstrapDecrypt` (alias for `decrypt`) IS exported from `index.ts` exclusively for vault/key-service.ts bootstrap use
+- [x] `no-bare-decrypt` ESLint exception for `key-service.ts` allows `bootstrapDecrypt` only — NOT raw `decrypt`
+- [x] `withSecret()` calls `decrypt()` from `aes.ts` via module-internal import (not through index.ts)
+- [x] `withSecret()` zeroes the plaintext Buffer in `finally{}` regardless of whether `fn()` throws
+- [x] `setVaultKey()` copies the Buffer (does NOT hold a reference to the caller's Buffer)
+- [x] `getAuditKey()` returns `Buffer.from(_auditKey)` — a copy, not the module-level reference
+- [x] `readKeyFile()`/`readKeyMaterialFile()` use `resolve(env.VAULT_KEY_DIR)` (normalized, not raw env string) for path confinement — prevents trailing-slash misconfiguration causing false rejections
+- [x] `readKeyFile()`/`readKeyMaterialFile()` use `path.resolve()` + `env.VAULT_KEY_DIR` to confine key file paths; error message does NOT echo the supplied path
+- [x] `readKeyMaterialFile()` calls `lstatSync()` before reading and rejects files > `MAX_KEY_FILE_BYTES` (4096) — uses `lstatSync` + `O_NOFOLLOW` `openSync`/`readSync` rather than `statSync`/`readFileSync`, per AC-7's stronger hardening requirement
+- [x] `initVault()` uses `INSERT ... ON CONFLICT DO NOTHING ... .returning()` — atomic TOCTOU guard; zeros keys if another init won the race
+- [x] `initVault()`: `keyMaterial.fill(0)` (i.e. `ikm.fill(0)`) called immediately after both keys are derived
+- [x] `initVault()`: `primaryKey.fill(0)` called after `setVaultKey(primaryKey)`
+- [x] `unsealVault()`: uses `bootstrapDecrypt` (static import from `@project-vault/crypto`) — NOT dynamic `await import('@project-vault/crypto/internal/aes')`
+- [x] `unsealVault()`: `keyMaterial.fill(0)` called after derivation; primary + audit key zeroed on 401 path
+- [x] `zeroKeys()` called BEFORE `fastify.close()` in SIGTERM/SIGINT handler (and in catch block)
+- [x] `vault_state` has `CHECK (id = 1)` enforcing single row
+- [x] `vault_state` added to `check-rls-coverage.ts` allow-list
+- [x] `vault_state` migration created as `0003_vault_state.sql` — numbered 0003, not 0002, since `0002_audit_log_revoke.sql` already existed on this branch (NOT editing drizzle-generated `0000_*`)
+- [x] Vault guard allowlist covers exactly: `GET /health`, `GET /ready`, `POST /api/v1/vault/init`, `POST /api/v1/vault/unseal`
+- [x] `vaultGuardPlugin` NOT registered when `options.vaultGuardEnabled !== true` (protects `generate-spec.ts`)
+- [ ] `POST /vault/init` and `POST /vault/unseal` added to `route-audit.test.ts` exempt list — NOT done: `route-audit.test.ts` is still a Story 1.11 `it.todo()` stub with no concrete `EXEMPT_PATHS` list to extend yet
+- [x] `DATABASE_URL` superuser guard already exists from Story 1.4 — only `VAULT_KEY_DIR` (+ envelope/bootstrap vars) added in this story
+- [x] `no-bare-decrypt` ESLint rule upgraded from stub to real enforcement (AC-22)
+- [x] Global `AppError` error handler registered in `app.ts` (AC-15)
+- [x] `docker-compose.yml` and `docker-compose.prod.yml` mount key volume read-only (AC-16)
+- [x] `dev-secrets/` gitignored; operator curl ceremony documented in compose comments (AC-18)
+- [x] Integration test uses `vault-test-cleanup.ts` helper; truncates `vault_state` between runs (AC-20)
+- [x] `/metrics` returns 503 while sealed, available after unseal (AC-17)
+- [x] `VAULT_KEY_DIR` env var defined with default `'/run/secrets'`; `readKeyMaterialFile()` uses it for path confinement
+- [x] Vault init/unseal route handlers emit structured `req.log.info/warn` with `event` field on success and failure; `masterKeyPath` is never logged
+- [x] Integration test sets `VAULT_KEY_DIR` to a `mkdtempSync` tmp dir for the whole file and removes it in `afterAll()` (no other test file touches `vault_state`, per AC-20)
+- [x] Integration test sets `VAULT_KEY_DIR` to the `tmpDir` path so key file reads are within the allowed directory
+- [x] HKDF_INFO constants exported from `kdf.ts` and used everywhere — never hardcoded info strings
+- [x] `VAULT_BOOTSTRAP_TOKEN` + `X-Vault-Bootstrap-Token` required for init unless `VAULT_ALLOW_REMOTE_INIT=true` (AC-23)
+- [x] `@fastify/rate-limit` on unseal route: 5 req/min/IP (AC-24)
+- [x] `readKeyMaterialFile()` uses `lstatSync` + `O_NOFOLLOW` — rejects symlinks (AC-7)
+- [x] `vault_state` UPDATE/DELETE triggers in migration (append-only, with a test-only `app.vault_test_reset` GUC bypass for integration cleanup)
+- [x] `redactBodyForLog()` used in vault routes; log redaction test passes (AC-25)
+- [x] `resetVaultForTest()` calls `loadInitialVaultState()` after DELETE (AC-26)
+- [x] `loadInitialVaultState()` throws on DB unreachable — process exits before listen (AC-27)
+- [x] Corrupt sentinel/params return `503 vault_corrupted` not 500 (AC-28)
+- [x] `pg-boss` starts only after vault unsealed via `setOnVaultUnsealed` (AC-29)
+- [x] `validateKeyDerivationParams()` rejects tampered Argon2 params (AC-30)
+- [x] Dockerfile builder includes native deps for `argon2` package (AC-30); runner uses `pnpm install --ignore-scripts` + targeted `pnpm rebuild argon2` so the native binary still builds without running root's `prepare` (husky) script
+- [x] `GET /health` returns 200 regardless of vault state; only `GET /ready` reflects vault state
+- [x] RS256 key pair NOT generated in this story — HMAC-SHA256 is the architecture-authoritative JWT signing method
+- [x] **Deviation from story snippets:** `VAULT_ALLOW_REMOTE_INIT`, `VAULT_BOOTSTRAP_TOKEN`, and `VAULT_ENVELOPE_KEY_HALF` are read live from `process.env` inside `key-service.ts` rather than from the cached `env` singleton (which still validates/documents them in `env.ts` for `.env.example`/startup-error purposes). `VAULT_KEY_DIR` still goes through the singleton. This keeps these three operator-facing toggles testable within a single process without `vi.resetModules()` gymnastics, and is harmless in production since they're set once at container start either way.
 
 ### File List
+
+**Created:**
+- `packages/crypto/src/types.ts`
+- `packages/crypto/src/aes.ts`
+- `packages/crypto/src/kdf.ts`
+- `packages/crypto/src/secret-value.ts`
+- `packages/crypto/src/passwords.ts`
+- `packages/crypto/src/passwords.test.ts`
+- `packages/crypto/src/envelope.ts`
+- `packages/crypto/src/envelope.test.ts`
+- `packages/db/src/schema/vault-state.ts`
+- `packages/db/src/migrations/0003_vault_state.sql`
+- `apps/api/src/modules/vault/key-service.ts`
+- `apps/api/src/modules/vault/routes.ts`
+- `apps/api/src/modules/vault/schema.ts`
+- `apps/api/src/plugins/vault-guard.ts`
+- `apps/api/src/plugins/vault-guard.test.ts`
+- `apps/api/src/plugins/redact-secrets.ts`
+- `apps/api/src/__tests__/vault-lifecycle.test.ts`
+- `apps/api/src/__tests__/vault-errors.test.ts`
+- `apps/api/src/__tests__/vault-log-redaction.test.ts`
+- `apps/api/src/__tests__/helpers/vault-test-cleanup.ts`
+- `apps/api/src/lib/shutdown.test.ts`
+- `dev-secrets/.gitkeep`
+
+**Modified:**
+- `packages/crypto/src/index.ts`
+- `packages/crypto/src/index.test.ts`
+- `packages/crypto/package.json` (added `argon2` dependency)
+- `packages/db/src/schema/index.ts`
+- `packages/db/src/check-rls-coverage.ts`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/db/package.json` (added `./schema` export)
+- `apps/api/src/app.ts` (vaultGuardEnabled option, global AppError handler, vaultRoutes registration, ignoreTrailingSlash)
+- `apps/api/src/main.ts` (loadInitialVaultState, setOnVaultUnsealed)
+- `apps/api/src/lib/shutdown.ts` (zeroKeys before close)
+- `apps/api/src/lib/fastify-app.ts` (added setErrorHandler, log.warn to the FastifyApp type)
+- `apps/api/src/routes/health.ts` (/ready vault-state branches)
+- `apps/api/src/routes/health.test.ts` (mock vault key-service for DB-branch tests)
+- `apps/api/src/config/env.ts` (VAULT_KEY_DIR, VAULT_ENVELOPE_KEY_HALF, VAULT_BOOTSTRAP_TOKEN, VAULT_ALLOW_REMOTE_INIT)
+- `apps/api/src/config/env.test.ts` (merged into one describe block; added VAULT_KEY_DIR test)
+- `apps/api/src/lib/cors.test.ts` (updated for new generic 500 error shape)
+- `apps/api/package.json` (added @project-vault/crypto, fastify-plugin, drizzle-orm dependencies)
+- `apps/api/vitest.config.ts` (expanded coverage include list)
+- `apps/api/Dockerfile` (argon2 native build deps; pnpm rebuild argon2 in runner)
+- `packages/eslint-config/rules/no-bare-decrypt.js` (real rule implementation)
+- `packages/eslint-config/index.js` (two-tier bootstrapDecrypt allowlist)
+- `pnpm-workspace.yaml` (onlyBuiltDependencies/allowBuilds for argon2)
+- `docker-compose.yml` (dev-secrets mount, VAULT_KEY_DIR/VAULT_ENVELOPE_KEY_HALF env, operator comment block)
+- `docker-compose.dev.yml` (VAULT_ALLOW_REMOTE_INIT=true dev convenience)
+- `docker-compose.prod.yml` (vault_keys volume mount)
+- `.env.example` (VAULT_KEY_DIR, VAULT_ENVELOPE_KEY_HALF, VAULT_BOOTSTRAP_TOKEN, VAULT_ALLOW_REMOTE_INIT docs)
+- `.gitignore` (dev-secrets/ exclusion with .gitkeep exception)
+
+### Change Log
+
+- 2026-06-25: Implemented full vault initialization and master-key management — AES-256-GCM/HKDF/Argon2id crypto layer, three-custody-model init/unseal state machine, vault guard middleware, bootstrap-token protection, unseal rate limiting, append-only `vault_state` with test-only reset bypass, FMEA hardening (fail-fast startup, corrupted-state handling, deferred pg-boss start), real `no-bare-decrypt` lint enforcement, and Docker/Compose wiring for envelope/file key material. All quality gates (build, typecheck, lint, test, jscpd) pass monorepo-wide; verified end-to-end against the live Docker stack.

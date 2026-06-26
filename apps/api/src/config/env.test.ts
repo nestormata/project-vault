@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
 
+const VAULT_APP_DATABASE_URL = 'postgresql://vault_app:secret@localhost:5432/project_vault'
+
 const BASE_ENV = {
   NODE_ENV: 'test',
   API_PORT: '3000',
@@ -8,7 +10,7 @@ const BASE_ENV = {
   LOG_LEVEL: 'fatal',
 }
 
-describe('env DATABASE_URL superuser guard', () => {
+describe('env', () => {
   let originalEnv: NodeJS.ProcessEnv
   let exitSpy: MockInstance<(...args: never[]) => unknown>
 
@@ -31,10 +33,10 @@ describe('env DATABASE_URL superuser guard', () => {
   it('accepts a DATABASE_URL using a non-superuser role', async () => {
     process.env = {
       ...BASE_ENV,
-      DATABASE_URL: 'postgresql://vault_app:secret@localhost:5432/project_vault',
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
     }
     const { env } = await import('./env.js')
-    expect(env.DATABASE_URL).toBe('postgresql://vault_app:secret@localhost:5432/project_vault')
+    expect(env.DATABASE_URL).toBe(VAULT_APP_DATABASE_URL)
     expect(exitSpy).not.toHaveBeenCalled()
   })
 
@@ -45,5 +47,15 @@ describe('env DATABASE_URL superuser guard', () => {
     }
     await import('./env.js')
     expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('defaults VAULT_KEY_DIR to /run/secrets and VAULT_ALLOW_REMOTE_INIT to false when unset', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+    }
+    const { env } = await import('./env.js')
+    expect(env.VAULT_KEY_DIR).toBe('/run/secrets')
+    expect(env.VAULT_ALLOW_REMOTE_INIT).toBe(false)
   })
 })

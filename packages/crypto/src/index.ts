@@ -1,43 +1,38 @@
-export type EncryptedValue = {
-  version: number
-  iv: string
-  ciphertext: string
-  tag: string
-}
+// Public types
+export type { EncryptedValue } from './types.js'
 
-const REDACTED_MARKER = '[REDACTED]'
+// Public encryption API — encrypt IS exported (plaintext is the INPUT, not leaked output)
+export { encrypt } from './aes.js'
 
-export class SecretValue {
-  readonly #value: string
+// Key derivation
+export { deriveKey, HKDF_INFO } from './kdf.js'
 
-  constructor(value: string) {
-    this.#value = value
-  }
+// Safe decryption + vault key lifecycle
+export {
+  withSecret,
+  SecretValue,
+  setVaultKey,
+  clearVaultKey,
+  isVaultKeySet,
+} from './secret-value.js'
 
-  use<T>(fn: (plaintext: string) => T): T {
-    return fn(this.#value)
-  }
+// Argon2id master passphrase KDF
+export {
+  deriveIkmFromPassphrase,
+  createKeyDerivationParams,
+  validateKeyDerivationParams,
+  ARGON2_PARAMS,
+} from './passwords.js'
+export type { KeyDerivationParams } from './passwords.js'
 
-  toJSON(): string {
-    return REDACTED_MARKER
-  }
+// Split-key envelope combination
+export { combineEnvelopeHalves, parseEnvelopeEnvHalf } from './envelope.js'
 
-  toString(): string {
-    return REDACTED_MARKER
-  }
-
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
-    return REDACTED_MARKER
-  }
-}
-
-export async function withSecret<T>(
-  _encrypted: EncryptedValue,
-  fn: (plaintext: Buffer) => Promise<T>
-): Promise<T> {
-  // Story 1.5 implements real decryption
-  // Stub: never call in production — throws to surface misuse early
-  throw new Error('withSecret is not implemented until Story 1.5')
-  // Unreachable but satisfies TypeScript return type analysis
-  return fn(Buffer.alloc(0))
-}
+// NOTE: decrypt() from aes.ts is NOT re-exported for general use.
+// All plaintext access goes through withSecret() which zeros the buffer in finally.
+// The no-bare-decrypt ESLint rule enforces this at compile time.
+//
+// EXCEPTION: bootstrapDecrypt is the ONLY export of the raw decrypt function.
+// It is permitted ONLY in apps/api/src/modules/vault/key-service.ts (unseal bootstrap,
+// where the module-level key is not yet set and withSecret() cannot be used).
+export { decrypt as bootstrapDecrypt } from './aes.js'
