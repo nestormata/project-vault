@@ -11,7 +11,41 @@ writeFileSync(
     {
       openapi: '3.0.0',
       info: { title: 'Project Vault', version: '0.0.1' },
-      paths: {},
+      paths: {
+        '/api/v1/auth/register': {
+          post: {
+            tags: ['auth'],
+            summary: 'Register a user and organization',
+            responses: {
+              '201': { description: 'User and organization registered' },
+              '403': { description: 'Registration disabled' },
+              '409': { description: 'Email or organization name unavailable' },
+              '422': { description: 'Validation error' },
+            },
+          },
+        },
+        '/api/v1/auth/login': {
+          post: {
+            tags: ['auth'],
+            summary: 'Create an authenticated session',
+            responses: {
+              '200': { description: 'Session cookies set' },
+              '401': { description: 'Invalid credentials' },
+              '422': { description: 'Validation error' },
+            },
+          },
+        },
+        '/api/v1/auth/refresh': {
+          post: {
+            tags: ['auth'],
+            summary: 'Rotate refresh token and issue a new access token',
+            responses: {
+              '200': { description: 'Session refreshed' },
+              '401': { description: 'Refresh token missing, invalid, expired, or revoked' },
+            },
+          },
+        },
+      },
     },
     null,
     2

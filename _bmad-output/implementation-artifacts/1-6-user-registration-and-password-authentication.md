@@ -1,6 +1,6 @@
 # Story 1.6: User Registration & Password Authentication
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for registration, login, JWT cookies, refresh rotation, and integration tests. -->
 <!-- Security Audit Personas elicitation 2026-06-24 — AC-19–24, rate limits, concurrency, enumeration controls. -->
@@ -1186,47 +1186,47 @@ const fastify = Fastify({
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema & migration** (AC: 3)
-  - [ ] Create `refresh_tokens` Drizzle schema + migration
-  - [ ] Add `jti`, `revoked_at` to sessions schema + migration
-  - [ ] Update `check-rls-coverage.ts` EXCLUDED_TABLES for `refresh_tokens`
-  - [ ] Run `db:migrate` idempotency check
-- [ ] **Task 2: Crypto password helpers** (AC: 4)
-  - [ ] Extend `packages/crypto/src/passwords.ts` with `hashUserPassword` / `verifyUserPassword`
-  - [ ] Unit tests in `packages/crypto`
-- [ ] **Task 3: Env & config** (AC: 2, 2b, 15, 20, 24, 28, 35)
-  - [ ] Extend `env.ts` — add `AUTH_REGISTRATION_ENABLED`, `COOKIE_SECURE`, `TRUST_PROXY`, `TRUST_PROXY_HOPS`
-  - [ ] AC-2b: validate dummy hash PHC, reject identical secrets, cap Argon2 memory
-  - [ ] Update `.env.example`, check-env-example CI
-- [ ] **Task 4: Audit write helper** (AC: 5f, 5g)
-  - [ ] `modules/audit/write-entry.ts` + expand `AuditEvent` constants
-- [ ] **Task 5: Auth service** (AC: 5, 6, 7, 25–32, 36)
-  - [ ] `normalizeEmail()` — NFKC + ASCII-only (AC-32)
-  - [ ] `registerUser()` — unique violation catch + slug retry (AC-25); dummy hash on 409 (AC-31)
-  - [ ] `loginUser()` — deactivated check, corrupt hash catch, cookies after commit (AC-26–27, 29)
-  - [ ] `refreshSession()` — cookies after commit (AC-27)
-  - [ ] `recordLoginFailed()` — best-effort audit tx (AC-30)
-  - [ ] `tokens.ts` — JWT + refresh HMAC + cookie helpers
-  - [ ] `slugify()`, timing-safe login
-- [ ] **Task 6: Auth routes + plugins** (AC: 1, 1b, 6, 7, 9, 12, 12b, 13, 19, 23, 27, 34, 35)
-  - [ ] Register `@fastify/cookie`, `@fastify/jwt`, rate limit (register 10/min, login 60/min)
-  - [ ] Set `bodyLimit: 4096` on auth plugin
-  - [ ] `trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY_HOPS : false` (AC-35)
-  - [ ] POST-only auth routes (AC-34)
-  - [ ] Mount routes; update vault guard allowlist
-  - [ ] Route handlers: set cookies **after** service returns (AC-27)
-  - [ ] `AUTH_REGISTRATION_ENABLED` guard on register route
-- [ ] **Task 7: Shared schemas** (AC: 11, 16)
-  - [ ] `packages/shared/src/schemas/auth.ts`
-  - [ ] Regenerate OpenAPI
-- [ ] **Task 8: Tests** (AC: 10, 14, 17, 19–36)
-  - [ ] Integration test suite (security + failure mode + red team cases)
-  - [ ] `tokens.test.ts` — timingSafeEqual + JWT alg rejection (AC-21, AC-33)
-  - [ ] `write-entry.test.ts` — audit HMAC determinism
-  - [ ] Log redaction test
-  - [ ] Update route-audit exempt list
-- [ ] **Task 9: Documentation touchpoints**
-  - [ ] README auth section (minimal — env vars + curl examples)
+- [x] **Task 1: Schema & migration** (AC: 3)
+  - [x] Create `refresh_tokens` Drizzle schema + migration
+  - [x] Add `jti`, `revoked_at` to sessions schema + migration
+  - [x] Update `check-rls-coverage.ts` EXCLUDED_TABLES for `refresh_tokens`
+  - [x] Run `db:migrate` idempotency check
+- [x] **Task 2: Crypto password helpers** (AC: 4)
+  - [x] Extend `packages/crypto/src/passwords.ts` with `hashUserPassword` / `verifyUserPassword`
+  - [x] Unit tests in `packages/crypto`
+- [x] **Task 3: Env & config** (AC: 2, 2b, 15, 20, 24, 28, 35)
+  - [x] Extend `env.ts` — add `AUTH_REGISTRATION_ENABLED`, `COOKIE_SECURE`, `TRUST_PROXY`, `TRUST_PROXY_HOPS`
+  - [x] AC-2b: validate dummy hash PHC, reject identical secrets, cap Argon2 memory
+  - [x] Update `.env.example`, check-env-example CI
+- [x] **Task 4: Audit write helper** (AC: 5f, 5g)
+  - [x] `modules/audit/write-entry.ts` + expand `AuditEvent` constants
+- [x] **Task 5: Auth service** (AC: 5, 6, 7, 25–32, 36)
+  - [x] `normalizeEmail()` — NFKC + ASCII-only (AC-32)
+  - [x] `registerUser()` — unique violation catch + slug retry (AC-25); dummy hash on 409 (AC-31)
+  - [x] `loginUser()` — deactivated check, corrupt hash catch, cookies after commit (AC-26–27, 29)
+  - [x] `refreshSession()` — cookies after commit (AC-27)
+  - [x] `recordLoginFailed()` — best-effort audit tx (AC-30)
+  - [x] `tokens.ts` — JWT + refresh HMAC + cookie helpers
+  - [x] `slugify()`, timing-safe login
+- [x] **Task 6: Auth routes + plugins** (AC: 1, 1b, 6, 7, 9, 12, 12b, 13, 19, 23, 27, 34, 35)
+  - [x] Register `@fastify/cookie`, `@fastify/jwt`, rate limit (register 10/min, login 60/min)
+  - [x] Set `bodyLimit: 4096` on auth plugin
+  - [x] `trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY_HOPS : false` (AC-35)
+  - [x] POST-only auth routes (AC-34)
+  - [x] Mount routes; update vault guard allowlist
+  - [x] Route handlers: set cookies **after** service returns (AC-27)
+  - [x] `AUTH_REGISTRATION_ENABLED` guard on register route
+- [x] **Task 7: Shared schemas** (AC: 11, 16)
+  - [x] `packages/shared/src/schemas/auth.ts`
+  - [x] Regenerate OpenAPI
+- [x] **Task 8: Tests** (AC: 10, 14, 17, 19–36)
+  - [x] Integration test suite (security + failure mode + red team cases)
+  - [x] `tokens.test.ts` — timingSafeEqual + JWT alg rejection (AC-21, AC-33)
+  - [x] `write-entry.test.ts` — audit HMAC determinism
+  - [x] Log redaction test
+  - [x] Update route-audit exempt list
+- [x] **Task 9: Documentation touchpoints**
+  - [x] README auth section (minimal — env vars + curl examples)
 
 ---
 
@@ -1557,11 +1557,48 @@ curl -s -X POST http://localhost:3000/api/v1/auth/register \
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5.5
 
 ### Debug Log References
+- 2026-06-26: `pnpm --filter @project-vault/db test -- --runInBand` confirmed new Task 1 red test failed before implementation; same run also showed unrelated pre-existing local DB RLS/permission expectation failures.
+- 2026-06-26: `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` passed after Task 1 implementation.
+- 2026-06-26: `pnpm --filter @project-vault/db db:migrate` passed twice, covering migration application and idempotency.
+- 2026-06-26: `pnpm --filter @project-vault/crypto exec vitest run src/passwords.test.ts` failed before Task 2 implementation on missing helper exports, then passed after implementation.
+- 2026-06-26: `pnpm --filter @project-vault/crypto test` passed.
+- 2026-06-26: `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts` failed before Task 3 implementation on missing auth env defaults/validation, then passed after implementation.
+- 2026-06-26: `pnpm exec tsx scripts/check-env-example.ts` passed.
+- 2026-06-26: `pnpm --filter @project-vault/api test` failed without `DATABASE_URL`; rerun with `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault` passed.
+- 2026-06-26: `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` and `pnpm --filter @project-vault/api exec vitest run src/modules/audit/write-entry.test.ts` failed before Task 4 implementation, then passed after implementation.
+- 2026-06-26: `pnpm --filter @project-vault/shared test` passed.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed after Task 4 implementation.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/auth/normalize.test.ts`, `tokens.test.ts`, and `service.test.ts` failed before each Task 5 helper existed, then passed after implementation.
+- 2026-06-26: `pnpm --filter @project-vault/crypto build`, `pnpm --filter @project-vault/db build`, and `pnpm --filter @project-vault/shared build` refreshed workspace package outputs for API typecheck.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck` passed after Task 5 implementation.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed after Task 5 implementation.
+- 2026-06-26: `pnpm --filter @project-vault/api add @fastify/cookie` added the Story 1.6 cookie dependency.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/auth/routes.test.ts` failed before Task 6 implementation with 404, then passed with POST-only 405 handling.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck` passed after Task 6 implementation.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed after Task 6 implementation.
+- 2026-06-26: `pnpm --filter @project-vault/shared exec vitest run src/schemas/auth.test.ts` failed before Task 7 implementation, then passed after shared auth schemas were added.
+- 2026-06-26: `pnpm --filter @project-vault/shared test && pnpm --filter @project-vault/shared build` passed.
+- 2026-06-26: `pnpm --filter @project-vault/api generate-spec && pnpm --filter @project-vault/api typecheck && DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck && DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed after Task 8 redaction/route-audit updates.
+- 2026-06-26: `pnpm turbo lint` passed after lint cleanup; remaining output is warnings from existing security rules.
+- 2026-06-26: `pnpm turbo typecheck` passed.
+- 2026-06-26: `pnpm --filter @project-vault/crypto test`, `pnpm --filter @project-vault/shared test`, `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/db test`, and `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed.
+- 2026-06-26: `pnpm turbo build` passed.
 
 ### Completion Notes List
+- Task 1 complete: added Story 1.6 session columns, `refresh_tokens` schema/migration, RLS coverage exception, and focused schema coverage.
+- Task 2 complete: added Argon2id PHC user-password hash/verify helpers in `@project-vault/crypto`, exported their config type/API, and covered matching/non-matching password verification.
+- Task 3 complete: added auth startup env defaults and production hardening, including dummy PHC shape validation, separated secrets, Argon2 memory cap, registration/cookie/proxy controls, and `.env.example` coverage.
+- Task 4 complete: added auth audit event constants and deterministic sorted-key HMAC helper for audit log rows.
+- Task 5 complete: added auth service registration/login/refresh flows, email normalization, password wrapper, refresh token HMAC helpers, cookie helpers, slug generation, and focused auth helper tests.
+- Task 6 complete: registered cookie/JWT/rate-limit infrastructure, mounted POST-only auth routes, enabled CORS credentials and restricted trust proxy, updated vault guard allowlist, and added route coverage.
+- Task 7 complete: added shared auth Zod contracts, re-exported them through the shared package, wired API auth schemas to shared contracts, and regenerated `openapi.json` with auth paths.
+- Task 8 complete: added/updated auth helper, route, audit HMAC, log redaction, and route-audit tests; API regression suite passes with the expected `vault_app` database URL.
+- Task 9 complete: documented auth env variables, cookie/proxy settings, curl registration/login/refresh examples, and secret rotation effects in README.
+- Final DoD complete: all story tasks/subtasks checked, focused tests and package suites pass, lint/typecheck/build pass, File List updated, and story status moved to review.
 
 ### File List
 
@@ -1595,6 +1632,52 @@ curl -s -X POST http://localhost:3000/api/v1/auth/register \
 | `apps/api/package.json` | MODIFY — add `@fastify/cookie` |
 | `.env.example` | MODIFY |
 | `packages/shared/openapi.json` | MODIFY — via generate-spec |
+
+**Actual files changed:**
+
+- `packages/db/src/schema/auth-sessions-schema.test.ts`
+- `packages/db/src/schema/refresh-tokens.ts`
+- `packages/db/src/schema/sessions.ts`
+- `packages/db/src/schema/index.ts`
+- `packages/db/src/check-rls-coverage.ts`
+- `packages/db/src/migrations/0004_auth_sessions_refresh.sql`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/crypto/src/passwords.ts`
+- `packages/crypto/src/passwords.test.ts`
+- `packages/crypto/src/index.ts`
+- `apps/api/src/config/env.ts`
+- `apps/api/src/config/env.test.ts`
+- `apps/api/src/modules/audit/write-entry.ts`
+- `apps/api/src/modules/audit/write-entry.test.ts`
+- `apps/api/src/modules/auth/normalize.ts`
+- `apps/api/src/modules/auth/normalize.test.ts`
+- `apps/api/src/modules/auth/password.ts`
+- `apps/api/src/modules/auth/service.ts`
+- `apps/api/src/modules/auth/service.test.ts`
+- `apps/api/src/modules/auth/routes.ts`
+- `apps/api/src/modules/auth/routes.test.ts`
+- `apps/api/src/modules/auth/schema.ts`
+- `apps/api/src/modules/auth/tokens.ts`
+- `apps/api/src/modules/auth/tokens.test.ts`
+- `apps/api/src/plugins/jwt.ts`
+- `apps/api/src/plugins/vault-guard.ts`
+- `apps/api/src/app.ts`
+- `apps/api/package.json`
+- `pnpm-lock.yaml`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/constants/audit-events.test.ts`
+- `packages/shared/src/schemas/auth.ts`
+- `packages/shared/src/schemas/auth.test.ts`
+- `packages/shared/src/index.ts`
+- `packages/shared/openapi.json`
+- `apps/api/src/scripts/generate-spec.ts`
+- `apps/api/src/__tests__/auth-log-redaction.test.ts`
+- `apps/api/src/__tests__/route-audit.test.ts`
+- `apps/api/src/plugins/redact-secrets.ts`
+- `README.md`
+- `.env.example`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/1-6-user-registration-and-password-authentication.md`
 
 ---
 

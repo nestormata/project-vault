@@ -130,6 +130,41 @@ pnpm check-rls                                # verify RLS coverage
 
 `turbo.json` passes `DATABASE_URL` through to every task once it's set in your shell — but **nothing auto-loads `.env`** for you (no dotenv wiring in `turbo.json` or package scripts). If a task complains about missing rows, RLS isolation, or unexpected privileges, the most likely cause is `DATABASE_URL` not being exported, or still pointing at `postgres`.
 
+### Auth Configuration
+
+Story 1.6 adds password registration and cookie-based sessions. Local development can use the defaults in `.env.example`; production must replace both auth secrets with distinct 32+ byte random values:
+
+```bash
+SESSION_SECRET=$(openssl rand -hex 32)
+REFRESH_TOKEN_HMAC_SECRET=$(openssl rand -hex 32)
+```
+
+Key auth settings:
+
+| Variable | Local default | Production note |
+|---|---|---|
+| `AUTH_REGISTRATION_ENABLED` | `true` | Set `false` for invite-only deployments |
+| `COOKIE_SECURE` | `false` | Set `true` behind HTTPS/Traefik so browsers persist auth cookies |
+| `TRUST_PROXY` / `TRUST_PROXY_HOPS` | `false` / `1` | Enable only behind a trusted reverse proxy |
+| `JWT_ACCESS_TTL_SECONDS` | `300` | Access cookie lifetime |
+| `REFRESH_TOKEN_TTL_DAYS` | `7` | Refresh cookie lifetime |
+
+Example auth flow after the vault is initialized and unsealed:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@acme.example","password":"correct-horse-battery-staple","orgName":"Acme Corp"}' | jq .
+
+curl -s -c cookies.txt -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@acme.example","password":"correct-horse-battery-staple"}' | jq .
+
+curl -s -b cookies.txt -c cookies.txt -X POST http://localhost:3000/api/v1/auth/refresh | jq .
+```
+
+Rotating `SESSION_SECRET` invalidates access JWTs. Rotating `REFRESH_TOKEN_HMAC_SECRET` invalidates all refresh tokens and forces users to log in again.
+
 A [`Makefile`](./Makefile) wraps all of this so you don't have to remember the roles or re-export `DATABASE_URL` by hand:
 
 ```bash

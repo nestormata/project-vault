@@ -1,4 +1,4 @@
-const REDACTED_FIELDS = new Set(['passphrase', 'masterKeyPath', 'envelopeKeyPath'])
+const REDACTED_FIELDS = new Set(['password', 'passphrase', 'masterKeyPath', 'envelopeKeyPath'])
 
 export function redactBodyForLog(body: unknown): unknown {
   if (!body || typeof body !== 'object') return body

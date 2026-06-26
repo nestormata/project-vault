@@ -14,6 +14,7 @@
     "generate-spec": "tsx src/scripts/generate-spec.ts"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.2",
     "@fastify/helmet": "^12.0.1",
     "@fastify/jwt": "^9.1.0",

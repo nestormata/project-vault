@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import swagger from '@fastify/swagger'
 import helmet from '@fastify/helmet'
 import cors from '@fastify/cors'
+import cookie from '@fastify/cookie'
 import {
   jsonSchemaTransform,
   serializerCompiler,
@@ -10,7 +11,9 @@ import {
 import { healthRoutes } from './routes/health.js'
 import { metricsRoutes } from './routes/metrics.js'
 import { vaultRoutes } from './modules/vault/routes.js'
+import { authRoutes } from './modules/auth/routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
+import { jwtPlugin } from './plugins/jwt.js'
 import { env } from './config/env.js'
 import { AppError } from './lib/errors.js'
 import type { FastifyApp } from './lib/fastify-app.js'
@@ -34,6 +37,15 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
         ? options.logger
         : {
             level: env.LOG_LEVEL,
+            redact: {
+              paths: [
+                'req.headers.authorization',
+                'req.headers.cookie',
+                'req.body.password',
+                'req.body.passphrase',
+              ],
+              censor: '[REDACTED]',
+            },
           }
 
   // ignoreTrailingSlash: Fastify's router treats "/health" and "/health/" as distinct
@@ -42,6 +54,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   const fastify: FastifyApp = Fastify({
     logger,
     routerOptions: { ignoreTrailingSlash: true },
+    trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY_HOPS : false,
   }) as unknown as FastifyApp
 
   fastify.setValidatorCompiler(validatorCompiler)
@@ -121,7 +134,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       }
       cb(new Error('Not allowed by CORS'), false)
     },
+    credentials: true,
   })
+
+  await fastify.register(cookie)
+  await fastify.register(jwtPlugin)
 
   if (options.vaultGuardEnabled) {
     await fastify.register(vaultGuardPlugin)
@@ -133,6 +150,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   })
   // Registered always (regardless of guard) so vault endpoints appear in the OpenAPI spec.
   await fastify.register(vaultRoutes)
+  await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
 
   return fastify
 }
