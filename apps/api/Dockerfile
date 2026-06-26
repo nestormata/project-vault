@@ -35,7 +35,7 @@ RUN pnpm --filter @project-vault/shared build \
 # Bundle the api and its production deps into a self-contained directory.
 # pnpm deploy copies from the already-built virtual store (argon2 native binary included)
 # so no compiler toolchain is needed in the runner stage.
-RUN pnpm --filter @project-vault/api deploy --prod /app/deploy
+RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
 
