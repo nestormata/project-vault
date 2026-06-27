@@ -9,6 +9,7 @@ import {
   cookieHeader,
   initVaultForTest,
   parseSetCookies,
+  registerAndLoginViaApi,
 } from './helpers/auth-test-helpers.js'
 
 configureAuthIntegrationEnv()
@@ -38,26 +39,13 @@ function totpForSecret(base32: string, timestamp = Date.now()): string {
 async function registerAndLogin() {
   const app = await createApp({ logger: false })
   const email = `mfa-${randomUUID()}@example.com`
-  const register = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/register',
-    payload: { email, password: PASSWORD, orgName: `MFA Test ${randomUUID()}` },
-  })
-  expect(register.statusCode).toBe(201)
-  const registerBody = register.json<{ data: { userId: string } }>()
-
-  const login = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/login',
-    payload: { email, password: PASSWORD },
-  })
-  expect(login.statusCode).toBe(200)
-  await app.close()
-  return {
-    userId: registerBody.data.userId,
+  const { userId, cookies } = await registerAndLoginViaApi(app, {
     email,
-    cookies: parseSetCookies(login.headers['set-cookie']),
-  }
+    password: PASSWORD,
+    orgName: `MFA Test ${randomUUID()}`,
+  })
+  await app.close()
+  return { userId, email, cookies }
 }
 
 async function enrollAndVerify(app: Awaited<ReturnType<typeof createApp>>, cookies: string) {

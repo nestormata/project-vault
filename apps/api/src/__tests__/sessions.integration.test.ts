@@ -8,6 +8,7 @@ import {
   cookieHeader,
   initVaultForTest,
   parseSetCookies,
+  registerAndLoginViaApi,
   type CookieJar,
 } from './helpers/auth-test-helpers.js'
 
@@ -34,28 +35,13 @@ async function registerAndLogin(label: string) {
   const app = await createApp({ logger: false })
   const email = uniqueEmail(label)
   const orgName = `Session Test ${label} ${randomUUID()}`
-  const register = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/register',
-    payload: { email, password: PASSWORD, orgName },
-  })
-  expect(register.statusCode).toBe(201)
-  const registerBody = register.json<{ data: { userId: string; orgId: string } }>()
-
-  const login = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/login',
-    payload: { email, password: PASSWORD },
-  })
-  expect(login.statusCode).toBe(200)
-  await app.close()
-  return {
-    userId: registerBody.data.userId,
-    orgId: registerBody.data.orgId,
+  const { userId, orgId, cookies } = await registerAndLoginViaApi(app, {
     email,
     password: PASSWORD,
-    cookies: parseSetCookies(login.headers['set-cookie']),
-  }
+    orgName,
+  })
+  await app.close()
+  return { userId, orgId, email, password: PASSWORD, cookies }
 }
 
 async function loginAs(email: string, password: string): Promise<CookieJar> {

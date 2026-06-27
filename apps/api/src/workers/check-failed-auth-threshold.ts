@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
   auditLogEntries,
@@ -10,6 +10,7 @@ import { env } from '../config/env.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
+import { failedAuthThresholdPayloadSchema } from '../modules/org/schema.js'
 
 const ALERT_TYPE = 'security.failed_auth_threshold'
 
@@ -25,21 +26,27 @@ type Breach = {
 type CountRow = { key: string; attempt_count: string | number }
 type UserRow = { user_id: string }
 
-async function activeOrgForUser(userId: string): Promise<string | null> {
-  const orgRows = await getDb().select({ orgId: organizations.id }).from(organizations)
-  for (const { orgId } of orgRows) {
+async function fetchAllOrgIds(): Promise<string[]> {
+  const rows = await getDb().select({ orgId: organizations.id }).from(organizations)
+  return rows.map((row) => row.orgId)
+}
+
+// RLS forces org_memberships lookups to run per-org (no cross-org query is possible
+// through the app role) — see Story 1.9 Dev Agent Record. Returns ALL active orgs for
+// the user, not just the first match, so a multi-org user's breach alerts every org.
+async function activeOrgsForUser(orgIds: string[], userId: string): Promise<string[]> {
+  const matches: string[] = []
+  for (const orgId of orgIds) {
     const memberships = await withOrg(orgId, (tx) =>
       tx
         .select({ orgId: orgMemberships.orgId })
         .from(orgMemberships)
-        .where(
-          sql`${orgMemberships.userId} = ${userId}::uuid AND ${orgMemberships.status} = 'active'`
-        )
+        .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.status, 'active')))
         .limit(1)
     )
-    if (memberships[0]) return orgId
+    if (memberships[0]) matches.push(orgId)
   }
-  return null
+  return matches
 }
 
 function payloadFor(breach: Breach, windowStart: Date, windowEnd: Date) {
@@ -55,7 +62,7 @@ function payloadFor(breach: Breach, windowStart: Date, windowEnd: Date) {
   }
 }
 
-async function findIpBreaches(windowStart: Date): Promise<Breach[]> {
+async function findIpBreaches(orgIds: string[], windowStart: Date): Promise<Breach[]> {
   const windowStartIso = windowStart.toISOString()
   const rows = await getDb().execute<CountRow>(sql`
     SELECT ip_address::text AS key, COUNT(*)::text AS attempt_count
@@ -73,17 +80,18 @@ async function findIpBreaches(windowStart: Date): Promise<Breach[]> {
         AND faa.ip_address = ${row.key}::inet
         AND faa.user_id IS NOT NULL
     `)
-    const orgIds = new Set<string>()
+    const orgIdsForIp = new Set<string>()
     for (const userRow of userRows) {
-      const orgId = await activeOrgForUser(userRow.user_id)
-      if (orgId) orgIds.add(orgId)
+      for (const orgId of await activeOrgsForUser(orgIds, userRow.user_id)) {
+        orgIdsForIp.add(orgId)
+      }
     }
-    if (orgIds.size === 0) {
+    if (orgIdsForIp.size === 0) {
       process.stdout.write(
         `${JSON.stringify({ eventType: 'security.failed_auth_threshold_no_org', thresholdType: 'ip', ipAddress: row.key })}\n`
       )
     }
-    for (const orgId of orgIds) {
+    for (const orgId of orgIdsForIp) {
       breaches.push({
         orgId,
         thresholdType: 'ip',
@@ -95,7 +103,7 @@ async function findIpBreaches(windowStart: Date): Promise<Breach[]> {
   return breaches
 }
 
-async function findAccountBreaches(windowStart: Date): Promise<Breach[]> {
+async function findAccountBreaches(orgIds: string[], windowStart: Date): Promise<Breach[]> {
   const windowStartIso = windowStart.toISOString()
   const rows = await getDb().execute<CountRow>(sql`
     SELECT user_id::text AS key, COUNT(*)::text AS attempt_count
@@ -107,7 +115,8 @@ async function findAccountBreaches(windowStart: Date): Promise<Breach[]> {
   `)
   const breaches: Breach[] = []
   for (const row of rows) {
-    const orgId = await activeOrgForUser(row.key)
+    // v1 single-org assumption (spec AC-9): primary org is the first active membership.
+    const [orgId] = await activeOrgsForUser(orgIds, row.key)
     if (!orgId) continue
     breaches.push({
       orgId,
@@ -117,6 +126,31 @@ async function findAccountBreaches(windowStart: Date): Promise<Breach[]> {
     })
   }
   return breaches
+}
+
+// AC-9b: account threshold by email when user_id is unknown. There is no org to
+// attribute these to (failed_auth_attempts has no org_id and no resolvable user),
+// so this only logs a platform-visible warning — never creates a security_alerts row.
+async function logUnknownEmailAccountBreaches(windowStart: Date): Promise<void> {
+  const windowStartIso = windowStart.toISOString()
+  const rows = await getDb().execute<CountRow>(sql`
+    SELECT lower(attempted_email) AS key, COUNT(*)::text AS attempt_count
+    FROM failed_auth_attempts
+    WHERE attempted_at >= ${windowStartIso}::timestamptz
+      AND user_id IS NULL
+    GROUP BY lower(attempted_email)
+    HAVING COUNT(*) >= ${env.FAILED_AUTH_THRESHOLD_COUNT}
+  `)
+  for (const row of rows) {
+    process.stdout.write(
+      `${JSON.stringify({
+        eventType: 'security.failed_auth_threshold_no_org',
+        thresholdType: 'account',
+        attemptedEmail: row.key,
+        attemptCount: Number(row.attempt_count),
+      })}\n`
+    )
+  }
 }
 
 async function existingAlert(tx: Tx, breach: Breach, windowStart: Date): Promise<boolean> {
@@ -130,7 +164,7 @@ async function existingAlert(tx: Tx, breach: Breach, windowStart: Date): Promise
             AND alert_type = ${ALERT_TYPE}
             AND created_at >= ${windowStartIso}::timestamptz
             AND payload->>'thresholdType' = ${breach.thresholdType}
-            AND payload->>'ipAddress' = ${breach.ipAddress}
+            AND (payload->>'ipAddress')::inet = ${breach.ipAddress}::inet
           LIMIT 1
         `)
       : await tx.execute(sql`
@@ -181,14 +215,24 @@ async function insertAuditRow(
   })
 }
 
+function dedupLockKey(breach: Breach): string {
+  const identity = breach.thresholdType === 'ip' ? breach.ipAddress : breach.userId
+  return `${breach.orgId}:${ALERT_TYPE}:${breach.thresholdType}:${identity ?? ''}`
+}
+
 async function createAlertIfNeeded(
   breach: Breach,
   windowStart: Date,
   windowEnd: Date
 ): Promise<void> {
   await withOrg(breach.orgId, async (tx) => {
+    // Serialize concurrent job runs against the same breach identity (AC-9c) so the
+    // check-then-insert below can't race across overlapping `runFailedAuthThresholdCheck()` calls.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${dedupLockKey(breach)}))`)
     if (await existingAlert(tx, breach, windowStart)) return
-    const payload = payloadFor(breach, windowStart, windowEnd)
+    const payload = failedAuthThresholdPayloadSchema.parse(
+      payloadFor(breach, windowStart, windowEnd)
+    )
     const [alert] = await tx
       .insert(securityAlerts)
       .values({
@@ -212,10 +256,12 @@ export async function runFailedAuthThresholdCheck(): Promise<void> {
   const windowStart = new Date(
     windowEnd.getTime() - env.FAILED_AUTH_THRESHOLD_WINDOW_SECONDS * 1000
   )
+  const orgIds = await fetchAllOrgIds()
   const breaches = [
-    ...(await findIpBreaches(windowStart)),
-    ...(await findAccountBreaches(windowStart)),
+    ...(await findIpBreaches(orgIds, windowStart)),
+    ...(await findAccountBreaches(orgIds, windowStart)),
   ]
+  await logUnknownEmailAccountBreaches(windowStart)
   for (const breach of breaches) {
     await createAlertIfNeeded(breach, windowStart, windowEnd)
   }

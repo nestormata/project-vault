@@ -297,22 +297,72 @@ async function validateEnrollmentTotp(
   enrollment: { id: string; secretEncrypted: EncryptedValue },
   totp: string,
   deletePendingOnInvalid: boolean
-): Promise<boolean> {
+): Promise<'valid' | 'invalid_code' | 'replayed_code'> {
   const plaintext = await decryptEnrollmentSecret(enrollment.secretEncrypted)
   try {
     const normalizedTotp = totp.replace(/\s/g, '')
     const result = validateTotpCode(base32FromSecretBytes(plaintext), normalizedTotp)
     if (!result.valid || result.counter === undefined) {
       if (deletePendingOnInvalid) await deletePendingEnrollmentForUser(userId, tx)
-      return false
+      return 'invalid_code'
     }
-    return recordTotpUse(userId, result.counter, normalizedTotp, tx)
+    const recorded = await recordTotpUse(userId, result.counter, normalizedTotp, tx)
+    return recorded ? 'valid' : 'replayed_code'
   } catch (error) {
-    if (isUniqueViolation(error)) return false
+    if (isUniqueViolation(error)) return 'invalid_code'
     throw error
   } finally {
     plaintext.fill(0)
   }
+}
+
+async function checkEnrollmentTotp(
+  db: Tx,
+  userId: string,
+  enrollment: { id: string; secretEncrypted: EncryptedValue },
+  totp: string,
+  deletePendingOnInvalid: boolean
+): Promise<{ invalidTotp: true; replayed: boolean } | null> {
+  const totpResult = await validateEnrollmentTotp(
+    db,
+    userId,
+    enrollment,
+    totp,
+    deletePendingOnInvalid
+  )
+  if (totpResult === 'valid') return null
+  return { invalidTotp: true as const, replayed: totpResult === 'replayed_code' }
+}
+
+async function handleInvalidEnrollmentTotp(
+  authContext: AuthContext,
+  attemptedEmail: string,
+  meta: RequestMeta,
+  replayed: boolean
+): Promise<never> {
+  if (!replayed) {
+    void recordFailedAuthAttempt({
+      userId: authContext.userId,
+      ipAddress: meta.ipAddress ?? '0.0.0.0',
+      attemptedEmail,
+      reason: 'invalid_totp',
+    })
+  }
+  throw invalidTotp()
+}
+
+async function runEnrollmentTotpGuardedTransaction<T extends object>(
+  authContext: AuthContext,
+  meta: RequestMeta,
+  fn: (db: Tx) => Promise<T | { invalidTotp: true; replayed: boolean }>
+): Promise<T> {
+  const attemptedEmail = await attemptedEmailForUser(authContext.userId)
+  const result = await getDb().transaction((tx) => fn(tx as Tx))
+  if ('invalidTotp' in result) {
+    await handleInvalidEnrollmentTotp(authContext, attemptedEmail, meta, result.replayed === true)
+    throw invalidTotp()
+  }
+  return result
 }
 
 export async function verifyEnrollment(
@@ -320,25 +370,21 @@ export async function verifyEnrollment(
   input: { totp: string },
   meta: RequestMeta = {}
 ) {
-  const attemptedEmail = await attemptedEmailForUser(authContext.userId)
-  const result = await getDb().transaction(async (tx) => {
-    const db = tx as Tx
+  return runEnrollmentTotpGuardedTransaction(authContext, meta, async (db) => {
     const enrollment = await loadPendingEnrollmentForUpdate(db, authContext.userId)
     if (!enrollment) {
       throw appError('mfa_enrollment_not_started', 'MFA enrollment has not been started.', 409)
     }
     if (enrollment.status !== 'pending') throw invalidTotp()
 
-    const validTotp = await validateEnrollmentTotp(
+    const totpCheck = await checkEnrollmentTotp(
       db,
       authContext.userId,
       enrollment,
       input.totp,
       true
     )
-    if (!validTotp) {
-      return { invalidTotp: true as const }
-    }
+    if (totpCheck) return totpCheck
 
     const enrolledAt = new Date()
     const recoveryCodes = generateRecoveryCodes(env.MFA_RECOVERY_CODE_COUNT)
@@ -360,16 +406,6 @@ export async function verifyEnrollment(
 
     return { mfaEnrolledAt: enrolledAt.toISOString(), recoveryCodes }
   })
-  if ('invalidTotp' in result) {
-    await recordFailedAuthAttempt({
-      userId: authContext.userId,
-      ipAddress: meta.ipAddress ?? '0.0.0.0',
-      attemptedEmail,
-      reason: 'invalid_totp',
-    })
-    throw invalidTotp()
-  }
-  return result
 }
 
 export async function regenerateRecoveryCodes(
@@ -377,22 +413,18 @@ export async function regenerateRecoveryCodes(
   input: { totp: string },
   meta: RequestMeta = {}
 ) {
-  const attemptedEmail = await attemptedEmailForUser(authContext.userId)
-  const result = await getDb().transaction(async (tx) => {
-    const db = tx as Tx
+  return runEnrollmentTotpGuardedTransaction(authContext, meta, async (db) => {
     const enrollment = await loadConfirmedEnrollmentForUpdate(db, authContext.userId)
     if (!enrollment) throw appError('mfa_not_enrolled', 'MFA is not enrolled for this user.', 409)
 
-    const validTotp = await validateEnrollmentTotp(
+    const totpCheck = await checkEnrollmentTotp(
       db,
       authContext.userId,
       enrollment,
       input.totp,
       false
     )
-    if (!validTotp) {
-      return { invalidTotp: true as const }
-    }
+    if (totpCheck) return totpCheck
 
     const generatedAt = new Date()
     const recoveryCodes = generateRecoveryCodes(env.MFA_RECOVERY_CODE_COUNT)
@@ -417,16 +449,6 @@ export async function regenerateRecoveryCodes(
 
     return { recoveryCodes, generatedAt: generatedAt.toISOString() }
   })
-  if ('invalidTotp' in result) {
-    await recordFailedAuthAttempt({
-      userId: authContext.userId,
-      ipAddress: meta.ipAddress ?? '0.0.0.0',
-      attemptedEmail,
-      reason: 'invalid_totp',
-    })
-    throw invalidTotp()
-  }
-  return result
 }
 
 async function findRecoveryUser(email: string) {
@@ -504,7 +526,7 @@ export async function recoverWithCode(
     reason: 'invalid_credentials' | 'invalid_recovery_code' | 'expired_recovery_code'
   ): Promise<void> => {
     await tryWriteFailedRecoverAudit(db, auditSubject, meta)
-    await recordFailedAuthAttempt({
+    void recordFailedAuthAttempt({
       userId,
       ipAddress: meta.ipAddress ?? '0.0.0.0',
       attemptedEmail: email,
@@ -524,7 +546,7 @@ export async function recoverWithCode(
     const orgId = await activeOrgForUser(db, user.id)
     const auditSubject = { orgId, identityTokenId: user.identityTokenId }
     if (!orgId) {
-      await recordRecoveryFailure(db, auditSubject, null, 'invalid_credentials')
+      await recordRecoveryFailure(db, auditSubject, user.id, 'invalid_credentials')
       throw invalidRecoveryCredentials()
     }
 

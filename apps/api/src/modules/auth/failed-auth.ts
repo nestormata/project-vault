@@ -15,6 +15,9 @@ export async function recordFailedAuthAttempt(input: {
   attemptedEmail: string
   reason: FailedAuthReason
 }): Promise<void> {
+  // `env` is parsed once at import time, so vi.stubEnv() in tests can't change the
+  // already-parsed env.FAILED_AUTH_RECORD_ENABLED — check process.env too so tests can
+  // toggle this without re-importing the env module.
   if (!env.FAILED_AUTH_RECORD_ENABLED || process.env['FAILED_AUTH_RECORD_ENABLED'] === 'false') {
     return
   }
@@ -25,12 +28,20 @@ export async function recordFailedAuthAttempt(input: {
       .values({
         userId: input.userId ?? null,
         ipAddress: input.ipAddress,
-        attemptedEmail: normalizeEmail(input.attemptedEmail),
+        attemptedEmail: normalizeAttemptedEmail(input.attemptedEmail),
         reason: input.reason,
       })
   } catch (error) {
     process.stderr.write(
       `[auth.failed_auth_record_error] ${error instanceof Error ? error.message : String(error)}\n`
     )
+  }
+}
+
+function normalizeAttemptedEmail(email: string): string {
+  try {
+    return normalizeEmail(email)
+  } catch {
+    return email.trim().toLowerCase().slice(0, 320)
   }
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, type SQL } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { securityAlerts } from '@project-vault/db/schema'
 import { failedAuthThresholdPayloadSchema, type SecurityAlertsQuery } from './schema.js'
@@ -16,14 +16,20 @@ export async function listSecurityAlerts(orgId: string, query: SecurityAlertsQue
     const filters: SQL[] = []
     if (query.status !== 'all') filters.push(eq(securityAlerts.status, query.status))
     if (query.severity) filters.push(eq(securityAlerts.severity, query.severity))
+    const where = filters.length ? and(...filters) : undefined
+
+    const [totalRow] = await tx.select({ total: count() }).from(securityAlerts).where(where)
+    const total = totalRow?.total ?? 0
 
     const rows = await tx
       .select()
       .from(securityAlerts)
-      .where(filters.length ? and(...filters) : undefined)
+      .where(where)
       .orderBy(desc(securityAlerts.createdAt))
+      .limit(query.limit)
+      .offset((query.page - 1) * query.limit)
 
-    const validItems = rows.flatMap((row) => {
+    const items = rows.flatMap((row) => {
       const payload = failedAuthThresholdPayloadSchema.safeParse(row.payload)
       if (!payload.success) {
         process.stderr.write(
@@ -44,14 +50,12 @@ export async function listSecurityAlerts(orgId: string, query: SecurityAlertsQue
       ]
     })
 
-    const start = (query.page - 1) * query.limit
-    const items = validItems.slice(start, start + query.limit)
     return {
       items,
-      total: validItems.length,
+      total,
       page: query.page,
       limit: query.limit,
-      hasNext: start + query.limit < validItems.length,
+      hasNext: query.page * query.limit < total,
     }
   })
 }

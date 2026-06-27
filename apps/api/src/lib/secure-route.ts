@@ -17,7 +17,12 @@ export function buildSecurePreHandlers(
   options: SecureRouteOptions
 ): preHandlerHookHandler[] {
   const chain: preHandlerHookHandler[] = []
-  if (options.requireAuth !== false && typeof fastify.authenticate === 'function') {
+  if (options.requireAuth !== false) {
+    if (typeof fastify.authenticate !== 'function') {
+      throw new Error(
+        'buildSecurePreHandlers: requireAuth is set but fastify.authenticate is not registered'
+      )
+    }
     chain.push(fastify.authenticate as preHandlerHookHandler)
   }
   if (options.requireOrgRole?.length) chain.push(requireOrgRole(...options.requireOrgRole))

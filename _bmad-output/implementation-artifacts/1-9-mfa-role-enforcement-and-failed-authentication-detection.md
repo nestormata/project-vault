@@ -1,6 +1,6 @@
 # Story 1.9: MFA Role Enforcement & Failed Authentication Detection
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for MFA role enforcement (FR57), failed authentication recording and threshold alerting (FR73), grace period handling, pg-boss detection/prune jobs, PENDING_DELIVERY security alerts, and admin visibility API. Addresses MQ-2 (PENDING_DELIVERY visibility) and MQ-3 (FR57 test boundary via mock privileged endpoint). Red Team hardening, PRD dual-threshold (IP + account), and architecture conflict resolution applied. Challenge from Critical Perspective applied 2026-06-24 (preHandler order, NFKC normalization, dedup spec, tier deferral, ADR-1.9-05). Red Team vs Blue Team applied 2026-06-24 (AC-5b route retrofit, MFA-exempt allowlist, route-audit CI, prod recording guard). Security Audit Personas applied 2026-06-24 (AC-5c/d, AC-9d, AC-11b, AC-19 compliance matrix, audit trail, payload validation). -->
 
@@ -1185,6 +1185,27 @@ async function seedFailedAttempts(count: number, opts: { ip?: string; userId?: s
   - [x] `security-alert-types.ts`
   - [x] `mfa-exempt-routes.ts`
   - [x] `AuditEvent.SECURITY_FAILED_AUTH_THRESHOLD`
+
+---
+
+### Review Findings
+
+- [x] [Review][Patch] `buildSecurePreHandlers()` fails open when `fastify.authenticate` is not a function — fixed: now throws instead of silently dropping the auth preHandler [apps/api/src/lib/secure-route.ts]
+- [x] [Review][Patch] `route-audit.test.ts` did not actually enforce AC-5c/AC-1's CI gate — fixed: added a generic route-parser test that enumerates every `requireOrgRole('owner'|'admin')` route across `modules/*/routes.ts` and fails if `requireMfaEnrollment()` is missing and the route isn't in `MFA_ENROLLMENT_EXEMPT_ROUTES`; verified it catches a deliberately-introduced violation [apps/api/src/__tests__/route-audit.test.ts]
+- [x] [Review][Patch] AC-9b account-threshold-by-unknown-email query was entirely missing — fixed: added `logUnknownEmailAccountBreaches()`; per spec, unknown-email breaches have no resolvable org so this logs `security.failed_auth_threshold_no_org` rather than creating an alert [apps/api/src/workers/check-failed-auth-threshold.ts]
+- [x] [Review][Patch] Threshold alert dedup had no transactional guard per AC-9c — fixed: added `pg_advisory_xact_lock(hashtext(...))` keyed on `orgId:alertType:thresholdType:identity` before the check-then-insert, serializing concurrent job runs against the same breach identity [apps/api/src/workers/check-failed-auth-threshold.ts]
+- [x] [Review][Patch] AC-11b payload schema was validated only on list, never on insert — fixed: worker now calls `failedAuthThresholdPayloadSchema.parse()` before inserting [apps/api/src/workers/check-failed-auth-threshold.ts]
+- [x] [Review][Patch] `recordTotpUse()`'s boolean return conflated "wrong code" with "valid but replayed code" — fixed: `validateEnrollmentTotp()` now returns a 3-way result (`valid`/`invalid_code`/`replayed_code`); replayed codes still reject the request but no longer feed the failed-auth threshold counter [apps/api/src/modules/auth/totp.ts, apps/api/src/modules/auth/mfa.ts]
+- [x] [Review][Patch] `normalizeEmail()` throwing on non-ASCII input bypassed `recordFailedAuthAttempt` in `loginUser()` — fixed: wrapped in try/catch, records the attempt (falling back to a non-throwing normalization) before rethrowing [apps/api/src/modules/auth/service.ts]
+- [x] [Review][Patch] `listSecurityAlerts()` loaded the org's entire alert history into memory and paginated via `.slice()` — fixed: now uses a `COUNT(*)` query for `total` plus SQL `LIMIT`/`OFFSET` for the page [apps/api/src/modules/org/security-alerts.ts]
+- [x] [Review][Patch] `recoverWithCode()`'s `!orgId` branch always recorded `userId: null` despite `user.id` being known — fixed: now passes `user.id` (the wrong-password branch correctly still uses `null` per the spec's timing-safe requirement) [apps/api/src/modules/auth/mfa.ts]
+- [x] [Review][Patch] `activeOrgForUser()` only returned the first matching org and re-fetched the org list on every call — fixed: org list is now fetched once per worker run and `activeOrgsForUser()` returns all active orgs for IP-threshold breaches (account threshold intentionally keeps "first org" per spec's v1 single-org assumption) [apps/api/src/workers/check-failed-auth-threshold.ts]
+- [x] [Review][Patch] Threshold dedup compared `payload->>'ipAddress'` as plain text — fixed: now casts both sides to `::inet` for the comparison so IPv6 representation differences don't break dedup [apps/api/src/workers/check-failed-auth-threshold.ts]
+- [x] [Review][Patch] `recordFailedAuthAttempt()`'s `process.env` fallback alongside `env.FAILED_AUTH_RECORD_ENABLED` — investigated and kept: it's not redundant, it's how `vi.stubEnv()` toggles the already-parsed `env` singleton in `failed-auth.test.ts`; added a clarifying comment [apps/api/src/modules/auth/failed-auth.ts]
+- [x] [Review][Patch] AC-16 "no await blocking response >50ms" claim vs. synchronous `await recordFailedAuthAttempt()` — fixed: switched all 4 call sites to fire-and-forget (`void recordFailedAuthAttempt(...)`); updated 2 tests that asserted on the row immediately after the HTTP response to poll via `vi.waitFor()` instead, since the insert is no longer guaranteed complete by the time the response returns [apps/api/src/modules/auth/service.ts, apps/api/src/modules/auth/mfa.ts, apps/api/src/__tests__/mfa-enforcement-failed-auth.integration.test.ts]
+- [x] [Review][Defer] `FAILED_AUTH_RETENTION_HOURS` and `FAILED_AUTH_THRESHOLD_WINDOW_SECONDS` have no cross-validation; a misconfigured deployment could prune attempts before the threshold window closes — deferred, pre-existing env-config gap class, not introduced uniquely by this diff [apps/api/src/config/env.ts]
+- [x] [Review][Defer] `loadMfaEnforcementStatus()` does two sequential (non-parallelized) DB round-trips on every MFA-gated request with no request-scoped caching — deferred, performance optimization not required by any AC [apps/api/src/modules/auth/mfa-enforcement.ts]
+- [x] [Review][Defer] Failed-auth recording defaults missing client IP to `0.0.0.0`, which could cluster unrelated failures under one fake IP for threshold purposes — deferred, pre-existing convention reused from Story 1.6/1.7's `getClientIp()` fallback, not unique to this diff [apps/api/src/modules/auth/service.ts, apps/api/src/modules/auth/mfa.ts]
 
 ---
 

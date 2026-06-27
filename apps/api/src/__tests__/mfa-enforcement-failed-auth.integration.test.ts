@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { desc, eq, sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import {
@@ -13,7 +13,7 @@ import {
   configureAuthIntegrationEnv,
   cookieHeader,
   initVaultForTest,
-  parseSetCookies,
+  registerAndLoginViaApi,
   type CookieJar,
 } from './helpers/auth-test-helpers.js'
 import { registerPrivilegedTestRoute } from './helpers/privileged-test-route.js'
@@ -41,26 +41,13 @@ async function registerAndLogin(label: string): Promise<TestUser> {
   const app = await createApp({ logger: false })
   registerPrivilegedTestRoute(app)
   const email = `mfa-enforcement-${label}-${randomUUID()}@example.com`
-  const register = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/register',
-    payload: { email, password: PASSWORD, orgName: `MFA Enforcement ${label} ${randomUUID()}` },
+  const { userId, orgId, cookies } = await registerAndLoginViaApi(app, {
+    email,
+    password: PASSWORD,
+    orgName: `MFA Enforcement ${label} ${randomUUID()}`,
   })
-  expect(register.statusCode).toBe(201)
-  const body = register.json<{ data: { userId: string; orgId: string } }>()
-
-  const login = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/login',
-    payload: { email, password: PASSWORD },
-  })
-  expect(login.statusCode).toBe(200)
   await app.close()
-  return {
-    userId: body.data.userId,
-    orgId: body.data.orgId,
-    cookies: parseSetCookies(login.headers['set-cookie']),
-  }
+  return { userId, orgId, cookies }
 }
 
 async function updateMembership(
@@ -70,6 +57,16 @@ async function updateMembership(
   await withOrg(user.orgId, (tx) =>
     tx.update(orgMemberships).set(values).where(eq(orgMemberships.userId, user.userId))
   )
+}
+
+async function expireGracePeriod(
+  user: TestUser,
+  values: Partial<typeof orgMemberships.$inferInsert> = {}
+) {
+  await updateMembership(user, {
+    ...values,
+    gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+  })
 }
 
 async function postPrivileged(user: TestUser, logger: false | object = false) {
@@ -91,6 +88,19 @@ async function latestFailedAuthAttempt() {
     .orderBy(desc(failedAuthAttempts.attemptedAt))
     .limit(1)
   return row
+}
+
+// recordFailedAuthAttempt() is fire-and-forget from the request path (AC-16), so the
+// row may not exist yet immediately after the HTTP response returns — poll briefly.
+async function waitForFailedAuthAttempt() {
+  return vi.waitFor(
+    async () => {
+      const row = await latestFailedAuthAttempt()
+      if (!row) throw new Error('expected a failed_auth_attempts row')
+      return row
+    },
+    { timeout: 1000, interval: 25 }
+  )
 }
 
 describe.sequential('Story 1.9 MFA enforcement', () => {
@@ -115,9 +125,7 @@ describe.sequential('Story 1.9 MFA enforcement', () => {
 
   it('blocks privileged action when owner has no MFA and grace expired', async () => {
     const user = await registerAndLogin('expired-owner')
-    await updateMembership(user, {
-      gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    })
+    await expireGracePeriod(user)
 
     const response = await postPrivileged(user)
 
@@ -128,9 +136,7 @@ describe.sequential('Story 1.9 MFA enforcement', () => {
   it('emits structured log when MFA enforcement denies a request', async () => {
     const user = await registerAndLogin('denial-log')
     const logs: string[] = []
-    await updateMembership(user, {
-      gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    })
+    await expireGracePeriod(user)
 
     const response = await postPrivileged(user, {
       level: 'warn',
@@ -147,9 +153,7 @@ describe.sequential('Story 1.9 MFA enforcement', () => {
 
   it('allows privileged action when MFA is enrolled even if grace expired', async () => {
     const user = await registerAndLogin('enrolled')
-    await updateMembership(user, {
-      gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    })
+    await expireGracePeriod(user)
     await getDb().update(users).set({ mfaEnrolledAt: new Date() }).where(eq(users.id, user.userId))
 
     const response = await postPrivileged(user)
@@ -159,10 +163,7 @@ describe.sequential('Story 1.9 MFA enforcement', () => {
 
   it('returns insufficient_role for member before MFA enforcement', async () => {
     const user = await registerAndLogin('member')
-    await updateMembership(user, {
-      role: 'member',
-      gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    })
+    await expireGracePeriod(user, { role: 'member' })
 
     const response = await postPrivileged(user)
 
@@ -172,9 +173,7 @@ describe.sequential('Story 1.9 MFA enforcement', () => {
 
   it('requires MFA on admin session revocation retrofit route', async () => {
     const user = await registerAndLogin('retrofit')
-    await updateMembership(user, {
-      gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    })
+    await expireGracePeriod(user)
     const app = await createApp({ logger: false })
 
     const response = await app.inject({
@@ -214,7 +213,7 @@ describe.sequential('Story 1.9 failed auth recording', () => {
     })
 
     expect(response.statusCode).toBe(401)
-    expect(await latestFailedAuthAttempt()).toMatchObject({
+    expect(await waitForFailedAuthAttempt()).toMatchObject({
       userId: null,
       reason: 'invalid_credentials',
     })
@@ -243,7 +242,7 @@ describe.sequential('Story 1.9 failed auth recording', () => {
     })
 
     expect(verify.statusCode).toBe(422)
-    expect(await latestFailedAuthAttempt()).toMatchObject({
+    expect(await waitForFailedAuthAttempt()).toMatchObject({
       userId: user.userId,
       reason: 'invalid_totp',
     })
