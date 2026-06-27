@@ -1,14 +1,14 @@
 import { and, eq } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
-import { getDb } from '@project-vault/db'
+import { getDb, withOrg } from '@project-vault/db'
 import { orgMemberships, revokedTokens, sessions } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { AppError } from '../lib/errors.js'
+import { touchSessionActivity } from '../modules/auth/session-activity.js'
 import { cleanupExpiredSession } from '../modules/auth/session-revoke.js'
 import { parseAccessTokenClaims } from '../modules/auth/tokens.js'
 
-const lastActivityWrite = new Map<string, number>()
 const ORG_ROLES = new Set(['owner', 'admin', 'member', 'viewer'])
 
 type JwtVerifier = {
@@ -37,21 +37,6 @@ function accessTokenInvalid(): AppError {
 
 function isOrgRole(role: string): role is 'owner' | 'admin' | 'member' | 'viewer' {
   return ORG_ROLES.has(role)
-}
-
-export function evictSessionActivityDebounce(sessionId: string): void {
-  lastActivityWrite.delete(sessionId)
-}
-
-export async function touchSessionActivity(sessionId: string): Promise<void> {
-  const now = Date.now()
-  const last = lastActivityWrite.get(sessionId) ?? 0
-  if (now - last < env.SESSION_ACTIVITY_DEBOUNCE_SECONDS * 1000) return
-  lastActivityWrite.set(sessionId, now)
-  await getDb()
-    .update(sessions)
-    .set({ lastActiveAt: new Date(now), updatedAt: new Date(now) })
-    .where(eq(sessions.id, sessionId))
 }
 
 function assertTemporalClaims(claims: { iat?: number; exp?: number }): void {
@@ -106,19 +91,21 @@ function assertSessionMatchesClaims(
 }
 
 async function loadSessionForClaims(claims: ParsedAccessClaims): Promise<AuthSessionRow> {
-  const sessionRows = await getDb()
-    .select({
-      id: sessions.id,
-      userId: sessions.userId,
-      orgId: sessions.orgId,
-      jti: sessions.jti,
-      sessionVersion: sessions.sessionVersion,
-      revokedAt: sessions.revokedAt,
-      lastActiveAt: sessions.lastActiveAt,
-    })
-    .from(sessions)
-    .where(eq(sessions.jti, claims.jti))
-    .limit(1)
+  const sessionRows = await withOrg(claims.orgId, (tx) =>
+    tx
+      .select({
+        id: sessions.id,
+        userId: sessions.userId,
+        orgId: sessions.orgId,
+        jti: sessions.jti,
+        sessionVersion: sessions.sessionVersion,
+        revokedAt: sessions.revokedAt,
+        lastActiveAt: sessions.lastActiveAt,
+      })
+      .from(sessions)
+      .where(eq(sessions.jti, claims.jti))
+      .limit(1)
+  )
   const session = sessionRows[0]
   assertSessionMatchesClaims(session, claims)
   return session
@@ -132,17 +119,19 @@ async function enforceIdleTimeout(session: AuthSessionRow): Promise<void> {
 }
 
 async function loadOrgRole(session: AuthSessionRow) {
-  const memberships = await getDb()
-    .select({ role: orgMemberships.role })
-    .from(orgMemberships)
-    .where(
-      and(
-        eq(orgMemberships.userId, session.userId),
-        eq(orgMemberships.orgId, session.orgId),
-        eq(orgMemberships.status, 'active')
+  const memberships = await withOrg(session.orgId, (tx) =>
+    tx
+      .select({ role: orgMemberships.role })
+      .from(orgMemberships)
+      .where(
+        and(
+          eq(orgMemberships.userId, session.userId),
+          eq(orgMemberships.orgId, session.orgId),
+          eq(orgMemberships.status, 'active')
+        )
       )
-    )
-    .limit(1)
+      .limit(1)
+  )
   const membership = memberships[0]
   if (!membership || !isOrgRole(membership.role)) {
     throw new AppError('account_deactivated', 'Account is deactivated', 403)

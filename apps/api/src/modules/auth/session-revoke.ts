@@ -7,6 +7,7 @@ import { AppError } from '../../lib/errors.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
+import { evictSessionActivityDebounce } from './session-activity.js'
 
 export type SessionRevokeScope =
   | 'single'
@@ -18,12 +19,13 @@ export type SessionRevokeScope =
   | 'security'
 
 type RevokeSessionOptions = {
-  actorUserId: string
+  actorUserId?: string
   scope: SessionRevokeScope
   accessTokenExp?: Date
   tx?: Tx
   expectedUserId?: string
   expectedOrgId?: string
+  audit?: boolean
 }
 
 type RevokeSessionResult = {
@@ -40,7 +42,7 @@ async function writeSessionRevokedAudit(
   tx: Tx,
   fields: {
     orgId: string
-    sessionId: string
+    sessionId?: string
     actorUserId: string
     targetUserId: string
     scope: SessionRevokeScope
@@ -104,13 +106,13 @@ async function runInTx<T>(tx: Tx | undefined, fn: (tx: Tx) => Promise<T>): Promi
   return getDb().transaction((innerTx) => fn(innerTx as Tx))
 }
 
-async function selectRevocableSessionIds(tx: Tx, predicate: SQL | undefined) {
-  return tx.select({ id: sessions.id }).from(sessions).where(predicate)
+async function selectRevocableSessionRows(tx: Tx, predicate: SQL | undefined) {
+  return tx.select({ id: sessions.id, orgId: sessions.orgId }).from(sessions).where(predicate)
 }
 
 async function revokeTargetSessions(
   tx: Tx,
-  targetSessions: Array<{ id: string }>,
+  targetSessions: Array<{ id: string; orgId: string }>,
   optionsForTarget: (sessionId: string) => RevokeSessionOptions
 ): Promise<{ revokedCount: number }> {
   let revokedCount = 0
@@ -121,11 +123,64 @@ async function revokeTargetSessions(
   return { revokedCount }
 }
 
+async function applyExpectedOrgContext(tx: Tx, expectedOrgId?: string): Promise<void> {
+  if (!expectedOrgId) return
+  await tx.execute(sql`SELECT set_config('app.current_org_id', ${expectedOrgId}, true)`)
+}
+
+async function selectRevocableUserSessionsInOrg(
+  tx: Tx,
+  {
+    userId,
+    orgId,
+    extraPredicate,
+  }: {
+    userId: string
+    orgId: string
+    extraPredicate?: SQL
+  }
+) {
+  await applyExpectedOrgContext(tx, orgId)
+  const predicates = [
+    eq(sessions.userId, userId),
+    eq(sessions.orgId, orgId),
+    isNull(sessions.revokedAt),
+  ]
+  if (extraPredicate) predicates.push(extraPredicate)
+  return selectRevocableSessionRows(tx, and(...predicates))
+}
+
+function sessionDoesNotMatchOptions(
+  session: { userId: string; orgId: string },
+  options: RevokeSessionOptions
+): boolean {
+  return Boolean(
+    (options.expectedUserId && session.userId !== options.expectedUserId) ||
+    (options.expectedOrgId && session.orgId !== options.expectedOrgId)
+  )
+}
+
+async function maybeWriteSessionRevokedAudit(
+  tx: Tx,
+  session: { id: string; userId: string; orgId: string },
+  options: RevokeSessionOptions
+): Promise<void> {
+  if (options.audit === false) return
+  await writeSessionRevokedAudit(tx, {
+    orgId: session.orgId,
+    sessionId: session.id,
+    actorUserId: options.actorUserId ?? session.userId,
+    targetUserId: session.userId,
+    scope: options.scope,
+  })
+}
+
 export async function revokeSessionById(
   sessionId: string,
   options: RevokeSessionOptions
 ): Promise<RevokeSessionResult> {
   return runInTx(options.tx, async (tx) => {
+    await applyExpectedOrgContext(tx, options.expectedOrgId)
     const rows = await tx
       .select({
         id: sessions.id,
@@ -141,9 +196,7 @@ export async function revokeSessionById(
       .limit(1)
     const session = rows[0]
     if (!session || session.revokedAt) return { revoked: false }
-    if (options.expectedUserId && session.userId !== options.expectedUserId)
-      return { revoked: false }
-    if (options.expectedOrgId && session.orgId !== options.expectedOrgId) return { revoked: false }
+    if (sessionDoesNotMatchOptions(session, options)) return { revoked: false }
 
     const activeRefreshRows = await tx
       .select({ expiresAt: refreshTokens.expiresAt })
@@ -180,13 +233,9 @@ export async function revokeSessionById(
       })
       .onConflictDoNothing()
 
-    await writeSessionRevokedAudit(tx, {
-      orgId: session.orgId,
-      sessionId: session.id,
-      actorUserId: options.actorUserId,
-      targetUserId: session.userId,
-      scope: options.scope,
-    })
+    evictSessionActivityDebounce(session.id)
+
+    await maybeWriteSessionRevokedAudit(tx, session, options)
 
     return {
       revoked: true,
@@ -205,7 +254,6 @@ export async function cleanupExpiredSession(
   options: { tx?: Tx } = {}
 ): Promise<void> {
   const result = await revokeSessionById(sessionId, {
-    actorUserId: 'system',
     scope: 'idle_expiry',
     tx: options.tx,
   })
@@ -226,10 +274,7 @@ export async function revokeAllUserSessionsInOrg({
   tx?: Tx
 }): Promise<{ revokedCount: number }> {
   return runInTx(tx, async (innerTx) => {
-    const targetSessions = await selectRevocableSessionIds(
-      innerTx,
-      and(eq(sessions.userId, userId), eq(sessions.orgId, orgId), isNull(sessions.revokedAt))
-    )
+    const targetSessions = await selectRevocableUserSessionsInOrg(innerTx, { userId, orgId })
 
     return revokeTargetSessions(innerTx, targetSessions, () => ({
       actorUserId,
@@ -243,27 +288,43 @@ export async function revokeAllUserSessionsInOrg({
 
 export async function revokeAllOtherSessions({
   userId,
+  orgId,
   currentJti,
   actorUserId,
   tx,
 }: {
   userId: string
+  orgId: string
   currentJti: string
   actorUserId: string
   tx?: Tx
 }): Promise<{ revokedCount: number }> {
   return runInTx(tx, async (innerTx) => {
-    const targetSessions = await selectRevocableSessionIds(
-      innerTx,
-      and(eq(sessions.userId, userId), ne(sessions.jti, currentJti), isNull(sessions.revokedAt))
-    )
+    const targetSessions = await selectRevocableUserSessionsInOrg(innerTx, {
+      userId,
+      orgId,
+      extraPredicate: ne(sessions.jti, currentJti),
+    })
 
-    return revokeTargetSessions(innerTx, targetSessions, () => ({
+    const result = await revokeTargetSessions(innerTx, targetSessions, () => ({
       actorUserId,
       scope: 'all_except_current',
       tx: innerTx,
       expectedUserId: userId,
+      expectedOrgId: orgId,
+      audit: false,
     }))
+    if (result.revokedCount > 0) {
+      await writeSessionRevokedAudit(innerTx, {
+        orgId,
+        actorUserId,
+        targetUserId: userId,
+        scope: 'all_except_current',
+        bulk: true,
+        revokedCount: result.revokedCount,
+      })
+    }
+    return result
   })
 }
 
