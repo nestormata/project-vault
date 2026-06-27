@@ -10,6 +10,29 @@ function createLogger() {
   }
 }
 
+async function expectFailedJobLog(
+  thrown: unknown,
+  expectedError: { message: string }
+): Promise<void> {
+  const logger = createLogger()
+
+  await expect(
+    withJobLogging(logger, 'test-job', 'job-1', async () => Promise.reject(thrown))
+  ).rejects.toBe(thrown)
+
+  expect(logger.error).toHaveBeenCalledWith(
+    expect.objectContaining({
+      eventType: OperationalEvent.JOB_FAILED,
+      traceId: SYSTEM_TRACE_ID,
+      jobName: 'test-job',
+      jobId: 'job-1',
+      durationMs: expect.any(Number),
+      err: expectedError,
+    }),
+    'job failed'
+  )
+}
+
 describe('withJobLogging', () => {
   it('logs job.started and job.completed around a successful worker', async () => {
     const logger = createLogger()
@@ -43,51 +66,18 @@ describe('withJobLogging', () => {
   })
 
   it('logs job.failed and rethrows the original non-Error throw value', async () => {
-    const logger = createLogger()
     const thrown = 'string error'
 
-    await expect(
-      withJobLogging(logger, 'test-job', 'job-1', async () => {
-        throw thrown
-      })
-    ).rejects.toBe(thrown)
-
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: OperationalEvent.JOB_FAILED,
-        traceId: SYSTEM_TRACE_ID,
-        jobName: 'test-job',
-        jobId: 'job-1',
-        durationMs: expect.any(Number),
-        err: { message: thrown },
-      }),
-      'job failed'
-    )
+    await expectFailedJobLog(thrown, { message: thrown })
   })
 
   it('logs job.failed and rethrows the original value when error serialization fails', async () => {
-    const logger = createLogger()
     const thrown = {
       toString() {
         throw new Error('toString failed')
       },
     }
 
-    await expect(
-      withJobLogging(logger, 'test-job', 'job-1', async () => {
-        throw thrown
-      })
-    ).rejects.toBe(thrown)
-
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: OperationalEvent.JOB_FAILED,
-        traceId: SYSTEM_TRACE_ID,
-        jobName: 'test-job',
-        jobId: 'job-1',
-        err: { message: 'Unable to serialize thrown value' },
-      }),
-      'job failed'
-    )
+    await expectFailedJobLog(thrown, { message: 'Unable to serialize thrown value' })
   })
 })

@@ -1,6 +1,6 @@
 # Story 1.10: Structured Operational Logging & Metrics
 
-Status: in-progress
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for FR82 structured operational logging (Pino config, traceId propagation, redaction, eventType registry, startup/shutdown/job logs) and Prometheus metrics completion (rename duration metric, vault_sealed, db_pool_connections_active, histogram buckets, bind-host tests). Builds on Story 1.3 partial metrics baseline and Story 1.5 redact-secrets plugin. Resolves AC-E1b vs Story 1.10 field naming, Story 1.3 `_ms` vs epic `_seconds` metric naming, and `event` vs `eventType` legacy vault logs. -->
 
@@ -1023,12 +1023,12 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
 
 > Note: Tasks 1-8 reflect implementation progress before advanced elicitation. Task 9 captures deferred hardening requirements added during story review; schedule it as a follow-up before treating Story 1.10 as fully review-ready.
 
-- [ ] **Task 9: Deferred elicitation hardening follow-up** (AC: 6, 8, 13, 15, 17)
-  - [ ] Add or verify sensitive-field registry coverage tests for Pino and manual redaction paths
-  - [ ] Add route-family redaction fixtures for vault, auth/login, MFA, and future secret write/import payloads
+- [x] **Task 9: Deferred elicitation hardening follow-up** (AC: 6, 8, 13, 15, 17)
+  - [x] Add or verify sensitive-field registry coverage tests for Pino and manual redaction paths
+  - [x] Add route-family redaction fixtures for vault, auth/login, MFA, and future secret write/import payloads
   - [x] Add metric cardinality tests for unknown routes, thrown handlers, and query strings
-  - [ ] Ensure log-capture helper uses deterministic synchronous capture or guarded flush behavior
-  - [ ] Add compliance language sanity check so operational logs are not described as audit evidence
+  - [x] Ensure log-capture helper uses deterministic synchronous capture or guarded flush behavior
+  - [x] Add compliance language sanity check so operational logs are not described as audit evidence
   - [x] Add `/metrics` proxy spoofing regression test when `TRUST_PROXY` support is present
 
 ### Review Findings
@@ -1040,6 +1040,12 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
 - [x] [Review][Patch] The reference job logging integration hardcodes `jobId: "unknown"`, so `job.started/completed/failed` logs do not carry the AC-10 job identifier. [`apps/api/src/main.ts:88`] — fixed 2026-06-27
 - [x] [Review][Patch] The top-level `main().catch()` always writes unstructured stderr, including failures that occur after a structured logger exists, which violates the AC-11 fatal stderr constraint. [`apps/api/src/main.ts:120`] — fixed 2026-06-27
 - [x] [Review][Patch] Non-Error job failure serialization calls `String(err)` outside a guard; a throwing `toString()` can replace the original worker failure instead of preserving pg-boss retry/DLQ behavior. [`apps/api/src/lib/job-logging.ts:13`] — fixed 2026-06-27
+
+### Review Findings (Second Pass)
+
+- [x] [Review][Patch] Startup DB/vault-state failures still emit unstructured stderr before a structured logger is assigned, and vault key-service writes a direct fatal stderr line. [`apps/api/src/main.ts:46`, `apps/api/src/modules/vault/key-service.ts:77`] — fixed 2026-06-27
+- [x] [Review][Patch] Structured startup failure logs can be dropped because `main().catch()` logs through Pino and immediately calls `process.exit(1)` without a guarded flush or drain. [`apps/api/src/main.ts:126`] — fixed 2026-06-27
+- [x] [Review][Patch] Story definition marks thrown-handler metric coverage complete, but `metrics.test.ts` does not add a throwing-route assertion for one counter and one duration observation. [`_bmad-output/implementation-artifacts/1-10-structured-operational-logging-and-metrics.md:1029`, `apps/api/src/routes/metrics.test.ts:97`] — fixed 2026-06-27
 
 ---
 
@@ -1220,6 +1226,7 @@ GPT-5.5
 - 2026-06-27: Updated Vitest coverage include paths and confirmed focused Story 1.10 API/shared tests pass.
 - 2026-06-27: Confirmed `check-env-example.ts` red failure for missing `SERVICE_NAME`, updated `.env.example`, and reran env parity successfully.
 - 2026-06-27: Final validation passed: `pnpm --filter @project-vault/api test`, `pnpm --filter @project-vault/shared exec vitest run`, `pnpm --filter @project-vault/api typecheck`, `pnpm --filter @project-vault/api lint`, and `pnpm exec tsx scripts/check-env-example.ts`. API lint passes with pre-existing warnings only.
+- 2026-06-27: Completed Task 9 follow-ups for sensitive-field registry coverage, route-family redaction fixtures, deterministic log capture helpers, and operational/audit language sanity check. Validation passed: API test/typecheck/lint, shared test/typecheck, and `pnpm exec tsx scripts/check-operational-log-language.ts`.
 
 ### Completion Notes List
 
@@ -1233,10 +1240,12 @@ GPT-5.5
 - Completed structured lifecycle and DB error logging; removed the unstructured vault startup status stderr write from normal startup.
 - Completed Story 1.10 focused unit/integration coverage and coverage configuration for new implementation files.
 - Documented Story 1.10 operational logging and metrics environment settings in `.env.example`; env schema/example parity passes.
+- Completed deferred hardening follow-ups and moved Story 1.10 to done.
 
 ### File List
 
 - apps/api/src/__tests__/helpers/capture-logs.ts
+- apps/api/src/__tests__/helpers/capture-logs.test.ts
 - apps/api/src/__tests__/structured-log-redaction.test.ts
 - apps/api/src/__tests__/structured-logging.integration.test.ts
 - apps/api/src/__tests__/vault-operational-logging.test.ts
@@ -1251,10 +1260,14 @@ GPT-5.5
 - apps/api/src/lib/job-logging.ts
 - apps/api/src/lib/logger.test.ts
 - apps/api/src/lib/logger.ts
+- apps/api/src/lib/redact-paths.test.ts
 - apps/api/src/lib/redact-paths.ts
 - apps/api/src/lib/shutdown.test.ts
 - apps/api/src/lib/shutdown.ts
+- apps/api/src/lib/startup-logging.test.ts
+- apps/api/src/lib/startup-logging.ts
 - apps/api/src/main.ts
+- apps/api/src/modules/vault/key-service.test.ts
 - apps/api/src/modules/vault/routes.ts
 - apps/api/src/plugins/http-metrics.ts
 - apps/api/src/plugins/structured-logging.ts
@@ -1263,6 +1276,7 @@ GPT-5.5
 - apps/api/src/routes/metrics.test.ts
 - apps/api/src/routes/metrics.ts
 - apps/api/vitest.config.ts
+- scripts/check-operational-log-language.ts
 - .env.example
 
 ### Change Log

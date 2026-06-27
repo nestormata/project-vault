@@ -10,3 +10,15 @@ export function createLogCaptureStream(): { stream: Writable; lines: string[] } 
   })
   return { stream, lines }
 }
+
+export function parseCapturedLogLines(lines: string[]): Array<Record<string, unknown>> {
+  return lines
+    .join('')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+}
+
+export async function flushCapturedLogger(logger: unknown): Promise<void> {
+  await (logger as { flush?: () => void | Promise<void> }).flush?.()
+}

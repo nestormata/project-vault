@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { OperationalEvent } from '@project-vault/shared'
 import { createLoggerConfig } from '../lib/logger.js'
 import { structuredLoggingPlugin } from '../plugins/structured-logging.js'
-import { createLogCaptureStream } from './helpers/capture-logs.js'
+import {
+  createLogCaptureStream,
+  flushCapturedLogger,
+  parseCapturedLogLines,
+} from './helpers/capture-logs.js'
 
 const initVaultMock = vi.fn()
 const unsealVaultMock = vi.fn()
@@ -15,18 +19,6 @@ vi.mock('../modules/vault/key-service.js', () => ({
 }))
 
 const { vaultRoutes } = await import('../modules/vault/routes.js')
-
-async function flushLogger(logger: unknown): Promise<void> {
-  await (logger as { flush?: () => void | Promise<void> }).flush?.()
-}
-
-function parseLogLines(lines: string[]): Array<Record<string, unknown>> {
-  return lines
-    .join('')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
-}
 
 async function createVaultLogTestApp() {
   const { stream, lines } = createLogCaptureStream()
@@ -56,10 +48,10 @@ describe('vault operational logging', () => {
       url: '/api/v1/vault/init',
       payload: { kmsType: 'passphrase', passphrase: 'test-passphrase-12chars' },
     })
-    await flushLogger(app.log)
+    await flushCapturedLogger(app.log)
 
     expect(response.statusCode).toBe(200)
-    const vaultLog = parseLogLines(lines).find(
+    const vaultLog = parseCapturedLogLines(lines).find(
       (line) => line.message === 'Vault initialized successfully'
     )
     expect(vaultLog).toMatchObject({

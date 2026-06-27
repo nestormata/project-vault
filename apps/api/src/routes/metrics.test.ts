@@ -23,6 +23,19 @@ function responseText(response: unknown): string {
   return typed.body ?? typed.payload ?? ''
 }
 
+async function getMetricsAfterHealthCheck(): Promise<{
+  app: Awaited<ReturnType<typeof createApp>>
+  body: string
+}> {
+  const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
+
+  await app.inject({ method: 'GET', url: '/health' })
+  const response = await app.inject({ method: 'GET', url: '/metrics' })
+
+  expect(response.statusCode).toBe(200)
+  return { app, body: responseText(response) }
+}
+
 describe('GET /metrics', () => {
   it('returns 200 with valid Prometheus content-type for localhost', async () => {
     const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
@@ -64,13 +77,8 @@ describe('GET /metrics', () => {
   })
 
   it('returns the Story 1.10 required metric names', async () => {
-    const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
+    const { app, body } = await getMetricsAfterHealthCheck()
 
-    await app.inject({ method: 'GET', url: '/health' })
-    const response = await app.inject({ method: 'GET', url: '/metrics' })
-    const body = responseText(response)
-
-    expect(response.statusCode).toBe(200)
     expect(body).toContain('process_uptime_seconds')
     expect(body).toContain('http_requests_total')
     expect(body).toContain('http_request_duration_seconds')
@@ -81,11 +89,7 @@ describe('GET /metrics', () => {
   })
 
   it('uses the Story 1.10 seconds histogram buckets', async () => {
-    const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
-
-    await app.inject({ method: 'GET', url: '/health' })
-    const response = await app.inject({ method: 'GET', url: '/metrics' })
-    const body = responseText(response)
+    const { app, body } = await getMetricsAfterHealthCheck()
 
     expect(body).toContain('http_request_duration_seconds_bucket')
     for (const bucket of ['0.005', '0.01', '0.025', '0.05', '0.1', '0.25', '0.5', '1', '2.5']) {
@@ -95,11 +99,7 @@ describe('GET /metrics', () => {
   })
 
   it('records HTTP metrics for non-metrics routes', async () => {
-    const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
-
-    await app.inject({ method: 'GET', url: '/health' })
-    const response = await app.inject({ method: 'GET', url: '/metrics' })
-    const body = responseText(response)
+    const { app, body } = await getMetricsAfterHealthCheck()
 
     expect(body).toContain('route="/health"')
     expect(body).toContain('http_request_duration_seconds_bucket')
@@ -117,6 +117,25 @@ describe('GET /metrics', () => {
     expect(body).toContain('route="__unknown__"')
     expect(body).not.toContain(uniquePath)
     expect(body).not.toContain('raw-query-secret')
+    await app.close()
+  })
+
+  it('records exactly one counter and duration observation when a handler throws', async () => {
+    const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
+    const route = `/throws-${randomUUID()}`
+    app.get(route, async () => {
+      throw new Error('boom')
+    })
+
+    const thrownResponse = await app.inject({ method: 'GET', url: route })
+    const metricsResponse = await app.inject({ method: 'GET', url: '/metrics' })
+    const body = responseText(metricsResponse)
+
+    expect(thrownResponse.statusCode).toBe(500)
+    expect(body).toContain(`http_requests_total{method="GET",route="${route}",status_code="500"} 1`)
+    expect(body).toContain(
+      `http_request_duration_seconds_count{method="GET",route="${route}",status_code="500"} 1`
+    )
     await app.close()
   })
 

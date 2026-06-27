@@ -20,6 +20,7 @@ import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
 import { operationalLog, serializeLogError } from './lib/logger.js'
+import { createStartupLogger, logStartupFailure } from './lib/startup-logging.js'
 import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
 
@@ -30,6 +31,7 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-
 let startupLogger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> | undefined
 
 async function main(): Promise<void> {
+  startupLogger = createStartupLogger(env)
   // Architecture mandates this exact startup ORDER:
   // 1. createEventEmitter()
   const _emitter = createEventEmitter()
@@ -125,11 +127,9 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   if (startupLogger) {
-    operationalLog(startupLogger, 'error', OperationalEvent.STARTUP_FAILED, 'API startup failed', {
-      err: serializeLogError(err),
-    })
+    void logStartupFailure(startupLogger, err).finally(() => process.exit(1))
   } else {
     process.stderr.write(`Fatal error: ${serializeLogError(err).message}\n`)
+    process.exit(1)
   }
-  process.exit(1)
 })

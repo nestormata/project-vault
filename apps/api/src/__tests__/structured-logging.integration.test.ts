@@ -2,25 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { OperationalEvent } from '@project-vault/shared'
 import { createApp } from '../app.js'
 import { createLoggerConfig } from '../lib/logger.js'
-import { createLogCaptureStream } from './helpers/capture-logs.js'
+import {
+  createLogCaptureStream,
+  flushCapturedLogger,
+  parseCapturedLogLines,
+} from './helpers/capture-logs.js'
 
 function testLogger(stream: NodeJS.WritableStream): object {
   return {
     ...createLoggerConfig({ NODE_ENV: 'development', LOG_LEVEL: 'info', SERVICE_NAME: 'api' }),
     stream,
   }
-}
-
-async function flushLogger(logger: unknown): Promise<void> {
-  await (logger as { flush?: () => void | Promise<void> }).flush?.()
-}
-
-function parseLogLines(lines: string[]): Array<Record<string, unknown>> {
-  return lines
-    .join('')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
 }
 
 describe.sequential('Story 1.10 structured logging', () => {
@@ -36,12 +28,12 @@ describe.sequential('Story 1.10 structured logging', () => {
       url: '/health',
       headers: { 'x-request-id': requestId },
     })
-    await flushLogger(app.log)
+    await flushCapturedLogger(app.log)
 
     expect(response.statusCode).toBe(200)
     expect(response.headers['x-request-id']).toBe(requestId)
 
-    const parsed = parseLogLines(lines)
+    const parsed = parseCapturedLogLines(lines)
     const requestLogs = parsed.filter((line) => line.eventType === OperationalEvent.HTTP_REQUEST)
     expect(requestLogs).toHaveLength(1)
     expect(requestLogs[0]).toMatchObject({
@@ -72,7 +64,7 @@ describe.sequential('Story 1.10 structured logging', () => {
       url: '/health',
       headers: { 'x-request-id': 'not-a-valid-request-id' },
     })
-    await flushLogger(app.log)
+    await flushCapturedLogger(app.log)
 
     expect(response.statusCode).toBe(200)
     expect(response.headers['x-request-id']).toMatch(
@@ -80,7 +72,7 @@ describe.sequential('Story 1.10 structured logging', () => {
     )
     expect(response.headers['x-request-id']).not.toBe('not-a-valid-request-id')
 
-    const [requestLog] = parseLogLines(lines).filter(
+    const [requestLog] = parseCapturedLogLines(lines).filter(
       (line) => line.eventType === OperationalEvent.HTTP_REQUEST
     )
     expect(requestLog?.traceId).toBe(response.headers['x-request-id'])
@@ -98,10 +90,10 @@ describe.sequential('Story 1.10 structured logging', () => {
     })
 
     const response = await app.inject({ method: 'GET', url: '/boom' })
-    await flushLogger(app.log)
+    await flushCapturedLogger(app.log)
 
     expect(response.statusCode).toBe(500)
-    const parsed = parseLogLines(lines)
+    const parsed = parseCapturedLogLines(lines)
     const errorLogs = parsed.filter((line) => line.level === 'error')
     expect(errorLogs).toContainEqual(
       expect.objectContaining({

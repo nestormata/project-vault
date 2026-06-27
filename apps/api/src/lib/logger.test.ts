@@ -1,6 +1,6 @@
-import { Writable } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 import { SYSTEM_TRACE_ID } from '@project-vault/shared'
+import { createLogCaptureStream } from '../__tests__/helpers/capture-logs.js'
 import { createLoggerConfig, operationalLog } from './logger.js'
 import type { Env } from '../config/env.js'
 import type { FastifyBaseLogger } from 'fastify'
@@ -16,17 +16,6 @@ function baseEnv(
   } as Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 }
 
-function captureStream(): { stream: Writable; lines: string[] } {
-  const lines: string[] = []
-  const stream = new Writable({
-    write(chunk, _enc, cb) {
-      lines.push(chunk.toString())
-      cb()
-    },
-  })
-  return { stream, lines }
-}
-
 describe('createLoggerConfig', () => {
   it('returns a plain options object with the configured level when no destination is given', () => {
     const config = createLoggerConfig(baseEnv({ LOG_LEVEL: 'warn' }))
@@ -39,13 +28,13 @@ describe('createLoggerConfig', () => {
   })
 
   it('honors LOG_LEVEL (not silent) in NODE_ENV=test when a destination is provided', () => {
-    const { stream } = captureStream()
+    const { stream } = createLogCaptureStream()
     const logger = createLoggerConfig(baseEnv({ NODE_ENV: 'test', LOG_LEVEL: 'info' }), stream)
     expect(logger.level).toBe('info')
   })
 
   it('emits the service field on every log line', () => {
-    const { stream, lines } = captureStream()
+    const { stream, lines } = createLogCaptureStream()
     const logger = createLoggerConfig(baseEnv({ SERVICE_NAME: 'my-svc' }), stream)
     logger.info({ eventType: 'test.event' }, 'hello')
     const parsed = JSON.parse(lines[0] ?? '{}')
@@ -54,7 +43,7 @@ describe('createLoggerConfig', () => {
   })
 
   it('defaults the mixin eventType to system.untyped when caller omits it', () => {
-    const { stream, lines } = captureStream()
+    const { stream, lines } = createLogCaptureStream()
     const logger = createLoggerConfig(baseEnv(), stream)
     logger.info('no eventType passed')
     const parsed = JSON.parse(lines[0] ?? '{}')
@@ -62,7 +51,7 @@ describe('createLoggerConfig', () => {
   })
 
   it('lets caller-provided eventType override the mixin default', () => {
-    const { stream, lines } = captureStream()
+    const { stream, lines } = createLogCaptureStream()
     const logger = createLoggerConfig(baseEnv(), stream)
     logger.info({ eventType: 'custom.event' }, 'overridden')
     const parsed = JSON.parse(lines[0] ?? '{}')
