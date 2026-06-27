@@ -1,6 +1,6 @@
 # Story 1.7: JWT Session Management & Security Controls
 
-Status: in-progress
+Status: ready-for-review
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for session list/revoke, idle timeout, revoked_tokens, auth middleware, admin revocation, and pg-boss cleanup. Red Team hardening applied 2026-06-24 (AC-4a, AC-10c, AC-15b, AC-30b). ADR review applied 2026-06-24 (ADR-1.7-01–07; AC-15b aligned to Story 1.6 new-session-row rotation). Security Audit Personas applied 2026-06-24 (AC-5a, AC-15c, live orgRole, idle audit). FMA applied 2026-06-24 (AC-4b, AC-5b/c, AC-9a, AC-14b, AC-7f). -->
 
@@ -205,7 +205,7 @@ If `options.tx` provided, participate in caller transaction; otherwise open own 
 | 2 | JWT signature valid (HS256, `@fastify/jwt`) — **must reject expired tokens** (`exp < now()`); see AC-5a | `401 { "code": "access_token_invalid", "message": "..." }` |
 | 3 | Required claims present: `sub`, `orgId`, `jti`, `sessionVersion` | `401 access_token_invalid` |
 | 4 | `revoked_tokens` row exists for `jti` | `401 { "code": "session_revoked", "message": "..." }` |
-| 5 | Session row lookup by `jti` (platform tx, no RLS) | `401 session_revoked` if missing, `revoked_at` set, or `sessionVersion` mismatch |
+| 5 | Session row lookup by `jti` under `app.current_org_id = claims.orgId` | `401 session_revoked` if missing, `revoked_at` set, or `sessionVersion` mismatch |
 | 6 | Idle timeout: `now - last_active_at > SESSION_IDLE_TIMEOUT_MINUTES` | `401 { "code": "session_expired", "message": "..." }` + **await** synchronous cleanup (AC-10c) before returning |
 | 7 | Live org membership for JWT `orgId` | `403 { "code": "account_deactivated", "message": "..." }` if no active membership; **load `orgRole` from `org_memberships.role`** into `authContext` — do not trust JWT role claim |
 | 8 | Debounced `last_active_at` update (AC-10) | — |
@@ -1036,10 +1036,39 @@ Use `SELECT FOR UPDATE` on session row inside revoke transaction.
 - [x] **Task 9: Shared schemas & audit** (AC: 16, 17, 25)
   - [x] Session Zod schemas + AuditEvent constants
   - [x] Regenerate OpenAPI
-- [ ] **Task 10: Tests** (AC: 22, 23, 26, 27, 30b)
-  - [ ] `sessions.integration.test.ts` — include rotation, concurrency, sync cleanup tests
+- [x] **Task 10: Tests** (AC: 22, 23, 26, 27, 30b)
+  - [x] `sessions.integration.test.ts` — initial real-DB self-service lifecycle suite added
   - [x] Unit tests for revoke + authenticate + worker
   - [x] Verify Story 1.6 regression suite green
+
+#### Deferred Session Integration Coverage
+
+The initial `sessions.integration.test.ts` suite intentionally covers the six self-service scenarios agreed in party-mode review:
+
+1. `GET /auth/me` returns auth context for a logged-in user.
+2. `GET /auth/sessions` lists current and second sessions with `isCurrent`.
+3. `DELETE /auth/sessions/:id` revokes another session and the target cookie gets `401`.
+4. `DELETE /auth/sessions/:id` for the current session clears auth cookies.
+5. `DELETE /auth/sessions` revokes all except current.
+6. `POST /auth/logout` revokes the current session and clears auth cookies.
+
+Later test expansion should add refresh rotation/grace-window coverage, idle-timeout synchronous cleanup, org-admin session revoke, max-session cap behavior, and the AC-30b concurrent refresh-vs-revoke path.
+
+### Review Findings
+
+- [x] [Review][Patch] Refresh grace-window retry is unreachable after rotation [`apps/api/src/modules/auth/service.ts`:590] — `refreshSession()` rejects `row.sessionRevokedAt` before checking `row.usedAt`, but full rotation marks the predecessor session revoked while setting `usedAt/newSessionId`; a legitimate retry within the grace window will fail before `handleGraceRefresh()` can run.
+- [x] [Review][Patch] Refresh route does not parse outgoing access JWT for predecessor revocation [`apps/api/src/modules/auth/routes.ts`:285] — `POST /refresh` calls `refreshSession(refreshOpaque, metaFromRequest(req))` without parsing the `access-token` cookie and passing its `exp`, violating AC-15b/AC-4a's current-token revocation path.
+- [x] [Review][Patch] Idle expiry audit records `system` instead of the session user [`apps/api/src/modules/auth/session-revoke.ts`:207] — `cleanupExpiredSession()` passes `actorUserId: 'system'`, but AC-4b/AC-16 require idle cleanup audit payloads to use `actorUserId: session.userId`.
+- [x] [Review][Patch] Bulk revoke audit writes per-session events instead of one summary [`apps/api/src/modules/auth/session-revoke.ts`:234] — `revokeAllOtherSessions()` loops through `revokeSessionById()`, so each target writes its own audit; AC-9/AC-9a require one summary audit with `bulk: true`, `revokedCount`, and `scope: "all_except_current"`.
+- [x] [Review][Patch] Debounce map eviction is not wired to revoke/idle/refresh paths [`apps/api/src/plugins/authenticate.ts`:32] — `evictSessionActivityDebounce()` is exported but unused, while AC-10a requires eviction on session revoke, idle cleanup, and predecessor refresh retirement.
+- [x] [Review][Patch] Bulk revoke infrastructure failures fall through as generic 500 [`apps/api/src/modules/auth/routes.ts`:165] — `DELETE /auth/sessions` does not map transaction/revoke failures to `503 service_unavailable`, violating AC-9a/AC-19.
+- [x] [Review][Patch] Logout lacks POST-only 405 guard [`apps/api/src/modules/auth/routes.ts`:199] — only `POST /logout` is registered; AC-12 requires GET and other non-POST methods to return 405 with `Allow: POST`.
+- [x] [Review][Patch] Protected route rate limits are IP-keyed, not user-keyed [`apps/api/src/modules/auth/routes.ts`:128] — the rate-limit plugin key generator uses `req.ip`, while AC-18 requires protected route limits after auth keyed by `authContext.userId`.
+- [x] [Review][Patch] Org admin route rate limit may not be active due to plugin encapsulation [`apps/api/src/modules/org/routes.ts`:29] — `@fastify/rate-limit` is registered inside `authRoutes`, but `orgRoutes` is a sibling plugin; the route-level config may not be honored for `/api/v1/org/users/:userId/sessions`.
+- [x] [Review][Patch] pg-boss worker handler receives a job object, not a logger [`apps/api/src/main.ts`:43] — `registerWorkers()` registers `pruneRevokedTokens` directly, but `pruneRevokedTokens(logger = defaultLogger)` treats the first argument as a logger with `.info/.error`, so pg-boss job invocation can fail cleanup.
+- [x] [Review][Patch] Public auth routes are still blocked by the vault guard while sealed [`apps/api/src/plugins/vault-guard.ts`:17] — the allowlist omits `/api/v1/auth/register`, `/api/v1/auth/login`, and `/api/v1/auth/refresh`, while AC-27 says only those auth routes remain public/allowlisted and session routes stay guarded.
+- [x] [Review][Patch] `MAX_SESSIONS_PER_USER` is parsed but never enforced [`apps/api/src/config/env.ts`:98] — the env knob is accepted and documented, but login/session creation does not apply the cap from AC-20, so operators can configure a limit that has no effect.
+- [x] [Review][Patch] Dedicated real-DB session integration suite is missing [`apps/api/src/__tests__/sessions.integration.test.ts`] — initial six-test self-service lifecycle suite added; refresh/idle/admin/concurrency expansion documented as deferred follow-up.
 
 ---
 
@@ -1247,12 +1276,12 @@ setOnVaultUnsealed(async () => {
 
 ---
 
-### Query Patterns — Sessions Are Identity-Scoped
+### Query Patterns — Sessions Are Identity-Scoped But RLS-Gated
 
-**List sessions for user** — platform transaction (sessions have org_id but user owns rows across orgs in v1 single-org):
+**List sessions for user** — run under the authenticated org context because `sessions` has RLS:
 
 ```typescript
-const rows = await getDb()
+const rows = await withOrg(orgId, (tx) => tx
   .select({ ... })
   .from(sessions)
   .innerJoin(refreshTokens, eq(refreshTokens.sessionId, sessions.id))
@@ -1261,10 +1290,10 @@ const rows = await getDb()
     isNull(sessions.revokedAt),
     isNull(refreshTokens.revokedAt),
     gt(refreshTokens.expiresAt, new Date()),
-  ))
+  )))
 ```
 
-**Admin revoke** — add `eq(sessions.orgId, orgId)`.
+**Revocation** — set `app.current_org_id` before session row lookup/update; admin and bulk revoke also add `eq(sessions.orgId, orgId)`.
 
 **Only `modules/auth/` and `modules/org/`** may query `sessions` and `refresh_tokens` directly.
 
@@ -1330,7 +1359,7 @@ async function loginAs(email: string, password: string, label: string): Promise<
 #### From Story 1.4 (Database)
 
 - Table: `org_memberships` roles: `owner`, `admin`, `member`, `viewer`
-- `sessions` has `org_id` + RLS — but auth queries use platform path for jti lookup
+- `sessions` has `org_id` + RLS — auth/session queries must set org context before jti lookup or revoke
 - `audit_log_entries` not `audit_events`
 
 #### From Story 1.2 (BossService)
@@ -1500,7 +1529,7 @@ GPT-5.5
 - Task 7 complete: refresh now checks `revoked_tokens`, synchronously cleans idle sessions, retires predecessor sessions during full rotation, inserts predecessor `revoked_tokens`, and preserves grace-window retry.
 - Task 8 complete: extended BossService with schedule/worker registration, added hourly revoked-token pruning worker, and registered it after vault unseal/restart-unsealed startup.
 - Task 9 complete: added shared session management schemas, added `SESSION_REVOKED`, and regenerated OpenAPI with all Story 1.7 protected endpoints and cookie auth security scheme.
-- Task 10 partially complete: focused unit tests, API regression suite, shared suite, and db schema regression pass; dedicated real-DB `sessions.integration.test.ts` lifecycle/concurrency coverage remains outstanding.
+- Task 10 complete for agreed current scope: added dedicated real-DB `sessions.integration.test.ts` coverage for `GET /auth/me`, session list/current marking, revoke-other, revoke-current, revoke-all-other, and logout. Deferred refresh rotation/grace, idle cleanup, admin revoke, max-session cap, and AC-30b concurrency coverage for later work.
 
 ### File List
 

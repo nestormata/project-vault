@@ -28,16 +28,27 @@ vi.mock('./password.js', () => ({
   verifyUserPassword: vi.fn(async () => false),
 }))
 
-function loginRows(rows: unknown[]) {
-  db.select.mockReturnValue({
+function userLookupRows(rows: unknown[]) {
+  return {
     from: () => ({
       leftJoin: () => ({
-        leftJoin: () => ({
-          where: async () => rows,
-        }),
+        where: async () => rows,
       }),
     }),
-  })
+  }
+}
+
+function orgLookupRows(rows: unknown[] = []) {
+  return {
+    from: async () => rows,
+  }
+}
+
+function loginRows(rows: unknown[]) {
+  db.select.mockReturnValueOnce(userLookupRows(rows))
+  if (rows.length > 0) {
+    db.select.mockReturnValueOnce(orgLookupRows())
+  }
 }
 
 describe('failed login platform security events', () => {

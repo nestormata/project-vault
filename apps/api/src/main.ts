@@ -40,7 +40,7 @@ async function main(): Promise<void> {
     await boss.start()
     if (bossRegistered) return
     await boss.registerSchedules({ 'prune-revoked-tokens': { cron: '0 * * * *' } })
-    await boss.registerWorkers({ 'prune-revoked-tokens': pruneRevokedTokens })
+    await boss.registerWorkers({ 'prune-revoked-tokens': () => pruneRevokedTokens() })
     bossRegistered = true
   }
   setOnVaultUnsealed(startBossAndRegisterWorkers)

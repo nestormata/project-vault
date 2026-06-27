@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, isNull, sql, type SQL } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
   auditLogEntries,
@@ -20,8 +20,13 @@ import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
+import { evictSessionActivityDebounce } from './session-activity.js'
 import { generateRefreshToken, hashRefreshToken } from './tokens.js'
-import { cleanupExpiredSession, computeRevokedTokenExpiresAt } from './session-revoke.js'
+import {
+  cleanupExpiredSession,
+  computeRevokedTokenExpiresAt,
+  revokeSessionById,
+} from './session-revoke.js'
 
 const MAX_SLUG_ATTEMPTS = 5
 const REFRESH_TOKEN_REVOKED = 'refresh_token_revoked'
@@ -226,6 +231,8 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
       const user = insertedUsers[0]
       if (!user) throw new Error('registerUser: user insert returned no row')
 
+      await tx.execute(sql`SELECT set_config('app.current_org_id', ${org.id}, true)`)
+      await tx.execute(sql`SELECT set_config('app.auth_bootstrap_org_id', ${org.id}, true)`)
       await tx.insert(orgMemberships).values({
         orgId: org.id,
         userId: user.id,
@@ -239,7 +246,6 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
       const identityToken = identityRows[0]
       if (!identityToken) throw new Error('registerUser: identity token insert returned no row')
 
-      await tx.execute(sql`SELECT set_config('app.auth_bootstrap_org_id', ${org.id}, true)`)
       await insertAuditEntry(tx as Tx, {
         orgId: org.id,
         actorTokenId: identityToken.id,
@@ -303,20 +309,39 @@ async function recordLoginFailed(
 }
 
 async function findLoginUser(email: string) {
-  const rows = await getDb()
+  const userRows = await getDb()
     .select({
       id: users.id,
       email: users.email,
       passwordHash: users.passwordHash,
-      orgId: orgMemberships.orgId,
-      membershipStatus: orgMemberships.status,
       identityTokenId: userIdentityTokens.id,
     })
     .from(users)
-    .leftJoin(orgMemberships, eq(orgMemberships.userId, users.id))
     .leftJoin(userIdentityTokens, eq(userIdentityTokens.userId, users.id))
     .where(eq(users.email, email))
-  return rows
+  const user = userRows[0]
+  if (!user) return []
+
+  const orgRows = await getDb().select({ orgId: organizations.id }).from(organizations)
+  const membershipRows = []
+  for (const { orgId } of orgRows) {
+    const memberships = await withOrg(orgId, (tx) =>
+      tx
+        .select({
+          orgId: orgMemberships.orgId,
+          membershipStatus: orgMemberships.status,
+        })
+        .from(orgMemberships)
+        .where(eq(orgMemberships.userId, user.id))
+        .limit(1)
+    )
+    const membership = memberships[0]
+    if (membership) {
+      membershipRows.push({ ...user, ...membership })
+    }
+  }
+
+  return membershipRows.length ? membershipRows : [{ ...user, orgId: null, membershipStatus: null }]
 }
 
 function invalidCredentials(): AppError {
@@ -370,6 +395,7 @@ async function createLoginSession(
   meta: RequestMeta
 ): Promise<LoginResult> {
   return withOrg(orgId, async (tx) => {
+    await enforceMaxSessionsForUser(tx, user.id, orgId)
     const jti = randomUUID()
     const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)
     const tokens = buildTokenMaterial(user.id, orgId, jti)
@@ -411,6 +437,57 @@ async function createLoginSession(
       tokens,
     }
   })
+}
+
+function activeSessionPredicate({
+  userId,
+  orgId,
+  idleCutoff,
+}: {
+  userId: string
+  orgId: string
+  idleCutoff?: Date
+}): SQL | undefined {
+  const predicates = [
+    eq(sessions.userId, userId),
+    eq(sessions.orgId, orgId),
+    isNull(sessions.revokedAt),
+    isNull(refreshTokens.revokedAt),
+    gt(refreshTokens.expiresAt, new Date()),
+  ]
+  if (idleCutoff) predicates.push(gt(sessions.lastActiveAt, idleCutoff))
+  return and(...predicates)
+}
+
+async function enforceMaxSessionsForUser(tx: Tx, userId: string, orgId: string): Promise<void> {
+  if (env.MAX_SESSIONS_PER_USER === 0) return
+  const rows = await tx
+    .select({ id: sessions.id })
+    .from(sessions)
+    .innerJoin(refreshTokens, eq(refreshTokens.sessionId, sessions.id))
+    .where(activeSessionPredicate({ userId, orgId }))
+    .orderBy(asc(sessions.lastActiveAt))
+
+  const seen = new Set<string>()
+  const activeSessionIds = rows
+    .map((row) => row.id)
+    .filter((id) => {
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+  const revokeCount = activeSessionIds.length - env.MAX_SESSIONS_PER_USER + 1
+  if (revokeCount <= 0) return
+
+  for (const sessionId of activeSessionIds.slice(0, revokeCount)) {
+    await revokeSessionById(sessionId, {
+      actorUserId: userId,
+      scope: 'security',
+      tx,
+      expectedUserId: userId,
+      expectedOrgId: orgId,
+    })
+  }
 }
 
 export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Promise<LoginResult> {
@@ -575,6 +652,7 @@ async function rotateRefreshToken(
       }),
     })
     .onConflictDoNothing()
+  evictSessionActivityDebounce(row.sessionId)
 
   return { expiresAt: expiresAt.toISOString(), tokens }
 }
@@ -587,8 +665,8 @@ export async function refreshSession(
   const tokenHash = hashRefreshToken(refreshOpaque)
   return getDb().transaction(async (tx) => {
     const row = await findRefreshRow(tx as Tx, tokenHash)
-    if (row.sessionRevokedAt) throw revokedRefreshToken()
     if (row.usedAt) return handleGraceRefresh(tx as Tx, row)
+    if (row.sessionRevokedAt) throw revokedRefreshToken()
     if (row.revokedAt) throw revokedRefreshToken()
     if (row.expiresAt.getTime() <= Date.now()) {
       throw new AppError('refresh_token_expired', 'Refresh token has expired', 401)
@@ -608,29 +686,27 @@ export async function refreshSession(
   })
 }
 
-export async function listSessions(userId: string, currentJti: string): Promise<SessionSummary[]> {
+export async function listSessions(
+  userId: string,
+  orgId: string,
+  currentJti: string
+): Promise<SessionSummary[]> {
   const idleCutoff = new Date(Date.now() - env.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000)
-  const rows = await getDb()
-    .select({
-      sessionId: sessions.id,
-      jti: sessions.jti,
-      createdAt: sessions.createdAt,
-      lastActiveAt: sessions.lastActiveAt,
-      ipAddress: sessions.ipAddress,
-      userAgent: sessions.userAgent,
-    })
-    .from(sessions)
-    .innerJoin(refreshTokens, eq(refreshTokens.sessionId, sessions.id))
-    .where(
-      and(
-        eq(sessions.userId, userId),
-        isNull(sessions.revokedAt),
-        isNull(refreshTokens.revokedAt),
-        gt(refreshTokens.expiresAt, new Date()),
-        gt(sessions.lastActiveAt, idleCutoff)
-      )
-    )
-    .orderBy(desc(sessions.lastActiveAt))
+  const rows = await withOrg(orgId, (tx) =>
+    tx
+      .select({
+        sessionId: sessions.id,
+        jti: sessions.jti,
+        createdAt: sessions.createdAt,
+        lastActiveAt: sessions.lastActiveAt,
+        ipAddress: sessions.ipAddress,
+        userAgent: sessions.userAgent,
+      })
+      .from(sessions)
+      .innerJoin(refreshTokens, eq(refreshTokens.sessionId, sessions.id))
+      .where(activeSessionPredicate({ userId, orgId, idleCutoff }))
+      .orderBy(desc(sessions.lastActiveAt))
+  )
 
   const seen = new Set<string>()
   return rows

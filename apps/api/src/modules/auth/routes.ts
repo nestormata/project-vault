@@ -5,7 +5,12 @@ import { z } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
-import { authPreHandler, requireAuthContext, validationError } from '../../lib/route-helpers.js'
+import {
+  authPreHandler,
+  enforceUserRateLimit,
+  requireAuthContext,
+  validationError,
+} from '../../lib/route-helpers.js'
 import { LoginRequestSchema, RegisterRequestSchema } from './schema.js'
 import { normalizeEmail } from './normalize.js'
 import { clearAuthCookies, setAuthCookies, type CookieReply } from './tokens.js'
@@ -24,6 +29,7 @@ type JwtFastify = FastifyApp & {
       payload: Record<string, unknown>,
       options: { jti: string; expiresIn: number }
     ) => Promise<string> | string
+    decode: (token: string) => unknown
   }
 }
 type AuthContext = NonNullable<FastifyRequest['authContext']>
@@ -87,6 +93,16 @@ async function buildCookieTokens(fastify: FastifyApp, tokens: TokenMaterial) {
   return { ...tokens, accessJwt: jwt }
 }
 
+function accessTokenExpFromRequest(fastify: FastifyApp, req: FastifyRequest): Date | undefined {
+  const accessToken = (req as unknown as { cookies?: Record<string, string | undefined> })
+    .cookies?.['access-token']
+  if (!accessToken) return undefined
+  const decoded = (fastify as JwtFastify).jwt.decode(accessToken)
+  if (!decoded || typeof decoded !== 'object') return undefined
+  const exp = (decoded as { exp?: unknown }).exp
+  return typeof exp === 'number' ? new Date(exp * 1000) : undefined
+}
+
 function sendAppError(reply: FastifyReply, error: AppError) {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
 }
@@ -111,13 +127,21 @@ function registerProtectedRoute(fastify: FastifyApp, options: ProtectedRouteOpti
   fastify.route({
     method: options.method,
     url: options.url,
-    config: options.rateLimitMax
-      ? { rateLimit: { max: options.rateLimitMax, timeWindow: '1 minute' } }
-      : undefined,
     preHandler: [authPreHandler(fastify)],
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const authContext = requireAuthContext(req, reply)
       if (!authContext) return reply
+      if (
+        options.rateLimitMax &&
+        !enforceUserRateLimit({
+          userId: authContext.userId,
+          key: `${options.method} ${options.url}`,
+          max: options.rateLimitMax,
+          reply,
+        })
+      ) {
+        return reply
+      }
       return options.handler(authContext, req, reply)
     },
   })
@@ -137,6 +161,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/register')
   registerMethodNotAllowed(fastify, '/login')
   registerMethodNotAllowed(fastify, '/refresh')
+  registerMethodNotAllowed(fastify, '/logout')
 
   registerProtectedRoute(fastify, {
     method: 'GET',
@@ -157,7 +182,11 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     url: '/sessions',
     rateLimitMax: 30,
     handler: async (authContext, _req, reply) => {
-      const sessionsList = await listSessions(authContext.userId, authContext.jti)
+      const sessionsList = await listSessions(
+        authContext.userId,
+        authContext.orgId,
+        authContext.jti
+      )
       return reply.send({ data: sessionsList })
     },
   })
@@ -167,12 +196,20 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     url: '/sessions',
     rateLimitMax: 10,
     handler: async (authContext, _req, reply) => {
-      const result = await revokeAllOtherSessions({
-        userId: authContext.userId,
-        currentJti: authContext.jti,
-        actorUserId: authContext.userId,
-      })
-      return reply.send({ data: result })
+      try {
+        const result = await revokeAllOtherSessions({
+          userId: authContext.userId,
+          orgId: authContext.orgId,
+          currentJti: authContext.jti,
+          actorUserId: authContext.userId,
+        })
+        return reply.send({ data: result })
+      } catch {
+        return sendAppError(
+          reply,
+          new AppError('service_unavailable', 'Session revocation service is unavailable', 503)
+        )
+      }
     },
   })
 
@@ -187,6 +224,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: authContext.userId,
         scope: parsed.data.sessionId === authContext.sessionId ? 'logout' : 'single',
         expectedUserId: authContext.userId,
+        expectedOrgId: authContext.orgId,
       })
       if (!result.revoked) return sendAppError(reply, sessionNotFound())
       if (parsed.data.sessionId === authContext.sessionId) {
@@ -205,6 +243,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: authContext.userId,
         scope: 'logout',
         expectedUserId: authContext.userId,
+        expectedOrgId: authContext.orgId,
       })
       clearAuthCookies(reply as unknown as CookieReply)
       return reply.status(204).send()
@@ -282,7 +321,11 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           .send({ code: 'refresh_token_invalid', message: 'Refresh token is invalid' })
       }
       try {
-        const result = await refreshSession(refreshOpaque, metaFromRequest(req))
+        const result = await refreshSession(
+          refreshOpaque,
+          metaFromRequest(req),
+          accessTokenExpFromRequest(fastify, req)
+        )
         setAuthCookies(
           reply as unknown as CookieReply,
           await buildCookieTokens(fastify, result.tokens)

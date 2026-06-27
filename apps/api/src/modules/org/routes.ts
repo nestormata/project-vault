@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify/types/request.js'
 import { getDb } from '@project-vault/db'
 import { orgMemberships } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
-import { authPreHandler, validationError } from '../../lib/route-helpers.js'
+import { authPreHandler, enforceUserRateLimit, validationError } from '../../lib/route-helpers.js'
 import { requireOrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { OrgUserParamsSchema } from './schema.js'
@@ -13,7 +13,6 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
   fastify.route({
     method: 'DELETE',
     url: '/users/:userId/sessions',
-    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     preHandler: [authPreHandler(fastify), requireOrgRole('admin', 'owner')],
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const authContext = req.authContext
@@ -21,6 +20,16 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         return reply
           .status(401)
           .send({ code: 'access_token_missing', message: 'Access token is missing' })
+      }
+      if (
+        !enforceUserRateLimit({
+          userId: authContext.userId,
+          key: 'DELETE /org/users/:userId/sessions',
+          max: 20,
+          reply,
+        })
+      ) {
+        return reply
       }
       const parsed = OrgUserParamsSchema.safeParse(req.params)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'params'))

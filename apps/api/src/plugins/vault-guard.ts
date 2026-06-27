@@ -19,6 +19,9 @@ const VAULT_GUARD_ALLOWLIST = new Set([
   'GET /ready',
   'POST /api/v1/vault/init',
   'POST /api/v1/vault/unseal',
+  'POST /api/v1/auth/register',
+  'POST /api/v1/auth/login',
+  'POST /api/v1/auth/refresh',
 ])
 
 async function vaultGuard(fastify: FastifyInstance): Promise<void> {

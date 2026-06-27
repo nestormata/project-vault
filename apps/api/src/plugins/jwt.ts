@@ -1,8 +1,9 @@
 import fjwt from '@fastify/jwt'
-import type { FastifyApp } from '../lib/fastify-app.js'
+import fp from 'fastify-plugin'
+import type { FastifyInstance } from 'fastify'
 import { env } from '../config/env.js'
 
-export async function jwtPlugin(fastify: FastifyApp): Promise<void> {
+export const jwtPlugin = fp(async function jwtPlugin(fastify: FastifyInstance): Promise<void> {
   // env.ts rejects missing production secrets at import time. This fallback only protects
   // concurrent unit tests that temporarily mutate process.env while creating apps.
   const secret = env.SESSION_SECRET || process.env['SESSION_SECRET'] || 'a'.repeat(64)
@@ -15,4 +16,4 @@ export async function jwtPlugin(fastify: FastifyApp): Promise<void> {
       signed: false,
     },
   })
-}
+})
