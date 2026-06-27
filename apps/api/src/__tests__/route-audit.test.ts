@@ -1,7 +1,15 @@
-import { readFileSync } from 'node:fs'
+/* eslint-disable security/detect-non-literal-fs-filename */
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { MFA_ENROLLMENT_EXEMPT_ROUTES } from '@project-vault/shared'
+import {
+  DIRECT_DB_ACCESS_CLASSIFICATIONS,
+  HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS,
+  PUBLIC_ROUTE_EXEMPTIONS,
+  ROUTE_ACTION_CLASSIFICATIONS,
+} from '../lib/route-exemptions.js'
 
 export const EXEMPT_PATHS = new Set([
   '/health',
@@ -15,57 +23,397 @@ export const EXEMPT_PATHS = new Set([
   '/api/v1/auth/mfa/recover',
 ])
 
-// Routes.ts file path (relative to apps/api/src/modules) -> the prefix it's registered
-// under in app.ts (`fastify.register(routes, { prefix })`).
-const ROUTE_FILES: Array<{ path: string; prefix: string }> = [
-  { path: 'modules/auth/routes.ts', prefix: '/api/v1/auth' },
-  { path: 'modules/org/routes.ts', prefix: '/api/v1/org' },
-]
+const SRC_ROOT = resolve(process.cwd(), 'src')
+const FASTIFY_SHORTHANDS = ['get', 'post', 'put', 'patch', 'delete'] as const
 
 type ParsedRoute = {
   method: string
   url: string
   preHandlerSource: string
+  registrar: string
+}
+
+type RouteFile = { path: string; prefix: string }
+type ParsedProductionRoute = RouteFile & { route: ParsedRoute; routeKey: string }
+
+function tsFilesUnder(relativeDir: string): string[] {
+  const root = resolve(SRC_ROOT, relativeDir)
+  const files: string[] = []
+  function visit(dir: string): void {
+    for (const entry of readdirSync(dir)) {
+      const fullPath = resolve(dir, entry)
+      const stat = statSync(fullPath)
+      if (stat.isDirectory()) {
+        visit(fullPath)
+      } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+        files.push(fullPath.slice(SRC_ROOT.length + 1))
+      }
+    }
+  }
+  visit(root)
+  return files.sort()
+}
+
+function workerFiles(): string[] {
+  return tsFilesUnder('workers')
+}
+
+function routeFilesForDbScan(): string[] {
+  return [
+    ...tsFilesUnder('routes'),
+    ...tsFilesUnder('modules').filter((path) => path.endsWith('/routes.ts')),
+  ].sort()
+}
+
+function sourceFile(source: string, path = 'route.ts'): ts.SourceFile {
+  return ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+}
+
+function literalText(node: ts.Expression | undefined): string | undefined {
+  if (!node) return undefined
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text
+  return undefined
+}
+
+function propertyNameText(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name))
+    return name.text
+  return undefined
+}
+
+function objectProperty(
+  object: ts.ObjectLiteralExpression,
+  name: string
+): ts.Expression | undefined {
+  for (const property of object.properties) {
+    if (!ts.isPropertyAssignment(property)) continue
+    if (propertyNameText(property.name) === name) return property.initializer
+  }
+  return undefined
+}
+
+function routeFromOptions(
+  object: ts.ObjectLiteralExpression,
+  registrar: string,
+  fallbackMethod?: string
+): ParsedRoute | null {
+  const method = fallbackMethod ?? literalText(objectProperty(object, 'method'))
+  const url = literalText(objectProperty(object, 'url'))
+  const security = objectProperty(object, 'security')
+  const preHandler = objectProperty(object, 'preHandler')
+  const preHandlerSource = (security ?? preHandler)?.getText() ?? ''
+  if (!method && !url) return null
+  return { method: method ?? '<dynamic>', url: url ?? '<dynamic>', preHandlerSource, registrar }
+}
+
+function importPathToSourcePath(moduleSpecifier: string): string | null {
+  if (!moduleSpecifier.startsWith('./')) return null
+  return moduleSpecifier.replace(/^\.\//, '').replace(/\.js$/, '.ts')
+}
+
+function registeredRouteFromCall(
+  node: ts.CallExpression,
+  imports: Map<string, string>
+): RouteFile | null {
+  if (!ts.isPropertyAccessExpression(node.expression)) return null
+  if (node.expression.name.text !== 'register') return null
+  const firstArgument = node.arguments[0]
+  if (!firstArgument || !ts.isIdentifier(firstArgument)) return null
+  const routePath = imports.get(firstArgument.text)
+  if (!routePath) return null
+  const options = node.arguments[1]
+  const prefix =
+    options && ts.isObjectLiteralExpression(options)
+      ? (literalText(objectProperty(options, 'prefix')) ?? '')
+      : ''
+  return { path: routePath, prefix }
+}
+
+function productionRouteFiles(): RouteFile[] {
+  const appSource = readFileSync(resolve(SRC_ROOT, 'app.ts'), 'utf-8')
+  const app = sourceFile(appSource, 'app.ts')
+  const imports = new Map<string, string>()
+  const routes: RouteFile[] = []
+
+  for (const statement of app.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) continue
+    const importedPath = importPathToSourcePath(statement.moduleSpecifier.text)
+    if (!importedPath) continue
+    const namedBindings = statement.importClause?.namedBindings
+    if (!namedBindings || !ts.isNamedImports(namedBindings)) continue
+    for (const specifier of namedBindings.elements) {
+      imports.set(specifier.name.text, importedPath)
+    }
+  }
+
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node)) {
+      const route = registeredRouteFromCall(node, imports)
+      if (route) routes.push(route)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(app)
+
+  return [...new Map(routes.map((route) => [route.path, route])).values()].sort((a, b) =>
+    a.path.localeCompare(b.path)
+  )
+}
+
+function rawRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
+  if (!ts.isPropertyAccessExpression(node.expression)) return null
+  if (node.expression.name.text !== 'route') return null
+  const firstArgument = node.arguments[0]
+  if (!firstArgument || !ts.isObjectLiteralExpression(firstArgument)) return null
+  return routeFromOptions(firstArgument, 'fastify.route')
+}
+
+function shorthandRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
+  if (!ts.isPropertyAccessExpression(node.expression)) return null
+  const registrar = node.expression.name.text
+  if (!(FASTIFY_SHORTHANDS as readonly string[]).includes(registrar)) return null
+  const url = literalText(node.arguments[0])
+  return {
+    method: registrar.toUpperCase(),
+    url: url ?? '<dynamic>',
+    preHandlerSource: node.arguments[1]?.getText() ?? '',
+    registrar: `fastify.${registrar}`,
+  }
+}
+
+function parseRawRouteDeclarations(source: string): ParsedRoute[] {
+  const routes: ParsedRoute[] = []
+  const file = sourceFile(source)
+
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node)) {
+      const route = rawRegisteredRoute(node) ?? shorthandRegisteredRoute(node)
+      if (route) routes.push(route)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return routes
 }
 
 function parseRoutes(source: string): ParsedRoute[] {
-  return source
-    .split('fastify.route(')
-    .slice(1)
-    .map((chunk) => {
-      const head = chunk.split(/handler:\s*async/)[0] ?? chunk
-      const method = /method:\s*'([A-Z]+)'/.exec(head)?.[1] ?? ''
-      const url = /url:\s*'([^']+)'/.exec(head)?.[1] ?? ''
-      const preHandlerSource = /preHandler:\s*\[([^\]]*)\]/.exec(head)?.[1] ?? ''
-      return { method, url, preHandlerSource }
-    })
-    .filter((route) => route.method && route.url)
+  const secureRoutes: ParsedRoute[] = []
+  const file = sourceFile(source)
+  function visit(node: ts.Node): void {
+    const secondArgument = ts.isCallExpression(node) ? node.arguments[1] : undefined
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'secureRoute' &&
+      secondArgument &&
+      ts.isObjectLiteralExpression(secondArgument)
+    ) {
+      const route = routeFromOptions(secondArgument, 'secureRoute')
+      if (route) secureRoutes.push(route)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return [...parseRawRouteDeclarations(source), ...secureRoutes]
+}
+
+function parsedProductionRoutes(): ParsedProductionRoute[] {
+  const entries: ParsedProductionRoute[] = []
+  for (const { path, prefix } of productionRouteFiles()) {
+    const source = readFileSync(resolve(process.cwd(), 'src', path), 'utf-8')
+    for (const route of parseRoutes(source)) {
+      entries.push({ path, prefix, route, routeKey: routeKeyFor(route, prefix) })
+    }
+  }
+  return entries
 }
 
 function requiresOwnerOrAdmin(preHandlerSource: string): boolean {
   const match = /requireOrgRole\(([^)]*)\)/.exec(preHandlerSource)
-  if (!match) return false
-  return /'owner'|'admin'/.test(match[1] ?? '')
+  if (match && /'owner'|'admin'/.test(match[1] ?? '')) return true
+  if (/allowedRoles:\s*\[[^\]]*'(owner|admin)'/.test(preHandlerSource)) return true
+  return /minimumRole:\s*'(owner|admin)'/.test(preHandlerSource)
+}
+
+function routeKeyFor(route: ParsedRoute, prefix: string): string {
+  return `${route.method} ${prefix}${route.url}`
+}
+
+function isRawApiRoute(route: ParsedRoute, routeKey: string, prefix: string): boolean {
+  if (route.registrar === 'secureRoute') return false
+  if (routeKey.includes('/api/v1/') || routeKey.endsWith(' /api/v1')) return true
+  return route.url === '<dynamic>' && prefix.startsWith('/api/v1')
+}
+
+function missingActionClassification(
+  route: ParsedRoute,
+  routeKey: string,
+  classified: Set<string>
+): boolean {
+  if (route.registrar !== 'secureRoute') return false
+  if (!routeKey.includes('/api/v1/')) return false
+  return !classified.has(routeKey)
+}
+
+function assertClassifiedHelpers(): void {
+  const classifiedHelpers = new Set(Object.keys(HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS))
+  const helperViolations: string[] = []
+  for (const { path } of productionRouteFiles()) {
+    const source = readFileSync(resolve(process.cwd(), 'src', path), 'utf-8')
+    for (const helper of helperRegistrars(source)) {
+      if (!classifiedHelpers.has(helper)) helperViolations.push(`${path}: ${helper}`)
+    }
+  }
+  expect(helperViolations).toEqual([])
+}
+
+function assertClassifiedProtectedRoutes(): void {
+  const classifiedRoutes = new Set(Object.keys(ROUTE_ACTION_CLASSIFICATIONS))
+  const routeViolations: string[] = []
+  for (const { route, routeKey } of parsedProductionRoutes()) {
+    if (missingActionClassification(route, routeKey, classifiedRoutes)) {
+      routeViolations.push(routeKey)
+    }
+  }
+  expect(routeViolations).toEqual([])
+}
+
+function assertClassificationMetadata(): void {
+  for (const [route, classification] of Object.entries(ROUTE_ACTION_CLASSIFICATIONS)) {
+    expect(route).toMatch(/^[A-Z]+ \/api\/v1\//)
+    expect(['read', 'sensitive-read', 'mutation', 'security-action']).toContain(
+      classification.action
+    )
+    if (
+      (classification.action === 'mutation' || classification.action === 'security-action') &&
+      !classification.auditEvent
+    ) {
+      expect(classification.auditOmissionReason).toBeTruthy()
+      expect(classification.reviewer).toBeTruthy()
+    }
+  }
+}
+
+function helperRegistrars(source: string): string[] {
+  const helpers: string[] = []
+  for (const match of source.matchAll(/function\s+(\w+)\s*\([^)]*fastify[^)]*\)\s*:\s*[^{]+\{/g)) {
+    const name = match[1] ?? ''
+    if (!name || name.endsWith('Routes')) continue
+    const body = source.slice(match.index ?? 0, source.indexOf('\n}\n', match.index ?? 0) + 3)
+    if (/fastify\.(route|get|post|put|patch|delete)\(/.test(body)) helpers.push(name)
+  }
+  return helpers
 }
 
 describe('route audit', () => {
-  it.todo('every /api/v1/ route must be registered via SecureRoute')
+  it('every non-public /api/v1 route is registered via SecureRoute', () => {
+    const publicRoutes = new Set(PUBLIC_ROUTE_EXEMPTIONS.map((entry) => entry.route))
+    const violations: string[] = []
+
+    for (const { path, prefix, route, routeKey } of parsedProductionRoutes()) {
+      if (route.registrar === 'secureRoute' || publicRoutes.has(routeKey)) continue
+      if (!isRawApiRoute(route, routeKey, prefix)) continue
+      violations.push(`${path}: ${routeKey} uses ${route.registrar}`)
+    }
+
+    expect(violations).toEqual([])
+  })
+
+  it('public route exemptions include required security metadata', () => {
+    expect(PUBLIC_ROUTE_EXEMPTIONS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          route: 'POST /api/v1/auth/login',
+          reason: expect.any(String),
+          securityOwner: expect.any(String),
+          compensatingControls: expect.arrayContaining([expect.any(String)]),
+          expiresAfterStory: null,
+        }),
+      ])
+    )
+
+    for (const exemption of PUBLIC_ROUTE_EXEMPTIONS) {
+      expect(exemption.route).toMatch(/^[A-Z]+ \//)
+      expect(exemption.reason.trim().length).toBeGreaterThan(10)
+      expect(exemption.securityOwner.trim().length).toBeGreaterThan(0)
+      expect(exemption.compensatingControls.length).toBeGreaterThan(0)
+      if (exemption.temporary) {
+        expect(exemption.expiresAfterStory ?? exemption.revisitBy).toBeTruthy()
+      }
+    }
+  })
+
+  it('classifies route-registering helpers and protected route actions', () => {
+    expect(HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS).toMatchObject({
+      secureRoute: 'secure',
+      registerMethodNotAllowed: 'shell-only',
+    })
+
+    assertClassifiedHelpers()
+    assertClassifiedProtectedRoutes()
+    assertClassificationMetadata()
+  })
+
+  it('does not use the legacy protected-route helper after SecureRoute migration', () => {
+    const authSource = readFileSync(resolve(process.cwd(), 'src/modules/auth/routes.ts'), 'utf-8')
+
+    expect(authSource).not.toContain('registerProtectedRoute(fastify')
+  })
+
+  it('requires direct getDb imports in route and worker modules to be classified', () => {
+    const classifiedPaths = new Set(DIRECT_DB_ACCESS_CLASSIFICATIONS.map((entry) => entry.path))
+    const violations: string[] = []
+
+    for (const path of [...routeFilesForDbScan(), ...workerFiles()]) {
+      const source = readFileSync(resolve(process.cwd(), 'src', path), 'utf-8')
+      if (
+        (/import\s+\{[^}]*\bgetDb\b/.test(source) ||
+          /import\s+\*\s+as\s+\w+\s+from\s+['"]@project-vault\/db['"]/.test(source)) &&
+        !classifiedPaths.has(path)
+      ) {
+        violations.push(path)
+      }
+    }
+
+    for (const classification of DIRECT_DB_ACCESS_CLASSIFICATIONS) {
+      expect(classification.reason.trim().length).toBeGreaterThan(10)
+      expect(classification.reviewer.trim().length).toBeGreaterThan(0)
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('does not spread raw request params, query, or body into audit payload builders', () => {
+    const violations: string[] = []
+    const files = [
+      'lib/secure-route.ts',
+      'modules/auth/service.ts',
+      'modules/auth/mfa.ts',
+      'modules/auth/session-revoke.ts',
+      'workers/check-failed-auth-threshold.ts',
+    ]
+
+    for (const path of files) {
+      const source = readFileSync(resolve(process.cwd(), 'src', path), 'utf-8')
+      if (/\.\.\.\s*(req|request)\.(params|query|body)/.test(source)) violations.push(path)
+    }
+
+    expect(violations).toEqual([])
+  })
 
   it('every owner/admin route requires MFA enrollment unless explicitly exempt (AC-5b/AC-5c)', () => {
     const violations: string[] = []
 
-    for (const { path, prefix } of ROUTE_FILES) {
-      const source = readFileSync(resolve(process.cwd(), 'src', path), 'utf-8')
-      for (const route of parseRoutes(source)) {
-        if (!requiresOwnerOrAdmin(route.preHandlerSource)) continue
+    for (const { route, routeKey } of parsedProductionRoutes()) {
+      if (!requiresOwnerOrAdmin(route.preHandlerSource)) continue
 
-        const routeKey = `${route.method} ${prefix}${route.url}`
-        const hasMfaCheck = route.preHandlerSource.includes('requireMfaEnrollment()')
-        const isExempt = (MFA_ENROLLMENT_EXEMPT_ROUTES as readonly string[]).includes(routeKey)
+      const hasMfaCheck =
+        route.preHandlerSource.includes('requireMfaEnrollment()') ||
+        /requireMfa:\s*true/.test(route.preHandlerSource)
+      const isExempt = (MFA_ENROLLMENT_EXEMPT_ROUTES as readonly string[]).includes(routeKey)
 
-        if (!hasMfaCheck && !isExempt) {
-          violations.push(routeKey)
-        }
+      if (!hasMfaCheck && !isExempt) {
+        violations.push(routeKey)
       }
     }
 
@@ -89,9 +437,8 @@ describe('route audit', () => {
     ).replace(/\s+/g, ' ')
 
     expect(source).toContain("url: '/users/:userId/sessions'")
-    expect(source).toMatch(
-      /preHandler:\s*\[\s*authPreHandler\(fastify\),\s*requireOrgRole\('admin', 'owner'\),\s*requireMfaEnrollment\(\)\s*\]/
-    )
+    expect(source).toMatch(/allowedRoles:\s*\['admin', 'owner'\]/)
+    expect(source).toMatch(/requireMfa:\s*true/)
   })
 
   it('does not import the test-only privileged route helper from production entrypoints', () => {

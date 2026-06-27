@@ -1,6 +1,5 @@
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
-import type { FastifySchema } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import { z } from 'zod/v4'
 import { sql } from 'drizzle-orm'
@@ -9,12 +8,8 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.js'
-import {
-  authPreHandler,
-  enforceUserRateLimit,
-  requireAuthContext,
-  validationError,
-} from '../../lib/route-helpers.js'
+import { validationError } from '../../lib/route-helpers.js'
+import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import {
   LoginRequestSchema,
   RegisterRequestSchema,
@@ -54,19 +49,6 @@ type JwtFastify = FastifyApp & {
     ) => Promise<string> | string
     decode: (token: string) => unknown
   }
-}
-type AuthContext = NonNullable<FastifyRequest['authContext']>
-type ProtectedRouteOptions = {
-  method: 'GET' | 'POST' | 'DELETE'
-  url: string
-  schema?: FastifySchema
-  rateLimitMax?: number
-  rateLimitWindowMs?: number
-  handler: (
-    authContext: AuthContext,
-    req: FastifyRequest,
-    reply: FastifyReply
-  ) => Promise<unknown> | unknown
 }
 type ParsedBody<T> = { success: true; data: T } | { success: false; reply: FastifyReply }
 type AuthSessionResult = {
@@ -157,11 +139,14 @@ async function sendAuthSession(
 async function sendMfaAction<T>(
   reply: FastifyReply,
   action: () => Promise<T>
-): Promise<FastifyReply> {
+): Promise<{ data: T } | { code: string; message: string }> {
   try {
-    return reply.send({ data: await action() })
+    return { data: await action() }
   } catch (error) {
-    if (error instanceof AppError) return sendAppError(reply, error)
+    if (error instanceof AppError) {
+      reply.status(error.statusCode)
+      return { code: error.code, message: error.message }
+    }
     throw error
   }
 }
@@ -237,33 +222,6 @@ function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
   }
 }
 
-function registerProtectedRoute(fastify: FastifyApp, options: ProtectedRouteOptions): void {
-  withRouteTypeProvider(fastify).route({
-    method: options.method,
-    url: options.url,
-    schema: options.schema,
-    attachValidation: Boolean(options.schema?.body),
-    preHandler: [authPreHandler(fastify)],
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      const authContext = requireAuthContext(req, reply)
-      if (!authContext) return reply
-      if (
-        options.rateLimitMax &&
-        !enforceUserRateLimit({
-          userId: authContext.userId,
-          key: `${options.method} ${options.url}`,
-          max: options.rateLimitMax,
-          timeWindowMs: options.rateLimitWindowMs,
-          reply,
-        })
-      ) {
-        return reply
-      }
-      return options.handler(authContext, req, reply)
-    },
-  })
-}
-
 export async function authRoutes(fastify: FastifyApp): Promise<void> {
   await fastify.register(rateLimit, {
     max: 60,
@@ -284,7 +242,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/mfa/regenerate-recovery-codes')
   registerMethodNotAllowed(fastify, '/mfa/recover')
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'GET',
     url: '/me',
     schema: {
@@ -293,10 +251,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
       },
     },
-    handler: async (authContext, _req, reply) => {
-      const mfaStatus = await getMfaStatus(authContext.userId)
-      const enforcementStatus = await loadMfaEnforcementStatus(authContext)
-      return reply.send({
+    security: { writeAuditEvent: false },
+    handler: async (ctx, _req, _reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const authContext = secureCtx.auth
+      const mfaStatus = await getMfaStatus(authContext.userId, secureCtx.tx)
+      const enforcementStatus = await loadMfaEnforcementStatus(authContext, secureCtx.tx)
+      return {
         data: {
           userId: authContext.userId,
           orgId: authContext.orgId,
@@ -305,11 +266,11 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           ...mfaStatus,
           mfaStatus: enforcementStatus.mfaStatus,
         },
-      })
+      }
     },
   })
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'POST',
     url: '/mfa/enroll',
     schema: {
@@ -320,14 +281,19 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         429: ApiErrorSchema,
       },
     },
-    rateLimitMax: 10,
-    rateLimitWindowMs: 60 * 60 * 1000,
-    handler: async (authContext, _req, reply) => {
-      return sendMfaAction(reply, () => enrollMfa(authContext, metaFromRequest(_req)))
+    security: {
+      rateLimit: { max: 10, timeWindowMs: 60 * 60 * 1000 },
+      writeAuditEvent: false, // MFA service writes the specific audit row through secureCtx.tx.
+    },
+    handler: async (ctx, _req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      return sendMfaAction(reply, () =>
+        enrollMfa(secureCtx.auth, metaFromRequest(_req), secureCtx.tx)
+      )
     },
   })
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'POST',
     url: '/mfa/verify-enrollment',
     schema: {
@@ -340,18 +306,21 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         429: ApiErrorSchema,
       },
     },
-    rateLimitMax: 20,
-    rateLimitWindowMs: 15 * 60 * 1000,
-    handler: async (authContext, req, reply) => {
+    security: {
+      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
+      writeAuditEvent: false, // MFA service writes the specific audit row through secureCtx.tx.
+    },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
       const parsed = parseBody(mfaVerifyEnrollmentBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
       return sendMfaAction(reply, () =>
-        verifyEnrollment(authContext, parsed.data, metaFromRequest(req))
+        verifyEnrollment(secureCtx.auth, parsed.data, metaFromRequest(req), secureCtx.tx)
       )
     },
   })
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'POST',
     url: '/mfa/regenerate-recovery-codes',
     schema: {
@@ -364,44 +333,51 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         429: ApiErrorSchema,
       },
     },
-    rateLimitMax: 5,
-    rateLimitWindowMs: 60 * 60 * 1000,
-    handler: async (authContext, req, reply) => {
+    security: {
+      rateLimit: { max: 5, timeWindowMs: 60 * 60 * 1000 },
+      writeAuditEvent: false, // MFA service writes the specific audit row through secureCtx.tx.
+    },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
       const parsed = parseBody(mfaRegenerateBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
       return sendMfaAction(reply, () =>
-        regenerateRecoveryCodes(authContext, parsed.data, metaFromRequest(req))
+        regenerateRecoveryCodes(secureCtx.auth, parsed.data, metaFromRequest(req), secureCtx.tx)
       )
     },
   })
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'GET',
     url: '/sessions',
-    rateLimitMax: 30,
-    handler: async (authContext, _req, reply) => {
+    security: { rateLimit: { max: 30 }, writeAuditEvent: false },
+    handler: async (ctx, _req, _reply) => {
+      const secureCtx = ctx as SecureRouteContext
       const sessionsList = await listSessions(
-        authContext.userId,
-        authContext.orgId,
-        authContext.jti
+        secureCtx.auth.userId,
+        secureCtx.auth.orgId,
+        secureCtx.auth.jti,
+        secureCtx.tx
       )
-      return reply.send({ data: sessionsList })
+      return { data: sessionsList }
     },
   })
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'DELETE',
     url: '/sessions',
-    rateLimitMax: 10,
-    handler: async (authContext, _req, reply) => {
+    security: { rateLimit: { max: 10 }, writeAuditEvent: false },
+    handler: async (ctx, _req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
       try {
         const result = await revokeAllOtherSessions({
-          userId: authContext.userId,
-          orgId: authContext.orgId,
-          currentJti: authContext.jti,
-          actorUserId: authContext.userId,
+          userId: secureCtx.auth.userId,
+          orgId: secureCtx.auth.orgId,
+          currentJti: secureCtx.auth.jti,
+          actorUserId: secureCtx.auth.userId,
+          tx: secureCtx.tx,
         })
-        return reply.send({ data: result })
+        return { data: result }
       } catch {
         return sendAppError(
           reply,
@@ -411,40 +387,46 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'DELETE',
     url: '/sessions/:sessionId',
-    rateLimitMax: 10,
-    handler: async (authContext, req, reply) => {
+    security: { rateLimit: { max: 10 }, writeAuditEvent: false },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
       const parsed = SessionParamsSchema.safeParse(req.params)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'params'))
       const result = await revokeSessionById(parsed.data.sessionId, {
-        actorUserId: authContext.userId,
-        scope: parsed.data.sessionId === authContext.sessionId ? 'logout' : 'single',
-        expectedUserId: authContext.userId,
-        expectedOrgId: authContext.orgId,
+        actorUserId: secureCtx.auth.userId,
+        scope: parsed.data.sessionId === secureCtx.auth.sessionId ? 'logout' : 'single',
+        expectedUserId: secureCtx.auth.userId,
+        expectedOrgId: secureCtx.auth.orgId,
+        tx: secureCtx.tx,
       })
       if (!result.revoked) return sendAppError(reply, sessionNotFound())
-      if (parsed.data.sessionId === authContext.sessionId) {
+      if (parsed.data.sessionId === secureCtx.auth.sessionId) {
         clearAuthCookies(reply as unknown as CookieReply)
       }
-      return reply.status(204).send()
+      reply.status(204)
+      return undefined
     },
   })
 
-  registerProtectedRoute(fastify, {
+  secureRoute(fastify, {
     method: 'POST',
     url: '/logout',
-    rateLimitMax: 30,
-    handler: async (authContext, _req, reply) => {
-      await revokeSessionById(authContext.sessionId, {
-        actorUserId: authContext.userId,
+    security: { rateLimit: { max: 30 }, writeAuditEvent: false },
+    handler: async (ctx, _req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      await revokeSessionById(secureCtx.auth.sessionId, {
+        actorUserId: secureCtx.auth.userId,
         scope: 'logout',
-        expectedUserId: authContext.userId,
-        expectedOrgId: authContext.orgId,
+        expectedUserId: secureCtx.auth.userId,
+        expectedOrgId: secureCtx.auth.orgId,
+        tx: secureCtx.tx,
       })
       clearAuthCookies(reply as unknown as CookieReply)
-      return reply.status(204).send()
+      reply.status(204)
+      return undefined
     },
   })
 

@@ -11,6 +11,7 @@ import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { failedAuthThresholdPayloadSchema } from '../modules/org/schema.js'
+import { runOrgScopedJob } from '../middleware/rls.js'
 
 const ALERT_TYPE = 'security.failed_auth_threshold'
 
@@ -225,7 +226,7 @@ async function createAlertIfNeeded(
   windowStart: Date,
   windowEnd: Date
 ): Promise<void> {
-  await withOrg(breach.orgId, async (tx) => {
+  await runOrgScopedJob(breach.orgId, 'security:check-failed-auth-threshold', async ({ tx }) => {
     // Serialize concurrent job runs against the same breach identity (AC-9c) so the
     // check-then-insert below can't race across overlapping `runFailedAuthThresholdCheck()` calls.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${dedupLockKey(breach)}))`)
