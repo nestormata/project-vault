@@ -366,7 +366,10 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'DELETE',
     url: '/sessions',
-    security: { rateLimit: { max: 10 }, writeAuditEvent: false },
+    security: {
+      rateLimit: { max: 10 },
+      writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
+    },
     handler: async (ctx, _req, reply) => {
       const secureCtx = ctx as SecureRouteContext
       try {
@@ -390,7 +393,10 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'DELETE',
     url: '/sessions/:sessionId',
-    security: { rateLimit: { max: 10 }, writeAuditEvent: false },
+    security: {
+      rateLimit: { max: 10 },
+      writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
+    },
     handler: async (ctx, req, reply) => {
       const secureCtx = ctx as SecureRouteContext
       const parsed = SessionParamsSchema.safeParse(req.params)
@@ -414,7 +420,10 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/logout',
-    security: { rateLimit: { max: 30 }, writeAuditEvent: false },
+    security: {
+      rateLimit: { max: 30 },
+      writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
+    },
     handler: async (ctx, _req, reply) => {
       const secureCtx = ctx as SecureRouteContext
       await revokeSessionById(secureCtx.auth.sessionId, {

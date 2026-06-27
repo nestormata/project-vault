@@ -34,7 +34,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       allowedRoles: ['admin', 'owner'],
       requireMfa: true,
       rateLimit: { max: 20, key: 'DELETE /org/users/:userId/sessions' },
-      writeAuditEvent: false,
+      writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
     },
     handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
       const secureCtx = ctx as SecureRouteContext

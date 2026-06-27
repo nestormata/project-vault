@@ -11,6 +11,7 @@ export type PublicRouteExemption = {
 export type RouteActionClassification = {
   action: 'read' | 'sensitive-read' | 'mutation' | 'security-action'
   auditEvent?: string
+  sameTransactionAuditService?: string
   auditOmissionReason?: string
   reviewer?: string
 }
@@ -114,14 +115,17 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/auth/mfa/enroll': {
     action: SECURITY_ACTION,
     auditEvent: 'MFA_ENROLLMENT_STARTED',
+    sameTransactionAuditService: 'enrollMfa',
   },
   'POST /api/v1/auth/mfa/verify-enrollment': {
     action: SECURITY_ACTION,
     auditEvent: 'MFA_ENROLLED',
+    sameTransactionAuditService: 'verifyEnrollment',
   },
   'POST /api/v1/auth/mfa/regenerate-recovery-codes': {
     action: SECURITY_ACTION,
     auditEvent: 'MFA_RECOVERY_CODES_REGENERATED',
+    sameTransactionAuditService: 'regenerateRecoveryCodes',
   },
   'GET /api/v1/auth/sessions': {
     action: 'read',
@@ -131,14 +135,17 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'DELETE /api/v1/auth/sessions': {
     action: SECURITY_ACTION,
     auditEvent: SESSION_REVOKED,
+    sameTransactionAuditService: 'revokeAllOtherSessions',
   },
   'DELETE /api/v1/auth/sessions/:sessionId': {
     action: SECURITY_ACTION,
     auditEvent: SESSION_REVOKED,
+    sameTransactionAuditService: 'revokeSessionById',
   },
   'POST /api/v1/auth/logout': {
     action: SECURITY_ACTION,
     auditEvent: SESSION_REVOKED,
+    sameTransactionAuditService: 'revokeSessionById',
   },
   'GET /api/v1/org/security-alerts': {
     action: 'read',
@@ -149,6 +156,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'DELETE /api/v1/org/users/:userId/sessions': {
     action: SECURITY_ACTION,
     auditEvent: SESSION_REVOKED,
+    sameTransactionAuditService: 'revokeAllUserSessionsInOrg',
   },
 }
 
