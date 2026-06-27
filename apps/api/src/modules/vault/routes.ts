@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import rateLimit from '@fastify/rate-limit'
+import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { initVault, unsealVault } from './key-service.js'
@@ -28,7 +29,7 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         )
         req.log.info(
           {
-            event: 'vault.init',
+            eventType: OperationalEvent.VAULT_INIT,
             keyVersion: result.keyVersion,
             kmsType: result.kmsType,
             body: redactBodyForLog(req.body),
@@ -38,7 +39,10 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(200).send(result)
       } catch (err) {
         if (err instanceof AppError) {
-          req.log.warn({ event: 'vault.init.failed', error: err.code }, 'Vault init failed')
+          req.log.warn(
+            { eventType: OperationalEvent.VAULT_INIT_FAILED, error: err.code },
+            'Vault init failed'
+          )
           return reply
             .status(err.statusCode)
             .send({ error: err.code.toLowerCase(), message: err.message })
@@ -73,7 +77,7 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         const result = await unsealVault(parsed.data)
         req.log.info(
           {
-            event: 'vault.unseal',
+            eventType: OperationalEvent.VAULT_UNSEAL,
             keyVersion: result.keyVersion,
             kmsType: result.kmsType,
             body: redactBodyForLog(req.body),
@@ -83,7 +87,10 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(200).send(result)
       } catch (err) {
         if (err instanceof AppError) {
-          req.log.warn({ event: 'vault.unseal.failed', error: err.code }, 'Vault unseal failed')
+          req.log.warn(
+            { eventType: OperationalEvent.VAULT_UNSEAL_FAILED, error: err.code },
+            'Vault unseal failed'
+          )
           return reply
             .status(err.statusCode)
             .send({ error: err.code.toLowerCase(), message: err.message })

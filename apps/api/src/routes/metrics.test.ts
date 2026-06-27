@@ -9,8 +9,16 @@ vi.mock('../config/env.js', () => ({
     CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
     METRICS_BIND_HOST: '127.0.0.1',
     LOG_LEVEL: 'silent',
+    SERVICE_NAME: 'api',
+    TRUST_PROXY: false,
+    TRUST_PROXY_HOPS: 1,
   },
 }))
+
+function responseText(response: unknown): string {
+  const typed = response as { body?: string; payload?: string }
+  return typed.body ?? typed.payload ?? ''
+}
 
 describe('GET /metrics', () => {
   it('returns 200 with valid Prometheus content-type for localhost', async () => {
@@ -49,6 +57,37 @@ describe('GET /metrics', () => {
     })
 
     expect(response.statusCode).toBe(403)
+    await app.close()
+  })
+
+  it('returns the Story 1.10 required metric names', async () => {
+    const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
+
+    await app.inject({ method: 'GET', url: '/health' })
+    const response = await app.inject({ method: 'GET', url: '/metrics' })
+    const body = responseText(response)
+
+    expect(response.statusCode).toBe(200)
+    expect(body).toContain('process_uptime_seconds')
+    expect(body).toContain('http_requests_total')
+    expect(body).toContain('http_request_duration_seconds')
+    expect(body).toContain('vault_sealed')
+    expect(body).toContain('db_pool_connections_active')
+    expect(body).not.toContain('http_request_duration_ms')
+    await app.close()
+  })
+
+  it('uses the Story 1.10 seconds histogram buckets', async () => {
+    const app = await createApp({ logger: false, metricsBindHost: '127.0.0.1' })
+
+    await app.inject({ method: 'GET', url: '/health' })
+    const response = await app.inject({ method: 'GET', url: '/metrics' })
+    const body = responseText(response)
+
+    expect(body).toContain('http_request_duration_seconds_bucket')
+    for (const bucket of ['0.005', '0.01', '0.025', '0.05', '0.1', '0.25', '0.5', '1', '2.5']) {
+      expect(body).toContain(`le="${bucket}"`)
+    }
     await app.close()
   })
 })

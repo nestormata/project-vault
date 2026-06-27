@@ -53,8 +53,8 @@ development_status:
   1-7-jwt-session-management-and-security-controls: in-progress
   1-8-totp-mfa-enrollment-and-recovery-codes: done
   1-9-mfa-role-enforcement-and-failed-authentication-detection: done
-  1-10-structured-operational-logging-and-metrics: ready-for-dev
-  1-11-secureroute-framework-and-drizzle-rls-middleware: backlog
+  1-10-structured-operational-logging-and-metrics: review
+  1-11-secureroute-framework-and-drizzle-rls-middleware: ready-for-dev
   1-12-mfa-login-verification-flow: backlog
   epic-1-retrospective: optional
 

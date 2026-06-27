@@ -2,6 +2,8 @@ import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import { collectDefaultMetrics, register, Counter, Histogram, Gauge } from 'prom-client'
 import type { FastifyApp } from '../lib/fastify-app.js'
+import { dbPoolConnectionsActive } from '../lib/db-pool-metrics.js'
+import { getVaultStatus } from '../modules/vault/key-service.js'
 
 collectDefaultMetrics()
 
@@ -11,11 +13,11 @@ export const httpRequestsTotal = new Counter({
   labelNames: ['method', 'route', 'status_code'],
 })
 
-export const httpRequestDurationMs = new Histogram({
-  name: 'http_request_duration_ms',
-  help: 'HTTP request duration in milliseconds',
+export const httpRequestDurationSeconds = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
   labelNames: ['method', 'route', 'status_code'],
-  buckets: [1, 5, 15, 50, 100, 500, 1000, 5000],
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
 })
 
 export const processUptimeSeconds = new Gauge({
@@ -25,6 +27,18 @@ export const processUptimeSeconds = new Gauge({
     this.set(process.uptime())
   },
 })
+
+export const vaultSealed = new Gauge({
+  name: 'vault_sealed',
+  help: '1 if vault is sealed or uninitialized, 0 if unsealed',
+  collect() {
+    this.set(getVaultStatus() !== 'unsealed' ? 1 : 0)
+  },
+})
+
+// Keep an explicit module reference so this route module registers the Story 1.10
+// DB gauge even when no instrumented pool has issued a query yet.
+void dbPoolConnectionsActive
 
 function isLoopbackRemoteAddress(remoteAddress: string): boolean {
   return (
@@ -52,6 +66,14 @@ export async function metricsRoutes(
       route,
       status_code: String(reply.statusCode),
     })
+    httpRequestDurationSeconds.observe(
+      {
+        method: req.method,
+        route,
+        status_code: String(reply.statusCode),
+      },
+      reply.elapsedTime / 1000
+    )
     done()
   })
 }

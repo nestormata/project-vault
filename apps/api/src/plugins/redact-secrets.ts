@@ -9,6 +9,11 @@ const REDACTED_FIELDS = new Set([
   'otpauthUrl',
   'qrCodeSvg',
   'recoveryCodes',
+  'value',
+  'refreshToken',
+  'accessToken',
+  'currentPassword',
+  'newPassword',
 ])
 
 export function redactBodyForLog(body: unknown): unknown {
