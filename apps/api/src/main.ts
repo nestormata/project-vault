@@ -19,13 +19,15 @@ import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
-import { operationalLog } from './lib/logger.js'
+import { operationalLog, serializeLogError } from './lib/logger.js'
+import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
   version: string
 }
+let startupLogger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> | undefined
 
 async function main(): Promise<void> {
   // Architecture mandates this exact startup ORDER:
@@ -48,6 +50,7 @@ async function main(): Promise<void> {
     dbPool,
     vaultGuardEnabled: true,
   })
+  startupLogger = fastify.log
   operationalLog(
     fastify.log,
     'info',
@@ -85,9 +88,12 @@ async function main(): Promise<void> {
       'mfa:prune-totp-used-codes': () => pruneTotpUsedCodes(),
       'mfa:prune-pending': () => pruneMfaPendingEnrollments(),
       'security:check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(),
-      'security:prune-failed-auth-attempts': () =>
-        withJobLogging(fastify.log, 'security:prune-failed-auth-attempts', 'unknown', () =>
-          pruneFailedAuthAttempts()
+      'security:prune-failed-auth-attempts': (job) =>
+        withJobLogging(
+          fastify.log,
+          'security:prune-failed-auth-attempts',
+          job.id ?? 'unknown',
+          () => pruneFailedAuthAttempts()
         ),
     })
     bossRegistered = true
@@ -118,6 +124,12 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  process.stderr.write(`Fatal error: ${String(err)}\n`)
+  if (startupLogger) {
+    operationalLog(startupLogger, 'error', OperationalEvent.STARTUP_FAILED, 'API startup failed', {
+      err: serializeLogError(err),
+    })
+  } else {
+    process.stderr.write(`Fatal error: ${serializeLogError(err).message}\n`)
+  }
   process.exit(1)
 })

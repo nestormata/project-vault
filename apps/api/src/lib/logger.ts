@@ -5,6 +5,7 @@ import type { Env } from '../config/env.js'
 import { PINO_REDACT_PATHS } from './redact-paths.js'
 
 export type LoggerConfig = ReturnType<typeof buildPinoOptions>
+export type SerializedLogError = { message: string; name?: string; stack?: string }
 
 function buildPinoOptions(
   env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>,
@@ -72,4 +73,19 @@ export function operationalLog(
   fields?: Record<string, unknown>
 ): void {
   logger[level]({ ...fields, eventType, traceId: SYSTEM_TRACE_ID }, message)
+}
+
+export function serializeLogError(err: unknown): SerializedLogError {
+  if (err instanceof Error) {
+    return {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+    }
+  }
+  try {
+    return { message: String(err) }
+  } catch {
+    return { message: 'Unable to serialize thrown value' }
+  }
 }

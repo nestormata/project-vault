@@ -1,6 +1,6 @@
 # Story 1.10: Structured Operational Logging & Metrics
 
-Status: review
+Status: in-progress
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for FR82 structured operational logging (Pino config, traceId propagation, redaction, eventType registry, startup/shutdown/job logs) and Prometheus metrics completion (rename duration metric, vault_sealed, db_pool_connections_active, histogram buckets, bind-host tests). Builds on Story 1.3 partial metrics baseline and Story 1.5 redact-secrets plugin. Resolves AC-E1b vs Story 1.10 field naming, Story 1.3 `_ms` vs epic `_seconds` metric naming, and `event` vs `eventType` legacy vault logs. -->
 
@@ -477,6 +477,19 @@ it('redacts password nested one level inside a data envelope', async () => {
 })
 ```
 
+**Required redaction fixtures by route family:**
+
+| Route family | Sentinel fields that must be injected and verified absent from logs |
+|---|---|
+| Vault | `passphrase`, `masterKeyPath`, `envelopeKeyPath`, `secret`, `value` |
+| Auth/login | `password`, `refreshToken`, `accessToken`, `cookie`, `authorization` |
+| MFA | `totp`, `recoveryCode`, `currentPassword`, `newPassword` |
+| Future secret write/import routes | `secret`, `value`, nested credential arrays, import payloads |
+
+Each fixture must inject unique sentinel values and assert those values appear nowhere in captured log lines. Do not rely on a single vault-route test to prove redaction across auth, MFA, sessions, and future secret import/write payloads.
+
+**Sensitive field registry:** Maintain a single exported sensitive-field registry where practical, and derive both `PINO_REDACT_PATHS` and manual body-redaction field sets from it. If a field cannot be derived automatically because a path is structurally different, document the exception next to the path. Tests must fail if the registry contains a field that is absent from both Pino redaction and manual redaction coverage.
+
 ---
 
 ### AC-7: LOG_LEVEL Behavior
@@ -588,6 +601,14 @@ db_pool_connections_active 0
 ```
 
 **Breaking change note:** Remove `http_request_duration_ms` — document in ADR-1.10-02 for anyone who scraped Story 1.3 metric name.
+
+**Route label cardinality guard:** Metrics labels must use `request.routeOptions.url` when available. For unmatched routes, use `route="__unknown__"` rather than raw request paths. Raw URLs may be included only in logs after sanitization/truncation; never as Prometheus labels.
+
+**Required metric edge-case tests:**
+
+- `GET /does/not/exist/<uuid>` records route label `__unknown__`, not the raw path.
+- A handler that throws still increments `http_requests_total` once and observes `http_request_duration_seconds` once.
+- A request with query parameters never places the query string in metric labels.
 
 **Known Limitation — `db_pool_connections_active`:** The gauge reflects only queries routed through the `instrumentDbPool()` wrapper. Prepared statements and Postgres.js template-literal queries (`sql\`...\``) are not counted in v1. This is acceptable pre-production — the gauge still usefully reads `0` at idle, confirming no in-flight instrumented queries. Replace with Postgres.js native pool instrumentation in Epic 9.
 
@@ -801,6 +822,9 @@ describe.sequential('Story 1.10 — structured logging & metrics', () => {
     it('http.request includes method, url, statusCode, responseTimeMs without body', ...)
     it('no log line contains eventType "system.untyped" during a normal GET /health request', ...)
     it('url field is truncated to 256 characters when request path exceeds 256 characters', ...)
+    it('message-only application log calls are prohibited by helper tests or still emit required fields without system.untyped on request flows', ...)
+    it('404 requests emit exactly one http.request log with bounded url and unknown metric route label', ...)
+    it('thrown handler errors emit exactly one http.request log and one duration observation', ...)
   })
 
   describe('Redaction', () => {
@@ -853,6 +877,8 @@ expect(capturedLines.length).toBeGreaterThan(0)
 ```
 
 Alternatively, configure the test logger with `pino.destination({ sync: true })` to eliminate the race entirely — document that choice in `capture-logs.ts` if used.
+
+**Required log-capture invariant:** Schema and redaction tests must use a deterministic synchronous capture destination. Do not rely on arbitrary sleeps. If `app.log.flush()` is used, guard for logger implementations where `flush` is unavailable and prefer a sync destination in `capture-logs.ts`.
 
 ---
 
@@ -956,6 +982,8 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
 
 > **Compliance footnote:** "Complete when merged" refers to the **application-layer emission obligation** only. FR82 log retention, queryability, and durability depend on the deployment-layer log shipping pipeline (Fluent Bit, Vector, or equivalent — Epic 9 scope). Story 1.10 does not satisfy any retention SLA. Auditors reviewing FR82 compliance must assess both this story and the Epic 9 shipping/retention deliverable together.
 
+**Compliance boundary:** Story 1.10 does not make Project Vault "audit ready." It only ensures operational logs are structured, parseable, and redacted. Compliance-grade evidence requires `audit_log_entries`, immutable/tamper-evident storage, retention controls, integrity verification, and export workflows in later audit stories. Any README, ADR, or release note created from this story must use "operational logs" wording and must not describe these logs as audit logs.
+
 ---
 
 ### AC-18: Tasks / Subtasks
@@ -993,6 +1021,26 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
   - [x] `.env.example` Story 1.10 block
   - [x] `check-env-example.ts` parity
 
+> Note: Tasks 1-8 reflect implementation progress before advanced elicitation. Task 9 captures deferred hardening requirements added during story review; schedule it as a follow-up before treating Story 1.10 as fully review-ready.
+
+- [ ] **Task 9: Deferred elicitation hardening follow-up** (AC: 6, 8, 13, 15, 17)
+  - [ ] Add or verify sensitive-field registry coverage tests for Pino and manual redaction paths
+  - [ ] Add route-family redaction fixtures for vault, auth/login, MFA, and future secret write/import payloads
+  - [x] Add metric cardinality tests for unknown routes, thrown handlers, and query strings
+  - [ ] Ensure log-capture helper uses deterministic synchronous capture or guarded flush behavior
+  - [ ] Add compliance language sanity check so operational logs are not described as audit evidence
+  - [x] Add `/metrics` proxy spoofing regression test when `TRUST_PROXY` support is present
+
+### Review Findings
+
+- [x] [Review][Patch] HTTP metrics are only observed inside the `/metrics` plugin, so `/health`, vault, auth, org, and 404 requests are not counted or timed despite AC-8 requiring HTTP request metrics across the app. [`apps/api/src/routes/metrics.ts:62`] — fixed 2026-06-27
+- [x] [Review][Patch] Unknown-route metric labels fall back to raw `req.url`, allowing high-cardinality labels and query strings instead of the AC-8 `__unknown__` fallback. [`apps/api/src/routes/metrics.ts:63`] — fixed 2026-06-27
+- [x] [Review][Patch] `/metrics` loopback authorization uses `req.ip` while the app can enable `trustProxy`, allowing spoofed `X-Forwarded-For` headers to bypass the AC-9 loopback gate. [`apps/api/src/routes/metrics.ts:54`, `apps/api/src/app.ts:65`] — fixed 2026-06-27
+- [x] [Review][Patch] Bare root logger error paths can emit non-FR82 log lines without `traceId` and with `eventType: system.untyped` on unexpected request errors or shutdown failures. [`apps/api/src/app.ts:100`, `apps/api/src/lib/shutdown.ts:23`] — fixed 2026-06-27
+- [x] [Review][Patch] The reference job logging integration hardcodes `jobId: "unknown"`, so `job.started/completed/failed` logs do not carry the AC-10 job identifier. [`apps/api/src/main.ts:88`] — fixed 2026-06-27
+- [x] [Review][Patch] The top-level `main().catch()` always writes unstructured stderr, including failures that occur after a structured logger exists, which violates the AC-11 fatal stderr constraint. [`apps/api/src/main.ts:120`] — fixed 2026-06-27
+- [x] [Review][Patch] Non-Error job failure serialization calls `String(err)` outside a guard; a throwing `toString()` can replace the original worker failure instead of preserving pg-boss retry/DLQ behavior. [`apps/api/src/lib/job-logging.ts:13`] — fixed 2026-06-27
+
 ---
 
 ### Out of Scope (Explicit)
@@ -1010,8 +1058,8 @@ Alternatively, configure the test logger with `pino.destination({ sync: true })`
 
 **Post-merge checklist (run after Story 1.10 merges to branch):**
 
-- [ ] `grep -rn "event:" apps/api/src/modules/ apps/api/src/routes/` — any remaining `event:` keys (old vault pattern) must be migrated to `eventType:`
-- [ ] `grep -rn "eventType: '" apps/api/src/` — any hardcoded string literals (not `OperationalEvent.*`) must be replaced with registry constants
+- [ ] `rg -n "event:" apps/api/src/modules apps/api/src/routes` — any remaining `event:` keys (old vault pattern) must be migrated to `eventType:`
+- [ ] `rg -n "eventType: '" apps/api/src` — any hardcoded string literals (not `OperationalEvent.*`) must be replaced with registry constants
 - [ ] Verify Story 1.10 is merged **before** Stories 1.6–1.9 auth log calls are finalized — those stories must import `OperationalEvent` from `@project-vault/shared`, not define their own strings
 - [ ] Open follow-up tasks for any auth/session/job log calls found that use ad-hoc strings
 
@@ -1064,6 +1112,10 @@ curl -s -X POST http://localhost:3000/api/v1/vault/unseal \
 
 # 6. Docker compose — exec into api container
 docker compose exec api wget -qO- http://127.0.0.1:3000/metrics | head -20
+
+# 7. Compliance language sanity check
+rg -n "audit ready|audit log|compliance evidence|tamper" apps/api packages/shared _bmad-output/implementation-artifacts/1-10-structured-operational-logging-and-metrics.md
+# → verify any references clearly distinguish operational logs from security audit logs
 ```
 
 ---
@@ -1191,6 +1243,7 @@ GPT-5.5
 - apps/api/src/app.ts
 - apps/api/src/config/env.test.ts
 - apps/api/src/config/env.ts
+- apps/api/src/lib/boss.test.ts
 - apps/api/src/lib/boss.ts
 - apps/api/src/lib/db-pool-metrics.test.ts
 - apps/api/src/lib/db-pool-metrics.ts
@@ -1203,6 +1256,7 @@ GPT-5.5
 - apps/api/src/lib/shutdown.ts
 - apps/api/src/main.ts
 - apps/api/src/modules/vault/routes.ts
+- apps/api/src/plugins/http-metrics.ts
 - apps/api/src/plugins/structured-logging.ts
 - apps/api/src/routes/health.test.ts
 - apps/api/src/routes/health.ts

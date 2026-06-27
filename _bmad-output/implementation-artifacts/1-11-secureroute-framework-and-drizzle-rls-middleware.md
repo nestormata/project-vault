@@ -164,9 +164,13 @@ export type SecureRouteOptions = {
 
 **And** `ctx.tx` is the only approved database client for org-scoped queries inside protected route handlers.
 
+**DB escape-hatch guard:** Protected route modules must not import `getDb()` directly. Route handlers that need org-scoped data use `ctx.tx`. If platform-level tables are genuinely needed, the route must declare `security.requireOrgScope: false` or use a named platform-access helper with a code comment explaining why RLS does not apply. Add a static route-audit test that scans protected route modules for direct `getDb` imports.
+
 **And** if `requireAuth: false`, the handler receives a narrowed public context without `auth` or `tx`, unless `requireOrgScope` is separately provided through a trusted system context.
 
 **And** TypeScript tests must prove a protected handler can use `ctx.auth.orgId` and `ctx.tx`, while a public handler cannot accidentally access a fake authenticated context.
+
+**Developer ergonomics requirement:** SecureRoute must include a concise happy-path example for a protected read route and one migration example from the existing `registerProtectedRoute()` helper. If the API requires more than the route method, URL, schema, security overrides, and handler, reconsider the API before implementation.
 
 ### AC-4: Drizzle RLS Context Is Transaction-Scoped
 
@@ -201,6 +205,10 @@ return getDb().transaction(async (tx) => {
 ```
 
 **And** the story must preserve `packages/db/src/index.ts` `withOrg()` for tests and lower-level helpers while providing a request-friendly way to reuse the same transaction.
+
+**Transaction duration guard:** SecureRoute transactions must contain only database work and the same-transaction audit write. CPU-heavy work, external HTTP calls, QR generation, email/Slack delivery, and pg-boss scheduling should happen before opening the transaction or after commit unless the scheduled job row is part of the atomic business operation. Add code-review checklist items for transaction boundaries.
+
+**Response-after-commit guard:** Prefer SecureRoute handlers to return a serializable result instead of calling `reply.send()` inside the transaction. SecureRoute should send the response only after handler and audit write complete. If a handler must use `reply` directly (streaming, 204 responses, special headers), it must not perform any DB/audit work after sending. Add a test for audit failure after handler result generation to verify no success response is sent before rollback completes.
 
 ### AC-5: Auth Integration Uses Existing JWT and Session Rules
 
@@ -323,6 +331,8 @@ with HTTP status `403`.
 
 **And** audit payloads must never include secret values, passwords, TOTP codes, recovery codes, JWTs, refresh tokens, API keys, or raw request bodies.
 
+**Audit payload allowlist:** Audit payload builders must be allowlist-only for params, query, and body. No generic spreading (`{ ...req.params }`, `{ ...req.query }`, `{ ...req.body }`) is allowed in audit payload code. Add a test or static scan for spread usage in audit payload builders.
+
 **Example audit config:**
 
 ```typescript
@@ -340,6 +350,13 @@ writeAuditEvent: {
 2. Force `writeAuditEvent` to fail.
 3. Assert the inserted row is not visible after the request.
 4. Assert no partial audit row exists.
+
+**Audit failure coverage:** Tests must cover both classes of audit failure:
+
+- persistence failure: insert into `audit_log_entries` fails
+- integrity failure: HMAC/key-version generation fails before insert
+
+Both failures must roll back the business operation and return controlled error semantics.
 
 ### AC-9: Audit and Operational Logs Stay Separate
 
@@ -387,7 +404,11 @@ export async function runOrgScopedJob<T>(
 
 **And** a job payload without `orgId` must fail before any DB query.
 
+**Background job schema guard:** Any job that touches org-scoped tables must validate an `orgId` field in its payload schema before opening a transaction. Missing or invalid `orgId` fails before any DB query. Add a test for invalid UUID and missing org ID.
+
 **And** background jobs must not call `getDb().select()` against org-scoped tables directly.
+
+**Background job DB escape-hatch guard:** Static route/job audit scans must also cover `apps/api/src/workers/**`. Worker modules that touch org-scoped tables must not import `getDb()` directly; they must use `runOrgScopedJob()` or a named platform-access helper with a comment explaining why RLS does not apply.
 
 **And** integration tests cover:
 
@@ -469,12 +490,35 @@ export const PUBLIC_ROUTE_EXEMPTIONS = [
 {
   route: 'POST /api/v1/auth/login',
   reason: 'Public credential exchange endpoint; protected by IP/email rate limits and failed-auth recording.',
+  securityOwner: 'api-security-reviewer',
+  compensatingControls: ['ip-rate-limit', 'failed-auth-recording'],
+  expiresAfterStory: null,
 }
 ```
+
+**Public exemption metadata:** Every public/raw route exemption must include:
+
+- route
+- reason
+- security owner or reviewer
+- compensating controls, such as IP rate limit, failed-auth recording, or no data access
+- expiration or revisit story if the exemption is temporary
+
+The route-audit test fails exemptions missing required metadata.
+
+**Exemption lifecycle guard:** Public/raw route exemptions marked temporary must include `expiresAfterStory` or `revisitBy`. The route-audit test fails if a temporary exemption has expired or references a completed story without being removed or renewed.
 
 **And** method-not-allowed helper routes may be exempt from SecureRoute only if their source module comments explain they do not touch data and exist only to preserve API behavior.
 
 **And** the test fails if a new protected route uses raw `fastify.route()` or Fastify shorthand methods outside `SecureRoute`.
+
+**Helper registration guard:** Any helper that registers Fastify routes (`registerMethodNotAllowed`, `publicRoute`, `secureRoute`, or future route wrappers) must be included in the route-audit test's allowlist with an explicit classification:
+
+- `secure`: applies SecureRoute defaults
+- `public-exempt`: requires public exemption registry entry with reason
+- `shell-only`: method-not-allowed or static response only; must not read request body, auth context, or database
+
+The audit test fails for any unclassified helper that calls `fastify.route()` or Fastify shorthand methods.
 
 ### AC-13: Existing Route Migration
 
@@ -506,6 +550,24 @@ Required migrations:
 | `POST /api/v1/auth/refresh` | Refresh token validation, rate limit preserved. |
 | `POST /api/v1/auth/mfa/recover` | Existing IP/email rate limits preserved. |
 
+**Audit event coverage matrix:** Migrating existing routes requires a table that records, for each protected route:
+
+- whether it is `read`, `sensitive-read`, `mutation`, or `security-action`
+- whether it writes an audit event
+- event type, if applicable
+- reason if no audit event is written
+
+This matrix lives in the story or route-audit test fixture and becomes the review checklist for future route migrations.
+
+**Route action classification:** The route audit matrix must classify each route as one of:
+
+- `read`: no audit by default
+- `sensitive-read`: audit required, e.g. future secret reveal
+- `mutation`: audit required unless explicitly justified
+- `security-action`: audit required, e.g. session revocation, MFA recovery, role changes
+
+A route marked `mutation` or `security-action` without an audit event must include a reason and reviewer approval.
+
 ### AC-14: RLS Correctness Tests Cover HTTP and Job Paths
 
 **Given** `packages/db/src/__tests__/rls-isolation.test.ts` already verifies table-level isolation for direct helpers,
@@ -531,6 +593,8 @@ Expected: value equals authenticated user's `orgId`.
 5. Background job helper with Org A context sees only Org A rows.
 
 **And** test-only routes must live under `apps/api/src/__tests__/helpers/` or be registered only inside test files. They must not be imported by `app.ts` or `main.ts`; preserve the existing production-entrypoint guard.
+
+**Test-only route production guard:** Any test-only route helper used for SecureRoute/RLS integration tests must live under `apps/api/src/__tests__/helpers/` or be registered inline in the test. `app.ts` and `main.ts` must not import it. Preserve the production-entrypoint guard from Story 1.9 and extend it to SecureRoute test helpers.
 
 ### AC-15: Same-Transaction Audit Test
 
@@ -607,6 +671,8 @@ payload: ({ params }) => ({
 
 **And** no `err.message` from database/auth failures is used as an audit payload value or client-facing message if it may include SQL fragments or sensitive data.
 
+**Params/query sensitivity:** Sensitive values are forbidden in params and query strings as well as bodies. Audit payload builders must treat params/query as untrusted and allowlist exact non-sensitive fields only. Add negative tests with sensitive sentinels in params and query.
+
 **And** a test injects forbidden fields into a request body and asserts:
 
 1. No audit row payload contains those values.
@@ -671,6 +737,8 @@ pnpm --filter @project-vault/api test -- route-audit
 
 **And** if test database availability prevents running DB integration tests, the developer must document the exact command attempted and the blocking error in the Dev Agent Record.
 
+**And** run the static guardrail scans introduced in AC-3, AC-10, AC-12, and AC-16 (raw `fastify.route` usage, direct `getDb` imports in route/worker modules, audit payload spreads, and exemption metadata completeness) as part of the route-audit test suite.
+
 ## Tasks / Subtasks
 
 - [ ] **Task 1: Write failing tests first** (AC: 2, 4, 8, 10, 12, 14, 15)
@@ -708,7 +776,7 @@ pnpm --filter @project-vault/api test -- route-audit
   - [ ] Preserve public auth exchange routes with explicit exemptions or `publicRoute()`.
   - [ ] Remove or simplify legacy helpers once no longer needed.
 
-- [ ] **Task 6: CI/static guardrails** (AC: 12)
+- [ ] **Task 6: CI/static guardrails** (AC: 3, 10, 12)
   - [ ] Add public route exemption registry with reasons.
   - [ ] Fail tests on raw protected `fastify.route()` or shorthand calls.
   - [ ] Preserve production-entrypoint guard against test-only routes.
@@ -719,6 +787,16 @@ pnpm --filter @project-vault/api test -- route-audit
   - [ ] Run typecheck for API and DB packages.
   - [ ] Run OpenAPI spec generation.
   - [ ] Document any test database blockers in Dev Agent Record.
+
+- [ ] **Task 8: Elicitation hardening guardrails** (AC: 3, 4, 8, 10, 12, 13, 16)
+  - [ ] Static scan: protected route modules and `apps/api/src/workers/**` must not import `getDb()` for org-scoped tables
+  - [ ] Route-audit helper classification (`secure` / `public-exempt` / `shell-only`) with failure on unclassified route-registering helpers
+  - [ ] Public exemption registry metadata (reason, security owner, compensating controls) + temporary-exemption lifecycle (`expiresAfterStory` / `revisitBy`)
+  - [ ] Route action classification matrix (`read` / `sensitive-read` / `mutation` / `security-action`) enforced in route-audit fixture
+  - [ ] Audit payload allowlist scan: no `{ ...req.params }`, `{ ...req.query }`, `{ ...req.body }` spreads; params/query sensitivity negative tests
+  - [ ] Audit failure coverage: both persistence failure and HMAC/key integrity failure roll back
+  - [ ] Response-after-commit guard test
+  - [ ] Background job schema guard: org-scoped job payloads validate `orgId` before any query
 
 ## Dev Notes
 
@@ -913,6 +991,40 @@ Actionable implications:
 - Regression prevention: requires migration tests for auth/session/MFA routes and route-audit TODO closure.
 - Security prevention: requires same-transaction audit writes, RLS transaction scoping, public route exemption registry, forbidden audit payload fields, and background job RLS.
 - LLM clarity: acceptance criteria include examples, negative examples, exact paths, commands, and explicit out-of-scope boundaries.
+
+## ADRs
+
+### ADR-1.11-01: SecureRoute Lives in `apps/api/src/lib/secure-route.ts`
+
+| | |
+|---|---|
+| **Context** | The epic references `apps/api/src/framework/secure-route.ts`, but the repo already has `apps/api/src/lib/secure-route.ts` and tests import it. |
+| **Decision** | Expand the existing `apps/api/src/lib/secure-route.ts` module in place. Do not create a second route-security abstraction unless all imports/tests are migrated in the same change. |
+| **Consequences** | Prevents duplicate frameworks and preserves current test paths. Future refactors may move it to `framework/`, but only as a deliberate rename, not during behavioral implementation. |
+
+### ADR-1.11-02: RLS Context Is Bound to the Handler Transaction
+
+| | |
+|---|---|
+| **Context** | `set_config(..., true)` behaves like `SET LOCAL`; it is scoped to the current PostgreSQL transaction. Calling `withOrg()` before a handler and then using `getDb()` inside the handler loses the RLS context. |
+| **Decision** | `SecureRoute` opens the transaction, sets `app.current_org_id`, passes `ctx.tx` to the handler, and writes audit rows before the same transaction commits. |
+| **Consequences** | Route handlers must use `ctx.tx` for org-scoped tables. Long-running external calls must not happen inside SecureRoute transactions. If a route needs external I/O, split it into pre-transaction validation, short DB transaction, and post-commit side effect. |
+
+### ADR-1.11-03: Audit Writes Are Mandatory for Auditable Mutations
+
+| | |
+|---|---|
+| **Context** | Architecture requires same-transaction audit writes; operation success without audit capture violates FR40 and audit completeness. |
+| **Decision** | For routes with `writeAuditEvent`, audit insert failure rolls back the business operation. |
+| **Consequences** | Some user-facing operations may fail when audit storage is unhealthy. This is intentional. Story 1.11 must expose controlled error semantics and tests for audit-write failure rollback. |
+
+### ADR-1.11-04: Raw Fastify Routes Are Allowed Only Through Explicit Public Exemptions
+
+| | |
+|---|---|
+| **Context** | Existing route modules use raw `fastify.route()`, and some public endpoints must remain unauthenticated. |
+| **Decision** | Protected routes must use `SecureRoute`. Public/raw routes require an explicit exemption registry entry with a reason. |
+| **Consequences** | The route audit test becomes the enforcement mechanism until a custom ESLint rule exists. Method-not-allowed helper routes may be exempt only if they do not touch data and are documented as behavior-preserving API shell routes. |
 
 ## Dev Agent Record
 

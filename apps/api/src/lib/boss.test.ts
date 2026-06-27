@@ -47,6 +47,9 @@ describe('BossService', () => {
     await boss.registerWorkers({ 'prune-revoked-tokens': handler })
 
     expect(schedule).toHaveBeenCalledWith('prune-revoked-tokens', '0 * * * *', null, { tz: 'UTC' })
-    expect(work).toHaveBeenCalledWith('prune-revoked-tokens', handler)
+    expect(work).toHaveBeenCalledWith('prune-revoked-tokens', expect.any(Function))
+    const registeredHandler = work.mock.calls[0]?.[1] as (job: { id: string }) => Promise<void>
+    await registeredHandler({ id: 'job-123' })
+    expect(handler).toHaveBeenCalledWith({ id: 'job-123' })
   })
 })

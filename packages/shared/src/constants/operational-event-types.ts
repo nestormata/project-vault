@@ -7,11 +7,14 @@ export const OperationalEvent = {
   // Lifecycle
   STARTUP_VAULT_STATUS: 'startup.vault_status',
   STARTUP_COMPLETE: 'startup.complete',
+  STARTUP_FAILED: 'startup.failed',
   STARTUP_DB_CONNECTED: 'startup.db_connected',
   STARTUP_DB_FAILED: 'startup.db_failed',
   STARTUP_METRICS_EXPOSED: 'startup.metrics_exposed',
   SHUTDOWN_SIGNAL: 'shutdown.signal_received',
   SHUTDOWN_COMPLETE: 'shutdown.complete',
+  SHUTDOWN_FAILED: 'shutdown.failed',
+  HTTP_REQUEST_FAILED: 'http.request_failed',
 
   // Vault (migrated from `event: vault.*`)
   VAULT_INIT: 'vault.init',

@@ -15,6 +15,8 @@ describe('OperationalEvent', () => {
   it('exposes the Story 1.10 core registry entries', () => {
     expect(OperationalEvent.HTTP_REQUEST).toBe('http.request')
     expect(OperationalEvent.STARTUP_COMPLETE).toBe('startup.complete')
+    expect(OperationalEvent.STARTUP_FAILED).toBe('startup.failed')
+    expect(OperationalEvent.SHUTDOWN_FAILED).toBe('shutdown.failed')
     expect(OperationalEvent.JOB_STARTED).toBe('job.started')
     expect(OperationalEvent.JOB_COMPLETED).toBe('job.completed')
     expect(OperationalEvent.JOB_FAILED).toBe('job.failed')

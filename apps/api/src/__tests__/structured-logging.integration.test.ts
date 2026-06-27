@@ -87,4 +87,30 @@ describe.sequential('Story 1.10 structured logging', () => {
 
     await app.close()
   })
+
+  it('keeps unexpected request error logs in the FR82 schema', async () => {
+    const { stream, lines } = createLogCaptureStream()
+    const app = await createApp({
+      logger: testLogger(stream),
+    })
+    app.get('/boom', async () => {
+      throw new Error('boom')
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/boom' })
+    await flushLogger(app.log)
+
+    expect(response.statusCode).toBe(500)
+    const parsed = parseLogLines(lines)
+    const errorLogs = parsed.filter((line) => line.level === 'error')
+    expect(errorLogs).toContainEqual(
+      expect.objectContaining({
+        traceId: expect.any(String),
+        eventType: expect.not.stringMatching(/^system\.untyped$/),
+        message: 'Unhandled request error',
+      })
+    )
+
+    await app.close()
+  })
 })

@@ -46,34 +46,40 @@ function isLoopbackRemoteAddress(remoteAddress: string): boolean {
   )
 }
 
+function metricsRemoteAddress(req: FastifyRequest): string {
+  return req.raw.socket.remoteAddress ?? req.ip
+}
+
+export function observeHttpMetrics(req: FastifyRequest, reply: FastifyReply): void {
+  const route = req.routeOptions?.url ?? '__unknown__'
+  httpRequestsTotal.inc({
+    method: req.method,
+    route,
+    status_code: String(reply.statusCode),
+  })
+  httpRequestDurationSeconds.observe(
+    {
+      method: req.method,
+      route,
+      status_code: String(reply.statusCode),
+    },
+    reply.elapsedTime / 1000
+  )
+}
+
 export async function metricsRoutes(
   fastify: FastifyApp,
   options: { metricsBindHost: string }
 ): Promise<void> {
   fastify.get('/metrics', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (options.metricsBindHost !== '0.0.0.0' && !isLoopbackRemoteAddress(req.ip)) {
+    if (
+      options.metricsBindHost !== '0.0.0.0' &&
+      !isLoopbackRemoteAddress(metricsRemoteAddress(req))
+    ) {
       return reply.status(403).send({ error: 'Forbidden' })
     }
 
     const metrics = await register.metrics()
     return reply.header('Content-Type', register.contentType).send(metrics)
-  })
-
-  fastify.addHook('onResponse', (req: FastifyRequest, reply: FastifyReply, done: () => void) => {
-    const route = req.routeOptions?.url ?? req.url
-    httpRequestsTotal.inc({
-      method: req.method,
-      route,
-      status_code: String(reply.statusCode),
-    })
-    httpRequestDurationSeconds.observe(
-      {
-        method: req.method,
-        route,
-        status_code: String(reply.statusCode),
-      },
-      reply.elapsedTime / 1000
-    )
-    done()
   })
 }

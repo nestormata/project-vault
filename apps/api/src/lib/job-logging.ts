@@ -1,17 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify'
 import { OperationalEvent } from '@project-vault/shared'
-import { operationalLog } from './logger.js'
-
-function serializeJobError(err: unknown): { message: string; name?: string; stack?: string } {
-  if (err instanceof Error) {
-    return {
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-    }
-  }
-  return { message: String(err) }
-}
+import { operationalLog, serializeLogError } from './logger.js'
 
 export async function withJobLogging<T>(
   logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>,
@@ -34,7 +23,7 @@ export async function withJobLogging<T>(
       jobName,
       jobId,
       durationMs: Date.now() - start,
-      err: serializeJobError(err),
+      err: serializeLogError(err),
     })
     throw err
   }

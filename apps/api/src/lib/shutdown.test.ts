@@ -78,6 +78,14 @@ describe('registerShutdown', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(zeroKeys).toHaveBeenCalledTimes(2) // once before close, once in catch
+    expect(fastify.log.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: OperationalEvent.SHUTDOWN_FAILED,
+        traceId: SYSTEM_TRACE_ID,
+        err: expect.objectContaining({ message: 'close failed' }),
+      }),
+      'Shutdown failed'
+    )
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
 })
