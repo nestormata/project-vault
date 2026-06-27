@@ -20,10 +20,13 @@ export {
 export {
   deriveIkmFromPassphrase,
   createKeyDerivationParams,
+  hashUserPassword,
+  passwordHashConfigFromEnv,
   validateKeyDerivationParams,
+  verifyUserPassword,
   ARGON2_PARAMS,
 } from './passwords.js'
-export type { KeyDerivationParams } from './passwords.js'
+export type { KeyDerivationParams, PasswordHashConfig } from './passwords.js'
 
 // Split-key envelope combination
 export { combineEnvelopeHalves, parseEnvelopeEnvHalf } from './envelope.js'

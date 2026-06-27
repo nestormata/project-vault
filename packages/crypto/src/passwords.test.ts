@@ -2,8 +2,13 @@ import { describe, it, expect } from 'vitest'
 import {
   createKeyDerivationParams,
   deriveIkmFromPassphrase,
+  hashUserPassword,
+  passwordHashConfigFromEnv,
   validateKeyDerivationParams,
+  verifyUserPassword,
 } from './passwords.js'
+
+const USER_PASSWORD = 'correct-horse-battery-staple'
 
 describe('createKeyDerivationParams', () => {
   it('generates a 32-char hex salt and canonical argon2id params', () => {
@@ -25,7 +30,7 @@ describe('createKeyDerivationParams', () => {
 describe('deriveIkmFromPassphrase', () => {
   it('produces a 32-byte IKM buffer', async () => {
     const params = createKeyDerivationParams()
-    const ikm = await deriveIkmFromPassphrase('correct-horse-battery-staple', params)
+    const ikm = await deriveIkmFromPassphrase(USER_PASSWORD, params)
     expect(ikm.length).toBe(32)
   })
 
@@ -74,5 +79,31 @@ describe('validateKeyDerivationParams', () => {
   it('rejects invalid salt', () => {
     const params = { ...createKeyDerivationParams(), salt: 'not-hex' }
     expect(() => validateKeyDerivationParams(params)).toThrow(/salt/)
+  })
+})
+
+describe('user password hashing', () => {
+  const fastTestConfig = {
+    memoryCost: 19456,
+    timeCost: 2,
+    parallelism: 1,
+  }
+
+  it('builds a runtime hash config from env-shaped values', () => {
+    expect(passwordHashConfigFromEnv(fastTestConfig)).toEqual(fastTestConfig)
+  })
+
+  it('hashes user passwords as Argon2id PHC strings', async () => {
+    const hash = await hashUserPassword(USER_PASSWORD, fastTestConfig)
+
+    expect(hash).toMatch(/^\$argon2id\$/)
+    expect(hash).toContain('m=19456,t=2,p=1')
+  })
+
+  it('verifies matching and non-matching user passwords', async () => {
+    const hash = await hashUserPassword(USER_PASSWORD, fastTestConfig)
+
+    await expect(verifyUserPassword(USER_PASSWORD, hash)).resolves.toBe(true)
+    await expect(verifyUserPassword('wrong-password-12345', hash)).resolves.toBe(false)
   })
 })

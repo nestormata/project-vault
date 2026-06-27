@@ -29,6 +29,27 @@
       "when": 1782322500000,
       "tag": "0003_vault_state",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782509460000,
+      "tag": "0004_auth_sessions_refresh",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782519120000,
+      "tag": "0005_auth_bootstrap_audit_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782522780000,
+      "tag": "0006_platform_security_events",
+      "breakpoints": true
     }
   ]
 }

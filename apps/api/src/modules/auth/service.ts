@@ -1,0 +1,555 @@
+import { createHmac, randomUUID } from 'node:crypto'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
+import { getDb, withOrg, type Tx } from '@project-vault/db'
+import {
+  auditLogEntries,
+  orgMemberships,
+  organizations,
+  platformSecurityEvents,
+  refreshTokens,
+  sessions,
+  userIdentityTokens,
+  users,
+  vaultState,
+} from '@project-vault/db/schema'
+import { AuditEvent } from '@project-vault/shared'
+import { AppError } from '../../lib/errors.js'
+import { env } from '../../config/env.js'
+import { getAuditKey } from '../vault/key-service.js'
+import { computeAuditHmac } from '../audit/write-entry.js'
+import { normalizeEmail } from './normalize.js'
+import { hashUserPassword, verifyUserPassword } from './password.js'
+import { generateRefreshToken, hashRefreshToken } from './tokens.js'
+
+const MAX_SLUG_ATTEMPTS = 5
+const REFRESH_TOKEN_REVOKED = 'refresh_token_revoked'
+const REFRESH_TOKEN_REVOKED_MESSAGE = 'Refresh token has been revoked'
+
+export type RequestMeta = {
+  ipAddress?: string | null
+  userAgent?: string | null
+}
+
+export type AccessClaims = {
+  sub: string
+  orgId: string
+  jti: string
+  sessionVersion: number
+}
+
+export type TokenMaterial = {
+  accessClaims: AccessClaims
+  accessMaxAgeSec: number
+  refreshOpaque?: string
+  refreshMaxAgeSec: number
+}
+type RotatedTokenMaterial = TokenMaterial & { refreshOpaque: string }
+
+export type RegisterInput = {
+  email: string
+  password: string
+  orgName: string
+}
+
+export type RegisterResult = {
+  userId: string
+  orgId: string
+  email: string
+  orgName: string
+  role: 'owner'
+}
+
+export type LoginInput = {
+  email: string
+  password: string
+}
+
+export type LoginResult = {
+  userId: string
+  orgId: string
+  expiresAt: string
+  tokens: TokenMaterial
+}
+
+export type RefreshResult = {
+  expiresAt: string
+  tokens: TokenMaterial
+}
+
+export function slugify(orgName: string): string {
+  const slug = orgName
+    .trim()
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '')
+  return slug || 'org'
+}
+
+function isUniqueViolation(error: unknown, constraint?: string): boolean {
+  const cause = (error as { cause?: { code?: string; constraint_name?: string } }).cause
+  if (cause?.code !== '23505') return false
+  return constraint ? cause.constraint_name === constraint : true
+}
+
+function emailDomain(email: string): string {
+  return email.split('@')[1] ?? ''
+}
+
+async function currentAuditKeyVersion(tx: Tx): Promise<number> {
+  const rows = await tx
+    .select({ auditKeyVersion: vaultState.auditKeyVersion })
+    .from(vaultState)
+    .limit(1)
+  return rows[0]?.auditKeyVersion ?? 1
+}
+
+async function insertAuditEntry(
+  tx: Tx,
+  fields: {
+    orgId: string
+    actorTokenId: string | null
+    actorType: 'human' | 'machine_user' | 'system'
+    eventType: string
+    payload: Record<string, unknown>
+    ipAddress?: string | null
+    userAgent?: string | null
+  }
+): Promise<void> {
+  const keyVersion = await currentAuditKeyVersion(tx)
+  const hmac = computeAuditHmac(
+    {
+      orgId: fields.orgId,
+      actorTokenId: fields.actorTokenId,
+      actorType: fields.actorType,
+      eventType: fields.eventType,
+      payload: fields.payload,
+      keyVersion,
+    },
+    getAuditKey()
+  )
+
+  await tx.insert(auditLogEntries).values({
+    orgId: fields.orgId,
+    actorTokenId: fields.actorTokenId,
+    actorType: fields.actorType,
+    eventType: fields.eventType,
+    payload: fields.payload,
+    keyVersion,
+    hmac,
+    ipAddress: fields.ipAddress ?? null,
+    userAgent: fields.userAgent ?? null,
+  })
+}
+
+function subjectHash(email: string): string {
+  return createHmac('sha256', getAuditKey()).update(email).digest('hex')
+}
+
+async function insertPlatformSecurityEvent(
+  tx: Tx,
+  fields: {
+    eventType: string
+    subjectHash: string | null
+    emailDomain: string | null
+    payload: Record<string, unknown>
+    ipAddress?: string | null
+    userAgent?: string | null
+  }
+): Promise<void> {
+  const keyVersion = await currentAuditKeyVersion(tx)
+  const hmac = computeAuditHmac(
+    {
+      eventType: fields.eventType,
+      subjectHash: fields.subjectHash,
+      emailDomain: fields.emailDomain,
+      payload: fields.payload,
+      keyVersion,
+    },
+    getAuditKey()
+  )
+
+  await tx.insert(platformSecurityEvents).values({
+    eventType: fields.eventType,
+    subjectHash: fields.subjectHash,
+    emailDomain: fields.emailDomain,
+    payload: fields.payload,
+    keyVersion,
+    hmac,
+    ipAddress: fields.ipAddress ?? null,
+    userAgent: fields.userAgent ?? null,
+  })
+}
+
+async function allocateOrganizationSlug(
+  tx: Tx,
+  baseSlug: string
+): Promise<{ id: string; slug: string }> {
+  for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt += 1) {
+    const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`
+    try {
+      const inserted = await tx
+        .insert(organizations)
+        .values({ name: '', slug })
+        .returning({ id: organizations.id, slug: organizations.slug })
+      const org = inserted[0]
+      if (org) return org
+    } catch (error) {
+      if (!isUniqueViolation(error, 'organizations_slug_unique')) throw error
+    }
+  }
+  throw new AppError('org_name_unavailable', 'Organization name could not be allocated', 409)
+}
+
+export async function registerUser(input: RegisterInput): Promise<RegisterResult> {
+  const email = normalizeEmail(input.email)
+  const passwordHash = await hashUserPassword(input.password)
+  const baseSlug = slugify(input.orgName)
+
+  try {
+    return await getDb().transaction(async (tx) => {
+      const org = await allocateOrganizationSlug(tx as Tx, baseSlug)
+      await tx
+        .update(organizations)
+        .set({ name: input.orgName.trim() })
+        .where(eq(organizations.id, org.id))
+
+      const insertedUsers = await tx
+        .insert(users)
+        .values({ email, passwordHash })
+        .returning({ id: users.id, email: users.email })
+      const user = insertedUsers[0]
+      if (!user) throw new Error('registerUser: user insert returned no row')
+
+      await tx.insert(orgMemberships).values({
+        orgId: org.id,
+        userId: user.id,
+        role: 'owner',
+        status: 'active',
+      })
+      const identityRows = await tx
+        .insert(userIdentityTokens)
+        .values({ userId: user.id, displayName: email })
+        .returning({ id: userIdentityTokens.id })
+      const identityToken = identityRows[0]
+      if (!identityToken) throw new Error('registerUser: identity token insert returned no row')
+
+      await tx.execute(sql`SELECT set_config('app.auth_bootstrap_org_id', ${org.id}, true)`)
+      await insertAuditEntry(tx as Tx, {
+        orgId: org.id,
+        actorTokenId: identityToken.id,
+        actorType: 'human',
+        eventType: AuditEvent.USER_REGISTERED,
+        payload: { emailDomain: emailDomain(email) },
+      })
+
+      return {
+        userId: user.id,
+        orgId: org.id,
+        email: user.email,
+        orgName: input.orgName.trim(),
+        role: 'owner' as const,
+      }
+    })
+  } catch (error) {
+    if (isUniqueViolation(error, 'users_email_unique')) {
+      await verifyUserPassword(input.password, env.AUTH_DUMMY_PASSWORD_HASH)
+      throw new AppError('email_taken', 'An account with this email already exists', 409)
+    }
+    throw error
+  }
+}
+
+async function recordLoginFailed(
+  user: { id: string; identityTokenId: string | null; orgId: string | null } | null,
+  email: string,
+  meta: RequestMeta
+): Promise<void> {
+  try {
+    if (!user?.orgId) {
+      await getDb().transaction((tx) =>
+        insertPlatformSecurityEvent(tx as Tx, {
+          eventType: AuditEvent.LOGIN_FAILED,
+          subjectHash: subjectHash(email),
+          emailDomain: emailDomain(email),
+          payload: { reason: user ? 'orphan_user' : 'unknown_subject' },
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+        })
+      )
+      return
+    }
+    await withOrg(user.orgId, async (tx) => {
+      await insertAuditEntry(tx, {
+        orgId: user.orgId as string,
+        actorTokenId: user.identityTokenId,
+        actorType: 'human',
+        eventType: AuditEvent.LOGIN_FAILED,
+        payload: { reason: 'invalid_credentials' },
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+      })
+    })
+  } catch (error) {
+    process.stderr.write(
+      `[auth.login_failed_audit_error] ${error instanceof Error ? error.message : String(error)}\n`
+    )
+  }
+}
+
+async function findLoginUser(email: string) {
+  const rows = await getDb()
+    .select({
+      id: users.id,
+      email: users.email,
+      passwordHash: users.passwordHash,
+      orgId: orgMemberships.orgId,
+      membershipStatus: orgMemberships.status,
+      identityTokenId: userIdentityTokens.id,
+    })
+    .from(users)
+    .leftJoin(orgMemberships, eq(orgMemberships.userId, users.id))
+    .leftJoin(userIdentityTokens, eq(userIdentityTokens.userId, users.id))
+    .where(eq(users.email, email))
+  return rows
+}
+
+function invalidCredentials(): AppError {
+  return new AppError('invalid_credentials', 'Invalid email or password', 401)
+}
+
+function failedLoginAuditSubject(
+  user: Awaited<ReturnType<typeof findLoginUser>>[number] | undefined,
+  rows: Awaited<ReturnType<typeof findLoginUser>>,
+  activeOrgId: string | null | undefined
+): { id: string; identityTokenId: string | null; orgId: string | null } | null {
+  if (!user) return null
+  return {
+    id: user.id,
+    identityTokenId: user.identityTokenId,
+    orgId: activeOrgId ?? rows.find((row) => row.orgId)?.orgId ?? null,
+  }
+}
+
+function buildTokenMaterial(userId: string, orgId: string, jti: string): RotatedTokenMaterial {
+  return {
+    accessClaims: { sub: userId, orgId, jti, sessionVersion: 1 },
+    accessMaxAgeSec: env.JWT_ACCESS_TTL_SECONDS,
+    refreshOpaque: generateRefreshToken(),
+    refreshMaxAgeSec: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
+  }
+}
+
+async function verifyLoginPassword(
+  input: LoginInput,
+  user: Awaited<ReturnType<typeof findLoginUser>>[number] | undefined
+) {
+  const hash = user?.passwordHash ?? env.AUTH_DUMMY_PASSWORD_HASH
+  try {
+    return await verifyUserPassword(input.password, hash)
+  } catch (error) {
+    if (user) {
+      process.stderr.write(
+        `[auth.password_hash_corrupt] userId=${user.id} ${
+          error instanceof Error ? error.message : String(error)
+        }\n`
+      )
+    }
+    return false
+  }
+}
+
+async function createLoginSession(
+  user: NonNullable<Awaited<ReturnType<typeof findLoginUser>>[number]>,
+  orgId: string,
+  meta: RequestMeta
+): Promise<LoginResult> {
+  return withOrg(orgId, async (tx) => {
+    const jti = randomUUID()
+    const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)
+    const tokens = buildTokenMaterial(user.id, orgId, jti)
+    const sessionRows = await tx
+      .insert(sessions)
+      .values({
+        userId: user.id,
+        orgId,
+        jti,
+        sessionVersion: 1,
+        expiresAt,
+        ipAddress: meta.ipAddress ?? null,
+        userAgent: meta.userAgent ?? null,
+      })
+      .returning({ id: sessions.id })
+    const session = sessionRows[0]
+    if (!session) throw new Error('loginUser: session insert returned no row')
+
+    await tx.insert(refreshTokens).values({
+      sessionId: session.id,
+      tokenHash: hashRefreshToken(tokens.refreshOpaque),
+      expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
+    })
+
+    await insertAuditEntry(tx, {
+      orgId,
+      actorTokenId: user.identityTokenId,
+      actorType: 'human',
+      eventType: AuditEvent.SESSION_CREATED,
+      payload: {},
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+
+    return {
+      userId: user.id,
+      orgId,
+      expiresAt: expiresAt.toISOString(),
+      tokens,
+    }
+  })
+}
+
+export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Promise<LoginResult> {
+  const email = normalizeEmail(input.email)
+  const rows = await findLoginUser(email)
+  const user = rows[0]
+  const activeMembership = rows.find((row) => row.membershipStatus === 'active' && row.orgId)
+  const valid = await verifyLoginPassword(input, user)
+
+  if (!user || !valid || !activeMembership?.orgId) {
+    await recordLoginFailed(
+      failedLoginAuditSubject(user, rows, activeMembership?.orgId),
+      email,
+      meta
+    )
+    throw invalidCredentials()
+  }
+
+  return createLoginSession(user, activeMembership.orgId, meta)
+}
+
+type RefreshRow = {
+  id: string
+  expiresAt: Date
+  usedAt: Date | null
+  revokedAt: Date | null
+  newSessionId: string | null
+  userId: string
+  orgId: string
+  sessionVersion: number
+  sessionRevokedAt: Date | null
+}
+
+function revokedRefreshToken(): AppError {
+  return new AppError(REFRESH_TOKEN_REVOKED, REFRESH_TOKEN_REVOKED_MESSAGE, 401)
+}
+
+async function findRefreshRow(tx: Tx, tokenHash: string): Promise<RefreshRow> {
+  const rows = await tx
+    .select({
+      id: refreshTokens.id,
+      expiresAt: refreshTokens.expiresAt,
+      usedAt: refreshTokens.usedAt,
+      revokedAt: refreshTokens.revokedAt,
+      newSessionId: refreshTokens.newSessionId,
+      userId: sessions.userId,
+      orgId: sessions.orgId,
+      sessionVersion: sessions.sessionVersion,
+      sessionRevokedAt: sessions.revokedAt,
+    })
+    .from(refreshTokens)
+    .innerJoin(sessions, eq(sessions.id, refreshTokens.sessionId))
+    .where(eq(refreshTokens.tokenHash, tokenHash))
+    .for('update')
+    .limit(1)
+  const row = rows[0]
+  if (!row) throw new AppError('refresh_token_invalid', 'Refresh token is invalid', 401)
+  return row
+}
+
+async function handleGraceRefresh(tx: Tx, row: RefreshRow): Promise<RefreshResult> {
+  const withinGrace =
+    Date.now() - (row.usedAt?.getTime() ?? 0) <= env.REFRESH_GRACE_WINDOW_SECONDS * 1000
+  if (!withinGrace || !row.newSessionId) throw revokedRefreshToken()
+  const existing = await tx
+    .select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.id, row.newSessionId),
+        isNull(sessions.revokedAt),
+        gt(sessions.expiresAt, new Date())
+      )
+    )
+    .limit(1)
+  const session = existing[0]
+  if (!session?.jti) throw revokedRefreshToken()
+  const tokens: TokenMaterial = {
+    accessClaims: {
+      sub: session.userId,
+      orgId: session.orgId,
+      jti: session.jti,
+      sessionVersion: session.sessionVersion,
+    },
+    accessMaxAgeSec: env.JWT_ACCESS_TTL_SECONDS,
+    refreshMaxAgeSec: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
+  }
+  return {
+    expiresAt: new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000).toISOString(),
+    tokens,
+  }
+}
+
+async function rotateRefreshToken(
+  tx: Tx,
+  row: RefreshRow,
+  meta: RequestMeta
+): Promise<RefreshResult> {
+  const jti = randomUUID()
+  const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)
+  const tokens = buildTokenMaterial(row.userId, row.orgId, jti)
+  const sessionRows = await tx
+    .insert(sessions)
+    .values({
+      userId: row.userId,
+      orgId: row.orgId,
+      jti,
+      sessionVersion: row.sessionVersion,
+      expiresAt,
+      ipAddress: meta.ipAddress ?? null,
+      userAgent: meta.userAgent ?? null,
+    })
+    .returning({ id: sessions.id })
+  const newSession = sessionRows[0]
+  if (!newSession) throw new Error('refreshSession: session insert returned no row')
+
+  await tx
+    .update(refreshTokens)
+    .set({ usedAt: new Date(), newSessionId: newSession.id })
+    .where(eq(refreshTokens.id, row.id))
+  await tx.insert(refreshTokens).values({
+    sessionId: newSession.id,
+    tokenHash: hashRefreshToken(tokens.refreshOpaque),
+    expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
+  })
+
+  return { expiresAt: expiresAt.toISOString(), tokens }
+}
+
+export async function refreshSession(
+  refreshOpaque: string,
+  meta: RequestMeta = {}
+): Promise<RefreshResult> {
+  const tokenHash = hashRefreshToken(refreshOpaque)
+  return getDb().transaction(async (tx) => {
+    const row = await findRefreshRow(tx as Tx, tokenHash)
+    if (row.sessionRevokedAt) throw revokedRefreshToken()
+    if (row.revokedAt) throw revokedRefreshToken()
+    if (row.expiresAt.getTime() <= Date.now()) {
+      throw new AppError('refresh_token_expired', 'Refresh token has expired', 401)
+    }
+    if (row.usedAt) return handleGraceRefresh(tx as Tx, row)
+    return rotateRefreshToken(tx as Tx, row, meta)
+  })
+}
