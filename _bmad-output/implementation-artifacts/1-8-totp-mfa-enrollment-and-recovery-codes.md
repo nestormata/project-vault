@@ -1,6 +1,6 @@
 # Story 1.8: TOTP MFA Enrollment & Recovery Codes
 
-Status: ready-for-dev
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for TOTP enrollment, recovery codes, encrypted secret storage, replay protection, and MFA recovery login path. Covers FR54, FR55. Red Team hardening applied 2026-06-24. User Persona Focus Group applied 2026-06-24. Critique and Refine applied 2026-06-24 (AC quick ref, AC-1, AC-2, AC-4b, AC-6a/b/f, AC-8h, AC-9e, AC-16, AC-17 #22). -->
 
@@ -60,7 +60,7 @@ Epics.md uses simplified column names (`users.totp_secret_encrypted`, `users.mfa
 | `POST /mfa/enroll` | Yes | No | 10/h/user | `200` + QR/secret | `409 mfa_already_enrolled`, `401 access_token_missing` |
 | `POST /mfa/verify-enrollment` | Yes | No | 20/15m/user | `200` + recovery codes | `422 invalid_totp`, `409 mfa_enrollment_not_started` |
 | `POST /mfa/regenerate-recovery-codes` | Yes + TOTP | No | 5/h/user | `200` + new codes | `422 invalid_totp`, `409 mfa_not_enrolled` |
-| `POST /mfa/recover` | No | **Yes** | 10/15m/IP + 5/15m/email | `200` + session cookies | `401 invalid_credentials`, `422 validation_error`, `429 rate_limit_exceeded` |
+| `POST /mfa/recover` | No | **No** | 10/15m/IP + 5/15m/email | `200` + session cookies | `401 invalid_credentials`, `422 validation_error`, `429 rate_limit_exceeded`, `503 sealed` |
 
 ---
 
@@ -126,11 +126,10 @@ packages/shared/src/constants/
 | `POST /api/v1/auth/mfa/enroll` | **No** | Requires primary key encryption — 503 when vault sealed |
 | `POST /api/v1/auth/mfa/verify-enrollment` | **No** | Requires decrypt — 503 when sealed |
 | `POST /api/v1/auth/mfa/regenerate-recovery-codes` | **No** | Requires decrypt — 503 when sealed |
-| `POST /api/v1/auth/mfa/recover` | **Yes** | Public login path — same class as `/login` |
+| `POST /api/v1/auth/mfa/recover` | **No** | Requires audit/session HMAC keys; return `503 sealed` when vault is sealed |
 
 ```typescript
-// Add to VAULT_GUARD_ALLOWLIST (method + path key — match vault-guard.ts convention):
-'POST /api/v1/auth/mfa/recover',
+// Do not add recover to VAULT_GUARD_ALLOWLIST; it must return 503 while sealed.
 ```
 
 **Rate limits (extend Story 1.6 patterns — separate buckets from `/login`; login remains 60/min/IP per Story 1.6 AC-9):**
@@ -1085,41 +1084,62 @@ export function totpForSecret(base32: string): string {
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Database migration & Drizzle schemas** (AC: 4)
-  - [ ] Add `users.mfa_enrolled_at`
-  - [ ] Create `mfa_enrollments`, `mfa_recovery_codes`, `totp_used_codes`
-  - [ ] Update `check-rls-coverage.ts` EXCLUDED_TABLES
-  - [ ] Run `pnpm --filter @project-vault/db db:migrate` locally
+- [x] **Task 1: Database migration & Drizzle schemas** (AC: 4)
+  - [x] Add `users.mfa_enrolled_at`
+  - [x] Create `mfa_enrollments`, `mfa_recovery_codes`, `totp_used_codes`
+  - [x] Update `check-rls-coverage.ts` EXCLUDED_TABLES
+  - [x] Run `pnpm --filter @project-vault/db db:migrate` locally
 
-- [ ] **Task 2: Dependencies & env** (AC: 3, 15)
-  - [ ] Add `otpauth`, `qrcode`, `bcrypt` to `apps/api`
-  - [ ] Extend `env.ts` incl. `TOTP_REPLAY_HMAC_SECRET`, `.env.example`, `check-env-example.ts`
+- [x] **Task 2: Dependencies & env** (AC: 3, 15)
+  - [x] Add `otpauth`, `qrcode`, `bcrypt` to `apps/api`
+  - [x] Extend `env.ts` incl. `TOTP_REPLAY_HMAC_SECRET`, `.env.example`, `check-env-example.ts`
 
-- [ ] **Task 3: Core MFA modules** (AC: 5, 6, 7, 9)
-  - [ ] Implement `totp.ts`, `recovery-codes.ts` (incl. `countUnusedRecoveryCodes`, `deletePendingEnrollmentForUser`), `mfa.ts`
-  - [ ] Transactional verify (AC-6h) + transactional regenerate (AC-9e); `MFA_ENROLLMENT_STARTED` audit on enroll
-  - [ ] Wire routes with `authenticate` preHandler (except recover)
-  - [ ] Extend audit constants + `writeAuditEntry` calls
+- [x] **Task 3: Core MFA modules** (AC: 5, 6, 7, 9)
+  - [x] Implement `totp.ts`, `recovery-codes.ts` (incl. `countUnusedRecoveryCodes`, `deletePendingEnrollmentForUser`), `mfa.ts`
+  - [x] Transactional verify (AC-6h) + transactional regenerate (AC-9e); `MFA_ENROLLMENT_STARTED` audit on enroll
+  - [x] Wire routes with `authenticate` preHandler (except recover)
+  - [x] Extend audit constants + `writeAuditEntry` calls
 
-- [ ] **Task 4: Recovery login** (AC: 8)
-  - [ ] Implement `/mfa/recover` reusing session creation from 1.6
-  - [ ] Add `POST /api/v1/auth/mfa/recover` to vault guard allowlist; dual rate limits (IP + email)
-  - [ ] `SELECT FOR UPDATE` on recovery code consumption; failed-recover audit
-  - [ ] Return `remainingRecoveryCodes` on success; `429` with `Retry-After` (AC-8k)
+- [x] **Task 4: Recovery login** (AC: 8)
+  - [x] Implement `/mfa/recover` reusing session creation from 1.6
+  - [x] Keep `POST /api/v1/auth/mfa/recover` behind vault guard; dual rate limits (IP + email)
+  - [x] `SELECT FOR UPDATE` on recovery code consumption; failed-recover audit
+  - [x] Return `remainingRecoveryCodes` on success; `429` with `Retry-After` (AC-8k)
 
-- [ ] **Task 5: Background jobs** (AC: 10, 11)
-  - [ ] `prune-totp-used-codes.ts` hourly worker
-  - [ ] `prune-mfa-pending.ts` daily worker (24h pending TTL)
-  - [ ] Hook `deletePendingEnrollmentForUser()` into session revoke (Option B)
+- [x] **Task 5: Background jobs** (AC: 10, 11)
+  - [x] `prune-totp-used-codes.ts` hourly worker
+  - [x] `prune-mfa-pending.ts` daily worker (24h pending TTL)
+  - [x] Hook `deletePendingEnrollmentForUser()` into session revoke (Option B)
 
-- [ ] **Task 6: Testing** (AC: 17, 18)
-  - [ ] Integration test suite with real TOTP codes (incl. #16–22)
-  - [ ] Unit tests for code generation/normalization
-  - [ ] Log redaction test
-  - [ ] Update `route-audit.test.ts`
+- [x] **Task 6: Testing** (AC: 17, 18)
+  - [x] Integration test suite with real TOTP codes (incl. #16–22)
+  - [x] Unit tests for code generation/normalization
+  - [x] Log redaction test
+  - [x] Update `route-audit.test.ts`
 
-- [ ] **Task 7: `/auth/me` extension** (AC: 19)
-  - [ ] Add `mfaEnrolled`, `mfaEnrolledAt`, `remainingRecoveryCodesCount`
+- [x] **Task 7: `/auth/me` extension** (AC: 19)
+  - [x] Add `mfaEnrolled`, `mfaEnrolledAt`, `remainingRecoveryCodesCount`
+
+### Review Findings
+
+- [x] [Review][Patch] Return 503 for `/mfa/recover` when the vault is sealed [apps/api/src/plugins/vault-guard.ts:25]
+- [x] [Review][Patch] TOTP body schema rejects space-normalized codes [apps/api/src/modules/auth/schema.ts:19]
+- [x] [Review][Patch] TOTP secret is encrypted as base32 text instead of raw secret bytes [apps/api/src/modules/auth/mfa.ts:190]
+- [x] [Review][Patch] Recovery-code validation allows excluded ambiguous `L` [apps/api/src/modules/auth/recovery-codes.ts:9]
+- [x] [Review][Patch] MFA response schemas are defined but not wired into Fastify/OpenAPI routes [apps/api/src/modules/auth/routes.ts:208]
+- [x] [Review][Patch] Required Story 1.8 integration coverage is incomplete [apps/api/src/__tests__/mfa-enrollment.test.ts:97]
+- [x] [Review][Patch] Concurrent enroll requests can surface a raw unique-constraint error [apps/api/src/modules/auth/mfa.ts:190]
+- [x] [Review][Patch] Recovery-code generator does not enforce uniqueness within a batch [apps/api/src/modules/auth/recovery-codes.ts:11]
+- [x] [Review][Patch] Recovery rate limiter is process-local and leaks expired buckets [apps/api/src/modules/auth/routes.ts:49]
+- [x] [Review][Patch] Recovery login resolves organization context before rejecting a wrong password [apps/api/src/modules/auth/mfa.ts:424]
+
+### Rerun Review Findings
+
+- [x] [Review][Patch] Spaced TOTP input can bypass replay protection [apps/api/src/modules/auth/mfa.ts:261]
+- [x] [Review][Patch] Concurrent enrollment verification can return `409` instead of replay-style `422` [apps/api/src/modules/auth/mfa.ts:286]
+- [x] [Review][Patch] Failed recovery attempts for known users are not audited on wrong password or not-enrolled paths [apps/api/src/modules/auth/mfa.ts:432]
+- [x] [Review][Patch] Recovery-code regeneration does not emit the required Epic 3 pending-alert log [apps/api/src/modules/auth/mfa.ts:339]
+- [x] [Review][Patch] TOTP replay TTL can be configured shorter than the accepted skew window [apps/api/src/config/env.ts:159]
 
 ---
 
@@ -1353,10 +1373,93 @@ curl -s -o /dev/null -w '%{http_code}' -b cookies.txt http://localhost:3000/api/
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5.5
 
 ### Debug Log References
 
+- 2026-06-26: Task 1 red check added to `packages/db/src/schema/auth-sessions-schema.test.ts`; narrow schema test failed on missing `users.mfaEnrolledAt` and MFA RLS exclusions as expected.
+- 2026-06-26: Started local Postgres with `docker compose up -d db`; ran `pnpm --filter @project-vault/db db:migrate` successfully.
+- 2026-06-26: Re-ran `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` successfully.
+- 2026-06-26: Task 2 red check added to `apps/api/src/config/env.test.ts`; focused env test failed on missing MFA env defaults and production replay-secret validation as expected.
+- 2026-06-26: Installed `otpauth`, `qrcode`, `bcrypt`, `@types/qrcode`, and `@types/bcrypt`; `pnpm` ignored the `bcrypt` build script, but a focused Node smoke test confirmed `bcrypt` hash/compare works.
+- 2026-06-26: Ran `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts` and `pnpm exec tsx scripts/check-env-example.ts` successfully.
+- 2026-06-26: Task 3 red checks added for MFA audit constants, recovery-code helpers, TOTP helpers, and MFA protected route wiring; tests failed on missing constants/modules/routes as expected.
+- 2026-06-26: Ran `pnpm --filter @project-vault/api exec vitest run src/modules/auth/routes.test.ts src/modules/auth/recovery-codes.test.ts src/modules/auth/totp.test.ts` successfully.
+- 2026-06-26: Ran `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts`, `pnpm --filter @project-vault/db build`, `pnpm --filter @project-vault/shared build`, and `pnpm --filter @project-vault/api typecheck` successfully.
+- 2026-06-26: Task 4 route coverage added for public `/mfa/recover` validation and POST-only behavior.
+- 2026-06-26: Ran `pnpm --filter @project-vault/api exec vitest run src/modules/auth/routes.test.ts`, `pnpm --filter @project-vault/api typecheck`, and `pnpm --filter @project-vault/api exec vitest run src/plugins/vault-guard.test.ts` successfully.
+- 2026-06-26: Task 5 added `mfa:prune-totp-used-codes` hourly worker, `mfa:prune-pending` daily worker, and pending-enrollment deletion inside `revokeSessionById()`.
+- 2026-06-26: Ran `pnpm --filter @project-vault/api exec vitest run src/modules/auth/session-revoke.test.ts` and `pnpm --filter @project-vault/api typecheck` successfully.
+- 2026-06-26: Task 6 added MFA integration coverage with real TOTP generation, recovery-code single-use assertion, log redaction coverage, and route-audit public exemption for `/mfa/recover`.
+- 2026-06-26: Added `0008_mfa_foundation` to Drizzle migration journal after discovering drizzle-kit did not apply the manual SQL file without a journal entry; reran `pnpm --filter @project-vault/db db:migrate` successfully.
+- 2026-06-26: Ran `pnpm --filter @project-vault/api exec vitest run src/__tests__/auth-log-redaction.test.ts src/__tests__/mfa-enrollment.test.ts src/modules/auth/recovery-codes.test.ts src/modules/auth/totp.test.ts src/modules/auth/routes.test.ts src/plugins/vault-guard.test.ts` successfully.
+- 2026-06-26: Ran `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` successfully.
+- 2026-06-26: Expanded `mfa-enrollment.test.ts` to cover `/auth/me` MFA state after enrollment/recovery, concurrent recovery-code redemption, recover `429` `Retry-After`, and pending enrollment cleanup on session revoke.
+- 2026-06-26: Ran `pnpm --filter @project-vault/api exec vitest run src/__tests__/auth-log-redaction.test.ts src/__tests__/mfa-enrollment.test.ts src/modules/auth/recovery-codes.test.ts src/modules/auth/totp.test.ts src/modules/auth/routes.test.ts src/plugins/vault-guard.test.ts src/modules/auth/session-revoke.test.ts`, `pnpm --filter @project-vault/api typecheck`, and `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` successfully.
+- 2026-06-26: Ran `pnpm typecheck` successfully.
+- 2026-06-26: Ran `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault ADMIN_DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault VAULT_ALLOW_REMOTE_INIT=true pnpm test` successfully.
+- 2026-06-26: Ran targeted ESLint for touched API files successfully (one pre-existing warning remains in `redact-secrets.ts`); full `pnpm lint` still fails on unrelated pre-existing repo-wide lint errors under `.claude/skills` and other legacy files.
+
 ### Completion Notes List
 
+- Task 1 complete: added `users.mfa_enrolled_at`, identity-scoped MFA enrollment/recovery/replay tables, Drizzle exports, RLS coverage exclusions, and migration `0008_mfa_foundation.sql`.
+- Task 2 complete: added MFA dependencies, env defaults/production guardrails, `.env.example` entries, and explicit env-example checker coverage for Story 1.8 MFA variables.
+- Task 3 complete: added TOTP/recovery-code helpers, transactional enroll/verify/regenerate service methods, protected MFA routes, and Story 1.8 audit event constants.
+- Task 4 complete: added public recovery-code login, dual in-memory rate limits, transactional recovery-code consumption/session creation/audit, recovery response count, and vault-guard allowlist entry.
+- Task 5 complete: added MFA cleanup workers, registered pg-boss schedules after vault unseal, and hooked pending-enrollment cleanup into session revocation.
+- Task 6 complete: added focused integration/unit/route/log-redaction coverage for MFA enrollment, recovery, helper behavior, and public route governance.
+- Task 7 complete: extended `/auth/me` with `mfaEnrolled`, `mfaEnrolledAt`, and `remainingRecoveryCodesCount`; integration coverage verifies counts after enrollment and recovery.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/1-8-totp-mfa-enrollment-and-recovery-codes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `.env.example`
+- `apps/api/package.json`
+- `apps/api/src/app.ts`
+- `apps/api/src/__tests__/auth-log-redaction.test.ts`
+- `apps/api/src/__tests__/mfa-enrollment.test.ts`
+- `apps/api/src/__tests__/sessions.integration.test.ts`
+- `apps/api/src/config/env.test.ts`
+- `apps/api/src/config/env.ts`
+- `apps/api/src/modules/auth/mfa.ts`
+- `apps/api/src/modules/auth/recovery-codes.test.ts`
+- `apps/api/src/modules/auth/recovery-codes.ts`
+- `apps/api/src/modules/auth/routes.test.ts`
+- `apps/api/src/modules/auth/routes.ts`
+- `apps/api/src/modules/auth/schema.ts`
+- `apps/api/src/modules/auth/session-revoke.ts`
+- `apps/api/src/modules/auth/totp.test.ts`
+- `apps/api/src/modules/auth/totp.ts`
+- `apps/api/src/modules/auth/service.ts`
+- `apps/api/src/main.ts`
+- `apps/api/src/plugins/vault-guard.ts`
+- `apps/api/src/plugins/redact-secrets.ts`
+- `apps/api/src/workers/prune-mfa-pending.ts`
+- `apps/api/src/workers/prune-totp-used-codes.ts`
+- `apps/api/src/__tests__/route-audit.test.ts`
+- `apps/api/src/modules/vault/key-service.ts`
+- `pnpm-lock.yaml`
+- `pnpm-workspace.yaml`
+- `packages/db/src/check-rls-coverage.ts`
+- `packages/db/src/migrations/0008_mfa_foundation.sql`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/db/src/schema/auth-sessions-schema.test.ts`
+- `packages/db/src/schema/index.ts`
+- `packages/db/src/schema/mfa-enrollments.ts`
+- `packages/db/src/schema/mfa-recovery-codes.ts`
+- `packages/db/src/schema/totp-used-codes.ts`
+- `packages/db/src/schema/users.ts`
+- `packages/shared/src/constants/audit-events.test.ts`
+- `packages/shared/src/constants/audit-events.ts`
+- `scripts/check-env-example.ts`
+
+### Change Log
+
+- 2026-06-26: Started Story 1.8 implementation and completed Task 1 database migration/Drizzle schema foundation.
+- 2026-06-26: Completed Task 2 dependency and MFA environment configuration.
+- 2026-06-26: Completed Task 3 core MFA modules, protected routes, and audit constants.
+- 2026-06-26: Completed Task 4 recovery-code login flow, vault allowlist, and rate-limit response handling.
+- 2026-06-26: Completed Task 5 cleanup workers and pending-enrollment session-revoke hook.
+- 2026-06-26: Completed Task 6 MFA test coverage and log redaction updates.
+- 2026-06-26: Completed Task 7 `/auth/me` MFA status extension.

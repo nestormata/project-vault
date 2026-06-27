@@ -7,6 +7,7 @@ import { AppError } from '../../lib/errors.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
+import { deletePendingEnrollmentForUser } from './recovery-codes.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
 
 export type SessionRevokeScope =
@@ -233,6 +234,7 @@ export async function revokeSessionById(
       })
       .onConflictDoNothing()
 
+    await deletePendingEnrollmentForUser(session.userId, tx)
     evictSessionActivityDebounce(session.id)
 
     await maybeWriteSessionRevokedAudit(tx, session, options)

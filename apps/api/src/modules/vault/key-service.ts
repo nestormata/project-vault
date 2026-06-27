@@ -29,6 +29,7 @@ type VaultStatus = 'uninitialized' | 'sealed' | 'unsealed'
 type KmsType = 'passphrase' | 'envelope' | 'file'
 
 let _status: VaultStatus = 'uninitialized'
+let _primaryKey: Buffer | null = null // copy retained for encryption operations while unsealed
 let _auditKey: Buffer | null = null // separate from _activeKey in packages/crypto
 let _onUnsealed: (() => Promise<void>) | null = null
 
@@ -57,6 +58,11 @@ function warnIfEnvelopeMisconfigured(row: { kmsType: string } | undefined): void
   process.stderr.write(
     '[vault] WARN: vault is sealed (envelope mode) but VAULT_ENVELOPE_KEY_HALF is not configured — unseal will fail until set\n'
   )
+}
+
+function setPrimaryKeyCopy(primaryKey: Buffer): void {
+  if (_primaryKey) _primaryKey.fill(0)
+  _primaryKey = Buffer.from(primaryKey)
 }
 
 /** Call at API startup and after any vault_state truncate — syncs _status with DB. */
@@ -324,6 +330,7 @@ export async function initVault(
   }
 
   setVaultKey(primaryKey)
+  setPrimaryKeyCopy(primaryKey)
   primaryKey.fill(0)
 
   if (_auditKey) _auditKey.fill(0)
@@ -383,6 +390,7 @@ export async function unsealVault(
   expectedSentinel.fill(0)
 
   setVaultKey(primaryKey)
+  setPrimaryKeyCopy(primaryKey)
   primaryKey.fill(0)
 
   if (_auditKey) _auditKey.fill(0)
@@ -401,9 +409,21 @@ export function getAuditKey(): Buffer {
   return Buffer.from(_auditKey)
 }
 
+/** Returns a copy of the primary encryption key. Throws if vault is sealed. */
+export function getPrimaryKey(): Buffer {
+  if (!_primaryKey || _status !== 'unsealed') {
+    throw new Error('getPrimaryKey: vault is sealed — primary key unavailable')
+  }
+  return Buffer.from(_primaryKey)
+}
+
 /** Called by shutdown.ts to zero in-memory keys before process exit. */
 export function zeroKeys(): void {
   clearVaultKey()
+  if (_primaryKey) {
+    _primaryKey.fill(0)
+    _primaryKey = null
+  }
   if (_auditKey) {
     _auditKey.fill(0)
     _auditKey = null

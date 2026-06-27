@@ -16,6 +16,30 @@ const AUTH_DUMMY_PASSWORD_HASH = [
   ['7zS8GhNt', 'QTJsiMmJ', 'LErN9kM1', '9VoNBM3P', 'HV3OhidvHtY'].join(''),
 ].join('$')
 
+function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return {
+    ...BASE_ENV,
+    NODE_ENV: 'production',
+    DATABASE_URL: VAULT_APP_DATABASE_URL,
+    SESSION_SECRET: 'a'.repeat(64),
+    REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
+    AUTH_DUMMY_PASSWORD_HASH,
+    ...overrides,
+  }
+}
+
+async function expectInvalidEnv(
+  exitSpy: MockInstance<(...args: never[]) => unknown>
+): Promise<void> {
+  await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+  expect(exitSpy).toHaveBeenCalledWith(1)
+}
+
+function resetEnvImport(exitSpy: MockInstance<(...args: never[]) => unknown>): void {
+  vi.resetModules()
+  exitSpy.mockClear()
+}
+
 describe('env', () => {
   let originalEnv: NodeJS.ProcessEnv
   let exitSpy: MockInstance<(...args: never[]) => unknown>
@@ -84,6 +108,14 @@ describe('env', () => {
     expect(env.COOKIE_SECURE).toBe(false)
     expect(env.TRUST_PROXY).toBe(false)
     expect(env.TRUST_PROXY_HOPS).toBe(1)
+    expect(env.MFA_TOTP_ISSUER).toBe('Project Vault')
+    expect(env.MFA_TOTP_PERIOD_SECONDS).toBe(30)
+    expect(env.MFA_TOTP_DIGITS).toBe(6)
+    expect(env.MFA_TOTP_WINDOW).toBe(1)
+    expect(env.MFA_RECOVERY_CODE_COUNT).toBe(10)
+    expect(env.MFA_RECOVERY_CODE_BCRYPT_COST).toBe(12)
+    expect(env.TOTP_USED_CODES_TTL_MINUTES).toBe(90)
+    expect(env.TOTP_REPLAY_HMAC_SECRET).toBe(env.REFRESH_TOKEN_HMAC_SECRET)
   })
 
   it('rejects identical auth secrets', async () => {
@@ -161,41 +193,52 @@ describe('env', () => {
   })
 
   it('defaults COOKIE_SECURE to true in production and rejects placeholder secrets', async () => {
-    process.env = {
-      ...BASE_ENV,
-      NODE_ENV: 'production',
-      DATABASE_URL: VAULT_APP_DATABASE_URL,
+    process.env = productionEnv({
       SESSION_SECRET: 'change-me'.repeat(8),
-      REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
-      AUTH_DUMMY_PASSWORD_HASH,
-    }
-    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+    await expectInvalidEnv(exitSpy)
 
-    vi.resetModules()
-    exitSpy.mockClear()
-    process.env = {
-      ...BASE_ENV,
-      NODE_ENV: 'production',
-      DATABASE_URL: VAULT_APP_DATABASE_URL,
-      SESSION_SECRET: 'a'.repeat(64),
-      REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
-      AUTH_DUMMY_PASSWORD_HASH,
-    }
+    resetEnvImport(exitSpy)
+    process.env = productionEnv({
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+    })
     const { env } = await import('./env.js')
     expect(env.COOKIE_SECURE).toBe(true)
     expect(exitSpy).not.toHaveBeenCalled()
   })
 
   it('rejects COOKIE_SECURE=false in production', async () => {
+    process.env = productionEnv({
+      COOKIE_SECURE: 'false',
+    })
+    await expectInvalidEnv(exitSpy)
+  })
+
+  it('requires a dedicated TOTP replay secret in production', async () => {
+    process.env = productionEnv({
+      COOKIE_SECURE: 'true',
+    })
+    await expectInvalidEnv(exitSpy)
+
+    resetEnvImport(exitSpy)
+    process.env = productionEnv({
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      COOKIE_SECURE: 'true',
+    })
+    const { env } = await import('./env.js')
+    expect(env.TOTP_REPLAY_HMAC_SECRET).toBe('c'.repeat(64))
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects unsupported MFA parameter values', async () => {
     process.env = {
       ...BASE_ENV,
-      NODE_ENV: 'production',
       DATABASE_URL: VAULT_APP_DATABASE_URL,
-      SESSION_SECRET: 'a'.repeat(64),
-      REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
-      AUTH_DUMMY_PASSWORD_HASH,
-      COOKIE_SECURE: 'false',
+      MFA_TOTP_PERIOD_SECONDS: '60',
+      MFA_TOTP_DIGITS: '8',
+      MFA_RECOVERY_CODE_COUNT: '17',
+      MFA_RECOVERY_CODE_BCRYPT_COST: '9',
+      TOTP_USED_CODES_TTL_MINUTES: '1',
     }
     await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
     expect(exitSpy).toHaveBeenCalledWith(1)

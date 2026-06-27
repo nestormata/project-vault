@@ -30,11 +30,27 @@ if (envExampleKeys.size === 0 || schemaKeys.size === 0) {
 }
 
 const missingInExample = [...schemaKeys].filter((key) => !envExampleKeys.has(key))
+const requiredMfaKeys = [
+  'MFA_TOTP_ISSUER',
+  'MFA_TOTP_PERIOD_SECONDS',
+  'MFA_TOTP_DIGITS',
+  'MFA_TOTP_WINDOW',
+  'MFA_RECOVERY_CODE_COUNT',
+  'MFA_RECOVERY_CODE_BCRYPT_COST',
+  'TOTP_USED_CODES_TTL_MINUTES',
+  'TOTP_REPLAY_HMAC_SECRET',
+]
+const missingMfaKeys = requiredMfaKeys.filter((key) => !envExampleKeys.has(key))
 if (missingInExample.length > 0) {
   process.stderr.write('ERROR: .env.example and env schema keys are out of sync\n')
   if (missingInExample.length > 0) {
     process.stderr.write(`  Missing in .env.example: ${missingInExample.join(', ')}\n`)
   }
+  process.exit(1)
+}
+if (missingMfaKeys.length > 0) {
+  process.stderr.write('ERROR: .env.example is missing Story 1.8 MFA keys\n')
+  process.stderr.write(`  Missing MFA keys: ${missingMfaKeys.join(', ')}\n`)
   process.exit(1)
 }
 

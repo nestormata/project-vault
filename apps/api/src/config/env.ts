@@ -12,7 +12,15 @@ const isProduction = process.env.NODE_ENV === 'production'
 const ARGON2_PHC_REGEX =
   /^\$argon2id\$v=\d+\$m=(\d+),t=(\d+),p=(\d+)\$[A-Za-z0-9+/._-]{16,}\$[A-Za-z0-9+/._-]{32,}$/
 
-function validateProductionEnv(env: Env, ctx: z.RefinementCtx): void {
+function validateProductionEnv(
+  env: {
+    COOKIE_SECURE: boolean
+    SESSION_SECRET: string
+    REFRESH_TOKEN_HMAC_SECRET: string
+    TOTP_REPLAY_HMAC_SECRET?: string
+  },
+  ctx: z.RefinementCtx
+): void {
   if (!env.COOKIE_SECURE) {
     ctx.addIssue({
       code: 'custom',
@@ -35,9 +43,36 @@ function validateProductionEnv(env: Env, ctx: z.RefinementCtx): void {
       message: 'REFRESH_TOKEN_HMAC_SECRET must not be a placeholder secret in production',
     })
   }
+  if (!env.TOTP_REPLAY_HMAC_SECRET) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TOTP_REPLAY_HMAC_SECRET'],
+      message: 'TOTP_REPLAY_HMAC_SECRET is required in production',
+    })
+  } else if (env.TOTP_REPLAY_HMAC_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TOTP_REPLAY_HMAC_SECRET'],
+      message: 'TOTP_REPLAY_HMAC_SECRET must differ from REFRESH_TOKEN_HMAC_SECRET in production',
+    })
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.TOTP_REPLAY_HMAC_SECRET)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TOTP_REPLAY_HMAC_SECRET'],
+      message: 'TOTP_REPLAY_HMAC_SECRET must not be a placeholder secret in production',
+    })
+  }
 }
 
-function validateDummyPasswordHash(env: Env, ctx: z.RefinementCtx): void {
+function validateDummyPasswordHash(
+  env: {
+    AUTH_DUMMY_PASSWORD_HASH: string
+    ARGON2_MEMORY_COST: number
+    ARGON2_TIME_COST: number
+    ARGON2_PARALLELISM: number
+  },
+  ctx: z.RefinementCtx
+): void {
   const dummyParams = ARGON2_PHC_REGEX.exec(env.AUTH_DUMMY_PASSWORD_HASH)
   if (
     !dummyParams ||
@@ -107,6 +142,25 @@ const envSchema = z
     JWT_MAX_CLOCK_SKEW_SECONDS: z.coerce.number().int().min(0).max(300).default(30),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
     REFRESH_GRACE_WINDOW_SECONDS: z.coerce.number().int().positive().default(30),
+    MFA_TOTP_ISSUER: z.string().min(1).max(64).default('Project Vault'),
+    MFA_TOTP_PERIOD_SECONDS: z.coerce
+      .number()
+      .int()
+      .refine((value) => value === 30, 'MFA_TOTP_PERIOD_SECONDS must be 30 in v1')
+      .default(30),
+    MFA_TOTP_DIGITS: z.coerce
+      .number()
+      .int()
+      .refine((value) => value === 6, 'MFA_TOTP_DIGITS must be 6 in v1')
+      .default(6),
+    MFA_TOTP_WINDOW: z.coerce.number().int().min(0).max(2).default(1),
+    MFA_RECOVERY_CODE_COUNT: z.coerce.number().int().min(8).max(16).default(10),
+    MFA_RECOVERY_CODE_BCRYPT_COST: z.coerce.number().int().min(10).max(14).default(12),
+    TOTP_USED_CODES_TTL_MINUTES: z.coerce.number().int().positive().default(90),
+    TOTP_REPLAY_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(19456).max(262144).default(65536),
     ARGON2_TIME_COST: z.coerce.number().int().min(2).default(3),
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(4),
@@ -155,10 +209,21 @@ const envSchema = z
     }
 
     if (env.NODE_ENV === 'production') validateProductionEnv(env, ctx)
+    if (
+      env.TOTP_USED_CODES_TTL_MINUTES * 60 <=
+      (env.MFA_TOTP_WINDOW + 1) * env.MFA_TOTP_PERIOD_SECONDS
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TOTP_USED_CODES_TTL_MINUTES'],
+        message: 'TOTP_USED_CODES_TTL_MINUTES must outlive the accepted TOTP replay window',
+      })
+    }
     validateDummyPasswordHash(env, ctx)
   })
 
-export type Env = z.infer<typeof envSchema>
+type RawEnv = z.infer<typeof envSchema>
+export type Env = Omit<RawEnv, 'TOTP_REPLAY_HMAC_SECRET'> & { TOTP_REPLAY_HMAC_SECRET: string }
 
 function loadEnv(): Env {
   const result = envSchema.safeParse(process.env)
@@ -168,7 +233,16 @@ function loadEnv(): Env {
     process.exit(1)
     throw new Error('Invalid environment configuration')
   }
-  return result.data
+  if (!result.data.TOTP_REPLAY_HMAC_SECRET) {
+    process.stderr.write(
+      '[env] TOTP_REPLAY_HMAC_SECRET unset outside production; falling back to REFRESH_TOKEN_HMAC_SECRET. Do not use this fallback in production.\n'
+    )
+    return {
+      ...result.data,
+      TOTP_REPLAY_HMAC_SECRET: result.data.REFRESH_TOKEN_HMAC_SECRET,
+    }
+  }
+  return result.data as Env
 }
 
 export const env = loadEnv()

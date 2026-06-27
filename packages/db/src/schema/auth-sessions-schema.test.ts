@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { refreshTokens, revokedTokens, sessions } from './index.js'
+import {
+  mfaEnrollments,
+  mfaRecoveryCodes,
+  refreshTokens,
+  revokedTokens,
+  sessions,
+  totpUsedCodes,
+  users,
+} from './index.js'
 import { EXCLUDED_TABLES } from '../check-rls-coverage.js'
 
 describe('auth session schema', () => {
@@ -28,5 +36,33 @@ describe('auth session schema', () => {
     expect(revokedTokens.expiresAt).toBeDefined()
 
     expect(EXCLUDED_TABLES.has('revoked_tokens')).toBe(true)
+  })
+
+  it('exposes Story 1.8 MFA enrollment, recovery code, and TOTP replay columns', () => {
+    expect(users.mfaEnrolledAt).toBeDefined()
+
+    expect(mfaEnrollments.id).toBeDefined()
+    expect(mfaEnrollments.userId).toBeDefined()
+    expect(mfaEnrollments.secretEncrypted).toBeDefined()
+    expect(mfaEnrollments.status).toBeDefined()
+    expect(mfaEnrollments.label).toBeDefined()
+    expect(mfaEnrollments.confirmedAt).toBeDefined()
+
+    expect(mfaRecoveryCodes.id).toBeDefined()
+    expect(mfaRecoveryCodes.userId).toBeDefined()
+    expect(mfaRecoveryCodes.codeHash).toBeDefined()
+    expect(mfaRecoveryCodes.usedAt).toBeDefined()
+
+    expect(totpUsedCodes.id).toBeDefined()
+    expect(totpUsedCodes.userId).toBeDefined()
+    expect(totpUsedCodes.codeHash).toBeDefined()
+    expect(totpUsedCodes.windowStart).toBeDefined()
+    expect(totpUsedCodes.expiresAt).toBeDefined()
+  })
+
+  it('documents Story 1.8 identity-scoped MFA tables as RLS coverage exceptions', () => {
+    expect(EXCLUDED_TABLES.has('mfa_enrollments')).toBe(true)
+    expect(EXCLUDED_TABLES.has('mfa_recovery_codes')).toBe(true)
+    expect(EXCLUDED_TABLES.has('totp_used_codes')).toBe(true)
   })
 })

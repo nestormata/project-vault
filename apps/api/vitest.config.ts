@@ -4,6 +4,8 @@ import { baseVitestConfig } from '@project-vault/tsconfig/vitest.base'
 export default mergeConfig(baseVitestConfig, {
   test: {
     include: ['src/**/*.test.ts'],
+    setupFiles: ['src/__tests__/setup-env.ts'],
+    fileParallelism: false,
     coverage: {
       // Only count coverage for files directly tested in Story 1.1+
       // (boss.ts, events.ts stubs covered in later stories)

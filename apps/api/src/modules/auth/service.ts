@@ -92,6 +92,11 @@ export type SessionSummary = {
   isCurrent: boolean
 }
 
+export type LoginSessionUser = {
+  id: string
+  identityTokenId: string | null
+}
+
 export function slugify(orgName: string): string {
   const slug = orgName
     .trim()
@@ -389,53 +394,62 @@ async function verifyLoginPassword(
   }
 }
 
+export async function createLoginSessionInTx(
+  tx: Tx,
+  user: LoginSessionUser,
+  orgId: string,
+  meta: RequestMeta
+): Promise<LoginResult> {
+  await enforceMaxSessionsForUser(tx, user.id, orgId)
+  const jti = randomUUID()
+  const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)
+  const tokens = buildTokenMaterial(user.id, orgId, jti)
+  const sessionRows = await tx
+    .insert(sessions)
+    .values({
+      userId: user.id,
+      orgId,
+      jti,
+      sessionVersion: 1,
+      expiresAt,
+      ipAddress: meta.ipAddress ?? null,
+      userAgent: meta.userAgent ?? null,
+    })
+    .returning({ id: sessions.id })
+  const session = sessionRows[0]
+  if (!session) throw new Error('loginUser: session insert returned no row')
+
+  await tx.insert(refreshTokens).values({
+    sessionId: session.id,
+    tokenHash: hashRefreshToken(tokens.refreshOpaque),
+    expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
+  })
+
+  await insertAuditEntry(tx, {
+    orgId,
+    actorTokenId: user.identityTokenId,
+    actorType: 'human',
+    eventType: AuditEvent.SESSION_CREATED,
+    payload: {},
+    ipAddress: meta.ipAddress,
+    userAgent: meta.userAgent,
+  })
+
+  return {
+    userId: user.id,
+    orgId,
+    expiresAt: expiresAt.toISOString(),
+    tokens,
+  }
+}
+
 async function createLoginSession(
   user: NonNullable<Awaited<ReturnType<typeof findLoginUser>>[number]>,
   orgId: string,
   meta: RequestMeta
 ): Promise<LoginResult> {
   return withOrg(orgId, async (tx) => {
-    await enforceMaxSessionsForUser(tx, user.id, orgId)
-    const jti = randomUUID()
-    const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)
-    const tokens = buildTokenMaterial(user.id, orgId, jti)
-    const sessionRows = await tx
-      .insert(sessions)
-      .values({
-        userId: user.id,
-        orgId,
-        jti,
-        sessionVersion: 1,
-        expiresAt,
-        ipAddress: meta.ipAddress ?? null,
-        userAgent: meta.userAgent ?? null,
-      })
-      .returning({ id: sessions.id })
-    const session = sessionRows[0]
-    if (!session) throw new Error('loginUser: session insert returned no row')
-
-    await tx.insert(refreshTokens).values({
-      sessionId: session.id,
-      tokenHash: hashRefreshToken(tokens.refreshOpaque),
-      expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
-    })
-
-    await insertAuditEntry(tx, {
-      orgId,
-      actorTokenId: user.identityTokenId,
-      actorType: 'human',
-      eventType: AuditEvent.SESSION_CREATED,
-      payload: {},
-      ipAddress: meta.ipAddress,
-      userAgent: meta.userAgent,
-    })
-
-    return {
-      userId: user.id,
-      orgId,
-      expiresAt: expiresAt.toISOString(),
-      tokens,
-    }
+    return createLoginSessionInTx(tx, user, orgId, meta)
   })
 }
 

@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import {
+  configureAuthIntegrationEnv,
+  cookieHeader,
+  initVaultForTest,
+  parseSetCookies,
+  type CookieJar,
+} from './helpers/auth-test-helpers.js'
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
+configureAuthIntegrationEnv()
 
 const { createApp } = await import('../app.js')
 const { initVault } = await import('../modules/vault/key-service.js')
@@ -13,29 +18,9 @@ const TEST_PASSPHRASE = 'session-tests-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const AUTH_ME_URL = '/api/v1/auth/me'
 
-type CookieJar = Record<string, string>
 type SessionSummary = {
   sessionId: string
   isCurrent: boolean
-}
-
-function parseSetCookies(setCookie: string | string[] | undefined): CookieJar {
-  const headers = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : []
-  return Object.fromEntries(
-    headers
-      .map((header) => header.split(';')[0] ?? '')
-      .filter(Boolean)
-      .map((cookie) => {
-        const [name, ...valueParts] = cookie.split('=')
-        return [name, valueParts.join('=')]
-      })
-  )
-}
-
-function cookieHeader(jar: CookieJar): string {
-  return Object.entries(jar)
-    .map(([name, value]) => `${name}=${value}`)
-    .join('; ')
 }
 
 function uniqueEmail(label: string): string {
@@ -90,7 +75,7 @@ async function listSessions(jar: CookieJar): Promise<SessionSummary[]> {
 describe.sequential('Session management integration', () => {
   beforeAll(async () => {
     await resetVaultForTest()
-    await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
+    await initVaultForTest(initVault, TEST_PASSPHRASE)
   })
 
   afterAll(async () => {

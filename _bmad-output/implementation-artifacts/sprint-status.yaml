@@ -51,7 +51,7 @@ development_status:
   1-5-vault-initialization-and-master-key-management: done
   1-6-user-registration-and-password-authentication: done
   1-7-jwt-session-management-and-security-controls: in-progress
-  1-8-totp-mfa-enrollment-and-recovery-codes: ready-for-dev
+  1-8-totp-mfa-enrollment-and-recovery-codes: done
   1-9-mfa-role-enforcement-and-failed-authentication-detection: ready-for-dev
   1-10-structured-operational-logging-and-metrics: ready-for-dev
   1-11-secureroute-framework-and-drizzle-rls-middleware: backlog
