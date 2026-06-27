@@ -43,6 +43,20 @@ function bodyWithNormalizedEmail(body: unknown): unknown {
   }
 }
 
+function normalizeEmailBodyForRoute(
+  body: unknown,
+  reply: FastifyReply
+): { success: true; body: unknown } | { success: false; reply: FastifyReply } {
+  try {
+    return { success: true, body: bodyWithNormalizedEmail(body) }
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'validation_error') {
+      return { success: false, reply: reply.status(422).send(asciiEmailValidationError()) }
+    }
+    throw error
+  }
+}
+
 function metaFromRequest(req: FastifyRequest) {
   return {
     ipAddress: req.ip,
@@ -107,16 +121,9 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           message: 'Registration is disabled on this vault',
         })
       }
-      let normalizedBody: unknown
-      try {
-        normalizedBody = bodyWithNormalizedEmail(req.body)
-      } catch (error) {
-        if (error instanceof AppError && error.code === 'validation_error') {
-          return reply.status(422).send(asciiEmailValidationError())
-        }
-        throw error
-      }
-      const parsed = RegisterRequestSchema.safeParse(normalizedBody)
+      const normalized = normalizeEmailBodyForRoute(req.body, reply)
+      if (!normalized.success) return normalized.reply
+      const parsed = RegisterRequestSchema.safeParse(normalized.body)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
       try {
         const result = await registerUser(parsed.data)
@@ -133,16 +140,9 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     url: '/login',
     bodyLimit: 4096,
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      let normalizedBody: unknown
-      try {
-        normalizedBody = bodyWithNormalizedEmail(req.body)
-      } catch (error) {
-        if (error instanceof AppError && error.code === 'validation_error') {
-          return reply.status(422).send(asciiEmailValidationError())
-        }
-        throw error
-      }
-      const parsed = LoginRequestSchema.safeParse(normalizedBody)
+      const normalized = normalizeEmailBodyForRoute(req.body, reply)
+      if (!normalized.success) return normalized.reply
+      const parsed = LoginRequestSchema.safeParse(normalized.body)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
       try {
         const result = await loginUser(parsed.data, metaFromRequest(req))
