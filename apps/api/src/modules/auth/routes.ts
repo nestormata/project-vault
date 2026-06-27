@@ -1,10 +1,14 @@
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
+import type { FastifySchema } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import { z } from 'zod/v4'
+import { sql } from 'drizzle-orm'
+import { getDb } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
+import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.js'
 import {
   authPreHandler,
   enforceUserRateLimit,
@@ -14,9 +18,14 @@ import {
 import {
   LoginRequestSchema,
   RegisterRequestSchema,
+  authMeResponseSchema,
+  mfaEnrollResponseSchema,
   mfaRegenerateBodySchema,
+  mfaRegenerateResponseSchema,
   mfaRecoverBodySchema,
+  mfaRecoverResponseSchema,
   mfaVerifyEnrollmentBodySchema,
+  mfaVerifyEnrollmentResponseSchema,
 } from './schema.js'
 import { normalizeEmail } from './normalize.js'
 import { clearAuthCookies, setAuthCookies, type CookieReply } from './tokens.js'
@@ -46,10 +55,10 @@ type JwtFastify = FastifyApp & {
   }
 }
 type AuthContext = NonNullable<FastifyRequest['authContext']>
-const recoverRateLimitWindows = new Map<string, { count: number; resetAt: number }>()
 type ProtectedRouteOptions = {
   method: 'GET' | 'POST' | 'DELETE'
   url: string
+  schema?: FastifySchema
   rateLimitMax?: number
   rateLimitWindowMs?: number
   handler: (
@@ -57,6 +66,13 @@ type ProtectedRouteOptions = {
     req: FastifyRequest,
     reply: FastifyReply
   ) => Promise<unknown> | unknown
+}
+type ParsedBody<T> = { success: true; data: T } | { success: false; reply: FastifyReply }
+type AuthSessionResult = {
+  userId: string
+  orgId: string
+  expiresAt: string
+  tokens: TokenMaterial
 }
 
 function asciiEmailValidationError() {
@@ -108,6 +124,47 @@ async function buildCookieTokens(fastify: FastifyApp, tokens: TokenMaterial) {
   return { ...tokens, accessJwt: jwt }
 }
 
+function parseBody<T>(
+  schema: z.ZodType<T>,
+  req: FastifyRequest,
+  reply: FastifyReply
+): ParsedBody<T> {
+  const parsed = schema.safeParse(req.body)
+  if (!parsed.success)
+    return { success: false, reply: reply.status(422).send(validationError(parsed.error, 'body')) }
+  return { success: true, data: parsed.data }
+}
+
+async function sendAuthSession(
+  fastify: FastifyApp,
+  reply: FastifyReply,
+  result: AuthSessionResult,
+  extraData: Record<string, unknown> = {}
+) {
+  clearAuthCookies(reply as unknown as CookieReply)
+  setAuthCookies(reply as unknown as CookieReply, await buildCookieTokens(fastify, result.tokens))
+  return reply.send({
+    data: {
+      userId: result.userId,
+      orgId: result.orgId,
+      expiresAt: result.expiresAt,
+      ...extraData,
+    },
+  })
+}
+
+async function sendMfaAction<T>(
+  reply: FastifyReply,
+  action: () => Promise<T>
+): Promise<FastifyReply> {
+  try {
+    return reply.send({ data: await action() })
+  } catch (error) {
+    if (error instanceof AppError) return sendAppError(reply, error)
+    throw error
+  }
+}
+
 function accessTokenExpFromRequest(fastify: FastifyApp, req: FastifyRequest): Date | undefined {
   const accessToken = (req as unknown as { cookies?: Record<string, string | undefined> })
     .cookies?.['access-token']
@@ -122,20 +179,39 @@ function sendAppError(reply: FastifyReply, error: AppError) {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
 }
 
-function enforceRecoverRateLimit(
+async function enforceRecoverRateLimit(
   key: string,
   max: number,
   reply: FastifyReply,
   timeWindowMs = 15 * 60 * 1000
-): boolean {
-  const now = Date.now()
-  const current = recoverRateLimitWindows.get(key)
-  const bucket =
-    !current || current.resetAt <= now ? { count: 0, resetAt: now + timeWindowMs } : current
-  bucket.count += 1
-  recoverRateLimitWindows.set(key, bucket)
-  if (bucket.count <= max) return true
-  const retryAfterSeconds = Math.ceil((bucket.resetAt - now) / 1000)
+): Promise<boolean> {
+  const now = new Date()
+  const resetAt = new Date(now.getTime() + timeWindowMs)
+  const nowIso = now.toISOString()
+  const resetAtIso = resetAt.toISOString()
+  await getDb().execute(
+    sql`DELETE FROM auth_rate_limit_buckets WHERE reset_at <= ${nowIso}::timestamptz`
+  )
+  const [bucket] = await getDb().execute(sql`
+    INSERT INTO auth_rate_limit_buckets (bucket_key, request_count, reset_at)
+    VALUES (${key}, 1, ${resetAtIso}::timestamptz)
+    ON CONFLICT (bucket_key)
+    DO UPDATE SET
+      request_count = CASE
+        WHEN auth_rate_limit_buckets.reset_at <= ${nowIso}::timestamptz THEN 1
+        ELSE auth_rate_limit_buckets.request_count + 1
+      END,
+      reset_at = CASE
+        WHEN auth_rate_limit_buckets.reset_at <= ${nowIso}::timestamptz THEN ${resetAtIso}::timestamptz
+        ELSE auth_rate_limit_buckets.reset_at
+      END,
+      updated_at = NOW()
+    RETURNING request_count, reset_at
+  `)
+  const requestCount = Number((bucket as { request_count: number | string }).request_count)
+  const bucketResetAt = new Date((bucket as { reset_at: Date | string }).reset_at)
+  if (requestCount <= max) return true
+  const retryAfterSeconds = Math.ceil((bucketResetAt.getTime() - now.getTime()) / 1000)
   reply.header('Retry-After', String(retryAfterSeconds)).status(429).send({
     code: 'rate_limit_exceeded',
     message: 'Too many attempts. Try again later.',
@@ -161,9 +237,11 @@ function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
 }
 
 function registerProtectedRoute(fastify: FastifyApp, options: ProtectedRouteOptions): void {
-  fastify.route({
+  withRouteTypeProvider(fastify).route({
     method: options.method,
     url: options.url,
+    schema: options.schema,
+    attachValidation: Boolean(options.schema?.body),
     preHandler: [authPreHandler(fastify)],
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const authContext = requireAuthContext(req, reply)
@@ -208,6 +286,12 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerProtectedRoute(fastify, {
     method: 'GET',
     url: '/me',
+    schema: {
+      response: {
+        200: authMeResponseSchema,
+        401: ApiErrorSchema,
+      },
+    },
     handler: async (authContext, _req, reply) => {
       const mfaStatus = await getMfaStatus(authContext.userId)
       return reply.send({
@@ -225,52 +309,66 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerProtectedRoute(fastify, {
     method: 'POST',
     url: '/mfa/enroll',
+    schema: {
+      response: {
+        200: mfaEnrollResponseSchema,
+        401: ApiErrorSchema,
+        409: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
     rateLimitMax: 10,
     rateLimitWindowMs: 60 * 60 * 1000,
     handler: async (authContext, _req, reply) => {
-      try {
-        const result = await enrollMfa(authContext, metaFromRequest(_req))
-        return reply.send({ data: result })
-      } catch (error) {
-        if (error instanceof AppError) return sendAppError(reply, error)
-        throw error
-      }
+      return sendMfaAction(reply, () => enrollMfa(authContext, metaFromRequest(_req)))
     },
   })
 
   registerProtectedRoute(fastify, {
     method: 'POST',
     url: '/mfa/verify-enrollment',
+    schema: {
+      body: mfaVerifyEnrollmentBodySchema,
+      response: {
+        200: mfaVerifyEnrollmentResponseSchema,
+        401: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
     rateLimitMax: 20,
     rateLimitWindowMs: 15 * 60 * 1000,
     handler: async (authContext, req, reply) => {
-      const parsed = mfaVerifyEnrollmentBodySchema.safeParse(req.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
-      try {
-        const result = await verifyEnrollment(authContext, parsed.data, metaFromRequest(req))
-        return reply.send({ data: result })
-      } catch (error) {
-        if (error instanceof AppError) return sendAppError(reply, error)
-        throw error
-      }
+      const parsed = parseBody(mfaVerifyEnrollmentBodySchema, req, reply)
+      if (!parsed.success) return parsed.reply
+      return sendMfaAction(reply, () =>
+        verifyEnrollment(authContext, parsed.data, metaFromRequest(req))
+      )
     },
   })
 
   registerProtectedRoute(fastify, {
     method: 'POST',
     url: '/mfa/regenerate-recovery-codes',
+    schema: {
+      body: mfaRegenerateBodySchema,
+      response: {
+        200: mfaRegenerateResponseSchema,
+        401: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
     rateLimitMax: 5,
     rateLimitWindowMs: 60 * 60 * 1000,
     handler: async (authContext, req, reply) => {
-      const parsed = mfaRegenerateBodySchema.safeParse(req.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
-      try {
-        const result = await regenerateRecoveryCodes(authContext, parsed.data, metaFromRequest(req))
-        return reply.send({ data: result })
-      } catch (error) {
-        if (error instanceof AppError) return sendAppError(reply, error)
-        throw error
-      }
+      const parsed = parseBody(mfaRegenerateBodySchema, req, reply)
+      if (!parsed.success) return parsed.reply
+      return sendMfaAction(reply, () =>
+        regenerateRecoveryCodes(authContext, parsed.data, metaFromRequest(req))
+      )
     },
   })
 
@@ -384,14 +482,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
         const result = await loginUser(parsed.data, metaFromRequest(req))
-        clearAuthCookies(reply as unknown as CookieReply)
-        setAuthCookies(
-          reply as unknown as CookieReply,
-          await buildCookieTokens(fastify, result.tokens)
-        )
-        return reply.send({
-          data: { userId: result.userId, orgId: result.orgId, expiresAt: result.expiresAt },
-        })
+        return sendAuthSession(fastify, reply, result)
       } catch (error) {
         if (error instanceof AppError) return sendAppError(reply, error)
         throw error
@@ -399,32 +490,36 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  fastify.route({
+  withRouteTypeProvider(fastify).route({
     method: 'POST',
     url: '/mfa/recover',
     bodyLimit: 4096,
+    attachValidation: true,
+    schema: {
+      body: mfaRecoverBodySchema,
+      response: {
+        200: mfaRecoverResponseSchema,
+        401: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: z.object({
+          code: z.literal('rate_limit_exceeded'),
+          message: z.string(),
+          retryAfterSeconds: z.number().int().positive(),
+        }),
+      },
+    },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (!enforceRecoverRateLimit(`ip:${req.ip}`, 10, reply)) return reply
+      if (!(await enforceRecoverRateLimit(`ip:${req.ip}`, 10, reply))) return reply
       const normalized = normalizeEmailBodyForRoute(req.body, reply)
       if (!normalized.success) return normalized.reply
       const parsed = mfaRecoverBodySchema.safeParse(normalized.body)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       const normalizedEmail = parsed.data.email
-      if (!enforceRecoverRateLimit(`email:${normalizedEmail}`, 5, reply)) return reply
+      if (!(await enforceRecoverRateLimit(`email:${normalizedEmail}`, 5, reply))) return reply
       try {
         const result = await recoverWithCode(parsed.data, metaFromRequest(req))
-        clearAuthCookies(reply as unknown as CookieReply)
-        setAuthCookies(
-          reply as unknown as CookieReply,
-          await buildCookieTokens(fastify, result.tokens)
-        )
-        return reply.send({
-          data: {
-            userId: result.userId,
-            orgId: result.orgId,
-            expiresAt: result.expiresAt,
-            remainingRecoveryCodes: result.remainingRecoveryCodes,
-          },
+        return sendAuthSession(fastify, reply, result, {
+          remainingRecoveryCodes: result.remainingRecoveryCodes,
         })
       } catch (error) {
         if (error instanceof AppError) return sendAppError(reply, error)

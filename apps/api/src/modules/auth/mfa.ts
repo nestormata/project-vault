@@ -31,6 +31,7 @@ import {
   recoveryCodeMatches,
 } from './recovery-codes.js'
 import {
+  base32FromSecretBytes,
   buildOtpAuthUrl,
   decryptEnrollmentSecret,
   encryptTotpSecret,
@@ -165,6 +166,31 @@ async function recoveryCodeRows(userId: string, codes: string[]) {
   return hashed.map((row) => ({ ...row, userId }))
 }
 
+async function insertRecoveryCodes(tx: Tx, userId: string, codes: string[]): Promise<void> {
+  await tx.insert(mfaRecoveryCodes).values(await recoveryCodeRows(userId, codes))
+}
+
+async function writeMfaEnrollmentAudit(
+  tx: Tx,
+  authContext: AuthContext,
+  fields: {
+    eventType: string
+    enrollmentId: string
+    payload: Record<string, unknown>
+    meta: RequestMeta
+  }
+): Promise<void> {
+  await writeAuditEntry(tx, {
+    orgId: authContext.orgId,
+    actorTokenId: await actorTokenIdForUser(tx, authContext.userId),
+    eventType: fields.eventType,
+    resourceId: fields.enrollmentId,
+    resourceType: 'mfa_enrollment',
+    payload: fields.payload,
+    meta: fields.meta,
+  })
+}
+
 async function buildQrCodeSvg(otpauthUrl: string): Promise<string> {
   return QRCode.toString(otpauthUrl, { type: 'svg', margin: 2, width: 256 })
 }
@@ -189,7 +215,7 @@ export async function enrollMfa(authContext: AuthContext, meta: RequestMeta = {}
 
     await deletePendingEnrollmentForUser(authContext.userId, db)
     const secret = generateSecret()
-    const secretBuffer = Buffer.from(secret.base32, 'utf8')
+    const secretBuffer = Buffer.from(secret.buffer)
     const encrypted = await encryptTotpSecret(secretBuffer)
     secretBuffer.fill(0)
 
@@ -202,15 +228,18 @@ export async function enrollMfa(authContext: AuthContext, meta: RequestMeta = {}
         label: 'Authenticator',
       })
       .returning({ id: mfaEnrollments.id })
+      .catch((error: unknown) => {
+        if (isUniqueViolation(error)) {
+          throw appError('mfa_enrollment_conflict', 'MFA enrollment is already in progress.', 409)
+        }
+        throw error
+      })
     const enrollment = enrollmentRows[0]
     if (!enrollment) throw new Error('enrollMfa: enrollment insert returned no row')
 
-    await writeAuditEntry(db, {
-      orgId: authContext.orgId,
-      actorTokenId: await actorTokenIdForUser(db, authContext.userId),
+    await writeMfaEnrollmentAudit(db, authContext, {
       eventType: AuditEvent.MFA_ENROLLMENT_STARTED,
-      resourceId: enrollment.id,
-      resourceType: 'mfa_enrollment',
+      enrollmentId: enrollment.id,
       payload: { method: 'totp' },
       meta,
     })
@@ -229,10 +258,11 @@ async function loadPendingEnrollmentForUpdate(tx: Tx, userId: string) {
   const rows = await tx
     .select({
       id: mfaEnrollments.id,
+      status: mfaEnrollments.status,
       secretEncrypted: mfaEnrollments.secretEncrypted,
     })
     .from(mfaEnrollments)
-    .where(and(eq(mfaEnrollments.userId, userId), eq(mfaEnrollments.status, 'pending')))
+    .where(eq(mfaEnrollments.userId, userId))
     .for('update')
     .limit(1)
   return rows[0]
@@ -257,17 +287,19 @@ async function validateEnrollmentTotp(
   enrollment: { id: string; secretEncrypted: EncryptedValue },
   totp: string,
   deletePendingOnInvalid: boolean
-): Promise<void> {
+): Promise<boolean> {
   const plaintext = await decryptEnrollmentSecret(enrollment.secretEncrypted)
   try {
-    const result = validateTotpCode(plaintext.toString('utf8'), totp)
+    const normalizedTotp = totp.replace(/\s/g, '')
+    const result = validateTotpCode(base32FromSecretBytes(plaintext), normalizedTotp)
     if (!result.valid || result.counter === undefined) {
       if (deletePendingOnInvalid) await deletePendingEnrollmentForUser(userId, tx)
-      throw invalidTotp()
+      return false
     }
-    await recordTotpUse(userId, result.counter, totp, tx)
+    await recordTotpUse(userId, result.counter, normalizedTotp, tx)
+    return true
   } catch (error) {
-    if (isUniqueViolation(error)) throw invalidTotp()
+    if (isUniqueViolation(error)) return false
     throw error
   } finally {
     plaintext.fill(0)
@@ -279,14 +311,22 @@ export async function verifyEnrollment(
   input: { totp: string },
   meta: RequestMeta = {}
 ) {
-  return getDb().transaction(async (tx) => {
+  const result = await getDb().transaction(async (tx) => {
     const db = tx as Tx
     const enrollment = await loadPendingEnrollmentForUpdate(db, authContext.userId)
     if (!enrollment) {
       throw appError('mfa_enrollment_not_started', 'MFA enrollment has not been started.', 409)
     }
+    if (enrollment.status !== 'pending') throw invalidTotp()
 
-    await validateEnrollmentTotp(db, authContext.userId, enrollment, input.totp, true)
+    const validTotp = await validateEnrollmentTotp(
+      db,
+      authContext.userId,
+      enrollment,
+      input.totp,
+      true
+    )
+    if (!validTotp) return { invalidTotp: true as const }
 
     const enrolledAt = new Date()
     const recoveryCodes = generateRecoveryCodes(env.MFA_RECOVERY_CODE_COUNT)
@@ -298,21 +338,18 @@ export async function verifyEnrollment(
       .update(users)
       .set({ mfaEnrolledAt: enrolledAt })
       .where(eq(users.id, authContext.userId))
-    await db
-      .insert(mfaRecoveryCodes)
-      .values(await recoveryCodeRows(authContext.userId, recoveryCodes))
-    await writeAuditEntry(db, {
-      orgId: authContext.orgId,
-      actorTokenId: await actorTokenIdForUser(db, authContext.userId),
+    await insertRecoveryCodes(db, authContext.userId, recoveryCodes)
+    await writeMfaEnrollmentAudit(db, authContext, {
       eventType: AuditEvent.MFA_ENROLLED,
-      resourceId: enrollment.id,
-      resourceType: 'mfa_enrollment',
+      enrollmentId: enrollment.id,
       payload: { method: 'totp' },
       meta,
     })
 
     return { mfaEnrolledAt: enrolledAt.toISOString(), recoveryCodes }
   })
+  if ('invalidTotp' in result) throw invalidTotp()
+  return result
 }
 
 export async function regenerateRecoveryCodes(
@@ -325,7 +362,14 @@ export async function regenerateRecoveryCodes(
     const enrollment = await loadConfirmedEnrollmentForUpdate(db, authContext.userId)
     if (!enrollment) throw appError('mfa_not_enrolled', 'MFA is not enrolled for this user.', 409)
 
-    await validateEnrollmentTotp(db, authContext.userId, enrollment, input.totp, false)
+    const validTotp = await validateEnrollmentTotp(
+      db,
+      authContext.userId,
+      enrollment,
+      input.totp,
+      false
+    )
+    if (!validTotp) throw invalidTotp()
 
     const generatedAt = new Date()
     const recoveryCodes = generateRecoveryCodes(env.MFA_RECOVERY_CODE_COUNT)
@@ -333,21 +377,20 @@ export async function regenerateRecoveryCodes(
       .update(mfaRecoveryCodes)
       .set({ usedAt: generatedAt })
       .where(and(eq(mfaRecoveryCodes.userId, authContext.userId), isNull(mfaRecoveryCodes.usedAt)))
-    await db
-      .insert(mfaRecoveryCodes)
-      .values(await recoveryCodeRows(authContext.userId, recoveryCodes))
-    await writeAuditEntry(db, {
-      orgId: authContext.orgId,
-      actorTokenId: await actorTokenIdForUser(db, authContext.userId),
+    await insertRecoveryCodes(db, authContext.userId, recoveryCodes)
+    await writeMfaEnrollmentAudit(db, authContext, {
       eventType: AuditEvent.MFA_RECOVERY_CODES_REGENERATED,
-      resourceId: enrollment.id,
-      resourceType: 'mfa_enrollment',
+      enrollmentId: enrollment.id,
       payload: {
         method: 'totp',
         remainingRecoveryCodes: await countUnusedRecoveryCodes(authContext.userId, db),
       },
       meta,
     })
+
+    process.stdout.write(
+      `${JSON.stringify({ eventType: 'alert.pending_epic3', alertType: 'mfa.recovery_codes_regenerated', userId: authContext.userId })}\n`
+    )
 
     return { recoveryCodes, generatedAt: generatedAt.toISOString() }
   })
@@ -423,9 +466,19 @@ export async function recoverWithCode(
 
   return getDb().transaction(async (tx) => {
     const db = tx as Tx
-    const orgId = user ? await activeOrgForUser(db, user.id) : null
-    const auditSubject = user ? { orgId, identityTokenId: user.identityTokenId } : null
-    if (!user || !validPassword || !user.mfaEnrolledAt || !orgId) {
+    if (!user || !validPassword || !user.mfaEnrolledAt) {
+      const orgId = user ? await activeOrgForUser(db, user.id) : null
+      await tryWriteFailedRecoverAudit(
+        db,
+        user ? { orgId, identityTokenId: user.identityTokenId } : null,
+        meta
+      )
+      throw invalidRecoveryCredentials()
+    }
+
+    const orgId = await activeOrgForUser(db, user.id)
+    const auditSubject = { orgId, identityTokenId: user.identityTokenId }
+    if (!orgId) {
       await tryWriteFailedRecoverAudit(db, auditSubject, meta)
       throw invalidRecoveryCredentials()
     }

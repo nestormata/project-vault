@@ -39,6 +39,14 @@ export async function decryptEnrollmentSecret(encrypted: EncryptedValue): Promis
   return withSecret(encrypted, async (plaintext) => Buffer.from(plaintext))
 }
 
+export function base32FromSecretBytes(secretBytes: Buffer): string {
+  const buffer = secretBytes.buffer.slice(
+    secretBytes.byteOffset,
+    secretBytes.byteOffset + secretBytes.byteLength
+  )
+  return new OTPAuth.Secret({ buffer }).base32
+}
+
 export function validateTotpCode(
   secretBase32: string,
   token: string,

@@ -209,6 +209,16 @@ const envSchema = z
     }
 
     if (env.NODE_ENV === 'production') validateProductionEnv(env, ctx)
+    if (
+      env.TOTP_USED_CODES_TTL_MINUTES * 60 <=
+      (env.MFA_TOTP_WINDOW + 1) * env.MFA_TOTP_PERIOD_SECONDS
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TOTP_USED_CODES_TTL_MINUTES'],
+        message: 'TOTP_USED_CODES_TTL_MINUTES must outlive the accepted TOTP replay window',
+      })
+    }
     validateDummyPasswordHash(env, ctx)
   })
 

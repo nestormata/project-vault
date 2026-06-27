@@ -1,6 +1,6 @@
 # Story 1.8: TOTP MFA Enrollment & Recovery Codes
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for TOTP enrollment, recovery codes, encrypted secret storage, replay protection, and MFA recovery login path. Covers FR54, FR55. Red Team hardening applied 2026-06-24. User Persona Focus Group applied 2026-06-24. Critique and Refine applied 2026-06-24 (AC quick ref, AC-1, AC-2, AC-4b, AC-6a/b/f, AC-8h, AC-9e, AC-16, AC-17 #22). -->
 
@@ -60,7 +60,7 @@ Epics.md uses simplified column names (`users.totp_secret_encrypted`, `users.mfa
 | `POST /mfa/enroll` | Yes | No | 10/h/user | `200` + QR/secret | `409 mfa_already_enrolled`, `401 access_token_missing` |
 | `POST /mfa/verify-enrollment` | Yes | No | 20/15m/user | `200` + recovery codes | `422 invalid_totp`, `409 mfa_enrollment_not_started` |
 | `POST /mfa/regenerate-recovery-codes` | Yes + TOTP | No | 5/h/user | `200` + new codes | `422 invalid_totp`, `409 mfa_not_enrolled` |
-| `POST /mfa/recover` | No | **Yes** | 10/15m/IP + 5/15m/email | `200` + session cookies | `401 invalid_credentials`, `422 validation_error`, `429 rate_limit_exceeded` |
+| `POST /mfa/recover` | No | **No** | 10/15m/IP + 5/15m/email | `200` + session cookies | `401 invalid_credentials`, `422 validation_error`, `429 rate_limit_exceeded`, `503 sealed` |
 
 ---
 
@@ -126,11 +126,10 @@ packages/shared/src/constants/
 | `POST /api/v1/auth/mfa/enroll` | **No** | Requires primary key encryption — 503 when vault sealed |
 | `POST /api/v1/auth/mfa/verify-enrollment` | **No** | Requires decrypt — 503 when sealed |
 | `POST /api/v1/auth/mfa/regenerate-recovery-codes` | **No** | Requires decrypt — 503 when sealed |
-| `POST /api/v1/auth/mfa/recover` | **Yes** | Public login path — same class as `/login` |
+| `POST /api/v1/auth/mfa/recover` | **No** | Requires audit/session HMAC keys; return `503 sealed` when vault is sealed |
 
 ```typescript
-// Add to VAULT_GUARD_ALLOWLIST (method + path key — match vault-guard.ts convention):
-'POST /api/v1/auth/mfa/recover',
+// Do not add recover to VAULT_GUARD_ALLOWLIST; it must return 503 while sealed.
 ```
 
 **Rate limits (extend Story 1.6 patterns — separate buckets from `/login`; login remains 60/min/IP per Story 1.6 AC-9):**
@@ -1103,7 +1102,7 @@ export function totpForSecret(base32: string): string {
 
 - [x] **Task 4: Recovery login** (AC: 8)
   - [x] Implement `/mfa/recover` reusing session creation from 1.6
-  - [x] Add `POST /api/v1/auth/mfa/recover` to vault guard allowlist; dual rate limits (IP + email)
+  - [x] Keep `POST /api/v1/auth/mfa/recover` behind vault guard; dual rate limits (IP + email)
   - [x] `SELECT FOR UPDATE` on recovery code consumption; failed-recover audit
   - [x] Return `remainingRecoveryCodes` on success; `429` with `Retry-After` (AC-8k)
 
@@ -1120,6 +1119,27 @@ export function totpForSecret(base32: string): string {
 
 - [x] **Task 7: `/auth/me` extension** (AC: 19)
   - [x] Add `mfaEnrolled`, `mfaEnrolledAt`, `remainingRecoveryCodesCount`
+
+### Review Findings
+
+- [x] [Review][Patch] Return 503 for `/mfa/recover` when the vault is sealed [apps/api/src/plugins/vault-guard.ts:25]
+- [x] [Review][Patch] TOTP body schema rejects space-normalized codes [apps/api/src/modules/auth/schema.ts:19]
+- [x] [Review][Patch] TOTP secret is encrypted as base32 text instead of raw secret bytes [apps/api/src/modules/auth/mfa.ts:190]
+- [x] [Review][Patch] Recovery-code validation allows excluded ambiguous `L` [apps/api/src/modules/auth/recovery-codes.ts:9]
+- [x] [Review][Patch] MFA response schemas are defined but not wired into Fastify/OpenAPI routes [apps/api/src/modules/auth/routes.ts:208]
+- [x] [Review][Patch] Required Story 1.8 integration coverage is incomplete [apps/api/src/__tests__/mfa-enrollment.test.ts:97]
+- [x] [Review][Patch] Concurrent enroll requests can surface a raw unique-constraint error [apps/api/src/modules/auth/mfa.ts:190]
+- [x] [Review][Patch] Recovery-code generator does not enforce uniqueness within a batch [apps/api/src/modules/auth/recovery-codes.ts:11]
+- [x] [Review][Patch] Recovery rate limiter is process-local and leaks expired buckets [apps/api/src/modules/auth/routes.ts:49]
+- [x] [Review][Patch] Recovery login resolves organization context before rejecting a wrong password [apps/api/src/modules/auth/mfa.ts:424]
+
+### Rerun Review Findings
+
+- [x] [Review][Patch] Spaced TOTP input can bypass replay protection [apps/api/src/modules/auth/mfa.ts:261]
+- [x] [Review][Patch] Concurrent enrollment verification can return `409` instead of replay-style `422` [apps/api/src/modules/auth/mfa.ts:286]
+- [x] [Review][Patch] Failed recovery attempts for known users are not audited on wrong password or not-enrolled paths [apps/api/src/modules/auth/mfa.ts:432]
+- [x] [Review][Patch] Recovery-code regeneration does not emit the required Epic 3 pending-alert log [apps/api/src/modules/auth/mfa.ts:339]
+- [x] [Review][Patch] TOTP replay TTL can be configured shorter than the accepted skew window [apps/api/src/config/env.ts:159]
 
 ---
 

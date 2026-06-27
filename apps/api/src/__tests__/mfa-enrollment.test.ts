@@ -1,51 +1,38 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { and, eq } from 'drizzle-orm'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { and, eq, sql } from 'drizzle-orm'
 import * as OTPAuth from 'otpauth'
 import { getDb } from '@project-vault/db'
-import { mfaEnrollments } from '@project-vault/db/schema'
+import { mfaEnrollments, totpUsedCodes } from '@project-vault/db/schema'
+import {
+  configureAuthIntegrationEnv,
+  cookieHeader,
+  initVaultForTest,
+  parseSetCookies,
+} from './helpers/auth-test-helpers.js'
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
+configureAuthIntegrationEnv()
 
 const { createApp } = await import('../app.js')
 const { initVault } = await import('../modules/vault/key-service.js')
+const { pruneMfaPendingEnrollments } = await import('../workers/prune-mfa-pending.js')
 const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
 
 const PASSWORD = 'correct-horse-battery-staple'
 const TEST_PASSPHRASE = 'mfa-tests-passphrase'
 const AUTH_ME_URL = '/api/v1/auth/me'
+const MFA_ENROLL_URL = '/api/v1/auth/mfa/enroll'
+const MFA_VERIFY_ENROLLMENT_URL = '/api/v1/auth/mfa/verify-enrollment'
+const MFA_REGENERATE_RECOVERY_CODES_URL = '/api/v1/auth/mfa/regenerate-recovery-codes'
 const MFA_RECOVER_URL = '/api/v1/auth/mfa/recover'
 
-type CookieJar = Record<string, string>
-
-function parseSetCookies(setCookie: string | string[] | undefined): CookieJar {
-  const headers = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : []
-  return Object.fromEntries(
-    headers
-      .map((header) => header.split(';')[0] ?? '')
-      .filter(Boolean)
-      .map((cookie) => {
-        const [name, ...valueParts] = cookie.split('=')
-        return [name, valueParts.join('=')]
-      })
-  )
-}
-
-function cookieHeader(jar: CookieJar): string {
-  return Object.entries(jar)
-    .map(([name, value]) => `${name}=${value}`)
-    .join('; ')
-}
-
-function totpForSecret(base32: string): string {
+function totpForSecret(base32: string, timestamp = Date.now()): string {
   return new OTPAuth.TOTP({
     secret: OTPAuth.Secret.fromBase32(base32),
     algorithm: 'SHA1',
     digits: 6,
     period: 30,
-  }).generate()
+  }).generate({ timestamp })
 }
 
 async function registerAndLogin() {
@@ -74,34 +61,61 @@ async function registerAndLogin() {
 }
 
 async function enrollAndVerify(app: Awaited<ReturnType<typeof createApp>>, cookies: string) {
+  const result = await enrollAndVerifyWithSecret(app, cookies)
+  return result.recoveryCodes
+}
+
+async function startEnrollment(app: Awaited<ReturnType<typeof createApp>>, cookies: string) {
   const enroll = await app.inject({
     method: 'POST',
-    url: '/api/v1/auth/mfa/enroll',
+    url: MFA_ENROLL_URL,
     headers: { cookie: cookies },
     payload: {},
   })
   expect(enroll.statusCode).toBe(200)
   const enrollBody = enroll.json<{ data: { secret: string; qrCodeSvg: string } }>()
   expect(enrollBody.data.qrCodeSvg).toContain('<svg')
+  return enrollBody.data.secret
+}
+
+async function pendingEnrollmentRows(userId: string) {
+  return getDb()
+    .select({ id: mfaEnrollments.id })
+    .from(mfaEnrollments)
+    .where(and(eq(mfaEnrollments.status, 'pending'), eq(mfaEnrollments.userId, userId)))
+}
+
+async function expectNoPendingEnrollment(userId: string): Promise<void> {
+  await expect(pendingEnrollmentRows(userId)).resolves.toHaveLength(0)
+}
+
+async function enrollAndVerifyWithSecret(
+  app: Awaited<ReturnType<typeof createApp>>,
+  cookies: string
+) {
+  const secret = await startEnrollment(app, cookies)
 
   const verify = await app.inject({
     method: 'POST',
-    url: '/api/v1/auth/mfa/verify-enrollment',
+    url: MFA_VERIFY_ENROLLMENT_URL,
     headers: { cookie: cookies },
-    payload: { totp: totpForSecret(enrollBody.data.secret) },
+    payload: { totp: totpForSecret(secret) },
   })
   expect(verify.statusCode).toBe(200)
-  return verify.json<{ data: { recoveryCodes: string[] } }>().data.recoveryCodes
+  return {
+    secret,
+    recoveryCodes: verify.json<{ data: { recoveryCodes: string[] } }>().data.recoveryCodes,
+  }
 }
 
 describe.sequential('MFA enrollment integration', () => {
   beforeAll(async () => {
     await resetVaultForTest()
-    try {
-      await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
-    } catch (error) {
-      if ((error as { code?: string }).code !== 'ALREADY_INITIALIZED') throw error
-    }
+    await initVaultForTest(initVault, TEST_PASSPHRASE)
+  })
+
+  beforeEach(async () => {
+    await getDb().execute(sql`DELETE FROM auth_rate_limit_buckets`)
   })
 
   afterAll(async () => {
@@ -181,6 +195,209 @@ describe.sequential('MFA enrollment integration', () => {
     await app.close()
   }, 20_000)
 
+  it('deletes pending enrollment on invalid TOTP and stores no plaintext base32 secret', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+
+    const secret = await startEnrollment(app, cookies)
+
+    const storedRows = await getDb()
+      .select({ secretEncrypted: mfaEnrollments.secretEncrypted })
+      .from(mfaEnrollments)
+      .where(and(eq(mfaEnrollments.status, 'pending'), eq(mfaEnrollments.userId, user.userId)))
+    expect(storedRows).toHaveLength(1)
+    expect(JSON.stringify(storedRows[0]?.secretEncrypted)).not.toContain(secret)
+
+    const verify = await app.inject({
+      method: 'POST',
+      url: MFA_VERIFY_ENROLLMENT_URL,
+      headers: { cookie: cookies },
+      payload: { totp: '000000' },
+    })
+    expect(verify.statusCode).toBe(422)
+
+    await expectNoPendingEnrollment(user.userId)
+
+    await app.close()
+  }, 20_000)
+
+  it('accepts a TOTP from the previous clock-skew window', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+    const secret = await startEnrollment(app, cookies)
+
+    const verify = await app.inject({
+      method: 'POST',
+      url: MFA_VERIFY_ENROLLMENT_URL,
+      headers: { cookie: cookies },
+      payload: { totp: totpForSecret(secret, Date.now() - 30_000) },
+    })
+
+    expect(verify.statusCode).toBe(200)
+    await app.close()
+  }, 20_000)
+
+  it('rejects replaying an already used TOTP counter', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+    const secret = await startEnrollment(app, cookies)
+    const token = totpForSecret(secret)
+
+    const verify = await app.inject({
+      method: 'POST',
+      url: MFA_VERIFY_ENROLLMENT_URL,
+      headers: { cookie: cookies },
+      payload: { totp: token },
+    })
+    expect(verify.statusCode).toBe(200)
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: MFA_REGENERATE_RECOVERY_CODES_URL,
+      headers: { cookie: cookies },
+      payload: { totp: `${token.slice(0, 3)} ${token.slice(3)}` },
+    })
+
+    expect(replay.statusCode).toBe(422)
+    expect(replay.json()).toMatchObject({ code: 'invalid_totp' })
+    await app.close()
+  }, 20_000)
+
+  it('allows exactly one concurrent enrollment verification for one TOTP', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+    const secret = await startEnrollment(app, cookies)
+    const totp = totpForSecret(secret)
+
+    const responses = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: MFA_VERIFY_ENROLLMENT_URL,
+        headers: { cookie: cookies },
+        payload: { totp },
+      }),
+      app.inject({
+        method: 'POST',
+        url: MFA_VERIFY_ENROLLMENT_URL,
+        headers: { cookie: cookies },
+        payload: { totp },
+      }),
+    ])
+
+    expect(responses.map((res) => res.statusCode).sort()).toEqual([200, 422])
+    await app.close()
+  }, 20_000)
+
+  it('rejects a second enrollment after MFA is confirmed', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+
+    await enrollAndVerify(app, cookies)
+    const secondEnroll = await app.inject({
+      method: 'POST',
+      url: MFA_ENROLL_URL,
+      headers: { cookie: cookies },
+      payload: {},
+    })
+
+    expect(secondEnroll.statusCode).toBe(409)
+    expect(secondEnroll.json()).toMatchObject({ code: 'mfa_already_enrolled' })
+    await app.close()
+  }, 20_000)
+
+  it('rejects recovery login for a user without MFA enrolled', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+
+    const recover = await app.inject({
+      method: 'POST',
+      url: MFA_RECOVER_URL,
+      payload: { email: user.email, password: PASSWORD, recoveryCode: 'K7F2M-9QPNX' },
+    })
+
+    expect(recover.statusCode).toBe(401)
+    expect(recover.json()).toMatchObject({ code: 'invalid_credentials' })
+    await app.close()
+  }, 20_000)
+
+  it('does not invalidate existing recovery codes when regenerate TOTP is invalid', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+    const recoveryCodes = await enrollAndVerify(app, cookies)
+
+    const regenerate = await app.inject({
+      method: 'POST',
+      url: MFA_REGENERATE_RECOVERY_CODES_URL,
+      headers: { cookie: cookies },
+      payload: { totp: '000000' },
+    })
+    expect(regenerate.statusCode).toBe(422)
+
+    const recover = await app.inject({
+      method: 'POST',
+      url: MFA_RECOVER_URL,
+      payload: { email: user.email, password: PASSWORD, recoveryCode: recoveryCodes[0] },
+    })
+    expect(recover.statusCode).toBe(200)
+    await app.close()
+  }, 20_000)
+
+  it('regenerates recovery codes and invalidates old unused codes', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+    const { secret, recoveryCodes: firstCodes } = await enrollAndVerifyWithSecret(app, cookies)
+    await getDb().delete(totpUsedCodes).where(eq(totpUsedCodes.userId, user.userId))
+
+    const regenerate = await app.inject({
+      method: 'POST',
+      url: MFA_REGENERATE_RECOVERY_CODES_URL,
+      headers: { cookie: cookies },
+      payload: { totp: totpForSecret(secret) },
+    })
+    expect(regenerate.statusCode).toBe(200)
+    const newCodes = regenerate.json<{ data: { recoveryCodes: string[] } }>().data.recoveryCodes
+    expect(newCodes).toHaveLength(10)
+
+    const oldCodeRecover = await app.inject({
+      method: 'POST',
+      url: MFA_RECOVER_URL,
+      payload: { email: user.email, password: PASSWORD, recoveryCode: firstCodes[0] },
+    })
+    expect(oldCodeRecover.statusCode).toBe(401)
+
+    const newCodeRecover = await app.inject({
+      method: 'POST',
+      url: MFA_RECOVER_URL,
+      payload: { email: user.email, password: PASSWORD, recoveryCode: newCodes[0] },
+    })
+    expect(newCodeRecover.statusCode).toBe(200)
+    await app.close()
+  }, 20_000)
+
+  it('prunes pending enrollments older than 24 hours', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+
+    await startEnrollment(app, cookies)
+
+    await getDb()
+      .update(mfaEnrollments)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where(and(eq(mfaEnrollments.status, 'pending'), eq(mfaEnrollments.userId, user.userId)))
+    await pruneMfaPendingEnrollments({ info: () => undefined, error: () => undefined })
+
+    await expectNoPendingEnrollment(user.userId)
+    await app.close()
+  }, 20_000)
+
   it('returns Retry-After and retryAfterSeconds when recover email limit is exceeded', async () => {
     const user = await registerAndLogin()
     const app = await createApp({ logger: false })
@@ -208,13 +425,7 @@ describe.sequential('MFA enrollment integration', () => {
     const user = await registerAndLogin()
     const app = await createApp({ logger: false })
     const cookies = cookieHeader(user.cookies)
-    const enroll = await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/mfa/enroll',
-      headers: { cookie: cookies },
-      payload: {},
-    })
-    expect(enroll.statusCode).toBe(200)
+    await startEnrollment(app, cookies)
 
     const logout = await app.inject({
       method: 'POST',
@@ -223,11 +434,7 @@ describe.sequential('MFA enrollment integration', () => {
     })
     expect(logout.statusCode).toBe(204)
 
-    const rows = await getDb()
-      .select({ id: mfaEnrollments.id })
-      .from(mfaEnrollments)
-      .where(and(eq(mfaEnrollments.status, 'pending'), eq(mfaEnrollments.userId, user.userId)))
-    expect(rows).toHaveLength(0)
+    await expectNoPendingEnrollment(user.userId)
     await app.close()
   }, 20_000)
 })

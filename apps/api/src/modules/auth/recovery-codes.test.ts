@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   generateRecoveryCodes,
+  isNormalizedRecoveryCode,
   normalizeRecoveryCode,
   recoveryCodeMatches,
   hashRecoveryCode,
@@ -21,6 +22,11 @@ describe('recovery codes', () => {
     expect(normalizeRecoveryCode('K7F2M-9QPLX')).toBe('K7F2M9QPLX')
     expect(normalizeRecoveryCode('k7f2m9qplx')).toBe('K7F2M9QPLX')
     expect(normalizeRecoveryCode('K7F2M 9QPLX')).toBe('K7F2M9QPLX')
+  })
+
+  it('rejects ambiguous characters excluded from generated recovery codes', () => {
+    expect(isNormalizedRecoveryCode('K7F2M9QPLX')).toBe(false)
+    expect(isNormalizedRecoveryCode('K7F2M9QPNX')).toBe(true)
   })
 
   it('hashes and verifies normalized recovery codes with bcrypt', async () => {

@@ -11,6 +11,8 @@ import { sql } from 'drizzle-orm'
 // live from process.env by key-service.ts (not cached), so individual tests below may
 // freely toggle them between cases without needing module resets.
 const keyDir = mkdtempSync(join(tmpdir(), 'vault-key-test-'))
+process.env['DATABASE_URL'] ??=
+  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 process.env['VAULT_KEY_DIR'] = keyDir
 process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 

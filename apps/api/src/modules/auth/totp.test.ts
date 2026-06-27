@@ -28,6 +28,12 @@ describe('totp helpers', () => {
     expect(Buffer.from(secret.buffer).byteLength).toBe(20)
   })
 
+  it('round-trips raw secret bytes back to base32', () => {
+    const secret = totpHelpers.generateSecret()
+
+    expect(totpHelpers.base32FromSecretBytes(Buffer.from(secret.buffer))).toBe(secret.base32)
+  })
+
   it('validates current and adjacent-window TOTP codes', () => {
     const secret = totpHelpers.generateSecret()
     const now = Date.now()

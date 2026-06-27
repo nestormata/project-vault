@@ -17,7 +17,7 @@ export const mfaEnrollResponseSchema = z.object({
 })
 
 export const mfaVerifyEnrollmentBodySchema = z.object({
-  totp: z.string().regex(/^\d{6}$/, 'TOTP must be exactly 6 digits'),
+  totp: z.string().regex(/^\s*\d(?:\s*\d){5}\s*$/, 'TOTP must be exactly 6 digits'),
 })
 
 export const mfaRegenerateBodySchema = mfaVerifyEnrollmentBodySchema

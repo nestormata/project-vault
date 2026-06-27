@@ -98,6 +98,13 @@ describe('vaultGuardPlugin', () => {
     expect(reply.calls.status).toBe(503)
   })
 
+  it('blocks MFA recovery while sealed', async () => {
+    const hook = await captureHook()
+    const reply = makeReply()
+    await hook({ method: 'POST', url: '/api/v1/auth/mfa/recover' }, reply)
+    expect(reply.calls.status).toBe(503)
+  })
+
   it('blocks the same allowlisted path with a different method', async () => {
     const hook = await captureHook()
     const reply = makeReply()

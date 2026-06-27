@@ -2,9 +2,16 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 let createApp: typeof import('../../app.js').createApp
 
+type OpenApiDocument = {
+  paths?: Record<string, unknown>
+}
+
 describe('auth routes', () => {
   beforeAll(async () => {
-    vi.stubEnv('DATABASE_URL', 'postgresql://vault_app:secret@localhost:5432/project_vault')
+    vi.stubEnv(
+      'DATABASE_URL',
+      'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
+    )
     createApp = (await import('../../app.js')).createApp
   })
 
@@ -45,6 +52,34 @@ describe('auth routes', () => {
     expect(enroll.statusCode).toBe(401)
     expect(verify.statusCode).toBe(401)
     expect(regenerate.statusCode).toBe(401)
+
+    await app.close()
+  })
+
+  it('accepts spaced TOTP input before auth enforcement', async () => {
+    const app = await createApp({ logger: false })
+
+    const verify = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/mfa/verify-enrollment',
+      payload: { totp: '123 456' },
+    })
+
+    expect(verify.statusCode).toBe(401)
+
+    await app.close()
+  })
+
+  it('registers MFA routes in the OpenAPI document', async () => {
+    const app = await createApp({ logger: false })
+    await app.ready()
+
+    const document = app.swagger() as OpenApiDocument
+    expect(document.paths?.['/api/v1/auth/me']).toBeDefined()
+    expect(document.paths?.['/api/v1/auth/mfa/enroll']).toBeDefined()
+    expect(document.paths?.['/api/v1/auth/mfa/verify-enrollment']).toBeDefined()
+    expect(document.paths?.['/api/v1/auth/mfa/regenerate-recovery-codes']).toBeDefined()
+    expect(document.paths?.['/api/v1/auth/mfa/recover']).toBeDefined()
 
     await app.close()
   })
