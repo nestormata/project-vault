@@ -16,6 +16,7 @@ configureAuthIntegrationEnv()
 
 const { createApp } = await import('../app.js')
 const { initVault } = await import('../modules/vault/key-service.js')
+const { verifyConfirmedLoginTotp } = await import('../modules/auth/mfa.js')
 const { pruneMfaPendingEnrollments } = await import('../workers/prune-mfa-pending.js')
 const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
 
@@ -251,6 +252,29 @@ describe.sequential('MFA enrollment integration', () => {
 
     expect(replay.statusCode).toBe(422)
     expect(replay.json()).toMatchObject({ code: 'invalid_totp' })
+    await app.close()
+  }, 20_000)
+
+  it('reuses confirmed-enrollment TOTP verification for login checks', async () => {
+    const user = await registerAndLogin()
+    const app = await createApp({ logger: false })
+    const cookies = cookieHeader(user.cookies)
+    const { secret } = await enrollAndVerifyWithSecret(app, cookies)
+
+    const loginToken = totpForSecret(secret, Date.now() + 30_000)
+    await getDb().transaction(async (tx) => {
+      await expect(verifyConfirmedLoginTotp(tx, user.userId, loginToken)).resolves.toBe('valid')
+      await expect(verifyConfirmedLoginTotp(tx, user.userId, loginToken)).resolves.toBe(
+        'replayed_code'
+      )
+      await expect(verifyConfirmedLoginTotp(tx, user.userId, '000000')).resolves.toBe(
+        'invalid_code'
+      )
+      await expect(verifyConfirmedLoginTotp(tx, randomUUID(), loginToken)).resolves.toBe(
+        'no_enrollment'
+      )
+    })
+
     await app.close()
   }, 20_000)
 

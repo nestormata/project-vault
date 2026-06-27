@@ -17,6 +17,8 @@ import {
   mfaEnrollResponseSchema,
   mfaRegenerateBodySchema,
   mfaRegenerateResponseSchema,
+  mfaVerifyLoginBodySchema,
+  mfaVerifyLoginResponseSchema,
   mfaRecoverBodySchema,
   mfaRecoverResponseSchema,
   mfaVerifyEnrollmentBodySchema,
@@ -31,6 +33,7 @@ import {
   regenerateRecoveryCodes,
   verifyEnrollment,
 } from './mfa.js'
+import { verifyLogin, type MfaChallengeResult } from './mfa-login.js'
 import {
   listSessions,
   loginUser,
@@ -56,6 +59,12 @@ type AuthSessionResult = {
   orgId: string
   expiresAt: string
   tokens: TokenMaterial
+}
+
+function isMfaChallengeResult(
+  result: AuthSessionResult | MfaChallengeResult
+): result is MfaChallengeResult {
+  return 'mfaRequired' in result
 }
 
 function asciiEmailValidationError() {
@@ -241,6 +250,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/mfa/verify-enrollment')
   registerMethodNotAllowed(fastify, '/mfa/regenerate-recovery-codes')
   registerMethodNotAllowed(fastify, '/mfa/recover')
+  registerMethodNotAllowed(fastify, '/mfa/verify-login')
 
   secureRoute(fastify, {
     method: 'GET',
@@ -476,6 +486,38 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
         const result = await loginUser(parsed.data, metaFromRequest(req))
+        if (isMfaChallengeResult(result)) {
+          clearAuthCookies(reply as unknown as CookieReply)
+          return reply.send({ data: result })
+        }
+        return sendAuthSession(fastify, reply, result)
+      } catch (error) {
+        if (error instanceof AppError) return sendAppError(reply, error)
+        throw error
+      }
+    },
+  })
+
+  withRouteTypeProvider(fastify).route({
+    method: 'POST',
+    url: '/mfa/verify-login',
+    bodyLimit: 4096,
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    attachValidation: true,
+    schema: {
+      body: mfaVerifyLoginBodySchema,
+      response: {
+        200: mfaVerifyLoginResponseSchema,
+        401: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const parsed = parseBody(mfaVerifyLoginBodySchema, req, reply)
+      if (!parsed.success) return parsed.reply
+      try {
+        const result = await verifyLogin(parsed.data, metaFromRequest(req))
         return sendAuthSession(fastify, reply, result)
       } catch (error) {
         if (error instanceof AppError) return sendAppError(reply, error)

@@ -9,6 +9,7 @@ export const defaultWorkerLogger: WorkerLogger = {
 }
 
 export function deletedCountFromResult(result: unknown): number {
+  if (Array.isArray(result)) return result.length
   if (result && typeof result === 'object' && 'rowCount' in result) {
     return Number((result as { rowCount?: unknown }).rowCount ?? 0)
   }

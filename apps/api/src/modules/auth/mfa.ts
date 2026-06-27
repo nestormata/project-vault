@@ -328,6 +328,16 @@ async function checkEnrollmentTotp(
   return { invalidTotp: true as const, replayed: totpResult === 'replayed_code' }
 }
 
+export async function verifyConfirmedLoginTotp(
+  tx: Tx,
+  userId: string,
+  totp: string
+): Promise<'valid' | 'invalid_code' | 'replayed_code' | 'no_enrollment'> {
+  const enrollment = await loadConfirmedEnrollmentForUpdate(tx, userId)
+  if (!enrollment) return 'no_enrollment'
+  return validateEnrollmentTotp(tx, userId, enrollment, totp, false)
+}
+
 async function handleInvalidEnrollmentTotp(
   authContext: AuthContext,
   attemptedEmail: string,

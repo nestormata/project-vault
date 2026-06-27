@@ -78,6 +78,13 @@
       "when": 1782540960000,
       "tag": "0010_failed_auth_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782544560000,
+      "tag": "0011_pending_mfa_sessions",
+      "breakpoints": true
     }
   ]
 }

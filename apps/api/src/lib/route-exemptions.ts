@@ -25,6 +25,7 @@ export type DirectDbAccessClassification = {
 
 const SECURITY_OWNER = 'api-security-reviewer'
 const IP_RATE_LIMIT = 'ip-rate-limit'
+const FAILED_AUTH_RECORDING = 'failed-auth-recording'
 const SECURITY_ACTION = 'security-action'
 const SESSION_REVOKED = 'SESSION_REVOKED'
 const IDENTITY_CLEANUP_JOB = 'identity-cleanup-job'
@@ -66,7 +67,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     reason:
       'Public credential exchange endpoint; guarded by failed-auth recording and rate limits.',
     securityOwner: SECURITY_OWNER,
-    compensatingControls: [IP_RATE_LIMIT, 'failed-auth-recording', 'generic-auth-errors'],
+    compensatingControls: [IP_RATE_LIMIT, FAILED_AUTH_RECORDING, 'generic-auth-errors'],
     expiresAfterStory: null,
   },
   {
@@ -81,7 +82,15 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     route: 'POST /api/v1/auth/mfa/recover',
     reason: 'Public MFA recovery exchange endpoint; guarded by IP and email-specific rate limits.',
     securityOwner: SECURITY_OWNER,
-    compensatingControls: [IP_RATE_LIMIT, 'email-rate-limit', 'failed-auth-recording'],
+    compensatingControls: [IP_RATE_LIMIT, 'email-rate-limit', FAILED_AUTH_RECORDING],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/mfa/verify-login',
+    reason:
+      'Public MFA second-factor endpoint; validates a short-lived hashed pending login token before issuing a session.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, 'pending-token-attempt-cap', FAILED_AUTH_RECORDING],
     expiresAfterStory: null,
   },
   {
@@ -195,6 +204,12 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     path: 'workers/prune-mfa-pending.ts',
     classification: IDENTITY_CLEANUP_JOB,
     reason: 'Prunes identity-scoped stale MFA pending-enrollment rows; table has no org scope.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/prune-pending-mfa-sessions.ts',
+    classification: IDENTITY_CLEANUP_JOB,
+    reason: 'Prunes identity-scoped pending MFA login rows by expiration and attempt cap.',
     reviewer: SECURITY_OWNER,
   },
 ]

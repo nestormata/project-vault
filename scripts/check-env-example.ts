@@ -49,6 +49,12 @@ const requiredStory19Keys = [
   'FAILED_AUTH_RECORD_ENABLED',
 ]
 const missingStory19Keys = requiredStory19Keys.filter((key) => !envExampleKeys.has(key))
+const requiredStory112Keys = [
+  'MFA_PENDING_SESSION_TTL_SECONDS',
+  'MFA_LOGIN_MAX_ATTEMPTS',
+  'MFA_PENDING_SESSION_HMAC_SECRET',
+]
+const missingStory112Keys = requiredStory112Keys.filter((key) => !envExampleKeys.has(key))
 if (missingInExample.length > 0) {
   process.stderr.write('ERROR: .env.example and env schema keys are out of sync\n')
   if (missingInExample.length > 0) {
@@ -64,6 +70,11 @@ if (missingMfaKeys.length > 0) {
 if (missingStory19Keys.length > 0) {
   process.stderr.write('ERROR: .env.example is missing Story 1.9 security keys\n')
   process.stderr.write(`  Missing Story 1.9 keys: ${missingStory19Keys.join(', ')}\n`)
+  process.exit(1)
+}
+if (missingStory112Keys.length > 0) {
+  process.stderr.write('ERROR: .env.example is missing Story 1.12 MFA login keys\n')
+  process.stderr.write(`  Missing Story 1.12 keys: ${missingStory112Keys.join(', ')}\n`)
   process.exit(1)
 }
 

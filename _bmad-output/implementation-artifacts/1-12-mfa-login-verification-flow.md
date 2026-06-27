@@ -1,6 +1,6 @@
 # Story 1.12: MFA Login Verification Flow
 
-Status: in-progress
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-27 — comprehensive developer guide for the MFA second-factor login step (FR55/FR57 hard login gate). Adds `pending_mfa_sessions` table, two-step login (`POST /auth/login` → `mfaRequired` challenge; `POST /auth/mfa/verify-login` → full session), hourly pg-boss cleanup, failed-auth threshold integration (Story 1.9 deferred wiring), brute-force attempt capping, and TOTP replay protection reuse. Architecture conflict resolution (boolean `mfa_enrolled` → `mfa_enrolled_at`, cookie session vs raw JWT body), Red Team hardening, and ADRs applied. -->
 
@@ -1022,6 +1022,18 @@ GPT-5.5
 - `pnpm --filter @project-vault/shared build` (refreshed shared package exports for API tests)
 - `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (audit coverage; passed after transaction outcome refactor)
 - `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (expanded AC-12/13/14 coverage; passed)
+- `pnpm --filter @project-vault/api lint` (passed with existing warnings only)
+- `pnpm --filter @project-vault/db lint` (passed)
+- `pnpm --filter @project-vault/shared lint` (passed with existing warning only)
+- `pnpm --filter @project-vault/api typecheck` (passed)
+- `pnpm --filter @project-vault/db typecheck` (passed)
+- `pnpm --filter @project-vault/shared typecheck` (passed)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (post-lint-refactor focused regression; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts src/modules/auth/tokens.test.ts src/modules/auth/routes.test.ts src/workers/prune-pending-mfa-sessions.test.ts src/__tests__/route-audit.test.ts` (passed)
+- `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` (passed)
+- `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` (passed)
+- `pnpm test` (failed in `@project-vault/db` on pre-existing RLS isolation / audit immutability / api_instances privilege tests; same failure class observed before Story 1.12 implementation)
+- `pnpm --filter @project-vault/api test` (passed: 47 files, 253 tests)
 
 ### Completion Notes List
 
@@ -1035,6 +1047,11 @@ GPT-5.5
 - Task 8 complete: added hourly pending MFA session prune worker for expired and attempt-capped rows, registered pg-boss schedule/worker, and covered prune logging/count behavior.
 - Task 9 complete: added `MFA_LOGIN_VERIFIED`, wrote success and failed verify-login audit rows with minimal method payloads, and retained redacted operational lifecycle logs without adding a challenge audit event.
 - Task 10 complete: expanded MFA login tests for non-MFA compatibility, invalid-password safety, latest-challenge-wins, unknown/expired/capped token handling, failed-auth replay behavior, audit rows, and lifecycle log redaction.
+- Full API suite passes. Full repository suite remains blocked by unrelated existing DB package failures in RLS isolation, audit immutability expected error text, and `api_instances` delete privilege coverage.
+
+### Change Log
+
+- 2026-06-27: Implemented Story 1.12 MFA login verification flow and moved story to review.
 
 ### File List
 
@@ -1052,6 +1069,7 @@ GPT-5.5
 - `apps/api/src/modules/auth/tokens.test.ts`
 - `apps/api/src/modules/auth/mfa.ts`
 - `apps/api/src/__tests__/mfa-enrollment.test.ts`
+- `apps/api/src/__tests__/mfa-enforcement-failed-auth.integration.test.ts`
 - `apps/api/src/modules/auth/mfa-login.ts`
 - `apps/api/src/modules/auth/mfa-login.test.ts`
 - `apps/api/src/modules/auth/service.ts`

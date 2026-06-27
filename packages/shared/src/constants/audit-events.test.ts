@@ -19,4 +19,9 @@ describe('AuditEvent', () => {
   it('exposes Story 1.9 failed auth threshold audit event constant', () => {
     expect(AuditEvent.SECURITY_FAILED_AUTH_THRESHOLD).toBe('security.failed_auth_threshold')
   })
+
+  it('exposes Story 1.12 MFA login audit event constants', () => {
+    expect(AuditEvent.MFA_LOGIN_VERIFIED).toBe('MFA_LOGIN_VERIFIED')
+    expect(Object.values(AuditEvent)).not.toContain('MFA_LOGIN_CHALLENGED')
+  })
 })

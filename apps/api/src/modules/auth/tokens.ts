@@ -51,6 +51,14 @@ export function hashRefreshToken(opaque: string): string {
   return createHmac('sha256', env.REFRESH_TOKEN_HMAC_SECRET).update(opaque).digest('hex')
 }
 
+export function generatePendingMfaToken(): string {
+  return randomBytes(16).toString('base64url')
+}
+
+export function hashPendingMfaToken(opaque: string): string {
+  return createHmac('sha256', env.MFA_PENDING_SESSION_HMAC_SECRET).update(opaque).digest('hex')
+}
+
 export function refreshTokensMatch(storedHash: string, opaque: string): boolean {
   const computed = hashRefreshToken(opaque)
   if (!/^[0-9a-f]{64}$/i.test(storedHash)) return false

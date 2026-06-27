@@ -116,6 +116,12 @@ describe('env', () => {
     expect(env.MFA_RECOVERY_CODE_BCRYPT_COST).toBe(12)
     expect(env.TOTP_USED_CODES_TTL_MINUTES).toBe(90)
     expect(env.TOTP_REPLAY_HMAC_SECRET).toBe(env.REFRESH_TOKEN_HMAC_SECRET)
+    expect(env.MFA_PENDING_SESSION_TTL_SECONDS).toBe(300)
+    expect(env.MFA_LOGIN_MAX_ATTEMPTS).toBe(5)
+    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).toHaveLength(64)
+    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).not.toBe(env.REFRESH_TOKEN_HMAC_SECRET)
+    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).not.toBe(env.SESSION_SECRET)
+    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).not.toBe(env.TOTP_REPLAY_HMAC_SECRET)
     expect(env.MFA_PRIVILEGED_ROLE_GRACE_DAYS).toBe(7)
     expect(env.FAILED_AUTH_THRESHOLD_COUNT).toBe(10)
     expect(env.FAILED_AUTH_THRESHOLD_WINDOW_SECONDS).toBe(300)
@@ -206,6 +212,7 @@ describe('env', () => {
     resetEnvImport(exitSpy)
     process.env = productionEnv({
       TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
     })
     const { env } = await import('./env.js')
     expect(env.COOKIE_SECURE).toBe(true)
@@ -228,11 +235,47 @@ describe('env', () => {
     resetEnvImport(exitSpy)
     process.env = productionEnv({
       TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
       COOKIE_SECURE: 'true',
     })
     const { env } = await import('./env.js')
     expect(env.TOTP_REPLAY_HMAC_SECRET).toBe('c'.repeat(64))
     expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('requires a dedicated pending MFA session secret in production', async () => {
+    process.env = productionEnv({
+      COOKIE_SECURE: 'true',
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+    })
+    await expectInvalidEnv(exitSpy)
+
+    resetEnvImport(exitSpy)
+    process.env = productionEnv({
+      COOKIE_SECURE: 'true',
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+    })
+    const { env } = await import('./env.js')
+    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).toBe('d'.repeat(64))
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects placeholder or reused pending MFA session secrets in production', async () => {
+    for (const MFA_PENDING_SESSION_HMAC_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({
+        COOKIE_SECURE: 'true',
+        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET,
+      })
+      await expectInvalidEnv(exitSpy)
+    }
   })
 
   it('rejects unsupported MFA parameter values', async () => {
@@ -244,6 +287,34 @@ describe('env', () => {
       MFA_RECOVERY_CODE_COUNT: '17',
       MFA_RECOVERY_CODE_BCRYPT_COST: '9',
       TOTP_USED_CODES_TTL_MINUTES: '1',
+      MFA_PENDING_SESSION_TTL_SECONDS: '59',
+      MFA_LOGIN_MAX_ATTEMPTS: '0',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('accepts Story 1.12 pending MFA login settings within bounds', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      MFA_PENDING_SESSION_TTL_SECONDS: '900',
+      MFA_LOGIN_MAX_ATTEMPTS: '10',
+      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+    }
+    const { env } = await import('./env.js')
+    expect(env.MFA_PENDING_SESSION_TTL_SECONDS).toBe(900)
+    expect(env.MFA_LOGIN_MAX_ATTEMPTS).toBe(10)
+    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).toBe('d'.repeat(64))
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects pending MFA TTL values that cannot cover the accepted TOTP window', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      MFA_PENDING_SESSION_TTL_SECONDS: '60',
+      MFA_TOTP_WINDOW: '2',
     }
     await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
     expect(exitSpy).toHaveBeenCalledWith(1)
