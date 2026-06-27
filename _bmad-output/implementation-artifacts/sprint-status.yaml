@@ -54,13 +54,13 @@ development_status:
   1-8-totp-mfa-enrollment-and-recovery-codes: done
   1-9-mfa-role-enforcement-and-failed-authentication-detection: done
   1-10-structured-operational-logging-and-metrics: done
-  1-11-secureroute-framework-and-drizzle-rls-middleware: ready-for-dev
+  1-11-secureroute-framework-and-drizzle-rls-middleware: review
   1-12-mfa-login-verification-flow: ready-for-dev
   epic-1-retrospective: optional
 
   # Epic 2: Secret & Credential Management — Store, Retrieve, Search & Import
-  epic-2: backlog
-  2-0-mvp-frontend-shell-and-empty-project-dashboard: backlog
+  epic-2: in-progress
+  2-0-mvp-frontend-shell-and-empty-project-dashboard: ready-for-dev
   2-1-project-creation-and-cross-project-dashboard: backlog
   2-2-credential-storage-and-retrieval-with-version-history: backlog
   2-3-credential-search-filter-and-tag-management: backlog

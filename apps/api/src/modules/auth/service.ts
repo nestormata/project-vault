@@ -729,11 +729,12 @@ export async function refreshSession(
 export async function listSessions(
   userId: string,
   orgId: string,
-  currentJti: string
+  currentJti: string,
+  tx?: Tx
 ): Promise<SessionSummary[]> {
   const idleCutoff = new Date(Date.now() - env.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000)
-  const rows = await withOrg(orgId, (tx) =>
-    tx
+  const selectRows = (db: Tx) =>
+    db
       .select({
         sessionId: sessions.id,
         jti: sessions.jti,
@@ -746,7 +747,7 @@ export async function listSessions(
       .innerJoin(refreshTokens, eq(refreshTokens.sessionId, sessions.id))
       .where(activeSessionPredicate({ userId, orgId, idleCutoff }))
       .orderBy(desc(sessions.lastActiveAt))
-  )
+  const rows = tx ? await selectRows(tx) : await withOrg(orgId, selectRows)
 
   const seen = new Set<string>()
   return rows

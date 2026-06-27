@@ -1,66 +1,53 @@
 import { and, eq } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
-import { getDb } from '@project-vault/db'
 import { orgMemberships } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
-import {
-  authPreHandler,
-  enforceUserRateLimit,
-  requireAuthContext,
-  validationError,
-} from '../../lib/route-helpers.js'
-import { requireOrgRole } from '../../plugins/require-org-role.js'
-import { requireMfaEnrollment } from '../auth/mfa-enforcement.js'
+import { validationError } from '../../lib/route-helpers.js'
+import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { listSecurityAlerts } from './security-alerts.js'
 import { OrgUserParamsSchema, SecurityAlertsQuerySchema } from './schema.js'
 
 export async function orgRoutes(fastify: FastifyApp): Promise<void> {
-  fastify.route({
+  secureRoute(fastify, {
     method: 'GET',
     url: '/security-alerts',
-    preHandler: [authPreHandler(fastify), requireOrgRole('owner', 'admin')],
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      const authContext = requireAuthContext(req, reply)
-      if (!authContext) return reply
+    security: {
+      allowedRoles: ['owner', 'admin'],
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const secureCtx = ctx as SecureRouteContext
       const parsed = SecurityAlertsQuerySchema.safeParse(req.query)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'query'))
-      return reply.send({ data: await listSecurityAlerts(authContext.orgId, parsed.data) })
+      return {
+        data: await listSecurityAlerts(secureCtx.auth.orgId, parsed.data, secureCtx.tx),
+      }
     },
   })
 
-  fastify.route({
+  secureRoute(fastify, {
     method: 'DELETE',
     url: '/users/:userId/sessions',
-    preHandler: [authPreHandler(fastify), requireOrgRole('admin', 'owner'), requireMfaEnrollment()],
-    handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      const authContext = req.authContext
-      if (!authContext) {
-        return reply
-          .status(401)
-          .send({ code: 'access_token_missing', message: 'Access token is missing' })
-      }
-      if (
-        !enforceUserRateLimit({
-          userId: authContext.userId,
-          key: 'DELETE /org/users/:userId/sessions',
-          max: 20,
-          reply,
-        })
-      ) {
-        return reply
-      }
+    security: {
+      allowedRoles: ['admin', 'owner'],
+      requireMfa: true,
+      rateLimit: { max: 20, key: 'DELETE /org/users/:userId/sessions' },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const secureCtx = ctx as SecureRouteContext
       const parsed = OrgUserParamsSchema.safeParse(req.params)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'params'))
 
-      const targetMembership = await getDb()
+      const targetMembership = await secureCtx.tx
         .select({ userId: orgMemberships.userId })
         .from(orgMemberships)
         .where(
           and(
             eq(orgMemberships.userId, parsed.data.userId),
-            eq(orgMemberships.orgId, authContext.orgId),
+            eq(orgMemberships.orgId, secureCtx.auth.orgId),
             eq(orgMemberships.status, 'active')
           )
         )
@@ -71,12 +58,13 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
 
       const result = await revokeAllUserSessionsInOrg({
         userId: parsed.data.userId,
-        orgId: authContext.orgId,
-        actorUserId: authContext.userId,
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
         reason: 'admin_action',
+        tx: secureCtx.tx,
       })
 
-      return reply.send({ data: { ...result, userId: parsed.data.userId } })
+      return { data: { ...result, userId: parsed.data.userId } }
     },
   })
 }
