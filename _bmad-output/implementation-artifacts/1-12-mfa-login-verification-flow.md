@@ -1,6 +1,6 @@
 # Story 1.12: MFA Login Verification Flow
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Ultimate context engine analysis completed 2026-06-27 — comprehensive developer guide for the MFA second-factor login step (FR55/FR57 hard login gate). Adds `pending_mfa_sessions` table, two-step login (`POST /auth/login` → `mfaRequired` challenge; `POST /auth/mfa/verify-login` → full session), hourly pg-boss cleanup, failed-auth threshold integration (Story 1.9 deferred wiring), brute-force attempt capping, and TOTP replay protection reuse. Architecture conflict resolution (boolean `mfa_enrolled` → `mfa_enrolled_at`, cookie session vs raw JWT body), Red Team hardening, and ADRs applied. -->
 
@@ -805,40 +805,40 @@ describe.sequential('Story 1.12 — MFA login verification', () => {
 
 > Follow repo TDD red-green (AGENTS.md): write/extend the failing test first, confirm it fails for the right reason, implement the minimal change, re-run.
 
-- [ ] **Task 1: Schema & migration** (AC: 3)
-  - [ ] `pending-mfa-sessions.ts` Drizzle schema + export from `schema/index.ts`
-  - [ ] `0011_pending_mfa_sessions.sql` + `_journal.json` entry (verify next index)
-  - [ ] DB integrity checks for 64-hex `token_hash`, nonnegative `attempt_count`, and `expires_at > created_at`
-  - [ ] Unique `(user_id, org_id)` index for latest-challenge-wins concurrency safety
-  - [ ] Add `'pending_mfa_sessions'` to `EXCLUDED_TABLES`
-  - [ ] Extend `auth-sessions-schema.test.ts`
-- [ ] **Task 2: Env config** (AC: 2)
-  - [ ] Add `MFA_PENDING_SESSION_TTL_SECONDS`, `MFA_LOGIN_MAX_ATTEMPTS`, `MFA_PENDING_SESSION_HMAC_SECRET` + prod/cross-field guards
-  - [ ] `.env.example` + `check-env-example.ts` + `env.test.ts`
-- [ ] **Task 3: Token helpers** (AC: 4)
-  - [ ] `generatePendingMfaToken()` + `hashPendingMfaToken()` in `tokens.ts` + `tokens.test.ts`
-- [ ] **Task 4: TOTP reuse** (AC: 8)
-  - [ ] Extract/export `verifyConfirmedLoginTotp()` (refactor from `mfa.ts`, behavior-preserving)
-- [ ] **Task 5: Login branch + verify-login service** (AC: 5, 6)
-  - [ ] `findLoginUser()` selects `mfa_enrolled_at`; `loginUser()` returns union
-  - [ ] `createPendingMfaSession()` + `verifyLogin()` in `mfa-login.ts`
-  - [ ] Challenge branch clears existing auth cookies and enforces latest-challenge-wins per `(user_id, org_id)` with DB concurrency protection
-  - [ ] DB-time expiry on insert/verify and token-hash unique-collision retry
-- [ ] **Task 6: Routes & schemas** (AC: 5, 6, 7)
-  - [ ] `/login` handler branch (no cookies on challenge)
-  - [ ] `POST /mfa/verify-login` + method-not-allowed + rate limit + Zod schemas
-  - [ ] `route-audit.test.ts` map update
-- [ ] **Task 7: Failed-auth wiring** (AC: 9)
-  - [ ] `recordFailedAuthAttempt({ reason: 'invalid_totp' })` on invalid (non-replayed) code
-- [ ] **Task 8: Cleanup job** (AC: 10)
-  - [ ] `prune-pending-mfa-sessions.ts` deletes expired and attempt-capped rows + schedule/worker in `main.ts` + test
-- [ ] **Task 9: Audit events** (AC: 11)
-  - [ ] `MFA_LOGIN_VERIFIED` constant + emit + `audit-events.test.ts`
-  - [ ] Redacted structured operational logs for challenge, verified, and failed outcomes (no challenge audit event by default)
-- [ ] **Task 10: Tests** (AC: 12, 13, 14)
-  - [ ] `mfa-login.integration.test.ts` (all scenarios + concurrency)
-  - [ ] Log-redaction test for `mfaToken`, `tokenHash`, `totp`, and TOTP secret
-  - [ ] Unit tests per AC-13
+- [x] **Task 1: Schema & migration** (AC: 3)
+  - [x] `pending-mfa-sessions.ts` Drizzle schema + export from `schema/index.ts`
+  - [x] `0011_pending_mfa_sessions.sql` + `_journal.json` entry (verify next index)
+  - [x] DB integrity checks for 64-hex `token_hash`, nonnegative `attempt_count`, and `expires_at > created_at`
+  - [x] Unique `(user_id, org_id)` index for latest-challenge-wins concurrency safety
+  - [x] Add `'pending_mfa_sessions'` to `EXCLUDED_TABLES`
+  - [x] Extend `auth-sessions-schema.test.ts`
+- [x] **Task 2: Env config** (AC: 2)
+  - [x] Add `MFA_PENDING_SESSION_TTL_SECONDS`, `MFA_LOGIN_MAX_ATTEMPTS`, `MFA_PENDING_SESSION_HMAC_SECRET` + prod/cross-field guards
+  - [x] `.env.example` + `check-env-example.ts` + `env.test.ts`
+- [x] **Task 3: Token helpers** (AC: 4)
+  - [x] `generatePendingMfaToken()` + `hashPendingMfaToken()` in `tokens.ts` + `tokens.test.ts`
+- [x] **Task 4: TOTP reuse** (AC: 8)
+  - [x] Extract/export `verifyConfirmedLoginTotp()` (refactor from `mfa.ts`, behavior-preserving)
+- [x] **Task 5: Login branch + verify-login service** (AC: 5, 6)
+  - [x] `findLoginUser()` selects `mfa_enrolled_at`; `loginUser()` returns union
+  - [x] `createPendingMfaSession()` + `verifyLogin()` in `mfa-login.ts`
+  - [x] Challenge branch clears existing auth cookies and enforces latest-challenge-wins per `(user_id, org_id)` with DB concurrency protection
+  - [x] DB-time expiry on insert/verify and token-hash unique-collision retry
+- [x] **Task 6: Routes & schemas** (AC: 5, 6, 7)
+  - [x] `/login` handler branch (no cookies on challenge)
+  - [x] `POST /mfa/verify-login` + method-not-allowed + rate limit + Zod schemas
+  - [x] `route-audit.test.ts` map update
+- [x] **Task 7: Failed-auth wiring** (AC: 9)
+  - [x] `recordFailedAuthAttempt({ reason: 'invalid_totp' })` on invalid (non-replayed) code
+- [x] **Task 8: Cleanup job** (AC: 10)
+  - [x] `prune-pending-mfa-sessions.ts` deletes expired and attempt-capped rows + schedule/worker in `main.ts` + test
+- [x] **Task 9: Audit events** (AC: 11)
+  - [x] `MFA_LOGIN_VERIFIED` constant + emit + `audit-events.test.ts`
+  - [x] Redacted structured operational logs for challenge, verified, and failed outcomes (no challenge audit event by default)
+- [x] **Task 10: Tests** (AC: 12, 13, 14)
+  - [x] `mfa-login.integration.test.ts` (all scenarios + concurrency)
+  - [x] Log-redaction test for `mfaToken`, `tokenHash`, `totp`, and TOTP secret
+  - [x] Unit tests per AC-13
 
 ---
 
@@ -993,11 +993,77 @@ Recent Epic 1 commits implemented Stories 1.7–1.10 on this branch (structured 
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+GPT-5.5
 
 ### Debug Log References
 
+- `pnpm --filter @project-vault/db test -- src/schema/auth-sessions-schema.test.ts` (red phase; expected Story 1.12 schema failure observed, plus unrelated broader DB test failures from package script fan-out)
+- `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` (green phase; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts` (red phase; expected missing Story 1.12 env fields/guards)
+- `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts` (green phase; passed)
+- `pnpm exec tsx scripts/check-env-example.ts` (passed)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/tokens.test.ts` (red phase; expected missing pending MFA token helpers)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/tokens.test.ts` (green phase; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/__tests__/mfa-enrollment.test.ts` (red phase; expected missing exported `verifyConfirmedLoginTotp`; then corrected test to use an unused adjacent TOTP window)
+- `pnpm --filter @project-vault/api exec vitest run src/__tests__/mfa-enrollment.test.ts` (green phase; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (red phase; expected missing `mfa-login.ts`)
+- `pnpm --filter @project-vault/db db:migrate` (applied `0011_pending_mfa_sessions`)
+- `pnpm --filter @project-vault/db build` (refreshed DB package schema exports for API tests)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (green phase; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/routes.test.ts` (red phase; expected missing `/mfa/verify-login` route)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/routes.test.ts` (green phase; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/__tests__/route-audit.test.ts` (passed)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (route cookie coverage; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (failed-auth invalid/replay coverage; passed)
+- `pnpm --filter @project-vault/api exec vitest run src/workers/prune-pending-mfa-sessions.test.ts` (red phase; expected missing worker)
+- `pnpm --filter @project-vault/api exec vitest run src/workers/prune-pending-mfa-sessions.test.ts` (green phase; passed)
+- `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` (red phase; expected missing `MFA_LOGIN_VERIFIED`)
+- `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` (green phase; passed)
+- `pnpm --filter @project-vault/shared build` (refreshed shared package exports for API tests)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (audit coverage; passed after transaction outcome refactor)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (expanded AC-12/13/14 coverage; passed)
+
 ### Completion Notes List
 
+- Task 1 complete: added `pending_mfa_sessions` Drizzle schema, migration `0011`, journal entry, RLS coverage exception, and schema coverage test.
+- Task 2 complete: added pending MFA session TTL, max-attempts, and HMAC-secret env configuration with production distinctness and TOTP-window guards; documented keys in `.env.example`.
+- Task 3 complete: added 128-bit opaque pending MFA token generation and dedicated HMAC-SHA256 hashing helpers.
+- Task 4 complete: exported `verifyConfirmedLoginTotp()` to reuse confirmed-enrollment secret decrypt, TOTP validation, and replay recording for login verification.
+- Task 5 complete: added pending MFA challenge creation and verify-login service, wired `loginUser()` to branch for enrolled users, and verified hash-only storage plus token consumption on successful second factor.
+- Task 6 complete: added verify-login route/schema/method guard/rate limit, updated route audit public exemption, and ensured MFA challenge login responses clear existing auth cookies without setting usable auth cookies.
+- Task 7 complete: verified invalid non-replayed login TOTP records `failed_auth_attempts.reason = invalid_totp`, while replayed codes do not record failed-auth attempts.
+- Task 8 complete: added hourly pending MFA session prune worker for expired and attempt-capped rows, registered pg-boss schedule/worker, and covered prune logging/count behavior.
+- Task 9 complete: added `MFA_LOGIN_VERIFIED`, wrote success and failed verify-login audit rows with minimal method payloads, and retained redacted operational lifecycle logs without adding a challenge audit event.
+- Task 10 complete: expanded MFA login tests for non-MFA compatibility, invalid-password safety, latest-challenge-wins, unknown/expired/capped token handling, failed-auth replay behavior, audit rows, and lifecycle log redaction.
+
 ### File List
+
+- `packages/db/src/schema/auth-sessions-schema.test.ts`
+- `packages/db/src/schema/pending-mfa-sessions.ts`
+- `packages/db/src/schema/index.ts`
+- `packages/db/src/check-rls-coverage.ts`
+- `packages/db/src/migrations/0011_pending_mfa_sessions.sql`
+- `packages/db/src/migrations/meta/_journal.json`
+- `apps/api/src/config/env.ts`
+- `apps/api/src/config/env.test.ts`
+- `.env.example`
+- `scripts/check-env-example.ts`
+- `apps/api/src/modules/auth/tokens.ts`
+- `apps/api/src/modules/auth/tokens.test.ts`
+- `apps/api/src/modules/auth/mfa.ts`
+- `apps/api/src/__tests__/mfa-enrollment.test.ts`
+- `apps/api/src/modules/auth/mfa-login.ts`
+- `apps/api/src/modules/auth/mfa-login.test.ts`
+- `apps/api/src/modules/auth/service.ts`
+- `apps/api/src/modules/auth/routes.ts`
+- `apps/api/src/modules/auth/routes.test.ts`
+- `apps/api/src/modules/auth/schema.ts`
+- `apps/api/src/__tests__/route-audit.test.ts`
+- `apps/api/src/lib/route-exemptions.ts`
+- `apps/api/src/workers/prune-pending-mfa-sessions.ts`
+- `apps/api/src/workers/prune-pending-mfa-sessions.test.ts`
+- `apps/api/src/workers/prune-utils.ts`
+- `apps/api/src/main.ts`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/constants/audit-events.test.ts`
 
