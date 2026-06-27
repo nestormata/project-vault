@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { OperationalEvent } from '@project-vault/shared'
 import { createEventEmitter } from './lib/events.js'
 import { createApp } from './app.js'
 import { BossService } from './lib/boss.js'
@@ -13,9 +17,21 @@ import { pruneTotpUsedCodes } from './workers/prune-totp-used-codes.js'
 import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-threshold.js'
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { env } from './config/env.js'
+import { instrumentDbPool } from './lib/db-pool-metrics.js'
+import { withJobLogging } from './lib/job-logging.js'
+import { operationalLog, serializeLogError } from './lib/logger.js'
+import { createStartupLogger, logStartupFailure } from './lib/startup-logging.js'
+import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
+  version: string
+}
+let startupLogger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> | undefined
+
 async function main(): Promise<void> {
+  startupLogger = createStartupLogger(env)
   // Architecture mandates this exact startup ORDER:
   // 1. createEventEmitter()
   const _emitter = createEventEmitter()
@@ -24,18 +40,37 @@ async function main(): Promise<void> {
   const _ringBuffer = null
 
   const sql = postgres(env.DATABASE_URL)
+  const dbPool = instrumentDbPool({
+    query: async (statement: string) => sql.unsafe(statement),
+  })
 
   // Check vault state from DB before starting server — throws if DB unreachable (AC-27)
   const initialVaultStatus = await loadInitialVaultState()
-  process.stderr.write(`[vault] Initial status: ${initialVaultStatus}\n`)
 
   // 3. createApp({ emitter, ringBuffer })
   const fastify = await createApp({
-    dbPool: {
-      query: async (statement: string) => sql.unsafe(statement),
-    },
+    dbPool,
     vaultGuardEnabled: true,
   })
+  startupLogger = fastify.log
+  operationalLog(
+    fastify.log,
+    'info',
+    OperationalEvent.STARTUP_VAULT_STATUS,
+    'Vault status loaded',
+    {
+      vaultStatus: initialVaultStatus,
+    }
+  )
+  operationalLog(fastify.log, 'info', OperationalEvent.STARTUP_DB_CONNECTED, 'Database reachable')
+  if (env.NODE_ENV === 'production' && env.METRICS_BIND_HOST === '0.0.0.0') {
+    operationalLog(
+      fastify.log,
+      'warn',
+      OperationalEvent.STARTUP_METRICS_EXPOSED,
+      'Metrics endpoint exposed to non-loopback scrapers'
+    )
+  }
 
   // 4. registerWorkers(emitter) — pg-boss workers, BossService stub in Story 1.1
   const boss = new BossService(env.DATABASE_URL)
@@ -55,7 +90,13 @@ async function main(): Promise<void> {
       'mfa:prune-totp-used-codes': () => pruneTotpUsedCodes(),
       'mfa:prune-pending': () => pruneMfaPendingEnrollments(),
       'security:check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(),
-      'security:prune-failed-auth-attempts': () => pruneFailedAuthAttempts(),
+      'security:prune-failed-auth-attempts': (job) =>
+        withJobLogging(
+          fastify.log,
+          'security:prune-failed-auth-attempts',
+          job.id ?? 'unknown',
+          () => pruneFailedAuthAttempts()
+        ),
     })
     bossRegistered = true
   }
@@ -75,9 +116,20 @@ async function main(): Promise<void> {
 
   // 6. fastify.listen()
   await fastify.listen({ port: env.API_PORT, host: '0.0.0.0' })
+  operationalLog(fastify.log, 'info', OperationalEvent.STARTUP_COMPLETE, 'API startup complete', {
+    nodeVersion: process.version,
+    serviceVersion: pkg.version,
+    vaultStatus: getVaultStatus(),
+    dbConnected: true,
+    port: env.API_PORT,
+  })
 }
 
 main().catch((err) => {
-  process.stderr.write(`Fatal error: ${String(err)}\n`)
-  process.exit(1)
+  if (startupLogger) {
+    void logStartupFailure(startupLogger, err).finally(() => process.exit(1))
+  } else {
+    process.stderr.write(`Fatal error: ${serializeLogError(err).message}\n`)
+    process.exit(1)
+  }
 })

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { OperationalEvent, SYSTEM_TRACE_ID } from '@project-vault/shared'
 import { registerShutdown } from './shutdown.js'
 
 vi.mock('../modules/vault/key-service.js', () => ({
@@ -45,6 +46,21 @@ describe('registerShutdown', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(callOrder).toEqual(['zeroKeys', 'close'])
+    expect(fastify.log.info).toHaveBeenCalledWith(
+      {
+        eventType: OperationalEvent.SHUTDOWN_SIGNAL,
+        traceId: SYSTEM_TRACE_ID,
+        signal: 'SIGTERM',
+      },
+      'Received shutdown signal'
+    )
+    expect(fastify.log.info).toHaveBeenCalledWith(
+      {
+        eventType: OperationalEvent.SHUTDOWN_COMPLETE,
+        traceId: SYSTEM_TRACE_ID,
+      },
+      'Shutdown complete'
+    )
     expect(exitSpy).toHaveBeenCalledWith(0)
   })
 
@@ -62,6 +78,14 @@ describe('registerShutdown', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(zeroKeys).toHaveBeenCalledTimes(2) // once before close, once in catch
+    expect(fastify.log.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: OperationalEvent.SHUTDOWN_FAILED,
+        traceId: SYSTEM_TRACE_ID,
+        err: expect.objectContaining({ message: 'close failed' }),
+      }),
+      'Shutdown failed'
+    )
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
 })

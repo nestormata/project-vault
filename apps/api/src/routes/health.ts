@@ -3,6 +3,7 @@ import type { FastifyReply } from 'fastify/types/reply.js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { getVaultStatus } from '../modules/vault/key-service.js'
 
@@ -15,6 +16,13 @@ type DbPool = {
   query: (sql: string) => Promise<unknown>
 }
 
+function serializeError(err: unknown): { message: string; name?: string; stack?: string } {
+  if (err instanceof Error) {
+    return { name: err.name, message: err.message, stack: err.stack }
+  }
+  return { message: String(err) }
+}
+
 export async function healthRoutes(
   fastify: FastifyApp,
   options: { dbPool?: DbPool }
@@ -23,7 +31,7 @@ export async function healthRoutes(
     return reply.send({ status: 'ok', version: pkg.version })
   })
 
-  fastify.get('/ready', async (_req: FastifyRequest, reply: FastifyReply) => {
+  fastify.get('/ready', async (req: FastifyRequest, reply: FastifyReply) => {
     const vaultStatus = getVaultStatus()
 
     if (vaultStatus === 'uninitialized') {
@@ -49,7 +57,11 @@ export async function healthRoutes(
     try {
       await options.dbPool.query('SELECT 1')
       return reply.send({ status: 'ready' })
-    } catch {
+    } catch (err) {
+      req.log.error(
+        { eventType: OperationalEvent.DB_ERROR, err: serializeError(err) },
+        'Database query failed'
+      )
       return reply.status(503).send({ status: 'unavailable', reason: 'db', retryAfter: 5 })
     }
   })

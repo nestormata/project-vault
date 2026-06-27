@@ -19,9 +19,17 @@ function validateProductionEnv(
     REFRESH_TOKEN_HMAC_SECRET: string
     FAILED_AUTH_RECORD_ENABLED: boolean
     TOTP_REPLAY_HMAC_SECRET?: string
+    LOG_LEVEL: string
   },
   ctx: z.RefinementCtx
 ): void {
+  if (env.LOG_LEVEL === 'debug' || env.LOG_LEVEL === 'trace') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['LOG_LEVEL'],
+      message: 'FATAL: LOG_LEVEL must not be debug or trace in production',
+    })
+  }
   if (!env.COOKIE_SECURE) {
     ctx.addIssue({
       code: 'custom',
@@ -137,7 +145,16 @@ const envSchema = z
       )
       .default('http://localhost:5173'),
     METRICS_BIND_HOST: z.string().default('127.0.0.1'),
-    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+    LOG_LEVEL: z
+      .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+      .default('info'),
+    SERVICE_NAME: z
+      .string()
+      .regex(
+        /^[a-z][a-z0-9_-]{0,63}$/,
+        'SERVICE_NAME must be lowercase alphanumeric with hyphens/underscores, max 64 chars'
+      )
+      .default('api'),
 
     SESSION_SECRET: secretEnvDefault(isProduction ? undefined : DEV_SESSION_SECRET),
     REFRESH_TOKEN_HMAC_SECRET: secretEnvDefault(

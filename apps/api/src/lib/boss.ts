@@ -2,6 +2,7 @@ import { PgBoss } from 'pg-boss'
 
 type BossClient = Pick<PgBoss, 'start' | 'stop'> & Partial<Pick<PgBoss, 'schedule' | 'work'>>
 type BossFactory = () => BossClient
+export type BossJob = { id?: string }
 
 export class BossService {
   readonly #createBoss: BossFactory
@@ -42,11 +43,11 @@ export class BossService {
     }
   }
 
-  async registerWorkers(handlers: Record<string, () => Promise<void>>): Promise<void> {
+  async registerWorkers(handlers: Record<string, (job: BossJob) => Promise<void>>): Promise<void> {
     if (!this.#boss) throw new Error('BossService not started')
     if (!this.#boss.work) throw new Error('BossService work API unavailable')
     for (const [name, handler] of Object.entries(handlers)) {
-      await this.#boss.work(name, handler)
+      await this.#boss.work(name, async (job: unknown) => handler(job as BossJob))
     }
   }
 }

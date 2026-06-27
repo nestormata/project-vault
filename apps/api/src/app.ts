@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import Fastify from 'fastify'
 import swagger from '@fastify/swagger'
 import helmet from '@fastify/helmet'
@@ -16,9 +17,19 @@ import { orgRoutes } from './modules/org/routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
 import authenticatePlugin from './plugins/authenticate.js'
+import { structuredLoggingPlugin } from './plugins/structured-logging.js'
+import { httpMetricsPlugin } from './plugins/http-metrics.js'
+import { createLoggerConfig, serializeLogError } from './lib/logger.js'
 import { env } from './config/env.js'
 import { AppError } from './lib/errors.js'
 import type { FastifyApp } from './lib/fastify-app.js'
+import { OperationalEvent } from '@project-vault/shared'
+import type { FastifyRequest } from 'fastify'
+
+// RFC 4122 UUID v4: version nibble = 4, variant nibble ∈ {8,9,a,b}. Do NOT loosen
+// this regex — nil UUID and non-v4 formats are intentionally rejected so a caller
+// cannot inject arbitrary trace-correlation strings via X-Request-ID.
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 type DbPool = {
   query: (sql: string) => Promise<unknown>
@@ -37,31 +48,22 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       ? false
       : options.logger !== undefined
         ? options.logger
-        : {
-            level: env.LOG_LEVEL,
-            redact: {
-              paths: [
-                'req.headers.authorization',
-                'req.headers.cookie',
-                'req.body.password',
-                'req.body.passphrase',
-                'req.body.totp',
-                'req.body.recoveryCode',
-                'req.body.secret',
-                'res.body.data.secret',
-                'res.body.data.otpauthUrl',
-                'res.body.data.qrCodeSvg',
-                'res.body.data.recoveryCodes',
-              ],
-              censor: '[REDACTED]',
-            },
-          }
+        : createLoggerConfig(env)
 
   // ignoreTrailingSlash: Fastify's router treats "/health" and "/health/" as distinct
   // routes by default, which would 404 before the vault guard's own normalizePath() ever
   // runs (AC-5 requires /health/ to behave identically to /health while sealed).
   const fastify: FastifyApp = Fastify({
     logger,
+    // Disable Fastify's blind header trust; genReqId validates X-Request-ID itself.
+    requestIdHeader: false,
+    genReqId(req) {
+      const header = req.headers['x-request-id']
+      const value = Array.isArray(header) ? header[0] : header
+      if (value && UUID_V4_RE.test(value)) return value
+      return randomUUID()
+    },
+    disableRequestLogging: true,
     routerOptions: { ignoreTrailingSlash: true },
     trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY_HOPS : false,
   }) as unknown as FastifyApp
@@ -72,7 +74,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   fastify.setErrorHandler(
     (
       error: Error & { statusCode?: number },
-      _req: unknown,
+      req: FastifyRequest,
       reply: { status: (code: number) => { send: (body: unknown) => unknown } }
     ) => {
       if (error instanceof AppError) {
@@ -98,7 +100,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
           message: error.message,
         })
       }
-      fastify.log.error(error)
+      req.log.error(
+        { eventType: OperationalEvent.HTTP_REQUEST_FAILED, err: serializeLogError(error) },
+        'Unhandled request error'
+      )
       return reply
         .status(500)
         .send({ error: 'internal_error', message: 'An unexpected error occurred' })
@@ -149,6 +154,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(cookie)
   await fastify.register(jwtPlugin)
   await fastify.register(authenticatePlugin)
+  await fastify.register(structuredLoggingPlugin)
+  await fastify.register(httpMetricsPlugin)
 
   if (options.vaultGuardEnabled) {
     await fastify.register(vaultGuardPlugin)

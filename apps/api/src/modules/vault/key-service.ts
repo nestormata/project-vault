@@ -74,9 +74,6 @@ export async function loadInitialVaultState(): Promise<VaultStatus> {
     warnIfEnvelopeMisconfigured(rows[0])
     return _status
   } catch (err) {
-    process.stderr.write(
-      '[vault] FATAL: cannot read vault_state — verify DATABASE_URL and that PostgreSQL is reachable.\n'
-    )
     throw err // main().catch → process.exit(1)
   }
 }

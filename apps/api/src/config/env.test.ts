@@ -289,4 +289,63 @@ describe('env', () => {
     })
     await expectInvalidEnv(exitSpy)
   })
+
+  it('defaults SERVICE_NAME to "api" and LOG_LEVEL to "info"', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      LOG_LEVEL: undefined,
+    }
+    const { env } = await import('./env.js')
+    expect(env.SERVICE_NAME).toBe('api')
+    expect(env.LOG_LEVEL).toBe('info')
+  })
+
+  it('accepts a custom SERVICE_NAME matching the lowercase slug pattern', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      SERVICE_NAME: 'vault-api_2',
+    }
+    const { env } = await import('./env.js')
+    expect(env.SERVICE_NAME).toBe('vault-api_2')
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects a SERVICE_NAME with invalid characters', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      SERVICE_NAME: 'Vault API!',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('accepts LOG_LEVEL=silent', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      LOG_LEVEL: 'silent',
+    }
+    const { env } = await import('./env.js')
+    expect(env.LOG_LEVEL).toBe('silent')
+  })
+
+  it('rejects LOG_LEVEL=debug or trace in production', async () => {
+    process.env = productionEnv({
+      COOKIE_SECURE: 'true',
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      LOG_LEVEL: 'debug',
+    })
+    await expectInvalidEnv(exitSpy)
+
+    resetEnvImport(exitSpy)
+    process.env = productionEnv({
+      COOKIE_SECURE: 'true',
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      LOG_LEVEL: 'trace',
+    })
+    await expectInvalidEnv(exitSpy)
+  })
 })
