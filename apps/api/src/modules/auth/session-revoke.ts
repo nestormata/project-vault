@@ -1,15 +1,10 @@
-import { and, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, eq, isNull, ne, sql, type SQL } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
-import {
-  auditLogEntries,
-  refreshTokens,
-  revokedTokens,
-  sessions,
-  vaultState,
-} from '@project-vault/db/schema'
+import { auditLogEntries, refreshTokens, revokedTokens, sessions } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
+import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
 
@@ -39,14 +34,6 @@ type RevokeSessionResult = {
     orgId: string
     jti: string
   }
-}
-
-async function currentAuditKeyVersion(tx: Tx): Promise<number> {
-  const rows = await tx
-    .select({ auditKeyVersion: vaultState.auditKeyVersion })
-    .from(vaultState)
-    .limit(1)
-  return rows[0]?.auditKeyVersion ?? 1
 }
 
 async function writeSessionRevokedAudit(
@@ -115,6 +102,23 @@ export function computeRevokedTokenExpiresAt({
 async function runInTx<T>(tx: Tx | undefined, fn: (tx: Tx) => Promise<T>): Promise<T> {
   if (tx) return fn(tx)
   return getDb().transaction((innerTx) => fn(innerTx as Tx))
+}
+
+async function selectRevocableSessionIds(tx: Tx, predicate: SQL | undefined) {
+  return tx.select({ id: sessions.id }).from(sessions).where(predicate)
+}
+
+async function revokeTargetSessions(
+  tx: Tx,
+  targetSessions: Array<{ id: string }>,
+  optionsForTarget: (sessionId: string) => RevokeSessionOptions
+): Promise<{ revokedCount: number }> {
+  let revokedCount = 0
+  for (const target of targetSessions) {
+    const result = await revokeSessionById(target.id, optionsForTarget(target.id))
+    if (result.revoked) revokedCount += 1
+  }
+  return { revokedCount }
 }
 
 export async function revokeSessionById(
@@ -222,26 +226,18 @@ export async function revokeAllUserSessionsInOrg({
   tx?: Tx
 }): Promise<{ revokedCount: number }> {
   return runInTx(tx, async (innerTx) => {
-    const targetSessions = await innerTx
-      .select({ id: sessions.id })
-      .from(sessions)
-      .where(
-        and(eq(sessions.userId, userId), eq(sessions.orgId, orgId), isNull(sessions.revokedAt))
-      )
+    const targetSessions = await selectRevocableSessionIds(
+      innerTx,
+      and(eq(sessions.userId, userId), eq(sessions.orgId, orgId), isNull(sessions.revokedAt))
+    )
 
-    let revokedCount = 0
-    for (const target of targetSessions) {
-      const result = await revokeSessionById(target.id, {
-        actorUserId,
-        scope: reason,
-        tx: innerTx,
-        expectedUserId: userId,
-        expectedOrgId: orgId,
-      })
-      if (result.revoked) revokedCount += 1
-    }
-
-    return { revokedCount }
+    return revokeTargetSessions(innerTx, targetSessions, () => ({
+      actorUserId,
+      scope: reason,
+      tx: innerTx,
+      expectedUserId: userId,
+      expectedOrgId: orgId,
+    }))
   })
 }
 
@@ -257,24 +253,17 @@ export async function revokeAllOtherSessions({
   tx?: Tx
 }): Promise<{ revokedCount: number }> {
   return runInTx(tx, async (innerTx) => {
-    const targetSessions = await innerTx
-      .select({ id: sessions.id })
-      .from(sessions)
-      .where(
-        and(eq(sessions.userId, userId), ne(sessions.jti, currentJti), isNull(sessions.revokedAt))
-      )
+    const targetSessions = await selectRevocableSessionIds(
+      innerTx,
+      and(eq(sessions.userId, userId), ne(sessions.jti, currentJti), isNull(sessions.revokedAt))
+    )
 
-    let revokedCount = 0
-    for (const target of targetSessions) {
-      const result = await revokeSessionById(target.id, {
-        actorUserId,
-        scope: 'all_except_current',
-        tx: innerTx,
-        expectedUserId: userId,
-      })
-      if (result.revoked) revokedCount += 1
-    }
-    return { revokedCount }
+    return revokeTargetSessions(innerTx, targetSessions, () => ({
+      actorUserId,
+      scope: 'all_except_current',
+      tx: innerTx,
+      expectedUserId: userId,
+    }))
   })
 }
 

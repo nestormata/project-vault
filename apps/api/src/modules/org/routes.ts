@@ -4,26 +4,10 @@ import type { FastifyRequest } from 'fastify/types/request.js'
 import { getDb } from '@project-vault/db'
 import { orgMemberships } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
+import { authPreHandler, validationError } from '../../lib/route-helpers.js'
 import { requireOrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { OrgUserParamsSchema } from './schema.js'
-
-function validationError(error: { issues: { path: PropertyKey[]; message: string }[] }) {
-  const details = new Map<string, string[]>()
-  for (const issue of error.issues) {
-    const key = String(issue.path[0] ?? 'params')
-    details.set(key, [...(details.get(key) ?? []), issue.message])
-  }
-  return {
-    code: 'validation_error',
-    message: 'Request validation failed',
-    details: Object.fromEntries(details),
-  }
-}
-
-function authPreHandler(fastify: FastifyApp) {
-  return (fastify as unknown as { authenticate: unknown }).authenticate
-}
 
 export async function orgRoutes(fastify: FastifyApp): Promise<void> {
   fastify.route({
@@ -39,7 +23,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           .send({ code: 'access_token_missing', message: 'Access token is missing' })
       }
       const parsed = OrgUserParamsSchema.safeParse(req.params)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
+      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'params'))
 
       const targetMembership = await getDb()
         .select({ userId: orgMemberships.userId })

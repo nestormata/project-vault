@@ -11,12 +11,12 @@ import {
   sessions,
   userIdentityTokens,
   users,
-  vaultState,
 } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
+import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
@@ -107,14 +107,6 @@ function isUniqueViolation(error: unknown, constraint?: string): boolean {
 
 function emailDomain(email: string): string {
   return email.split('@')[1] ?? ''
-}
-
-async function currentAuditKeyVersion(tx: Tx): Promise<number> {
-  const rows = await tx
-    .select({ auditKeyVersion: vaultState.auditKeyVersion })
-    .from(vaultState)
-    .limit(1)
-  return rows[0]?.auditKeyVersion ?? 1
 }
 
 async function insertAuditEntry(
