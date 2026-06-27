@@ -57,6 +57,13 @@
       "when": 1782525360000,
       "tag": "0007_session_revocation",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782533760000,
+      "tag": "0008_mfa_foundation",
+      "breakpoints": true
     }
   ]
 }

@@ -8,4 +8,11 @@ describe('AuditEvent', () => {
     expect(AuditEvent.SESSION_REVOKED).toBe('SESSION_REVOKED')
     expect(AuditEvent.LOGIN_FAILED).toBe('LOGIN_FAILED')
   })
+
+  it('exposes Story 1.8 MFA audit event constants', () => {
+    expect(AuditEvent.MFA_ENROLLMENT_STARTED).toBe('MFA_ENROLLMENT_STARTED')
+    expect(AuditEvent.MFA_ENROLLED).toBe('MFA_ENROLLED')
+    expect(AuditEvent.MFA_RECOVERY_USED).toBe('MFA_RECOVERY_USED')
+    expect(AuditEvent.MFA_RECOVERY_CODES_REGENERATED).toBe('MFA_RECOVERY_CODES_REGENERATED')
+  })
 })

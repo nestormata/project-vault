@@ -84,6 +84,14 @@ describe('env', () => {
     expect(env.COOKIE_SECURE).toBe(false)
     expect(env.TRUST_PROXY).toBe(false)
     expect(env.TRUST_PROXY_HOPS).toBe(1)
+    expect(env.MFA_TOTP_ISSUER).toBe('Project Vault')
+    expect(env.MFA_TOTP_PERIOD_SECONDS).toBe(30)
+    expect(env.MFA_TOTP_DIGITS).toBe(6)
+    expect(env.MFA_TOTP_WINDOW).toBe(1)
+    expect(env.MFA_RECOVERY_CODE_COUNT).toBe(10)
+    expect(env.MFA_RECOVERY_CODE_BCRYPT_COST).toBe(12)
+    expect(env.TOTP_USED_CODES_TTL_MINUTES).toBe(90)
+    expect(env.TOTP_REPLAY_HMAC_SECRET).toBe(env.REFRESH_TOKEN_HMAC_SECRET)
   })
 
   it('rejects identical auth secrets', async () => {
@@ -180,6 +188,7 @@ describe('env', () => {
       DATABASE_URL: VAULT_APP_DATABASE_URL,
       SESSION_SECRET: 'a'.repeat(64),
       REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
       AUTH_DUMMY_PASSWORD_HASH,
     }
     const { env } = await import('./env.js')
@@ -196,6 +205,49 @@ describe('env', () => {
       REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
       AUTH_DUMMY_PASSWORD_HASH,
       COOKIE_SECURE: 'false',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('requires a dedicated TOTP replay secret in production', async () => {
+    process.env = {
+      ...BASE_ENV,
+      NODE_ENV: 'production',
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      SESSION_SECRET: 'a'.repeat(64),
+      REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
+      AUTH_DUMMY_PASSWORD_HASH,
+      COOKIE_SECURE: 'true',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+
+    vi.resetModules()
+    exitSpy.mockClear()
+    process.env = {
+      ...BASE_ENV,
+      NODE_ENV: 'production',
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      SESSION_SECRET: 'a'.repeat(64),
+      REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      AUTH_DUMMY_PASSWORD_HASH,
+      COOKIE_SECURE: 'true',
+    }
+    const { env } = await import('./env.js')
+    expect(env.TOTP_REPLAY_HMAC_SECRET).toBe('c'.repeat(64))
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects unsupported MFA parameter values', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      MFA_TOTP_PERIOD_SECONDS: '60',
+      MFA_TOTP_DIGITS: '8',
+      MFA_RECOVERY_CODE_COUNT: '17',
+      MFA_RECOVERY_CODE_BCRYPT_COST: '9',
     }
     await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
     expect(exitSpy).toHaveBeenCalledWith(1)

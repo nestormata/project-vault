@@ -90,7 +90,11 @@ async function listSessions(jar: CookieJar): Promise<SessionSummary[]> {
 describe.sequential('Session management integration', () => {
   beforeAll(async () => {
     await resetVaultForTest()
-    await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
+    try {
+      await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'ALREADY_INITIALIZED') throw error
+    }
   })
 
   afterAll(async () => {
