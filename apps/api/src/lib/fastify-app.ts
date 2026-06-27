@@ -19,6 +19,8 @@ export type FastifyApp = {
   get: (path: string, handler: unknown) => FastifyApp
   route: (options: unknown) => FastifyApp
   addHook: (name: string, hook: unknown) => FastifyApp
+  decorate?: (name: string, value: unknown) => FastifyApp
+  authenticate?: unknown
   inject: (options: unknown) => Promise<FastifyInjectResponse>
   withTypeProvider: <_T>() => FastifyApp
   swagger: () => unknown

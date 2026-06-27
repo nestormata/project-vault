@@ -13,6 +13,36 @@ export type CookieReply = {
   clearCookie: (name: string, options: Record<string, unknown>) => void
 }
 
+export type AccessTokenClaims = {
+  sub: string
+  orgId: string
+  jti: string
+  sessionVersion: number
+  iat?: number
+  exp?: number
+}
+
+export function parseAccessTokenClaims(payload: unknown): AccessTokenClaims | null {
+  if (!payload || typeof payload !== 'object') return null
+  const claims = payload as Record<string, unknown>
+  if (
+    typeof claims['sub'] !== 'string' ||
+    typeof claims['orgId'] !== 'string' ||
+    typeof claims['jti'] !== 'string' ||
+    typeof claims['sessionVersion'] !== 'number'
+  ) {
+    return null
+  }
+  return {
+    sub: claims['sub'],
+    orgId: claims['orgId'],
+    jti: claims['jti'],
+    sessionVersion: claims['sessionVersion'],
+    iat: typeof claims['iat'] === 'number' ? claims['iat'] : undefined,
+    exp: typeof claims['exp'] === 'number' ? claims['exp'] : undefined,
+  }
+}
+
 export function generateRefreshToken(): string {
   return randomBytes(32).toString('base64url')
 }

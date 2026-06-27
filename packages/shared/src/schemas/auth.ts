@@ -33,7 +33,36 @@ export const RegisterResponseSchema = z
   })
   .meta({ id: 'RegisterResponse' })
 
+export const SessionSummarySchema = z
+  .object({
+    sessionId: z.uuid(),
+    createdAt: z.iso.datetime(),
+    lastActiveAt: z.iso.datetime(),
+    ipAddress: z.string().nullable(),
+    userAgent: z.string().nullable(),
+    isCurrent: z.boolean(),
+  })
+  .meta({ id: 'SessionSummary' })
+
+export const SessionListResponseSchema = z.array(SessionSummarySchema).meta({
+  id: 'SessionListResponse',
+})
+
+export const RevokeSessionsResponseSchema = z
+  .object({
+    revokedCount: z.number().int().nonnegative(),
+  })
+  .meta({ id: 'RevokeSessionsResponse' })
+
+export const AdminRevokeSessionsResponseSchema = RevokeSessionsResponseSchema.extend({
+  userId: z.uuid(),
+}).meta({ id: 'AdminRevokeSessionsResponse' })
+
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>
 export type LoginRequest = z.infer<typeof LoginRequestSchema>
 export type AuthSessionResponse = z.infer<typeof AuthSessionResponseSchema>
 export type RegisterResponse = z.infer<typeof RegisterResponseSchema>
+export type SessionSummary = z.infer<typeof SessionSummarySchema>
+export type SessionListResponse = z.infer<typeof SessionListResponseSchema>
+export type RevokeSessionsResponse = z.infer<typeof RevokeSessionsResponseSchema>
+export type AdminRevokeSessionsResponse = z.infer<typeof AdminRevokeSessionsResponseSchema>

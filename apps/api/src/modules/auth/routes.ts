@@ -1,13 +1,21 @@
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import rateLimit from '@fastify/rate-limit'
+import { z } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { LoginRequestSchema, RegisterRequestSchema } from './schema.js'
 import { normalizeEmail } from './normalize.js'
 import { clearAuthCookies, setAuthCookies, type CookieReply } from './tokens.js'
-import { loginUser, refreshSession, registerUser, type TokenMaterial } from './service.js'
+import {
+  listSessions,
+  loginUser,
+  refreshSession,
+  registerUser,
+  type TokenMaterial,
+} from './service.js'
+import { revokeAllOtherSessions, revokeSessionById, sessionNotFound } from './session-revoke.js'
 
 type JwtFastify = FastifyApp & {
   jwt: {
@@ -19,12 +27,16 @@ type JwtFastify = FastifyApp & {
 }
 
 function validationError(error: { issues: { path: PropertyKey[]; message: string }[] }) {
-  const details: Record<string, string[]> = {}
+  const details = new Map<string, string[]>()
   for (const issue of error.issues) {
     const key = String(issue.path[0] ?? 'body')
-    details[key] = [...(details[key] ?? []), issue.message]
+    details.set(key, [...(details.get(key) ?? []), issue.message])
   }
-  return { code: 'validation_error', message: 'Request validation failed', details }
+  return {
+    code: 'validation_error',
+    message: 'Request validation failed',
+    details: Object.fromEntries(details),
+  }
 }
 
 function asciiEmailValidationError() {
@@ -80,6 +92,25 @@ function sendAppError(reply: FastifyReply, error: AppError) {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
 }
 
+const SessionParamsSchema = z.object({ sessionId: z.uuid() })
+const ACCESS_TOKEN_MISSING_RESPONSE = {
+  code: 'access_token_missing',
+  message: 'Access token is missing',
+}
+
+function authPreHandler(fastify: FastifyApp) {
+  return (fastify as unknown as { authenticate: unknown }).authenticate
+}
+
+function requireAuthContext(req: FastifyRequest, reply: FastifyReply) {
+  const authContext = req.authContext
+  if (!authContext) {
+    reply.status(401).send(ACCESS_TOKEN_MISSING_RESPONSE)
+    return null
+  }
+  return authContext
+}
+
 function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
   for (const method of ['GET', 'PUT', 'PATCH', 'DELETE'] as const) {
     fastify.route({
@@ -108,6 +139,97 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/register')
   registerMethodNotAllowed(fastify, '/login')
   registerMethodNotAllowed(fastify, '/refresh')
+
+  fastify.route({
+    method: 'GET',
+    url: '/me',
+    preHandler: [authPreHandler(fastify)],
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const authContext = req.authContext
+      if (!authContext) {
+        return reply.status(401).send(ACCESS_TOKEN_MISSING_RESPONSE)
+      }
+      return reply.send({
+        data: {
+          userId: authContext.userId,
+          orgId: authContext.orgId,
+          sessionId: authContext.sessionId,
+          orgRole: authContext.orgRole,
+        },
+      })
+    },
+  })
+
+  fastify.route({
+    method: 'GET',
+    url: '/sessions',
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    preHandler: [authPreHandler(fastify)],
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const authContext = requireAuthContext(req, reply)
+      if (!authContext) return reply
+      const sessionsList = await listSessions(authContext.userId, authContext.jti)
+      return reply.send({ data: sessionsList })
+    },
+  })
+
+  fastify.route({
+    method: 'DELETE',
+    url: '/sessions',
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    preHandler: [authPreHandler(fastify)],
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const authContext = requireAuthContext(req, reply)
+      if (!authContext) return reply
+      const result = await revokeAllOtherSessions({
+        userId: authContext.userId,
+        currentJti: authContext.jti,
+        actorUserId: authContext.userId,
+      })
+      return reply.send({ data: result })
+    },
+  })
+
+  fastify.route({
+    method: 'DELETE',
+    url: '/sessions/:sessionId',
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    preHandler: [authPreHandler(fastify)],
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const authContext = requireAuthContext(req, reply)
+      if (!authContext) return reply
+      const parsed = SessionParamsSchema.safeParse(req.params)
+      if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
+      const result = await revokeSessionById(parsed.data.sessionId, {
+        actorUserId: authContext.userId,
+        scope: parsed.data.sessionId === authContext.sessionId ? 'logout' : 'single',
+        expectedUserId: authContext.userId,
+      })
+      if (!result.revoked) return sendAppError(reply, sessionNotFound())
+      if (parsed.data.sessionId === authContext.sessionId) {
+        clearAuthCookies(reply as unknown as CookieReply)
+      }
+      return reply.status(204).send()
+    },
+  })
+
+  fastify.route({
+    method: 'POST',
+    url: '/logout',
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    preHandler: [authPreHandler(fastify)],
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const authContext = requireAuthContext(req, reply)
+      if (!authContext) return reply
+      await revokeSessionById(authContext.sessionId, {
+        actorUserId: authContext.userId,
+        scope: 'logout',
+        expectedUserId: authContext.userId,
+      })
+      clearAuthCookies(reply as unknown as CookieReply)
+      return reply.status(204).send()
+    },
+  })
 
   fastify.route({
     method: 'POST',

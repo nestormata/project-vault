@@ -22,14 +22,20 @@ describe('RLS cross-org isolation', () => {
       await withTestOrg(async ({ orgId: orgAId }) => {
         await withTestOrg(async ({ orgId: orgBId }) => {
           await withOrg(orgAId, (tx) =>
-            tx
-              .insert(sessions)
-              .values({ userId, orgId: orgAId, expiresAt: new Date(Date.now() + 3600_000) })
+            tx.insert(sessions).values({
+              userId,
+              orgId: orgAId,
+              jti: `rls-org-a-${crypto.randomUUID()}`,
+              expiresAt: new Date(Date.now() + 3600_000),
+            })
           )
           await withOrg(orgBId, (tx) =>
-            tx
-              .insert(sessions)
-              .values({ userId, orgId: orgBId, expiresAt: new Date(Date.now() + 3600_000) })
+            tx.insert(sessions).values({
+              userId,
+              orgId: orgBId,
+              jti: `rls-org-b-${crypto.randomUUID()}`,
+              expiresAt: new Date(Date.now() + 3600_000),
+            })
           )
 
           const orgARows = await withOrg(orgAId, (tx) => tx.select().from(sessions))
@@ -135,7 +141,12 @@ describe('RLS cross-org isolation', () => {
     try {
       await withTestOrg(async ({ orgId }) => {
         await withOrg(orgId, (tx) =>
-          tx.insert(sessions).values({ userId, orgId, expiresAt: new Date(Date.now() + 3600_000) })
+          tx.insert(sessions).values({
+            userId,
+            orgId,
+            jti: `rls-bare-${crypto.randomUUID()}`,
+            expiresAt: new Date(Date.now() + 3600_000),
+          })
         )
 
         const bareRows = await getDb().select().from(sessions)

@@ -1,5 +1,20 @@
+import type { FastifyReply } from 'fastify'
+
 declare module 'fastify' {
+  type AuthContext = {
+    userId: string
+    orgId: string
+    sessionId: string
+    jti: string
+    sessionVersion: number
+    orgRole: 'owner' | 'admin' | 'member' | 'viewer'
+  }
+
   interface FastifyRequest {
-    authContext?: unknown // Story 1.11 replaces with full AuthContext type
+    authContext?: AuthContext
+  }
+
+  interface FastifyInstance {
+    authenticate?: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>
   }
 }

@@ -21,14 +21,19 @@ function validateProductionEnv(env: Env, ctx: z.RefinementCtx): void {
     })
   }
 
-  for (const name of ['SESSION_SECRET', 'REFRESH_TOKEN_HMAC_SECRET'] as const) {
-    if (PLACEHOLDER_SECRET_PATTERN.test(env[name])) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [name],
-        message: `${name} must not be a placeholder secret in production`,
-      })
-    }
+  if (PLACEHOLDER_SECRET_PATTERN.test(env.SESSION_SECRET)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SESSION_SECRET'],
+      message: 'SESSION_SECRET must not be a placeholder secret in production',
+    })
+  }
+  if (PLACEHOLDER_SECRET_PATTERN.test(env.REFRESH_TOKEN_HMAC_SECRET)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['REFRESH_TOKEN_HMAC_SECRET'],
+      message: 'REFRESH_TOKEN_HMAC_SECRET must not be a placeholder secret in production',
+    })
   }
 }
 
@@ -96,6 +101,10 @@ const envSchema = z
       isProduction ? undefined : DEV_REFRESH_TOKEN_HMAC_SECRET
     ),
     JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().max(600).default(300),
+    SESSION_IDLE_TIMEOUT_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
+    SESSION_ACTIVITY_DEBOUNCE_SECONDS: z.coerce.number().int().min(10).max(300).default(60),
+    MAX_SESSIONS_PER_USER: z.coerce.number().int().min(0).default(0),
+    JWT_MAX_CLOCK_SKEW_SECONDS: z.coerce.number().int().min(0).max(300).default(30),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
     REFRESH_GRACE_WINDOW_SECONDS: z.coerce.number().int().positive().default(30),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(19456).max(262144).default(65536),

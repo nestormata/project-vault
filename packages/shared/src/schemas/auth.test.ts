@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import {
+  AdminRevokeSessionsResponseSchema,
   AuthSessionResponseSchema,
   LoginRequestSchema,
   RegisterRequestSchema,
   RegisterResponseSchema,
+  RevokeSessionsResponseSchema,
+  SessionListResponseSchema,
 } from './auth.js'
 
 const OWNER_EMAIL = 'owner@example.com'
@@ -38,5 +41,27 @@ describe('auth schemas', () => {
         role: 'owner',
       }).success
     ).toBe(true)
+  })
+
+  it('validates session management response contracts', () => {
+    const sessionId = randomUUID()
+    const userId = randomUUID()
+
+    expect(
+      SessionListResponseSchema.safeParse([
+        {
+          sessionId,
+          createdAt: '2026-06-24T12:00:00.000Z',
+          lastActiveAt: '2026-06-24T12:05:00.000Z',
+          ipAddress: '203.0.113.10',
+          userAgent: 'vitest',
+          isCurrent: true,
+        },
+      ]).success
+    ).toBe(true)
+    expect(RevokeSessionsResponseSchema.safeParse({ revokedCount: 0 }).success).toBe(true)
+    expect(AdminRevokeSessionsResponseSchema.safeParse({ revokedCount: 2, userId }).success).toBe(
+      true
+    )
   })
 })

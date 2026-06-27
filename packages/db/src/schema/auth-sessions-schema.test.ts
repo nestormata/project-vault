@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { refreshTokens, sessions } from './index.js'
+import { refreshTokens, revokedTokens, sessions } from './index.js'
 import { EXCLUDED_TABLES } from '../check-rls-coverage.js'
 
 describe('auth session schema', () => {
@@ -19,5 +19,14 @@ describe('auth session schema', () => {
 
   it('documents refresh_tokens as an RLS coverage exception', () => {
     expect(EXCLUDED_TABLES.has('refresh_tokens')).toBe(true)
+  })
+
+  it('exposes Story 1.7 revoked token columns and RLS exception', () => {
+    expect(revokedTokens.jti).toBeDefined()
+    expect(revokedTokens.userId).toBeDefined()
+    expect(revokedTokens.revokedAt).toBeDefined()
+    expect(revokedTokens.expiresAt).toBeDefined()
+
+    expect(EXCLUDED_TABLES.has('revoked_tokens')).toBe(true)
   })
 })

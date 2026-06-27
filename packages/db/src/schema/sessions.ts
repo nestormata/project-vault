@@ -1,4 +1,4 @@
-import { pgTable, uuid, integer, timestamp, text, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, integer, timestamp, text, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { orgScoped } from './helpers.js'
 import { users } from './users.js'
 
@@ -10,7 +10,7 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     ...orgScoped({ onDelete: 'cascade' }),
-    jti: text('jti').unique(),
+    jti: text('jti').notNull(),
     sessionVersion: integer('session_version').notNull().default(1),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -22,6 +22,8 @@ export const sessions = pgTable(
   },
   (t) => ({
     expiresAtIdx: index('idx_sessions_expires_at').on(t.expiresAt),
+    jtiIdx: uniqueIndex('idx_sessions_jti').on(t.jti),
     userIdIdx: index('idx_sessions_user_id').on(t.userId),
+    lastActiveAtIdx: index('idx_sessions_last_active_at').on(t.lastActiveAt),
   })
 )

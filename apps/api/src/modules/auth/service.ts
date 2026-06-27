@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { and, eq, gt, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
   auditLogEntries,
@@ -7,6 +7,7 @@ import {
   organizations,
   platformSecurityEvents,
   refreshTokens,
+  revokedTokens,
   sessions,
   userIdentityTokens,
   users,
@@ -20,6 +21,7 @@ import { computeAuditHmac } from '../audit/write-entry.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
 import { generateRefreshToken, hashRefreshToken } from './tokens.js'
+import { cleanupExpiredSession, computeRevokedTokenExpiresAt } from './session-revoke.js'
 
 const MAX_SLUG_ATTEMPTS = 5
 const REFRESH_TOKEN_REVOKED = 'refresh_token_revoked'
@@ -74,6 +76,15 @@ export type LoginResult = {
 export type RefreshResult = {
   expiresAt: string
   tokens: TokenMaterial
+}
+
+export type SessionSummary = {
+  sessionId: string
+  createdAt: string
+  lastActiveAt: string
+  ipAddress: string | null
+  userAgent: string | null
+  isCurrent: boolean
 }
 
 export function slugify(orgName: string): string {
@@ -431,14 +442,17 @@ export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Prom
 
 type RefreshRow = {
   id: string
+  sessionId: string
   expiresAt: Date
   usedAt: Date | null
   revokedAt: Date | null
   newSessionId: string | null
   userId: string
   orgId: string
+  jti: string
   sessionVersion: number
   sessionRevokedAt: Date | null
+  lastActiveAt: Date
 }
 
 function revokedRefreshToken(): AppError {
@@ -449,14 +463,17 @@ async function findRefreshRow(tx: Tx, tokenHash: string): Promise<RefreshRow> {
   const rows = await tx
     .select({
       id: refreshTokens.id,
+      sessionId: refreshTokens.sessionId,
       expiresAt: refreshTokens.expiresAt,
       usedAt: refreshTokens.usedAt,
       revokedAt: refreshTokens.revokedAt,
       newSessionId: refreshTokens.newSessionId,
       userId: sessions.userId,
       orgId: sessions.orgId,
+      jti: sessions.jti,
       sessionVersion: sessions.sessionVersion,
       sessionRevokedAt: sessions.revokedAt,
+      lastActiveAt: sessions.lastActiveAt,
     })
     .from(refreshTokens)
     .innerJoin(sessions, eq(sessions.id, refreshTokens.sessionId))
@@ -504,11 +521,13 @@ async function handleGraceRefresh(tx: Tx, row: RefreshRow): Promise<RefreshResul
 async function rotateRefreshToken(
   tx: Tx,
   row: RefreshRow,
-  meta: RequestMeta
+  meta: RequestMeta,
+  accessTokenExp?: Date
 ): Promise<RefreshResult> {
   const jti = randomUUID()
   const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)
   const tokens = buildTokenMaterial(row.userId, row.orgId, jti)
+  const rotatedAt = new Date()
   const sessionRows = await tx
     .insert(sessions)
     .values({
@@ -517,6 +536,7 @@ async function rotateRefreshToken(
       jti,
       sessionVersion: row.sessionVersion,
       expiresAt,
+      lastActiveAt: rotatedAt,
       ipAddress: meta.ipAddress ?? null,
       userAgent: meta.userAgent ?? null,
     })
@@ -525,31 +545,114 @@ async function rotateRefreshToken(
   if (!newSession) throw new Error('refreshSession: session insert returned no row')
 
   await tx
+    .update(sessions)
+    .set({
+      revokedAt: rotatedAt,
+      sessionVersion: row.sessionVersion + 1,
+      updatedAt: rotatedAt,
+    })
+    .where(eq(sessions.id, row.sessionId))
+  await tx
     .update(refreshTokens)
-    .set({ usedAt: new Date(), newSessionId: newSession.id })
+    .set({ revokedAt: rotatedAt })
+    .where(
+      and(
+        eq(refreshTokens.sessionId, row.sessionId),
+        isNull(refreshTokens.revokedAt),
+        sql`${refreshTokens.id} <> ${row.id}`
+      )
+    )
+  await tx
+    .update(refreshTokens)
+    .set({ usedAt: rotatedAt, newSessionId: newSession.id })
     .where(eq(refreshTokens.id, row.id))
   await tx.insert(refreshTokens).values({
     sessionId: newSession.id,
     tokenHash: hashRefreshToken(tokens.refreshOpaque),
     expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
   })
+  await tx
+    .insert(revokedTokens)
+    .values({
+      jti: row.jti,
+      userId: row.userId,
+      expiresAt: computeRevokedTokenExpiresAt({
+        accessTokenExp,
+        refreshTokenExpiresAt: row.expiresAt,
+        now: rotatedAt,
+      }),
+    })
+    .onConflictDoNothing()
 
   return { expiresAt: expiresAt.toISOString(), tokens }
 }
 
 export async function refreshSession(
   refreshOpaque: string,
-  meta: RequestMeta = {}
+  meta: RequestMeta = {},
+  accessTokenExp?: Date
 ): Promise<RefreshResult> {
   const tokenHash = hashRefreshToken(refreshOpaque)
   return getDb().transaction(async (tx) => {
     const row = await findRefreshRow(tx as Tx, tokenHash)
     if (row.sessionRevokedAt) throw revokedRefreshToken()
+    if (row.usedAt) return handleGraceRefresh(tx as Tx, row)
     if (row.revokedAt) throw revokedRefreshToken()
     if (row.expiresAt.getTime() <= Date.now()) {
       throw new AppError('refresh_token_expired', 'Refresh token has expired', 401)
     }
-    if (row.usedAt) return handleGraceRefresh(tx as Tx, row)
-    return rotateRefreshToken(tx as Tx, row, meta)
+    const revoked = await (tx as Tx)
+      .select({ jti: revokedTokens.jti })
+      .from(revokedTokens)
+      .where(eq(revokedTokens.jti, row.jti))
+      .limit(1)
+    if (revoked[0]) throw revokedRefreshToken()
+    const idleMs = env.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000
+    if (Date.now() - row.lastActiveAt.getTime() > idleMs) {
+      await cleanupExpiredSession(row.sessionId, { tx: tx as Tx })
+      throw new AppError('session_expired', 'Session expired due to inactivity', 401)
+    }
+    return rotateRefreshToken(tx as Tx, row, meta, accessTokenExp)
   })
+}
+
+export async function listSessions(userId: string, currentJti: string): Promise<SessionSummary[]> {
+  const idleCutoff = new Date(Date.now() - env.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000)
+  const rows = await getDb()
+    .select({
+      sessionId: sessions.id,
+      jti: sessions.jti,
+      createdAt: sessions.createdAt,
+      lastActiveAt: sessions.lastActiveAt,
+      ipAddress: sessions.ipAddress,
+      userAgent: sessions.userAgent,
+    })
+    .from(sessions)
+    .innerJoin(refreshTokens, eq(refreshTokens.sessionId, sessions.id))
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        isNull(sessions.revokedAt),
+        isNull(refreshTokens.revokedAt),
+        gt(refreshTokens.expiresAt, new Date()),
+        gt(sessions.lastActiveAt, idleCutoff)
+      )
+    )
+    .orderBy(desc(sessions.lastActiveAt))
+
+  const seen = new Set<string>()
+  return rows
+    .filter((row) => {
+      if (seen.has(row.sessionId)) return false
+      seen.add(row.sessionId)
+      return true
+    })
+    .map((row) => ({
+      sessionId: row.sessionId,
+      createdAt: row.createdAt.toISOString(),
+      lastActiveAt: row.lastActiveAt.toISOString(),
+      ipAddress: row.ipAddress,
+      userAgent: row.userAgent,
+      isCurrent: row.jti === currentJti,
+    }))
 }

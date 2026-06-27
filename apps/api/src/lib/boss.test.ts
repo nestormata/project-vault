@@ -30,4 +30,23 @@ describe('BossService', () => {
 
     expect(createBoss).not.toHaveBeenCalled()
   })
+
+  it('registers schedules and workers after start', async () => {
+    const schedule = vi.fn().mockResolvedValue(undefined)
+    const work = vi.fn().mockResolvedValue(undefined)
+    const boss = new BossService(() => ({
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      schedule,
+      work,
+    }))
+    const handler = vi.fn().mockResolvedValue(undefined)
+
+    await boss.start()
+    await boss.registerSchedules({ 'prune-revoked-tokens': { cron: '0 * * * *' } })
+    await boss.registerWorkers({ 'prune-revoked-tokens': handler })
+
+    expect(schedule).toHaveBeenCalledWith('prune-revoked-tokens', '0 * * * *', null, { tz: 'UTC' })
+    expect(work).toHaveBeenCalledWith('prune-revoked-tokens', handler)
+  })
 })
