@@ -88,13 +88,18 @@ export async function recordTotpUse(
   counter: number,
   token: string,
   tx: Tx
-): Promise<void> {
+): Promise<boolean> {
   const periodMs = env.MFA_TOTP_PERIOD_SECONDS * 1000
   const windowStart = new Date(counter * periodMs)
-  await tx.insert(totpUsedCodes).values({
-    userId,
-    codeHash: createTotpReplayHash(userId, counter, token),
-    windowStart,
-    expiresAt: new Date(windowStart.getTime() + env.TOTP_USED_CODES_TTL_MINUTES * 60_000),
-  })
+  const rows = await tx
+    .insert(totpUsedCodes)
+    .values({
+      userId,
+      codeHash: createTotpReplayHash(userId, counter, token),
+      windowStart,
+      expiresAt: new Date(windowStart.getTime() + env.TOTP_USED_CODES_TTL_MINUTES * 60_000),
+    })
+    .onConflictDoNothing()
+    .returning({ id: totpUsedCodes.id })
+  return rows.length > 0
 }

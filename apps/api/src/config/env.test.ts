@@ -116,6 +116,11 @@ describe('env', () => {
     expect(env.MFA_RECOVERY_CODE_BCRYPT_COST).toBe(12)
     expect(env.TOTP_USED_CODES_TTL_MINUTES).toBe(90)
     expect(env.TOTP_REPLAY_HMAC_SECRET).toBe(env.REFRESH_TOKEN_HMAC_SECRET)
+    expect(env.MFA_PRIVILEGED_ROLE_GRACE_DAYS).toBe(7)
+    expect(env.FAILED_AUTH_THRESHOLD_COUNT).toBe(10)
+    expect(env.FAILED_AUTH_THRESHOLD_WINDOW_SECONDS).toBe(300)
+    expect(env.FAILED_AUTH_RETENTION_HOURS).toBe(24)
+    expect(env.FAILED_AUTH_RECORD_ENABLED).toBe(true)
   })
 
   it('rejects identical auth secrets', async () => {
@@ -242,5 +247,46 @@ describe('env', () => {
     }
     await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
     expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('accepts Story 1.9 MFA enforcement and failed auth settings within bounds', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      MFA_PRIVILEGED_ROLE_GRACE_DAYS: '0',
+      FAILED_AUTH_THRESHOLD_COUNT: '3',
+      FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: '60',
+      FAILED_AUTH_RETENTION_HOURS: '168',
+      FAILED_AUTH_RECORD_ENABLED: 'false',
+    }
+    const { env } = await import('./env.js')
+    expect(env.MFA_PRIVILEGED_ROLE_GRACE_DAYS).toBe(0)
+    expect(env.FAILED_AUTH_THRESHOLD_COUNT).toBe(3)
+    expect(env.FAILED_AUTH_THRESHOLD_WINDOW_SECONDS).toBe(60)
+    expect(env.FAILED_AUTH_RETENTION_HOURS).toBe(168)
+    expect(env.FAILED_AUTH_RECORD_ENABLED).toBe(false)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid Story 1.9 MFA enforcement and failed auth settings', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      MFA_PRIVILEGED_ROLE_GRACE_DAYS: '31',
+      FAILED_AUTH_THRESHOLD_COUNT: '2',
+      FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: '59',
+      FAILED_AUTH_RETENTION_HOURS: '0',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('rejects FAILED_AUTH_RECORD_ENABLED=false in production', async () => {
+    process.env = productionEnv({
+      COOKIE_SECURE: 'true',
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      FAILED_AUTH_RECORD_ENABLED: 'false',
+    })
+    await expectInvalidEnv(exitSpy)
   })
 })

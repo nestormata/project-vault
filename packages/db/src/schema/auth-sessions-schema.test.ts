@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  failedAuthAttempts,
   mfaEnrollments,
   mfaRecoveryCodes,
   refreshTokens,
@@ -64,5 +65,16 @@ describe('auth session schema', () => {
     expect(EXCLUDED_TABLES.has('mfa_enrollments')).toBe(true)
     expect(EXCLUDED_TABLES.has('mfa_recovery_codes')).toBe(true)
     expect(EXCLUDED_TABLES.has('totp_used_codes')).toBe(true)
+  })
+
+  it('exposes Story 1.9 failed auth attempt columns and RLS exception', () => {
+    expect(failedAuthAttempts.id).toBeDefined()
+    expect(failedAuthAttempts.userId).toBeDefined()
+    expect(failedAuthAttempts.ipAddress).toBeDefined()
+    expect(failedAuthAttempts.attemptedEmail).toBeDefined()
+    expect(failedAuthAttempts.reason).toBeDefined()
+    expect(failedAuthAttempts.attemptedAt).toBeDefined()
+
+    expect(EXCLUDED_TABLES.has('failed_auth_attempts')).toBe(true)
   })
 })

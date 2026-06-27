@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-26
+last_updated: 2026-06-27
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -52,7 +52,7 @@ development_status:
   1-6-user-registration-and-password-authentication: done
   1-7-jwt-session-management-and-security-controls: in-progress
   1-8-totp-mfa-enrollment-and-recovery-codes: done
-  1-9-mfa-role-enforcement-and-failed-authentication-detection: ready-for-dev
+  1-9-mfa-role-enforcement-and-failed-authentication-detection: review
   1-10-structured-operational-logging-and-metrics: ready-for-dev
   1-11-secureroute-framework-and-drizzle-rls-middleware: backlog
   1-12-mfa-login-verification-flow: backlog

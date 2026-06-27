@@ -43,6 +43,7 @@ import {
   registerUser,
   type TokenMaterial,
 } from './service.js'
+import { loadMfaEnforcementStatus } from './mfa-enforcement.js'
 import { revokeAllOtherSessions, revokeSessionById, sessionNotFound } from './session-revoke.js'
 
 type JwtFastify = FastifyApp & {
@@ -294,6 +295,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (authContext, _req, reply) => {
       const mfaStatus = await getMfaStatus(authContext.userId)
+      const enforcementStatus = await loadMfaEnforcementStatus(authContext)
       return reply.send({
         data: {
           userId: authContext.userId,
@@ -301,6 +303,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           sessionId: authContext.sessionId,
           orgRole: authContext.orgRole,
           ...mfaStatus,
+          mfaStatus: enforcementStatus.mfaStatus,
         },
       })
     },

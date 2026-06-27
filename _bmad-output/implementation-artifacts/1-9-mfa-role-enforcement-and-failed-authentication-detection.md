@@ -1,6 +1,6 @@
 # Story 1.9: MFA Role Enforcement & Failed Authentication Detection
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for MFA role enforcement (FR57), failed authentication recording and threshold alerting (FR73), grace period handling, pg-boss detection/prune jobs, PENDING_DELIVERY security alerts, and admin visibility API. Addresses MQ-2 (PENDING_DELIVERY visibility) and MQ-3 (FR57 test boundary via mock privileged endpoint). Red Team hardening, PRD dual-threshold (IP + account), and architecture conflict resolution applied. Challenge from Critical Perspective applied 2026-06-24 (preHandler order, NFKC normalization, dedup spec, tier deferral, ADR-1.9-05). Red Team vs Blue Team applied 2026-06-24 (AC-5b route retrofit, MFA-exempt allowlist, route-audit CI, prod recording guard). Security Audit Personas applied 2026-06-24 (AC-5c/d, AC-9d, AC-11b, AC-19 compliance matrix, audit trail, payload validation). -->
 
@@ -1148,43 +1148,43 @@ async function seedFailedAttempts(count: number, opts: { ip?: string; userId?: s
 
 ### AC-18: Tasks / Subtasks
 
-- [ ] **Task 1: Schema & migration** (AC: 3)
-  - [ ] `failed-auth-attempts.ts` Drizzle schema
-  - [ ] Migration SQL + journal
-  - [ ] Update `check-rls-coverage.ts` allow-list
-- [ ] **Task 2: Env config** (AC: 2)
-  - [ ] Add variables to `env.ts` + tests
-  - [ ] Update `.env.example`
-- [ ] **Task 3: Grace period** (AC: 4, 12)
-  - [ ] `grace-period.ts` helper
-  - [ ] Wire into `registerUser()`
-- [ ] **Task 4: MFA enforcement** (AC: 5, 5b, 5c, 5d, 6, 13)
-  - [ ] `mfa-enforcement.ts` + `require-mfa-enrollment.ts`
-  - [ ] Extend `secure-route.ts` contract
-  - [ ] `mfa-exempt-routes.ts` shared constant (AC-5c)
-  - [ ] Retrofit 1.7 admin routes with `requireMfaEnrollment()` (AC-5b)
-  - [ ] `route-audit.test.ts` MFA coverage + exempt allowlist
-  - [ ] Test helper mock privileged route
-  - [ ] Extend `/auth/me`
-- [ ] **Task 5: Failed auth recording** (AC: 8)
-  - [ ] `failed-auth.ts`
-  - [ ] Wire login, recover, verify-enrollment, regenerate
-- [ ] **Task 6: Background jobs** (AC: 9, 9c, 9d, 10)
-  - [ ] Threshold worker + schedule
-  - [ ] Audit log on alert create (AC-9d)
-  - [ ] Prune worker + schedule
-  - [ ] Extend `BossService` if not done in 1.7
-- [ ] **Task 7: Admin API** (AC: 11, 11b)
-  - [ ] `GET /org/security-alerts`
-  - [ ] `security-alerts.ts` service
-  - [ ] `failedAuthThresholdPayloadSchema` (AC-11b)
-- [ ] **Task 8: Tests** (AC: 14, 15, 16)
-  - [ ] Integration test file
-  - [ ] Unit tests
-- [ ] **Task 9: Shared constants** (AC: 9, 9d, 5c)
-  - [ ] `security-alert-types.ts`
-  - [ ] `mfa-exempt-routes.ts`
-  - [ ] `AuditEvent.SECURITY_FAILED_AUTH_THRESHOLD`
+- [x] **Task 1: Schema & migration** (AC: 3)
+  - [x] `failed-auth-attempts.ts` Drizzle schema
+  - [x] Migration SQL + journal
+  - [x] Update `check-rls-coverage.ts` allow-list
+- [x] **Task 2: Env config** (AC: 2)
+  - [x] Add variables to `env.ts` + tests
+  - [x] Update `.env.example`
+- [x] **Task 3: Grace period** (AC: 4, 12)
+  - [x] `grace-period.ts` helper
+  - [x] Wire into `registerUser()`
+- [x] **Task 4: MFA enforcement** (AC: 5, 5b, 5c, 5d, 6, 13)
+  - [x] `mfa-enforcement.ts` + `require-mfa-enrollment.ts`
+  - [x] Extend `secure-route.ts` contract
+  - [x] `mfa-exempt-routes.ts` shared constant (AC-5c)
+  - [x] Retrofit 1.7 admin routes with `requireMfaEnrollment()` (AC-5b)
+  - [x] `route-audit.test.ts` MFA coverage + exempt allowlist
+  - [x] Test helper mock privileged route
+  - [x] Extend `/auth/me`
+- [x] **Task 5: Failed auth recording** (AC: 8)
+  - [x] `failed-auth.ts`
+  - [x] Wire login, recover, verify-enrollment, regenerate
+- [x] **Task 6: Background jobs** (AC: 9, 9c, 9d, 10)
+  - [x] Threshold worker + schedule
+  - [x] Audit log on alert create (AC-9d)
+  - [x] Prune worker + schedule
+  - [x] Extend `BossService` if not done in 1.7
+- [x] **Task 7: Admin API** (AC: 11, 11b)
+  - [x] `GET /org/security-alerts`
+  - [x] `security-alerts.ts` service
+  - [x] `failedAuthThresholdPayloadSchema` (AC-11b)
+- [x] **Task 8: Tests** (AC: 14, 15, 16)
+  - [x] Integration test file
+  - [x] Unit tests
+- [x] **Task 9: Shared constants** (AC: 9, 9d, 5c)
+  - [x] `security-alert-types.ts`
+  - [x] `mfa-exempt-routes.ts`
+  - [x] `AuditEvent.SECURITY_FAILED_AUTH_THRESHOLD`
 
 ---
 
@@ -1362,10 +1362,109 @@ Recent commits (`d8e82e1`, `b97e481`) established database foundation with RLS, 
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5.5
 
 ### Debug Log References
 
+- 2026-06-27: `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` failed before implementation with `failedAuthAttempts` undefined.
+- 2026-06-27: `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` passed after schema/RLS implementation.
+- 2026-06-27: `pnpm --filter @project-vault/db typecheck` passed.
+- 2026-06-27: `pnpm --filter @project-vault/db test` failed with default superuser connection because RLS/privilege tests require app-role `DATABASE_URL`.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/db test` passed.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts` failed before implementation on missing Story 1.9 env fields and production guard.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts` passed after env implementation.
+- 2026-06-27: `pnpm exec tsx scripts/check-env-example.ts` passed.
+- 2026-06-27: `pnpm --filter @project-vault/api typecheck` passed.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/modules/auth/grace-period.test.ts` failed before implementation because `grace-period.ts` did not exist.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/modules/auth/grace-period.test.ts` passed after helper implementation.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/sessions.integration.test.ts` failed before registration wiring because owner membership grace was null.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/sessions.integration.test.ts` passed after registration wiring.
+- 2026-06-27: `pnpm --filter @project-vault/api typecheck` passed after grace-period work.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-enforcement.test.ts` failed before implementation because `mfa-enforcement.ts` did not exist; passed after implementation.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/sessions.integration.test.ts` failed before `/auth/me` wiring because `mfaStatus` was absent; passed after route/schema update.
+- 2026-06-27: `pnpm --filter @project-vault/shared exec vitest run src/constants/mfa-exempt-routes.test.ts` failed before implementation because `mfa-exempt-routes.ts` did not exist; passed after implementation.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/lib/secure-route.test.ts` failed before implementation because `buildSecurePreHandlers` did not exist; passed after implementation.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/mfa-enforcement-failed-auth.integration.test.ts` failed before helper/retrofit because `privileged-test-route.ts` did not exist; passed after helper, middleware, and route retrofit.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/__tests__/route-audit.test.ts` passed for MFA guardrails.
+- 2026-06-27: `pnpm --filter @project-vault/shared typecheck` passed.
+- 2026-06-27: `pnpm --filter @project-vault/api typecheck` passed after Task 4 fixes.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/modules/auth/failed-auth.test.ts` failed before implementation because `failed-auth.ts` did not exist.
+- 2026-06-27: `pnpm --filter @project-vault/db build` and `pnpm --filter @project-vault/shared build` run so direct API tests could resolve new ignored package `dist/` export surfaces.
+- 2026-06-27: `DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/db db:migrate` applied migration `0010_failed_auth_attempts` to local DB for integration validation.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/modules/auth/failed-auth.test.ts` passed after recorder implementation and migration.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/mfa-enforcement-failed-auth.integration.test.ts` failed before auth route wiring because no failed-auth rows were created; passed after login and MFA failure wiring.
+- 2026-06-27: `pnpm --filter @project-vault/api typecheck` passed after Task 5 wiring.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/mfa-enforcement-failed-auth.integration.test.ts` failed before worker implementation because threshold/prune worker modules did not exist.
+- 2026-06-27: Same integration file initially failed threshold org resolution because `org_memberships` is RLS-protected outside org context; fixed by resolving active orgs via `withOrg()` per organization.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/mfa-enforcement-failed-auth.integration.test.ts` passed after threshold/prune workers.
+- 2026-06-27: `pnpm --filter @project-vault/api typecheck` passed after Task 6 worker changes.
+- 2026-06-27: `pnpm --filter @project-vault/api exec vitest run src/modules/org/schema.test.ts` failed before implementation because `failedAuthThresholdPayloadSchema` was undefined; passed after schema implementation.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api exec vitest run src/__tests__/mfa-enforcement-failed-auth.integration.test.ts` failed before admin API implementation with `404` for `/org/security-alerts`; passed after route/service implementation.
+- 2026-06-27: `pnpm --filter @project-vault/api typecheck` passed after Task 7 admin API changes.
+- 2026-06-27: `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts src/constants/security-alert-types.test.ts src/constants/mfa-exempt-routes.test.ts` failed before Story 1.9 shared constants were complete; passed after constants implementation.
+- 2026-06-27: `pnpm --filter @project-vault/shared typecheck` passed after Task 9 constants.
+- 2026-06-27: Full API suite initially failed `rejects replaying an already used TOTP counter` after failed-auth recording was added; fixed by changing TOTP replay recording to `ON CONFLICT DO NOTHING` so transactions are not poisoned by unique violations.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/db test` passed (9 files, 36 tests).
+- 2026-06-27: `pnpm --filter @project-vault/shared test` passed (5 files, 15 tests).
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' ADMIN_DATABASE_URL='postgresql://postgres:password@localhost:5432/project_vault' pnpm --filter @project-vault/api test` passed (33 files, 166 tests, 1 existing todo).
+- 2026-06-27: `pnpm --filter @project-vault/api typecheck` passed after final replay fix.
+
 ### Completion Notes List
 
+- Task 1 complete: added platform-scoped `failed_auth_attempts` Drizzle schema, sequential `0010_failed_auth_attempts` migration plus journal entry, and RLS coverage exception with focused schema coverage.
+- Task 2 complete: added bounded Story 1.9 MFA grace/failed-auth threshold env config, production guard against disabling failed-auth recording, env tests, and `.env.example` sync coverage.
+- Task 3 complete: added exported privileged-role grace helper and wired registration so new owner memberships get a bounded MFA grace period without extending existing periods.
+- Task 4 complete: added composable MFA enrollment enforcement, `/auth/me` status metadata, SecureRoute `requireMfa` preHandler contract, shared MFA-exempt registry, test-only privileged route, admin session-revoke retrofit, structured denial logging, and route-audit guardrails.
+- Task 5 complete: added exported failed-auth recorder and wired invalid login, recovery, verify-enrollment, and regenerate-recovery-codes failure paths to create best-effort platform telemetry rows.
+- Task 6 complete: added failed-auth threshold and prune workers, pg-boss schedules, deduped security alert insertion, `alert.pending_epic3` logging, and system audit rows for threshold alerts.
+- Task 7 complete: added org-scoped security alerts listing API, payload validation/omission for malformed rows, delivery status mapping, pagination, and owner/admin access control without MFA enforcement.
+- Task 8 complete: added and exercised Story 1.9 integration coverage plus focused unit tests for env config, schema, grace-period, MFA enforcement, SecureRoute, failed-auth recorder, route audit, and shared constants.
+- Task 9 complete: added shared security alert type constant, MFA-exempt route registry, and failed-auth threshold audit event constant.
+- Story ready for review: all tasks/subtasks complete, Story 1.9 focused tests pass, DB/shared/API package suites pass, and sprint/story statuses moved to review.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/1-9-mfa-role-enforcement-and-failed-authentication-detection.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `packages/db/src/check-rls-coverage.ts`
+- `packages/db/src/migrations/0010_failed_auth_attempts.sql`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/db/src/schema/auth-sessions-schema.test.ts`
+- `packages/db/src/schema/failed-auth-attempts.ts`
+- `packages/db/src/schema/index.ts`
+- `.env.example`
+- `apps/api/src/config/env.test.ts`
+- `apps/api/src/config/env.ts`
+- `scripts/check-env-example.ts`
+- `apps/api/src/__tests__/sessions.integration.test.ts`
+- `apps/api/src/modules/auth/grace-period.test.ts`
+- `apps/api/src/modules/auth/grace-period.ts`
+- `apps/api/src/modules/auth/service.ts`
+- `apps/api/src/__tests__/helpers/privileged-test-route.ts`
+- `apps/api/src/__tests__/mfa-enforcement-failed-auth.integration.test.ts`
+- `apps/api/src/__tests__/route-audit.test.ts`
+- `apps/api/src/lib/secure-route.test.ts`
+- `apps/api/src/lib/secure-route.ts`
+- `apps/api/src/modules/auth/mfa-enforcement.test.ts`
+- `apps/api/src/modules/auth/mfa-enforcement.ts`
+- `apps/api/src/modules/auth/routes.ts`
+- `apps/api/src/modules/auth/schema.ts`
+- `apps/api/src/modules/org/routes.ts`
+- `apps/api/src/plugins/require-mfa-enrollment.ts`
+- `packages/shared/src/constants/mfa-exempt-routes.test.ts`
+- `packages/shared/src/constants/mfa-exempt-routes.ts`
+- `packages/shared/src/index.ts`
+- `apps/api/src/modules/auth/failed-auth.test.ts`
+- `apps/api/src/modules/auth/failed-auth.ts`
+- `apps/api/src/modules/auth/mfa.ts`
+- `apps/api/src/modules/auth/totp.ts`
+- `apps/api/src/main.ts`
+- `apps/api/src/workers/check-failed-auth-threshold.ts`
+- `apps/api/src/workers/prune-failed-auth-attempts.ts`
+- `apps/api/src/modules/org/schema.test.ts`
+- `apps/api/src/modules/org/schema.ts`
+- `apps/api/src/modules/org/security-alerts.ts`
+- `packages/shared/src/constants/audit-events.test.ts`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/constants/security-alert-types.test.ts`
+- `packages/shared/src/constants/security-alert-types.ts`

@@ -10,6 +10,8 @@ import {
 import { pruneMfaPendingEnrollments } from './workers/prune-mfa-pending.js'
 import { pruneRevokedTokens } from './workers/prune-revoked-tokens.js'
 import { pruneTotpUsedCodes } from './workers/prune-totp-used-codes.js'
+import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-threshold.js'
+import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { env } from './config/env.js'
 import postgres from 'postgres'
 
@@ -45,11 +47,15 @@ async function main(): Promise<void> {
       'prune-revoked-tokens': { cron: '0 * * * *' },
       'mfa:prune-totp-used-codes': { cron: '0 * * * *' },
       'mfa:prune-pending': { cron: '0 0 * * *' },
+      'security:check-failed-auth-threshold': { cron: '* * * * *' },
+      'security:prune-failed-auth-attempts': { cron: '0 2 * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
       'mfa:prune-totp-used-codes': () => pruneTotpUsedCodes(),
       'mfa:prune-pending': () => pruneMfaPendingEnrollments(),
+      'security:check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(),
+      'security:prune-failed-auth-attempts': () => pruneFailedAuthAttempts(),
     })
     bossRegistered = true
   }

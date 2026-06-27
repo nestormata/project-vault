@@ -18,6 +18,8 @@ import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
+import { setGracePeriodOnPrivilegedRole } from './grace-period.js'
+import { recordFailedAuthAttempt } from './failed-auth.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
@@ -243,6 +245,10 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
         userId: user.id,
         role: 'owner',
         status: 'active',
+        gracePeriodExpiresAt: setGracePeriodOnPrivilegedRole({
+          role: 'owner',
+          mfaEnrolledAt: null,
+        }),
       })
       const identityRows = await tx
         .insert(userIdentityTokens)
@@ -512,6 +518,12 @@ export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Prom
   const valid = await verifyLoginPassword(input, user)
 
   if (!user || !valid || !activeMembership?.orgId) {
+    await recordFailedAuthAttempt({
+      userId: user?.id ?? null,
+      ipAddress: meta.ipAddress ?? '0.0.0.0',
+      attemptedEmail: email,
+      reason: 'invalid_credentials',
+    })
     await recordLoginFailed(
       failedLoginAuditSubject(user, rows, activeMembership?.orgId),
       email,
