@@ -305,13 +305,16 @@ function assertClassificationMetadata(): void {
 
 function assertAuditedActionOptOutsAreJustified(): void {
   const violations: string[] = []
-  const sameTransactionServiceAudit = /service writes the specific audit row through secureCtx\.tx/i
 
   for (const { route, routeKey } of parsedProductionRoutes()) {
     const classification = ROUTE_ACTION_CLASSIFICATIONS[routeKey]
     if (!classification?.auditEvent) continue
     if (!/writeAuditEvent:\s*false/.test(route.source)) continue
-    if (sameTransactionServiceAudit.test(route.source)) continue
+    const delegatedService = classification.sameTransactionAuditService
+    const delegatesAuditThroughTx =
+      delegatedService &&
+      new RegExp(`${delegatedService}\\([\\s\\S]*secureCtx\\.tx`).test(route.source)
+    if (delegatesAuditThroughTx) continue
 
     violations.push(routeKey)
   }
