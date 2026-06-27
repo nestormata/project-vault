@@ -835,10 +835,10 @@ describe.sequential('Story 1.12 — MFA login verification', () => {
 - [x] **Task 9: Audit events** (AC: 11)
   - [x] `MFA_LOGIN_VERIFIED` constant + emit + `audit-events.test.ts`
   - [x] Redacted structured operational logs for challenge, verified, and failed outcomes (no challenge audit event by default)
-- [ ] **Task 10: Tests** (AC: 12, 13, 14)
-  - [ ] `mfa-login.integration.test.ts` (all scenarios + concurrency)
-  - [ ] Log-redaction test for `mfaToken`, `tokenHash`, `totp`, and TOTP secret
-  - [ ] Unit tests per AC-13
+- [x] **Task 10: Tests** (AC: 12, 13, 14)
+  - [x] `mfa-login.integration.test.ts` (all scenarios + concurrency)
+  - [x] Log-redaction test for `mfaToken`, `tokenHash`, `totp`, and TOTP secret
+  - [x] Unit tests per AC-13
 
 ---
 
@@ -1021,6 +1021,7 @@ GPT-5.5
 - `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` (green phase; passed)
 - `pnpm --filter @project-vault/shared build` (refreshed shared package exports for API tests)
 - `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (audit coverage; passed after transaction outcome refactor)
+- `pnpm --filter @project-vault/api exec vitest run src/modules/auth/mfa-login.test.ts` (expanded AC-12/13/14 coverage; passed)
 
 ### Completion Notes List
 
@@ -1033,6 +1034,7 @@ GPT-5.5
 - Task 7 complete: verified invalid non-replayed login TOTP records `failed_auth_attempts.reason = invalid_totp`, while replayed codes do not record failed-auth attempts.
 - Task 8 complete: added hourly pending MFA session prune worker for expired and attempt-capped rows, registered pg-boss schedule/worker, and covered prune logging/count behavior.
 - Task 9 complete: added `MFA_LOGIN_VERIFIED`, wrote success and failed verify-login audit rows with minimal method payloads, and retained redacted operational lifecycle logs without adding a challenge audit event.
+- Task 10 complete: expanded MFA login tests for non-MFA compatibility, invalid-password safety, latest-challenge-wins, unknown/expired/capped token handling, failed-auth replay behavior, audit rows, and lifecycle log redaction.
 
 ### File List
 
