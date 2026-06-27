@@ -7,6 +7,7 @@ import {
   setOnVaultUnsealed,
   getVaultStatus,
 } from './modules/vault/key-service.js'
+import { pruneRevokedTokens } from './workers/prune-revoked-tokens.js'
 import { env } from './config/env.js'
 import postgres from 'postgres'
 
@@ -34,13 +35,19 @@ async function main(): Promise<void> {
 
   // 4. registerWorkers(emitter) — pg-boss workers, BossService stub in Story 1.1
   const boss = new BossService(env.DATABASE_URL)
-  setOnVaultUnsealed(async () => {
+  let bossRegistered = false
+  async function startBossAndRegisterWorkers(): Promise<void> {
     await boss.start()
-  })
+    if (bossRegistered) return
+    await boss.registerSchedules({ 'prune-revoked-tokens': { cron: '0 * * * *' } })
+    await boss.registerWorkers({ 'prune-revoked-tokens': pruneRevokedTokens })
+    bossRegistered = true
+  }
+  setOnVaultUnsealed(startBossAndRegisterWorkers)
 
   fastify.addHook('onReady', async () => {
     // Restart case: already unsealed (e.g. dev hot-reload edge) — start immediately
-    if (getVaultStatus() === 'unsealed') await boss.start()
+    if (getVaultStatus() === 'unsealed') await startBossAndRegisterWorkers()
   })
   fastify.addHook('onClose', async () => {
     await boss.stop()

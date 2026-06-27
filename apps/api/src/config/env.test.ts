@@ -71,6 +71,10 @@ describe('env', () => {
     expect(env.REFRESH_TOKEN_HMAC_SECRET).toHaveLength(64)
     expect(env.SESSION_SECRET).not.toBe(env.REFRESH_TOKEN_HMAC_SECRET)
     expect(env.JWT_ACCESS_TTL_SECONDS).toBe(300)
+    expect(env.SESSION_IDLE_TIMEOUT_MINUTES).toBe(30)
+    expect(env.SESSION_ACTIVITY_DEBOUNCE_SECONDS).toBe(60)
+    expect(env.MAX_SESSIONS_PER_USER).toBe(0)
+    expect(env.JWT_MAX_CLOCK_SKEW_SECONDS).toBe(30)
     expect(env.REFRESH_TOKEN_TTL_DAYS).toBe(7)
     expect(env.REFRESH_GRACE_WINDOW_SECONDS).toBe(30)
     expect(env.ARGON2_MEMORY_COST).toBe(65536)
@@ -121,6 +125,36 @@ describe('env', () => {
       ...BASE_ENV,
       DATABASE_URL: VAULT_APP_DATABASE_URL,
       ARGON2_MEMORY_COST: '262145',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('accepts Story 1.7 session security controls within bounds', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      SESSION_IDLE_TIMEOUT_MINUTES: '1440',
+      SESSION_ACTIVITY_DEBOUNCE_SECONDS: '300',
+      MAX_SESSIONS_PER_USER: '5',
+      JWT_MAX_CLOCK_SKEW_SECONDS: '0',
+    }
+    const { env } = await import('./env.js')
+    expect(env.SESSION_IDLE_TIMEOUT_MINUTES).toBe(1440)
+    expect(env.SESSION_ACTIVITY_DEBOUNCE_SECONDS).toBe(300)
+    expect(env.MAX_SESSIONS_PER_USER).toBe(5)
+    expect(env.JWT_MAX_CLOCK_SKEW_SECONDS).toBe(0)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid Story 1.7 session security controls', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      SESSION_IDLE_TIMEOUT_MINUTES: '0',
+      SESSION_ACTIVITY_DEBOUNCE_SECONDS: '9',
+      MAX_SESSIONS_PER_USER: '-1',
+      JWT_MAX_CLOCK_SKEW_SECONDS: '301',
     }
     await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
     expect(exitSpy).toHaveBeenCalledWith(1)

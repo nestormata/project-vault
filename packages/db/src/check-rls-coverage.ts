@@ -5,6 +5,7 @@ export const EXCLUDED_TABLES = new Set([
   'api_instances',
   'vault_state',
   'refresh_tokens',
+  'revoked_tokens',
   'platform_security_events',
 ])
 

@@ -50,6 +50,13 @@
       "when": 1782522780000,
       "tag": "0006_platform_security_events",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782525360000,
+      "tag": "0007_session_revocation",
+      "breakpoints": true
     }
   ]
 }

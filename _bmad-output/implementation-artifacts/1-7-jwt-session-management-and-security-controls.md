@@ -1,6 +1,6 @@
 # Story 1.7: JWT Session Management & Security Controls
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for session list/revoke, idle timeout, revoked_tokens, auth middleware, admin revocation, and pg-boss cleanup. Red Team hardening applied 2026-06-24 (AC-4a, AC-10c, AC-15b, AC-30b). ADR review applied 2026-06-24 (ADR-1.7-01–07; AC-15b aligned to Story 1.6 new-session-row rotation). Security Audit Personas applied 2026-06-24 (AC-5a, AC-15c, live orgRole, idle audit). FMA applied 2026-06-24 (AC-4b, AC-5b/c, AC-9a, AC-14b, AC-7f). -->
 
@@ -1005,41 +1005,41 @@ Use `SELECT FOR UPDATE` on session row inside revoke transaction.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Migration & schema** (AC: 3, 4)
-  - [ ] `revoked_tokens` Drizzle schema + SQL migration
-  - [ ] Finalize `sessions.jti` NOT NULL + indexes
-  - [ ] Update `check-rls-coverage.ts` EXCLUDED_TABLES
-- [ ] **Task 2: Env config** (AC: 2, 5a, 20)
-  - [ ] `SESSION_IDLE_TIMEOUT_MINUTES`, debounce, `MAX_SESSIONS_PER_USER`, `JWT_MAX_CLOCK_SKEW_SECONDS`
-  - [ ] `.env.example` + CI check
-- [ ] **Task 3: Session revoke service** (AC: 4, 4a, 4b, 8, 9, 9a, 11, 12, 28, 28a, 30, 30b)
-  - [ ] `session-revoke.ts` with transactional revoke + audit
-  - [ ] `cleanupExpiredSession()` shared helper (AC-4b)
-  - [ ] `computeRevokedTokenExpiresAt()` helper (AC-4a)
-  - [ ] Export `revokeAllUserSessionsInOrg()` for Epic 4
-- [ ] **Task 4: Auth plugin** (AC: 5, 5a, 5b, 5c, 6, 10, 10a, 10c, 13, 21)
-  - [ ] `plugins/authenticate.ts` — live orgRole from DB, JWT exp/skew validation
-  - [ ] `plugins/require-org-role.ts`
-  - [ ] `GET /auth/me` route
-  - [ ] Extend `@types/fastify.d.ts` with AuthContext
-- [ ] **Task 5: Session routes** (AC: 7, 8, 9, 12, 18, 29)
-  - [ ] Extend `auth/routes.ts`
-  - [ ] Rate limits on protected auth routes
-- [ ] **Task 6: Org admin routes** (AC: 11, 21)
-  - [ ] `modules/org/routes.ts` + mount in app.ts
-- [ ] **Task 7: Refresh idle integration** (AC: 10, 15, 15b, 15c, 26, 30b)
-  - [ ] Extend `refreshSession()` — idle check, revoked_tokens check, predecessor retirement + fallback, new session row (1.6 AC-7a), grace window exception
-- [ ] **Task 8: pg-boss worker** (AC: 14, 14b)
-  - [ ] Extend `BossService` with schedule/work registration
-  - [ ] `workers/prune-revoked-tokens.ts`
-  - [ ] Wire in `main.ts` after unseal
-- [ ] **Task 9: Shared schemas & audit** (AC: 16, 17, 25)
-  - [ ] Session Zod schemas + AuditEvent constants
-  - [ ] Regenerate OpenAPI
+- [x] **Task 1: Migration & schema** (AC: 3, 4)
+  - [x] `revoked_tokens` Drizzle schema + SQL migration
+  - [x] Finalize `sessions.jti` NOT NULL + indexes
+  - [x] Update `check-rls-coverage.ts` EXCLUDED_TABLES
+- [x] **Task 2: Env config** (AC: 2, 5a, 20)
+  - [x] `SESSION_IDLE_TIMEOUT_MINUTES`, debounce, `MAX_SESSIONS_PER_USER`, `JWT_MAX_CLOCK_SKEW_SECONDS`
+  - [x] `.env.example` + CI check
+- [x] **Task 3: Session revoke service** (AC: 4, 4a, 4b, 8, 9, 9a, 11, 12, 28, 28a, 30, 30b)
+  - [x] `session-revoke.ts` with transactional revoke + audit
+  - [x] `cleanupExpiredSession()` shared helper (AC-4b)
+  - [x] `computeRevokedTokenExpiresAt()` helper (AC-4a)
+  - [x] Export `revokeAllUserSessionsInOrg()` for Epic 4
+- [x] **Task 4: Auth plugin** (AC: 5, 5a, 5b, 5c, 6, 10, 10a, 10c, 13, 21)
+  - [x] `plugins/authenticate.ts` — live orgRole from DB, JWT exp/skew validation
+  - [x] `plugins/require-org-role.ts`
+  - [x] `GET /auth/me` route
+  - [x] Extend `@types/fastify.d.ts` with AuthContext
+- [x] **Task 5: Session routes** (AC: 7, 8, 9, 12, 18, 29)
+  - [x] Extend `auth/routes.ts`
+  - [x] Rate limits on protected auth routes
+- [x] **Task 6: Org admin routes** (AC: 11, 21)
+  - [x] `modules/org/routes.ts` + mount in app.ts
+- [x] **Task 7: Refresh idle integration** (AC: 10, 15, 15b, 15c, 26, 30b)
+  - [x] Extend `refreshSession()` — idle check, revoked_tokens check, predecessor retirement + fallback, new session row (1.6 AC-7a), grace window exception
+- [x] **Task 8: pg-boss worker** (AC: 14, 14b)
+  - [x] Extend `BossService` with schedule/work registration
+  - [x] `workers/prune-revoked-tokens.ts`
+  - [x] Wire in `main.ts` after unseal
+- [x] **Task 9: Shared schemas & audit** (AC: 16, 17, 25)
+  - [x] Session Zod schemas + AuditEvent constants
+  - [x] Regenerate OpenAPI
 - [ ] **Task 10: Tests** (AC: 22, 23, 26, 27, 30b)
   - [ ] `sessions.integration.test.ts` — include rotation, concurrency, sync cleanup tests
-  - [ ] Unit tests for revoke + authenticate + worker
-  - [ ] Verify Story 1.6 regression suite green
+  - [x] Unit tests for revoke + authenticate + worker
+  - [x] Verify Story 1.6 regression suite green
 
 ---
 
@@ -1460,11 +1460,47 @@ curl -s -w '\nHTTP %{http_code}\n' -b member.txt -X DELETE \
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+GPT-5.5
 
 ### Debug Log References
+- 2026-06-26: `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` failed before Task 1 implementation on missing `revokedTokens` export, then passed after adding schema/export/RLS exception.
+- 2026-06-26: `pnpm --filter @project-vault/db db:migrate` passed after adding `0007_session_revocation.sql`.
+- 2026-06-26: `pnpm --filter @project-vault/db test` still fails on pre-existing local RLS/permission expectation failures (`rls-isolation`, `audit-log-immutability`, `api-instances-privileges`); Story 1.7 schema-specific failures were fixed by adding `jti` values to legacy session test fixtures.
+- 2026-06-26: `pnpm --filter @project-vault/api exec vitest run src/config/env.test.ts` failed before Task 2 implementation on missing Story 1.7 session controls, then passed after adding env schema validation.
+- 2026-06-26: `pnpm exec tsx scripts/check-env-example.ts` passed after adding Story 1.7 env keys to `.env.example`.
+- 2026-06-26: `pnpm --filter @project-vault/api exec vitest run src/modules/auth/session-revoke.test.ts` failed before Task 3 implementation on missing `session-revoke.ts`, then passed after adding revoke helper/service.
+- 2026-06-26: `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts` passed after adding `SESSION_REVOKED`.
+- 2026-06-26: `pnpm --filter @project-vault/db build`, `pnpm --filter @project-vault/shared build`, and `pnpm --filter @project-vault/api typecheck` passed after refreshing package declarations.
+- 2026-06-26: `pnpm --filter @project-vault/api exec vitest run src/plugins/authenticate.test.ts` failed before Task 4 implementation with `/auth/me` 404, then passed after adding authenticate plugin and route.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck` passed after adding auth middleware/types and aligning vault-guard plugin typing.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/auth/tokens.test.ts src/modules/auth/routes.test.ts` passed.
+- 2026-06-26: `pnpm --filter @project-vault/api exec vitest run src/plugins/vault-guard.test.ts` passed.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck` passed after adding session management routes.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/auth/routes.test.ts src/plugins/authenticate.test.ts` passed after Task 5 route wiring.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck` passed after adding org admin session revocation route.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/plugins/authenticate.test.ts src/modules/auth/routes.test.ts` passed after mounting org routes.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck` passed after refresh idle/revoked-token/predecessor-retirement integration.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/auth/tokens.test.ts src/modules/auth/routes.test.ts src/plugins/authenticate.test.ts` passed after Task 7 changes.
+- 2026-06-26: `pnpm --filter @project-vault/api exec vitest run src/lib/boss.test.ts` passed after adding schedule/worker registration coverage.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck` passed after adding `prune-revoked-tokens` worker and unseal lifecycle registration.
+- 2026-06-26: `pnpm --filter @project-vault/shared exec vitest run src/schemas/auth.test.ts src/constants/audit-events.test.ts` passed after adding Story 1.7 shared schemas and audit constant.
+- 2026-06-26: `pnpm --filter @project-vault/shared build`, `pnpm --filter @project-vault/api typecheck`, and `pnpm --filter @project-vault/api generate-spec` passed after Task 9 changes.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed: 22 files passed, 98 tests passed, 1 route-audit todo skipped.
+- 2026-06-26: `pnpm --filter @project-vault/shared test` passed: 3 files passed, 11 tests passed.
+- 2026-06-26: `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` passed.
+- 2026-06-26: Full `pnpm --filter @project-vault/db test` remains blocked by local pre-existing RLS/permission expectation failures unrelated to Story 1.7 schema (`rls-isolation`, `audit-log-immutability`, `api-instances-privileges`).
 
 ### Completion Notes List
+- Task 1 complete: added `revoked_tokens` Drizzle schema/migration, enforced non-null `sessions.jti`, added session indexes, and registered `revoked_tokens` as an intentional RLS coverage exception.
+- Task 2 complete: added idle timeout, activity debounce, max-session cap, and JWT clock-skew env controls with defaults and bounds.
+- Task 3 complete: added transaction-aware session revocation helpers, revoked-token expiry calculation, refresh-token/session retirement, same-transaction audit writing, idle cleanup, and Epic 4 org-scoped bulk revoke export.
+- Task 4 complete: added reusable authenticate plugin, live org role lookup, revoked token/session/idle checks, debounced activity touch, role guard helper, typed `authContext`, and protected `/auth/me`.
+- Task 5 complete: added authenticated session list, revoke single/current, revoke all other sessions, logout handlers, and route-level rate limit configuration.
+- Task 6 complete: added org admin route `DELETE /api/v1/org/users/:userId/sessions` with live role guard, target membership check, org-scoped bulk revoke, and app mount.
+- Task 7 complete: refresh now checks `revoked_tokens`, synchronously cleans idle sessions, retires predecessor sessions during full rotation, inserts predecessor `revoked_tokens`, and preserves grace-window retry.
+- Task 8 complete: extended BossService with schedule/worker registration, added hourly revoked-token pruning worker, and registered it after vault unseal/restart-unsealed startup.
+- Task 9 complete: added shared session management schemas, added `SESSION_REVOKED`, and regenerated OpenAPI with all Story 1.7 protected endpoints and cookie auth security scheme.
+- Task 10 partially complete: focused unit tests, API regression suite, shared suite, and db schema regression pass; dedicated real-DB `sessions.integration.test.ts` lifecycle/concurrency coverage remains outstanding.
 
 ### File List
 
@@ -1474,7 +1510,7 @@ curl -s -w '\nHTTP %{http_code}\n' -b member.txt -X DELETE \
 |---|---|
 | `packages/db/src/schema/revoked-tokens.ts` | CREATE |
 | `packages/db/src/schema/sessions.ts` | MODIFY — jti, revokedAt |
-| `packages/db/src/migrations/0004_session_revocation.sql` | CREATE |
+| `packages/db/src/migrations/0007_session_revocation.sql` | CREATE |
 | `packages/db/src/check-rls-coverage.ts` | MODIFY — EXCLUDED_TABLES |
 | `packages/shared/src/schemas/auth.ts` | MODIFY — session schemas |
 | `packages/shared/src/constants/audit-events.ts` | MODIFY — SESSION_REVOKED |

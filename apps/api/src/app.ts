@@ -12,8 +12,10 @@ import { healthRoutes } from './routes/health.js'
 import { metricsRoutes } from './routes/metrics.js'
 import { vaultRoutes } from './modules/vault/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
+import { orgRoutes } from './modules/org/routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
+import authenticatePlugin from './plugins/authenticate.js'
 import { env } from './config/env.js'
 import { AppError } from './lib/errors.js'
 import type { FastifyApp } from './lib/fastify-app.js'
@@ -139,6 +141,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
 
   await fastify.register(cookie)
   await fastify.register(jwtPlugin)
+  await fastify.register(authenticatePlugin)
 
   if (options.vaultGuardEnabled) {
     await fastify.register(vaultGuardPlugin)
@@ -151,6 +154,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Registered always (regardless of guard) so vault endpoints appear in the OpenAPI spec.
   await fastify.register(vaultRoutes)
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
+  await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
 
   return fastify
 }

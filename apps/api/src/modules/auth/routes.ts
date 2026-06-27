@@ -1,13 +1,22 @@
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import rateLimit from '@fastify/rate-limit'
+import { z } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
+import { authPreHandler, requireAuthContext, validationError } from '../../lib/route-helpers.js'
 import { LoginRequestSchema, RegisterRequestSchema } from './schema.js'
 import { normalizeEmail } from './normalize.js'
 import { clearAuthCookies, setAuthCookies, type CookieReply } from './tokens.js'
-import { loginUser, refreshSession, registerUser, type TokenMaterial } from './service.js'
+import {
+  listSessions,
+  loginUser,
+  refreshSession,
+  registerUser,
+  type TokenMaterial,
+} from './service.js'
+import { revokeAllOtherSessions, revokeSessionById, sessionNotFound } from './session-revoke.js'
 
 type JwtFastify = FastifyApp & {
   jwt: {
@@ -17,14 +26,16 @@ type JwtFastify = FastifyApp & {
     ) => Promise<string> | string
   }
 }
-
-function validationError(error: { issues: { path: PropertyKey[]; message: string }[] }) {
-  const details: Record<string, string[]> = {}
-  for (const issue of error.issues) {
-    const key = String(issue.path[0] ?? 'body')
-    details[key] = [...(details[key] ?? []), issue.message]
-  }
-  return { code: 'validation_error', message: 'Request validation failed', details }
+type AuthContext = NonNullable<FastifyRequest['authContext']>
+type ProtectedRouteOptions = {
+  method: 'GET' | 'POST' | 'DELETE'
+  url: string
+  rateLimitMax?: number
+  handler: (
+    authContext: AuthContext,
+    req: FastifyRequest,
+    reply: FastifyReply
+  ) => Promise<unknown> | unknown
 }
 
 function asciiEmailValidationError() {
@@ -80,6 +91,8 @@ function sendAppError(reply: FastifyReply, error: AppError) {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
 }
 
+const SessionParamsSchema = z.object({ sessionId: z.uuid() })
+
 function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
   for (const method of ['GET', 'PUT', 'PATCH', 'DELETE'] as const) {
     fastify.route({
@@ -92,6 +105,22 @@ function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
         }),
     })
   }
+}
+
+function registerProtectedRoute(fastify: FastifyApp, options: ProtectedRouteOptions): void {
+  fastify.route({
+    method: options.method,
+    url: options.url,
+    config: options.rateLimitMax
+      ? { rateLimit: { max: options.rateLimitMax, timeWindow: '1 minute' } }
+      : undefined,
+    preHandler: [authPreHandler(fastify)],
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const authContext = requireAuthContext(req, reply)
+      if (!authContext) return reply
+      return options.handler(authContext, req, reply)
+    },
+  })
 }
 
 export async function authRoutes(fastify: FastifyApp): Promise<void> {
@@ -109,6 +138,79 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/login')
   registerMethodNotAllowed(fastify, '/refresh')
 
+  registerProtectedRoute(fastify, {
+    method: 'GET',
+    url: '/me',
+    handler: (authContext, _req, reply) =>
+      reply.send({
+        data: {
+          userId: authContext.userId,
+          orgId: authContext.orgId,
+          sessionId: authContext.sessionId,
+          orgRole: authContext.orgRole,
+        },
+      }),
+  })
+
+  registerProtectedRoute(fastify, {
+    method: 'GET',
+    url: '/sessions',
+    rateLimitMax: 30,
+    handler: async (authContext, _req, reply) => {
+      const sessionsList = await listSessions(authContext.userId, authContext.jti)
+      return reply.send({ data: sessionsList })
+    },
+  })
+
+  registerProtectedRoute(fastify, {
+    method: 'DELETE',
+    url: '/sessions',
+    rateLimitMax: 10,
+    handler: async (authContext, _req, reply) => {
+      const result = await revokeAllOtherSessions({
+        userId: authContext.userId,
+        currentJti: authContext.jti,
+        actorUserId: authContext.userId,
+      })
+      return reply.send({ data: result })
+    },
+  })
+
+  registerProtectedRoute(fastify, {
+    method: 'DELETE',
+    url: '/sessions/:sessionId',
+    rateLimitMax: 10,
+    handler: async (authContext, req, reply) => {
+      const parsed = SessionParamsSchema.safeParse(req.params)
+      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'params'))
+      const result = await revokeSessionById(parsed.data.sessionId, {
+        actorUserId: authContext.userId,
+        scope: parsed.data.sessionId === authContext.sessionId ? 'logout' : 'single',
+        expectedUserId: authContext.userId,
+      })
+      if (!result.revoked) return sendAppError(reply, sessionNotFound())
+      if (parsed.data.sessionId === authContext.sessionId) {
+        clearAuthCookies(reply as unknown as CookieReply)
+      }
+      return reply.status(204).send()
+    },
+  })
+
+  registerProtectedRoute(fastify, {
+    method: 'POST',
+    url: '/logout',
+    rateLimitMax: 30,
+    handler: async (authContext, _req, reply) => {
+      await revokeSessionById(authContext.sessionId, {
+        actorUserId: authContext.userId,
+        scope: 'logout',
+        expectedUserId: authContext.userId,
+      })
+      clearAuthCookies(reply as unknown as CookieReply)
+      return reply.status(204).send()
+    },
+  })
+
   fastify.route({
     method: 'POST',
     url: '/register',
@@ -124,7 +226,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       const normalized = normalizeEmailBodyForRoute(req.body, reply)
       if (!normalized.success) return normalized.reply
       const parsed = RegisterRequestSchema.safeParse(normalized.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
+      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
         const result = await registerUser(parsed.data)
         return reply.status(201).send({ data: result })
@@ -143,7 +245,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       const normalized = normalizeEmailBodyForRoute(req.body, reply)
       if (!normalized.success) return normalized.reply
       const parsed = LoginRequestSchema.safeParse(normalized.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
+      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
         const result = await loginUser(parsed.data, metaFromRequest(req))
         clearAuthCookies(reply as unknown as CookieReply)

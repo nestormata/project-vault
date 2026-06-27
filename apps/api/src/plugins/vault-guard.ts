@@ -1,7 +1,7 @@
 import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
+import type { FastifyInstance } from 'fastify'
 import fp from 'fastify-plugin'
-import type { FastifyApp } from '../lib/fastify-app.js'
 import { getVaultStatus } from '../modules/vault/key-service.js'
 
 /** Normalize path: strip query string, remove trailing slash (except root "/"). */
@@ -21,7 +21,7 @@ const VAULT_GUARD_ALLOWLIST = new Set([
   'POST /api/v1/vault/unseal',
 ])
 
-async function vaultGuard(fastify: FastifyApp): Promise<void> {
+async function vaultGuard(fastify: FastifyInstance): Promise<void> {
   fastify.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     const path = normalizePath(req.url)
     const routeKey = `${req.method} ${path}`
