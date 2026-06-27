@@ -60,6 +60,7 @@ development_status:
 
   # Epic 2: Secret & Credential Management — Store, Retrieve, Search & Import
   epic-2: backlog
+  2-0-mvp-frontend-shell-and-empty-project-dashboard: backlog
   2-1-project-creation-and-cross-project-dashboard: backlog
   2-2-credential-storage-and-retrieval-with-version-history: backlog
   2-3-credential-search-filter-and-tag-management: backlog

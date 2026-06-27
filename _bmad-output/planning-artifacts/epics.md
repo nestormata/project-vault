@@ -1025,6 +1025,7 @@ Users can deploy the vault on self-hosted infrastructure via Docker, create acco
 ### Epic 2: Secret & Credential Management — Store, Retrieve, Search & Import
 **🟢 Tier 0 — Required for all beta tiers**
 > 🔵 **Beta cuts (T2 recommended scope):** FR9 (onboarding wizard), FR80 (global search), FR17 (bulk import) are deferrable to post-beta polish. Per-project search and manual entry are sufficient at beta scale.
+> 🟢 **Course-correction insert:** Story 2.0 pulls a thin, visible SvelteKit frontend shell forward before durable credential work. It validates the vault/login/project mental model using real Epic 1 APIs and either a minimal reusable project API or explicitly marked temporary project stubs. This story must not expand Epic 1 scope or imply shipped credential, alert, or health functionality.
 Users can create projects, store and retrieve credentials with full version history and configurable retention/cryptographic deletion, search and filter by name/tag/status/expiry, record dependent systems, set expiry and rotation schedules, bulk-import from `.env`/JSON files with per-conflict resolution, complete the guided onboarding wizard, view a cross-project dashboard, and use global search.
 
 **FRs covered:** FR1, FR7, FR8, FR9, FR10, FR11, FR12, FR14, FR15, FR16, FR17, FR64, FR80, FR93, FR95, FR96, FR98, FR105
@@ -1036,6 +1037,53 @@ Users can create projects, store and retrieve credentials with full version hist
 > 📋 **AC-E2c — FR9 onboarding wizard trigger:** Wizard triggers once per user per org on first project creation only. It is permanently dismissible. It does not re-trigger on subsequent project creation.
 > 📋 **AC-E2d — FR7 dashboard scope:** Dashboard must display at minimum: total credentials count, credentials expiring within 30 days (count + list), projects with overdue rotations. Additional widgets are out of v1 scope.
 > 📋 **AC-E2e — FR12/FR105 version retention race condition:** Story must specify: a version that is the current active credential for an in-progress rotation is exempt from retention policy deletion until rotation completes or is abandoned.
+> 📋 **AC-E2f — Story 2.0 honest placeholders:** Any dashboard, credential, alert, or health panel rendered before its backing API exists must display an explicit empty/not-configured state. The UI must not show fabricated counts, fake health statuses, simulated alerts, or copy implying unavailable capabilities are already functional.
+
+#### Story 2.0: MVP Frontend Shell & Empty Project Dashboard
+
+*Covers: FR46, supports early validation of FR1, FR7, FR8, FR53, FR60, FR72, FR93, FR98*
+
+**As a** first-time evaluator,
+**I want** to initialize or unseal the vault, register or log in, and land in a project-centered app shell,
+**So that** I understand Project Vault's core product model before the full credential-management feature set exists.
+
+**Acceptance Criteria:**
+
+**Given** the SvelteKit app loads before the vault is ready,
+**When** it calls the existing readiness and vault endpoints (`GET /ready`, `POST /api/v1/vault/init`, `POST /api/v1/vault/unseal`),
+**Then** it renders distinct uninitialized, sealed, unavailable, and ready states with only the valid next action visible for each state.
+
+**And** vault init/unseal forms must be explicit operator flows: they accept the key file path required by the API, display clear host-trust-boundary copy, never echo the submitted path after submission, and never log or persist it in browser storage.
+
+**And** registration and login use the existing Epic 1 auth APIs (`POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`) and rely on `HttpOnly` cookies for session state; the frontend must not store access tokens in `localStorage`, `sessionStorage`, IndexedDB, or JavaScript-accessible memory.
+
+**And** authenticated routes are guarded in SvelteKit server-side load or hooks: unauthenticated users are redirected to login, authenticated users can refresh transparently when the refresh endpoint succeeds, and expired/revoked sessions return to login with a non-alarming message.
+
+**And** if Story 1.12 is complete before this story is implemented, the login UI supports the MFA-required response and verification step; if Story 1.12 is not complete, MFA login UI is intentionally deferred and marked as blocked by Story 1.12 in the story implementation notes.
+
+**And** the authenticated layout includes responsive navigation for Dashboard, Projects, Credentials, Alerts, Health, and Settings; unavailable sections render honest placeholder/empty states rather than 404s or fake data.
+
+**And** the cross-project dashboard renders an empty state that explains Project Vault's organizing principle: projects are the home for credentials, certificates, services, alerts, and operational context; the empty state gives a clear first action toward creating or selecting a project.
+
+**And** the project dashboard placeholder uses the Story 2.1 response shape when possible (`credentialStats`, `upcomingRotations`, `monitoredServiceHealth`, `recentAccessEvents`, `unresolvedAlertCount`, `isEmpty`, `suggestedActions`) so the frontend can swap from stubbed data to the real Story 2.1 API without redesigning the screen.
+
+**And** the "Create project" UI is included only if one of these implementation paths is selected before development starts:
+- **Preferred:** implement the minimal real `POST /api/v1/projects` and `GET /api/v1/projects` subset from Story 2.1 using the final schema and RLS model, then Story 2.1 completes the remaining dashboard and update behavior.
+- **Fallback:** use an explicitly labeled in-memory/local preview stub that resets on reload and cannot be mistaken for persisted product behavior.
+
+**And** all credential, alert, and health widgets are placeholders only: credentials show "No credentials added yet", alerts show "No alert sources configured yet", and health shows "No monitored services configured yet"; no widget shows green/healthy/success states until a real backing API exists.
+
+**And** the shell is mobile-friendly at common phone widths: the navigation collapses cleanly, primary vault/auth/dashboard flows do not require horizontal scrolling, and the empty project/dashboard states remain readable without desktop-only layout assumptions.
+
+**And** automated tests cover: vault-state rendering, register/login happy and error paths with mocked API responses, authenticated-route redirects, logout behavior, empty dashboard rendering, honest placeholder copy, and a mobile viewport smoke test.
+
+**And** Story 2.0 does not modify the security-critical scope of Epic 1; it depends on Epic 1 API contracts being stable enough for frontend wiring and may be scheduled only after the current Epic 1 security stories are not blocked by frontend work.
+
+**Out of scope:**
+- Storing, revealing, searching, importing, or versioning credential values.
+- Real alert delivery, in-product notification inbox, Slack/email notifications, or threshold alert configuration.
+- Real service, certificate, domain, uptime, or public status-page monitoring.
+- Rotation workflows, dependent-system management, machine users, API keys, audit-log UI, compliance exports, backup/restore UI, full onboarding wizard, Shamir unseal UX, or any fake demo data that implies those capabilities are functional.
 
 #### Story 2.1: Project Creation & Cross-Project Dashboard
 
