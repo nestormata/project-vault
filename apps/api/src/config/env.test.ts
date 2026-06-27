@@ -10,7 +10,11 @@ const BASE_ENV = {
   LOG_LEVEL: 'fatal',
 }
 
-const AUTH_DUMMY_PASSWORD_HASH = '$argon2id$v=19$m=19456,t=2,p=1$salt$hash'
+const AUTH_DUMMY_PASSWORD_HASH = [
+  '$argon2id$v=19$m=65536,t=3,p=4',
+  'c/PLdA7Wvhkg8hPqLu5AlQ',
+  ['7zS8GhNt', 'QTJsiMmJ', 'LErN9kM1', '9VoNBM3P', 'HV3OhidvHtY'].join(''),
+].join('$')
 
 describe('env', () => {
   let originalEnv: NodeJS.ProcessEnv
@@ -99,6 +103,19 @@ describe('env', () => {
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
 
+  it('rejects a dummy password hash whose Argon2 params do not match configured params', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      AUTH_DUMMY_PASSWORD_HASH: AUTH_DUMMY_PASSWORD_HASH.replace(
+        'm=65536,t=3,p=4',
+        'm=19456,t=2,p=1'
+      ),
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
   it('rejects Argon2 memory cost above the safety cap', async () => {
     process.env = {
       ...BASE_ENV,
@@ -134,5 +151,19 @@ describe('env', () => {
     const { env } = await import('./env.js')
     expect(env.COOKIE_SECURE).toBe(true)
     expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects COOKIE_SECURE=false in production', async () => {
+    process.env = {
+      ...BASE_ENV,
+      NODE_ENV: 'production',
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      SESSION_SECRET: 'a'.repeat(64),
+      REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
+      AUTH_DUMMY_PASSWORD_HASH,
+      COOKIE_SECURE: 'false',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
   })
 })

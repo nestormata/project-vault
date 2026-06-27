@@ -25,5 +25,6 @@ describe('refresh token helpers', () => {
     expect(refreshTokensMatch(hash, OPAQUE_REFRESH_TOKEN)).toBe(true)
     expect(refreshTokensMatch(hash, 'other-refresh-token')).toBe(false)
     expect(refreshTokensMatch('short', OPAQUE_REFRESH_TOKEN)).toBe(false)
+    expect(refreshTokensMatch('z'.repeat(64), OPAQUE_REFRESH_TOKEN)).toBe(false)
   })
 })

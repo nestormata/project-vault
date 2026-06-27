@@ -5,6 +5,7 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { LoginRequestSchema, RegisterRequestSchema } from './schema.js'
+import { normalizeEmail } from './normalize.js'
 import { clearAuthCookies, setAuthCookies, type CookieReply } from './tokens.js'
 import { loginUser, refreshSession, registerUser, type TokenMaterial } from './service.js'
 
@@ -24,6 +25,22 @@ function validationError(error: { issues: { path: PropertyKey[]; message: string
     details[key] = [...(details[key] ?? []), issue.message]
   }
   return { code: 'validation_error', message: 'Request validation failed', details }
+}
+
+function asciiEmailValidationError() {
+  return {
+    code: 'validation_error',
+    message: 'Request validation failed',
+    details: { email: ['ASCII characters only'] },
+  }
+}
+
+function bodyWithNormalizedEmail(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || !('email' in body)) return body
+  return {
+    ...(body as Record<string, unknown>),
+    email: normalizeEmail(String((body as { email: unknown }).email)),
+  }
 }
 
 function metaFromRequest(req: FastifyRequest) {
@@ -90,7 +107,16 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           message: 'Registration is disabled on this vault',
         })
       }
-      const parsed = RegisterRequestSchema.safeParse(req.body)
+      let normalizedBody: unknown
+      try {
+        normalizedBody = bodyWithNormalizedEmail(req.body)
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'validation_error') {
+          return reply.status(422).send(asciiEmailValidationError())
+        }
+        throw error
+      }
+      const parsed = RegisterRequestSchema.safeParse(normalizedBody)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
       try {
         const result = await registerUser(parsed.data)
@@ -107,7 +133,16 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     url: '/login',
     bodyLimit: 4096,
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      const parsed = LoginRequestSchema.safeParse(req.body)
+      let normalizedBody: unknown
+      try {
+        normalizedBody = bodyWithNormalizedEmail(req.body)
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'validation_error') {
+          return reply.status(422).send(asciiEmailValidationError())
+        }
+        throw error
+      }
+      const parsed = LoginRequestSchema.safeParse(normalizedBody)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error))
       try {
         const result = await loginUser(parsed.data, metaFromRequest(req))
@@ -138,6 +173,11 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         return reply
           .status(401)
           .send({ code: 'refresh_token_missing', message: 'Refresh token is missing' })
+      }
+      if (refreshOpaque.length > 128) {
+        return reply
+          .status(401)
+          .send({ code: 'refresh_token_invalid', message: 'Refresh token is invalid' })
       }
       try {
         const result = await refreshSession(refreshOpaque, metaFromRequest(req))

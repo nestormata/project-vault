@@ -2,9 +2,51 @@ import { z } from 'zod/v4'
 
 const DEV_SESSION_SECRET = 'a'.repeat(64)
 const DEV_REFRESH_TOKEN_HMAC_SECRET = 'b'.repeat(64)
-const DEV_AUTH_DUMMY_PASSWORD_HASH = '$argon2id$v=19$m=19456,t=2,p=1$salt$hash'
+const DEV_AUTH_DUMMY_PASSWORD_HASH = [
+  '$argon2id$v=19$m=65536,t=3,p=4',
+  'c/PLdA7Wvhkg8hPqLu5AlQ',
+  ['7zS8GhNt', 'QTJsiMmJ', 'LErN9kM1', '9VoNBM3P', 'HV3OhidvHtY'].join(''),
+].join('$')
 const PLACEHOLDER_SECRET_PATTERN = /change-me|dev-only|placeholder/i
 const isProduction = process.env.NODE_ENV === 'production'
+const ARGON2_PHC_REGEX =
+  /^\$argon2id\$v=\d+\$m=(\d+),t=(\d+),p=(\d+)\$[A-Za-z0-9+/._-]{16,}\$[A-Za-z0-9+/._-]{32,}$/
+
+function validateProductionEnv(env: Env, ctx: z.RefinementCtx): void {
+  if (!env.COOKIE_SECURE) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['COOKIE_SECURE'],
+      message: 'FATAL: COOKIE_SECURE must be true in production',
+    })
+  }
+
+  for (const name of ['SESSION_SECRET', 'REFRESH_TOKEN_HMAC_SECRET'] as const) {
+    if (PLACEHOLDER_SECRET_PATTERN.test(env[name])) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [name],
+        message: `${name} must not be a placeholder secret in production`,
+      })
+    }
+  }
+}
+
+function validateDummyPasswordHash(env: Env, ctx: z.RefinementCtx): void {
+  const dummyParams = ARGON2_PHC_REGEX.exec(env.AUTH_DUMMY_PASSWORD_HASH)
+  if (
+    !dummyParams ||
+    Number(dummyParams[1]) !== env.ARGON2_MEMORY_COST ||
+    Number(dummyParams[2]) !== env.ARGON2_TIME_COST ||
+    Number(dummyParams[3]) !== env.ARGON2_PARALLELISM
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AUTH_DUMMY_PASSWORD_HASH'],
+      message: 'AUTH_DUMMY_PASSWORD_HASH Argon2 params must match configured user-password params',
+    })
+  }
+}
 
 function booleanEnvDefault(defaultValue: boolean) {
   return z.preprocess(
@@ -61,10 +103,7 @@ const envSchema = z
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(4),
     AUTH_DUMMY_PASSWORD_HASH: z
       .string()
-      .regex(
-        /^\$argon2id\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+/._-]+\$[A-Za-z0-9+/._-]+$/,
-        'AUTH_DUMMY_PASSWORD_HASH must be a valid Argon2id PHC string'
-      )
+      .regex(ARGON2_PHC_REGEX, 'AUTH_DUMMY_PASSWORD_HASH must be a valid Argon2id PHC string')
       .default(DEV_AUTH_DUMMY_PASSWORD_HASH),
     AUTH_REGISTRATION_ENABLED: booleanEnvDefault(true),
     COOKIE_SECURE: booleanEnvDefault(isProduction),
@@ -106,18 +145,8 @@ const envSchema = z
       })
     }
 
-    if (env.NODE_ENV === 'production') {
-      for (const name of ['SESSION_SECRET', 'REFRESH_TOKEN_HMAC_SECRET'] as const) {
-        const value = env[name]
-        if (value.length < 32 || PLACEHOLDER_SECRET_PATTERN.test(value)) {
-          ctx.addIssue({
-            code: 'custom',
-            path: [name],
-            message: `FATAL: ${name} must be a strong secret in production`,
-          })
-        }
-      }
-    }
+    if (env.NODE_ENV === 'production') validateProductionEnv(env, ctx)
+    validateDummyPasswordHash(env, ctx)
   })
 
 export type Env = z.infer<typeof envSchema>

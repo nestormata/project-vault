@@ -3,7 +3,7 @@ import { env } from '../../config/env.js'
 
 export type AuthCookieTokens = {
   accessJwt: string
-  refreshOpaque: string
+  refreshOpaque?: string
   accessMaxAgeSec: number
   refreshMaxAgeSec: number
 }
@@ -23,6 +23,7 @@ export function hashRefreshToken(opaque: string): string {
 
 export function refreshTokensMatch(storedHash: string, opaque: string): boolean {
   const computed = hashRefreshToken(opaque)
+  if (!/^[0-9a-f]{64}$/i.test(storedHash)) return false
   if (storedHash.length !== computed.length) return false
   return timingSafeEqual(Buffer.from(storedHash, 'hex'), Buffer.from(computed, 'hex'))
 }
@@ -36,13 +37,15 @@ export function setAuthCookies(reply: CookieReply, tokens: AuthCookieTokens): vo
     path: '/',
     maxAge: tokens.accessMaxAgeSec,
   })
-  reply.setCookie('refresh-token', tokens.refreshOpaque, {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure,
-    path: '/api/v1/auth/refresh',
-    maxAge: tokens.refreshMaxAgeSec,
-  })
+  if (tokens.refreshOpaque) {
+    reply.setCookie('refresh-token', tokens.refreshOpaque, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure,
+      path: '/api/v1/auth/refresh',
+      maxAge: tokens.refreshMaxAgeSec,
+    })
+  }
 }
 
 export function clearAuthCookies(reply: CookieReply): void {

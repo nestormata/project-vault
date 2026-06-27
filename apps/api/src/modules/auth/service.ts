@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
   auditLogEntries,
   orgMemberships,
   organizations,
+  platformSecurityEvents,
   refreshTokens,
   sessions,
   userIdentityTokens,
@@ -39,9 +40,10 @@ export type AccessClaims = {
 export type TokenMaterial = {
   accessClaims: AccessClaims
   accessMaxAgeSec: number
-  refreshOpaque: string
+  refreshOpaque?: string
   refreshMaxAgeSec: number
 }
+type RotatedTokenMaterial = TokenMaterial & { refreshOpaque: string }
 
 export type RegisterInput = {
   email: string
@@ -142,6 +144,45 @@ async function insertAuditEntry(
   })
 }
 
+function subjectHash(email: string): string {
+  return createHmac('sha256', getAuditKey()).update(email).digest('hex')
+}
+
+async function insertPlatformSecurityEvent(
+  tx: Tx,
+  fields: {
+    eventType: string
+    subjectHash: string | null
+    emailDomain: string | null
+    payload: Record<string, unknown>
+    ipAddress?: string | null
+    userAgent?: string | null
+  }
+): Promise<void> {
+  const keyVersion = await currentAuditKeyVersion(tx)
+  const hmac = computeAuditHmac(
+    {
+      eventType: fields.eventType,
+      subjectHash: fields.subjectHash,
+      emailDomain: fields.emailDomain,
+      payload: fields.payload,
+      keyVersion,
+    },
+    getAuditKey()
+  )
+
+  await tx.insert(platformSecurityEvents).values({
+    eventType: fields.eventType,
+    subjectHash: fields.subjectHash,
+    emailDomain: fields.emailDomain,
+    payload: fields.payload,
+    keyVersion,
+    hmac,
+    ipAddress: fields.ipAddress ?? null,
+    userAgent: fields.userAgent ?? null,
+  })
+}
+
 async function allocateOrganizationSlug(
   tx: Tx,
   baseSlug: string
@@ -195,7 +236,7 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
       const identityToken = identityRows[0]
       if (!identityToken) throw new Error('registerUser: identity token insert returned no row')
 
-      await tx.execute(sql`SELECT set_config('app.current_org_id', ${org.id}, true)`)
+      await tx.execute(sql`SELECT set_config('app.auth_bootstrap_org_id', ${org.id}, true)`)
       await insertAuditEntry(tx as Tx, {
         orgId: org.id,
         actorTokenId: identityToken.id,
@@ -223,10 +264,23 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
 
 async function recordLoginFailed(
   user: { id: string; identityTokenId: string | null; orgId: string | null } | null,
+  email: string,
   meta: RequestMeta
 ): Promise<void> {
   try {
-    if (!user?.orgId) return
+    if (!user?.orgId) {
+      await getDb().transaction((tx) =>
+        insertPlatformSecurityEvent(tx as Tx, {
+          eventType: AuditEvent.LOGIN_FAILED,
+          subjectHash: subjectHash(email),
+          emailDomain: emailDomain(email),
+          payload: { reason: user ? 'orphan_user' : 'unknown_subject' },
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+        })
+      )
+      return
+    }
     await withOrg(user.orgId, async (tx) => {
       await insertAuditEntry(tx, {
         orgId: user.orgId as string,
@@ -266,7 +320,20 @@ function invalidCredentials(): AppError {
   return new AppError('invalid_credentials', 'Invalid email or password', 401)
 }
 
-function buildTokenMaterial(userId: string, orgId: string, jti: string): TokenMaterial {
+function failedLoginAuditSubject(
+  user: Awaited<ReturnType<typeof findLoginUser>>[number] | undefined,
+  rows: Awaited<ReturnType<typeof findLoginUser>>,
+  activeOrgId: string | null | undefined
+): { id: string; identityTokenId: string | null; orgId: string | null } | null {
+  if (!user) return null
+  return {
+    id: user.id,
+    identityTokenId: user.identityTokenId,
+    orgId: activeOrgId ?? rows.find((row) => row.orgId)?.orgId ?? null,
+  }
+}
+
+function buildTokenMaterial(userId: string, orgId: string, jti: string): RotatedTokenMaterial {
   return {
     accessClaims: { sub: userId, orgId, jti, sessionVersion: 1 },
     accessMaxAgeSec: env.JWT_ACCESS_TTL_SECONDS,
@@ -352,13 +419,8 @@ export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Prom
 
   if (!user || !valid || !activeMembership?.orgId) {
     await recordLoginFailed(
-      user
-        ? {
-            id: user.id,
-            identityTokenId: user.identityTokenId,
-            orgId: activeMembership?.orgId ?? null,
-          }
-        : null,
+      failedLoginAuditSubject(user, rows, activeMembership?.orgId),
+      email,
       meta
     )
     throw invalidCredentials()
@@ -376,6 +438,7 @@ type RefreshRow = {
   userId: string
   orgId: string
   sessionVersion: number
+  sessionRevokedAt: Date | null
 }
 
 function revokedRefreshToken(): AppError {
@@ -393,6 +456,7 @@ async function findRefreshRow(tx: Tx, tokenHash: string): Promise<RefreshRow> {
       userId: sessions.userId,
       orgId: sessions.orgId,
       sessionVersion: sessions.sessionVersion,
+      sessionRevokedAt: sessions.revokedAt,
     })
     .from(refreshTokens)
     .innerJoin(sessions, eq(sessions.id, refreshTokens.sessionId))
@@ -421,7 +485,16 @@ async function handleGraceRefresh(tx: Tx, row: RefreshRow): Promise<RefreshResul
     .limit(1)
   const session = existing[0]
   if (!session?.jti) throw revokedRefreshToken()
-  const tokens = buildTokenMaterial(session.userId, session.orgId, session.jti)
+  const tokens: TokenMaterial = {
+    accessClaims: {
+      sub: session.userId,
+      orgId: session.orgId,
+      jti: session.jti,
+      sessionVersion: session.sessionVersion,
+    },
+    accessMaxAgeSec: env.JWT_ACCESS_TTL_SECONDS,
+    refreshMaxAgeSec: env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
+  }
   return {
     expiresAt: new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000).toISOString(),
     tokens,
@@ -471,6 +544,7 @@ export async function refreshSession(
   const tokenHash = hashRefreshToken(refreshOpaque)
   return getDb().transaction(async (tx) => {
     const row = await findRefreshRow(tx as Tx, tokenHash)
+    if (row.sessionRevokedAt) throw revokedRefreshToken()
     if (row.revokedAt) throw revokedRefreshToken()
     if (row.expiresAt.getTime() <= Date.now()) {
       throw new AppError('refresh_token_expired', 'Refresh token has expired', 401)

@@ -1,6 +1,6 @@
 # Story 1.6: User Registration & Password Authentication
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for registration, login, JWT cookies, refresh rotation, and integration tests. -->
 <!-- Security Audit Personas elicitation 2026-06-24 — AC-19–24, rate limits, concurrency, enumeration controls. -->
@@ -1228,6 +1228,16 @@ const fastify = Fastify({
 - [x] **Task 9: Documentation touchpoints**
   - [x] README auth section (minimal — env vars + curl examples)
 
+### Review Findings
+
+- [x] [Review][Patch] Registration audit bootstrap contradicts RLS/bootstrap constraints [apps/api/src/modules/auth/service.ts:198]
+- [x] [Review][Patch] Auth routes bypass sealed-vault protection [apps/api/src/plugins/vault-guard.ts:17]
+- [x] [Review][Patch] Grace-window refresh returns an unstored refresh token [apps/api/src/modules/auth/service.ts:407]
+- [x] [Review][Patch] Failed-login audit skips unknown, orphan, and deactivated users [apps/api/src/modules/auth/service.ts:224] — resolved with org audit for known org subjects and `platform_security_events` for unknown/orphan subjects.
+- [x] [Review][Patch] Dummy password hash validation accepts non-verifiable or wrong-cost hashes [apps/api/src/config/env.ts:62]
+- [x] [Review][Patch] Non-ASCII email validation runs after `z.email()` and returns the wrong error detail [apps/api/src/modules/auth/routes.ts:93]
+- [x] [Review][Patch] Required real-DB auth integration coverage is missing [apps/api/src/__tests__/auth.integration.test.ts]
+
 ---
 
 ## Dev Notes
@@ -1587,6 +1597,15 @@ GPT-5.5
 - 2026-06-26: `pnpm turbo typecheck` passed.
 - 2026-06-26: `pnpm --filter @project-vault/crypto test`, `pnpm --filter @project-vault/shared test`, `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/db test`, and `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed.
 - 2026-06-26: `pnpm turbo build` passed.
+- 2026-06-26: Applied review patch batch. `DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm --filter @project-vault/db db:migrate` applied `0005_auth_bootstrap_audit_policy`.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/plugins/vault-guard.test.ts src/modules/auth/tokens.test.ts src/config/env.test.ts src/__tests__/auth.integration.test.ts src/modules/auth/routes.test.ts src/modules/auth/service.test.ts` passed after review patches.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed after review patches.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/db test` passed after tightening RLS coverage checks for bootstrap insert policies.
+- 2026-06-26: `pnpm --filter @project-vault/api typecheck && pnpm --filter @project-vault/db typecheck && pnpm turbo lint` passed; lint output contains existing warnings only.
+- 2026-06-26: `DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm --filter @project-vault/db db:migrate` applied `0006_platform_security_events`.
+- 2026-06-26: `pnpm --filter @project-vault/db build && DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/auth/service-platform-events.test.ts src/modules/auth/service.test.ts` passed.
+- 2026-06-26: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/db test` and `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test` passed after platform security event implementation.
+- 2026-06-26: `pnpm --filter @project-vault/db build && pnpm --filter @project-vault/api typecheck && pnpm --filter @project-vault/db typecheck && pnpm turbo lint` passed; lint output contains existing warnings only.
 
 ### Completion Notes List
 - Task 1 complete: added Story 1.6 session columns, `refresh_tokens` schema/migration, RLS coverage exception, and focused schema coverage.
@@ -1599,6 +1618,8 @@ GPT-5.5
 - Task 8 complete: added/updated auth helper, route, audit HMAC, log redaction, and route-audit tests; API regression suite passes with the expected `vault_app` database URL.
 - Task 9 complete: documented auth env variables, cookie/proxy settings, curl registration/login/refresh examples, and secret rotation effects in README.
 - Final DoD complete: all story tasks/subtasks checked, focused tests and package suites pass, lint/typecheck/build pass, File List updated, and story status moved to review.
+- Review patch batch complete: added bootstrap audit insert policy, sealed-vault auth guard enforcement, no-refresh-cookie grace retry behavior, parent-session revocation rejection, stricter dummy hash/cookie production validation, normalized email route validation, oversized refresh-cookie rejection, and focused integration coverage.
+- Platform security event follow-up complete: unknown/orphan failed-login attempts now write keyed, no-raw-email telemetry to `platform_security_events` while known org subjects continue using org-scoped `audit_log_entries`.
 
 ### File List
 
@@ -1637,22 +1658,27 @@ GPT-5.5
 
 - `packages/db/src/schema/auth-sessions-schema.test.ts`
 - `packages/db/src/schema/refresh-tokens.ts`
+- `packages/db/src/schema/platform-security-events.ts`
 - `packages/db/src/schema/sessions.ts`
 - `packages/db/src/schema/index.ts`
 - `packages/db/src/check-rls-coverage.ts`
 - `packages/db/src/migrations/0004_auth_sessions_refresh.sql`
+- `packages/db/src/migrations/0005_auth_bootstrap_audit_policy.sql`
+- `packages/db/src/migrations/0006_platform_security_events.sql`
 - `packages/db/src/migrations/meta/_journal.json`
 - `packages/crypto/src/passwords.ts`
 - `packages/crypto/src/passwords.test.ts`
 - `packages/crypto/src/index.ts`
 - `apps/api/src/config/env.ts`
 - `apps/api/src/config/env.test.ts`
+- `apps/api/src/__tests__/auth.integration.test.ts`
 - `apps/api/src/modules/audit/write-entry.ts`
 - `apps/api/src/modules/audit/write-entry.test.ts`
 - `apps/api/src/modules/auth/normalize.ts`
 - `apps/api/src/modules/auth/normalize.test.ts`
 - `apps/api/src/modules/auth/password.ts`
 - `apps/api/src/modules/auth/service.ts`
+- `apps/api/src/modules/auth/service-platform-events.test.ts`
 - `apps/api/src/modules/auth/service.test.ts`
 - `apps/api/src/modules/auth/routes.ts`
 - `apps/api/src/modules/auth/routes.test.ts`
@@ -1661,6 +1687,7 @@ GPT-5.5
 - `apps/api/src/modules/auth/tokens.test.ts`
 - `apps/api/src/plugins/jwt.ts`
 - `apps/api/src/plugins/vault-guard.ts`
+- `apps/api/src/plugins/vault-guard.test.ts`
 - `apps/api/src/app.ts`
 - `apps/api/package.json`
 - `pnpm-lock.yaml`
