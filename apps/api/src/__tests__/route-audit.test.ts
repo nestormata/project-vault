@@ -30,6 +30,7 @@ type ParsedRoute = {
   method: string
   url: string
   preHandlerSource: string
+  source: string
   registrar: string
 }
 
@@ -103,7 +104,13 @@ function routeFromOptions(
   const preHandler = objectProperty(object, 'preHandler')
   const preHandlerSource = (security ?? preHandler)?.getText() ?? ''
   if (!method && !url) return null
-  return { method: method ?? '<dynamic>', url: url ?? '<dynamic>', preHandlerSource, registrar }
+  return {
+    method: method ?? '<dynamic>',
+    url: url ?? '<dynamic>',
+    preHandlerSource,
+    source: object.getFullText(),
+    registrar,
+  }
 }
 
 function importPathToSourcePath(moduleSpecifier: string): string | null {
@@ -178,6 +185,7 @@ function shorthandRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
     method: registrar.toUpperCase(),
     url: url ?? '<dynamic>',
     preHandlerSource: node.arguments[1]?.getText() ?? '',
+    source: node.getFullText(),
     registrar: `fastify.${registrar}`,
   }
 }
@@ -295,6 +303,22 @@ function assertClassificationMetadata(): void {
   }
 }
 
+function assertAuditedActionOptOutsAreJustified(): void {
+  const violations: string[] = []
+  const sameTransactionServiceAudit = /service writes the specific audit row through secureCtx\.tx/i
+
+  for (const { route, routeKey } of parsedProductionRoutes()) {
+    const classification = ROUTE_ACTION_CLASSIFICATIONS[routeKey]
+    if (!classification?.auditEvent) continue
+    if (!/writeAuditEvent:\s*false/.test(route.source)) continue
+    if (sameTransactionServiceAudit.test(route.source)) continue
+
+    violations.push(routeKey)
+  }
+
+  expect(violations).toEqual([])
+}
+
 function helperRegistrars(source: string): string[] {
   const helpers: string[] = []
   for (const match of source.matchAll(/function\s+(\w+)\s*\([^)]*fastify[^)]*\)\s*:\s*[^{]+\{/g)) {
@@ -353,6 +377,7 @@ describe('route audit', () => {
     assertClassifiedHelpers()
     assertClassifiedProtectedRoutes()
     assertClassificationMetadata()
+    assertAuditedActionOptOutsAreJustified()
   })
 
   it('does not use the legacy protected-route helper after SecureRoute migration', () => {
