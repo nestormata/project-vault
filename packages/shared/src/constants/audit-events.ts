@@ -7,6 +7,7 @@ export const AuditEvent = {
   MFA_ENROLLED: 'MFA_ENROLLED',
   MFA_RECOVERY_USED: 'MFA_RECOVERY_USED',
   MFA_RECOVERY_CODES_REGENERATED: 'MFA_RECOVERY_CODES_REGENERATED',
+  SECURITY_FAILED_AUTH_THRESHOLD: 'security.failed_auth_threshold',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]

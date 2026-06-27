@@ -17,6 +17,7 @@ function validateProductionEnv(
     COOKIE_SECURE: boolean
     SESSION_SECRET: string
     REFRESH_TOKEN_HMAC_SECRET: string
+    FAILED_AUTH_RECORD_ENABLED: boolean
     TOTP_REPLAY_HMAC_SECRET?: string
   },
   ctx: z.RefinementCtx
@@ -41,6 +42,13 @@ function validateProductionEnv(
       code: 'custom',
       path: ['REFRESH_TOKEN_HMAC_SECRET'],
       message: 'REFRESH_TOKEN_HMAC_SECRET must not be a placeholder secret in production',
+    })
+  }
+  if (!env.FAILED_AUTH_RECORD_ENABLED) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['FAILED_AUTH_RECORD_ENABLED'],
+      message: 'FATAL: FAILED_AUTH_RECORD_ENABLED must not be false in production',
     })
   }
   if (!env.TOTP_REPLAY_HMAC_SECRET) {
@@ -161,6 +169,11 @@ const envSchema = z
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
+    MFA_PRIVILEGED_ROLE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
+    FAILED_AUTH_THRESHOLD_COUNT: z.coerce.number().int().min(3).max(100).default(10),
+    FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
+    FAILED_AUTH_RETENTION_HOURS: z.coerce.number().int().min(1).max(168).default(24),
+    FAILED_AUTH_RECORD_ENABLED: booleanEnvDefault(true),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(19456).max(262144).default(65536),
     ARGON2_TIME_COST: z.coerce.number().int().min(2).default(3),
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(4),

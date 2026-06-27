@@ -41,6 +41,14 @@ const requiredMfaKeys = [
   'TOTP_REPLAY_HMAC_SECRET',
 ]
 const missingMfaKeys = requiredMfaKeys.filter((key) => !envExampleKeys.has(key))
+const requiredStory19Keys = [
+  'MFA_PRIVILEGED_ROLE_GRACE_DAYS',
+  'FAILED_AUTH_THRESHOLD_COUNT',
+  'FAILED_AUTH_THRESHOLD_WINDOW_SECONDS',
+  'FAILED_AUTH_RETENTION_HOURS',
+  'FAILED_AUTH_RECORD_ENABLED',
+]
+const missingStory19Keys = requiredStory19Keys.filter((key) => !envExampleKeys.has(key))
 if (missingInExample.length > 0) {
   process.stderr.write('ERROR: .env.example and env schema keys are out of sync\n')
   if (missingInExample.length > 0) {
@@ -51,6 +59,11 @@ if (missingInExample.length > 0) {
 if (missingMfaKeys.length > 0) {
   process.stderr.write('ERROR: .env.example is missing Story 1.8 MFA keys\n')
   process.stderr.write(`  Missing MFA keys: ${missingMfaKeys.join(', ')}\n`)
+  process.exit(1)
+}
+if (missingStory19Keys.length > 0) {
+  process.stderr.write('ERROR: .env.example is missing Story 1.9 security keys\n')
+  process.stderr.write(`  Missing Story 1.9 keys: ${missingStory19Keys.join(', ')}\n`)
   process.exit(1)
 }
 

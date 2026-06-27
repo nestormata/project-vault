@@ -1,8 +1,12 @@
+import { expect } from 'vitest'
+import type { createApp } from '../../app.js'
+
 export type CookieJar = Record<string, string>
 type InitVault = (
   config: { kmsType: 'passphrase'; passphrase: string },
   headers: Record<string, string | string[] | undefined>
 ) => Promise<unknown>
+type TestApp = Awaited<ReturnType<typeof createApp>>
 
 export function configureAuthIntegrationEnv(): void {
   process.env['DATABASE_URL'] ??=
@@ -34,5 +38,31 @@ export async function initVaultForTest(initVault: InitVault, passphrase: string)
     await initVault({ kmsType: 'passphrase', passphrase }, {})
   } catch (error) {
     if ((error as { code?: string }).code !== 'ALREADY_INITIALIZED') throw error
+  }
+}
+
+export async function registerAndLoginViaApi(
+  app: TestApp,
+  input: { email: string; password: string; orgName: string }
+): Promise<{ userId: string; orgId: string; cookies: CookieJar }> {
+  const register = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/register',
+    payload: { email: input.email, password: input.password, orgName: input.orgName },
+  })
+  expect(register.statusCode).toBe(201)
+  const registerBody = register.json<{ data: { userId: string; orgId: string } }>()
+
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/login',
+    payload: { email: input.email, password: input.password },
+  })
+  expect(login.statusCode).toBe(200)
+
+  return {
+    userId: registerBody.data.userId,
+    orgId: registerBody.data.orgId,
+    cookies: parseSetCookies(login.headers['set-cookie']),
   }
 }

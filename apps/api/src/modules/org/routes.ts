@@ -4,16 +4,36 @@ import type { FastifyRequest } from 'fastify/types/request.js'
 import { getDb } from '@project-vault/db'
 import { orgMemberships } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
-import { authPreHandler, enforceUserRateLimit, validationError } from '../../lib/route-helpers.js'
+import {
+  authPreHandler,
+  enforceUserRateLimit,
+  requireAuthContext,
+  validationError,
+} from '../../lib/route-helpers.js'
 import { requireOrgRole } from '../../plugins/require-org-role.js'
+import { requireMfaEnrollment } from '../auth/mfa-enforcement.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
-import { OrgUserParamsSchema } from './schema.js'
+import { listSecurityAlerts } from './security-alerts.js'
+import { OrgUserParamsSchema, SecurityAlertsQuerySchema } from './schema.js'
 
 export async function orgRoutes(fastify: FastifyApp): Promise<void> {
   fastify.route({
+    method: 'GET',
+    url: '/security-alerts',
+    preHandler: [authPreHandler(fastify), requireOrgRole('owner', 'admin')],
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const authContext = requireAuthContext(req, reply)
+      if (!authContext) return reply
+      const parsed = SecurityAlertsQuerySchema.safeParse(req.query)
+      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'query'))
+      return reply.send({ data: await listSecurityAlerts(authContext.orgId, parsed.data) })
+    },
+  })
+
+  fastify.route({
     method: 'DELETE',
     url: '/users/:userId/sessions',
-    preHandler: [authPreHandler(fastify), requireOrgRole('admin', 'owner')],
+    preHandler: [authPreHandler(fastify), requireOrgRole('admin', 'owner'), requireMfaEnrollment()],
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const authContext = req.authContext
       if (!authContext) {

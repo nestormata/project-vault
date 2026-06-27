@@ -15,6 +15,12 @@
 - `docker-compose.yml`'s `migrate` service rebuilds the full `api` builder stage on every cold start just to run one migration command. Deferred: pre-existing tradeoff from the documented scope deviation; an optimization, not a defect.
 - `getDb()` singleton in `packages/db/src/index.ts` has no recovery path if the underlying connection pool dies. Deferred: pre-existing connection-management architecture beyond Story 1.4's scope; broader resilience work is a future concern.
 
+## Deferred from: code review of story-1.9 (2026-06-27)
+
+- `FAILED_AUTH_RETENTION_HOURS` and `FAILED_AUTH_THRESHOLD_WINDOW_SECONDS` have no cross-validation in `apps/api/src/config/env.ts`; a misconfigured deployment (retention shorter than the detection window) could prune attempts before the threshold worker counts them. Deferred: env-config robustness gap, not unique to this story.
+- `loadMfaEnforcementStatus()` (`apps/api/src/modules/auth/mfa-enforcement.ts`) does two sequential, non-parallelized DB round-trips on every MFA-gated request with no request-scoped caching. Deferred: performance optimization, not required by any AC.
+- Failed-auth recording defaults a missing client IP to `0.0.0.0` (`apps/api/src/modules/auth/service.ts`, `apps/api/src/modules/auth/mfa.ts`), which could cluster unrelated failures under one fake IP for threshold purposes. Deferred: pre-existing convention reused from Story 1.6/1.7's `getClientIp()` fallback, not introduced by this diff.
+
 ## Deferred from: code review of story-1.5 (2026-06-25)
 
 - `GRANT` on `vault_state` omits `UPDATE`, making the `vault_state_no_update` trigger currently unreachable (Postgres blocks UPDATE at the grant layer first). Deferred: harmless defense-in-depth redundancy matching the `audit_log_entries` REVOKE-based pattern from Story 1.4, not a functional bug.

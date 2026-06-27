@@ -60,6 +60,13 @@ export const authMeResponseSchema = z.object({
     mfaEnrolled: z.boolean(),
     mfaEnrolledAt: z.iso.datetime().nullable(),
     remainingRecoveryCodesCount: z.number().int().min(0).nullable(),
+    mfaStatus: z.object({
+      enrollmentRequired: z.boolean(),
+      gracePeriodActive: z.boolean(),
+      gracePeriodExpiresAt: z.iso.datetime().nullable(),
+      gracePeriodDaysRemaining: z.number().int().min(0).nullable(),
+      bannerMessage: z.string().nullable(),
+    }),
   }),
 })
 

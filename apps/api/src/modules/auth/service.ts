@@ -18,6 +18,8 @@ import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
+import { setGracePeriodOnPrivilegedRole } from './grace-period.js'
+import { recordFailedAuthAttempt } from './failed-auth.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
@@ -243,6 +245,10 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
         userId: user.id,
         role: 'owner',
         status: 'active',
+        gracePeriodExpiresAt: setGracePeriodOnPrivilegedRole({
+          role: 'owner',
+          mfaEnrolledAt: null,
+        }),
       })
       const identityRows = await tx
         .insert(userIdentityTokens)
@@ -504,14 +510,34 @@ async function enforceMaxSessionsForUser(tx: Tx, userId: string, orgId: string):
   }
 }
 
+function normalizeLoginEmail(rawEmail: string, meta: RequestMeta): string {
+  try {
+    return normalizeEmail(rawEmail)
+  } catch (error) {
+    void recordFailedAuthAttempt({
+      userId: null,
+      ipAddress: meta.ipAddress ?? '0.0.0.0',
+      attemptedEmail: rawEmail,
+      reason: 'invalid_credentials',
+    })
+    throw error
+  }
+}
+
 export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Promise<LoginResult> {
-  const email = normalizeEmail(input.email)
+  const email = normalizeLoginEmail(input.email, meta)
   const rows = await findLoginUser(email)
   const user = rows[0]
   const activeMembership = rows.find((row) => row.membershipStatus === 'active' && row.orgId)
   const valid = await verifyLoginPassword(input, user)
 
   if (!user || !valid || !activeMembership?.orgId) {
+    void recordFailedAuthAttempt({
+      userId: user?.id ?? null,
+      ipAddress: meta.ipAddress ?? '0.0.0.0',
+      attemptedEmail: email,
+      reason: 'invalid_credentials',
+    })
     await recordLoginFailed(
       failedLoginAuditSubject(user, rows, activeMembership?.orgId),
       email,

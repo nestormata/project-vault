@@ -71,6 +71,13 @@
       "when": 1782537360000,
       "tag": "0009_auth_rate_limit_buckets",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782540960000,
+      "tag": "0010_failed_auth_attempts",
+      "breakpoints": true
     }
   ]
 }

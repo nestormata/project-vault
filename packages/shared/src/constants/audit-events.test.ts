@@ -15,4 +15,8 @@ describe('AuditEvent', () => {
     expect(AuditEvent.MFA_RECOVERY_USED).toBe('MFA_RECOVERY_USED')
     expect(AuditEvent.MFA_RECOVERY_CODES_REGENERATED).toBe('MFA_RECOVERY_CODES_REGENERATED')
   })
+
+  it('exposes Story 1.9 failed auth threshold audit event constant', () => {
+    expect(AuditEvent.SECURITY_FAILED_AUTH_THRESHOLD).toBe('security.failed_auth_threshold')
+  })
 })

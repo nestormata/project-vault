@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { withOrg } from '@project-vault/db'
+import { orgMemberships } from '@project-vault/db/schema'
 import {
   configureAuthIntegrationEnv,
   cookieHeader,
   initVaultForTest,
   parseSetCookies,
+  registerAndLoginViaApi,
   type CookieJar,
 } from './helpers/auth-test-helpers.js'
 
@@ -31,21 +35,13 @@ async function registerAndLogin(label: string) {
   const app = await createApp({ logger: false })
   const email = uniqueEmail(label)
   const orgName = `Session Test ${label} ${randomUUID()}`
-  const register = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/register',
-    payload: { email, password: PASSWORD, orgName },
+  const { userId, orgId, cookies } = await registerAndLoginViaApi(app, {
+    email,
+    password: PASSWORD,
+    orgName,
   })
-  expect(register.statusCode).toBe(201)
-
-  const login = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/login',
-    payload: { email, password: PASSWORD },
-  })
-  expect(login.statusCode).toBe(200)
   await app.close()
-  return { email, password: PASSWORD, cookies: parseSetCookies(login.headers['set-cookie']) }
+  return { userId, orgId, email, password: PASSWORD, cookies }
 }
 
 async function loginAs(email: string, password: string): Promise<CookieJar> {
@@ -98,9 +94,43 @@ describe.sequential('Session management integration', () => {
         orgId: expect.any(String),
         sessionId: expect.any(String),
         orgRole: 'owner',
+        mfaEnrolled: false,
+        mfaStatus: {
+          enrollmentRequired: false,
+          gracePeriodActive: true,
+          gracePeriodExpiresAt: expect.any(String),
+          gracePeriodDaysRemaining: expect.any(Number),
+          bannerMessage: expect.stringContaining('MFA enrollment is required'),
+        },
       },
     })
     await app.close()
+  })
+
+  it('registration sets a seven-day MFA grace period for the owner membership', async () => {
+    const user = await registerAndLogin('grace-period')
+
+    const [membership] = await withOrg(user.orgId, (tx) =>
+      tx
+        .select({
+          role: orgMemberships.role,
+          gracePeriodExpiresAt: orgMemberships.gracePeriodExpiresAt,
+        })
+        .from(orgMemberships)
+        .where(eq(orgMemberships.userId, user.userId))
+        .limit(1)
+    )
+
+    expect(membership?.role).toBe('owner')
+    expect(membership?.gracePeriodExpiresAt).toBeInstanceOf(Date)
+    if (!membership?.gracePeriodExpiresAt) {
+      throw new Error('expected membership grace period to be set')
+    }
+    const daysUntil = Math.ceil(
+      (membership.gracePeriodExpiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
+    )
+    expect(daysUntil).toBeGreaterThanOrEqual(6)
+    expect(daysUntil).toBeLessThanOrEqual(7)
   })
 
   it('GET /auth/sessions lists current and second sessions with isCurrent', async () => {
