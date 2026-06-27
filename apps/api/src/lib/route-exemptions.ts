@@ -30,6 +30,30 @@ const IDENTITY_CLEANUP_JOB = 'identity-cleanup-job'
 
 export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
+    route: 'GET /health',
+    reason:
+      'Public liveness endpoint exposes no tenant data and is required for service monitoring.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: ['no-data-access', 'vault-guard-aware-response'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'GET /ready',
+    reason:
+      'Public readiness endpoint exposes no tenant data and is required for orchestration checks.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: ['no-data-access', 'vault-guard-aware-response'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'GET /metrics',
+    reason:
+      'Public metrics endpoint exposes operational counters only and is controlled by deployment binding.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: ['operational-only-data', 'metrics-bind-host'],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/auth/register',
     reason: 'Public account bootstrap endpoint; guarded by input validation and IP rate limiting.',
     securityOwner: SECURITY_OWNER,
@@ -138,7 +162,7 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
   {
     path: 'workers/check-failed-auth-threshold.ts',
     classification: 'platform-job',
-    reason: 'Scans platform failed-auth aggregates and uses withOrg for org-scoped alert writes.',
+    reason: 'Scans platform failed-auth aggregates and uses runOrgScopedJob for alert writes.',
     reviewer: SECURITY_OWNER,
   },
   {

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const RLS_ORG_SETTING = 'app.current_org_id'
 
 type TransactionalDb = {
   transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>
@@ -18,7 +19,7 @@ export async function setRlsOrgContext(
   orgId: string
 ): Promise<void> {
   assertUuid(orgId, 'setRlsOrgContext')
-  await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`)
+  await tx.execute(sql`SELECT set_config(${RLS_ORG_SETTING}, ${orgId}, true)`)
 }
 
 export async function runOrgScopedJob<T>(

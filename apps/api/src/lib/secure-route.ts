@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest, FastifySchema, preHandlerHookHandler
 import { getDb, type Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { requireMfaEnrollment } from '../modules/auth/mfa-enforcement.js'
+import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
@@ -95,6 +96,7 @@ const FORBIDDEN_AUDIT_KEYS = new Set([
   'recoveryCode',
   'apiKey',
 ])
+const MUTATING_METHODS = new Set<HttpMethod>(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function isReplySent(reply: FastifyReply): boolean {
   return Boolean((reply as unknown as { sent?: boolean }).sent)
@@ -126,8 +128,28 @@ function normalizeRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
-function sanitizeAuditPayload(value: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !FORBIDDEN_AUDIT_KEYS.has(key)))
+function isForbiddenAuditKey(key: string): boolean {
+  const normalized = key.toLowerCase()
+  return [...FORBIDDEN_AUDIT_KEYS].some((forbidden) => normalized.includes(forbidden.toLowerCase()))
+}
+
+function sanitizeAuditValue(value: unknown, seen: WeakSet<object>): unknown {
+  if (Array.isArray(value)) return value.map((entry) => sanitizeAuditValue(entry, seen))
+  if (!value || typeof value !== 'object') return value
+  if (seen.has(value)) return '[Circular]'
+  seen.add(value)
+  return sanitizeAuditPayload(value as Record<string, unknown>, seen)
+}
+
+function sanitizeAuditPayload(
+  value: Record<string, unknown>,
+  seen = new WeakSet<object>()
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !isForbiddenAuditKey(key))
+      .map(([key, entry]) => [key, sanitizeAuditValue(entry, seen)])
+  )
 }
 
 function stringValueForKey(record: Record<string, unknown>, key: string): string | undefined {
@@ -137,9 +159,12 @@ function stringValueForKey(record: Record<string, unknown>, key: string): string
 
 function auditConfigFor(options: SecureRouteRegistrationOptions): AuditConfig | null {
   const configured = options.security?.writeAuditEvent
-  if (!configured) return null
+  if (configured === false) return null
   if (configured === true) return { eventType: `${options.method} ${options.url}` }
-  return configured
+  if (configured === undefined && MUTATING_METHODS.has(options.method)) {
+    return { eventType: `${options.method} ${options.url}` }
+  }
+  return configured ?? null
 }
 
 function roleRank(role: OrgRole): number {
@@ -179,10 +204,14 @@ async function defaultAuditWriter({
   const resourceId = config.resourceIdFromParams
     ? stringValueForKey(params, config.resourceIdFromParams)
     : undefined
+  if (config.resourceIdFromParams && !resourceId) {
+    throw new Error(`SecureRoute: missing audit resourceId param "${config.resourceIdFromParams}"`)
+  }
+  const actorTokenId = await firstActorTokenIdForUser(tx, auth.userId)
   const keyVersion = await currentAuditKeyVersion(tx)
   const fields = {
     orgId: auth.orgId,
-    actorTokenId: null,
+    actorTokenId,
     actorType: 'human',
     eventType: config.eventType,
     resourceId,
@@ -193,7 +222,7 @@ async function defaultAuditWriter({
   const hmac = computeAuditHmac(fields, getAuditKey())
   await tx.insert(auditLogEntries).values({
     orgId: auth.orgId,
-    actorTokenId: null,
+    actorTokenId,
     actorType: 'human',
     eventType: config.eventType,
     resourceId,
@@ -215,6 +244,18 @@ type ResolvedSecurity = {
 
 type RequestPhase = 'rls' | 'handler' | 'audit'
 
+function withAuditSendGuard(reply: FastifyReply, enabled: boolean): () => void {
+  if (!enabled) return () => undefined
+  const guarded = reply as FastifyReply & { send: FastifyReply['send'] }
+  const originalSend = guarded.send
+  guarded.send = ((..._args: Parameters<FastifyReply['send']>) => {
+    throw new Error('SecureRoute: audited handlers must return data instead of sending replies')
+  }) as FastifyReply['send']
+  return () => {
+    guarded.send = originalSend
+  }
+}
+
 function resolveSecurity(options: SecureRouteRegistrationOptions): ResolvedSecurity {
   const security = options.security ?? {}
   const requireAuth = security.requireAuth !== false
@@ -228,9 +269,22 @@ function resolveSecurity(options: SecureRouteRegistrationOptions): ResolvedSecur
 
 async function handlePublicRequest(
   options: SecureRouteRegistrationOptions,
+  rateLimit: ResolvedSecurity['rateLimit'],
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<unknown> {
+  if (
+    rateLimit &&
+    !enforceUserRateLimit({
+      userId: `ip:${request.ip}`,
+      key: rateLimit.key ?? `${options.method} ${options.url}`,
+      max: rateLimit.max,
+      timeWindowMs: rateLimit.timeWindowMs,
+      reply,
+    })
+  ) {
+    return reply
+  }
   const result = await options.handler({}, request, reply)
   return sendIfNeeded(reply, result)
 }
@@ -310,17 +364,23 @@ async function runProtectedHandler({
     state.phase = 'rls'
     await setRlsOrgContext(tx as { execute: (query: unknown) => Promise<unknown> }, auth.orgId)
     state.phase = 'handler'
-    const handlerResult = await options.handler(
-      {
-        auth,
-        tx: typedTx,
-        audit: auditConfig
-          ? { eventType: auditConfig.eventType, resourceType: auditConfig.resourceType }
-          : {},
-      },
-      request,
-      reply
-    )
+    const restoreReplySend = withAuditSendGuard(reply, Boolean(auditConfig))
+    let handlerResult: unknown
+    try {
+      handlerResult = await options.handler(
+        {
+          auth,
+          tx: typedTx,
+          audit: auditConfig
+            ? { eventType: auditConfig.eventType, resourceType: auditConfig.resourceType }
+            : {},
+        },
+        request,
+        reply
+      )
+    } finally {
+      restoreReplySend()
+    }
     if (auditConfig) {
       state.phase = 'audit'
       try {
@@ -339,6 +399,9 @@ function sendSecureRouteFailure(
   error: unknown,
   phase: RequestPhase
 ): unknown {
+  if (isReplySent(reply)) {
+    throw new Error('SecureRoute: handler sent a response before audit completed')
+  }
   if (phase === 'rls') {
     logRouteError(request, { eventType: 'secure_route.rls_context_failed', err: error })
     return reply.status(503).send({
@@ -368,7 +431,9 @@ async function handleSecureRouteRequest({
   reply: FastifyReply
 }): Promise<unknown> {
   if (isReplySent(reply)) return reply
-  if (!resolvedSecurity.requireAuth) return handlePublicRequest(options, request, reply)
+  if (!resolvedSecurity.requireAuth) {
+    return handlePublicRequest(options, resolvedSecurity.rateLimit, request, reply)
+  }
 
   const auth = request.authContext
   if (!auth) return sendMissingAuth(reply)
@@ -416,13 +481,25 @@ export function buildSecurePreHandlers(
   return chain
 }
 
-export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrationOptions): void {
-  const resolvedSecurity = resolveSecurity(options)
+function assertSecureRouteConfig(
+  fastify: RouteFastify,
+  options: SecureRouteRegistrationOptions,
+  resolvedSecurity: ResolvedSecurity
+): void {
   if (resolvedSecurity.requireAuth && typeof fastify.authenticate !== 'function') {
     throw new Error('SecureRoute: requireAuth is true but fastify.authenticate is not registered')
   }
+  if (options.security?.allowedRoles && options.security.allowedRoles.length === 0) {
+    throw new Error('SecureRoute: allowedRoles must not be empty')
+  }
+  if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {
+    throw new Error('SecureRoute: writeAuditEvent requires requireOrgScope')
+  }
+}
 
-  secureRoutes.add(`${options.method} ${options.url}`)
+export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrationOptions): void {
+  const resolvedSecurity = resolveSecurity(options)
+  assertSecureRouteConfig(fastify, options, resolvedSecurity)
 
   const preHandler: preHandlerHookHandler[] = []
   if (resolvedSecurity.requireAuth) preHandler.push(fastify.authenticate as preHandlerHookHandler)
@@ -439,4 +516,5 @@ export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrat
 
   const routeHost = fastify.withTypeProvider ? fastify.withTypeProvider() : fastify
   routeHost.route(routeOptions as never)
+  secureRoutes.add(`${options.method} ${options.url}`)
 }

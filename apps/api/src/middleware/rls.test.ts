@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { setRlsOrgContext, runOrgScopedJob } from './rls.js'
+import { RLS_ORG_SETTING, setRlsOrgContext, runOrgScopedJob } from './rls.js'
 
 const TEST_ORG_ID = ['00000000', '0000', '4000', '8000', '000000000001'].join('-')
 
@@ -9,9 +9,11 @@ describe('RLS middleware helpers', () => {
 
     await setRlsOrgContext(tx, TEST_ORG_ID)
 
-    expect(tx.execute).toHaveBeenCalledWith(
-      expect.objectContaining({ queryChunks: expect.any(Array) })
-    )
+    const query = tx.execute.mock.calls[0]?.[0] as { queryChunks?: unknown[] }
+    expect(query).toEqual(expect.objectContaining({ queryChunks: expect.any(Array) }))
+    expect(JSON.stringify(query.queryChunks)).toContain(RLS_ORG_SETTING)
+    expect(JSON.stringify(query.queryChunks)).toContain(TEST_ORG_ID)
+    expect(JSON.stringify(query.queryChunks)).toContain('true')
   })
 
   it('rejects invalid background job org IDs before opening a transaction', async () => {

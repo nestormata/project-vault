@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { getDb, withOrg } from '@project-vault/db'
+import { getDb, withOrg, type Tx } from '@project-vault/db'
 import { orgMemberships, users } from '@project-vault/db/schema'
 
 type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
@@ -74,19 +74,23 @@ export function computeMfaStatus({
   }
 }
 
-export async function loadMfaEnforcementStatus(authContext: {
-  userId: string
-  orgId: string
-  orgRole: OrgRole
-}): Promise<ComputedMfaStatus> {
-  const [user] = await getDb()
+export async function loadMfaEnforcementStatus(
+  authContext: {
+    userId: string
+    orgId: string
+    orgRole: OrgRole
+  },
+  tx?: Tx
+): Promise<ComputedMfaStatus> {
+  const db = tx ?? getDb()
+  const [user] = await db
     .select({ mfaEnrolledAt: users.mfaEnrolledAt })
     .from(users)
     .where(eq(users.id, authContext.userId))
     .limit(1)
 
-  const [membership] = await withOrg(authContext.orgId, (tx) =>
-    tx
+  const loadMembership = (db: Tx) =>
+    db
       .select({ gracePeriodExpiresAt: orgMemberships.gracePeriodExpiresAt })
       .from(orgMemberships)
       .where(
@@ -97,7 +101,9 @@ export async function loadMfaEnforcementStatus(authContext: {
         )
       )
       .limit(1)
-  )
+  const [membership] = tx
+    ? await loadMembership(tx)
+    : await withOrg(authContext.orgId, loadMembership)
 
   return computeMfaStatus({
     orgRole: authContext.orgRole,

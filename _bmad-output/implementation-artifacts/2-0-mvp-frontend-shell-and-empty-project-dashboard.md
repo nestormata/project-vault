@@ -102,10 +102,12 @@ apps/web/src/
 ├── app.d.ts                                # NEW or MODIFY: App.Locals auth shape
 ├── lib/
 │   ├── api/
-│   │   ├── client.ts                       # NEW: typed fetch wrapper, credentials include
+│   │   ├── client.ts                       # NEW: typed fetch wrapper, credentials include; base URL from trusted env only
 │   │   ├── auth.ts                         # NEW: register/login/logout/me/refresh helpers
-│   │   ├── vault.ts                        # NEW: ready/init/unseal helpers
-│   │   └── dashboard-preview.ts            # NEW: Story 2.1-shaped placeholder payloads
+│   │   ├── vault.ts                        # NEW: ready/init/unseal helpers (init sends x-vault-bootstrap-token header)
+│   │   └── dashboard-preview.ts            # NEW: imports ProjectDashboardPreview from @project-vault/shared
+│   ├── security/
+│   │   └── hardening.ts                    # NEW: same-origin redirect guard + reason->copy enum (AC-23 H2/H3)
 │   ├── components/
 │   │   ├── auth/
 │   │   │   ├── LoginForm.svelte
@@ -124,7 +126,7 @@ apps/web/src/
 │   │       ├── ProjectDashboardEmptyState.svelte
 │   │       └── DashboardPlaceholderGrid.svelte
 │   └── state/
-│       └── preview-project.svelte.ts       # NEW: module-level $state, reset-on-reload only
+│       └── preview-project.svelte.ts       # NEW: CLIENT-ONLY rune state (browser), reset-on-reload; never server module state
 └── routes/
     ├── +layout.svelte
     ├── +page.server.ts                     # NEW: redirect root by vault/auth state
@@ -148,7 +150,15 @@ apps/web/src/
 
 **And** all route groups use SvelteKit file-based routing exactly as architecture specifies: `(auth)` for unauthenticated routes, `(app)` for authenticated routes, and project-scoped routes later under `(app)/projects/[projectId]/`. [Source: `_bmad-output/planning-artifacts/architecture.md#Frontend-Architecture`]
 
-**And** do not introduce a frontend state library; use Svelte 5 runes and module-level state where shared client state is needed. [Source: `_bmad-output/planning-artifacts/architecture.md#Frontend-Architecture`]
+**And** do not introduce a frontend state library; use Svelte 5 runes and module-level state where shared client state is needed. [Source: `_bmad-output/planning-artifacts/architecture.md#Frontend-Architecture`] **Caveat:** module-level mutable state is only safe for client-only state — in SvelteKit a module imported during SSR is shared across all server requests/users, so any per-user/preview state must be browser-scoped (see AC-14 SSR safety note).
+
+**And** the shared dashboard contract lives outside `apps/web` so Story 2.1 reuses it:
+
+```text
+packages/shared/src/schemas/dashboard.ts   # NEW: zod ProjectDashboardPreviewSchema + type + EMPTY_PROJECT_DASHBOARD_PREVIEW (AC-13)
+packages/shared/src/index.ts               # MODIFY: add `export * from './schemas/dashboard.js'`
+apps/web/package.json                       # MODIFY: add "dependencies": { "@project-vault/shared": "workspace:*" }
+```
 
 **And** keep `apps/web/src/lib/components/ui/` reserved for shadcn-svelte primitives if components are added later; do not place feature components there.
 
@@ -197,6 +207,8 @@ export async function apiFetch<T>(
 **And** SvelteKit server-side `event.fetch` calls that depend on cookies must explicitly forward relevant cookies when calling the API from hooks/server load if the API origin differs from the web origin. If same-origin proxying is used, document that choice in code comments.
 
 **And** no UI component calls `fetch` directly except through `lib/api/*` helpers.
+
+**And** the API base URL/origin is resolved only from trusted server-side env config (never from request input, query params, or `Referer`). Cookies are forwarded only to that configured API origin — never to an arbitrary or user-supplied URL (AC-23 H4).
 
 **And** normalize backend error shapes:
 
@@ -288,6 +300,16 @@ Content-Type: application/json
 }
 ```
 
+**Bootstrap authorization (required — do not omit):** `POST /api/v1/vault/init` is gated server-side by `assertBootstrapAuthorized()` in `apps/api/src/modules/vault/key-service.ts`. Unless the host sets `VAULT_ALLOW_REMOTE_INIT=true` (dev only), init **requires** the header `x-vault-bootstrap-token: <VAULT_BOOTSTRAP_TOKEN>`. Without it the API returns `403 { error: "bootstrap_forbidden", message: "Vault bootstrap requires valid bootstrap credentials" }`.
+
+The frontend init flow must therefore:
+
+- Provide an operator-only field for the one-time bootstrap token, shown **only** in the uninitialized state.
+- Send it as the `x-vault-bootstrap-token` request header, never in the JSON body, query string, or a cookie.
+- Never bundle, hardcode, default, log, or persist the bootstrap token (same handling rules as passphrase/key-path in AC-4 form rules).
+- Render `403 bootstrap_forbidden` as calm operator copy: "This vault is locked to local initialization. Provide the bootstrap token configured on the host, or initialize from the server." Do not imply the token was "wrong" vs "missing" beyond the backend message.
+- Clear the bootstrap-token field on submit (success or failure), identical to passphrase handling.
+
 **And** after success, the UI immediately re-checks readiness and routes to login/register only when `/ready` returns `200 { status: "ready" }`.
 
 ---
@@ -310,11 +332,14 @@ Content-Type: application/json
 The path is read by the API server from the vault host. Do not paste secret file contents here.
 ```
 
-**And** on `401 UNSEAL_FAILED`, display calm copy:
+**And** on unseal failure the API returns `{ error, message }` where `error` is the lowercased error code (the route sends `err.code.toLowerCase()`). Map the failure cases:
 
-```text
-The vault could not be unsealed with the provided material. Check the key mode and try again.
-```
+| Status + `error` | UI behavior |
+|---|---|
+| `401 { error: "unseal_failed" }` | Calm copy: "The vault could not be unsealed with the provided material. Check the key mode and try again." |
+| `400 { error: "already_unsealed" }` | Re-check `/ready`; if ready, proceed — do not show a hard error. |
+| `400 { error: "invalid_key_file" \| "key_file_not_found" \| "invalid_passphrase" }` | Generic calm copy from the backend `message` (already redacted server-side); never echo the path/passphrase. |
+| `429` (rate-limited, unseal is 5/min) | Show "Too many attempts. Wait a moment and try again." and do **not** auto-retry (AC-23 H6). |
 
 **And** the UI does not mention whether the path exists, whether the passphrase length was close, or any other detail that would create an oracle beyond the backend message.
 
@@ -503,6 +528,10 @@ Your session ended. Sign in again to continue.
 
 **And** include a simple concurrent refresh guard if multiple server loads can refresh the same request/session at once. Module-level `Map<string, Promise<...>>` keyed by a stable refresh-token hash prefix is the architecture direction; for 2.0, at minimum avoid issuing multiple refresh calls from the same hook execution.
 
+**And** redirect safety: if a post-login `redirectTo`/return-path parameter is added, only honor **internal, same-origin path** targets (must start with a single `/`, must not start with `//` or a scheme). Reject or ignore absolute/external URLs to prevent open-redirect. The default redirect is `/dashboard`.
+
+**And** query-driven status copy must come from a fixed enum map, never rendered from raw query input. `?reason=session-expired|logged-out` maps to a known message; any unknown value falls back to a generic message. Do not interpolate raw `reason` (or any query param) into the DOM — this prevents reflected injection even though `{@html}` is already forbidden.
+
 ---
 
 ### AC-10: Logout Flow
@@ -543,11 +572,36 @@ Set-Cookie: refresh-token=; Max-Age=0; ...
 - Health (`/health`)
 - Settings (`/settings`)
 
+**`GET /api/v1/auth/me` response contract (use these exact fields — do not invent others):**
+
+```json
+{
+  "data": {
+    "userId": "uuid",
+    "orgId": "uuid",
+    "sessionId": "uuid",
+    "orgRole": "owner | admin | member | viewer",
+    "mfaEnrolled": true,
+    "mfaEnrolledAt": "iso-datetime | null",
+    "remainingRecoveryCodesCount": 0,
+    "mfaStatus": {
+      "enrollmentRequired": false,
+      "gracePeriodActive": false,
+      "gracePeriodExpiresAt": "iso-datetime | null",
+      "gracePeriodDaysRemaining": 0,
+      "bannerMessage": "string | null"
+    }
+  }
+}
+```
+
+Render the MFA enrollment banner (Epic 1.8/1.9 integration) **only** when `mfaStatus.enrollmentRequired` is true or `mfaStatus.bannerMessage` is non-null; show `bannerMessage` verbatim. Do not fabricate banner copy or hide an active enforcement banner.
+
 **And** desktop layout:
 
 - Shows product name "Project Vault".
 - Shows the active section.
-- Shows user/org context from `/auth/me` when available.
+- Shows user/org context from `/auth/me` when available (`orgRole`, identifiers).
 - Shows logout action.
 - Uses the tagline sparingly: "Run complex projects. Miss nothing."
 
@@ -619,31 +673,53 @@ Preview only. Project persistence arrives in Story 2.1. This preview resets when
 
 ### AC-13: Project Dashboard Placeholder Uses Story 2.1 Shape
 
+> **Single source of truth (prevents a Story 2.1 redesign):** Define `ProjectDashboardPreviewSchema` (and its inferred `ProjectDashboardPreview` type) once in `packages/shared/src/schemas/dashboard.ts` and import it into the web app — do **not** redeclare it inline in `apps/web`. Story 2.1's real dashboard API must consume the *same* exported schema/type, so the UI swap is a data-source change, not a re-layout. A Pre-mortem failure mode is "2.1 had to redesign the dashboard because the preview shape diverged"; the shared schema closes that gap.
+>
+> **Required wiring (the web app does not yet depend on `@project-vault/shared`):**
+> 1. Add the workspace dependency to `apps/web/package.json` (it currently has no `dependencies` block, only `devDependencies`):
+>    ```json
+>    "dependencies": { "@project-vault/shared": "workspace:*" }
+>    ```
+>    then run `pnpm install` so the workspace symlink is created.
+> 2. Re-export the new module from `packages/shared/src/index.ts` (add `export * from './schemas/dashboard.js'`) so it resolves via the package root, matching the existing `schemas/auth.js` / `schemas/api.js` pattern.
+> 3. Import in the web app as `import { ... } from '@project-vault/shared'` — never via a deep relative path into `packages/`.
+
 **Given** Story 2.1 will return a project dashboard payload,
 **When** Story 2.0 creates preview/placeholder dashboard data,
-**Then** use this type shape so the UI can swap in the real API later:
+**Then** define this as a **zod schema** (not a bare type) in `packages/shared/src/schemas/dashboard.ts`, matching the `zod/v4` + `.meta({ id })` + `z.infer` convention used by `schemas/auth.ts`. Story 2.1 reuses this schema to validate the real dashboard API response, so the contract is enforced at runtime on both sides:
 
 ```typescript
-export type ProjectDashboardPreview = {
-  credentialStats: {
-    active: number
-    expiringSoon: number
-    expired: number
-  }
-  upcomingRotations: Array<never>
-  monitoredServiceHealth: {
-    healthy: number
-    degraded: number
-    down: number
-  }
-  recentAccessEvents: Array<never>
-  unresolvedAlertCount: number
-  isEmpty: true
-  suggestedActions: Array<'add_credential' | 'add_service' | 'import_credentials'>
-}
+import { z } from 'zod/v4'
+
+export const ProjectDashboardPreviewSchema = z
+  .object({
+    credentialStats: z.object({
+      active: z.number().int().nonnegative(),
+      expiringSoon: z.number().int().nonnegative(),
+      expired: z.number().int().nonnegative(),
+    }),
+    // Story 2.1 replaces z.never() with the real rotation / access-event item schemas.
+    // z.never() permits only empty arrays, which enforces the 2.0 "must be empty" rule
+    // and self-documents the exact swap point for 2.1.
+    upcomingRotations: z.array(z.never()),
+    monitoredServiceHealth: z.object({
+      healthy: z.number().int().nonnegative(),
+      degraded: z.number().int().nonnegative(),
+      down: z.number().int().nonnegative(),
+    }),
+    recentAccessEvents: z.array(z.never()),
+    unresolvedAlertCount: z.number().int().nonnegative(),
+    isEmpty: z.literal(true),
+    suggestedActions: z.array(
+      z.enum(['add_credential', 'add_service', 'import_credentials'])
+    ),
+  })
+  .meta({ id: 'ProjectDashboardPreview' })
+
+export type ProjectDashboardPreview = z.infer<typeof ProjectDashboardPreviewSchema>
 ```
 
-**And** for 2.0 all counts must be zero and all arrays empty:
+**And** export the canonical empty value from the same module so the web app never hand-rolls preview data; for 2.0 all counts are zero and all arrays empty:
 
 ```typescript
 export const EMPTY_PROJECT_DASHBOARD_PREVIEW: ProjectDashboardPreview = {
@@ -656,6 +732,8 @@ export const EMPTY_PROJECT_DASHBOARD_PREVIEW: ProjectDashboardPreview = {
   suggestedActions: ['add_credential', 'add_service', 'import_credentials'],
 }
 ```
+
+**And** a unit test asserts `ProjectDashboardPreviewSchema.parse(EMPTY_PROJECT_DASHBOARD_PREVIEW)` succeeds and that a non-empty `upcomingRotations`/`recentAccessEvents` array is rejected (guards the 2.0 empty-only invariant).
 
 **And** the UI labels suggested actions as not-yet-available:
 
@@ -671,9 +749,11 @@ export const EMPTY_PROJECT_DASHBOARD_PREVIEW: ProjectDashboardPreview = {
 
 ### AC-14: Preview Project State
 
+> **SSR safety (critical):** Preview state must be **client-only**. A module-level mutable `$state` in a SvelteKit file imported during SSR is shared across **all server requests and users** (the Node process is long-lived), which would leak one visitor's preview into another's response. Initialize and mutate preview state only in the browser (e.g., guard with `import { browser } from '$app/environment'` or keep it in component/page client state). Server `load` must not write to a shared preview singleton. The architecture's module-level refresh-promise `Map` is acceptable only because it is keyed by a transient token hash and removed on settle; preview *content* is not.
+
 **Given** the user chooses to preview an empty project dashboard,
 **When** the preview route renders,
-**Then** it may create an in-memory/module-level preview project object:
+**Then** it may create a client-only, in-memory preview project object:
 
 ```typescript
 type PreviewProject = {
@@ -705,7 +785,7 @@ Preview only - this project is not saved.
 
 **And** the preview resets on reload. Do not persist it to localStorage/sessionStorage/IndexedDB/cookies/database.
 
-**And** tests assert reload/reset behavior at the state-module level by re-importing or resetting module state.
+**And** tests assert reload/reset behavior at the client state level (re-importing/resetting the browser state module), and additionally assert the preview state module is **not** mutated during SSR (no shared singleton write on the server path).
 
 ---
 
@@ -761,6 +841,12 @@ Story 2.1 starts with saved projects; credential and service coverage follow in 
 | Auth-route bypass | Server-side redirects and refresh handling | Load/hook tests |
 | MFA token persistence | Hold `mfaToken` only in current component state when 1.12 is present | Conditional test if MFA is implemented |
 | HTML injection | No `{@html}` usage | ESLint already forbids `svelte/no-at-html-tags`; do not disable it |
+| Open redirect | Honor only same-origin path redirect targets | Redirect-helper test (AC-23 H2) |
+| Reflected injection / status spoofing | Status copy from a fixed reason enum; never render raw query params | Enum-mapping test (AC-23 H3) |
+| Cookie exfiltration via API base | API base URL from trusted server env only, not user input | API-base-trust test (AC-23 H4) |
+| Clickjacking | Web app not framable (`frame-ancestors 'none'`/`X-Frame-Options: DENY`) | Header test or documented proxy enforcement (AC-23 H7) |
+
+> See **AC-23** for the full Red Team / Blue Team hardening matrix; this table is the security summary it expands.
 
 **And** do not add analytics, session replay, or client logging of request/response bodies in this story.
 
@@ -811,16 +897,33 @@ apps/web/src/lib/api/vault.test.ts
   - ready: sealed response -> sealed state
   - ready: db/network failure -> unavailable state
   - init/unseal requests never include extra mode fields
+  - init sends bootstrap token as x-vault-bootstrap-token header, never in body/query (AC-23 H1)
+  - 403 bootstrap_forbidden surfaces operator copy, not a generic error (AC-23 H1)
+  - unseal does not auto-retry after a 429/lockout response (AC-23 H6)
+
+packages/shared/src/schemas/dashboard.test.ts
+  - ProjectDashboardPreviewSchema.parse(EMPTY_PROJECT_DASHBOARD_PREVIEW) succeeds
+  - non-empty upcomingRotations/recentAccessEvents is rejected (empty-only invariant)
 
 apps/web/src/lib/state/preview-project.test.ts
-  - preview dashboard uses Story 2.1 shape
+  - preview dashboard uses ProjectDashboardPreview from @project-vault/shared
   - preview project is persisted: false
   - reset clears preview state
+  - preview state module is not mutated during SSR (no shared singleton write) (AC-14)
+
+apps/web/src/lib/security/hardening.test.ts
+  - redirect helper rejects external/scheme/'//'-prefixed targets, allows '/dashboard' (AC-23 H2)
+  - status copy is resolved from a fixed reason enum; unknown reason -> generic message (AC-23 H3)
+  - API base URL is sourced from server env config, not request/query input (AC-23 H4)
+  - static search: no localStorage/sessionStorage/IndexedDB for token/refresh/mfa/vault material (AC-23 H5)
+  - static search: no {@html} usage in apps/web (AC-16)
+  - web responses set frame-ancestors 'none' / X-Frame-Options DENY, or doc note records proxy enforcement (AC-23 H7)
 
 apps/web/src/routes/auth-guard.test.ts or hooks.server.test.ts
   - unauthenticated app route redirects to /login
   - valid /auth/me populates locals
   - expired access + valid refresh retries /auth/me and forwards Set-Cookie
+  - refresh persists session across a simulated 5-minute expiry (no spurious logout) (AC-24)
   - refresh failure redirects with reason=session-expired
 
 apps/web/src/routes/dashboard.test.ts
@@ -904,38 +1007,43 @@ Do **not** implement any of the following in Story 2.0:
   - [ ] Implement `lib/api/client.ts`, `auth.ts`, and `vault.ts`.
   - [ ] Normalize `{ code, message }` and `{ error, message }` errors.
   - [ ] Ensure `credentials: 'include'` is always used.
-- [ ] **Task 3: Vault gate** (AC: 3, 4, 5)
+- [ ] **Task 3: Vault gate** (AC: 3, 4, 5, 23)
   - [ ] Implement readiness classification tests.
   - [ ] Implement `VaultGate`, `VaultInitForm`, `VaultUnsealForm`.
+  - [ ] Add operator bootstrap-token field; send as `x-vault-bootstrap-token` header only; handle `403 bootstrap_forbidden` copy (AC-23 H1).
+  - [ ] Ensure no auto-retry storm on `429`/lockout for unseal (AC-23 H6).
   - [ ] Optional backend fix: change `/ready` uninitialized reason to `uninitialized` with API test.
 - [ ] **Task 4: Auth pages** (AC: 6, 7, 8)
   - [ ] Implement register/login forms and post-register routing.
   - [ ] Implement conditional MFA step only if 1.12 backend exists.
   - [ ] Ensure no token/key material enters browser storage.
-- [ ] **Task 5: Server-side route guards and refresh** (AC: 9)
+- [ ] **Task 5: Server-side route guards and refresh** (AC: 9, 23)
   - [ ] Add `hooks.server.ts` and `app.d.ts` locals.
   - [ ] Authenticated routes redirect unauthenticated users.
-  - [ ] Refresh flow forwards cookies and retries `/auth/me`.
+  - [ ] Refresh flow forwards cookies and retries `/auth/me`; assert session persists across simulated expiry (AC-24).
+  - [ ] Add same-origin-only redirect helper and fixed reason->copy enum (AC-23 H2/H3).
 - [ ] **Task 6: App shell and navigation** (AC: 11, 17)
   - [ ] Add authenticated layout and responsive nav.
   - [ ] Implement logout.
   - [ ] Add mobile structural smoke test.
 - [ ] **Task 7: Empty dashboard and preview state** (AC: 12, 13, 14, 15)
-  - [ ] Add Story 2.1-shaped preview payload.
-  - [ ] Add reset-on-reload preview project state.
+  - [ ] Export `ProjectDashboardPreview` from `packages/shared` (add `schemas/dashboard.ts` + index re-export), add `@project-vault/shared` to `apps/web/package.json` deps, run `pnpm install`, then consume it in the web app (AC-13).
+  - [ ] Add reset-on-reload, **client-only** preview project state; assert no SSR singleton write (AC-14).
   - [ ] Render cross-project and project dashboard empty states.
   - [ ] Assert no fake operational data appears.
 - [ ] **Task 8: Placeholder sections** (AC: 11, 20)
   - [ ] Credentials, Alerts, Health, Settings render honest placeholders.
   - [ ] No 404s for primary shell nav.
-- [ ] **Task 9: Security and accessibility hardening** (AC: 16, 17)
-  - [ ] Add static/storage/logging tests where practical.
+- [ ] **Task 9: Security and accessibility hardening** (AC: 16, 17, 23)
+  - [ ] Add static/storage/logging tests where practical (no localStorage/sessionStorage/IndexedDB for tokens; no `{@html}`).
+  - [ ] Add API-base-URL trust test and clickjacking header (CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY`) or document proxy enforcement (AC-23 H4/H7).
   - [ ] Verify labels, focus behavior, keyboard flows.
-- [ ] **Task 10: Final verification** (AC: 18, 19)
+- [ ] **Task 10: Final verification** (AC: 18, 19, 24, 25)
   - [ ] Run focused web tests.
   - [ ] Run `pnpm --filter @project-vault/web typecheck` and `lint`.
   - [ ] Run relevant root checks if time allows.
-  - [ ] Complete manual QA checklist.
+  - [ ] Complete manual QA checklist and persona acceptance signals (AC-25).
+  - [ ] Confirm Pre-mortem failure modes are each prevented or noted (AC-24).
 
 ---
 
@@ -1000,6 +1108,57 @@ Do **not** implement any of the following in Story 2.0:
 | **Decision** | **Option B.** No green/healthy/success state, no fake counts, no mock activity until a real backing API exists. |
 | **Rationale** | For a trust product, a fabricated "all healthy" is actively harmful — it implies coverage that does not exist and undermines the exact confidence the product sells (epic AC-E2f). Absence must read as honest gap, not false safety. |
 | **Consequences** | The shell looks intentionally sparse pre-Epic-2.2+. Enforced by rendering tests asserting honest copy and absence of success/health language (AC-11/AC-12/AC-18). |
+
+---
+
+### AC-23: Frontend Security Hardening (Red Team / Blue Team)
+
+The following attack surfaces were identified by adversarial review and MUST be closed. Each has a corresponding test in AC-18.
+
+| # | Attack (Red Team) | Required defense (Blue Team) |
+|---|---|---|
+| H1 | **Vault init bypass / 403 in prod** — init form omits bootstrap token, breaks in any secure deploy, or worse the token gets bundled/persisted. | Operator-only bootstrap-token field, sent as `x-vault-bootstrap-token` header only; never bundled, defaulted, logged, or persisted (AC-4). |
+| H2 | **Open redirect** via a crafted `redirectTo`/return path after login. | Only same-origin path targets (start with single `/`, not `//` or a scheme); else fall back to `/dashboard` (AC-9). |
+| H3 | **Reflected injection / spoofed status** via `?reason=` or other query params rendered into the page. | Render status copy from a fixed enum map only; never interpolate raw query input into the DOM; `{@html}` remains forbidden (AC-9, AC-16). |
+| H4 | **SSRF / cookie exfiltration** by pointing the API client at an attacker URL so forwarded `Cookie`/credentials leak. | API base URL comes only from trusted server env config — never from user input, query, or referer. Cookies are forwarded only to the configured API origin (AC-2, AC-9). |
+| H5 | **Token theft via browser storage** — a contributor stashes access/refresh/MFA/vault material in `localStorage`/`sessionStorage`/`IndexedDB`/JS memory/URL. | HttpOnly-cookie-only sessions; static-search CI test forbids these stores for sensitive material (AC-16, AC-18; ADR-2.0-03). |
+| H6 | **Rate-limit/lockout DoS or brute oracle** via aggressive auto-retry against `/vault/unseal` (5/min) or repeated login. | No automatic retry storms; unseal/login submit is user-initiated, surfaces `429`/lockout calmly, and does not auto-resubmit (AC-5, AC-7). |
+| H7 | **Clickjacking** of login/init/unseal forms embedded in a hostile frame. | The web app must not be framable: `frame-ancestors 'none'` (CSP) or `X-Frame-Options: DENY`, set via the adapter-node response hook or documented as enforced by the reverse proxy (Traefik). State the chosen enforcement point. |
+| H8 | **CSRF on state-changing POSTs** (login/logout/init/unseal). | Rely on `SameSite=Strict` session cookies (Epic 1 contract) and same-origin requests; document this reliance so it is not silently weakened. |
+
+---
+
+### AC-24: Failure Modes & Prevention (Pre-mortem)
+
+Assume Story 2.0 shipped and failed. These are the most likely causes and their guardrails. Each must be demonstrably prevented (test or explicit note).
+
+| Failure mode | Why it would happen | Prevention (already in story) |
+|---|---|---|
+| **Scope balloon / missed delivery** | Dev treats the shell as "build all sections." | Honor AC-20 out-of-scope **and** the Minimum Shippable Slice cut line below. |
+| **Fake data slips in** ("0 alerts ✓", "all healthy") | Pressure to make the shell feel complete. | ADR-2.0-06 + honest-copy / no-success-language tests (AC-11/12/18). |
+| **`/ready` misclassification** (uninitialized shown as sealed) | Both states share `reason: "sealed"` today. | ADR-2.0-02 backend `reason` fix (preferred) + classification tests (AC-3). |
+| **Users logged out every ~5 min** | SSR `fetch` doesn't forward cookies; refresh `Set-Cookie` dropped. | Server-side cookie forwarding + silent refresh + concurrent-refresh guard, with a refresh-persists-session test (AC-9; ADR-2.0-04). |
+| **Cross-user preview leak** | Module-level preview `$state` shared across SSR requests. | Client-only preview state + "no SSR singleton write" test (AC-14). |
+| **Story 2.1 must redesign dashboard** | Preview shape diverged from real API. | Shared `ProjectDashboardPreview` type in `packages/shared` (AC-13). |
+| **Init unusable in real deploy** | Bootstrap-token gate not handled. | AC-23 H1 / AC-4 bootstrap authorization. |
+| **Mobile broken** | Only desktop verified. | Mobile viewport smoke tests + manual QA (AC-17/18/19). |
+
+**Minimum Shippable Slice (if time-boxed):** vault readiness gate → init (with bootstrap token) → unseal → register → login (non-MFA) → server-side auth guard + silent refresh → logout → authenticated shell with honest empty dashboard. **MFA login (AC-8), preview project (AC-14), and non-essential placeholder polish are the first cuts** — defer them before sacrificing the auth/refresh correctness or the no-fake-data invariant.
+
+---
+
+### AC-25: Persona Acceptance Signals (User Persona Focus Group)
+
+The shell must pass these persona reactions; copy and behavior should be validated against them in manual QA (AC-19).
+
+| Persona | Risk reaction | Required signal |
+|---|---|---|
+| **Self-hoster / operator** (runs init+unseal) | "What do I paste? Where's the key file? What bootstrap token?" | Init/unseal forms label each field plainly (passphrase vs key path), explain the bootstrap token is host-configured, and link nothing fake. |
+| **Evaluator** (first login) | "It's empty — is it broken?" | Empty dashboard explicitly reads as an early shell / honest gap ("Nothing here yet" + what's coming + which story), never as an error or as "all clear." |
+| **Buyer / CTO** (skims the demo) | "Looks unfinished/abandoned." | Sparse-but-intentional framing: honest "early MVP shell" messaging and a clean, finished-feeling layout, so absence reads as deliberate, not broken. |
+| **On-call / mobile** (Morgan) | "Can't use it on my phone." | Mobile nav and all four vault states + auth flows are usable at mobile viewport (AC-17). |
+| **Compliance** (Dana) | "Implies audit/compliance features that don't exist." | Settings/placeholder sections never imply audit, RBAC, or compliance capabilities are live; they state availability by story/epic. |
+| **Implementing dev** | "Where do shared types live? Is preview SSR-safe?" | Shared types in `packages/shared` (AC-13); preview state is client-only with an SSR-safety note and test (AC-14). |
 
 ---
 

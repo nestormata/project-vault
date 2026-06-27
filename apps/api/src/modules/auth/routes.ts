@@ -139,11 +139,14 @@ async function sendAuthSession(
 async function sendMfaAction<T>(
   reply: FastifyReply,
   action: () => Promise<T>
-): Promise<FastifyReply> {
+): Promise<{ data: T } | { code: string; message: string }> {
   try {
-    return reply.send({ data: await action() })
+    return { data: await action() }
   } catch (error) {
-    if (error instanceof AppError) return sendAppError(reply, error)
+    if (error instanceof AppError) {
+      reply.status(error.statusCode)
+      return { code: error.code, message: error.message }
+    }
     throw error
   }
 }
@@ -250,9 +253,10 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: { writeAuditEvent: false },
     handler: async (ctx, _req, _reply) => {
-      const authContext = (ctx as SecureRouteContext).auth
-      const mfaStatus = await getMfaStatus(authContext.userId)
-      const enforcementStatus = await loadMfaEnforcementStatus(authContext)
+      const secureCtx = ctx as SecureRouteContext
+      const authContext = secureCtx.auth
+      const mfaStatus = await getMfaStatus(authContext.userId, secureCtx.tx)
+      const enforcementStatus = await loadMfaEnforcementStatus(authContext, secureCtx.tx)
       return {
         data: {
           userId: authContext.userId,
@@ -279,11 +283,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: {
       rateLimit: { max: 10, timeWindowMs: 60 * 60 * 1000 },
-      writeAuditEvent: false,
+      writeAuditEvent: false, // MFA service writes the specific audit row through secureCtx.tx.
     },
     handler: async (ctx, _req, reply) => {
-      const authContext = (ctx as SecureRouteContext).auth
-      return sendMfaAction(reply, () => enrollMfa(authContext, metaFromRequest(_req)))
+      const secureCtx = ctx as SecureRouteContext
+      return sendMfaAction(reply, () =>
+        enrollMfa(secureCtx.auth, metaFromRequest(_req), secureCtx.tx)
+      )
     },
   })
 
@@ -302,14 +308,14 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: {
       rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000 },
-      writeAuditEvent: false,
+      writeAuditEvent: false, // MFA service writes the specific audit row through secureCtx.tx.
     },
     handler: async (ctx, req, reply) => {
-      const authContext = (ctx as SecureRouteContext).auth
+      const secureCtx = ctx as SecureRouteContext
       const parsed = parseBody(mfaVerifyEnrollmentBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
       return sendMfaAction(reply, () =>
-        verifyEnrollment(authContext, parsed.data, metaFromRequest(req))
+        verifyEnrollment(secureCtx.auth, parsed.data, metaFromRequest(req), secureCtx.tx)
       )
     },
   })
@@ -329,14 +335,14 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: {
       rateLimit: { max: 5, timeWindowMs: 60 * 60 * 1000 },
-      writeAuditEvent: false,
+      writeAuditEvent: false, // MFA service writes the specific audit row through secureCtx.tx.
     },
     handler: async (ctx, req, reply) => {
-      const authContext = (ctx as SecureRouteContext).auth
+      const secureCtx = ctx as SecureRouteContext
       const parsed = parseBody(mfaRegenerateBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
       return sendMfaAction(reply, () =>
-        regenerateRecoveryCodes(authContext, parsed.data, metaFromRequest(req))
+        regenerateRecoveryCodes(secureCtx.auth, parsed.data, metaFromRequest(req), secureCtx.tx)
       )
     },
   })

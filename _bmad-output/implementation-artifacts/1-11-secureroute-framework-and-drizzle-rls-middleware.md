@@ -1,6 +1,6 @@
 # Story 1.11: SecureRoute Framework & Drizzle RLS Middleware
 
-Status: review
+Status: in-progress
 
 <!-- Ultimate context engine analysis completed 2026-06-27 - comprehensive developer guide for SecureRoute, Drizzle transaction-scoped RLS, same-transaction security audit writes, route registration guardrails, background job RLS, and route audit CI enforcement. Builds on Story 1.4 RLS schema, Story 1.6 JWT/session auth, Stories 1.8-1.9 MFA enforcement and failed-auth detection, and Story 1.10 operational logging. -->
 
@@ -798,6 +798,42 @@ pnpm --filter @project-vault/api test -- route-audit
   - [x] Response-after-commit guard test
   - [x] Background job schema guard: org-scoped job payloads validate `orgId` before any query
 
+### Review Findings
+
+- [x] [Review][Patch] Mutating and security-action routes do not default to same-transaction audit writes [`apps/api/src/lib/secure-route.ts:138`]
+- [x] [Review][Patch] Migrated MFA and auth-context handlers still perform DB work outside `ctx.tx` [`apps/api/src/modules/auth/routes.ts:252`]
+- [ ] [Review][Patch] Security-action route migrations explicitly disable audit events [`apps/api/src/modules/auth/routes.ts:360`]
+- [x] [Review][Patch] Audit-enabled handlers can send a success reply before audit failure is known [`apps/api/src/lib/secure-route.ts:313`]
+- [x] [Review][Patch] Audit payload sanitization is shallow and case-sensitive [`apps/api/src/lib/secure-route.ts:129`]
+- [x] [Review][Patch] Default audit rows set `actorTokenId` to `null` without the required documented TODO/contract [`apps/api/src/lib/secure-route.ts:183`]
+- [x] [Review][Patch] `allowedRoles: []` falls back to viewer access instead of failing closed [`apps/api/src/lib/secure-route.ts:158`]
+- [x] [Review][Patch] Public SecureRoute rate-limit configuration is ignored [`apps/api/src/lib/secure-route.ts:229`]
+- [x] [Review][Patch] Non-org-scoped protected routes with audit enabled skip audit writing entirely [`apps/api/src/lib/secure-route.ts:302`]
+- [x] [Review][Patch] Route audit misses Fastify shorthand registrations and newly added route modules [`apps/api/src/__tests__/route-audit.test.ts:46`]
+- [x] [Review][Patch] Route action classifications are not enforced against actual protected routes [`apps/api/src/__tests__/route-audit.test.ts:119`]
+- [x] [Review][Patch] Route-registering helper classifications are declarative only and do not detect new helpers [`apps/api/src/__tests__/route-audit.test.ts:119`]
+- [x] [Review][Patch] Direct `getDb` guard uses hard-coded file lists and narrow import matching [`apps/api/src/__tests__/route-audit.test.ts:146`]
+- [x] [Review][Patch] Required RLS/job and audit success/failure integration cases are incomplete [`apps/api/src/__tests__/secure-route.integration.test.ts:132`]
+- [x] [Review][Patch] Background job RLS helper is added but existing org-scoped worker writes still use `withOrg()` directly [`apps/api/src/workers/check-failed-auth-threshold.ts:223`]
+- [x] [Review][Patch] RLS helper unit test does not assert the actual `set_config('app.current_org_id', ..., true)` invariant [`apps/api/src/middleware/rls.test.ts:7`]
+- [ ] [Review][Patch] Focused Story 1.11 diff includes unrelated Story 2.0 artifact content [`_bmad-output/implementation-artifacts/2-0-mvp-frontend-shell-and-empty-project-dashboard.md:1`]
+
+### Review Findings Rerun
+
+- [x] [Review][Patch] MFA SecureRoute handlers still bypass `ctx.tx` for service-owned transactions [`apps/api/src/modules/auth/routes.ts:284`]
+- [ ] [Review][Patch] Security-action routes still disable SecureRoute audit while relying on service audit writes [`apps/api/src/modules/auth/routes.ts:280`]
+- [x] [Review][Patch] Audited handlers can still call `reply.send()` before audit durability is known [`apps/api/src/lib/secure-route.ts:313`]
+- [ ] [Review][Patch] Audit payload handling remains denylist-based and lacks circular-object protection [`apps/api/src/lib/secure-route.ts:129`]
+- [x] [Review][Patch] Audit resource IDs are optional even when `resourceIdFromParams` is configured [`apps/api/src/lib/secure-route.ts:176`]
+- [x] [Review][Patch] Route audit still hard-codes audited route files and uses brittle string parsing [`apps/api/src/__tests__/route-audit.test.ts:27`]
+- [x] [Review][Patch] Owner/admin MFA audit still detects only legacy `requireOrgRole()` declarations [`apps/api/src/__tests__/route-audit.test.ts:72`]
+- [x] [Review][Patch] Public/raw exemption metadata omits health, ready, and metrics routes [`apps/api/src/lib/route-exemptions.ts:31`]
+- [x] [Review][Patch] Required audit failure coverage does not exercise default persistence and integrity/key failures [`apps/api/src/__tests__/secure-route.integration.test.ts:132`]
+- [x] [Review][Patch] Default audit actor token lookup is nondeterministic when a user has multiple identity tokens [`apps/api/src/lib/secure-route.ts:184`]
+- [x] [Review][Patch] RLS helper test does not assert the transaction-local `set_config(..., true)` flag [`apps/api/src/middleware/rls.test.ts:7`]
+- [x] [Review][Patch] Story artifact includes a credential-bearing `DATABASE_URL` example [`_bmad-output/implementation-artifacts/1-11-secureroute-framework-and-drizzle-rls-middleware.md:1045`]
+- [ ] [Review][Patch] Story 1.11 diff still includes unrelated Story 2.0 artifact content [`_bmad-output/implementation-artifacts/2-0-mvp-frontend-shell-and-empty-project-dashboard.md:1`]
+
 ## Dev Notes
 
 ### Current Codebase State
@@ -1042,9 +1078,9 @@ GPT-5.5
 - 2026-06-27: `pnpm --filter @project-vault/db typecheck` passed.
 - 2026-06-27: `pnpm --filter @project-vault/api generate-spec` passed.
 - 2026-06-27: `pnpm --filter @project-vault/db test -- rls-isolation` initially failed when run without `DATABASE_URL` because the db package defaulted to the superuser connection and bypassed RLS.
-- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' pnpm --filter @project-vault/db test -- rls-isolation` passed.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:<dev-password>@localhost:5432/project_vault' pnpm --filter @project-vault/db test -- rls-isolation` passed.
 - 2026-06-27: `pnpm check-rls` initially failed because `DATABASE_URL` was unset.
-- 2026-06-27: `DATABASE_URL='postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault' pnpm check-rls` passed.
+- 2026-06-27: `DATABASE_URL='postgresql://vault_app:<dev-password>@localhost:5432/project_vault' pnpm check-rls` passed.
 
 ### Completion Notes List
 - Expanded `apps/api/src/lib/secure-route.ts` into the SecureRoute constructor with secure defaults, explicit opt-outs, centralized role/MFA/rate-limit enforcement, request-scoped RLS transactions, response-after-commit behavior, and same-transaction audit writer support.
