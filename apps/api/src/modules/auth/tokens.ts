@@ -80,7 +80,7 @@ export function setAuthCookies(reply: CookieReply, tokens: AuthCookieTokens): vo
       httpOnly: true,
       sameSite: 'strict',
       secure,
-      path: '/api/v1/auth/refresh',
+      path: '/',
       maxAge: tokens.refreshMaxAgeSec,
     })
   }
@@ -88,5 +88,5 @@ export function setAuthCookies(reply: CookieReply, tokens: AuthCookieTokens): vo
 
 export function clearAuthCookies(reply: CookieReply): void {
   reply.clearCookie('access-token', { path: '/' })
-  reply.clearCookie('refresh-token', { path: '/api/v1/auth/refresh' })
+  reply.clearCookie('refresh-token', { path: '/' })
 }

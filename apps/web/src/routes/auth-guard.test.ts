@@ -73,7 +73,22 @@ describe('server auth guard', () => {
       credentials: 'include',
       headers: { Cookie: 'access-token=old-access; refresh-token=old-refresh' },
     })
-    expect(forwardedCookies).toEqual([setCookieHeaders.join(', ')])
+    expect(fetchFn).toHaveBeenNthCalledWith(3, '/api/v1/auth/me', {
+      credentials: 'include',
+      headers: { Cookie: 'access-token=new-access; refresh-token=new-refresh' },
+    })
+    expect(forwardedCookies).toEqual(setCookieHeaders)
+  })
+
+  it('treats auth API outages as unauthenticated instead of throwing', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new Error('API unavailable'))
+
+    await expect(
+      resolveAuthContext({
+        fetchFn,
+        cookieHeader: 'access-token=old-access; refresh-token=old-refresh',
+      })
+    ).resolves.toEqual({ status: 'unauthenticated' })
   })
 
   it('refresh failure returns a calm session-expired redirect reason', async () => {

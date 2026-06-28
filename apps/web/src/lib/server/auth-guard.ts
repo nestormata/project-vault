@@ -18,6 +18,39 @@ function cookieHeaders(cookieHeader?: string | null) {
   return cookieHeader ? { Cookie: cookieHeader } : undefined
 }
 
+function splitSetCookieHeader(value: string): string[] {
+  return value
+    .split(/,(?=\s*[^;,\s]+=)/)
+    .map((cookie) => cookie.trim())
+    .filter(Boolean)
+}
+
+function getSetCookieHeaders(headers: Headers): string[] {
+  const getSetCookie = (headers as unknown as { getSetCookie?: () => string[] }).getSetCookie
+  if (getSetCookie) return getSetCookie.call(headers).flatMap(splitSetCookieHeader)
+  const combined = headers.get('set-cookie')
+  return combined ? splitSetCookieHeader(combined) : []
+}
+
+function mergeCookieHeader(cookieHeader: string | null | undefined, setCookieHeaders: string[]) {
+  const cookies = new Map<string, string>()
+  for (const part of cookieHeader?.split(';') ?? []) {
+    const [name, ...valueParts] = part.trim().split('=')
+    if (name && valueParts.length > 0) cookies.set(name, valueParts.join('='))
+  }
+
+  for (const setCookie of setCookieHeaders) {
+    const [pair] = setCookie.split(';')
+    if (!pair) continue
+    const [name, ...valueParts] = pair.trim().split('=')
+    if (name && valueParts.length > 0) cookies.set(name, valueParts.join('='))
+  }
+
+  return Array.from(cookies.entries())
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ')
+}
+
 async function fetchMe(fetchFn: typeof fetch, cookieHeader?: string | null) {
   return fetchFn(AUTH_ME_PATH, {
     credentials: 'include',
@@ -38,32 +71,56 @@ async function readData<T>(response: Response): Promise<T | null> {
   return body?.data ?? null
 }
 
-export async function resolveAuthContext({
+async function authenticatedResult(response: Response): Promise<AuthGuardResult> {
+  const user = await readData<AuthUser>(response)
+  return user ? { status: 'authenticated', user } : { status: 'unauthenticated' }
+}
+
+async function refreshAndRetry({
   fetchFn,
   cookieHeader,
   forwardSetCookie,
 }: ResolveAuthOptions): Promise<AuthGuardResult> {
-  const meResponse = await fetchMe(fetchFn, cookieHeader)
-  if (meResponse.ok) {
-    const user = await readData<AuthUser>(meResponse)
-    return user ? { status: 'authenticated', user } : { status: 'unauthenticated' }
+  let refreshResponse: Response
+  try {
+    refreshResponse = await fetchRefresh(fetchFn, cookieHeader)
+  } catch {
+    return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
   }
-
-  if (meResponse.status !== 401) return { status: 'unauthenticated' }
-
-  const refreshResponse = await fetchRefresh(fetchFn, cookieHeader)
   if (!refreshResponse.ok) return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
 
-  const setCookie = refreshResponse.headers.get('set-cookie')
-  if (setCookie) forwardSetCookie?.(setCookie)
+  const setCookieHeaders = getSetCookieHeaders(refreshResponse.headers)
+  for (const setCookie of setCookieHeaders) forwardSetCookie?.(setCookie)
 
-  const retryMeResponse = await fetchMe(fetchFn, cookieHeader)
+  const retryCookieHeader = mergeCookieHeader(cookieHeader, setCookieHeaders)
+  let retryMeResponse: Response
+  try {
+    retryMeResponse = await fetchMe(fetchFn, retryCookieHeader || cookieHeader)
+  } catch {
+    return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
+  }
   if (!retryMeResponse.ok) return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
 
   const user = await readData<AuthUser>(retryMeResponse)
   return user
     ? { status: 'authenticated', user }
     : { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
+}
+
+export async function resolveAuthContext({
+  fetchFn,
+  cookieHeader,
+  forwardSetCookie,
+}: ResolveAuthOptions): Promise<AuthGuardResult> {
+  let meResponse: Response
+  try {
+    meResponse = await fetchMe(fetchFn, cookieHeader)
+  } catch {
+    return { status: 'unauthenticated' }
+  }
+  if (meResponse.ok) return authenticatedResult(meResponse)
+  if (meResponse.status !== 401) return { status: 'unauthenticated' }
+  return refreshAndRetry({ fetchFn, cookieHeader, forwardSetCookie })
 }
 
 export function isProtectedAppPath(pathname: string) {

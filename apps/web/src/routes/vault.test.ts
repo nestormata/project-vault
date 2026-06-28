@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   buildVaultInitRequest,
   buildVaultUnsealRequest,
@@ -6,6 +9,8 @@ import {
   clearVaultUnsealFields,
 } from '$lib/components/vault/form-model.js'
 import { getVaultGateModel } from '$lib/components/vault/gate-model.js'
+
+const routeRoot = resolve(dirname(fileURLToPath(import.meta.url)))
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -43,6 +48,20 @@ describe('vault operator UI', () => {
     expect(model.primaryAction).toBe('Retry readiness')
     expect(model.showInit).toBe(false)
     expect(model.showUnseal).toBe(false)
+  })
+
+  it('mounts vault gate in a user-visible vault route', () => {
+    const vaultPagePath = resolve(routeRoot, '(vault)/vault/+page.svelte')
+
+    expect(existsSync(vaultPagePath)).toBe(true)
+    expect(readFileSync(vaultPagePath, 'utf-8')).toContain('VaultGate')
+  })
+
+  it('roots users through server-side vault readiness routing', () => {
+    const rootServerPath = resolve(routeRoot, '+page.server.ts')
+
+    expect(existsSync(rootServerPath)).toBe(true)
+    expect(readFileSync(rootServerPath, 'utf-8')).toContain('getVaultReadiness')
   })
 
   it('init form model keeps bootstrap token separate and clears sensitive fields', async () => {
