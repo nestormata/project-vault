@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload RLS isolation coverage (SOC2 Type II evidence)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: db-coverage-${{ github.run_id }}
           path: packages/db/coverage/
