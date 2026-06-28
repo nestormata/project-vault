@@ -4,6 +4,9 @@ import adapter from '@sveltejs/adapter-node'
 const config = {
   kit: {
     adapter: adapter(),
+    alias: {
+      '@project-vault/shared': '../../packages/shared/src/index.ts',
+    },
   },
 }
 

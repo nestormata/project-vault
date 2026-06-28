@@ -5,12 +5,6 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
-    "paths": {
-      "$lib": ["./src/lib"],
-      "$lib/*": ["./src/lib/*"],
-      "$app/types": ["./.svelte-kit/types/index.d.ts"],
-      "@project-vault/shared": ["../../packages/shared/src/index.ts"]
-    },
     "rootDirs": [".", ".svelte-kit/types"]
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", ".svelte-kit/ambient.d.ts", ".svelte-kit/types/**/*.d.ts"],

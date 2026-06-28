@@ -1,12 +1,7 @@
 import { createHmac } from 'node:crypto'
 
 type JsonLike =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonLike[]
-  | { [key: string]: JsonLike | undefined }
+  string | number | boolean | null | JsonLike[] | { [key: string]: JsonLike | undefined }
 
 function sortKeys(value: unknown): JsonLike {
   if (value === null || typeof value !== 'object') {
@@ -16,15 +11,12 @@ function sortKeys(value: unknown): JsonLike {
     return value.map((item) => sortKeys(item))
   }
 
-  return Object.keys(value as Record<string, unknown>)
-    .sort()
-    .reduce<Record<string, JsonLike>>((acc, key) => {
-      const nested = (value as Record<string, unknown>)[key]
-      if (nested !== undefined) {
-        acc[key] = sortKeys(nested)
-      }
-      return acc
-    }, {})
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, nested]) => nested !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortKeys(nested)])
+  )
 }
 
 /** Canonical JSON: sorted keys, no whitespace; matches the Story 8.1 audit HMAC contract. */

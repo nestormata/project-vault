@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- test fixtures intentionally exercise dynamic temp-file key paths. */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { mkdtempSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
