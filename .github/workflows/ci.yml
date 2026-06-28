@@ -173,7 +173,7 @@ jobs:
           driver: docker-container
 
       - name: Build API image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -185,7 +185,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=api-${{ matrix.arch }}
 
       - name: Build web image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
@@ -200,7 +200,7 @@ jobs:
       # amd64 is the primary deployment target; arm64 build success is the validation.
       - name: Load API image for size check
         if: matrix.arch == 'amd64'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -210,7 +210,7 @@ jobs:
 
       - name: Load web image for size check
         if: matrix.arch == 'amd64'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
