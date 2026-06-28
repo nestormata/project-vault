@@ -97,6 +97,37 @@ Services will be available at:
 - API: http://localhost:3000
 - API health: http://localhost:3000/health
 
+### Use the Story 2.0 MVP Shell
+
+Story 2.0 ships the first usable web shell: vault readiness, vault initialize/unseal forms, registration, login, server-side session refresh, logout, the authenticated app shell, and honest empty project dashboards.
+
+The fastest local path is to run the API and web app in development mode against the local Postgres container:
+
+```bash
+pnpm install
+make db-up
+make db-migrate
+
+export DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+export VAULT_BOOTSTRAP_TOKEN=$(openssl rand -base64 32)
+pnpm turbo dev
+```
+
+Open http://localhost:5173. The root route checks vault readiness and sends you to the correct next step:
+
+1. If the vault is uninitialized, use **Initialize vault**. For local evaluation, choose **Passphrase**, paste the `VAULT_BOOTSTRAP_TOKEN` value from your shell into the bootstrap-token field, and enter a vault passphrase you can reuse for unseal.
+2. If the vault is sealed, use **Unseal vault** with the same passphrase or with the configured server-side key path for file/envelope modes.
+3. When the vault is ready, register the first user, then sign in. Registration creates the account but does not automatically create a session.
+4. After login, use the authenticated shell navigation: Dashboard, Projects, Credentials, Alerts, Health, and Settings.
+5. On Dashboard, choose **Preview an empty project dashboard** to see the project-centered MVP dashboard. This preview is intentionally in-memory only and resets on reload; durable projects arrive in Story 2.1.
+
+What is intentionally not live yet:
+
+- Saved project creation and project APIs are Story 2.1.
+- Credential storage/search, imports, and credential actions start in later Epic 2 stories.
+- Alerts, health monitoring, audit UI, machine users, backup/restore, and real operational counts are placeholders only.
+- Empty states are not errors and are not "all healthy" signals; they show which operational coverage is still missing.
+
 ### Local Development
 
 ```bash

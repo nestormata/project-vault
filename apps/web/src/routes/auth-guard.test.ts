@@ -1,12 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { resolveAuthContext } from '$lib/server/auth-guard.js'
-
-function jsonResponse(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    status: init.status ?? 200,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  })
-}
+import { jsonResponse } from '$lib/test/json-response.js'
 
 const authUser = {
   userId: '00000000-0000-4000-8000-000000000001',

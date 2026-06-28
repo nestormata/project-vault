@@ -50,32 +50,29 @@ describe('GET /health', () => {
 })
 
 describe('GET /ready', () => {
-  it('returns a distinct uninitialized reason before vault initialization', async () => {
-    mockVaultStatus.value = 'uninitialized'
+  async function expectUnavailableReady(reason: 'uninitialized' | 'sealed', message: string) {
+    mockVaultStatus.value = reason
     const app = await createApp({ logger: false })
     const response = await app.inject({ method: 'GET', url: '/ready' })
 
     expect(response.statusCode).toBe(503)
     expect(response.json<{ status: string; reason: string; message: string }>()).toEqual({
       status: 'unavailable',
-      reason: 'uninitialized',
-      message: 'Vault not initialized. POST /api/v1/vault/init to initialize.',
+      reason,
+      message,
     })
     await app.close()
+  }
+
+  it('returns a distinct uninitialized reason before vault initialization', async () => {
+    await expectUnavailableReady(
+      'uninitialized',
+      'Vault not initialized. POST /api/v1/vault/init to initialize.'
+    )
   })
 
   it('returns a sealed reason when manual unseal is required', async () => {
-    mockVaultStatus.value = 'sealed'
-    const app = await createApp({ logger: false })
-    const response = await app.inject({ method: 'GET', url: '/ready' })
-
-    expect(response.statusCode).toBe(503)
-    expect(response.json<{ status: string; reason: string; message: string }>()).toEqual({
-      status: 'unavailable',
-      reason: 'sealed',
-      message: 'Manual unseal required via POST /api/v1/vault/unseal',
-    })
-    await app.close()
+    await expectUnavailableReady('sealed', 'Manual unseal required via POST /api/v1/vault/unseal')
   })
 
   it('returns 200 when DB pool resolves', async () => {

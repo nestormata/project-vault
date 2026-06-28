@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from './client.js'
 import { getVaultReadiness, initVault, unsealVault } from './vault.js'
-
-function jsonResponse(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    status: init.status ?? 200,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  })
-}
+import { jsonResponse } from '$lib/test/json-response.js'
 
 describe('vault API helpers', () => {
   it('classifies 200 ready as ready', async () => {

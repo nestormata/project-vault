@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from './client.js'
 import { getCurrentUser, login, logout, register, verifyMfaLogin } from './auth.js'
-
-function jsonResponse(body: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(body), {
-    status: init.status ?? 200,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  })
-}
+import { jsonResponse } from '$lib/test/json-response.js'
 
 describe('auth API helpers', () => {
   it('register sends the expected body and returns the backend data envelope', async () => {
