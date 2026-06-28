@@ -37,7 +37,7 @@ export async function healthRoutes(
     if (vaultStatus === 'uninitialized') {
       return reply.status(503).send({
         status: 'unavailable',
-        reason: 'sealed',
+        reason: 'uninitialized',
         message: 'Vault not initialized. POST /api/v1/vault/init to initialize.',
       })
     }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { OperationalEvent } from '@project-vault/shared'
 import { createApp } from '../app.js'
 import { createLoggerConfig } from '../lib/logger.js'
@@ -20,9 +20,17 @@ vi.mock('../config/env.js', () => ({
 
 // These tests exercise the DB-connectivity branch of /ready, which only runs once the
 // vault is unsealed (Story 1.5) — mock vault status so the DB branch is reachable.
-vi.mock('../modules/vault/key-service.js', () => ({
-  getVaultStatus: () => 'unsealed',
+const { mockVaultStatus } = vi.hoisted(() => ({
+  mockVaultStatus: { value: 'unsealed' as 'uninitialized' | 'sealed' | 'unsealed' },
 }))
+
+vi.mock('../modules/vault/key-service.js', () => ({
+  getVaultStatus: () => mockVaultStatus.value,
+}))
+
+beforeEach(() => {
+  mockVaultStatus.value = 'unsealed'
+})
 
 describe('GET /health', () => {
   it('returns 200 with status ok and version', async () => {
@@ -42,6 +50,31 @@ describe('GET /health', () => {
 })
 
 describe('GET /ready', () => {
+  async function expectUnavailableReady(reason: 'uninitialized' | 'sealed', message: string) {
+    mockVaultStatus.value = reason
+    const app = await createApp({ logger: false })
+    const response = await app.inject({ method: 'GET', url: '/ready' })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.json<{ status: string; reason: string; message: string }>()).toEqual({
+      status: 'unavailable',
+      reason,
+      message,
+    })
+    await app.close()
+  }
+
+  it('returns a distinct uninitialized reason before vault initialization', async () => {
+    await expectUnavailableReady(
+      'uninitialized',
+      'Vault not initialized. POST /api/v1/vault/init to initialize.'
+    )
+  })
+
+  it('returns a sealed reason when manual unseal is required', async () => {
+    await expectUnavailableReady('sealed', 'Manual unseal required via POST /api/v1/vault/unseal')
+  })
+
   it('returns 200 when DB pool resolves', async () => {
     const mockDbPool = {
       query: vi.fn().mockResolvedValue([]),

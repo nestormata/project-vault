@@ -18,7 +18,7 @@ import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
 import { verifyUserPassword } from './password.js'
 import { normalizeEmail } from './normalize.js'
-import { createLoginSessionInTx, type TokenMaterial } from './service.js'
+import { createLoginSessionInTx, type RequestMeta, type TokenMaterial } from './service.js'
 import { findUserWithIdentityByEmail } from './user-lookup.js'
 import {
   countUnusedRecoveryCodes,
@@ -38,11 +38,6 @@ import {
   recordTotpUse,
   validateTotpCode,
 } from './totp.js'
-
-type RequestMeta = {
-  ipAddress?: string | null
-  userAgent?: string | null
-}
 
 type AuthContext = {
   userId: string

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { env } from '../../config/env.js'
 import {
+  clearAuthCookies,
   generatePendingMfaToken,
   generateRefreshToken,
   hashPendingMfaToken,
   hashRefreshToken,
   refreshTokensMatch,
+  setAuthCookies,
 } from './tokens.js'
 
 const OPAQUE_REFRESH_TOKEN = 'opaque-refresh-token'
@@ -34,6 +36,31 @@ describe('refresh token helpers', () => {
     expect(refreshTokensMatch(hash, 'other-refresh-token')).toBe(false)
     expect(refreshTokensMatch('short', OPAQUE_REFRESH_TOKEN)).toBe(false)
     expect(refreshTokensMatch('z'.repeat(64), OPAQUE_REFRESH_TOKEN)).toBe(false)
+  })
+
+  it('scopes refresh cookies to app routes so SSR route guards can refresh sessions', () => {
+    const setCookie = new Map<string, Record<string, unknown>>()
+    const clearCookie = new Map<string, Record<string, unknown>>()
+
+    setAuthCookies(
+      {
+        setCookie: (name, _value, options) => setCookie.set(name, options),
+        clearCookie: (name, options) => clearCookie.set(name, options),
+      },
+      {
+        accessJwt: 'access-token',
+        refreshOpaque: OPAQUE_REFRESH_TOKEN,
+        accessMaxAgeSec: 300,
+        refreshMaxAgeSec: 3600,
+      }
+    )
+    clearAuthCookies({
+      setCookie: () => undefined,
+      clearCookie: (name, options) => clearCookie.set(name, options),
+    })
+
+    expect(setCookie.get('refresh-token')?.['path']).toBe('/')
+    expect(clearCookie.get('refresh-token')?.['path']).toBe('/')
   })
 })
 

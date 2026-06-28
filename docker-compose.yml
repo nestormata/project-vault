@@ -78,6 +78,7 @@ services:
       dockerfile: apps/web/Dockerfile
     environment:
       NODE_ENV: production
+      API_BASE_URL: http://api:3000
     ports:
       - "5173:3000"
     depends_on:

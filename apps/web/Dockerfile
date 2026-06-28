@@ -8,16 +8,19 @@ COPY package.json pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
+COPY packages/shared/package.json ./packages/shared/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 
 RUN pnpm install --frozen-lockfile
 
 COPY apps/web ./apps/web
 COPY packages/tsconfig ./packages/tsconfig
+COPY packages/shared ./packages/shared
 COPY packages/eslint-config ./packages/eslint-config
 
 WORKDIR /app/apps/web
-RUN pnpm build
+RUN pnpm --filter @project-vault/shared build \
+ && pnpm build
 
 FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
 
@@ -31,12 +34,14 @@ COPY --from=builder /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/apps/web/package.json ./apps/web/
 COPY --from=builder /app/packages/tsconfig/package.json ./packages/tsconfig/
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder /app/packages/eslint-config/package.json ./packages/eslint-config/
 
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
  && rm -rf /root/.cache/pnpm /root/.local/share/pnpm /root/.npm
 
 COPY --from=builder --chown=node:node /app/apps/web/build ./apps/web/build
+COPY --from=builder --chown=node:node /app/packages/shared/dist ./packages/shared/dist
 RUN chown -R node:node /app
 
 EXPOSE 3000

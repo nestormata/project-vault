@@ -80,11 +80,11 @@ describe.sequential('Vault lifecycle (passphrase mode)', () => {
     await app.close()
   })
 
-  it('GET /ready returns 503 not_initialized message while uninitialized', async () => {
+  it('GET /ready returns 503 uninitialized message while uninitialized', async () => {
     const app = await createApp({ logger: false, vaultGuardEnabled: true })
     const res = await app.inject({ method: 'GET', url: '/ready' })
     expect(res.statusCode).toBe(503)
-    expect(res.json<{ reason: string }>().reason).toBe('sealed')
+    expect(res.json<{ reason: string }>().reason).toBe('uninitialized')
     await app.close()
   })
 
