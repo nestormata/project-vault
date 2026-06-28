@@ -25,6 +25,11 @@ describe('project API schemas', () => {
     }
   )
 
+  it('rejects names that are empty after trimming', () => {
+    expect(() => CreateProjectBodySchema.parse({ name: '   ', slug: 'blank-name' })).toThrow()
+    expect(() => PatchProjectBodySchema.parse({ name: '   ' })).toThrow()
+  })
+
   it('rejects unknown create keys such as orgId', () => {
     expect(() =>
       CreateProjectBodySchema.parse({

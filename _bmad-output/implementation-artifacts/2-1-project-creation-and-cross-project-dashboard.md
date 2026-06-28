@@ -1,6 +1,6 @@
 # Story 2.1: Project Creation & Cross-Project Dashboard
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-27 - comprehensive developer guide for the first durable backend and frontend project model. This story introduces the projects table, project_memberships, RLS policies, four new API routes, and the real ProjectDashboard schema replacing the Story 2.0 preview stub. -->
 
@@ -1296,6 +1296,18 @@ Do **not** implement any of the following in Story 2.1:
   - [x] Run `pnpm typecheck` and `pnpm lint` at repo root.
   - [x] Confirm `pnpm --filter @project-vault/db check-rls` passes.
 
+### Review Findings
+
+- [x] [Review][Patch] Enforce non-empty names after trimming [apps/api/src/modules/projects/schema.ts:14]
+- [x] [Review][Patch] Preserve Story 2.1 org-wide project visibility in project list/dashboard [apps/api/src/modules/projects/routes.ts]
+- [x] [Review][Patch] Prevent PATCH from mutating archived projects [apps/api/src/modules/projects/routes.ts:306]
+- [x] [Review][Patch] Make audit orphan cleanup work with audit immutability trigger [packages/db/src/migrations/0013_projects.sql]
+- [x] [Review][Patch] Add missing AC-13 unauthenticated/not-found route tests [apps/api/src/modules/projects/routes.test.ts]
+- [x] [Review][Patch] Add RLS coverage for project_memberships [packages/db/src/__tests__/projects-rls-isolation.test.ts]
+- [x] [Review][Patch] Handle dashboard list-to-detail race/fallback [apps/web/src/routes/(app)/dashboard/+page.server.ts:7]
+- [x] [Review][Patch] Prevent duplicate create-project submissions [apps/web/src/routes/(app)/projects/new/+page.svelte:34]
+- [x] [Review][Patch] Keep suggested slugs valid and trim submitted descriptions [apps/web/src/routes/(app)/projects/new/+page.svelte]
+
 ---
 
 ## Dev Notes
@@ -1594,6 +1606,8 @@ GPT-5.5
 2026-06-28: Task 11 final verification:
 - Full checks passed: `pnpm --filter @project-vault/db test`, `pnpm --filter @project-vault/api test`, `pnpm --filter @project-vault/shared test`, `pnpm --filter @project-vault/web test`, `pnpm --filter @project-vault/web typecheck`, `pnpm --filter @project-vault/web lint`, `pnpm typecheck`, `pnpm lint`, and `DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm check-rls`.
 - `pnpm lint` exits 0 with 5 existing script warnings after excluding generated agent asset trees from root lint.
+2026-06-28: Code review remediation:
+- BMAD code review found 9 patch findings and 16 dismissed findings. All 9 patch findings were fixed and focused API/DB/web tests passed.
 
 ### Completion Notes List
 - Task 1 complete: added org-scoped `projects` and `project_memberships` Drizzle schemas, exported them, created scoped `0013_projects.sql` with RLS policies, audit-log `project_id` FK, and project `updated_at` trigger. Migration applied locally with the owner role; db tests pass under `vault_app`.
@@ -1603,6 +1617,7 @@ GPT-5.5
 - Task 9 complete: projects table is covered by app-role RLS integration tests for cross-org isolation, bare-query denial, and per-org slug uniqueness.
 - Task 10 complete: web app now lists projects, loads the first project dashboard from the API, provides a real create-project form with slug suggestion and inline conflict handling, and keeps the preview flow explicitly labeled as preview-only.
 - Task 11 complete: sealed-vault and audit-failure rollback project route tests pass; full package/root verification passed and story is ready for review.
+- Code review remediation complete: fixed org-wide project visibility, post-trim name validation, archived PATCH protection, audit cleanup trigger handling, missing route/RLS tests, dashboard fallback, duplicate submit guard, and slug/description client edge cases.
 
 ### File List
 - packages/db/src/schema/projects-schema.test.ts
@@ -1646,3 +1661,4 @@ GPT-5.5
 
 ### Change Log
 - 2026-06-28: Implemented Story 2.1 project schema, API, shared contracts, web project flow, RLS/audit hardening tests, and final verification; status moved to review.
+- 2026-06-28: Addressed BMAD code review findings; status moved to done.

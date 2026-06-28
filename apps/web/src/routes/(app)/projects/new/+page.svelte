@@ -32,6 +32,7 @@
   }
 
   async function submitForm() {
+    if (submitting) return
     errorMessage = null
     slugError = null
     fieldErrors = {}
@@ -40,7 +41,7 @@
       await createProject(fetch, {
         name,
         slug,
-        description: description.trim() ? description : null,
+        description: description.trim() ? description.trim() : null,
       })
       await goto(resolve('/dashboard'))
     } catch (error) {

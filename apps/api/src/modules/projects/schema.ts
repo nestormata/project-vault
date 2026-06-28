@@ -11,7 +11,7 @@ const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$/
 
 export const CreateProjectBodySchema = z
   .object({
-    name: z.string().min(1).max(128).trim(),
+    name: z.string().trim().min(1).max(128),
     slug: z
       .string()
       .regex(SLUG_REGEX, 'Slug must be 3-50 lowercase alphanumeric characters and hyphens'),
@@ -22,7 +22,7 @@ export const CreateProjectBodySchema = z
 
 export const PatchProjectBodySchema = z
   .object({
-    name: z.string().min(1).max(128).trim().optional(),
+    name: z.string().trim().min(1).max(128).optional(),
     description: z.string().max(512).trim().nullable().optional(),
     slug: z.string().optional(),
   })

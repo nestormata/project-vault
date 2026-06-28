@@ -121,6 +121,8 @@ describe('project API helpers', () => {
   it.each([
     ['Payments API', 'payments-api'],
     ['  My  App!! ', 'my-app'],
+    ['A', 'project'],
+    ['AB', 'project'],
     ['---', 'project'],
   ])('suggests a slug for %s', (name, slug) => {
     expect(suggestProjectSlug(name)).toBe(slug)

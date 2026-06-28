@@ -215,7 +215,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           createdAt: projects.createdAt,
         })
         .from(projects)
-        .innerJoin(
+        .leftJoin(
           projectMemberships,
           and(
             eq(projectMemberships.projectId, projects.id),
@@ -230,7 +230,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         name: row.name,
         slug: row.slug,
         description: row.description,
-        role: row.role as 'owner' | 'admin' | 'member' | 'viewer',
+        role: (row.role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer',
         credentialCount: 0,
         expiringCount: 0,
         alertCount: 0,
@@ -306,7 +306,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const [updated] = await secureCtx.tx
         .update(projects)
         .set(updateSet)
-        .where(eq(projects.id, params.projectId))
+        .where(and(eq(projects.id, params.projectId), isNull(projects.archivedAt)))
         .returning({
           id: projects.id,
           name: projects.name,

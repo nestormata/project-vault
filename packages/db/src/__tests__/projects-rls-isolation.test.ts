@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { getDb, withOrg } from '../index.js'
-import { projects } from '../schema/index.js'
+import { projectMemberships, projects } from '../schema/index.js'
 import { withTestOrg } from '../test-helpers.js'
 
 async function createTestUser(label: string): Promise<string> {
@@ -23,20 +23,43 @@ describe('projects RLS cross-org isolation', () => {
     try {
       await withTestOrg(async ({ orgId: orgAId }) => {
         await withTestOrg(async ({ orgId: orgBId }) => {
+          const [projectA] = await withOrg(orgAId, (tx) =>
+            tx
+              .insert(projects)
+              .values({
+                orgId: orgAId,
+                name: 'Project A',
+                slug: 'project-a',
+                createdBy: userId,
+              })
+              .returning({ id: projects.id })
+          )
+          const [projectB] = await withOrg(orgBId, (tx) =>
+            tx
+              .insert(projects)
+              .values({
+                orgId: orgBId,
+                name: 'Project B',
+                slug: 'project-b',
+                createdBy: userId,
+              })
+              .returning({ id: projects.id })
+          )
+          if (!projectA || !projectB) throw new Error('expected test projects to be inserted')
           await withOrg(orgAId, (tx) =>
-            tx.insert(projects).values({
+            tx.insert(projectMemberships).values({
               orgId: orgAId,
-              name: 'Project A',
-              slug: 'project-a',
-              createdBy: userId,
+              projectId: projectA.id,
+              userId,
+              role: 'owner',
             })
           )
           await withOrg(orgBId, (tx) =>
-            tx.insert(projects).values({
+            tx.insert(projectMemberships).values({
               orgId: orgBId,
-              name: 'Project B',
-              slug: 'project-b',
-              createdBy: userId,
+              projectId: projectB.id,
+              userId,
+              role: 'owner',
             })
           )
 
@@ -50,6 +73,21 @@ describe('projects RLS cross-org isolation', () => {
 
           const bareRows = await getDb().select().from(projects)
           expect(bareRows).toHaveLength(0)
+
+          const orgAMemberships = await withOrg(orgAId, (tx) =>
+            tx.select().from(projectMemberships)
+          )
+          expect(orgAMemberships).toHaveLength(1)
+          expect(orgAMemberships[0]?.orgId).toBe(orgAId)
+
+          const orgBMemberships = await withOrg(orgBId, (tx) =>
+            tx.select().from(projectMemberships)
+          )
+          expect(orgBMemberships).toHaveLength(1)
+          expect(orgBMemberships[0]?.orgId).toBe(orgBId)
+
+          const bareMemberships = await getDb().select().from(projectMemberships)
+          expect(bareMemberships).toHaveLength(0)
         })
       })
     } finally {

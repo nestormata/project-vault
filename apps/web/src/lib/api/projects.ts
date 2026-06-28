@@ -33,7 +33,7 @@ export function suggestProjectSlug(name: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 50)
     .replace(/-+$/g, '')
-  return slug || 'project'
+  return slug.length >= 3 ? slug : 'project'
 }
 
 export function createProject(fetchFn: typeof fetch, body: CreateProjectRequest) {

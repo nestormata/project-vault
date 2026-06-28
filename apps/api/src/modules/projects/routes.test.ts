@@ -16,12 +16,14 @@ configureAuthIntegrationEnv()
 const { createApp } = await import('../../app.js')
 const { initVault } = await import('../vault/key-service.js')
 const humanAudit = await import('../audit/human-entry.js')
+const { createLoginSessionInTx } = await import('../auth/service.js')
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const TEST_PASSPHRASE = 'project-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const PROJECTS_URL = '/api/v1/projects'
+const ALPHA_PROJECT_SLUG = 'alpha-project'
 
 function uniqueEmail(label: string): string {
   return `projects-${label}-${randomUUID()}@example.com`
@@ -54,6 +56,39 @@ async function createProject(app: TestApp, cookies: Record<string, string>, slug
       updatedAt: string
     }
   }>().data
+}
+
+async function loginExistingUserInOrg(
+  app: TestApp,
+  input: { userId: string; orgId: string; role: 'viewer' | 'member' | 'admin' }
+) {
+  const result = await withOrg(input.orgId, async (tx) => {
+    await tx.insert(orgMemberships).values({
+      orgId: input.orgId,
+      userId: input.userId,
+      role: input.role,
+      status: 'active',
+    })
+    return createLoginSessionInTx(tx, { id: input.userId, identityTokenId: null }, input.orgId, {})
+  })
+  const jwt = await (
+    app as TestApp & {
+      jwt: {
+        sign: (
+          payload: Record<string, unknown>,
+          options: { jti: string; expiresIn: number }
+        ) => Promise<string>
+      }
+    }
+  ).jwt.sign(
+    {
+      sub: result.tokens.accessClaims.sub,
+      orgId: result.tokens.accessClaims.orgId,
+      sessionVersion: result.tokens.accessClaims.sessionVersion,
+    },
+    { jti: result.tokens.accessClaims.jti, expiresIn: result.tokens.accessMaxAgeSec }
+  )
+  return { 'access-token': jwt }
 }
 
 describe.sequential('project routes', () => {
@@ -174,7 +209,7 @@ describe.sequential('project routes', () => {
     expect(empty.statusCode).toBe(200)
     expect(empty.json()).toEqual({ data: { items: [], total: 0 } })
 
-    await createProject(app, userA.cookies, 'alpha-project')
+    await createProject(app, userA.cookies, ALPHA_PROJECT_SLUG)
     await createProject(app, userB.cookies, 'other-org-project')
 
     const populated = await app.inject({
@@ -188,13 +223,31 @@ describe.sequential('project routes', () => {
         total: 1,
         items: [
           {
-            slug: 'alpha-project',
+            slug: ALPHA_PROJECT_SLUG,
             role: 'owner',
             credentialCount: 0,
             expiringCount: 0,
             alertCount: 0,
           },
         ],
+      },
+    })
+
+    const sameOrgViewerCookies = await loginExistingUserInOrg(app, {
+      userId: userB.userId,
+      orgId: userA.orgId,
+      role: 'viewer',
+    })
+    const sameOrg = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(sameOrgViewerCookies) },
+    })
+    expect(sameOrg.statusCode).toBe(200)
+    expect(sameOrg.json()).toMatchObject({
+      data: {
+        total: 1,
+        items: [expect.objectContaining({ slug: ALPHA_PROJECT_SLUG, role: 'viewer' })],
       },
     })
   }, 20_000)
@@ -236,6 +289,19 @@ describe.sequential('project routes', () => {
       headers: { cookie: cookieHeader(userA.cookies) },
     })
     expect(malformed.statusCode).toBe(422)
+
+    const missing = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${randomUUID()}/dashboard`,
+      headers: { cookie: cookieHeader(userA.cookies) },
+    })
+    expect(missing.statusCode).toBe(404)
+
+    const unauthenticated = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${projectA.id}/dashboard`,
+    })
+    expect(unauthenticated.statusCode).toBe(401)
   }, 20_000)
 
   it('PATCH updates metadata, preserves slug, clears description, and denies viewer role', async () => {
@@ -272,6 +338,21 @@ describe.sequential('project routes', () => {
       payload: {},
     })
     expect(empty.statusCode).toBe(422)
+
+    const missing = await app.inject({
+      method: 'PATCH',
+      url: `${PROJECTS_URL}/${randomUUID()}`,
+      headers: { cookie: cookieHeader(user.cookies) },
+      payload: { name: 'Missing' },
+    })
+    expect(missing.statusCode).toBe(404)
+
+    const unauthenticated = await app.inject({
+      method: 'PATCH',
+      url: `${PROJECTS_URL}/${project.id}`,
+      payload: { name: 'Unauthenticated' },
+    })
+    expect(unauthenticated.statusCode).toBe(401)
 
     await withOrg(user.orgId, (tx) =>
       tx
