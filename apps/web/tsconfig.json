@@ -1,9 +1,11 @@
 {
   "extends": "@project-vault/tsconfig/svelte.json",
   "compilerOptions": {
+    "moduleResolution": "bundler",
     "paths": {
       "$lib": ["./src/lib"],
-      "$lib/*": ["./src/lib/*"]
+      "$lib/*": ["./src/lib/*"],
+      "@project-vault/shared": ["../../packages/shared/src/index.ts"]
     },
     "rootDirs": [".", ".svelte-kit/types"]
   },

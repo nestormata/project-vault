@@ -15,4 +15,12 @@ export default [
   ...secretsRules,
   ...svelteRules,
   ...webEnforcement,
+  {
+    files: ['src/**/*.test.ts'],
+    rules: {
+      'no-secrets/no-secrets': 'off',
+      'sonarjs/no-duplicate-string': 'off',
+      'security/detect-non-literal-fs-filename': 'off',
+    },
+  },
 ]

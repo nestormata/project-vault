@@ -1,0 +1,22 @@
+export const dashboardEmptyStateCopy = {
+  projectModel:
+    'Projects are the home for everything your product depends on: credentials, certificates, services, alerts, and operational context.',
+  organizingPrinciple:
+    'Project Vault organizes by project, not by environment. Add the things that keep one product running in one place.',
+  previewAction: 'Preview an empty project dashboard',
+  previewWarning:
+    'Preview only. Project persistence arrives in Story 2.1. This preview resets when you reload.',
+  noProjects: 'No projects are saved yet.',
+  noCredentials: 'No credentials added yet.',
+  noCertificates: 'No certificate or domain records added yet.',
+  noServices: 'No monitored services configured yet.',
+  noAlerts: 'No alert sources configured yet.',
+}
+
+export const forbiddenDashboardClaims = ['All systems healthy', '0 alerts', '100% coverage']
+
+export const suggestedActionLabels = {
+  add_credential: 'Add first credential - available in Story 2.2',
+  add_service: 'Add first service - available in Epic 6',
+  import_credentials: 'Import .env or JSON - available in Story 2.5',
+} as const

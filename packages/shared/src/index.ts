@@ -1,5 +1,6 @@
 export * from './schemas/api.js'
 export * from './schemas/auth.js'
+export * from './schemas/dashboard.js'
 export * from './constants/audit-events.js'
 export * from './constants/cache.js'
 export * from './constants/mfa-exempt-routes.js'
