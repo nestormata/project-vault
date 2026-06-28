@@ -9,6 +9,7 @@
   let mfaToken = $state(null)
   let statusMessage = $state(null)
   let errorMessage = $state(null)
+  let isSubmitting = $state(false)
 
   function clearFields() {
     const cleared = clearLoginFields({ email, password })
@@ -17,6 +18,8 @@
   }
 
   async function submitForm() {
+    if (isSubmitting) return
+    isSubmitting = true
     errorMessage = null
     statusMessage = null
     try {
@@ -41,6 +44,8 @@
           : error instanceof Error
             ? error.message
             : 'Sign in failed.'
+    } finally {
+      isSubmitting = false
     }
   }
 
@@ -105,8 +110,12 @@
         {errorMessage}
       </p>
     {/if}
-    <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit"
-      >Sign in</button
+    <button
+      class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+      type="submit"
+      disabled={isSubmitting}
     >
+      {isSubmitting ? 'Signing in...' : 'Sign in'}
+    </button>
   </form>
 {/if}

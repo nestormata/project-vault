@@ -6,6 +6,7 @@
   let { mfaToken, onExpired } = $props()
   let totp = $state('')
   let errorMessage = $state(null)
+  let isSubmitting = $state(false)
 
   function clearFields(clearToken = false) {
     const cleared = clearMfaLoginFields({ mfaToken: clearToken ? mfaToken : '', totp })
@@ -14,6 +15,8 @@
   }
 
   async function submitForm() {
+    if (isSubmitting) return
+    isSubmitting = true
     errorMessage = null
     try {
       await verifyMfaLogin(fetch, buildMfaLoginRequest({ mfaToken, totp }))
@@ -35,6 +38,8 @@
           : error instanceof Error
             ? error.message
             : 'MFA verification failed.'
+    } finally {
+      isSubmitting = false
     }
   }
 </script>
@@ -64,7 +69,11 @@
       {errorMessage}
     </p>
   {/if}
-  <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit"
-    >Verify MFA code</button
+  <button
+    class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+    type="submit"
+    disabled={isSubmitting}
   >
+    {isSubmitting ? 'Verifying...' : 'Verify MFA code'}
+  </button>
 </form>

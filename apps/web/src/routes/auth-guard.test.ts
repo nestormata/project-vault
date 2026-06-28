@@ -105,4 +105,20 @@ describe('server auth guard', () => {
       })
     ).resolves.toEqual({ status: 'unauthenticated', reason: 'session-expired' })
   })
+
+  it('does not call refresh for anonymous requests without a refresh cookie', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ code: 'unauthorized', message: 'Unauthorized' }, { status: 401 })
+      )
+
+    await expect(resolveAuthContext({ fetchFn, cookieHeader: null })).resolves.toEqual({
+      status: 'unauthenticated',
+    })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/auth/me', {
+      credentials: 'include',
+    })
+  })
 })

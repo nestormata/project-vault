@@ -108,4 +108,18 @@ describe('vault operator UI', () => {
       masterKeyPath: '',
     })
   })
+
+  it('guards vault init and unseal submissions while a request is already in flight', () => {
+    const vaultComponentsRoot = resolve(routeRoot, '../lib/components/vault')
+    const initSource = readFileSync(resolve(vaultComponentsRoot, 'VaultInitForm.svelte'), 'utf-8')
+    const unsealSource = readFileSync(
+      resolve(vaultComponentsRoot, 'VaultUnsealForm.svelte'),
+      'utf-8'
+    )
+
+    expect(initSource).toContain('if (isSubmitting) return')
+    expect(initSource).toContain('disabled={isSubmitting}')
+    expect(unsealSource).toContain('if (isSubmitting) return')
+    expect(unsealSource).toContain('disabled={isSubmitting}')
+  })
 })

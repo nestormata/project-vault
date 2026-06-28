@@ -18,6 +18,10 @@ function cookieHeaders(cookieHeader?: string | null) {
   return cookieHeader ? { Cookie: cookieHeader } : undefined
 }
 
+function hasRefreshCookie(cookieHeader?: string | null) {
+  return cookieHeader?.split(';').some((part) => part.trim().startsWith('refresh-token=')) === true
+}
+
 function splitSetCookieHeader(value: string): string[] {
   return value
     .split(/,(?=\s*[^;,\s]+=)/)
@@ -120,6 +124,7 @@ export async function resolveAuthContext({
   }
   if (meResponse.ok) return authenticatedResult(meResponse)
   if (meResponse.status !== 401) return { status: 'unauthenticated' }
+  if (!hasRefreshCookie(cookieHeader)) return { status: 'unauthenticated' }
   return refreshAndRetry({ fetchFn, cookieHeader, forwardSetCookie })
 }
 

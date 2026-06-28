@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   buildLoginRequest,
   buildMfaLoginRequest,
@@ -9,6 +12,9 @@ import {
   getPostRegisterPath,
   isMfaChallenge,
 } from '$lib/components/auth/form-model.js'
+
+const routeRoot = resolve(dirname(fileURLToPath(import.meta.url)))
+const authComponentsRoot = resolve(routeRoot, '../lib/components/auth')
 
 describe('auth form model', () => {
   it('builds register requests and routes to login after registration', () => {
@@ -38,5 +44,15 @@ describe('auth form model', () => {
     expect(isMfaChallenge(challenge)).toBe(true)
     expect(buildMfaLoginRequest(fields)).toEqual(fields)
     expect(clearMfaLoginFields(fields)).toEqual({ mfaToken: '', totp: '' })
+  })
+
+  it('guards login and MFA submissions while a request is already in flight', () => {
+    const loginSource = readFileSync(resolve(authComponentsRoot, 'LoginForm.svelte'), 'utf-8')
+    const mfaSource = readFileSync(resolve(authComponentsRoot, 'MfaLoginForm.svelte'), 'utf-8')
+
+    expect(loginSource).toContain('if (isSubmitting) return')
+    expect(loginSource).toContain('disabled={isSubmitting}')
+    expect(mfaSource).toContain('if (isSubmitting) return')
+    expect(mfaSource).toContain('disabled={isSubmitting}')
   })
 })

@@ -1063,6 +1063,13 @@ Do **not** implement any of the following in Story 2.0:
 - [x] [Review][Patch] Static hardening test is tied to one local checkout path [`apps/web/src/lib/security/static-hardening.test.ts`:6] — resolved by deriving the scan root from `import.meta.url`.
 - [x] [Review][Patch] Vault route tests do not validate user-visible vault behavior [`apps/web/src/routes/vault.test.ts`:1] — resolved by adding tests for the mounted `/vault` route and root readiness routing.
 
+### Review Findings (2026-06-28)
+
+- [x] [Review][Patch] Frontend API calls do not reach the API service in the documented topology [`apps/web/src/lib/api/client.ts`:32] — resolved by adding trusted same-origin web proxy routes for `/api/v1/*` and `/ready`, plus Docker `API_BASE_URL=http://api:3000`.
+- [x] [Review][Patch] Anonymous requests always attempt `/auth/me` and then `/auth/refresh`, burning refresh rate limits without cookies [`apps/web/src/lib/server/auth-guard.ts`:110] — resolved by skipping refresh unless the incoming cookie header includes `refresh-token`.
+- [x] [Review][Patch] Login and MFA forms allow duplicate submissions that can strand users on stale MFA challenges [`apps/web/src/lib/components/auth/LoginForm.svelte`:19] — resolved with in-flight submission guards and disabled submit buttons in login and MFA verification forms.
+- [x] [Review][Patch] Vault init/unseal forms allow duplicate submissions against rate-limited sensitive endpoints [`apps/web/src/lib/components/vault/VaultUnsealForm.svelte`:22] — resolved with in-flight submission guards and disabled submit buttons in init and unseal forms.
+
 ---
 
 ### AC-22: ADRs

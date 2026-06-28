@@ -10,6 +10,7 @@
   let acknowledgeSplitKeyModel = $state(false)
   let acknowledgeCoLocationRisk = $state(false)
   let errorMessage = $state(null)
+  let isSubmitting = $state(false)
 
   function currentFields() {
     return { bootstrapToken, mode, passphrase, envelopeKeyPath, masterKeyPath }
@@ -24,6 +25,8 @@
   }
 
   async function submitForm() {
+    if (isSubmitting) return
+    isSubmitting = true
     errorMessage = null
     const fields = currentFields()
     const request = buildVaultInitRequest(fields)
@@ -34,6 +37,7 @@
       errorMessage = error instanceof Error ? error.message : 'Vault initialization failed.'
     } finally {
       clearSensitiveFields()
+      isSubmitting = false
     }
   }
 </script>
@@ -152,7 +156,11 @@
     </p>
   {/if}
 
-  <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit">
-    Initialize vault
+  <button
+    class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+    type="submit"
+    disabled={isSubmitting}
+  >
+    {isSubmitting ? 'Initializing vault...' : 'Initialize vault'}
   </button>
 </form>

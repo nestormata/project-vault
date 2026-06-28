@@ -7,6 +7,7 @@
   let envelopeKeyPath = $state('')
   let masterKeyPath = $state('')
   let errorMessage = $state(null)
+  let isSubmitting = $state(false)
 
   function currentFields() {
     return { mode, passphrase, envelopeKeyPath, masterKeyPath }
@@ -20,6 +21,8 @@
   }
 
   async function submitForm() {
+    if (isSubmitting) return
+    isSubmitting = true
     errorMessage = null
     const request = buildVaultUnsealRequest(currentFields())
     try {
@@ -28,6 +31,7 @@
       errorMessage = error instanceof Error ? error.message : 'Vault unseal failed.'
     } finally {
       clearSensitiveFields()
+      isSubmitting = false
     }
   }
 </script>
@@ -112,7 +116,11 @@
     </p>
   {/if}
 
-  <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit">
-    Unseal vault
+  <button
+    class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+    type="submit"
+    disabled={isSubmitting}
+  >
+    {isSubmitting ? 'Unsealing vault...' : 'Unseal vault'}
   </button>
 </form>
