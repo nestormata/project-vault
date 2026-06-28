@@ -155,8 +155,10 @@ export async function createPendingMfaSession(
 ): Promise<MfaChallengeResult> {
   return getDb().transaction(async (tx) => {
     const db = tx as Tx
+    // Two independent integer keys (rather than hashing a concatenated string) avoid any
+    // collision surface between different (userId, orgId) pairs serializing on the same lock.
     await db.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${input.userId}:${input.orgId}`}, 0))`
+      sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}), hashtext(${input.orgId}))`
     )
     await db
       .delete(pendingMfaSessions)

@@ -6,6 +6,7 @@ import { getDb, withOrg } from '@project-vault/db'
 import { AuditEvent } from '@project-vault/shared'
 import { auditLogEntries, failedAuthAttempts, pendingMfaSessions } from '@project-vault/db/schema'
 import { env } from '../../config/env.js'
+import * as tokensModule from './tokens.js'
 import {
   configureAuthIntegrationEnv,
   cookieHeader,
@@ -20,7 +21,7 @@ const { createApp } = await import('../../app.js')
 const { initVault } = await import('../vault/key-service.js')
 const { resetVaultForTest } = await import('../../__tests__/helpers/vault-test-cleanup.js')
 const { loginUser } = await import('./service.js')
-const { verifyLogin } = await import('./mfa-login.js')
+const { createPendingMfaSession, verifyLogin } = await import('./mfa-login.js')
 const { hashPendingMfaToken } = await import('./tokens.js')
 
 const PASSWORD = 'correct-horse-battery-staple'
@@ -368,4 +369,64 @@ describe.sequential('MFA login service', () => {
     expect(logs).not.toContain(INVALID_TOTP_CODE)
     expect(logs).not.toContain(user.secret)
   })
+
+  it('allows exactly one of two concurrent verify-login requests for the same valid token to succeed', async () => {
+    const user = await enrollMfaUser()
+    const challenge = await loginUser({ email: user.email, password: PASSWORD })
+    if (!('mfaRequired' in challenge)) throw new Error(EXPECTED_MFA_CHALLENGE)
+    const totp = totpForSecret(user.secret, Date.now() + 30_000)
+
+    const results = await Promise.allSettled([
+      verifyLogin({ mfaToken: challenge.mfaToken, totp }),
+      verifyLogin({ mfaToken: challenge.mfaToken, totp }),
+    ])
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled')
+    const rejected = results.filter((result) => result.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      code: MFA_TOKEN_EXPIRED,
+      statusCode: 401,
+    })
+    await expect(
+      getDb().select().from(pendingMfaSessions).where(eq(pendingMfaSessions.userId, user.userId))
+    ).resolves.toHaveLength(0)
+  }, 20_000)
+
+  it('retries token generation on a token_hash collision and never returns the collided token', async () => {
+    const user = await enrollMfaUser()
+    const otherUser = await enrollMfaUser()
+    const collidedToken = 'a'.repeat(22)
+    const collidedHash = hashPendingMfaToken(collidedToken)
+
+    await getDb()
+      .insert(pendingMfaSessions)
+      .values({
+        userId: otherUser.userId,
+        orgId: otherUser.orgId,
+        tokenHash: collidedHash,
+        attemptCount: 0,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      })
+
+    const generateSpy = vi
+      .spyOn(tokensModule, 'generatePendingMfaToken')
+      .mockReturnValueOnce(collidedToken)
+
+    try {
+      const challenge = await createPendingMfaSession({ userId: user.userId, orgId: user.orgId })
+
+      expect(challenge.mfaToken).not.toBe(collidedToken)
+      expect(generateSpy).toHaveBeenCalledTimes(2)
+      const rows = await getDb()
+        .select()
+        .from(pendingMfaSessions)
+        .where(eq(pendingMfaSessions.tokenHash, hashPendingMfaToken(challenge.mfaToken)))
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.userId).toBe(user.userId)
+    } finally {
+      generateSpy.mockRestore()
+    }
+  }, 20_000)
 })

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-27  # updated: 1-12 -> review
+last_updated: 2026-06-27  # updated: 1-12 -> done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -55,7 +55,7 @@ development_status:
   1-9-mfa-role-enforcement-and-failed-authentication-detection: done
   1-10-structured-operational-logging-and-metrics: done
   1-11-secureroute-framework-and-drizzle-rls-middleware: done
-  1-12-mfa-login-verification-flow: review
+  1-12-mfa-login-verification-flow: done
   epic-1-retrospective: optional
 
   # Epic 2: Secret & Credential Management — Store, Retrieve, Search & Import

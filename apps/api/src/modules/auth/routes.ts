@@ -502,6 +502,10 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     method: 'POST',
     url: '/mfa/verify-login',
     bodyLimit: 4096,
+    // 20/min/IP is a broad shield, not the authoritative control (AC-9/ADR-1.12-09): ~4x the
+    // default MFA_LOGIN_MAX_ATTEMPTS=5 leaves room for one legitimate retry-exhausted cycle
+    // per minute per IP, while the DB-backed per-token attempt_count and the Story 1.9
+    // failed-auth threshold worker remain the real brute-force defenses.
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     attachValidation: true,
     schema: {
