@@ -248,6 +248,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@project-vault/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       drizzle-orm:
         specifier: ^0.45.0
         version: 0.45.2(@opentelemetry/api@1.9.1)(pg@8.22.0)(postgres@3.4.9)

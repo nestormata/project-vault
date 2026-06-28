@@ -29,4 +29,14 @@ describe('AuditEvent', () => {
     expect(AuditEvent.PROJECT_CREATED).toBe('project.created')
     expect(AuditEvent.PROJECT_UPDATED).toBe('project.updated')
   })
+
+  it('exposes Story 2.2 credential audit event names and retires the stale secret.* vocabulary', () => {
+    expect(AuditEvent.CREDENTIAL_CREATED).toBe('credential.created')
+    expect(AuditEvent.CREDENTIAL_VERSION_CREATED).toBe('credential.version_created')
+    expect(AuditEvent.CREDENTIAL_VALUE_REVEALED).toBe('credential.value_revealed')
+    expect(AuditEvent.CREDENTIAL_VERSION_PURGED).toBe('credential.version_purged')
+    expect(Object.values(AuditEvent)).not.toEqual(
+      expect.arrayContaining(['secret.created', 'secret.read', 'secret.updated', 'secret.deleted'])
+    )
+  })
 })

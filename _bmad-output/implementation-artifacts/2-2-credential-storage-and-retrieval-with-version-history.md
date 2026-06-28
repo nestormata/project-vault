@@ -842,14 +842,14 @@ Do NOT implement in Story 2.2:
   - [x] Create `apps/api/src/modules/credentials/schema.ts` with request schemas (`.strict()`), cron + value rules (value NOT trimmed), and response envelopes.
   - [x] Unit-test value/cron/tag bounds and `.strict()` rejection.
 - [x] **Task 3: DB-layer RLS isolation test** (AC: 12) — write `credentials-rls-isolation.test.ts` and confirm it fails before the schema exists, passes after.
-- [ ] **Task 4: POST create credential** (AC: 4, 9, 11) — failing test first; implement encrypt (zero buffers) + version-1 insert + project existence 404 + custom audit writer capturing new id.
-- [ ] **Task 5: POST add version** (AC: 5, 9, 11) — failing test first; `FOR UPDATE` lock + MAX+1 + `23505 → 409`; no dedup.
-- [ ] **Task 6: GET reveal value** (AC: 6, 9, 11) — failing test first; `withSecret` reveal-path conversion; audited GET; sealed-vault 503; all-purged 404.
-- [ ] **Task 7: GET version history** (AC: 7, 9) — failing test first; metadata-only select; `isCurrent` + `purgedAt`; value-leak regression test.
-- [ ] **Task 8: Retention worker + operational signals** (AC: 8, 11A, 11B, 12) — failing worker test first; `runOrgScopedJob` purge with overwrite-then-null + `credential.version_purged` audit; rotation-locked exemption; `PRUNE_DRY_RUN` (log-only) mode with `versionsWouldPurge` logging; per-run `{ orgId, credentialsScanned, versionsPurged }` summary; `job.failed` on error; register schedule/worker in `main.ts` and assert registration; add `DIRECT_DB_ACCESS_CLASSIFICATIONS` entry.
-- [ ] **Task 9: Route registration + audit classification + audit-event constants** (AC: 9) — `app.ts` register; `ROUTE_FILES` + four `ROUTE_ACTION_CLASSIFICATIONS` entries; add `credential.created` / `credential.version_created` / `credential.value_revealed` / `credential.version_purged` to `AuditEventType` in `packages/shared/src/constants/audit-events.ts` and **remove the stale `secret.*` members**; run `route-audit.test.ts` in isolation and confirm all four routes appear.
-- [ ] **Task 9A: Reveal/create operational logging** (AC: 11A) — emit reveal attempt/success/failure + `credential.audit_write_failed` structured signals (never logging values); test that a forced audit-write failure emits the signal, returns `503`, and persists no value/audit row.
-- [ ] **Task 9B: Deployment rollout guardrails** (AC: 11B) — document dry-run-first rollout, backup warning, forward-only revert, and migration-order gate in completion notes; ensure the migration-order/ schedule-registration checks exist.
+- [x] **Task 4: POST create credential** (AC: 4, 9, 11) — failing test first; implement encrypt (zero buffers) + version-1 insert + project existence 404 + custom audit writer capturing new id.
+- [x] **Task 5: POST add version** (AC: 5, 9, 11) — failing test first; `FOR UPDATE` lock + MAX+1 + `23505 → 409`; no dedup.
+- [x] **Task 6: GET reveal value** (AC: 6, 9, 11) — failing test first; `withSecret` reveal-path conversion; audited GET; sealed-vault 503; all-purged 404.
+- [x] **Task 7: GET version history** (AC: 7, 9) — failing test first; metadata-only select; `isCurrent` + `purgedAt`; value-leak regression test.
+- [x] **Task 8: Retention worker + operational signals** (AC: 8, 11A, 11B, 12) — failing worker test first; `runOrgScopedJob` purge with overwrite-then-null + `credential.version_purged` audit; rotation-locked exemption; `PRUNE_DRY_RUN` (log-only) mode with `versionsWouldPurge` logging; per-run `{ orgId, credentialsScanned, versionsPurged }` summary; `job.failed` on error; register schedule/worker in `main.ts` and assert registration; add `DIRECT_DB_ACCESS_CLASSIFICATIONS` entry.
+- [x] **Task 9: Route registration + audit classification + audit-event constants** (AC: 9) — `app.ts` register; `ROUTE_FILES` + four `ROUTE_ACTION_CLASSIFICATIONS` entries; add `credential.created` / `credential.version_created` / `credential.value_revealed` / `credential.version_purged` to `AuditEventType` in `packages/shared/src/constants/audit-events.ts` and **remove the stale `secret.*` members**; run `route-audit.test.ts` in isolation and confirm all four routes appear.
+- [x] **Task 9A: Reveal/create operational logging** (AC: 11A) — emit reveal attempt/success/failure + `credential.audit_write_failed` structured signals (never logging values); test that a forced audit-write failure emits the signal, returns `503`, and persists no value/audit row.
+- [x] **Task 9B: Deployment rollout guardrails** (AC: 11B) — document dry-run-first rollout, backup warning, forward-only revert, and migration-order gate in completion notes; ensure the migration-order/ schedule-registration checks exist.
 - [ ] **Task 10: Final verification** (AC: all)
   - [ ] `pnpm --filter @project-vault/db test` (RLS isolation) + `check-rls`.
   - [ ] `pnpm --filter @project-vault/api test` (integration + route-audit + worker).
@@ -1071,14 +1071,52 @@ Pattern observations:
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+Claude Sonnet 4.6
 
 ### Debug Log References
 
+- Migration number confirmed dynamically against `packages/db/src/migrations/meta/_journal.json` before generating: tip was `0013_projects` (Story 2.1, merged via PR #23), so this story landed as `0014_credentials.sql`.
+- `apps/api/src/__tests__/route-audit.test.ts` confirms all four credential routes are registered via `secureRoute()`, classified in `ROUTE_ACTION_CLASSIFICATIONS`, and that the worker's direct `getDb()` usage is classified in `DIRECT_DB_ACCESS_CLASSIFICATIONS`.
+
 ### Completion Notes List
+
+- **AC-11B O1 (dry-run-first rollout):** The retention worker reads `CREDENTIAL_RETENTION_DRY_RUN` (new env var, `apps/api/src/config/env.ts`). Default is `isProduction` (true in production, false in dev/test) — production's first deploy defaults to dry-run (log-only, `credential.retention.dry_run` operational log with `versionsWouldPurge`); tests/dev default to destructive so coverage exercises the real purge path. Operators must explicitly set `CREDENTIAL_RETENTION_DRY_RUN=false` in production after verifying the dry-run output.
+- **AC-11B O2 (backup warning):** Enabling destructive retention permanently destroys credential version values beyond `retentionCount` (default 3, min 1). **A verified database backup must exist before the first destructive run in any environment.** The zero-overwrite in `purgeVersion()` (`apps/api/src/workers/prune-credential-versions.ts`) is defense-in-depth/intent-signaling only — under PostgreSQL MVCC it does not guarantee byte-level erasure (the prior tuple persists as dead-row data until `VACUUM`, and may persist in WAL/backups). The only true cryptographic-deletion guarantee comes from destroying the encryption key at master-key rotation (Epic 5+).
+- **AC-11B O3 (forward-only migration):** `0014_credentials.sql` is forward-only, consistent with every prior migration in this repo (no down-migration files exist). If it must be reverted, write a new forward migration (e.g. `0015_drop_credentials.sql`) or restore from backup — never hand-author a down migration.
+- **AC-11B O4 (migration-order gate):** `0014_credentials.sql` has an FK to `projects` (Story 2.1's `0013_projects.sql`). The migration was generated and applied only after confirming `0013_projects` precedes it in `meta/_journal.json` (idx 13 vs idx 14). `make ci`'s `db-migrate` step applies migrations in journal order, so this ordering is enforced structurally — there is no separate manual gate beyond keeping the journal append-only and never renumbering.
+- **AC-11B O5 (schedule-registration verification):** `apps/api/src/__tests__/worker-registration.test.ts` asserts `'credentials:prune-versions'` appears in both the `registerSchedules` and `registerWorkers` maps in `main.ts`, so the job cannot silently go unregistered.
+- The "custom auditWriter stash pattern" referenced in the story's AC-4 prose does not exist as a framework feature in `secure-route.ts` — Story 2.1's actual precedent (`writeProjectAudit` in `modules/projects/routes.ts`) is `writeAuditEvent: false` + a manual same-transaction audit call wrapped in `SameTransactionAuditWriteError` on failure. This story follows that real precedent (`writeCredentialAudit`/`writeCredentialAuditOrFailClosed` in `modules/credentials/routes.ts`) for the create and add-version routes (no `credentialId` in the create URL); the reveal and version-history routes use SecureRoute's declarative `writeAuditEvent`/`resourceIdFromParams` since `credentialId` is already in those URLs.
+- `packages/db` did not declare `@project-vault/crypto` as a runtime dependency even though `credential-versions.ts` imports `EncryptedValue` from it; added to `packages/db/package.json` dependencies (required for the workspace package graph to resolve correctly).
 
 ### File List
 
+- `packages/db/src/schema/credentials.ts` (new)
+- `packages/db/src/schema/credential-versions.ts` (new)
+- `packages/db/src/schema/index.ts` (modified — export new schemas)
+- `packages/db/package.json` (modified — add `@project-vault/crypto` dependency)
+- `packages/db/src/migrations/0014_credentials.sql` (new)
+- `packages/db/src/migrations/meta/0014_snapshot.json` (new)
+- `packages/db/src/migrations/meta/_journal.json` (modified)
+- `packages/db/src/__tests__/credentials-rls-isolation.test.ts` (new)
+- `packages/shared/src/schemas/credentials.ts` (new)
+- `packages/shared/src/schemas/credentials.test.ts` (new)
+- `packages/shared/src/index.ts` (modified — export new schema)
+- `packages/shared/src/constants/audit-events.ts` (modified — add `credential.*`, remove stale `secret.*`)
+- `packages/shared/src/constants/audit-events.test.ts` (modified)
+- `packages/shared/src/constants/operational-event-types.ts` (modified — add `credential.reveal.*`/`credential.retention.*`/`credential.audit_write_failed`)
+- `apps/api/src/modules/credentials/schema.ts` (new)
+- `apps/api/src/modules/credentials/schema.test.ts` (new)
+- `apps/api/src/modules/credentials/service.ts` (new)
+- `apps/api/src/modules/credentials/routes.ts` (new)
+- `apps/api/src/modules/credentials/routes.test.ts` (new)
+- `apps/api/src/workers/prune-credential-versions.ts` (new)
+- `apps/api/src/workers/prune-credential-versions.test.ts` (new)
+- `apps/api/src/__tests__/worker-registration.test.ts` (new)
+- `apps/api/src/app.ts` (modified — register `credentialRoutes`)
+- `apps/api/src/main.ts` (modified — register `credentials:prune-versions` schedule/worker)
+- `apps/api/src/config/env.ts` (modified — add `CREDENTIAL_RETENTION_DRY_RUN`)
+- `apps/api/src/lib/route-exemptions.ts` (modified — four new `ROUTE_ACTION_CLASSIFICATIONS` entries + one `DIRECT_DB_ACCESS_CLASSIFICATIONS` entry)
+- `.env.example` (modified — document `CREDENTIAL_RETENTION_DRY_RUN`)
 
 
 
