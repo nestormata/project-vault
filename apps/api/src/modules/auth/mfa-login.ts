@@ -1,13 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
-import { auditLogEntries, pendingMfaSessions, users } from '@project-vault/db/schema'
+import { pendingMfaSessions, users } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
-import { getAuditKey } from '../vault/key-service.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
-import { currentAuditKeyVersion } from '../audit/key-version.js'
-import { computeAuditHmac } from '../audit/write-entry.js'
+import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
 import { verifyConfirmedLoginTotp } from './mfa.js'
 import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
@@ -51,50 +49,13 @@ async function attemptedEmailForUser(tx: Tx, userId: string): Promise<string> {
   return rows[0]?.email ?? 'unknown@example.invalid'
 }
 
-async function writeAuditEntry(
-  tx: Tx,
-  fields: {
-    orgId: string
-    actorTokenId: string | null
-    eventType: string
-    payload: Record<string, unknown>
-    meta?: RequestMeta
-  }
-): Promise<void> {
-  await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
-  const keyVersion = await currentAuditKeyVersion(tx)
-  const hmac = computeAuditHmac(
-    {
-      orgId: fields.orgId,
-      actorTokenId: fields.actorTokenId,
-      actorType: 'human',
-      eventType: fields.eventType,
-      payload: fields.payload,
-      keyVersion,
-    },
-    getAuditKey()
-  )
-
-  await tx.insert(auditLogEntries).values({
-    orgId: fields.orgId,
-    actorTokenId: fields.actorTokenId,
-    actorType: 'human',
-    eventType: fields.eventType,
-    payload: fields.payload,
-    keyVersion,
-    hmac,
-    ipAddress: fields.meta?.ipAddress ?? null,
-    userAgent: fields.meta?.userAgent ?? null,
-  })
-}
-
 async function tryWriteLoginFailedAudit(
   tx: Tx,
   row: { userId: string; orgId: string },
   meta: RequestMeta
 ): Promise<void> {
   try {
-    await writeAuditEntry(tx, {
+    await writeHumanAuditEntry(tx, {
       orgId: row.orgId,
       actorTokenId: await firstActorTokenIdForUser(tx, row.userId),
       eventType: AuditEvent.LOGIN_FAILED,
@@ -110,6 +71,26 @@ async function tryWriteLoginFailedAudit(
 
 async function deletePendingSession(tx: Tx, tokenHash: string): Promise<void> {
   await tx.delete(pendingMfaSessions).where(eq(pendingMfaSessions.tokenHash, tokenHash))
+}
+
+async function recordInvalidTotpFailure(
+  tx: Tx,
+  row: {
+    userId: string
+    orgId: string
+    ipAddress: string | null
+  },
+  meta: RequestMeta,
+  replayed: boolean
+): Promise<void> {
+  await tryWriteLoginFailedAudit(tx, row, meta)
+  if (replayed) return
+  void recordFailedAuthAttempt({
+    userId: row.userId,
+    ipAddress: meta.ipAddress ?? row.ipAddress ?? '0.0.0.0',
+    attemptedEmail: await attemptedEmailForUser(tx, row.userId),
+    reason: 'invalid_totp',
+  })
 }
 
 async function insertPendingChallenge(
@@ -180,6 +161,7 @@ async function consumeInvalidAttempt(
 ): Promise<VerifyLoginOutcome> {
   const nextAttemptCount = row.attemptCount + 1
   if (nextAttemptCount >= env.MFA_LOGIN_MAX_ATTEMPTS) {
+    await recordInvalidTotpFailure(tx, row, meta, replayed)
     await deletePendingSession(tx, row.tokenHash)
     process.stdout.write(
       `${JSON.stringify({ eventType: MFA_LOGIN_FAILED_EVENT, userId: row.userId, method: TOTP_METHOD, reason: 'attempt_capped' })}\n`
@@ -191,16 +173,7 @@ async function consumeInvalidAttempt(
     .update(pendingMfaSessions)
     .set({ attemptCount: nextAttemptCount })
     .where(eq(pendingMfaSessions.tokenHash, row.tokenHash))
-  await tryWriteLoginFailedAudit(tx, row, meta)
-
-  if (!replayed) {
-    void recordFailedAuthAttempt({
-      userId: row.userId,
-      ipAddress: meta.ipAddress ?? row.ipAddress ?? '0.0.0.0',
-      attemptedEmail: await attemptedEmailForUser(tx, row.userId),
-      reason: 'invalid_totp',
-    })
-  }
+  await recordInvalidTotpFailure(tx, row, meta, replayed)
   process.stdout.write(
     `${JSON.stringify({ eventType: MFA_LOGIN_FAILED_EVENT, userId: row.userId, method: TOTP_METHOD, reason: replayed ? 'replayed_totp' : 'invalid_totp' })}\n`
   )
@@ -252,7 +225,7 @@ export async function verifyLogin(
       row.orgId,
       meta
     )
-    await writeAuditEntry(db, {
+    await writeHumanAuditEntry(db, {
       orgId: row.orgId,
       actorTokenId: identityTokenId,
       eventType: AuditEvent.MFA_LOGIN_VERIFIED,

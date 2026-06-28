@@ -101,6 +101,22 @@ async function auditRowsForEvent(orgId: string, eventType: string) {
   )
 }
 
+async function expectInvalidLoginTotpRecorded(
+  user: { userId: string; email: string; orgId: string },
+  ipAddress: string
+) {
+  const rows = await waitForFailedTotpRows(user.userId)
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.attemptedEmail).toBe(user.email)
+  expect(rows[0]?.ipAddress).toBe(ipAddress)
+
+  const auditRows = await auditRowsForEvent(user.orgId, AuditEvent.LOGIN_FAILED)
+  expect(auditRows).toContainEqual({
+    eventType: AuditEvent.LOGIN_FAILED,
+    payload: { method: 'totp_login' },
+  })
+}
+
 describe.sequential('MFA login service', () => {
   beforeAll(async () => {
     await resetVaultForTest()
@@ -306,16 +322,26 @@ describe.sequential('MFA login service', () => {
       )
     ).rejects.toMatchObject({ code: INVALID_TOTP, statusCode: 422 })
 
-    const rows = await waitForFailedTotpRows(user.userId)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.attemptedEmail).toBe(user.email)
-    expect(rows[0]?.ipAddress).toBe('203.0.113.11')
+    await expectInvalidLoginTotpRecorded(user, '203.0.113.11')
+  })
 
-    const auditRows = await auditRowsForEvent(user.orgId, AuditEvent.LOGIN_FAILED)
-    expect(auditRows).toContainEqual({
-      eventType: AuditEvent.LOGIN_FAILED,
-      payload: { method: 'totp_login' },
-    })
+  it('records the invalid TOTP attempt that consumes a capped login challenge', async () => {
+    const previousMaxAttempts = env.MFA_LOGIN_MAX_ATTEMPTS
+    env.MFA_LOGIN_MAX_ATTEMPTS = 1
+    try {
+      const { user, challenge } = await challengeForEnrolledUser()
+
+      await expect(
+        verifyLogin(
+          { mfaToken: challenge.mfaToken, totp: INVALID_TOTP_CODE },
+          { ipAddress: '203.0.113.12' }
+        )
+      ).rejects.toMatchObject({ code: MFA_TOKEN_EXPIRED, statusCode: 401 })
+
+      await expectInvalidLoginTotpRecorded(user, '203.0.113.12')
+    } finally {
+      env.MFA_LOGIN_MAX_ATTEMPTS = previousMaxAttempts
+    }
   })
 
   it('does not record failed-auth attempts for replayed login TOTP codes', async () => {

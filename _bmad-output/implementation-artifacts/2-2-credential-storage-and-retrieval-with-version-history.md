@@ -18,12 +18,12 @@ so that I always have the current secret value and can audit or roll back to any
 
 | Prerequisite | Why |
 |---|---|
-| Story 2.1 (`projects` + `project_memberships` tables, migration 0011) is merged | Credentials are project-scoped (`credentials.project_id → projects.id`). The migration in this story (0012) builds on 0011. Run `pnpm --filter @project-vault/db migrate` first. |
+| Story 2.1 (`projects` + `project_memberships` tables, its projects migration) is merged | Credentials are project-scoped (`credentials.project_id → projects.id`). This story's credentials migration builds on Story 2.1's projects migration. Run `pnpm --filter @project-vault/db migrate` first. (See R1 below for the actual numbers — do NOT hardcode.) |
 | Story 1.11 `SecureRoute` framework is merged and passing CI | All four new credential routes must use `secureRoute()`. The route-audit CI gate (`route-audit.test.ts`) requires every route be classified. |
 | Story 1.5 vault init/unseal + `packages/crypto` are merged | Value encryption uses `encrypt()` + `getPrimaryKey()`; decryption uses `withSecret()`. The vault must be unsealed for any credential value operation. |
-| Story 1.4 audit log foundation (`audit_log_entries`, `user_identity_tokens`, `vault_state.audit_key_version`) exists | The reveal endpoint and retention job write HMAC-chained audit rows via the SecureRoute default audit writer / `computeAuditHmac`. |
-| Migration numbering **(R1 — verify, do NOT hardcode 0012)** | ⚠️ On the current branch the highest migration is **`0011_pending_mfa_sessions.sql`** — `projects` is **not yet added**. Story 2.1 will therefore land as `0012_projects.sql`, making **this story's migration `0013_credentials.sql`**, NOT 0012. Before generating, run a fresh check of `packages/db/src/migrations/` (and `meta/_journal.json`) and use the next free number. The `0012` references elsewhere in this doc are illustrative placeholders — substitute the real number. |
-| Migration ordering guard (R1) | `0012/0013_credentials` has an FK to `projects`; if it is applied before 2.1's projects migration, the `CREATE TABLE credential … REFERENCES projects` fails mid-migration. Do not merge/deploy this story's migration until 2.1's projects migration is present and ordered earlier in `meta/_journal.json`. Add a CI/ordering check (or a manual gate) confirming `projects` exists before the credentials migration runs. |
+| Story 1.4 audit log foundation (`audit_log_entries`, `user_identity_tokens`, `vault_state.audit_key_version`) exists | The reveal endpoint and retention job write **per-row keyed-HMAC** audit rows via the SecureRoute default audit writer / `computeAuditHmac` (canonical-JSON HMAC-SHA256 over each row's fields, keyed by the audit key). **There is no prev-row hash chaining in current Epic 1 reality** — `computeAuditHmac` takes only the row's own fields, not a previous HMAC. If cryptographic chaining is ever wanted it must be added intentionally (Epic 8 territory), not assumed here. |
+| Migration numbering **(R1 — verify against `meta/_journal.json`, do NOT hardcode)** | ⚠️ On the current branch the highest migration is **`0012_refresh_tokens_org_id.sql`** (`packages/db/src/migrations/meta/_journal.json` last entry, idx 12) — `projects` is **not yet added**. Story 2.1 will therefore land as **`0013_projects.sql`**, making **this story's migration `0014_credentials.sql`**. Before generating, run a fresh check of `packages/db/src/migrations/` and `meta/_journal.json` and use the **next free number after whatever Story 2.1 actually committed** (do not assume 0013 is still free if 2.1 has merged — re-read the journal). Every `0012`/`0013_credentials` reference elsewhere in this doc is an illustrative placeholder — substitute the real number. |
+| Migration ordering guard (R1) | The credentials migration (`0014_credentials.sql`, or whatever number it takes) has an FK to `projects`; if it is applied before 2.1's projects migration, the `CREATE TABLE credentials … REFERENCES projects` fails mid-migration. Do not merge/deploy this story's migration until 2.1's projects migration is present and ordered earlier in `meta/_journal.json`. Add a CI/ordering check (or a manual gate) confirming the `projects` table/migration exists and precedes the credentials migration in the journal before it runs. |
 
 ---
 
@@ -63,7 +63,7 @@ The architecture document predates the epic refinement and uses older names/shap
 
 | Area | Required result |
 |---|---|
-| DB schema | `credentials` + `credential_versions` tables, both org-scoped with RLS in migration 0012. `credential_versions` carries `rotation_locked_at` (retention exemption seam) and `purged_at` (crypto-deletion marker). |
+| DB schema | `credentials` + `credential_versions` tables, both org-scoped with RLS in the credentials migration (next free number, e.g. `0014_credentials.sql` — see R1). `credential_versions` carries `rotation_locked_at` (retention exemption seam) and `purged_at` (crypto-deletion marker). |
 | Create credential | `POST /…/credentials` encrypts the value with `packages/crypto`, stores ciphertext in `credential_versions` (version 1), returns metadata only — never the value. |
 | Reveal value | `GET /…/credentials/:id/value` decrypts via `withSecret()`, returns `{ value, versionNumber, retrievedAt }`, and writes a `credential.value_revealed` audit row in the same transaction. |
 | Add version | `POST /…/credentials/:id/versions` creates a new version (monotonic `versionNumber`), no value dedup. |
@@ -72,6 +72,8 @@ The architecture document predates the epic refinement and uses older names/shap
 | Security | `encrypted_value` never appears in any list/history/search response or any index. Vault-sealed → 503. Cross-org/cross-project access → 404. Reveal is **fail-closed on audit** (ADR-2.2-09). |
 | Route audit | All four routes registered in `ROUTE_FILES` and `ROUTE_ACTION_CLASSIFICATIONS`; `route-audit.test.ts` passes. The `:projectId` param is declared in each route's `url`, not the plugin prefix (AC-9). The retention worker is added to `DIRECT_DB_ACCESS_CLASSIFICATIONS`. |
 | Tests | Create, reveal (audit verified), add version, version history, retention enforcement, rotation-locked exemption, cross-org isolation, sealed-vault 503, audit-failure rollback (fail-closed reveal), version-conflict concurrency, cross-org write isolation, purged-top current-version handling. |
+| Operational metrics/logging | Reveal attempt/success/failure signals, audit-write-failure signal, retention purged/dry-run/job-failure logs — never logging values (AC-11A). |
+| Deployment / first destructive rollout | Dry-run-first, backup warning, forward-only migration revert note, migration-order gate, schedule-registration check (AC-11B). |
 
 ---
 
@@ -195,11 +197,13 @@ export const credentialVersions = pgTable(
 
 ---
 
-### AC-3: Migration 0012 — Schema, RLS Policies, `updated_at` Trigger
+### AC-3: Credentials Migration (next free number, e.g. `0014_credentials.sql`) — Schema, RLS Policies, `updated_at` Trigger
+
+> **Migration number is dynamic (R1).** Use the next free number after the journal tip *as it stands once Story 2.1's projects migration has merged*. On today's branch the tip is `0012_refresh_tokens_org_id`; with 2.1 landing `0013_projects`, this story is `0014_credentials.sql`. Always re-read `packages/db/src/migrations/meta/_journal.json` immediately before `drizzle-kit generate`. Every `0012_credentials.sql` mention below is an illustrative placeholder.
 
 **Given** the RLS coverage check (`packages/db/src/check-rls-coverage.ts`) fails CI if any `org_id` table lacks an `ALL` policy,
 **When** Story 2.2 creates the migration,
-**Then** create `packages/db/src/migrations/0012_credentials.sql` that:
+**Then** create `packages/db/src/migrations/<next>_credentials.sql` (e.g. `0014_credentials.sql`) that:
 
 1. Creates both tables (`drizzle-kit generate` emits the `CREATE TABLE` statements — `credentials` MUST be created before `credential_versions` because of the FK).
 2. Enables RLS and adds isolation policies for **both** tables in the **same migration file**.
@@ -579,6 +583,14 @@ await fastify.register(credentialRoutes, { prefix: '/api/v1/projects' })
 ```
 > Note the value endpoint is classified `sensitive-read` WITH an `auditEvent` — it is the canonical example of a read that must be audited. Confirm the route-audit test accepts a `GET` carrying an `auditEvent`; if its logic only expects `auditEvent` on mutations, extend the test's allow-list for `sensitive-read`.
 
+5. **Add the `credential.*` audit event names to the shared audit-event typing and retire the stale `secret.*` names** (`packages/shared/src/constants/audit-events.ts`):
+
+   That file's `AuditEventType` union still carries the **stale, never-emitted** `secret.*` members (`secret.created` / `secret.read` / `secret.updated` / `secret.deleted`) from the superseded architecture naming (ADR-2.2-01). Story 2.2 is where the canonical `credential.*` vocabulary fully lands, so:
+
+   - **Add** all four event names to `AuditEventType`: `'credential.created'`, `'credential.version_created'`, `'credential.value_revealed'`, `'credential.version_purged'`. These are the exact strings used in `ROUTE_ACTION_CLASSIFICATIONS`, `writeAuditEvent`, and the retention worker — keep them byte-identical across the route classifications, the audit payloads, and this union.
+   - **Remove the stale `secret.*` members** from `AuditEventType` (Story 2.1 may have already deprecated them; this story deletes them). Do NOT type any 2.2 audit event as `secret.*`. The Story 2.1 dashboard `RecentAccessEventSchema` already references `credential.value_revealed` / `credential.created` — they must match these constants exactly.
+   - `route-exemptions.ts` types `auditEvent` loosely as `string`, so the route-audit CI gate passes regardless; the union update is for cross-package type consistency and to remove the misleading `secret.*` vocabulary entirely. After editing, run `pnpm --filter @project-vault/shared test` and `pnpm typecheck` to confirm nothing still references the removed `secret.*` names.
+
 ---
 
 ### AC-10: Shared & API Zod Schemas
@@ -689,6 +701,48 @@ export const CredentialVersionListResponseSchema = z.object({
 
 ---
 
+### AC-11A: Operational Metrics & Logging
+
+**Given** Story 1.10 established the structured operational logger + metrics conventions, and credential reveal/retention are the most security-sensitive operations in Epic 2,
+**When** Story 2.2 routes and the retention worker run,
+**Then** emit the following structured operational signals (Story 1.10 logger; metric counters where the metrics surface exists). **NEVER log credential values, plaintext, `encrypted_value`, or key material in any of these.**
+
+| Signal | Where | What to emit | Why |
+|---|---|---|---|
+| **Reveal attempt** | `GET …/credentials/:id/value` (entry) | structured log/counter `credential.reveal.attempt` with `{ orgId, credentialId, actorTokenId }` — never the value | Baseline volume for later anomaly detection (the audit row is forensic; this is operational). |
+| **Reveal success** | reveal handler, after audit commit | `credential.reveal.success` `{ orgId, credentialId, versionNumber }` | Distinguish served reveals from attempts/failures. |
+| **Reveal failure** | reveal handler/guard error paths | `credential.reveal.failure` `{ orgId, credentialId, reason }` where `reason ∈ { not_found, all_versions_purged, sealed_vault, audit_write_failed, decrypt_error }` | Operators must see *why* reveals fail without reading values. |
+| **Audit-write failure (fail-closed)** | reveal + create + add-version | `credential.audit_write_failed` `{ orgId, eventType, resourceId }` when the same-tx audit write throws and the tx rolls back (client gets `503`) | This is the 100%-capture guarantee (ADR-2.2-09); its failures must be observable, not silent. |
+| **Retention — versions purged** | retention worker, per run | one summary `{ orgId, credentialsScanned, versionsPurged }` (extends AC-8 R12) | Distinguish "retention working" from "runaway purge" / "no-op". |
+| **Retention — dry-run counts** | retention worker in `PRUNE_DRY_RUN` mode | `{ orgId, credentialsScanned, versionsWouldPurge }` and per-candidate `{ orgId, credentialId, versionNumber }` it *would* purge — without mutating | Operators verify the keep-set before enabling destructive mode (AC-8 R11). |
+| **Retention — job failure** | retention worker error path | `job.failed` for `credentials:prune-versions` with the error (Story 1.10 `withJobLogging`); on `getAuditKey()` throw, surface a clear error — never silently skip the audit | A silently-dead retention job (AC-8 R3) lets versions accumulate forever with no signal. |
+
+**And** reveal `attempt` vs `success` vs `failure` must be separately countable so a spike of failures (e.g., decrypt errors after a bad key rotation) is distinguishable from normal reveal volume.
+
+**And** these operational logs are **in addition to** the mandatory `credential.value_revealed` / `credential.version_purged` **audit** rows — operational logging never replaces the audit trail, and the audit trail never substitutes for operational observability.
+
+**And** tests assert: (a) a forced audit-write failure emits `credential.audit_write_failed` and returns `503` with no value and no committed audit row; (b) the retention worker emits its per-run summary with correct `versionsPurged`; (c) dry-run mode emits `versionsWouldPurge` and mutates nothing.
+
+---
+
+### AC-11B: Deployment / Operations for First Destructive Retention Rollout
+
+**Given** the retention purge is **irreversible** (AC-8 R11) and this story is the first time Project Vault destroys credential material on a schedule,
+**When** the credentials migration and retention worker are deployed for the first time,
+**Then** satisfy these operational guardrails:
+
+| # | Requirement | Detail |
+|---|---|---|
+| O1 | **Dry-run-first rollout** | The retention worker ships with a `PRUNE_DRY_RUN` (log-only) mode (AC-8 R11). Production first-run MUST start in dry-run: it logs the keep-set / would-purge candidates (AC-11A) and mutates nothing. Destructive mode is enabled only after an operator verifies the dry-run output. Document the env flag / toggle and its default. Tests default to destructive; production defaults to dry-run for the first deploy. |
+| O2 | **Backup warning before enabling destructive mode** | The deploy runbook / story completion notes MUST state, prominently, that enabling destructive retention permanently destroys version values beyond `retentionCount` and that a verified database backup should exist before the first destructive run. The purge cannot be undone (cross-reference AC-8 MVCC caveat: zeroing is defense-in-depth, not byte-erasure; true shredding is key-destruction at master-key rotation, Epic 5+). |
+| O3 | **Forward-only migration / no down-migration** | The repo uses **forward-only** drizzle-kit migrations — there are no `down`/rollback files. If the credentials migration must be reverted, do it via a **new forward migration** (or restore from backup); never hand-author a down migration that diverges from `meta/_journal.json`. Record this in the rollout note. |
+| O4 | **Migration-order gate** | Before the credentials migration runs in any environment, confirm the `projects` migration (Story 2.1) is present and ordered earlier in `meta/_journal.json` (R1 ordering guard). The credentials `… REFERENCES projects` FK fails mid-migration otherwise. Add a CI/ordering check or a documented manual gate that blocks deploy if `projects` is absent or ordered later. |
+| O5 | **Schedule-registration verification** | Confirm `credentials:prune-versions` is registered in both the schedules and workers maps at startup (AC-8 R3). A startup/integration test asserts registration so the job cannot silently never run. |
+
+**And** these deployment requirements are recorded in the story's completion notes (and, on completion, offered to `specs/` per the repo's spec-maintenance rule) so the first destructive rollout is a deliberate, reviewed action — not a side effect of merging the migration.
+
+---
+
 ### AC-12: Integration & Unit Tests
 
 > Follow repo TDD red-green (`AGENTS.md`): write failing tests first, confirm the failure reason, implement the smallest change, then re-run focused + broader checks.
@@ -777,7 +831,7 @@ Do NOT implement in Story 2.2:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Database schema + migration 0012** (AC: 1, 2, 3)
+- [ ] **Task 1: Database schema + credentials migration (next free number, e.g. `0014_credentials.sql`)** (AC: 1, 2, 3)
   - [ ] Create `packages/db/src/schema/credentials.ts` and `credential-versions.ts`.
   - [ ] Export both from `packages/db/src/schema/index.ts`.
   - [ ] Run `pnpm --filter @project-vault/db generate`; confirm `CREATE TABLE credentials` precedes `credential_versions`.
@@ -792,8 +846,10 @@ Do NOT implement in Story 2.2:
 - [ ] **Task 5: POST add version** (AC: 5, 9, 11) — failing test first; `FOR UPDATE` lock + MAX+1 + `23505 → 409`; no dedup.
 - [ ] **Task 6: GET reveal value** (AC: 6, 9, 11) — failing test first; `withSecret` reveal-path conversion; audited GET; sealed-vault 503; all-purged 404.
 - [ ] **Task 7: GET version history** (AC: 7, 9) — failing test first; metadata-only select; `isCurrent` + `purgedAt`; value-leak regression test.
-- [ ] **Task 8: Retention worker** (AC: 8, 12) — failing worker test first; `runOrgScopedJob` purge with overwrite-then-null + `credential.version_purged` audit; rotation-locked exemption; register schedule/worker in `main.ts`; add `DIRECT_DB_ACCESS_CLASSIFICATIONS` entry.
-- [ ] **Task 9: Route registration + audit classification** (AC: 9) — `app.ts` register; `ROUTE_FILES` + four `ROUTE_ACTION_CLASSIFICATIONS` entries; run `route-audit.test.ts` in isolation and confirm all four routes appear.
+- [ ] **Task 8: Retention worker + operational signals** (AC: 8, 11A, 11B, 12) — failing worker test first; `runOrgScopedJob` purge with overwrite-then-null + `credential.version_purged` audit; rotation-locked exemption; `PRUNE_DRY_RUN` (log-only) mode with `versionsWouldPurge` logging; per-run `{ orgId, credentialsScanned, versionsPurged }` summary; `job.failed` on error; register schedule/worker in `main.ts` and assert registration; add `DIRECT_DB_ACCESS_CLASSIFICATIONS` entry.
+- [ ] **Task 9: Route registration + audit classification + audit-event constants** (AC: 9) — `app.ts` register; `ROUTE_FILES` + four `ROUTE_ACTION_CLASSIFICATIONS` entries; add `credential.created` / `credential.version_created` / `credential.value_revealed` / `credential.version_purged` to `AuditEventType` in `packages/shared/src/constants/audit-events.ts` and **remove the stale `secret.*` members**; run `route-audit.test.ts` in isolation and confirm all four routes appear.
+- [ ] **Task 9A: Reveal/create operational logging** (AC: 11A) — emit reveal attempt/success/failure + `credential.audit_write_failed` structured signals (never logging values); test that a forced audit-write failure emits the signal, returns `503`, and persists no value/audit row.
+- [ ] **Task 9B: Deployment rollout guardrails** (AC: 11B) — document dry-run-first rollout, backup warning, forward-only revert, and migration-order gate in completion notes; ensure the migration-order/ schedule-registration checks exist.
 - [ ] **Task 10: Final verification** (AC: all)
   - [ ] `pnpm --filter @project-vault/db test` (RLS isolation) + `check-rls`.
   - [ ] `pnpm --filter @project-vault/api test` (integration + route-audit + worker).
@@ -810,7 +866,7 @@ Do NOT implement in Story 2.2:
 |---|---|
 | New API module | `apps/api/src/modules/credentials/` — `routes.ts`, `schema.ts`, and a `service.ts` if any handler exceeds ~60 lines (the encrypt/version logic likely warrants `service.ts`). Service functions MUST accept `tx: Tx` and use it exclusively — never call `getDb()` inside a handler-invoked helper (breaks RLS + the outer transaction). |
 | New DB schema files | `packages/db/src/schema/credentials.ts`, `credential-versions.ts` — exported from `schema/index.ts`. |
-| Migration | `packages/db/src/migrations/0012_credentials.sql` (confirm number after Story 2.1's 0011). |
+| Migration | `packages/db/src/migrations/<next>_credentials.sql` — confirm the number against `meta/_journal.json` after Story 2.1's projects migration merges (tip `0012_refresh_tokens_org_id` → 2.1 `0013_projects` → this story `0014_credentials.sql`). Never hardcode. |
 | Worker | `apps/api/src/workers/prune-credential-versions.ts` (+ `.test.ts`), wired in `main.ts`. |
 | Shared schema | `packages/shared/src/schemas/credentials.ts`. |
 
@@ -872,7 +928,7 @@ Do NOT implement in Story 2.2:
 
 Recent commits on `feature/1-11-secureroute-framework-and-drizzle-rls-middleware`:
 - `1cfd889 fix(core): improve secureroute framework and drizzle rls middleware` — the SecureRoute + RLS + route-audit foundations this story builds on are freshly hardened. Re-read `secure-route.ts` (audit writer signature, `withAuditSendGuard`) before wiring routes.
-- Story 2.0 / 2.1 are `ready-for-dev` on this branch; 2.1's `projects` schema/migration is the direct prerequisite (it may not be merged yet — coordinate so 0011 lands before 0012).
+- Story 2.0 / 2.1 are `ready-for-dev` on this branch (Epic 1, including Story 1.12 MFA login, is `done`); 2.1's `projects` schema/migration is the direct prerequisite (it may not be merged yet — coordinate so the `projects` migration, e.g. `0013_projects`, lands and is journaled before this story's credentials migration, e.g. `0014_credentials`).
 
 Pattern observations:
 - Route modules export `async function xRoutes(fastify: FastifyApp): Promise<void>`.
@@ -960,7 +1016,7 @@ Pattern observations:
 ### ADR-2.2-07: Retention runs as a scheduled pg-boss job, not a DB trigger / TTL / on-write purge
 | | |
 |---|---|
-| **Context** | Versions beyond `retentionCount` must be cryptographically purged AND each purge must write an HMAC-chained, key-versioned, RLS-scoped audit row. |
+| **Context** | Versions beyond `retentionCount` must be cryptographically purged AND each purge must write a per-row keyed-HMAC, key-versioned, RLS-scoped audit row (per-row `computeAuditHmac`, not a prev-row chain). |
 | **Options** | (a) daily pg-boss cron job (Story 1.10 worker pattern + `runOrgScopedJob`); (b) DB trigger/rule purging inline on insert; (c) `pg_cron` / partition TTL. |
 | **Decision** | (a) scheduled pg-boss job (`credentials:prune-versions`, `0 3 * * *`). |
 | **Rationale** | Only the app worker path has `getAuditKey()` and `runOrgScopedJob` for audited, org-scoped writes. A trigger cannot cleanly produce audited, key-versioned audit rows and would couple write latency to purge work; `pg_cron`/TTL adds infra outside the audit/RLS framework. Eventual (daily) purge is acceptable for a retention policy. |

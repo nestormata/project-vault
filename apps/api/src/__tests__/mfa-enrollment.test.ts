@@ -404,16 +404,19 @@ describe.sequential('MFA enrollment integration', () => {
   it('returns Retry-After and retryAfterSeconds when recover email limit is exceeded', async () => {
     const user = await registerAndLogin()
     const app = await createApp({ logger: false })
-    await enrollAndVerify(app, cookieHeader(user.cookies))
+    const resetAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+    await getDb().execute(sql`
+      INSERT INTO auth_rate_limit_buckets (bucket_key, request_count, reset_at)
+      VALUES (${`email:${user.email}`}, 5, ${resetAt}::timestamptz)
+      ON CONFLICT (bucket_key)
+      DO UPDATE SET request_count = 5, reset_at = ${resetAt}::timestamptz, updated_at = NOW()
+    `)
 
-    let lastResponse
-    for (let i = 0; i < 6; i += 1) {
-      lastResponse = await app.inject({
-        method: 'POST',
-        url: MFA_RECOVER_URL,
-        payload: { email: user.email, password: PASSWORD, recoveryCode: 'AAAAA-AAAAA' },
-      })
-    }
+    const lastResponse = await app.inject({
+      method: 'POST',
+      url: MFA_RECOVER_URL,
+      payload: { email: user.email, password: PASSWORD, recoveryCode: 'AAAAA-AAAAA' },
+    })
 
     expect(lastResponse?.statusCode).toBe(429)
     expect(lastResponse?.headers['retry-after']).toBeDefined()

@@ -1149,6 +1149,8 @@ Users can create projects, store and retrieve credentials with full version hist
 
 *Covers: FR14, FR95*
 
+> **Readiness note (Epic 2 planning pass, 2026-06-27):** Search/index work here MUST never index or return credential values. The `credentials` table has no `value`/`encrypted_value` column (introduced clean in Story 2.2 per RS-E2a); this story adds the CI lint rule (`scripts/check-search-index.ts`) that fails if any migration/Drizzle query puts a value column into a full-text or trigram index, plus the required negative test (searching a known plaintext returns zero results). Pagination here is the canonical FR97 implementation (`page`/`limit`, max 100) — note that Story 2.1's project list is an explicit, recorded FR97 exception (ADR-2.1-06), not a precedent for skipping pagination on the credential list. Relies on: Story 2.2 `credentials`/`credential_versions` schema + audit vocabulary. Consumed by: Story 2.7 global search (same never-index-values invariant).
+
 **As a** developer working across many credentials,
 **I want** to search and filter credentials by name, tag, status, and expiry, and manage tags on both credentials and projects,
 **So that** I can quickly locate what I need without scrolling through a full list.
@@ -1183,6 +1185,8 @@ Users can create projects, store and retrieve credentials with full version hist
 
 *Covers: FR15, FR16, FR64*
 
+> **Readiness note (Epic 2 planning pass, 2026-06-27):** The `credential_dependencies` records created here are the **direct input to Epic 5 rotation checklists** — Story 5.1 generates a `rotation_checklist_items` row per non-archived dependency (see epics.md Story 5.1 ACs). Design the dependency record (`systemName`, `systemType`, `notes`, `archivedAt`) and the archive semantics so Epic 5 can consume them with no reshape; archived dependencies stay in history but are excluded from checklist generation. This story also activates the `expiresAt`/`rotationSchedule` columns that Story 2.2 created but left write-only-at-create — full cron semantics land here (2.2 validated shape only). Relies on: Story 2.2 credential schema (`expiresAt`/`rotationSchedule` columns, `rotation_locked_at` seam). Consumed by: Epic 5 (rotation checklists), Story 2.3 (status/expiry filters).
+
 **As a** developer managing credential lifecycle,
 **I want** to record which systems depend on each credential, set expiry dates and rotation schedules, and see who has access to a specific credential,
 **So that** rotation checklists are pre-populated (for Epic 5) and I can audit credential exposure.
@@ -1208,6 +1212,8 @@ Users can create projects, store and retrieve credentials with full version hist
 #### Story 2.5: Credential Bulk Import from .env & JSON
 
 *Covers: FR17*
+
+> **Readiness note (Epic 2 planning pass, 2026-06-27):** Import MUST preserve existing version history and dependency/rotation metadata. The `new_version` conflict action creates a **new credential version** (reusing Story 2.2's add-version path, monotonic `versionNumber`, no dedup) and must NOT overwrite or truncate prior versions, dependencies (Story 2.4), `rotationSchedule`, tags, or notes — only the value advances via a new version. `skip` leaves the credential untouched; `create_new` makes a suffixed new credential. Every imported value goes through the same encrypt + version-insert path as a manual create (no bypass of the no-value-leak / audit invariants). Relies on: Story 2.2 (versioning + encryption), Story 2.4 (dependencies/rotation metadata to preserve). Consumed by: Story 2.6 onboarding (step 3 links to import).
 
 **As a** developer migrating secrets from an existing setup,
 **I want** to import credentials in bulk from `.env` files or JSON exports with explicit per-conflict resolution,
@@ -1241,6 +1247,8 @@ Users can create projects, store and retrieve credentials with full version hist
 
 *Covers: FR9*
 
+> **Readiness note (Epic 2 planning pass, 2026-06-27):** Onboarding triggers **once per user per org** and is permanently dismissible — the `user_onboarding` table keyed by `(userId, orgId)` is the source of truth; `POST /api/v1/users/me/onboarding { completed: true }` must make the wizard never re-trigger on subsequent logins or project creation (AC-E2c). Operators bootstrapping via Docker ENV / direct API are exempt (web-UI first-access only; the API has no wizard gate). Step 2 completes only on a real non-empty credential value (no placeholder/demo). Relies on: Story 2.1 (first project), Story 2.2 (real credential create), Story 2.0 (web shell/auth guard). Consumed by: none downstream — it is a one-time UX gate, not a data dependency.
+
 **As a** new user accessing the web UI for the first time after creating an account,
 **I want** a guided onboarding wizard that teaches me project-centric organization and walks me through adding my first real credential,
 **So that** I understand the vault's model and can place secrets confidently before working independently.
@@ -1272,6 +1280,8 @@ Users can create projects, store and retrieve credentials with full version hist
 #### Story 2.7: Cross-Project Global Search
 
 *Covers: FR80*
+
+> **Readiness note (Epic 2 planning pass, 2026-06-27):** Global search MUST exclude credential values and any secret material entirely — it matches only credential `name`/`description`/`tags`, project `name`/`tags`. The negative test (searching a known credential plaintext returns zero results) is a **required passing CI check** (AC-E2a), reusing the same never-index-values invariant established in Story 2.2 (no value column) and enforced by the Story 2.3 CI lint rule (`scripts/check-search-index.ts`); the `pg_trgm` indexes added here go on `name`/`description`/`tags` only, never on value/encrypted columns. Results are org-scoped at the DB query level via RLS (not post-filtered). Relies on: Story 2.3 (search/index foundation + lint rule), Story 2.2 (value-free schema), Story 2.1 (projects). Consumed by: the web shell's global search affordance.
 
 **As a** developer working across multiple projects,
 **I want** to search all accessible credentials, services, and projects by name or tag from anywhere in the product,

@@ -234,7 +234,9 @@ cluster_addr = "http://127.0.0.1:8201"
 
 ## Audit Log
 
-### Hash-Chained Tamper-Evident Log (PostgreSQL)
+> **⚠️ v1 implementation reality (Story 1.4+, 2026-06-27):** The running codebase does **NOT** use the hash-chained design below. v1 uses a **per-row keyed HMAC** (`HMAC-SHA256` over each row's canonical-JSON fields via `computeAuditHmac`, keyed by the vault audit key) with **no `prev_hash` linkage**; immutability is enforced by an append-only trigger (migration `0001`), not by a chain. See **[specs/audit-secureroute-and-platform-conventions.md](audit-secureroute-and-platform-conventions.md)** for the implemented model, the SecureRoute fail-closed same-transaction audit guarantee, and the audit event vocabulary. The hash chain below is the research design; adopting it (true prev-row chaining) is an intentional future change (Epic 8), not current behavior.
+
+### Hash-Chained Tamper-Evident Log (PostgreSQL) — research design (not yet implemented)
 
 ```sql
 CREATE TABLE audit_log (

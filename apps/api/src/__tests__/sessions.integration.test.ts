@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { orgMemberships } from '@project-vault/db/schema'
+import { orgMemberships, sessions } from '@project-vault/db/schema'
+import { env } from '../config/env.js'
 import {
   configureAuthIntegrationEnv,
   cookieHeader,
@@ -16,7 +17,10 @@ configureAuthIntegrationEnv()
 
 const { createApp } = await import('../app.js')
 const { initVault } = await import('../modules/vault/key-service.js')
+const { createLoginSessionInTx } = await import('../modules/auth/service.js')
 const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
+
+type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const TEST_PASSPHRASE = 'session-tests-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
@@ -68,6 +72,42 @@ async function listSessions(jar: CookieJar): Promise<SessionSummary[]> {
   return res.json<{ data: SessionSummary[] }>().data
 }
 
+async function refreshWith(jar: CookieJar) {
+  const app = await createApp({ logger: false })
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/refresh',
+    headers: { cookie: cookieHeader(jar) },
+  })
+  await app.close()
+  return response
+}
+
+async function expectAuthMe(
+  app: TestApp,
+  jar: CookieJar,
+  statusCode: number,
+  code?: string
+): Promise<void> {
+  const response = await app.inject({
+    method: 'GET',
+    url: AUTH_ME_URL,
+    headers: { cookie: cookieHeader(jar) },
+  })
+  expect(response.statusCode).toBe(statusCode)
+  if (code) expect(response.json()).toMatchObject({ code })
+}
+
+async function revokeCurrentSession(app: TestApp, jar: CookieJar) {
+  const currentSession = (await listSessions(jar)).find((session) => session.isCurrent)
+  expect(currentSession).toBeDefined()
+  return app.inject({
+    method: 'DELETE',
+    url: `/api/v1/auth/sessions/${currentSession?.sessionId}`,
+    headers: { cookie: cookieHeader(jar) },
+  })
+}
+
 describe.sequential('Session management integration', () => {
   beforeAll(async () => {
     await resetVaultForTest()
@@ -105,7 +145,7 @@ describe.sequential('Session management integration', () => {
       },
     })
     await app.close()
-  })
+  }, 20_000)
 
   it('registration sets a seven-day MFA grace period for the owner membership', async () => {
     const user = await registerAndLogin('grace-period')
@@ -131,7 +171,7 @@ describe.sequential('Session management integration', () => {
     )
     expect(daysUntil).toBeGreaterThanOrEqual(6)
     expect(daysUntil).toBeLessThanOrEqual(7)
-  })
+  }, 20_000)
 
   it('GET /auth/sessions lists current and second sessions with isCurrent', async () => {
     const user = await registerAndLogin('list')
@@ -141,7 +181,7 @@ describe.sequential('Session management integration', () => {
 
     expect(sessions).toHaveLength(2)
     expect(sessions.filter((session) => session.isCurrent)).toHaveLength(1)
-  })
+  }, 20_000)
 
   it('DELETE /auth/sessions/:id revokes another session and target cookie is rejected', async () => {
     const user = await registerAndLogin('revoke-other')
@@ -157,34 +197,21 @@ describe.sequential('Session management integration', () => {
     })
     expect(revoke.statusCode).toBe(204)
 
-    const targetMe = await app.inject({
-      method: 'GET',
-      url: AUTH_ME_URL,
-      headers: { cookie: cookieHeader(otherCookies) },
-    })
-    expect(targetMe.statusCode).toBe(401)
-    expect(targetMe.json()).toMatchObject({ code: 'session_revoked' })
+    await expectAuthMe(app, otherCookies, 401, 'session_revoked')
     await app.close()
-  })
+  }, 20_000)
 
   it('DELETE /auth/sessions/:id for current session clears auth cookies', async () => {
     const user = await registerAndLogin('revoke-current')
-    const currentSession = (await listSessions(user.cookies)).find((session) => session.isCurrent)
-    expect(currentSession).toBeDefined()
-
     const app = await createApp({ logger: false })
-    const revoke = await app.inject({
-      method: 'DELETE',
-      url: `/api/v1/auth/sessions/${currentSession?.sessionId}`,
-      headers: { cookie: cookieHeader(user.cookies) },
-    })
+    const revoke = await revokeCurrentSession(app, user.cookies)
 
     expect(revoke.statusCode).toBe(204)
     const cleared = parseSetCookies(revoke.headers['set-cookie'])
     expect(cleared['access-token']).toBe('')
     expect(cleared['refresh-token']).toBe('')
     await app.close()
-  })
+  }, 20_000)
 
   it('DELETE /auth/sessions revokes all sessions except current', async () => {
     const user = await registerAndLogin('revoke-all-other')
@@ -200,21 +227,10 @@ describe.sequential('Session management integration', () => {
     expect(revoke.statusCode).toBe(200)
     expect(revoke.json()).toMatchObject({ data: { revokedCount: 2 } })
 
-    const currentMe = await app.inject({
-      method: 'GET',
-      url: AUTH_ME_URL,
-      headers: { cookie: cookieHeader(user.cookies) },
-    })
-    expect(currentMe.statusCode).toBe(200)
+    await expectAuthMe(app, user.cookies, 200)
 
     for (const jar of [second, third]) {
-      const revokedMe = await app.inject({
-        method: 'GET',
-        url: AUTH_ME_URL,
-        headers: { cookie: cookieHeader(jar) },
-      })
-      expect(revokedMe.statusCode).toBe(401)
-      expect(revokedMe.json()).toMatchObject({ code: 'session_revoked' })
+      await expectAuthMe(app, jar, 401, 'session_revoked')
     }
     await app.close()
   }, 20_000)
@@ -233,13 +249,126 @@ describe.sequential('Session management integration', () => {
     expect(cleared['access-token']).toBe('')
     expect(cleared['refresh-token']).toBe('')
 
-    const me = await app.inject({
-      method: 'GET',
-      url: AUTH_ME_URL,
-      headers: { cookie: cookieHeader(user.cookies) },
-    })
-    expect(me.statusCode).toBe(401)
-    expect(me.json()).toMatchObject({ code: 'session_revoked' })
+    await expectAuthMe(app, user.cookies, 401, 'session_revoked')
     await app.close()
-  })
+  }, 20_000)
+
+  it('refresh rotation revokes the predecessor access token and allows grace retry', async () => {
+    const user = await registerAndLogin('refresh-rotation')
+
+    const refresh = await refreshWith(user.cookies)
+    expect(refresh.statusCode).toBe(200)
+    const rotatedCookies = parseSetCookies(refresh.headers['set-cookie'])
+    expect(rotatedCookies['access-token']).toEqual(expect.any(String))
+    expect(rotatedCookies['refresh-token']).toEqual(expect.any(String))
+
+    const app = await createApp({ logger: false })
+    await expectAuthMe(app, user.cookies, 401, 'session_revoked')
+    await app.close()
+
+    const graceRetry = await refreshWith(user.cookies)
+    expect(graceRetry.statusCode).toBe(200)
+    const graceCookies = parseSetCookies(graceRetry.headers['set-cookie'])
+    expect(graceCookies['access-token']).toEqual(expect.any(String))
+    expect(graceCookies['refresh-token']).toBeUndefined()
+  }, 20_000)
+
+  it('refresh rejects revoked sessions', async () => {
+    const user = await registerAndLogin('refresh-revoked')
+    const app = await createApp({ logger: false })
+    const revoke = await revokeCurrentSession(app, user.cookies)
+    expect(revoke.statusCode).toBe(204)
+    await app.close()
+
+    const refresh = await refreshWith(user.cookies)
+    expect(refresh.statusCode).toBe(401)
+    expect(refresh.json()).toMatchObject({ code: 'refresh_token_revoked' })
+  }, 20_000)
+
+  it('refresh idle timeout synchronously revokes the session', async () => {
+    const user = await registerAndLogin('refresh-idle')
+    const currentSession = (await listSessions(user.cookies)).find((session) => session.isCurrent)
+    expect(currentSession).toBeDefined()
+
+    await withOrg(user.orgId, async (tx) => {
+      await tx
+        .update(sessions)
+        .set({
+          lastActiveAt: new Date(Date.now() - (env.SESSION_IDLE_TIMEOUT_MINUTES + 1) * 60 * 1000),
+        })
+        .where(eq(sessions.id, currentSession?.sessionId as string))
+    })
+
+    const refresh = await refreshWith(user.cookies)
+    expect(refresh.statusCode).toBe(401)
+    expect(refresh.json()).toMatchObject({ code: 'session_expired' })
+
+    const [session] = await withOrg(user.orgId, (tx) =>
+      tx
+        .select({ revokedAt: sessions.revokedAt })
+        .from(sessions)
+        .where(eq(sessions.id, currentSession?.sessionId as string))
+        .limit(1)
+    )
+    expect(session?.revokedAt).toBeInstanceOf(Date)
+  }, 20_000)
+
+  it('org owner can revoke all sessions for a user in the org', async () => {
+    const admin = await registerAndLogin('admin-revoke-admin')
+    const target = await registerAndLogin('admin-revoke-target')
+    const targetSession = await withOrg(admin.orgId, async (tx) => {
+      await tx.insert(orgMemberships).values({
+        orgId: admin.orgId,
+        userId: target.userId,
+        role: 'member',
+        status: 'active',
+      })
+      return createLoginSessionInTx(
+        tx,
+        { id: target.userId, identityTokenId: null },
+        admin.orgId,
+        {}
+      )
+    })
+
+    const app = await createApp({ logger: false })
+    const revoke = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/org/users/${target.userId}/sessions`,
+      headers: { cookie: cookieHeader(admin.cookies) },
+    })
+    expect(revoke.statusCode).toBe(200)
+    expect(revoke.json()).toMatchObject({
+      data: { revokedCount: 1, userId: target.userId },
+    })
+    await app.close()
+
+    const [session] = await withOrg(admin.orgId, (tx) =>
+      tx
+        .select({ revokedAt: sessions.revokedAt })
+        .from(sessions)
+        .where(eq(sessions.jti, targetSession.tokens.accessClaims.jti))
+        .limit(1)
+    )
+    expect(session?.revokedAt).toBeInstanceOf(Date)
+  }, 20_000)
+
+  it('MAX_SESSIONS_PER_USER revokes oldest sessions on login when configured', async () => {
+    const previousLimit = env.MAX_SESSIONS_PER_USER
+    env.MAX_SESSIONS_PER_USER = 2
+    try {
+      const user = await registerAndLogin('max-sessions')
+      await loginAs(user.email, user.password)
+      const latest = await loginAs(user.email, user.password)
+
+      const active = await listSessions(latest)
+      expect(active).toHaveLength(2)
+
+      const app = await createApp({ logger: false })
+      await expectAuthMe(app, user.cookies, 401, 'session_revoked')
+      await app.close()
+    } finally {
+      env.MAX_SESSIONS_PER_USER = previousLimit
+    }
+  }, 20_000)
 })

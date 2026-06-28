@@ -1,6 +1,6 @@
 # Story 1.2: Configure Backend Package Structure
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -166,6 +166,7 @@ GPT-5.4 (gpt-5.4)
 - Restored Fastify v5 ESM compatibility with a local app-surface shim so `@fastify/swagger` and `@fastify/type-provider-zod` could be wired without changing runtime behavior.
 - `pnpm db:migrate` and `pnpm --filter @project-vault/db db:migrate` both reached `drizzle-kit migrate`; execution stopped only when no local Postgres server was available.
 - `pnpm dev` now launches both `@project-vault/api` and `@project-vault/web`; Turbo env forwarding was fixed via `globalEnv`, and the API halts only on the expected local Postgres connection refusal in this environment.
+- 2026-06-27: Re-verified Story 1.2 package-boundary quality gates during Epic 1 closure: `pnpm typecheck`, `pnpm build`, `pnpm run lint`, and API regression coverage passed.
 
 ### Completion Notes List
 
@@ -173,6 +174,7 @@ GPT-5.4 (gpt-5.4)
 - Wired Fastify swagger and Zod compilers in `apps/api`, added shared API contract helpers for future route modules, and hardened the canonical `ApiError`/`ApiResponse` schemas in `packages/shared`.
 - Converted `BossService` into an idempotent pg-boss lifecycle wrapper, preserved the existing crypto and DB stub contracts, added a placeholder migrations directory, and expanded smoke coverage for package boundaries and boss lifecycle behavior.
 - Verified the story quality gates with `pnpm lint && pnpm typecheck && pnpm build && pnpm test`.
+- Re-verified during Epic 1 closure with root typecheck/build/lint, jscpd, env parity, compose config, and full API test suite; no Story 1.2 package-boundary follow-ups remained.
 
 ### File List
 
@@ -203,3 +205,4 @@ GPT-5.4 (gpt-5.4)
 ### Change Log
 
 - 2026-06-15: Completed Story 1.2 by wiring backend package dependencies and exports, adding shared Zod/OpenAPI contract plumbing, hardening pg-boss lifecycle integration, and fixing Turbo dev env forwarding for API startup.
+- 2026-06-27: Marked Story 1.2 done after Epic 1 closure validation confirmed its review status was stale.

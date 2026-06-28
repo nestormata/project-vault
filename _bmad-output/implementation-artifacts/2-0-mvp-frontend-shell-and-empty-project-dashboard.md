@@ -20,7 +20,7 @@ so that I understand Project Vault's core product model before the full credenti
 |---|---|
 | Epic 1 auth APIs are available and stable enough for frontend wiring | Story 2.0 uses `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`, and `GET /api/v1/auth/me`. |
 | Epic 1 vault APIs are available | Story 2.0 uses `GET /ready`, `POST /api/v1/vault/init`, and `POST /api/v1/vault/unseal`. |
-| Story 1.12 status is checked before implementation | If 1.12 is complete, login must handle `{ data: { mfaRequired: true, mfaToken } }` plus verify-login. If 1.12 is not complete, MFA login UI is explicitly deferred and documented as blocked by 1.12. |
+| Story 1.12 (MFA login verification) is complete and merged | Story 1.12 is `done` (sprint-status.yaml). MFA login is a real backend contract, not a conditional. Login must handle `200 { data: { mfaRequired: true, mfaToken } }` and the verify-login step `POST /api/v1/auth/mfa/verify-login`. There is no "deferred / blocked by 1.12" branch — implement the full MFA login UI. |
 | No `projects` table exists yet | `packages/db/src/schema/audit-log-entries.ts` states the FK to `projects(id)` is deferred to Story 2.1. Do not invent durable project persistence in 2.0 unless the team explicitly re-scopes the story. |
 | Existing web app is a minimal scaffold | `apps/web/src/routes/+page.svelte` currently renders only the product name and tagline; `apps/web/src/routes/page.test.ts` is a placeholder. This story establishes the first real frontend structure. |
 
@@ -52,7 +52,7 @@ Do not call it "Create project" unless the UI also states in the same viewport t
 | 1.9 | Adds MFA enforcement status in `GET /auth/me`. 2.0 must not bypass or hide enforcement banners from authenticated users. |
 | 1.10 | Structured operational logging exists on the API. Frontend must not log secret material, key paths, passphrases, auth request bodies, or credential-like values. |
 | 1.11 | SecureRoute framework may affect auth exemptions. 2.0 should consume the published API behavior, not refactor API routes. |
-| 1.12 | If complete, login may return `mfaRequired`; 2.0 consumes that contract. If incomplete, the MFA login step is blocked and documented. |
+| 1.12 | **Done.** Login returns `200 { data: { mfaRequired: true, mfaToken } }` for MFA-enrolled users; 2.0 consumes that contract and implements the `POST /api/v1/auth/mfa/verify-login` step. This is required, not conditional. |
 | 2.1 | Owns durable project creation, project list, project dashboard API, empty project response shape, and project RLS. 2.0 must shape placeholders so 2.1 can replace preview/stub state without redesign. |
 
 ---
@@ -67,7 +67,7 @@ Do not call it "Create project" unless the UI also states in the same viewport t
 | Epic permits a local preview project stub | Selected path: preview stub only, reset-on-reload | No durable `projects` table exists. The preview state must not look persisted. |
 | Dashboard wants "green silence" | 2.0 has no real health/alert/credential sources | Do **not** show green/healthy/success operational state. Use empty/not-configured states only. |
 | Navigation includes unavailable sections | Routes may exist, but must be honest placeholders | `Credentials`, `Alerts`, `Health`, and `Settings` may render explanatory empty/coming states, not fake data or 404s. |
-| Story 1.12 may not be done | Current sprint status has 1.12 ready-for-dev, not done | Implement MFA login only if backend 1.12 has landed. Otherwise include blocked implementation note and tests must assert the non-MFA login path only. |
+| Story 1.12 is done | Sprint status has 1.12 `done`; `apps/api/src/modules/auth/mfa-login.ts` + `POST /api/v1/auth/mfa/verify-login` exist | Implement the MFA login step against the real contract (AC-8). Tests must exercise both the non-MFA path and the MFA challenge + verify-login path. Do not ship a "blocked by 1.12" placeholder. |
 
 ---
 
@@ -81,7 +81,7 @@ Do not call it "Create project" unless the UI also states in the same viewport t
 | Vault init/unseal | Explicit operator forms, host trust-boundary copy, no echo/log/storage of submitted passphrase/path after submit. |
 | Auth | Register/login/refresh/logout/me use Epic 1 APIs and HttpOnly cookies only. |
 | Route guard | Server-side SvelteKit guard redirects unauthenticated users and refreshes valid sessions transparently. |
-| MFA login | Implement only if Story 1.12 backend exists; otherwise document blocked state. |
+| MFA login | Required. Implement the TOTP challenge + `POST /api/v1/auth/mfa/verify-login` step against the merged Story 1.12 contract; `mfaToken` lives only in current component state. |
 | App shell | Responsive authenticated layout with Dashboard, Projects, Credentials, Alerts, Health, Settings. |
 | Dashboard | Project-centered empty state, no fake metrics, Story 2.1 payload shape mirrored in typed placeholders. |
 | Preview project | Preview-only, non-persistent, reset-on-reload, visibly labeled. |
@@ -112,7 +112,7 @@ apps/web/src/
 │   │   ├── auth/
 │   │   │   ├── LoginForm.svelte
 │   │   │   ├── RegisterForm.svelte
-│   │   │   └── MfaLoginForm.svelte         # only active if Story 1.12 backend exists
+│   │   │   └── MfaLoginForm.svelte         # required: Story 1.12 verify-login is merged
 │   │   ├── vault/
 │   │   │   ├── VaultGate.svelte
 │   │   │   ├── VaultInitForm.svelte
@@ -448,9 +448,11 @@ Check your email and password, then try again.
 
 ---
 
-### AC-8: Optional MFA Login Step (Conditional on Story 1.12)
+### AC-8: MFA Login Step (Story 1.12 is merged — required)
 
-**Given** Story 1.12 is complete before Story 2.0 implementation starts,
+> Story 1.12 is `done`. The `mfaRequired` login branch and `POST /api/v1/auth/mfa/verify-login` are real backend contracts (`apps/api/src/modules/auth/mfa-login.ts`). This AC is **mandatory**, not conditional — there is no "defer until 1.12" path.
+
+**Given** an MFA-enrolled user authenticates,
 **When** `POST /api/v1/auth/login` returns:
 
 ```json
@@ -492,13 +494,13 @@ Content-Type: application/json
 | `401 { code: "mfa_token_expired" }` | Clear `mfaToken`, return to password step, show "Your login step expired. Please sign in again." |
 | validation error | Stay on TOTP step, explain six digits are required. |
 
-**If Story 1.12 is not complete**, do not implement a speculative verify-login route. Add an implementation note in the story completion notes:
+**Backend contract reference (verify-login is merged):** the real responses come from `apps/api/src/modules/auth/mfa-login.ts`:
 
-```text
-MFA login UI intentionally deferred because Story 1.12 backend verify-login API is not complete.
-```
+- Success → `200 { data: { userId, orgId, expiresAt } }` plus HttpOnly `access-token`/`refresh-token` cookies set by the backend (never raw tokens in the body).
+- Invalid TOTP → `422 { code: "invalid_totp" }` (retry-allowed; the pending row survives until TTL/attempt cap).
+- Dead/expired/consumed/attempt-capped token → `401 { code: "mfa_token_expired" }` (restart login).
 
-and include a skipped conditional test or explicit implementation note referencing Story 1.12, not a passing fake implementation.
+The MFA login UI and its verify-login tests are required deliverables of Story 2.0; do not ship a skipped/deferred placeholder.
 
 ---
 
@@ -839,7 +841,7 @@ Story 2.1 starts with saved projects; credential and service coverage follow in 
 | Fake operational trust | No fabricated dashboard counts, alerts, health, credentials, rotations, access events | Rendering tests for honest placeholder copy |
 | Vault state confusion | Distinct UI states for uninitialized/sealed/unavailable/ready | VaultGate tests |
 | Auth-route bypass | Server-side redirects and refresh handling | Load/hook tests |
-| MFA token persistence | Hold `mfaToken` only in current component state when 1.12 is present | Conditional test if MFA is implemented |
+| MFA token persistence | Hold `mfaToken` only in current login-step component state; never in any browser storage, URL, or long-lived module state | Required test: `mfaToken` is never written to localStorage/sessionStorage/IndexedDB/cookies/URL and is cleared on step change / `mfa_token_expired` |
 | HTML injection | No `{@html}` usage | ESLint already forbids `svelte/no-at-html-tags`; do not disable it |
 | Open redirect | Honor only same-origin path redirect targets | Redirect-helper test (AC-23 H2) |
 | Reflected injection / status spoofing | Status copy from a fixed reason enum; never render raw query params | Enum-mapping test (AC-23 H3) |
@@ -888,13 +890,18 @@ Story 2.1 starts with saved projects; credential and service coverage follow in 
 apps/web/src/lib/api/auth.test.ts
   - register sends expected body and returns data
   - login success returns session data without exposing tokens
+  - login returns { mfaRequired: true, mfaToken } -> transitions to TOTP step, does NOT route to app shell (AC-8)
+  - verify-login sends { mfaToken, totp } to POST /api/v1/auth/mfa/verify-login and on success behaves like normal login (AC-8)
+  - verify-login 422 invalid_totp keeps TOTP step and clears only the TOTP input (AC-8)
+  - verify-login 401 mfa_token_expired clears mfaToken and returns to the password step (AC-8)
   - logout handles 204
   - auth errors normalize { code, message }
 
 apps/web/src/lib/api/vault.test.ts
   - ready: 200 ready -> ready state
-  - ready: uninitialized response -> uninitialized state
-  - ready: sealed response -> sealed state
+  - ready: uninitialized response (503, reason "sealed", uninitialized message) -> uninitialized state
+  - ready: sealed response (503, reason "sealed", manual-unseal message) -> sealed state
+  - ready: AMBIGUITY GUARD — uninitialized and sealed both return reason "sealed" today; classification MUST NOT collapse them into one state. Until the backend adds reason "uninitialized", classify by message and assert the two distinct states are produced (AC-3 / ADR-2.0-02)
   - ready: db/network failure -> unavailable state
   - init/unseal requests never include extra mode fields
   - init sends bootstrap token as x-vault-bootstrap-token header, never in body/query (AC-23 H1)
@@ -916,6 +923,7 @@ apps/web/src/lib/security/hardening.test.ts
   - status copy is resolved from a fixed reason enum; unknown reason -> generic message (AC-23 H3)
   - API base URL is sourced from server env config, not request/query input (AC-23 H4)
   - static search: no localStorage/sessionStorage/IndexedDB for token/refresh/mfa/vault material (AC-23 H5)
+  - mfaToken is never persisted to localStorage/sessionStorage/IndexedDB/cookies/URL and is cleared on step change or mfa_token_expired (AC-8, AC-16)
   - static search: no {@html} usage in apps/web (AC-16)
   - web responses set frame-ancestors 'none' / X-Frame-Options DENY, or doc note records proxy enforcement (AC-23 H7)
 
@@ -999,10 +1007,10 @@ Do **not** implement any of the following in Story 2.0:
 
 > Follow repo TDD red-green (`AGENTS.md`): write or update failing tests first, confirm they fail for the expected reason, implement the smallest change, then rerun focused and relevant broader checks.
 
-- [ ] **Task 1: Confirm backend contracts and decide MFA branch** (AC: 2, 3, 8)
-  - [ ] Verify Story 1.12 implementation status in code, not only sprint status.
-  - [ ] Decide whether to implement MFA login UI or add blocked note.
-  - [ ] Add failing API-helper tests for current auth/vault response shapes.
+- [ ] **Task 1: Confirm backend contracts (MFA login is merged)** (AC: 2, 3, 8)
+  - [ ] Confirm the current auth/vault response shapes in code (Story 1.12 verify-login is `done`).
+  - [ ] Add failing API-helper tests for the auth/vault response shapes, including the MFA challenge + verify-login contract.
+  - [ ] Add the `/ready` ambiguity classification test (uninitialized vs sealed must not collapse — AC-3).
 - [ ] **Task 2: API client helpers** (AC: 2, 6, 7, 10)
   - [ ] Implement `lib/api/client.ts`, `auth.ts`, and `vault.ts`.
   - [ ] Normalize `{ code, message }` and `{ error, message }` errors.
@@ -1015,8 +1023,8 @@ Do **not** implement any of the following in Story 2.0:
   - [ ] Optional backend fix: change `/ready` uninitialized reason to `uninitialized` with API test.
 - [ ] **Task 4: Auth pages** (AC: 6, 7, 8)
   - [ ] Implement register/login forms and post-register routing.
-  - [ ] Implement conditional MFA step only if 1.12 backend exists.
-  - [ ] Ensure no token/key material enters browser storage.
+  - [ ] Implement the MFA TOTP challenge + verify-login step against the merged Story 1.12 contract.
+  - [ ] Ensure no token/key/`mfaToken` material enters browser storage.
 - [ ] **Task 5: Server-side route guards and refresh** (AC: 9, 23)
   - [ ] Add `hooks.server.ts` and `app.d.ts` locals.
   - [ ] Authenticated routes redirect unauthenticated users.
@@ -1089,15 +1097,15 @@ Do **not** implement any of the following in Story 2.0:
 | **Rationale** | Client-only guards flash protected UI before redirecting and can leak structure. Server-side resolution is the architecture's stated pattern and the only correct place to forward `Cookie`/`Set-Cookie` for SSR refresh. |
 | **Consequences** | Requires `hooks.server.ts`, `app.d.ts` locals, and explicit `Set-Cookie` forwarding. A minimal in-flight refresh guard is required to avoid refresh races (AC-9). |
 
-#### ADR-2.0-05: MFA login UI is conditional on Story 1.12 backend, never speculative
+#### ADR-2.0-05: MFA login UI is implemented against the merged Story 1.12 contract
 
 | | |
 |---|---|
-| **Context** | Story 1.12 (`POST /auth/mfa/verify-login` + `mfaRequired` login branch) is `ready-for-dev`, not done. Story 2.0 may be implemented before or after it. |
-| **Options** | **A** — Build the MFA login UI now against the *specified* 1.12 contract. **B** — Implement MFA login UI only if the 1.12 backend has landed; otherwise defer with an explicit blocked note and a skipped conditional test. |
-| **Decision** | **Option B.** Gate the MFA login step on verified backend existence (checked in code, not just sprint status). |
-| **Rationale** | Building UI against an unshipped endpoint risks contract drift and a fake-passing flow that cannot be exercised end-to-end. Conditional implementation keeps the non-MFA login path honest and shippable independently. |
-| **Consequences** | If 1.12 is absent, login supports only the non-MFA path and the completion notes record the deferral. The `mfaRequired` response shape must stay aligned with Story 1.12 to avoid rework. |
+| **Context** | Story 1.12 (`POST /api/v1/auth/mfa/verify-login` + the `mfaRequired` login branch) is `done` and merged (`apps/api/src/modules/auth/mfa-login.ts`). The earlier conditional/deferred framing is obsolete. |
+| **Options** | **A** — Build the full MFA login UI against the real, merged 1.12 contract. **B** — (obsolete) defer behind a "1.12 not done" gate. |
+| **Decision** | **Option A.** Implement the TOTP challenge + verify-login step and its tests against the real backend contract. No deferral/blocked branch exists. |
+| **Rationale** | The backend endpoint is shipped and exercisable end-to-end; deferring would leave enrolled users unable to complete login. The contract (`200 { data: { mfaRequired, mfaToken } }` → verify-login → cookie session; `422 invalid_totp`; `401 mfa_token_expired`) is stable. |
+| **Consequences** | Story 2.0 must include working MFA login UI and verify-login tests. `mfaToken` is held only in transient component state and is covered by the no-persistence test (AC-8/AC-16). If the backend contract changes, update the UI and tests in lockstep. |
 
 #### ADR-2.0-06: Unavailable sections render honest placeholders, never fabricated operational state
 
@@ -1143,7 +1151,7 @@ Assume Story 2.0 shipped and failed. These are the most likely causes and their 
 | **Init unusable in real deploy** | Bootstrap-token gate not handled. | AC-23 H1 / AC-4 bootstrap authorization. |
 | **Mobile broken** | Only desktop verified. | Mobile viewport smoke tests + manual QA (AC-17/18/19). |
 
-**Minimum Shippable Slice (if time-boxed):** vault readiness gate → init (with bootstrap token) → unseal → register → login (non-MFA) → server-side auth guard + silent refresh → logout → authenticated shell with honest empty dashboard. **MFA login (AC-8), preview project (AC-14), and non-essential placeholder polish are the first cuts** — defer them before sacrificing the auth/refresh correctness or the no-fake-data invariant.
+**Minimum Shippable Slice (if time-boxed):** vault readiness gate → init (with bootstrap token) → unseal → register → login (non-MFA **and** the MFA challenge + verify-login step, since Story 1.12 is merged) → server-side auth guard + silent refresh → logout → authenticated shell with honest empty dashboard. **Preview project (AC-14) and non-essential placeholder polish are the first cuts** — defer them before sacrificing the auth/refresh correctness or the no-fake-data invariant. MFA login is part of the core auth slice (not a cut), because enrolled users cannot log in without it.
 
 ---
 
@@ -1195,7 +1203,8 @@ Story 2.0 is the first meaningful web-app implementation. Expect broad additions
 | `POST /api/v1/vault/init` | Returns `{ initialized: true, keyVersion, kmsType }`. |
 | `POST /api/v1/vault/unseal` | Returns `{ unsealed: true, keyVersion, kmsType }`. |
 | `POST /api/v1/auth/register` | Returns `201 { data: { userId, orgId, email, orgName, role: "owner" } }`; no session cookies. |
-| `POST /api/v1/auth/login` | Returns `200 { data: { userId, orgId, expiresAt } }` plus HttpOnly cookies, unless Story 1.12 MFA branch exists. |
+| `POST /api/v1/auth/login` | Non-MFA user: `200 { data: { userId, orgId, expiresAt } }` plus HttpOnly cookies. MFA-enrolled user (Story 1.12, merged): `200 { data: { mfaRequired: true, mfaToken } }` with NO cookies until verify-login. |
+| `POST /api/v1/auth/mfa/verify-login` | Story 1.12 (merged). Body `{ mfaToken, totp }` → `200 { data: { userId, orgId, expiresAt } }` + cookies; `422 invalid_totp`; `401 mfa_token_expired`. |
 | `POST /api/v1/auth/refresh` | Uses refresh cookie, returns refreshed session cookies and expiry. |
 | `POST /api/v1/auth/logout` | Returns `204` and clears cookies. |
 | `GET /api/v1/auth/me` | Returns user/org/session/MFA enforcement data. |
@@ -1244,7 +1253,7 @@ No prior Epic 2 story file exists. Relevant carry-forward intelligence comes fro
 - Story 1.7 established refresh/session revocation behavior. Frontend must treat refresh and revocation as normal session lifecycle.
 - Story 1.8/1.9 added MFA status and enforcement data to auth context. The app shell should preserve this signal for future MFA enrollment prompts.
 - Story 1.10 emphasized structured logging and redaction. Frontend must not introduce client logging that bypasses redaction expectations.
-- Story 1.12 is the intended backend dependency for MFA login UI. Do not invent its API if it is not implemented.
+- Story 1.12 is `done`: it provides the real `mfaRequired` login branch and `POST /api/v1/auth/mfa/verify-login`. Consume the merged contract directly — do not reinvent or speculatively stub it.
 
 ---
 

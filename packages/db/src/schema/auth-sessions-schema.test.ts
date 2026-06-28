@@ -19,6 +19,7 @@ describe('auth session schema', () => {
 
     expect(refreshTokens.id).toBeDefined()
     expect(refreshTokens.sessionId).toBeDefined()
+    expect(refreshTokens.orgId).toBeDefined()
     expect(refreshTokens.tokenHash).toBeDefined()
     expect(refreshTokens.expiresAt).toBeDefined()
     expect(refreshTokens.usedAt).toBeDefined()

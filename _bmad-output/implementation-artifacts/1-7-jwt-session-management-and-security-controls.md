@@ -1,6 +1,6 @@
 # Story 1.7: JWT Session Management & Security Controls
 
-Status: ready-for-review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-24 — comprehensive developer guide for session list/revoke, idle timeout, revoked_tokens, auth middleware, admin revocation, and pg-boss cleanup. Red Team hardening applied 2026-06-24 (AC-4a, AC-10c, AC-15b, AC-30b). ADR review applied 2026-06-24 (ADR-1.7-01–07; AC-15b aligned to Story 1.6 new-session-row rotation). Security Audit Personas applied 2026-06-24 (AC-5a, AC-15c, live orgRole, idle audit). FMA applied 2026-06-24 (AC-4b, AC-5b/c, AC-9a, AC-14b, AC-7f). -->
 
@@ -1041,9 +1041,9 @@ Use `SELECT FOR UPDATE` on session row inside revoke transaction.
   - [x] Unit tests for revoke + authenticate + worker
   - [x] Verify Story 1.6 regression suite green
 
-#### Deferred Session Integration Coverage
+#### Session Integration Coverage
 
-The initial `sessions.integration.test.ts` suite intentionally covers the six self-service scenarios agreed in party-mode review:
+The `sessions.integration.test.ts` suite now covers the six self-service scenarios agreed in party-mode review:
 
 1. `GET /auth/me` returns auth context for a logged-in user.
 2. `GET /auth/sessions` lists current and second sessions with `isCurrent`.
@@ -1052,7 +1052,7 @@ The initial `sessions.integration.test.ts` suite intentionally covers the six se
 5. `DELETE /auth/sessions` revokes all except current.
 6. `POST /auth/logout` revokes the current session and clears auth cookies.
 
-Later test expansion should add refresh rotation/grace-window coverage, idle-timeout synchronous cleanup, org-admin session revoke, max-session cap behavior, and the AC-30b concurrent refresh-vs-revoke path.
+Epic 1 closure added coverage for refresh rotation/grace-window retry, revoked-session refresh rejection, idle-timeout synchronous cleanup, org-admin session revoke, and `MAX_SESSIONS_PER_USER` cap enforcement. AC-30b concurrent refresh-vs-revoke remains a future stress/concurrency expansion candidate, but the functional Story 1.7 paths are covered and green.
 
 ### Review Findings
 
@@ -1518,6 +1518,11 @@ GPT-5.5
 - 2026-06-26: `pnpm --filter @project-vault/shared test` passed: 3 files passed, 11 tests passed.
 - 2026-06-26: `pnpm --filter @project-vault/db exec vitest run src/schema/auth-sessions-schema.test.ts` passed.
 - 2026-06-26: Full `pnpm --filter @project-vault/db test` remains blocked by local pre-existing RLS/permission expectation failures unrelated to Story 1.7 schema (`rls-isolation`, `audit-log-immutability`, `api-instances-privileges`).
+- 2026-06-27: Added failing real-DB session integration coverage for refresh rotation/grace retry, revoked refresh, idle cleanup, admin revoke, and max-session cap. Initial run exposed refresh lookup failure under session RLS and idle cleanup rollback.
+- 2026-06-27: Fixed refresh token lookup by locking the `refresh_tokens` row first, then resolving the linked session under the correct org RLS context inside the same transaction.
+- 2026-06-27: Fixed idle refresh cleanup rollback by committing cleanup before returning `session_expired`; passed the session org into cleanup from refresh and authenticate paths.
+- 2026-06-27: Extracted shared human audit writing helper to remove MFA audit duplication and restore the Story 1.1 jscpd zero-duplicate gate.
+- 2026-06-27: Final validation passed: `pnpm --filter @project-vault/api typecheck`, `pnpm --filter @project-vault/api test`, `pnpm run lint`, `pnpm typecheck`, `pnpm build`, `pnpm jscpd`, `docker compose config --quiet`, and `pnpm tsx scripts/check-env-example.ts`.
 
 ### Completion Notes List
 - Task 1 complete: added `revoked_tokens` Drizzle schema/migration, enforced non-null `sessions.jti`, added session indexes, and registered `revoked_tokens` as an intentional RLS coverage exception.
@@ -1529,7 +1534,10 @@ GPT-5.5
 - Task 7 complete: refresh now checks `revoked_tokens`, synchronously cleans idle sessions, retires predecessor sessions during full rotation, inserts predecessor `revoked_tokens`, and preserves grace-window retry.
 - Task 8 complete: extended BossService with schedule/worker registration, added hourly revoked-token pruning worker, and registered it after vault unseal/restart-unsealed startup.
 - Task 9 complete: added shared session management schemas, added `SESSION_REVOKED`, and regenerated OpenAPI with all Story 1.7 protected endpoints and cookie auth security scheme.
-- Task 10 complete for agreed current scope: added dedicated real-DB `sessions.integration.test.ts` coverage for `GET /auth/me`, session list/current marking, revoke-other, revoke-current, revoke-all-other, and logout. Deferred refresh rotation/grace, idle cleanup, admin revoke, max-session cap, and AC-30b concurrency coverage for later work.
+- Task 10 complete: added dedicated real-DB `sessions.integration.test.ts` coverage for `GET /auth/me`, session list/current marking, revoke-other, revoke-current, revoke-all-other, logout, refresh rotation/grace, revoked refresh, idle cleanup, admin revoke, and max-session cap behavior. AC-30b concurrency remains a future stress-test candidate.
+- Epic 1 closure expanded `sessions.integration.test.ts` beyond the initial self-service suite: refresh rotation retires predecessor access, grace retry succeeds without duplicate refresh rotation, revoked sessions reject refresh, idle refresh cleanup commits before returning `session_expired`, org owner/admin session revocation works, and `MAX_SESSIONS_PER_USER` revokes the oldest session on login.
+- Refresh session lookup now honors RLS by resolving the org context from the refresh-token session chain before reading the session row.
+- Shared human audit insert logic now lives in `apps/api/src/modules/audit/human-entry.ts`, removing duplicate MFA audit code while preserving audit HMAC behavior.
 
 ### File List
 
@@ -1550,6 +1558,9 @@ GPT-5.5
 | `apps/api/src/modules/auth/routes.ts` | MODIFY |
 | `apps/api/src/modules/auth/service.ts` | MODIFY — list/revoke/logout, refresh idle |
 | `apps/api/src/modules/auth/schema.ts` | MODIFY |
+| `apps/api/src/modules/auth/mfa.ts` | MODIFY — use shared human audit helper |
+| `apps/api/src/modules/auth/mfa-login.ts` | MODIFY — use shared human audit helper |
+| `apps/api/src/modules/audit/human-entry.ts` | CREATE — shared human audit insert helper |
 | `apps/api/src/modules/org/routes.ts` | CREATE |
 | `apps/api/src/modules/org/schema.ts` | CREATE |
 | `apps/api/src/workers/prune-revoked-tokens.ts` | CREATE |
@@ -1558,6 +1569,7 @@ GPT-5.5
 | `apps/api/src/app.ts` | MODIFY — register plugins + org routes |
 | `apps/api/src/main.ts` | MODIFY — worker registration |
 | `apps/api/src/__tests__/sessions.integration.test.ts` | CREATE |
+| `apps/api/src/__tests__/mfa-enrollment.test.ts` | MODIFY — deterministic rate-limit setup |
 | `apps/api/src/modules/auth/session-revoke.test.ts` | CREATE |
 | `apps/api/src/plugins/authenticate.test.ts` | CREATE |
 | `apps/api/src/workers/prune-revoked-tokens.test.ts` | CREATE |

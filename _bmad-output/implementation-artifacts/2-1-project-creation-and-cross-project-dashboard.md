@@ -18,7 +18,7 @@ so that I can group secrets, services, and certificates by team or domain and ge
 
 | Prerequisite | Why |
 |---|---|
-| `packages/db` migration 0010 (or current latest) is the base | Story 2.1 adds migration 0011 (next number). Run `pnpm --filter @project-vault/db migrate` before implementing. |
+| Migration numbering **(verify, do NOT hardcode)** | ⚠️ On the current branch the highest migration is **`0012_refresh_tokens_org_id.sql`** (`packages/db/src/migrations/meta/_journal.json` last entry, idx 12) — Story 2.1 therefore lands as **`0013_projects.sql`**, NOT 0011. The `0011` references elsewhere in this doc are illustrative placeholders — before generating, re-check `packages/db/src/migrations/` and `meta/_journal.json` and use the next free number. Run `pnpm --filter @project-vault/db migrate` before implementing. |
 | Story 2.0 is complete OR its `ProjectDashboardPreviewSchema` is available in `packages/shared` | Story 2.1 replaces the `z.never()` stub arrays in that schema with real item schemas. The web app must be updated in the same PR so the dashboard page compiles. |
 | `apps/api/src/lib/route-exemptions.ts` `ROUTE_ACTION_CLASSIFICATIONS` exists | Story 2.1 adds four new route entries to that map; the route-audit.test.ts CI gate enforces this. |
 | Story 1.11 `SecureRoute` framework is merged and passing CI | All four new project routes must use `secureRoute()`. |
@@ -34,7 +34,7 @@ so that I can group secrets, services, and certificates by team or domain and ge
 | 2.0 | Defined `ProjectDashboardPreviewSchema` in `packages/shared/src/schemas/dashboard.ts` with `z.never()` stub arrays. 2.1 must replace `upcomingRotations` and `recentAccessEvents` with real (but still empty-at-launch) schemas, keeping `isEmpty` and `suggestedActions` for the web app. |
 | 2.2 | Adds `credential_versions` and `credentials` tables. `credentialStats` in the dashboard counts rows from those tables by `projectId`. For 2.1, all counts are `0` because no credentials exist yet — the dashboard query returns zeros, not errors. |
 | 4.1 | Will add project-specific membership roles. For 2.1, project access uses the calling user's org membership role (`orgRole` on `AuthContext`). The `project_memberships` table records the creator as `owner`; actual per-project RBAC enforcement is deferred to 4.1. |
-| 8.x | Audit log FK to `projects(id)` was intentionally deferred (see comment in `packages/db/src/schema/audit-log-entries.ts`). Story 2.1 MUST add that FK in migration 0011 as instructed by the inline defer note. |
+| 8.x | Audit log FK to `projects(id)` was intentionally deferred (see comment in `packages/db/src/schema/audit-log-entries.ts`). Story 2.1 MUST add that FK in this story's projects migration (next free number, e.g. `0013_projects.sql`) as instructed by the inline defer note. |
 
 ---
 
@@ -161,11 +161,13 @@ export const projectMemberships = pgTable(
 
 ---
 
-### AC-3: Migration 0011 — Schema, RLS Policies, FK, and `updated_at` Trigger
+### AC-3: Migration (next free number, e.g. `0013_projects.sql`) — Schema, RLS Policies, FK, and `updated_at` Trigger
+
+> **Migration number is dynamic.** Use the next free number after the current journal tip (`0012_refresh_tokens_org_id` → `0013_projects.sql` on today's branch). Confirm against `packages/db/src/migrations/meta/_journal.json` immediately before running `drizzle-kit generate`. Every `0011`/`0011_projects.sql` mention below is an illustrative placeholder — substitute the real number.
 
 **Given** the RLS coverage check (`packages/db/src/check-rls-coverage.ts`) fails CI if any `org_id` table lacks an `ALL` policy,
 **When** Story 2.1 creates the migration,
-**Then** create `packages/db/src/migrations/0011_projects.sql` that:
+**Then** create `packages/db/src/migrations/<next>_projects.sql` (e.g. `0013_projects.sql`) that:
 
 1. Creates both tables (let Drizzle generate the `CREATE TABLE` statements via `drizzle-kit generate`).
 2. Enables RLS and creates isolation policies for **both** new tables in the **same migration file**.
@@ -427,7 +429,7 @@ tx.select({ ...projectFields, role: projectMemberships.role })
 - `credentialCount`, `expiringCount`, `alertCount` are all `0` in Story 2.1. These fields are placeholders for Epics 2.2+ and 3. **Do not make them nullable** — always return `0` as the type. Future stories will add real subqueries.
 - Order by `projects.createdAt DESC` (most recently created first).
 
-**And** pagination is NOT required in Story 2.1 (the epic does not mention it for the project list). Return all projects. Future story will add pagination if needed.
+**And** pagination — **accepted PRD exception to FR97 (recorded, not an oversight):** FR97 ("all list endpoints support `page`/`limit` pagination", reaffirmed by the Story 2.3 epic ACs) would otherwise require the project list to paginate. Story 2.1 deliberately ships `GET /api/v1/projects` **unpaginated**, returning all org projects, per ADR-2.1-06. This is a conscious, bounded exception (orgs are expected to have tens, not thousands, of projects; the POST rate limit of 20/min bounds growth), **not** a missed requirement. The `{ items, total }` envelope is forward-compatible — adding `page`/`limit`/`hasNext` later is non-breaking. **Revisit trigger:** if any org exceeds ~200 projects, or before Epic 9's multi-org platform story, add pagination to match the Story 2.3 credential-list shape. Until then, the exception stands and is documented in ADR-2.1-06 and AC-16.
 
 **And** a user with no projects in their org receives:
 ```json
@@ -436,7 +438,7 @@ tx.select({ ...projectFields, role: projectMemberships.role })
 
 **And** the `role` field in each item is the user's role from `project_memberships` for that project.
 
-**And** project names and slugs are visible to all org members including `viewer` role. This is intentional — viewers are trusted org members and project names are metadata, not secret values. Restricting project list visibility to per-project members is deferred to Story 4.1 per ADR-2.1-01. Project names must not be sanitized at the API layer (frontend escaping handles XSS; SvelteKit auto-escapes template expressions). In 2.1, this will always be `owner` for the project creator; future Story 4.1 will allow other members with different roles.
+**And** project names and slugs are visible to all org members including `viewer` role — **this is an explicit, recorded product + security decision, not an implementation default.** Until Story 4.1 adds per-project membership scoping, *every authenticated member of an org can list and view the dashboard of every project in that org.* The decision: project names/slugs are treated as org-internal metadata (not secret values), and all org members are trusted/vetted, so org-wide visibility is acceptable for v1. The security boundary that still holds in 2.1 is **cross-org isolation** (RLS), not intra-org per-project isolation. Credential *values* are never exposed by these endpoints regardless of visibility. This decision is owned jointly by product and security and MUST be re-affirmed (or tightened) when Story 4.1 introduces project-scoped roles — see ADR-2.1-01. Restricting project list visibility to per-project members is therefore deferred to Story 4.1. Project names must not be sanitized at the API layer (frontend escaping handles XSS; SvelteKit auto-escapes template expressions). In 2.1, `role` is always `owner` for the project creator; Story 4.1 will allow other members with different roles.
 
 ---
 
@@ -663,6 +665,16 @@ const ROUTE_FILES: Array<{ path: string; prefix: string }> = [
 ```
 
 **Critical:** Failing to add any of the above causes `route-audit.test.ts` to fail. Run this test before marking the story done.
+
+**5. Add the `project.*` audit event names to the shared audit-event typing (`packages/shared/src/constants/audit-events.ts`):**
+
+That file currently declares an `AuditEventType` union that still carries stale, never-emitted `secret.*` members (`secret.created` / `secret.read` / `secret.updated` / `secret.deleted`) inherited from the superseded architecture naming. Story 2.1 introduces the first `project.*` events. Therefore:
+
+- Add `'project.created'` and `'project.updated'` to the `AuditEventType` union so the event names used in `ROUTE_ACTION_CLASSIFICATIONS` / `writeAuditEvent` are typed consistently across packages.
+- Do **not** add new `secret.*` names. The credential events (`credential.*`) are added by Story 2.2; the legacy `secret.*` members should be treated as deprecated and removed in Story 2.2 when the canonical `credential.*` names land (do not depend on them here). If removing them in 2.1 is low-risk (no references), remove them now; otherwise leave the removal to Story 2.2 and add a `// deprecated: superseded by credential.* (Epic 2)` comment.
+- `route-exemptions.ts` types `auditEvent` loosely as `string`, so the route-audit gate will pass regardless — the union update is for cross-package type consistency and to stop new code reaching for the stale `secret.*` names.
+
+> Note: this is the only `packages/shared` source change required for 2.1's audit naming; the dev agent makes it during implementation (TDD applies). It is called out here so the audit-event vocabulary stays consistent from Epic 2 onward.
 
 ---
 
@@ -1062,6 +1074,22 @@ PATCH /api/v1/projects/:projectId
   - 422 when body is empty (no updatable fields)
   - 403 when caller has viewer role (minimumRole: admin)
   - 401 when unauthenticated
+
+SEALED-VAULT GUARD (vault-guard fail-closed)
+  - 503 { status: "sealed" } for POST /api/v1/projects when the vault is sealed/uninitialized
+  - 503 { status: "sealed" } for GET /api/v1/projects when sealed
+  - 503 { status: "sealed" } for GET /api/v1/projects/:projectId/dashboard when sealed
+  - 503 { status: "sealed" } for PATCH /api/v1/projects/:projectId when sealed
+  - (project routes are NOT on the vault-guard allowlist; assert the guard runs before the handler)
+
+AUDIT-FAILURE ROLLBACK (mutations are fail-closed on audit)
+  - POST /api/v1/projects: when the audit write (project.created) is forced to fail, the whole
+    transaction rolls back — NO projects row and NO project_memberships row are persisted, and the
+    client receives 503 (audit_write_failed), not a 201 with an un-audited project.
+  - PATCH /api/v1/projects/:projectId: when the audit write (project.updated) is forced to fail,
+    the update rolls back — the project row is unchanged and the client receives 503, not a 200.
+  - These prove the SecureRoute same-transaction audit coupling: a mutation is never committed
+    without its audit row (mirrors the Story 2.2 reveal fail-closed guarantee for write events).
 ```
 
 **And** all tests use `withTestOrg()` — RLS is always active. **Never assert row counts after a bare `getDb()` insert** — RLS silently returns zero rows without the org context, making tests false-pass (0 rows seen, assertion expects 0, test passes, but the data was written, not absent). Always insert AND query within the same `withOrg()` / `withTestOrg()` scope.
@@ -1174,8 +1202,10 @@ export async function updateProject(
 | Unbounded project creation | POST rate limit overridden to `{ max: 20, timeWindowMs: 60_000 }`. |
 | Unprivileged project update | `PATCH` requires `minimumRole: 'admin'`; `viewer` and `member` receive `403 { code: "insufficient_role" }`. |
 | Audit trail completeness | POST and PATCH emit audit events via SecureRoute `writeAuditEvent`. GET routes omit audit (read-only, classified in `ROUTE_ACTION_CLASSIFICATIONS`). |
+| Audit-write failure must not silently commit a mutation | SecureRoute writes the audit row in the **same transaction** as the handler. If the `project.created`/`project.updated` audit write fails, the whole tx rolls back and the client gets `503 audit_write_failed` — no project is created/updated without a recorded audit event. Asserted by the AC-13 audit-failure rollback tests. |
 | RLS bypass in tests | `withTestOrg()` must be used in all integration tests. Never call `getDb().select().from(projects)` without org context in a test that asserts real data — the RLS will silently return zero rows and the test will false-pass. |
 | Service function breaking outer transaction | Helper functions accept `tx: Tx` parameter; never call `getDb()` internally — documented in Anti-Patterns. |
+| Operating on a sealed/uninitialized vault | The global `vault-guard` (`apps/api/src/plugins/vault-guard.ts`) is an `onRequest` hook that returns `503 { status: "sealed" }` for every route not on its allowlist whenever the vault is not `unsealed`. None of the four project routes are allowlisted, so all project reads/writes return `503` while sealed — fail-closed. This is asserted by the sealed-vault tests in AC-13. |
 
 ---
 
@@ -1194,6 +1224,7 @@ Do **not** implement any of the following in Story 2.1:
 - Project archival (`DELETE` or `PATCH archived: true`) — `archivedAt` column is reserved for Story 4.4.
 - Project deletion endpoint.
 - A dedicated org-wide aggregate dashboard endpoint (epic AC-E2d: total credentials, expiring-within-30-days, projects with overdue rotations). Deferred per ADR-2.1-08 — every input is zero until Story 2.2+/Epic 3/Epic 5 exist. The v1 cross-project view is the per-project list with per-project counts; a client-side rollup is acceptable if shown.
+- Pagination on `GET /api/v1/projects` — intentionally omitted as an **accepted FR97 exception** (ADR-2.1-06 / AC-6). Not an oversight; revisit at ~200 projects/org or Epic 9. The `{ items, total }` envelope is forward-compatible.
 - Project notes as a separate entity (FR8 `description` field covers notes for v1; a dedicated notes API is not required in 2.1).
 - `suggestedActions` partial-completion guidance (e.g., showing `add_service` when credentials already exist but no services are configured). In Story 2.1, `suggestedActions` is either the full 3-item list (when `isEmpty: true`) or empty (when `isEmpty: false`). Smarter partial-completion suggestions are deferred until Epic 6 monitoring data exists to reason about coverage gaps.
 - Machine user project access (Epic 7).
@@ -1208,7 +1239,7 @@ Do **not** implement any of the following in Story 2.1:
 - [ ] **Task 1: Database schema and migration** (AC: 1, 2, 3)
   - [ ] Create `packages/db/src/schema/projects.ts` and `project-memberships.ts`.
   - [ ] Export both from `packages/db/src/schema/index.ts`.
-  - [ ] Run `pnpm --filter @project-vault/db generate` to generate migration 0011.
+  - [ ] Run `pnpm --filter @project-vault/db generate` to generate the projects migration (next free number — `0013_projects.sql` on today's branch; verify `meta/_journal.json` first).
   - [ ] Add RLS policies, FK from `audit_log_entries`, and `updated_at` trigger to the generated migration.
   - [ ] Run `pnpm --filter @project-vault/db check-rls` to confirm no coverage gap.
   - [ ] Run `pnpm --filter @project-vault/db migrate` locally to apply.
@@ -1237,10 +1268,11 @@ Do **not** implement any of the following in Story 2.1:
 - [ ] **Task 7: PATCH /api/v1/projects/:projectId** (AC: 8, 9)
   - [ ] Write failing tests for update, slug immutability, empty body rejection, and viewer 403.
   - [ ] Implement handler; strip `slug` from update set.
-- [ ] **Task 8: Route audit registration** (AC: 9)
+- [ ] **Task 8: Route audit registration + audit-event constants** (AC: 9)
   - [ ] Add `projectRoutes` to `app.ts`.
   - [ ] Add `modules/projects/routes.ts` to `ROUTE_FILES` in `route-audit.test.ts`.
   - [ ] Add all four route entries to `ROUTE_ACTION_CLASSIFICATIONS` in `route-exemptions.ts`.
+  - [ ] Add `'project.created'` and `'project.updated'` to `AuditEventType` in `packages/shared/src/constants/audit-events.ts`; do not add new `secret.*` names (treat legacy `secret.*` as deprecated — see AC-9 step 5).
   - [ ] Run `pnpm --filter @project-vault/api test` to confirm route-audit passes.
 - [ ] **Task 9: RLS isolation integration test** (AC: 12)
   - [ ] Create `packages/db/src/__tests__/projects-rls-isolation.test.ts`.
@@ -1255,6 +1287,8 @@ Do **not** implement any of the following in Story 2.1:
   - [ ] Confirm the new form + project list pass mobile responsiveness (320/375/390px) — extend the Story 2.0 mobile smoke test.
   - [ ] Run `pnpm --filter @project-vault/web test`, `typecheck`, and `lint`.
 - [ ] **Task 11: Final verification** (AC: 13, 15, 17)
+  - [ ] Confirm the AC-13 sealed-vault `503` tests pass for all four project routes (vault-guard fail-closed).
+  - [ ] Confirm the AC-13 audit-failure rollback tests pass for `project.created` and `project.updated` (mutation never commits without its audit row).
   - [ ] Run `pnpm --filter @project-vault/db test` (includes RLS isolation test).
   - [ ] Run `pnpm --filter @project-vault/api test` (includes route-audit, integration tests).
   - [ ] Run `pnpm --filter @project-vault/shared test`.
@@ -1272,7 +1306,7 @@ Do **not** implement any of the following in Story 2.1:
 |---|---|
 | New API module location | `apps/api/src/modules/projects/` — create `routes.ts`, `schema.ts`, and a `service.ts` if the handler logic grows beyond ~60 lines per handler. |
 | New DB schema files | `packages/db/src/schema/projects.ts` and `project-memberships.ts`. Both must be exported from `schema/index.ts`. |
-| Migration file | `packages/db/src/migrations/0011_projects.sql` — number follows the current last migration (`0010_failed_auth_attempts.sql`). |
+| Migration file | `packages/db/src/migrations/<next>_projects.sql` — number follows the current journal tip. On today's branch the last migration is `0012_refresh_tokens_org_id.sql`, so this is `0013_projects.sql`. Verify `meta/_journal.json` before generating; never hardcode. |
 | Shared schema location | `packages/shared/src/schemas/dashboard.ts` — already exists from Story 2.0; update in place with backwards-compat aliases. NEW `packages/shared/src/schemas/projects.ts` holds `ProjectSummarySchema`/`ProjectDetailSchema` (response shapes the web app also consumes). |
 | Web API helpers | `apps/web/src/lib/api/projects.ts` — new file, follows the existing pattern in `auth.ts` and `vault.ts`. |
 
@@ -1342,7 +1376,7 @@ if (!parsed.success) return reply.status(422).send(validationError(parsed.error,
 
 - **No bare `getDb()` in route handlers.** The `SecureRoute` framework passes a transaction-scoped `tx` in the `SecureRouteContext`. Using `getDb()` inside a handler bypasses RLS. If you add `getDb` to the import list in a route file, you must add it to `DIRECT_DB_ACCESS_CLASSIFICATIONS` in `route-exemptions.ts` with justification — and the route-audit test will fail if you don't.
 - **`org_id` always from JWT, never from request.** `auth.orgId` is the only valid source. The Zod body schemas must not include `orgId` as an accepted field.
-- **RLS policies in the same migration file.** `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` and `CREATE POLICY` must be in `0011_projects.sql`. The `check-rls` CI task runs before `migrate`; if the policy is missing, CI fails.
+- **RLS policies in the same migration file.** `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` and `CREATE POLICY` must be in the projects migration (`<next>_projects.sql`, e.g. `0013_projects.sql`). The `check-rls` CI task runs before `migrate`; if the policy is missing, CI fails.
 - **No `test-helpers.ts` change is needed for cleanup.** `projects` and `project_memberships` are `orgScoped({ onDelete: 'cascade' })`, so deleting the test organization in `withTestOrg()`'s teardown cascades both tables automatically. The new `audit_log_entries → projects` FK uses `ON DELETE SET NULL`, so cascading project deletion nullifies `project_id` on any audit rows rather than blocking — it does not interfere with the existing append-only audit cleanup path (which already tolerates the expected append-only/FK-violation errors). Do not add manual `projects` cleanup to `withTestOrg()`.
 - **Route registration order in `app.ts`.** Register `projectRoutes` after `orgRoutes` and before any future epic-scoped modules. Fastify plugin registration is order-dependent for logging/metrics context.
 - **`authMeResponseSchema` and `authMeResponse`** in `modules/auth/schema.ts` does not include `projectRole` — do not add it in 2.1. `projectRole` is a Story 4.1 concern.
@@ -1419,6 +1453,10 @@ Pattern observations:
 | **`isEmpty: true` persists after credentials are added (Story 2.2)** | `isEmpty` was hardcoded `true` instead of computed | AC-7 requires computing `isEmpty` from actual counts from day one. |
 | **PATCH returns 200 on cross-org write attempt** | Handler sends response without checking `.returning()` row count | AC-8 requires `.returning()` + row count check → 404 if 0 rows. |
 | **`req.body` spread passes orgId or createdBy to Drizzle** | Developer spreads raw body without Zod parse | Mutation schemas use `.strict()`; Anti-Patterns forbids raw `req.body` in Drizzle calls. |
+| **Project created/updated without an audit row** | Audit write swallowed or run outside the tx | SecureRoute writes audit in the same tx; failure → rollback + `503`. AC-13 audit-failure rollback tests assert no project row persists when the audit write fails. |
+| **Project route returns 500 instead of 503 while sealed** | Handler reached before the vault guard, or guard misordered | The global `vault-guard` `onRequest` hook short-circuits non-allowlisted routes with `503 { status: "sealed" }`; AC-13 sealed-vault tests assert this for all four routes. |
+| **Org-wide project visibility silently persists past Story 4.1** | The 2.1 org-scoped default is forgotten when per-project roles land | ADR-2.1-01 + AC-6 record it as an explicit decision requiring re-affirmation/tightening at Story 4.1. |
+| **FR97 pagination treated as an oversight** | Reviewer flags missing pagination on the project list | ADR-2.1-06 + AC-6 record the unpaginated list as an accepted, bounded FR97 exception with a revisit trigger (~200 projects / Epic 9). |
 
 ---
 
@@ -1431,7 +1469,7 @@ Pattern observations:
 | **Context** | Story 2.1 introduces `project_memberships` but does not yet enforce per-project RBAC in `SecureRoute`. Story 4.1 adds project-specific membership enforcement. |
 | **Decision** | In 2.1, any authenticated org member can read project dashboards (minimumRole: viewer) and create projects (minimumRole: member). Only admin/owner can mutate project metadata (PATCH). `project_memberships` records the creator as owner for future use. |
 | **Rationale** | Implementing per-project RBAC in `SecureRoute` requires a `projectRole` resolver that queries `project_memberships` on every request — a significant framework change. For 2.1, org-level role gates provide acceptable access control without requiring 4.1's framework work. |
-| **Consequences** | Any authenticated org member can list and view project dashboards for all org projects. Acceptable for a trust product where all org members are vetted. Story 4.1 tightens this with project-specific roles. |
+| **Consequences** | Any authenticated org member can list and view project dashboards for all org projects. **This is an explicit product + security decision (not an accident of the framework), and must be signed off as such:** org-wide project visibility is accepted for v1 because (a) all org members are vetted/trusted, (b) project names/slugs are metadata, not secrets, and (c) credential values are never exposed by project endpoints. The only enforced isolation boundary in 2.1 is cross-org (RLS). **Required action at Story 4.1:** explicitly re-affirm or tighten this to per-project membership scoping before shipping per-project roles; do not let the org-wide default silently persist past 4.1. Cross-referenced in AC-6. |
 
 ### ADR-2.1-02: `modules/projects/` handles both project CRUD and per-project dashboard
 
@@ -1458,7 +1496,7 @@ Pattern observations:
 | **Context** | AC-3 adds `fk_audit_project` from `audit_log_entries.project_id` to `projects.id`. The `ON DELETE` behavior was chosen inline without recording why. Three options exist when a project is deleted. |
 | **Options** | **A** — `CASCADE`: deleting a project deletes its audit rows. **B** — `RESTRICT`: cannot delete a project while audit rows reference it. **C** — `SET NULL`: project deletion nullifies `project_id` on audit rows, preserving the events. |
 | **Decision** | **Option C (`ON DELETE SET NULL`).** |
-| **Rationale** | `audit_log_entries` is an append-only, tamper-evident table (HMAC-chained, immutability trigger from migration 0001). `CASCADE` would let project deletion destroy audit history — unacceptable for a compliance product (Epic 8). `RESTRICT` would make projects undeletable once any audit event references them, breaking Story 4.4 archival. `SET NULL` keeps the event (org_id, actor, timestamp, HMAC intact) while severing the now-dangling project reference. |
+| **Rationale** | `audit_log_entries` is an append-only, tamper-evident table (per-row keyed HMAC over canonical row fields via `computeAuditHmac`, plus the immutability trigger from migration 0001 — there is **no** prev-row HMAC chaining in current Epic 1 reality). `CASCADE` would let project deletion destroy audit history — unacceptable for a compliance product (Epic 8). `RESTRICT` would make projects undeletable once any audit event references them, breaking Story 4.4 archival. `SET NULL` keeps the event (org_id, actor, timestamp, HMAC intact) while severing the now-dangling project reference. |
 | **Consequences** | Audit queries filtering by `project_id` will miss events for deleted projects (their `project_id` is now null). Epic 8 audit-export must account for null `project_id` rows. The HMAC covers the original `project_id` value computed at write time and is never recomputed, so nullifying the column does NOT invalidate the stored HMAC. |
 
 ### ADR-2.1-05: `org_id` is denormalized onto `project_memberships` for RLS uniformity
@@ -1471,15 +1509,15 @@ Pattern observations:
 | **Rationale** | The architecture mandates a uniform RLS pattern: one `org_id` column + one `USING (org_id = current_setting(...))` policy per table. A subquery-based policy on memberships would be slower (per-row join), harder to audit, and would break the `check-rls-coverage.ts` heuristic (which looks for an `org_id` column + an `ALL` policy). Uniformity is worth the denormalization. |
 | **Consequences** | Risk: `project_memberships.org_id` could drift from `projects.org_id` if inserted incorrectly. Mitigation: both are set from the same `auth.orgId` inside one transaction (AC-4). A future hardening could add a composite FK `(project_id, org_id) REFERENCES projects(id, org_id)` to make drift impossible at the DB level — noted as a deferred enhancement (would require a composite unique key on `projects(id, org_id)`). |
 
-### ADR-2.1-06: `GET /api/v1/projects` is unpaginated in v1
+### ADR-2.1-06: `GET /api/v1/projects` is unpaginated in v1 — accepted exception to FR97
 
 | | |
 |---|---|
-| **Context** | AC-6 explicitly returns all org projects with no `page`/`limit`. Story 2.3 introduces pagination for credentials (`page`, `limit`, max 100). The project list deliberately diverges. |
-| **Options** | **A** — Paginate the project list now for consistency with the credential list pattern. **B** — Return all projects unpaginated; defer pagination until a real scale need exists. |
-| **Decision** | **Option B**, with an explicit revisit trigger. |
-| **Rationale** | Orgs are expected to have tens, not thousands, of projects. Unpaginated keeps the cross-project dashboard simple (no client-side pagination state for the primary nav). The POST rate limit (`max: 20/min`) bounds abusive growth. |
-| **Consequences** | An org that creates thousands of projects degrades `GET /api/v1/projects` (full scan, large payload). **Revisit trigger:** if any org exceeds ~200 projects, or before the multi-org platform story (Epic 9). The current `{ items, total }` envelope is forward-compatible — adding `page`/`limit`/`hasNext` to match the Story 2.3 shape is non-breaking. |
+| **Context** | AC-6 returns all org projects with no `page`/`limit`. **FR97** mandates pagination on all list endpoints (reaffirmed by the Story 2.3 epic ACs, which paginate the credential list with `page`/`limit`, max 100). The project list deliberately diverges from FR97. |
+| **Options** | **A** — Paginate the project list now to comply with FR97 and match the credential list pattern. **B** — Return all projects unpaginated and record an explicit, bounded FR97 exception with a revisit trigger. |
+| **Decision** | **Option B** — ship unpaginated and **formally record this as an accepted PRD exception to FR97**, with a hard revisit trigger. This is a deliberate product decision, not an unmet requirement. |
+| **Rationale** | Orgs are expected to have tens, not thousands, of projects. Unpaginated keeps the cross-project dashboard simple (no client-side pagination state for the primary nav). The POST rate limit (`max: 20/min`) bounds abusive growth. The cost of full FR97 compliance here (client + server pagination state on the primary nav) is not justified at v1 scale. |
+| **Consequences** | An org that creates thousands of projects degrades `GET /api/v1/projects` (full scan, large payload). **Revisit trigger (exception expires):** if any org exceeds ~200 projects, or before the multi-org platform story (Epic 9), FR97 must be honored here. The current `{ items, total }` envelope is forward-compatible — adding `page`/`limit`/`hasNext` to match the Story 2.3 shape is non-breaking. The exception is cross-referenced in AC-6 and AC-16. |
 
 ### ADR-2.1-07: Resource response shapes are right-sized per endpoint, not uniform
 

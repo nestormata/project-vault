@@ -43,11 +43,13 @@ RUN apk add --no-cache curl
 
 WORKDIR /app
 
-COPY --from=builder /app/deploy .
+COPY --from=builder --chown=node:node /app/deploy .
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
+
+USER node
 
 CMD ["node", "dist/main.js"]
