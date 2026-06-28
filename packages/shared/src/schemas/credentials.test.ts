@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest'
+import {
+  CredentialDetailSchema,
+  CredentialValueSchema,
+  CredentialVersionSummarySchema,
+} from './credentials.js'
+
+const CREDENTIAL_ID = `00000000-0000-4000-8000-${'000000000100'}`
+const PROJECT_ID = `00000000-0000-4000-8000-${'000000000010'}`
+const ORG_ID = `00000000-0000-4000-8000-${'000000000002'}`
+const USER_ID = `00000000-0000-4000-8000-${'000000000001'}`
+const CREATED_AT = '2026-06-27T20:00:00.000Z'
+const CREDENTIAL_NAME = 'Stripe Secret Key'
+
+describe('credential response schemas', () => {
+  it('parses a credential detail response item', () => {
+    expect(
+      CredentialDetailSchema.parse({
+        id: CREDENTIAL_ID,
+        projectId: PROJECT_ID,
+        orgId: ORG_ID,
+        name: CREDENTIAL_NAME,
+        description: 'Production Stripe API secret',
+        tags: ['payments', 'third-party'],
+        expiresAt: null,
+        rotationSchedule: null,
+        retentionCount: 3,
+        currentVersionNumber: 1,
+        createdBy: USER_ID,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      })
+    ).toMatchObject({ name: CREDENTIAL_NAME, currentVersionNumber: 1 })
+  })
+
+  it('rejects a retentionCount below 1', () => {
+    expect(() =>
+      CredentialDetailSchema.parse({
+        id: CREDENTIAL_ID,
+        projectId: PROJECT_ID,
+        orgId: ORG_ID,
+        name: CREDENTIAL_NAME,
+        description: null,
+        tags: [],
+        expiresAt: null,
+        rotationSchedule: null,
+        retentionCount: 0,
+        currentVersionNumber: 1,
+        createdBy: null,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      })
+    ).toThrow()
+  })
+
+  it('parses a credential value reveal response', () => {
+    expect(
+      CredentialValueSchema.parse({
+        value: 'super-secret',
+        versionNumber: 1,
+        retrievedAt: CREATED_AT,
+      })
+    ).toMatchObject({ value: 'super-secret', versionNumber: 1 })
+  })
+
+  it('parses a version summary item with purgedAt set', () => {
+    expect(
+      CredentialVersionSummarySchema.parse({
+        versionNumber: 1,
+        createdBy: USER_ID,
+        createdAt: CREATED_AT,
+        isCurrent: false,
+        purgedAt: CREATED_AT,
+      })
+    ).toMatchObject({ isCurrent: false, purgedAt: CREATED_AT })
+  })
+
+  it('rejects a non-positive version number', () => {
+    expect(() =>
+      CredentialVersionSummarySchema.parse({
+        versionNumber: 0,
+        createdBy: null,
+        createdAt: CREATED_AT,
+        isCurrent: false,
+        purgedAt: null,
+      })
+    ).toThrow()
+  })
+})

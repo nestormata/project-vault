@@ -831,17 +831,17 @@ Do NOT implement in Story 2.2:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Database schema + credentials migration (next free number, e.g. `0014_credentials.sql`)** (AC: 1, 2, 3)
-  - [ ] Create `packages/db/src/schema/credentials.ts` and `credential-versions.ts`.
-  - [ ] Export both from `packages/db/src/schema/index.ts`.
-  - [ ] Run `pnpm --filter @project-vault/db generate`; confirm `CREATE TABLE credentials` precedes `credential_versions`.
-  - [ ] Add RLS policies for both tables + `updated_at` trigger for `credentials` only to the migration.
-  - [ ] Run `pnpm --filter @project-vault/db check-rls` (no gap) and `migrate` (applies cleanly).
-- [ ] **Task 2: Shared + API schemas** (AC: 10)
-  - [ ] Create `packages/shared/src/schemas/credentials.ts`; add to `packages/shared/src/index.ts`; `pnpm --filter @project-vault/shared test`.
-  - [ ] Create `apps/api/src/modules/credentials/schema.ts` with request schemas (`.strict()`), cron + value rules (value NOT trimmed), and response envelopes.
-  - [ ] Unit-test value/cron/tag bounds and `.strict()` rejection.
-- [ ] **Task 3: DB-layer RLS isolation test** (AC: 12) — write `credentials-rls-isolation.test.ts` and confirm it fails before the schema exists, passes after.
+- [x] **Task 1: Database schema + credentials migration (next free number, e.g. `0014_credentials.sql`)** (AC: 1, 2, 3)
+  - [x] Create `packages/db/src/schema/credentials.ts` and `credential-versions.ts`.
+  - [x] Export both from `packages/db/src/schema/index.ts`.
+  - [x] Run `pnpm --filter @project-vault/db generate`; confirm `CREATE TABLE credentials` precedes `credential_versions`.
+  - [x] Add RLS policies for both tables + `updated_at` trigger for `credentials` only to the migration.
+  - [x] Run `pnpm --filter @project-vault/db check-rls` (no gap) and `migrate` (applies cleanly).
+- [x] **Task 2: Shared + API schemas** (AC: 10)
+  - [x] Create `packages/shared/src/schemas/credentials.ts`; add to `packages/shared/src/index.ts`; `pnpm --filter @project-vault/shared test`.
+  - [x] Create `apps/api/src/modules/credentials/schema.ts` with request schemas (`.strict()`), cron + value rules (value NOT trimmed), and response envelopes.
+  - [x] Unit-test value/cron/tag bounds and `.strict()` rejection.
+- [x] **Task 3: DB-layer RLS isolation test** (AC: 12) — write `credentials-rls-isolation.test.ts` and confirm it fails before the schema exists, passes after.
 - [ ] **Task 4: POST create credential** (AC: 4, 9, 11) — failing test first; implement encrypt (zero buffers) + version-1 insert + project existence 404 + custom audit writer capturing new id.
 - [ ] **Task 5: POST add version** (AC: 5, 9, 11) — failing test first; `FOR UPDATE` lock + MAX+1 + `23505 → 409`; no dedup.
 - [ ] **Task 6: GET reveal value** (AC: 6, 9, 11) — failing test first; `withSecret` reveal-path conversion; audited GET; sealed-vault 503; all-purged 404.
