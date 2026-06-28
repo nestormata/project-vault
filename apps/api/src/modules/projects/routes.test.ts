@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { orgMemberships, projectMemberships, projects } from '@project-vault/db/schema'
+import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import {
   configureAuthIntegrationEnv,
   cookieHeader,
@@ -24,6 +25,11 @@ const TEST_PASSPHRASE = 'project-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const PROJECTS_URL = '/api/v1/projects'
 const ALPHA_PROJECT_SLUG = 'alpha-project'
+
+function expectAuditWriteFailed(response: Awaited<ReturnType<TestApp['inject']>>) {
+  expect(response.statusCode).toBe(503)
+  expect(response.json()).toMatchObject({ code: 'audit_write_failed' })
+}
 
 function uniqueEmail(label: string): string {
   return `projects-${label}-${randomUUID()}@example.com`
@@ -263,17 +269,7 @@ describe.sequential('project routes', () => {
       headers: { cookie: cookieHeader(userA.cookies) },
     })
     expect(dashboard.statusCode).toBe(200)
-    expect(dashboard.json()).toMatchObject({
-      data: {
-        credentialStats: { active: 0, expiringSoon: 0, expired: 0 },
-        upcomingRotations: [],
-        monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
-        recentAccessEvents: [],
-        unresolvedAlertCount: 0,
-        isEmpty: true,
-        suggestedActions: ['add_credential', 'add_service', 'import_credentials'],
-      },
-    })
+    expect(dashboard.json()).toMatchObject({ data: EMPTY_PROJECT_DASHBOARD })
 
     const crossOrg = await app.inject({
       method: 'GET',
@@ -382,8 +378,7 @@ describe.sequential('project routes', () => {
       payload: { name: 'Audit Fail', slug: 'audit-fail' },
     })
 
-    expect(res.statusCode).toBe(503)
-    expect(res.json()).toMatchObject({ code: 'audit_write_failed' })
+    expectAuditWriteFailed(res)
 
     const rows = await withOrg(user.orgId, (tx) =>
       tx.select({ id: projects.id }).from(projects).where(eq(projects.slug, 'audit-fail'))
@@ -413,8 +408,7 @@ describe.sequential('project routes', () => {
       payload: { name: 'Should Roll Back' },
     })
 
-    expect(res.statusCode).toBe(503)
-    expect(res.json()).toMatchObject({ code: 'audit_write_failed' })
+    expectAuditWriteFailed(res)
 
     const rows = await withOrg(user.orgId, (tx) =>
       tx.select({ name: projects.name }).from(projects).where(eq(projects.id, project.id))

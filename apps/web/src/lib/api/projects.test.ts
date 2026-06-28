@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import { ApiClientError } from './client.js'
 import {
   createProject,
@@ -55,15 +56,7 @@ describe('project API helpers', () => {
   it('getProjectDashboard returns dashboard data', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse({
-        data: {
-          credentialStats: { active: 0, expiringSoon: 0, expired: 0 },
-          upcomingRotations: [],
-          monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
-          recentAccessEvents: [],
-          unresolvedAlertCount: 0,
-          isEmpty: true,
-          suggestedActions: ['add_credential', 'add_service', 'import_credentials'],
-        },
+        data: EMPTY_PROJECT_DASHBOARD,
       })
     )
 

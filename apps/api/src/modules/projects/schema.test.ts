@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import {
   CreateProjectBodySchema,
   PatchProjectBodySchema,
@@ -64,15 +65,7 @@ describe('project API schemas', () => {
     })
     expect(
       ProjectDashboardResponseSchema.parse({
-        data: {
-          credentialStats: { active: 0, expiringSoon: 0, expired: 0 },
-          upcomingRotations: [],
-          monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
-          recentAccessEvents: [],
-          unresolvedAlertCount: 0,
-          isEmpty: true,
-          suggestedActions: ['add_credential', 'add_service', 'import_credentials'],
-        },
+        data: EMPTY_PROJECT_DASHBOARD,
       })
     ).toMatchObject({ data: { isEmpty: true } })
   })
