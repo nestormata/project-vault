@@ -1,6 +1,6 @@
 # Story 2.1: Project Creation & Cross-Project Dashboard
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-27 - comprehensive developer guide for the first durable backend and frontend project model. This story introduces the projects table, project_memberships, RLS policies, four new API routes, and the real ProjectDashboard schema replacing the Story 2.0 preview stub. -->
 
@@ -1236,65 +1236,65 @@ Do **not** implement any of the following in Story 2.1:
 
 > Follow repo TDD red-green (`AGENTS.md`): write or update failing tests first, confirm they fail for the expected reason, implement the smallest change, then rerun focused and relevant broader checks.
 
-- [ ] **Task 1: Database schema and migration** (AC: 1, 2, 3)
-  - [ ] Create `packages/db/src/schema/projects.ts` and `project-memberships.ts`.
-  - [ ] Export both from `packages/db/src/schema/index.ts`.
-  - [ ] Run `pnpm --filter @project-vault/db generate` to generate the projects migration (next free number — `0013_projects.sql` on today's branch; verify `meta/_journal.json` first).
-  - [ ] Add RLS policies, FK from `audit_log_entries`, and `updated_at` trigger to the generated migration.
-  - [ ] Run `pnpm --filter @project-vault/db check-rls` to confirm no coverage gap.
-  - [ ] Run `pnpm --filter @project-vault/db migrate` locally to apply.
-- [ ] **Task 2: Shared package schemas** (AC: 10, 11)
-  - [ ] Write failing test in `dashboard.test.ts` for the new item schemas; DELETE the Story 2.0 `z.never()` rejection tests.
-  - [ ] Update `packages/shared/src/schemas/dashboard.ts` to replace `z.never()` with real schemas and backwards-compat aliases.
-  - [ ] Create `packages/shared/src/schemas/projects.ts` with `ProjectSummarySchema`, `ProjectDetailSchema`, `ProjectRoleSchema` (web-consumed response schemas).
-  - [ ] Add `export * from './schemas/projects.js'` to `packages/shared/src/index.ts`.
-  - [ ] Run `pnpm --filter @project-vault/shared test`; run `pnpm install` so the web app picks up new exports.
-- [ ] **Task 3: API request schema types** (AC: 11)
-  - [ ] Create `apps/api/src/modules/projects/schema.ts` with request schemas (`CreateProjectBodySchema`, `PatchProjectBodySchema`, `ProjectParamsSchema`) and response envelopes, importing `ProjectSummarySchema`/`ProjectDetailSchema`/`ProjectDashboardSchema` from `@project-vault/shared`.
-  - [ ] Add unit tests for slug validation regex edge cases (leading hyphen, trailing hyphen, uppercase, min/max length).
-  - [ ] Add a unit test asserting `.strict()` rejects unknown keys (e.g., `orgId`) with a parse error.
-- [ ] **Task 4: POST /api/v1/projects** (AC: 4, 5, 9)
-  - [ ] Write failing integration test for project creation.
-  - [ ] Implement handler including `project_memberships` insert in same transaction.
-  - [ ] Implement `409 slug_taken` catch (Postgres error code `23505` + constraint name).
-  - [ ] Run route-audit test to confirm classification entry is present.
-- [ ] **Task 5: GET /api/v1/projects** (AC: 6, 9)
-  - [ ] Write failing test for empty list, populated list, cross-org isolation.
-  - [ ] Implement handler with project + membership join.
-  - [ ] Confirm `credentialCount`, `expiringCount`, `alertCount` are always `0`.
-- [ ] **Task 6: GET /api/v1/projects/:projectId/dashboard** (AC: 7, 9)
-  - [ ] Write failing tests for empty dashboard, 404, cross-org 404 (not 403), and 422 on bad UUID.
-  - [ ] Implement handler with `isEmpty` computation and `suggestedActions` derivation.
-- [ ] **Task 7: PATCH /api/v1/projects/:projectId** (AC: 8, 9)
-  - [ ] Write failing tests for update, slug immutability, empty body rejection, and viewer 403.
-  - [ ] Implement handler; strip `slug` from update set.
-- [ ] **Task 8: Route audit registration + audit-event constants** (AC: 9)
-  - [ ] Add `projectRoutes` to `app.ts`.
-  - [ ] Add `modules/projects/routes.ts` to `ROUTE_FILES` in `route-audit.test.ts`.
-  - [ ] Add all four route entries to `ROUTE_ACTION_CLASSIFICATIONS` in `route-exemptions.ts`.
-  - [ ] Add `'project.created'` and `'project.updated'` to `AuditEventType` in `packages/shared/src/constants/audit-events.ts`; do not add new `secret.*` names (treat legacy `secret.*` as deprecated — see AC-9 step 5).
-  - [ ] Run `pnpm --filter @project-vault/api test` to confirm route-audit passes.
-- [ ] **Task 9: RLS isolation integration test** (AC: 12)
-  - [ ] Create `packages/db/src/__tests__/projects-rls-isolation.test.ts`.
-  - [ ] Confirm cross-org isolation and per-org slug uniqueness.
-- [ ] **Task 10: Web app updates** (AC: 14)
-  - [ ] Create `apps/web/src/lib/api/projects.ts` with typed API helpers (importing `ProjectDetail`/`ProjectSummary`/`ProjectDashboard` from `@project-vault/shared`).
-  - [ ] Build the real "Create Project" form: name/slug/description inputs, slug auto-suggest from name, client validation, submit → navigate to the new project's dashboard.
-  - [ ] Map `409 slug_taken` to an inline error on the slug field; map `422` to field-level errors.
-  - [ ] Update the dashboard page server load to call the real API (list → first project dashboard, or empty state).
-  - [ ] Supersede or relabel the Story 2.0 preview stub; update its dependent tests.
-  - [ ] Add `projects.test.ts` (API helpers + 409 path) and a unit test for the slug auto-suggest helper.
-  - [ ] Confirm the new form + project list pass mobile responsiveness (320/375/390px) — extend the Story 2.0 mobile smoke test.
-  - [ ] Run `pnpm --filter @project-vault/web test`, `typecheck`, and `lint`.
-- [ ] **Task 11: Final verification** (AC: 13, 15, 17)
-  - [ ] Confirm the AC-13 sealed-vault `503` tests pass for all four project routes (vault-guard fail-closed).
-  - [ ] Confirm the AC-13 audit-failure rollback tests pass for `project.created` and `project.updated` (mutation never commits without its audit row).
-  - [ ] Run `pnpm --filter @project-vault/db test` (includes RLS isolation test).
-  - [ ] Run `pnpm --filter @project-vault/api test` (includes route-audit, integration tests).
-  - [ ] Run `pnpm --filter @project-vault/shared test`.
-  - [ ] Run `pnpm --filter @project-vault/web test`, `typecheck`, `lint`.
-  - [ ] Run `pnpm typecheck` and `pnpm lint` at repo root.
-  - [ ] Confirm `pnpm --filter @project-vault/db check-rls` passes.
+- [x] **Task 1: Database schema and migration** (AC: 1, 2, 3)
+  - [x] Create `packages/db/src/schema/projects.ts` and `project-memberships.ts`.
+  - [x] Export both from `packages/db/src/schema/index.ts`.
+  - [x] Run `pnpm --filter @project-vault/db generate` to generate the projects migration (next free number — `0013_projects.sql` on today's branch; verify `meta/_journal.json` first).
+  - [x] Add RLS policies, FK from `audit_log_entries`, and `updated_at` trigger to the generated migration.
+  - [x] Run `pnpm --filter @project-vault/db check-rls` to confirm no coverage gap.
+  - [x] Run `pnpm --filter @project-vault/db migrate` locally to apply.
+- [x] **Task 2: Shared package schemas** (AC: 10, 11)
+  - [x] Write failing test in `dashboard.test.ts` for the new item schemas; DELETE the Story 2.0 `z.never()` rejection tests.
+  - [x] Update `packages/shared/src/schemas/dashboard.ts` to replace `z.never()` with real schemas and backwards-compat aliases.
+  - [x] Create `packages/shared/src/schemas/projects.ts` with `ProjectSummarySchema`, `ProjectDetailSchema`, `ProjectRoleSchema` (web-consumed response schemas).
+  - [x] Add `export * from './schemas/projects.js'` to `packages/shared/src/index.ts`.
+  - [x] Run `pnpm --filter @project-vault/shared test`; run `pnpm install` so the web app picks up new exports.
+- [x] **Task 3: API request schema types** (AC: 11)
+  - [x] Create `apps/api/src/modules/projects/schema.ts` with request schemas (`CreateProjectBodySchema`, `PatchProjectBodySchema`, `ProjectParamsSchema`) and response envelopes, importing `ProjectSummarySchema`/`ProjectDetailSchema`/`ProjectDashboardSchema` from `@project-vault/shared`.
+  - [x] Add unit tests for slug validation regex edge cases (leading hyphen, trailing hyphen, uppercase, min/max length).
+  - [x] Add a unit test asserting `.strict()` rejects unknown keys (e.g., `orgId`) with a parse error.
+- [x] **Task 4: POST /api/v1/projects** (AC: 4, 5, 9)
+  - [x] Write failing integration test for project creation.
+  - [x] Implement handler including `project_memberships` insert in same transaction.
+  - [x] Implement `409 slug_taken` catch (Postgres error code `23505` + constraint name).
+  - [x] Run route-audit test to confirm classification entry is present.
+- [x] **Task 5: GET /api/v1/projects** (AC: 6, 9)
+  - [x] Write failing test for empty list, populated list, cross-org isolation.
+  - [x] Implement handler with project + membership join.
+  - [x] Confirm `credentialCount`, `expiringCount`, `alertCount` are always `0`.
+- [x] **Task 6: GET /api/v1/projects/:projectId/dashboard** (AC: 7, 9)
+  - [x] Write failing tests for empty dashboard, 404, cross-org 404 (not 403), and 422 on bad UUID.
+  - [x] Implement handler with `isEmpty` computation and `suggestedActions` derivation.
+- [x] **Task 7: PATCH /api/v1/projects/:projectId** (AC: 8, 9)
+  - [x] Write failing tests for update, slug immutability, empty body rejection, and viewer 403.
+  - [x] Implement handler; strip `slug` from update set.
+- [x] **Task 8: Route audit registration + audit-event constants** (AC: 9)
+  - [x] Add `projectRoutes` to `app.ts`.
+  - [x] Add `modules/projects/routes.ts` to `ROUTE_FILES` in `route-audit.test.ts`.
+  - [x] Add all four route entries to `ROUTE_ACTION_CLASSIFICATIONS` in `route-exemptions.ts`.
+  - [x] Add `'project.created'` and `'project.updated'` to `AuditEventType` in `packages/shared/src/constants/audit-events.ts`; do not add new `secret.*` names (treat legacy `secret.*` as deprecated — see AC-9 step 5).
+  - [x] Run `pnpm --filter @project-vault/api test` to confirm route-audit passes.
+- [x] **Task 9: RLS isolation integration test** (AC: 12)
+  - [x] Create `packages/db/src/__tests__/projects-rls-isolation.test.ts`.
+  - [x] Confirm cross-org isolation and per-org slug uniqueness.
+- [x] **Task 10: Web app updates** (AC: 14)
+  - [x] Create `apps/web/src/lib/api/projects.ts` with typed API helpers (importing `ProjectDetail`/`ProjectSummary`/`ProjectDashboard` from `@project-vault/shared`).
+  - [x] Build the real "Create Project" form: name/slug/description inputs, slug auto-suggest from name, client validation, submit → navigate to the new project's dashboard.
+  - [x] Map `409 slug_taken` to an inline error on the slug field; map `422` to field-level errors.
+  - [x] Update the dashboard page server load to call the real API (list → first project dashboard, or empty state).
+  - [x] Supersede or relabel the Story 2.0 preview stub; update its dependent tests.
+  - [x] Add `projects.test.ts` (API helpers + 409 path) and a unit test for the slug auto-suggest helper.
+  - [x] Confirm the new form + project list pass mobile responsiveness (320/375/390px) — extend the Story 2.0 mobile smoke test.
+  - [x] Run `pnpm --filter @project-vault/web test`, `typecheck`, and `lint`.
+- [x] **Task 11: Final verification** (AC: 13, 15, 17)
+  - [x] Confirm the AC-13 sealed-vault `503` tests pass for all four project routes (vault-guard fail-closed).
+  - [x] Confirm the AC-13 audit-failure rollback tests pass for `project.created` and `project.updated` (mutation never commits without its audit row).
+  - [x] Run `pnpm --filter @project-vault/db test` (includes RLS isolation test).
+  - [x] Run `pnpm --filter @project-vault/api test` (includes route-audit, integration tests).
+  - [x] Run `pnpm --filter @project-vault/shared test`.
+  - [x] Run `pnpm --filter @project-vault/web test`, `typecheck`, and `lint`.
+  - [x] Run `pnpm typecheck` and `pnpm lint` at repo root.
+  - [x] Confirm `pnpm --filter @project-vault/db check-rls` passes.
 
 ---
 
@@ -1571,10 +1571,78 @@ Pattern observations:
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+GPT-5.5
 
 ### Debug Log References
+2026-06-28: Task 1 red-green validation:
+- Red: `pnpm --filter @project-vault/db test -- src/schema/projects-schema.test.ts` failed because `projects` and `projectMemberships` exports were undefined.
+- Green: added schema files/exports, generated next migration number, replaced broad generated SQL with scoped `0013_projects.sql`, applied migration with owner connection, ran RLS coverage and db tests with app role.
+2026-06-28: Task 2 red-green validation:
+- Red: `pnpm --filter @project-vault/shared test -- src/schemas/dashboard.test.ts src/schemas/projects.test.ts` failed because `ProjectDashboardSchema`/`EMPTY_PROJECT_DASHBOARD` and `schemas/projects.ts` did not exist.
+- Green: promoted dashboard preview schema to `ProjectDashboardSchema`, added typed rotation/access-event items and backwards-compatible aliases, added shared project response schemas and exports.
+2026-06-28: Task 3 red-green validation:
+- Red: `pnpm exec vitest run src/modules/projects/schema.test.ts --coverage` failed because `apps/api/src/modules/projects/schema.ts` did not exist.
+- Green: added API request schemas and response envelopes; focused schema tests pass without coverage. Shared package was rebuilt so API imports resolve the new shared schema exports.
+2026-06-28: Tasks 4-8 red-green validation:
+- Red: `pnpm exec vitest run src/modules/projects/routes.test.ts --coverage.enabled=false` failed with 404s because the projects routes were not registered.
+- Green: added `projectRoutes`, registered them in `app.ts`, added explicit same-transaction audit writes for POST/PATCH, route classifications, project audit event constants, and PATCH MFA exemption. Project route integration tests and route-audit test pass.
+2026-06-28: Task 9 validation:
+- Added `projects-rls-isolation.test.ts`; `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/db test -- src/__tests__/projects-rls-isolation.test.ts` passes.
+2026-06-28: Task 10 red-green validation:
+- Red: `pnpm exec vitest run src/lib/api/projects.test.ts --coverage.enabled=false` failed because `apps/web/src/lib/api/projects.ts` did not exist.
+- Green: added typed project API helpers, slug suggestion tests, dashboard/projects server loads, real create-project form, and updated empty-state copy. Focused web tests and web typecheck pass.
+2026-06-28: Task 11 final verification:
+- Full checks passed: `pnpm --filter @project-vault/db test`, `pnpm --filter @project-vault/api test`, `pnpm --filter @project-vault/shared test`, `pnpm --filter @project-vault/web test`, `pnpm --filter @project-vault/web typecheck`, `pnpm --filter @project-vault/web lint`, `pnpm typecheck`, `pnpm lint`, and `DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm check-rls`.
+- `pnpm lint` exits 0 with 5 existing script warnings after excluding generated agent asset trees from root lint.
 
 ### Completion Notes List
+- Task 1 complete: added org-scoped `projects` and `project_memberships` Drizzle schemas, exported them, created scoped `0013_projects.sql` with RLS policies, audit-log `project_id` FK, and project `updated_at` trigger. Migration applied locally with the owner role; db tests pass under `vault_app`.
+- Task 2 complete: shared dashboard schema now accepts real rotation/access event item shapes while retaining Story 2.0 aliases; shared project role/detail/summary schemas are exported for API and web use. Shared tests and `pnpm install` completed.
+- Task 3 complete: API projects schema module validates create/patch bodies, UUID params, and response envelopes. PATCH treats `slug` as a special immutable field that is accepted and stripped while true unknown keys such as `orgId` still fail validation, reconciling AC-8 with the strict mass-assignment guard.
+- Tasks 4-8 complete: project create/list/dashboard/update routes are implemented under SecureRoute with RLS-scoped transactions, duplicate slug handling, owner membership creation, zero-count dashboard/list placeholders, cross-org 404 behavior, and mutation audit entries written in the same transaction.
+- Task 9 complete: projects table is covered by app-role RLS integration tests for cross-org isolation, bare-query denial, and per-org slug uniqueness.
+- Task 10 complete: web app now lists projects, loads the first project dashboard from the API, provides a real create-project form with slug suggestion and inline conflict handling, and keeps the preview flow explicitly labeled as preview-only.
+- Task 11 complete: sealed-vault and audit-failure rollback project route tests pass; full package/root verification passed and story is ready for review.
 
 ### File List
+- packages/db/src/schema/projects-schema.test.ts
+- packages/db/src/schema/projects.ts
+- packages/db/src/schema/project-memberships.ts
+- packages/db/src/schema/index.ts
+- packages/db/src/migrations/0013_projects.sql
+- packages/db/src/migrations/meta/_journal.json
+- packages/shared/src/schemas/dashboard.test.ts
+- packages/shared/src/schemas/dashboard.ts
+- packages/shared/src/schemas/projects.test.ts
+- packages/shared/src/schemas/projects.ts
+- packages/shared/src/index.ts
+- apps/api/src/modules/projects/schema.test.ts
+- apps/api/src/modules/projects/schema.ts
+- apps/api/src/modules/projects/routes.test.ts
+- apps/api/src/modules/projects/routes.ts
+- apps/api/src/app.ts
+- apps/api/src/lib/secure-route.ts
+- apps/api/src/lib/route-exemptions.ts
+- packages/shared/src/constants/audit-events.test.ts
+- packages/shared/src/constants/audit-events.ts
+- packages/shared/src/constants/mfa-exempt-routes.test.ts
+- packages/shared/src/constants/mfa-exempt-routes.ts
+- packages/db/src/__tests__/projects-rls-isolation.test.ts
+- packages/db/src/migrations/meta/0013_snapshot.json
+- apps/web/src/lib/api/projects.test.ts
+- apps/web/src/lib/api/projects.ts
+- apps/web/src/routes/(app)/dashboard/+page.server.ts
+- apps/web/src/routes/(app)/dashboard/+page.svelte
+- apps/web/src/routes/(app)/projects/+page.server.ts
+- apps/web/src/routes/(app)/projects/+page.svelte
+- apps/web/src/routes/(app)/projects/new/+page.svelte
+- apps/web/src/lib/components/dashboard/CrossProjectEmptyState.svelte
+- apps/web/src/lib/components/dashboard/dashboard-copy.ts
+- apps/web/src/routes/dashboard.test.ts
+- apps/web/src/routes/mobile-smoke.test.ts
+- eslint.config.mjs
+- packages/tsconfig/package.json
+- pnpm-lock.yaml
+
+### Change Log
+- 2026-06-28: Implemented Story 2.1 project schema, API, shared contracts, web project flow, RLS/audit hardening tests, and final verification; status moved to review.

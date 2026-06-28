@@ -9,6 +9,7 @@ describe('MFA_ENROLLMENT_EXEMPT_ROUTES', () => {
       'POST /api/v1/auth/mfa/verify-enrollment',
       'POST /api/v1/auth/mfa/regenerate-recovery-codes',
       'GET /api/v1/auth/me',
+      'PATCH /api/v1/projects/:projectId',
     ])
   })
 })

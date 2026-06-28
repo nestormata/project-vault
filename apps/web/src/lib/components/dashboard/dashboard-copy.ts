@@ -4,8 +4,7 @@ export const dashboardEmptyStateCopy = {
   organizingPrinciple:
     'Project Vault organizes by project, not by environment. Add the things that keep one product running in one place.',
   previewAction: 'Preview an empty project dashboard',
-  previewWarning:
-    'Preview only. Project persistence arrives in Story 2.1. This preview resets when you reload.',
+  previewWarning: 'Preview only. Use Create project for saved project dashboards.',
   noProjects: 'No projects are saved yet.',
   noCredentials: 'No credentials added yet.',
   noCertificates: 'No certificate or domain records added yet.',

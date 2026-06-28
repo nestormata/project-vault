@@ -11,9 +11,12 @@
     <p class="text-slate-700">{dashboardEmptyStateCopy.organizingPrinciple}</p>
   </div>
   <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
-    <a class="font-semibold text-slate-950 underline" href={resolve('/projects/preview')}>
-      {dashboardEmptyStateCopy.previewAction}
+    <a class="font-semibold text-slate-950 underline" href={resolve('/projects/new')}>
+      Create your first project
     </a>
-    <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.previewWarning}</p>
+    <p class="mt-2 text-sm text-slate-600">
+      Want to explore without saving? The preview flow remains available at
+      <a class="underline" href={resolve('/projects/preview')}>/projects/preview</a>.
+    </p>
   </div>
 </section>

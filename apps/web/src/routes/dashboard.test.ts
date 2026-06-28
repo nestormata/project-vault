@@ -10,7 +10,7 @@ describe('dashboard empty state', () => {
     expect(dashboardEmptyStateCopy.projectModel).toContain('Projects are the home')
     expect(dashboardEmptyStateCopy.organizingPrinciple).toContain('organizes by project')
     expect(dashboardEmptyStateCopy.previewWarning).toBe(
-      'Preview only. Project persistence arrives in Story 2.1. This preview resets when you reload.'
+      'Preview only. Use Create project for saved project dashboards.'
     )
   })
 
