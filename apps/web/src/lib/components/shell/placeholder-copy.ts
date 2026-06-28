@@ -33,5 +33,16 @@ export function getPlaceholderSections() {
 }
 
 export function getPlaceholderSection(key: PlaceholderSectionKey) {
-  return placeholderSections[key]
+  switch (key) {
+    case 'projects':
+      return placeholderSections.projects
+    case 'credentials':
+      return placeholderSections.credentials
+    case 'alerts':
+      return placeholderSections.alerts
+    case 'health':
+      return placeholderSections.health
+    case 'settings':
+      return placeholderSections.settings
+  }
 }

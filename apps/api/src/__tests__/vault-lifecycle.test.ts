@@ -32,6 +32,11 @@ async function restartSealed(): Promise<void> {
   await loadInitialVaultState()
 }
 
+async function initVaultThenRestartSealed(): Promise<void> {
+  await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
+  await restartSealed()
+}
+
 /** Initializes with the test passphrase, closes that app, then simulates a restart (sealed). */
 async function initThenSeal(): Promise<void> {
   const initApp = await createApp({ logger: false, vaultGuardEnabled: true })
@@ -319,8 +324,7 @@ describe.sequential('Vault key-service custody models', () => {
   })
 
   it('returns 503 vault_corrupted when encrypted_sentinel JSON is malformed', async () => {
-    await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
-    await restartSealed()
+    await initVaultThenRestartSealed()
 
     // append-only trigger blocks UPDATE in production; bypass via test-only GUC for this assertion
     await getDb().transaction(async (tx) => {
@@ -335,8 +339,7 @@ describe.sequential('Vault key-service custody models', () => {
   })
 
   it('returns 503 vault_corrupted when key_derivation_params are tampered below minimum', async () => {
-    await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
-    await restartSealed()
+    await initVaultThenRestartSealed()
 
     await getDb().transaction(async (tx) => {
       await tx.execute(sql`SELECT set_config('app.vault_test_reset', 'true', true)`)

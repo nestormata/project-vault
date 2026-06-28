@@ -17,7 +17,7 @@
   <section class="rounded-2xl border border-slate-200 bg-white p-4">
     <h2 class="font-semibold">Suggested next actions</h2>
     <ul class="mt-3 space-y-2 text-sm text-slate-600">
-      {#each project.dashboard.suggestedActions as action}
+      {#each project.dashboard.suggestedActions as action (action)}
         <li>{suggestedActionLabels[action]}</li>
       {/each}
     </ul>

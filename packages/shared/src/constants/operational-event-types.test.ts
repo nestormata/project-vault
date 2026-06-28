@@ -8,7 +8,13 @@ describe('OperationalEvent', () => {
 
   it('uses domain.action dot notation for every event type value', () => {
     for (const value of Object.values(OperationalEvent)) {
-      expect(value).toMatch(/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/)
+      const segments = value.split('.')
+      expect(segments.length).toBeGreaterThanOrEqual(2)
+      expect(
+        segments.every((segment) => segment.length > 0 && segment === segment.toLowerCase())
+      ).toBe(true)
+      expect(segments.every((segment) => /^[a-z0-9_]+$/.test(segment))).toBe(true)
+      expect(segments[0]?.[0]).toMatch(/[a-z]/)
     }
   })
 

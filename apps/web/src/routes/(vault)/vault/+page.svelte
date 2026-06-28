@@ -1,5 +1,6 @@
 <script>
   import { goto } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import VaultGate from '$lib/components/vault/VaultGate.svelte'
   import { getVaultReadiness, initVault, unsealVault } from '$lib/api/vault.js'
 
@@ -8,7 +9,7 @@
 
   async function refreshReadiness() {
     readiness = await getVaultReadiness(fetch)
-    if (readiness.state === 'ready') await goto('/login')
+    if (readiness.state === 'ready') await goto(resolve('/login'))
   }
 
   async function handleInit(request, bootstrapToken) {

@@ -1,5 +1,4 @@
 {
-  "$comment": "Drizzle schema column definitions are intentionally repetitive by design.",
   "minLines": 5,
   "minTokens": 50,
   "threshold": 0,

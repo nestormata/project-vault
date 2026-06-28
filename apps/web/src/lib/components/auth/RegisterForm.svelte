@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import { register } from '$lib/api/auth.js'
   import { buildRegisterRequest, clearRegisterFields, getPostRegisterPath } from './form-model.js'
 
@@ -20,7 +21,7 @@
     try {
       await register(fetch, buildRegisterRequest({ email, password, orgName }))
       clearFields()
-      await goto(getPostRegisterPath())
+      await goto(resolve(getPostRegisterPath()))
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : 'Registration failed.'
       password = ''

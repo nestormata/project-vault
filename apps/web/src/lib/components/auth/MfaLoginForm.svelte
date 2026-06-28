@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import { getCurrentUser, verifyMfaLogin } from '$lib/api/auth.js'
   import { buildMfaLoginRequest, clearMfaLoginFields } from './form-model.js'
 
@@ -22,7 +23,7 @@
       await verifyMfaLogin(fetch, buildMfaLoginRequest({ mfaToken, totp }))
       await getCurrentUser(fetch)
       clearFields(true)
-      await goto('/dashboard')
+      await goto(resolve('/dashboard'))
     } catch (error) {
       const code = typeof error === 'object' && error && 'code' in error ? error.code : undefined
       if (code === 'mfa_token_expired') {

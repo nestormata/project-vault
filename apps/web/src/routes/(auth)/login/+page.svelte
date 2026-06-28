@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import LoginForm from '$lib/components/auth/LoginForm.svelte'
   import { getLoginReasonMessage } from '$lib/security/hardening.js'
@@ -22,6 +23,8 @@
   {/if}
   <LoginForm />
   <p class="text-sm text-slate-600">
-    Need an account? <a class="font-medium text-slate-950 underline" href="/register">Register</a>
+    Need an account? <a class="font-medium text-slate-950 underline" href={resolve('/register')}
+      >Register</a
+    >
   </p>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths'
   import RegisterForm from '$lib/components/auth/RegisterForm.svelte'
 </script>
 
@@ -13,8 +14,9 @@
   </div>
   <RegisterForm />
   <p class="text-sm text-slate-600">
-    Already have an account? <a class="font-medium text-slate-950 underline" href="/login"
-      >Sign in</a
+    Already have an account? <a
+      class="font-medium text-slate-950 underline"
+      href={resolve('/login')}>Sign in</a
     >
   </p>
 </div>
