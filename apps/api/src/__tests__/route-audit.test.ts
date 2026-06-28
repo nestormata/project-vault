@@ -21,6 +21,7 @@ export const EXEMPT_PATHS = new Set([
   '/api/v1/auth/login',
   '/api/v1/auth/refresh',
   '/api/v1/auth/mfa/recover',
+  '/api/v1/auth/mfa/verify-login',
 ])
 
 const SRC_ROOT = resolve(process.cwd(), 'src')

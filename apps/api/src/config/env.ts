@@ -2,6 +2,7 @@ import { z } from 'zod/v4'
 
 const DEV_SESSION_SECRET = 'a'.repeat(64)
 const DEV_REFRESH_TOKEN_HMAC_SECRET = 'b'.repeat(64)
+const DEV_MFA_PENDING_SESSION_HMAC_SECRET = 'd'.repeat(64)
 const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
@@ -12,72 +13,99 @@ const isProduction = process.env.NODE_ENV === 'production'
 const ARGON2_PHC_REGEX =
   /^\$argon2id\$v=\d+\$m=(\d+),t=(\d+),p=(\d+)\$[A-Za-z0-9+/._-]{16,}\$[A-Za-z0-9+/._-]{32,}$/
 
-function validateProductionEnv(
-  env: {
-    COOKIE_SECURE: boolean
-    SESSION_SECRET: string
-    REFRESH_TOKEN_HMAC_SECRET: string
-    FAILED_AUTH_RECORD_ENABLED: boolean
-    TOTP_REPLAY_HMAC_SECRET?: string
-    LOG_LEVEL: string
-  },
-  ctx: z.RefinementCtx
-): void {
+type ProductionEnv = {
+  COOKIE_SECURE: boolean
+  SESSION_SECRET: string
+  REFRESH_TOKEN_HMAC_SECRET: string
+  FAILED_AUTH_RECORD_ENABLED: boolean
+  TOTP_REPLAY_HMAC_SECRET?: string
+  MFA_PENDING_SESSION_HMAC_SECRET?: string
+  LOG_LEVEL: string
+}
+
+function addEnvIssue(ctx: z.RefinementCtx, path: string, message: string): void {
+  ctx.addIssue({ code: 'custom', path: [path], message })
+}
+
+function validateProductionBasics(env: ProductionEnv, ctx: z.RefinementCtx): void {
   if (env.LOG_LEVEL === 'debug' || env.LOG_LEVEL === 'trace') {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['LOG_LEVEL'],
-      message: 'FATAL: LOG_LEVEL must not be debug or trace in production',
-    })
+    addEnvIssue(ctx, 'LOG_LEVEL', 'FATAL: LOG_LEVEL must not be debug or trace in production')
   }
   if (!env.COOKIE_SECURE) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['COOKIE_SECURE'],
-      message: 'FATAL: COOKIE_SECURE must be true in production',
-    })
+    addEnvIssue(ctx, 'COOKIE_SECURE', 'FATAL: COOKIE_SECURE must be true in production')
   }
 
   if (PLACEHOLDER_SECRET_PATTERN.test(env.SESSION_SECRET)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['SESSION_SECRET'],
-      message: 'SESSION_SECRET must not be a placeholder secret in production',
-    })
+    addEnvIssue(
+      ctx,
+      'SESSION_SECRET',
+      'SESSION_SECRET must not be a placeholder secret in production'
+    )
   }
   if (PLACEHOLDER_SECRET_PATTERN.test(env.REFRESH_TOKEN_HMAC_SECRET)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['REFRESH_TOKEN_HMAC_SECRET'],
-      message: 'REFRESH_TOKEN_HMAC_SECRET must not be a placeholder secret in production',
-    })
+    addEnvIssue(
+      ctx,
+      'REFRESH_TOKEN_HMAC_SECRET',
+      'REFRESH_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
+    )
   }
   if (!env.FAILED_AUTH_RECORD_ENABLED) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['FAILED_AUTH_RECORD_ENABLED'],
-      message: 'FATAL: FAILED_AUTH_RECORD_ENABLED must not be false in production',
-    })
+    addEnvIssue(
+      ctx,
+      'FAILED_AUTH_RECORD_ENABLED',
+      'FATAL: FAILED_AUTH_RECORD_ENABLED must not be false in production'
+    )
   }
+}
+
+function validateTotpReplayProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
   if (!env.TOTP_REPLAY_HMAC_SECRET) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['TOTP_REPLAY_HMAC_SECRET'],
-      message: 'TOTP_REPLAY_HMAC_SECRET is required in production',
-    })
+    addEnvIssue(ctx, 'TOTP_REPLAY_HMAC_SECRET', 'TOTP_REPLAY_HMAC_SECRET is required in production')
   } else if (env.TOTP_REPLAY_HMAC_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['TOTP_REPLAY_HMAC_SECRET'],
-      message: 'TOTP_REPLAY_HMAC_SECRET must differ from REFRESH_TOKEN_HMAC_SECRET in production',
-    })
+    addEnvIssue(
+      ctx,
+      'TOTP_REPLAY_HMAC_SECRET',
+      'TOTP_REPLAY_HMAC_SECRET must differ from REFRESH_TOKEN_HMAC_SECRET in production'
+    )
   } else if (PLACEHOLDER_SECRET_PATTERN.test(env.TOTP_REPLAY_HMAC_SECRET)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['TOTP_REPLAY_HMAC_SECRET'],
-      message: 'TOTP_REPLAY_HMAC_SECRET must not be a placeholder secret in production',
-    })
+    addEnvIssue(
+      ctx,
+      'TOTP_REPLAY_HMAC_SECRET',
+      'TOTP_REPLAY_HMAC_SECRET must not be a placeholder secret in production'
+    )
   }
+}
+
+function validatePendingMfaProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (!env.MFA_PENDING_SESSION_HMAC_SECRET) {
+    addEnvIssue(
+      ctx,
+      'MFA_PENDING_SESSION_HMAC_SECRET',
+      'MFA_PENDING_SESSION_HMAC_SECRET is required in production'
+    )
+  } else if (
+    env.MFA_PENDING_SESSION_HMAC_SECRET === env.SESSION_SECRET ||
+    env.MFA_PENDING_SESSION_HMAC_SECRET === env.REFRESH_TOKEN_HMAC_SECRET ||
+    env.MFA_PENDING_SESSION_HMAC_SECRET === env.TOTP_REPLAY_HMAC_SECRET
+  ) {
+    addEnvIssue(
+      ctx,
+      'MFA_PENDING_SESSION_HMAC_SECRET',
+      'MFA_PENDING_SESSION_HMAC_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.MFA_PENDING_SESSION_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'MFA_PENDING_SESSION_HMAC_SECRET',
+      'MFA_PENDING_SESSION_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  }
+}
+
+function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  validateProductionBasics(env, ctx)
+  validateTotpReplayProductionSecret(env, ctx)
+  validatePendingMfaProductionSecret(env, ctx)
 }
 
 function validateDummyPasswordHash(
@@ -186,6 +214,12 @@ const envSchema = z
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
+    MFA_PENDING_SESSION_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
+    MFA_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+    MFA_PENDING_SESSION_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
     MFA_PRIVILEGED_ROLE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
     FAILED_AUTH_THRESHOLD_COUNT: z.coerce.number().int().min(3).max(100).default(10),
     FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
@@ -249,11 +283,24 @@ const envSchema = z
         message: 'TOTP_USED_CODES_TTL_MINUTES must outlive the accepted TOTP replay window',
       })
     }
+    if (
+      env.MFA_PENDING_SESSION_TTL_SECONDS <
+      (env.MFA_TOTP_WINDOW + 1) * env.MFA_TOTP_PERIOD_SECONDS
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MFA_PENDING_SESSION_TTL_SECONDS'],
+        message: 'MFA_PENDING_SESSION_TTL_SECONDS must cover the accepted TOTP window',
+      })
+    }
     validateDummyPasswordHash(env, ctx)
   })
 
 type RawEnv = z.infer<typeof envSchema>
-export type Env = Omit<RawEnv, 'TOTP_REPLAY_HMAC_SECRET'> & { TOTP_REPLAY_HMAC_SECRET: string }
+export type Env = Omit<RawEnv, 'TOTP_REPLAY_HMAC_SECRET' | 'MFA_PENDING_SESSION_HMAC_SECRET'> & {
+  TOTP_REPLAY_HMAC_SECRET: string
+  MFA_PENDING_SESSION_HMAC_SECRET: string
+}
 
 function loadEnv(): Env {
   const result = envSchema.safeParse(process.env)
@@ -263,16 +310,20 @@ function loadEnv(): Env {
     process.exit(1)
     throw new Error('Invalid environment configuration')
   }
-  if (!result.data.TOTP_REPLAY_HMAC_SECRET) {
+  const data = { ...result.data }
+  if (!data.TOTP_REPLAY_HMAC_SECRET) {
     process.stderr.write(
       '[env] TOTP_REPLAY_HMAC_SECRET unset outside production; falling back to REFRESH_TOKEN_HMAC_SECRET. Do not use this fallback in production.\n'
     )
-    return {
-      ...result.data,
-      TOTP_REPLAY_HMAC_SECRET: result.data.REFRESH_TOKEN_HMAC_SECRET,
-    }
+    data.TOTP_REPLAY_HMAC_SECRET = data.REFRESH_TOKEN_HMAC_SECRET
   }
-  return result.data as Env
+  if (!data.MFA_PENDING_SESSION_HMAC_SECRET) {
+    process.stderr.write(
+      '[env] MFA_PENDING_SESSION_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
+    )
+    data.MFA_PENDING_SESSION_HMAC_SECRET = DEV_MFA_PENDING_SESSION_HMAC_SECRET
+  }
+  return data as Env
 }
 
 export const env = loadEnv()

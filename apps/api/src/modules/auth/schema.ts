@@ -28,6 +28,18 @@ export const mfaRecoverBodySchema = z.object({
   recoveryCode: z.string().min(10).max(16),
 })
 
+export const mfaVerifyLoginBodySchema = z.object({
+  mfaToken: z.string().min(16).max(64),
+  totp: z.string().regex(/^\s*\d(?:\s*\d){5}\s*$/, 'TOTP must be exactly 6 digits'),
+})
+
+export const mfaLoginRequiredResponseSchema = z.object({
+  data: z.object({
+    mfaRequired: z.literal(true),
+    mfaToken: z.string(),
+  }),
+})
+
 export const mfaVerifyEnrollmentResponseSchema = z.object({
   data: z.object({
     mfaEnrolledAt: z.iso.datetime(),
@@ -48,6 +60,14 @@ export const mfaRecoverResponseSchema = z.object({
     orgId: z.uuid(),
     expiresAt: z.iso.datetime(),
     remainingRecoveryCodes: z.number().int().min(0),
+  }),
+})
+
+export const mfaVerifyLoginResponseSchema = z.object({
+  data: z.object({
+    userId: z.uuid(),
+    orgId: z.uuid(),
+    expiresAt: z.iso.datetime(),
   }),
 })
 
@@ -73,3 +93,4 @@ export const authMeResponseSchema = z.object({
 export type MfaVerifyEnrollmentBody = z.infer<typeof mfaVerifyEnrollmentBodySchema>
 export type MfaRegenerateBody = z.infer<typeof mfaRegenerateBodySchema>
 export type MfaRecoverBody = z.infer<typeof mfaRecoverBodySchema>
+export type MfaVerifyLoginBody = z.infer<typeof mfaVerifyLoginBodySchema>

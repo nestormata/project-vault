@@ -20,10 +20,12 @@ import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { setGracePeriodOnPrivilegedRole } from './grace-period.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
+import { createPendingMfaSession, type MfaChallengeResult } from './mfa-login.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
 import { generateRefreshToken, hashRefreshToken } from './tokens.js'
+import { findUserWithIdentityByEmail } from './user-lookup.js'
 import {
   cleanupExpiredSession,
   computeRevokedTokenExpiresAt,
@@ -320,16 +322,7 @@ async function recordLoginFailed(
 }
 
 async function findLoginUser(email: string) {
-  const userRows = await getDb()
-    .select({
-      id: users.id,
-      email: users.email,
-      passwordHash: users.passwordHash,
-      identityTokenId: userIdentityTokens.id,
-    })
-    .from(users)
-    .leftJoin(userIdentityTokens, eq(userIdentityTokens.userId, users.id))
-    .where(eq(users.email, email))
+  const userRows = await findUserWithIdentityByEmail(email)
   const user = userRows[0]
   if (!user) return []
 
@@ -524,7 +517,27 @@ function normalizeLoginEmail(rawEmail: string, meta: RequestMeta): string {
   }
 }
 
-export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Promise<LoginResult> {
+async function rejectInvalidLogin(
+  email: string,
+  meta: RequestMeta,
+  user: Awaited<ReturnType<typeof findLoginUser>>[number] | undefined,
+  rows: Awaited<ReturnType<typeof findLoginUser>>,
+  activeOrgId: string | null | undefined
+): Promise<never> {
+  void recordFailedAuthAttempt({
+    userId: user?.id ?? null,
+    ipAddress: meta.ipAddress ?? '0.0.0.0',
+    attemptedEmail: email,
+    reason: 'invalid_credentials',
+  })
+  await recordLoginFailed(failedLoginAuditSubject(user, rows, activeOrgId), email, meta)
+  throw invalidCredentials()
+}
+
+export async function loginUser(
+  input: LoginInput,
+  meta: RequestMeta = {}
+): Promise<LoginResult | MfaChallengeResult> {
   const email = normalizeLoginEmail(input.email, meta)
   const rows = await findLoginUser(email)
   const user = rows[0]
@@ -532,18 +545,11 @@ export async function loginUser(input: LoginInput, meta: RequestMeta = {}): Prom
   const valid = await verifyLoginPassword(input, user)
 
   if (!user || !valid || !activeMembership?.orgId) {
-    void recordFailedAuthAttempt({
-      userId: user?.id ?? null,
-      ipAddress: meta.ipAddress ?? '0.0.0.0',
-      attemptedEmail: email,
-      reason: 'invalid_credentials',
-    })
-    await recordLoginFailed(
-      failedLoginAuditSubject(user, rows, activeMembership?.orgId),
-      email,
-      meta
-    )
-    throw invalidCredentials()
+    return rejectInvalidLogin(email, meta, user, rows, activeMembership?.orgId)
+  }
+
+  if (user.mfaEnrolledAt) {
+    return createPendingMfaSession({ userId: user.id, orgId: activeMembership.orgId }, meta)
   }
 
   return createLoginSession(user, activeMembership.orgId, meta)

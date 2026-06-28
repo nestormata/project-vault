@@ -3,6 +3,7 @@ import {
   failedAuthAttempts,
   mfaEnrollments,
   mfaRecoveryCodes,
+  pendingMfaSessions,
   refreshTokens,
   revokedTokens,
   sessions,
@@ -76,5 +77,19 @@ describe('auth session schema', () => {
     expect(failedAuthAttempts.attemptedAt).toBeDefined()
 
     expect(EXCLUDED_TABLES.has('failed_auth_attempts')).toBe(true)
+  })
+
+  it('exposes Story 1.12 pending MFA login session columns and RLS exception', () => {
+    expect(pendingMfaSessions.id).toBeDefined()
+    expect(pendingMfaSessions.userId).toBeDefined()
+    expect(pendingMfaSessions.orgId).toBeDefined()
+    expect(pendingMfaSessions.tokenHash).toBeDefined()
+    expect(pendingMfaSessions.attemptCount).toBeDefined()
+    expect(pendingMfaSessions.ipAddress).toBeDefined()
+    expect(pendingMfaSessions.userAgent).toBeDefined()
+    expect(pendingMfaSessions.expiresAt).toBeDefined()
+    expect(pendingMfaSessions.createdAt).toBeDefined()
+
+    expect(EXCLUDED_TABLES.has('pending_mfa_sessions')).toBe(true)
   })
 })

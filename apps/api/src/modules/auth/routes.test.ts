@@ -24,6 +24,7 @@ describe('auth routes', () => {
     const refresh = await app.inject({ method: 'GET', url: '/api/v1/auth/refresh' })
     const enroll = await app.inject({ method: 'GET', url: '/api/v1/auth/mfa/enroll' })
     const recover = await app.inject({ method: 'GET', url: '/api/v1/auth/mfa/recover' })
+    const verifyLogin = await app.inject({ method: 'GET', url: '/api/v1/auth/mfa/verify-login' })
 
     expect(login.statusCode).toBe(405)
     expect(login.headers['allow']).toBe('POST')
@@ -33,6 +34,8 @@ describe('auth routes', () => {
     expect(enroll.headers['allow']).toBe('POST')
     expect(recover.statusCode).toBe(405)
     expect(recover.headers['allow']).toBe('POST')
+    expect(verifyLogin.statusCode).toBe(405)
+    expect(verifyLogin.headers['allow']).toBe('POST')
 
     await app.close()
   })
@@ -83,6 +86,7 @@ describe('auth routes', () => {
     expect(document.paths?.['/api/v1/auth/mfa/verify-enrollment']).toBeDefined()
     expect(document.paths?.['/api/v1/auth/mfa/regenerate-recovery-codes']).toBeDefined()
     expect(document.paths?.['/api/v1/auth/mfa/recover']).toBeDefined()
+    expect(document.paths?.['/api/v1/auth/mfa/verify-login']).toBeDefined()
 
     await app.close()
   })
@@ -94,6 +98,20 @@ describe('auth routes', () => {
       method: 'POST',
       url: '/api/v1/auth/mfa/recover',
       payload: { email: 'not-an-email', password: 'short', recoveryCode: 'bad' },
+    })
+
+    expect(response.statusCode).toBe(422)
+
+    await app.close()
+  })
+
+  it('keeps MFA verify-login public while validating malformed bodies', async () => {
+    const app = await createApp({ logger: false })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/mfa/verify-login',
+      payload: { mfaToken: 'short', totp: 'bad' },
     })
 
     expect(response.statusCode).toBe(422)

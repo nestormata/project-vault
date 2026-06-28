@@ -1,5 +1,16 @@
 # Deferred Work
 
+## Deferred from: code review of story-1.12 (2026-06-27)
+
+- Repeated `POST /auth/login` calls reset a pending MFA challenge's `attempt_count` to 0 (delete-then-recreate in `createPendingMfaSession`), so the per-token `MFA_LOGIN_MAX_ATTEMPTS` cap can be bypassed by re-challenging between attempt batches. Deferred: documented two-layer design (ADR-1.12-09) — the Story 1.9 cross-token threshold worker still bounds sustained brute-forcing across all tokens for an account; only the local real-time cap is bypassable.
+- `apps/api/src/modules/auth/mfa-login.test.ts` lives outside `__tests__/` and isn't named `*.integration.test.ts`, deviating from AC-1's specified path, despite functionally being a real-DB integration suite.
+- TOTP regex in `mfaVerifyLoginBodySchema` permits internal whitespace between digits — matches the pre-existing Story 1.8 enrollment-verification pattern, not unique to this story.
+- `writeAuditEntry()` on the verify-login success path has no try/catch (unlike the failure path), so an audit-insert failure rolls back the whole login transaction as an unhandled 500 — consistent with how unexpected tx errors are handled elsewhere in the auth module.
+- `attemptedEmailForUser()` falls back to a synthetic email on a rare deleted-user race mid-flow — same fallback pattern as Story 1.9's `mfa.ts`.
+- `MFA_PENDING_SESSION_TTL_SECONDS` cross-field guard allows exact equality with zero slack for Postgres-vs-Node clock skew; defaults have a 5x margin.
+- Oversized body / wrong content-type on `/mfa/verify-login` produces Fastify's framework-level 413/415 instead of the documented `401/422/429` response schema — systemic pattern likely shared by every `bodyLimit`-configured route in this codebase.
+- AC-12's threshold-integration test (N invalid TOTP submissions crossing `FAILED_AUTH_THRESHOLD_COUNT` → `PENDING_DELIVERY` alert) isn't present in the new test file; lower priority since the underlying worker is already covered by Story 1.9's suite.
+
 ## Deferred from: code review of story-1.3 (2026-06-24)
 
 - `apps/api/src/lib/cors.test.ts` only covers one disallowed-origin case; no test for a missing `Origin` header or substring/case-sensitivity allow-list bypass variants (e.g. `http://localhost:5173.evil.com`).

@@ -11,6 +11,7 @@ export const EXCLUDED_TABLES = new Set([
   'mfa_recovery_codes',
   'totp_used_codes',
   'failed_auth_attempts',
+  'pending_mfa_sessions',
   'platform_security_events',
 ])
 

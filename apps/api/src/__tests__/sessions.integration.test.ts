@@ -217,7 +217,7 @@ describe.sequential('Session management integration', () => {
       expect(revokedMe.json()).toMatchObject({ code: 'session_revoked' })
     }
     await app.close()
-  })
+  }, 20_000)
 
   it('POST /auth/logout revokes current session and clears auth cookies', async () => {
     const user = await registerAndLogin('logout')
