@@ -84,7 +84,7 @@ jobs:
     if: failure()
     steps:
       - name: Post to Slack
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v3
         with:
           payload: |
             {
