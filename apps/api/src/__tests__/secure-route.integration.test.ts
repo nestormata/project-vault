@@ -2,9 +2,17 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
-import { auditLogEntries, securityAlerts } from '@project-vault/db/schema'
+import {
+  auditLogEntries,
+  orgMemberships,
+  organizations,
+  securityAlerts,
+  sessions,
+  users,
+} from '@project-vault/db/schema'
 import { secureRoute } from '../lib/secure-route.js'
 import { runOrgScopedJob } from '../middleware/rls.js'
+import type { CookieJar } from './helpers/auth-test-helpers.js'
 import {
   configureAuthIntegrationEnv,
   cookieHeader,
@@ -21,9 +29,57 @@ const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
 const TEST_PASSPHRASE = 'secure-route-tests-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const RLS_ALERTS_URL = '/api/v1/test/rls-alerts'
+const TEST_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
+
+type JwtTestApp = Awaited<ReturnType<typeof createApp>> & {
+  jwt: {
+    sign: (
+      payload: Record<string, unknown>,
+      options: { jti: string; expiresIn: number }
+    ) => Promise<string> | string
+  }
+}
 
 function uniqueEmail(label: string): string {
   return `secure-route-${label}-${randomUUID()}@example.com`
+}
+
+async function createAuthenticatedSession(
+  app: Awaited<ReturnType<typeof createApp>>,
+  label: string
+): Promise<{ userId: string; orgId: string; cookies: CookieJar }> {
+  const orgName = `SecureRoute ${label} ${randomUUID()}`
+  const [org] = await getDb()
+    .insert(organizations)
+    .values({ name: orgName, slug: orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-') })
+    .returning({ id: organizations.id })
+  if (!org) throw new Error('createAuthenticatedSession: org insert returned no row')
+
+  const [user] = await getDb()
+    .insert(users)
+    .values({ email: uniqueEmail(label), passwordHash: 'test-password-hash' })
+    .returning({ id: users.id })
+  if (!user) throw new Error('createAuthenticatedSession: user insert returned no row')
+
+  const jti = randomUUID()
+  await withOrg(org.id, async (tx) => {
+    await tx
+      .insert(orgMemberships)
+      .values({ orgId: org.id, userId: user.id, role: 'owner', status: 'active' })
+    await tx.insert(sessions).values({
+      userId: user.id,
+      orgId: org.id,
+      jti,
+      sessionVersion: 1,
+      expiresAt: new Date(Date.now() + TEST_ACCESS_TOKEN_TTL_SECONDS * 1000),
+    })
+  })
+
+  const accessToken = await (app as JwtTestApp).jwt.sign(
+    { sub: user.id, orgId: org.id, sessionVersion: 1 },
+    { jti, expiresIn: TEST_ACCESS_TOKEN_TTL_SECONDS }
+  )
+  return { userId: user.id, orgId: org.id, cookies: { 'access-token': accessToken } }
 }
 
 describe.sequential('SecureRoute integration', () => {
@@ -95,16 +151,8 @@ describe.sequential('SecureRoute integration', () => {
         return { data: rows.map((row) => ({ orgId: row.orgId, alertType: row.alertType })) }
       },
     })
-    const orgA = await registerAndLoginViaApi(app, {
-      email: uniqueEmail('org-a'),
-      password: PASSWORD,
-      orgName: `SecureRoute Org A ${randomUUID()}`,
-    })
-    const orgB = await registerAndLoginViaApi(app, {
-      email: uniqueEmail('org-b'),
-      password: PASSWORD,
-      orgName: `SecureRoute Org B ${randomUUID()}`,
-    })
+    const orgA = await createAuthenticatedSession(app, 'org-a')
+    const orgB = await createAuthenticatedSession(app, 'org-b')
     await withOrg(orgA.orgId, (tx) =>
       tx.insert(securityAlerts).values({ orgId: orgA.orgId, alertType: 'a', severity: 'info' })
     )

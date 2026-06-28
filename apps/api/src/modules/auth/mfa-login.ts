@@ -1,15 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
-import {
-  auditLogEntries,
-  pendingMfaSessions,
-  users,
-  userIdentityTokens,
-} from '@project-vault/db/schema'
+import { auditLogEntries, pendingMfaSessions, users } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
+import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
@@ -53,15 +49,6 @@ async function attemptedEmailForUser(tx: Tx, userId: string): Promise<string> {
     .where(eq(users.id, userId))
     .limit(1)
   return rows[0]?.email ?? 'unknown@example.invalid'
-}
-
-async function identityTokenForUser(tx: Tx, userId: string): Promise<string | null> {
-  const rows = await tx
-    .select({ id: userIdentityTokens.id })
-    .from(userIdentityTokens)
-    .where(eq(userIdentityTokens.userId, userId))
-    .limit(1)
-  return rows[0]?.id ?? null
 }
 
 async function writeAuditEntry(
@@ -109,7 +96,7 @@ async function tryWriteLoginFailedAudit(
   try {
     await writeAuditEntry(tx, {
       orgId: row.orgId,
-      actorTokenId: await identityTokenForUser(tx, row.userId),
+      actorTokenId: await firstActorTokenIdForUser(tx, row.userId),
       eventType: AuditEvent.LOGIN_FAILED,
       payload: { method: 'totp_login' },
       meta,
@@ -258,7 +245,7 @@ export async function verifyLogin(
     }
 
     await db.execute(sql`SELECT set_config('app.current_org_id', ${row.orgId}, true)`)
-    const identityTokenId = await identityTokenForUser(db, row.userId)
+    const identityTokenId = await firstActorTokenIdForUser(db, row.userId)
     const session = await createLoginSessionInTx(
       db,
       { id: row.userId, identityTokenId },

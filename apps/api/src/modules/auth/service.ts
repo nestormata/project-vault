@@ -25,6 +25,7 @@ import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
 import { generateRefreshToken, hashRefreshToken } from './tokens.js'
+import { findUserWithIdentityByEmail } from './user-lookup.js'
 import {
   cleanupExpiredSession,
   computeRevokedTokenExpiresAt,
@@ -321,17 +322,7 @@ async function recordLoginFailed(
 }
 
 async function findLoginUser(email: string) {
-  const userRows = await getDb()
-    .select({
-      id: users.id,
-      email: users.email,
-      passwordHash: users.passwordHash,
-      mfaEnrolledAt: users.mfaEnrolledAt,
-      identityTokenId: userIdentityTokens.id,
-    })
-    .from(users)
-    .leftJoin(userIdentityTokens, eq(userIdentityTokens.userId, users.id))
-    .where(eq(users.email, email))
+  const userRows = await findUserWithIdentityByEmail(email)
   const user = userRows[0]
   if (!user) return []
 

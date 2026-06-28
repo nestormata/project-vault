@@ -9,7 +9,6 @@ import {
   orgMemberships,
   organizations,
   users,
-  userIdentityTokens,
 } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import type { EncryptedValue } from '@project-vault/crypto'
@@ -23,6 +22,7 @@ import { recordFailedAuthAttempt } from './failed-auth.js'
 import { verifyUserPassword } from './password.js'
 import { normalizeEmail } from './normalize.js'
 import { createLoginSessionInTx, type TokenMaterial } from './service.js'
+import { findUserWithIdentityByEmail } from './user-lookup.js'
 import {
   countUnusedRecoveryCodes,
   deletePendingEnrollmentForUser,
@@ -471,18 +471,7 @@ export async function regenerateRecoveryCodes(
 }
 
 async function findRecoveryUser(email: string) {
-  const userRows = await getDb()
-    .select({
-      id: users.id,
-      email: users.email,
-      passwordHash: users.passwordHash,
-      mfaEnrolledAt: users.mfaEnrolledAt,
-      identityTokenId: userIdentityTokens.id,
-    })
-    .from(users)
-    .leftJoin(userIdentityTokens, eq(userIdentityTokens.userId, users.id))
-    .where(eq(users.email, email))
-    .limit(1)
+  const userRows = await findUserWithIdentityByEmail(email)
   return userRows[0] ?? null
 }
 

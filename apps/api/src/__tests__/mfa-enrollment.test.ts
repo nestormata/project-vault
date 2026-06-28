@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
-import * as OTPAuth from 'otpauth'
 import { getDb } from '@project-vault/db'
 import { mfaEnrollments, totpUsedCodes } from '@project-vault/db/schema'
 import {
@@ -11,6 +10,7 @@ import {
   parseSetCookies,
   registerAndLoginViaApi,
 } from './helpers/auth-test-helpers.js'
+import { totpForSecret } from './helpers/totp.js'
 
 configureAuthIntegrationEnv()
 
@@ -27,15 +27,6 @@ const MFA_ENROLL_URL = '/api/v1/auth/mfa/enroll'
 const MFA_VERIFY_ENROLLMENT_URL = '/api/v1/auth/mfa/verify-enrollment'
 const MFA_REGENERATE_RECOVERY_CODES_URL = '/api/v1/auth/mfa/regenerate-recovery-codes'
 const MFA_RECOVER_URL = '/api/v1/auth/mfa/recover'
-
-function totpForSecret(base32: string, timestamp = Date.now()): string {
-  return new OTPAuth.TOTP({
-    secret: OTPAuth.Secret.fromBase32(base32),
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-  }).generate({ timestamp })
-}
 
 async function registerAndLogin() {
   const app = await createApp({ logger: false })

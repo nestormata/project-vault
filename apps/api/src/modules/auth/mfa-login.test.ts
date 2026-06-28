@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
-import * as OTPAuth from 'otpauth'
 import { getDb, withOrg } from '@project-vault/db'
 import { AuditEvent } from '@project-vault/shared'
 import { auditLogEntries, failedAuthAttempts, pendingMfaSessions } from '@project-vault/db/schema'
@@ -14,6 +13,7 @@ import {
   parseSetCookies,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { totpForSecret } from '../../__tests__/helpers/totp.js'
 
 configureAuthIntegrationEnv()
 // Most tests here enroll MFA (Argon2 hashing + multiple createApp() round trips) and can
@@ -34,15 +34,6 @@ const EXPECTED_MFA_CHALLENGE = 'expected MFA challenge'
 const INVALID_TOTP_CODE = '000000'
 const MFA_TOKEN_EXPIRED = 'mfa_token_expired'
 const INVALID_TOTP = 'invalid_totp'
-
-function totpForSecret(base32: string, timestamp = Date.now()): string {
-  return new OTPAuth.TOTP({
-    secret: OTPAuth.Secret.fromBase32(base32),
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-  }).generate({ timestamp })
-}
 
 async function enrollMfaUser() {
   const app = await createApp({ logger: false })
@@ -92,6 +83,22 @@ async function waitForFailedTotpRows(userId: string) {
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
   return failedTotpRowsForUser(userId)
+}
+
+async function challengeForEnrolledUser() {
+  const user = await enrollMfaUser()
+  const challenge = await loginUser({ email: user.email, password: PASSWORD })
+  if (!('mfaRequired' in challenge)) throw new Error(EXPECTED_MFA_CHALLENGE)
+  return { user, challenge }
+}
+
+async function auditRowsForEvent(orgId: string, eventType: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select({ eventType: auditLogEntries.eventType, payload: auditLogEntries.payload })
+      .from(auditLogEntries)
+      .where(and(eq(auditLogEntries.orgId, orgId), eq(auditLogEntries.eventType, eventType)))
+  )
 }
 
 describe.sequential('MFA login service', () => {
@@ -192,9 +199,7 @@ describe.sequential('MFA login service', () => {
   })
 
   it('verifies a pending MFA login, issues a session, and consumes the token', async () => {
-    const user = await enrollMfaUser()
-    const challenge = await loginUser({ email: user.email, password: PASSWORD })
-    if (!('mfaRequired' in challenge)) throw new Error(EXPECTED_MFA_CHALLENGE)
+    const { user, challenge } = await challengeForEnrolledUser()
 
     const session = await verifyLogin({
       mfaToken: challenge.mfaToken,
@@ -217,17 +222,7 @@ describe.sequential('MFA login service', () => {
       })
     ).rejects.toMatchObject({ code: MFA_TOKEN_EXPIRED, statusCode: 401 })
 
-    const auditRows = await withOrg(user.orgId, (tx) =>
-      tx
-        .select({ eventType: auditLogEntries.eventType, payload: auditLogEntries.payload })
-        .from(auditLogEntries)
-        .where(
-          and(
-            eq(auditLogEntries.orgId, user.orgId),
-            eq(auditLogEntries.eventType, AuditEvent.MFA_LOGIN_VERIFIED)
-          )
-        )
-    )
+    const auditRows = await auditRowsForEvent(user.orgId, AuditEvent.MFA_LOGIN_VERIFIED)
     expect(auditRows).toContainEqual({
       eventType: AuditEvent.MFA_LOGIN_VERIFIED,
       payload: { method: 'totp' },
@@ -302,9 +297,7 @@ describe.sequential('MFA login service', () => {
   })
 
   it('records invalid_totp failed-auth attempts for wrong login TOTP codes', async () => {
-    const user = await enrollMfaUser()
-    const challenge = await loginUser({ email: user.email, password: PASSWORD })
-    if (!('mfaRequired' in challenge)) throw new Error(EXPECTED_MFA_CHALLENGE)
+    const { user, challenge } = await challengeForEnrolledUser()
 
     await expect(
       verifyLogin(
@@ -318,17 +311,7 @@ describe.sequential('MFA login service', () => {
     expect(rows[0]?.attemptedEmail).toBe(user.email)
     expect(rows[0]?.ipAddress).toBe('203.0.113.11')
 
-    const auditRows = await withOrg(user.orgId, (tx) =>
-      tx
-        .select({ eventType: auditLogEntries.eventType, payload: auditLogEntries.payload })
-        .from(auditLogEntries)
-        .where(
-          and(
-            eq(auditLogEntries.orgId, user.orgId),
-            eq(auditLogEntries.eventType, AuditEvent.LOGIN_FAILED)
-          )
-        )
-    )
+    const auditRows = await auditRowsForEvent(user.orgId, AuditEvent.LOGIN_FAILED)
     expect(auditRows).toContainEqual({
       eventType: AuditEvent.LOGIN_FAILED,
       payload: { method: 'totp_login' },
@@ -336,9 +319,7 @@ describe.sequential('MFA login service', () => {
   })
 
   it('does not record failed-auth attempts for replayed login TOTP codes', async () => {
-    const user = await enrollMfaUser()
-    const challenge = await loginUser({ email: user.email, password: PASSWORD })
-    if (!('mfaRequired' in challenge)) throw new Error(EXPECTED_MFA_CHALLENGE)
+    const { user, challenge } = await challengeForEnrolledUser()
 
     await expect(
       verifyLogin({ mfaToken: challenge.mfaToken, totp: user.enrollmentTotp })
@@ -349,9 +330,7 @@ describe.sequential('MFA login service', () => {
   })
 
   it('does not emit mfaToken, tokenHash, totp, or TOTP secret in lifecycle logs', async () => {
-    const user = await enrollMfaUser()
-    const challenge = await loginUser({ email: user.email, password: PASSWORD })
-    if (!('mfaRequired' in challenge)) throw new Error(EXPECTED_MFA_CHALLENGE)
+    const { user, challenge } = await challengeForEnrolledUser()
     const written: string[] = []
     const stdoutSpy = vi
       .spyOn(process.stdout, 'write')
@@ -374,9 +353,7 @@ describe.sequential('MFA login service', () => {
   })
 
   it('allows exactly one of two concurrent verify-login requests for the same valid token to succeed', async () => {
-    const user = await enrollMfaUser()
-    const challenge = await loginUser({ email: user.email, password: PASSWORD })
-    if (!('mfaRequired' in challenge)) throw new Error(EXPECTED_MFA_CHALLENGE)
+    const { user, challenge } = await challengeForEnrolledUser()
     const totp = totpForSecret(user.secret, Date.now() + 30_000)
 
     const results = await Promise.allSettled([
