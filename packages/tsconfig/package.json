@@ -10,9 +10,9 @@
     "./vitest.base": "./vitest.base.ts"
   },
   "devDependencies": {
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.9"
   },
   "peerDependencies": {
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.9"
   }
 }

@@ -26,6 +26,8 @@ export const EXEMPT_PATHS = new Set([
 
 const SRC_ROOT = resolve(process.cwd(), 'src')
 const FASTIFY_SHORTHANDS = ['get', 'post', 'put', 'patch', 'delete'] as const
+const ROUTE_ACTION_CLASSIFICATION_ENTRIES = Object.entries(ROUTE_ACTION_CLASSIFICATIONS)
+const ROUTE_ACTION_CLASSIFICATION_MAP = new Map(ROUTE_ACTION_CLASSIFICATION_ENTRIES)
 
 type ParsedRoute = {
   method: string
@@ -289,7 +291,7 @@ function assertClassifiedProtectedRoutes(): void {
 }
 
 function assertClassificationMetadata(): void {
-  for (const [route, classification] of Object.entries(ROUTE_ACTION_CLASSIFICATIONS)) {
+  for (const [route, classification] of ROUTE_ACTION_CLASSIFICATION_ENTRIES) {
     expect(route).toMatch(/^[A-Z]+ \/api\/v1\//)
     expect(['read', 'sensitive-read', 'mutation', 'security-action']).toContain(
       classification.action
@@ -308,13 +310,14 @@ function assertAuditedActionOptOutsAreJustified(): void {
   const violations: string[] = []
 
   for (const { route, routeKey } of parsedProductionRoutes()) {
-    const classification = ROUTE_ACTION_CLASSIFICATIONS[routeKey]
+    const classification = ROUTE_ACTION_CLASSIFICATION_MAP.get(routeKey)
     if (!classification?.auditEvent) continue
     if (!/writeAuditEvent:\s*false/.test(route.source)) continue
     const delegatedService = classification.sameTransactionAuditService
-    const delegatesAuditThroughTx =
-      delegatedService &&
-      new RegExp(`${delegatedService}\\([\\s\\S]*secureCtx\\.tx`).test(route.source)
+    const serviceCallIndex = delegatedService ? route.source.indexOf(`${delegatedService}(`) : -1
+    const txArgumentIndex =
+      serviceCallIndex === -1 ? -1 : route.source.indexOf('secureCtx.tx', serviceCallIndex)
+    const delegatesAuditThroughTx = serviceCallIndex !== -1 && txArgumentIndex !== -1
     if (delegatesAuditThroughTx) continue
 
     violations.push(routeKey)

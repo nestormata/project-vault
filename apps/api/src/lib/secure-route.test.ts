@@ -23,6 +23,8 @@ type ReplyMock = {
   send: ReturnType<typeof vi.fn>
 }
 
+type TransactionFn = NonNullable<SecureRouteRegistrationOptions['db']>['transaction']
+
 function authContext(orgRole = 'viewer'): Record<string, unknown> {
   return {
     userId: 'user-1',
@@ -71,7 +73,7 @@ function replyMock(): ReplyMock {
 
 function transactionHarness(tx = { execute: vi.fn() }): {
   tx: typeof tx
-  transaction: ReturnType<typeof vi.fn>
+  transaction: TransactionFn
 } {
   return {
     tx,

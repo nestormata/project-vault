@@ -1,5 +1,11 @@
 import { z } from 'zod/v4'
 
+function isTotpInput(value: string): boolean {
+  const digits = [...value].filter((char) => char >= '0' && char <= '9')
+  const nonWhitespace = [...value].filter((char) => char.trim() !== '')
+  return digits.length === 6 && nonWhitespace.every((char) => char >= '0' && char <= '9')
+}
+
 export {
   LoginRequestSchema,
   RegisterRequestSchema,
@@ -17,7 +23,7 @@ export const mfaEnrollResponseSchema = z.object({
 })
 
 export const mfaVerifyEnrollmentBodySchema = z.object({
-  totp: z.string().regex(/^\s*\d(?:\s*\d){5}\s*$/, 'TOTP must be exactly 6 digits'),
+  totp: z.string().refine(isTotpInput, 'TOTP must be exactly 6 digits'),
 })
 
 export const mfaRegenerateBodySchema = mfaVerifyEnrollmentBodySchema
@@ -30,7 +36,7 @@ export const mfaRecoverBodySchema = z.object({
 
 export const mfaVerifyLoginBodySchema = z.object({
   mfaToken: z.string().min(16).max(64),
-  totp: z.string().regex(/^\s*\d(?:\s*\d){5}\s*$/, 'TOTP must be exactly 6 digits'),
+  totp: z.string().refine(isTotpInput, 'TOTP must be exactly 6 digits'),
 })
 
 export const mfaLoginRequiredResponseSchema = z.object({

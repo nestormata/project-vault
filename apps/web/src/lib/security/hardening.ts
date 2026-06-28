@@ -1,9 +1,3 @@
-const loginReasonMessages: Record<string, string> = {
-  registered: 'Account created. Sign in to continue.',
-  'session-expired': 'Your session ended. Sign in again to continue.',
-  'logged-out': 'You have signed out.',
-}
-
 export function safeRedirectPath(value: string | null | undefined, fallback = '/dashboard') {
   if (!value) return fallback
   if (!value.startsWith('/') || value.startsWith('//')) return fallback
@@ -12,8 +6,16 @@ export function safeRedirectPath(value: string | null | undefined, fallback = '/
 }
 
 export function getLoginReasonMessage(reason: string | null | undefined) {
-  if (!reason) return 'Sign in to continue.'
-  return loginReasonMessages[reason] ?? 'Sign in to continue.'
+  switch (reason) {
+    case 'registered':
+      return 'Account created. Sign in to continue.'
+    case 'session-expired':
+      return 'Your session ended. Sign in again to continue.'
+    case 'logged-out':
+      return 'You have signed out.'
+    default:
+      return 'Sign in to continue.'
+  }
 }
 
 export function getTrustedApiBase(

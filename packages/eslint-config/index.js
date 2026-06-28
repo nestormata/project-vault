@@ -96,6 +96,15 @@ export const svelteRules = [
   // Use flat/recommended which includes the correct parser and processor config
   ...svelte.configs['flat/recommended'],
   {
+    files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
+    languageOptions: {
+      parserOptions: {
+        extraFileExtensions: ['.svelte'],
+        parser: tsParser,
+      },
+    },
+  },
+  {
     files: ['**/*.svelte'],
     rules: {
       'svelte/no-at-html-tags': 'error',

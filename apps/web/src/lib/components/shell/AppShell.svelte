@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import { logout } from '$lib/api/auth.js'
   import PrimaryNav from './PrimaryNav.svelte'
 
@@ -13,7 +14,7 @@
     } catch {
       // A missing/expired session should not trap the user in the app shell.
     }
-    await goto('/login?reason=logged-out')
+    await goto(resolve('/login?reason=logged-out'))
   }
 </script>
 
@@ -23,7 +24,7 @@
       class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between"
     >
       <div>
-        <a class="text-xl font-bold" href="/dashboard">Project Vault</a>
+        <a class="text-xl font-bold" href={resolve('/dashboard')}>Project Vault</a>
         <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div>
       <PrimaryNav />

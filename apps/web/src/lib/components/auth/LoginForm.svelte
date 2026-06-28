@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import { getCurrentUser, login } from '$lib/api/auth.js'
   import { buildLoginRequest, clearLoginFields, isMfaChallenge } from './form-model.js'
   import MfaLoginForm from './MfaLoginForm.svelte'
@@ -32,7 +33,7 @@
       }
       await getCurrentUser(fetch)
       clearFields()
-      await goto('/dashboard')
+      await goto(resolve('/dashboard'))
     } catch (error) {
       password = ''
       errorMessage =

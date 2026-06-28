@@ -4,6 +4,7 @@ packages:
 overrides:
   fast-jwt: ^6.2.4
   "minimatch@>=10 <10.2.3": ^10.2.5
+  tsx: 4.21.1
   vite: ^6.4.3
 onlyBuiltDependencies:
   - esbuild

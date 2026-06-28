@@ -72,7 +72,18 @@ export function operationalLog(
   message: string,
   fields?: Record<string, unknown>
 ): void {
-  logger[level]({ ...fields, eventType, traceId: SYSTEM_TRACE_ID }, message)
+  const payload = { ...fields, eventType, traceId: SYSTEM_TRACE_ID }
+  switch (level) {
+    case 'info':
+      logger.info(payload, message)
+      break
+    case 'warn':
+      logger.warn(payload, message)
+      break
+    case 'error':
+      logger.error(payload, message)
+      break
+  }
 }
 
 export function serializeLogError(err: unknown): SerializedLogError {

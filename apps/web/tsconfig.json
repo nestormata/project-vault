@@ -1,12 +1,10 @@
 {
-  "extends": "@project-vault/tsconfig/svelte.json",
+  "extends": "./.svelte-kit/tsconfig.json",
   "compilerOptions": {
-    "moduleResolution": "bundler",
-    "paths": {
-      "$lib": ["./src/lib"],
-      "$lib/*": ["./src/lib/*"],
-      "@project-vault/shared": ["../../packages/shared/src/index.ts"]
-    },
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
     "rootDirs": [".", ".svelte-kit/types"]
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", ".svelte-kit/ambient.d.ts", ".svelte-kit/types/**/*.d.ts"],

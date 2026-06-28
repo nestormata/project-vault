@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- test fixtures intentionally exercise dynamic temp-file key paths. */
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { mkdtempSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -30,6 +31,11 @@ const UNSEAL_URL = '/api/v1/vault/unseal'
 async function restartSealed(): Promise<void> {
   zeroKeys()
   await loadInitialVaultState()
+}
+
+async function initVaultThenRestartSealed(): Promise<void> {
+  await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
+  await restartSealed()
 }
 
 /** Initializes with the test passphrase, closes that app, then simulates a restart (sealed). */
@@ -319,8 +325,7 @@ describe.sequential('Vault key-service custody models', () => {
   })
 
   it('returns 503 vault_corrupted when encrypted_sentinel JSON is malformed', async () => {
-    await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
-    await restartSealed()
+    await initVaultThenRestartSealed()
 
     // append-only trigger blocks UPDATE in production; bypass via test-only GUC for this assertion
     await getDb().transaction(async (tx) => {
@@ -335,8 +340,7 @@ describe.sequential('Vault key-service custody models', () => {
   })
 
   it('returns 503 vault_corrupted when key_derivation_params are tampered below minimum', async () => {
-    await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
-    await restartSealed()
+    await initVaultThenRestartSealed()
 
     await getDb().transaction(async (tx) => {
       await tx.execute(sql`SELECT set_config('app.vault_test_reset', 'true', true)`)
