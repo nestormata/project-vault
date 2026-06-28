@@ -81,6 +81,13 @@ export type SecureRouteRegistrationOptions = {
 
 class AuditWriteError extends Error {}
 
+export class SameTransactionAuditWriteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SameTransactionAuditWriteError'
+  }
+}
+
 const FORBIDDEN_AUDIT_KEYS = new Set([
   'password',
   'passphrase',
@@ -409,7 +416,11 @@ function sendSecureRouteFailure(
       message: 'Database security context unavailable',
     })
   }
-  if (error instanceof AuditWriteError || phase === 'audit') {
+  if (
+    error instanceof AuditWriteError ||
+    error instanceof SameTransactionAuditWriteError ||
+    phase === 'audit'
+  ) {
     logRouteError(request, { eventType: 'secure_route.audit_write_failed', err: error })
     return reply.status(503).send({
       code: 'audit_write_failed',

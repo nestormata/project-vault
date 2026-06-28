@@ -9,6 +9,8 @@ export const AuditEvent = {
   MFA_RECOVERY_USED: 'MFA_RECOVERY_USED',
   MFA_RECOVERY_CODES_REGENERATED: 'MFA_RECOVERY_CODES_REGENERATED',
   SECURITY_FAILED_AUTH_THRESHOLD: 'security.failed_auth_threshold',
+  PROJECT_CREATED: 'project.created',
+  PROJECT_UPDATED: 'project.updated',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -21,6 +23,8 @@ export type AuditEventType =
   | 'secret.read'
   | 'secret.updated'
   | 'secret.deleted'
+  | 'project.created'
+  | 'project.updated'
 
 export type AuditEvent = {
   type: AuditEventType

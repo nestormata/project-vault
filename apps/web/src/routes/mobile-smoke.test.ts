@@ -20,6 +20,7 @@ describe('mobile shell smoke', () => {
   it('active nav matching supports primary routes without fixed desktop-only assumptions', () => {
     expect(isActiveNavItem('/dashboard', '/dashboard')).toBe(true)
     expect(isActiveNavItem('/projects', '/projects/preview')).toBe(true)
+    expect(isActiveNavItem('/projects', '/projects/new')).toBe(true)
     expect(isActiveNavItem('/credentials', '/dashboard')).toBe(false)
   })
 })

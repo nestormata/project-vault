@@ -24,4 +24,9 @@ describe('AuditEvent', () => {
     expect(AuditEvent.MFA_LOGIN_VERIFIED).toBe('MFA_LOGIN_VERIFIED')
     expect(Object.values(AuditEvent)).not.toContain('MFA_LOGIN_CHALLENGED')
   })
+
+  it('exposes Story 2.1 project audit event names', () => {
+    expect(AuditEvent.PROJECT_CREATED).toBe('project.created')
+    expect(AuditEvent.PROJECT_UPDATED).toBe('project.updated')
+  })
 })

@@ -10,6 +10,7 @@
     "./vitest.base": "./vitest.base.ts"
   },
   "devDependencies": {
+    "@project-vault/eslint-config": "workspace:*",
     "vitest": "^4.1.9"
   },
   "peerDependencies": {

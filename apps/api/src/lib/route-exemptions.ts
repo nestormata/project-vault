@@ -167,6 +167,26 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: SESSION_REVOKED,
     sameTransactionAuditService: 'revokeAllUserSessionsInOrg',
   },
+  'POST /api/v1/projects': {
+    action: 'mutation',
+    auditEvent: 'project.created',
+    sameTransactionAuditService: 'writeProjectAudit',
+  },
+  'GET /api/v1/projects': {
+    action: 'read',
+    auditOmissionReason: 'Project list read is org-scoped and does not reveal secret values.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/projects/:projectId/dashboard': {
+    action: 'read',
+    auditOmissionReason: 'Dashboard read is org-scoped and returns only aggregate counts.',
+    reviewer: SECURITY_OWNER,
+  },
+  'PATCH /api/v1/projects/:projectId': {
+    action: 'mutation',
+    auditEvent: 'project.updated',
+    sameTransactionAuditService: 'writeProjectAudit',
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
