@@ -16,6 +16,9 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 
 configureAuthIntegrationEnv()
+// Most tests here enroll MFA (Argon2 hashing + multiple createApp() round trips) and can
+// exceed vitest's 5s default under the concurrent cross-package load of `make ci`/`pnpm test`.
+vi.setConfig({ testTimeout: 20_000 })
 
 const { createApp } = await import('../../app.js')
 const { initVault } = await import('../vault/key-service.js')
@@ -186,7 +189,7 @@ describe.sequential('MFA login service', () => {
     expect(invalid.statusCode).toBe(401)
     expect(JSON.stringify(invalid.json())).not.toContain('mfaToken')
     await appForMfa.close()
-  }, 20_000)
+  })
 
   it('verifies a pending MFA login, issues a session, and consumes the token', async () => {
     const user = await enrollMfaUser()
@@ -253,7 +256,7 @@ describe.sequential('MFA login service', () => {
           and(eq(pendingMfaSessions.userId, user.userId), eq(pendingMfaSessions.orgId, user.orgId))
         )
     ).resolves.toHaveLength(1)
-  }, 20_000)
+  })
 
   it('returns the same expired error for unknown, expired, and attempt-capped tokens', async () => {
     await expect(
@@ -296,7 +299,7 @@ describe.sequential('MFA login service', () => {
         .from(pendingMfaSessions)
         .where(eq(pendingMfaSessions.tokenHash, hashPendingMfaToken(cappedChallenge.mfaToken)))
     ).resolves.toHaveLength(0)
-  }, 20_000)
+  })
 
   it('records invalid_totp failed-auth attempts for wrong login TOTP codes', async () => {
     const user = await enrollMfaUser()
@@ -392,7 +395,7 @@ describe.sequential('MFA login service', () => {
     await expect(
       getDb().select().from(pendingMfaSessions).where(eq(pendingMfaSessions.userId, user.userId))
     ).resolves.toHaveLength(0)
-  }, 20_000)
+  })
 
   it('retries token generation on a token_hash collision and never returns the collided token', async () => {
     const user = await enrollMfaUser()
@@ -428,5 +431,5 @@ describe.sequential('MFA login service', () => {
     } finally {
       generateSpy.mockRestore()
     }
-  }, 20_000)
+  })
 })
