@@ -36,7 +36,8 @@ COPY --from=builder /app/packages/eslint-config/package.json ./packages/eslint-c
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
  && rm -rf /root/.cache/pnpm /root/.local/share/pnpm /root/.npm
 
-COPY --from=builder /app/apps/web/build ./apps/web/build
+COPY --from=builder --chown=node:node /app/apps/web/build ./apps/web/build
+RUN chown -R node:node /app
 
 EXPOSE 3000
 
@@ -44,4 +45,6 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:3000/ || exit 1
 
 WORKDIR /app/apps/web
+USER node
+
 CMD ["node", "build"]

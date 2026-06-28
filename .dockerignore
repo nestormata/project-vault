@@ -1,0 +1,14 @@
+.git
+.env*
+!/.env.example
+.npmrc
+.pnpmrc
+node_modules
+dist
+build
+coverage
+.turbo
+.stryker-tmp
+reports
+.svelte-kit
+*.log

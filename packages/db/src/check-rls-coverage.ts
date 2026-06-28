@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
 
-// Platform-level or identity-scoped tables that intentionally have no org_id column and need no RLS policy.
+// Platform-level or identity-scoped tables that intentionally need no org RLS policy.
 export const EXCLUDED_TABLES = new Set([
   'api_instances',
   'vault_state',

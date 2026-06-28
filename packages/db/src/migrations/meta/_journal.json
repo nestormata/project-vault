@@ -85,6 +85,13 @@
       "when": 1782544560000,
       "tag": "0011_pending_mfa_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782598320000,
+      "tag": "0012_refresh_tokens_org_id",
+      "breakpoints": true
     }
   ]
 }

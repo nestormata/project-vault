@@ -114,7 +114,7 @@ async function loadSessionForClaims(claims: ParsedAccessClaims): Promise<AuthSes
 async function enforceIdleTimeout(session: AuthSessionRow): Promise<void> {
   const idleMs = env.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000
   if (Date.now() - session.lastActiveAt.getTime() <= idleMs) return
-  await cleanupExpiredSession(session.id)
+  await cleanupExpiredSession(session.id, { orgId: session.orgId })
   throw new AppError('session_expired', 'Session expired due to inactivity', 401)
 }
 

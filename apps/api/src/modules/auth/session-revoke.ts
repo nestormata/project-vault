@@ -182,6 +182,11 @@ export async function revokeSessionById(
 ): Promise<RevokeSessionResult> {
   return runInTx(options.tx, async (tx) => {
     await applyExpectedOrgContext(tx, options.expectedOrgId)
+    const activeRefreshRows = await tx
+      .select({ expiresAt: refreshTokens.expiresAt })
+      .from(refreshTokens)
+      .where(and(eq(refreshTokens.sessionId, sessionId), isNull(refreshTokens.revokedAt)))
+      .for('update')
     const rows = await tx
       .select({
         id: sessions.id,
@@ -199,11 +204,6 @@ export async function revokeSessionById(
     if (!session || session.revokedAt) return { revoked: false }
     if (sessionDoesNotMatchOptions(session, options)) return { revoked: false }
 
-    const activeRefreshRows = await tx
-      .select({ expiresAt: refreshTokens.expiresAt })
-      .from(refreshTokens)
-      .where(and(eq(refreshTokens.sessionId, sessionId), isNull(refreshTokens.revokedAt)))
-      .limit(1)
     const activeRefresh = activeRefreshRows[0]
     const revokedAt = new Date()
 
@@ -253,11 +253,12 @@ export async function revokeSessionById(
 
 export async function cleanupExpiredSession(
   sessionId: string,
-  options: { tx?: Tx } = {}
+  options: { tx?: Tx; orgId?: string } = {}
 ): Promise<void> {
   const result = await revokeSessionById(sessionId, {
     scope: 'idle_expiry',
     tx: options.tx,
+    expectedOrgId: options.orgId,
   })
   if (!result.revoked) return
 }

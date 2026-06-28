@@ -420,6 +420,7 @@ export async function createLoginSessionInTx(
 
   await tx.insert(refreshTokens).values({
     sessionId: session.id,
+    orgId,
     tokenHash: hashRefreshToken(tokens.refreshOpaque),
     expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
   })
@@ -464,6 +465,7 @@ function activeSessionPredicate({
   const predicates = [
     eq(sessions.userId, userId),
     eq(sessions.orgId, orgId),
+    eq(refreshTokens.orgId, orgId),
     isNull(sessions.revokedAt),
     isNull(refreshTokens.revokedAt),
     gt(refreshTokens.expiresAt, new Date()),
@@ -575,29 +577,39 @@ function revokedRefreshToken(): AppError {
 }
 
 async function findRefreshRow(tx: Tx, tokenHash: string): Promise<RefreshRow> {
-  const rows = await tx
+  const tokenRows = await tx
     .select({
       id: refreshTokens.id,
       sessionId: refreshTokens.sessionId,
+      orgId: refreshTokens.orgId,
       expiresAt: refreshTokens.expiresAt,
       usedAt: refreshTokens.usedAt,
       revokedAt: refreshTokens.revokedAt,
       newSessionId: refreshTokens.newSessionId,
+    })
+    .from(refreshTokens)
+    .where(eq(refreshTokens.tokenHash, tokenHash))
+    .for('update')
+    .limit(1)
+  const token = tokenRows[0]
+  if (!token) throw new AppError('refresh_token_invalid', 'Refresh token is invalid', 401)
+
+  await tx.execute(sql`SELECT set_config('app.current_org_id', ${token.orgId}, true)`)
+  const sessionRows = await tx
+    .select({
       userId: sessions.userId,
-      orgId: sessions.orgId,
       jti: sessions.jti,
       sessionVersion: sessions.sessionVersion,
       sessionRevokedAt: sessions.revokedAt,
       lastActiveAt: sessions.lastActiveAt,
     })
-    .from(refreshTokens)
-    .innerJoin(sessions, eq(sessions.id, refreshTokens.sessionId))
-    .where(eq(refreshTokens.tokenHash, tokenHash))
+    .from(sessions)
+    .where(and(eq(sessions.id, token.sessionId), eq(sessions.orgId, token.orgId)))
     .for('update')
     .limit(1)
-  const row = rows[0]
-  if (!row) throw new AppError('refresh_token_invalid', 'Refresh token is invalid', 401)
-  return row
+  const session = sessionRows[0]
+  if (!session) throw new AppError('refresh_token_invalid', 'Refresh token is invalid', 401)
+  return { ...token, ...session }
 }
 
 async function handleGraceRefresh(tx: Tx, row: RefreshRow): Promise<RefreshResult> {
@@ -683,6 +695,7 @@ async function rotateRefreshToken(
     .where(eq(refreshTokens.id, row.id))
   await tx.insert(refreshTokens).values({
     sessionId: newSession.id,
+    orgId: row.orgId,
     tokenHash: hashRefreshToken(tokens.refreshOpaque),
     expiresAt: new Date(Date.now() + tokens.refreshMaxAgeSec * 1000),
   })
@@ -709,9 +722,11 @@ export async function refreshSession(
   accessTokenExp?: Date
 ): Promise<RefreshResult> {
   const tokenHash = hashRefreshToken(refreshOpaque)
-  return getDb().transaction(async (tx) => {
+  const result = await getDb().transaction(async (tx) => {
     const row = await findRefreshRow(tx as Tx, tokenHash)
-    if (row.usedAt) return handleGraceRefresh(tx as Tx, row)
+    if (row.usedAt) {
+      return { expired: false as const, value: await handleGraceRefresh(tx as Tx, row) }
+    }
     if (row.sessionRevokedAt) throw revokedRefreshToken()
     if (row.revokedAt) throw revokedRefreshToken()
     if (row.expiresAt.getTime() <= Date.now()) {
@@ -725,11 +740,18 @@ export async function refreshSession(
     if (revoked[0]) throw revokedRefreshToken()
     const idleMs = env.SESSION_IDLE_TIMEOUT_MINUTES * 60 * 1000
     if (Date.now() - row.lastActiveAt.getTime() > idleMs) {
-      await cleanupExpiredSession(row.sessionId, { tx: tx as Tx })
-      throw new AppError('session_expired', 'Session expired due to inactivity', 401)
+      await cleanupExpiredSession(row.sessionId, { tx: tx as Tx, orgId: row.orgId })
+      return { expired: true as const }
     }
-    return rotateRefreshToken(tx as Tx, row, meta, accessTokenExp)
+    return {
+      expired: false as const,
+      value: await rotateRefreshToken(tx as Tx, row, meta, accessTokenExp),
+    }
   })
+  if (result.expired) {
+    throw new AppError('session_expired', 'Session expired due to inactivity', 401)
+  }
+  return result.value
 }
 
 export async function listSessions(

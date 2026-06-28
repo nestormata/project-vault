@@ -14,7 +14,7 @@ services:
       retries: 10
       start_period: 10s
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   # One-shot migration runner: creates the vault_app role, RLS policies, and triggers
   # (see packages/db/src/migrations/0001_rls_and_triggers.sql) before `api` starts, so

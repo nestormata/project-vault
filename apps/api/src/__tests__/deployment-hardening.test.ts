@@ -1,0 +1,61 @@
+/* eslint-disable security/detect-non-literal-fs-filename */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+const root = resolve(__dirname, '../../../../')
+
+const readRepoFile = (path: string) => readFileSync(resolve(root, path), 'utf8')
+
+describe('deployment hardening configuration', () => {
+  it('runs api and web containers as the node user', () => {
+    const apiDockerfile = readRepoFile('apps/api/Dockerfile')
+    const webDockerfile = readRepoFile('apps/web/Dockerfile')
+
+    expect(apiDockerfile).toMatch(/\nUSER node\n/)
+    expect(webDockerfile).toMatch(/\nUSER node\n/)
+  })
+
+  it('does not expose Postgres on every host interface', () => {
+    const compose = readRepoFile('docker-compose.yml')
+
+    expect(compose).not.toContain('"5432:5432"')
+    expect(compose).toContain('"127.0.0.1:5432:5432"')
+  })
+
+  it('keeps sensitive and bulky files out of Docker build context', () => {
+    const dockerignore = readRepoFile('.dockerignore')
+
+    for (const requiredEntry of [
+      '.git',
+      '.env*',
+      '!/.env.example',
+      '.npmrc',
+      '.pnpmrc',
+      'node_modules',
+      'dist',
+      'build',
+      'coverage',
+      '.turbo',
+      '.stryker-tmp',
+    ]) {
+      expect(dockerignore).toContain(requiredEntry)
+    }
+  })
+
+  it('uses least-privilege GitHub token permissions', () => {
+    const ciWorkflow = readRepoFile('.github/workflows/ci.yml')
+    const nightlyWorkflow = readRepoFile('.github/workflows/nightly.yml')
+
+    expect(ciWorkflow).toMatch(/\npermissions:\n\s+contents: read\n/)
+    expect(nightlyWorkflow).toMatch(/\npermissions:\n\s+contents: read\n/)
+  })
+
+  it('configures Dependabot for pnpm and GitHub Actions updates', () => {
+    const dependabot = readRepoFile('.github/dependabot.yml')
+
+    expect(dependabot).toContain('package-ecosystem: "npm"')
+    expect(dependabot).toContain('directory: "/"')
+    expect(dependabot).toContain('package-ecosystem: "github-actions"')
+  })
+})

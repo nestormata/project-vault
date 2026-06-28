@@ -3,7 +3,6 @@ import bcrypt from 'bcrypt'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
 import {
-  auditLogEntries,
   mfaEnrollments,
   mfaRecoveryCodes,
   orgMemberships,
@@ -15,9 +14,7 @@ import type { EncryptedValue } from '@project-vault/crypto'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
-import { currentAuditKeyVersion } from '../audit/key-version.js'
-import { computeAuditHmac } from '../audit/write-entry.js'
-import { getAuditKey } from '../vault/key-service.js'
+import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
 import { verifyUserPassword } from './password.js'
 import { normalizeEmail } from './normalize.js'
@@ -64,16 +61,6 @@ const DUMMY_RECOVERY_CODE_HASH =
   // eslint-disable-next-line no-secrets/no-secrets -- Test-only timing pad hash for a known dummy code.
   '$2b$10$N69wUwERzaedA4v2CD2yNuNTfjbwDj8g2x8Mk41u.lP6o11m8o6xW'
 
-type AuditFields = {
-  orgId: string
-  actorTokenId: string | null
-  eventType: string
-  resourceId?: string
-  resourceType?: string
-  payload: Record<string, unknown>
-  meta?: RequestMeta
-}
-
 function appError(code: string, message: string, statusCode: number): AppError {
   return new AppError(code, message, statusCode)
 }
@@ -100,38 +87,6 @@ async function attemptedEmailForUser(userId: string, tx?: Tx): Promise<string> {
   return rows[0]?.email ?? 'unknown@example.invalid'
 }
 
-async function writeAuditEntry(tx: Tx, fields: AuditFields): Promise<void> {
-  await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
-  const keyVersion = await currentAuditKeyVersion(tx)
-  const hmac = computeAuditHmac(
-    {
-      orgId: fields.orgId,
-      actorTokenId: fields.actorTokenId,
-      actorType: 'human',
-      eventType: fields.eventType,
-      resourceId: fields.resourceId,
-      resourceType: fields.resourceType,
-      payload: fields.payload,
-      keyVersion,
-    },
-    getAuditKey()
-  )
-
-  await tx.insert(auditLogEntries).values({
-    orgId: fields.orgId,
-    actorTokenId: fields.actorTokenId,
-    actorType: 'human',
-    eventType: fields.eventType,
-    resourceId: fields.resourceId,
-    resourceType: fields.resourceType,
-    payload: fields.payload,
-    keyVersion,
-    hmac,
-    ipAddress: fields.meta?.ipAddress ?? null,
-    userAgent: fields.meta?.userAgent ?? null,
-  })
-}
-
 async function tryWriteFailedRecoverAudit(
   tx: Tx,
   user: { orgId: string | null; identityTokenId: string | null } | null,
@@ -139,7 +94,7 @@ async function tryWriteFailedRecoverAudit(
 ): Promise<void> {
   if (!user?.orgId) return
   try {
-    await writeAuditEntry(tx, {
+    await writeHumanAuditEntry(tx, {
       orgId: user.orgId,
       actorTokenId: user.identityTokenId,
       eventType: AuditEvent.LOGIN_FAILED,
@@ -183,7 +138,7 @@ async function writeMfaEnrollmentAudit(
     meta: RequestMeta
   }
 ): Promise<void> {
-  await writeAuditEntry(tx, {
+  await writeHumanAuditEntry(tx, {
     orgId: authContext.orgId,
     actorTokenId: await firstActorTokenIdForUser(tx, authContext.userId),
     eventType: fields.eventType,
@@ -586,7 +541,7 @@ export async function recoverWithCode(
       orgId,
       meta
     )
-    await writeAuditEntry(db, {
+    await writeHumanAuditEntry(db, {
       orgId,
       actorTokenId: user.identityTokenId,
       eventType: AuditEvent.MFA_RECOVERY_USED,
