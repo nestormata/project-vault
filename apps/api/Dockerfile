@@ -28,8 +28,8 @@ COPY packages/eslint-config ./packages/eslint-config
 
 WORKDIR /app
 RUN pnpm --filter @project-vault/shared build \
- && pnpm --filter @project-vault/db build \
  && pnpm --filter @project-vault/crypto build \
+ && pnpm --filter @project-vault/db build \
  && pnpm --filter @project-vault/api build
 
 # Bundle the api and its production deps into a self-contained directory.

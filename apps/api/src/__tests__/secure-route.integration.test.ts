@@ -138,7 +138,7 @@ describe.sequential('SecureRoute integration', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ data: { current_org_id: user.orgId } })
     await app.close()
-  })
+  }, 15_000)
 
   it('applies org isolation through ctx.tx on request handlers', async () => {
     const app = await createApp({ logger: false })

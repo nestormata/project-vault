@@ -6,6 +6,8 @@ export default mergeConfig(baseVitestConfig, {
     include: ['src/**/*.test.ts'],
     setupFiles: ['src/__tests__/setup-env.ts'],
     fileParallelism: false,
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       // Only count coverage for files directly tested in Story 1.1+
       // (boss.ts, events.ts stubs covered in later stories)

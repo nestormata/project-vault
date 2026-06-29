@@ -39,6 +39,14 @@ export const OperationalEvent = {
 
   // DB
   DB_ERROR: 'db.error',
+
+  // Credentials (Story 2.2)
+  CREDENTIAL_REVEAL_ATTEMPT: 'credential.reveal.attempt',
+  CREDENTIAL_REVEAL_SUCCESS: 'credential.reveal.success',
+  CREDENTIAL_REVEAL_FAILURE: 'credential.reveal.failure',
+  CREDENTIAL_AUDIT_WRITE_FAILED: 'credential.audit_write_failed',
+  CREDENTIAL_RETENTION_SUMMARY: 'credential.retention.summary',
+  CREDENTIAL_RETENTION_DRY_RUN: 'credential.retention.dry_run',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

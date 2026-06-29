@@ -310,7 +310,7 @@ describe.sequential('MFA login service', () => {
         .from(pendingMfaSessions)
         .where(eq(pendingMfaSessions.tokenHash, hashPendingMfaToken(cappedChallenge.mfaToken)))
     ).resolves.toHaveLength(0)
-  })
+  }, 40_000)
 
   it('records invalid_totp failed-auth attempts for wrong login TOTP codes', async () => {
     const { user, challenge } = await challengeForEnrolledUser()

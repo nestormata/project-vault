@@ -5,18 +5,16 @@ import { withOrg } from '@project-vault/db'
 import { orgMemberships, projectMemberships, projects } from '@project-vault/db/schema'
 import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import {
-  configureAuthIntegrationEnv,
+  assertRoutesFailClosedWhileSealed,
+  bootstrapRouteIntegrationTest,
   cookieHeader,
+  expectAuditWriteFailed,
   initVaultForTest,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
-configureAuthIntegrationEnv()
-
-const { createApp } = await import('../../app.js')
-const { initVault } = await import('../vault/key-service.js')
-const humanAudit = await import('../audit/human-entry.js')
+const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 const { createLoginSessionInTx } = await import('../auth/service.js')
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
@@ -25,11 +23,6 @@ const TEST_PASSPHRASE = 'project-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const PROJECTS_URL = '/api/v1/projects'
 const ALPHA_PROJECT_SLUG = 'alpha-project'
-
-function expectAuditWriteFailed(response: Awaited<ReturnType<TestApp['inject']>>) {
-  expect(response.statusCode).toBe(503)
-  expect(response.json()).toMatchObject({ code: 'audit_write_failed' })
-}
 
 function uniqueEmail(label: string): string {
   return `projects-${label}-${randomUUID()}@example.com`
@@ -418,20 +411,16 @@ describe.sequential('project routes', () => {
   }, 20_000)
 
   it('project routes fail closed while the vault is sealed', async () => {
-    await app.close()
-    await resetVaultForTest()
-    app = await createApp({ logger: false, vaultGuardEnabled: true })
-
-    for (const request of [
-      { method: 'POST', url: PROJECTS_URL, payload: { name: 'Sealed', slug: 'sealed' } },
-      { method: 'GET', url: PROJECTS_URL },
-      { method: 'GET', url: `/api/v1/projects/${randomUUID()}/dashboard` },
-      { method: 'PATCH', url: `/api/v1/projects/${randomUUID()}`, payload: { name: 'Sealed' } },
-    ] as const) {
-      const res = await app.inject(request)
-      expect(res.statusCode).toBe(503)
-      expect(res.json()).toMatchObject({ status: 'sealed' })
-    }
+    app = await assertRoutesFailClosedWhileSealed(
+      app,
+      () => createApp({ logger: false, vaultGuardEnabled: true }),
+      [
+        { method: 'POST', url: PROJECTS_URL, payload: { name: 'Sealed', slug: 'sealed' } },
+        { method: 'GET', url: PROJECTS_URL },
+        { method: 'GET', url: `/api/v1/projects/${randomUUID()}/dashboard` },
+        { method: 'PATCH', url: `/api/v1/projects/${randomUUID()}`, payload: { name: 'Sealed' } },
+      ]
+    )
 
     await app.close()
     await initVaultForTest(initVault, TEST_PASSPHRASE)

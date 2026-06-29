@@ -15,6 +15,7 @@ import { vaultRoutes } from './modules/vault/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { orgRoutes } from './modules/org/routes.js'
 import { projectRoutes } from './modules/projects/routes.js'
+import { credentialRoutes } from './modules/credentials/routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
 import authenticatePlugin from './plugins/authenticate.js'
@@ -171,6 +172,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
   await fastify.register(projectRoutes, { prefix: '/api/v1/projects' })
+  await fastify.register(credentialRoutes, { prefix: '/api/v1/projects' })
 
   return fastify
 }

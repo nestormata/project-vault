@@ -14,15 +14,56 @@ export function validationError(
   fallbackPath: string
 ) {
   const details = new Map<string, string[]>()
+  let code = 'validation_error'
   for (const issue of error.issues) {
     const key = String(issue.path[0] ?? fallbackPath)
     details.set(key, [...(details.get(key) ?? []), issue.message])
+    if (issue.message === 'invalid_cron') code = 'invalid_cron'
   }
   return {
-    code: 'validation_error',
+    code,
     message: 'Request validation failed',
     details: Object.fromEntries(details),
   }
+}
+
+type SafeParseSchema<T> = {
+  safeParse: (
+    value: unknown
+  ) =>
+    | { success: true; data: T }
+    | { success: false; error: { issues: { path: PropertyKey[]; message: string }[] } }
+}
+
+function parseRequestPart<T>(
+  schema: SafeParseSchema<T>,
+  value: unknown,
+  fallbackPath: 'body' | 'params',
+  reply: FastifyReply
+): { success: true; data: T } | { success: false } {
+  const parsed = schema.safeParse(value)
+  if (!parsed.success) {
+    reply.status(422).send(validationError(parsed.error, fallbackPath))
+    return { success: false }
+  }
+  return { success: true, data: parsed.data }
+}
+
+export function parseBody<T>(
+  schema: SafeParseSchema<T>,
+  req: FastifyRequest,
+  reply: FastifyReply
+): { success: true; data: T } | { success: false } {
+  return parseRequestPart(schema, req.body, 'body', reply)
+}
+
+export function parseParams<T>(
+  schema: SafeParseSchema<T>,
+  req: FastifyRequest,
+  reply: FastifyReply
+): T | null {
+  const result = parseRequestPart(schema, req.params, 'params', reply)
+  return result.success ? result.data : null
 }
 
 export function authPreHandler(fastify: FastifyApp) {

@@ -1,17 +1,10 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
-import type { FastifyReply, FastifyRequest } from 'fastify'
-import { projectMemberships, projects } from '@project-vault/db/schema'
-import type { Tx } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
-import { validationError } from '../../lib/route-helpers.js'
-import {
-  SameTransactionAuditWriteError,
-  secureRoute,
-  type SecureRouteContext,
-} from '../../lib/secure-route.js'
-import { firstActorTokenIdForUser } from '../audit/actor-token.js'
-import { writeHumanAuditEntry } from '../audit/human-entry.js'
+import { parseBody, parseParams } from '../../lib/route-helpers.js'
+import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
+import { projectMemberships, projects } from '@project-vault/db/schema'
 import {
   CreateProjectBodySchema,
   PatchProjectBodySchema,
@@ -23,15 +16,6 @@ import {
   type CreateProjectBody,
   type PatchProjectBody,
 } from './schema.js'
-
-type ProjectAuditInput = {
-  orgId: string
-  actorUserId: string
-  eventType: 'project.created' | 'project.updated'
-  resourceId: string
-  payload: Record<string, unknown>
-  request: FastifyRequest
-}
 
 function serializeProjectDetail(project: typeof projects.$inferSelect, role: 'owner') {
   return {
@@ -51,57 +35,6 @@ function isProjectSlugTaken(error: unknown): boolean {
     pg.code === '23505' &&
     (pg.constraint === 'idx_projects_org_slug' || pg.constraint_name === 'idx_projects_org_slug')
   )
-}
-
-function parseBody<T>(
-  schema: {
-    safeParse: (
-      body: unknown
-    ) =>
-      | { success: true; data: T }
-      | { success: false; error: { issues: { path: PropertyKey[]; message: string }[] } }
-  },
-  req: FastifyRequest,
-  reply: FastifyReply
-): { success: true; data: T } | { success: false } {
-  const parsed = schema.safeParse(req.body)
-  if (!parsed.success) {
-    reply.status(422).send(validationError(parsed.error, 'body'))
-    return { success: false }
-  }
-  return { success: true, data: parsed.data }
-}
-
-function parseParams(req: FastifyRequest, reply: FastifyReply) {
-  const parsed = ProjectParamsSchema.safeParse(req.params)
-  if (!parsed.success) {
-    reply.status(422).send(validationError(parsed.error, 'params'))
-    return null
-  }
-  return parsed.data
-}
-
-async function writeProjectAudit(tx: Tx, input: ProjectAuditInput): Promise<void> {
-  try {
-    const actorTokenId = await firstActorTokenIdForUser(tx, input.actorUserId)
-    await writeHumanAuditEntry(tx, {
-      orgId: input.orgId,
-      actorTokenId,
-      eventType: input.eventType,
-      resourceId: input.resourceId,
-      resourceType: 'project',
-      payload: input.payload,
-      meta: {
-        ipAddress: input.request.ip,
-        userAgent:
-          typeof input.request.headers['user-agent'] === 'string'
-            ? input.request.headers['user-agent']
-            : null,
-      },
-    })
-  } catch (error) {
-    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
-  }
 }
 
 async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {
@@ -183,7 +116,8 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       const result = await createProject(secureCtx, parsed.data)
       if ('error' in result) return reply.status(409).send(result.error)
-      await writeProjectAudit(secureCtx.tx, {
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
         orgId: secureCtx.auth.orgId,
         actorUserId: secureCtx.auth.userId,
         eventType: 'project.created',
@@ -254,7 +188,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: { minimumRole: 'viewer', writeAuditEvent: false },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(req, reply)
+      const params = parseParams(ProjectParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
       const rows = await secureCtx.tx
@@ -287,7 +221,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(req, reply)
+      const params = parseParams(ProjectParamsSchema, req, reply)
       if (!params) return reply
       const parsed = parseBody(PatchProjectBodySchema, req, reply)
       if (!parsed.success) return reply
@@ -319,7 +253,8 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(404).send({ code: 'project_not_found', message: 'Project not found' })
       }
 
-      await writeProjectAudit(secureCtx.tx, {
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
         orgId: secureCtx.auth.orgId,
         actorUserId: secureCtx.auth.userId,
         eventType: 'project.updated',

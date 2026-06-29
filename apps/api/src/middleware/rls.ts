@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
+import { organizations } from '@project-vault/db/schema'
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const RLS_ORG_SETTING = 'app.current_org_id'
@@ -20,6 +21,12 @@ export async function setRlsOrgContext(
 ): Promise<void> {
   assertUuid(orgId, 'setRlsOrgContext')
   await tx.execute(sql`SELECT set_config(${RLS_ORG_SETTING}, ${orgId}, true)`)
+}
+
+/** Lists every org id for background jobs that must iterate orgs (RLS scopes everything else). */
+export async function fetchAllOrgIds(): Promise<string[]> {
+  const rows = await getDb().select({ orgId: organizations.id }).from(organizations)
+  return rows.map((row) => row.orgId)
 }
 
 export async function runOrgScopedJob<T>(

@@ -29,6 +29,8 @@ const FAILED_AUTH_RECORDING = 'failed-auth-recording'
 const SECURITY_ACTION = 'security-action'
 const SESSION_REVOKED = 'SESSION_REVOKED'
 const IDENTITY_CLEANUP_JOB = 'identity-cleanup-job'
+const WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED = 'writeCredentialAuditOrFailClosed'
+const PLATFORM_JOB = 'platform-job'
 
 export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
@@ -170,7 +172,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/projects': {
     action: 'mutation',
     auditEvent: 'project.created',
-    sameTransactionAuditService: 'writeProjectAudit',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
   'GET /api/v1/projects': {
     action: 'read',
@@ -185,7 +187,27 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'PATCH /api/v1/projects/:projectId': {
     action: 'mutation',
     auditEvent: 'project.updated',
-    sameTransactionAuditService: 'writeProjectAudit',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
+  'POST /api/v1/projects/:projectId/credentials': {
+    action: 'mutation',
+    auditEvent: 'credential.created',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/versions': {
+    action: 'mutation',
+    auditEvent: 'credential.version_created',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/value': {
+    action: 'sensitive-read',
+    auditEvent: 'credential.value_revealed',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/versions': {
+    action: 'read',
+    auditOmissionReason: 'Version history returns metadata only; never any credential value.',
+    reviewer: SECURITY_OWNER,
   },
 }
 
@@ -198,14 +220,21 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
   },
   {
     path: 'workers/check-failed-auth-threshold.ts',
-    classification: 'platform-job',
+    classification: PLATFORM_JOB,
     reason: 'Scans platform failed-auth aggregates and uses runOrgScopedJob for alert writes.',
     reviewer: SECURITY_OWNER,
   },
   {
     path: 'workers/prune-failed-auth-attempts.ts',
-    classification: 'platform-job',
+    classification: PLATFORM_JOB,
     reason: 'Prunes platform failed-auth attempt rows by retention window.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/prune-credential-versions.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Cryptographically purges expired credential versions per org via runOrgScopedJob; org-scoped writes.',
     reviewer: SECURITY_OWNER,
   },
   {

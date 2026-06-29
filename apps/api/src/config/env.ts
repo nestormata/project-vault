@@ -237,6 +237,10 @@ const envSchema = z
     TRUST_PROXY: booleanEnvDefault(false),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(1).default(1),
 
+    // Credential version retention is irreversible (AC-8 R11/AC-11B O1). Production's first
+    // run MUST default to dry-run (log-only); tests/dev default to destructive for coverage.
+    CREDENTIAL_RETENTION_DRY_RUN: booleanEnvDefault(isProduction),
+
     // Directory for envelope/file key halves (read-only mount in production).
     VAULT_KEY_DIR: z.string().min(1).default('/run/secrets'),
 

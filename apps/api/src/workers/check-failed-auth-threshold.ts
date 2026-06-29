@@ -1,17 +1,12 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
-import {
-  auditLogEntries,
-  orgMemberships,
-  organizations,
-  securityAlerts,
-} from '@project-vault/db/schema'
+import { auditLogEntries, orgMemberships, securityAlerts } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { failedAuthThresholdPayloadSchema } from '../modules/org/schema.js'
-import { runOrgScopedJob } from '../middleware/rls.js'
+import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 
 const ALERT_TYPE = 'security.failed_auth_threshold'
 
@@ -26,11 +21,6 @@ type Breach = {
 
 type CountRow = { key: string; attempt_count: string | number }
 type UserRow = { user_id: string }
-
-async function fetchAllOrgIds(): Promise<string[]> {
-  const rows = await getDb().select({ orgId: organizations.id }).from(organizations)
-  return rows.map((row) => row.orgId)
-}
 
 // RLS forces org_memberships lookups to run per-org (no cross-org query is possible
 // through the app role) — see Story 1.9 Dev Agent Record. Returns ALL active orgs for

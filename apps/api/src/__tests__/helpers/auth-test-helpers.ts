@@ -14,6 +14,19 @@ export function configureAuthIntegrationEnv(): void {
   process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 }
 
+/**
+ * Sets integration env vars and dynamically imports the modules every SecureRoute integration
+ * suite needs (app must load after env vars are set, since env.ts reads process.env at import
+ * time). Centralized here so route test files don't each repeat the same bootstrap sequence.
+ */
+export async function bootstrapRouteIntegrationTest() {
+  configureAuthIntegrationEnv()
+  const { createApp } = await import('../../app.js')
+  const { initVault } = await import('../../modules/vault/key-service.js')
+  const humanAudit = await import('../../modules/audit/human-entry.js')
+  return { createApp, initVault, humanAudit }
+}
+
 export function parseSetCookies(setCookie: string | string[] | undefined): CookieJar {
   const headers = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : []
   return Object.fromEntries(
@@ -39,6 +52,43 @@ export async function initVaultForTest(initVault: InitVault, passphrase: string)
   } catch (error) {
     if ((error as { code?: string }).code !== 'ALREADY_INITIALIZED') throw error
   }
+}
+
+/** Asserts a SecureRoute same-transaction audit-write failure: 503 audit_write_failed. */
+export function expectAuditWriteFailed(response: { statusCode: number; json: <T>() => T }): void {
+  expect(response.statusCode).toBe(503)
+  expect(response.json()).toMatchObject({ code: 'audit_write_failed' })
+}
+
+type InjectableApp = {
+  close: () => Promise<unknown>
+  inject: (request: {
+    method: string
+    url: string
+    payload?: unknown
+  }) => Promise<{ statusCode: number; json: <T>() => T }>
+}
+
+/**
+ * Closes the current app, resets the vault to sealed, boots a fresh sealed app, and asserts
+ * every given request gets a 503 { status: 'sealed' } response (vault-guard fail-closed).
+ * Returns the sealed app instance so the caller can close it and re-unseal afterward.
+ */
+export async function assertRoutesFailClosedWhileSealed<TApp extends InjectableApp>(
+  currentApp: TApp,
+  createSealedApp: () => Promise<TApp>,
+  requests: readonly { method: string; url: string; payload?: unknown }[]
+): Promise<TApp> {
+  await currentApp.close()
+  const { resetVaultForTest } = await import('./vault-test-cleanup.js')
+  await resetVaultForTest()
+  const sealedApp = await createSealedApp()
+  for (const request of requests) {
+    const res = await sealedApp.inject(request)
+    expect(res.statusCode).toBe(503)
+    expect(res.json()).toMatchObject({ status: 'sealed' })
+  }
+  return sealedApp
 }
 
 export async function registerAndLoginViaApi(
