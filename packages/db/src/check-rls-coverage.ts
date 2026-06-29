@@ -13,6 +13,8 @@ export const EXCLUDED_TABLES = new Set([
   'failed_auth_attempts',
   'pending_mfa_sessions',
   'platform_security_events',
+  // user_onboarding: no RLS — access gated in application layer by auth.userId == userId; org_id is a FK for cascade, not for multi-tenant row filtering.
+  'user_onboarding',
 ])
 
 export class RlsCoverageGapError extends Error {

@@ -122,3 +122,18 @@ export async function registerAndLoginViaApi(
     cookies: parseSetCookies(login.headers['set-cookie']),
   }
 }
+
+export async function bootUnsealedRouteApp(initVault: InitVault, passphrase: string) {
+  const { resetVaultForTest } = await import('./vault-test-cleanup.js')
+  const { createApp } = await import('../../app.js')
+  await resetVaultForTest()
+  await initVaultForTest(initVault, passphrase)
+  const app = await createApp({ logger: false, vaultGuardEnabled: true })
+  return {
+    app,
+    close: async () => {
+      await app.close()
+      await resetVaultForTest()
+    },
+  }
+}

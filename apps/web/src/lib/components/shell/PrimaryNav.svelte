@@ -6,7 +6,11 @@
   const navItems = getPrimaryNavItems()
 </script>
 
-<nav aria-label="Primary navigation" class="flex flex-col gap-2 md:flex-row md:items-center">
+<nav
+  aria-label="Primary navigation"
+  data-testid="primary-nav"
+  class="flex flex-col gap-2 md:flex-row md:items-center"
+>
   {#each navItems as item (item.href)}
     {@const active = isActiveNavItem(item.href, page.url.pathname)}
     <a

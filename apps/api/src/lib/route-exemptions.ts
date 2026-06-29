@@ -267,6 +267,17 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.bulk_import_confirmed',
     sameTransactionAuditService: 'writeImportBatchAudit',
   },
+  'GET /api/v1/users/me/onboarding': {
+    action: 'read',
+    auditOmissionReason:
+      'Onboarding status read is scoped to the current user and does not reveal secrets.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/users/me/onboarding': {
+    action: 'mutation',
+    auditEvent: 'onboarding.completed',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [

@@ -4,7 +4,15 @@
   import { logout } from '$lib/api/auth.js'
   import PrimaryNav from './PrimaryNav.svelte'
 
-  let { user, children } = $props()
+  let {
+    user,
+    children,
+    hidePrimaryNav = false,
+  }: {
+    user: import('$lib/api/auth.js').AuthUser
+    children: import('svelte').Snippet
+    hidePrimaryNav?: boolean
+  } = $props()
   let logoutError = $state(null)
 
   async function signOut() {
@@ -24,10 +32,16 @@
       class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between"
     >
       <div>
-        <a class="text-xl font-bold" href={resolve('/dashboard')}>Project Vault</a>
+        {#if hidePrimaryNav}
+          <p class="text-xl font-bold">Project Vault</p>
+        {:else}
+          <a class="text-xl font-bold" href={resolve('/dashboard')}>Project Vault</a>
+        {/if}
         <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div>
-      <PrimaryNav />
+      {#if !hidePrimaryNav}
+        <PrimaryNav />
+      {/if}
       <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
         <span>Role: {user.orgRole}</span>
         <span class="max-w-full break-all">Org: {user.orgId}</span>
@@ -49,7 +63,7 @@
       <p class="px-4 py-2 text-sm text-red-700" role="alert">{logoutError}</p>
     {/if}
   </header>
-  <main class="mx-auto max-w-7xl px-4 py-6">
+  <main class={hidePrimaryNav ? 'p-0' : 'mx-auto max-w-7xl px-4 py-6'}>
     {@render children()}
   </main>
 </div>
