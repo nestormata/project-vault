@@ -49,6 +49,7 @@ export const CredentialSummarySchema = z
     expiresAt: z.iso.datetime().nullable(),
     rotationSchedule: z.string().nullable(),
     currentVersionNumber: z.number().int().positive(),
+    hasDependencies: z.boolean(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })

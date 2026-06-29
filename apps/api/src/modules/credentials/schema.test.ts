@@ -50,15 +50,15 @@ describe('credential create body schema', () => {
     ).toThrow()
   })
 
-  it.each(['0 0 1 * *', '*/5 * * * *', '0 3 * * 1-5'])('accepts valid cron shape %s', (cron) => {
+  it.each(['0 0 1 * *', '0 3 1 * *', '0 * * * *'])('accepts valid cron schedule %s', (cron) => {
     expect(
       CreateCredentialBodySchema.parse({ name: 'Key', value: 'secret', rotationSchedule: cron })
     ).toMatchObject({ rotationSchedule: cron })
   })
 
-  it('rejects a cron with fewer than 5 fields', () => {
+  it.each(['*/30 * * * *', 'a b c d e', '* * *'])('rejects invalid cron schedule %s', (cron) => {
     expect(() =>
-      CreateCredentialBodySchema.parse({ name: 'Key', value: 'secret', rotationSchedule: '* * *' })
+      CreateCredentialBodySchema.parse({ name: 'Key', value: 'secret', rotationSchedule: cron })
     ).toThrow()
   })
 

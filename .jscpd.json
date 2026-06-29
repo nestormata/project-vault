@@ -5,6 +5,7 @@
   "ignore": [
     "packages/db/src/schema/**",
     "packages/db/src/migrations/**",
+    "**/*test-helpers*",
     "**/node_modules/**",
     "**/dist/**",
     "**/build/**",

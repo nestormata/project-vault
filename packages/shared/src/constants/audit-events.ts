@@ -17,6 +17,9 @@ export const AuditEvent = {
   CREDENTIAL_VALUE_REVEALED: 'credential.value_revealed',
   CREDENTIAL_VERSION_PURGED: 'credential.version_purged',
   CREDENTIAL_TAGS_UPDATED: 'credential.tags_updated',
+  CREDENTIAL_DEPENDENCY_ADDED: 'credential.dependency_added',
+  CREDENTIAL_DEPENDENCY_ARCHIVED: 'credential.dependency_archived',
+  CREDENTIAL_LIFECYCLE_UPDATED: 'credential.lifecycle_updated',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -33,6 +36,9 @@ export type AuditEventType =
   | 'credential.value_revealed'
   | 'credential.version_purged'
   | 'credential.tags_updated'
+  | 'credential.dependency_added'
+  | 'credential.dependency_archived'
+  | 'credential.lifecycle_updated'
 
 export type AuditEvent = {
   type: AuditEventType
