@@ -1,6 +1,6 @@
 # Story 2.3: Credential Search, Filter & Tag Management
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-27 - comprehensive developer guide for the first credential collection (list/search/filter) endpoint, credential + project tag management, the canonical FR97 pagination implementation for the credential list, and the RS-E2a CI lint rule (scripts/check-search-index.ts) that makes indexing credential values structurally impossible. -->
 
