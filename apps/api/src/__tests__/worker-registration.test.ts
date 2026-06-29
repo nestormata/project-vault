@@ -17,4 +17,19 @@ describe('credentials:prune-versions registration (AC-8 R3)', () => {
     expect(schedulesBlock).toContain("'credentials:prune-versions'")
     expect(workersBlock).toContain("'credentials:prune-versions'")
   })
+
+  it('keeps the projects migration before the credentials migration (AC-11B O4)', () => {
+    const journal = JSON.parse(
+      readFileSync(
+        resolve(process.cwd(), '../../packages/db/src/migrations/meta/_journal.json'),
+        'utf-8'
+      )
+    ) as { entries: { tag: string; idx: number }[] }
+    const projects = journal.entries.find((entry) => entry.tag === '0013_projects')
+    const credentials = journal.entries.find((entry) => entry.tag === '0014_credentials')
+
+    expect(projects).toBeDefined()
+    expect(credentials).toBeDefined()
+    expect(projects?.idx).toBeLessThan(credentials?.idx ?? -1)
+  })
 })

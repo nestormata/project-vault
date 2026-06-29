@@ -11,6 +11,10 @@ export class VersionConflictError extends Error {
   }
 }
 
+type RevealCurrentValueResult =
+  | { status: 'found'; value: string; versionNumber: number }
+  | { status: 'not_found'; reason: 'not_found' | 'all_versions_purged' }
+
 function isUniqueViolation(error: unknown): boolean {
   const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
   if (!cause || typeof cause !== 'object') return false
@@ -166,9 +170,9 @@ export async function addCredentialVersion(
 export async function revealCurrentValue(
   tx: Tx,
   params: { credentialId: string; projectId: string }
-) {
+): Promise<RevealCurrentValueResult> {
   const credential = await findCredentialInProject(tx, params)
-  if (!credential) return null
+  if (!credential) return { status: 'not_found', reason: 'not_found' }
 
   const [version] = await tx
     .select({
@@ -185,13 +189,15 @@ export async function revealCurrentValue(
     .orderBy(desc(credentialVersions.versionNumber))
     .limit(1)
 
-  if (!version || !version.encryptedValue) return null
+  if (!version || !version.encryptedValue) {
+    return { status: 'not_found', reason: 'all_versions_purged' }
+  }
 
   // reveal path: Buffer->string permitted here (the one sanctioned conversion site)
   const value = await withSecret(version.encryptedValue, async (plaintext) =>
     plaintext.toString('utf8')
   )
-  return { value, versionNumber: version.versionNumber }
+  return { status: 'found', value, versionNumber: version.versionNumber }
 }
 
 export async function listVersionHistory(

@@ -25,6 +25,10 @@ describe('credential create body schema', () => {
     expect(() => CreateCredentialBodySchema.parse({ name: 'Key', value: '' })).toThrow()
   })
 
+  it('rejects a whitespace-only name after trimming', () => {
+    expect(() => CreateCredentialBodySchema.parse({ name: '   ', value: 'secret' })).toThrow()
+  })
+
   it('rejects a value over 65536 chars', () => {
     expect(() =>
       CreateCredentialBodySchema.parse({ name: 'Key', value: 'a'.repeat(65537) })

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { credentialVersions, credentials, projects } from '@project-vault/db/schema'
@@ -79,6 +79,19 @@ async function seedVersion(
   return version.id
 }
 
+/** Seeds a project + credential, then `versionCount` plain versions (1..N), and runs the prune job. */
+async function seedAndPruneVersions(
+  orgId: string,
+  retentionCount: number,
+  versionCount: number
+): Promise<string> {
+  const projectId = await seedProject(orgId)
+  const credentialId = await seedCredential(orgId, projectId, retentionCount)
+  for (let n = 1; n <= versionCount; n += 1) await seedVersion(orgId, credentialId, n)
+  await pruneCredentialVersions()
+  return credentialId
+}
+
 async function versionsFor(orgId: string, credentialId: string) {
   return withOrg(orgId, (tx) =>
     tx
@@ -110,11 +123,7 @@ describe.sequential('pruneCredentialVersions', () => {
 
   it('prunes versions beyond retentionCount (default 3): with 5 versions, the oldest 2 are purged', async () => {
     await withTestOrg(async ({ orgId }) => {
-      const projectId = await seedProject(orgId)
-      const credentialId = await seedCredential(orgId, projectId, 3)
-      for (let n = 1; n <= 5; n += 1) await seedVersion(orgId, credentialId, n)
-
-      await pruneCredentialVersions()
+      const credentialId = await seedAndPruneVersions(orgId, 3, 5)
 
       const versions = await versionsFor(orgId, credentialId)
       const purged = versions.filter((v) => v.purgedAt !== null)
@@ -130,11 +139,7 @@ describe.sequential('pruneCredentialVersions', () => {
 
   it('respects a per-credential retentionCount override (1 keeps only the newest)', async () => {
     await withTestOrg(async ({ orgId }) => {
-      const projectId = await seedProject(orgId)
-      const credentialId = await seedCredential(orgId, projectId, 1)
-      for (let n = 1; n <= 3; n += 1) await seedVersion(orgId, credentialId, n)
-
-      await pruneCredentialVersions()
+      const credentialId = await seedAndPruneVersions(orgId, 1, 3)
 
       const versions = await versionsFor(orgId, credentialId)
       const live = versions.filter((v) => v.purgedAt === null)
@@ -159,11 +164,7 @@ describe.sequential('pruneCredentialVersions', () => {
 
   it('writes a credential.version_purged audit row per purged version with actorType system', async () => {
     await withTestOrg(async ({ orgId }) => {
-      const projectId = await seedProject(orgId)
-      const credentialId = await seedCredential(orgId, projectId, 1)
-      for (let n = 1; n <= 3; n += 1) await seedVersion(orgId, credentialId, n)
-
-      await pruneCredentialVersions()
+      await seedAndPruneVersions(orgId, 1, 3)
 
       const auditRows = await withOrg(orgId, (tx) =>
         tx
@@ -237,6 +238,7 @@ describe.sequential('pruneCredentialVersions', () => {
     const { env } = await import('../config/env.js')
     const original = env.CREDENTIAL_RETENTION_DRY_RUN
     Object.assign(env, { CREDENTIAL_RETENTION_DRY_RUN: true })
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 
     try {
       await withTestOrg(async ({ orgId }) => {
@@ -244,11 +246,28 @@ describe.sequential('pruneCredentialVersions', () => {
         const credentialId = await seedCredential(orgId, projectId, 1)
         for (let n = 1; n <= 3; n += 1) await seedVersion(orgId, credentialId, n)
 
-        await pruneCredentialVersions()
+        await pruneCredentialVersions(logger)
 
         const versions = await versionsFor(orgId, credentialId)
         expect(versions.every((v) => v.purgedAt === null)).toBe(true)
         expect(versions.every((v) => v.encryptedValue !== null)).toBe(true)
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'credential.retention.dry_run',
+            orgId,
+            credentialId,
+            versionNumber: 1,
+          }),
+          'credential retention dry-run candidate'
+        )
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'credential.retention.dry_run',
+            orgId,
+            versionsWouldPurge: 2,
+          }),
+          'credential retention dry-run summary'
+        )
       })
     } finally {
       Object.assign(env, { CREDENTIAL_RETENTION_DRY_RUN: original })

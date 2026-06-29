@@ -1,21 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { sql } from 'drizzle-orm'
 import { getDb, withOrg } from '../index.js'
 import { credentialVersions, credentials, projects } from '../schema/index.js'
-import { withTestOrg } from '../test-helpers.js'
-
-async function createTestUser(label: string): Promise<string> {
-  const [user] = await getDb().execute(
-    sql`INSERT INTO users (email, password_hash)
-        VALUES (${`cred-rls-${label}-${crypto.randomUUID()}@example.com`}, 'x')
-        RETURNING id`
-  )
-  return (user as { id: string }).id
-}
-
-async function deleteTestUser(userId: string): Promise<void> {
-  await getDb().execute(sql`DELETE FROM users WHERE id = ${userId}`)
-}
+import { createTestUser, deleteTestUser, withTestOrg } from '../test-helpers.js'
 
 async function createTestProject(orgId: string, userId: string, slug: string): Promise<string> {
   const [project] = await withOrg(orgId, (tx) =>

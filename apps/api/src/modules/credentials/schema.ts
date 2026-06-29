@@ -9,7 +9,7 @@ const CRON_REGEX = /^(\S+\s+){4}\S+$/ // structural 5-field check only; full sem
 
 export const CreateCredentialBodySchema = z
   .object({
-    name: z.string().min(1).max(256).trim(),
+    name: z.string().trim().min(1).max(256),
     value: z.string().min(1).max(65536), // value is NEVER trimmed (whitespace may be significant)
     description: z.string().max(1024).trim().nullable().optional(),
     tags: z.array(z.string().min(1).max(50)).max(20).optional(),

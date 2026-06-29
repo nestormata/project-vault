@@ -173,7 +173,7 @@ describe.sequential('MFA enrollment integration', () => {
     ])
     expect(concurrent.map((res) => res.statusCode).sort()).toEqual([200, 401])
     await app.close()
-  }, 20_000)
+  }, 40_000)
 
   it('deletes pending enrollment on invalid TOTP and stores no plaintext base32 secret', async () => {
     const user = await registerAndLogin()

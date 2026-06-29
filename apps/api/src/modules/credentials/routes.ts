@@ -1,16 +1,14 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyRequest } from 'fastify'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
-import { validationError } from '../../lib/route-helpers.js'
+import { parseBody, parseParams } from '../../lib/route-helpers.js'
+import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import {
-  SameTransactionAuditWriteError,
-  secureRoute,
-  type SecureRouteContext,
-} from '../../lib/secure-route.js'
-import { firstActorTokenIdForUser } from '../audit/actor-token.js'
-import { writeHumanAuditEntry } from '../audit/human-entry.js'
+  writeHumanAuditEntryOrFailClosed,
+  type SameTransactionAuditInput,
+} from '../../lib/audit-or-fail-closed.js'
 import {
   AddVersionBodySchema,
   AddVersionResponseSchema,
@@ -32,36 +30,8 @@ import {
   revealCurrentValue,
 } from './service.js'
 
-type CredentialAuditInput = {
-  orgId: string
-  actorUserId: string
+type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType: 'credential.created' | 'credential.version_created' | 'credential.value_revealed'
-  resourceId: string
-  payload: Record<string, unknown>
-  request: FastifyRequest
-}
-
-async function writeCredentialAudit(tx: Tx, input: CredentialAuditInput): Promise<void> {
-  try {
-    const actorTokenId = await firstActorTokenIdForUser(tx, input.actorUserId)
-    await writeHumanAuditEntry(tx, {
-      orgId: input.orgId,
-      actorTokenId,
-      eventType: input.eventType,
-      resourceId: input.resourceId,
-      resourceType: 'credential',
-      payload: input.payload,
-      meta: {
-        ipAddress: input.request.ip,
-        userAgent:
-          typeof input.request.headers['user-agent'] === 'string'
-            ? input.request.headers['user-agent']
-            : null,
-      },
-    })
-  } catch (error) {
-    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
-  }
 }
 
 async function writeCredentialAuditOrFailClosed(
@@ -70,7 +40,7 @@ async function writeCredentialAuditOrFailClosed(
   input: CredentialAuditInput
 ): Promise<void> {
   try {
-    await writeCredentialAudit(tx, input)
+    await writeHumanAuditEntryOrFailClosed(tx, { ...input, resourceType: 'credential' })
   } catch (error) {
     req.log.error(
       {
@@ -85,48 +55,12 @@ async function writeCredentialAuditOrFailClosed(
   }
 }
 
-function parseBody<T>(
-  schema: {
-    safeParse: (
-      body: unknown
-    ) =>
-      | { success: true; data: T }
-      | { success: false; error: { issues: { path: PropertyKey[]; message: string }[] } }
-  },
-  req: FastifyRequest,
-  reply: FastifyReply
-): { success: true; data: T } | { success: false } {
-  const parsed = schema.safeParse(req.body)
-  if (!parsed.success) {
-    reply.status(422).send(validationError(parsed.error, 'body'))
-    return { success: false }
-  }
-  return { success: true, data: parsed.data }
-}
-
-function parseProjectScopeParams(req: FastifyRequest, reply: FastifyReply) {
-  const parsed = ProjectScopeParamsSchema.safeParse(req.params)
-  if (!parsed.success) {
-    reply.status(422).send(validationError(parsed.error, 'params'))
-    return null
-  }
-  return parsed.data
-}
-
-function parseCredentialParams(req: FastifyRequest, reply: FastifyReply) {
-  const parsed = CredentialParamsSchema.safeParse(req.params)
-  if (!parsed.success) {
-    reply.status(422).send(validationError(parsed.error, 'params'))
-    return null
-  }
-  return parsed.data
-}
-
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const CREDENTIAL_NOT_FOUND = {
   code: 'credential_not_found',
   message: 'Credential not found',
 } as const
+const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
 
 export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
@@ -151,7 +85,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseProjectScopeParams(req, reply)
+      const params = parseParams(ProjectScopeParamsSchema, req, reply)
       if (!params) return reply
       const parsed = parseBody<CreateCredentialBody>(CreateCredentialBodySchema, req, reply)
       if (!parsed.success) return reply
@@ -203,7 +137,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseCredentialParams(req, reply)
+      const params = parseParams(CredentialParamsSchema, req, reply)
       if (!params) return reply
       const parsed = parseBody<AddVersionBody>(AddVersionBodySchema, req, reply)
       if (!parsed.success) return reply
@@ -267,7 +201,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseCredentialParams(req, reply)
+      const params = parseParams(CredentialParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
 
@@ -281,22 +215,38 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         'Credential value reveal attempted'
       )
 
-      const revealed = await revealCurrentValue(secureCtx.tx, params)
-      if (!revealed) {
+      let revealed: Awaited<ReturnType<typeof revealCurrentValue>>
+      try {
+        revealed = await revealCurrentValue(secureCtx.tx, params)
+      } catch (error) {
         req.log.warn(
           {
             eventType: OperationalEvent.CREDENTIAL_REVEAL_FAILURE,
             orgId: secureCtx.auth.orgId,
             credentialId: params.credentialId,
-            reason: 'not_found',
+            reason: 'decrypt_error',
           },
-          'Credential value reveal failed'
+          CREDENTIAL_REVEAL_FAILED_MESSAGE
+        )
+        throw error
+      }
+
+      if (revealed.status === 'not_found') {
+        req.log.warn(
+          {
+            eventType: OperationalEvent.CREDENTIAL_REVEAL_FAILURE,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+            reason: revealed.reason,
+          },
+          CREDENTIAL_REVEAL_FAILED_MESSAGE
         )
         return reply.status(404).send(CREDENTIAL_NOT_FOUND)
       }
 
       try {
-        await writeCredentialAudit(secureCtx.tx, {
+        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+          resourceType: 'credential',
           orgId: secureCtx.auth.orgId,
           actorUserId: secureCtx.auth.userId,
           eventType: 'credential.value_revealed',
@@ -321,7 +271,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
             credentialId: params.credentialId,
             reason: 'audit_write_failed',
           },
-          'Credential value reveal failed'
+          CREDENTIAL_REVEAL_FAILED_MESSAGE
         )
         throw error
       }
@@ -359,7 +309,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: { minimumRole: 'viewer', writeAuditEvent: false },
     handler: async (ctx, req, reply) => {
-      const params = parseCredentialParams(req, reply)
+      const params = parseParams(CredentialParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
 

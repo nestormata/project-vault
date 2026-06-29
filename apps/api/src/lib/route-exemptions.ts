@@ -172,7 +172,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/projects': {
     action: 'mutation',
     auditEvent: 'project.created',
-    sameTransactionAuditService: 'writeProjectAudit',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
   'GET /api/v1/projects': {
     action: 'read',
@@ -187,7 +187,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'PATCH /api/v1/projects/:projectId': {
     action: 'mutation',
     auditEvent: 'project.updated',
-    sameTransactionAuditService: 'writeProjectAudit',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
   'POST /api/v1/projects/:projectId/credentials': {
     action: 'mutation',
@@ -202,7 +202,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'GET /api/v1/projects/:projectId/credentials/:credentialId/value': {
     action: 'sensitive-read',
     auditEvent: 'credential.value_revealed',
-    sameTransactionAuditService: 'writeCredentialAudit',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
   'GET /api/v1/projects/:projectId/credentials/:credentialId/versions': {
     action: 'read',

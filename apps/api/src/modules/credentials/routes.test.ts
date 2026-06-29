@@ -4,18 +4,16 @@ import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditLogEntries, credentialVersions, orgMemberships } from '@project-vault/db/schema'
 import {
-  configureAuthIntegrationEnv,
+  assertRoutesFailClosedWhileSealed,
+  bootstrapRouteIntegrationTest,
   cookieHeader,
+  expectAuditWriteFailed,
   initVaultForTest,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
-configureAuthIntegrationEnv()
-
-const { createApp } = await import('../../app.js')
-const { initVault } = await import('../vault/key-service.js')
-const humanAudit = await import('../audit/human-entry.js')
+const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 type RegisteredUser = { userId: string; orgId: string; cookies: Record<string, string> }
@@ -23,11 +21,6 @@ type RegisteredUser = { userId: string; orgId: string; cookies: Record<string, s
 const TEST_PASSPHRASE = 'credential-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const SENTINEL_VALUE = 'sentinel-credential-value-never-leaks'
-
-function expectAuditWriteFailed(response: Awaited<ReturnType<TestApp['inject']>>) {
-  expect(response.statusCode).toBe(503)
-  expect(response.json()).toMatchObject({ code: 'audit_write_failed' })
-}
 
 async function createTestProject(app: TestApp, cookies: Record<string, string>, slug: string) {
   const response = await app.inject({
@@ -63,6 +56,61 @@ async function createTestCredential(
   })
   expect(response.statusCode).toBe(201)
   return response.json<{ data: CredentialDetail }>().data
+}
+
+async function revealValue(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  credentialId: string
+) {
+  return app.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${projectId}/credentials/${credentialId}/value`,
+    headers: { cookie: cookieHeader(cookies) },
+  })
+}
+
+async function addVersion(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  credentialId: string,
+  value: string
+) {
+  return app.inject({
+    method: 'POST',
+    url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { value },
+  })
+}
+
+async function listVersions(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  credentialId: string
+) {
+  return app.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
+    headers: { cookie: cookieHeader(cookies) },
+  })
+}
+
+async function purgeVersion(orgId: string, credentialId: string, versionNumber: number) {
+  await withOrg(orgId, (tx) =>
+    tx
+      .update(credentialVersions)
+      .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date() })
+      .where(
+        and(
+          eq(credentialVersions.credentialId, credentialId),
+          eq(credentialVersions.versionNumber, versionNumber)
+        )
+      )
+  )
 }
 
 describe.sequential('credential routes', () => {
@@ -175,6 +223,7 @@ describe.sequential('credential routes', () => {
       payload: { name: 'Key', value: 'secret', rotationSchedule: '* * *' },
     })
     expect(malformedCron.statusCode).toBe(422)
+    expect(malformedCron.json()).toMatchObject({ code: 'invalid_cron' })
   }, 20_000)
 
   it('POST returns 404 for a project outside the caller org and 401 when unauthenticated', async () => {
@@ -222,11 +271,7 @@ describe.sequential('credential routes', () => {
       value: 'reveal-secret-v1',
     })
 
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/value`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const res = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ data: { value: 'reveal-secret-v1', versionNumber: 1 } })
 
@@ -248,18 +293,9 @@ describe.sequential('credential routes', () => {
       value: 'v1-value',
     })
 
-    await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { value: 'v2-value' },
-    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'v2-value')
 
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/value`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const res = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ data: { value: 'v2-value', versionNumber: 2 } })
   }, 20_000)
@@ -270,30 +306,10 @@ describe.sequential('credential routes', () => {
       name: 'Purge-Top Key',
       value: 'v1-value',
     })
-    await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { value: 'v2-value' },
-    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'v2-value')
+    await purgeVersion(owner.orgId, credential.id, 2)
 
-    await withOrg(owner.orgId, (tx) =>
-      tx
-        .update(credentialVersions)
-        .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date() })
-        .where(
-          and(
-            eq(credentialVersions.credentialId, credential.id),
-            eq(credentialVersions.versionNumber, 2)
-          )
-        )
-    )
-
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/value`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const res = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ data: { value: 'v1-value', versionNumber: 1 } })
   }, 20_000)
@@ -313,11 +329,7 @@ describe.sequential('credential routes', () => {
     })
     expect(missing.statusCode).toBe(404)
 
-    const wrongProject = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${otherProjectId}/credentials/${credential.id}/value`,
-      headers: { cookie: cookieHeader(other.cookies) },
-    })
+    const wrongProject = await revealValue(app, other.cookies, otherProjectId, credential.id)
     expect(wrongProject.statusCode).toBe(404)
 
     await withOrg(owner.orgId, (tx) =>
@@ -326,11 +338,7 @@ describe.sequential('credential routes', () => {
         .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date() })
         .where(eq(credentialVersions.credentialId, credential.id))
     )
-    const allPurged = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/value`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const allPurged = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(allPurged.statusCode).toBe(404)
   }, 20_000)
 
@@ -345,11 +353,7 @@ describe.sequential('credential routes', () => {
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error('forced audit failure'))
 
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/value`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const res = await revealValue(app, owner.cookies, projectId, credential.id)
     expectAuditWriteFailed(res)
     expect(JSON.stringify(res.json())).not.toContain('should-not-leak')
 
@@ -370,12 +374,7 @@ describe.sequential('credential routes', () => {
       value: 'same-value',
     })
 
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { value: 'same-value' },
-    })
+    const res = await addVersion(app, owner.cookies, projectId, credential.id, 'same-value')
     expect(res.statusCode).toBe(201)
     expect(res.json()).toMatchObject({ data: { credentialId: credential.id, versionNumber: 2 } })
 
@@ -445,18 +444,9 @@ describe.sequential('credential routes', () => {
       name: 'List Key',
       value: SENTINEL_VALUE,
     })
-    await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { value: 'second-version-value' },
-    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'second-version-value')
 
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const res = await listVersions(app, owner.cookies, projectId, credential.id)
     expect(res.statusCode).toBe(200)
     const body = res.json<{
       data: { items: { versionNumber: number; isCurrent: boolean; purgedAt: string | null }[] }
@@ -467,22 +457,8 @@ describe.sequential('credential routes', () => {
     ])
     expect(JSON.stringify(body)).not.toContain(SENTINEL_VALUE)
 
-    await withOrg(owner.orgId, (tx) =>
-      tx
-        .update(credentialVersions)
-        .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date() })
-        .where(
-          and(
-            eq(credentialVersions.credentialId, credential.id),
-            eq(credentialVersions.versionNumber, 2)
-          )
-        )
-    )
-    const afterPurge = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    await purgeVersion(owner.orgId, credential.id, 2)
+    const afterPurge = await listVersions(app, owner.cookies, projectId, credential.id)
     const afterPurgeBody = afterPurge.json<{
       data: { items: { versionNumber: number; isCurrent: boolean; purgedAt: string | null }[] }
     }>()
@@ -494,39 +470,28 @@ describe.sequential('credential routes', () => {
   it('GET versions returns 404 when the credential is missing', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'versions-404-project')
 
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${randomUUID()}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const res = await listVersions(app, owner.cookies, projectId, randomUUID())
     expect(res.statusCode).toBe(404)
   }, 20_000)
 
   it('security regression: the credential value never appears in any non-reveal response body', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'no-leak-project')
-
-    const created = await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { name: 'Sentinel Key', value: SENTINEL_VALUE },
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Sentinel Key',
+      value: SENTINEL_VALUE,
     })
-    expect(JSON.stringify(created.json())).not.toContain(SENTINEL_VALUE)
-    const credentialId = created.json<{ data: CredentialDetail }>().data.id
+    expect(JSON.stringify(credential)).not.toContain(SENTINEL_VALUE)
 
-    const addedVersion = await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { value: SENTINEL_VALUE },
-    })
+    const addedVersion = await addVersion(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      SENTINEL_VALUE
+    )
     expect(JSON.stringify(addedVersion.json())).not.toContain(SENTINEL_VALUE)
 
-    const versionList = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const versionList = await listVersions(app, owner.cookies, projectId, credential.id)
     expect(JSON.stringify(versionList.json())).not.toContain(SENTINEL_VALUE)
   }, 20_000)
 
@@ -552,53 +517,43 @@ describe.sequential('credential routes', () => {
     })
     expect(createDenied.statusCode).toBe(403)
 
-    const revealDenied = await app.inject({
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/value`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const revealDenied = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(revealDenied.statusCode).toBe(403)
 
-    const addVersionDenied = await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/versions`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { value: 'secret-2' },
-    })
+    const addVersionDenied = await addVersion(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'secret-2'
+    )
     expect(addVersionDenied.statusCode).toBe(403)
   }, 20_000)
 
   it('credential routes fail closed while the vault is sealed', async () => {
-    await app.close()
-    await resetVaultForTest()
-    app = await createApp({ logger: false, vaultGuardEnabled: true })
-
     const projectId = randomUUID()
     const credentialId = randomUUID()
-    for (const request of [
-      {
-        method: 'POST',
-        url: `/api/v1/projects/${projectId}/credentials`,
-        payload: { name: 'Sealed', value: 'secret' },
-      },
-      {
-        method: 'GET',
-        url: `/api/v1/projects/${projectId}/credentials/${credentialId}/value`,
-      },
-      {
-        method: 'POST',
-        url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
-        payload: { value: 'secret' },
-      },
-      {
-        method: 'GET',
-        url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
-      },
-    ] as const) {
-      const res = await app.inject(request)
-      expect(res.statusCode).toBe(503)
-      expect(res.json()).toMatchObject({ status: 'sealed' })
-    }
+    app = await assertRoutesFailClosedWhileSealed(
+      app,
+      () => createApp({ logger: false, vaultGuardEnabled: true }),
+      [
+        {
+          method: 'POST',
+          url: `/api/v1/projects/${projectId}/credentials`,
+          payload: { name: 'Sealed', value: 'secret' },
+        },
+        { method: 'GET', url: `/api/v1/projects/${projectId}/credentials/${credentialId}/value` },
+        {
+          method: 'POST',
+          url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
+          payload: { value: 'secret' },
+        },
+        {
+          method: 'GET',
+          url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
+        },
+      ]
+    )
 
     await app.close()
     await initVaultForTest(initVault, TEST_PASSPHRASE)

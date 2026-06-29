@@ -1,17 +1,11 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
-import { getDb } from '@project-vault/db'
 import type { Tx } from '@project-vault/db'
-import {
-  auditLogEntries,
-  credentialVersions,
-  credentials,
-  organizations,
-} from '@project-vault/db/schema'
+import { auditLogEntries, credentialVersions, credentials } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyBaseLogger } from 'fastify'
 import { env } from '../config/env.js'
 import { operationalLog } from '../lib/logger.js'
-import { runOrgScopedJob } from '../middleware/rls.js'
+import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
@@ -22,11 +16,6 @@ type PurgeCandidate = {
   id: string
   credentialId: string
   versionNumber: number
-}
-
-async function fetchAllOrgIds(): Promise<string[]> {
-  const rows = await getDb().select({ orgId: organizations.id }).from(organizations)
-  return rows.map((row) => row.orgId)
 }
 
 async function purgeCandidatesForCredential(
@@ -56,7 +45,21 @@ async function purgeCandidatesForCredential(
   }))
 }
 
-async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): Promise<void> {
+async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): Promise<boolean> {
+  const [lockedCandidate] = await tx
+    .select({ id: credentialVersions.id })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.id, candidate.id),
+        isNull(credentialVersions.rotationLockedAt),
+        isNull(credentialVersions.purgedAt)
+      )
+    )
+    .for('update')
+    .limit(1)
+  if (!lockedCandidate) return false
+
   // Zero-overwrite then null: defense-in-depth/intent-signaling, not byte-level erasure
   // under PostgreSQL MVCC (see AC-8 MVCC caveat) — true shredding is key destruction at
   // master-key rotation (Epic 5+).
@@ -102,11 +105,13 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     keyVersion,
     hmac,
   })
+  return true
 }
 
 async function pruneOrgCredentialVersions(
   orgId: string,
-  dryRun: boolean
+  dryRun: boolean,
+  logger?: WorkerLogger
 ): Promise<{ credentialsScanned: number; versionsPurged: number; versionsWouldPurge: number }> {
   const orgCredentials = await runOrgScopedJob(orgId, 'credentials:prune-versions', ({ tx }) =>
     tx
@@ -131,12 +136,27 @@ async function pruneOrgCredentialVersions(
 
       if (dryRun) {
         versionsWouldPurge += candidates.length
+        if (logger) {
+          for (const candidate of candidates) {
+            operationalLog(
+              logger,
+              'info',
+              OperationalEvent.CREDENTIAL_RETENTION_DRY_RUN,
+              'credential retention dry-run candidate',
+              {
+                orgId,
+                credentialId: candidate.credentialId,
+                versionNumber: candidate.versionNumber,
+              }
+            )
+          }
+        }
         return
       }
 
       for (const candidate of candidates) {
-        await purgeVersion(tx, orgId, candidate)
-        versionsPurged += 1
+        const purged = await purgeVersion(tx, orgId, candidate)
+        if (purged) versionsPurged += 1
       }
     })
   }
@@ -149,7 +169,7 @@ export async function pruneCredentialVersions(logger?: WorkerLogger): Promise<vo
   const orgIds = await fetchAllOrgIds()
 
   for (const orgId of orgIds) {
-    const result = await pruneOrgCredentialVersions(orgId, dryRun)
+    const result = await pruneOrgCredentialVersions(orgId, dryRun, logger)
     if (result.credentialsScanned === 0) continue
 
     if (dryRun) {

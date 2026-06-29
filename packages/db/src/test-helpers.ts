@@ -1,6 +1,20 @@
 import { sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from './index.js'
 
+/** Inserts a bare test user (RLS isolation specs only need a valid created_by FK target). */
+export async function createTestUser(label: string): Promise<string> {
+  const [user] = await getDb().execute(
+    sql`INSERT INTO users (email, password_hash)
+        VALUES (${`${label}-${crypto.randomUUID()}@example.com`}, 'x')
+        RETURNING id`
+  )
+  return (user as { id: string }).id
+}
+
+export async function deleteTestUser(userId: string): Promise<void> {
+  await getDb().execute(sql`DELETE FROM users WHERE id = ${userId}`)
+}
+
 // audit_log_entries is append-only — blocked by both the prevent_audit_log_mutation()
 // trigger and (since 0002_audit_log_revoke.sql) a grant-layer REVOKE on vault_app,
 // which fires first since PostgreSQL checks table privileges before triggers. A test
