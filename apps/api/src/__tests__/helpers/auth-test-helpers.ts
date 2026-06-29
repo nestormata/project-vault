@@ -66,6 +66,7 @@ type InjectableApp = {
     method: string
     url: string
     payload?: unknown
+    headers?: Record<string, string>
   }) => Promise<{ statusCode: number; json: <T>() => T }>
 }
 
@@ -77,7 +78,12 @@ type InjectableApp = {
 export async function assertRoutesFailClosedWhileSealed<TApp extends InjectableApp>(
   currentApp: TApp,
   createSealedApp: () => Promise<TApp>,
-  requests: readonly { method: string; url: string; payload?: unknown }[]
+  requests: readonly {
+    method: string
+    url: string
+    payload?: unknown
+    headers?: Record<string, string>
+  }[]
 ): Promise<TApp> {
   await currentApp.close()
   const { resetVaultForTest } = await import('./vault-test-cleanup.js')

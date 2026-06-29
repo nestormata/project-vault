@@ -960,6 +960,14 @@ describe.sequential('credential routes', () => {
           method: 'GET',
           url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
         },
+        {
+          method: 'POST',
+          url: `/api/v1/projects/${projectId}/credentials/import/confirm`,
+          payload: {
+            importId: randomUUID(),
+            defaultAction: 'skip',
+          },
+        },
       ]
     )
 

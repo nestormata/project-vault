@@ -3,47 +3,49 @@ import { describe, expect, it } from 'vitest'
 import { getDb, withOrg } from '../index.js'
 import { credentialDependencies } from '../schema/index.js'
 import { createTestUser, deleteTestUser, withTestOrg } from '../test-helpers.js'
-import { createCredentialTestProject, insertTestCredential } from './credential-test-helpers.js'
+import {
+  createCredentialTestProject,
+  insertTestCredential,
+  withTwoTestOrgs,
+} from './credential-test-helpers.js'
 describe('credential_dependencies RLS cross-org isolation', () => {
   it('isolates credential_dependencies rows by org', async () => {
     const userId = await createTestUser('credential-deps')
     try {
-      await withTestOrg(async ({ orgId: orgAId }) => {
-        await withTestOrg(async ({ orgId: orgBId }) => {
-          const projectAId = await createCredentialTestProject(orgAId, userId, 'proj-a')
-          const projectBId = await createCredentialTestProject(orgBId, userId, 'proj-b')
+      await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+        const projectAId = await createCredentialTestProject(orgAId, userId, 'proj-a')
+        const projectBId = await createCredentialTestProject(orgBId, userId, 'proj-b')
 
-          const credentialAId = await insertTestCredential(orgAId, projectAId, userId, 'Cred A')
-          const credentialBId = await insertTestCredential(orgBId, projectBId, userId, 'Cred B')
+        const credentialAId = await insertTestCredential(orgAId, projectAId, userId, 'Cred A')
+        const credentialBId = await insertTestCredential(orgBId, projectBId, userId, 'Cred B')
 
-          await withOrg(orgAId, (tx) =>
-            tx.insert(credentialDependencies).values({
-              orgId: orgAId,
-              credentialId: credentialAId,
-              systemName: 'service-a',
-              createdBy: userId,
-            })
-          )
-          await withOrg(orgBId, (tx) =>
-            tx.insert(credentialDependencies).values({
-              orgId: orgBId,
-              credentialId: credentialBId,
-              systemName: 'service-b',
-              createdBy: userId,
-            })
-          )
+        await withOrg(orgAId, (tx) =>
+          tx.insert(credentialDependencies).values({
+            orgId: orgAId,
+            credentialId: credentialAId,
+            systemName: 'service-a',
+            createdBy: userId,
+          })
+        )
+        await withOrg(orgBId, (tx) =>
+          tx.insert(credentialDependencies).values({
+            orgId: orgBId,
+            credentialId: credentialBId,
+            systemName: 'service-b',
+            createdBy: userId,
+          })
+        )
 
-          const orgADeps = await withOrg(orgAId, (tx) => tx.select().from(credentialDependencies))
-          expect(orgADeps).toHaveLength(1)
-          expect(orgADeps[0]?.orgId).toBe(orgAId)
+        const orgADeps = await withOrg(orgAId, (tx) => tx.select().from(credentialDependencies))
+        expect(orgADeps).toHaveLength(1)
+        expect(orgADeps[0]?.orgId).toBe(orgAId)
 
-          const orgBDeps = await withOrg(orgBId, (tx) => tx.select().from(credentialDependencies))
-          expect(orgBDeps).toHaveLength(1)
-          expect(orgBDeps[0]?.orgId).toBe(orgBId)
+        const orgBDeps = await withOrg(orgBId, (tx) => tx.select().from(credentialDependencies))
+        expect(orgBDeps).toHaveLength(1)
+        expect(orgBDeps[0]?.orgId).toBe(orgBId)
 
-          const bareDeps = await getDb().select().from(credentialDependencies)
-          expect(bareDeps).toHaveLength(0)
-        })
+        const bareDeps = await getDb().select().from(credentialDependencies)
+        expect(bareDeps).toHaveLength(0)
       })
     } finally {
       await deleteTestUser(userId)

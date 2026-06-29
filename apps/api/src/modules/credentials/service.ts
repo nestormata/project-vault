@@ -4,12 +4,12 @@ import {
   credentialVersions,
   credentials,
   projects,
-  vaultState,
   credentialDependencies,
 } from '@project-vault/db/schema'
 import { encrypt, withSecret, type EncryptedValue } from '@project-vault/crypto'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
 import { getPrimaryKey } from '../vault/key-service.js'
+import { currentKeyVersion, isUniqueViolation } from './db-helpers.js'
 import type {
   AddVersionBody,
   CreateCredentialBody,
@@ -35,17 +35,6 @@ type CredentialListParams = {
   offset: number
 }
 type TagUpdateMode = 'replace' | 'append'
-
-function isUniqueViolation(error: unknown): boolean {
-  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
-  if (!cause || typeof cause !== 'object') return false
-  return (cause as { code?: string }).code === '23505'
-}
-
-async function currentKeyVersion(tx: Tx): Promise<number> {
-  const [vs] = await tx.select({ keyVersion: vaultState.keyVersion }).from(vaultState).limit(1)
-  return vs?.keyVersion ?? 1
-}
 
 async function encryptValue(value: string): Promise<EncryptedValue> {
   const plaintext = Buffer.from(value, 'utf8')

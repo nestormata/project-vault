@@ -8,6 +8,7 @@ import {
   MAX_CREDENTIAL_LIST_OFFSET,
   TagArrayBodySchema,
   TagUpdateResponseSchema,
+  ImportConfirmBodySchema,
 } from './schema.js'
 
 const PROJECT_ID = `00000000-0000-4000-8000-${'000000000010'}`
@@ -182,5 +183,35 @@ describe('credential list and tag schemas', () => {
     expect(TagUpdateResponseSchema.parse({ data: { id: CREDENTIAL_ID, tags: ['prod'] } })).toEqual({
       data: { id: CREDENTIAL_ID, tags: ['prod'] },
     })
+  })
+})
+
+describe('import confirm body schema', () => {
+  const IMPORT_ID = `00000000-0000-4000-8000-${'000000000200'}`
+
+  it('accepts a valid confirm body', () => {
+    expect(
+      ImportConfirmBodySchema.parse({
+        importId: IMPORT_ID,
+        defaultAction: 'new_version',
+        overrides: { API_KEY: 'skip' },
+      })
+    ).toMatchObject({ importId: IMPORT_ID, defaultAction: 'new_version' })
+  })
+
+  it('rejects unknown keys (.strict)', () => {
+    expect(() =>
+      ImportConfirmBodySchema.parse({
+        importId: IMPORT_ID,
+        defaultAction: 'skip',
+        orgId: PROJECT_ID,
+      })
+    ).toThrow()
+  })
+
+  it('rejects invalid importId UUID', () => {
+    expect(() =>
+      ImportConfirmBodySchema.parse({ importId: 'not-a-uuid', defaultAction: 'skip' })
+    ).toThrow()
   })
 })

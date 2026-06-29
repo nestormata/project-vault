@@ -1,5 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { OperationalEvent, validateRotationCron } from '@project-vault/shared'
+import {
+  OperationalEvent,
+  ImportValidationError,
+  validateRotationCron,
+} from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -32,6 +36,10 @@ import {
   ListCredentialsQuerySchema,
   ListCredentialsResponseSchema,
   ListDependenciesQuerySchema,
+  ImportConfirmBodySchema,
+  ImportConfirmResponseSchema,
+  ImportErrorResponseSchema,
+  ImportPreviewResponseSchema,
   MAX_CREDENTIAL_LIST_OFFSET,
   ProjectScopeParamsSchema,
   TagArrayBodySchema,
@@ -42,6 +50,7 @@ import {
   type CreateCredentialBody,
   type TagArrayBody,
   type UpdateCredentialLifecycleBody,
+  type ImportConfirmBody,
 } from './schema.js'
 import {
   VersionConflictError,
@@ -60,6 +69,12 @@ import {
   listCredentialDependencies,
   updateCredentialLifecycle,
 } from './dependencies-service.js'
+import {
+  confirmCredentialImport,
+  detectImportFileType,
+  stageCredentialImport,
+} from './import-service.js'
+import type { AuditConfig } from '../../lib/secure-route.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType:
@@ -70,6 +85,94 @@ type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
     | 'credential.dependency_added'
     | 'credential.dependency_archived'
     | 'credential.lifecycle_updated'
+}
+
+type ImportAuditRequest = FastifyRequest & {
+  importAuditPayload?: Record<string, unknown>
+}
+
+async function writeImportBatchAudit({
+  tx,
+  auth,
+  request,
+  config,
+}: {
+  tx: Tx
+  auth: SecureRouteContext['auth']
+  request: FastifyRequest
+  config: AuditConfig
+}): Promise<void> {
+  const params = request.params as Record<string, unknown>
+  const resourceId =
+    config.resourceIdFromParams && typeof params[config.resourceIdFromParams] === 'string'
+      ? (params[config.resourceIdFromParams] as string)
+      : undefined
+  if (config.resourceIdFromParams && !resourceId) {
+    throw new Error(`SecureRoute: missing audit resourceId param "${config.resourceIdFromParams}"`)
+  }
+  const payload = (request as ImportAuditRequest).importAuditPayload ?? {}
+  await writeHumanAuditEntryOrFailClosed(tx, {
+    resourceType: config.resourceType ?? 'project',
+    orgId: auth.orgId,
+    actorUserId: auth.userId,
+    eventType: config.eventType,
+    resourceId: resourceId as string,
+    payload,
+    request,
+  })
+}
+
+async function readImportUpload(
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<{ filename: string; content: string } | null> {
+  let upload: { filename: string; content: string } | null = null
+  try {
+    for await (const part of req.parts()) {
+      if (part.type === 'file') {
+        if (part.fieldname !== 'file' || upload) {
+          await part.toBuffer()
+          reply.status(422).send({ code: 'unknown_field', message: 'Unknown form field' })
+          return null
+        }
+        if (!part.filename) {
+          await part.toBuffer()
+          reply.status(422).send({
+            code: 'missing_filename',
+            message: 'File must have a filename to determine its type',
+          })
+          return null
+        }
+        const buffer = await part.toBuffer()
+        upload = { filename: part.filename, content: buffer.toString('utf8') }
+        continue
+      }
+      void part.value
+      reply.status(422).send({ code: 'unknown_field', message: 'Unknown form field' })
+      return null
+    }
+  } catch (error) {
+    const code = (error as { code?: string }).code
+    if (code === 'FST_REQ_FILE_TOO_LARGE') {
+      reply.status(422).send({
+        code: 'file_too_large',
+        message: 'Import file must be 1 MB or smaller',
+        limitBytes: 1_048_576,
+      })
+      return null
+    }
+    throw error
+  }
+
+  if (!upload) {
+    reply.status(422).send({
+      code: 'missing_filename',
+      message: 'File must have a filename to determine its type',
+    })
+    return null
+  }
+
+  return upload
 }
 
 async function writeCredentialAuditOrFailClosed(
@@ -309,6 +412,215 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
 
       reply.status(201)
       return { data: detail }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/import',
+    schema: {
+      response: {
+        201: ImportPreviewResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ImportErrorResponseSchema,
+      },
+    },
+    security: {
+      allowedRoles: ['owner', 'admin'],
+      requireMfa: false,
+      rateLimit: {
+        max: 20,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/credentials/import',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectScopeParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const upload = await readImportUpload(req, reply)
+      if (!upload) return reply
+
+      const fileType = detectImportFileType(upload.filename)
+      if (fileType === 'unsupported') {
+        return reply.status(422).send({
+          code: 'unsupported_file_type',
+          message: 'Only .env and .json files are supported',
+          supportedExtensions: ['.env', '.json'],
+        })
+      }
+
+      let staged
+      try {
+        staged = await stageCredentialImport(secureCtx.tx, {
+          orgId: secureCtx.auth.orgId,
+          projectId: params.projectId,
+          userId: secureCtx.auth.userId,
+          fileType,
+          content: upload.content,
+        })
+      } catch (error) {
+        if (error instanceof ImportValidationError) {
+          return reply.status(422).send({ code: error.code, message: error.message })
+        }
+        throw error
+      }
+
+      if (staged.status === 'project_not_found') {
+        return reply.status(404).send(PROJECT_NOT_FOUND)
+      }
+      if (staged.status === 'too_large') {
+        return reply.status(422).send({
+          code: 'import_too_large',
+          message: 'Import file contains too many credentials',
+          limit: 500,
+          found: staged.found,
+        })
+      }
+
+      const { preview } = staged
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_IMPORT_PARSE_COMPLETED,
+          orgId: secureCtx.auth.orgId,
+          projectId: params.projectId,
+          fileType: preview.operational.fileType,
+          itemCount: preview.itemCount,
+          warningCount: preview.operational.warningCount,
+          conflictCount: preview.operational.conflictCount,
+        },
+        'Credential import parse completed'
+      )
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_IMPORT_ENCRYPTED,
+          orgId: secureCtx.auth.orgId,
+          projectId: params.projectId,
+          importId: preview.importId,
+          itemCount: preview.itemCount,
+        },
+        'Credential import values encrypted'
+      )
+
+      ;(req as ImportAuditRequest).importAuditPayload = preview.auditPayload
+      await writeImportBatchAudit({
+        tx: secureCtx.tx,
+        auth: secureCtx.auth,
+        request: req,
+        config: {
+          eventType: 'credential.bulk_import_initiated',
+          resourceType: 'project',
+          resourceIdFromParams: 'projectId',
+        },
+      })
+      reply.status(201)
+      return { data: preview }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/import/confirm',
+    schema: {
+      body: ImportConfirmBodySchema,
+      response: {
+        200: ImportConfirmResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        410: ImportErrorResponseSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      allowedRoles: ['owner', 'admin'],
+      requireMfa: false,
+      rateLimit: {
+        max: 20,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/credentials/import/confirm',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectScopeParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody<ImportConfirmBody>(ImportConfirmBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const confirmed = await confirmCredentialImport(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        projectId: params.projectId,
+        userId: secureCtx.auth.userId,
+        importId: parsed.data.importId,
+        defaultAction: parsed.data.defaultAction,
+        overrides: parsed.data.overrides,
+      })
+
+      if (confirmed.status === 'not_found') {
+        return reply.status(404).send({
+          code: 'import_not_found',
+          message: 'Import not found',
+        })
+      }
+      if (confirmed.status === 'expired') {
+        req.log.info(
+          {
+            eventType: OperationalEvent.CREDENTIAL_IMPORT_EXPIRED_ON_CONFIRM,
+            orgId: secureCtx.auth.orgId,
+            projectId: params.projectId,
+            importId: parsed.data.importId,
+          },
+          'Credential import expired on confirm'
+        )
+        return reply.status(410).send({
+          code: 'import_expired',
+          message: 'Import preview has expired. Please upload the file again.',
+          expiredAt: confirmed.expiredAt,
+        })
+      }
+
+      for (const audit of confirmed.perCredentialAudits) {
+        await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+          orgId: secureCtx.auth.orgId,
+          actorUserId: secureCtx.auth.userId,
+          eventType: audit.eventType,
+          resourceId: audit.resourceId,
+          payload: audit.payload,
+          request: req,
+        })
+      }
+
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_IMPORT_CONFIRMED,
+          orgId: secureCtx.auth.orgId,
+          projectId: params.projectId,
+          importId: confirmed.result.auditPayload.importId,
+          imported: confirmed.result.imported,
+          newVersions: confirmed.result.newVersions,
+          skipped: confirmed.result.skipped,
+        },
+        'Credential import confirmed'
+      )
+
+      ;(req as ImportAuditRequest).importAuditPayload = confirmed.result.auditPayload
+      await writeImportBatchAudit({
+        tx: secureCtx.tx,
+        auth: secureCtx.auth,
+        request: req,
+        config: {
+          eventType: 'credential.bulk_import_confirmed',
+          resourceType: 'project',
+          resourceIdFromParams: 'projectId',
+        },
+      })
+      return { data: confirmed.result }
     },
   })
 

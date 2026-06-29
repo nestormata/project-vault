@@ -257,6 +257,16 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Access list returns org-role metadata only; never any credential value (ADR-2.4-06).',
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/projects/:projectId/credentials/import': {
+    action: 'mutation',
+    auditEvent: 'credential.bulk_import_initiated',
+    sameTransactionAuditService: 'writeImportBatchAudit',
+  },
+  'POST /api/v1/projects/:projectId/credentials/import/confirm': {
+    action: 'mutation',
+    auditEvent: 'credential.bulk_import_confirmed',
+    sameTransactionAuditService: 'writeImportBatchAudit',
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
@@ -307,6 +317,13 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     path: 'workers/prune-pending-mfa-sessions.ts',
     classification: IDENTITY_CLEANUP_JOB,
     reason: 'Prunes identity-scoped pending MFA login rows by expiration and attempt cap.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/import-cleanup.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Cross-org cleanup of expired pending_imports rows; no credential values are read — only metadata rows are deleted.',
     reviewer: SECURITY_OWNER,
   },
 ]

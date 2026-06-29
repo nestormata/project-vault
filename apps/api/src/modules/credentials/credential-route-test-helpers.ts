@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import FormData from 'form-data'
 import { expect } from 'vitest'
 import type { createApp } from '../../app.js'
 import {
@@ -129,4 +130,47 @@ export function credentialHasDependencies(
   return response
     .json<{ data: { items: { id: string; hasDependencies: boolean }[] } }>()
     .data.items.find((item) => item.id === credentialId)?.hasDependencies
+}
+
+export function credentialImportUrl(projectId: string, confirm = false) {
+  return `/api/v1/projects/${projectId}/credentials/import${confirm ? '/confirm' : ''}`
+}
+
+export function buildImportMultipart(body: string, filename: string) {
+  const form = new FormData()
+  form.append('file', Buffer.from(body, 'utf8'), { filename, contentType: 'text/plain' })
+  return {
+    payload: form,
+    headers: form.getHeaders(),
+  }
+}
+
+export async function uploadCredentialImport(
+  app: CredentialRouteTestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  body: string,
+  filename: string
+) {
+  const multipart = buildImportMultipart(body, filename)
+  return app.inject({
+    method: 'POST',
+    url: credentialImportUrl(projectId),
+    headers: { cookie: cookieHeader(cookies), ...multipart.headers },
+    payload: multipart.payload,
+  })
+}
+
+export async function confirmCredentialImport(
+  app: CredentialRouteTestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  payload: Record<string, unknown>
+) {
+  return app.inject({
+    method: 'POST',
+    url: credentialImportUrl(projectId, true),
+    headers: { cookie: cookieHeader(cookies) },
+    payload,
+  })
 }

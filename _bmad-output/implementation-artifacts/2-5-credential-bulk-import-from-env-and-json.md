@@ -1,6 +1,6 @@
 # Story 2.5: Credential Bulk Import from .env & JSON
 
-Status: ready-for-dev
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-28 - comprehensive developer guide for the two-step bulk import flow (parse/preview → confirm), the pending_imports table with 15-minute TTL, the .env and JSON file parsers, three conflict-resolution actions (new_version, skip, create_new), encrypted value staging, and the import:cleanup-expired pg-boss job. This story intentionally reuses the same encrypt() → credential_versions insert path that Story 2.2 established, and must never touch existing credential metadata (dependencies, rotationSchedule, notes, tags). Advanced elicitation pass (2026-06-28) applied 5 methods (Pre-mortem, Security Audit Personas, Self-Consistency Validation, Devil's Advocate, Failure Mode Analysis) — findings accepted: getPrimaryKey() called once before encryption loop; SELECT FOR UPDATE on confirm to prevent concurrent double-execution; suffix includes loop index to prevent same-ms collision; resolveAction() remaps new_version for non-conflicting items regardless of override vs default; duplicate-key deduplication added to env parser with last-occurrence-wins semantics; admin pool BYPASSRLS requirement clarified; cleanup job logs deleted importIds for audit correlation; non-conflicting race condition documented as residual risk. -->
 
@@ -1293,68 +1293,68 @@ Do NOT implement in Story 2.5:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: `pending_imports` schema + migration** (AC: 1, 2)
-  - [ ] Create `packages/db/src/schema/pending-imports.ts` (JSONB items, file_type CHECK, item_count CHECK, no updated_at).
-  - [ ] Export from `packages/db/src/schema/index.ts`.
-  - [ ] `pnpm --filter @project-vault/db generate`; confirm next free number against `meta/_journal.json` (e.g. `0017_pending_imports.sql`); confirm both CHECK constraints emitted (hand-add if drizzle-kit omits).
-  - [ ] Add the RLS policy to the migration (no set_updated_at trigger — intentional).
-  - [ ] `pnpm --filter @project-vault/db check-rls` (no gap; do NOT exclude the table) + `migrate`.
-- [ ] **Task 2: DB-layer RLS isolation test** (AC: 12) — write `pending-imports-rls-isolation.test.ts`; confirm it fails before schema exists, passes after.
-- [ ] **Task 3: Shared parsers + schemas** (AC: 3, 4, 9)
-  - [ ] Create `packages/shared/src/utils/env-parser.ts` + `env-parser.test.ts` (red first).
-  - [ ] Create `packages/shared/src/utils/json-import-parser.ts` + `json-import-parser.test.ts` (red first).
-  - [ ] Create `packages/shared/src/schemas/imports.ts` with response schemas.
-  - [ ] Export all from `packages/shared/src/index.ts`.
-  - [ ] `pnpm --filter @project-vault/shared test`.
-- [ ] **Task 4: Add `@fastify/multipart` to API** (AC: 5)
-  - [ ] `pnpm --filter @project-vault/api add @fastify/multipart`
-  - [ ] Register in `apps/api/src/app.ts` with `limits: { fileSize: 1_048_576 }`.
-  - [ ] Add `@types/node` is already present; no additional type packages needed.
-- [ ] **Task 5: API schemas for import routes** (AC: 9)
-  - [ ] Extend `apps/api/src/modules/credentials/schema.ts` with `ImportParamsSchema`, `ImportConfirmBodySchema`.
-  - [ ] Unit-test `.strict()` rejection, importId UUID validation, overrides map validation.
-- [ ] **Task 6: POST /import parse & preview route** (AC: 5, 10, 11) — failing test first
-  - [ ] Multipart file extraction with `request.file()`.
-  - [ ] File type detection from filename extension.
-  - [ ] File size limit enforcement (catch multipart fileSize error).
-  - [ ] Parse file using the appropriate shared parser (env or JSON).
-  - [ ] 500-entry count check → `422 import_too_large`.
-  - [ ] Project existence check → `404 project_not_found`.
-  - [ ] Batch conflict detection (single IN query against credentials).
-  - [ ] Value encryption via `encrypt(plaintext, getPrimaryKey())`.
-  - [ ] Insert `pending_imports` row.
-  - [ ] Return preview with `[REDACTED]` values.
-  - [ ] Custom audit writer stashing `{ importId, itemCount, fileType }`.
-- [ ] **Task 7: POST /import/confirm route** (AC: 6, 7, 10, 11) — failing test first
-  - [ ] Load + validate import record (existence + expiry check → 404/410).
-  - [ ] Action resolution per item (defaultAction + overrides, non-conflicting remapping).
-  - [ ] Single-transaction application of all actions (new_version, create_new, skip).
-  - [ ] `new_version`: monotonic versionNumber via MAX + 1; ciphertext direct transfer; metadata preservation (no credentials row update).
-  - [ ] `create_new` (conflicting): suffix `_imported_<unix_ms>_<n>` (timestamp + 0-based loop index, e.g. `Date.now() + '_' + itemIndex`).
-  - [ ] `create_new` (non-conflicting): original name, no suffix.
-  - [ ] Per-credential audit events inside transaction.
-  - [ ] Hard-delete `pending_imports` after commit.
-  - [ ] Return results summary.
-- [ ] **Task 8: `import:cleanup-expired` pg-boss job** (AC: 8, 10) — failing test first
-  - [ ] Create `apps/api/src/workers/import-cleanup.ts`.
-  - [ ] Register in `workers/index.ts`.
-  - [ ] Add to `DIRECT_DB_ACCESS_CLASSIFICATIONS`.
-  - [ ] Unit test: expired rows deleted, non-expired preserved, idempotent.
-- [ ] **Task 9: Route registration + audit constants** (AC: 10)
-  - [ ] Register both routes in `routes.ts`; confirm both are in `ROUTE_FILES`.
-  - [ ] Add `credential.bulk_import_initiated` and `credential.bulk_import_confirmed` to `AuditEventType`.
-  - [ ] Classify both in `ROUTE_ACTION_CLASSIFICATIONS`.
-  - [ ] Run `route-audit.test.ts` in isolation — both routes must appear.
-- [ ] **Task 10: Security regression + sentinel-scan + metadata preservation** (AC: 11, 12)
-  - [ ] Sentinel-scan test: import a file with a known plaintext value; assert it never appears in preview or confirm response.
-  - [ ] Metadata-preservation test: confirm existing credential's expiresAt/rotationSchedule/tags/dependencies are unchanged after new_version import.
-  - [ ] Audit-failure rollback test: force audit write failure during confirm; assert no credentials or versions created.
-- [ ] **Task 11: Final verification** (AC: all)
-  - [ ] `pnpm --filter @project-vault/db test` + `check-rls`.
-  - [ ] `pnpm --filter @project-vault/api test` (integration + route-audit).
-  - [ ] `pnpm --filter @project-vault/shared test`.
-  - [ ] `pnpm check-search-index` (still clean — import never indexes values).
-  - [ ] `pnpm typecheck` + `pnpm lint` at repo root.
+- [x] **Task 1: `pending_imports` schema + migration** (AC: 1, 2)
+  - [x] Create `packages/db/src/schema/pending-imports.ts` (JSONB items, file_type CHECK, item_count CHECK, no updated_at).
+  - [x] Export from `packages/db/src/schema/index.ts`.
+  - [x] `pnpm --filter @project-vault/db generate`; confirm next free number against `meta/_journal.json` (e.g. `0017_pending_imports.sql`); confirm both CHECK constraints emitted (hand-add if drizzle-kit omits).
+  - [x] Add the RLS policy to the migration (no set_updated_at trigger — intentional).
+  - [x] `pnpm --filter @project-vault/db check-rls` (no gap; do NOT exclude the table) + `migrate`.
+- [x] **Task 2: DB-layer RLS isolation test** (AC: 12) — write `pending-imports-rls-isolation.test.ts`; confirm it fails before schema exists, passes after.
+- [x] **Task 3: Shared parsers + schemas** (AC: 3, 4, 9)
+  - [x] Create `packages/shared/src/utils/env-parser.ts` + `env-parser.test.ts` (red first).
+  - [x] Create `packages/shared/src/utils/json-import-parser.ts` + `json-import-parser.test.ts` (red first).
+  - [x] Create `packages/shared/src/schemas/imports.ts` with response schemas.
+  - [x] Export all from `packages/shared/src/index.ts`.
+  - [x] `pnpm --filter @project-vault/shared test`.
+- [x] **Task 4: Add `@fastify/multipart` to API** (AC: 5)
+  - [x] `pnpm --filter @project-vault/api add @fastify/multipart`
+  - [x] Register in `apps/api/src/app.ts` with `limits: { fileSize: 1_048_576 }`.
+  - [x] Add `@types/node` is already present; no additional type packages needed.
+- [x] **Task 5: API schemas for import routes** (AC: 9)
+  - [x] Extend `apps/api/src/modules/credentials/schema.ts` with `ImportParamsSchema`, `ImportConfirmBodySchema`.
+  - [x] Unit-test `.strict()` rejection, importId UUID validation, overrides map validation.
+- [x] **Task 6: POST /import parse & preview route** (AC: 5, 10, 11) — failing test first
+  - [x] Multipart file extraction with `request.file()`.
+  - [x] File type detection from filename extension.
+  - [x] File size limit enforcement (catch multipart fileSize error).
+  - [x] Parse file using the appropriate shared parser (env or JSON).
+  - [x] 500-entry count check → `422 import_too_large`.
+  - [x] Project existence check → `404 project_not_found`.
+  - [x] Batch conflict detection (single IN query against credentials).
+  - [x] Value encryption via `encrypt(plaintext, getPrimaryKey())`.
+  - [x] Insert `pending_imports` row.
+  - [x] Return preview with `[REDACTED]` values.
+  - [x] Custom audit writer stashing `{ importId, itemCount, fileType }`.
+- [x] **Task 7: POST /import/confirm route** (AC: 6, 7, 10, 11) — failing test first
+  - [x] Load + validate import record (existence + expiry check → 404/410).
+  - [x] Action resolution per item (defaultAction + overrides, non-conflicting remapping).
+  - [x] Single-transaction application of all actions (new_version, create_new, skip).
+  - [x] `new_version`: monotonic versionNumber via MAX + 1; ciphertext direct transfer; metadata preservation (no credentials row update).
+  - [x] `create_new` (conflicting): suffix `_imported_<unix_ms>_<n>` (timestamp + 0-based loop index, e.g. `Date.now() + '_' + itemIndex`).
+  - [x] `create_new` (non-conflicting): original name, no suffix.
+  - [x] Per-credential audit events inside transaction.
+  - [x] Hard-delete `pending_imports` after commit.
+  - [x] Return results summary.
+- [x] **Task 8: `import:cleanup-expired` pg-boss job** (AC: 8, 10) — failing test first
+  - [x] Create `apps/api/src/workers/import-cleanup.ts`.
+  - [x] Register in `workers/index.ts`.
+  - [x] Add to `DIRECT_DB_ACCESS_CLASSIFICATIONS`.
+  - [x] Unit test: expired rows deleted, non-expired preserved, idempotent.
+- [x] **Task 9: Route registration + audit constants** (AC: 10)
+  - [x] Register both routes in `routes.ts`; confirm both are in `ROUTE_FILES`.
+  - [x] Add `credential.bulk_import_initiated` and `credential.bulk_import_confirmed` to `AuditEventType`.
+  - [x] Classify both in `ROUTE_ACTION_CLASSIFICATIONS`.
+  - [x] Run `route-audit.test.ts` in isolation — both routes must appear.
+- [x] **Task 10: Security regression + sentinel-scan + metadata preservation** (AC: 11, 12)
+  - [x] Sentinel-scan test: import a file with a known plaintext value; assert it never appears in preview or confirm response.
+  - [x] Metadata-preservation test: confirm existing credential's expiresAt/rotationSchedule/tags/dependencies are unchanged after new_version import.
+  - [x] Audit-failure rollback test: force audit write failure during confirm; assert no credentials or versions created.
+- [x] **Task 11: Final verification** (AC: all)
+  - [x] `pnpm --filter @project-vault/db test` + `check-rls`.
+  - [x] `pnpm --filter @project-vault/api test` (integration + route-audit).
+  - [x] `pnpm --filter @project-vault/shared test`.
+  - [x] `pnpm check-search-index` (still clean — import never indexes values).
+  - [x] `pnpm typecheck` + `pnpm lint` at repo root.
 
 ---
 
@@ -1593,10 +1593,47 @@ Pattern observations (verified in the live tree via Story 2.4 Git Intelligence):
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+Claude Sonnet (Cursor Agent)
 
 ### Debug Log References
 
+- `make ci` green after fixing OpenAPI params on `/credentials/import*` routes, vault-guard 503 schema mismatch, admin DB URL for cleanup worker, and jscpd duplicates.
+- Worker job registered as `import/cleanup-expired` (pg-boss disallows `:` in queue names).
+
 ### Completion Notes List
 
+- Added `pending_imports` staging table (migration `0018`) with RLS, env/json parsers, multipart upload + confirm routes, import service, cleanup worker, audit/operational events, and integration tests (382 API tests pass).
+- Import routes registered before `/:credentialId` routes; OpenAPI omits `params` on import paths (handler still validates via `parseParams`) to avoid swagger ref resolution errors.
+- Removed `503: ApiErrorSchema` from import route response schemas so vault-guard `{ status: 'sealed' }` responses are not rejected by the serializer.
+- `getAdminDb()` uses `ADMIN_DATABASE_URL` or postgres superuser only (never `vault_app`); `Makefile` test target and API `setup-env.ts` set `ADMIN_DATABASE_URL` for cleanup worker tests.
+
 ### File List
+
+- `packages/db/src/schema/pending-imports.ts`
+- `packages/db/src/migrations/0018_pending_imports.sql`
+- `packages/db/src/__tests__/pending-imports-rls-isolation.test.ts`
+- `packages/db/src/__tests__/pending-import-test-helpers.ts`
+- `packages/db/src/__tests__/credential-test-helpers.ts` (withTwoTestOrgs)
+- `packages/shared/src/utils/env-parser.ts`
+- `packages/shared/src/utils/env-parser.test.ts`
+- `packages/shared/src/utils/json-import-parser.ts`
+- `packages/shared/src/utils/json-import-parser.test.ts`
+- `packages/shared/src/schemas/imports.ts`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/constants/operational-event-types.ts`
+- `packages/shared/src/constants/mfa-exempt-routes.ts`
+- `apps/api/src/lib/db.ts`
+- `apps/api/src/app.ts`
+- `apps/api/src/main.ts`
+- `apps/api/src/lib/route-exemptions.ts`
+- `apps/api/src/__tests__/setup-env.ts`
+- `apps/api/src/modules/credentials/import-service.ts`
+- `apps/api/src/modules/credentials/db-helpers.ts`
+- `apps/api/src/modules/credentials/credential-integration-context.ts`
+- `apps/api/src/modules/credentials/routes.ts`
+- `apps/api/src/modules/credentials/schema.ts`
+- `apps/api/src/modules/credentials/credential-import.test.ts`
+- `apps/api/src/modules/credentials/credential-route-test-helpers.ts`
+- `apps/api/src/workers/import-cleanup.ts`
+- `apps/api/src/workers/import-cleanup.test.ts`
+- `Makefile`
