@@ -216,7 +216,7 @@ async function createAlertIfNeeded(
   windowStart: Date,
   windowEnd: Date
 ): Promise<void> {
-  await runOrgScopedJob(breach.orgId, 'security:check-failed-auth-threshold', async ({ tx }) => {
+  await runOrgScopedJob(breach.orgId, 'security/check-failed-auth-threshold', async ({ tx }) => {
     // Serialize concurrent job runs against the same breach identity (AC-9c) so the
     // check-then-insert below can't race across overlapping `runFailedAuthThresholdCheck()` calls.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${dedupLockKey(breach)}))`)
@@ -263,7 +263,7 @@ export async function checkFailedAuthThresholdHandler(): Promise<void> {
     await runFailedAuthThresholdCheck()
   } catch (error) {
     process.stderr.write(
-      `${JSON.stringify({ eventType: 'job.failed', job: 'security:check-failed-auth-threshold', error: error instanceof Error ? error.message : String(error) })}\n`
+      `${JSON.stringify({ eventType: 'job.failed', job: 'security/check-failed-auth-threshold', error: error instanceof Error ? error.message : String(error) })}\n`
     )
     throw error
   }

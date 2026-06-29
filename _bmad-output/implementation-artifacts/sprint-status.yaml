@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-28  # updated: 2-1 -> done, 2-5 -> ready-for-dev, 2-6 -> ready-for-dev, 2-7 -> ready-for-dev, 2-2 -> done
+last_updated: 2026-06-28  # updated: 2-1 -> done, 2-5 -> ready-for-dev, 2-6 -> ready-for-dev, 2-7 -> ready-for-dev, 2-2 -> done, epic-3 -> in-progress, 3-1 -> ready-for-dev, 3-2 -> ready-for-dev, 3-3 -> ready-for-dev
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -71,10 +71,10 @@ development_status:
   epic-2-retrospective: optional
 
   # Epic 3: Notification Infrastructure — Alert Delivery, Routing & In-App Inbox
-  epic-3: backlog
-  3-1-email-and-slack-notification-delivery: backlog
-  3-2-notification-preferences-and-per-alert-type-routing: backlog
-  3-3-in-product-notification-inbox: backlog
+  epic-3: in-progress
+  3-1-email-and-slack-notification-delivery: ready-for-dev
+  3-2-notification-preferences-and-per-alert-type-routing: ready-for-dev
+  3-3-in-product-notification-inbox: ready-for-dev
   epic-3-retrospective: optional
 
   # Epic 4: Team & Organization Management — Roles, Invitations, Access & Lifecycle

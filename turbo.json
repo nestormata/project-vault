@@ -9,6 +9,11 @@
     "METRICS_BIND_HOST",
     "NODE_ENV"
   ],
+  "globalPassThroughEnv": [
+    "VAULT_ALLOW_REMOTE_INIT",
+    "VAULT_BOOTSTRAP_TOKEN",
+    "VAULT_ENVELOPE_KEY_HALF"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

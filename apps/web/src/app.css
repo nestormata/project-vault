@@ -1,1 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+
+@source "./**/*.{svelte,ts}";
+@source "../../../packages/shared/src/**/*.ts";

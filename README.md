@@ -113,6 +113,9 @@ export VAULT_BOOTSTRAP_TOKEN=$(openssl rand -base64 32)
 pnpm turbo dev
 ```
 
+Start or restart `pnpm turbo dev` after exporting the vault token. Turbo runs in strict
+environment mode, so `turbo.json` must pass vault operator env vars through to the API task.
+
 Open http://localhost:5173. The root route checks vault readiness and sends you to the correct next step:
 
 1. If the vault is uninitialized, use **Initialize vault**. For local evaluation, choose **Passphrase**, paste the `VAULT_BOOTSTRAP_TOKEN` value from your shell into the bootstrap-token field, and enter a vault passphrase you can reuse for unseal.

@@ -1,6 +1,5 @@
-import { getTrustedApiBase } from '$lib/security/hardening.js'
+import { trustedApiBase } from './server-api-fetch.js'
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000'
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'content-length',
@@ -24,10 +23,6 @@ type ApiProxyOptions = ProxyOptions & {
   path: string
 }
 
-function trustedApiBase(apiBaseUrl?: string) {
-  return getTrustedApiBase({ API_BASE_URL: apiBaseUrl }) || DEFAULT_API_BASE_URL
-}
-
 function targetUrl(request: Request, apiBaseUrl: string | undefined, pathname: string) {
   const target = new URL(pathname, trustedApiBase(apiBaseUrl))
   target.search = new URL(request.url).search
@@ -42,6 +37,26 @@ function forwardedHeaders(request: Request) {
   return headers
 }
 
+function mutableProxyResponse(response: Response) {
+  const headers = new Headers(response.headers)
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
+function apiUnavailableResponse() {
+  return Response.json(
+    {
+      status: 'unavailable',
+      reason: 'api_unreachable',
+      message: 'Project Vault API is unavailable.',
+    },
+    { status: 503 }
+  )
+}
+
 async function proxyRequest({
   fetchFn,
   request,
@@ -49,13 +64,19 @@ async function proxyRequest({
   pathname,
 }: ProxyOptions & { pathname: string }) {
   const hasBody = !['GET', 'HEAD'].includes(request.method)
-  return fetchFn(
-    new Request(targetUrl(request, apiBaseUrl, pathname), {
-      method: request.method,
-      headers: forwardedHeaders(request),
-      ...(hasBody ? { body: request.body, duplex: 'half' } : {}),
-    } as RequestInit)
-  )
+  let response: Response
+  try {
+    response = await fetchFn(
+      new Request(targetUrl(request, apiBaseUrl, pathname), {
+        method: request.method,
+        headers: forwardedHeaders(request),
+        ...(hasBody ? { body: request.body, duplex: 'half' } : {}),
+      } as RequestInit)
+    )
+  } catch {
+    return apiUnavailableResponse()
+  }
+  return mutableProxyResponse(response)
 }
 
 export function proxyApiRequest({ path, ...options }: ApiProxyOptions) {

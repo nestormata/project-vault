@@ -82,28 +82,28 @@ async function main(): Promise<void> {
     if (bossRegistered) return
     await boss.registerSchedules({
       'prune-revoked-tokens': { cron: '0 * * * *' },
-      'mfa:prune-totp-used-codes': { cron: '0 * * * *' },
-      'mfa:prune-pending-mfa-sessions': { cron: '0 * * * *' },
-      'mfa:prune-pending': { cron: '0 0 * * *' },
-      'security:check-failed-auth-threshold': { cron: '* * * * *' },
-      'security:prune-failed-auth-attempts': { cron: '0 2 * * *' },
-      'credentials:prune-versions': { cron: '0 3 * * *' },
+      'mfa/prune-totp-used-codes': { cron: '0 * * * *' },
+      'mfa/prune-pending-mfa-sessions': { cron: '0 * * * *' },
+      'mfa/prune-pending': { cron: '0 0 * * *' },
+      'security/check-failed-auth-threshold': { cron: '* * * * *' },
+      'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
+      'credentials/prune-versions': { cron: '0 3 * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
-      'mfa:prune-totp-used-codes': () => pruneTotpUsedCodes(),
-      'mfa:prune-pending-mfa-sessions': () => prunePendingMfaSessions(),
-      'mfa:prune-pending': () => pruneMfaPendingEnrollments(),
-      'security:check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(),
-      'security:prune-failed-auth-attempts': (job) =>
+      'mfa/prune-totp-used-codes': () => pruneTotpUsedCodes(),
+      'mfa/prune-pending-mfa-sessions': () => prunePendingMfaSessions(),
+      'mfa/prune-pending': () => pruneMfaPendingEnrollments(),
+      'security/check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(),
+      'security/prune-failed-auth-attempts': (job) =>
         withJobLogging(
           fastify.log,
-          'security:prune-failed-auth-attempts',
+          'security/prune-failed-auth-attempts',
           job.id ?? 'unknown',
           () => pruneFailedAuthAttempts()
         ),
-      'credentials:prune-versions': (job) =>
-        withJobLogging(fastify.log, 'credentials:prune-versions', job.id ?? 'unknown', () =>
+      'credentials/prune-versions': (job) =>
+        withJobLogging(fastify.log, 'credentials/prune-versions', job.id ?? 'unknown', () =>
           pruneCredentialVersions(fastify.log)
         ),
     })
