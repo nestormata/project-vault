@@ -2,6 +2,7 @@ import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { credentialVersions, credentials, projects, vaultState } from '@project-vault/db/schema'
 import { encrypt, withSecret, type EncryptedValue } from '@project-vault/crypto'
+import { dedupeTags, tagDelta } from '../../lib/tags.js'
 import { getPrimaryKey } from '../vault/key-service.js'
 import type {
   AddVersionBody,
@@ -232,17 +233,6 @@ export async function findCredentialInProject(
     )
     .limit(1)
   return credential ?? null
-}
-
-function dedupeTags(tags: string[]): string[] {
-  return tags.filter((tag, index) => tags.indexOf(tag) === index)
-}
-
-function tagDelta(oldTags: string[], newTags: string[]) {
-  return {
-    added: newTags.filter((tag) => !oldTags.includes(tag)),
-    removed: oldTags.filter((tag) => !newTags.includes(tag)),
-  }
 }
 
 export async function updateCredentialTags(

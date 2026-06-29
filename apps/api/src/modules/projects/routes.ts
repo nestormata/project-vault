@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
+import { dedupeTags, tagDelta } from '../../lib/tags.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
@@ -39,17 +40,6 @@ function isProjectSlugTaken(error: unknown): boolean {
     pg.code === '23505' &&
     (pg.constraint === 'idx_projects_org_slug' || pg.constraint_name === 'idx_projects_org_slug')
   )
-}
-
-function dedupeTags(tags: string[]): string[] {
-  return tags.filter((tag, index) => tags.indexOf(tag) === index)
-}
-
-function tagDelta(oldTags: string[], newTags: string[]) {
-  return {
-    added: newTags.filter((tag) => !oldTags.includes(tag)),
-    removed: oldTags.filter((tag) => !newTags.includes(tag)),
-  }
 }
 
 async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {

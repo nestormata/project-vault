@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
+import { insertTestProject } from '@project-vault/db/test-helpers'
 import {
   auditLogEntries,
   organizations,
@@ -68,19 +69,7 @@ async function createProject(app: TestApp, cookies: Record<string, string>, slug
 }
 
 async function createProjectDirect(orgId: string, userId: string, slug: string) {
-  const [project] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(projects)
-      .values({
-        orgId,
-        name: `Project ${slug}`,
-        slug: `${slug}-${randomUUID().slice(0, 8)}`,
-        createdBy: userId,
-      })
-      .returning({ id: projects.id, tags: projects.tags })
-  )
-  if (!project) throw new Error('expected test project to be inserted')
-  return project
+  return insertTestProject(orgId, { userId, slug })
 }
 
 async function updateProjectTags(

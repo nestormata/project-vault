@@ -2,12 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import {
-  auditLogEntries,
-  credentialVersions,
-  orgMemberships,
-  projects,
-} from '@project-vault/db/schema'
+import { insertTestProject } from '@project-vault/db/test-helpers'
+import { auditLogEntries, credentialVersions, orgMemberships } from '@project-vault/db/schema'
 import {
   assertRoutesFailClosedWhileSealed,
   bootstrapRouteIntegrationTest,
@@ -45,19 +41,17 @@ async function createTestProject(app: TestApp, cookies: Record<string, string>, 
 }
 
 async function createTestProjectDirect(orgId: string, userId: string, slug: string) {
-  const [project] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(projects)
-      .values({
-        orgId,
-        name: `Project ${slug}`,
-        slug: `${slug}-${randomUUID().slice(0, 8)}`,
-        createdBy: userId,
-      })
-      .returning({ id: projects.id })
-  )
-  if (!project) throw new Error('expected test project to be inserted')
+  const project = await insertTestProject(orgId, { userId, slug })
   return project.id
+}
+
+type CredentialListByName = { data: { total: number; items: { name: string }[] } }
+
+function expectSingleCredentialNamed(response: { json<T>(): T }, name: string): void {
+  expect(response.json<CredentialListByName>().data).toMatchObject({
+    total: 1,
+    items: [expect.objectContaining({ name })],
+  })
 }
 
 type CredentialDetail = {
@@ -610,18 +604,10 @@ describe.sequential('credential routes', () => {
     })
 
     const tags = await listCredentials(app, owner.cookies, projectId, '?tags=payments,prod')
-    expect(tags.json<{ data: { total: number; items: { name: string }[] } }>().data).toMatchObject({
-      total: 1,
-      items: [expect.objectContaining({ name: STRIPE_PROD })],
-    })
+    expectSingleCredentialNamed(tags, STRIPE_PROD)
 
     const expiringDefault = await listCredentials(app, owner.cookies, projectId, '?status=expiring')
-    expect(
-      expiringDefault.json<{ data: { total: number; items: { name: string }[] } }>().data
-    ).toMatchObject({
-      total: 1,
-      items: [expect.objectContaining({ name: STRIPE_PROD })],
-    })
+    expectSingleCredentialNamed(expiringDefault, STRIPE_PROD)
 
     const expiringCustom = await listCredentials(
       app,

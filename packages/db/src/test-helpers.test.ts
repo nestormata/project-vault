@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { withTestOrg } from './test-helpers.js'
+import { createTestUser, deleteTestUser, insertTestProject, withTestOrg } from './test-helpers.js'
 import { getDb, withOrg } from './index.js'
-import { securityAlerts, auditLogEntries } from './schema/index.js'
+import { projects, securityAlerts, auditLogEntries } from './schema/index.js'
 
 describe('withTestOrg', () => {
   it('calls fn with a valid orgId and a usable tx', async () => {
@@ -80,5 +80,25 @@ describe('withTestOrg', () => {
       sql`SELECT id FROM organizations WHERE id = ${capturedOrgId}`
     )
     expect(orgRows).toHaveLength(1)
+  })
+})
+
+describe('insertTestProject', () => {
+  it('inserts a project with default tags under org RLS', async () => {
+    const userId = await createTestUser('insert-test-project')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const project = await insertTestProject(orgId, { userId, slug: 'payments' })
+        expect(project.id).toMatch(/^[0-9a-f-]{36}$/)
+        expect(project.tags).toEqual([])
+
+        const rows = await withOrg(orgId, (tx) =>
+          tx.select({ id: projects.id, tags: projects.tags }).from(projects)
+        )
+        expect(rows).toEqual([{ id: project.id, tags: [] }])
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
   })
 })
