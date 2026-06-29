@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
@@ -153,6 +153,20 @@ async function purgeVersion(orgId: string, credentialId: string, versionNumber: 
   )
 }
 
+async function credentialTagAuditRows(orgId: string, credentialId: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
+      .from(auditLogEntries)
+      .where(
+        and(
+          eq(auditLogEntries.eventType, 'credential.tags_updated'),
+          eq(auditLogEntries.resourceId, credentialId)
+        )
+      )
+  )
+}
+
 describe.sequential('credential routes', () => {
   let app: TestApp
   let owner: RegisteredUser
@@ -171,6 +185,10 @@ describe.sequential('credential routes', () => {
   afterAll(async () => {
     await app.close()
     await resetVaultForTest()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('POST creates a credential and first version, never returning the value', async () => {
@@ -706,6 +724,11 @@ describe.sequential('credential routes', () => {
     expect(replace.json()).toEqual({ data: { id: credential.id, tags: [PAYMENTS_TAG, PROD_TAG] } })
     expect(JSON.stringify(replace.json())).not.toContain(SENTINEL_VALUE)
 
+    const replaceAuditRows = await credentialTagAuditRows(owner.orgId, credential.id)
+    expect(
+      replaceAuditRows.some((row) => (row.payload as { mode?: string }).mode === 'replace')
+    ).toBe(true)
+
     const clear = await updateCredentialTags(
       app,
       owner.cookies,
@@ -717,18 +740,13 @@ describe.sequential('credential routes', () => {
     expect(clear.statusCode).toBe(200)
     expect(clear.json()).toEqual({ data: { id: credential.id, tags: [] } })
 
-    const auditRows = await withOrg(owner.orgId, (tx) =>
-      tx
-        .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
-        .from(auditLogEntries)
-        .where(eq(auditLogEntries.eventType, 'credential.tags_updated'))
-    )
+    const auditRows = await credentialTagAuditRows(owner.orgId, credential.id)
+    expect(auditRows.length).toBeGreaterThanOrEqual(2)
     expect(
       auditRows.some(
         (row) =>
-          row.resourceId === credential.id &&
           (row.payload as { mode?: string; added?: string[]; removed?: string[] }).mode ===
-            'replace'
+          'replace'
       )
     ).toBe(true)
     expect(JSON.stringify(auditRows)).not.toContain(SENTINEL_VALUE)

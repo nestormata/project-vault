@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq, isNull } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
@@ -58,6 +58,10 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
   afterAll(async () => {
     await app.close()
     await resetVaultForTest()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('POST dependency creates a row with audit and defaults systemType to other', async () => {
