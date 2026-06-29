@@ -1,5 +1,6 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
+import { SystemTypeSchema } from '@project-vault/shared'
 import {
   credentialDependencies,
   credentials,
@@ -14,11 +15,15 @@ import type {
 import { MAX_ACTIVE_DEPENDENCIES } from './schema.js'
 
 export function serializeDependency(row: typeof credentialDependencies.$inferSelect) {
+  const systemType = SystemTypeSchema.safeParse(row.systemType)
+  if (!systemType.success) {
+    throw new Error(`invalid credential dependency systemType: ${row.systemType}`)
+  }
   return {
     id: row.id,
     credentialId: row.credentialId,
     systemName: row.systemName,
-    systemType: row.systemType as 'service' | 'ci_pipeline' | 'database' | 'third_party' | 'other',
+    systemType: systemType.data,
     notes: row.notes,
     createdBy: row.createdBy,
     archivedAt: row.archivedAt?.toISOString() ?? null,
@@ -27,17 +32,18 @@ export function serializeDependency(row: typeof credentialDependencies.$inferSel
   }
 }
 
-async function credentialExistsInProject(
+async function credentialInProject(
   tx: Tx,
-  params: { credentialId: string; projectId: string }
+  params: { credentialId: string; projectId: string },
+  lock = false
 ): Promise<boolean> {
-  const [cred] = await tx
+  const query = tx
     .select({ id: credentials.id })
     .from(credentials)
     .where(
       and(eq(credentials.id, params.credentialId), eq(credentials.projectId, params.projectId))
     )
-    .limit(1)
+  const [cred] = await (lock ? query.for('update') : query).limit(1)
   return Boolean(cred)
 }
 
@@ -65,11 +71,15 @@ export async function addCredentialDependency(
     body: AddDependencyBody
   }
 ) {
-  const exists = await credentialExistsInProject(tx, {
-    credentialId: input.credentialId,
-    projectId: input.projectId,
-  })
-  if (!exists) return { status: 'not_found' as const }
+  const locked = await credentialInProject(
+    tx,
+    {
+      credentialId: input.credentialId,
+      projectId: input.projectId,
+    },
+    true
+  )
+  if (!locked) return { status: 'not_found' as const }
 
   const countResult = await tx
     .select({ count: sql<number>`count(*)` })
@@ -109,7 +119,7 @@ export async function listCredentialDependencies(
     query: ListDependenciesQuery
   }
 ) {
-  const exists = await credentialExistsInProject(tx, {
+  const exists = await credentialInProject(tx, {
     credentialId: input.credentialId,
     projectId: input.projectId,
   })
@@ -142,11 +152,11 @@ export async function archiveCredentialDependency(
     dependencyId: string
   }
 ) {
-  const exists = await credentialExistsInProject(tx, {
+  const exists = await credentialInProject(tx, {
     credentialId: input.credentialId,
     projectId: input.projectId,
   })
-  if (!exists) return { status: 'not_found' as const }
+  if (!exists) return { status: 'credential_not_found' as const }
 
   const [archived] = await tx
     .update(credentialDependencies)
@@ -193,7 +203,7 @@ export async function archiveCredentialDependency(
     )
     .limit(1)
 
-  if (!existing?.archivedAt) return { status: 'not_found' as const }
+  if (!existing?.archivedAt) return { status: 'dependency_not_found' as const }
 
   return {
     status: 'already_archived' as const,
@@ -226,6 +236,29 @@ function buildLifecyclePatch(
   return { updates, changed }
 }
 
+function expiresAtEqual(next: Date | null | undefined, prev: Date | null): boolean {
+  return (next?.getTime() ?? null) === (prev?.getTime() ?? null)
+}
+
+function lifecycleValuesEqual(
+  existing: {
+    expiresAt: Date | null
+    rotationSchedule: string | null
+  },
+  updates: Partial<typeof credentials.$inferInsert>
+): boolean {
+  if ('expiresAt' in updates && !expiresAtEqual(updates.expiresAt, existing.expiresAt)) {
+    return false
+  }
+  if (
+    'rotationSchedule' in updates &&
+    (updates.rotationSchedule ?? null) !== existing.rotationSchedule
+  ) {
+    return false
+  }
+  return true
+}
+
 export async function updateCredentialLifecycle(
   tx: Tx,
   input: {
@@ -236,6 +269,31 @@ export async function updateCredentialLifecycle(
   }
 ) {
   const { updates, changed } = buildLifecyclePatch(input.rawBody, input.body)
+
+  const [existing] = await tx
+    .select({
+      id: credentials.id,
+      expiresAt: credentials.expiresAt,
+      rotationSchedule: credentials.rotationSchedule,
+      updatedAt: credentials.updatedAt,
+    })
+    .from(credentials)
+    .where(and(eq(credentials.id, input.credentialId), eq(credentials.projectId, input.projectId)))
+    .limit(1)
+
+  if (!existing) return null
+
+  if (lifecycleValuesEqual(existing, updates)) {
+    return {
+      status: 'unchanged' as const,
+      data: {
+        id: existing.id,
+        expiresAt: existing.expiresAt?.toISOString() ?? null,
+        rotationSchedule: existing.rotationSchedule,
+        updatedAt: existing.updatedAt.toISOString(),
+      },
+    }
+  }
 
   const [updated] = await tx
     .update(credentials)
@@ -251,6 +309,7 @@ export async function updateCredentialLifecycle(
   if (!updated) return null
 
   return {
+    status: 'updated' as const,
     data: {
       id: updated.id,
       expiresAt: updated.expiresAt?.toISOString() ?? null,
@@ -269,7 +328,7 @@ export async function listCredentialAccess(
   tx: Tx,
   input: { credentialId: string; projectId: string; orgId: string }
 ) {
-  const exists = await credentialExistsInProject(tx, {
+  const exists = await credentialInProject(tx, {
     credentialId: input.credentialId,
     projectId: input.projectId,
   })

@@ -28,6 +28,7 @@ type RevealCurrentValueResult =
   | { status: 'not_found'; reason: 'not_found' | 'all_versions_purged' }
 
 type CredentialListParams = {
+  orgId: string
   projectId: string
   query: ListCredentialsQuery
   limit: number
@@ -184,6 +185,7 @@ export async function listCredentials(tx: Tx, params: CredentialListParams) {
           .from(credentialDependencies)
           .where(
             and(
+              eq(credentialDependencies.orgId, params.orgId),
               inArray(credentialDependencies.credentialId, credentialIds),
               isNull(credentialDependencies.archivedAt)
             )

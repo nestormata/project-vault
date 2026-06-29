@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq, isNull } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
-import { auditLogEntries, credentialDependencies } from '@project-vault/db/schema'
+import { auditLogEntries, credentialDependencies, credentials } from '@project-vault/db/schema'
 import { MAX_ACTIVE_DEPENDENCIES } from './schema.js'
 import {
   addCredentialDependencyViaApi,
@@ -23,7 +23,10 @@ import {
   expectAuditWriteFailed,
   initVaultForTest,
 } from '../../__tests__/helpers/auth-test-helpers.js'
-import { createDirectAuthenticatedUser } from '../../__tests__/helpers/org-role-test-helpers.js'
+import {
+  createDirectAuthenticatedUser,
+  loginExistingUserInOrg,
+} from '../../__tests__/helpers/org-role-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
@@ -328,7 +331,12 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
   it('GET access lists active org members for admin/owner only', async () => {
     const projectId = await createCredentialTestProject(app, owner.cookies, 'access-list')
     const credential = await createCredentialViaApi(app, owner.cookies, projectId)
-    const member = await createDirectAuthenticatedUser(app, 'member', 'member')
+    const foreignUser = await createDirectAuthenticatedUser(app, 'foreign-member', 'member')
+    const sameOrgMemberCookies = await loginExistingUserInOrg(app, {
+      userId: foreignUser.userId,
+      orgId: owner.orgId,
+      role: 'member',
+    })
 
     const ownerRes = await app.inject({
       method: 'GET',
@@ -348,7 +356,7 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     const memberDenied = await app.inject({
       method: 'GET',
       url: `/api/v1/projects/${projectId}/credentials/${credential.id}/access`,
-      headers: { cookie: cookieHeader(member.cookies) },
+      headers: { cookie: cookieHeader(sameOrgMemberCookies) },
     })
     expect(memberDenied.statusCode).toBe(403)
 
@@ -359,6 +367,84 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     })
     expect(foreign.statusCode).toBe(404)
     expect(foreign.json()).toMatchObject({ code: 'credential_not_found' })
+  }, 20_000)
+
+  it('rolls back POST dependency and PATCH lifecycle when audit write fails', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'audit-rollback')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+    const addSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    const addFail = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { systemName: 'audit-rollback-add' },
+    })
+    expectAuditWriteFailed(addFail)
+    addSpy.mockRestore()
+
+    const afterAddFail = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ id: credentialDependencies.id })
+        .from(credentialDependencies)
+        .where(eq(credentialDependencies.systemName, 'audit-rollback-add'))
+    )
+    expect(afterAddFail).toHaveLength(0)
+
+    const patchSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    const patchFail = await app.inject({
+      method: 'PATCH',
+      url: credentialLifecycleUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { expiresAt: FUTURE_EXPIRY },
+    })
+    expectAuditWriteFailed(patchFail)
+    patchSpy.mockRestore()
+
+    const afterPatchFail = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ expiresAt: credentials.expiresAt })
+        .from(credentials)
+        .where(eq(credentials.id, credential.id))
+    )
+    expect(afterPatchFail[0]?.expiresAt).toBeNull()
+  }, 20_000)
+
+  it('PATCH lifecycle skips audit when values are unchanged', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'lifecycle-noop')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'No-op Lifecycle',
+      value: 'secret',
+      rotationSchedule: MONTHLY_ROTATION_CRON,
+    })
+
+    const auditSpy = vi.spyOn(humanAudit, 'writeHumanAuditEntry')
+    const noop = await app.inject({
+      method: 'PATCH',
+      url: credentialLifecycleUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { rotationSchedule: MONTHLY_ROTATION_CRON },
+    })
+    expect(noop.statusCode).toBe(200)
+    expect(
+      auditSpy.mock.calls.filter((call) => call[1]?.eventType === 'credential.lifecycle_updated')
+    ).toHaveLength(0)
+    auditSpy.mockRestore()
+  }, 20_000)
+
+  it('DELETE returns credential_not_found when the parent credential is missing', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'delete-missing-cred')
+    const missing = await app.inject({
+      method: 'DELETE',
+      url: `${credentialDependenciesUrl(projectId, randomUUID())}/${randomUUID()}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json()).toMatchObject({ code: 'credential_not_found' })
   }, 20_000)
 
   it('returns 404 for cross-org credential access and denies viewer mutations', async () => {

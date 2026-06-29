@@ -242,6 +242,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       const { items, total } = await listCredentials(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
         projectId: params.projectId,
         query: parsedQuery.data,
         limit: pagination.limit,
@@ -675,7 +676,12 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         projectId: params.projectId,
         dependencyId: params.dependencyId,
       })
-      if (result.status === 'not_found') return reply.status(404).send(DEPENDENCY_NOT_FOUND)
+      if (result.status === 'credential_not_found') {
+        return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      }
+      if (result.status === 'dependency_not_found') {
+        return reply.status(404).send(DEPENDENCY_NOT_FOUND)
+      }
 
       if (result.status === 'archived') {
         await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
@@ -756,6 +762,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         rawBody,
       })
       if (!result) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      if (result.status === 'unchanged') return { data: result.data }
 
       await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
@@ -765,7 +772,6 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         payload: result.auditPayload,
         request: req,
       })
-
       req.log.info(
         {
           eventType: OperationalEvent.CREDENTIAL_LIFECYCLE_UPDATED,
@@ -775,7 +781,6 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         },
         'Credential lifecycle updated'
       )
-
       return { data: result.data }
     },
   })

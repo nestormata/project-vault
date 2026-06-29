@@ -35,5 +35,9 @@ export const credentialDependencies = pgTable(
       'credential_dependencies_system_name_len_check',
       sql`char_length(${t.systemName}) BETWEEN 1 AND 256`
     ),
+    notesLenCheck: check(
+      'credential_dependencies_notes_len_check',
+      sql`${t.notes} IS NULL OR char_length(${t.notes}) <= 2048`
+    ),
   })
 )

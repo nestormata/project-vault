@@ -120,6 +120,13 @@
       "when": 1782735121831,
       "tag": "0016_credential_dependencies",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782739000000,
+      "tag": "0017_credential_dependency_notes_len",
+      "breakpoints": true
     }
   ]
 }
