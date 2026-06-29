@@ -140,6 +140,12 @@
   })
 </script>
 
+{#snippet highlighted(text: string)}
+  {#each highlightParts(text, query) as part, partIndex (partIndex)}
+    {#if part.match}<mark class="bg-amber-100">{part.text}</mark>{:else}{part.text}{/if}
+  {/each}
+{/snippet}
+
 {#if open}
   <div
     bind:this={dialogRef}
@@ -197,10 +203,7 @@
                     <span class="font-semibold text-slate-500">{item.projectName}</span>
                     <span class="text-slate-400">/</span>
                     <span class="font-medium text-slate-950">
-                      {#each highlightParts(item.name, query) as part, partIndex (partIndex)}
-                        {#if part.match}<mark class="bg-amber-100">{part.text}</mark
-                          >{:else}{part.text}{/if}
-                      {/each}
+                      {@render highlighted(item.name)}
                     </span>
                     {#if item.expiresAt && expiresWithinDays(item.expiresAt)}
                       <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
@@ -210,27 +213,17 @@
                   </div>
                   {#if item.snippet}
                     <p class="mt-1 text-sm text-slate-600">
-                      {#each highlightParts(item.snippet, query) as part, partIndex (partIndex)}
-                        {#if part.match}<mark class="bg-amber-100">{part.text}</mark
-                          >{:else}{part.text}{/if}
-                      {/each}
+                      {@render highlighted(item.snippet)}
                     </p>
                   {/if}
                 {:else}
                   <div class="font-medium text-slate-950">
-                    {#each highlightParts(item.name, query) as part, partIndex (partIndex)}
-                      {#if part.match}<mark class="bg-amber-100">{part.text}</mark
-                        >{:else}{part.text}{/if}
-                    {/each}
+                    {@render highlighted(item.name)}
                   </div>
                   <p class="mt-1 text-sm text-slate-600">
                     {item.credentialCount} credentials
                     {#if item.snippet}
-                      ·
-                      {#each highlightParts(item.snippet, query) as part, partIndex (partIndex)}
-                        {#if part.match}<mark class="bg-amber-100">{part.text}</mark
-                          >{:else}{part.text}{/if}
-                      {/each}
+                      · {@render highlighted(item.snippet)}
                     {/if}
                   </p>
                 {/if}
