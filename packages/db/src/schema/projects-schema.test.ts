@@ -9,6 +9,7 @@ describe('projects schema', () => {
     expect(projects.name).toBeDefined()
     expect(projects.slug).toBeDefined()
     expect(projects.description).toBeDefined()
+    expect(projects.tags).toBeDefined()
     expect(projects.createdBy).toBeDefined()
     expect(projects.createdAt).toBeDefined()
     expect(projects.updatedAt).toBeDefined()

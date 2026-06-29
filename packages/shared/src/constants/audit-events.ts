@@ -11,10 +11,12 @@ export const AuditEvent = {
   SECURITY_FAILED_AUTH_THRESHOLD: 'security.failed_auth_threshold',
   PROJECT_CREATED: 'project.created',
   PROJECT_UPDATED: 'project.updated',
+  PROJECT_TAGS_UPDATED: 'project.tags_updated',
   CREDENTIAL_CREATED: 'credential.created',
   CREDENTIAL_VERSION_CREATED: 'credential.version_created',
   CREDENTIAL_VALUE_REVEALED: 'credential.value_revealed',
   CREDENTIAL_VERSION_PURGED: 'credential.version_purged',
+  CREDENTIAL_TAGS_UPDATED: 'credential.tags_updated',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -25,10 +27,12 @@ export type AuditEventType =
   | 'user.logout'
   | 'project.created'
   | 'project.updated'
+  | 'project.tags_updated'
   | 'credential.created'
   | 'credential.version_created'
   | 'credential.value_revealed'
   | 'credential.version_purged'
+  | 'credential.tags_updated'
 
 export type AuditEvent = {
   type: AuditEventType

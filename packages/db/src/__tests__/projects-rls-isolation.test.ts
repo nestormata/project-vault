@@ -3,6 +3,9 @@ import { getDb, withOrg } from '../index.js'
 import { projectMemberships, projects } from '../schema/index.js'
 import { createTestUser, deleteTestUser, withTestOrg } from '../test-helpers.js'
 
+const TEAM_PAYMENTS_TAG = 'team-payments'
+const TIER_0_TAG = 'tier-0'
+
 describe('projects RLS cross-org isolation', () => {
   it('isolates projects rows by org', async () => {
     const userId = await createTestUser('projects')
@@ -74,6 +77,59 @@ describe('projects RLS cross-org isolation', () => {
 
           const bareMemberships = await getDb().select().from(projectMemberships)
           expect(bareMemberships).toHaveLength(0)
+        })
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('defaults project tags to an empty array and keeps tags org-isolated', async () => {
+    const userId = await createTestUser('project-tags')
+    try {
+      await withTestOrg(async ({ orgId: orgAId }) => {
+        await withTestOrg(async ({ orgId: orgBId }) => {
+          const [projectA] = await withOrg(orgAId, (tx) =>
+            tx
+              .insert(projects)
+              .values({
+                orgId: orgAId,
+                name: 'Project Tags A',
+                slug: 'project-tags-a',
+                createdBy: userId,
+              })
+              .returning({ id: projects.id, tags: projects.tags })
+          )
+          const [projectB] = await withOrg(orgBId, (tx) =>
+            tx
+              .insert(projects)
+              .values({
+                orgId: orgBId,
+                name: 'Project Tags B',
+                slug: 'project-tags-b',
+                tags: [TEAM_PAYMENTS_TAG, TIER_0_TAG],
+                createdBy: userId,
+              })
+              .returning({ id: projects.id, tags: projects.tags })
+          )
+          if (!projectA || !projectB) throw new Error('expected test projects to be inserted')
+          expect(projectA.tags).toEqual([])
+          expect(projectB.tags).toEqual([TEAM_PAYMENTS_TAG, TIER_0_TAG])
+
+          const orgARows = await withOrg(orgAId, (tx) =>
+            tx.select({ id: projects.id, tags: projects.tags }).from(projects)
+          )
+          expect(orgARows).toEqual([{ id: projectA.id, tags: [] }])
+
+          const orgBRows = await withOrg(orgBId, (tx) =>
+            tx.select({ id: projects.id, tags: projects.tags }).from(projects)
+          )
+          expect(orgBRows).toEqual([{ id: projectB.id, tags: [TEAM_PAYMENTS_TAG, TIER_0_TAG] }])
+
+          const bareRows = await getDb()
+            .select({ id: projects.id, tags: projects.tags })
+            .from(projects)
+          expect(bareRows).toHaveLength(0)
         })
       })
     } finally {

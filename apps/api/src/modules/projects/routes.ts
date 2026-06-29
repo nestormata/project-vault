@@ -13,9 +13,13 @@ import {
   ProjectDashboardResponseSchema,
   ProjectListResponseSchema,
   ProjectParamsSchema,
+  ProjectTagUpdateResponseSchema,
+  TagArrayBodySchema,
   type CreateProjectBody,
   type PatchProjectBody,
 } from './schema.js'
+
+const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 
 function serializeProjectDetail(project: typeof projects.$inferSelect, role: 'owner') {
   return {
@@ -35,6 +39,17 @@ function isProjectSlugTaken(error: unknown): boolean {
     pg.code === '23505' &&
     (pg.constraint === 'idx_projects_org_slug' || pg.constraint_name === 'idx_projects_org_slug')
   )
+}
+
+function dedupeTags(tags: string[]): string[] {
+  return tags.filter((tag, index) => tags.indexOf(tag) === index)
+}
+
+function tagDelta(oldTags: string[], newTags: string[]) {
+  return {
+    added: newTags.filter((tag) => !oldTags.includes(tag)),
+    removed: oldTags.filter((tag) => !newTags.includes(tag)),
+  }
 }
 
 async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {
@@ -197,7 +212,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         .where(and(eq(projects.id, params.projectId), isNull(projects.archivedAt)))
         .limit(1)
       if (!rows[0]) {
-        return reply.status(404).send({ code: 'project_not_found', message: 'Project not found' })
+        return reply.status(404).send(PROJECT_NOT_FOUND)
       }
       return { data: emptyDashboard() }
     },
@@ -250,7 +265,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         })
 
       if (!updated) {
-        return reply.status(404).send({ code: 'project_not_found', message: 'Project not found' })
+        return reply.status(404).send(PROJECT_NOT_FOUND)
       }
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
@@ -269,6 +284,65 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           updatedAt: updated.updatedAt.toISOString(),
         },
       }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'PUT',
+    url: '/:projectId/tags',
+    schema: {
+      response: {
+        200: ProjectTagUpdateResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'PUT /api/v1/projects/:projectId/tags' },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody<{ tags: string[] }>(TagArrayBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const [current] = await secureCtx.tx
+        .select({ id: projects.id, tags: projects.tags })
+        .from(projects)
+        .where(and(eq(projects.id, params.projectId), isNull(projects.archivedAt)))
+        .for('update')
+        .limit(1)
+      if (!current) {
+        return reply.status(404).send(PROJECT_NOT_FOUND)
+      }
+
+      const nextTags = dedupeTags(parsed.data.tags)
+      const [updated] = await secureCtx.tx
+        .update(projects)
+        .set({ tags: nextTags, updatedAt: new Date() })
+        .where(eq(projects.id, params.projectId))
+        .returning({ id: projects.id, tags: projects.tags })
+      if (!updated) {
+        return reply.status(404).send(PROJECT_NOT_FOUND)
+      }
+
+      const delta = tagDelta(current.tags, nextTags)
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'project.tags_updated',
+        resourceId: updated.id,
+        payload: { mode: 'replace', ...delta, resultCount: nextTags.length },
+        request: req,
+      })
+
+      return { data: updated }
     },
   })
 }

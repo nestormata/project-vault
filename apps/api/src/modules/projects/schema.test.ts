@@ -6,11 +6,15 @@ import {
   ProjectDashboardResponseSchema,
   ProjectListResponseSchema,
   ProjectParamsSchema,
+  ProjectTagUpdateResponseSchema,
+  TagArrayBodySchema as ProjectTagArrayBodySchema,
 } from './schema.js'
 
 const PROJECT_NAME = 'Payments API'
 const ORG_ID = `00000000-0000-4000-8000-${'000000000002'}`
 const PROJECT_ID = `00000000-0000-4000-8000-${'000000000010'}`
+const TEAM_PAYMENTS_TAG = 'team-payments'
+const TIER_0_TAG = 'tier-0'
 
 describe('project API schemas', () => {
   it.each(['payments-api', 'abc', 'frontend-prod-v2', 'a1b'])('accepts valid slug %s', (slug) => {
@@ -68,5 +72,19 @@ describe('project API schemas', () => {
         data: EMPTY_PROJECT_DASHBOARD,
       })
     ).toMatchObject({ data: { isEmpty: true } })
+  })
+
+  it('reuses the shared tag body schema and parses project tag responses', () => {
+    expect(
+      ProjectTagArrayBodySchema.parse({ tags: [` ${TEAM_PAYMENTS_TAG} `, TIER_0_TAG] })
+    ).toEqual({
+      tags: [TEAM_PAYMENTS_TAG, TIER_0_TAG],
+    })
+    expect(() => ProjectTagArrayBodySchema.parse({ tags: [' '] })).toThrow()
+    expect(
+      ProjectTagUpdateResponseSchema.parse({
+        data: { id: PROJECT_ID, tags: [TEAM_PAYMENTS_TAG, TIER_0_TAG] },
+      })
+    ).toEqual({ data: { id: PROJECT_ID, tags: [TEAM_PAYMENTS_TAG, TIER_0_TAG] } })
   })
 })

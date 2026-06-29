@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { auditLogEntries, credentialVersions, orgMemberships } from '@project-vault/db/schema'
+import {
+  auditLogEntries,
+  credentialVersions,
+  orgMemberships,
+  projects,
+} from '@project-vault/db/schema'
 import {
   assertRoutesFailClosedWhileSealed,
   bootstrapRouteIntegrationTest,
@@ -21,6 +26,12 @@ type RegisteredUser = { userId: string; orgId: string; cookies: Record<string, s
 const TEST_PASSPHRASE = 'credential-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const SENTINEL_VALUE = 'sentinel-credential-value-never-leaks'
+const STRIPE_SECRET_KEY = 'Stripe Secret Key'
+const STRIPE_PROD = 'Stripe Prod'
+const PAYMENTS_TAG = 'payments'
+const PROD_TAG = 'prod'
+const THIRD_PARTY_TAG = 'third-party'
+const FORCED_AUDIT_FAILURE = 'forced audit failure'
 
 async function createTestProject(app: TestApp, cookies: Record<string, string>, slug: string) {
   const response = await app.inject({
@@ -31,6 +42,22 @@ async function createTestProject(app: TestApp, cookies: Record<string, string>, 
   })
   expect(response.statusCode).toBe(201)
   return response.json<{ data: { id: string } }>().data.id
+}
+
+async function createTestProjectDirect(orgId: string, userId: string, slug: string) {
+  const [project] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(projects)
+      .values({
+        orgId,
+        name: `Project ${slug}`,
+        slug: `${slug}-${randomUUID().slice(0, 8)}`,
+        createdBy: userId,
+      })
+      .returning({ id: projects.id })
+  )
+  if (!project) throw new Error('expected test project to be inserted')
+  return project.id
 }
 
 type CredentialDetail = {
@@ -99,6 +126,35 @@ async function listVersions(
   })
 }
 
+async function listCredentials(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  query = ''
+) {
+  return app.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${projectId}/credentials${query}`,
+    headers: { cookie: cookieHeader(cookies) },
+  })
+}
+
+async function updateCredentialTags(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  credentialId: string,
+  method: 'PUT' | 'PATCH',
+  tags: string[]
+) {
+  return app.inject({
+    method,
+    url: `/api/v1/projects/${projectId}/credentials/${credentialId}/tags`,
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { tags },
+  })
+}
+
 async function purgeVersion(orgId: string, credentialId: string, versionNumber: number) {
   await withOrg(orgId, (tx) =>
     tx
@@ -147,10 +203,10 @@ describe.sequential('credential routes', () => {
       url: `/api/v1/projects/${projectId}/credentials`,
       headers: { cookie: cookieHeader(owner.cookies) },
       payload: {
-        name: 'Stripe Secret Key',
+        name: STRIPE_SECRET_KEY,
         value: 'sk_live_example_not_a_real_key',
         description: 'Production secret',
-        tags: ['payments'],
+        tags: [PAYMENTS_TAG],
         rotationSchedule: '0 0 1 * *',
       },
     })
@@ -159,7 +215,7 @@ describe.sequential('credential routes', () => {
     const body = res.json<{ data: CredentialDetail }>()
     expect(body.data).toMatchObject({
       projectId,
-      name: 'Stripe Secret Key',
+      name: STRIPE_SECRET_KEY,
       currentVersionNumber: 1,
       retentionCount: 3,
     })
@@ -251,7 +307,7 @@ describe.sequential('credential routes', () => {
     const projectId = await createTestProject(app, owner.cookies, 'create-audit-fail')
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
-      .mockRejectedValueOnce(new Error('forced audit failure'))
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
     const res = await app.inject({
       method: 'POST',
@@ -351,7 +407,7 @@ describe.sequential('credential routes', () => {
 
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
-      .mockRejectedValueOnce(new Error('forced audit failure'))
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
     const res = await revealValue(app, owner.cookies, projectId, credential.id)
     expectAuditWriteFailed(res)
@@ -474,8 +530,341 @@ describe.sequential('credential routes', () => {
     expect(res.statusCode).toBe(404)
   }, 20_000)
 
+  it('GET credentials returns an empty paginated list for a real project', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'list-empty-project')
+
+    const res = await listCredentials(app, owner.cookies, projectId)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+    })
+  }, 20_000)
+
+  it('GET credentials searches metadata only and never matches or returns credential values', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'list-search-project')
+    await createTestCredential(app, owner.cookies, projectId, {
+      name: STRIPE_SECRET_KEY,
+      value: SENTINEL_VALUE,
+      description: 'Production payments secret',
+      tags: [PAYMENTS_TAG, PROD_TAG],
+    })
+    await createTestCredential(app, owner.cookies, projectId, {
+      name: 'GitHub Token',
+      value: 'github-token-value',
+      description: 'Repository automation',
+      tags: ['ci'],
+    })
+
+    const byName = await listCredentials(app, owner.cookies, projectId, '?q=stripe')
+    expect(byName.statusCode).toBe(200)
+    expect(
+      byName.json<{ data: { total: number; items: { name: string }[] } }>().data
+    ).toMatchObject({
+      total: 1,
+      items: [expect.objectContaining({ name: STRIPE_SECRET_KEY })],
+    })
+    expect(JSON.stringify(byName.json())).not.toContain(SENTINEL_VALUE)
+
+    const byDescription = await listCredentials(app, owner.cookies, projectId, '?q=automation')
+    expect(byDescription.json<{ data: { total: number } }>().data.total).toBe(1)
+
+    const byValue = await listCredentials(
+      app,
+      owner.cookies,
+      projectId,
+      `?q=${encodeURIComponent(SENTINEL_VALUE)}`
+    )
+    expect(byValue.statusCode).toBe(200)
+    expect(byValue.json<{ data: { total: number; items: unknown[] } }>().data).toMatchObject({
+      total: 0,
+      items: [],
+    })
+    expect(JSON.stringify(byValue.json())).not.toContain(SENTINEL_VALUE)
+  }, 20_000)
+
+  it('GET credentials applies tag, status, expiresWithin, and combined filters', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'list-filter-project')
+    const soon = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString()
+    const later = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString()
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+    await createTestCredential(app, owner.cookies, projectId, {
+      name: STRIPE_PROD,
+      value: 'secret-1',
+      description: 'Payments prod',
+      tags: [PAYMENTS_TAG, PROD_TAG],
+      expiresAt: soon,
+    })
+    await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Stripe Dev',
+      value: 'secret-2',
+      tags: [PAYMENTS_TAG, 'dev'],
+      expiresAt: later,
+    })
+    await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Legacy Key',
+      value: 'secret-3',
+      tags: ['legacy', PROD_TAG],
+      expiresAt: past,
+    })
+
+    const tags = await listCredentials(app, owner.cookies, projectId, '?tags=payments,prod')
+    expect(tags.json<{ data: { total: number; items: { name: string }[] } }>().data).toMatchObject({
+      total: 1,
+      items: [expect.objectContaining({ name: STRIPE_PROD })],
+    })
+
+    const expiringDefault = await listCredentials(app, owner.cookies, projectId, '?status=expiring')
+    expect(
+      expiringDefault.json<{ data: { total: number; items: { name: string }[] } }>().data
+    ).toMatchObject({
+      total: 1,
+      items: [expect.objectContaining({ name: STRIPE_PROD })],
+    })
+
+    const expiringCustom = await listCredentials(
+      app,
+      owner.cookies,
+      projectId,
+      '?status=expiring&expiresWithin=90'
+    )
+    expect(expiringCustom.json<{ data: { total: number } }>().data.total).toBe(2)
+
+    const expired = await listCredentials(app, owner.cookies, projectId, '?status=expired')
+    expect(
+      expired.json<{ data: { total: number; items: { name: string; status: string }[] } }>().data
+    ).toMatchObject({
+      total: 1,
+      items: [expect.objectContaining({ name: 'Legacy Key', status: 'expired' })],
+    })
+
+    const combined = await listCredentials(
+      app,
+      owner.cookies,
+      projectId,
+      '?q=stripe&tags=payments,prod&status=expiring&expiresWithin=30'
+    )
+    expect(
+      combined.json<{ data: { total: number; items: { name: string }[] } }>().data
+    ).toMatchObject({
+      total: 1,
+      items: [expect.objectContaining({ name: STRIPE_PROD })],
+    })
+  }, 20_000)
+
+  it('GET credentials paginates and rejects overly deep offsets', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'list-pagination-project')
+    for (const name of ['Alpha', 'Beta', 'Gamma']) {
+      await createTestCredential(app, owner.cookies, projectId, { name, value: `${name}-secret` })
+    }
+
+    const pageOne = await listCredentials(app, owner.cookies, projectId, '?page=1&limit=2')
+    expect(pageOne.statusCode).toBe(200)
+    expect(
+      pageOne.json<{ data: { total: number; items: unknown[]; hasNext: boolean } }>().data
+    ).toMatchObject({
+      total: 3,
+      hasNext: true,
+    })
+    expect(pageOne.json<{ data: { items: unknown[] } }>().data.items).toHaveLength(2)
+
+    const clamped = await listCredentials(app, owner.cookies, projectId, '?limit=999')
+    expect(clamped.statusCode).toBe(422)
+
+    const tooDeep = await listCredentials(app, owner.cookies, projectId, '?page=102&limit=100')
+    expect(tooDeep.statusCode).toBe(422)
+    expect(tooDeep.json()).toMatchObject({ code: 'page_out_of_range' })
+  }, 20_000)
+
+  it('GET credentials validates params and hides cross-org projects as 404', async () => {
+    const otherProjectId = await createTestProject(app, other.cookies, 'list-other-project')
+    const ownerProjectId = await createTestProject(app, owner.cookies, 'list-owner-project')
+
+    const malformed = await listCredentials(app, owner.cookies, 'not-a-uuid')
+    expect(malformed.statusCode).toBe(422)
+
+    const unknownQuery = await listCredentials(
+      app,
+      owner.cookies,
+      ownerProjectId,
+      '?includeValues=true'
+    )
+    expect(unknownQuery.statusCode).toBe(422)
+
+    const crossOrg = await listCredentials(app, owner.cookies, otherProjectId)
+    expect(crossOrg.statusCode).toBe(404)
+    expect(crossOrg.json()).toMatchObject({ code: 'project_not_found' })
+
+    const unauthenticated = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${ownerProjectId}/credentials`,
+    })
+    expect(unauthenticated.statusCode).toBe(401)
+  }, 20_000)
+
+  it('PUT credential tags replaces, clears, de-dupes, and writes audit delta', async () => {
+    const projectId = await createTestProjectDirect(
+      owner.orgId,
+      owner.userId,
+      'credential-tags-put'
+    )
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Tagged Key',
+      value: SENTINEL_VALUE,
+      tags: ['old', PROD_TAG],
+    })
+
+    const replace = await updateCredentialTags(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'PUT',
+      [PAYMENTS_TAG, PAYMENTS_TAG, PROD_TAG]
+    )
+    expect(replace.statusCode).toBe(200)
+    expect(replace.json()).toEqual({ data: { id: credential.id, tags: [PAYMENTS_TAG, PROD_TAG] } })
+    expect(JSON.stringify(replace.json())).not.toContain(SENTINEL_VALUE)
+
+    const clear = await updateCredentialTags(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'PUT',
+      []
+    )
+    expect(clear.statusCode).toBe(200)
+    expect(clear.json()).toEqual({ data: { id: credential.id, tags: [] } })
+
+    const auditRows = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'credential.tags_updated'))
+    )
+    expect(
+      auditRows.some(
+        (row) =>
+          row.resourceId === credential.id &&
+          (row.payload as { mode?: string; added?: string[]; removed?: string[] }).mode ===
+            'replace'
+      )
+    ).toBe(true)
+    expect(JSON.stringify(auditRows)).not.toContain(SENTINEL_VALUE)
+  }, 20_000)
+
+  it('PATCH credential tags appends as a set union and enforces post-merge bounds', async () => {
+    const projectId = await createTestProjectDirect(
+      owner.orgId,
+      owner.userId,
+      'credential-tags-patch'
+    )
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Append Tags Key',
+      value: 'tag-secret',
+      tags: [PAYMENTS_TAG, PROD_TAG],
+    })
+
+    const append = await updateCredentialTags(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'PATCH',
+      [THIRD_PARTY_TAG, PAYMENTS_TAG]
+    )
+    expect(append.statusCode).toBe(200)
+    expect(append.json()).toEqual({
+      data: { id: credential.id, tags: [PAYMENTS_TAG, PROD_TAG, THIRD_PARTY_TAG] },
+    })
+
+    const noOp = await updateCredentialTags(app, owner.cookies, projectId, credential.id, 'PATCH', [
+      PAYMENTS_TAG,
+    ])
+    expect(noOp.statusCode).toBe(200)
+    expect(noOp.json()).toEqual({
+      data: { id: credential.id, tags: [PAYMENTS_TAG, PROD_TAG, THIRD_PARTY_TAG] },
+    })
+
+    const tooMany = await updateCredentialTags(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'PATCH',
+      Array.from({ length: 18 }, (_, i) => `extra-${i}`)
+    )
+    expect(tooMany.statusCode).toBe(422)
+    expect(tooMany.json()).toMatchObject({ code: 'too_many_tags' })
+  }, 20_000)
+
+  it('credential tag routes validate body, auth, project scope, and audit rollback', async () => {
+    const projectId = await createTestProjectDirect(
+      owner.orgId,
+      owner.userId,
+      'credential-tags-validation'
+    )
+    const otherProjectId = await createTestProjectDirect(
+      other.orgId,
+      other.userId,
+      'credential-tags-other'
+    )
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Validate Tags Key',
+      value: 'tag-validation-secret',
+      tags: ['stable'],
+    })
+
+    const invalid = await updateCredentialTags(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'PUT',
+      [' ']
+    )
+    expect(invalid.statusCode).toBe(422)
+
+    const wrongProject = await updateCredentialTags(
+      app,
+      owner.cookies,
+      otherProjectId,
+      credential.id,
+      'PUT',
+      ['x']
+    )
+    expect(wrongProject.statusCode).toBe(404)
+
+    const unauthenticated = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/tags`,
+      payload: { tags: ['x'] },
+    })
+    expect(unauthenticated.statusCode).toBe(401)
+
+    const auditSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    const auditFail = await updateCredentialTags(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'PUT',
+      ['rolled-back']
+    )
+    expectAuditWriteFailed(auditFail)
+    auditSpy.mockRestore()
+
+    const afterRollback = await listCredentials(app, owner.cookies, projectId)
+    expect(JSON.stringify(afterRollback.json())).toContain('stable')
+    expect(JSON.stringify(afterRollback.json())).not.toContain('rolled-back')
+  }, 20_000)
+
   it('security regression: the credential value never appears in any non-reveal response body', async () => {
-    const projectId = await createTestProject(app, owner.cookies, 'no-leak-project')
+    const projectId = await createTestProjectDirect(owner.orgId, owner.userId, 'no-leak-project')
     const credential = await createTestCredential(app, owner.cookies, projectId, {
       name: 'Sentinel Key',
       value: SENTINEL_VALUE,
@@ -493,10 +882,13 @@ describe.sequential('credential routes', () => {
 
     const versionList = await listVersions(app, owner.cookies, projectId, credential.id)
     expect(JSON.stringify(versionList.json())).not.toContain(SENTINEL_VALUE)
+
+    const credentialList = await listCredentials(app, owner.cookies, projectId)
+    expect(JSON.stringify(credentialList.json())).not.toContain(SENTINEL_VALUE)
   }, 20_000)
 
-  it('viewer role is denied on create, reveal, and add-version', async () => {
-    const projectId = await createTestProject(app, owner.cookies, 'viewer-project')
+  it('viewer role can list credentials but is denied on create, reveal, and add-version', async () => {
+    const projectId = await createTestProjectDirect(owner.orgId, owner.userId, 'viewer-project')
     const credential = await createTestCredential(app, owner.cookies, projectId, {
       name: 'Viewer Key',
       value: 'secret',
@@ -508,6 +900,9 @@ describe.sequential('credential routes', () => {
         .set({ role: 'viewer' })
         .where(eq(orgMemberships.userId, owner.userId))
     )
+
+    const listAllowed = await listCredentials(app, owner.cookies, projectId)
+    expect(listAllowed.statusCode).toBe(200)
 
     const createDenied = await app.inject({
       method: 'POST',
@@ -543,6 +938,17 @@ describe.sequential('credential routes', () => {
           payload: { name: 'Sealed', value: 'secret' },
         },
         { method: 'GET', url: `/api/v1/projects/${projectId}/credentials/${credentialId}/value` },
+        { method: 'GET', url: `/api/v1/projects/${projectId}/credentials` },
+        {
+          method: 'PUT',
+          url: `/api/v1/projects/${projectId}/credentials/${credentialId}/tags`,
+          payload: { tags: ['sealed'] },
+        },
+        {
+          method: 'PATCH',
+          url: `/api/v1/projects/${projectId}/credentials/${credentialId}/tags`,
+          payload: { tags: ['sealed'] },
+        },
         {
           method: 'POST',
           url: `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,

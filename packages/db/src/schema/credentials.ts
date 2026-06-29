@@ -30,6 +30,7 @@ export const credentials = pgTable(
   },
   (t) => ({
     projectCreatedIdx: index('idx_credentials_project_created').on(t.projectId, t.createdAt.desc()),
+    projectExpiresIdx: index('idx_credentials_project_expires').on(t.projectId, t.expiresAt),
     orgIdx: index('idx_credentials_org').on(t.orgId),
     retentionCheck: check('credentials_retention_count_check', sql`${t.retentionCount} >= 1`),
   })

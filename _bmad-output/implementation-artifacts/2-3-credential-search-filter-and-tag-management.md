@@ -1,6 +1,6 @@
 # Story 2.3: Credential Search, Filter & Tag Management
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-27 - comprehensive developer guide for the first credential collection (list/search/filter) endpoint, credential + project tag management, the canonical FR97 pagination implementation for the credential list, and the RS-E2a CI lint rule (scripts/check-search-index.ts) that makes indexing credential values structurally impossible. -->
 
@@ -615,28 +615,28 @@ Do NOT implement in Story 2.3:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Project tags schema + migration** (AC: 1, 1b)
-  - [ ] Add `tags` JSONB column to `packages/db/src/schema/projects.ts` (mirror credentials shape: `notNull().default('[]').$type<string[]>()`).
-  - [ ] Run `pnpm --filter @project-vault/db generate`; confirm the next free migration number against `meta/_journal.json` (e.g. `0015_credential_search_and_project_tags.sql`).
-  - [ ] Add the optional `idx_credentials_project_expires` B-tree index to the migration; confirm NO value-column index.
-  - [ ] Run `pnpm --filter @project-vault/db check-rls` (no gap) and `migrate` (applies cleanly).
-- [ ] **Task 2: RS-E2a CI lint rule** (AC: 2) — write `scripts/check-search-index.test.ts` first (positive + negative controls), then implement `scripts/check-search-index.ts`; add `"check-search-index"` to root `package.json`; confirm it passes on the live tree and fails on the synthetic fixture.
-- [ ] **Task 3: Shared + API schemas** (AC: 6)
-  - [ ] Extend `packages/shared/src/schemas/credentials.ts` with `CredentialStatusSchema` + `CredentialSummarySchema`.
-  - [ ] Extend `apps/api/src/modules/credentials/schema.ts` with `ListCredentialsQuerySchema`, `TagArrayBodySchema`, and response envelopes.
-  - [ ] Reuse `TagArrayBodySchema` in `apps/api/src/modules/projects/schema.ts` for the project-tags route.
-  - [ ] Unit-test query coercion, `.strict()` rejection, and tag bounds.
-- [ ] **Task 4: GET list/search/filter** (AC: 3, 7, 8) — failing test first; implement project existence 404, `q` ILIKE (escaped), `status`/`expiresWithin` predicates, `tags` AND-containment, `currentVersionNumber` subquery (no value join), pagination via `lib/pagination.ts`, fixed ordering. Add the route classification.
-- [ ] **Task 5: Credential tag PUT + PATCH** (AC: 4, 7, 8) — failing test first; replace vs union-append + dedup; post-op bounds (`too_many_tags` for >20 union); `.returning()` 0-row → 404; audit `credential.tags_updated` with `{ mode, tagCount }`.
-- [ ] **Task 6: Project tag PUT** (AC: 5, 7, 8) — failing test first; in the projects module; replace semantics; 0-row → 404; audit `project.tags_updated`.
-- [ ] **Task 7: Audit-event constants + route registration** (AC: 7) — add `credential.tags_updated` + `project.tags_updated` to `AuditEventType`; confirm all four routes in `ROUTE_ACTION_CLASSIFICATIONS`; run `route-audit.test.ts` in isolation.
-- [ ] **Task 8: Negative + regression security tests** (AC: 8, 9) — the AC-E2a negative plaintext test (search returns zero results) and the value-never-leaks scan across list + tag responses; tag-mutation audit-failure rollback.
-- [ ] **Task 9: Final verification** (AC: all)
-  - [ ] `pnpm --filter @project-vault/db test` + `check-rls`.
-  - [ ] `pnpm --filter @project-vault/api test` (integration + route-audit).
-  - [ ] `pnpm --filter @project-vault/shared test`.
-  - [ ] `pnpm check-search-index` (RS-E2a guard passes on the live tree).
-  - [ ] `pnpm typecheck` and `pnpm lint` at repo root.
+- [x] **Task 1: Project tags schema + migration** (AC: 1, 1b)
+  - [x] Add `tags` JSONB column to `packages/db/src/schema/projects.ts` (mirror credentials shape: `notNull().default('[]').$type<string[]>()`).
+  - [x] Run `pnpm --filter @project-vault/db generate`; confirm the next free migration number against `meta/_journal.json` (e.g. `0015_credential_search_and_project_tags.sql`).
+  - [x] Add the optional `idx_credentials_project_expires` B-tree index to the migration; confirm NO value-column index.
+  - [x] Run `pnpm --filter @project-vault/db check-rls` (no gap) and `migrate` (applies cleanly).
+- [x] **Task 2: RS-E2a CI lint rule** (AC: 2) — write `scripts/check-search-index.test.ts` first (positive + negative controls), then implement `scripts/check-search-index.ts`; add `"check-search-index"` to root `package.json`; confirm it passes on the live tree and fails on the synthetic fixture.
+- [x] **Task 3: Shared + API schemas** (AC: 6)
+  - [x] Extend `packages/shared/src/schemas/credentials.ts` with `CredentialStatusSchema` + `CredentialSummarySchema`.
+  - [x] Extend `apps/api/src/modules/credentials/schema.ts` with `ListCredentialsQuerySchema`, `TagArrayBodySchema`, and response envelopes.
+  - [x] Reuse `TagArrayBodySchema` in `apps/api/src/modules/projects/schema.ts` for the project-tags route.
+  - [x] Unit-test query coercion, `.strict()` rejection, and tag bounds.
+- [x] **Task 4: GET list/search/filter** (AC: 3, 7, 8) — failing test first; implement project existence 404, `q` ILIKE (escaped), `status`/`expiresWithin` predicates, `tags` AND-containment, `currentVersionNumber` subquery (no value join), pagination via `lib/pagination.ts`, fixed ordering. Add the route classification.
+- [x] **Task 5: Credential tag PUT + PATCH** (AC: 4, 7, 8) — failing test first; replace vs union-append + dedup; post-op bounds (`too_many_tags` for >20 union); `.returning()` 0-row → 404; audit `credential.tags_updated` with `{ mode, tagCount }`.
+- [x] **Task 6: Project tag PUT** (AC: 5, 7, 8) — failing test first; in the projects module; replace semantics; 0-row → 404; audit `project.tags_updated`.
+- [x] **Task 7: Audit-event constants + route registration** (AC: 7) — add `credential.tags_updated` + `project.tags_updated` to `AuditEventType`; confirm all four routes in `ROUTE_ACTION_CLASSIFICATIONS`; run `route-audit.test.ts` in isolation.
+- [x] **Task 8: Negative + regression security tests** (AC: 8, 9) — the AC-E2a negative plaintext test (search returns zero results) and the value-never-leaks scan across list + tag responses; tag-mutation audit-failure rollback.
+- [x] **Task 9: Final verification** (AC: all)
+  - [x] `pnpm --filter @project-vault/db test` + `check-rls`.
+  - [x] `pnpm --filter @project-vault/api test` (integration + route-audit).
+  - [x] `pnpm --filter @project-vault/shared test`.
+  - [x] `pnpm check-search-index` (RS-E2a guard passes on the live tree).
+  - [x] `pnpm typecheck` and `pnpm lint` at repo root.
 
 ---
 
@@ -848,10 +848,63 @@ Pattern observations (verified in the live tree):
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+GPT-5.5
 
 ### Debug Log References
 
+- 2026-06-28: Red phase for Task 1 confirmed with `pnpm --filter @project-vault/db test -- src/schema/projects-schema.test.ts src/__tests__/projects-rls-isolation.test.ts`; failures were `projects.tags` undefined and Drizzle selection on undefined `tags`.
+- 2026-06-28: Green phase for Task 1 passed with `DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm --filter @project-vault/db db:migrate`, `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm check-rls`, and `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/db test -- src/schema/projects-schema.test.ts src/__tests__/projects-rls-isolation.test.ts`.
+- 2026-06-28: Red phase for Task 2 confirmed with `pnpm exec vitest run scripts/check-search-index.test.ts`; failure was missing `./check-search-index.js`.
+- 2026-06-28: Green phase for Task 2 passed with `pnpm exec vitest run scripts/check-search-index.test.ts` and `pnpm check-search-index`.
+- 2026-06-28: Red phase for Task 3 confirmed with `pnpm --filter @project-vault/shared test -- src/schemas/credentials.test.ts` and `pnpm --filter @project-vault/api test -- src/modules/credentials/schema.test.ts src/modules/projects/schema.test.ts`; failures were missing shared/API schema exports.
+- 2026-06-28: Green phase for Task 3 passed with `pnpm --filter @project-vault/shared test -- src/schemas/credentials.test.ts` and `pnpm --filter @project-vault/api test -- src/modules/credentials/schema.test.ts src/modules/projects/schema.test.ts`.
+- 2026-06-28: Red phase for Task 4 confirmed with `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/credentials/routes.test.ts --coverage=false`; failures were missing `GET /api/v1/projects/:projectId/credentials` behavior.
+- 2026-06-28: Green phase for Task 4 passed with `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/credentials/routes.test.ts --coverage=false` and route audit `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/__tests__/route-audit.test.ts --coverage=false`.
+- 2026-06-28: Red phase for Task 5 confirmed with `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/credentials/routes.test.ts --coverage=false`; failures were missing credential tag routes.
+- 2026-06-28: Green phase for Task 5 passed with `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/__tests__/route-audit.test.ts src/modules/credentials/routes.test.ts --coverage=false`.
+- 2026-06-28: Red phase for Task 6 confirmed with `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/projects/routes.test.ts --coverage=false`; failures were missing project tag route behavior.
+- 2026-06-28: Green phase for Task 6 passed with `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/projects/routes.test.ts src/__tests__/route-audit.test.ts --coverage=false`.
+- 2026-06-28: Red phase for Task 7 confirmed with `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts --coverage=false`; failures were missing Story 2.3 tag audit constants.
+- 2026-06-28: Green phase for Task 7 passed with `pnpm --filter @project-vault/shared exec vitest run src/constants/audit-events.test.ts --coverage=false` and route audit `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/__tests__/route-audit.test.ts --coverage=false`.
+- 2026-06-28: Task 8 security regressions passed as part of `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api exec vitest run src/modules/credentials/routes.test.ts --coverage=false`.
+- 2026-06-28: Task 9 full verification passed: `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/db test`, `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm check-rls`, `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm --filter @project-vault/api test`, `pnpm --filter @project-vault/shared test`, `pnpm check-search-index`, `pnpm typecheck`, and `pnpm lint` (0 errors, warnings only). After lint cleanup, affected route/DB tests and `pnpm typecheck && pnpm lint` were rerun successfully.
+
 ### Completion Notes List
 
+- Task 1 complete: added `projects.tags` as a non-null JSONB string array with `[]` default, generated/applied `0015_credential_search_and_project_tags`, and added the metadata-only `idx_credentials_project_expires` B-tree index.
+- Added DB coverage proving `projects.tags` is exposed in schema, defaults to `[]`, accepts explicit tag arrays, and remains isolated under org-scoped RLS.
+- Task 2 complete: added `scripts/check-search-index.ts` as a source scanner for forbidden value-column indexes and runtime `CREATE INDEX`, wired `pnpm check-search-index`, and covered positive, negative, runtime-DDL, and live-tree cases.
+- Task 3 complete: added metadata-only credential summary/status shared schemas, list query/tag body/response API schemas, and project tag response schema using the shared tag body validator.
+- Task 4 complete: added the project-scoped credential list/search/filter endpoint with metadata-only projection, AND filters, pagination/deep-offset guard, cross-org 404 behavior, sealed-vault coverage, and route-audit classification.
+- Task 5 complete: added credential tag replace/append routes with dedupe, post-merge bounds, row-lock serialization, fail-closed audit deltas, rollback coverage, and sealed-vault coverage.
+- Task 6 complete: added project tag replacement route in the projects module with dedupe, cross-org 404 behavior, member-role enforcement, fail-closed audit delta, rollback coverage, and sealed-vault coverage.
+- Task 7 complete: added Story 2.3 tag audit constants and verified all new list/tag routes are classified by route-audit.
+- Task 8 complete: covered AC-E2a plaintext search negative, sentinel value absence in list/tag responses and audits, and tag mutation audit-failure rollback.
+- Task 9 complete: final verification gates passed and story is ready for review.
+
 ### File List
+
+- `packages/db/src/schema/projects.ts`
+- `packages/db/src/schema/credentials.ts`
+- `packages/db/src/schema/projects-schema.test.ts`
+- `packages/db/src/__tests__/projects-rls-isolation.test.ts`
+- `packages/db/src/migrations/0015_credential_search_and_project_tags.sql`
+- `packages/db/src/migrations/meta/0015_snapshot.json`
+- `packages/db/src/migrations/meta/_journal.json`
+- `scripts/check-search-index.ts`
+- `scripts/check-search-index.test.ts`
+- `package.json`
+- `packages/shared/src/schemas/credentials.ts`
+- `packages/shared/src/schemas/credentials.test.ts`
+- `apps/api/src/modules/credentials/schema.ts`
+- `apps/api/src/modules/credentials/schema.test.ts`
+- `apps/api/src/modules/projects/schema.ts`
+- `apps/api/src/modules/projects/schema.test.ts`
+- `apps/api/src/modules/credentials/routes.ts`
+- `apps/api/src/modules/credentials/routes.test.ts`
+- `apps/api/src/modules/credentials/service.ts`
+- `apps/api/src/lib/route-exemptions.ts`
+- `apps/api/src/modules/projects/routes.ts`
+- `apps/api/src/modules/projects/routes.test.ts`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/constants/audit-events.test.ts`

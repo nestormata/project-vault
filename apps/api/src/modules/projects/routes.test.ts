@@ -1,8 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
-import { withOrg } from '@project-vault/db'
-import { orgMemberships, projectMemberships, projects } from '@project-vault/db/schema'
+import { getDb, withOrg } from '@project-vault/db'
+import {
+  auditLogEntries,
+  organizations,
+  orgMemberships,
+  projectMemberships,
+  projects,
+  users,
+} from '@project-vault/db/schema'
 import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import {
   assertRoutesFailClosedWhileSealed,
@@ -23,6 +30,9 @@ const TEST_PASSPHRASE = 'project-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const PROJECTS_URL = '/api/v1/projects'
 const ALPHA_PROJECT_SLUG = 'alpha-project'
+const TEAM_PAYMENTS_TAG = 'team-payments'
+const TIER_0_TAG = 'tier-0'
+const FORCED_AUDIT_FAILURE = 'forced audit failure'
 
 function uniqueEmail(label: string): string {
   return `projects-${label}-${randomUUID()}@example.com`
@@ -57,6 +67,36 @@ async function createProject(app: TestApp, cookies: Record<string, string>, slug
   }>().data
 }
 
+async function createProjectDirect(orgId: string, userId: string, slug: string) {
+  const [project] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(projects)
+      .values({
+        orgId,
+        name: `Project ${slug}`,
+        slug: `${slug}-${randomUUID().slice(0, 8)}`,
+        createdBy: userId,
+      })
+      .returning({ id: projects.id, tags: projects.tags })
+  )
+  if (!project) throw new Error('expected test project to be inserted')
+  return project
+}
+
+async function updateProjectTags(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  tags: string[]
+) {
+  return app.inject({
+    method: 'PUT',
+    url: `${PROJECTS_URL}/${projectId}/tags`,
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { tags },
+  })
+}
+
 async function loginExistingUserInOrg(
   app: TestApp,
   input: { userId: string; orgId: string; role: 'viewer' | 'member' | 'admin' }
@@ -88,6 +128,29 @@ async function loginExistingUserInOrg(
     { jti: result.tokens.accessClaims.jti, expiresIn: result.tokens.accessMaxAgeSec }
   )
   return { 'access-token': jwt }
+}
+
+async function createDirectAuthenticatedUser(
+  app: TestApp,
+  label: string,
+  role: 'viewer' | 'member' | 'admin' = 'member'
+) {
+  const orgId = randomUUID()
+  const suffix = orgId.slice(0, 8)
+  await getDb()
+    .insert(organizations)
+    .values({
+      id: orgId,
+      name: `Projects ${label} ${suffix}`,
+      slug: `projects-${label}-${suffix}`,
+    })
+  const [user] = await getDb()
+    .insert(users)
+    .values({ email: uniqueEmail(label), passwordHash: 'x' })
+    .returning({ id: users.id })
+  if (!user) throw new Error('expected test user to be inserted')
+  const cookies = await loginExistingUserInOrg(app, { userId: user.id, orgId, role })
+  return { userId: user.id, orgId, cookies }
 }
 
 describe.sequential('project routes', () => {
@@ -362,7 +425,7 @@ describe.sequential('project routes', () => {
     const user = await registerUser(app, 'post-audit-fail')
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
-      .mockRejectedValueOnce(new Error('forced audit failure'))
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
     const res = await app.inject({
       method: 'POST',
@@ -392,7 +455,7 @@ describe.sequential('project routes', () => {
     const project = await createProject(app, user.cookies, 'patch-audit-fail')
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
-      .mockRejectedValueOnce(new Error('forced audit failure'))
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
     const res = await app.inject({
       method: 'PATCH',
@@ -410,6 +473,73 @@ describe.sequential('project routes', () => {
     auditSpy.mockRestore()
   }, 20_000)
 
+  it('PUT /api/v1/projects/:projectId/tags replaces tags, de-dupes, clears, and audits', async () => {
+    const user = await createDirectAuthenticatedUser(app, 'project-tags')
+    const project = await createProjectDirect(user.orgId, user.userId, 'project-tags')
+    expect(project.tags).toEqual([])
+
+    const replace = await updateProjectTags(app, user.cookies, project.id, [
+      TEAM_PAYMENTS_TAG,
+      TEAM_PAYMENTS_TAG,
+      TIER_0_TAG,
+    ])
+    expect(replace.statusCode).toBe(200)
+    expect(replace.json()).toEqual({
+      data: { id: project.id, tags: [TEAM_PAYMENTS_TAG, TIER_0_TAG] },
+    })
+
+    const clear = await updateProjectTags(app, user.cookies, project.id, [])
+    expect(clear.statusCode).toBe(200)
+    expect(clear.json()).toEqual({ data: { id: project.id, tags: [] } })
+
+    const auditRows = await withOrg(user.orgId, (tx) =>
+      tx
+        .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'project.tags_updated'))
+    )
+    expect(
+      auditRows.some(
+        (row) =>
+          row.resourceId === project.id &&
+          (row.payload as { mode?: string; resultCount?: number }).mode === 'replace'
+      )
+    ).toBe(true)
+  }, 20_000)
+
+  it('PUT project tags validates body, hides cross-org projects, denies viewer, and rolls back audit failures', async () => {
+    const user = await createDirectAuthenticatedUser(app, 'project-tags-validation')
+    const other = await createDirectAuthenticatedUser(app, 'project-tags-other')
+    const project = await createProjectDirect(user.orgId, user.userId, 'project-tags-validation')
+    const otherProject = await createProjectDirect(other.orgId, other.userId, 'project-tags-other')
+
+    const invalid = await updateProjectTags(app, user.cookies, project.id, [' '])
+    expect(invalid.statusCode).toBe(422)
+
+    const crossOrg = await updateProjectTags(app, user.cookies, otherProject.id, ['x'])
+    expect(crossOrg.statusCode).toBe(404)
+
+    const auditSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    const auditFail = await updateProjectTags(app, user.cookies, project.id, ['rolled-back'])
+    expectAuditWriteFailed(auditFail)
+    auditSpy.mockRestore()
+
+    const afterRollback = await withOrg(user.orgId, (tx) =>
+      tx.select({ tags: projects.tags }).from(projects).where(eq(projects.id, project.id))
+    )
+    expect(afterRollback[0]?.tags).toEqual([])
+
+    const viewerCookies = await loginExistingUserInOrg(app, {
+      userId: other.userId,
+      orgId: user.orgId,
+      role: 'viewer',
+    })
+    const denied = await updateProjectTags(app, viewerCookies, project.id, ['viewer-denied'])
+    expect(denied.statusCode).toBe(403)
+  }, 20_000)
+
   it('project routes fail closed while the vault is sealed', async () => {
     app = await assertRoutesFailClosedWhileSealed(
       app,
@@ -419,6 +549,11 @@ describe.sequential('project routes', () => {
         { method: 'GET', url: PROJECTS_URL },
         { method: 'GET', url: `/api/v1/projects/${randomUUID()}/dashboard` },
         { method: 'PATCH', url: `/api/v1/projects/${randomUUID()}`, payload: { name: 'Sealed' } },
+        {
+          method: 'PUT',
+          url: `/api/v1/projects/${randomUUID()}/tags`,
+          payload: { tags: ['sealed'] },
+        },
       ]
     )
 
