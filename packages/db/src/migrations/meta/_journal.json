@@ -141,6 +141,13 @@
       "when": 1782758424115,
       "tag": "0019_cloudy_dracula",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782762000000,
+      "tag": "0020_global_search_trgm_indexes",
+      "breakpoints": true
     }
   ]
 }

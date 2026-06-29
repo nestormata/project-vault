@@ -1,13 +1,22 @@
 <script lang="ts">
   import AppShell from '$lib/components/shell/AppShell.svelte'
+  import GlobalSearch from '$lib/components/shell/GlobalSearch.svelte'
   import OnboardingWizard from '$lib/components/onboarding/OnboardingWizard.svelte'
 
   let { data, children } = $props()
-  // Client-side flag optimizes rendering; +layout.server.ts remains authoritative on full loads.
   let onboardingDone = $state(data.onboardingCompleted)
+  let searchOpen = $state(false)
 </script>
 
-<AppShell user={data.user} hidePrimaryNav={!onboardingDone}>
+<GlobalSearch bind:open={searchOpen} />
+
+<AppShell
+  user={data.user}
+  hidePrimaryNav={!onboardingDone}
+  onsearch={() => {
+    searchOpen = true
+  }}
+>
   {#if !onboardingDone}
     <OnboardingWizard
       user={data.user}

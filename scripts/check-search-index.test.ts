@@ -94,4 +94,24 @@ describe('check-search-index', () => {
   it('passes on the current repository tree', () => {
     expect(scanSearchIndexes(resolve(import.meta.dirname, '..'))).toEqual([])
   })
+
+  it('allows safe trgm indexes on credential metadata columns', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      'packages/db/src/migrations/0020_good_trgm.sql',
+      'CREATE INDEX idx_credentials_name_trgm ON credentials USING GIN (name gin_trgm_ops);'
+    )
+    expect(scanSearchIndexes(root)).toEqual([])
+  })
+
+  it('flags hypothetical credential value trgm indexes', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      'packages/db/src/migrations/0020_bad_trgm.sql',
+      'CREATE INDEX idx_creds_value_trgm ON credentials USING GIN (value gin_trgm_ops);'
+    )
+    expect(scanSearchIndexes(root)).toHaveLength(1)
+  })
 })

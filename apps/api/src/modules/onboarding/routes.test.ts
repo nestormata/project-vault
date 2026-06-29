@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditLogEntries, userIdentityTokens, userOnboarding } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
-  bootUnsealedRouteApp,
   cookieHeader,
   expectAuditWriteFailed,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { createUnsealedRouteSuite } from '../../__tests__/helpers/unsealed-route-suite-test-helpers.js'
 import {
   createDirectAuthenticatedUser,
   loginExistingUserInOrg,
@@ -66,22 +66,12 @@ async function listOnboardingRows(user: TestUser) {
 }
 
 describe.sequential('onboarding routes', () => {
-  let app: TestApp
-  let closeSuite: () => Promise<void>
-
-  beforeAll(async () => {
-    const suite = await bootUnsealedRouteApp(initVault, TEST_PASSPHRASE)
-    app = suite.app
-    closeSuite = suite.close
-  })
-
-  afterAll(async () => {
-    await closeSuite()
-  })
+  const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
+  suite.registerLifecycle()
 
   it('GET returns completed: false for a new user with no onboarding row', async () => {
-    const user = await registerUser(app, 'get-new')
-    const res = await getOnboarding(app, user.cookies)
+    const user = await registerUser(suite.app, 'get-new')
+    const res = await getOnboarding(suite.app, user.cookies)
 
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ completed: false })
@@ -89,38 +79,40 @@ describe.sequential('onboarding routes', () => {
   }, 20_000)
 
   it('GET returns completed: true with completedAt for a completed user', async () => {
-    const user = await registerUser(app, 'get-completed')
-    const post = await postOnboarding(app, user.cookies)
+    const user = await registerUser(suite.app, 'get-completed')
+    const post = await postOnboarding(suite.app, user.cookies)
     expect(post.statusCode).toBe(200)
     const posted = post.json<{ completed: true; completedAt: string }>()
 
-    const res = await getOnboarding(app, user.cookies)
+    const res = await getOnboarding(suite.app, user.cookies)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ completed: true, completedAt: posted.completedAt })
   }, 20_000)
 
   it('GET returns 401 when unauthenticated', async () => {
-    const res = await app.inject({ method: 'GET', url: ONBOARDING_URL })
+    const res = await suite.app.inject({ method: 'GET', url: ONBOARDING_URL })
     expect(res.statusCode).toBe(401)
   })
 
   it('GET isolates onboarding state per user within the same org', async () => {
-    const owner = await registerUser(app, 'isolation-owner')
-    const member = await createDirectAuthenticatedUser(app, 'isolation-member')
-    const memberCookies = await loginExistingUserInOrg(app, {
+    const owner = await registerUser(suite.app, 'isolation-owner')
+    const member = await createDirectAuthenticatedUser(suite.app, 'isolation-member')
+    const memberCookies = await loginExistingUserInOrg(suite.app, {
       userId: member.userId,
       orgId: owner.orgId,
       role: 'member',
     })
 
-    expect((await postOnboarding(app, owner.cookies)).statusCode).toBe(200)
-    expect((await getOnboarding(app, owner.cookies)).json()).toMatchObject({ completed: true })
-    expect((await getOnboarding(app, memberCookies)).json()).toEqual({ completed: false })
+    expect((await postOnboarding(suite.app, owner.cookies)).statusCode).toBe(200)
+    expect((await getOnboarding(suite.app, owner.cookies)).json()).toMatchObject({
+      completed: true,
+    })
+    expect((await getOnboarding(suite.app, memberCookies)).json()).toEqual({ completed: false })
   }, 20_000)
 
   it('POST completes onboarding, writes audit with actor token, and GET reflects completion', async () => {
-    const user = await registerUser(app, 'post-happy')
-    const res = await postOnboarding(app, user.cookies)
+    const user = await registerUser(suite.app, 'post-happy')
+    const res = await postOnboarding(suite.app, user.cookies)
 
     expect(res.statusCode).toBe(200)
     const body = res.json<{ completed: true; completedAt: string }>()
@@ -161,8 +153,8 @@ describe.sequential('onboarding routes', () => {
   }, 20_000)
 
   it('POST rejects completed: false with 422 and writes nothing', async () => {
-    const user = await registerUser(app, 'post-false')
-    const res = await postOnboarding(app, user.cookies, false)
+    const user = await registerUser(suite.app, 'post-false')
+    const res = await postOnboarding(suite.app, user.cookies, false)
 
     expect(res.statusCode).toBe(422)
     expect(await listOnboardingRows(user)).toHaveLength(0)
@@ -177,8 +169,8 @@ describe.sequential('onboarding routes', () => {
   }, 20_000)
 
   it('POST rejects missing body with 422', async () => {
-    const user = await registerUser(app, 'post-missing')
-    const res = await app.inject({
+    const user = await registerUser(suite.app, 'post-missing')
+    const res = await suite.app.inject({
       method: 'POST',
       url: ONBOARDING_URL,
       headers: { cookie: cookieHeader(user.cookies) },
@@ -188,12 +180,12 @@ describe.sequential('onboarding routes', () => {
   }, 20_000)
 
   it('POST returns 409 when onboarding is already completed', async () => {
-    const user = await registerUser(app, 'post-duplicate')
-    const first = await postOnboarding(app, user.cookies)
+    const user = await registerUser(suite.app, 'post-duplicate')
+    const first = await postOnboarding(suite.app, user.cookies)
     expect(first.statusCode).toBe(200)
     const firstBody = first.json<{ completedAt: string }>()
 
-    const second = await postOnboarding(app, user.cookies)
+    const second = await postOnboarding(suite.app, user.cookies)
     expect(second.statusCode).toBe(409)
     expect(second.json()).toMatchObject({ code: 'onboarding_already_completed' })
 
@@ -203,19 +195,19 @@ describe.sequential('onboarding routes', () => {
   }, 20_000)
 
   it('POST rolls back onboarding insert when audit write fails', async () => {
-    const user = await registerUser(app, 'post-audit-fail')
+    const user = await registerUser(suite.app, 'post-audit-fail')
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
-    const res = await postOnboarding(app, user.cookies)
+    const res = await postOnboarding(suite.app, user.cookies)
     expectAuditWriteFailed(res)
     expect(await listOnboardingRows(user)).toHaveLength(0)
     auditSpy.mockRestore()
   }, 20_000)
 
   it('POST returns 401 when unauthenticated', async () => {
-    const res = await app.inject({
+    const res = await suite.app.inject({
       method: 'POST',
       url: ONBOARDING_URL,
       payload: { completed: true },
