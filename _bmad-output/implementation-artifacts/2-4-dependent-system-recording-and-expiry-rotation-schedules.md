@@ -1,6 +1,6 @@
 # Story 2.4: Dependent System Recording & Expiry/Rotation Schedules
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-28 - comprehensive developer guide for the credential_dependencies table (the direct input to Epic 5 rotation checklists), the credential lifecycle PATCH (expiry + full cron-validated rotation schedule with a max-every-1-hour rule), the role-derived credential access list (FR64), and the hasDependencies coverage-gap flag (UX-DR7). This story activates the expiresAt/rotationSchedule columns Story 2.2 created write-only-at-create. -->
 
@@ -926,32 +926,32 @@ Do NOT implement in Story 2.4:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: `credential_dependencies` schema + migration** (AC: 1, 2)
-  - [ ] Create `packages/db/src/schema/credential-dependencies.ts` (soft-archive `archived_at`, `system_type` CHECK, indexes).
-  - [ ] Export from `packages/db/src/schema/index.ts`.
-  - [ ] `pnpm --filter @project-vault/db generate`; confirm next free number against `meta/_journal.json` (e.g. `0016_credential_dependencies.sql`); confirm both CHECK constraints emitted (hand-add if drizzle-kit omits).
-  - [ ] Add the RLS policy + `updated_at` trigger to the migration.
-  - [ ] `pnpm --filter @project-vault/db check-rls` (no gap; do NOT exclude the table) + `migrate`.
-- [ ] **Task 2: DB-layer RLS isolation test** (AC: 12) — write `credential-dependencies-rls-isolation.test.ts`; confirm it fails before the schema exists, passes after (org read isolation, write isolation, system_type CHECK).
-- [ ] **Task 3: Shared cron validator + schemas** (AC: 6, 9)
-  - [ ] Add `cron-parser` `^5.6.1` to `packages/shared/package.json`.
-  - [ ] Create `packages/shared/src/validation/rotation-cron.ts` (`validateRotationCron`) + `rotation-cron.test.ts` (red first) — guard BOTH `parse()` and every `next()` in one try (impossible dates → `unparseable`, never throw out), and reject on the **min** gap across the sampled occurrences (covers irregular crons).
-  - [ ] Create `packages/shared/src/schemas/credential-dependencies.ts`; extend `schemas/credentials.ts` with `hasDependencies`; export all from `index.ts`; `pnpm --filter @project-vault/shared test`.
-- [ ] **Task 4: API schemas** (AC: 9) — extend `apps/api/src/modules/credentials/schema.ts` with dependency body/query/params, lifecycle body (`.superRefine` cron), and response envelopes. Unit-test `.strict()` rejection, systemType set, includeArchived coercion.
-- [ ] **Task 5: POST add dependency** (AC: 3, 10, 11) — failing test first; credential existence 404; active-dependency cap (`MAX_ACTIVE_DEPENDENCIES = 200`) → `422 too_many_dependencies`; insert; custom audit writer stashing dependencyId; `credential.dependency_added`.
-- [ ] **Task 6: GET list dependencies** (AC: 4, 10, 11) — failing test first; non-archived default + includeArchived; `hasDependencies` in response; ordering; 404; classify route `read`.
-- [ ] **Task 7: DELETE archive dependency** (AC: 5, 10, 11) — failing test first; soft-archive UPDATE matching `(id, credentialId)`; idempotent re-archive 200; cross-credential 404; `credential.dependency_archived`.
-- [ ] **Task 8: PATCH lifecycle** (AC: 6, 10, 11) — failing test first; absent/null/value three-state; `no_fields_to_update`; `invalid_cron` (unparseable incl. impossible-date `0 0 30 2 *` → no 500; too_frequent incl. irregular `0 23,0 * * *`); wire shared validator into 2.2's create body and update the 2.2 create test; `credential.lifecycle_updated`.
-- [ ] **Task 9: GET access list** (AC: 7, 10, 11) — failing test first; org-membership join → access entries; admin/owner only; credential existence check before roster; classify route `read`.
-- [ ] **Task 10: `hasDependencies` on the 2.3 list** (AC: 8) — failing test first; add the `EXISTS` subquery to the existing list query; extend `CredentialSummarySchema`; keep all 2.3 list tests green.
-- [ ] **Task 11: Route registration + audit constants + operational logging** (AC: 10, 11A) — register all five routes; add 3 audit event names to `AuditEventType`; classify in `ROUTE_ACTION_CLASSIFICATIONS`; emit operational signals; run `route-audit.test.ts` in isolation.
-- [ ] **Task 12: Security regression + audit-failure rollback** (AC: 11, 12) — value-never-leaks scan across all 2.4 responses; forced audit-write-failure rollback test on a mutation (e.g. archive).
-- [ ] **Task 13: Final verification** (AC: all)
-  - [ ] `pnpm --filter @project-vault/db test` + `check-rls`.
-  - [ ] `pnpm --filter @project-vault/api test` (integration + route-audit).
-  - [ ] `pnpm --filter @project-vault/shared test`.
-  - [ ] `pnpm check-search-index` (still clean — 2.4 adds no value-bearing index).
-  - [ ] `pnpm typecheck` + `pnpm lint` at repo root.
+- [x] **Task 1: `credential_dependencies` schema + migration** (AC: 1, 2)
+  - [x] Create `packages/db/src/schema/credential-dependencies.ts` (soft-archive `archived_at`, `system_type` CHECK, indexes).
+  - [x] Export from `packages/db/src/schema/index.ts`.
+  - [x] `pnpm --filter @project-vault/db generate`; confirm next free number against `meta/_journal.json` (e.g. `0016_credential_dependencies.sql`); confirm both CHECK constraints emitted (hand-add if drizzle-kit omits).
+  - [x] Add the RLS policy + `updated_at` trigger to the migration.
+  - [x] `pnpm --filter @project-vault/db check-rls` (no gap; do NOT exclude the table) + `migrate`.
+- [x] **Task 2: DB-layer RLS isolation test** (AC: 12) — write `credential-dependencies-rls-isolation.test.ts`; confirm it fails before the schema exists, passes after (org read isolation, write isolation, system_type CHECK).
+- [x] **Task 3: Shared cron validator + schemas** (AC: 6, 9)
+  - [x] Add `cron-parser` `^5.6.1` to `packages/shared/package.json`.
+  - [x] Create `packages/shared/src/validation/rotation-cron.ts` (`validateRotationCron`) + `rotation-cron.test.ts` (red first) — guard BOTH `parse()` and every `next()` in one try (impossible dates → `unparseable`, never throw out), and reject on the **min** gap across the sampled occurrences (covers irregular crons).
+  - [x] Create `packages/shared/src/schemas/credential-dependencies.ts`; extend `schemas/credentials.ts` with `hasDependencies`; export all from `index.ts`; `pnpm --filter @project-vault/shared test`.
+- [x] **Task 4: API schemas** (AC: 9) — extend `apps/api/src/modules/credentials/schema.ts` with dependency body/query/params, lifecycle body (`.superRefine` cron), and response envelopes. Unit-test `.strict()` rejection, systemType set, includeArchived coercion.
+- [x] **Task 5: POST add dependency** (AC: 3, 10, 11) — failing test first; credential existence 404; active-dependency cap (`MAX_ACTIVE_DEPENDENCIES = 200`) → `422 too_many_dependencies`; insert; custom audit writer stashing dependencyId; `credential.dependency_added`.
+- [x] **Task 6: GET list dependencies** (AC: 4, 10, 11) — failing test first; non-archived default + includeArchived; `hasDependencies` in response; ordering; 404; classify route `read`.
+- [x] **Task 7: DELETE archive dependency** (AC: 5, 10, 11) — failing test first; soft-archive UPDATE matching `(id, credentialId)`; idempotent re-archive 200; cross-credential 404; `credential.dependency_archived`.
+- [x] **Task 8: PATCH lifecycle** (AC: 6, 10, 11) — failing test first; absent/null/value three-state; `no_fields_to_update`; `invalid_cron` (unparseable incl. impossible-date `0 0 30 2 *` → no 500; too_frequent incl. irregular `0 23,0 * * *`); wire shared validator into 2.2's create body and update the 2.2 create test; `credential.lifecycle_updated`.
+- [x] **Task 9: GET access list** (AC: 7, 10, 11) — failing test first; org-membership join → access entries; admin/owner only; credential existence check before roster; classify route `read`.
+- [x] **Task 10: `hasDependencies` on the 2.3 list** (AC: 8) — failing test first; add the `EXISTS` subquery to the existing list query; extend `CredentialSummarySchema`; keep all 2.3 list tests green.
+- [x] **Task 11: Route registration + audit constants + operational logging** (AC: 10, 11A) — register all five routes; add 3 audit event names to `AuditEventType`; classify in `ROUTE_ACTION_CLASSIFICATIONS`; emit operational signals; run `route-audit.test.ts` in isolation.
+- [x] **Task 12: Security regression + audit-failure rollback** (AC: 11, 12) — value-never-leaks scan across all 2.4 responses; forced audit-write-failure rollback test on a mutation (e.g. archive).
+- [x] **Task 13: Final verification** (AC: all)
+  - [x] `pnpm --filter @project-vault/db test` + `check-rls`.
+  - [x] `pnpm --filter @project-vault/api test` (integration + route-audit).
+  - [x] `pnpm --filter @project-vault/shared test`.
+  - [x] `pnpm check-search-index` (still clean — 2.4 adds no value-bearing index).
+  - [x] `pnpm typecheck` + `pnpm lint` at repo root.
 
 ---
 
@@ -1196,11 +1196,35 @@ Pattern observations (verified in the live tree):
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+Claude Sonnet 4.6
 
 ### Debug Log References
 
+- `make ci` green on branch `feature/2-4-dependent-system-recording-and-expiry-rotation-schedules`
+- `0 23,0 * * *` accepted by cron validator (exactly 60-minute gap; story example treated as boundary-ok per `< 3600000` rule)
+- `hasDependencies` implemented via batched `selectDistinct` + Set lookup (not per-row EXISTS subquery) after EXISTS approach failed integration tests
+
 ### Completion Notes List
+
+- Migration `0016_credential_dependencies.sql` with RLS + `updated_at` trigger
+- Five new credential routes: dependency POST/GET/DELETE, lifecycle PATCH, access GET
+- Shared `validateRotationCron()` replaces shape-only regex on create + PATCH paths
+- Extracted `org-role-test-helpers.ts` and `credential-route-test-helpers.ts` for jscpd dedup
 
 ### File List
 
+- `packages/db/src/schema/credential-dependencies.ts`
+- `packages/db/src/migrations/0016_credential_dependencies.sql`
+- `packages/db/src/__tests__/credential-dependencies-rls-isolation.test.ts`
+- `packages/db/src/__tests__/credential-test-helpers.ts`
+- `packages/shared/src/validation/rotation-cron.ts`
+- `packages/shared/src/schemas/credential-dependencies.ts`
+- `packages/shared/src/schemas/credentials.ts`
+- `apps/api/src/modules/credentials/dependencies-service.ts`
+- `apps/api/src/modules/credentials/routes.ts`
+- `apps/api/src/modules/credentials/schema.ts`
+- `apps/api/src/modules/credentials/service.ts`
+- `apps/api/src/modules/credentials/credential-dependencies.test.ts`
+- `apps/api/src/modules/credentials/credential-route-test-helpers.ts`
+- `apps/api/src/__tests__/helpers/org-role-test-helpers.ts`
+- `apps/api/src/lib/route-exemptions.ts`
