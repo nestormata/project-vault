@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-29  # updated: 2-6 -> done
+last_updated: 2026-06-29  # updated: 2-7 -> in-progress
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -67,7 +67,7 @@ development_status:
   2-4-dependent-system-recording-and-expiry-rotation-schedules: done
   2-5-credential-bulk-import-from-env-and-json: done
   2-6-onboarding-wizard: done
-  2-7-cross-project-global-search: ready-for-dev
+  2-7-cross-project-global-search: in-progress
   epic-2-retrospective: optional
 
   # Epic 3: Notification Infrastructure — Alert Delivery, Routing & In-App Inbox
