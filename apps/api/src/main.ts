@@ -18,6 +18,7 @@ import { prunePendingMfaSessions } from './workers/prune-pending-mfa-sessions.js
 import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-threshold.js'
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
+import { importCleanupExpired } from './workers/import-cleanup.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
       'security/check-failed-auth-threshold': { cron: '* * * * *' },
       'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
       'credentials/prune-versions': { cron: '0 3 * * *' },
+      'import/cleanup-expired': { cron: '*/5 * * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
@@ -105,6 +107,10 @@ async function main(): Promise<void> {
       'credentials/prune-versions': (job) =>
         withJobLogging(fastify.log, 'credentials/prune-versions', job.id ?? 'unknown', () =>
           pruneCredentialVersions(fastify.log)
+        ),
+      'import/cleanup-expired': (job) =>
+        withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>
+          importCleanupExpired(fastify.log)
         ),
     })
     bossRegistered = true

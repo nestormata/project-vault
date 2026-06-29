@@ -154,6 +154,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   })
 
   await fastify.register(cookie)
+  await fastify.register(await import('@fastify/multipart').then((m) => m.default), {
+    limits: { fileSize: 1_048_576 },
+  })
   await fastify.register(jwtPlugin)
   await fastify.register(authenticatePlugin)
   await fastify.register(structuredLoggingPlugin)

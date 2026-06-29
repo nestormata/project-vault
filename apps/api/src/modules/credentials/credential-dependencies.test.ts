@@ -18,26 +18,25 @@ import {
 } from './credential-route-test-helpers.js'
 import {
   assertRoutesFailClosedWhileSealed,
-  bootstrapRouteIntegrationTest,
   cookieHeader,
   expectAuditWriteFailed,
   initVaultForTest,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import {
+  createApp,
   createDirectAuthenticatedUser,
+  CREDENTIAL_INTEGRATION_PASSWORD as PASSWORD,
+  FORCED_AUDIT_FAILURE,
+  humanAudit,
+  initVault,
   loginExistingUserInOrg,
-} from '../../__tests__/helpers/org-role-test-helpers.js'
-import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
-
-const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
-
-type TestApp = Awaited<ReturnType<typeof createApp>>
-type RegisteredUser = { userId: string; orgId: string; cookies: Record<string, string> }
+  MONTHLY_ROTATION_CRON,
+  resetVaultForTest,
+  type CredentialRegisteredUser as RegisteredUser,
+  type CredentialTestApp as TestApp,
+} from './credential-integration-context.js'
 
 const TEST_PASSPHRASE = 'credential-deps-passphrase'
-const PASSWORD = 'correct-horse-battery-staple'
-const FORCED_AUDIT_FAILURE = 'forced audit failure'
-const MONTHLY_ROTATION_CRON = '0 3 1 * *'
 const FUTURE_EXPIRY = '2026-12-31T23:59:59.000Z'
 
 describe.sequential('credential dependencies and lifecycle routes', () => {

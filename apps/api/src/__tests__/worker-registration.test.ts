@@ -38,6 +38,7 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
         'security/check-failed-auth-threshold',
         'security/prune-failed-auth-attempts',
         'credentials/prune-versions',
+        'import/cleanup-expired',
       ])
     )
     expect(queueNames.every((name) => /^[A-Za-z0-9_.\-/]+$/.test(name))).toBe(true)

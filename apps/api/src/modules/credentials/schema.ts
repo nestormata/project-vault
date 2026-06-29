@@ -5,6 +5,9 @@ import {
   CredentialSummarySchema,
   CredentialValueSchema,
   CredentialVersionSummarySchema,
+  ImportActionSchema,
+  ImportConfirmResponseSchema,
+  ImportPreviewResponseSchema,
   SystemTypeSchema,
   validateRotationCron,
 } from '@project-vault/shared'
@@ -189,3 +192,36 @@ export type TagArrayBody = z.infer<typeof TagArrayBodySchema>
 export type AddDependencyBody = z.infer<typeof AddDependencyBodySchema>
 export type ListDependenciesQuery = z.infer<typeof ListDependenciesQuerySchema>
 export type UpdateCredentialLifecycleBody = z.infer<typeof UpdateCredentialLifecycleBodySchema>
+
+export const ImportErrorResponseSchema = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+    limit: z.number().int().optional(),
+    found: z.number().int().optional(),
+    limitBytes: z.number().int().optional(),
+    supportedExtensions: z.array(z.string()).optional(),
+    expiredAt: z.iso.datetime().optional(),
+  })
+  .meta({ id: 'ImportErrorResponse' })
+
+export const ImportExpiredResponseSchema = ImportErrorResponseSchema
+
+export const ImportParamsSchema = z.object({ projectId: z.uuid() }).meta({ id: 'ImportParams' })
+
+export const ImportConfirmParamsSchema = z
+  .object({ projectId: z.uuid() })
+  .meta({ id: 'ImportConfirmParams' })
+
+export const ImportConfirmBodySchema = z
+  .object({
+    importId: z.uuid(),
+    defaultAction: ImportActionSchema,
+    overrides: z.record(z.string(), ImportActionSchema).optional(),
+  })
+  .strict()
+  .meta({ id: 'ImportConfirmBody' })
+
+export { ImportPreviewResponseSchema, ImportConfirmResponseSchema }
+
+export type ImportConfirmBody = z.infer<typeof ImportConfirmBodySchema>

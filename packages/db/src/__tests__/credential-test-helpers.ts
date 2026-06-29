@@ -31,3 +31,12 @@ export async function insertTestCredential(
   if (!credential) throw new Error('expected test credential to be inserted')
   return credential.id
 }
+
+export async function withTwoTestOrgs<T>(
+  run: (orgs: { orgAId: string; orgBId: string }) => Promise<T>
+): Promise<T> {
+  const { withTestOrg } = await import('../test-helpers.js')
+  return withTestOrg(async ({ orgId: orgAId }) =>
+    withTestOrg(async ({ orgId: orgBId }) => run({ orgAId, orgBId }))
+  )
+}

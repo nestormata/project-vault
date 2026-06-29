@@ -51,6 +51,12 @@ export const OperationalEvent = {
   CREDENTIAL_DEPENDENCY_ARCHIVED: 'credential.dependency.archived',
   CREDENTIAL_LIFECYCLE_UPDATED: 'credential.lifecycle.updated',
   CREDENTIAL_LIFECYCLE_INVALID_CRON: 'credential.lifecycle.invalid_cron',
+  CREDENTIAL_IMPORT_PARSE_COMPLETED: 'credential.import.parse_completed',
+  CREDENTIAL_IMPORT_ENCRYPTED: 'credential.import.encrypted',
+  CREDENTIAL_IMPORT_CONFIRMED: 'credential.import.confirmed',
+  CREDENTIAL_IMPORT_EXPIRED_ON_CONFIRM: 'credential.import.expired_on_confirm',
+  CREDENTIAL_IMPORT_CLEANUP_RUN: 'credential.import.cleanup_run',
+  CREDENTIAL_IMPORT_AUDIT_WRITE_FAILED: 'credential.import.audit_write_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]
