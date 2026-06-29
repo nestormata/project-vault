@@ -65,7 +65,7 @@ development_status:
   2-2-credential-storage-and-retrieval-with-version-history: done
   2-3-credential-search-filter-and-tag-management: done
   2-4-dependent-system-recording-and-expiry-rotation-schedules: done
-  2-5-credential-bulk-import-from-env-and-json: ready-for-dev
+  2-5-credential-bulk-import-from-env-and-json: in-progress
   2-6-onboarding-wizard: ready-for-dev
   2-7-cross-project-global-search: ready-for-dev
   epic-2-retrospective: optional
