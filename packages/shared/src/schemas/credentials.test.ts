@@ -46,6 +46,7 @@ describe('credential response schemas', () => {
       expiresAt: '2026-07-20T23:59:59.000Z',
       rotationSchedule: '0 0 1 * *',
       currentVersionNumber: 2,
+      hasDependencies: false,
       createdAt: CREATED_AT,
       updatedAt: CREATED_AT,
     })

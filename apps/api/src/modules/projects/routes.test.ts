@@ -1,15 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
-import { getDb, withOrg } from '@project-vault/db'
+import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
 import {
   auditLogEntries,
-  organizations,
   orgMemberships,
   projectMemberships,
   projects,
-  users,
 } from '@project-vault/db/schema'
 import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import {
@@ -23,7 +21,6 @@ import {
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
-const { createLoginSessionInTx } = await import('../auth/service.js')
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
@@ -86,61 +83,10 @@ async function updateProjectTags(
   })
 }
 
-async function loginExistingUserInOrg(
-  app: TestApp,
-  input: { userId: string; orgId: string; role: 'viewer' | 'member' | 'admin' }
-) {
-  const result = await withOrg(input.orgId, async (tx) => {
-    await tx.insert(orgMemberships).values({
-      orgId: input.orgId,
-      userId: input.userId,
-      role: input.role,
-      status: 'active',
-    })
-    return createLoginSessionInTx(tx, { id: input.userId, identityTokenId: null }, input.orgId, {})
-  })
-  const jwt = await (
-    app as TestApp & {
-      jwt: {
-        sign: (
-          payload: Record<string, unknown>,
-          options: { jti: string; expiresIn: number }
-        ) => Promise<string>
-      }
-    }
-  ).jwt.sign(
-    {
-      sub: result.tokens.accessClaims.sub,
-      orgId: result.tokens.accessClaims.orgId,
-      sessionVersion: result.tokens.accessClaims.sessionVersion,
-    },
-    { jti: result.tokens.accessClaims.jti, expiresIn: result.tokens.accessMaxAgeSec }
-  )
-  return { 'access-token': jwt }
-}
-
-async function createDirectAuthenticatedUser(
-  app: TestApp,
-  label: string,
-  role: 'viewer' | 'member' | 'admin' = 'member'
-) {
-  const orgId = randomUUID()
-  const suffix = orgId.slice(0, 8)
-  await getDb()
-    .insert(organizations)
-    .values({
-      id: orgId,
-      name: `Projects ${label} ${suffix}`,
-      slug: `projects-${label}-${suffix}`,
-    })
-  const [user] = await getDb()
-    .insert(users)
-    .values({ email: uniqueEmail(label), passwordHash: 'x' })
-    .returning({ id: users.id })
-  if (!user) throw new Error('expected test user to be inserted')
-  const cookies = await loginExistingUserInOrg(app, { userId: user.id, orgId, role })
-  return { userId: user.id, orgId, cookies }
-}
+import {
+  createDirectAuthenticatedUser,
+  loginExistingUserInOrg,
+} from '../../__tests__/helpers/org-role-test-helpers.js'
 
 describe.sequential('project routes', () => {
   let app: TestApp

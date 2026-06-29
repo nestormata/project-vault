@@ -1,17 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { getDb, withOrg } from '../index.js'
-import { credentialVersions, credentials, projects } from '../schema/index.js'
+import { credentialVersions, credentials } from '../schema/index.js'
 import { createTestUser, deleteTestUser, withTestOrg } from '../test-helpers.js'
+import { createCredentialTestProject } from './credential-test-helpers.js'
 
 async function createTestProject(orgId: string, userId: string, slug: string): Promise<string> {
-  const [project] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(projects)
-      .values({ orgId, name: slug, slug, createdBy: userId })
-      .returning({ id: projects.id })
-  )
-  if (!project) throw new Error('expected test project to be inserted')
-  return project.id
+  return createCredentialTestProject(orgId, userId, slug)
 }
 
 describe('credentials RLS cross-org isolation', () => {

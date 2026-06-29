@@ -10,9 +10,14 @@ import {
   cookieHeader,
   expectAuditWriteFailed,
   initVaultForTest,
-  registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import {
+  bootstrapCredentialRouteOwners,
+  createCredentialTestProject,
+  createCredentialViaApi,
+  SENTINEL_VALUE,
+} from './credential-route-test-helpers.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
@@ -21,24 +26,12 @@ type RegisteredUser = { userId: string; orgId: string; cookies: Record<string, s
 
 const TEST_PASSPHRASE = 'credential-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
-const SENTINEL_VALUE = 'sentinel-credential-value-never-leaks'
 const STRIPE_SECRET_KEY = 'Stripe Secret Key'
 const STRIPE_PROD = 'Stripe Prod'
 const PAYMENTS_TAG = 'payments'
 const PROD_TAG = 'prod'
 const THIRD_PARTY_TAG = 'third-party'
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
-
-async function createTestProject(app: TestApp, cookies: Record<string, string>, slug: string) {
-  const response = await app.inject({
-    method: 'POST',
-    url: '/api/v1/projects',
-    headers: { cookie: cookieHeader(cookies) },
-    payload: { name: `Project ${slug}`, slug: `${slug}-${randomUUID().slice(0, 8)}` },
-  })
-  expect(response.statusCode).toBe(201)
-  return response.json<{ data: { id: string } }>().data.id
-}
 
 async function createTestProjectDirect(orgId: string, userId: string, slug: string) {
   const project = await insertTestProject(orgId, { userId, slug })
@@ -69,14 +62,11 @@ async function createTestCredential(
   projectId: string,
   body: { name: string; value: string; [key: string]: unknown }
 ) {
-  const response = await app.inject({
-    method: 'POST',
-    url: `/api/v1/projects/${projectId}/credentials`,
-    headers: { cookie: cookieHeader(cookies) },
-    payload: body,
-  })
-  expect(response.statusCode).toBe(201)
-  return response.json<{ data: CredentialDetail }>().data
+  return createCredentialViaApi(app, cookies, projectId, body) as Promise<CredentialDetail>
+}
+
+async function createTestProject(app: TestApp, cookies: Record<string, string>, slug: string) {
+  return createCredentialTestProject(app, cookies, slug)
 }
 
 async function revealValue(
@@ -163,25 +153,33 @@ async function purgeVersion(orgId: string, credentialId: string, versionNumber: 
   )
 }
 
+async function credentialTagAuditRows(orgId: string, credentialId: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
+      .from(auditLogEntries)
+      .where(
+        and(
+          eq(auditLogEntries.eventType, 'credential.tags_updated'),
+          eq(auditLogEntries.resourceId, credentialId)
+        )
+      )
+  )
+}
+
 describe.sequential('credential routes', () => {
   let app: TestApp
   let owner: RegisteredUser
   let other: RegisteredUser
 
   beforeAll(async () => {
-    await resetVaultForTest()
-    await initVaultForTest(initVault, TEST_PASSPHRASE)
-    app = await createApp({ logger: false, vaultGuardEnabled: true })
-    owner = await registerAndLoginViaApi(app, {
-      email: `credentials-owner-${randomUUID()}@example.com`,
-      password: PASSWORD,
-      orgName: `Credentials Owner ${randomUUID()}`,
-    })
-    other = await registerAndLoginViaApi(app, {
-      email: `credentials-other-${randomUUID()}@example.com`,
-      password: PASSWORD,
-      orgName: `Credentials Other ${randomUUID()}`,
-    })
+    ;({ app, owner, other } = await bootstrapCredentialRouteOwners(
+      createApp,
+      initVault,
+      TEST_PASSPHRASE,
+      PASSWORD,
+      'credentials'
+    ))
   })
 
   afterAll(async () => {
@@ -274,6 +272,15 @@ describe.sequential('credential routes', () => {
     })
     expect(malformedCron.statusCode).toBe(422)
     expect(malformedCron.json()).toMatchObject({ code: 'invalid_cron' })
+
+    const tooFrequentCron = await app.inject({
+      method: 'POST',
+      url,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { name: 'Key2', value: 'secret', rotationSchedule: '*/30 * * * *' },
+    })
+    expect(tooFrequentCron.statusCode).toBe(422)
+    expect(tooFrequentCron.json()).toMatchObject({ code: 'invalid_cron' })
   }, 20_000)
 
   it('POST returns 404 for a project outside the caller org and 401 when unauthenticated', async () => {
@@ -303,15 +310,18 @@ describe.sequential('credential routes', () => {
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { name: 'Audit Fail', value: 'secret' },
-    })
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { name: 'Audit Fail', value: 'secret' },
+      })
 
-    expectAuditWriteFailed(res)
-    auditSpy.mockRestore()
+      expectAuditWriteFailed(res)
+    } finally {
+      auditSpy.mockRestore()
+    }
   }, 20_000)
 
   it('GET value reveals the current value and writes a value_revealed audit row', async () => {
@@ -403,18 +413,21 @@ describe.sequential('credential routes', () => {
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
-    const res = await revealValue(app, owner.cookies, projectId, credential.id)
-    expectAuditWriteFailed(res)
-    expect(JSON.stringify(res.json())).not.toContain('should-not-leak')
+    try {
+      const res = await revealValue(app, owner.cookies, projectId, credential.id)
+      expectAuditWriteFailed(res)
+      expect(JSON.stringify(res.json())).not.toContain('should-not-leak')
 
-    const auditRows = await withOrg(owner.orgId, (tx) =>
-      tx
-        .select({ id: auditLogEntries.id })
-        .from(auditLogEntries)
-        .where(eq(auditLogEntries.eventType, 'credential.value_revealed'))
-    )
-    expect(auditRows.filter((row) => row).length).toBeGreaterThanOrEqual(0)
-    auditSpy.mockRestore()
+      const auditRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ id: auditLogEntries.id })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'credential.value_revealed'))
+      )
+      expect(auditRows.filter((row) => row).length).toBeGreaterThanOrEqual(0)
+    } finally {
+      auditSpy.mockRestore()
+    }
   }, 20_000)
 
   it('POST versions creates a monotonic version and allows duplicate values', async () => {
@@ -713,6 +726,11 @@ describe.sequential('credential routes', () => {
     expect(replace.json()).toEqual({ data: { id: credential.id, tags: [PAYMENTS_TAG, PROD_TAG] } })
     expect(JSON.stringify(replace.json())).not.toContain(SENTINEL_VALUE)
 
+    const replaceAuditRows = await credentialTagAuditRows(owner.orgId, credential.id)
+    expect(
+      replaceAuditRows.some((row) => (row.payload as { mode?: string }).mode === 'replace')
+    ).toBe(true)
+
     const clear = await updateCredentialTags(
       app,
       owner.cookies,
@@ -724,18 +742,13 @@ describe.sequential('credential routes', () => {
     expect(clear.statusCode).toBe(200)
     expect(clear.json()).toEqual({ data: { id: credential.id, tags: [] } })
 
-    const auditRows = await withOrg(owner.orgId, (tx) =>
-      tx
-        .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
-        .from(auditLogEntries)
-        .where(eq(auditLogEntries.eventType, 'credential.tags_updated'))
-    )
+    const auditRows = await credentialTagAuditRows(owner.orgId, credential.id)
+    expect(auditRows.length).toBeGreaterThanOrEqual(2)
     expect(
       auditRows.some(
         (row) =>
-          row.resourceId === credential.id &&
           (row.payload as { mode?: string; added?: string[]; removed?: string[] }).mode ===
-            'replace'
+          'replace'
       )
     ).toBe(true)
     expect(JSON.stringify(auditRows)).not.toContain(SENTINEL_VALUE)
@@ -833,16 +846,19 @@ describe.sequential('credential routes', () => {
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
-    const auditFail = await updateCredentialTags(
-      app,
-      owner.cookies,
-      projectId,
-      credential.id,
-      'PUT',
-      ['rolled-back']
-    )
-    expectAuditWriteFailed(auditFail)
-    auditSpy.mockRestore()
+    try {
+      const auditFail = await updateCredentialTags(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        'PUT',
+        ['rolled-back']
+      )
+      expectAuditWriteFailed(auditFail)
+    } finally {
+      auditSpy.mockRestore()
+    }
 
     const afterRollback = await listCredentials(app, owner.cookies, projectId)
     expect(JSON.stringify(afterRollback.json())).toContain('stable')

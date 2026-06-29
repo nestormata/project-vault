@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { OperationalEvent } from '@project-vault/shared'
+import { OperationalEvent, validateRotationCron } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -17,20 +17,31 @@ import {
 import {
   AddVersionBodySchema,
   AddVersionResponseSchema,
+  AddDependencyBodySchema,
   CreateCredentialBodySchema,
+  CredentialAccessListResponseSchema,
   CredentialDetailResponseSchema,
+  CredentialLifecycleResponseSchema,
   CredentialParamsSchema,
   CredentialValueResponseSchema,
   CredentialVersionListResponseSchema,
+  DependencyArchivedResponseSchema,
+  DependencyListResponseSchema,
+  DependencyParamsSchema,
+  DependencyResponseSchema,
   ListCredentialsQuerySchema,
   ListCredentialsResponseSchema,
+  ListDependenciesQuerySchema,
   MAX_CREDENTIAL_LIST_OFFSET,
   ProjectScopeParamsSchema,
   TagArrayBodySchema,
   TagUpdateResponseSchema,
+  UpdateCredentialLifecycleBodySchema,
   type AddVersionBody,
+  type AddDependencyBody,
   type CreateCredentialBody,
   type TagArrayBody,
+  type UpdateCredentialLifecycleBody,
 } from './schema.js'
 import {
   VersionConflictError,
@@ -42,6 +53,13 @@ import {
   revealCurrentValue,
   updateCredentialTags,
 } from './service.js'
+import {
+  addCredentialDependency,
+  archiveCredentialDependency,
+  listCredentialAccess,
+  listCredentialDependencies,
+  updateCredentialLifecycle,
+} from './dependencies-service.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType:
@@ -49,6 +67,9 @@ type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
     | 'credential.version_created'
     | 'credential.value_revealed'
     | 'credential.tags_updated'
+    | 'credential.dependency_added'
+    | 'credential.dependency_archived'
+    | 'credential.lifecycle_updated'
 }
 
 async function writeCredentialAuditOrFailClosed(
@@ -77,11 +98,51 @@ const CREDENTIAL_NOT_FOUND = {
   code: 'credential_not_found',
   message: 'Credential not found',
 } as const
+const DEPENDENCY_NOT_FOUND = {
+  code: 'dependency_not_found',
+  message: 'Dependency not found',
+} as const
 const TOO_MANY_TAGS = {
   code: 'too_many_tags',
   message: 'A credential may have at most 20 tags',
 } as const
 const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
+
+function invalidRotationScheduleResponse(reason: 'unparseable' | 'too_frequent'): {
+  code: 'invalid_cron'
+  message: string
+} {
+  return {
+    code: 'invalid_cron',
+    message:
+      reason === 'too_frequent'
+        ? 'Rotation schedule may run at most once per hour'
+        : 'Invalid cron expression',
+  }
+}
+
+function rejectInvalidRotationSchedule(
+  schedule: unknown,
+  reply: FastifyReply,
+  logContext?: { req: FastifyRequest; orgId: string; credentialId?: string }
+): schedule is string {
+  if (typeof schedule !== 'string') return true
+  const res = validateRotationCron(schedule)
+  if (res.ok) return true
+  if (logContext) {
+    logContext.req.log.info(
+      {
+        eventType: OperationalEvent.CREDENTIAL_LIFECYCLE_INVALID_CRON,
+        orgId: logContext.orgId,
+        credentialId: logContext.credentialId,
+        reason: res.reason,
+      },
+      'Invalid rotation schedule rejected'
+    )
+  }
+  reply.status(422).send(invalidRotationScheduleResponse(res.reason))
+  return false
+}
 
 const CREDENTIAL_TAG_ROUTE_SCHEMA = {
   response: {
@@ -181,6 +242,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       const { items, total } = await listCredentials(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
         projectId: params.projectId,
         query: parsedQuery.data,
         limit: pagination.limit,
@@ -217,6 +279,14 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<CreateCredentialBody>(CreateCredentialBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+      if (
+        !rejectInvalidRotationSchedule(parsed.data.rotationSchedule, reply, {
+          req,
+          orgId: secureCtx.auth.orgId,
+        })
+      ) {
+        return reply
+      }
 
       const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
       if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
@@ -457,6 +527,294 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
 
       const items = await listVersionHistory(secureCtx.tx, params)
+      if (!items) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+
+      return { data: { items } }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/dependencies',
+    schema: {
+      response: {
+        201: DependencyResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      requireMfa: false,
+      rateLimit: {
+        max: 60,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/credentials/:credentialId/dependencies',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(CredentialParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody<AddDependencyBody>(AddDependencyBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await addCredentialDependency(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        userId: secureCtx.auth.userId,
+        ...params,
+        body: parsed.data,
+      })
+      if (result.status === 'not_found') return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      if (result.status === 'too_many') {
+        return reply.status(422).send({
+          code: 'too_many_dependencies',
+          message: 'A credential may have at most 200 active dependencies',
+        })
+      }
+
+      await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'credential.dependency_added',
+        resourceId: params.credentialId,
+        payload: {
+          dependencyId: result.dependency.id,
+          systemName: result.dependency.systemName,
+          systemType: result.dependency.systemType,
+        },
+        request: req,
+      })
+
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_DEPENDENCY_ADDED,
+          orgId: secureCtx.auth.orgId,
+          credentialId: params.credentialId,
+          dependencyId: result.dependency.id,
+          systemType: result.dependency.systemType,
+        },
+        'Credential dependency added'
+      )
+
+      reply.status(201)
+      return { data: result.dependency }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/credentials/:credentialId/dependencies',
+    schema: {
+      response: {
+        200: DependencyListResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'viewer',
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 120,
+        timeWindowMs: 60_000,
+        key: 'GET /api/v1/projects/:projectId/credentials/:credentialId/dependencies',
+      },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(CredentialParamsSchema, req, reply)
+      if (!params) return reply
+      const parsedQuery = ListDependenciesQuerySchema.safeParse(req.query)
+      if (!parsedQuery.success) {
+        return reply.status(422).send(validationError(parsedQuery.error, 'query'))
+      }
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await listCredentialDependencies(secureCtx.tx, {
+        ...params,
+        query: parsedQuery.data,
+      })
+      if (!result) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+
+      return { data: result }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'DELETE',
+    url: '/:projectId/credentials/:credentialId/dependencies/:dependencyId',
+    schema: {
+      response: {
+        200: DependencyArchivedResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      rateLimit: {
+        max: 60,
+        timeWindowMs: 60_000,
+        key: 'DELETE /api/v1/projects/:projectId/credentials/:credentialId/dependencies/:dependencyId',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(DependencyParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await archiveCredentialDependency(secureCtx.tx, {
+        userId: secureCtx.auth.userId,
+        credentialId: params.credentialId,
+        projectId: params.projectId,
+        dependencyId: params.dependencyId,
+      })
+      if (result.status === 'credential_not_found') {
+        return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      }
+      if (result.status === 'dependency_not_found') {
+        return reply.status(404).send(DEPENDENCY_NOT_FOUND)
+      }
+
+      if (result.status === 'archived') {
+        await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+          orgId: secureCtx.auth.orgId,
+          actorUserId: secureCtx.auth.userId,
+          eventType: 'credential.dependency_archived',
+          resourceId: params.credentialId,
+          payload: result.auditPayload,
+          request: req,
+        })
+        req.log.info(
+          {
+            eventType: OperationalEvent.CREDENTIAL_DEPENDENCY_ARCHIVED,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+            dependencyId: params.dependencyId,
+          },
+          'Credential dependency archived'
+        )
+      }
+
+      return { data: result.data }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'PATCH',
+    url: '/:projectId/credentials/:credentialId',
+    schema: {
+      response: {
+        200: CredentialLifecycleResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      rateLimit: {
+        max: 60,
+        timeWindowMs: 60_000,
+        key: 'PATCH /api/v1/projects/:projectId/credentials/:credentialId',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(CredentialParamsSchema, req, reply)
+      if (!params) return reply
+      const rawBody =
+        req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {}
+      if (!('expiresAt' in rawBody) && !('rotationSchedule' in rawBody)) {
+        return reply.status(422).send({
+          code: 'no_fields_to_update',
+          message: 'Provide expiresAt and/or rotationSchedule',
+        })
+      }
+      const secureCtx = ctx as SecureRouteContext
+      if (
+        !rejectInvalidRotationSchedule(rawBody.rotationSchedule, reply, {
+          req,
+          orgId: secureCtx.auth.orgId,
+          credentialId: params.credentialId,
+        })
+      ) {
+        return reply
+      }
+      const parsed = parseBody<UpdateCredentialLifecycleBody>(
+        UpdateCredentialLifecycleBodySchema,
+        req,
+        reply
+      )
+      if (!parsed.success) return reply
+
+      const result = await updateCredentialLifecycle(secureCtx.tx, {
+        ...params,
+        body: parsed.data,
+        rawBody,
+      })
+      if (!result) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      if (result.status === 'unchanged') return { data: result.data }
+
+      await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'credential.lifecycle_updated',
+        resourceId: params.credentialId,
+        payload: result.auditPayload,
+        request: req,
+      })
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_LIFECYCLE_UPDATED,
+          orgId: secureCtx.auth.orgId,
+          credentialId: params.credentialId,
+          changed: result.auditPayload.changed,
+        },
+        'Credential lifecycle updated'
+      )
+      return { data: result.data }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/credentials/:credentialId/access',
+    schema: {
+      response: {
+        200: CredentialAccessListResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      allowedRoles: ['owner', 'admin'],
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 60,
+        timeWindowMs: 60_000,
+        key: 'GET /api/v1/projects/:projectId/credentials/:credentialId/access',
+      },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(CredentialParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const items = await listCredentialAccess(secureCtx.tx, {
+        ...params,
+        orgId: secureCtx.auth.orgId,
+      })
       if (!items) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
 
       return { data: { items } }

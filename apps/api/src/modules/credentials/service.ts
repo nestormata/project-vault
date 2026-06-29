@@ -1,6 +1,12 @@
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { credentialVersions, credentials, projects, vaultState } from '@project-vault/db/schema'
+import {
+  credentialVersions,
+  credentials,
+  projects,
+  vaultState,
+  credentialDependencies,
+} from '@project-vault/db/schema'
 import { encrypt, withSecret, type EncryptedValue } from '@project-vault/crypto'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
 import { getPrimaryKey } from '../vault/key-service.js'
@@ -22,6 +28,7 @@ type RevealCurrentValueResult =
   | { status: 'not_found'; reason: 'not_found' | 'all_versions_purged' }
 
 type CredentialListParams = {
+  orgId: string
   projectId: string
   query: ListCredentialsQuery
   limit: number
@@ -170,11 +177,27 @@ export async function listCredentials(tx: Tx, params: CredentialListParams) {
     versionRows.map((row) => [row.credentialId, Number(row.currentVersionNumber)])
   )
 
+  const activeDepRows =
+    credentialIds.length === 0
+      ? []
+      : await tx
+          .selectDistinct({ credentialId: credentialDependencies.credentialId })
+          .from(credentialDependencies)
+          .where(
+            and(
+              eq(credentialDependencies.orgId, params.orgId),
+              inArray(credentialDependencies.credentialId, credentialIds),
+              isNull(credentialDependencies.archivedAt)
+            )
+          )
+  const hasDependenciesByCredential = new Set(activeDepRows.map((row) => row.credentialId))
+
   return {
     total: Number(total),
     items: rows.map((row) => ({
       ...row,
       currentVersionNumber: currentVersionByCredential.get(row.id) ?? 1,
+      hasDependencies: hasDependenciesByCredential.has(row.id),
       expiresAt: row.expiresAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

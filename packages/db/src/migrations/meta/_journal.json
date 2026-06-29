@@ -113,6 +113,20 @@
       "when": 1782704311997,
       "tag": "0015_credential_search_and_project_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1782735121831,
+      "tag": "0016_credential_dependencies",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782739000000,
+      "tag": "0017_credential_dependency_notes_len",
+      "breakpoints": true
     }
   ]
 }

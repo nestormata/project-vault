@@ -230,6 +230,33 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditOmissionReason: 'Version history returns metadata only; never any credential value.',
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/dependencies': {
+    action: 'mutation',
+    auditEvent: 'credential.dependency_added',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/dependencies': {
+    action: 'read',
+    auditOmissionReason:
+      'Dependency list returns non-secret metadata only; never any credential value.',
+    reviewer: SECURITY_OWNER,
+  },
+  'DELETE /api/v1/projects/:projectId/credentials/:credentialId/dependencies/:dependencyId': {
+    action: 'mutation',
+    auditEvent: 'credential.dependency_archived',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/projects/:projectId/credentials/:credentialId': {
+    action: 'mutation',
+    auditEvent: 'credential.lifecycle_updated',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/access': {
+    action: 'read',
+    auditOmissionReason:
+      'Access list returns org-role metadata only; never any credential value (ADR-2.4-06).',
+    reviewer: SECURITY_OWNER,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
