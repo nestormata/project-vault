@@ -7,6 +7,9 @@ export default mergeConfig(
   baseVitestConfig,
   defineConfig({
     plugins: [sveltekit()],
+    resolve: {
+      conditions: ['browser'],
+    },
     test: {
       include: ['src/**/*.test.ts'],
       environment: 'jsdom',

@@ -1,6 +1,6 @@
 # Story 2.6: Onboarding Wizard
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-28 — comprehensive developer guide for the first-run onboarding wizard. This story adds: (1) the `user_onboarding` table tracking per-user-per-org wizard completion state, (2) `GET/POST /api/v1/users/me/onboarding` endpoints gated behind SecureRoute, (3) the three-step bypass-proof `OnboardingWizard` Svelte component that overlays the full app shell, and (4) a SvelteKit layout-level guard that intercepts first-time users before they can reach any other route. Relies on: Story 2.0 (web shell, auth guard), Story 2.1 (projects table, project creation), Story 2.2 (credential create + encrypt path). Produces: no downstream data dependencies — it is a one-time UX gate. -->
 

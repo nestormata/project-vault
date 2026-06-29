@@ -22,6 +22,7 @@ export const AuditEvent = {
   CREDENTIAL_LIFECYCLE_UPDATED: 'credential.lifecycle_updated',
   CREDENTIAL_BULK_IMPORT_INITIATED: 'credential.bulk_import_initiated',
   CREDENTIAL_BULK_IMPORT_CONFIRMED: 'credential.bulk_import_confirmed',
+  ONBOARDING_COMPLETED: 'onboarding.completed',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -43,6 +44,7 @@ export type AuditEventType =
   | 'credential.lifecycle_updated'
   | 'credential.bulk_import_initiated'
   | 'credential.bulk_import_confirmed'
+  | 'onboarding.completed'
 
 export type AuditEvent = {
   type: AuditEventType
