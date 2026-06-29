@@ -21,26 +21,20 @@ import {
 } from './credential-route-test-helpers.js'
 import { cookieHeader, expectAuditWriteFailed } from '../../__tests__/helpers/auth-test-helpers.js'
 import {
+  createApp,
   createDirectAuthenticatedUser,
-  loginExistingUserInOrg,
-} from '../../__tests__/helpers/org-role-test-helpers.js'
-import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
-import {
-  credentialIntegration,
-  type CredentialRegisteredUser,
-  type CredentialTestApp,
-  CREDENTIAL_INTEGRATION_PASSWORD,
+  CREDENTIAL_INTEGRATION_PASSWORD as PASSWORD,
   FORCED_AUDIT_FAILURE,
+  humanAudit,
+  initVault,
+  loginExistingUserInOrg,
+  MONTHLY_ROTATION_CRON,
+  resetVaultForTest,
+  type CredentialRegisteredUser as RegisteredUser,
+  type CredentialTestApp as TestApp,
 } from './credential-integration-context.js'
 
-const { createApp, initVault, humanAudit } = credentialIntegration
-
-type TestApp = CredentialTestApp
-type RegisteredUser = CredentialRegisteredUser
-
 const TEST_PASSPHRASE = 'credential-import-passphrase'
-const PASSWORD = CREDENTIAL_INTEGRATION_PASSWORD
-const MONTHLY_ROTATION_CRON = '0 3 1 * *'
 
 async function credentialAuditRows(orgId: string, eventType: string, resourceId?: string) {
   return withOrg(orgId, (tx) =>

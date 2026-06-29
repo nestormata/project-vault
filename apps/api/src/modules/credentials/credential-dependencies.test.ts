@@ -23,26 +23,20 @@ import {
   initVaultForTest,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import {
+  createApp,
   createDirectAuthenticatedUser,
-  loginExistingUserInOrg,
-} from '../../__tests__/helpers/org-role-test-helpers.js'
-import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
-import {
-  credentialIntegration,
-  type CredentialRegisteredUser,
-  type CredentialTestApp,
-  CREDENTIAL_INTEGRATION_PASSWORD,
+  CREDENTIAL_INTEGRATION_PASSWORD as PASSWORD,
   FORCED_AUDIT_FAILURE,
+  humanAudit,
+  initVault,
+  loginExistingUserInOrg,
+  MONTHLY_ROTATION_CRON,
+  resetVaultForTest,
+  type CredentialRegisteredUser as RegisteredUser,
+  type CredentialTestApp as TestApp,
 } from './credential-integration-context.js'
 
-const { createApp, initVault, humanAudit } = credentialIntegration
-
-type TestApp = CredentialTestApp
-type RegisteredUser = CredentialRegisteredUser
-
 const TEST_PASSPHRASE = 'credential-deps-passphrase'
-const PASSWORD = CREDENTIAL_INTEGRATION_PASSWORD
-const MONTHLY_ROTATION_CRON = '0 3 1 * *'
 const FUTURE_EXPIRY = '2026-12-31T23:59:59.000Z'
 
 describe.sequential('credential dependencies and lifecycle routes', () => {
