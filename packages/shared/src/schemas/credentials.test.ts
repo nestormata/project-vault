@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   CredentialDetailSchema,
+  CredentialStatusSchema,
+  CredentialSummarySchema,
   CredentialValueSchema,
   CredentialVersionSummarySchema,
 } from './credentials.js'
@@ -31,6 +33,32 @@ describe('credential response schemas', () => {
         updatedAt: CREATED_AT,
       })
     ).toMatchObject({ name: CREDENTIAL_NAME, currentVersionNumber: 1 })
+  })
+
+  it('parses a metadata-only credential summary item', () => {
+    const parsed = CredentialSummarySchema.parse({
+      id: CREDENTIAL_ID,
+      projectId: PROJECT_ID,
+      name: CREDENTIAL_NAME,
+      description: 'Production Stripe API secret',
+      tags: ['payments', 'third-party'],
+      status: 'expiring',
+      expiresAt: '2026-07-20T23:59:59.000Z',
+      rotationSchedule: '0 0 1 * *',
+      currentVersionNumber: 2,
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+    })
+
+    expect(parsed).toMatchObject({ name: CREDENTIAL_NAME, status: 'expiring' })
+    expect(parsed).not.toHaveProperty('orgId')
+    expect(parsed).not.toHaveProperty('value')
+    expect(parsed).not.toHaveProperty('encryptedValue')
+  })
+
+  it('rejects invalid credential status values', () => {
+    expect(CredentialStatusSchema.parse('active')).toBe('active')
+    expect(() => CredentialStatusSchema.parse('rotating')).toThrow()
   })
 
   it('rejects a retentionCount below 1', () => {

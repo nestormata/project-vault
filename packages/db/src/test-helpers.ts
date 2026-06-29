@@ -1,5 +1,26 @@
 import { sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from './index.js'
+import { projects } from './schema/projects.js'
+
+export async function insertTestProject(
+  orgId: string,
+  input: { userId: string; slug: string; name?: string; tags?: string[] }
+): Promise<{ id: string; tags: string[] }> {
+  const [project] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(projects)
+      .values({
+        orgId,
+        name: input.name ?? `Project ${input.slug}`,
+        slug: `${input.slug}-${crypto.randomUUID().slice(0, 8)}`,
+        ...(input.tags !== undefined ? { tags: input.tags } : {}),
+        createdBy: input.userId,
+      })
+      .returning({ id: projects.id, tags: projects.tags })
+  )
+  if (!project) throw new Error('expected test project to be inserted')
+  return project
+}
 
 /** Inserts a bare test user (RLS isolation specs only need a valid created_by FK target). */
 export async function createTestUser(label: string): Promise<string> {

@@ -3,6 +3,11 @@ import {
   AddVersionBodySchema,
   CreateCredentialBodySchema,
   CredentialParamsSchema,
+  ListCredentialsQuerySchema,
+  ListCredentialsResponseSchema,
+  MAX_CREDENTIAL_LIST_OFFSET,
+  TagArrayBodySchema,
+  TagUpdateResponseSchema,
 } from './schema.js'
 
 const PROJECT_ID = `00000000-0000-4000-8000-${'000000000010'}`
@@ -112,5 +117,70 @@ describe('credential params schema', () => {
     expect(() =>
       CredentialParamsSchema.parse({ projectId: 'not-a-uuid', credentialId: CREDENTIAL_ID })
     ).toThrow()
+  })
+})
+
+describe('credential list and tag schemas', () => {
+  it('coerces list query numerics and applies defaults', () => {
+    expect(
+      ListCredentialsQuerySchema.parse({
+        q: ' stripe ',
+        tags: 'payments,prod',
+        status: 'expiring',
+        expiresWithin: '45',
+        page: '2',
+        limit: '50',
+      })
+    ).toEqual({
+      q: 'stripe',
+      tags: 'payments,prod',
+      status: 'expiring',
+      expiresWithin: 45,
+      page: 2,
+      limit: 50,
+    })
+
+    expect(ListCredentialsQuerySchema.parse({})).toMatchObject({
+      expiresWithin: 30,
+      page: 1,
+      limit: 20,
+    })
+    expect(MAX_CREDENTIAL_LIST_OFFSET).toBe(10_000)
+  })
+
+  it('rejects unknown list query keys and out-of-range numerics', () => {
+    expect(() => ListCredentialsQuerySchema.parse({ includeValues: 'true' })).toThrow()
+    expect(() => ListCredentialsQuerySchema.parse({ limit: '101' })).toThrow()
+    expect(() => ListCredentialsQuerySchema.parse({ expiresWithin: '0' })).toThrow()
+  })
+
+  it('validates tag mutation bodies', () => {
+    expect(TagArrayBodySchema.parse({ tags: [' payments ', 'prod'] })).toEqual({
+      tags: ['payments', 'prod'],
+    })
+    expect(() => TagArrayBodySchema.parse({ tags: [' '] })).toThrow()
+    expect(() => TagArrayBodySchema.parse({ tags: ['a'.repeat(51)] })).toThrow()
+    expect(() =>
+      TagArrayBodySchema.parse({ tags: Array.from({ length: 21 }, (_, i) => `tag-${i}`) })
+    ).toThrow()
+    expect(() => TagArrayBodySchema.parse({ tags: [], orgId: PROJECT_ID })).toThrow()
+  })
+
+  it('parses list and tag response envelopes', () => {
+    expect(
+      ListCredentialsResponseSchema.parse({
+        data: {
+          items: [],
+          total: 0,
+          page: 1,
+          limit: 20,
+          hasNext: false,
+        },
+      })
+    ).toEqual({ data: { items: [], total: 0, page: 1, limit: 20, hasNext: false } })
+
+    expect(TagUpdateResponseSchema.parse({ data: { id: CREDENTIAL_ID, tags: ['prod'] } })).toEqual({
+      data: { id: CREDENTIAL_ID, tags: ['prod'] },
+    })
   })
 })

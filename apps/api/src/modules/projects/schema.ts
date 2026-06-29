@@ -6,6 +6,7 @@ import {
   type ProjectSummary,
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
+export { TagArrayBodySchema } from '../credentials/schema.js'
 
 const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$/
 
@@ -60,6 +61,10 @@ export const PatchProjectResponseSchema = z
     }),
   })
   .meta({ id: 'PatchProjectResponse' })
+
+export const ProjectTagUpdateResponseSchema = z
+  .object({ data: z.object({ id: z.uuid(), tags: z.array(z.string()) }) })
+  .meta({ id: 'ProjectTagUpdateResponse' })
 
 export type CreateProjectBody = z.infer<typeof CreateProjectBodySchema>
 export type PatchProjectBody = z.infer<typeof PatchProjectBodySchema>

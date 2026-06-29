@@ -39,4 +39,9 @@ describe('AuditEvent', () => {
       expect.arrayContaining(['secret.created', 'secret.read', 'secret.updated', 'secret.deleted'])
     )
   })
+
+  it('exposes Story 2.3 tag audit event names', () => {
+    expect(AuditEvent.CREDENTIAL_TAGS_UPDATED).toBe('credential.tags_updated')
+    expect(AuditEvent.PROJECT_TAGS_UPDATED).toBe('project.tags_updated')
+  })
 })

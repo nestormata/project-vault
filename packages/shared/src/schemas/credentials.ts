@@ -36,6 +36,26 @@ export const CredentialVersionSummarySchema = z
   })
   .meta({ id: 'CredentialVersionSummary' })
 
+export const CredentialStatusSchema = z.enum(['active', 'expiring', 'expired'])
+
+export const CredentialSummarySchema = z
+  .object({
+    id: z.uuid(),
+    projectId: z.uuid(),
+    name: z.string(),
+    description: z.string().nullable(),
+    tags: z.array(z.string()),
+    status: CredentialStatusSchema,
+    expiresAt: z.iso.datetime().nullable(),
+    rotationSchedule: z.string().nullable(),
+    currentVersionNumber: z.number().int().positive(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'CredentialSummary' })
+
 export type CredentialDetail = z.infer<typeof CredentialDetailSchema>
 export type CredentialValue = z.infer<typeof CredentialValueSchema>
 export type CredentialVersionSummary = z.infer<typeof CredentialVersionSummarySchema>
+export type CredentialStatus = z.infer<typeof CredentialStatusSchema>
+export type CredentialSummary = z.infer<typeof CredentialSummarySchema>

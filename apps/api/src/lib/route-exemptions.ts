@@ -189,9 +189,30 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'project.updated',
     sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
+  'PUT /api/v1/projects/:projectId/tags': {
+    action: 'mutation',
+    auditEvent: 'project.tags_updated',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
   'POST /api/v1/projects/:projectId/credentials': {
     action: 'mutation',
     auditEvent: 'credential.created',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/credentials': {
+    action: 'read',
+    auditOmissionReason:
+      'Credential list/search returns metadata only; never any credential value (RS-E2a).',
+    reviewer: SECURITY_OWNER,
+  },
+  'PUT /api/v1/projects/:projectId/credentials/:credentialId/tags': {
+    action: 'mutation',
+    auditEvent: 'credential.tags_updated',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/projects/:projectId/credentials/:credentialId/tags': {
+    action: 'mutation',
+    auditEvent: 'credential.tags_updated',
     sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
   },
   'POST /api/v1/projects/:projectId/credentials/:credentialId/versions': {

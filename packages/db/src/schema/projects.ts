@@ -1,4 +1,5 @@
-import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { orgScoped } from './helpers.js'
 import { users } from './users.js'
 
@@ -10,6 +11,10 @@ export const projects = pgTable(
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     description: text('description'),
+    tags: jsonb('tags')
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<string[]>(),
     // Projects belong to the org, so deleting a user must not delete their projects.
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

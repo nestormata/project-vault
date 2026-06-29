@@ -1,9 +1,15 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { credentialVersions, credentials, projects, vaultState } from '@project-vault/db/schema'
 import { encrypt, withSecret, type EncryptedValue } from '@project-vault/crypto'
+import { dedupeTags, tagDelta } from '../../lib/tags.js'
 import { getPrimaryKey } from '../vault/key-service.js'
-import type { AddVersionBody, CreateCredentialBody } from './schema.js'
+import type {
+  AddVersionBody,
+  CreateCredentialBody,
+  ListCredentialsQuery,
+  TagArrayBody,
+} from './schema.js'
 
 export class VersionConflictError extends Error {
   constructor() {
@@ -14,6 +20,14 @@ export class VersionConflictError extends Error {
 type RevealCurrentValueResult =
   | { status: 'found'; value: string; versionNumber: number }
   | { status: 'not_found'; reason: 'not_found' | 'all_versions_purged' }
+
+type CredentialListParams = {
+  projectId: string
+  query: ListCredentialsQuery
+  limit: number
+  offset: number
+}
+type TagUpdateMode = 'replace' | 'append'
 
 function isUniqueViolation(error: unknown): boolean {
   const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
@@ -67,6 +81,107 @@ export async function findProjectInOrg(tx: Tx, projectId: string): Promise<boole
   return Boolean(rows[0])
 }
 
+function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, (match) => `\\${match}`)
+}
+
+function parseTagFilter(rawTags: string | undefined): string[] {
+  return (rawTags ?? '')
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0)
+}
+
+function credentialListWhere(params: { projectId: string; query: ListCredentialsQuery }) {
+  const filters = [eq(credentials.projectId, params.projectId)]
+  const q = params.query.q?.trim()
+  if (q) {
+    const like = `%${escapeLikeTerm(q)}%`
+    const searchFilter = or(ilike(credentials.name, like), ilike(credentials.description, like))
+    if (searchFilter) filters.push(searchFilter)
+  }
+
+  const tagList = parseTagFilter(params.query.tags)
+  if (tagList.length > 0) {
+    filters.push(sql`${credentials.tags} @> ${JSON.stringify(tagList)}::jsonb`)
+  }
+
+  if (params.query.status === 'active') {
+    filters.push(sql`(${credentials.expiresAt} IS NULL OR ${credentials.expiresAt} > now())`)
+  } else if (params.query.status === 'expiring') {
+    filters.push(
+      sql`${credentials.expiresAt} > now() AND ${credentials.expiresAt} <= now() + make_interval(days => ${params.query.expiresWithin})`
+    )
+  } else if (params.query.status === 'expired') {
+    filters.push(sql`${credentials.expiresAt} IS NOT NULL AND ${credentials.expiresAt} <= now()`)
+  }
+
+  return and(...filters)
+}
+
+export async function listCredentials(tx: Tx, params: CredentialListParams) {
+  const where = credentialListWhere(params)
+  const [{ total } = { total: 0 }] = await tx
+    .select({ total: sql<number>`count(*)` })
+    .from(credentials)
+    .where(where)
+
+  const rows = await tx
+    .select({
+      id: credentials.id,
+      projectId: credentials.projectId,
+      name: credentials.name,
+      description: credentials.description,
+      tags: credentials.tags,
+      status: sql<'active' | 'expiring' | 'expired'>`CASE
+        WHEN ${credentials.expiresAt} IS NOT NULL AND ${credentials.expiresAt} <= now() THEN 'expired'
+        WHEN ${credentials.expiresAt} IS NOT NULL AND ${credentials.expiresAt} <= now() + make_interval(days => 30) THEN 'expiring'
+        ELSE 'active'
+      END`,
+      expiresAt: credentials.expiresAt,
+      rotationSchedule: credentials.rotationSchedule,
+      createdAt: credentials.createdAt,
+      updatedAt: credentials.updatedAt,
+    })
+    .from(credentials)
+    .where(where)
+    .orderBy(desc(credentials.createdAt), desc(credentials.id))
+    .limit(params.limit)
+    .offset(params.offset)
+
+  const credentialIds = rows.map((row) => row.id)
+  const versionRows =
+    credentialIds.length === 0
+      ? []
+      : await tx
+          .select({
+            credentialId: credentialVersions.credentialId,
+            currentVersionNumber: sql<number>`MAX(${credentialVersions.versionNumber})`,
+          })
+          .from(credentialVersions)
+          .where(
+            and(
+              inArray(credentialVersions.credentialId, credentialIds),
+              isNull(credentialVersions.purgedAt)
+            )
+          )
+          .groupBy(credentialVersions.credentialId)
+  const currentVersionByCredential = new Map(
+    versionRows.map((row) => [row.credentialId, Number(row.currentVersionNumber)])
+  )
+
+  return {
+    total: Number(total),
+    items: rows.map((row) => ({
+      ...row,
+      currentVersionNumber: currentVersionByCredential.get(row.id) ?? 1,
+      expiresAt: row.expiresAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    })),
+  }
+}
+
 export async function createCredentialWithFirstVersion(
   tx: Tx,
   input: {
@@ -118,6 +233,53 @@ export async function findCredentialInProject(
     )
     .limit(1)
   return credential ?? null
+}
+
+export async function updateCredentialTags(
+  tx: Tx,
+  params: {
+    credentialId: string
+    projectId: string
+    body: TagArrayBody
+    mode: TagUpdateMode
+  }
+) {
+  const [row] = await tx
+    .select({ id: credentials.id, tags: credentials.tags })
+    .from(credentials)
+    .where(
+      and(eq(credentials.id, params.credentialId), eq(credentials.projectId, params.projectId))
+    )
+    .for('update')
+    .limit(1)
+  if (!row) return { status: 'not_found' as const }
+
+  const incoming = dedupeTags(params.body.tags)
+  const nextTags =
+    params.mode === 'replace'
+      ? incoming
+      : [...row.tags, ...incoming.filter((tag) => !row.tags.includes(tag))]
+  if (nextTags.length > 20) return { status: 'too_many_tags' as const }
+
+  const [updated] = await tx
+    .update(credentials)
+    .set({ tags: nextTags })
+    .where(eq(credentials.id, params.credentialId))
+    .returning({ id: credentials.id, tags: credentials.tags })
+  if (!updated) return { status: 'not_found' as const }
+
+  const delta = tagDelta(row.tags, nextTags)
+  return {
+    status: 'updated' as const,
+    data: updated,
+    auditPayload: {
+      mode: params.mode,
+      added:
+        params.mode === 'append' ? nextTags.filter((tag) => !row.tags.includes(tag)) : delta.added,
+      removed: params.mode === 'append' ? [] : delta.removed,
+      resultCount: nextTags.length,
+    },
+  }
 }
 
 export async function addCredentialVersion(

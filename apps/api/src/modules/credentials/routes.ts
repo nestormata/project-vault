@@ -1,10 +1,15 @@
-import type { FastifyRequest } from 'fastify'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
-import { parseBody, parseParams } from '../../lib/route-helpers.js'
-import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
+import { buildPaginationMeta, paginationOffset, parsePagination } from '../../lib/pagination.js'
+import {
+  secureRoute,
+  type PublicRouteContext,
+  type SecureRouteContext,
+} from '../../lib/secure-route.js'
 import {
   writeHumanAuditEntryOrFailClosed,
   type SameTransactionAuditInput,
@@ -17,21 +22,33 @@ import {
   CredentialParamsSchema,
   CredentialValueResponseSchema,
   CredentialVersionListResponseSchema,
+  ListCredentialsQuerySchema,
+  ListCredentialsResponseSchema,
+  MAX_CREDENTIAL_LIST_OFFSET,
   ProjectScopeParamsSchema,
+  TagArrayBodySchema,
+  TagUpdateResponseSchema,
   type AddVersionBody,
   type CreateCredentialBody,
+  type TagArrayBody,
 } from './schema.js'
 import {
   VersionConflictError,
   addCredentialVersion,
   createCredentialWithFirstVersion,
   findProjectInOrg,
+  listCredentials,
   listVersionHistory,
   revealCurrentValue,
+  updateCredentialTags,
 } from './service.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
-  eventType: 'credential.created' | 'credential.version_created' | 'credential.value_revealed'
+  eventType:
+    | 'credential.created'
+    | 'credential.version_created'
+    | 'credential.value_revealed'
+    | 'credential.tags_updated'
 }
 
 async function writeCredentialAuditOrFailClosed(
@@ -60,9 +77,119 @@ const CREDENTIAL_NOT_FOUND = {
   code: 'credential_not_found',
   message: 'Credential not found',
 } as const
+const TOO_MANY_TAGS = {
+  code: 'too_many_tags',
+  message: 'A credential may have at most 20 tags',
+} as const
 const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
 
+const CREDENTIAL_TAG_ROUTE_SCHEMA = {
+  response: {
+    200: TagUpdateResponseSchema,
+    401: ApiErrorSchema,
+    403: ApiErrorSchema,
+    404: ApiErrorSchema,
+    422: ApiErrorSchema,
+  },
+} as const
+
+function credentialTagRouteSecurity(method: 'PUT' | 'PATCH') {
+  return {
+    minimumRole: 'member' as const,
+    rateLimit: {
+      max: 60,
+      timeWindowMs: 60_000,
+      key: `${method} /api/v1/projects/:projectId/credentials/:credentialId/tags`,
+    },
+    writeAuditEvent: false,
+  }
+}
+
+async function handleCredentialTagUpdate(
+  ctx: SecureRouteContext | PublicRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  mode: 'replace' | 'append'
+) {
+  const params = parseParams(CredentialParamsSchema, req, reply)
+  if (!params) return reply
+  const parsed = parseBody<TagArrayBody>(TagArrayBodySchema, req, reply)
+  if (!parsed.success) return reply
+  const secureCtx = ctx as SecureRouteContext
+
+  const result = await updateCredentialTags(secureCtx.tx, {
+    ...params,
+    body: parsed.data,
+    mode,
+  })
+  if (result.status === 'not_found') return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+  if (result.status === 'too_many_tags') {
+    return reply.status(422).send(TOO_MANY_TAGS)
+  }
+
+  await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+    orgId: secureCtx.auth.orgId,
+    actorUserId: secureCtx.auth.userId,
+    eventType: 'credential.tags_updated',
+    resourceId: params.credentialId,
+    payload: result.auditPayload,
+    request: req,
+  })
+
+  return { data: result.data }
+}
+
 export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/credentials',
+    schema: {
+      response: {
+        200: ListCredentialsResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'viewer',
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 120,
+        timeWindowMs: 60_000,
+        key: 'GET /api/v1/projects/:projectId/credentials',
+      },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectScopeParamsSchema, req, reply)
+      if (!params) return reply
+      const parsedQuery = ListCredentialsQuerySchema.safeParse(req.query)
+      if (!parsedQuery.success) {
+        return reply.status(422).send(validationError(parsedQuery.error, 'query'))
+      }
+      const secureCtx = ctx as SecureRouteContext
+      const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
+      if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
+
+      const pagination = parsePagination(parsedQuery.data.page, parsedQuery.data.limit)
+      const offset = paginationOffset(pagination)
+      if (offset > MAX_CREDENTIAL_LIST_OFFSET) {
+        return reply.status(422).send({
+          code: 'page_out_of_range',
+          message: 'Page is too deep; narrow your filters',
+        })
+      }
+
+      const { items, total } = await listCredentials(secureCtx.tx, {
+        projectId: params.projectId,
+        query: parsedQuery.data,
+        limit: pagination.limit,
+        offset,
+      })
+      return { data: { items, ...buildPaginationMeta(pagination, total) } }
+    },
+  })
+
   secureRoute(fastify, {
     method: 'POST',
     url: '/:projectId/credentials',
@@ -113,6 +240,22 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       reply.status(201)
       return { data: detail }
     },
+  })
+
+  secureRoute(fastify, {
+    method: 'PUT',
+    url: '/:projectId/credentials/:credentialId/tags',
+    schema: CREDENTIAL_TAG_ROUTE_SCHEMA,
+    security: credentialTagRouteSecurity('PUT'),
+    handler: async (ctx, req, reply) => handleCredentialTagUpdate(ctx, req, reply, 'replace'),
+  })
+
+  secureRoute(fastify, {
+    method: 'PATCH',
+    url: '/:projectId/credentials/:credentialId/tags',
+    schema: CREDENTIAL_TAG_ROUTE_SCHEMA,
+    security: credentialTagRouteSecurity('PATCH'),
+    handler: async (ctx, req, reply) => handleCredentialTagUpdate(ctx, req, reply, 'append'),
   })
 
   secureRoute(fastify, {
