@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq, isNull } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
@@ -58,10 +58,6 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
   afterAll(async () => {
     await app.close()
     await resetVaultForTest()
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
   })
 
   it('POST dependency creates a row with audit and defaults systemType to other', async () => {
@@ -243,13 +239,16 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
-    const fail = await app.inject({
-      method: 'DELETE',
-      url: `${credentialDependenciesUrl(projectId, credential.id)}/${freshId}`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
-    expectAuditWriteFailed(fail)
-    auditSpy.mockRestore()
+    try {
+      const fail = await app.inject({
+        method: 'DELETE',
+        url: `${credentialDependenciesUrl(projectId, credential.id)}/${freshId}`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expectAuditWriteFailed(fail)
+    } finally {
+      auditSpy.mockRestore()
+    }
 
     const row = await withOrg(owner.orgId, (tx) =>
       tx
@@ -380,14 +379,17 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     const addSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
-    const addFail = await app.inject({
-      method: 'POST',
-      url: credentialDependenciesUrl(projectId, credential.id),
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { systemName: 'audit-rollback-add' },
-    })
-    expectAuditWriteFailed(addFail)
-    addSpy.mockRestore()
+    try {
+      const addFail = await app.inject({
+        method: 'POST',
+        url: credentialDependenciesUrl(projectId, credential.id),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { systemName: 'audit-rollback-add' },
+      })
+      expectAuditWriteFailed(addFail)
+    } finally {
+      addSpy.mockRestore()
+    }
 
     const afterAddFail = await withOrg(owner.orgId, (tx) =>
       tx
@@ -400,14 +402,17 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     const patchSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
-    const patchFail = await app.inject({
-      method: 'PATCH',
-      url: credentialLifecycleUrl(projectId, credential.id),
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { expiresAt: FUTURE_EXPIRY },
-    })
-    expectAuditWriteFailed(patchFail)
-    patchSpy.mockRestore()
+    try {
+      const patchFail = await app.inject({
+        method: 'PATCH',
+        url: credentialLifecycleUrl(projectId, credential.id),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { expiresAt: FUTURE_EXPIRY },
+      })
+      expectAuditWriteFailed(patchFail)
+    } finally {
+      patchSpy.mockRestore()
+    }
 
     const afterPatchFail = await withOrg(owner.orgId, (tx) =>
       tx
@@ -427,17 +432,20 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     })
 
     const auditSpy = vi.spyOn(humanAudit, 'writeHumanAuditEntry')
-    const noop = await app.inject({
-      method: 'PATCH',
-      url: credentialLifecycleUrl(projectId, credential.id),
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { rotationSchedule: MONTHLY_ROTATION_CRON },
-    })
-    expect(noop.statusCode).toBe(200)
-    expect(
-      auditSpy.mock.calls.filter((call) => call[1]?.eventType === 'credential.lifecycle_updated')
-    ).toHaveLength(0)
-    auditSpy.mockRestore()
+    try {
+      const noop = await app.inject({
+        method: 'PATCH',
+        url: credentialLifecycleUrl(projectId, credential.id),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { rotationSchedule: MONTHLY_ROTATION_CRON },
+      })
+      expect(noop.statusCode).toBe(200)
+      expect(
+        auditSpy.mock.calls.filter((call) => call[1]?.eventType === 'credential.lifecycle_updated')
+      ).toHaveLength(0)
+    } finally {
+      auditSpy.mockRestore()
+    }
   }, 20_000)
 
   it('DELETE returns credential_not_found when the parent credential is missing', async () => {

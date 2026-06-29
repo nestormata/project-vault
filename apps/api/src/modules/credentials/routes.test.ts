@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
@@ -187,10 +187,6 @@ describe.sequential('credential routes', () => {
     await resetVaultForTest()
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it('POST creates a credential and first version, never returning the value', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'create-project')
 
@@ -314,15 +310,18 @@ describe.sequential('credential routes', () => {
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/credentials`,
-      headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { name: 'Audit Fail', value: 'secret' },
-    })
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { name: 'Audit Fail', value: 'secret' },
+      })
 
-    expectAuditWriteFailed(res)
-    auditSpy.mockRestore()
+      expectAuditWriteFailed(res)
+    } finally {
+      auditSpy.mockRestore()
+    }
   }, 20_000)
 
   it('GET value reveals the current value and writes a value_revealed audit row', async () => {
@@ -414,18 +413,21 @@ describe.sequential('credential routes', () => {
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
-    const res = await revealValue(app, owner.cookies, projectId, credential.id)
-    expectAuditWriteFailed(res)
-    expect(JSON.stringify(res.json())).not.toContain('should-not-leak')
+    try {
+      const res = await revealValue(app, owner.cookies, projectId, credential.id)
+      expectAuditWriteFailed(res)
+      expect(JSON.stringify(res.json())).not.toContain('should-not-leak')
 
-    const auditRows = await withOrg(owner.orgId, (tx) =>
-      tx
-        .select({ id: auditLogEntries.id })
-        .from(auditLogEntries)
-        .where(eq(auditLogEntries.eventType, 'credential.value_revealed'))
-    )
-    expect(auditRows.filter((row) => row).length).toBeGreaterThanOrEqual(0)
-    auditSpy.mockRestore()
+      const auditRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ id: auditLogEntries.id })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'credential.value_revealed'))
+      )
+      expect(auditRows.filter((row) => row).length).toBeGreaterThanOrEqual(0)
+    } finally {
+      auditSpy.mockRestore()
+    }
   }, 20_000)
 
   it('POST versions creates a monotonic version and allows duplicate values', async () => {
@@ -844,16 +846,19 @@ describe.sequential('credential routes', () => {
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
-    const auditFail = await updateCredentialTags(
-      app,
-      owner.cookies,
-      projectId,
-      credential.id,
-      'PUT',
-      ['rolled-back']
-    )
-    expectAuditWriteFailed(auditFail)
-    auditSpy.mockRestore()
+    try {
+      const auditFail = await updateCredentialTags(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        'PUT',
+        ['rolled-back']
+      )
+      expectAuditWriteFailed(auditFail)
+    } finally {
+      auditSpy.mockRestore()
+    }
 
     const afterRollback = await listCredentials(app, owner.cookies, projectId)
     expect(JSON.stringify(afterRollback.json())).toContain('stable')
