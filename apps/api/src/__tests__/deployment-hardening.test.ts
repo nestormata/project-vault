@@ -23,6 +23,22 @@ describe('deployment hardening configuration', () => {
     expect(compose).toContain('"127.0.0.1:5432:5432"')
   })
 
+  it('passes the vault bootstrap token into the api container', () => {
+    const compose = readRepoFile('docker-compose.yml')
+
+    expect(compose).toContain('VAULT_BOOTSTRAP_TOKEN: ${VAULT_BOOTSTRAP_TOKEN:-}')
+  })
+
+  it('allows vault bootstrap env vars through turbo dev tasks', () => {
+    const turbo = JSON.parse(readRepoFile('turbo.json')) as {
+      globalPassThroughEnv?: string[]
+    }
+
+    expect(turbo.globalPassThroughEnv).toEqual(
+      expect.arrayContaining(['VAULT_BOOTSTRAP_TOKEN', 'VAULT_ALLOW_REMOTE_INIT'])
+    )
+  })
+
   it('keeps sensitive and bulky files out of Docker build context', () => {
     const dockerignore = readRepoFile('.dockerignore')
 

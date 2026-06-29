@@ -113,7 +113,7 @@ async function pruneOrgCredentialVersions(
   dryRun: boolean,
   logger?: WorkerLogger
 ): Promise<{ credentialsScanned: number; versionsPurged: number; versionsWouldPurge: number }> {
-  const orgCredentials = await runOrgScopedJob(orgId, 'credentials:prune-versions', ({ tx }) =>
+  const orgCredentials = await runOrgScopedJob(orgId, 'credentials/prune-versions', ({ tx }) =>
     tx
       .select({ id: credentials.id, retentionCount: credentials.retentionCount })
       .from(credentials)
@@ -126,7 +126,7 @@ async function pruneOrgCredentialVersions(
   // Short-transaction batching (F7): one credential per transaction, so purge UPDATEs
   // and audit inserts never hold row locks long enough to block concurrent reveals/add-version.
   for (const credential of orgCredentials) {
-    await runOrgScopedJob(orgId, 'credentials:prune-versions', async ({ tx }) => {
+    await runOrgScopedJob(orgId, 'credentials/prune-versions', async ({ tx }) => {
       const candidates = await purgeCandidatesForCredential(
         tx,
         credential.id,

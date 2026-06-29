@@ -37,4 +37,35 @@ describe('server API proxy', () => {
     const forwarded = fetchFn.mock.calls[0]?.[0] as Request
     expect(forwarded.url).toBe('http://localhost:3000/ready?apiBaseUrl=https://attacker.example')
   })
+
+  it('returns a mutable response when proxying native fetch responses', async () => {
+    const nativeResponse = await fetch('data:application/json,{"status":"ready"}')
+    const fetchFn = vi.fn().mockResolvedValue(nativeResponse)
+
+    const response = await proxyReadyRequest({
+      fetchFn,
+      request: new Request('http://web.local/ready'),
+      apiBaseUrl: 'http://api.local:3000',
+    })
+
+    expect(() => response.headers.set('x-sveltekit-test', 'mutable')).not.toThrow()
+    await expect(response.json()).resolves.toEqual({ status: 'ready' })
+  })
+
+  it('returns a calm unavailable response when the API cannot be reached', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new TypeError('fetch failed'))
+
+    const response = await proxyReadyRequest({
+      fetchFn,
+      request: new Request('http://web.local/ready'),
+      apiBaseUrl: 'http://api.local:3000',
+    })
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'api_unreachable',
+      message: 'Project Vault API is unavailable.',
+    })
+  })
 })

@@ -2,9 +2,9 @@ import { env } from '$env/dynamic/private'
 import type { RequestHandler } from './$types'
 import { proxyApiRequest } from '$lib/server/api-proxy.js'
 
-const proxy: RequestHandler = ({ fetch, params, request }) =>
+const proxy: RequestHandler = ({ params, request }) =>
   proxyApiRequest({
-    fetchFn: fetch,
+    fetchFn: globalThis.fetch,
     request,
     path: params.path ?? '',
     apiBaseUrl: env.API_BASE_URL,

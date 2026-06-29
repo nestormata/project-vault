@@ -1,7 +1,9 @@
 import type { Handle } from '@sveltejs/kit'
+import { env } from '$env/dynamic/private'
 import { isAuthPath, isProtectedAppPath, resolveAuthContext } from '$lib/server/auth-guard.js'
 import { getVaultReadiness } from '$lib/api/vault.js'
 import { getFrameProtectionHeaders } from '$lib/security/hardening.js'
+import { createServerApiFetch } from '$lib/server/server-api-fetch.js'
 
 function appendSetCookies(response: Response, setCookies: string[]) {
   for (const setCookie of setCookies) response.headers.append('set-cookie', setCookie)
@@ -31,13 +33,14 @@ export const handle: Handle = async ({ event, resolve }) => {
   event.setHeaders(getFrameProtectionHeaders())
   const forwardedSetCookies: string[] = []
   const pathname = event.url.pathname
+  const apiFetch = createServerApiFetch({ apiBaseUrl: env.API_BASE_URL })
 
-  const vaultRedirect = await redirectIfVaultUnavailable(event.fetch, pathname)
+  const vaultRedirect = await redirectIfVaultUnavailable(apiFetch, pathname)
   if (vaultRedirect) return vaultRedirect
 
   const cookieHeader = event.request.headers.get('cookie')
   const auth = await resolveAuthContext({
-    fetchFn: event.fetch,
+    fetchFn: apiFetch,
     cookieHeader,
     forwardSetCookie: (value) => forwardedSetCookies.push(value),
   })

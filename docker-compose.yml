@@ -55,6 +55,8 @@ services:
       METRICS_BIND_HOST: 127.0.0.1
       LOG_LEVEL: info
       VAULT_KEY_DIR: /run/secrets
+      # First-init protection: set in .env or shell. Generate: openssl rand -base64 32
+      VAULT_BOOTSTRAP_TOKEN: ${VAULT_BOOTSTRAP_TOKEN:-}
       # Envelope mode only: set in .env (not committed). Generate: openssl rand -hex 16
       VAULT_ENVELOPE_KEY_HALF: ${VAULT_ENVELOPE_KEY_HALF:-}
     ports:

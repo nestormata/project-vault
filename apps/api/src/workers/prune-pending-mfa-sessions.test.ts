@@ -77,7 +77,7 @@ describe('prunePendingMfaSessions', () => {
     ).resolves.toHaveLength(1)
     expect(logs).toContainEqual({
       eventType: 'job.completed',
-      jobName: 'mfa:prune-pending-mfa-sessions',
+      jobName: 'mfa/prune-pending-mfa-sessions',
       deletedCount: 2,
     })
   })

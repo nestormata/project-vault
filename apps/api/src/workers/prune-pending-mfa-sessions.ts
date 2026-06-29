@@ -6,7 +6,7 @@ import { runPruneJob, type WorkerLogger } from './prune-utils.js'
 
 export async function prunePendingMfaSessions(logger?: WorkerLogger): Promise<void> {
   await runPruneJob(
-    'mfa:prune-pending-mfa-sessions',
+    'mfa/prune-pending-mfa-sessions',
     () =>
       getDb()
         .delete(pendingMfaSessions)
