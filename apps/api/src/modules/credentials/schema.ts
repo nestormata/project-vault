@@ -5,7 +5,14 @@ import {
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
 
-const CRON_REGEX = /^(\S+\s+){4}\S+$/ // structural 5-field check only; full semantics in Story 2.4
+function hasFiveCronFields(value: string): boolean {
+  // Structural 5-field check only; full cron semantics land in Story 2.4.
+  const fields = value
+    .trim()
+    .split(' ')
+    .filter((field) => field.length > 0)
+  return fields.length === 5
+}
 
 export const CreateCredentialBodySchema = z
   .object({
@@ -14,7 +21,7 @@ export const CreateCredentialBodySchema = z
     description: z.string().max(1024).trim().nullable().optional(),
     tags: z.array(z.string().min(1).max(50)).max(20).optional(),
     expiresAt: z.iso.datetime().nullable().optional(),
-    rotationSchedule: z.string().regex(CRON_REGEX, 'invalid_cron').nullable().optional(),
+    rotationSchedule: z.string().refine(hasFiveCronFields, 'invalid_cron').nullable().optional(),
   })
   .strict()
   .meta({ id: 'CreateCredentialBody' })
