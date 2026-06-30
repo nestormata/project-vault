@@ -11,7 +11,10 @@ import {
   expectAuditWriteFailed,
   initVaultForTest,
 } from '../../__tests__/helpers/auth-test-helpers.js'
-import { loginExistingUserInOrg } from '../../__tests__/helpers/org-role-test-helpers.js'
+import {
+  createDirectAuthenticatedUser,
+  loginExistingUserInOrg,
+} from '../../__tests__/helpers/org-role-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import {
   bootstrapCredentialRouteOwners,
@@ -801,35 +804,32 @@ describe.sequential('credential routes', () => {
   }, 20_000)
 
   it('credential tag routes validate body, auth, project scope, and audit rollback', async () => {
+    const user = await createDirectAuthenticatedUser(app, 'credential-tags-validation')
+    const crossOrgUser = await createDirectAuthenticatedUser(app, 'credential-tags-other')
     const projectId = await createTestProjectDirect(
-      owner.orgId,
-      owner.userId,
+      user.orgId,
+      user.userId,
       'credential-tags-validation'
     )
     const otherProjectId = await createTestProjectDirect(
-      other.orgId,
-      other.userId,
+      crossOrgUser.orgId,
+      crossOrgUser.userId,
       'credential-tags-other'
     )
-    const credential = await createTestCredential(app, owner.cookies, projectId, {
+    const credential = await createTestCredential(app, user.cookies, projectId, {
       name: 'Validate Tags Key',
       value: 'tag-validation-secret',
       tags: ['stable'],
     })
 
-    const invalid = await updateCredentialTags(
-      app,
-      owner.cookies,
-      projectId,
-      credential.id,
-      'PUT',
-      [' ']
-    )
+    const invalid = await updateCredentialTags(app, user.cookies, projectId, credential.id, 'PUT', [
+      ' ',
+    ])
     expect(invalid.statusCode).toBe(422)
 
     const wrongProject = await updateCredentialTags(
       app,
-      owner.cookies,
+      user.cookies,
       otherProjectId,
       credential.id,
       'PUT',
@@ -837,20 +837,13 @@ describe.sequential('credential routes', () => {
     )
     expect(wrongProject.statusCode).toBe(404)
 
-    const unauthenticated = await app.inject({
-      method: 'PUT',
-      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/tags`,
-      payload: { tags: ['x'] },
-    })
-    expect(unauthenticated.statusCode).toBe(401)
-
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
     try {
       const auditFail = await updateCredentialTags(
         app,
-        owner.cookies,
+        user.cookies,
         projectId,
         credential.id,
         'PUT',
@@ -861,13 +854,20 @@ describe.sequential('credential routes', () => {
       auditSpy.mockRestore()
     }
 
-    const afterRollback = await withOrg(owner.orgId, (tx) =>
+    const afterRollback = await withOrg(user.orgId, (tx) =>
       tx
         .select({ tags: credentials.tags })
         .from(credentials)
         .where(eq(credentials.id, credential.id))
     )
     expect(afterRollback[0]?.tags).toEqual(['stable'])
+
+    const unauthenticated = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/projects/${projectId}/credentials/${credential.id}/tags`,
+      payload: { tags: ['x'] },
+    })
+    expect(unauthenticated.statusCode).toBe(401)
   }, 20_000)
 
   it('security regression: the credential value never appears in any non-reveal response body', async () => {
