@@ -1,6 +1,6 @@
 # Story 3.1: Email & Slack Notification Delivery
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-28 - comprehensive developer guide for the notification delivery infrastructure.
      This story introduces the notification_queue table, nodemailer email delivery, Slack webhook delivery, the notification
@@ -1689,76 +1689,76 @@ Test files:
 ## Tasks
 
 ### Phase 1: Database & Migration
-- [ ] **R1**: Read `packages/db/src/migrations/meta/_journal.json`, note the next free migration number
-- [ ] Create `packages/db/src/schema/notification-queue.ts` (AC-1)
-- [ ] Export `notificationQueue` from `packages/db/src/schema/index.ts`
-- [ ] Create `packages/db/src/migrations/00XX_notification_queue.sql` (AC-2) with RLS policy
-- [ ] Update `meta/_journal.json`
-- [ ] Run `pnpm --filter @project-vault/db migrate` in dev environment — confirm migration applies cleanly
-- [ ] Run `pnpm --filter @project-vault/db generate` — confirm Drizzle schema is in sync
-- [ ] Run `check-rls-coverage.ts` — confirm `notification_queue` is covered
+- [x] **R1**: Read `packages/db/src/migrations/meta/_journal.json`, note the next free migration number
+- [x] Create `packages/db/src/schema/notification-queue.ts` (AC-1)
+- [x] Export `notificationQueue` from `packages/db/src/schema/index.ts`
+- [x] Create `packages/db/src/migrations/00XX_notification_queue.sql` (AC-2) with RLS policy
+- [x] Update `meta/_journal.json`
+- [x] Run `pnpm --filter @project-vault/db migrate` in dev environment — confirm migration applies cleanly
+- [x] Run `pnpm --filter @project-vault/db generate` — confirm Drizzle schema is in sync
+- [x] Run `check-rls-coverage.ts` — confirm `notification_queue` is covered
 
 ### Phase 2: Env Vars & Dependencies
-- [ ] Add `SMTP_*` and `SLACK_WEBHOOK_URL` to `apps/api/src/config/env.ts` (AC-10) — with `superRefine` validation
-- [ ] Add SMTP_HOST required-when-SMTP_FROM validation
-- [ ] Update `.env.example` with SMTP and Slack examples
-- [ ] Run `pnpm --filter @project-vault/api add nodemailer` (AC-13)
-- [ ] Run `pnpm --filter @project-vault/api add -D @types/nodemailer`
-- [ ] Verify `import nodemailer from 'nodemailer'` works in the ESM context
+- [x] Add `SMTP_*` and `SLACK_WEBHOOK_URL` to `apps/api/src/config/env.ts` (AC-10) — with `superRefine` validation
+- [x] Add SMTP_HOST required-when-SMTP_FROM validation
+- [x] Update `.env.example` with SMTP and Slack examples
+- [x] Run `pnpm --filter @project-vault/api add nodemailer` (AC-13)
+- [x] Run `pnpm --filter @project-vault/api add -D @types/nodemailer`
+- [x] Verify `import nodemailer from 'nodemailer'` works in the ESM context
 
 ### Phase 3: Templates (TDD — write tests first)
-- [ ] Write template unit tests (renderSecurityFailedAuthThreshold, renderSlackTemplate)
-- [ ] Create `apps/api/src/notifications/templates/security-failed-auth-threshold.ts` (AC-6)
-- [ ] Create `apps/api/src/notifications/templates/index.ts` (AC-6)
-- [ ] Verify template tests pass
+- [x] Write template unit tests (renderSecurityFailedAuthThreshold, renderSlackTemplate)
+- [x] Create `apps/api/src/notifications/templates/security-failed-auth-threshold.ts` (AC-6)
+- [x] Create `apps/api/src/notifications/templates/index.ts` (AC-6)
+- [x] Verify template tests pass
 
 ### Phase 4: Dispatcher (TDD)
-- [ ] Write dispatcher unit tests (`notifications/dispatcher.test.ts`)
-- [ ] Create `apps/api/src/notifications/dispatcher.ts` (AC-3)
-- [ ] Verify dispatcher tests pass
+- [x] Write dispatcher unit tests (`notifications/dispatcher.test.ts`)
+- [x] Create `apps/api/src/notifications/dispatcher.ts` (AC-3)
+- [x] Verify dispatcher tests pass
 
 ### Phase 5: Workers (TDD)
-- [ ] Write `workers/notification-email.test.ts` before implementing (AC-14)
-- [ ] Write `workers/notification-slack.test.ts` before implementing (AC-14)
-- [ ] Create `apps/api/src/workers/notification-email.ts` (AC-4)
-- [ ] Create `apps/api/src/workers/notification-slack.ts` (AC-5)
-- [ ] Write `workers/notification-backfill.test.ts` before implementing
-- [ ] Create `apps/api/src/workers/notification-backfill.ts` (AC-7)
-- [ ] Verify all worker tests pass
+- [x] Write `workers/notification-email.test.ts` before implementing (AC-14)
+- [x] Write `workers/notification-slack.test.ts` before implementing (AC-14)
+- [x] Create `apps/api/src/workers/notification-email.ts` (AC-4)
+- [x] Create `apps/api/src/workers/notification-slack.ts` (AC-5)
+- [x] Write `workers/notification-backfill.test.ts` before implementing
+- [x] Create `apps/api/src/workers/notification-backfill.ts` (AC-7)
+- [x] Verify all worker tests pass
 
 ### Phase 6: `check-failed-auth-threshold.ts` Update
-- [ ] Update existing Story 1.9 tests for `check-failed-auth-threshold.ts` to reflect new behavior (AC-8)
-- [ ] Modify `apps/api/src/workers/check-failed-auth-threshold.ts` to call dispatcher (AC-8)
-- [ ] Verify existing tests still pass + new assertions (no `PENDING_DELIVERY`, calls enqueueSecurityAlertNotification)
+- [x] Update existing Story 1.9 tests for `check-failed-auth-threshold.ts` to reflect new behavior (AC-8)
+- [x] Modify `apps/api/src/workers/check-failed-auth-threshold.ts` to call dispatcher (AC-8)
+- [x] Verify existing tests still pass + new assertions (no `PENDING_DELIVERY`, calls enqueueSecurityAlertNotification)
 
 ### Phase 7: Boss Extension
-- [ ] Extend `apps/api/src/lib/boss.ts` to support per-worker concurrency options (AC-9)
-- [ ] Update `boss.test.ts` for the new API
+- [x] Extend `apps/api/src/lib/boss.ts` to support per-worker concurrency options (AC-9)
+- [x] Update `boss.test.ts` for the new API
 
 ### Phase 8: Admin Module
-- [ ] Write `modules/admin/routes.test.ts` before implementing (AC-14)
-- [ ] Create `apps/api/src/modules/admin/routes.ts` and `schema.ts` (AC-11)
-- [ ] Register `adminRoutes` in `apps/api/src/app.ts` (AC-11)
-- [ ] Verify admin route tests pass
+- [x] Write `modules/admin/routes.test.ts` before implementing (AC-14)
+- [x] Create `apps/api/src/modules/admin/routes.ts` and `schema.ts` (AC-11)
+- [x] Register `adminRoutes` in `apps/api/src/app.ts` (AC-11)
+- [x] Verify admin route tests pass
 
 ### Phase 9: Route Audit & Main.ts
-- [ ] Add `ROUTE_ACTION_CLASSIFICATIONS` entry for `POST /api/v1/admin/notifications/test` (AC-12)
-- [ ] Add `DIRECT_DB_ACCESS_CLASSIFICATIONS` entries for notification workers (AC-12)
-- [ ] Register notification workers in `apps/api/src/main.ts` (AC-9)
-- [ ] Add backfill startup trigger in `startBossAndRegisterWorkers()` (AC-7)
-- [ ] Update `worker-registration.test.ts` assertions (AC-14)
-- [ ] Verify `route-audit.test.ts` passes
+- [x] Add `ROUTE_ACTION_CLASSIFICATIONS` entry for `POST /api/v1/admin/notifications/test` (AC-12)
+- [x] Add `DIRECT_DB_ACCESS_CLASSIFICATIONS` entries for notification workers (AC-12)
+- [x] Register notification workers in `apps/api/src/main.ts` (AC-9)
+- [x] Add backfill startup trigger in `startBossAndRegisterWorkers()` (AC-7)
+- [x] Update `worker-registration.test.ts` assertions (AC-14)
+- [x] Verify `route-audit.test.ts` passes
 
 ### Phase 10: RLS Test
-- [ ] Create `packages/db/src/__tests__/notification-queue-rls.test.ts` (AC-14)
-- [ ] Verify RLS isolation tests pass
+- [x] Create `packages/db/src/__tests__/notification-queue-rls.test.ts` (AC-14)
+- [x] Verify RLS isolation tests pass
 
 ### Phase 11: Full CI Sweep
-- [ ] `pnpm typecheck` — no errors
-- [ ] `pnpm lint` — no errors
-- [ ] `pnpm test` (all workspaces) — all tests pass
-- [ ] `pnpm --filter @project-vault/api test` — notification-specific tests pass
-- [ ] Manual smoke test: vault unsealed → `POST /api/v1/admin/notifications/test` returns expected result
+- [x] `pnpm typecheck` — no errors
+- [x] `pnpm lint` — no errors
+- [x] `pnpm test` (all workspaces) — all tests pass
+- [x] `pnpm --filter @project-vault/api test` — notification-specific tests pass
+- [x] Manual smoke test: vault unsealed → `POST /api/v1/admin/notifications/test` returns expected result
 
 ---
 
@@ -1786,16 +1786,33 @@ Test files:
 > **Fill in this section as you implement each phase. It becomes the intelligence source for Story 3.2.**
 
 ### Decisions Made During Implementation
-*(To be filled by dev agent)*
+- `orgId` included in pg-boss job payload because RLS blocks cross-org `getDb()` reads on `notification_queue`.
+- Post-commit `boss.send()` via `sendNotificationJobs()` separate from DB transaction inserts (outbox pattern).
+- `attemptCount` incremented in its own `withOrg` transaction before external SMTP/Slack I/O.
+- pg-boss v12 uses `localConcurrency` / `localGroupConcurrency` (not `teamSize`/`teamConcurrency`).
+- Shared worker logic extracted to `notification-queue-ops.ts` and `notification-worker-common.ts` for DRY/jscpd compliance.
 
 ### Problems Encountered
-*(To be filled by dev agent)*
+- RLS required `withOrg(orgId)` in workers; bare queue ID lookups returned no rows.
+- jscpd zero-threshold CI required deduplicating test helpers and worker code.
+- Must run `pnpm --filter @project-vault/db build` after schema changes before API tests pass.
 
 ### Test Coverage Achieved
-*(To be filled by dev agent)*
+- Dispatcher unit tests (recipient resolution, job dispatch)
+- Email worker tests (deliver, suppress, retry, idempotency)
+- Slack worker tests (deliver, suppress, HTTP errors)
+- Backfill tests (PENDING_DELIVERY drain, idempotency)
+- Admin route integration tests (auth, SMTP test outcomes)
+- Template unit tests (HTML escaping, fallbacks)
+- RLS isolation test for `notification_queue`
+- Updated worker-registration and mfa-enforcement integration tests
 
 ### Files Changed
-*(To be filled by dev agent)*
+- `packages/db`: schema, migration 0021, RLS test
+- `apps/api`: dispatcher, templates, email/slack/backfill workers, admin routes, boss extensions, main.ts, env.ts, check-failed-auth-threshold update
+- Test helpers: `notification-test-helpers.ts`, `mfa-enroll-test-helpers.ts`
 
 ### Notes for Story 3.2
-*(Dev agent: document anything Story 3.2 must know — dispatcher refactoring hooks, schema limitations, unexpected behaviors)*
+- Dispatcher recipient resolution is in `createOrgAdminNotificationEntries()` — replace this for per-user preferences.
+- `notification_queue.status = 'failed'` after DLQ exhaustion deferred (story edge-case table); entries stay `pending` until cleanup.
+- `enqueueSecurityAlertNotification()` is the hook from security alert workers.
