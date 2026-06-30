@@ -6,7 +6,9 @@ import { notificationInbox, notificationQueue } from '@project-vault/db/schema'
 import { createTestUser, deleteTestUser, withTestOrg } from '@project-vault/db/test-helpers'
 import {
   deliverInboxNotification,
+  countInboxEntriesForTest,
   insertInboxQueueEntry,
+  listInboxEntriesForTest,
   resetEmitterForTesting,
   setEmitterForTesting,
 } from './notification-inbox.js'
@@ -32,62 +34,59 @@ function createMockEventEmitter() {
   return { emitter, emittedEvents }
 }
 
+async function withInboxTestUser(
+  slug: string,
+  fn: (ctx: { orgId: string; userId: string }) => Promise<void>
+): Promise<void> {
+  const userId = await createTestUser(slug)
+  try {
+    await withTestOrg(async ({ orgId }) => fn({ orgId, userId }))
+  } finally {
+    resetEmitterForTesting()
+    await deleteTestUser(userId)
+  }
+}
+
 describe('inbox delivery worker', () => {
   it('creates notification_inbox entry when channel="inbox" queue entry is delivered', async () => {
-    const userId = await createTestUser('inbox-deliver')
-    try {
-      await withTestOrg(async ({ orgId }) => {
-        const queueId = await insertInboxQueueEntry(orgId, userId, {
-          payload: SAMPLE_QUEUE_PAYLOAD,
-        })
-        const { emitter, emittedEvents } = createMockEventEmitter()
-        setEmitterForTesting(emitter)
-
-        await deliverInboxNotification(queueId, orgId, emitter)
-
-        const inboxEntries = await withOrgAndUser(orgId, userId, (tx) =>
-          tx.select().from(notificationInbox).where(eq(notificationInbox.userId, userId))
-        )
-        expect(inboxEntries).toHaveLength(1)
-        expect(inboxEntries[0]?.alertType).toBe(FAILED_AUTH_ALERT)
-        expect(inboxEntries[0]?.readAt).toBeNull()
-
-        const [updated] = await withOrg(orgId, (tx) =>
-          tx.select().from(notificationQueue).where(eq(notificationQueue.id, queueId))
-        )
-        expect(updated?.status).toBe('delivered')
-
-        expect(emittedEvents).toContainEqual(
-          expect.objectContaining({
-            event: 'notification.inbox',
-            data: expect.objectContaining({ unreadCount: 1 }),
-          })
-        )
+    await withInboxTestUser('inbox-deliver', async ({ orgId, userId }) => {
+      const queueId = await insertInboxQueueEntry(orgId, userId, {
+        payload: SAMPLE_QUEUE_PAYLOAD,
       })
-    } finally {
-      resetEmitterForTesting()
-      await deleteTestUser(userId)
-    }
+      const { emitter, emittedEvents } = createMockEventEmitter()
+      setEmitterForTesting(emitter)
+
+      await deliverInboxNotification(queueId, orgId, emitter)
+
+      const inboxEntries = await listInboxEntriesForTest(orgId, userId)
+      expect(inboxEntries).toHaveLength(1)
+      expect(inboxEntries[0]?.alertType).toBe(FAILED_AUTH_ALERT)
+      expect(inboxEntries[0]?.readAt).toBeNull()
+
+      const [updated] = await withOrg(orgId, (tx) =>
+        tx.select().from(notificationQueue).where(eq(notificationQueue.id, queueId))
+      )
+      expect(updated?.status).toBe('delivered')
+
+      expect(emittedEvents).toContainEqual(
+        expect.objectContaining({
+          event: 'notification.inbox',
+          data: expect.objectContaining({ unreadCount: 1 }),
+        })
+      )
+    })
   })
 
   it('is idempotent: skips if queue entry already delivered', async () => {
-    const userId = await createTestUser('inbox-idempotent')
-    try {
-      await withTestOrg(async ({ orgId }) => {
-        const queueId = await insertInboxQueueEntry(orgId, userId, { status: 'delivered' })
-        const { emitter, emittedEvents } = createMockEventEmitter()
+    await withInboxTestUser('inbox-idempotent', async ({ orgId, userId }) => {
+      const queueId = await insertInboxQueueEntry(orgId, userId, { status: 'delivered' })
+      const { emitter, emittedEvents } = createMockEventEmitter()
 
-        await deliverInboxNotification(queueId, orgId, emitter)
+      await deliverInboxNotification(queueId, orgId, emitter)
 
-        const inboxEntries = await withOrgAndUser(orgId, userId, (tx) =>
-          tx.select().from(notificationInbox).where(eq(notificationInbox.userId, userId))
-        )
-        expect(inboxEntries).toHaveLength(0)
-        expect(emittedEvents).toHaveLength(0)
-      })
-    } finally {
-      await deleteTestUser(userId)
-    }
+      expect(await countInboxEntriesForTest(orgId, userId)).toBe(0)
+      expect(emittedEvents).toHaveLength(0)
+    })
   })
 
   it('inbox entries are isolated per org (dual RLS)', async () => {

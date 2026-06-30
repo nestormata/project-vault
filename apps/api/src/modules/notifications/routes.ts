@@ -23,6 +23,59 @@ const USER_PREFS_SECURITY = {
   writeAuditEvent: false,
 }
 
+const INBOX_ROUTE_SECURITY = {
+  allowedRoles: ['owner', 'admin', 'member', 'viewer'] satisfies OrgRole[],
+  writeAuditEvent: false,
+}
+
+function parseInboxEntryId(req: FastifyRequest, reply: FastifyReply): string | null {
+  const paramParsed = InboxEntryIdParamSchema.safeParse(req.params)
+  if (!paramParsed.success) {
+    void reply.status(400).send(validationError(paramParsed.error, 'params'))
+    return null
+  }
+  return paramParsed.data.id
+}
+
+function inboxEntryScope(id: string, orgId: string, userId: string) {
+  return and(
+    eq(notificationInbox.id, id),
+    eq(notificationInbox.orgId, orgId),
+    eq(notificationInbox.userId, userId)
+  )
+}
+
+async function mutateInboxEntryById(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  mutate: (tx: Parameters<Parameters<typeof withOrgAndUser>[2]>[0], id: string) => Promise<boolean>
+) {
+  const id = parseInboxEntryId(req, reply)
+  if (id === null) return
+
+  const notFound = await withOrgAndUser(secureCtx.auth.orgId, secureCtx.auth.userId, (tx) =>
+    mutate(tx, id)
+  )
+
+  if (notFound) return reply.status(404).send({ error: 'not_found' })
+  return reply.status(204).send()
+}
+
+function inboxEntryRoute(
+  fastify: FastifyApp,
+  method: 'POST' | 'DELETE',
+  url: string,
+  handler: (ctx: SecureRouteContext, req: FastifyRequest, reply: FastifyReply) => Promise<unknown>
+) {
+  secureRoute(fastify, {
+    method,
+    url,
+    security: INBOX_ROUTE_SECURITY,
+    handler: async (ctx, req, reply) => handler(ctx as SecureRouteContext, req, reply),
+  })
+}
+
 export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
@@ -174,68 +227,35 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  secureRoute(fastify, {
-    method: 'POST',
-    url: '/notifications/inbox/:id/read',
-    security: {
-      allowedRoles: ['owner', 'admin', 'member', 'viewer'] satisfies OrgRole[],
-      writeAuditEvent: false,
-    },
-    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const paramParsed = InboxEntryIdParamSchema.safeParse(req.params)
-      if (!paramParsed.success) {
-        return reply.status(400).send(validationError(paramParsed.error, 'params'))
-      }
-      const { id } = paramParsed.data
+  inboxEntryRoute(fastify, 'POST', '/notifications/inbox/:id/read', async (secureCtx, req, reply) =>
+    mutateInboxEntryById(secureCtx, req, reply, async (tx, id) => {
+      const result = await tx
+        .update(notificationInbox)
+        .set({ readAt: new Date() })
+        .where(
+          and(
+            inboxEntryScope(id, secureCtx.auth.orgId, secureCtx.auth.userId),
+            isNull(notificationInbox.readAt)
+          )
+        )
+        .returning({ id: notificationInbox.id })
 
-      const notFound = await withOrgAndUser(
-        secureCtx.auth.orgId,
-        secureCtx.auth.userId,
-        async (tx) => {
-          const result = await tx
-            .update(notificationInbox)
-            .set({ readAt: new Date() })
-            .where(
-              and(
-                eq(notificationInbox.id, id),
-                eq(notificationInbox.orgId, secureCtx.auth.orgId),
-                eq(notificationInbox.userId, secureCtx.auth.userId),
-                isNull(notificationInbox.readAt)
-              )
-            )
-            .returning({ id: notificationInbox.id })
+      if (result.length > 0) return false
 
-          if (result.length > 0) return false
+      const existing = await tx
+        .select({ id: notificationInbox.id })
+        .from(notificationInbox)
+        .where(inboxEntryScope(id, secureCtx.auth.orgId, secureCtx.auth.userId))
+        .limit(1)
 
-          const existing = await tx
-            .select({ id: notificationInbox.id })
-            .from(notificationInbox)
-            .where(
-              and(
-                eq(notificationInbox.id, id),
-                eq(notificationInbox.orgId, secureCtx.auth.orgId),
-                eq(notificationInbox.userId, secureCtx.auth.userId)
-              )
-            )
-            .limit(1)
-
-          return existing.length === 0
-        }
-      )
-
-      if (notFound) return reply.status(404).send({ error: 'not_found' })
-      return reply.status(204).send()
-    },
-  })
+      return existing.length === 0
+    })
+  )
 
   secureRoute(fastify, {
     method: 'POST',
     url: '/notifications/inbox/read-all',
-    security: {
-      allowedRoles: ['owner', 'admin', 'member', 'viewer'] satisfies OrgRole[],
-      writeAuditEvent: false,
-    },
+    security: INBOX_ROUTE_SECURITY,
     handler: async (ctx, _req: FastifyRequest, reply: FastifyReply) => {
       const secureCtx = ctx as SecureRouteContext
 
@@ -257,44 +277,20 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  secureRoute(fastify, {
-    method: 'DELETE',
-    url: '/notifications/inbox/:id',
-    security: {
-      allowedRoles: ['owner', 'admin', 'member', 'viewer'] satisfies OrgRole[],
-      writeAuditEvent: false,
-    },
-    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const paramParsed = InboxEntryIdParamSchema.safeParse(req.params)
-      if (!paramParsed.success) {
-        return reply.status(400).send(validationError(paramParsed.error, 'params'))
-      }
-      const { id } = paramParsed.data
+  inboxEntryRoute(fastify, 'DELETE', '/notifications/inbox/:id', async (secureCtx, req, reply) =>
+    mutateInboxEntryById(secureCtx, req, reply, async (tx, id) => {
+      const result = await tx
+        .update(notificationInbox)
+        .set({ dismissedAt: new Date() })
+        .where(
+          and(
+            inboxEntryScope(id, secureCtx.auth.orgId, secureCtx.auth.userId),
+            isNull(notificationInbox.dismissedAt)
+          )
+        )
+        .returning({ id: notificationInbox.id })
 
-      const notFound = await withOrgAndUser(
-        secureCtx.auth.orgId,
-        secureCtx.auth.userId,
-        async (tx) => {
-          const result = await tx
-            .update(notificationInbox)
-            .set({ dismissedAt: new Date() })
-            .where(
-              and(
-                eq(notificationInbox.id, id),
-                eq(notificationInbox.orgId, secureCtx.auth.orgId),
-                eq(notificationInbox.userId, secureCtx.auth.userId),
-                isNull(notificationInbox.dismissedAt)
-              )
-            )
-            .returning({ id: notificationInbox.id })
-
-          return result.length === 0
-        }
-      )
-
-      if (notFound) return reply.status(404).send({ error: 'not_found' })
-      return reply.status(204).send()
-    },
-  })
+      return result.length === 0
+    })
+  )
 }

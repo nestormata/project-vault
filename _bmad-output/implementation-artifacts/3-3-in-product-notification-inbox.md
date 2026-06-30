@@ -1,6 +1,6 @@
 # Story 3.3: In-Product Notification Inbox
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-28 - comprehensive developer guide for the persistent
      in-product notification inbox. This story introduces the notification_inbox table, the inbox delivery
