@@ -149,7 +149,16 @@
                     </button>
                   </form>
                 {/if}
-                <form method="POST" action="?/dismiss" use:enhance>
+                <form
+                  method="POST"
+                  action="?/dismiss"
+                  use:enhance={() => ({
+                    update: ({ update }) => {
+                      if (!notification.readAt) decrementUnread(1)
+                      void update()
+                    },
+                  })}
+                >
                   <input type="hidden" name="id" value={notification.id} />
                   <button type="submit" class="text-xs text-red-500 hover:text-red-700">
                     Dismiss

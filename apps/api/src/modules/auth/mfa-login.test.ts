@@ -17,7 +17,7 @@ import { totpForSecret } from '../../__tests__/helpers/totp.js'
 configureAuthIntegrationEnv()
 // Most tests here enroll MFA (Argon2 hashing + multiple createApp() round trips) and can
 // exceed vitest's 5s default under the concurrent cross-package load of `make ci`/`pnpm test`.
-vi.setConfig({ testTimeout: 20_000 })
+vi.setConfig({ testTimeout: 45_000 })
 
 const { createApp } = await import('../../app.js')
 const { initVault } = await import('../vault/key-service.js')

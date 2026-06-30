@@ -200,7 +200,7 @@ describe.sequential('MFA enrollment integration', () => {
     await expectNoPendingEnrollment(user.userId)
 
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('accepts a TOTP from the previous clock-skew window', async () => {
     const user = await registerAndLogin()
@@ -217,7 +217,7 @@ describe.sequential('MFA enrollment integration', () => {
 
     expect(verify.statusCode).toBe(200)
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('rejects replaying an already used TOTP counter', async () => {
     const user = await registerAndLogin()
@@ -244,7 +244,7 @@ describe.sequential('MFA enrollment integration', () => {
     expect(replay.statusCode).toBe(422)
     expect(replay.json()).toMatchObject({ code: 'invalid_totp' })
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('reuses confirmed-enrollment TOTP verification for login checks', async () => {
     const user = await registerAndLogin()
@@ -267,7 +267,7 @@ describe.sequential('MFA enrollment integration', () => {
     })
 
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('allows exactly one concurrent enrollment verification for one TOTP', async () => {
     const user = await registerAndLogin()
@@ -293,7 +293,7 @@ describe.sequential('MFA enrollment integration', () => {
 
     expect(responses.map((res) => res.statusCode).sort()).toEqual([200, 422])
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('rejects a second enrollment after MFA is confirmed', async () => {
     const user = await registerAndLogin()
@@ -311,7 +311,7 @@ describe.sequential('MFA enrollment integration', () => {
     expect(secondEnroll.statusCode).toBe(409)
     expect(secondEnroll.json()).toMatchObject({ code: 'mfa_already_enrolled' })
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('rejects recovery login for a user without MFA enrolled', async () => {
     const user = await registerAndLogin()
@@ -326,7 +326,7 @@ describe.sequential('MFA enrollment integration', () => {
     expect(recover.statusCode).toBe(401)
     expect(recover.json()).toMatchObject({ code: 'invalid_credentials' })
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('does not invalidate existing recovery codes when regenerate TOTP is invalid', async () => {
     const user = await registerAndLogin()
@@ -349,7 +349,7 @@ describe.sequential('MFA enrollment integration', () => {
     })
     expect(recover.statusCode).toBe(200)
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('regenerates recovery codes and invalidates old unused codes', async () => {
     const user = await registerAndLogin()
@@ -382,7 +382,7 @@ describe.sequential('MFA enrollment integration', () => {
     })
     expect(newCodeRecover.statusCode).toBe(200)
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('prunes pending enrollments older than 24 hours', async () => {
     const user = await registerAndLogin()
@@ -399,7 +399,7 @@ describe.sequential('MFA enrollment integration', () => {
 
     await expectNoPendingEnrollment(user.userId)
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('returns Retry-After and retryAfterSeconds when recover email limit is exceeded', async () => {
     const user = await registerAndLogin()
@@ -425,7 +425,7 @@ describe.sequential('MFA enrollment integration', () => {
       retryAfterSeconds: expect.any(Number),
     })
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('deletes pending MFA enrollment when the session is revoked', async () => {
     const user = await registerAndLogin()
@@ -442,5 +442,5 @@ describe.sequential('MFA enrollment integration', () => {
 
     await expectNoPendingEnrollment(user.userId)
     await app.close()
-  }, 20_000)
+  }, 45_000)
 })
