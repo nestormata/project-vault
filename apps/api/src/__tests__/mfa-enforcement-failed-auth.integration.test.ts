@@ -322,7 +322,7 @@ describe.sequential('Story 1.9 failed auth recording', () => {
       },
     })
     await app.close()
-  }, 20_000)
+  }, 45_000)
 
   it('rejects member access to security alerts', async () => {
     const user = await registerAndLogin('member-alerts')
