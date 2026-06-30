@@ -12,6 +12,19 @@ const adminSql = postgres(
   process.env['ADMIN_DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
 )
 
+// Serialize live-policy mutation against the shared dev/CI Postgres instance. API integration
+// tests authenticate via the sessions table RLS policy; dropping it concurrently yields flaky 401s.
+const RLS_POLICY_MUTATION_LOCK = 758_304_221
+
+async function withRlsPolicyMutationLock<T>(fn: () => Promise<T>): Promise<T> {
+  await adminSql`SELECT pg_advisory_lock(${RLS_POLICY_MUTATION_LOCK})`
+  try {
+    return await fn()
+  } finally {
+    await adminSql`SELECT pg_advisory_unlock(${RLS_POLICY_MUTATION_LOCK})`
+  }
+}
+
 describe('checkRlsCoverage', () => {
   afterEach(async () => {
     // Restore policies in case a test dropped them without restoring.
@@ -37,31 +50,35 @@ describe('checkRlsCoverage', () => {
   })
 
   it('throws RlsCoverageGapError listing the table missing a policy', async () => {
-    await adminSql`DROP POLICY sessions_isolation ON sessions`
+    await withRlsPolicyMutationLock(async () => {
+      await adminSql`DROP POLICY sessions_isolation ON sessions`
 
-    let caught: unknown
-    try {
-      await checkRlsCoverage(sql)
-    } catch (error) {
-      caught = error
-    }
+      let caught: unknown
+      try {
+        await checkRlsCoverage(sql)
+      } catch (error) {
+        caught = error
+      }
 
-    expect(caught).toBeInstanceOf(RlsCoverageGapError)
-    expect((caught as RlsCoverageGapError).gaps).toContain('sessions')
+      expect(caught).toBeInstanceOf(RlsCoverageGapError)
+      expect((caught as RlsCoverageGapError).gaps).toContain('sessions')
+    })
   })
 
   it('includes audit_log_entries in the gap list when its policy is missing', async () => {
-    await adminSql`DROP POLICY audit_log_isolation ON audit_log_entries`
+    await withRlsPolicyMutationLock(async () => {
+      await adminSql`DROP POLICY audit_log_isolation ON audit_log_entries`
 
-    let caught: unknown
-    try {
-      await checkRlsCoverage(sql)
-    } catch (error) {
-      caught = error
-    }
+      let caught: unknown
+      try {
+        await checkRlsCoverage(sql)
+      } catch (error) {
+        caught = error
+      }
 
-    expect(caught).toBeInstanceOf(RlsCoverageGapError)
-    expect((caught as RlsCoverageGapError).gaps).toContain('audit_log_entries')
+      expect(caught).toBeInstanceOf(RlsCoverageGapError)
+      expect((caught as RlsCoverageGapError).gaps).toContain('audit_log_entries')
+    })
   })
 
   it('throws when no tables exist in the target database', async () => {
