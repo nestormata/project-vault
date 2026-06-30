@@ -1,6 +1,6 @@
 # Story 2.8: Epic 2 Completion — Credential Web UI, Dashboard Truth & CI Guards
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-29 — expanded 2026-06-29 with worked examples, extended ACs, and quality guardrails (Failure Mode Analysis, Red Team, Persona Focus Group, Pre-mortem). Closes Epic 2 product gaps from epic-2-retro-2026-06-29.md. -->
 
