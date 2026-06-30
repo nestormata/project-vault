@@ -290,6 +290,7 @@ const envSchema = z
       z.string().url('SLACK_WEBHOOK_URL must be a valid URL').optional()
     ),
     NOTIFICATION_DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(8),
+    INBOX_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(90),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {

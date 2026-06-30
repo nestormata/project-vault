@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { EventEmitter } from 'node:events'
 import { eq } from 'drizzle-orm'
+import { createTestUser, deleteTestUser, withTestOrg } from '@project-vault/db/test-helpers'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
-import { withTestOrg } from '@project-vault/db/test-helpers'
 import { deliverNotification } from './notification-deliver.js'
 
 async function insertPendingEntry(orgId: string, values: typeof notificationQueue.$inferInsert) {
@@ -20,21 +21,56 @@ async function fetchQueueStatus(orgId: string, entryId: string) {
   return row?.status
 }
 
+const FAILED_AUTH_ALERT = 'security.failed_auth_threshold'
+
+const SAMPLE_QUEUE_PAYLOAD = {
+  thresholdType: 'ip' as const,
+  thresholdCount: 10,
+  windowSeconds: 300,
+  attemptCount: 10,
+  windowStart: '2026-06-30T00:00:00.000Z',
+  windowEnd: '2026-06-30T00:05:00.000Z',
+  ipAddress: '203.0.113.1',
+  severity: 'warning',
+}
+
 describe('notification deliver worker', () => {
-  it('skips inbox channel without error', async () => {
+  it('throws when inbox channel is delivered without emitter', async () => {
     await withTestOrg(async ({ orgId }) => {
       const entryId = await insertPendingEntry(orgId, {
         orgId,
         recipientUserId: null,
         channel: 'inbox',
-        templateId: 'security.failed_auth_threshold',
+        templateId: FAILED_AUTH_ALERT,
         payload: {},
         status: 'pending',
       })
 
-      await expect(deliverNotification(entryId, orgId)).resolves.toBeUndefined()
+      await expect(deliverNotification(entryId, orgId)).rejects.toThrow(/EventEmitter/)
       expect(await fetchQueueStatus(orgId, entryId)).toBe('pending')
     })
+  })
+
+  it('delivers inbox channel when emitter is provided', async () => {
+    const userId = await createTestUser('deliver-inbox')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const entryId = await insertPendingEntry(orgId, {
+          orgId,
+          recipientUserId: userId,
+          channel: 'inbox',
+          templateId: FAILED_AUTH_ALERT,
+          payload: SAMPLE_QUEUE_PAYLOAD,
+          status: 'pending',
+        })
+
+        const emitter = new EventEmitter()
+        await deliverNotification(entryId, orgId, emitter)
+        expect(await fetchQueueStatus(orgId, entryId)).toBe('delivered')
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
   })
 
   it('skips entries with future deliverAt', async () => {
@@ -42,7 +78,7 @@ describe('notification deliver worker', () => {
       const entryId = await insertPendingEntry(orgId, {
         orgId,
         channel: 'email',
-        templateId: 'security.failed_auth_threshold',
+        templateId: FAILED_AUTH_ALERT,
         payload: {},
         status: 'pending',
         deliverAt: new Date(Date.now() + 3600_000),

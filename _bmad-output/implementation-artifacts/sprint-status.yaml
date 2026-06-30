@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-30  # updated: 3-2 -> done
+last_updated: 2026-06-30  # updated: 3-3 -> done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -75,7 +75,7 @@ development_status:
   epic-3: in-progress
   3-1-email-and-slack-notification-delivery: done
   3-2-notification-preferences-and-per-alert-type-routing: done
-  3-3-in-product-notification-inbox: ready-for-dev
+  3-3-in-product-notification-inbox: done
   epic-3-retrospective: optional
 
   # Epic 4: Team & Organization Management — Roles, Invitations, Access & Lifecycle

@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit'
 import { getOnboardingStatus } from '$lib/api/onboarding.js'
 import { listProjects } from '$lib/api/projects.js'
+import { getUsersMe } from '$lib/api/inbox.js'
 import type { LayoutServerLoad } from './$types.js'
 
 export const load: LayoutServerLoad = async ({ locals, fetch }) => {
@@ -11,7 +12,6 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
     const status = await getOnboardingStatus(fetch)
     onboardingCompleted = status.completed === true
   } catch {
-    // Fail-open: transient onboarding API errors must not trap users in the wizard.
     onboardingCompleted = true
   }
 
@@ -24,10 +24,19 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
     }
   }
 
+  let unreadCount = 0
+  try {
+    const me = await getUsersMe(fetch)
+    unreadCount = me.notifications?.unreadCount ?? 0
+  } catch {
+    unreadCount = 0
+  }
+
   return {
     user: locals.user,
     onboardingCompleted,
     projects: projects.items,
     importRouteLive: ['owner', 'admin'].includes(locals.user.orgRole),
+    unreadCount,
   }
 }

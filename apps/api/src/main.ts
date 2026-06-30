@@ -30,6 +30,10 @@ import {
 import { notificationBackfillHandler } from './workers/notification-backfill.js'
 import { notificationDeliverCatchupJobHandler } from './workers/notification-deliver-catchup.js'
 import { wrapDeliverHandler } from './workers/notification-deliver.js'
+import {
+  notificationInboxCatchupHandler,
+  notificationInboxPurgeHandler,
+} from './workers/notification-inbox-purge.js'
 import { notificationDigestHandler } from './workers/notification-digest.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
@@ -51,7 +55,7 @@ async function main(): Promise<void> {
   startupLogger = createStartupLogger(env)
   // Architecture mandates this exact startup ORDER:
   // 1. createEventEmitter()
-  const _emitter = createEventEmitter()
+  const emitter = createEventEmitter()
 
   // 2. createRingBuffer(emitter) — stub in Story 1.1
   const _ringBuffer = null
@@ -69,6 +73,7 @@ async function main(): Promise<void> {
     dbPool,
     vaultGuardEnabled: true,
   })
+  fastify.decorate?.('emitter', emitter)
   startupLogger = fastify.log
   operationalLog(
     fastify.log,
@@ -106,7 +111,9 @@ async function main(): Promise<void> {
       'import/cleanup-expired': { cron: '*/5 * * * *' },
       'notification:email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification:inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:deliver-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification:inbox-purge': { cron: '0 3 * * *' },
       'notification:send-digest': { cron: `0 ${env.NOTIFICATION_DIGEST_HOUR} * * *` },
     })
     await boss.registerWorkers({
@@ -142,11 +149,13 @@ async function main(): Promise<void> {
         notificationBackfillHandler(boss, fastify.log),
       'notification:email-catchup': () => notificationEmailCatchupHandler(boss, fastify.log),
       'notification:slack-catchup': () => notificationSlackCatchupHandler(boss, fastify.log),
+      'notification:inbox-catchup': () => notificationInboxCatchupHandler(boss, fastify.log),
       'notification:deliver': {
-        handler: (job) => wrapDeliverHandler(fastify.log)(job),
+        handler: (job) => wrapDeliverHandler(fastify.log, emitter)(job),
         options: { localConcurrency: 5, localGroupConcurrency: 3 },
       },
       'notification:deliver-catchup': () => notificationDeliverCatchupJobHandler(boss, fastify.log),
+      'notification:inbox-purge': () => notificationInboxPurgeHandler(fastify.log),
       'notification:send-digest': () => notificationDigestHandler(fastify.log),
     })
     await boss.send('notification:backfill-pending-delivery', {})

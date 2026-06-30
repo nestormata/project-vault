@@ -17,6 +17,7 @@ import { orgRoutes } from './modules/org/routes.js'
 import { projectRoutes } from './modules/projects/routes.js'
 import { credentialRoutes } from './modules/credentials/routes.js'
 import { onboardingRoutes } from './modules/onboarding/routes.js'
+import { usersRoutes } from './modules/users/routes.js'
 import { searchRoutes } from './modules/search/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
@@ -183,6 +184,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(credentialRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(dashboardRoutes, { prefix: '/api/v1/dashboard' })
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })
+  await fastify.register(usersRoutes, { prefix: '/api/v1/users' })
   await fastify.register(searchRoutes, { prefix: '/api/v1' })
   await fastify.register(adminRoutes, { prefix: '/api/v1/admin' })
   await fastify.register(notificationRoutes, { prefix: '/api/v1' })
