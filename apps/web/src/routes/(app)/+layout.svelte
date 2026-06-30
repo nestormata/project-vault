@@ -21,6 +21,7 @@
     <OnboardingWizard
       user={data.user}
       projects={data.projects}
+      importRouteLive={data.importRouteLive}
       oncompleted={() => {
         onboardingDone = true
       }}

@@ -12,7 +12,7 @@ const placeholderSections: Record<PlaceholderSectionKey, PlaceholderSectionCopy>
   },
   credentials: {
     title: 'Credentials',
-    copy: 'No credentials added yet. Credential storage arrives in Story 2.2.',
+    copy: 'Choose a project to manage credentials.',
   },
   alerts: {
     title: 'Alerts',

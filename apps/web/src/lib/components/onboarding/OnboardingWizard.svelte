@@ -14,10 +14,12 @@
   let {
     user,
     projects,
+    importRouteLive = false,
     oncompleted,
   }: {
     user: AuthUser
     projects: ProjectSummary[]
+    importRouteLive?: boolean
     oncompleted: () => void
   } = $props()
 
@@ -88,6 +90,6 @@
       />
     {/if}
   {:else}
-    <OnboardingStep3 {projectId} {headingId} {oncompleted} />
+    <OnboardingStep3 {projectId} {headingId} {importRouteLive} {oncompleted} />
   {/if}
 </OnboardingDialog>

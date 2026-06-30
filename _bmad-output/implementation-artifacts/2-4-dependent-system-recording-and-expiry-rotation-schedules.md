@@ -1,6 +1,6 @@
 # Story 2.4: Dependent System Recording & Expiry/Rotation Schedules
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-28 - comprehensive developer guide for the credential_dependencies table (the direct input to Epic 5 rotation checklists), the credential lifecycle PATCH (expiry + full cron-validated rotation schedule with a max-every-1-hour rule), the role-derived credential access list (FR64), and the hasDependencies coverage-gap flag (UX-DR7). This story activates the expiresAt/rotationSchedule columns Story 2.2 created write-only-at-create. -->
 

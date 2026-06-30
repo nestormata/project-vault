@@ -19,6 +19,11 @@ import {
   type CreateProjectBody,
   type PatchProjectBody,
 } from './schema.js'
+import {
+  getBatchedProjectCredentialStats,
+  getProjectDashboardData,
+  lookupProjectStats,
+} from './dashboard-stats.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 
@@ -75,25 +80,6 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
       }
     }
     throw error
-  }
-}
-
-function emptyDashboard() {
-  const credentialStats = { active: 0, expiringSoon: 0, expired: 0 }
-  const monitoredServiceHealth = { healthy: 0, degraded: 0, down: 0 }
-  const credentialTotal =
-    credentialStats.active + credentialStats.expiringSoon + credentialStats.expired
-  const serviceTotal =
-    monitoredServiceHealth.healthy + monitoredServiceHealth.degraded + monitoredServiceHealth.down
-  const isEmpty = credentialTotal === 0 && serviceTotal === 0
-  return {
-    credentialStats,
-    upcomingRotations: [],
-    monitoredServiceHealth,
-    recentAccessEvents: [],
-    unresolvedAlertCount: 0,
-    isEmpty,
-    suggestedActions: isEmpty ? ['add_credential', 'add_service', 'import_credentials'] : [],
   }
 }
 
@@ -164,17 +150,25 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         .where(isNull(projects.archivedAt))
         .orderBy(desc(projects.createdAt))
 
-      const items = rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        slug: row.slug,
-        description: row.description,
-        role: (row.role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer',
-        credentialCount: 0,
-        expiringCount: 0,
-        alertCount: 0,
-        createdAt: row.createdAt.toISOString(),
-      }))
+      const statsByProject = await getBatchedProjectCredentialStats(
+        secureCtx.tx,
+        rows.map((row) => row.id)
+      )
+
+      const items = rows.map((row) => {
+        const stats = lookupProjectStats(statsByProject, row.id)
+        return {
+          id: row.id,
+          name: row.name,
+          slug: row.slug,
+          description: row.description,
+          role: (row.role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer',
+          credentialCount: stats.credentialCount,
+          expiringCount: stats.expiringCount,
+          alertCount: 0,
+          createdAt: row.createdAt.toISOString(),
+        }
+      })
 
       return { data: { items, total: items.length } }
     },
@@ -204,7 +198,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       if (!rows[0]) {
         return reply.status(404).send(PROJECT_NOT_FOUND)
       }
-      return { data: emptyDashboard() }
+      return { data: await getProjectDashboardData(secureCtx.tx, params.projectId) }
     },
   })
 

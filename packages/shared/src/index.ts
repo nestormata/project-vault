@@ -1,6 +1,7 @@
 export * from './schemas/api.js'
 export * from './schemas/auth.js'
 export * from './schemas/dashboard.js'
+export * from './schemas/org-dashboard.js'
 export * from './schemas/projects.js'
 export * from './schemas/credentials.js'
 export * from './schemas/credential-dependencies.js'

@@ -71,6 +71,7 @@ ci: ## Run the full local quality-gate sequence (mirrors .github/workflows/ci.ym
 	pnpm turbo lint
 	$(MAKE) db-migrate
 	$(MAKE) check-rls
+	pnpm check-search-index
 	$(MAKE) test
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts

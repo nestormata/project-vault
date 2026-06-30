@@ -18,13 +18,21 @@ import {
   initVaultForTest,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import {
+  createCredentialTestProject,
+  createCredentialViaApi,
+} from '../credentials/credential-route-test-helpers.js'
+import {
+  bootProjectRouteTestApp,
+  PROJECT_ROUTE_TEST_PASSPHRASE,
+} from './project-route-test-bootstrap.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
-const TEST_PASSPHRASE = 'project-routes-passphrase'
+const TEST_PASSPHRASE = PROJECT_ROUTE_TEST_PASSPHRASE
 const PASSWORD = 'correct-horse-battery-staple'
 const PROJECTS_URL = '/api/v1/projects'
 const ALPHA_PROJECT_SLUG = 'alpha-project'
@@ -92,9 +100,7 @@ describe.sequential('project routes', () => {
   let app: TestApp
 
   beforeAll(async () => {
-    await resetVaultForTest()
-    await initVaultForTest(initVault, TEST_PASSPHRASE)
-    app = await createApp({ logger: false, vaultGuardEnabled: true })
+    app = await bootProjectRouteTestApp(createApp, initVault)
   })
 
   afterAll(async () => {
@@ -249,6 +255,46 @@ describe.sequential('project routes', () => {
     })
   }, 20_000)
 
+  it('GET /api/v1/projects returns truthful credential and expiring counts', async () => {
+    const user = await createDirectAuthenticatedUser(app, 'list-stats', 'admin')
+    const projectId = await createCredentialTestProject(app, user.cookies, 'payments-stats')
+
+    await createCredentialViaApi(app, user.cookies, projectId, {
+      name: 'Stripe Secret Key',
+      value: 'sk_test',
+      expiresAt: '2026-07-15T00:00:00.000Z',
+    })
+    await createCredentialViaApi(app, user.cookies, projectId, {
+      name: 'Legacy API Token',
+      value: 'legacy',
+      expiresAt: '2026-06-01T00:00:00.000Z',
+    })
+    await createCredentialViaApi(app, user.cookies, projectId, {
+      name: 'Internal Service Key',
+      value: 'internal',
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      data: {
+        items: [
+          expect.objectContaining({
+            id: projectId,
+            credentialCount: 3,
+            expiringCount: 1,
+            alertCount: 0,
+          }),
+        ],
+      },
+    })
+  }, 20_000)
+
   it('GET dashboard returns empty state and hides cross-org projects as 404', async () => {
     const userA = await registerUser(app, 'dashboard-a')
     const userB = await registerUser(app, 'dashboard-b')
@@ -357,55 +403,61 @@ describe.sequential('project routes', () => {
   }, 20_000)
 
   it('rolls back project creation when the audit write fails', async () => {
-    const user = await registerUser(app, 'post-audit-fail')
+    const user = await createDirectAuthenticatedUser(app, 'post-audit-fail', 'admin')
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
-    const res = await app.inject({
-      method: 'POST',
-      url: PROJECTS_URL,
-      headers: { cookie: cookieHeader(user.cookies) },
-      payload: { name: 'Audit Fail', slug: 'audit-fail' },
-    })
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: PROJECTS_URL,
+        headers: { cookie: cookieHeader(user.cookies) },
+        payload: { name: 'Audit Fail', slug: 'audit-fail' },
+      })
 
-    expectAuditWriteFailed(res)
+      expectAuditWriteFailed(res)
 
-    const rows = await withOrg(user.orgId, (tx) =>
-      tx.select({ id: projects.id }).from(projects).where(eq(projects.slug, 'audit-fail'))
-    )
-    const memberships = await withOrg(user.orgId, (tx) =>
-      tx
-        .select({ projectId: projectMemberships.projectId })
-        .from(projectMemberships)
-        .where(eq(projectMemberships.userId, user.userId))
-    )
-    expect(rows).toHaveLength(0)
-    expect(memberships).toHaveLength(0)
-    auditSpy.mockRestore()
+      const rows = await withOrg(user.orgId, (tx) =>
+        tx.select({ id: projects.id }).from(projects).where(eq(projects.slug, 'audit-fail'))
+      )
+      const memberships = await withOrg(user.orgId, (tx) =>
+        tx
+          .select({ projectId: projectMemberships.projectId })
+          .from(projectMemberships)
+          .where(eq(projectMemberships.userId, user.userId))
+      )
+      expect(rows).toHaveLength(0)
+      expect(memberships).toHaveLength(0)
+    } finally {
+      auditSpy.mockRestore()
+    }
   }, 20_000)
 
   it('rolls back project updates when the audit write fails', async () => {
-    const user = await registerUser(app, 'patch-audit-fail')
+    const user = await createDirectAuthenticatedUser(app, 'patch-audit-fail', 'admin')
     const project = await createProject(app, user.cookies, 'patch-audit-fail')
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
 
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `${PROJECTS_URL}/${project.id}`,
-      headers: { cookie: cookieHeader(user.cookies) },
-      payload: { name: 'Should Roll Back' },
-    })
+    try {
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `${PROJECTS_URL}/${project.id}`,
+        headers: { cookie: cookieHeader(user.cookies) },
+        payload: { name: 'Should Roll Back' },
+      })
 
-    expectAuditWriteFailed(res)
+      expectAuditWriteFailed(res)
 
-    const rows = await withOrg(user.orgId, (tx) =>
-      tx.select({ name: projects.name }).from(projects).where(eq(projects.id, project.id))
-    )
-    expect(rows[0]?.name).toBe(project.name)
-    auditSpy.mockRestore()
+      const rows = await withOrg(user.orgId, (tx) =>
+        tx.select({ name: projects.name }).from(projects).where(eq(projects.id, project.id))
+      )
+      expect(rows[0]?.name).toBe(project.name)
+    } finally {
+      auditSpy.mockRestore()
+    }
   }, 20_000)
 
   it('PUT /api/v1/projects/:projectId/tags replaces tags, de-dupes, clears, and audits', async () => {
@@ -457,9 +509,12 @@ describe.sequential('project routes', () => {
     const auditSpy = vi
       .spyOn(humanAudit, 'writeHumanAuditEntry')
       .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
-    const auditFail = await updateProjectTags(app, user.cookies, project.id, ['rolled-back'])
-    expectAuditWriteFailed(auditFail)
-    auditSpy.mockRestore()
+    try {
+      const auditFail = await updateProjectTags(app, user.cookies, project.id, ['rolled-back'])
+      expectAuditWriteFailed(auditFail)
+    } finally {
+      auditSpy.mockRestore()
+    }
 
     const afterRollback = await withOrg(user.orgId, (tx) =>
       tx.select({ tags: projects.tags }).from(projects).where(eq(projects.id, project.id))

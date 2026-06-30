@@ -57,6 +57,7 @@ import {
   addCredentialVersion,
   createCredentialWithFirstVersion,
   findProjectInOrg,
+  getCredentialDetail,
   listCredentials,
   listVersionHistory,
   revealCurrentValue,
@@ -201,6 +202,11 @@ const CREDENTIAL_NOT_FOUND = {
   code: 'credential_not_found',
   message: 'Credential not found',
 } as const
+const CREDENTIAL_SUBRESOURCE_READ_ERRORS = {
+  401: ApiErrorSchema,
+  404: ApiErrorSchema,
+  422: ApiErrorSchema,
+} as const
 const DEPENDENCY_NOT_FOUND = {
   code: 'dependency_not_found',
   message: 'Dependency not found',
@@ -301,6 +307,22 @@ async function handleCredentialTagUpdate(
   })
 
   return { data: result.data }
+}
+
+async function withCredentialParams<T>(
+  ctx: PublicRouteContext | SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  run: (
+    secureCtx: SecureRouteContext,
+    params: { projectId: string; credentialId: string }
+  ) => Promise<T | null>
+) {
+  const params = parseParams(CredentialParamsSchema, req, reply)
+  if (!params) return reply
+  const result = await run(ctx as SecureRouteContext, params)
+  if (result === null) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+  return result
 }
 
 export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
@@ -641,6 +663,23 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/credentials/:credentialId',
+    schema: {
+      response: {
+        200: CredentialDetailResponseSchema,
+        ...CREDENTIAL_SUBRESOURCE_READ_ERRORS,
+      },
+    },
+    security: { minimumRole: 'viewer', writeAuditEvent: false },
+    handler: async (ctx, req, reply) =>
+      withCredentialParams(ctx, req, reply, async (secureCtx, params) => {
+        const detail = await getCredentialDetail(secureCtx.tx, params)
+        return detail ? { data: detail } : null
+      }),
+  })
+
+  secureRoute(fastify, {
     method: 'POST',
     url: '/:projectId/credentials/:credentialId/versions',
     schema: {
@@ -827,22 +866,15 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         200: CredentialVersionListResponseSchema,
-        401: ApiErrorSchema,
-        404: ApiErrorSchema,
-        422: ApiErrorSchema,
+        ...CREDENTIAL_SUBRESOURCE_READ_ERRORS,
       },
     },
     security: { minimumRole: 'viewer', writeAuditEvent: false },
-    handler: async (ctx, req, reply) => {
-      const params = parseParams(CredentialParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      const items = await listVersionHistory(secureCtx.tx, params)
-      if (!items) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
-
-      return { data: { items } }
-    },
+    handler: async (ctx, req, reply) =>
+      withCredentialParams(ctx, req, reply, async (secureCtx, params) => {
+        const items = await listVersionHistory(secureCtx.tx, params)
+        return items ? { data: { items } } : null
+      }),
   })
 
   secureRoute(fastify, {

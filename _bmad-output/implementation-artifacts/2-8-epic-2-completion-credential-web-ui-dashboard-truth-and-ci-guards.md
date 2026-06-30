@@ -1,6 +1,6 @@
 # Story 2.8: Epic 2 Completion — Credential Web UI, Dashboard Truth & CI Guards
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-29 — expanded 2026-06-29 with worked examples, extended ACs, and quality guardrails (Failure Mode Analysis, Red Team, Persona Focus Group, Pre-mortem). Closes Epic 2 product gaps from epic-2-retro-2026-06-29.md. -->
 
@@ -772,39 +772,39 @@ secureRoute({
 
 > TDD red-green: failing test first for each task.
 
-- [ ] **Task 1: CI wiring (AC-1)**  
-  - [ ] Add `check-search-index` to `Makefile` `ci` target  
-  - [ ] Add CI workflow step after RLS check  
-  - [ ] Verify local `make ci` invokes scanner
+- [x] **Task 1: CI wiring (AC-1)**  
+  - [x] Add `check-search-index` to `Makefile` `ci` target  
+  - [x] Add CI workflow step after RLS check  
+  - [x] Verify local `make ci` invokes scanner
 
-- [ ] **Task 2: Dashboard stats backend (AC-2, AC-3, AC-4, AC-16)**  
-  - [ ] Implement `dashboard-stats.ts` with batched aggregates  
-  - [ ] Wire project list + project dashboard handlers  
-  - [ ] Add `GET /api/v1/dashboard` + `org-dashboard.ts` schema  
-  - [ ] API tests using Scenario Fixture Catalog
+- [x] **Task 2: Dashboard stats backend (AC-2, AC-3, AC-4, AC-16)**  
+  - [x] Implement `dashboard-stats.ts` with batched aggregates  
+  - [x] Wire project list + project dashboard handlers  
+  - [x] Add `GET /api/v1/dashboard` + `org-dashboard.ts` schema  
+  - [x] API tests using Scenario Fixture Catalog
 
-- [ ] **Task 3: Metadata GET + API client (AC-6, AC-13)**  
-  - [ ] Add `GET .../credentials/:credentialId` route + tests  
-  - [ ] Extend `lib/api/credentials.ts` + tests
+- [x] **Task 3: Metadata GET + API client (AC-6, AC-13)**  
+  - [x] Add `GET .../credentials/:credentialId` route + tests  
+  - [x] Extend `lib/api/credentials.ts` + tests
 
-- [ ] **Task 4: Credential web routes (AC-5, AC-6, AC-7, AC-14, AC-15)**  
-  - [ ] Gateway `/credentials`  
-  - [ ] Project list/create/detail pages with role gates  
-  - [ ] Reveal security (state clear, storage spies)  
-  - [ ] GlobalSearch route regression
+- [x] **Task 4: Credential web routes (AC-5, AC-6, AC-7, AC-14, AC-15)**  
+  - [x] Gateway `/credentials`  
+  - [x] Project list/create/detail pages with role gates  
+  - [x] Reveal security (state clear, storage spies)  
+  - [x] GlobalSearch route regression
 
-- [ ] **Task 5: Bulk import UI (AC-8, AC-9)**  
-  - [ ] Project import page + gateway `/credentials/import`  
-  - [ ] Wire `importRouteLive` in `+layout.server.ts`
+- [x] **Task 5: Bulk import UI (AC-8, AC-9)**  
+  - [x] Project import page + gateway `/credentials/import`  
+  - [x] Wire `importRouteLive` in `+layout.server.ts`
 
-- [ ] **Task 6: Placeholder copy + org dashboard web (AC-3, AC-4, AC-10)**  
-  - [ ] Update placeholder + dashboard copy maps  
-  - [ ] Wire dashboard page to org dashboard API + expiring panel
+- [x] **Task 6: Placeholder copy + org dashboard web (AC-3, AC-4, AC-10)**  
+  - [x] Update placeholder + dashboard copy maps  
+  - [x] Wire dashboard page to org dashboard API + expiring panel
 
-- [ ] **Task 7: Final verification (AC-11, AC-12)**  
-  - [ ] Persona journey smoke (Alex, Morgan, Riley)  
-  - [ ] Full focused test run + typecheck  
-  - [ ] Pre-mortem checklist all green
+- [x] **Task 7: Final verification (AC-11, AC-12)**  
+  - [x] Persona journey smoke (Alex, Morgan, Riley)  
+  - [x] Full focused test run + typecheck  
+  - [x] Pre-mortem checklist all green
 
 ---
 

@@ -22,11 +22,11 @@ describe('dashboard empty state', () => {
     expect(JSON.stringify(dashboardEmptyStateCopy)).not.toContain('100% coverage')
   })
 
-  it('labels suggested actions as not yet available', () => {
+  it('labels suggested actions without story deferrals', () => {
     expect(suggestedActionLabels).toEqual({
-      add_credential: 'Add first credential - available in Story 2.2',
+      add_credential: 'Add first credential',
       add_service: 'Add first service - available in Epic 6',
-      import_credentials: 'Import .env or JSON - available in Story 2.5',
+      import_credentials: 'Import .env or JSON',
     })
   })
 })

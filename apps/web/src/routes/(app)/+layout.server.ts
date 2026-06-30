@@ -28,5 +28,6 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
     user: locals.user,
     onboardingCompleted,
     projects: projects.items,
+    importRouteLive: ['owner', 'admin'].includes(locals.user.orgRole),
   }
 }

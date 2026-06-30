@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
+  import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
   import { createProject, suggestProjectSlug } from '$lib/api/projects.js'
 
   const SLUG_PATTERN = '^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$'
@@ -134,17 +135,11 @@
       </p>
     {/if}
 
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <button
-        class="rounded-xl bg-slate-950 px-4 py-3 font-semibold text-white disabled:opacity-60"
-        type="submit"
-        disabled={submitting}
-      >
-        {submitting ? 'Creating...' : 'Create project'}
-      </button>
-      <a class="text-center font-medium text-slate-700 underline" href={resolve('/projects')}
-        >Cancel</a
-      >
-    </div>
+    <FormSubmitRow
+      submitLabel="Create project"
+      pendingLabel="Creating..."
+      cancelHref="/projects"
+      {submitting}
+    />
   </form>
 </section>
