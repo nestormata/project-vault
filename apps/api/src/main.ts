@@ -19,6 +19,15 @@ import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-thr
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
+import {
+  notificationEmailCatchupHandler,
+  notificationEmailHandler,
+} from './workers/notification-email.js'
+import {
+  notificationSlackCatchupHandler,
+  notificationSlackHandler,
+} from './workers/notification-slack.js'
+import { notificationBackfillHandler } from './workers/notification-backfill.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
@@ -90,13 +99,15 @@ async function main(): Promise<void> {
       'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
       'credentials/prune-versions': { cron: '0 3 * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
+      'notification:email-catchup': { cron: '*/10 * * * *' },
+      'notification:slack-catchup': { cron: '*/10 * * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
       'mfa/prune-totp-used-codes': () => pruneTotpUsedCodes(),
       'mfa/prune-pending-mfa-sessions': () => prunePendingMfaSessions(),
       'mfa/prune-pending': () => pruneMfaPendingEnrollments(),
-      'security/check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(),
+      'security/check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(boss),
       'security/prune-failed-auth-attempts': (job) =>
         withJobLogging(
           fastify.log,
@@ -112,7 +123,20 @@ async function main(): Promise<void> {
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>
           importCleanupExpired(fastify.log)
         ),
+      'notification:email': {
+        handler: (job) => notificationEmailHandler(job, fastify.log),
+        options: { localConcurrency: 5, localGroupConcurrency: 3 },
+      },
+      'notification:slack': {
+        handler: (job) => notificationSlackHandler(job, fastify.log),
+        options: { localConcurrency: 5, localGroupConcurrency: 3 },
+      },
+      'notification:backfill-pending-delivery': () =>
+        notificationBackfillHandler(boss, fastify.log),
+      'notification:email-catchup': () => notificationEmailCatchupHandler(boss, fastify.log),
+      'notification:slack-catchup': () => notificationSlackCatchupHandler(boss, fastify.log),
     })
+    await boss.send('notification:backfill-pending-delivery', {})
     bossRegistered = true
   }
   setOnVaultUnsealed(startBossAndRegisterWorkers)

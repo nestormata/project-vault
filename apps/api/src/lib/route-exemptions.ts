@@ -295,6 +295,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Org dashboard read is org-scoped and returns aggregate counts and expiry metadata only.',
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/admin/notifications/test': {
+    action: 'mutation',
+    auditOmissionReason:
+      'Test notification sends to configured channels; does not mutate vault state or expose secrets. Operational verification only.',
+    reviewer: SECURITY_OWNER,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
@@ -352,6 +358,27 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'Cross-org cleanup of expired pending_imports rows; no credential values are read — only metadata rows are deleted.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/notification-email.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Org-scoped notification delivery worker; catchup scans pending entries per org via withOrg().',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/notification-slack.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Org-scoped notification delivery worker; catchup scans pending entries per org via withOrg().',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/notification-backfill.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'One-time backfill job uses fetchAllOrgIds() (getDb()) to scan PENDING_DELIVERY security alerts across all orgs.',
     reviewer: SECURITY_OWNER,
   },
 ]

@@ -19,6 +19,9 @@ import {
 import { registerPrivilegedTestRoute } from './helpers/privileged-test-route.js'
 import { runFailedAuthThresholdCheck } from '../workers/check-failed-auth-threshold.js'
 import { pruneFailedAuthAttempts } from '../workers/prune-failed-auth-attempts.js'
+import { BossService } from '../lib/boss.js'
+import { PgBoss } from 'pg-boss'
+import { notificationQueue } from '@project-vault/db/schema'
 import { SecurityAlertType } from '@project-vault/shared'
 
 configureAuthIntegrationEnv()
@@ -35,6 +38,17 @@ type TestUser = {
   userId: string
   orgId: string
   cookies: CookieJar
+}
+
+async function createTestBoss(): Promise<BossService> {
+  const boss = new BossService(() => ({
+    start: vi.fn().mockResolvedValue({} as PgBoss),
+    stop: vi.fn().mockResolvedValue(undefined),
+    createQueue: vi.fn().mockResolvedValue(undefined),
+    send: vi.fn().mockResolvedValue('job-id'),
+  }))
+  await boss.start()
+  return boss
 }
 
 async function registerAndLogin(label: string): Promise<TestUser> {
@@ -267,12 +281,15 @@ describe.sequential('Story 1.9 failed auth recording', () => {
         })
     }
 
-    await runFailedAuthThresholdCheck()
+    const boss = await createTestBoss()
+    await runFailedAuthThresholdCheck(boss)
 
     const alerts = await withOrg(user.orgId, (tx) => tx.select().from(securityAlerts))
     const audits = await withOrg(user.orgId, (tx) => tx.select().from(auditLogEntries))
+    const queueEntries = await withOrg(user.orgId, (tx) => tx.select().from(notificationQueue))
 
     expect(alerts).toHaveLength(2)
+    expect(alerts.every((alert) => alert.status === 'delivered')).toBe(true)
     expect(alerts.map((alert) => alert.alertType)).toEqual([
       SecurityAlertType.FAILED_AUTH_THRESHOLD,
       SecurityAlertType.FAILED_AUTH_THRESHOLD,
@@ -280,11 +297,12 @@ describe.sequential('Story 1.9 failed auth recording', () => {
     expect(
       audits.some((audit) => audit.eventType === SecurityAlertType.FAILED_AUTH_THRESHOLD)
     ).toBe(true)
+    expect(queueEntries.length).toBeGreaterThan(0)
 
     const app = await createApp({ logger: false })
     const list = await app.inject({
       method: 'GET',
-      url: '/api/v1/org/security-alerts?status=PENDING_DELIVERY',
+      url: '/api/v1/org/security-alerts?status=delivered',
       headers: { cookie: cookieHeader(user.cookies) },
     })
     expect(list.statusCode).toBe(200)
@@ -294,13 +312,11 @@ describe.sequential('Story 1.9 failed auth recording', () => {
         items: [
           {
             alertType: SecurityAlertType.FAILED_AUTH_THRESHOLD,
-            status: 'PENDING_DELIVERY',
-            deliveryStatus: 'pending_notification_channel',
+            status: 'delivered',
           },
           {
             alertType: SecurityAlertType.FAILED_AUTH_THRESHOLD,
-            status: 'PENDING_DELIVERY',
-            deliveryStatus: 'pending_notification_channel',
+            status: 'delivered',
           },
         ],
       },

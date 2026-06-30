@@ -7,6 +7,11 @@ import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { failedAuthThresholdPayloadSchema } from '../modules/org/schema.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
+import {
+  enqueueSecurityAlertNotification,
+  sendNotificationJobs,
+} from '../notifications/dispatcher.js'
+import type { BossService } from '../lib/boss.js'
 
 const ALERT_TYPE = 'security.failed_auth_threshold'
 
@@ -214,35 +219,48 @@ function dedupLockKey(breach: Breach): string {
 async function createAlertIfNeeded(
   breach: Breach,
   windowStart: Date,
-  windowEnd: Date
+  windowEnd: Date,
+  boss: BossService
 ): Promise<void> {
-  await runOrgScopedJob(breach.orgId, 'security/check-failed-auth-threshold', async ({ tx }) => {
-    // Serialize concurrent job runs against the same breach identity (AC-9c) so the
-    // check-then-insert below can't race across overlapping `runFailedAuthThresholdCheck()` calls.
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${dedupLockKey(breach)}))`)
-    if (await existingAlert(tx, breach, windowStart)) return
-    const payload = failedAuthThresholdPayloadSchema.parse(
-      payloadFor(breach, windowStart, windowEnd)
-    )
-    const [alert] = await tx
-      .insert(securityAlerts)
-      .values({
+  const queueIds = await runOrgScopedJob(
+    breach.orgId,
+    'security/check-failed-auth-threshold',
+    async ({ tx }) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${dedupLockKey(breach)}))`)
+      if (await existingAlert(tx, breach, windowStart)) return { emailIds: [], slackId: undefined }
+      const payload = failedAuthThresholdPayloadSchema.parse(
+        payloadFor(breach, windowStart, windowEnd)
+      )
+      const [alert] = await tx
+        .insert(securityAlerts)
+        .values({
+          orgId: breach.orgId,
+          alertType: ALERT_TYPE,
+          severity: 'critical',
+          status: 'delivered',
+          payload,
+        })
+        .returning({ id: securityAlerts.id })
+      if (!alert) return { emailIds: [], slackId: undefined }
+      await insertAuditRow(tx, breach.orgId, alert.id, payload)
+
+      const ids = await enqueueSecurityAlertNotification({
         orgId: breach.orgId,
-        alertType: ALERT_TYPE,
-        severity: 'critical',
-        status: 'PENDING_DELIVERY',
+        templateId: ALERT_TYPE,
         payload,
+        tx,
       })
-      .returning({ id: securityAlerts.id })
-    if (!alert) return
-    await insertAuditRow(tx, breach.orgId, alert.id, payload)
-    process.stdout.write(
-      `${JSON.stringify({ eventType: 'alert.pending_epic3', alertType: ALERT_TYPE, orgId: breach.orgId, thresholdType: breach.thresholdType, ipAddress: breach.ipAddress })}\n`
-    )
-  })
+
+      process.stdout.write(
+        `${JSON.stringify({ eventType: 'security.failed_auth_threshold.notification_enqueued', alertType: ALERT_TYPE, orgId: breach.orgId, thresholdType: breach.thresholdType })}\n`
+      )
+      return ids
+    }
+  )
+  await sendNotificationJobs(boss, queueIds)
 }
 
-export async function runFailedAuthThresholdCheck(): Promise<void> {
+export async function runFailedAuthThresholdCheck(boss: BossService): Promise<void> {
   const windowEnd = new Date()
   const windowStart = new Date(
     windowEnd.getTime() - env.FAILED_AUTH_THRESHOLD_WINDOW_SECONDS * 1000
@@ -254,13 +272,13 @@ export async function runFailedAuthThresholdCheck(): Promise<void> {
   ]
   await logUnknownEmailAccountBreaches(windowStart)
   for (const breach of breaches) {
-    await createAlertIfNeeded(breach, windowStart, windowEnd)
+    await createAlertIfNeeded(breach, windowStart, windowEnd, boss)
   }
 }
 
-export async function checkFailedAuthThresholdHandler(): Promise<void> {
+export async function checkFailedAuthThresholdHandler(boss: BossService): Promise<void> {
   try {
-    await runFailedAuthThresholdCheck()
+    await runFailedAuthThresholdCheck(boss)
   } catch (error) {
     process.stderr.write(
       `${JSON.stringify({ eventType: 'job.failed', job: 'security/check-failed-auth-threshold', error: error instanceof Error ? error.message : String(error) })}\n`

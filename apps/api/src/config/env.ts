@@ -266,6 +266,29 @@ const envSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((v) => v === 'true'),
+
+    SMTP_HOST: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+    SMTP_PORT: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.coerce.number().int().min(1).max(65535).optional()
+    ),
+    SMTP_SECURE: z.preprocess(
+      (v) => (v === '' ? undefined : String(v)),
+      z
+        .enum(['true', 'false'])
+        .transform((v) => v === 'true')
+        .optional()
+    ),
+    SMTP_USER: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+    SMTP_PASS: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+    SMTP_FROM: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().email('SMTP_FROM must be a valid email address').optional()
+    ),
+    SLACK_WEBHOOK_URL: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().url('SLACK_WEBHOOK_URL must be a valid URL').optional()
+    ),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {
@@ -298,6 +321,9 @@ const envSchema = z
       })
     }
     validateDummyPasswordHash(env, ctx)
+    if (env.SMTP_HOST && !env.SMTP_FROM) {
+      addEnvIssue(ctx, 'SMTP_FROM', 'SMTP_FROM is required when SMTP_HOST is set')
+    }
   })
 
 type RawEnv = z.infer<typeof envSchema>
