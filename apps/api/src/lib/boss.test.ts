@@ -2,6 +2,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { BossService } from './boss.js'
 
 const TEST_QUEUE_NAME = 'prune-revoked-tokens'
+const NOTIFICATION_EMAIL_JOB = 'notification:email'
+
+function createBossWithMocks(extra: Record<string, unknown> = {}) {
+  return new BossService(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    createQueue: vi.fn().mockResolvedValue(undefined),
+    ...extra,
+  }))
+}
 
 describe('BossService', () => {
   it('starts pg-boss only once and stops gracefully', async () => {
@@ -65,5 +75,37 @@ describe('BossService', () => {
     const registeredHandler = work.mock.calls[0]?.[1] as (job: { id: string }) => Promise<void>
     await registeredHandler({ id: 'job-123' })
     expect(handler).toHaveBeenCalledWith({ id: 'job-123' })
+  })
+
+  it('sends jobs after start', async () => {
+    const send = vi.fn().mockResolvedValue('job-1')
+    const boss = createBossWithMocks({ send })
+
+    await boss.start()
+    await boss.send(NOTIFICATION_EMAIL_JOB, { notificationQueueId: 'queue-1' }, { retryLimit: 3 })
+
+    expect(send).toHaveBeenCalledWith(
+      NOTIFICATION_EMAIL_JOB,
+      { notificationQueueId: 'queue-1' },
+      { retryLimit: 3 }
+    )
+  })
+
+  it('registers workers with concurrency options', async () => {
+    const work = vi.fn().mockResolvedValue(undefined)
+    const boss = createBossWithMocks({ work })
+    const handler = vi.fn().mockResolvedValue(undefined)
+
+    await boss.start()
+    await boss.registerWorker(NOTIFICATION_EMAIL_JOB, handler, {
+      localConcurrency: 5,
+      localGroupConcurrency: 3,
+    })
+
+    expect(work).toHaveBeenCalledWith(
+      NOTIFICATION_EMAIL_JOB,
+      { localConcurrency: 5, localGroupConcurrency: 3 },
+      expect.any(Function)
+    )
   })
 })

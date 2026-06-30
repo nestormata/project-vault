@@ -8,11 +8,10 @@ import { env } from '../../config/env.js'
 import * as tokensModule from './tokens.js'
 import {
   configureAuthIntegrationEnv,
-  cookieHeader,
   initVaultForTest,
   parseSetCookies,
-  registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { enrollUserWithMfa } from '../../__tests__/helpers/mfa-enroll-test-helpers.js'
 import { totpForSecret } from '../../__tests__/helpers/totp.js'
 
 configureAuthIntegrationEnv()
@@ -37,34 +36,13 @@ const INVALID_TOTP = 'invalid_totp'
 
 async function enrollMfaUser() {
   const app = await createApp({ logger: false })
-  const email = `mfa-login-${randomUUID()}@example.com`
-  const registered = await registerAndLoginViaApi(app, {
-    email,
+  const enrolled = await enrollUserWithMfa(app, {
+    emailPrefix: 'mfa-login',
+    orgNamePrefix: 'MFA Login',
     password: PASSWORD,
-    orgName: `MFA Login ${randomUUID()}`,
+    closeApp: true,
   })
-  const cookies = cookieHeader(registered.cookies)
-
-  const enroll = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/mfa/enroll',
-    headers: { cookie: cookies },
-    payload: {},
-  })
-  expect(enroll.statusCode).toBe(200)
-  const secret = enroll.json<{ data: { secret: string } }>().data.secret
-  const enrollmentTotp = totpForSecret(secret)
-
-  const verify = await app.inject({
-    method: 'POST',
-    url: '/api/v1/auth/mfa/verify-enrollment',
-    headers: { cookie: cookies },
-    payload: { totp: enrollmentTotp },
-  })
-  expect(verify.statusCode).toBe(200)
-  await app.close()
-
-  return { ...registered, email, secret, enrollmentTotp }
+  return { ...enrolled, enrollmentTotp: totpForSecret(enrolled.secret) }
 }
 
 async function failedTotpRowsForUser(userId: string) {
