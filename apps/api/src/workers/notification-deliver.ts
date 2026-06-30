@@ -1,5 +1,7 @@
+import type { EventEmitter } from 'node:events'
 import { sendEmailNotification } from './notification-email.js'
 import { sendSlackNotification } from './notification-slack.js'
+import { deliverInboxNotification } from './notification-inbox.js'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
 import { eq } from 'drizzle-orm'
@@ -9,7 +11,8 @@ import type { BossJob } from '../lib/boss.js'
 
 export async function deliverNotification(
   notificationQueueId: string,
-  orgId: string
+  orgId: string,
+  emitter?: EventEmitter
 ): Promise<void> {
   const [entry] = await withOrg(orgId, (tx) =>
     tx
@@ -34,6 +37,10 @@ export async function deliverNotification(
       await sendSlackNotification(notificationQueueId, orgId)
       break
     case 'inbox':
+      if (!emitter) {
+        throw new Error('notification:deliver inbox channel requires EventEmitter')
+      }
+      await deliverInboxNotification(notificationQueueId, orgId, emitter)
       break
     default:
       process.stderr.write(
@@ -46,13 +53,21 @@ export async function deliverNotification(
   }
 }
 
+export function createDeliverNotificationHandler(emitter: EventEmitter) {
+  return createNotificationJobHandler('notification:deliver', (notificationQueueId, orgId) =>
+    deliverNotification(notificationQueueId, orgId, emitter)
+  )
+}
+
 export const notificationDeliverHandler = createNotificationJobHandler(
   'notification:deliver',
-  deliverNotification
+  (notificationQueueId, orgId) => deliverNotification(notificationQueueId, orgId)
 )
 
 export function wrapDeliverHandler(
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
+  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>,
+  emitter?: EventEmitter
 ): (job: BossJob) => Promise<void> {
-  return (job) => notificationDeliverHandler(job, logger)
+  const handler = emitter ? createDeliverNotificationHandler(emitter) : notificationDeliverHandler
+  return (job) => handler(job, logger)
 }

@@ -62,3 +62,32 @@ export const PutRoutingBodySchema = z
 export const GetRoutingResponseSchema = z.object({
   data: z.array(RoutingItemSchema),
 })
+
+export const GetInboxQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(['unread', 'read', 'all']).default('all'),
+})
+
+export const InboxEntrySchema = z.object({
+  id: z.string().uuid(),
+  alertType: z.string(),
+  severity: z.string(),
+  title: z.string(),
+  body: z.string(),
+  projectId: z.string().nullable(),
+  resourceId: z.string().nullable(),
+  resourceType: z.string().nullable(),
+  readAt: z.string().nullable(),
+  createdAt: z.string(),
+})
+
+export const InboxEntryIdParamSchema = z.object({
+  id: z.string().uuid('id must be a valid UUID'),
+})
+
+export const GetInboxResponseSchema = z.object({
+  data: z.array(InboxEntrySchema),
+  page: z.number(),
+  limit: z.number(),
+})

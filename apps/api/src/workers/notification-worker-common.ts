@@ -27,7 +27,7 @@ export async function runNotificationCatchup(
   boss: BossService,
   options: {
     jobName: string
-    channel?: 'email' | 'slack'
+    channel?: 'email' | 'slack' | 'inbox'
     deliverAtAware?: boolean
     logMessage: string
   },

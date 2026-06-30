@@ -8,7 +8,7 @@ const primaryNavItems: PrimaryNavItem[] = [
   { label: 'Dashboard', mobileLabel: 'Dashboard', href: '/dashboard' },
   { label: 'Projects', mobileLabel: 'Projects', href: '/projects' },
   { label: 'Credentials', mobileLabel: 'Creds', href: '/credentials' },
-  { label: 'Alerts', mobileLabel: 'Alerts', href: '/alerts' },
+  { label: 'Alerts', mobileLabel: 'Alerts', href: '/notifications' },
   { label: 'Health', mobileLabel: 'Health', href: '/health' },
   { label: 'Settings', mobileLabel: 'Settings', href: '/settings' },
 ]

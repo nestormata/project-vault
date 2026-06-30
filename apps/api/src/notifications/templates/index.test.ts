@@ -32,6 +32,14 @@ describe('notification templates', () => {
     const rendered = renderEmailTemplate(UNKNOWN_TEMPLATE, { foo: 'bar' })
     expect(rendered.subject).toContain(UNKNOWN_TEMPLATE)
     expect(rendered.text).toContain('"foo": "bar"')
+    expect(rendered.inboxTitle).toContain(UNKNOWN_TEMPLATE)
+    expect(rendered.inboxBody).toContain(UNKNOWN_TEMPLATE)
+  })
+
+  it('renderTemplate exposes inbox fields for failed auth threshold', () => {
+    const rendered = renderEmailTemplate('security.failed_auth_threshold', SAMPLE_PAYLOAD)
+    expect(rendered.inboxTitle).toContain('Failed login threshold exceeded')
+    expect(rendered.inboxBody.length).toBeLessThanOrEqual(500)
   })
 
   it('falls back for unknown slack templates', () => {

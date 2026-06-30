@@ -27,7 +27,30 @@ export async function withOrg<T>(orgId: string, fn: (tx: Tx) => Promise<T>): Pro
   return getDb().transaction(async (tx) => {
     // set_config(..., true) is the SET LOCAL equivalent: scoped to this transaction,
     // automatically cleared on commit/rollback so pooled connections never leak org context.
-    await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`)
+    await tx.execute(
+      sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+                 set_config('app.current_user_id', '', true)`
+    )
+    return fn(tx as unknown as Tx)
+  })
+}
+
+export async function withOrgAndUser<T>(
+  orgId: string,
+  userId: string,
+  fn: (tx: Tx) => Promise<T>
+): Promise<T> {
+  if (!UUID_REGEX.test(orgId)) {
+    throw new Error(`withOrgAndUser: invalid orgId — expected UUID, received: "${orgId}"`)
+  }
+  if (!UUID_REGEX.test(userId)) {
+    throw new Error(`withOrgAndUser: invalid userId — expected UUID, received: "${userId}"`)
+  }
+  return getDb().transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+                 set_config('app.current_user_id', ${userId}, true)`
+    )
     return fn(tx as unknown as Tx)
   })
 }

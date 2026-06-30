@@ -3,15 +3,31 @@ import type { SseEventType, SsePayloadMap } from '@project-vault/shared'
 
 export type AppEventEmitter = EventEmitter
 
+export type SseEnvelope<T extends SseEventType = SseEventType> = {
+  event: T
+  projectId: string
+  orgId: string
+  data: SsePayloadMap[T]
+  timestamp: string
+}
+
 export function createEventEmitter(): AppEventEmitter {
-  // Story 1.11 expands with typed event emitter
   return new EventEmitter()
 }
 
 export function emitSseEvent<T extends SseEventType>(
-  _emitter: AppEventEmitter,
-  _event: T,
-  _payload: SsePayloadMap[T]
+  emitter: AppEventEmitter,
+  event: T,
+  projectId: string,
+  orgId: string,
+  data: SsePayloadMap[T]
 ): void {
-  // Story 1.11 implements SSE ring buffer and delivery
+  const envelope: SseEnvelope<T> = {
+    event,
+    projectId,
+    orgId,
+    data,
+    timestamp: new Date().toISOString(),
+  }
+  emitter.emit('sse', envelope)
 }

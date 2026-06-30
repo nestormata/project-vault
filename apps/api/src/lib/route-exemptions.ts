@@ -328,6 +328,35 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Admin updates org routing config; organizational configuration change, not a security event.',
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/users/me': {
+    action: 'read',
+    auditOmissionReason:
+      'User reads own profile summary and unread notification count; no secrets exposed.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/notifications/inbox': {
+    action: 'read',
+    auditOmissionReason:
+      'User reads own notification inbox; no secrets exposed. High-frequency UI operation.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/notifications/inbox/:id/read': {
+    action: 'mutation',
+    auditOmissionReason: 'User marks own inbox entry read; no security-sensitive state change.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/notifications/inbox/read-all': {
+    action: 'mutation',
+    auditOmissionReason:
+      'User marks all own inbox entries read; no security-sensitive state change.',
+    reviewer: SECURITY_OWNER,
+  },
+  'DELETE /api/v1/notifications/inbox/:id': {
+    action: 'mutation',
+    auditOmissionReason:
+      'User dismisses own inbox entry (soft delete); no credential or secret data removed.',
+    reviewer: SECURITY_OWNER,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
@@ -419,6 +448,20 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'Fetches digest queue entries per org using getDb() DISTINCT org scan; writes via withOrg().',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/notification-inbox.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Inbox delivery worker uses withOrgAndUser() for per-user RLS; queue lookup via withOrg().',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/notification-inbox-purge.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Cross-org purge of expired inbox entries via getAdminDb(); bypasses per-user RLS for maintenance operation.',
     reviewer: SECURITY_OWNER,
   },
 ]
