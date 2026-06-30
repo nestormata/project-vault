@@ -3,7 +3,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
-import { auditLogEntries, credentialVersions, orgMemberships } from '@project-vault/db/schema'
+import {
+  auditLogEntries,
+  credentials,
+  credentialVersions,
+  orgMemberships,
+} from '@project-vault/db/schema'
 import {
   assertRoutesFailClosedWhileSealed,
   bootstrapRouteIntegrationTest,
@@ -860,9 +865,13 @@ describe.sequential('credential routes', () => {
       auditSpy.mockRestore()
     }
 
-    const afterRollback = await listCredentials(app, owner.cookies, projectId)
-    expect(JSON.stringify(afterRollback.json())).toContain('stable')
-    expect(JSON.stringify(afterRollback.json())).not.toContain('rolled-back')
+    const afterRollback = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ tags: credentials.tags })
+        .from(credentials)
+        .where(eq(credentials.id, credential.id))
+    )
+    expect(afterRollback[0]?.tags).toEqual(['stable'])
   }, 20_000)
 
   it('security regression: the credential value never appears in any non-reveal response body', async () => {
