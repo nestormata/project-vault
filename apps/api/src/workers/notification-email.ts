@@ -94,9 +94,11 @@ export async function notificationEmailCatchupHandler(
 ): Promise<void> {
   await runNotificationCatchup(
     boss,
-    'email',
-    'notification:email',
-    logger,
-    'Notification catchup found stale pending email entries'
+    {
+      channel: 'email',
+      jobName: 'notification:email',
+      logMessage: 'Notification catchup found stale pending email entries',
+    },
+    logger
   )
 }

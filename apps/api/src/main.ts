@@ -28,6 +28,9 @@ import {
   notificationSlackHandler,
 } from './workers/notification-slack.js'
 import { notificationBackfillHandler } from './workers/notification-backfill.js'
+import { notificationDeliverCatchupJobHandler } from './workers/notification-deliver-catchup.js'
+import { wrapDeliverHandler } from './workers/notification-deliver.js'
+import { notificationDigestHandler } from './workers/notification-digest.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
@@ -35,6 +38,8 @@ import { operationalLog, serializeLogError } from './lib/logger.js'
 import { createStartupLogger, logStartupFailure } from './lib/startup-logging.js'
 import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
+
+const NOTIFICATION_CATCHUP_CRON = '*/10 * * * *'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
@@ -99,8 +104,10 @@ async function main(): Promise<void> {
       'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
       'credentials/prune-versions': { cron: '0 3 * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
-      'notification:email-catchup': { cron: '*/10 * * * *' },
-      'notification:slack-catchup': { cron: '*/10 * * * *' },
+      'notification:email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification:slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification:deliver-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification:send-digest': { cron: `0 ${env.NOTIFICATION_DIGEST_HOUR} * * *` },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
@@ -135,6 +142,12 @@ async function main(): Promise<void> {
         notificationBackfillHandler(boss, fastify.log),
       'notification:email-catchup': () => notificationEmailCatchupHandler(boss, fastify.log),
       'notification:slack-catchup': () => notificationSlackCatchupHandler(boss, fastify.log),
+      'notification:deliver': {
+        handler: (job) => wrapDeliverHandler(fastify.log)(job),
+        options: { localConcurrency: 5, localGroupConcurrency: 3 },
+      },
+      'notification:deliver-catchup': () => notificationDeliverCatchupJobHandler(boss, fastify.log),
+      'notification:send-digest': () => notificationDigestHandler(fastify.log),
     })
     await boss.send('notification:backfill-pending-delivery', {})
     bossRegistered = true

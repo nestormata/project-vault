@@ -15,6 +15,7 @@ export async function claimPendingNotificationEntry(
       .where(eq(notificationQueue.id, notificationQueueId))
       .limit(1)
     if (!row || row.status !== 'pending') return null
+    if (row.deliverAt && row.deliverAt.getTime() > Date.now()) return null
 
     await tx
       .update(notificationQueue)

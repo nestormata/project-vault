@@ -25,26 +25,42 @@ export function createNotificationJobHandler(
 
 export async function runNotificationCatchup(
   boss: BossService,
-  channel: 'email' | 'slack',
-  jobName: string,
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>,
-  logMessage: string
+  options: {
+    jobName: string
+    channel?: 'email' | 'slack'
+    deliverAtAware?: boolean
+    logMessage: string
+  },
+  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 ): Promise<void> {
   const { fetchAllOrgIds } = await import('../middleware/rls.js')
   const orgIds = await fetchAllOrgIds()
   let total = 0
+  const { jobName, channel, deliverAtAware = false, logMessage } = options
 
   for (const orgId of orgIds) {
     const staleEntries = await withOrg(orgId, (tx) =>
-      tx.execute<{ id: string }>(sql`
-        SELECT id::text AS id
-        FROM notification_queue
-        WHERE org_id = ${orgId}::uuid
-          AND channel = ${channel}
-          AND status = 'pending'
-          AND created_at < NOW() - INTERVAL '5 minutes'
-        LIMIT 100
-      `)
+      tx.execute<{ id: string }>(
+        deliverAtAware
+          ? sql`
+              SELECT id::text AS id
+              FROM notification_queue
+              WHERE org_id = ${orgId}::uuid
+                AND status = 'pending'
+                AND (deliver_at IS NULL OR deliver_at <= NOW())
+                AND created_at < NOW() - INTERVAL '5 minutes'
+              LIMIT 100
+            `
+          : sql`
+              SELECT id::text AS id
+              FROM notification_queue
+              WHERE org_id = ${orgId}::uuid
+                AND channel = ${channel}
+                AND status = 'pending'
+                AND created_at < NOW() - INTERVAL '5 minutes'
+              LIMIT 100
+            `
+      )
     )
     for (const entry of staleEntries) {
       await boss.send(

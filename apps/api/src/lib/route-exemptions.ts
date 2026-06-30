@@ -301,6 +301,33 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Test notification sends to configured channels; does not mutate vault state or expose secrets. Operational verification only.',
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/users/me/notification-preferences': {
+    action: 'read',
+    auditOmissionReason: 'User reads own notification preferences; no secrets exposed.',
+    reviewer: SECURITY_OWNER,
+  },
+  'PUT /api/v1/users/me/notification-preferences': {
+    action: 'mutation',
+    auditOmissionReason:
+      'User updates own notification preferences; no secrets mutated. Not a security-sensitive setting change.',
+    reviewer: SECURITY_OWNER,
+  },
+  'PATCH /api/v1/users/me/notification-preferences': {
+    action: 'mutation',
+    auditOmissionReason: 'User partially updates own notification preferences.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/org/notification-routing': {
+    action: 'read',
+    auditOmissionReason: 'Admin reads org routing config; no secret values.',
+    reviewer: SECURITY_OWNER,
+  },
+  'PUT /api/v1/org/notification-routing': {
+    action: 'mutation',
+    auditOmissionReason:
+      'Admin updates org routing config; organizational configuration change, not a security event.',
+    reviewer: SECURITY_OWNER,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
@@ -379,6 +406,19 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'One-time backfill job uses fetchAllOrgIds() (getDb()) to scan PENDING_DELIVERY security alerts across all orgs.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/notification-deliver.ts',
+    classification: PLATFORM_JOB,
+    reason: 'Reads notification_queue channel via withOrg() to route delivery.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/notification-digest.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Fetches digest queue entries per org using getDb() DISTINCT org scan; writes via withOrg().',
     reviewer: SECURITY_OWNER,
   },
 ]
