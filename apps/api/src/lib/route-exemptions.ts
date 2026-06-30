@@ -205,6 +205,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Credential list/search returns metadata only; never any credential value (RS-E2a).',
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId': {
+    action: 'read',
+    auditOmissionReason:
+      'Credential metadata read returns no secret value; detail page load path (ADR-2.8-05).',
+    reviewer: SECURITY_OWNER,
+  },
   'PUT /api/v1/projects/:projectId/credentials/:credentialId/tags': {
     action: 'mutation',
     auditEvent: 'credential.tags_updated',
@@ -282,6 +288,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'read',
     auditEvent: 'credential.search',
     sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
+  'GET /api/v1/dashboard': {
+    action: 'read',
+    auditOmissionReason:
+      'Org dashboard read is org-scoped and returns aggregate counts and expiry metadata only.',
+    reviewer: SECURITY_OWNER,
   },
 }
 

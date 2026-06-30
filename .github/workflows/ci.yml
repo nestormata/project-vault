@@ -90,6 +90,9 @@ jobs:
         env:
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
 
+      - name: Check search index safety (RS-E2a)
+        run: pnpm check-search-index
+
       - name: Test (with coverage)
         run: pnpm turbo test
         env:

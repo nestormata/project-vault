@@ -74,6 +74,14 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 ## Getting Started
 
+**Operator guide:** **[docs/operator-quickstart.md](docs/operator-quickstart.md)** — zero → eval-ready (`make bootstrap`, database roles, vault ceremony, troubleshooting).
+
+| Goal | Command |
+|------|---------|
+| Local dev (hot reload) | `make bootstrap` then `pnpm turbo dev` — [Path A](docs/operator-quickstart.md#path-a--local-dev-fastest-for-ui-work) |
+| Full Docker stack | `make bootstrap-docker` — [Path B](docs/operator-quickstart.md#path-b--full-docker-stack) |
+| All make targets | `make help` |
+
 ### Minimum Tooling Versions
 
 | Tool | Minimum Version |
@@ -88,81 +96,78 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 ### Docker Quickstart
 
 ```bash
-cp .env.example .env          # configure environment variables
-docker compose up --build     # start all services
+cp .env.example .env
+make bootstrap-docker
 ```
 
-Services will be available at:
+Optional vault init/unseal via API (requires `jq`):
+
+```bash
+export VAULT_BOOTSTRAP_TOKEN="$(openssl rand -base64 32)"
+export VAULT_DEV_PASSPHRASE='your-local-passphrase-min-12-chars'
+make bootstrap-docker ARGS="--init-vault"
+```
+
+Vault init/unseal in the web UI, readiness states, and troubleshooting: **[docs/operator-quickstart.md](docs/operator-quickstart.md)**.
+
+Manual equivalent: `docker compose up --build -d`
+
+Services:
 - Web: http://localhost:5173
 - API: http://localhost:3000
 - API health: http://localhost:3000/health
 
-### Use the Story 2.0 MVP Shell
-
-Story 2.0 ships the first usable web shell: vault readiness, vault initialize/unseal forms, registration, login, server-side session refresh, logout, the authenticated app shell, and honest empty project dashboards.
-
-The fastest local path is to run the API and web app in development mode against the local Postgres container:
+### Local dev (API + web, hot reload)
 
 ```bash
 pnpm install
-make db-up
-make db-migrate
+cp .env.example .env          # optional for local eval; defaults work with make bootstrap
+
+make bootstrap                # Postgres + migrate + RLS check
 
 export DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
 export VAULT_BOOTSTRAP_TOKEN=$(openssl rand -base64 32)
+export VAULT_ALLOW_REMOTE_INIT=true   # local dev only — never in production
 pnpm turbo dev
 ```
 
-Start or restart `pnpm turbo dev` after exporting the vault token. Turbo runs in strict
-environment mode, so `turbo.json` must pass vault operator env vars through to the API task.
+Restart `pnpm turbo dev` after changing vault operator exports. Turbo passes them via `globalPassThroughEnv` in `turbo.json` (`VAULT_BOOTSTRAP_TOKEN`, `VAULT_ENVELOPE_KEY_HALF`, `VAULT_ALLOW_REMOTE_INIT`).
 
-Open http://localhost:5173. The root route checks vault readiness and sends you to the correct next step:
+Open http://localhost:5173:
 
-1. If the vault is uninitialized, use **Initialize vault**. For local evaluation, choose **Passphrase**, paste the `VAULT_BOOTSTRAP_TOKEN` value from your shell into the bootstrap-token field, and enter a vault passphrase you can reuse for unseal.
-2. If the vault is sealed, use **Unseal vault** with the same passphrase or with the configured server-side key path for file/envelope modes.
-3. When the vault is ready, register the first user, then sign in. Registration creates the account but does not automatically create a session.
-4. After login, use the authenticated shell navigation: Dashboard, Projects, Credentials, Alerts, Health, and Settings.
-5. On Dashboard, choose **Preview an empty project dashboard** to see the project-centered MVP dashboard. This preview is intentionally in-memory only and resets on reload; durable projects arrive in Story 2.1.
+1. **Initialize vault** (if uninitialized) — Passphrase mode, paste `VAULT_BOOTSTRAP_TOKEN`, choose a passphrase for unseal.
+2. **Unseal vault** (if sealed) — same passphrase.
+3. **Register** the first user, then **sign in** (registration does not auto-login).
+4. Use the shell: projects, credentials, import, onboarding, global search. Placeholder routes: `/alerts`, `/health`, `/settings` (future epics).
 
-What is intentionally not live yet:
-
-- Saved project creation and project APIs are Story 2.1.
-- Credential storage/search, imports, and credential actions start in later Epic 2 stories.
-- Alerts, health monitoring, audit UI, machine users, backup/restore, and real operational counts are placeholders only.
-- Empty states are not errors and are not "all healthy" signals; they show which operational coverage is still missing.
+API-only eval: same vault steps, then use `curl` against http://localhost:3000 — see [Auth Configuration](#auth-configuration) below.
 
 ### Local Development
 
 ```bash
-pnpm install                  # install dependencies
-cp .env.example .env          # configure environment variables (see below)
+pnpm install
+cp .env.example .env
+make bootstrap                # preferred — see docs/operator-quickstart.md
 ```
 
-Most local tasks need a real PostgreSQL connection. The repo uses **two** DB roles:
+The repo uses **two** PostgreSQL roles (details in the [operator quickstart](docs/operator-quickstart.md#two-database-roles-read-this-first)):
 
 | Role | Used for | Why |
 |---|---|---|
-| `postgres` (superuser) | running migrations only | migrations bootstrap the `vault_app` role and the RLS policies/triggers in `packages/db/src/migrations/` |
-| `vault_app` | everything else — the app itself, tests, RLS checks | the `postgres` **superuser bypasses Row-Level Security entirely**. If anything other than a migration connects as `postgres`, RLS/isolation tests will pass even when policies are broken or missing — they're silently not being checked |
+| `postgres` (superuser) | migrations only (`make db-migrate`) | creates `vault_app`, RLS policies, triggers |
+| `vault_app` | app, tests, `check-rls`, `turbo dev` | superuser **bypasses RLS** — false-green tests if misused |
 
-Steps to get a working local DB:
-
-```bash
-docker compose up -d db                       # start just the Postgres container
-DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault \
-  pnpm db:migrate                             # bootstraps vault_app + RLS (superuser only)
-```
-
-From here on, **export `DATABASE_URL` using `vault_app`**, not `postgres`, for dev/test/lint work:
+`make bootstrap` runs migrate + `check-rls` with the correct roles. Individual targets when you need them:
 
 ```bash
-export DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
-pnpm turbo dev                                # start all dev servers
-pnpm turbo test                               # run tests
-pnpm check-rls                                # verify RLS coverage
+make db-up          # Postgres container only
+make db-migrate     # superuser migrations
+make check-rls      # vault_app RLS coverage
+make test           # test suite as vault_app
+make dev            # pnpm turbo dev (export DATABASE_URL first)
 ```
 
-`turbo.json` passes `DATABASE_URL` through to every task once it's set in your shell — but **nothing auto-loads `.env`** for you (no dotenv wiring in `turbo.json` or package scripts). If a task complains about missing rows, RLS isolation, or unexpected privileges, the most likely cause is `DATABASE_URL` not being exported, or still pointing at `postgres`.
+`turbo.json` passes `DATABASE_URL` via `globalEnv` once exported. **Nothing auto-loads `.env`** for turbo tasks — export vars in your shell or use the Makefile targets that set `DATABASE_URL` for you.
 
 ### Auth Configuration
 
@@ -199,17 +204,22 @@ curl -s -b cookies.txt -c cookies.txt -X POST http://localhost:3000/api/v1/auth/
 
 Rotating `SESSION_SECRET` invalidates access JWTs. Rotating `REFRESH_TOKEN_HMAC_SECRET` invalidates all refresh tokens and forces users to log in again.
 
-A [`Makefile`](./Makefile) wraps all of this so you don't have to remember the roles or re-export `DATABASE_URL` by hand:
+A [`Makefile`](./Makefile) wraps DB roles, bootstrap, quality gates, and Docker:
 
 ```bash
-make help          # list all available tasks
-make db-up          # start just the Postgres container
-make db-migrate      # run migrations as postgres (bootstraps vault_app + RLS)
-make test           # run tests as vault_app
-make check-rls      # verify RLS coverage as vault_app
-make ci             # run the full local quality-gate sequence
-make docker-up       # build + start the full stack
+make help             # list all targets
+make bootstrap        # Postgres + migrate + RLS (local dev entry point)
+make bootstrap-docker # full compose stack
+make db-up            # Postgres container only
+make db-migrate       # migrations as postgres
+make test             # tests as vault_app
+make check-rls        # RLS coverage as vault_app
+make ci               # full local quality-gate sequence
+make docker-up        # build + start full stack (manual compose)
+make docker-smoke     # end-to-end /health + /ready check
 ```
+
+Full operator flows: **[docs/operator-quickstart.md](docs/operator-quickstart.md)**.
 
 ### CI Quality Gates
 
@@ -226,22 +236,23 @@ Each gate runs on every PR:
 | Docker | CI only | Multi-arch build validation |
 
 Nightly gates (runs at 02:00 UTC):
-- **Mutation testing** (Stryker) — score ≥60% (target ≥80% after Epic 2)
+- **Mutation testing** (Stryker) — score ≥60% (target ≥80%; ratchet per project policy)
 - **Docker image scan** (Trivy) — zero high/critical CVEs
 
 ### Pre-PR Checklist
 
+Requires Postgres on `localhost:5432` (`make db-up` or `make bootstrap` first).
+
 ```bash
 make ci              # typecheck, lint, migrate, RLS check, test, jscpd, audit, spec freshness
-make docker-smoke     # end-to-end Docker health check
+make docker-smoke    # end-to-end Docker health check
 ```
 
 Equivalent without `make`:
 
 ```bash
 pnpm turbo typecheck lint
-DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm db:migrate
-DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm check-rls
+make db-migrate check-rls
 DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault pnpm turbo test
 pnpm jscpd
 pnpm docker:smoke
@@ -254,8 +265,12 @@ Run `scripts/update-base-image.sh` weekly to get fresh digests for pinned Docker
 ### Production Usage
 
 ```bash
+make docker-prod
+# equivalent:
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
+
+Production hardening checklist: [docs/operator-quickstart.md — Production hardening](docs/operator-quickstart.md#production-hardening-before-non-dev-deploy).
 
 ---
 

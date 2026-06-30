@@ -1195,6 +1195,8 @@ Bob (Scrum Master): "{user_name}, is addressing this stability work worth doing 
 
 <action>Explore unresolved blockers</action>
 
+<action>Verify Epic Completion Gate (G2) per `_bmad-output/implementation-artifacts/product-surface-contract.md`: PRD user journeys web-consumable or explicitly deferred; no API-only stories without linked UI or honest placeholders</action>
+
 <output>
 Bob (Scrum Master): "{user_name}, are there any unresolved blockers or technical issues from Epic {{epic_number}} that we're carrying forward?"
 

@@ -233,6 +233,29 @@ export async function createCredentialWithFirstVersion(
   return { credential, detail: serializeCredentialDetail(credential, 1) }
 }
 
+export async function getCredentialDetail(
+  tx: Tx,
+  params: { credentialId: string; projectId: string }
+) {
+  const credential = await findCredentialInProject(tx, params)
+  if (!credential) return null
+
+  const [versionRow] = await tx
+    .select({
+      currentVersionNumber: sql<number>`MAX(${credentialVersions.versionNumber})`,
+    })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.credentialId, params.credentialId),
+        isNull(credentialVersions.purgedAt)
+      )
+    )
+
+  const currentVersionNumber = Number(versionRow?.currentVersionNumber ?? 1)
+  return serializeCredentialDetail(credential, currentVersionNumber)
+}
+
 export async function findCredentialInProject(
   tx: Tx,
   params: { credentialId: string; projectId: string }

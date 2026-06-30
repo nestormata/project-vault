@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-29  # updated: 2-7 -> done
+last_updated: 2026-06-30  # updated: epic-1 retrospective done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -56,10 +56,10 @@ development_status:
   1-10-structured-operational-logging-and-metrics: done
   1-11-secureroute-framework-and-drizzle-rls-middleware: done
   1-12-mfa-login-verification-flow: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   # Epic 2: Secret & Credential Management — Store, Retrieve, Search & Import
-  epic-2: in-progress
+  epic-2: done
   2-0-mvp-frontend-shell-and-empty-project-dashboard: done
   2-1-project-creation-and-cross-project-dashboard: done
   2-2-credential-storage-and-retrieval-with-version-history: done
@@ -68,7 +68,8 @@ development_status:
   2-5-credential-bulk-import-from-env-and-json: done
   2-6-onboarding-wizard: done
   2-7-cross-project-global-search: done
-  epic-2-retrospective: optional
+  2-8-epic-2-completion-credential-web-ui-dashboard-truth-and-ci-guards: done
+  epic-2-retrospective: done
 
   # Epic 3: Notification Infrastructure — Alert Delivery, Routing & In-App Inbox
   epic-3: in-progress

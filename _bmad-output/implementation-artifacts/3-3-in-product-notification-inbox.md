@@ -18,6 +18,20 @@ so that I never miss a vault event even without configuring email or Slack.
 
 ---
 
+## Product Surface Contract
+
+| Field | Value |
+|-------|-------|
+| **Surface scope** | `both` |
+| **Evaluator-visible** | yes |
+| **Linked UI story** | N/A — **Epic 3 web completion story**; replaces `/alerts` placeholder |
+| **Honest placeholder AC** | N/A — must ship real inbox UI + nav badge; no fake unread counts |
+| **Persona journey** | **Morgan (member):** nav bell shows unread count → opens `/alerts` inbox → marks read → SSE updates badge. Empty inbox shows honest empty state, not placeholder copy. |
+
+**Epic 3 gate:** Epic 3 must not be `done` without this story — API-only delivery (3.1) is insufficient for web-first evaluators.
+
+---
+
 ## Prerequisites
 
 | Prerequisite | Why |

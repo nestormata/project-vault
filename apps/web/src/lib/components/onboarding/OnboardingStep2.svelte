@@ -4,6 +4,7 @@
   import type { OrgRole } from './onboarding-logic.js'
   import {
     canCreateCredential,
+    mapCredentialSubmitError,
     onboardingCopy,
     parseTagsInput,
     validateCredentialForm,
@@ -55,18 +56,10 @@
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 503) {
         apiError = onboardingCopy.vaultSealedMessage
-      } else if (error instanceof ApiClientError && error.status === 422) {
-        const details =
-          error.details && typeof error.details === 'object'
-            ? (error.details as Record<string, string[]>)
-            : {}
-        fieldErrors = {
-          name: details.name?.[0],
-          value: details.value?.[0],
-        }
-        apiError = error.message
       } else {
-        apiError = error instanceof Error ? error.message : 'Could not save credential.'
+        const mapped = mapCredentialSubmitError(error)
+        fieldErrors = mapped.fieldErrors
+        apiError = mapped.errorMessage
       }
     } finally {
       submitting = false

@@ -15,7 +15,7 @@ export const dashboardEmptyStateCopy = {
 export const forbiddenDashboardClaims = ['All systems healthy', '0 alerts', '100% coverage']
 
 export const suggestedActionLabels = {
-  add_credential: 'Add first credential - available in Story 2.2',
+  add_credential: 'Add first credential',
   add_service: 'Add first service - available in Epic 6',
-  import_credentials: 'Import .env or JSON - available in Story 2.5',
+  import_credentials: 'Import .env or JSON',
 } as const

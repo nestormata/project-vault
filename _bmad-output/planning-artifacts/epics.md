@@ -483,7 +483,7 @@ Users can deploy the vault on self-hosted infrastructure via Docker, create acco
 > ⚠️ **PJ6 — `user_identity_token` enforcement:** The `user_identity_token` schema is created in this epic. All subsequent epic stories that write audit events must use token references — not raw user identity. Story templates for Epics 2-7 must include an explicit audit-event checklist item: "actor stored as `user_identity_token` reference, not raw identity."
 > 📋 **AC-E1a — FR60 seal/unseal semantics:** Story must specify: (a) unseal is manual-only on startup; (b) vault auto-seals on unexpected shutdown/crash; (c) auto-seal requires manual unseal before any API or UI request is served. If auto-seal-on-crash is out of v1 scope, document explicitly.
 > 📋 **AC-E1b — FR82 log schema:** Story must define the required JSON fields (minimum: `timestamp`, `level`, `service`, `trace_id`, `event_type`, `message`). Any structured log output lacking required fields fails acceptance.
-> 📋 **AC-E1c — FR57 MFA enforcement point:** Story must specify: MFA is enforced at login (not deferred to sensitive actions). Users without MFA enrolled are blocked from completing login after the enrollment grace period. Grace period duration must be defined.
+> 📋 **AC-E1c — FR57 MFA enforcement point:** MFA is enforced at **privileged routes** for owner/admin roles after the enrollment grace period expires (`requireMfaEnrollment()` / `SecureRoute({ requireMfa: true })`). Users **with** MFA enrolled must complete the login challenge (`mfaRequired` → `verify-login`) before receiving a session. Users **without** MFA after grace may still complete password-only login but cannot perform privileged actions until enrolled (Option A — see `_bmad-output/planning-artifacts/mfa-policy-matrix.md`, ADR-1.9-05). Grace period duration: `MFA_PRIVILEGED_ROLE_GRACE_DAYS` (default 7). Full FR57 invite gate verified in Epic 4 Story 4.1.
 
 #### Story 1.1: Initialize Turborepo Monorepo with Full Quality Gate Suite
 
@@ -1451,6 +1451,8 @@ Project owners can invite team members, assign roles, and transfer ownership; or
 **And** no user may invite to a role higher than their own role (NFR-SEC10); an admin cannot invite an owner.
 
 **And** integration tests cover: invite, accept (existing user), accept (new user), expired token, role elevation rejection, revocation.
+
+**And** (FR57 / Epic 1 retro P4 — MFA journey) unenrolled owner/admin cannot create invitations; enrolled owner/admin who completed the Story 1.12 login challenge (`mfaRequired` → `verify-login`) can invite successfully. Persona journey references `_bmad-output/planning-artifacts/mfa-policy-matrix.md` row "Owner/admin, MFA enrolled". Regression: `apps/api/src/__tests__/mfa-journey.integration.test.ts` must remain green.
 
 ---
 

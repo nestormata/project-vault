@@ -13,7 +13,7 @@ describe('placeholder shell sections', () => {
       'settings',
     ])
     expect(sections.projects.copy).toContain('Story 2.1')
-    expect(sections.credentials.copy).toContain('Story 2.2')
+    expect(sections.credentials.copy).toContain('Choose a project')
     expect(sections.alerts.copy).toContain('Epic 3')
     expect(sections.health.copy).toContain('Epic 6')
     expect(sections.settings.copy).toContain('MVP shell')

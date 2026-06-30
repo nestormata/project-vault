@@ -32,6 +32,7 @@ const TEST_PASSPHRASE = 'credential-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const STRIPE_SECRET_KEY = 'Stripe Secret Key'
 const STRIPE_PROD = 'Stripe Prod'
+const PRODUCTION_SECRET = 'Production secret'
 const PAYMENTS_TAG = 'payments'
 const PROD_TAG = 'prod'
 const THIRD_PARTY_TAG = 'third-party'
@@ -201,7 +202,7 @@ describe.sequential('credential routes', () => {
       payload: {
         name: STRIPE_SECRET_KEY,
         value: 'sk_live_example_not_a_real_key',
-        description: 'Production secret',
+        description: PRODUCTION_SECRET,
         tags: [PAYMENTS_TAG],
         rotationSchedule: '0 0 1 * *',
       },
@@ -238,6 +239,53 @@ describe.sequential('credential routes', () => {
     )
     expect(auditRows.some((row) => row.resourceId === body.data.id)).toBe(true)
     expect(JSON.stringify(auditRows)).not.toContain('sk_live_example_not_a_real_key')
+  }, 20_000)
+
+  it('GET /projects/:id/credentials/:credentialId returns metadata without value field', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'metadata-get')
+    const created = await createTestCredential(app, owner.cookies, projectId, {
+      name: STRIPE_SECRET_KEY,
+      value: SENTINEL_VALUE,
+      description: PRODUCTION_SECRET,
+      tags: [PAYMENTS_TAG],
+      rotationSchedule: '0 0 1 * *',
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${created.id}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const body = response.json<{ data: CredentialDetail & { value?: string } }>()
+    expect(body.data).toMatchObject({
+      id: created.id,
+      projectId,
+      name: STRIPE_SECRET_KEY,
+      description: PRODUCTION_SECRET,
+      tags: [PAYMENTS_TAG],
+      rotationSchedule: '0 0 1 * *',
+      currentVersionNumber: 1,
+      retentionCount: 3,
+    })
+    expect(body.data.value).toBeUndefined()
+    expect(JSON.stringify(body.data)).not.toContain(SENTINEL_VALUE)
+
+    const crossOrg = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${created.id}`,
+      headers: { cookie: cookieHeader(other.cookies) },
+    })
+    expect(crossOrg.statusCode).toBe(404)
+    expect(crossOrg.json()).toMatchObject({ code: 'credential_not_found' })
+
+    const missing = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${randomUUID()}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(missing.statusCode).toBe(404)
   }, 20_000)
 
   it('POST rejects missing/empty value, unknown keys, and malformed cron', async () => {

@@ -24,6 +24,19 @@ export class ApiClientError extends Error {
   }
 }
 
+export async function parseApiEnvelope<T>(response: Response): Promise<T> {
+  if (response.status === 204) return undefined as T
+
+  const body = (await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null
+  if (!response.ok) {
+    const failure = body && !('data' in body) ? body : null
+    const message = failure?.message ?? 'Request failed'
+    throw new ApiClientError(response.status, failure, message)
+  }
+
+  return body && 'data' in body ? body.data : (body as T)
+}
+
 export async function apiFetch<T>(
   fetchFn: typeof fetch,
   path: string,
@@ -38,14 +51,5 @@ export async function apiFetch<T>(
     },
   })
 
-  if (response.status === 204) return undefined as T
-
-  const body = (await response.json().catch(() => null)) as ApiSuccess<T> | ApiFailure | null
-  if (!response.ok) {
-    const failure = body && !('data' in body) ? body : null
-    const message = failure?.message ?? 'Request failed'
-    throw new ApiClientError(response.status, failure, message)
-  }
-
-  return body && 'data' in body ? body.data : (body as T)
+  return parseApiEnvelope<T>(response)
 }

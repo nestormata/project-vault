@@ -57,6 +57,12 @@
               <dd class="font-semibold">{project.alertCount}</dd>
             </div>
           </dl>
+          <a
+            class="mt-4 inline-block rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
+            href={resolve(`/projects/${project.id}/credentials`)}
+          >
+            View credentials
+          </a>
         </li>
       {/each}
     </ul>

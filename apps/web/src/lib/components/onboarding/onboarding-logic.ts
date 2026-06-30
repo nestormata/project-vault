@@ -1,3 +1,5 @@
+import { ApiClientError } from '$lib/api/client.js'
+
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 
 export const CREDENTIAL_CREATOR_ROLES = ['member', 'admin', 'owner'] as const
@@ -22,6 +24,39 @@ export function validateCredentialForm(input: { name: string; value: string }) {
   if (!input.name.trim()) errors.name = 'Name is required'
   if (!input.value.trim()) errors.value = 'Credential value cannot be empty'
   return errors
+}
+
+export function mapCredentialSubmitError(error: unknown): {
+  fieldErrors: { name?: string; value?: string }
+  errorMessage: string
+} {
+  const fieldErrors: { name?: string; value?: string } = {}
+  if (error instanceof ApiClientError) {
+    if (error.status === 422) {
+      const details =
+        error.details && typeof error.details === 'object'
+          ? (error.details as Record<string, string[]>)
+          : {}
+      return {
+        fieldErrors: {
+          name: details.name?.[0],
+          value: details.value?.[0],
+        },
+        errorMessage: error.message,
+      }
+    }
+    if (error.status === 403) {
+      return {
+        fieldErrors,
+        errorMessage: 'You do not have permission to create credentials.',
+      }
+    }
+    return { fieldErrors, errorMessage: error.message }
+  }
+  return {
+    fieldErrors,
+    errorMessage: error instanceof Error ? error.message : 'Could not save credential.',
+  }
 }
 
 export const onboardingCopy = {
