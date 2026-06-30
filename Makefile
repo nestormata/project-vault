@@ -61,7 +61,7 @@ check-rls: ## Verify every table has RLS policy coverage (must run as vault_app)
 # --- Tests / quality gates --------------------------------------------------
 
 test: ## Run the test suite (must run as vault_app — postgres bypasses RLS)
-	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm turbo test
+	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm turbo test --force
 
 stryker: ## Run Stryker mutation testing (matches nightly CI)
 	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run

@@ -1,6 +1,6 @@
 # Story 2.7: Cross-Project Global Search
 
-Status: ready-for-dev
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-28 — comprehensive developer guide for the cross-project global search feature (FR80). This story adds: (1) a PostgreSQL migration introducing `pg_trgm` trigram indexes on `credentials.name`, `credentials.description`, `credentials.tags`, `projects.name`, and `projects.tags` (never on value/encrypted columns); (2) a new `modules/search/` API module implementing `GET /api/v1/search` behind SecureRoute with org-scoped RLS; (3) a `GlobalSearch.svelte` command-palette component triggered by Cmd+K/Ctrl+K wired into the existing AppShell. Relies on: Story 2.3 (check-search-index.ts CI lint rule, ILIKE foundation), Story 2.2 (value-free credentials schema), Story 2.1 (projects table + RLS). Consumed by: AppShell global nav. -->
 

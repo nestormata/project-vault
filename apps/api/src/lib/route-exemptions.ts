@@ -278,6 +278,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'onboarding.completed',
     sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
+  'GET /api/v1/search': {
+    action: 'read',
+    auditEvent: 'credential.search',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [

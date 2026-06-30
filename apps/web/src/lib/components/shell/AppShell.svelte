@@ -8,10 +8,12 @@
     user,
     children,
     hidePrimaryNav = false,
+    onsearch,
   }: {
     user: import('$lib/api/auth.js').AuthUser
     children: import('svelte').Snippet
     hidePrimaryNav?: boolean
+    onsearch?: () => void
   } = $props()
   let logoutError = $state(null)
 
@@ -40,7 +42,7 @@
         <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div>
       {#if !hidePrimaryNav}
-        <PrimaryNav />
+        <PrimaryNav {onsearch} />
       {/if}
       <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
         <span>Role: {user.orgRole}</span>

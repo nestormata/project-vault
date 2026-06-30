@@ -8,7 +8,7 @@ export type SameTransactionAuditInput = {
   orgId: string
   actorUserId: string
   eventType: string
-  resourceId: string
+  resourceId?: string
   resourceType: string
   payload: Record<string, unknown>
   request: FastifyRequest
