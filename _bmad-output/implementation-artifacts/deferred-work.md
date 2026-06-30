@@ -1,5 +1,89 @@
 # Deferred Work
 
+Tracked gaps: work intentionally deferred, not yet implemented, or needing follow-up.  
+**Product Surface Contract:** API-only items here must have a linked story before parent stories/epics close — see `_bmad-output/implementation-artifacts/product-surface-contract.md`.
+
+---
+
+## Deferred from: Epic 2 closure retrospective (2026-06-30)
+
+Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 3 notification infrastructure unless noted.
+
+### Open retro action items
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| P4 | Epic 1 retrospective or documented waiver | Nestor | Process — `epic-1-retrospective` still `optional` |
+| E3-1 | SMTP config split: Story 3.1 env vars vs AC-E3a Epic 9 system settings | Architect / PO | ADR before Story 3.1 dev |
+| E3-2 | FR73 `PENDING_DELIVERY` → `notification_queue` integration test | Dev | Story 3.1 AC |
+| D1 | Reconcile `architecture.md`: `secrets` tables/endpoints → `credentials` naming | Tech Writer | Planning doc |
+| D2 | Operator runbook: `CREDENTIAL_RETENTION_DRY_RUN` → destructive purge rollout | Dev / Ops | `specs/` |
+
+### Partial epic acceptance criteria (honest zeros until later epics)
+
+| AC / area | Status | Blocked by | Notes |
+|-----------|--------|------------|-------|
+| AC-E2d — projects with overdue rotations | Schema slot exists; `count: 0`, `items: []` | Epic 5 | `GET /api/v1/dashboard` credential/expiry slice shipped in 2.8 |
+| AC-E2d — unresolved alert count on org dashboard | Hardcoded `0` | Epic 3 | Honest per AC-E2f until alerts live |
+| Project dashboard — `upcomingRotations`, `recentAccessEvents`, `monitoredServiceHealth` | Empty arrays / placeholder grid on web | Epic 5, 8, 6 | `DashboardPlaceholderGrid` on `/dashboard` |
+| Project dashboard — `suggestedActions` partial completion | Empty when `isEmpty: false` | Epic 6 | Smarter suggestions need monitoring data (Story 2.1 deferral) |
+| Credential expiry **notifications** | Columns exist (2.2/2.4); no delivery | Epic 3+ | Backend ready; alerting jobs not wired |
+
+### Web UI gaps — API exists, web incomplete (Epic 2 surface)
+
+| Capability | API story | Web status | Suggested follow-up |
+|------------|-----------|------------|---------------------|
+| Tag filter on credential list | 2.3 | List has `q` + `status` only; no `tags` query param in UI | Polish story or Epic 2.x follow-up |
+| Project tag management (FR95) | 2.3 | API only | Web UI story |
+| Credential lifecycle PATCH (`expiresAt`, `rotationSchedule`) | 2.4 | Create-only on web; no edit form | Web edit story |
+| Dependent systems (list/create/archive) | 2.4 | Not on credential detail page (2.8 noted optional read-only) | Epic 5 prep UI or 2.x follow-up |
+| Add credential version (new value) | 2.2 | Reveal + history read-only; no "new version" action | Web story |
+| Onboarding Step — "Invite your team" | 2.6 | Links to settings placeholder | Epic 4 invitations |
+| Playwright E2E suite | — | Not implemented (2.8 out of scope) | Test automation epic / CI hardening |
+
+### Shell placeholders (future epics — tracked, not silent)
+
+| Route | Current state | Epic |
+|-------|---------------|------|
+| `/alerts` | `PlaceholderSection` — "Epic 3" | 3.3 inbox replaces placeholder |
+| `/health` | `PlaceholderSection` — "Epic 6" | 6.x monitoring |
+| `/settings` | `PlaceholderSection` — "MVP shell" | 3.2 partial (`/settings/notifications` in 3.2 story); full settings Epic 9 |
+
+**Stale copy:** `apps/web/src/lib/components/shell/placeholder-copy.ts` — `projects` blurb still references "Story 2.1"; `credentials` key unused by routes (gateway page is real). Hygiene cleanup deferred.
+
+### Operations & production
+
+- **`CREDENTIAL_RETENTION_DRY_RUN`:** Production defaults to dry-run; operators must explicitly enable destructive version purge after verification (`apps/api/src/workers/prune-credential-versions.ts`). No runbook yet (D2).
+- **Retention worker:** Rotation-in-progress version exemption enforced; operator rollout procedure not documented.
+
+### Planning document reconciliation
+
+| Document | Drift | Resolution |
+|----------|-------|------------|
+| `architecture.md` | `secrets` table names, `idx_secrets_*`, POST reveal patterns | D1 — align to `credentials` / `GET .../value` |
+| `epics.md` | Story 2.0 MFA deferral note stale (1.12 shipped) | Periodic epic doc reconciliation |
+| `epics.md` | Beta cuts FR9/FR17/FR80 marked deferrable but implemented | Document as scope expansion, not bug |
+
+### Security & permissions (cross-epic — explicit deferrals)
+
+| Item | Deferred to | Source |
+|------|-------------|--------|
+| Fine-grained `read:secret_value` vs `read:secret_metadata` (NFR-SEC9) | Epic 4+ | Story 2.2 ADR — role-based + audit is v1 |
+| Per-project membership RBAC (all org members see all projects) | Story 4.1 | Story 2.1 ADR-2.1-01 |
+| Tag case normalization (`Prod` ≠ `prod`) | v2 polish | Story 2.3 ADR-2.3-01 |
+| `withOrgReadScope()` vs `withOrg()` distinction | Later story | Story 1.4 deferred-work |
+
+### Process guardrails baked (2026-06-30) — remaining adoption
+
+| ID | Status |
+|----|--------|
+| G1–G4 Product Surface Contract | ✅ Templates/workflows updated |
+| E3-P1 Surface contracts on 3.1–3.3 | ✅ Added to story files |
+| E3-P2 Epic 3 not `done` without 3.3 inbox | ⏳ Enforce at epic close |
+| E3-P3 Resolve E3-1 before 3.1 | ⏳ Open |
+
+---
+
 ## Deferred from: code review of story-1.12 (2026-06-27)
 
 - Repeated `POST /auth/login` calls reset a pending MFA challenge's `attempt_count` to 0 (delete-then-recreate in `createPendingMfaSession`), so the per-token `MFA_LOGIN_MAX_ATTEMPTS` cap can be bypassed by re-challenging between attempt batches. Deferred: documented two-layer design (ADR-1.12-09) — the Story 1.9 cross-token threshold worker still bounds sustained brute-forcing across all tokens for an account; only the local real-time cap is bypassable.

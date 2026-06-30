@@ -18,6 +18,18 @@ so that I receive signal-quality alerts and critical events reach the right resp
 
 ---
 
+## Product Surface Contract
+
+| Field | Value |
+|-------|-------|
+| **Surface scope** | `both` |
+| **Evaluator-visible** | yes |
+| **Linked UI story** | N/A (web included: `/settings/notifications`) |
+| **Honest placeholder AC** | Inbox channel preference UI may show inbox option; delivery UI is Story 3.3 |
+| **Persona journey** | **Riley (admin):** opens Settings → Notifications, configures email + inbox channels per alert type. **Morgan (member):** updates personal preferences; org routing read-only. |
+
+---
+
 ## Prerequisites
 
 | Prerequisite | Why |

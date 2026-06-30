@@ -19,6 +19,18 @@ so that I am notified of security events, expiring credentials, and system issue
 
 ---
 
+## Product Surface Contract
+
+| Field | Value |
+|-------|-------|
+| **Surface scope** | `api` |
+| **Evaluator-visible** | no (delivery is email/Slack; no primary web UI in this story) |
+| **Linked UI story** | `3-2` (settings/notifications test UI), `3-3` (inbox — inbox channel stub only) |
+| **Honest placeholder AC** | `/alerts` remains placeholder until 3.3; admin test endpoint is API-only |
+| **Persona journey** | **N/A (infra)** — Org admin triggers `POST /api/v1/admin/notifications/test`; user receives email/Slack. Web inbox journey is Story 3.3. |
+
+---
+
 ## Prerequisites
 
 | Prerequisite | Why |
