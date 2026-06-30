@@ -3,12 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
-import {
-  auditLogEntries,
-  credentials,
-  credentialVersions,
-  orgMemberships,
-} from '@project-vault/db/schema'
+import { auditLogEntries, credentials, credentialVersions } from '@project-vault/db/schema'
 import {
   assertRoutesFailClosedWhileSealed,
   bootstrapRouteIntegrationTest,
@@ -16,6 +11,7 @@ import {
   expectAuditWriteFailed,
   initVaultForTest,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { loginExistingUserInOrg } from '../../__tests__/helpers/org-role-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import {
   bootstrapCredentialRouteOwners,
@@ -905,30 +901,29 @@ describe.sequential('credential routes', () => {
       value: 'secret',
     })
 
-    await withOrg(owner.orgId, (tx) =>
-      tx
-        .update(orgMemberships)
-        .set({ role: 'viewer' })
-        .where(eq(orgMemberships.userId, owner.userId))
-    )
+    const viewerCookies = await loginExistingUserInOrg(app, {
+      userId: other.userId,
+      orgId: owner.orgId,
+      role: 'viewer',
+    })
 
-    const listAllowed = await listCredentials(app, owner.cookies, projectId)
+    const listAllowed = await listCredentials(app, viewerCookies, projectId)
     expect(listAllowed.statusCode).toBe(200)
 
     const createDenied = await app.inject({
       method: 'POST',
       url: `/api/v1/projects/${projectId}/credentials`,
-      headers: { cookie: cookieHeader(owner.cookies) },
+      headers: { cookie: cookieHeader(viewerCookies) },
       payload: { name: 'Denied', value: 'secret' },
     })
     expect(createDenied.statusCode).toBe(403)
 
-    const revealDenied = await revealValue(app, owner.cookies, projectId, credential.id)
+    const revealDenied = await revealValue(app, viewerCookies, projectId, credential.id)
     expect(revealDenied.statusCode).toBe(403)
 
     const addVersionDenied = await addVersion(
       app,
-      owner.cookies,
+      viewerCookies,
       projectId,
       credential.id,
       'secret-2'
