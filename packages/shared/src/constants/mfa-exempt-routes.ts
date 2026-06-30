@@ -8,6 +8,9 @@ export const MFA_ENROLLMENT_EXEMPT_ROUTES = [
   'POST /api/v1/auth/mfa/regenerate-recovery-codes',
   'GET /api/v1/auth/me',
   'PATCH /api/v1/projects/:projectId',
+  'GET /api/v1/users/me/notification-preferences',
+  'PUT /api/v1/users/me/notification-preferences',
+  'PATCH /api/v1/users/me/notification-preferences',
 ] as const
 
 export type MfaExemptRoute = (typeof MFA_ENROLLMENT_EXEMPT_ROUTES)[number]

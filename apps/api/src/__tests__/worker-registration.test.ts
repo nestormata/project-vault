@@ -45,6 +45,8 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
         'import/cleanup-expired',
         'notification:email-catchup',
         'notification:slack-catchup',
+        'notification:deliver-catchup',
+        'notification:send-digest',
       ])
     )
     expect(queueNames.every((name) => /^[A-Za-z0-9_.\-/:]+$/.test(name))).toBe(true)
@@ -70,5 +72,8 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
     expect(workersBlock).toContain("'notification:email'")
     expect(workersBlock).toContain("'notification:slack'")
     expect(workersBlock).toContain("'notification:backfill-pending-delivery'")
+    expect(workersBlock).toContain("'notification:deliver'")
+    expect(workersBlock).toContain("'notification:deliver-catchup'")
+    expect(workersBlock).toContain("'notification:send-digest'")
   })
 })

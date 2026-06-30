@@ -79,6 +79,30 @@ function literalText(node: ts.Expression | undefined): string | undefined {
   return undefined
 }
 
+function moduleStringConstants(source: string): Map<string, string> {
+  const constants = new Map<string, string>()
+  const file = sourceFile(source)
+  for (const statement of file.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const decl of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name)) continue
+      const value = literalText(decl.initializer)
+      if (value !== undefined) constants.set(decl.name.text, value)
+    }
+  }
+  return constants
+}
+
+function literalTextFromNode(
+  node: ts.Expression | undefined,
+  constants: Map<string, string>
+): string | undefined {
+  const direct = literalText(node)
+  if (direct !== undefined) return direct
+  if (node && ts.isIdentifier(node)) return constants.get(node.text)
+  return undefined
+}
+
 function propertyNameText(name: ts.PropertyName): string | undefined {
   if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name))
     return name.text
@@ -99,10 +123,11 @@ function objectProperty(
 function routeFromOptions(
   object: ts.ObjectLiteralExpression,
   registrar: string,
+  constants: Map<string, string>,
   fallbackMethod?: string
 ): ParsedRoute | null {
-  const method = fallbackMethod ?? literalText(objectProperty(object, 'method'))
-  const url = literalText(objectProperty(object, 'url'))
+  const method = fallbackMethod ?? literalTextFromNode(objectProperty(object, 'method'), constants)
+  const url = literalTextFromNode(objectProperty(object, 'url'), constants)
   const security = objectProperty(object, 'security')
   const preHandler = objectProperty(object, 'preHandler')
   const preHandlerSource = (security ?? preHandler)?.getText() ?? ''
@@ -171,12 +196,15 @@ function productionRouteFiles(): RouteFile[] {
   )
 }
 
-function rawRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
+function rawRegisteredRoute(
+  node: ts.CallExpression,
+  constants: Map<string, string>
+): ParsedRoute | null {
   if (!ts.isPropertyAccessExpression(node.expression)) return null
   if (node.expression.name.text !== 'route') return null
   const firstArgument = node.arguments[0]
   if (!firstArgument || !ts.isObjectLiteralExpression(firstArgument)) return null
-  return routeFromOptions(firstArgument, 'fastify.route')
+  return routeFromOptions(firstArgument, 'fastify.route', constants)
 }
 
 function shorthandRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
@@ -194,12 +222,13 @@ function shorthandRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
 }
 
 function parseRawRouteDeclarations(source: string): ParsedRoute[] {
+  const constants = moduleStringConstants(source)
   const routes: ParsedRoute[] = []
   const file = sourceFile(source)
 
   function visit(node: ts.Node): void {
     if (ts.isCallExpression(node)) {
-      const route = rawRegisteredRoute(node) ?? shorthandRegisteredRoute(node)
+      const route = rawRegisteredRoute(node, constants) ?? shorthandRegisteredRoute(node)
       if (route) routes.push(route)
     }
     ts.forEachChild(node, visit)
@@ -209,6 +238,7 @@ function parseRawRouteDeclarations(source: string): ParsedRoute[] {
 }
 
 function parseRoutes(source: string): ParsedRoute[] {
+  const constants = moduleStringConstants(source)
   const secureRoutes: ParsedRoute[] = []
   const file = sourceFile(source)
   function visit(node: ts.Node): void {
@@ -220,7 +250,7 @@ function parseRoutes(source: string): ParsedRoute[] {
       secondArgument &&
       ts.isObjectLiteralExpression(secondArgument)
     ) {
-      const route = routeFromOptions(secondArgument, 'secureRoute')
+      const route = routeFromOptions(secondArgument, 'secureRoute', constants)
       if (route) secureRoutes.push(route)
     }
     ts.forEachChild(node, visit)

@@ -54,9 +54,11 @@ export async function notificationSlackCatchupHandler(
 ): Promise<void> {
   await runNotificationCatchup(
     boss,
-    'slack',
-    'notification:slack',
-    logger,
-    'Notification catchup found stale pending slack entries'
+    {
+      channel: 'slack',
+      jobName: 'notification:slack',
+      logMessage: 'Notification catchup found stale pending slack entries',
+    },
+    logger
   )
 }

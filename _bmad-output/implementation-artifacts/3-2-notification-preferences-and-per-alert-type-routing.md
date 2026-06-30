@@ -1,6 +1,6 @@
 # Story 3.2: Notification Preferences & Per-Alert-Type Routing
 
-Status: ready-for-dev
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-28 - comprehensive developer guide for notification preferences,
      per-alert-type routing, and dispatcher refactoring. This story introduces notification_preferences and
@@ -1915,66 +1915,66 @@ Test files:
 ## Tasks
 
 ### Phase 1: Shared Types
-- [ ] Create `packages/shared/constants/notification-types.ts` (AC-1)
-- [ ] Export from `packages/shared/index.ts`
-- [ ] Run `pnpm typecheck` to verify export
+- [x] Create `packages/shared/constants/notification-types.ts` (AC-1)
+- [x] Export from `packages/shared/index.ts`
+- [x] Run `pnpm typecheck` to verify export
 
 ### Phase 2: Database (TDD)
-- [ ] **R2**: Read `packages/db/src/migrations/meta/_journal.json` for next free number
-- [ ] Create `packages/db/src/schema/notification-preferences.ts` (AC-2)
-- [ ] Create `packages/db/src/schema/org-notification-routing.ts` (AC-3)
-- [ ] Update `packages/db/src/schema/notification-queue.ts` with `deliverAt` column (AC-12)
-- [ ] Export new schemas from `packages/db/src/schema/index.ts`
-- [ ] Create migration `00YY_notification_preferences.sql` (AC-4) with ALTER TABLE + new tables + RLS
-- [ ] Update `meta/_journal.json`
-- [ ] Run `pnpm --filter @project-vault/db migrate` — confirm clean apply
-- [ ] Write `packages/db/src/__tests__/notification-prefs-rls.test.ts` (AC-16)
-- [ ] Verify RLS isolation tests pass
+- [x] **R2**: Read `packages/db/src/migrations/meta/_journal.json` for next free number
+- [x] Create `packages/db/src/schema/notification-preferences.ts` (AC-2)
+- [x] Create `packages/db/src/schema/org-notification-routing.ts` (AC-3)
+- [x] Update `packages/db/src/schema/notification-queue.ts` with `deliverAt` column (AC-12)
+- [x] Export new schemas from `packages/db/src/schema/index.ts`
+- [x] Create migration `00YY_notification_preferences.sql` (AC-4) with ALTER TABLE + new tables + RLS
+- [x] Update `meta/_journal.json`
+- [x] Run `pnpm --filter @project-vault/db migrate` — confirm clean apply
+- [x] Write `packages/db/src/__tests__/notification-prefs-rls.test.ts` (AC-16)
+- [x] Verify RLS isolation tests pass
 
 ### Phase 3: Shared Constants + env.ts
-- [ ] Add `NOTIFICATION_DIGEST_HOUR` to `apps/api/src/config/env.ts` (AC-13)
+- [x] Add `NOTIFICATION_DIGEST_HOUR` to `apps/api/src/config/env.ts` (AC-13)
 
 ### Phase 4: Service Layer (TDD)
-- [ ] Write `modules/notifications/preferences.test.ts` first (AC-16)
-- [ ] Create `apps/api/src/modules/notifications/schema.ts` (AC-6)
-- [ ] Create `apps/api/src/modules/notifications/preferences.ts` (AC-7)
-- [ ] Verify preference tests pass
-- [ ] Write `modules/notifications/routing.test.ts` first (AC-16)
-- [ ] Create `apps/api/src/modules/notifications/routing.ts` (AC-8)
-- [ ] Verify routing tests pass (including zero-member fallback, routing_fallback log)
+- [x] Write `modules/notifications/preferences.test.ts` first (AC-16)
+- [x] Create `apps/api/src/modules/notifications/schema.ts` (AC-6)
+- [x] Create `apps/api/src/modules/notifications/preferences.ts` (AC-7)
+- [x] Verify preference tests pass
+- [x] Write `modules/notifications/routing.test.ts` first (AC-16)
+- [x] Create `apps/api/src/modules/notifications/routing.ts` (AC-8)
+- [x] Verify routing tests pass (including zero-member fallback, routing_fallback log)
 
 ### Phase 5: Dispatcher Refactor (TDD)
-- [ ] Write/update `notifications/dispatcher.test.ts` with severity, dedup, deliverAt tests (AC-16)
-- [ ] Refactor `apps/api/src/notifications/dispatcher.ts` (AC-9) — routing + preferences + severity + dedup + deliverAt
-- [ ] Verify dispatcher tests pass
+- [x] Write/update `notifications/dispatcher.test.ts` with severity, dedup, deliverAt tests (AC-16)
+- [x] Refactor `apps/api/src/notifications/dispatcher.ts` (AC-9) — routing + preferences + severity + dedup + deliverAt
+- [x] Verify dispatcher tests pass
 
 ### Phase 6: Workers (TDD)
-- [ ] Write `workers/notification-deliver.test.ts`
-- [ ] Create `apps/api/src/workers/notification-deliver.ts` (AC-10)
-- [ ] Write `workers/notification-digest.test.ts`
-- [ ] Create `apps/api/src/workers/notification-digest.ts` (AC-11)
-- [ ] Verify all worker tests pass
+- [x] Write `workers/notification-deliver.test.ts`
+- [x] Create `apps/api/src/workers/notification-deliver.ts` (AC-10)
+- [x] Write `workers/notification-digest.test.ts`
+- [x] Create `apps/api/src/workers/notification-digest.ts` (AC-11)
+- [x] Verify all worker tests pass
 
 ### Phase 7: Routes + App Registration
-- [ ] Create `apps/api/src/modules/notifications/routes.ts` (AC-5)
-- [ ] Register in `apps/api/src/app.ts` (AC-5)
-- [ ] Add 5 `ROUTE_ACTION_CLASSIFICATIONS` + 2 `DIRECT_DB_ACCESS_CLASSIFICATIONS` entries (AC-14)
-- [ ] Register `notification:deliver` and `notification:send-digest` in `main.ts` (AC-10, AC-11)
-- [ ] Add `notification:deliver-catchup` schedule (every 10 min, scans stale pending entries) to `main.ts` for the outbox pattern (extends Story 3.1's ADR-3.1-06)
-- [ ] Write `modules/notifications/routes.test.ts` (AC-16)
-- [ ] Verify route tests pass + `route-audit.test.ts` passes
+- [x] Create `apps/api/src/modules/notifications/routes.ts` (AC-5)
+- [x] Register in `apps/api/src/app.ts` (AC-5)
+- [x] Add 5 `ROUTE_ACTION_CLASSIFICATIONS` + 2 `DIRECT_DB_ACCESS_CLASSIFICATIONS` entries (AC-14)
+- [x] Register `notification:deliver` and `notification:send-digest` in `main.ts` (AC-10, AC-11)
+- [x] Add `notification:deliver-catchup` schedule (every 10 min, scans stale pending entries) to `main.ts` for the outbox pattern (extends Story 3.1's ADR-3.1-06)
+- [x] Write `modules/notifications/routes.test.ts` (AC-16)
+- [x] Verify route tests pass + `route-audit.test.ts` passes
 
 ### Phase 8: Frontend
-- [ ] Create `apps/web/src/routes/(app)/settings/notifications/+page.server.ts` (AC-15)
-- [ ] Create `apps/web/src/routes/(app)/settings/notifications/+page.svelte` (AC-15)
-- [ ] Manual smoke test: settings page loads, shows defaults, allows preference update
+- [x] Create `apps/web/src/routes/(app)/settings/notifications/+page.server.ts` (AC-15)
+- [x] Create `apps/web/src/routes/(app)/settings/notifications/+page.svelte` (AC-15)
+- [x] Manual smoke test: settings page loads, shows defaults, allows preference update
 
 ### Phase 9: Full CI Sweep
-- [ ] `pnpm typecheck` — no errors
-- [ ] `pnpm lint` — no errors
-- [ ] `pnpm test` (all workspaces) — all tests pass
-- [ ] `route-audit.test.ts` passes for all 5 new routes
-- [ ] `check-rls-coverage.ts` passes for both new tables
+- [x] `pnpm typecheck` — no errors
+- [x] `pnpm lint` — no errors
+- [x] `pnpm test` (all workspaces) — all tests pass
+- [x] `route-audit.test.ts` passes for all 5 new routes
+- [x] `check-rls-coverage.ts` passes for both new tables
 
 ---
 
@@ -1993,16 +1993,28 @@ Test files:
 > **Fill in this section as you implement each phase.**
 
 ### Decisions Made During Implementation
-*(To be filled by dev agent)*
+- Unified delivery via `notification:deliver` worker; legacy email/slack workers retained for channel-specific catchup.
+- Default preferences computed (email + inbox, immediate, warning+) — not stored per user until changed.
+- User preference routes MFA-exempt (all roles); org routing requires MFA for owner/admin.
+- `route-audit.test.ts` extended to resolve module-level string constants for URL paths.
 
 ### Problems Encountered
-*(To be filled by dev agent)*
+- Backfill tests failed without seeded org owner after dispatcher routing refactor.
+- jscpd duplicate detection required consolidating catchup logic and test helpers.
+- `.env.example` needed `NOTIFICATION_DIGEST_HOUR` for env schema sync check.
 
 ### Test Coverage Achieved
-*(To be filled by dev agent)*
+- DB RLS isolation for `notification_preferences` and `org_notification_routing`
+- Preferences/routing services, API routes (integration), dispatcher (severity, digest deliverAt, routing fallback)
+- Workers: deliver, digest skip, backfill idempotency; worker registration; route audit
 
 ### Files Changed
-*(To be filled by dev agent)*
+- `packages/shared`: notification-types, mfa-exempt-routes
+- `packages/db`: schemas, migration 0022, RLS tests
+- `apps/api`: notifications module, dispatcher refactor, deliver/digest/catchup workers, route exemptions
+- `apps/web`: settings hub link, `/settings/notifications` page
+- `.env.example`: NOTIFICATION_DIGEST_HOUR
 
 ### Notes for Story 3.3
-*(Dev agent: document any dispatcher changes, preference fields, or schema additions that Story 3.3 must know about)*
+- Dispatcher creates `channel: inbox` queue entries with `status: pending`; `notification-deliver` skips inbox until 3.3 inbox worker/SSE exists.
+- Preference schema supports inbox channel; UI shows inbox option with honest placeholder per product surface contract.

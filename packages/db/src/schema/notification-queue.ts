@@ -16,6 +16,7 @@ export const notificationQueue = pgTable(
     attemptCount: integer('attempt_count').notNull().default(0),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    deliverAt: timestamp('deliver_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

@@ -1,16 +1,21 @@
-import { eq, and, inArray } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { notificationQueue, orgMemberships, users } from '@project-vault/db/schema'
+import { notificationQueue } from '@project-vault/db/schema'
+import type { NotificationSeverity } from '@project-vault/shared'
+import { getPreferences, type PreferenceOutput } from '../modules/notifications/preferences.js'
+import { resolveRoutingRecipients } from '../modules/notifications/routing.js'
 import type { BossService } from '../lib/boss.js'
+import { env } from '../config/env.js'
 
 export type NotificationTemplate = {
   templateId: string
   payload: Record<string, unknown>
+  severity?: NotificationSeverity
 }
 
-export type NotificationQueueIds = {
-  emailIds: Array<{ id: string; orgId: string }>
-  slackId?: { id: string; orgId: string }
+export type NotificationQueueJob = {
+  id: string
+  orgId: string
+  deliverAt: Date | null
 }
 
 const NOTIFICATION_JOB_OPTIONS = {
@@ -19,96 +24,170 @@ const NOTIFICATION_JOB_OPTIONS = {
   retryDelay: 60,
 } as const
 
+const SEVERITY_LEVEL: Record<NotificationSeverity, number> = {
+  info: 0,
+  warning: 1,
+  critical: 2,
+}
+
 type CreateEntriesOptions = {
   orgId: string
   template: NotificationTemplate
   tx: Tx
 }
 
-export async function createOrgAdminNotificationEntries(
-  options: CreateEntriesOptions
-): Promise<NotificationQueueIds> {
-  const { orgId, template, tx } = options
+function nextDigestDeliveryTime(digestHourUtc: number): Date {
+  const now = new Date()
+  const candidate = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), digestHourUtc)
+  )
+  if (candidate.getTime() > now.getTime()) return candidate
+  return new Date(candidate.getTime() + 24 * 60 * 60 * 1000)
+}
 
-  const recipients = await tx
-    .select({ userId: orgMemberships.userId, email: users.email })
-    .from(orgMemberships)
-    .innerJoin(users, eq(orgMemberships.userId, users.id))
-    .where(
-      and(
-        eq(orgMemberships.orgId, orgId),
-        eq(orgMemberships.status, 'active'),
-        inArray(orgMemberships.role, ['owner', 'admin'])
-      )
-    )
+function passesSeverityFilter(
+  alertSeverity: NotificationSeverity,
+  pref: PreferenceOutput
+): boolean {
+  return SEVERITY_LEVEL[alertSeverity] >= SEVERITY_LEVEL[pref.minSeverity]
+}
 
-  if (recipients.length === 0) {
-    process.stderr.write(
-      `${JSON.stringify({
-        eventType: 'notification.dispatch.no_recipients',
-        orgId,
-        templateId: template.templateId,
-      })}\n`
-    )
+async function enqueueUserChannel(options: {
+  orgId: string
+  userId: string
+  template: NotificationTemplate
+  pref: PreferenceOutput
+  tx: Tx
+}): Promise<NotificationQueueJob | null> {
+  const { orgId, userId, template, pref, tx } = options
+  const deliverAt =
+    pref.frequency === 'digest_daily' && pref.channel === 'email'
+      ? nextDigestDeliveryTime(env.NOTIFICATION_DIGEST_HOUR)
+      : null
+
+  const [entry] = await tx
+    .insert(notificationQueue)
+    .values({
+      orgId,
+      recipientUserId: userId,
+      channel: pref.channel,
+      templateId: template.templateId,
+      payload: template.payload,
+      status: 'pending',
+      deliverAt,
+    })
+    .returning({ id: notificationQueue.id })
+
+  return entry?.id ? { id: entry.id, orgId, deliverAt } : null
+}
+
+async function processRecipientPreferences(
+  orgId: string,
+  userId: string,
+  template: NotificationTemplate,
+  alertSeverity: NotificationSeverity,
+  tx: Tx,
+  seenUserChannels: Set<string>
+): Promise<{ jobs: NotificationQueueJob[]; slackEnabled: boolean }> {
+  const prefs = await getPreferences(orgId, userId, tx)
+  const alertPrefs = prefs.filter((p) => p.alertType === template.templateId)
+  const jobs: NotificationQueueJob[] = []
+  let slackEnabled = false
+
+  for (const pref of alertPrefs) {
+    if (!passesSeverityFilter(alertSeverity, pref)) continue
+
+    const dedupKey = `${userId}:${pref.channel}`
+    if (seenUserChannels.has(dedupKey)) continue
+    seenUserChannels.add(dedupKey)
+
+    if (pref.channel === 'slack') {
+      slackEnabled = true
+      continue
+    }
+
+    const job = await enqueueUserChannel({ orgId, userId, template, pref, tx })
+    if (job) jobs.push(job)
   }
 
-  const emailEntries =
-    recipients.length === 0
-      ? []
-      : await tx
-          .insert(notificationQueue)
-          .values(
-            recipients.map((r) => ({
-              orgId,
-              recipientUserId: r.userId,
-              channel: 'email' as const,
-              templateId: template.templateId,
-              payload: template.payload,
-              status: 'pending' as const,
-            }))
-          )
-          .returning({ id: notificationQueue.id })
+  return { jobs, slackEnabled }
+}
 
+async function enqueueSlackEntry(
+  orgId: string,
+  template: NotificationTemplate,
+  tx: Tx
+): Promise<NotificationQueueJob | null> {
   const [slackEntry] = await tx
     .insert(notificationQueue)
     .values({
       orgId,
       recipientUserId: null,
-      channel: 'slack' as const,
+      channel: 'slack',
       templateId: template.templateId,
       payload: template.payload,
-      status: 'pending' as const,
+      status: 'pending',
+      deliverAt: null,
     })
     .returning({ id: notificationQueue.id })
 
-  return {
-    emailIds: emailEntries.filter((entry) => entry.id).map((entry) => ({ id: entry.id, orgId })),
-    slackId: slackEntry?.id ? { id: slackEntry.id, orgId } : undefined,
+  return slackEntry?.id ? { id: slackEntry.id, orgId, deliverAt: null } : null
+}
+
+export async function createOrgAdminNotificationEntries(
+  options: CreateEntriesOptions
+): Promise<NotificationQueueJob[]> {
+  const { orgId, template, tx } = options
+  const alertSeverity = template.severity ?? 'warning'
+  const recipientUserIds = await resolveRoutingRecipients(orgId, template.templateId, tx)
+  const queueJobs: NotificationQueueJob[] = []
+  const seenUserChannels = new Set<string>()
+  let slackEnabled = false
+
+  for (const userId of recipientUserIds) {
+    const result = await processRecipientPreferences(
+      orgId,
+      userId,
+      template,
+      alertSeverity,
+      tx,
+      seenUserChannels
+    )
+    queueJobs.push(...result.jobs)
+    if (result.slackEnabled) slackEnabled = true
   }
+
+  if (slackEnabled) {
+    const slackJob = await enqueueSlackEntry(orgId, template, tx)
+    if (slackJob) queueJobs.push(slackJob)
+  }
+
+  return queueJobs
+}
+
+/** @deprecated Use NotificationQueueJob — kept for transitional callers */
+export type NotificationQueueIds = {
+  emailIds: Array<{ id: string; orgId: string }>
+  slackId?: { id: string; orgId: string }
 }
 
 export async function sendNotificationJobs(
   boss: BossService,
-  ids: NotificationQueueIds
+  jobs: NotificationQueueJob[]
 ): Promise<void> {
   if (!boss.isStarted()) {
     process.stderr.write(
-      `${JSON.stringify({ eventType: 'notification.dispatch.boss_not_started', ids })}\n`
+      `${JSON.stringify({ eventType: 'notification.dispatch.boss_not_started', jobCount: jobs.length })}\n`
     )
     return
   }
 
-  for (const entry of ids.emailIds) {
+  const now = Date.now()
+  for (const job of jobs) {
+    if (job.deliverAt !== null && job.deliverAt.getTime() > now) continue
     await boss.send(
-      'notification:email',
-      { notificationQueueId: entry.id, orgId: entry.orgId },
-      NOTIFICATION_JOB_OPTIONS
-    )
-  }
-  if (ids.slackId) {
-    await boss.send(
-      'notification:slack',
-      { notificationQueueId: ids.slackId.id, orgId: ids.slackId.orgId },
+      'notification:deliver',
+      { notificationQueueId: job.id, orgId: job.orgId },
       NOTIFICATION_JOB_OPTIONS
     )
   }
@@ -119,19 +198,24 @@ type DispatchOptions = CreateEntriesOptions & {
 }
 
 export async function dispatchOrgAdminNotification(options: DispatchOptions): Promise<void> {
-  const ids = await createOrgAdminNotificationEntries(options)
-  await sendNotificationJobs(options.boss, ids)
+  const jobs = await createOrgAdminNotificationEntries(options)
+  await sendNotificationJobs(options.boss, jobs)
 }
 
 export async function enqueueSecurityAlertNotification(opts: {
   orgId: string
   templateId: string
   payload: Record<string, unknown>
+  severity?: NotificationSeverity
   tx: Tx
-}): Promise<NotificationQueueIds> {
+}): Promise<NotificationQueueJob[]> {
   return createOrgAdminNotificationEntries({
     orgId: opts.orgId,
-    template: { templateId: opts.templateId, payload: opts.payload },
+    template: {
+      templateId: opts.templateId,
+      payload: opts.payload,
+      severity: opts.severity,
+    },
     tx: opts.tx,
   })
 }

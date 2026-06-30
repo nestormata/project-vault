@@ -227,7 +227,7 @@ async function createAlertIfNeeded(
     'security/check-failed-auth-threshold',
     async ({ tx }) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${dedupLockKey(breach)}))`)
-      if (await existingAlert(tx, breach, windowStart)) return { emailIds: [], slackId: undefined }
+      if (await existingAlert(tx, breach, windowStart)) return []
       const payload = failedAuthThresholdPayloadSchema.parse(
         payloadFor(breach, windowStart, windowEnd)
       )
@@ -241,13 +241,15 @@ async function createAlertIfNeeded(
           payload,
         })
         .returning({ id: securityAlerts.id })
-      if (!alert) return { emailIds: [], slackId: undefined }
+      if (!alert) return []
+
       await insertAuditRow(tx, breach.orgId, alert.id, payload)
 
       const ids = await enqueueSecurityAlertNotification({
         orgId: breach.orgId,
         templateId: ALERT_TYPE,
         payload,
+        severity: 'critical',
         tx,
       })
 
