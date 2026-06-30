@@ -5,6 +5,31 @@ Tracked gaps: work intentionally deferred, not yet implemented, or needing follo
 
 ---
 
+## Deferred from: Epic 1 retrospective (2026-06-30)
+
+Retro commitments **D1–D2, P1–P5** implemented 2026-06-30:
+
+| ID | Item | Status |
+|----|------|--------|
+| D1 | Operator quickstart (`docs/operator-quickstart.md`) | ✅ Done |
+| D2 | `scripts/operator-bootstrap.sh` + `make bootstrap` | ✅ Done |
+| P1 | MFA policy matrix | ✅ Done |
+| P2 | AC-E1c updated in `epics.md` (Option A) | ✅ Done |
+| P3 | `mfa-journey.integration.test.ts` | ✅ Done |
+| P4 | Story 4.1 stub + FR57 journey AC | ✅ Stub |
+| P5 | Mandatory adversarial review in code-review step-02 | ✅ Done |
+
+### Open (Epic 1 retro)
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| D4 | `migrate` service rebuilds full API builder on every cold `docker compose up` | Dev | Slim migrate image or cache strategy |
+| D5 | Full production operator runbook | Tech Writer / Ops | Epic 9 Story 9.5 |
+
+**D4:** One-shot `migrate` uses `apps/api/Dockerfile` `builder` target — slow first boot. Dev path: `make bootstrap` avoids full stack rebuild when only DB is needed.
+
+---
+
 ## Deferred from: Epic 2 closure retrospective (2026-06-30)
 
 Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 3 notification infrastructure unless noted.
@@ -13,7 +38,7 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 
 | ID | Item | Owner | Target |
 |----|------|-------|--------|
-| P4 | Epic 1 retrospective or documented waiver | Nestor | Process — `epic-1-retrospective` still `optional` |
+| P4 | Epic 1 retrospective or documented waiver | Nestor | ✅ Done — `epic-1-retro-2026-06-30.md` |
 | E3-1 | SMTP config split: Story 3.1 env vars vs AC-E3a Epic 9 system settings | Architect / PO | ADR before Story 3.1 dev |
 | E3-2 | FR73 `PENDING_DELIVERY` → `notification_queue` integration test | Dev | Story 3.1 AC |
 | D1 | Reconcile `architecture.md`: `secrets` tables/endpoints → `credentials` naming | Tech Writer | Planning doc |

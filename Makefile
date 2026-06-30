@@ -1,15 +1,22 @@
 SHELL := /usr/bin/env bash
 
+# Project Vault — developer/operator tasks
+# Operator quickstart: docs/operator-quickstart.md
+#   make bootstrap         — local dev DB setup (Postgres + migrate + RLS)
+#   make bootstrap-docker  — full Docker stack
+# Pass ARGS to bootstrap targets, e.g. make bootstrap ARGS="--start-api --init-vault"
+
 # --- DB connection strings -----------------------------------------------
 # postgres = superuser, only used to run migrations (creates the vault_app
 # role, RLS policies, and triggers). vault_app = the app role; using the
 # superuser anywhere else bypasses RLS entirely and silently invalidates
-# the isolation tests. See .env.example.
+# the isolation tests. See .env.example and docs/operator-quickstart.md.
 DB_URL_SUPERUSER ?= postgresql://postgres:password@localhost:5432/project_vault
 DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit \
         db-up db-down db-migrate check-rls test stryker ci \
+        bootstrap bootstrap-docker \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-prod docker-prod-down \
         clean
 
@@ -42,9 +49,16 @@ jscpd: ## Check for duplicate code
 audit: ## Audit dependencies for high/critical CVEs
 	pnpm audit --audit-level=high
 
+# --- Operator bootstrap (Epic 1 retro D2) ------------------------------------
+
+bootstrap: ## Postgres + migrate + RLS check (see docs/operator-quickstart.md); ARGS e.g. --start-api --init-vault
+	./scripts/operator-bootstrap.sh $(ARGS)
+
+bootstrap-docker: ## Full docker compose up; ARGS e.g. --init-vault (needs jq + VAULT_DEV_PASSPHRASE)
+	./scripts/operator-bootstrap.sh --docker $(ARGS)
+
 # --- Database --------------------------------------------------------------
-# Requires Postgres reachable at localhost:5432 — either `make docker-up`
-# (full stack) or `make db-up` (just the db container).
+# Requires Postgres on localhost:5432 — `make bootstrap`, `make db-up`, or `make docker-up`.
 
 db-up: ## Start only the Postgres container
 	docker compose up -d db
@@ -66,7 +80,7 @@ test: ## Run the test suite (must run as vault_app — postgres bypasses RLS)
 stryker: ## Run Stryker mutation testing (matches nightly CI)
 	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run
 
-ci: ## Run the full local quality-gate sequence (mirrors .github/workflows/ci.yml)
+ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap first)
 	pnpm turbo typecheck
 	pnpm turbo lint
 	$(MAKE) db-migrate
