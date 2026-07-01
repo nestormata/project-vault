@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-06-01
+# last_updated: 2026-07-01 (4-1-team-invitations-and-role-assignment: review -> done; make ci green)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -81,7 +81,7 @@ development_status:
 
   # Epic 4: Team & Organization Management — Roles, Invitations, Access & Lifecycle
   epic-4: in-progress
-  4-1-team-invitations-and-role-assignment: review
+  4-1-team-invitations-and-role-assignment: done
   4-2-organization-user-management: backlog
   4-3-account-deactivation-and-recovery: backlog
   4-4-project-archival: ready-for-dev
