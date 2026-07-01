@@ -75,14 +75,15 @@ so that I can maintain a clean, accurate access model as the team evolves.
   4. `POST /api/v1/projects/:projectId/transfer-ownership` where the caller transfers ownership *away from themselves to someone else* — this is the entire point of the endpoint and is obviously allowed. (Transferring ownership *to yourself*, i.e. `newOwnerId === caller.userId` while already owner, is rejected as a no-op — see AC-6.)
 - **Rationale:** NFR-SEC10's intent ("no user may grant permissions exceeding their own role or modify their own role assignment") is about preventing silent privilege escalation, not about preventing someone from leaving a project or orchestrating their own planned handoff through the one endpoint designed for exactly that.
 
-### D5 — "Last owner" protection: exists nowhere yet; this story must add it in three places
+### D5 — "Last owner" protection: exists nowhere yet; this story must add it in four places
 
-- Grepping the entire codebase for `last owner`/`ownerCount`/`only owner` returns zero matches — **no such guard exists today**. `project_memberships` has no DB constraint enforcing "at least one owner per project" (only a `CHECK role IN (...)` on allowed values) — this is purely an application-level invariant this story must introduce and enforce everywhere it could be violated.
-- **The guard must run in three places**, all as an atomic check-then-act within the same `secureCtx.tx` (using `SELECT ... FOR UPDATE` on the affected `project_memberships` rows to close the race described below):
+- Grepping the entire codebase for `last owner`/`ownerCount`/`only owner` returns zero matches — **no such guard exists today**. `project_memberships` has no DB constraint enforcing "at least one owner per project" (only a `CHECK role IN (...)` on allowed values), and `org_memberships` has no equivalent constraint for "at least one owner per org" either — both are purely application-level invariants this story must introduce and enforce everywhere they could be violated.
+- **The guard must run in four places**, all as an atomic check-then-act within the same `secureCtx.tx` (using `SELECT ... FOR UPDATE` on the affected rows to close the race described below):
   1. **`DELETE /projects/:projectId/members/:userId`**: if the target's role in this project is `'owner'` and no *other* `project_memberships` row for this project has `role = 'owner'`, reject with `409 { code: "last_owner", message: "Cannot remove the last owner of a project" }`.
   2. **`DELETE /org/users/:userId`** (org-wide removal, which cascades to removing every `project_memberships` row for that user — see AC-3): before cascading, find every project where the target user is the **sole** owner. If any exist, reject the *entire* removal with `409 { code: "sole_owner_of_projects", projects: [{ projectId, projectName }, ...] }` — do not partially remove. The admin must transfer ownership on each blocking project first (AC-6), then retry.
   3. **`PUT /org/users/:userId/projects/:projectId/role`**: if the target's *current* role in this project is `'owner'`, reject with `409 { code: "must_transfer_ownership_first", message: "Use transfer-ownership to change the project owner" }` — this endpoint's schema also excludes `'owner'` as a settable *target* role (see D6), so this guard only fires when someone tries to demote an existing owner via the wrong endpoint.
-- **Concurrency:** two simultaneous `DELETE .../members/:userId` calls targeting the same sole owner (or a removal racing a role-change) must not both succeed. Lock the target project's owner-role rows with `SELECT ... FOR UPDATE` before counting, inside the same transaction as the mutation — mirrors the existing `revokeSessionById` pattern (`session-revoke.ts`) which already locks session rows `FOR UPDATE` before mutating. The loser of the race sees a consistent, re-checked count and gets the same `409`.
+  4. **`DELETE /org/users/:userId`** (org-level, added post-adversarial-review): independently of item 2's per-project check, if the target's **`org_memberships.role`** is `'owner'` and no *other* `org_memberships` row in this org has `role = 'owner'`, reject with `409 { code: "last_org_owner", message: "Cannot remove the sole owner of the organization" }`. This check runs **before** item 2's per-project check (a categorically worse failure — an org with no owner at all — must be caught first). Without this guard, an org `admin` could remove the org's only `owner` entirely, since D4 only blocks *self*-removal and item 2 only protects *project*-level ownership, leaving the org itself ownerless. See D9 for the related rank-hierarchy guard that further restricts who may act on an owner at all.
+- **Concurrency:** two simultaneous `DELETE .../members/:userId` calls targeting the same sole owner (or a removal racing a role-change) must not both succeed. Lock the target project's (or org's, for item 4) owner-role rows with `SELECT ... FOR UPDATE` before counting, inside the same transaction as the mutation — mirrors the existing `revokeSessionById` pattern (`session-revoke.ts`) which already locks session rows `FOR UPDATE` before mutating. The loser of the race sees a consistent, re-checked count and gets the same `409`.
 
 ### D6 — `PUT .../role` never accepts `'owner'` as a target role
 
@@ -99,6 +100,15 @@ so that I can maintain a clean, accurate access model as the team evolves.
 - Both Story 4.1 (`4-1-team-invitations-and-role-assignment.md:21`) and Story 4.4 (`4-4-project-archival.md:33,184`) explicitly deferred building a shared "resolve my role in project X" helper, each pointing at the other as the place it might eventually land. Story 4.2 needs this exact lookup in **two** routes (member removal, ownership transfer) — a third consumer.
 - **Decision:** still do **not** build a shared resolver in this story. Copy the exact inline-query pattern from `4-4-project-archival.md:164-183` (`SELECT role FROM project_memberships WHERE project_id = ? AND user_id = ?`) into both of this story's project-scoped handlers. **Do** leave a one-line comment at each call site (`// Inline project-role lookup — see 4.1 D-notes / 4.4 AC-2 for why this isn't centralized yet; 3rd occurrence as of 4.2, consider extracting if a 4th consumer appears`) so the next story to need it has a concrete trigger to finally extract it, rather than re-deferring silently a fourth time.
 
+### D9 — Org-role hierarchy guard on org-scoped mutations (added post-adversarial-review)
+
+- **Gap found by adversarial review:** D4's self-modification check and D5's sole-owner checks are the *only* guards originally specified on `DELETE /org/users/:userId` and `PUT /org/users/:userId/projects/:projectId/role`. Neither compares the **target's current org role** to the **caller's org role**. Since both routes only require `minimumRole: 'admin'`, an org `admin` could act on the org `owner` or another `admin` — e.g. removing them from the org (blocked for the *sole* owner by D5 item 4, but not for a co-owner or any admin), or stripping an org owner's project-level access via the role-change endpoint even though their org role is untouched. This is exactly the kind of escalation NFR-SEC10 exists to prevent, just expressed as "acting on a peer/superior" rather than "granting yourself a higher role."
+- **Decision:** add an explicit rank comparison, reusing the already-exported `roleRank()` (`secure-route.ts:177-188`), to both routes:
+  1. **`DELETE /org/users/:userId`**: immediately after the self-modification check (D4) and before the D5 sole-owner checks, look up the target's `org_memberships.role` (this lookup already happens as part of the existing "target membership lookup" step — reuse it, do not query twice). If `roleRank(target.orgRole) >= roleRank(caller.auth.orgRole)`, reject with `403 { code: "insufficient_role", message: "Cannot remove a user with an equal or higher organization role" }`.
+  2. **`PUT /org/users/:userId/projects/:projectId/role`**: add a lookup of the target's `org_memberships.role` (separate from the existing `project_memberships` lookup — the target's *org* role, not their *project* role, is what's being compared here) immediately before the existing role-elevation check (step 3). If `roleRank(target.orgRole) >= roleRank(caller.auth.orgRole)`, reject with the same `403 { code: "insufficient_role", message: "Cannot modify a user with an equal or higher organization role" }`. This is deliberately independent of the existing elevation check (which compares the *new project role value* to the caller's org rank) — this new check compares the *target's own org role* to the caller's org rank, closing a different hole (an admin quietly reducing an owner's or peer-admin's access in one project, even without granting anyone a higher role).
+- **Interaction with D5 item 4:** for org removal specifically, D5 item 4's "last org owner" guard already blocks removing the *sole* org owner outright (`409 last_org_owner`), so this rank check's practical effect there is mostly to block admin-on-admin and admin-on-co-owner removal (in orgs with more than one `owner`-role row, which is possible today even though the "creating owner" is normally singular — the schema does not prevent a second `org_memberships` row from being created with `role = 'owner'`). Both guards are kept because they fail for different, non-overlapping reasons and a reviewer should be able to tell which one fired from the response `code`.
+- **Known, accepted limitation:** this decision does not add any way for co-owners to manage each other's org membership — two org owners cannot remove one another via this route (rank comparison treats `owner`-vs-`owner` as "equal," which blocks it). Epics.md does not describe co-owner removal semantics, so this story does not attempt to invent them; it only closes the escalation gap the review identified. If multi-owner management becomes a real requirement, it needs its own story with its own ACs.
+
 ---
 
 ## Prerequisites
@@ -108,9 +118,9 @@ so that I can maintain a clean, accurate access model as the team evolves.
 | **Story 4.1 is `done`** (`sprint-status.yaml` confirms this) | This story is built entirely on `org_memberships` and `project_memberships`, both already shaped correctly by prior stories; 4.1 is the story that proved the `roleRank()` export and the `project_memberships` role-enforcement pattern this story reuses. |
 | **`revokeAllUserSessionsInOrg()` exists** (`apps/api/src/modules/auth/session-revoke.ts:266-290`) | This story's org-removal path (AC-3) calls it directly — confirmed live and already consumed by `DELETE /api/v1/org/users/:userId/sessions` (`apps/api/src/modules/org/routes.ts:30-69`). Do not reimplement session revocation. |
 | **`roleRank()` is exported from `secure-route.ts`** (`apps/api/src/lib/secure-route.ts:177-188`) | Confirmed exported (Story 4.1 Task 3) and already consumed by `apps/api/src/modules/invitations/routes.ts:15,164`. Reuse directly for the NFR-SEC10 role-elevation check in AC-4. |
-| **Story 4.4 is `ready-for-dev`, NOT implemented** (`sprint-status.yaml`: `4-4-project-archival: ready-for-dev`) | No archival code exists yet — `projects.archivedAt` is a real column (from Story 2.1) but there is no archive/unarchive route. This story's project-scoped mutations should still defensively guard `isNull(projects.archivedAt)` (the idiom is already used in `modules/projects/routes.ts`'s list/dashboard/patch/tags routes) so they degrade gracefully once 4.4 ships, but must not assume any 4.4-specific error codes exist today. |
+| **Story 4.4 is `ready-for-dev`, NOT implemented** (`sprint-status.yaml`: `4-4-project-archival: ready-for-dev`) | No archival code exists yet — `projects.archivedAt` is a real column (from Story 2.1) but there is no archive/unarchive route. This story's project-scoped mutations should still defensively guard `isNull(projects.archivedAt)` (the idiom is already used in `modules/projects/routes.ts`'s list/dashboard/patch/tags routes) so they degrade gracefully once 4.4 ships, but must not assume any 4.4-specific error codes exist today. **Important (clarified post-adversarial-review):** every reference in this story to `4-4-project-archival.md` (D1's `isProjectOwner \|\| isOrgOwner` pattern, AC-6's "archive idempotency" conditional-update pattern) is a reference to that file's **spec text only** — a documented design precedent to follow, not a pointer to shipped code, since none exists. Do not go looking for a 4.4 implementation to copy from; the patterns needed are already fully worked out inline in this story's own AC-1, D1, and AC-6 (including the complete conditional-`UPDATE` pseudocode). **Precedence rule if 4.4 ships before or during 4.2's implementation:** if 4.4's actual shipped code diverges from the pattern described here, prefer this story's own inline pseudocode (it is normative for 4.2's routes) and flag the discrepancy for a human to reconcile — do not silently adopt whichever version happened to ship first, and do not block 4.2's implementation on 4.4 landing. |
 | **Migration numbering (verify, do NOT hardcode)** | Latest migration on this branch is `0025_project_invitations.sql` (`packages/db/src/migrations/meta/_journal.json`, idx 25). **This story requires no new migration** (see AC-1) unless you choose to add the optional performance index — if you do, re-read `_journal.json` at code time and use the next free number (anticipated `0026_*`, but confirm). |
-| `apps/api/src/lib/route-exemptions.ts` `ROUTE_ACTION_CLASSIFICATIONS` | This story adds four new entries (list is read-classified with an omission reason; the other three are mutations with audit events). `route-audit.test.ts` enforces every route has an entry. |
+| `apps/api/src/lib/route-exemptions.ts` `ROUTE_ACTION_CLASSIFICATIONS` | This story adds six new entries (two are read-classified with an omission reason — `GET /org/users` and `GET /projects/:projectId/members`, AC-10 — the other four are mutations with audit events). `route-audit.test.ts` enforces every route has an entry. |
 
 ---
 
@@ -122,7 +132,7 @@ so that I can maintain a clean, accurate access model as the team evolves.
 | 4.1 | Created `project_invitations`, established `roleRank()` export, and the "inline project-role query" pattern this story copies a third time (D8). 4.2 does not touch invitation rows (D7). |
 | 4.3 (Account Deactivation & Recovery, not yet created) | Will introduce `organization_members.status = 'deactivated'` transitions and revoke pending invitations on deactivation. 4.2's org removal (`DELETE /org/users/:userId`) is a **different, permanent** lifecycle event ("remove the membership record entirely") — 4.3's deactivation is reversible-ish (recovery flow) and status-based. Do not conflate the two; 4.2 does not set any `status` field, it deletes the `org_memberships` row outright. |
 | 4.4 (Project Archival, `ready-for-dev`, not implemented) | Explicitly depends on 4.2's `DELETE /projects/:projectId/members` route existing so its "no new members after archive" write guard (`4-4-project-archival.md:51`) has something to protect. 4.2 does not add that guard itself (4.4 isn't implemented yet) — 4.4 will add the `archivedAt` check to this story's routes when it lands. This story's routes should still tolerate `isNull(projects.archivedAt)` in their base queries defensively (Prerequisites table), but the explicit 410 `project_archived` behavior is 4.4's to add. |
-| NFR-SEC10 (`epics.md:174`) | *"No user may grant permissions exceeding their own role or modify their own role assignment"* — enforced via the role-elevation check (AC-4) and the self-modification checks (D4, AC-3/AC-4). |
+| NFR-SEC10 (`epics.md:174`) | *"No user may grant permissions exceeding their own role or modify their own role assignment"* — enforced via the role-elevation check (AC-4), the self-modification checks (D4, AC-3/AC-4), and the org-role hierarchy checks (D9, AC-3/AC-4 — added post-adversarial-review to close the gap where an admin could act on an equal-or-higher-ranked peer without ever "granting" anything). |
 | FR84 (`prd.md:964`, implemented alongside Story 1.7/1.9) | *"Organization Admins can revoke all active sessions for any user in their organization"* — already shipped as `DELETE /api/v1/org/users/:userId/sessions` + `revokeAllUserSessionsInOrg()`. 4.2's org removal (AC-3) calls this exact function synchronously rather than duplicating session-revocation logic. |
 
 ---
@@ -147,10 +157,11 @@ so that I can maintain a clean, accurate access model as the team evolves.
 |---|---|
 | Schema | **No migration required** — reuses `org_memberships`, `project_memberships`, `sessions`, `users` as-is. Optional perf index only if added (see AC-1). |
 | GET `/api/v1/org/users` | Org role `admin`+. Lists every org member with `displayName` (= email, D3), `orgRole`, and every project membership + role. Bare array response (no pagination — documented limitation). |
-| DELETE `/api/v1/org/users/:userId` | Org role `admin`+, MFA required. Removes `org_memberships` row + every `project_memberships` row for that user in this org, atomically. Blocks (`409`) if the user is the sole owner of any project (D5). Blocks self-removal (`403`, D4). Synchronously revokes all sessions via `revokeAllUserSessionsInOrg()` (FR84 reuse). |
-| PUT `/api/v1/org/users/:userId/projects/:projectId/role` | Org role `admin`+, MFA required. Changes a `project_memberships.role` to `admin`/`member`/`viewer` (never `owner` — D6). Blocks role-elevation above caller's org role (NFR-SEC10). Blocks self-modification (D4). Blocks if target is currently `owner` (D5, must use transfer-ownership). |
+| DELETE `/api/v1/org/users/:userId` | Org role `admin`+, MFA required. Removes `org_memberships` row + every `project_memberships` row for that user in this org, atomically. Blocks (`403`) if target's org role outranks or equals caller's (D9 — new post-review guard). Blocks (`409`) if the target is the org's sole owner (D5 item 4 — new post-review guard) or the sole owner of any project (D5 item 2). Blocks self-removal (`403`, D4). Synchronously revokes all sessions via `revokeAllUserSessionsInOrg()` (FR84 reuse). |
+| PUT `/api/v1/org/users/:userId/projects/:projectId/role` | Org role `admin`+, MFA required. Changes a `project_memberships.role` to `admin`/`member`/`viewer` (never `owner` — D6). Blocks (`403`) if target's org role outranks or equals caller's (D9 — new post-review guard). Blocks role-elevation above caller's org role (NFR-SEC10). Blocks self-modification (D4). Blocks if target is currently `owner` (D5, must use transfer-ownership). |
 | DELETE `/api/v1/projects/:projectId/members/:userId` | Caller must be project `admin`/`owner` for this project, OR org `admin`/`owner` (D1). MFA required. Removes the single `project_memberships` row. Blocks (`409`) if target is the sole project owner (D5). Self-removal allowed (D4) subject to the same last-owner guard. |
 | POST `/api/v1/projects/:projectId/transfer-ownership` | Caller must be project `owner` for this project, OR org `owner` (D1, matches 4.4's `isProjectOwner \|\| isOrgOwner`). MFA required. Atomically: new owner's role → `owner`, old owner's role → `admin`. Target must be an accepted member (not a pending invite). Race-safe via conditional `WHERE role = 'owner'` update (mirrors 4.4's archive idempotency pattern). |
+| GET `/api/v1/projects/:projectId/members` (AC-10, added post-adversarial-review) | Caller must be project `admin`/`owner` for this project, OR org `admin`/`owner` (D1, same shape as AC-5). Lists every accepted member of the one project. Exists so the extended members page (AC-9) doesn't need org-admin rank to render — closes the AC-5/AC-9 authorization contradiction the review found. |
 | Audit | `org.user_removed`, `project.member_role_changed`, `project.member_removed`, `project.ownership_transferred` — all same-transaction, fail-closed via `writeHumanAuditEntryOrFailClosed`. Org removal also produces one `SESSION_REVOKED` audit row per revoked session (from `revokeAllUserSessionsInOrg`, pre-existing behavior, not new). |
 | Integration tests | List (with/without project memberships, empty org, 403 non-admin), org-removal (success + session revoke verified, self-block, sole-owner block, user-not-found), role-change (success, elevation-block, self-block, owner-target-block, invalid-role 422, cross-org 404), project-member-removal (success by project-admin, success by org-admin override, self-removal-allowed, sole-owner-block, not-a-member 404), transfer-ownership (success, non-accepted-member rejection, non-owner-caller 403, concurrent-transfer 409, self-transfer no-op rejection, cross-org 404). |
 | Web app | New `/settings/users` page (org-wide table: email, org role, per-project role chips, role-change dropdown, remove-from-org action with confirm dialog and honest last-owner blocking message). Extended `/projects/:projectId/members` page: accepted-member list (not just pending invitations) with per-row role change, remove, and "Transfer ownership" action. |
@@ -290,8 +301,10 @@ Cookie: access-token=<jwt>
 
 1. **Validate** `userId` as `z.uuid()` → `422 { code: "validation_error" }` on malformed.
 2. **Self-modification check (D4):** `params.userId === secureCtx.auth.userId` → `403 { code: "cannot_modify_self", message: "You cannot remove yourself from the organization" }`. Checked **before** the DB lookup — cheapest possible check.
-3. **Target membership lookup:** `SELECT userId FROM org_memberships WHERE userId = :userId AND orgId = :callerOrgId` within `secureCtx.tx` (RLS-scoped — cross-org targets simply don't exist in this query). Zero rows → `404 { code: "user_not_found", message: "User not found" }` (never `403` — enumeration-prevention rule, matches 4.1/4.4 precedent).
-4. **Sole-owner guard (D5, item 2):** lock and count. Concretely:
+3. **Target membership lookup:** `SELECT userId, role AS orgRole FROM org_memberships WHERE userId = :userId AND orgId = :callerOrgId` within `secureCtx.tx` (RLS-scoped — cross-org targets simply don't exist in this query). Zero rows → `404 { code: "user_not_found", message: "User not found" }` (never `403` — enumeration-prevention rule, matches 4.1/4.4 precedent). Note this query now also selects `role` (not just `userId`) — it feeds both this step's not-found check and the two guards below, so it is not queried twice.
+4. **Org-role hierarchy check (D9):** `roleRank(target.orgRole) >= roleRank(secureCtx.auth.orgRole)` → `403 { code: "insufficient_role", message: "Cannot remove a user with an equal or higher organization role" }`. Uses the `orgRole` fetched in step 3.
+5. **Org-level sole-owner guard (D5, item 4):** if `target.orgRole === 'owner'`, lock and count other `org_memberships` rows in this org with `role = 'owner'` (`SELECT ... FOR UPDATE`). If none exist besides the target, reject with `409 { code: "last_org_owner", message: "Cannot remove the sole owner of the organization" }` — checked before the per-project sole-owner guard below, since an ownerless org is worse than an ownerless project.
+6. **Per-project sole-owner guard (D5, item 2):** lock and count. Concretely:
    ```typescript
    const soleOwnerProjects = await secureCtx.tx.execute(sql`
      SELECT pm.project_id AS "projectId", p.name AS "projectName"
@@ -318,9 +331,9 @@ Cookie: access-token=<jwt>
    }
    ```
    (Adapt the raw-SQL shape to this codebase's Drizzle query builder idioms if a cleaner builder equivalent exists at code time — the `FOR UPDATE` locking semantics and the "no other owner exists" logic must be preserved exactly.)
-5. **Delete project memberships:** `DELETE FROM project_memberships WHERE org_id = :orgId AND user_id = :userId` (no join through `projects` needed — `project_memberships` is itself `orgScoped()`, confirmed in `packages/db/src/schema/project-memberships.ts`).
-6. **Delete org membership:** `DELETE FROM org_memberships WHERE org_id = :orgId AND user_id = :userId`.
-7. **Revoke sessions (FR84 reuse — do not reimplement):**
+7. **Delete project memberships:** `DELETE FROM project_memberships WHERE org_id = :orgId AND user_id = :userId` (no join through `projects` needed — `project_memberships` is itself `orgScoped()`, confirmed in `packages/db/src/schema/project-memberships.ts`).
+8. **Delete org membership:** `DELETE FROM org_memberships WHERE org_id = :orgId AND user_id = :userId`.
+9. **Revoke sessions (FR84 reuse — do not reimplement):**
    ```typescript
    const { revokedCount } = await revokeAllUserSessionsInOrg({
      userId: params.userId,
@@ -330,8 +343,8 @@ Cookie: access-token=<jwt>
      tx: secureCtx.tx,
    })
    ```
-8. **Audit:** `writeHumanAuditEntryOrFailClosed(secureCtx.tx, { eventType: 'org.user_removed', resourceType: 'org_membership', resourceId: params.userId, payload: { removedProjectCount: <count from step 5> }, ... })`. Note `revokeAllUserSessionsInOrg` already writes its own `SESSION_REVOKED` audit row per session (existing, unrelated code path) — this is additive, not a conflict.
-9. Return `200` with `{ data: { userId, revokedSessionCount: revokedCount } }`.
+10. **Audit:** `writeHumanAuditEntryOrFailClosed(secureCtx.tx, { eventType: 'org.user_removed', resourceType: 'org_membership', resourceId: params.userId, payload: { removedProjectCount: <count from step 7> }, ... })`. Note `revokeAllUserSessionsInOrg` already writes its own `SESSION_REVOKED` audit row per session (existing, unrelated code path) — this is additive, not a conflict.
+11. Return `200` with `{ data: { userId, revokedSessionCount: revokedCount } }`.
 
 **SecureRoute security:**
 ```typescript
@@ -349,7 +362,11 @@ security: {
 
 **Edge case — concurrent removal of the same user (double-click / retry):** the second call's step 3 lookup finds zero rows (already deleted by the first call's transaction, which commits first) → `404 { code: "user_not_found" }`. Idempotent-safe; not a `500`.
 
-**And** integration tests cover: happy path with session-revocation count assertion (create 2 sessions for the target, verify both rejected on next authenticated request), self-removal block (`403`), sole-owner block (`409` with correct `projects` array, verified user is **not** removed — transaction rolled back, `org_memberships`/`project_memberships` rows still present), user-not-found (`404`), zero-project-memberships user (succeeds, `revokedProjectCount: 0`), non-admin caller (`403`), cross-org target (`404`).
+**Edge case — org `admin` caller targets the org `owner` (D9):** step 4's hierarchy check fires (`roleRank('owner') >= roleRank('admin')`) → `403 { code: "insufficient_role" }` before either sole-owner guard is reached. This is the primary fix for the adversarial-review escalation finding — an admin can never remove an owner (or another admin) regardless of project ownership state.
+
+**Edge case — org `owner` caller targets a co-owner (a second `org_memberships` row with `role = 'owner'`):** step 4's hierarchy check treats `owner`-vs-`owner` as equal rank → `403 { code: "insufficient_role" }` (see D9's "known, accepted limitation" — co-owner removal is out of scope for this story).
+
+**And** integration tests cover: happy path with session-revocation count assertion (create 2 sessions for the target, verify both rejected on next authenticated request), self-removal block (`403`), org-role-hierarchy block — admin targets owner (`403 insufficient_role`, D9), org-role-hierarchy block — admin targets another admin (`403 insufficient_role`, D9), sole-org-owner block (`409 last_org_owner`, D5 item 4, verified user is **not** removed), sole-project-owner block (`409 sole_owner_of_projects` with correct `projects` array, verified user is **not** removed — transaction rolled back, `org_memberships`/`project_memberships` rows still present), user-not-found (`404`), zero-project-memberships user (succeeds, `revokedProjectCount: 0`), non-admin caller (`403`), cross-org target (`404`).
 
 ---
 
@@ -383,12 +400,13 @@ Content-Type: application/json
 
 1. **Validate params** (`userId`, `projectId` as `z.uuid()`) and **body** (`role: z.enum(['admin','member','viewer'])` — D6, `'owner'` is a schema-level `422`, not a `403`).
 2. **Self-modification check (D4):** `params.userId === secureCtx.auth.userId` → `403 { code: "cannot_modify_self" }`.
-3. **Role-elevation check (NFR-SEC10):** `roleRank(body.role) > roleRank(secureCtx.auth.orgRole)` → `403 { code: "insufficient_role", message: "Cannot assign a role higher than your own" }`. Reuse the exported `roleRank()` from `secure-route.ts` — do not duplicate.
-4. **Target membership lookup:** `SELECT role FROM project_memberships WHERE project_id = :projectId AND user_id = :userId AND org_id = :orgId` (RLS-scoped; also implicitly confirms the project belongs to the caller's org). Zero rows → `404 { code: "membership_not_found", message: "User is not a member of this project" }`.
-5. **Current-owner guard (D5, item 3):** if `membership.role === 'owner'` → `409 { code: "must_transfer_ownership_first", message: "Use transfer-ownership to change the project owner" }`.
-6. **Update:** `UPDATE project_memberships SET role = :role WHERE project_id = :projectId AND user_id = :userId`.
-7. **Audit:** `writeHumanAuditEntryOrFailClosed(..., eventType: 'project.member_role_changed', resourceType: 'project_membership', resourceId: params.userId, payload: { projectId, oldRole: membership.role, newRole: body.role })`.
-8. Return `200`.
+3. **Target's org-role lookup + hierarchy check (D9):** `SELECT role FROM org_memberships WHERE user_id = :userId AND org_id = :orgId` (a separate lookup from the project-membership one below — this fetches the target's **org** role, not their project role). If `roleRank(targetOrgRole) >= roleRank(secureCtx.auth.orgRole)` → `403 { code: "insufficient_role", message: "Cannot modify a user with an equal or higher organization role" }`. This blocks an org admin from changing an org owner's (or peer admin's) project-level access, independent of the elevation check below.
+4. **Role-elevation check (NFR-SEC10):** `roleRank(body.role) > roleRank(secureCtx.auth.orgRole)` → `403 { code: "insufficient_role", message: "Cannot assign a role higher than your own" }`. Reuse the exported `roleRank()` from `secure-route.ts` — do not duplicate.
+5. **Target membership lookup:** `SELECT role FROM project_memberships WHERE project_id = :projectId AND user_id = :userId AND org_id = :orgId` (RLS-scoped; also implicitly confirms the project belongs to the caller's org). Zero rows → `404 { code: "membership_not_found", message: "User is not a member of this project" }`.
+6. **Current-owner guard (D5, item 3):** if `membership.role === 'owner'` → `409 { code: "must_transfer_ownership_first", message: "Use transfer-ownership to change the project owner" }`.
+7. **Update:** `UPDATE project_memberships SET role = :role WHERE project_id = :projectId AND user_id = :userId`.
+8. **Audit:** `writeHumanAuditEntryOrFailClosed(..., eventType: 'project.member_role_changed', resourceType: 'project_membership', resourceId: params.userId, payload: { projectId, oldRole: membership.role, newRole: body.role })`.
+9. Return `200`.
 
 **SecureRoute security:**
 ```typescript
@@ -404,9 +422,13 @@ security: {
 
 **Edge case — target user exists in the org but not in this specific project:** `404 { code: "membership_not_found" }`, not `403` — this is a not-found condition (no `project_memberships` row), distinct from cross-org enumeration prevention but using the same "safe 404" instinct.
 
-**Edge case — `projectId` belongs to a different org than the caller's:** the RLS-scoped `tx` in step 4 returns zero rows regardless (the `project_memberships` row, if any, is invisible under RLS) → `404`, never `403` (enumeration-prevention rule, same as AC-3).
+**Edge case — `projectId` belongs to a different org than the caller's:** the RLS-scoped `tx` in step 5 returns zero rows regardless (the `project_memberships` row, if any, is invisible under RLS) → `404`, never `403` (enumeration-prevention rule, same as AC-3).
 
-**And** integration tests cover: happy path (each of admin/member/viewer as target role), role-elevation rejection (org `admin` caller attempts `role: "admin"`... wait — a caller with org role `admin` (rank 2) attempting to set a project role of `admin` (rank 2) is **not** elevation, since `roleRank(body.role) > roleRank(caller)` requires strictly greater; construct the actual failing case: an org `member` cannot reach this route at all (`minimumRole: 'admin'` blocks first) — so exercise elevation via a caller whose org role is `admin` attempting to defeat the check is not reachable either. **Document this the same way Story 4.1 documented its equivalent unreachable case** (`4-1-...md` Implementation Notes: "Role-elevation check... implemented but not integration-tested... every caller who can reach the handler already outranks every settable role"): since `minimumRole: 'admin'` (rank 2) is the floor and the settable target roles are `admin`/`member`/`viewer` (max rank 2), no caller who can reach this handler can ever fail the elevation check today. Keep the guard as defensive infrastructure (it becomes reachable the moment `owner` is ever added as a settable value, or if `minimumRole` is ever loosened) and flag this in Dev Notes exactly as 4.1 did — do not fabricate a fake-passing test for an unreachable branch), self-modification block (`403`), current-owner-target block (`409`), invalid role value `422` (`role: "owner"` and `role: "superadmin"` both), membership-not-found `404`, cross-org project `404`, non-admin caller `403`.
+**Edge case — step 3's org-role lookup returns zero rows (target not in caller's org at all):** treat identically to `404 { code: "membership_not_found" }` — do not distinguish "not in this org" from "not in this project" in the response (enumeration-prevention rule, same reasoning as AC-3's user-not-found case). Skip the D9 hierarchy check in this case (nothing to compare) and let the subsequent step 5 lookup produce the same `404` naturally.
+
+**Edge case — org `admin` caller attempts to change an org `owner`'s project role, even to a lower one (D9):** step 3's hierarchy check fires (`roleRank('owner') >= roleRank('admin')`) → `403 { code: "insufficient_role" }` before the role-elevation check or membership lookup runs — this is the primary fix for the adversarial-review finding that an admin could otherwise reduce an owner's project access without ever being flagged as "elevation."
+
+**And** integration tests cover: happy path (each of admin/member/viewer as target role), org-role-hierarchy block — admin targets owner's project role (`403 insufficient_role`, D9), org-role-hierarchy block — admin targets peer admin's project role (`403 insufficient_role`, D9), role-elevation rejection (org `admin` caller attempts `role: "admin"`... wait — a caller with org role `admin` (rank 2) attempting to set a project role of `admin` (rank 2) is **not** elevation, since `roleRank(body.role) > roleRank(caller)` requires strictly greater; construct the actual failing case: an org `member` cannot reach this route at all (`minimumRole: 'admin'` blocks first) — so exercise elevation via a caller whose org role is `admin` attempting to defeat the check is not reachable either. **Document this the same way Story 4.1 documented its equivalent unreachable case** (`4-1-...md` Implementation Notes: "Role-elevation check... implemented but not integration-tested... every caller who can reach the handler already outranks every settable role"): since `minimumRole: 'admin'` (rank 2) is the floor and the settable target roles are `admin`/`member`/`viewer` (max rank 2), no caller who can reach this handler can ever fail the elevation check today. Keep the guard as defensive infrastructure (it becomes reachable the moment `owner` is ever added as a settable value, or if `minimumRole` is ever loosened) and flag this in Dev Notes exactly as 4.1 did — do not fabricate a fake-passing test for an unreachable branch), self-modification block (`403`), current-owner-target block (`409`), invalid role value `422` (`role: "owner"` and `role: "superadmin"` both), membership-not-found `404`, cross-org project `404`, non-admin caller `403`.
 
 ---
 
@@ -557,6 +579,58 @@ security: {
 
 ---
 
+### AC-10: GET `/api/v1/projects/:projectId/members` — List Accepted Project Members (added post-adversarial-review)
+
+**Why this exists:** AC-9's original draft had the extended project members page source its accepted-member list by reusing `GET /api/v1/org/users` (org-admin-gated, D1) filtered client-side to one project. The adversarial review flagged this as contradicting D1's own design goal: a project `admin`/`owner` who is only an org `member` is fully authorized by AC-5 to manage their own project's membership, but would get a `403` from `GET /org/users` simply trying to fetch the data needed to render that same page. This endpoint gives the project members page a data source authorized on the correct axis (project role, matching AC-5), so AC-5 and AC-9 stop contradicting each other.
+
+**Given** the caller is a project `admin`/`owner` for `projectId`, **or** an org `admin`/`owner` (D1, identical authorization shape to AC-5),
+**When** they call `GET /api/v1/projects/:projectId/members`,
+**Then** they receive every **accepted** `project_memberships` row for that project. This story does not touch pending invitations — those remain on the existing `GET /api/v1/projects/:projectId/invitations` endpoint from Story 4.1; the two lists are combined client-side on the page (AC-9), not by this endpoint.
+
+**Request:**
+```http
+GET /api/v1/projects/00000000-0000-4000-8000-000000000010/members
+Cookie: access-token=<jwt>
+```
+
+**Successful response (`200 OK`):**
+```json
+{
+  "data": [
+    { "userId": "aaaaaaaa-0000-4000-8000-000000000001", "email": "alex@acme.example", "displayName": "alex@acme.example", "role": "owner" },
+    { "userId": "bbbbbbbb-0000-4000-8000-000000000002", "email": "jordan@acme.example", "displayName": "jordan@acme.example", "role": "admin" }
+  ]
+}
+```
+
+**Handler flow (exact order):**
+
+1. **Validate** `projectId` as `z.uuid()` → `422` on malformed.
+2. **Project existence check (RLS-scoped, enumeration-prevention):** `SELECT id FROM projects WHERE id = :projectId AND org_id = :callerOrgId`. Zero rows → `404 { code: "project_not_found" }` — never `403`, same rule as AC-3/AC-4's cross-org handling.
+3. **Authorization (D1, identical pattern to AC-5 step 3):** in-handler project-role lookup (same inline-query pattern and D8 pointer comment as AC-5/AC-6 — this is a further occurrence of the deferred lookup within this same story, not a new consumer story). Caller must be project `admin`/`owner` for this project, OR org `admin`/`owner`. Neither → `403 { code: "insufficient_role", message: "Only project admins/owners or org admins/owners can view the member list" }`.
+4. **List query:** `SELECT pm.user_id AS "userId", u.email, pm.role FROM project_memberships pm JOIN users u ON u.id = pm.user_id WHERE pm.project_id = :projectId` (already org-scoped by step 2's existence check). `displayName` is `row.email` verbatim (D3, same as AC-2) — do not join `user_identity_tokens`.
+5. Return `200` with `{ data: [...] }`.
+
+**SecureRoute security:**
+```typescript
+security: {
+  minimumRole: 'member', // broad floor — real authorization is the in-handler check (step 3)
+  requireMfa: false,     // read-only, matches AC-2's precedent
+  writeAuditEvent: false,
+  rateLimit: { max: 60, timeWindowMs: 60_000, key: 'GET /api/v1/projects/:projectId/members' },
+}
+```
+
+**Edge case — org admin/owner who has no `project_memberships` row for this project at all:** `callerMembership` is `null` but `isOrgAdminOrOwner` is `true` → succeeds (matches AC-5's override precedent exactly).
+
+**Edge case — project member (`viewer`/`member`, not admin/owner) who is also not an org admin:** `403 insufficient_role` — this endpoint deliberately uses the same admin-floor authorization as AC-5 removal (not "any member can view the roster"), since the review finding was specifically about admin-tier visibility being broken, not about broadening read access. Making the roster visible to all project members would be a separate, deliberate product decision for a future story.
+
+**Edge case — cross-org `projectId`:** step 2's RLS-scoped existence check returns zero rows → `404 { code: "project_not_found" }`, never `403` (enumeration-prevention rule, same as AC-3/AC-4/AC-5).
+
+**And** integration tests cover: happy path (project-admin caller), happy path (org-admin-override caller with no project membership), non-admin project member `403`, cross-org project `404`, project with only its sole owner as a member (returns `{ data: [{ ...owner... }] }`, not an error).
+
+---
+
 ### AC-7: Audit Events and Route Classifications
 
 **Given** four new mutation events are introduced,
@@ -585,6 +659,11 @@ PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
   auditOmissionReason: 'Org user list read is admin-scoped and does not reveal secret values.',
   reviewer: SECURITY_OWNER,
 },
+'GET /api/v1/projects/:projectId/members': {
+  action: 'read',
+  auditOmissionReason: 'Project member list read is project-admin/org-admin-scoped and does not reveal secret values.',
+  reviewer: SECURITY_OWNER,
+},
 'DELETE /api/v1/org/users/:userId': {
   action: 'security-action',
   auditEvent: 'org.user_removed',
@@ -611,7 +690,7 @@ PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
 
 **Edge case — audit write failure mid-transaction:** per the existing fail-closed contract (`SecureRoute`'s `AuditWriteError` handling, `secure-route.ts:403-431`), if `writeHumanAuditEntryOrFailClosed` throws, the entire transaction (including the membership deletion/update and, for AC-3, the session revocation) rolls back and the client receives `503 { code: "audit_write_failed" }` — no route in this story may complete a mutation without its audit row. Verify this with a forced-failure integration test (mock `getAuditKey()` or the audit table insert to throw) for at least one of the four routes.
 
-**And** integration test: `route-audit.test.ts` (or equivalent static route-coverage test) passes with all four new routes classified.
+**And** integration test: `route-audit.test.ts` (or equivalent static route-coverage test) passes with all six new routes classified (the four mutation routes above, plus the two read routes: `GET /api/v1/org/users` and `GET /api/v1/projects/:projectId/members`, AC-10).
 
 ---
 
@@ -622,12 +701,12 @@ PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
 **Then**:
 
 - `GET /users`, `DELETE /users/:userId`, `PUT /users/:userId/projects/:projectId/role` are added to `orgRoutes()` in `apps/api/src/modules/org/routes.ts` (already mounted at `/api/v1/org` in `apps/api/src/app.ts:190` — no `app.ts` change needed for these three).
-- `DELETE /:projectId/members/:userId`, `POST /:projectId/transfer-ownership` are added to `projectRoutes()` in `apps/api/src/modules/projects/routes.ts` (already mounted at `/api/v1/projects` in `apps/api/src/app.ts:193` — no `app.ts` change needed for these two either).
-- New Zod schemas live in the existing `modules/org/schema.ts` (extend, reusing the existing `OrgUserParamsSchema` for the `userId`-only param shape; add `OrgUserProjectRoleParamsSchema` and `ProjectRoleChangeBodySchema`) and `modules/projects/schema.ts` (add `ProjectMemberParamsSchema` and `TransferOwnershipBodySchema`).
+- `DELETE /:projectId/members/:userId`, `POST /:projectId/transfer-ownership`, `GET /:projectId/members` (AC-10, added post-adversarial-review) are added to `projectRoutes()` in `apps/api/src/modules/projects/routes.ts` (already mounted at `/api/v1/projects` in `apps/api/src/app.ts:193` — no `app.ts` change needed for these three either).
+- New Zod schemas live in the existing `modules/org/schema.ts` (extend, reusing the existing `OrgUserParamsSchema` for the `userId`-only param shape; add `OrgUserProjectRoleParamsSchema` and `ProjectRoleChangeBodySchema`) and `modules/projects/schema.ts` (add `ProjectMemberParamsSchema`, `TransferOwnershipBodySchema`, and a response schema for the AC-10 member list).
 - Response schemas are added and enforced (never rely on the handler alone to omit sensitive fields — this codebase's convention, per Story 4.1's `ProjectCreateResponseSchema` precedent, is that response schemas are the actually-enforced contract).
-- Run `pnpm --filter api generate-spec` and confirm `packages/shared/openapi.json` picks up all five new routes; confirm `web#typecheck` (which depends on `api#generate-spec` per the turbo task graph) has no new type errors.
+- Run `pnpm --filter api generate-spec` and confirm `packages/shared/openapi.json` picks up all six new routes; confirm `web#typecheck` (which depends on `api#generate-spec` per the turbo task graph) has no new type errors.
 
-**Edge case — `generate-spec.ts`'s mocked-DB app factory:** confirm the five new routes register cleanly against `createApp({ logger: false })` with no `dbPool` (the existing `generate-spec.ts` pattern, `architecture.md:357`) — they must not perform any DB access at route-registration time (only inside handlers), which is already guaranteed by following the existing `secureRoute()` idiom exactly.
+**Edge case — `generate-spec.ts`'s mocked-DB app factory:** confirm the six new routes register cleanly against `createApp({ logger: false })` with no `dbPool` (the existing `generate-spec.ts` pattern, `architecture.md:357`) — they must not perform any DB access at route-registration time (only inside handlers), which is already guaranteed by following the existing `secureRoute()` idiom exactly.
 
 ---
 
@@ -640,7 +719,7 @@ PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
 - Page is gated: `+page.server.ts` checks `locals.orgRole` is `admin`/`owner` (mirrors the existing `members/+page.server.ts` `canManage` pattern) and redirects or shows an access-denied state otherwise — never a raw 403 from an unguarded fetch.
 
 **Extended project members page** (`apps/web/src/routes/(app)/projects/[projectId]/members/+page.svelte`, currently only lists **pending invitations** — confirmed by reading the file) gains:
-- An **accepted members** section (new — this page currently has no accepted-member list at all) fetching from... **note:** there is no dedicated "list accepted members for one project" endpoint in this story or any prior one; the closest available data source is this story's own `GET /api/v1/org/users` (org-wide) filtered client-side to this `projectId`, **or** add a lightweight reuse of the project detail's existing membership join (`modules/projects/routes.ts`'s `GET ''` list route already returns `role` for the *current* user only, not all members). **Decision for this story:** reuse `GET /api/v1/org/users` and filter its `projects` array to the current `projectId` on the client — do not add a sixth backend endpoint just for this view; the org-wide endpoint already contains everything needed and this page is already gated to admin-level users who are authorized to call it.
+- An **accepted members** section (new — this page currently has no accepted-member list at all) fetching from the new **`GET /api/v1/projects/:projectId/members`** endpoint (AC-10, added post-adversarial-review). **This replaces an earlier draft of this AC that proposed reusing `GET /api/v1/org/users` filtered client-side to this `projectId` — that approach was rejected because `GET /org/users` is org-admin-gated (D1), while this page must remain usable by a project-scoped admin/owner who is only an org `member` (the same persona AC-5 already serves for member removal). AC-10 authorizes on the correct axis instead, so this page and AC-5 stay consistent.**
 - Per-member: role-change dropdown (`admin`/`member`/`viewer`, disabled/hidden for the current owner row — must use transfer-ownership instead, D5/D6) calling `PUT /org/users/:userId/projects/:projectId/role`; a remove button calling `DELETE /projects/:projectId/members/:userId`; a "Transfer ownership" action (visible only to the current project owner or an org owner) opening a member picker that calls `POST /projects/:projectId/transfer-ownership`.
 - **Last-owner UX:** attempting to remove or demote the sole owner surfaces the `409` message inline near that row, not a generic toast (same G3 honesty rule as the org-wide page).
 
@@ -656,31 +735,32 @@ PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
 
 - [ ] **Task 1: Schema verification** (AC-1) — confirm no migration needed; optionally add the perf index if you choose to (verify next journal number if so)
 - [ ] **Task 2: `GET /api/v1/org/users`** (AC-2) — batched query, response schema, route classification
-- [ ] **Task 3: `DELETE /api/v1/org/users/:userId`** (AC-3, D4, D5) — self-mod check, sole-owner guard (`FOR UPDATE`), cascade delete, `revokeAllUserSessionsInOrg()` reuse, audit
-- [ ] **Task 4: `PUT /api/v1/org/users/:userId/projects/:projectId/role`** (AC-4, D4, D5, D6) — self-mod check, elevation check (`roleRank()` reuse), owner-target guard, schema excludes `'owner'`, audit
-- [ ] **Task 5: `DELETE /api/v1/projects/:projectId/members/:userId`** (AC-5, D1, D5) — in-handler project/org role check, sole-owner guard, audit
-- [ ] **Task 6: `POST /api/v1/projects/:projectId/transfer-ownership`** (AC-6, D1) — in-handler owner check, accepted-member validation, race-safe atomic transfer, audit
-- [ ] **Task 7: Audit events + route classifications** (AC-7) — `audit-events.ts` (both the object and the type union), `route-exemptions.ts` entries for all 4 mutation routes + 1 read route
-- [ ] **Task 8: Route registration + OpenAPI regen** (AC-8) — extend `modules/org/routes.ts`/`schema.ts` and `modules/projects/routes.ts`/`schema.ts`; `pnpm --filter api generate-spec`; confirm `web#typecheck`
-- [ ] **Task 9: Web app — org users page** (AC-9) — `/settings/users` route, link from `/settings`, table + role-change + remove-from-org UI
-- [ ] **Task 10: Web app — extended project members page** (AC-9) — accepted-member list (derived from `GET /org/users` filtered client-side), role change, remove, transfer-ownership UI
-- [ ] **Task 11: Integration test suite** — all cases listed across AC-2 through AC-7 (list, org-removal incl. session-revoke + sole-owner + self-block, role-change incl. elevation + self-block + owner-target, project-member-removal incl. project-admin + org-admin-override + self-removal + sole-owner-block, transfer-ownership incl. race + non-accepted-member + self-transfer + already-owner, audit-write-failure rollback)
-- [ ] **Task 12: Route audit + OpenAPI regen verification** — confirm `route-audit.test.ts` (or equivalent) passes with all 5 new routes classified
+- [ ] **Task 3: `GET /api/v1/projects/:projectId/members`** (AC-10, added post-adversarial-review) — project existence check, in-handler D1 authorization, list query, response schema, route classification
+- [ ] **Task 4: `DELETE /api/v1/org/users/:userId`** (AC-3, D4, D5, D9) — self-mod check, org-role hierarchy check (D9), org-level sole-owner guard (D5 item 4), per-project sole-owner guard (`FOR UPDATE`), cascade delete, `revokeAllUserSessionsInOrg()` reuse, audit
+- [ ] **Task 5: `PUT /api/v1/org/users/:userId/projects/:projectId/role`** (AC-4, D4, D5, D6, D9) — self-mod check, target org-role hierarchy check (D9), elevation check (`roleRank()` reuse), owner-target guard, schema excludes `'owner'`, audit
+- [ ] **Task 6: `DELETE /api/v1/projects/:projectId/members/:userId`** (AC-5, D1, D5) — in-handler project/org role check, sole-owner guard, audit
+- [ ] **Task 7: `POST /api/v1/projects/:projectId/transfer-ownership`** (AC-6, D1) — in-handler owner check, accepted-member validation, race-safe atomic transfer, audit
+- [ ] **Task 8: Audit events + route classifications** (AC-7) — `audit-events.ts` (both the object and the type union), `route-exemptions.ts` entries for all 4 mutation routes + 2 read routes
+- [ ] **Task 9: Route registration + OpenAPI regen** (AC-8) — extend `modules/org/routes.ts`/`schema.ts` and `modules/projects/routes.ts`/`schema.ts`; `pnpm --filter api generate-spec`; confirm `web#typecheck`
+- [ ] **Task 10: Web app — org users page** (AC-9) — `/settings/users` route, link from `/settings`, table + role-change + remove-from-org UI
+- [ ] **Task 11: Web app — extended project members page** (AC-9) — accepted-member list (fetched from AC-10's `GET /projects/:projectId/members`, not `GET /org/users`), role change, remove, transfer-ownership UI
+- [ ] **Task 12: Integration test suite** — all cases listed across AC-2 through AC-7 and AC-10 (list, org-removal incl. session-revoke + org-role-hierarchy block + sole-org-owner block + sole-project-owner block + self-block, role-change incl. org-role-hierarchy block + elevation + self-block + owner-target, project-member-removal incl. project-admin + org-admin-override + self-removal + sole-owner-block, transfer-ownership incl. race + non-accepted-member + self-transfer + already-owner, project-members-list incl. project-admin + org-admin-override + non-admin-403, audit-write-failure rollback)
+- [ ] **Task 13: Route audit + OpenAPI regen verification** — confirm `route-audit.test.ts` (or equivalent) passes with all 6 new routes classified
 
 ---
 
 ## Dev Notes
 
-- **The role-elevation check in AC-4 (Task 4) is currently unreachable through the HTTP layer**, exactly like Story 4.1's equivalent NFR-SEC10 guard on invite creation — `minimumRole: 'admin'` (rank 2) is the floor to reach the handler, and the settable target roles (`admin`/`member`/`viewer`, max rank 2) can never exceed an `admin`-or-higher caller's own rank. Keep the guard anyway (defensive infrastructure for if `minimumRole` is ever loosened or a higher settable role is added) and do not attempt to fabricate a passing test for the unreachable branch — document it in your Completion Notes the same way 4.1 did, so a reviewer isn't surprised by its absence from the test suite.
-- **The "last owner" guard (D5) is genuinely new infrastructure** — there is zero precedent in the codebase. Get this right with real `FOR UPDATE` locking; a naive read-then-write without locking is a real, exploitable race (two admins racing to remove/demote the same sole owner from two different browser tabs).
+- **The role-elevation check in AC-4 (Task 5) is currently unreachable through the HTTP layer**, exactly like Story 4.1's equivalent NFR-SEC10 guard on invite creation — `minimumRole: 'admin'` (rank 2) is the floor to reach the handler, and the settable target roles (`admin`/`member`/`viewer`, max rank 2) can never exceed an `admin`-or-higher caller's own rank. Keep the guard anyway (defensive infrastructure for if `minimumRole` is ever loosened or a higher settable role is added) and do not attempt to fabricate a passing test for the unreachable branch — document it in your Completion Notes the same way 4.1 did, so a reviewer isn't surprised by its absence from the test suite. **Note this is distinct from the D9 org-role hierarchy check added in the same handler** — D9's check *is* reachable and *is* integration-tested (it compares the target's existing org role to the caller's, not the new value being assigned), so do not conflate the two guards' testability.
+- **The "last owner" (D5) and org-role hierarchy (D9) guards are genuinely new infrastructure** — there is zero precedent in the codebase for either. Get both right with real `FOR UPDATE` locking where specified; a naive read-then-write without locking is a real, exploitable race (two admins racing to remove/demote the same sole owner from two different browser tabs). D9 has no locking requirement (it's a point-in-time rank comparison, not a count), but D5's four guards all do.
 - **Watch the `secureCtx.tx.execute(sql\`...\`)` escape hatch (AC-3 step 4):** this codebase's convention is Drizzle query-builder calls, not raw SQL, wherever the builder can express the query. The sole-owner-across-all-projects check in AC-3 involves a correlated `NOT EXISTS` subquery that may be awkward in the builder — using `sql\`...\`` with `tx.execute()` is acceptable here (this codebase already uses `sql\`\`` fragments for `CHECK` constraints and `set_config()` calls), but keep it to this one query; do not reach for raw SQL as a first resort elsewhere in this story.
 - **`revokeAllUserSessionsInOrg()` already writes its own audit rows** (one `SESSION_REVOKED` entry per revoked session) via its own internal path — do not also try to audit-log the session revocation yourself in AC-3's handler; only add the `org.user_removed` entry for the membership removal itself.
 - **`project_memberships` has no `updatedAt` column** (confirmed by reading the schema — only `createdAt`). AC-4's role-change `UPDATE` and AC-6's ownership-transfer `UPDATE` therefore do not (and cannot) set an `updatedAt` timestamp; do not add one without a migration, and do not assume one exists when writing response serialization.
-- **Do not build the shared project-role resolver** this is the third story to defer it (D8) — copy the inline query pattern with the pointer comment specified in D8/AC-5 so the pattern's frequency is visible to whoever eventually extracts it.
+- **Do not build the shared project-role resolver** this is the third story to defer it (D8) — copy the inline query pattern with the pointer comment specified in D8/AC-5 so the pattern's frequency is visible to whoever eventually extracts it. Note this story now has **three** internal occurrences of the pattern (AC-5, AC-6, and AC-10's authorization check) — still do not extract a resolver within this story itself; the D8 pointer comment's job is to make the *cross-story* count visible, not to force extraction the moment a story reuses it more than once internally.
 
 ### Project Structure Notes
 
-- No new module directory. `modules/org/routes.ts` gains 3 routes (from 2 to 5); `modules/org/schema.ts` gains 2-3 new schemas. `modules/projects/routes.ts` gains 2 routes (from 5 to 7); `modules/projects/schema.ts` gains 2 new schemas.
+- No new module directory. `modules/org/routes.ts` gains 3 routes (from 2 to 5); `modules/org/schema.ts` gains 2-3 new schemas. `modules/projects/routes.ts` gains 3 routes (from 5 to 8, including AC-10's `GET /:projectId/members`); `modules/projects/schema.ts` gains 2-3 new schemas (including AC-10's response schema).
 - New web route: `apps/web/src/routes/(app)/settings/users/` (new directory, mirrors the existing `apps/web/src/routes/(app)/settings/notifications/` sibling exactly — `+page.server.ts` + `+page.svelte`, no separate model file needed unless the role-change/remove logic grows complex enough to warrant one, matching the notification settings precedent).
 - Extended web route: `apps/web/src/routes/(app)/projects/[projectId]/members/+page.svelte` and `+page.server.ts` (both modified, not replaced — the existing pending-invitations UI from Story 4.1 stays; this story adds the accepted-members section alongside it).
 - New API client functions: extend `apps/web/src/lib/api/` with an `org-users.ts` file (mirrors `invitations.ts`'s shape: typed request/response types + thin `apiFetch` wrappers) covering `listOrgUsers`, `removeOrgUser`, `changeProjectRole`, `removeProjectMember`, `transferOwnership`.
