@@ -272,7 +272,12 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     max: 60,
     timeWindow: '1 minute',
     keyGenerator: (req: FastifyRequest) => req.ip,
-    errorResponseBuilder: () => ({
+    // Must carry `statusCode` — @fastify/rate-limit throws this value as the request error
+    // (see its defaultErrorResponse), and the global error handler (app.ts) only recognizes
+    // rate-limit errors via `error.statusCode === 429`. Without it, this fell through to the
+    // generic branch and returned 500 instead of 429 whenever a route's limit was exceeded.
+    errorResponseBuilder: (_req: FastifyRequest, context: { statusCode: number }) => ({
+      statusCode: context.statusCode,
       code: 'rate_limit_exceeded',
       message: 'Too many authentication attempts',
     }),

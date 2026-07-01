@@ -93,6 +93,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       }
       // Rate-limit 429 errors from @fastify/rate-limit — map to canonical API shape (AC-24)
       if (error.statusCode === 429) {
+        // Route-scoped rate limiters (e.g. authRoutes) build their own { code, message } body
+        // via errorResponseBuilder — pass it through as-is instead of the vault-unseal default.
+        const { code } = error as unknown as { code?: string }
+        if (code) {
+          return reply.status(429).send({ code, message: error.message })
+        }
         return reply.status(429).send({
           error: 'rate_limited',
           message: 'Too many unseal attempts',
