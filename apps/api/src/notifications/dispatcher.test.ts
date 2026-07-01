@@ -1,19 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue, orgMemberships } from '@project-vault/db/schema'
 import {
   NOTIFICATION_ALERT_TYPES,
   DEFAULT_NOTIFICATION_MIN_SEVERITY,
   DEFAULT_NOTIFICATION_FREQUENCY,
+  type NotificationSeverity,
 } from '@project-vault/shared'
 import { withTestOrg, createTestUser, deleteTestUser } from '@project-vault/db/test-helpers'
 import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.js'
-import { createOrgAdminNotificationEntries, sendNotificationJobs } from './dispatcher.js'
+import {
+  createOrgAdminNotificationEntries,
+  dispatchDirectUserNotification,
+  sendNotificationJobs,
+} from './dispatcher.js'
 import { patchPreferences } from '../modules/notifications/preferences.js'
 import { putOrgRouting } from '../modules/notifications/routing.js'
 
 const FAILED_AUTH_TEMPLATE = 'security.failed_auth_threshold'
 const SERVICE_DOWN_TEMPLATE = 'service.down'
+const MFA_RECOVERY_USED_TEMPLATE = 'security.mfa_recovery_used'
 
 async function seedOwner(orgId: string, userId: string) {
   await withOrg(orgId, (tx) =>
@@ -197,6 +204,99 @@ describe('notification dispatcher', () => {
       })
     } finally {
       await deleteTestUser(ownerId)
+    }
+  })
+})
+
+async function setDirectDispatchPreference(
+  orgId: string,
+  userId: string,
+  channel: 'slack' | 'email',
+  minSeverity: 'warning' | 'critical'
+) {
+  await withOrg(orgId, (tx) =>
+    patchPreferences(
+      orgId,
+      userId,
+      [{ alertType: MFA_RECOVERY_USED_TEMPLATE, channel, frequency: 'immediate', minSeverity }],
+      tx
+    )
+  )
+}
+
+async function dispatchMfaRecoveryUsed(
+  orgId: string,
+  userId: string,
+  severity: NotificationSeverity
+) {
+  return withOrg(orgId, (tx) =>
+    dispatchDirectUserNotification({
+      orgId,
+      userId,
+      template: {
+        templateId: MFA_RECOVERY_USED_TEMPLATE,
+        payload: { userId, remainingRecoveryCodes: 3 },
+        severity,
+      },
+      tx,
+    })
+  )
+}
+
+async function mfaRecoveryUsedQueueRows(orgId: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select()
+      .from(notificationQueue)
+      .where(eq(notificationQueue.templateId, MFA_RECOVERY_USED_TEMPLATE))
+  )
+}
+
+describe('dispatchDirectUserNotification (AC-7a, ADR-3.4-07)', () => {
+  it('enqueues email and inbox jobs for the target user only, never slack', async () => {
+    const targetId = await createTestUser('direct-dispatch-target')
+    const otherOwnerId = await createTestUser('direct-dispatch-other-owner')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await seedOwner(orgId, targetId)
+        await withOrg(orgId, (tx) =>
+          tx
+            .insert(orgMemberships)
+            .values({ orgId, userId: otherOwnerId, role: 'owner', status: 'active' })
+        )
+        await setDirectDispatchPreference(orgId, targetId, 'slack', 'warning')
+
+        const jobs = await dispatchMfaRecoveryUsed(orgId, targetId, 'critical')
+        expect(jobs.length).toBeGreaterThanOrEqual(2)
+
+        const rows = await mfaRecoveryUsedQueueRows(orgId)
+        expect(rows.every((r) => r.recipientUserId === targetId)).toBe(true)
+        expect(rows.some((r) => r.channel === 'email')).toBe(true)
+        expect(rows.some((r) => r.channel === 'inbox')).toBe(true)
+        expect(rows.some((r) => r.channel === 'slack')).toBe(false)
+      })
+    } finally {
+      await deleteTestUser(targetId)
+      await deleteTestUser(otherOwnerId)
+    }
+  })
+
+  it('suppresses a channel the user raised above the alert severity, keeping the other channel', async () => {
+    const targetId = await createTestUser('direct-dispatch-severity')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await seedOwner(orgId, targetId)
+        await setDirectDispatchPreference(orgId, targetId, 'email', 'critical')
+
+        const jobs = await dispatchMfaRecoveryUsed(orgId, targetId, 'warning')
+        expect(jobs.length).toBe(1)
+
+        const rows = await mfaRecoveryUsedQueueRows(orgId)
+        expect(rows.some((r) => r.channel === 'email')).toBe(false)
+        expect(rows.some((r) => r.channel === 'inbox')).toBe(true)
+      })
+    } finally {
+      await deleteTestUser(targetId)
     }
   })
 })

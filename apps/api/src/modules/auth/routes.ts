@@ -8,8 +8,10 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.js'
-import { validationError } from '../../lib/route-helpers.js'
+import { isRateLimitEnforced, validationError } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { sendNotificationJobs, type NotificationQueueJob } from '../../notifications/dispatcher.js'
+import type { BossService } from '../../lib/boss.js'
 import {
   LoginRequestSchema,
   RegisterRequestSchema,
@@ -51,6 +53,40 @@ type JwtFastify = FastifyApp & {
       options: { jti: string; expiresIn: number }
     ) => Promise<string> | string
     decode: (token: string) => unknown
+  }
+}
+type BossFastify = FastifyApp & { boss?: BossService }
+
+/**
+ * pg-boss is decorated on the fastify instance in production (main.ts) but not in
+ * integration tests that build the app directly — jobs are still enqueued in
+ * notification_queue either way, only the async delivery dispatch is skipped.
+ *
+ * Never let a dispatch failure propagate: for regenerate-recovery-codes this call
+ * happens inside the ambient secureRoute transaction (pre-commit — see Dev Agent
+ * Record), so an uncaught throw here would roll back the already-successful MFA
+ * operation. For recover-with-code the operation has already committed, so an
+ * uncaught throw would return a 500 to a user whose recovery code was already
+ * consumed and session already created. Either way, a missed boss.send() is safe —
+ * the notification_queue row is still durable and notification:deliver-catchup
+ * (10-min cron, main.ts) will pick it up.
+ */
+async function sendPendingMfaNotifications(
+  fastify: FastifyApp,
+  jobs: NotificationQueueJob[]
+): Promise<void> {
+  const boss = (fastify as BossFastify).boss
+  if (!boss) return
+  try {
+    await sendNotificationJobs(boss, jobs)
+  } catch (error) {
+    process.stderr.write(
+      `${JSON.stringify({
+        eventType: 'auth.mfa_notification_dispatch_failed',
+        error: error instanceof Error ? error.message : String(error),
+        jobCount: jobs.length,
+      })}\n`
+    )
   }
 }
 type ParsedBody<T> = { success: true; data: T } | { success: false; reply: FastifyReply }
@@ -232,15 +268,26 @@ function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
 }
 
 export async function authRoutes(fastify: FastifyApp): Promise<void> {
-  await fastify.register(rateLimit, {
-    max: 60,
-    timeWindow: '1 minute',
-    keyGenerator: (req: FastifyRequest) => req.ip,
-    errorResponseBuilder: () => ({
-      code: 'rate_limit_exceeded',
-      message: 'Too many authentication attempts',
-    }),
-  })
+  // Skipped under NODE_ENV=test by default (see isRateLimitEnforced) — real request-rate
+  // buckets are wall-clock-based, so integration tests that register/log in many users as
+  // fixture setup can flakily trip these limits depending on how fast the run executes.
+  // register-rate-limit.test.ts opts back in via RATE_LIMIT_TEST_ENFORCE to cover enforcement.
+  if (isRateLimitEnforced()) {
+    await fastify.register(rateLimit, {
+      max: 60,
+      timeWindow: '1 minute',
+      keyGenerator: (req: FastifyRequest) => req.ip,
+      // Must carry `statusCode` — @fastify/rate-limit throws this value as the request error
+      // (see its defaultErrorResponse), and the global error handler (app.ts) only recognizes
+      // rate-limit errors via `error.statusCode === 429`. Without it, this fell through to the
+      // generic branch and returned 500 instead of 429 whenever a route's limit was exceeded.
+      errorResponseBuilder: (_req: FastifyRequest, context: { statusCode: number }) => ({
+        statusCode: context.statusCode,
+        code: 'rate_limit_exceeded',
+        message: 'Too many authentication attempts',
+      }),
+    })
+  }
 
   registerMethodNotAllowed(fastify, '/register')
   registerMethodNotAllowed(fastify, '/login')
@@ -351,9 +398,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       const parsed = parseBody(mfaRegenerateBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
-      return sendMfaAction(reply, () =>
+      const result = await sendMfaAction(reply, () =>
         regenerateRecoveryCodes(secureCtx.auth, parsed.data, metaFromRequest(req), secureCtx.tx)
       )
+      if ('data' in result) {
+        await sendPendingMfaNotifications(fastify, result.data.notificationJobs)
+      }
+      return result
     },
   })
 
@@ -558,6 +609,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       if (!(await enforceRecoverRateLimit(`email:${normalizedEmail}`, 5, reply))) return reply
       try {
         const result = await recoverWithCode(parsed.data, metaFromRequest(req))
+        await sendPendingMfaNotifications(fastify, result.notificationJobs)
         return sendAuthSession(fastify, reply, result, {
           remainingRecoveryCodes: result.remainingRecoveryCodes,
         })

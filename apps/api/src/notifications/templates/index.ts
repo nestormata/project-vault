@@ -2,6 +2,10 @@ import {
   renderSecurityFailedAuthThreshold,
   renderSecurityFailedAuthThresholdSlack,
 } from './security-failed-auth-threshold.js'
+import {
+  renderSecurityMfaRecoveryCodesRegenerated,
+  renderSecurityMfaRecoveryUsed,
+} from './security-mfa-recovery.js'
 
 export type EmailRender = {
   subject: string
@@ -15,6 +19,26 @@ export type SlackRender = { text: string; blocks: unknown[] }
 const EMAIL_RENDERERS: Record<string, (payload: Record<string, unknown>) => EmailRender> = {
   'security.failed_auth_threshold': (payload) => {
     const { subject, text, html } = renderSecurityFailedAuthThreshold(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: text.slice(0, 500),
+    }
+  },
+  'security.mfa_recovery_used': (payload) => {
+    const { subject, text, html } = renderSecurityMfaRecoveryUsed(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: text.slice(0, 500),
+    }
+  },
+  'security.mfa_recovery_codes_regenerated': (payload) => {
+    const { subject, text, html } = renderSecurityMfaRecoveryCodesRegenerated(payload)
     return {
       subject,
       text,

@@ -26,7 +26,7 @@ so that I never miss a vault event even without configuring email or Slack.
 | **Evaluator-visible** | yes |
 | **Linked UI story** | N/A — **Epic 3 web completion story**; replaces `/alerts` placeholder |
 | **Honest placeholder AC** | N/A — must ship real inbox UI + nav badge; no fake unread counts |
-| **Persona journey** | **Morgan (member):** nav bell shows unread count → opens `/alerts` inbox → marks read → SSE updates badge. Empty inbox shows honest empty state, not placeholder copy. |
+| **Persona journey** | **Morgan (member):** nav bell shows unread count → opens **`/notifications`** inbox → marks read → SSE updates badge. Empty inbox shows honest empty state, not placeholder copy. *(Updated in Story 3.4 AC-4 — `/alerts` is now a redirect to the canonical `/notifications` route, not the inbox itself.)* |
 
 **Epic 3 gate:** Epic 3 must not be `done` without this story — API-only delivery (3.1) is insufficient for web-first evaluators.
 
@@ -1671,19 +1671,44 @@ Test files:
 
 ## Dev Agent Record
 
-> **Fill in this section as you implement each phase.**
+> Backfilled from git history (commits `c4c6bd6`..`7d4a081`) as part of Story 3.4 P3 hygiene
+> (retro finding A5/CP-5 — this section was left empty at merge time).
 
 ### Decisions Made During Implementation
-*(To be filled by dev agent)*
+
+- Persisted inbox rows in a dedicated `notification_inbox` table (`0023_notification_inbox.sql`, `0024_notification_inbox_rls_nullif.sql`) rather than repurposing `notification_queue`, keeping per-user read/unread state separate from delivery-attempt state.
+- Delivered inbox updates via a `notification.inbox` SSE event (`apps/web/src/lib/state/sse.svelte.ts`) instead of polling, matching AC-E3b's "SSE or ≤30s polling" contract with the lower-latency option.
+- Exposed unread count on the existing `GET /users/me` response rather than a new endpoint, so the nav bell badge (`AppShell.svelte`) could hydrate on normal session load without an extra round trip.
+- Added a `notification:inbox-catchup` pg-boss schedule (10 min) alongside the existing `notification:email-catchup`/`notification:slack-catchup` jobs from Story 3.1, following the established catchup-worker pattern rather than inventing a new retry mechanism.
+- Reused the `withJobLogging()` helper from Story 1.10 for `notification-inbox-purge.ts` instead of ad hoc logging.
 
 ### Problems Encountered
-*(To be filled by dev agent)*
+
+- Initial inbox routes implementation duplicated logic across CRUD handlers and tripped the `jscpd` zero-duplication CI gate; resolved in `3f9b097` by extracting shared inbox route helpers and test fixtures.
+- Dismissing an unread notification didn't decrement the nav badge optimistically, causing a stale count until the next SSE push; fixed in `d570083` by updating local state on dismiss.
+- MFA integration tests became flaky under full-suite load once inbox delivery added extra async work per request; timeouts were raised to 45s in the same fix (`d570083`).
+- RLS-nullif handling required a follow-up migration (`0024_notification_inbox_rls_nullif.sql`) after the initial inbox table migration to correctly scope rows when `recipient_user_id` semantics interacted with existing RLS policies.
 
 ### Test Coverage Achieved
-*(To be filled by dev agent)*
+
+- `apps/api/src/modules/notifications/inbox-routes.test.ts` — CRUD route coverage (list, mark-read, dismiss, unauthorized/cross-org access).
+- `apps/api/src/workers/notification-inbox.test.ts` and `notification-inbox-purge.test.ts` — delivery worker and expiry-purge worker behavior, including catchup-schedule paths.
+- `packages/db/src/__tests__/notification-inbox-rls.test.ts` — RLS isolation for the new `notification_inbox` table.
+- `apps/api/src/notifications/templates/index.test.ts` — extended to cover inbox-specific `inboxTitle`/`inboxBody` template fields.
+- `packages/shared/src/constants/mfa-exempt-routes.test.ts` — updated for routes touched by the inbox rollout.
 
 ### Files Changed
-*(To be filled by dev agent)*
+
+- `packages/db/src/migrations/0023_notification_inbox.sql`, `0024_notification_inbox_rls_nullif.sql`, `packages/db/src/schema/notification-inbox.ts`, `packages/db/src/schema/index.ts` — new table + RLS.
+- `apps/api/src/modules/notifications/routes.ts`, `schema.ts`, `inbox-routes.test.ts` — inbox CRUD API.
+- `apps/api/src/workers/notification-inbox.ts` (+ `.test.ts`), `notification-inbox-purge.ts` (+ `.test.ts`) — delivery and purge workers.
+- `apps/web/src/lib/api/inbox.ts`, `apps/web/src/lib/state/notifications.svelte.ts`, `apps/web/src/lib/state/sse.svelte.ts` — web data/state layer.
+- `apps/web/src/lib/components/shell/AppShell.svelte`, `nav-model.ts`, `apps/web/src/routes/(app)/+layout.server.ts`, `+layout.svelte` — nav bell + SSE wiring.
+- `apps/web/src/routes/(app)/notifications/+page.server.ts`, `+page.svelte` — inbox page UI.
+- `apps/web/src/routes/(app)/alerts/+page.server.ts` — placeholder redirect stub added here (later hardened to a permanent redirect and had its placeholder page removed in Story 3.4 AC-1).
 
 ### Notes for Story 3.4+ / Future Work
-*(Dev agent: document any SSE infrastructure changes, RLS helper additions, or template registry expansions that affect future stories)*
+
+- The `/alerts` → `/notifications` redirect landed as a 307 stub in this story; Story 3.4 AC-1 changes it to a 308 permanent redirect and deletes the now-orphaned placeholder page.
+- SSE infrastructure (`sse.svelte.ts`) is generic enough to carry future event types beyond `notification.inbox` — Story 3.4's admin test-notification UI does not need new SSE wiring, it reuses the existing admin API test endpoint from Story 3.1 instead.
+- The template registry pattern (`inboxTitle`/`inboxBody` on `EmailRender`) is what Story 3.4's MFA recovery templates follow for their own inbox rendering.

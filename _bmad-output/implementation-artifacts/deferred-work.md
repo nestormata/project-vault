@@ -39,7 +39,7 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 | ID | Item | Owner | Target |
 |----|------|-------|--------|
 | P4 | Epic 1 retrospective or documented waiver | Nestor | ✅ Done — `epic-1-retro-2026-06-30.md` |
-| E3-1 | SMTP config split: Story 3.1 env vars vs AC-E3a Epic 9 system settings | Architect / PO | ADR before Story 3.1 dev |
+| E3-1 | SMTP config split: Story 3.1 env vars vs AC-E3a Epic 9 system settings | Architect / PO | ✅ Closed (Story 3.4) — env-var SMTP config is the MVP path (Story 3.1 AC); Epic 9 (`FR86`) adds an admin system-settings UI on top without breaking the env-var fallback |
 | E3-2 | FR73 `PENDING_DELIVERY` → `notification_queue` integration test | Dev | Story 3.1 AC |
 | D1 | Reconcile `architecture.md`: `secrets` tables/endpoints → `credentials` naming | Tech Writer | Planning doc |
 | D2 | Operator runbook: `CREDENTIAL_RETENTION_DRY_RUN` → destructive purge rollout | Dev / Ops | `specs/` |
@@ -49,7 +49,7 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 | AC / area | Status | Blocked by | Notes |
 |-----------|--------|------------|-------|
 | AC-E2d — projects with overdue rotations | Schema slot exists; `count: 0`, `items: []` | Epic 5 | `GET /api/v1/dashboard` credential/expiry slice shipped in 2.8 |
-| AC-E2d — unresolved alert count on org dashboard | Hardcoded `0` | Epic 3 | Honest per AC-E2f until alerts live |
+| AC-E2d — unresolved alert count on org dashboard | ✅ Live (Story 3.4) — real `security_alerts` count | — | Was hardcoded `0`; resolved by AC-10 |
 | Project dashboard — `upcomingRotations`, `recentAccessEvents`, `monitoredServiceHealth` | Empty arrays / placeholder grid on web | Epic 5, 8, 6 | `DashboardPlaceholderGrid` on `/dashboard` |
 | Project dashboard — `suggestedActions` partial completion | Empty when `isEmpty: false` | Epic 6 | Smarter suggestions need monitoring data (Story 2.1 deferral) |
 | Credential expiry **notifications** | Columns exist (2.2/2.4); no delivery | Epic 3+ | Backend ready; alerting jobs not wired |
@@ -70,7 +70,7 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 
 | Route | Current state | Epic |
 |-------|---------------|------|
-| `/alerts` | `PlaceholderSection` — "Epic 3" | 3.3 inbox replaces placeholder |
+| `/alerts` | ✅ Resolved (Story 3.4) — server redirects (308) to `/notifications`, the canonical inbox route from Story 3.3; placeholder page deleted | — |
 | `/health` | `PlaceholderSection` — "Epic 6" | 6.x monitoring |
 | `/settings` | `PlaceholderSection` — "MVP shell" | 3.2 partial (`/settings/notifications` in 3.2 story); full settings Epic 9 |
 
@@ -104,8 +104,32 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 |----|--------|
 | G1–G4 Product Surface Contract | ✅ Templates/workflows updated |
 | E3-P1 Surface contracts on 3.1–3.3 | ✅ Added to story files |
-| E3-P2 Epic 3 not `done` without 3.3 inbox | ⏳ Enforce at epic close |
-| E3-P3 Resolve E3-1 before 3.1 | ⏳ Open |
+| E3-P2 Epic 3 not `done` without 3.3 inbox | ✅ Enforced — 3.3 shipped the inbox |
+| E3-P3 Resolve E3-1 before 3.1 | ✅ Resolved (Story 3.4, see E3-1 row above) |
+
+---
+
+## Epic 3 closure (Story 3.4, 2026-06-30)
+
+Epic 3 (`epic-3`) is gated `done` only after Story 3.4 merges and its G2 preconditions checklist
+passes — see Story 3.4 AC-15. Story 3.4 closed the remaining Epic 3 product-surface gaps: `/alerts`
+route truth, dashboard alert-count truth, MFA recovery alert wiring, and the settings test-notification
+UI. Two items remain intentionally open past Epic 3 closure, tracked below.
+
+### Open (Epic 3 closure, Story 3.4 AC-16 — out of scope)
+
+| Item | Deferred to |
+|------|-------------|
+| Credential expiry notification pg-boss jobs (columns exist from Story 2.4) | Future story / Epic 3.x |
+| `notification_queue` failed status / DLQ cleanup | Future story |
+| Dispatcher batch preference lookup (N+1 query per recipient) | Performance follow-up — `TODO` left in `dispatcher.ts` |
+
+---
+
+## Deferred from: code review of story-3.4 (2026-06-30)
+
+- `activeOrgForUser()` (`apps/api/src/modules/auth/mfa.ts`, unchanged by 3.4) iterates all orgs with no `ORDER BY` and returns the first with an active membership — for a user active in two orgs, which org's preferences/notification apply is non-deterministic. Pre-existing since Story 1.x's login flow; not introduced or worsened by 3.4's MFA notification wiring, which reuses this helper as-is.
+- `patchPreferences()`'s `channel: 'none'` handling (Story 3.2) deletes stored override rows rather than persisting a suppression state, so a user selecting "None" for `security.mfa_recovery_used` / `security.mfa_recovery_codes_regenerated` in the personal preferences table (newly exposed by 3.4 AC-6) reverts to the default `email`+`inbox` channels on the next event instead of truly opting out. 3.4 exposes these types per AC-6's explicit "personal channel control" instruction; the underlying preference-persistence gap is pre-existing Story 3.2 scope.
 
 ---
 

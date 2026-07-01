@@ -5,18 +5,12 @@ describe('placeholder shell sections', () => {
   it('defines honest placeholders for unavailable primary sections', () => {
     const sections = getPlaceholderSections()
 
-    expect(Object.keys(sections)).toEqual([
-      'projects',
-      'credentials',
-      'alerts',
-      'health',
-      'settings',
-    ])
+    expect(Object.keys(sections)).toEqual(['projects', 'credentials', 'health', 'settings'])
     expect(sections.projects.copy).toContain('Story 2.1')
     expect(sections.credentials.copy).toContain('Choose a project')
-    expect(sections.alerts.copy).toContain('Epic 3')
     expect(sections.health.copy).toContain('Epic 6')
     expect(sections.settings.copy).toContain('MVP shell')
+    expect('alerts' in sections).toBe(false)
   })
 
   it('does not include fake counts or green operational claims', () => {

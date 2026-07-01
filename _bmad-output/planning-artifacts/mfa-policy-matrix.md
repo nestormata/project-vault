@@ -14,9 +14,19 @@
 | **Privileged API routes** | 1.9, 1.11 | `requireMfaEnrollment()` / `SecureRoute({ requireMfa: true })` |
 | **Login challenge** | 1.12 | `mfa_enrolled_at IS NOT NULL` → `mfaRequired` + `verify-login` |
 | **Invite members (FR57)** | 4.1 (planned) | Requires MFA enrolled before `POST .../invitations` |
-| **Alert delivery** | Epic 3 | MFA recovery use → email (stub `alert.pending_epic3` until 3.1) |
+| **Alert delivery** | Epic 3 | MFA recovery use / codes regenerated → email + inbox via `dispatchDirectUserNotification()`, live since Story 3.4 |
 
 **Grace period:** `MFA_PRIVILEGED_ROLE_GRACE_DAYS` (default **7** days) on `org_memberships.grace_period_expires_at` for new owner/admin.
+
+---
+
+## Alert delivery status (Story 3.4)
+
+| Surface | Status |
+|---|---|
+| FR73 failed-auth threshold | Live since Story 3.1 |
+| MFA recovery used / codes regenerated | Live since Story 3.4 |
+| Remaining Epic 3 stub alert markers in `apps/api/src` | **None** — enforced by `scripts/check-alert-pending-epic3.ts` (`make ci`) |
 
 ---
 

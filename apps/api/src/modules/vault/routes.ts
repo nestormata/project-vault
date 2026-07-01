@@ -4,6 +4,7 @@ import rateLimit from '@fastify/rate-limit'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
+import { isRateLimitEnforced } from '../../lib/route-helpers.js'
 import { initVault, unsealVault } from './key-service.js'
 import { VaultInitRequestSchema, VaultUnsealRequestSchema } from './schema.js'
 import { redactBodyForLog } from '../../plugins/redact-secrets.js'
@@ -58,11 +59,14 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
   // Note: @fastify/rate-limit v10's errorResponseBuilder has a status-code regression
   // when used with per-route config; the 429 response body shape is handled in app.ts's
   // global setErrorHandler instead (where the rate-limit error correctly carries statusCode 429).
-  await fastify.register(rateLimit, {
-    max: 5,
-    timeWindow: '1 minute',
-    keyGenerator: (req: FastifyRequest) => req.ip,
-  })
+  // Skipped under NODE_ENV=test by default — see isRateLimitEnforced in route-helpers.ts.
+  if (isRateLimitEnforced()) {
+    await fastify.register(rateLimit, {
+      max: 5,
+      timeWindow: '1 minute',
+      keyGenerator: (req: FastifyRequest) => req.ip,
+    })
+  }
 
   fastify.route({
     method: 'POST',
