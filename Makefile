@@ -86,6 +86,7 @@ ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap fi
 	$(MAKE) db-migrate
 	$(MAKE) check-rls
 	pnpm check-search-index
+	pnpm check-alert-pending-epic3
 	$(MAKE) test
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts

@@ -1,33 +1,15 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 import { scanSearchIndexes } from './check-search-index.js'
 
-const tempRoots: string[] = []
-
-function makeFixtureRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'project-vault-search-index-'))
-  tempRoots.push(root)
-  mkdirSync(join(root, 'packages/db/src/migrations'), { recursive: true })
-  mkdirSync(join(root, 'packages/db/src/schema'), { recursive: true })
-  mkdirSync(join(root, 'apps/api/src'), { recursive: true })
-  return root
-}
-
-function writeFixture(root: string, relativePath: string, content: string): void {
-  const fullPath = join(root, relativePath)
-  mkdirSync(resolve(fullPath, '..'), { recursive: true })
-  writeFileSync(fullPath, content)
-}
+const makeFixtureRoot = useFixtureRoots('project-vault-search-index-', [
+  'packages/db/src/migrations',
+  'packages/db/src/schema',
+  'apps/api/src',
+])
 
 describe('check-search-index', () => {
-  afterEach(() => {
-    for (const root of tempRoots.splice(0)) {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
   it('flags SQL and Drizzle indexes that reference credential value columns', () => {
     const root = makeFixtureRoot()
     writeFixture(

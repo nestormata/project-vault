@@ -13,6 +13,10 @@ import { AuditEvent } from '@project-vault/shared'
 import type { EncryptedValue } from '@project-vault/crypto'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
+import {
+  dispatchDirectUserNotification,
+  type NotificationQueueJob,
+} from '../../notifications/dispatcher.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
@@ -50,6 +54,7 @@ type RecoveryResult = {
   expiresAt: string
   remainingRecoveryCodes: number
   tokens: TokenMaterial
+  notificationJobs: NotificationQueueJob[]
 }
 
 const DUMMY_RECOVERY_CODE_HASH =
@@ -400,21 +405,26 @@ export async function regenerateRecoveryCodes(
           and(eq(mfaRecoveryCodes.userId, authContext.userId), isNull(mfaRecoveryCodes.usedAt))
         )
       await insertRecoveryCodes(db, authContext.userId, recoveryCodes)
+      const remainingRecoveryCodes = await countUnusedRecoveryCodes(authContext.userId, db)
       await writeMfaEnrollmentAudit(db, authContext, {
         eventType: AuditEvent.MFA_RECOVERY_CODES_REGENERATED,
         enrollmentId: enrollment.id,
-        payload: {
-          method: 'totp',
-          remainingRecoveryCodes: await countUnusedRecoveryCodes(authContext.userId, db),
-        },
+        payload: { method: 'totp', remainingRecoveryCodes },
         meta,
       })
 
-      process.stdout.write(
-        `${JSON.stringify({ eventType: 'alert.pending_epic3', alertType: 'mfa.recovery_codes_regenerated', userId: authContext.userId })}\n`
-      )
+      const notificationJobs = await dispatchDirectUserNotification({
+        orgId: authContext.orgId,
+        userId: authContext.userId,
+        template: {
+          templateId: 'security.mfa_recovery_codes_regenerated',
+          payload: { userId: authContext.userId, remainingRecoveryCodes },
+          severity: 'warning',
+        },
+        tx: db,
+      })
 
-      return { recoveryCodes, generatedAt: generatedAt.toISOString() }
+      return { recoveryCodes, generatedAt: generatedAt.toISOString(), notificationJobs }
     },
     tx
   )
@@ -544,9 +554,16 @@ export async function recoverWithCode(
       meta,
     })
 
-    process.stdout.write(
-      `${JSON.stringify({ eventType: 'alert.pending_epic3', alertType: 'mfa.recovery_used', userId: user.id })}\n`
-    )
+    const notificationJobs = await dispatchDirectUserNotification({
+      orgId,
+      userId: user.id,
+      template: {
+        templateId: 'security.mfa_recovery_used',
+        payload: { userId: user.id, remainingRecoveryCodes },
+        severity: 'critical',
+      },
+      tx: db,
+    })
 
     return {
       userId: session.userId,
@@ -554,6 +571,7 @@ export async function recoverWithCode(
       expiresAt: session.expiresAt,
       remainingRecoveryCodes,
       tokens: session.tokens,
+      notificationJobs,
     }
   })
 }

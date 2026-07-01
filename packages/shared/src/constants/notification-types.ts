@@ -1,5 +1,7 @@
 export const NOTIFICATION_ALERT_TYPES = [
   'security.failed_auth_threshold',
+  'security.mfa_recovery_used',
+  'security.mfa_recovery_codes_regenerated',
   'credential.expiry',
   'service.down',
   'service.recovery',

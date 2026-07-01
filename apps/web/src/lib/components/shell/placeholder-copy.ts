@@ -1,4 +1,4 @@
-export type PlaceholderSectionKey = 'projects' | 'credentials' | 'alerts' | 'health' | 'settings'
+export type PlaceholderSectionKey = 'projects' | 'credentials' | 'health' | 'settings'
 
 export type PlaceholderSectionCopy = {
   title: string
@@ -13,10 +13,6 @@ const placeholderSections: Record<PlaceholderSectionKey, PlaceholderSectionCopy>
   credentials: {
     title: 'Credentials',
     copy: 'Choose a project to manage credentials.',
-  },
-  alerts: {
-    title: 'Alerts',
-    copy: 'No alert sources configured yet. Notifications and alert routing arrive in Epic 3.',
   },
   health: {
     title: 'Health',
@@ -38,8 +34,6 @@ export function getPlaceholderSection(key: PlaceholderSectionKey) {
       return placeholderSections.projects
     case 'credentials':
       return placeholderSections.credentials
-    case 'alerts':
-      return placeholderSections.alerts
     case 'health':
       return placeholderSections.health
     case 'settings':

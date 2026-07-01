@@ -144,6 +144,9 @@ export async function createOrgAdminNotificationEntries(
   const seenUserChannels = new Set<string>()
   let slackEnabled = false
 
+  // TODO(perf): one getPreferences() query per recipient — batch this into a single
+  // query keyed by userId once routing tables grow past small org member counts
+  // (deferred-work.md — Epic 3 closure, Story 3.4 AC-16).
   for (const userId of recipientUserIds) {
     const result = await processRecipientPreferences(
       orgId,
@@ -200,6 +203,39 @@ type DispatchOptions = CreateEntriesOptions & {
 export async function dispatchOrgAdminNotification(options: DispatchOptions): Promise<void> {
   const jobs = await createOrgAdminNotificationEntries(options)
   await sendNotificationJobs(options.boss, jobs)
+}
+
+/**
+ * Delivers a notification to a specific user (self-alert) — e.g. MFA recovery events.
+ * Skips org routing and uses that user's own preferences only. Enqueues email and
+ * inbox channels only; never slack (ADR-3.4-07 — org Slack webhook is the wrong
+ * audience for an account-recovery self-alert).
+ */
+export async function dispatchDirectUserNotification(opts: {
+  orgId: string
+  userId: string
+  template: NotificationTemplate
+  tx: Tx
+}): Promise<NotificationQueueJob[]> {
+  const { orgId, userId, template, tx } = opts
+  const alertSeverity = template.severity ?? 'warning'
+  const prefs = await getPreferences(orgId, userId, tx)
+  const alertPrefs = prefs.filter(
+    (p) => p.alertType === template.templateId && p.channel !== 'slack'
+  )
+
+  const jobs: NotificationQueueJob[] = []
+  const seenChannels = new Set<string>()
+  for (const pref of alertPrefs) {
+    if (!passesSeverityFilter(alertSeverity, pref)) continue
+    if (seenChannels.has(pref.channel)) continue
+    seenChannels.add(pref.channel)
+
+    const job = await enqueueUserChannel({ orgId, userId, template, pref, tx })
+    if (job) jobs.push(job)
+  }
+
+  return jobs
 }
 
 export async function enqueueSecurityAlertNotification(opts: {

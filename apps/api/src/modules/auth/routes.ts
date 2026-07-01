@@ -10,6 +10,8 @@ import { env } from '../../config/env.js'
 import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.js'
 import { validationError } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { sendNotificationJobs, type NotificationQueueJob } from '../../notifications/dispatcher.js'
+import type { BossService } from '../../lib/boss.js'
 import {
   LoginRequestSchema,
   RegisterRequestSchema,
@@ -52,6 +54,21 @@ type JwtFastify = FastifyApp & {
     ) => Promise<string> | string
     decode: (token: string) => unknown
   }
+}
+type BossFastify = FastifyApp & { boss?: BossService }
+
+/**
+ * pg-boss is decorated on the fastify instance in production (main.ts) but not in
+ * integration tests that build the app directly — jobs are still enqueued in
+ * notification_queue either way, only the async delivery dispatch is skipped.
+ */
+async function sendPendingMfaNotifications(
+  fastify: FastifyApp,
+  jobs: NotificationQueueJob[]
+): Promise<void> {
+  const boss = (fastify as BossFastify).boss
+  if (!boss) return
+  await sendNotificationJobs(boss, jobs)
 }
 type ParsedBody<T> = { success: true; data: T } | { success: false; reply: FastifyReply }
 type AuthSessionResult = {
@@ -351,9 +368,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       const parsed = parseBody(mfaRegenerateBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
-      return sendMfaAction(reply, () =>
+      const result = await sendMfaAction(reply, () =>
         regenerateRecoveryCodes(secureCtx.auth, parsed.data, metaFromRequest(req), secureCtx.tx)
       )
+      if ('data' in result) {
+        await sendPendingMfaNotifications(fastify, result.data.notificationJobs)
+      }
+      return result
     },
   })
 
@@ -558,6 +579,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       if (!(await enforceRecoverRateLimit(`email:${normalizedEmail}`, 5, reply))) return reply
       try {
         const result = await recoverWithCode(parsed.data, metaFromRequest(req))
+        await sendPendingMfaNotifications(fastify, result.notificationJobs)
         return sendAuthSession(fastify, reply, result, {
           remainingRecoveryCodes: result.remainingRecoveryCodes,
         })

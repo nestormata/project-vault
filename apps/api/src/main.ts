@@ -96,6 +96,7 @@ async function main(): Promise<void> {
 
   // 4. registerWorkers(emitter) — pg-boss workers, BossService stub in Story 1.1
   const boss = new BossService(env.DATABASE_URL)
+  fastify.decorate?.('boss', boss)
   let bossRegistered = false
   async function startBossAndRegisterWorkers(): Promise<void> {
     await boss.start()

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { withOrg } from '@project-vault/db'
+import { securityAlerts } from '@project-vault/db/schema'
 import { insertTestProject } from '@project-vault/db/test-helpers'
 import {
   bootstrapRouteIntegrationTest,
@@ -61,6 +62,35 @@ async function seedPaymentsFixture(app: TestApp, cookies: Record<string, string>
   return { paymentsId, infraId, stripeId: stripe.id }
 }
 
+async function fetchProjectListItems(app: TestApp, cookies: Record<string, string>) {
+  const response = await app.inject({
+    method: 'GET',
+    url: PROJECTS_URL,
+    headers: { cookie: cookieHeader(cookies) },
+  })
+  expect(response.statusCode).toBe(200)
+  return response.json<{
+    data: {
+      items: { id: string; credentialCount: number; expiringCount: number; alertCount: number }[]
+    }
+  }>().data.items
+}
+
+async function seedSecurityAlert(
+  orgId: string,
+  status: 'PENDING_DELIVERY' | 'delivered' | 'dismissed'
+) {
+  await withOrg(orgId, (tx) =>
+    tx.insert(securityAlerts).values({
+      orgId,
+      alertType: 'security.failed_auth_threshold',
+      severity: 'critical',
+      status,
+      payload: {},
+    })
+  )
+}
+
 describe.sequential('dashboard stats', () => {
   let app: TestApp
 
@@ -77,26 +107,10 @@ describe.sequential('dashboard stats', () => {
     const owner = await registerOwner(app, 'list-counts')
     const { paymentsId, infraId } = await seedPaymentsFixture(app, owner.cookies)
 
-    const response = await app.inject({
-      method: 'GET',
-      url: PROJECTS_URL,
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
+    const items = await fetchProjectListItems(app, owner.cookies)
 
-    expect(response.statusCode).toBe(200)
-    const body = response.json<{
-      data: {
-        items: {
-          id: string
-          credentialCount: number
-          expiringCount: number
-          alertCount: number
-        }[]
-      }
-    }>()
-
-    const payments = body.data.items.find((item) => item.id === paymentsId)
-    const infra = body.data.items.find((item) => item.id === infraId)
+    const payments = items.find((item) => item.id === paymentsId)
+    const infra = items.find((item) => item.id === infraId)
     expect(payments).toMatchObject({
       credentialCount: 3,
       expiringCount: 1,
@@ -241,6 +255,49 @@ describe.sequential('dashboard stats', () => {
         projectId: paymentsId,
         projectName: expect.stringMatching(/payments/i),
       })
+    })
+  }, 30_000)
+
+  it('org dashboard unresolvedAlertCount excludes dismissed alerts (AC-10)', async () => {
+    const owner = await registerOwner(app, 'org-alert-count')
+
+    await withOrg(owner.orgId, async (tx) => {
+      const before = await getOrgDashboardData(tx)
+      expect(before.unresolvedAlertCount).toBe(0)
+    })
+
+    await seedSecurityAlert(owner.orgId, 'delivered')
+    await seedSecurityAlert(owner.orgId, 'dismissed')
+
+    await withOrg(owner.orgId, async (tx) => {
+      const after = await getOrgDashboardData(tx)
+      expect(after.unresolvedAlertCount).toBe(1)
+    })
+  }, 30_000)
+
+  it('project list alertCount stays 0 even with unresolved org security alerts (AC-12, ADR-3.4-02)', async () => {
+    const owner = await registerOwner(app, 'list-alertcount-zero')
+    const { paymentsId } = await seedPaymentsFixture(app, owner.cookies)
+    await seedSecurityAlert(owner.orgId, 'delivered')
+
+    const items = await fetchProjectListItems(app, owner.cookies)
+    const payments = items.find((item) => item.id === paymentsId)
+    expect(payments?.alertCount).toBe(0)
+  }, 30_000)
+
+  it('project dashboard unresolvedAlertCount mirrors the org-wide count (AC-11, ADR-3.4-01)', async () => {
+    const owner = await registerOwner(app, 'project-alert-count')
+    const { paymentsId, infraId } = await seedPaymentsFixture(app, owner.cookies)
+
+    await seedSecurityAlert(owner.orgId, 'PENDING_DELIVERY')
+    await seedSecurityAlert(owner.orgId, 'delivered')
+    await seedSecurityAlert(owner.orgId, 'dismissed')
+
+    await withOrg(owner.orgId, async (tx) => {
+      const paymentsDashboard = await getProjectDashboardData(tx, paymentsId)
+      const infraDashboard = await getProjectDashboardData(tx, infraId)
+      expect(paymentsDashboard.unresolvedAlertCount).toBe(2)
+      expect(infraDashboard.unresolvedAlertCount).toBe(2)
     })
   }, 30_000)
 })
