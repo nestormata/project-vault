@@ -4,7 +4,15 @@
   import LoginForm from '$lib/components/auth/LoginForm.svelte'
   import { getLoginReasonMessage } from '$lib/security/hardening.js'
 
+  // Only allow same-origin relative paths — a bare "/x" is safe, "//evil.com" or an absolute
+  // URL is not (browsers treat "//" as protocol-relative, i.e. an external redirect).
+  function safeNextPath(raw: string | null): string {
+    if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/dashboard'
+    return raw
+  }
+
   let message = $derived(getLoginReasonMessage(page.url.searchParams.get('reason')))
+  let nextPath = $derived(safeNextPath(page.url.searchParams.get('next')))
 </script>
 
 <svelte:head>
@@ -21,7 +29,7 @@
       {message}
     </p>
   {/if}
-  <LoginForm />
+  <LoginForm {nextPath} />
   <p class="text-sm text-slate-600">
     Need an account? <a class="font-medium text-slate-950 underline" href={resolve('/register')}
       >Register</a

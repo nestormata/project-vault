@@ -1,9 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
-  import { resolve } from '$app/paths'
   import { getCurrentUser, login } from '$lib/api/auth.js'
   import { buildLoginRequest, clearLoginFields, isMfaChallenge } from './form-model.js'
   import MfaLoginForm from './MfaLoginForm.svelte'
+
+  let { nextPath = '/dashboard' }: { nextPath?: string } = $props()
 
   let email = $state('')
   let password = $state('')
@@ -33,7 +34,10 @@
       }
       await getCurrentUser(fetch)
       clearFields()
-      await goto(resolve('/dashboard'))
+      // nextPath is a caller-supplied, same-origin-only redirect target (see safeNextPath() in
+      // the login page) — not a static route resolve() can type-check at compile time.
+      // eslint-disable-next-line svelte/no-navigation-without-resolve
+      await goto(nextPath)
     } catch (error) {
       password = ''
       errorMessage =

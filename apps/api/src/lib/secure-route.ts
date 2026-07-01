@@ -174,7 +174,7 @@ function auditConfigFor(options: SecureRouteRegistrationOptions): AuditConfig | 
   return configured ?? null
 }
 
-function roleRank(role: OrgRole): number {
+export function roleRank(role: OrgRole): number {
   switch (role) {
     case 'owner':
       return 3

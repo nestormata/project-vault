@@ -24,6 +24,9 @@ export const AuditEvent = {
   CREDENTIAL_BULK_IMPORT_CONFIRMED: 'credential.bulk_import_confirmed',
   ONBOARDING_COMPLETED: 'onboarding.completed',
   CREDENTIAL_SEARCH: 'credential.search',
+  PROJECT_INVITATION_CREATED: 'project.invitation_created',
+  PROJECT_INVITATION_ACCEPTED: 'project.invitation_accepted',
+  PROJECT_INVITATION_REVOKED: 'project.invitation_revoked',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -47,6 +50,9 @@ export type AuditEventType =
   | 'credential.bulk_import_confirmed'
   | 'onboarding.completed'
   | 'credential.search'
+  | 'project.invitation_created'
+  | 'project.invitation_accepted'
+  | 'project.invitation_revoked'
 
 export type AuditEvent = {
   type: AuditEventType

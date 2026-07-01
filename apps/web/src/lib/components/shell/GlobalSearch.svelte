@@ -133,7 +133,9 @@
 
   onMount(() => window.addEventListener('keydown', handleGlobalKeydown))
   onDestroy(() => {
-    window.removeEventListener('keydown', handleGlobalKeydown)
+    // onDestroy (unlike onMount) also fires when a component is torn down during SSR, where
+    // `window` doesn't exist — guard so a server-rendered (app) page doesn't 500.
+    if (typeof window !== 'undefined') window.removeEventListener('keydown', handleGlobalKeydown)
     clearTimeout(debounceTimer)
     if (abortController) abortController.abort()
     cleanupFocusTrap?.()

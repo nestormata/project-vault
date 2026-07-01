@@ -6,6 +6,7 @@ import {
   renderSecurityMfaRecoveryCodesRegenerated,
   renderSecurityMfaRecoveryUsed,
 } from './security-mfa-recovery.js'
+import { renderProjectInvitationCreated } from './project-invitation-created.js'
 
 export type EmailRender = {
   subject: string
@@ -39,6 +40,16 @@ const EMAIL_RENDERERS: Record<string, (payload: Record<string, unknown>) => Emai
   },
   'security.mfa_recovery_codes_regenerated': (payload) => {
     const { subject, text, html } = renderSecurityMfaRecoveryCodesRegenerated(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: text.slice(0, 500),
+    }
+  },
+  'project.invitation_created': (payload) => {
+    const { subject, text, html } = renderProjectInvitationCreated(payload)
     return {
       subject,
       text,

@@ -40,6 +40,23 @@ function resetEnvImport(exitSpy: MockInstance<(...args: never[]) => unknown>): v
   exitSpy.mockClear()
 }
 
+/** Asserts a secret is required in production once its predecessors are set, and accepted once present. */
+async function expectDedicatedSecretRequired(
+  exitSpy: MockInstance<(...args: never[]) => unknown>,
+  overridesWithoutSecret: NodeJS.ProcessEnv,
+  secretKey: string,
+  secretValue: string
+): Promise<void> {
+  process.env = productionEnv(overridesWithoutSecret)
+  await expectInvalidEnv(exitSpy)
+
+  resetEnvImport(exitSpy)
+  process.env = productionEnv({ ...overridesWithoutSecret, [secretKey]: secretValue })
+  const { env } = await import('./env.js')
+  expect((env as Record<string, unknown>)[secretKey]).toBe(secretValue)
+  expect(exitSpy).not.toHaveBeenCalled()
+}
+
 describe('env', () => {
   let originalEnv: NodeJS.ProcessEnv
   let exitSpy: MockInstance<(...args: never[]) => unknown>
@@ -213,6 +230,7 @@ describe('env', () => {
     process.env = productionEnv({
       TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
       MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+      INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
     })
     const { env } = await import('./env.js')
     expect(env.COOKIE_SECURE).toBe(true)
@@ -236,6 +254,7 @@ describe('env', () => {
     process.env = productionEnv({
       TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
       MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+      INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
       COOKIE_SECURE: 'true',
     })
     const { env } = await import('./env.js')
@@ -244,21 +263,16 @@ describe('env', () => {
   })
 
   it('requires a dedicated pending MFA session secret in production', async () => {
-    process.env = productionEnv({
-      COOKIE_SECURE: 'true',
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-    })
-    await expectInvalidEnv(exitSpy)
-
-    resetEnvImport(exitSpy)
-    process.env = productionEnv({
-      COOKIE_SECURE: 'true',
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-    })
-    const { env } = await import('./env.js')
-    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).toBe('d'.repeat(64))
-    expect(exitSpy).not.toHaveBeenCalled()
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      {
+        COOKIE_SECURE: 'true',
+        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+      },
+      'MFA_PENDING_SESSION_HMAC_SECRET',
+      'd'.repeat(64)
+    )
   })
 
   it('rejects placeholder or reused pending MFA session secrets in production', async () => {
@@ -273,6 +287,38 @@ describe('env', () => {
         COOKIE_SECURE: 'true',
         TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
         MFA_PENDING_SESSION_HMAC_SECRET,
+      })
+      await expectInvalidEnv(exitSpy)
+    }
+  })
+
+  it('requires a dedicated invitation token secret in production (Story 4.1)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      {
+        COOKIE_SECURE: 'true',
+        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+      },
+      'INVITATION_TOKEN_HMAC_SECRET',
+      'e'.repeat(64)
+    )
+  })
+
+  it('rejects placeholder or reused invitation token secrets in production', async () => {
+    for (const INVITATION_TOKEN_HMAC_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({
+        COOKIE_SECURE: 'true',
+        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+        INVITATION_TOKEN_HMAC_SECRET,
       })
       await expectInvalidEnv(exitSpy)
     }

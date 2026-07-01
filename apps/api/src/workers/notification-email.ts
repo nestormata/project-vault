@@ -61,6 +61,8 @@ export async function sendEmailNotification(
       tx.select({ email: users.email }).from(users).where(eq(users.id, recipientUserId)).limit(1)
     )
     toAddress = user?.email ?? null
+  } else if (entry.recipientEmail) {
+    toAddress = entry.recipientEmail
   }
   if (!toAddress) {
     await markNotificationSuppressed(notificationQueueId, orgId)

@@ -11,17 +11,34 @@ import {
 } from './auth.js'
 
 const OWNER_EMAIL = 'owner@example.com'
+const PASSWORD = 'correct-horse-battery-staple'
 
 describe('auth schemas', () => {
   it('validates register and login request contracts', () => {
     expect(
       RegisterRequestSchema.safeParse({
         email: OWNER_EMAIL,
-        password: 'correct-horse-battery-staple',
+        password: PASSWORD,
         orgName: 'Acme Corp',
       }).success
     ).toBe(true)
     expect(LoginRequestSchema.safeParse({ email: OWNER_EMAIL, password: 'x' }).success).toBe(true)
+  })
+
+  it('validates register request contracts for invitation-based joins (Story 4.1 D4)', () => {
+    expect(
+      RegisterRequestSchema.safeParse({
+        email: OWNER_EMAIL,
+        password: PASSWORD,
+        invitationToken: 'opaque-token',
+      }).success
+    ).toBe(true)
+    expect(
+      RegisterRequestSchema.safeParse({
+        email: OWNER_EMAIL,
+        password: PASSWORD,
+      }).success
+    ).toBe(false)
   })
 
   it('validates auth response contracts', () => {
@@ -39,6 +56,15 @@ describe('auth schemas', () => {
         email: OWNER_EMAIL,
         orgName: 'Acme Corp',
         role: 'owner',
+      }).success
+    ).toBe(true)
+    expect(
+      RegisterResponseSchema.safeParse({
+        ...ids,
+        email: OWNER_EMAIL,
+        orgName: 'Acme Corp',
+        role: 'member',
+        invitedProject: { projectId: randomUUID(), projectName: 'Payments API', role: 'admin' },
       }).success
     ).toBe(true)
   })

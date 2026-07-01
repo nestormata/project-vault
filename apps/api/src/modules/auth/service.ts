@@ -6,11 +6,14 @@ import {
   orgMemberships,
   organizations,
   platformSecurityEvents,
+  projectMemberships,
+  projects,
   refreshTokens,
   revokedTokens,
   sessions,
   userIdentityTokens,
   users,
+  type ProjectInvitation,
 } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
@@ -18,6 +21,12 @@ import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
+import {
+  claimInvitation,
+  findInvitationByTokenHash,
+  validateInvitationStatus,
+} from '../invitations/lookup.js'
+import { hashInvitationToken } from '../invitations/tokens.js'
 import { setGracePeriodOnPrivilegedRole } from './grace-period.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
 import { createPendingMfaSession, type MfaChallengeResult } from './mfa-login.js'
@@ -59,7 +68,8 @@ type RotatedTokenMaterial = TokenMaterial & { refreshOpaque: string }
 export type RegisterInput = {
   email: string
   password: string
-  orgName: string
+  orgName?: string
+  invitationToken?: string
 }
 
 export type RegisterResult = {
@@ -67,7 +77,8 @@ export type RegisterResult = {
   orgId: string
   email: string
   orgName: string
-  role: 'owner'
+  role: 'owner' | 'member'
+  invitedProject?: { projectId: string; projectName: string; role: 'admin' | 'member' | 'viewer' }
 }
 
 export type LoginInput = {
@@ -220,18 +231,142 @@ async function allocateOrganizationSlug(
   throw new AppError('org_name_unavailable', 'Organization name could not be allocated', 409)
 }
 
+async function resolveRegistrationInvitation(
+  input: RegisterInput,
+  email: string
+): Promise<ProjectInvitation | undefined> {
+  if (!input.invitationToken) return undefined
+
+  const found = await findInvitationByTokenHash(hashInvitationToken(input.invitationToken))
+  const statusError = validateInvitationStatus(found)
+  if (statusError) throw new AppError(statusError.code, statusError.message, statusError.statusCode)
+  const invitation = found as ProjectInvitation
+
+  if (normalizeEmail(invitation.email) !== email) {
+    throw new AppError(
+      'invitation_email_mismatch',
+      'Registration email must match the invited email',
+      422
+    )
+  }
+  return invitation
+}
+
+async function resolveRegistrationOrg(
+  tx: Tx,
+  invitation: ProjectInvitation | undefined,
+  orgName: string | undefined
+): Promise<{ id: string; name: string }> {
+  if (invitation) {
+    // Re-set org context for this fresh transaction — the pre-transaction lookup above
+    // ran its own withOrg() scans and doesn't carry context into this connection.
+    await tx.execute(sql`SELECT set_config('app.current_org_id', ${invitation.orgId}, true)`)
+    const [orgRow] = await tx
+      .select({ id: organizations.id, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, invitation.orgId))
+      .limit(1)
+    if (!orgRow) throw new AppError('invitation_not_found', 'Invitation not found', 404)
+    return orgRow
+  }
+  const allocated = await allocateOrganizationSlug(tx, slugify(orgName as string))
+  await tx
+    .update(organizations)
+    .set({ name: (orgName as string).trim() })
+    .where(eq(organizations.id, allocated.id))
+  return { id: allocated.id, name: (orgName as string).trim() }
+}
+
+async function insertRegistrationMemberships(
+  tx: Tx,
+  org: { id: string },
+  userId: string,
+  invitation: ProjectInvitation | undefined
+): Promise<void> {
+  if (!invitation) {
+    await tx.insert(orgMemberships).values({
+      orgId: org.id,
+      userId,
+      role: 'owner',
+      status: 'active',
+      gracePeriodExpiresAt: setGracePeriodOnPrivilegedRole({ role: 'owner', mfaEnrolledAt: null }),
+    })
+    return
+  }
+
+  // On failure to claim, the caller's transaction rolls back the just-inserted `users` row too.
+  const claimed = await claimInvitation(tx, invitation.id)
+  if (!claimed) {
+    throw new AppError(
+      'invitation_already_accepted',
+      'This invitation has already been accepted',
+      409
+    )
+  }
+
+  // D5: joining via invite always grants org role 'member', never the invited project role.
+  await tx
+    .insert(orgMemberships)
+    .values({ orgId: org.id, userId, role: 'member', status: 'active' })
+    .onConflictDoNothing()
+  await tx
+    .insert(projectMemberships)
+    .values({
+      orgId: org.id,
+      projectId: invitation.projectId,
+      userId,
+      role: invitation.roleToAssign,
+    })
+    .onConflictDoNothing()
+}
+
+async function buildRegisterResult(
+  tx: Tx,
+  org: { id: string; name: string },
+  user: { id: string; email: string },
+  invitation: ProjectInvitation | undefined
+): Promise<RegisterResult> {
+  if (!invitation) {
+    return {
+      userId: user.id,
+      orgId: org.id,
+      email: user.email,
+      orgName: org.name,
+      role: 'owner' as const,
+    }
+  }
+  const [project] = await tx
+    .select({ name: projects.name })
+    .from(projects)
+    .where(eq(projects.id, invitation.projectId))
+    .limit(1)
+  return {
+    userId: user.id,
+    orgId: org.id,
+    email: user.email,
+    orgName: org.name,
+    role: 'member' as const,
+    invitedProject: {
+      projectId: invitation.projectId,
+      projectName: project?.name ?? '',
+      role: invitation.roleToAssign as 'admin' | 'member' | 'viewer',
+    },
+  }
+}
+
+/**
+ * This is the single riskiest diff in Story 4.1 (D4) — it changes a Story 1.6 auth-critical
+ * function to also support joining an existing org via invitation token instead of always
+ * creating a new org. Adversarial review mandatory per Epic 1 retro P5.
+ */
 export async function registerUser(input: RegisterInput): Promise<RegisterResult> {
   const email = normalizeEmail(input.email)
+  const invitation = await resolveRegistrationInvitation(input, email)
   const passwordHash = await hashUserPassword(input.password)
-  const baseSlug = slugify(input.orgName)
 
   try {
     return await getDb().transaction(async (tx) => {
-      const org = await allocateOrganizationSlug(tx as Tx, baseSlug)
-      await tx
-        .update(organizations)
-        .set({ name: input.orgName.trim() })
-        .where(eq(organizations.id, org.id))
+      const org = await resolveRegistrationOrg(tx as Tx, invitation, input.orgName)
 
       const insertedUsers = await tx
         .insert(users)
@@ -242,16 +377,9 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
 
       await tx.execute(sql`SELECT set_config('app.current_org_id', ${org.id}, true)`)
       await tx.execute(sql`SELECT set_config('app.auth_bootstrap_org_id', ${org.id}, true)`)
-      await tx.insert(orgMemberships).values({
-        orgId: org.id,
-        userId: user.id,
-        role: 'owner',
-        status: 'active',
-        gracePeriodExpiresAt: setGracePeriodOnPrivilegedRole({
-          role: 'owner',
-          mfaEnrolledAt: null,
-        }),
-      })
+
+      await insertRegistrationMemberships(tx as Tx, org, user.id, invitation)
+
       const identityRows = await tx
         .insert(userIdentityTokens)
         .values({ userId: user.id, displayName: email })
@@ -263,17 +391,13 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
         orgId: org.id,
         actorTokenId: identityToken.id,
         actorType: 'human',
-        eventType: AuditEvent.USER_REGISTERED,
-        payload: { emailDomain: emailDomain(email) },
+        eventType: invitation ? AuditEvent.PROJECT_INVITATION_ACCEPTED : AuditEvent.USER_REGISTERED,
+        payload: invitation
+          ? { emailDomain: emailDomain(email), projectId: invitation.projectId }
+          : { emailDomain: emailDomain(email) },
       })
 
-      return {
-        userId: user.id,
-        orgId: org.id,
-        email: user.email,
-        orgName: input.orgName.trim(),
-        role: 'owner' as const,
-      }
+      return buildRegisterResult(tx as Tx, org, user, invitation)
     })
   } catch (error) {
     if (isUniqueViolation(error, 'users_email_unique')) {

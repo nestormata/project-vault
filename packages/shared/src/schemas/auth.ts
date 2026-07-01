@@ -4,7 +4,12 @@ export const RegisterRequestSchema = z
   .object({
     email: z.email().max(254),
     password: z.string().min(12).max(256),
-    orgName: z.string().min(1).max(128).trim(),
+    orgName: z.string().min(1).max(128).trim().optional(),
+    invitationToken: z.string().min(1).max(512).optional(),
+  })
+  .refine((data) => data.orgName || data.invitationToken, {
+    message: 'orgName is required unless an invitationToken is provided',
+    path: ['orgName'],
   })
   .meta({ id: 'RegisterRequest' })
 
@@ -29,7 +34,14 @@ export const RegisterResponseSchema = z
     orgId: z.uuid(),
     email: z.email(),
     orgName: z.string(),
-    role: z.enum(['owner']),
+    role: z.enum(['owner', 'member']),
+    invitedProject: z
+      .object({
+        projectId: z.uuid(),
+        projectName: z.string(),
+        role: z.enum(['admin', 'member', 'viewer']),
+      })
+      .optional(),
   })
   .meta({ id: 'RegisterResponse' })
 

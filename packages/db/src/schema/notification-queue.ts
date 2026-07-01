@@ -9,6 +9,7 @@ export const notificationQueue = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     ...orgScoped({ onDelete: 'cascade' }),
     recipientUserId: uuid('recipient_user_id').references(() => users.id, { onDelete: 'cascade' }),
+    recipientEmail: text('recipient_email'),
     channel: text('channel').notNull(),
     templateId: text('template_id').notNull(),
     payload: jsonb('payload').notNull().default({}),

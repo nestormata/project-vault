@@ -30,6 +30,7 @@ async function seedEmailQueueEntry(
   orgId: string,
   values: {
     recipientUserId?: string | null
+    recipientEmail?: string | null
     status?: 'pending' | 'delivered' | 'failed' | 'suppressed'
   }
 ): Promise<string> {
@@ -39,6 +40,7 @@ async function seedEmailQueueEntry(
       .values({
         orgId,
         recipientUserId: values.recipientUserId ?? null,
+        recipientEmail: values.recipientEmail ?? null,
         channel: 'email',
         templateId: 'security.failed_auth_threshold',
         payload: TEMPLATE_PAYLOAD,
@@ -93,6 +95,24 @@ describe('sendEmailNotification', () => {
 
       await sendEmailNotification(queueId, orgId)
       await expectQueueStatus(orgId, queueId, 'suppressed')
+    })
+  })
+
+  it('delivers to recipientEmail when there is no recipientUserId (Story 4.1 invitations, AC-7)', async () => {
+    const transport = nodemailer.createTransport({ jsonTransport: true })
+    const spy = vi.spyOn(transport, 'sendMail')
+    setEmailTransportForTesting(transport)
+
+    await withTestOrg(async ({ orgId }) => {
+      const queueId = await seedEmailQueueEntry(orgId, {
+        recipientUserId: null,
+        recipientEmail: 'jordan@example.com',
+      })
+
+      await sendEmailNotification(queueId, orgId)
+
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ to: 'jordan@example.com' }))
+      await expectQueueStatus(orgId, queueId, 'delivered')
     })
   })
 
