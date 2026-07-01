@@ -15,6 +15,24 @@ const TEST_PASSPHRASE = 'register-rate-limit-tests-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const REGISTER_URL = '/api/v1/auth/register'
 
+async function registerN(app: Awaited<ReturnType<typeof createApp>>, count: number) {
+  const responses: Awaited<ReturnType<typeof app.inject>>[] = []
+  for (let i = 0; i < count; i += 1) {
+    responses.push(
+      await app.inject({
+        method: 'POST',
+        url: REGISTER_URL,
+        payload: {
+          email: `register-rate-limit-${i}-${randomUUID()}@example.com`,
+          password: PASSWORD,
+          orgName: `Register Rate Limit ${i} ${randomUUID()}`,
+        },
+      })
+    )
+  }
+  return responses
+}
+
 describe('POST /register rate limiting', () => {
   beforeAll(async () => {
     await resetVaultForTest()
@@ -25,32 +43,40 @@ describe('POST /register rate limiting', () => {
     await resetVaultForTest()
   })
 
-  it('returns 429 rate_limit_exceeded (not a 500) once the per-route limit is exceeded', async () => {
+  it('does not rate-limit registration under NODE_ENV=test by default', async () => {
+    // Real integration suites (e.g. dashboard-stats.test.ts) register many users as pure
+    // fixture setup against one shared app instance. Rate limiting is bypassed here by
+    // default (route-helpers.ts, isRateLimitEnforced) precisely so that behavior stays
+    // deterministic regardless of how fast the suite happens to execute — see the CI flake
+    // this file exists to cover: the 11th registerOwner() call intermittently hit the real
+    // /register limiter (429) whenever a run was fast enough to pack 11 calls into 60s.
+    const app = await createApp({ logger: false })
+    try {
+      const responses = await registerN(app, 15)
+      for (const res of responses) expect(res.statusCode).toBe(201)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
+
+  it('returns 429 rate_limit_exceeded (not a 500) once the per-route limit is exceeded when explicitly enforced', async () => {
+    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
     const app = await createApp({ logger: false })
 
-    // The /register route caps at 10 requests/minute (routes.ts). The 11th request in the
-    // same window must be rejected with 429, not fall through to an unhandled 500 — see
-    // AGENTS.md TDD note: this reproduces the CI flake where dashboard-stats.test.ts calls
-    // registerOwner() 11 times against a single app instance.
-    let lastResponse: Awaited<ReturnType<typeof app.inject>> | undefined
-    for (let i = 0; i < 11; i += 1) {
-      lastResponse = await app.inject({
-        method: 'POST',
-        url: REGISTER_URL,
-        payload: {
-          email: `register-rate-limit-${i}-${randomUUID()}@example.com`,
-          password: PASSWORD,
-          orgName: `Register Rate Limit ${i} ${randomUUID()}`,
-        },
+    try {
+      // The /register route caps at 10 requests/minute (routes.ts). The 11th request in the
+      // same window must be rejected with 429, not fall through to an unhandled 500.
+      const responses = await registerN(app, 11)
+      const lastResponse = responses.at(-1)
+
+      expect(lastResponse?.statusCode).toBe(429)
+      expect(lastResponse?.json()).toMatchObject({
+        code: 'rate_limit_exceeded',
+        message: 'Too many authentication attempts',
       })
+    } finally {
+      await app.close()
+      delete process.env['RATE_LIMIT_TEST_ENFORCE']
     }
-
-    expect(lastResponse?.statusCode).toBe(429)
-    expect(lastResponse?.json()).toMatchObject({
-      code: 'rate_limit_exceeded',
-      message: 'Too many authentication attempts',
-    })
-
-    await app.close()
   }, 30_000)
 })

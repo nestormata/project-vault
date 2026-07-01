@@ -8,7 +8,7 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.js'
-import { validationError } from '../../lib/route-helpers.js'
+import { isRateLimitEnforced, validationError } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { sendNotificationJobs, type NotificationQueueJob } from '../../notifications/dispatcher.js'
 import type { BossService } from '../../lib/boss.js'
@@ -268,20 +268,26 @@ function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
 }
 
 export async function authRoutes(fastify: FastifyApp): Promise<void> {
-  await fastify.register(rateLimit, {
-    max: 60,
-    timeWindow: '1 minute',
-    keyGenerator: (req: FastifyRequest) => req.ip,
-    // Must carry `statusCode` — @fastify/rate-limit throws this value as the request error
-    // (see its defaultErrorResponse), and the global error handler (app.ts) only recognizes
-    // rate-limit errors via `error.statusCode === 429`. Without it, this fell through to the
-    // generic branch and returned 500 instead of 429 whenever a route's limit was exceeded.
-    errorResponseBuilder: (_req: FastifyRequest, context: { statusCode: number }) => ({
-      statusCode: context.statusCode,
-      code: 'rate_limit_exceeded',
-      message: 'Too many authentication attempts',
-    }),
-  })
+  // Skipped under NODE_ENV=test by default (see isRateLimitEnforced) — real request-rate
+  // buckets are wall-clock-based, so integration tests that register/log in many users as
+  // fixture setup can flakily trip these limits depending on how fast the run executes.
+  // register-rate-limit.test.ts opts back in via RATE_LIMIT_TEST_ENFORCE to cover enforcement.
+  if (isRateLimitEnforced()) {
+    await fastify.register(rateLimit, {
+      max: 60,
+      timeWindow: '1 minute',
+      keyGenerator: (req: FastifyRequest) => req.ip,
+      // Must carry `statusCode` — @fastify/rate-limit throws this value as the request error
+      // (see its defaultErrorResponse), and the global error handler (app.ts) only recognizes
+      // rate-limit errors via `error.statusCode === 429`. Without it, this fell through to the
+      // generic branch and returned 500 instead of 429 whenever a route's limit was exceeded.
+      errorResponseBuilder: (_req: FastifyRequest, context: { statusCode: number }) => ({
+        statusCode: context.statusCode,
+        code: 'rate_limit_exceeded',
+        message: 'Too many authentication attempts',
+      }),
+    })
+  }
 
   registerMethodNotAllowed(fastify, '/register')
   registerMethodNotAllowed(fastify, '/login')

@@ -177,31 +177,38 @@ describe.sequential('Vault lifecycle (passphrase mode)', () => {
   })
 
   it('rate-limits /vault/unseal but NOT /vault/init (AC-24: limiter scoped to unseal only)', async () => {
+    // Rate limiting is bypassed under NODE_ENV=test by default (route-helpers.ts,
+    // isRateLimitEnforced) — this test explicitly opts back in to cover real enforcement.
+    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
     const app = await createApp({ logger: false, vaultGuardEnabled: true })
 
-    // 6 init attempts (over the 5/min limit) must never 429 — init relies on the
-    // bootstrap-token gate, not rate limiting.
-    for (let i = 0; i < 6; i++) {
-      const res = await app.inject({
-        method: 'POST',
-        url: INIT_URL,
-        payload: { kmsType: 'passphrase', passphrase: TEST_PASSPHRASE },
-      })
-      expect(res.statusCode).not.toBe(429)
-    }
+    try {
+      // 6 init attempts (over the 5/min limit) must never 429 — init relies on the
+      // bootstrap-token gate, not rate limiting.
+      for (let i = 0; i < 6; i++) {
+        const res = await app.inject({
+          method: 'POST',
+          url: INIT_URL,
+          payload: { kmsType: 'passphrase', passphrase: TEST_PASSPHRASE },
+        })
+        expect(res.statusCode).not.toBe(429)
+      }
 
-    // 6 unseal attempts (over the 5/min limit) must 429 on the 6th.
-    const statuses: number[] = []
-    for (let i = 0; i < 6; i++) {
-      const res = await app.inject({
-        method: 'POST',
-        url: UNSEAL_URL,
-        payload: { passphrase: 'wrong-passphrase-here' },
-      })
-      statuses.push(res.statusCode)
+      // 6 unseal attempts (over the 5/min limit) must 429 on the 6th.
+      const statuses: number[] = []
+      for (let i = 0; i < 6; i++) {
+        const res = await app.inject({
+          method: 'POST',
+          url: UNSEAL_URL,
+          payload: { passphrase: 'wrong-passphrase-here' },
+        })
+        statuses.push(res.statusCode)
+      }
+      expect(statuses.at(-1)).toBe(429)
+    } finally {
+      await app.close()
+      delete process.env['RATE_LIMIT_TEST_ENFORCE']
     }
-    expect(statuses.at(-1)).toBe(429)
-    await app.close()
   })
 })
 

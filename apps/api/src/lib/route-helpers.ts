@@ -4,6 +4,19 @@ import type { FastifyApp } from './fastify-app.js'
 
 const userRateLimitWindows = new Map<string, { count: number; resetAt: number }>()
 
+/**
+ * Rate limiters are real wall-clock-bucketed counters shared across every request an app
+ * instance handles. Integration tests that register/log in many users as fixture setup
+ * (not testing rate limiting itself) can incidentally trip these limits depending on how
+ * fast the suite happens to run — deterministic in intent, but flaky in practice, since a
+ * faster CI run packs more calls into the same window than a slower local run does. Bypass
+ * enforcement by default under NODE_ENV=test; tests that specifically exercise rate-limit
+ * behavior opt back in with RATE_LIMIT_TEST_ENFORCE=true (see register-rate-limit.test.ts).
+ */
+export function isRateLimitEnforced(): boolean {
+  return process.env['NODE_ENV'] !== 'test' || process.env['RATE_LIMIT_TEST_ENFORCE'] === 'true'
+}
+
 export const ACCESS_TOKEN_MISSING_RESPONSE = {
   code: 'access_token_missing',
   message: 'Access token is missing',
@@ -92,6 +105,7 @@ export function enforceUserRateLimit({
   timeWindowMs?: number
   reply: FastifyReply
 }): boolean {
+  if (!isRateLimitEnforced()) return true
   const now = Date.now()
   const bucketKey = `${userId}:${key}`
   const current = userRateLimitWindows.get(bucketKey)
