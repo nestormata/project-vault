@@ -263,7 +263,7 @@ async function resolveRegistrationOrg(
       .from(organizations)
       .where(eq(organizations.id, invitation.orgId))
       .limit(1)
-    if (!orgRow) throw new Error('registerUser: invitation references a deleted org')
+    if (!orgRow) throw new AppError('invitation_not_found', 'Invitation not found', 404)
     return orgRow
   }
   const allocated = await allocateOrganizationSlug(tx, slugify(orgName as string))
@@ -290,20 +290,45 @@ async function insertRegistrationMemberships(
     })
     return
   }
+
+  // Atomically claim the invitation before granting any membership — closes the TOCTOU
+  // window between the pre-transaction status check (resolveRegistrationInvitation) and
+  // this point, where a concurrent accept/revoke could otherwise both succeed. On failure
+  // to claim, the caller's transaction rolls back the just-inserted `users` row too.
+  const [claimed] = await tx
+    .update(projectInvitations)
+    .set({ acceptedAt: new Date() })
+    .where(
+      and(
+        eq(projectInvitations.id, invitation.id),
+        isNull(projectInvitations.acceptedAt),
+        isNull(projectInvitations.revokedAt),
+        gt(projectInvitations.expiresAt, new Date())
+      )
+    )
+    .returning()
+  if (!claimed) {
+    throw new AppError(
+      'invitation_already_accepted',
+      'This invitation has already been accepted',
+      409
+    )
+  }
+
   // D5: joining via invite always grants org role 'member', never the invited project role.
   await tx
     .insert(orgMemberships)
     .values({ orgId: org.id, userId, role: 'member', status: 'active' })
-  await tx.insert(projectMemberships).values({
-    orgId: org.id,
-    projectId: invitation.projectId,
-    userId,
-    role: invitation.roleToAssign,
-  })
+    .onConflictDoNothing()
   await tx
-    .update(projectInvitations)
-    .set({ acceptedAt: new Date() })
-    .where(eq(projectInvitations.id, invitation.id))
+    .insert(projectMemberships)
+    .values({
+      orgId: org.id,
+      projectId: invitation.projectId,
+      userId,
+      role: invitation.roleToAssign,
+    })
+    .onConflictDoNothing()
 }
 
 async function buildRegisterResult(

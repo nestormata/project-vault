@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gt, isNull } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import {
   orgMemberships,
@@ -76,7 +76,7 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
       const [existingUser] = await getDb()
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.email, invitation.email))
+        .where(eq(users.email, normalizeEmail(invitation.email)))
         .limit(1)
 
       return {
@@ -130,10 +130,28 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
         })
       }
 
-      const project = await withOrg(invitation.orgId, async (tx) => {
+      const outcome = await withOrg(invitation.orgId, async (tx) => {
         // Not SecureRoute-managed (requireOrgScope: false — the org isn't known until the
         // token resolves above), so this mirrors the shape by hand for the audit write below.
         const secureCtx: SecureRouteContext = { auth: authCtx.auth, tx, audit: {} }
+
+        // Atomically claim the invitation before doing any membership writes — this closes
+        // the TOCTOU window between the pre-transaction status check (loadInvitationOrFail)
+        // and this point, where a concurrent accept/revoke could otherwise both succeed.
+        const [claimed] = await secureCtx.tx
+          .update(projectInvitations)
+          .set({ acceptedAt: new Date() })
+          .where(
+            and(
+              eq(projectInvitations.id, invitation.id),
+              isNull(projectInvitations.acceptedAt),
+              isNull(projectInvitations.revokedAt),
+              gt(projectInvitations.expiresAt, new Date())
+            )
+          )
+          .returning()
+        if (!claimed) return { claimed: false as const }
+
         const [existingOrgMembership] = await secureCtx.tx
           .select({ userId: orgMemberships.userId })
           .from(orgMemberships)
@@ -145,12 +163,15 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
           )
           .limit(1)
         if (!existingOrgMembership) {
-          await secureCtx.tx.insert(orgMemberships).values({
-            orgId: invitation.orgId,
-            userId: secureCtx.auth.userId,
-            role: 'member',
-            status: 'active',
-          })
+          await secureCtx.tx
+            .insert(orgMemberships)
+            .values({
+              orgId: invitation.orgId,
+              userId: secureCtx.auth.userId,
+              role: 'member',
+              status: 'active',
+            })
+            .onConflictDoNothing()
         }
 
         await secureCtx.tx
@@ -162,11 +183,6 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
             role: invitation.roleToAssign,
           })
           .onConflictDoNothing()
-
-        await secureCtx.tx
-          .update(projectInvitations)
-          .set({ acceptedAt: new Date() })
-          .where(eq(projectInvitations.id, invitation.id))
 
         await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
           resourceType: 'project_invitation',
@@ -183,13 +199,20 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
           .from(projects)
           .where(eq(projects.id, invitation.projectId))
           .limit(1)
-        return projectRow
+        return { claimed: true as const, project: projectRow }
       })
+
+      if (!outcome.claimed) {
+        return reply.status(409).send({
+          code: 'invitation_already_accepted',
+          message: 'This invitation has already been accepted',
+        })
+      }
 
       return {
         data: {
           projectId: invitation.projectId,
-          projectName: project?.name ?? '',
+          projectName: outcome.project?.name ?? '',
           role: invitation.roleToAssign,
         },
       }

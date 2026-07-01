@@ -16,6 +16,7 @@ import { secureRoute, roleRank, type SecureRouteContext } from '../../lib/secure
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { env } from '../../config/env.js'
 import { requireMfaEnrollmentStrict } from '../auth/mfa-enforcement.js'
+import { normalizeEmail } from '../auth/normalize.js'
 import { generateInvitationToken, hashInvitationToken } from './tokens.js'
 import {
   CreateInvitationBodySchema,
@@ -118,7 +119,7 @@ async function enqueueInvitationEmail(
       projectName: input.project.name,
       inviterEmail: inviter?.email ?? null,
       role: input.role,
-      acceptUrl: `${env.WEB_BASE_URL}/invitations/accept?token=${input.opaqueToken}`,
+      acceptUrl: `${env.WEB_BASE_URL.replace(/\/+$/, '')}/invitations/accept?token=${input.opaqueToken}`,
     },
     status: 'pending',
   })
@@ -167,6 +168,11 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
         })
       }
 
+      // Normalized once and reused everywhere below — email is a global-uniqueness key
+      // (users.email has no org scoping) so casing must be consistent across the
+      // already-member check, the pending-duplicate check, and the stored row.
+      const email = normalizeEmail(parsed.data.email)
+
       const [project] = await secureCtx.tx
         .select({ id: projects.id, name: projects.name })
         .from(projects)
@@ -174,7 +180,7 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
         .limit(1)
       if (!project) return reply.status(404).send(PROJECT_NOT_FOUND)
 
-      if (await findExistingProjectMember(secureCtx.tx, params.projectId, parsed.data.email)) {
+      if (await findExistingProjectMember(secureCtx.tx, params.projectId, email)) {
         return reply
           .status(409)
           .send({ code: 'already_member', message: 'User is already a project member' })
@@ -183,7 +189,7 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
       const { invitation, opaqueToken } = await upsertPendingInvitation(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         projectId: params.projectId,
-        email: parsed.data.email,
+        email,
         role: parsed.data.role,
         invitedBy: secureCtx.auth.userId,
       })
@@ -191,7 +197,7 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
       await enqueueInvitationEmail(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         inviterUserId: secureCtx.auth.userId,
-        email: parsed.data.email,
+        email,
         role: parsed.data.role,
         project,
         opaqueToken,
@@ -203,7 +209,7 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.PROJECT_INVITATION_CREATED,
         resourceId: invitation.id,
-        payload: { email: parsed.data.email, role: parsed.data.role, projectId: params.projectId },
+        payload: { email, role: parsed.data.role, projectId: params.projectId },
         request: req,
       })
 

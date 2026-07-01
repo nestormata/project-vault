@@ -458,6 +458,30 @@ describe.sequential('project invitation routes', () => {
       )
       expect(acceptedRow?.acceptedAt).not.toBeNull()
     })
+
+    it('cannot be consumed twice — a second accept returns 409, not a duplicate membership', async () => {
+      const owner = await registerOwner(app, 'accept-twice')
+      const projectId = await createProject(app, owner.cookies, 'accept-twice')
+      const inviteeEmail = uniqueEmail('accept-twice-invitee')
+      const invitee = await registerAndLoginViaApi(app, {
+        email: inviteeEmail,
+        password: PASSWORD,
+        orgName: `Accept Twice Org ${randomUUID()}`,
+      })
+      const created = await invite(app, owner.cookies, projectId, {
+        email: inviteeEmail,
+        role: MEMBER_ROLE,
+      })
+      const invitationId = created.json<{ data: { id: string } }>().data.id
+      const token = await tokenForInvitation(owner.orgId, invitationId)
+
+      const first = await acceptInvitation(app, token, invitee.cookies)
+      expect(first.statusCode).toBe(200)
+
+      const second = await acceptInvitation(app, token, invitee.cookies)
+      expect(second.statusCode).toBe(409)
+      expect(second.json()).toMatchObject({ code: 'invitation_already_accepted' })
+    })
   })
 
   describe('POST /api/v1/auth/register with invitationToken (AC-4)', () => {
