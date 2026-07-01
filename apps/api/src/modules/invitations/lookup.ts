@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, gt, isNull } from 'drizzle-orm'
+import type { Tx } from '@project-vault/db'
 import { projectInvitations, type ProjectInvitation } from '@project-vault/db/schema'
 import { getAdminDb } from '../../lib/db.js'
 
@@ -57,4 +58,30 @@ export function validateInvitationStatus(
     return { code: 'invitation_expired', message: 'This invitation has expired', statusCode: 410 }
   }
   return null
+}
+
+/**
+ * Atomically claims an invitation inside the caller's transaction via a conditional
+ * UPDATE ... RETURNING. Closes the TOCTOU window between the pre-transaction status check
+ * (validateInvitationStatus) and this point, where a concurrent accept/revoke could otherwise
+ * both succeed. Returns null when the invitation was already claimed/revoked/expired by the
+ * time this runs — the caller should treat that as a 409.
+ */
+export async function claimInvitation(
+  tx: Tx,
+  invitationId: string
+): Promise<ProjectInvitation | null> {
+  const [claimed] = await tx
+    .update(projectInvitations)
+    .set({ acceptedAt: new Date() })
+    .where(
+      and(
+        eq(projectInvitations.id, invitationId),
+        isNull(projectInvitations.acceptedAt),
+        isNull(projectInvitations.revokedAt),
+        gt(projectInvitations.expiresAt, new Date())
+      )
+    )
+    .returning()
+  return claimed ?? null
 }

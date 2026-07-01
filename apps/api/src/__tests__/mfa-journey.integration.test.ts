@@ -6,6 +6,7 @@ import { orgMemberships } from '@project-vault/db/schema'
 import {
   configureAuthIntegrationEnv,
   cookieHeader,
+  createProjectViaApi,
   initVaultForTest,
   parseSetCookies,
   registerAndLoginViaApi,
@@ -33,21 +34,6 @@ async function expireGracePeriod(userId: string, orgId: string) {
       .set({ gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000) })
       .where(eq(orgMemberships.userId, userId))
   )
-}
-
-async function createProjectViaApi(
-  app: Awaited<ReturnType<typeof createApp>>,
-  cookies: Record<string, string>,
-  slug: string
-): Promise<string> {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/v1/projects',
-    headers: { cookie: cookieHeader(cookies) },
-    payload: { name: `Project ${slug}`, slug: `${slug}-${randomUUID().slice(0, 8)}` },
-  })
-  expect(res.statusCode).toBe(201)
-  return res.json<{ data: { id: string } }>().data.id
 }
 
 describe.sequential('MFA journey (Epic 1 retro P3)', () => {

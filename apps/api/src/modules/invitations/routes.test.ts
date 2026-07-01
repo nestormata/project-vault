@@ -6,6 +6,7 @@ import { notificationQueue, projectInvitations, users } from '@project-vault/db/
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
+  createProjectViaApi as createProject,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
@@ -37,17 +38,6 @@ async function enrollMfa(userId: string): Promise<void> {
   await getDb().update(users).set({ mfaEnrolledAt: new Date() }).where(eq(users.id, userId))
 }
 
-async function createProject(app: TestApp, cookies: Record<string, string>, slug: string) {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/api/v1/projects',
-    headers: { cookie: cookieHeader(cookies) },
-    payload: { name: `Project ${slug}`, slug: `${slug}-${randomUUID().slice(0, 8)}` },
-  })
-  expect(res.statusCode).toBe(201)
-  return res.json<{ data: { id: string } }>().data.id
-}
-
 function invite(
   app: TestApp,
   cookies: Record<string, string>,
@@ -60,6 +50,18 @@ function invite(
     headers: { cookie: cookieHeader(cookies) },
     payload: body,
   })
+}
+
+async function inviteAndTokenize(
+  app: TestApp,
+  owner: { cookies: Record<string, string>; orgId: string },
+  projectId: string,
+  body: { email: string; role: string }
+): Promise<{ invitationId: string; token: string }> {
+  const created = await invite(app, owner.cookies, projectId, body)
+  const invitationId = created.json<{ data: { id: string } }>().data.id
+  const token = await tokenForInvitation(owner.orgId, invitationId)
+  return { invitationId, token }
 }
 
 function listInvitations(app: TestApp, cookies: Record<string, string>, projectId: string) {
@@ -131,6 +133,16 @@ async function insertRawInvitation(input: {
   )
   if (!row) throw new Error('expected invitation row to be inserted')
   return row
+}
+
+async function expectInvitationAccepted(orgId: string, invitationId: string): Promise<void> {
+  const [acceptedRow] = await withOrg(orgId, (tx) =>
+    tx
+      .select({ acceptedAt: projectInvitations.acceptedAt })
+      .from(projectInvitations)
+      .where(eq(projectInvitations.id, invitationId))
+  )
+  expect(acceptedRow?.acceptedAt).not.toBeNull()
 }
 
 describe.sequential('project invitation routes', () => {
@@ -367,12 +379,10 @@ describe.sequential('project invitation routes', () => {
     it('returns accountExists=false for a brand-new invitee', async () => {
       const owner = await registerOwner(app, 'peek-new')
       const projectId = await createProject(app, owner.cookies, 'peek-new')
-      const created = await invite(app, owner.cookies, projectId, {
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
         email: uniqueEmail('peek-new-invitee'),
         role: MEMBER_ROLE,
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const res = await peekInvitation(app, token)
       expect(res.statusCode).toBe(200)
@@ -388,12 +398,10 @@ describe.sequential('project invitation routes', () => {
         orgName: `Jordan Org ${randomUUID()}`,
       })
       const jordanEmail = await getOwnerEmail(jordan.userId)
-      const created = await invite(app, owner.cookies, projectId, {
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
         email: jordanEmail,
         role: MEMBER_ROLE,
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const res = await peekInvitation(app, token)
       expect(res.statusCode).toBe(200)
@@ -410,12 +418,10 @@ describe.sequential('project invitation routes', () => {
     it('returns 403 when the logged-in user does not match the invited email', async () => {
       const owner = await registerOwner(app, 'accept-mismatch')
       const projectId = await createProject(app, owner.cookies, 'accept-mismatch')
-      const created = await invite(app, owner.cookies, projectId, {
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
         email: uniqueEmail('accept-mismatch-invitee'),
         role: MEMBER_ROLE,
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const wrongUser = await registerAndLoginViaApi(app, {
         email: uniqueEmail('accept-mismatch-wrong'),
@@ -437,12 +443,10 @@ describe.sequential('project invitation routes', () => {
         password: PASSWORD,
         orgName: `Invitee Org ${randomUUID()}`,
       })
-      const created = await invite(app, owner.cookies, projectId, {
+      const { invitationId, token } = await inviteAndTokenize(app, owner, projectId, {
         email: inviteeEmail,
         role: 'viewer',
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const res = await acceptInvitation(app, token, invitee.cookies)
       expect(res.statusCode).toBe(200)
@@ -450,13 +454,7 @@ describe.sequential('project invitation routes', () => {
         data: { projectId, role: 'viewer' },
       })
 
-      const [acceptedRow] = await withOrg(owner.orgId, (tx) =>
-        tx
-          .select({ acceptedAt: projectInvitations.acceptedAt })
-          .from(projectInvitations)
-          .where(eq(projectInvitations.id, invitationId))
-      )
-      expect(acceptedRow?.acceptedAt).not.toBeNull()
+      await expectInvitationAccepted(owner.orgId, invitationId)
     })
 
     it('cannot be consumed twice — a second accept returns 409, not a duplicate membership', async () => {
@@ -468,12 +466,10 @@ describe.sequential('project invitation routes', () => {
         password: PASSWORD,
         orgName: `Accept Twice Org ${randomUUID()}`,
       })
-      const created = await invite(app, owner.cookies, projectId, {
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
         email: inviteeEmail,
         role: MEMBER_ROLE,
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const first = await acceptInvitation(app, token, invitee.cookies)
       expect(first.statusCode).toBe(200)
@@ -489,12 +485,10 @@ describe.sequential('project invitation routes', () => {
       const owner = await registerOwner(app, 'register-new')
       const projectId = await createProject(app, owner.cookies, 'register-new')
       const inviteeEmail = uniqueEmail('register-new-invitee')
-      const created = await invite(app, owner.cookies, projectId, {
+      const { invitationId, token } = await inviteAndTokenize(app, owner, projectId, {
         email: inviteeEmail,
         role: 'admin',
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const res = await registerWithToken(app, {
         email: inviteeEmail,
@@ -514,13 +508,7 @@ describe.sequential('project invitation routes', () => {
       expect(body.data.role).toBe('member')
       expect(body.data.invitedProject).toMatchObject({ projectId, role: 'admin' })
 
-      const [acceptedRow] = await withOrg(owner.orgId, (tx) =>
-        tx
-          .select({ acceptedAt: projectInvitations.acceptedAt })
-          .from(projectInvitations)
-          .where(eq(projectInvitations.id, invitationId))
-      )
-      expect(acceptedRow?.acceptedAt).not.toBeNull()
+      await expectInvitationAccepted(owner.orgId, invitationId)
     })
 
     it('returns 404/410/410/409 for not-found/expired/revoked/already-accepted tokens', async () => {
@@ -595,12 +583,10 @@ describe.sequential('project invitation routes', () => {
     it('returns 422 when the registration email does not match the invited email', async () => {
       const owner = await registerOwner(app, 'register-mismatch')
       const projectId = await createProject(app, owner.cookies, 'register-mismatch')
-      const created = await invite(app, owner.cookies, projectId, {
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
         email: uniqueEmail('register-mismatch-invitee'),
         role: MEMBER_ROLE,
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const res = await registerWithToken(app, {
         email: uniqueEmail('register-mismatch-someone-else'),
@@ -621,12 +607,10 @@ describe.sequential('project invitation routes', () => {
         password: PASSWORD,
         orgName: `Existing Org ${randomUUID()}`,
       })
-      const created = await invite(app, owner.cookies, projectId, {
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
         email: existingEmail,
         role: MEMBER_ROLE,
       })
-      const invitationId = created.json<{ data: { id: string } }>().data.id
-      const token = await tokenForInvitation(owner.orgId, invitationId)
 
       const res = await registerWithToken(app, {
         email: existingEmail,

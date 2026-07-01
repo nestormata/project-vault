@@ -1,12 +1,6 @@
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
-import {
-  orgMemberships,
-  projectInvitations,
-  projectMemberships,
-  projects,
-  users,
-} from '@project-vault/db/schema'
+import { orgMemberships, projectMemberships, projects, users } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -14,7 +8,7 @@ import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { normalizeEmail } from '../auth/normalize.js'
-import { findInvitationByTokenHash, validateInvitationStatus } from './lookup.js'
+import { claimInvitation, findInvitationByTokenHash, validateInvitationStatus } from './lookup.js'
 import { hashInvitationToken } from './tokens.js'
 import {
   InvitationAcceptResponseSchema,
@@ -135,21 +129,7 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
         // token resolves above), so this mirrors the shape by hand for the audit write below.
         const secureCtx: SecureRouteContext = { auth: authCtx.auth, tx, audit: {} }
 
-        // Atomically claim the invitation before doing any membership writes — this closes
-        // the TOCTOU window between the pre-transaction status check (loadInvitationOrFail)
-        // and this point, where a concurrent accept/revoke could otherwise both succeed.
-        const [claimed] = await secureCtx.tx
-          .update(projectInvitations)
-          .set({ acceptedAt: new Date() })
-          .where(
-            and(
-              eq(projectInvitations.id, invitation.id),
-              isNull(projectInvitations.acceptedAt),
-              isNull(projectInvitations.revokedAt),
-              gt(projectInvitations.expiresAt, new Date())
-            )
-          )
-          .returning()
+        const claimed = await claimInvitation(secureCtx.tx, invitation.id)
         if (!claimed) return { claimed: false as const }
 
         const [existingOrgMembership] = await secureCtx.tx

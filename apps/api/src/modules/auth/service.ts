@@ -6,7 +6,6 @@ import {
   orgMemberships,
   organizations,
   platformSecurityEvents,
-  projectInvitations,
   projectMemberships,
   projects,
   refreshTokens,
@@ -22,7 +21,11 @@ import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
-import { findInvitationByTokenHash, validateInvitationStatus } from '../invitations/lookup.js'
+import {
+  claimInvitation,
+  findInvitationByTokenHash,
+  validateInvitationStatus,
+} from '../invitations/lookup.js'
 import { hashInvitationToken } from '../invitations/tokens.js'
 import { setGracePeriodOnPrivilegedRole } from './grace-period.js'
 import { recordFailedAuthAttempt } from './failed-auth.js'
@@ -291,22 +294,8 @@ async function insertRegistrationMemberships(
     return
   }
 
-  // Atomically claim the invitation before granting any membership — closes the TOCTOU
-  // window between the pre-transaction status check (resolveRegistrationInvitation) and
-  // this point, where a concurrent accept/revoke could otherwise both succeed. On failure
-  // to claim, the caller's transaction rolls back the just-inserted `users` row too.
-  const [claimed] = await tx
-    .update(projectInvitations)
-    .set({ acceptedAt: new Date() })
-    .where(
-      and(
-        eq(projectInvitations.id, invitation.id),
-        isNull(projectInvitations.acceptedAt),
-        isNull(projectInvitations.revokedAt),
-        gt(projectInvitations.expiresAt, new Date())
-      )
-    )
-    .returning()
+  // On failure to claim, the caller's transaction rolls back the just-inserted `users` row too.
+  const claimed = await claimInvitation(tx, invitation.id)
   if (!claimed) {
     throw new AppError(
       'invitation_already_accepted',

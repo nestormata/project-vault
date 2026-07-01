@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { expect } from 'vitest'
 import type { createApp } from '../../app.js'
 
@@ -121,6 +122,21 @@ export async function registerAndLoginViaApi(
     orgId: registerBody.data.orgId,
     cookies: parseSetCookies(login.headers['set-cookie']),
   }
+}
+
+export async function createProjectViaApi(
+  app: TestApp,
+  cookies: CookieJar,
+  slug: string
+): Promise<string> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/v1/projects',
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { name: `Project ${slug}`, slug: `${slug}-${randomUUID().slice(0, 8)}` },
+  })
+  expect(res.statusCode).toBe(201)
+  return res.json<{ data: { id: string } }>().data.id
 }
 
 export async function bootUnsealedRouteApp(initVault: InitVault, passphrase: string) {
