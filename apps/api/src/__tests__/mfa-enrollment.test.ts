@@ -1,15 +1,20 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
+import { describe, expect, it } from 'vitest'
 import { getDb } from '@project-vault/db'
 import { mfaEnrollments, totpUsedCodes } from '@project-vault/db/schema'
 import {
   configureAuthIntegrationEnv,
   cookieHeader,
-  initVaultForTest,
   parseSetCookies,
-  registerAndLoginViaApi,
 } from './helpers/auth-test-helpers.js'
+import {
+  enrollAndVerifyMfa,
+  enrollAndVerifyMfaWithSecret,
+  registerAndLoginForMfaTests,
+  registerMfaIntegrationLifecycle,
+  startMfaEnrollment,
+} from './helpers/mfa-enrollment-test-helpers.js'
 import { totpForSecret } from './helpers/totp.js'
 
 configureAuthIntegrationEnv()
@@ -29,33 +34,16 @@ const MFA_REGENERATE_RECOVERY_CODES_URL = '/api/v1/auth/mfa/regenerate-recovery-
 const MFA_RECOVER_URL = '/api/v1/auth/mfa/recover'
 
 async function registerAndLogin() {
-  const app = await createApp({ logger: false })
-  const email = `mfa-${randomUUID()}@example.com`
-  const { userId, cookies } = await registerAndLoginViaApi(app, {
-    email,
-    password: PASSWORD,
-    orgName: `MFA Test ${randomUUID()}`,
-  })
-  await app.close()
+  const { userId, email, cookies } = await registerAndLoginForMfaTests(createApp, PASSWORD, 'mfa')
   return { userId, email, cookies }
 }
 
 async function enrollAndVerify(app: Awaited<ReturnType<typeof createApp>>, cookies: string) {
-  const result = await enrollAndVerifyWithSecret(app, cookies)
-  return result.recoveryCodes
+  return enrollAndVerifyMfa(app, cookies)
 }
 
 async function startEnrollment(app: Awaited<ReturnType<typeof createApp>>, cookies: string) {
-  const enroll = await app.inject({
-    method: 'POST',
-    url: MFA_ENROLL_URL,
-    headers: { cookie: cookies },
-    payload: {},
-  })
-  expect(enroll.statusCode).toBe(200)
-  const enrollBody = enroll.json<{ data: { secret: string; qrCodeSvg: string } }>()
-  expect(enrollBody.data.qrCodeSvg).toContain('<svg')
-  return enrollBody.data.secret
+  return startMfaEnrollment(app, cookies)
 }
 
 async function pendingEnrollmentRows(userId: string) {
@@ -73,34 +61,11 @@ async function enrollAndVerifyWithSecret(
   app: Awaited<ReturnType<typeof createApp>>,
   cookies: string
 ) {
-  const secret = await startEnrollment(app, cookies)
-
-  const verify = await app.inject({
-    method: 'POST',
-    url: MFA_VERIFY_ENROLLMENT_URL,
-    headers: { cookie: cookies },
-    payload: { totp: totpForSecret(secret) },
-  })
-  expect(verify.statusCode).toBe(200)
-  return {
-    secret,
-    recoveryCodes: verify.json<{ data: { recoveryCodes: string[] } }>().data.recoveryCodes,
-  }
+  return enrollAndVerifyMfaWithSecret(app, cookies)
 }
 
 describe.sequential('MFA enrollment integration', () => {
-  beforeAll(async () => {
-    await resetVaultForTest()
-    await initVaultForTest(initVault, TEST_PASSPHRASE)
-  })
-
-  beforeEach(async () => {
-    await getDb().execute(sql`DELETE FROM auth_rate_limit_buckets`)
-  })
-
-  afterAll(async () => {
-    await resetVaultForTest()
-  })
+  registerMfaIntegrationLifecycle({ initVault, passphrase: TEST_PASSPHRASE, resetVaultForTest })
 
   it('enrolls TOTP MFA and recovers with a single-use recovery code', async () => {
     const user = await registerAndLogin()

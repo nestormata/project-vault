@@ -76,7 +76,7 @@ development_status:
   3-1-email-and-slack-notification-delivery: done
   3-2-notification-preferences-and-per-alert-type-routing: done
   3-3-in-product-notification-inbox: done
-  3-4-epic-3-completion-notification-surface-truth-mfa-alerts-and-doc-reconciliation: ready-for-dev
+  3-4-epic-3-completion-notification-surface-truth-mfa-alerts-and-doc-reconciliation: review
   epic-3-retrospective: done
 
   # Epic 4: Team & Organization Management — Roles, Invitations, Access & Lifecycle

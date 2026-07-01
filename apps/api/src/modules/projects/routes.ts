@@ -165,6 +165,9 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           role: (row.role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer',
           credentialCount: stats.credentialCount,
           expiringCount: stats.expiringCount,
+          // ADR-3.4-02: security_alerts is org-scoped, not project-scoped — stays 0 here
+          // to avoid duplicating the org-wide unresolved count on every project row.
+          // The org dashboard (unresolvedAlertCount) is the truthful aggregate until Epic 6.
           alertCount: 0,
           createdAt: row.createdAt.toISOString(),
         }

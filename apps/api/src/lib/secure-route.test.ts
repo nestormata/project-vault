@@ -271,25 +271,32 @@ describe('secureRoute', () => {
   })
 
   it('applies configured public SecureRoute rate limits', async () => {
-    const handler = vi.fn(async () => ({ data: { ok: true } }))
-    const registered = mountPublicRoute({
-      method: 'GET',
-      url: '/api/v1/test/public-limited',
-      security: {
-        requireAuth: false,
-        requireOrgScope: false,
-        writeAuditEvent: false,
-        rateLimit: { max: 1, timeWindowMs: 60_000 },
-      },
-      handler,
-    })
+    // enforceUserRateLimit (route-helpers.ts) bypasses enforcement under NODE_ENV=test by
+    // default — opt back in here to cover real 429 behavior.
+    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    try {
+      const handler = vi.fn(async () => ({ data: { ok: true } }))
+      const registered = mountPublicRoute({
+        method: 'GET',
+        url: '/api/v1/test/public-limited',
+        security: {
+          requireAuth: false,
+          requireOrgScope: false,
+          writeAuditEvent: false,
+          rateLimit: { max: 1, timeWindowMs: 60_000 },
+        },
+        handler,
+      })
 
-    await registered.handler({ ip: '127.0.0.1' }, replyMock())
-    const secondReply = replyMock()
-    await registered.handler({ ip: '127.0.0.1' }, secondReply)
+      await registered.handler({ ip: '127.0.0.1' }, replyMock())
+      const secondReply = replyMock()
+      await registered.handler({ ip: '127.0.0.1' }, secondReply)
 
-    expect(secondReply.statusCode).toBe(429)
-    expect(handler).toHaveBeenCalledTimes(1)
+      expect(secondReply.statusCode).toBe(429)
+      expect(handler).toHaveBeenCalledTimes(1)
+    } finally {
+      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+    }
   })
 
   it('does not send a success response when audit writing fails after handler result generation', async () => {

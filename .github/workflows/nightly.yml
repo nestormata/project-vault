@@ -45,6 +45,64 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
 
+  flaky-test-repeat:
+    name: Flaky Test Repeat Run
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Rare, timing-dependent flakes (e.g. one bad run in ~6-8) are invisible to a single CI
+    # run and to a single local `make ci` — a green run says nothing about a bug that only
+    # shows up occasionally. Running the suite several times back-to-back turns "maybe
+    # catches it" into "almost certainly catches it" before it lands on main. See the
+    # register rate-limit fix and the mfa-login/mfa-enrollment cross-file investigation on
+    # story 3-4 for the failures this job exists to catch early.
+    env:
+      SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+      VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: project_vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run database migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+
+      - name: Test (5x back-to-back)
+        run: |
+          for i in $(seq 1 5); do
+            echo "=== flaky-test-repeat: run $i/5 ==="
+            pnpm turbo test --force
+          done
+        env:
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+
   trivy-image:
     name: Trivy Docker Image Scan
     runs-on: ubuntu-latest
@@ -80,7 +138,7 @@ jobs:
   notify-failure:
     name: Notify on Failure
     runs-on: ubuntu-latest
-    needs: [mutation, trivy-image]
+    needs: [mutation, flaky-test-repeat, trivy-image]
     if: failure()
     steps:
       - name: Post to Slack

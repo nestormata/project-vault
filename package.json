@@ -18,6 +18,7 @@
     "db:migrate": "pnpm --filter @project-vault/db db:migrate",
     "check-rls": "tsx scripts/check-rls-coverage.ts",
     "check-search-index": "tsx scripts/check-search-index.ts",
+    "check-alert-pending-epic3": "tsx scripts/check-alert-pending-epic3.ts",
     "docker:smoke": "bash -c 'set -euo pipefail; trap \"docker compose down\" EXIT; docker compose up --build -d; for i in $(seq 1 15); do code=0; curl -sf http://localhost:3000/health > /dev/null || code=$?; [ \"$code\" -eq 0 ] && break; if [ \"$code\" -ne 52 ] && [ \"$code\" -ne 56 ]; then exit \"$code\"; fi; sleep 3; done; curl -f http://localhost:3000/health; curl -f http://localhost:3000/ready'",
     "prepare": "husky"
   },

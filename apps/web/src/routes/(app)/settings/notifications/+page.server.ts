@@ -4,27 +4,35 @@ import {
   getNotificationPreferences,
   getOrgNotificationRouting,
   patchNotificationPreferences,
+  postAdminNotificationTest,
   putOrgNotificationRouting,
   type RoutingItem,
 } from '$lib/api/notifications.js'
 import { ApiClientError } from '$lib/api/client.js'
+import {
+  canSendTestNotification,
+  filterRoutableAlertTypes,
+  isAdminRole,
+  isRoutableAlertType,
+} from './notification-settings-model.js'
 import type { Actions, PageServerLoad } from './$types.js'
 
 export const load: PageServerLoad = async ({ fetch, locals }) => {
-  const isAdmin = locals.user ? ['owner', 'admin'].includes(locals.user.orgRole) : false
+  const isAdmin = locals.user ? isAdminRole(locals.user.orgRole) : false
+  const canSendTest = locals.user ? canSendTestNotification(locals.user) : false
 
   const preferences = await getNotificationPreferences(fetch)
 
   let routing: RoutingItem[] | null = null
   if (isAdmin) {
     try {
-      routing = await getOrgNotificationRouting(fetch)
+      routing = filterRoutableAlertTypes(await getOrgNotificationRouting(fetch))
     } catch (error) {
       if (!(error instanceof ApiClientError && error.status === 403)) throw error
     }
   }
 
-  return { preferences, routing, isAdmin }
+  return { preferences, routing, isAdmin, canSendTest }
 }
 
 export const actions: Actions = {
@@ -52,10 +60,12 @@ export const actions: Actions = {
 
   updateRouting: async ({ request, fetch }) => {
     const data = await request.formData()
-    const routing: RoutingItem[] = NOTIFICATION_ALERT_TYPES.map((alertType) => ({
-      alertType,
-      routeTo: String(data.get(`routeTo_${alertType}`) ?? 'owner') as RoutingItem['routeTo'],
-    }))
+    const routing: RoutingItem[] = NOTIFICATION_ALERT_TYPES.filter(isRoutableAlertType).map(
+      (alertType) => ({
+        alertType,
+        routeTo: String(data.get(`routeTo_${alertType}`) ?? 'owner') as RoutingItem['routeTo'],
+      })
+    )
 
     try {
       await putOrgNotificationRouting(fetch, routing)
@@ -63,5 +73,23 @@ export const actions: Actions = {
       return fail(422, { error: 'Failed to update routing' })
     }
     return { success: true }
+  },
+
+  sendTest: async ({ locals, fetch }) => {
+    if (!locals.user || !canSendTestNotification(locals.user)) {
+      return fail(403, { error: 'Only MFA-enrolled owners/admins can send a test notification' })
+    }
+
+    try {
+      const result = await postAdminNotificationTest(fetch)
+      return { testResult: result }
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 429) {
+        return fail(429, {
+          error: 'Test notification rate limit reached — try again in a few minutes',
+        })
+      }
+      return fail(422, { error: 'Failed to send test notification' })
+    }
   },
 }

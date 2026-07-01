@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { credentials, projects } from '@project-vault/db/schema'
+import { credentials, projects, securityAlerts } from '@project-vault/db/schema'
 import type { OrgDashboard, ProjectDashboard } from '@project-vault/shared'
 
 const EXPIRED_FILTER = sql`${credentials.expiresAt} IS NOT NULL AND ${credentials.expiresAt} <= now()`
@@ -68,7 +68,22 @@ export async function getBatchedProjectCredentialStats(
   return new Map(rows.map((row) => [row.projectId, toProjectCredentialStats(row)] as const))
 }
 
-function buildProjectDashboard(stats: ProjectCredentialStats): ProjectDashboard {
+/**
+ * Org-admin aggregate of undismissed security_alerts — not the same metric as the
+ * per-user notification_inbox unread count on the nav badge (ADR-3.4-05).
+ */
+export async function getUnresolvedSecurityAlertCount(tx: Tx): Promise<number> {
+  const [{ count } = { count: 0 }] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(securityAlerts)
+    .where(ne(securityAlerts.status, 'dismissed'))
+  return Number(count)
+}
+
+function buildProjectDashboard(
+  stats: ProjectCredentialStats,
+  unresolvedAlertCount: number
+): ProjectDashboard {
   const monitoredServiceHealth = { healthy: 0, degraded: 0, down: 0 }
   const credentialTotal = stats.active + stats.expiringSoon + stats.expired
   const serviceTotal =
@@ -84,7 +99,9 @@ function buildProjectDashboard(stats: ProjectCredentialStats): ProjectDashboard 
     upcomingRotations: [],
     monitoredServiceHealth,
     recentAccessEvents: [],
-    unresolvedAlertCount: 0,
+    // ADR-3.4-01: security_alerts has no project_id — project dashboard mirrors the
+    // org-wide unresolved count until Epic 6 project-scoped monitoring alerts exist.
+    unresolvedAlertCount,
     isEmpty,
     suggestedActions: isEmpty ? ['add_credential', 'add_service', 'import_credentials'] : [],
   }
@@ -94,8 +111,11 @@ export async function getProjectDashboardData(
   tx: Tx,
   projectId: string
 ): Promise<ProjectDashboard> {
-  const statsByProject = await getBatchedProjectCredentialStats(tx, [projectId])
-  return buildProjectDashboard(lookupProjectStats(statsByProject, projectId))
+  const [statsByProject, unresolvedAlertCount] = await Promise.all([
+    getBatchedProjectCredentialStats(tx, [projectId]),
+    getUnresolvedSecurityAlertCount(tx),
+  ])
+  return buildProjectDashboard(lookupProjectStats(statsByProject, projectId), unresolvedAlertCount)
 }
 
 export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
@@ -125,6 +145,8 @@ export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
           .orderBy(asc(credentials.expiresAt))
           .limit(20)
 
+  const unresolvedAlertCount = await getUnresolvedSecurityAlertCount(tx)
+
   return {
     totalCredentials: Number(totalCredentials),
     expiringWithin30Days: {
@@ -138,6 +160,6 @@ export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
       })),
     },
     projectsWithOverdueRotations: { count: 0, items: [] },
-    unresolvedAlertCount: 0,
+    unresolvedAlertCount,
   }
 }

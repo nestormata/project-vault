@@ -1312,6 +1312,7 @@ Users can create projects, store and retrieve credentials with full version hist
 ### Epic 3: Notification Infrastructure — Alert Delivery, Routing & In-App Inbox
 **🟢 Tier 0 — Required for all beta tiers** *(hard dependency: must ship in sprint immediately following Epic 1)*
 > 🔵 **Beta cuts (T2 recommended scope):** FR107 (in-product inbox) and FR100 (per-alert-type routing) are deferrable. Email + Slack delivery to org owner is sufficient to validate the alert story at beta. Inbox and routing are Tier 1 enhancements.
+> 🟢 **G2 gate:** FR107 inbox and FR100 routing are required for **epic completion** in sprint-status. T2 beta-cut defers them only for **external tier packaging**, not for marking `epic-3: done`.
 All alert-generating features across epics 1-9 have working delivery. Users receive notifications via email and Slack, manage personal preferences and delivery channels, configure per-alert-type routing to specific users or roles, and access a persistent in-product notification inbox with unread count in global nav — providing complete alert delivery from this point forward.
 
 **FRs covered:** FR51, FR52, FR94, FR100, FR107

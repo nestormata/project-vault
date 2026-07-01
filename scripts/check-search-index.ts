@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { relative, resolve, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { toRepoPath, walkFiles } from './lib/scan-utils.js'
 
 export type Violation = { file: string; line: number; text: string }
 
@@ -11,31 +12,12 @@ const SQL_INDEX_HINT =
 const RUNTIME_CREATE_INDEX = /\bcreate\s+(?:unique\s+)?index\b/i
 const DRIZZLE_INDEX_CHAIN = /\b(?:uniqueIndex|index)\s*\([^)]*\)[\s\S]*?\.on\s*\(([\s\S]*?)\)/g
 
-function toRepoPath(rootDir: string, file: string): string {
-  return relative(rootDir, file).split(sep).join('/')
-}
-
 function lineForOffset(content: string, offset: number): number {
   return content.slice(0, offset).split('\n').length
 }
 
 function lineText(content: string, line: number): string {
   return content.split('\n')[line - 1]?.trim() ?? ''
-}
-
-function walkFiles(dir: string, predicate: (file: string) => boolean): string[] {
-  if (!existsSync(dir)) return []
-
-  const files: string[] = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = resolve(dir, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...walkFiles(fullPath, predicate))
-    } else if (entry.isFile() && predicate(fullPath)) {
-      files.push(fullPath)
-    }
-  }
-  return files
 }
 
 function recordViolation(

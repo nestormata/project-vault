@@ -15,7 +15,7 @@ DB_URL_SUPERUSER ?= postgresql://postgres:password@localhost:5432/project_vault
 DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit \
-        db-up db-down db-migrate check-rls test stryker ci \
+        db-up db-down db-migrate check-rls test test-repeat stryker ci \
         bootstrap bootstrap-docker \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-prod docker-prod-down \
         clean
@@ -77,6 +77,18 @@ check-rls: ## Verify every table has RLS policy coverage (must run as vault_app)
 test: ## Run the test suite (must run as vault_app — postgres bypasses RLS)
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm turbo test --force
 
+# N repeat runs turns a rare, timing-dependent flake (e.g. one bad run in ~6-8) into a run
+# that fails almost every time, so it surfaces locally/in nightly CI instead of silently
+# landing on main. A single green `make test` says nothing about a bug that only shows up
+# 1 run in 6 — see the mfa-login.test.ts / mfa-enrollment.test.ts cross-file flake found
+# while investigating story 3-4's CI-only failures.
+N ?= 5
+test-repeat: ## Run the test suite N times back-to-back, stopping at the first failure (make test-repeat N=10)
+	for i in $$(seq 1 $(N)); do \
+		echo "=== test-repeat: run $$i/$(N) ==="; \
+		DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm turbo test --force || exit 1; \
+	done
+
 stryker: ## Run Stryker mutation testing (matches nightly CI)
 	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run
 
@@ -86,6 +98,7 @@ ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap fi
 	$(MAKE) db-migrate
 	$(MAKE) check-rls
 	pnpm check-search-index
+	pnpm check-alert-pending-epic3
 	$(MAKE) test
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts

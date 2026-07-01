@@ -47,3 +47,14 @@ export function putOrgNotificationRouting(fetchFn: typeof fetch, items: RoutingI
     body: JSON.stringify(items),
   })
 }
+
+export type NotificationTestResult = {
+  email: 'delivered' | 'failed' | 'not_configured'
+  slack: 'delivered' | 'failed' | 'not_configured'
+}
+
+export function postAdminNotificationTest(fetchFn: typeof fetch) {
+  return apiFetch<NotificationTestResult>(fetchFn, '/api/v1/admin/notifications/test', {
+    method: 'POST',
+  })
+}

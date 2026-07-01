@@ -1,12 +1,14 @@
 <script lang="ts">
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
-  import type { PageData } from './$types.js'
+  import type { ActionData, PageData } from './$types.js'
 
-  const { data }: { data: PageData } = $props()
+  const { data, form }: { data: PageData; form: ActionData } = $props()
 
   const ALERT_TYPE_LABELS: Record<string, string> = {
     'security.failed_auth_threshold': 'Failed Login Threshold',
+    'security.mfa_recovery_used': 'MFA Recovery Code Used',
+    'security.mfa_recovery_codes_regenerated': 'MFA Recovery Codes Regenerated',
     'credential.expiry': 'Credential Expiry',
     'service.down': 'Service Down',
     'service.recovery': 'Service Recovery',
@@ -15,6 +17,12 @@
     'machine_key.expiry': 'Machine Key Expiry',
     'security.anomalous_access': 'Anomalous Access',
     'machine_cache.activated': 'Offline Cache Activated',
+  }
+
+  const CHANNEL_LABELS: Record<string, string> = {
+    delivered: 'Delivered',
+    failed: 'Failed',
+    not_configured: 'Not configured',
   }
 </script>
 
@@ -128,6 +136,67 @@
             Save Routing
           </button>
         </form>
+      </div>
+    </div>
+  {/if}
+
+  {#if data.isAdmin}
+    <div class="mt-8 overflow-hidden rounded-lg bg-white shadow">
+      <div class="border-b border-gray-200 px-6 py-4">
+        <h2 class="text-lg font-semibold text-gray-800">Send Test Notification</h2>
+        <p class="mt-1 text-sm text-gray-500">
+          Verifies SMTP/Slack delivery. Test sent to configured From address — not your personal
+          inbox.
+        </p>
+      </div>
+      <div class="px-6 py-4">
+        {#if data.canSendTest}
+          <form method="POST" action="?/sendTest" use:enhance>
+            <button
+              type="submit"
+              class="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700"
+            >
+              Send test notification
+            </button>
+          </form>
+        {:else}
+          <p class="text-sm text-gray-500">
+            Enroll in MFA to unlock the test notification action for your admin account.
+          </p>
+        {/if}
+
+        {#if form?.testResult}
+          <ul class="mt-4 space-y-1 text-sm">
+            <li>
+              Email:
+              <span
+                class={form.testResult.email === 'delivered'
+                  ? 'text-green-700'
+                  : form.testResult.email === 'not_configured'
+                    ? 'text-gray-500'
+                    : 'text-red-700'}
+              >
+                {CHANNEL_LABELS[form.testResult.email]}
+              </span>
+            </li>
+            <li>
+              Slack:
+              <span
+                class={form.testResult.slack === 'delivered'
+                  ? 'text-green-700'
+                  : form.testResult.slack === 'not_configured'
+                    ? 'text-gray-500'
+                    : 'text-red-700'}
+              >
+                {CHANNEL_LABELS[form.testResult.slack]}
+              </span>
+            </li>
+          </ul>
+        {/if}
+
+        {#if form?.error}
+          <p class="mt-4 text-sm text-amber-700">{form.error}</p>
+        {/if}
       </div>
     </div>
   {/if}
