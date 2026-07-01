@@ -1,17 +1,19 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
-  import { resolve } from '$app/paths'
   import { register } from '$lib/api/auth.js'
   import { buildRegisterRequest, clearRegisterFields, getPostRegisterPath } from './form-model.js'
 
-  let email = $state('')
+  let { invitationToken, prefillEmail = '' }: { invitationToken?: string; prefillEmail?: string } =
+    $props()
+
+  let email = $state(prefillEmail)
   let password = $state('')
   let orgName = $state('')
   let errorMessage = $state(null)
 
   function clearFields() {
     const cleared = clearRegisterFields({ email, password, orgName })
-    email = cleared.email
+    email = invitationToken ? prefillEmail : cleared.email
     password = cleared.password
     orgName = cleared.orgName
   }
@@ -19,9 +21,15 @@
   async function submitForm() {
     errorMessage = null
     try {
-      await register(fetch, buildRegisterRequest({ email, password, orgName }))
+      const result = await register(
+        fetch,
+        buildRegisterRequest({ email, password, orgName, invitationToken })
+      )
       clearFields()
-      await goto(resolve(getPostRegisterPath()))
+      // getPostRegisterPath() returns either a static route or a server-issued project id —
+      // not a literal resolve() can type-check at compile time.
+      // eslint-disable-next-line svelte/no-navigation-without-resolve
+      await goto(getPostRegisterPath(result.invitedProject))
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : 'Registration failed.'
       password = ''
@@ -43,20 +51,23 @@
       id="register-email"
       type="email"
       bind:value={email}
+      readonly={Boolean(invitationToken)}
       required
     />
   </div>
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="register-org">Organization name</label>
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
-      id="register-org"
-      type="text"
-      bind:value={orgName}
-      maxlength="128"
-      required
-    />
-  </div>
+  {#if !invitationToken}
+    <div class="space-y-2">
+      <label class="block font-medium text-slate-900" for="register-org">Organization name</label>
+      <input
+        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        id="register-org"
+        type="text"
+        bind:value={orgName}
+        maxlength="128"
+        required
+      />
+    </div>
+  {/if}
   <div class="space-y-2">
     <label class="block font-medium text-slate-900" for="register-password">Password</label>
     <input

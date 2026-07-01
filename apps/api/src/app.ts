@@ -15,6 +15,8 @@ import { vaultRoutes } from './modules/vault/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { orgRoutes } from './modules/org/routes.js'
 import { projectRoutes } from './modules/projects/routes.js'
+import { projectInvitationRoutes } from './modules/invitations/routes.js'
+import { invitationTokenRoutes } from './modules/invitations/token-routes.js'
 import { credentialRoutes } from './modules/credentials/routes.js'
 import { onboardingRoutes } from './modules/onboarding/routes.js'
 import { usersRoutes } from './modules/users/routes.js'
@@ -186,8 +188,13 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(vaultRoutes)
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
+  /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
+     literal prefix strings; a shared constant would make them invisible to that parser. */
   await fastify.register(projectRoutes, { prefix: '/api/v1/projects' })
+  await fastify.register(projectInvitationRoutes, { prefix: '/api/v1/projects' })
+  await fastify.register(invitationTokenRoutes, { prefix: '/api/v1/invitations' })
   await fastify.register(credentialRoutes, { prefix: '/api/v1/projects' })
+  /* eslint-enable sonarjs/no-duplicate-string */
   await fastify.register(dashboardRoutes, { prefix: '/api/v1/dashboard' })
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })
   await fastify.register(usersRoutes, { prefix: '/api/v1/users' })

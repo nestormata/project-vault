@@ -176,6 +176,13 @@
       "when": 1782776400000,
       "tag": "0024_notification_inbox_rls_nullif",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782910935179,
+      "tag": "0025_project_invitations",
+      "breakpoints": true
     }
   ]
 }

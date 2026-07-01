@@ -7,15 +7,17 @@ import type {
 } from '$lib/api/auth.js'
 
 export function buildRegisterRequest(fields: RegisterRequest): RegisterRequest {
-  return { email: fields.email, password: fields.password, orgName: fields.orgName }
+  return fields.invitationToken
+    ? { email: fields.email, password: fields.password, invitationToken: fields.invitationToken }
+    : { email: fields.email, password: fields.password, orgName: fields.orgName }
 }
 
 export function clearRegisterFields(_fields: RegisterRequest): RegisterRequest {
   return { email: '', password: '', orgName: '' }
 }
 
-export function getPostRegisterPath() {
-  return '/login?reason=registered'
+export function getPostRegisterPath(invitedProject?: { projectId: string }): string {
+  return invitedProject ? `/projects/${invitedProject.projectId}` : '/login?reason=registered'
 }
 
 export function buildLoginRequest(fields: LoginRequest): LoginRequest {

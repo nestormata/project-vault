@@ -3,7 +3,8 @@ import { apiFetch } from './client.js'
 export type RegisterRequest = {
   email: string
   password: string
-  orgName: string
+  orgName?: string
+  invitationToken?: string
 }
 
 export type RegisterResponse = {
@@ -11,7 +12,8 @@ export type RegisterResponse = {
   orgId: string
   email: string
   orgName: string
-  role: 'owner'
+  role: 'owner' | 'member'
+  invitedProject?: { projectId: string; projectName: string; role: 'admin' | 'member' | 'viewer' }
 }
 
 export type LoginRequest = {

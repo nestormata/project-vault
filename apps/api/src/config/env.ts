@@ -3,6 +3,7 @@ import { z } from 'zod/v4'
 const DEV_SESSION_SECRET = 'a'.repeat(64)
 const DEV_REFRESH_TOKEN_HMAC_SECRET = 'b'.repeat(64)
 const DEV_MFA_PENDING_SESSION_HMAC_SECRET = 'd'.repeat(64)
+const DEV_INVITATION_TOKEN_HMAC_SECRET = 'e'.repeat(64)
 const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
@@ -20,6 +21,7 @@ type ProductionEnv = {
   FAILED_AUTH_RECORD_ENABLED: boolean
   TOTP_REPLAY_HMAC_SECRET?: string
   MFA_PENDING_SESSION_HMAC_SECRET?: string
+  INVITATION_TOKEN_HMAC_SECRET?: string
   LOG_LEVEL: string
 }
 
@@ -102,10 +104,38 @@ function validatePendingMfaProductionSecret(env: ProductionEnv, ctx: z.Refinemen
   }
 }
 
+function validateInvitationTokenProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (!env.INVITATION_TOKEN_HMAC_SECRET) {
+    addEnvIssue(
+      ctx,
+      'INVITATION_TOKEN_HMAC_SECRET',
+      'INVITATION_TOKEN_HMAC_SECRET is required in production'
+    )
+  } else if (
+    env.INVITATION_TOKEN_HMAC_SECRET === env.SESSION_SECRET ||
+    env.INVITATION_TOKEN_HMAC_SECRET === env.REFRESH_TOKEN_HMAC_SECRET ||
+    env.INVITATION_TOKEN_HMAC_SECRET === env.TOTP_REPLAY_HMAC_SECRET ||
+    env.INVITATION_TOKEN_HMAC_SECRET === env.MFA_PENDING_SESSION_HMAC_SECRET
+  ) {
+    addEnvIssue(
+      ctx,
+      'INVITATION_TOKEN_HMAC_SECRET',
+      'INVITATION_TOKEN_HMAC_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.INVITATION_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'INVITATION_TOKEN_HMAC_SECRET',
+      'INVITATION_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  }
+}
+
 function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateProductionBasics(env, ctx)
   validateTotpReplayProductionSecret(env, ctx)
   validatePendingMfaProductionSecret(env, ctx)
+  validateInvitationTokenProductionSecret(env, ctx)
 }
 
 function validateDummyPasswordHash(
@@ -220,6 +250,11 @@ const envSchema = z
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
+    INVITATION_TOKEN_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
+    WEB_BASE_URL: z.url().default('http://localhost:5173'),
     MFA_PRIVILEGED_ROLE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
     FAILED_AUTH_THRESHOLD_COUNT: z.coerce.number().int().min(3).max(100).default(10),
     FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
@@ -329,9 +364,13 @@ const envSchema = z
   })
 
 type RawEnv = z.infer<typeof envSchema>
-export type Env = Omit<RawEnv, 'TOTP_REPLAY_HMAC_SECRET' | 'MFA_PENDING_SESSION_HMAC_SECRET'> & {
+export type Env = Omit<
+  RawEnv,
+  'TOTP_REPLAY_HMAC_SECRET' | 'MFA_PENDING_SESSION_HMAC_SECRET' | 'INVITATION_TOKEN_HMAC_SECRET'
+> & {
   TOTP_REPLAY_HMAC_SECRET: string
   MFA_PENDING_SESSION_HMAC_SECRET: string
+  INVITATION_TOKEN_HMAC_SECRET: string
 }
 
 function loadEnv(): Env {
@@ -354,6 +393,12 @@ function loadEnv(): Env {
       '[env] MFA_PENDING_SESSION_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
     )
     data.MFA_PENDING_SESSION_HMAC_SECRET = DEV_MFA_PENDING_SESSION_HMAC_SECRET
+  }
+  if (!data.INVITATION_TOKEN_HMAC_SECRET) {
+    process.stderr.write(
+      '[env] INVITATION_TOKEN_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
+    )
+    data.INVITATION_TOKEN_HMAC_SECRET = DEV_INVITATION_TOKEN_HMAC_SECRET
   }
   return data as Env
 }

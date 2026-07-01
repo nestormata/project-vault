@@ -35,13 +35,33 @@ async function expireGracePeriod(userId: string, orgId: string) {
   )
 }
 
+async function createProjectViaApi(
+  app: Awaited<ReturnType<typeof createApp>>,
+  cookies: Record<string, string>,
+  slug: string
+): Promise<string> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/v1/projects',
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { name: `Project ${slug}`, slug: `${slug}-${randomUUID().slice(0, 8)}` },
+  })
+  expect(res.statusCode).toBe(201)
+  return res.json<{ data: { id: string } }>().data.id
+}
+
 describe.sequential('MFA journey (Epic 1 retro P3)', () => {
+  let sharedApp: Awaited<ReturnType<typeof createApp>>
+  let enrolledOwnerSessionCookies: Record<string, string>
+  let enrolledOwnerOrgId: string
+
   beforeAll(async () => {
     await resetVaultForTest()
     await initVaultForTest(initVault, TEST_PASSPHRASE)
   })
 
   afterAll(async () => {
+    await sharedApp?.close()
     await resetVaultForTest()
   })
 
@@ -51,6 +71,7 @@ describe.sequential('MFA journey (Epic 1 retro P3)', () => {
 
   it('enrolls MFA, completes login challenge, and accesses a privileged route', async () => {
     const app = await createApp({ logger: false })
+    sharedApp = app
     registerPrivilegedTestRoute(app)
     const email = `mfa-journey-${randomUUID()}@example.com`
 
@@ -111,6 +132,54 @@ describe.sequential('MFA journey (Epic 1 retro P3)', () => {
     expect(privileged.statusCode).toBe(200)
     expect(privileged.json()).toMatchObject({ ok: true, action: 'privileged_mock' })
 
-    await app.close()
+    enrolledOwnerSessionCookies = sessionCookies
+    enrolledOwnerOrgId = registered.orgId
+  })
+
+  // Story 4.1 (D2/AC-9): the invite-creation gate must block an unenrolled owner/admin even
+  // during an active grace period — the one case that would silently pass if AC-2 mistakenly
+  // used security.requireMfa:true (grace-respecting) instead of requireMfaEnrollmentStrict().
+  it('blocks invitation creation for an owner/admin without MFA, even during an active grace period', async () => {
+    const app = sharedApp
+    const graceOwner = await registerAndLoginViaApi(app, {
+      email: `mfa-journey-grace-owner-${randomUUID()}@example.com`,
+      password: PASSWORD,
+      orgName: `MFA Journey Grace Owner ${randomUUID()}`,
+    })
+    const projectId = await createProjectViaApi(app, graceOwner.cookies, 'grace-owner-invite')
+
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${projectId}/invitations`,
+      headers: { cookie: cookieHeader(graceOwner.cookies) },
+      payload: { email: `mfa-journey-grace-invitee-${randomUUID()}@example.com`, role: 'member' },
+    })
+
+    expect(invite.statusCode).toBe(403)
+    expect(invite.json()).toMatchObject({ code: 'mfa_required' })
+
+    const rows = await withOrg(graceOwner.orgId, (tx) =>
+      tx.execute(sql`SELECT id FROM project_invitations WHERE project_id = ${projectId}`)
+    )
+    expect(rows.length).toBe(0)
+  })
+
+  it('allows invitation creation after the full MFA login journey', async () => {
+    const app = sharedApp
+    const projectId = await createProjectViaApi(
+      app,
+      enrolledOwnerSessionCookies,
+      'mfa-verified-invite'
+    )
+
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${projectId}/invitations`,
+      headers: { cookie: cookieHeader(enrolledOwnerSessionCookies) },
+      payload: { email: `mfa-journey-invitee-${randomUUID()}@example.com`, role: 'member' },
+    })
+
+    expect(invite.statusCode).toBe(201)
+    expect(enrolledOwnerOrgId).toBeTruthy()
   })
 })

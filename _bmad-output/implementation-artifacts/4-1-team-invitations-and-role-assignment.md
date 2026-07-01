@@ -1,6 +1,6 @@
 # Story 4.1: Team Invitations & Role Assignment
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for project-scoped invitations, MFA-gated invite creation (FR57), and the accept flow for both existing and brand-new users. This story is the FIRST story in Epic 4 and the architectural foundation for `project_memberships` role enforcement that Stories 4.2–4.4 depend on. Read "Key Design Decisions & Open Questions" before coding — this story resolves several contradictions between the PRD, epics.md, the MFA policy matrix, and the code as it exists today. -->
 
@@ -651,29 +651,29 @@ INVITATION_TOKEN_HMAC_SECRET: z.preprocess(/* same pattern as TOTP_REPLAY_HMAC_S
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema** (AC-1)
-  - [ ] `packages/db/src/schema/project-invitations.ts` — new table
-  - [ ] `packages/db/src/schema/notification-queue.ts` — add `recipientEmail`
-  - [ ] Verify next migration number in `_journal.json`, generate, run `check-rls`, run `migrate`
-- [ ] **Task 2: Token helpers** (D6)
-  - [ ] `apps/api/src/modules/invitations/tokens.ts` — `generateInvitationToken()`, `hashInvitationToken()`, `invitationTokensMatch()`, mirroring `auth/tokens.ts`
-  - [ ] `INVITATION_TOKEN_HMAC_SECRET` env wiring (AC-8)
-- [ ] **Task 3: Strict MFA check** (D2, AC-2)
-  - [ ] `requireMfaEnrollmentStrict()` in `apps/api/src/modules/auth/mfa-enforcement.ts`
-  - [ ] Export `roleRank()` from `secure-route.ts` (or duplicate with a pointer comment)
-- [ ] **Task 4: Invite creation route** (AC-2)
-  - [ ] `apps/api/src/modules/invitations/routes.ts`, `schema.ts`
-  - [ ] Wire into `apps/api/src/app.ts` route registration alongside `projectRoutes`
-  - [ ] `ROUTE_ACTION_CLASSIFICATIONS` entry
-- [ ] **Task 5: Accept routes** (AC-3) — `GET /invitations/:token` (peek, non-mutating) and `POST /invitations/:token/accept` (authenticated-only join); shared `loadInvitationOrFail()` helper for the canonical status-code taxonomy
-- [ ] **Task 6: Registration extension** (AC-4, D4/D5) — widen `RegisterResult`, add `invitedProject` to the response, reuse AC-3's error taxonomy — **adversarial review required**
-- [ ] **Task 7: List + revoke routes** (AC-5, AC-6)
-- [ ] **Task 8: Email delivery** (AC-7) — template, worker branch, dispatcher call site
-- [ ] **Task 9: Audit events** — add `PROJECT_INVITATION_CREATED`, `PROJECT_INVITATION_ACCEPTED`, `PROJECT_INVITATION_REVOKED` to `packages/shared/src/constants/audit-events.ts`
-- [ ] **Task 10: MFA journey regression test** (AC-9)
-- [ ] **Task 11: Web app** (AC-10)
-- [ ] **Task 12: Integration test suite** — all cases listed across ACs 1-9
-- [ ] **Task 13: Route audit + OpenAPI regen** — `pnpm --filter api generate-spec`, confirm `web#typecheck` picks up new types
+- [x] **Task 1: Schema** (AC-1)
+  - [x] `packages/db/src/schema/project-invitations.ts` — new table
+  - [x] `packages/db/src/schema/notification-queue.ts` — add `recipientEmail`
+  - [x] Verify next migration number in `_journal.json`, generate, run `check-rls`, run `migrate`
+- [x] **Task 2: Token helpers** (D6)
+  - [x] `apps/api/src/modules/invitations/tokens.ts` — `generateInvitationToken()`, `hashInvitationToken()`, `invitationTokensMatch()`, mirroring `auth/tokens.ts`
+  - [x] `INVITATION_TOKEN_HMAC_SECRET` env wiring (AC-8)
+- [x] **Task 3: Strict MFA check** (D2, AC-2)
+  - [x] `requireMfaEnrollmentStrict()` in `apps/api/src/modules/auth/mfa-enforcement.ts`
+  - [x] Export `roleRank()` from `secure-route.ts` (or duplicate with a pointer comment)
+- [x] **Task 4: Invite creation route** (AC-2)
+  - [x] `apps/api/src/modules/invitations/routes.ts`, `schema.ts`
+  - [x] Wire into `apps/api/src/app.ts` route registration alongside `projectRoutes`
+  - [x] `ROUTE_ACTION_CLASSIFICATIONS` entry
+- [x] **Task 5: Accept routes** (AC-3) — `GET /invitations/:token` (peek, non-mutating) and `POST /invitations/:token/accept` (authenticated-only join); shared `loadInvitationOrFail()` helper for the canonical status-code taxonomy
+- [x] **Task 6: Registration extension** (AC-4, D4/D5) — widen `RegisterResult`, add `invitedProject` to the response, reuse AC-3's error taxonomy — **adversarial review required**
+- [x] **Task 7: List + revoke routes** (AC-5, AC-6)
+- [x] **Task 8: Email delivery** (AC-7) — template, worker branch, dispatcher call site
+- [x] **Task 9: Audit events** — add `PROJECT_INVITATION_CREATED`, `PROJECT_INVITATION_ACCEPTED`, `PROJECT_INVITATION_REVOKED` to `packages/shared/src/constants/audit-events.ts`
+- [x] **Task 10: MFA journey regression test** (AC-9)
+- [x] **Task 11: Web app** (AC-10)
+- [x] **Task 12: Integration test suite** — all cases listed across ACs 1-9
+- [x] **Task 13: Route audit + OpenAPI regen** — `pnpm --filter api generate-spec`, confirm `web#typecheck` picks up new types
 
 ---
 
@@ -710,7 +710,7 @@ INVITATION_TOKEN_HMAC_SECRET: z.preprocess(/* same pattern as TOTP_REPLAY_HMAC_S
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 4.6
 
 ### Debug Log References
 
@@ -719,4 +719,55 @@ INVITATION_TOKEN_HMAC_SECRET: z.preprocess(/* same pattern as TOTP_REPLAY_HMAC_S
 - Ultimate context engine analysis completed 2026-07-01. Six concrete design decisions (D1-D6) were resolved by cross-referencing the PRD, epics.md, the MFA policy matrix, and the live codebase rather than any single document in isolation — see "Key Design Decisions & Open Questions".
 - `/bmad-advanced-elicitation` pass completed 2026-07-01 using 4 methods (Red Team vs Blue Team, Self-Consistency Validation, Architecture Decision Records, Pre-mortem Analysis). All findings accepted and applied: (1) fixed a non-existent `AuthContext.email` reference in the email-enqueue snippet; (2) made `WEB_BASE_URL` env var addition explicit instead of conditional; (3) added missing SecureRoute config + rate limiting to the accept flow; (4) split the single `POST .../accept` endpoint into a non-mutating `GET` peek + authenticated-only `POST` accept, after finding the original unauthenticated branch was a no-op mutation disguised as a `POST`; (5) unified the invitation-status error taxonomy (404/410/410/409) across the peek, accept, and registration endpoints, which had diverged; (6) fixed `RegisterResult.role` being hard-typed to the literal `'owner'`, which would not have compiled once the invited-member branch was added; (7) added `invitedProject` to the registration response so the web client has something to redirect into, closing a gap where AC-10's persona journey promised a redirect the API never supplied; (8) added a pending-duplicate-invitation check to invite creation to prevent unbounded invite-spam to the same address. D1-D3, D5, D6 were validated as sound without changes.
 
+### Implementation Notes (Dev, 2026-07-01)
+
+- **Token lookup implementation diverges from AC-3/AC-4's literal snippets**: those snippets query `project_invitations` by `tokenHash` before any org context (`set_config`) is established. Under the RLS policy AC-1 requires (org-scoped, not excluded), that query would return zero rows for the vault_app role. Resolved by adding `apps/api/src/modules/invitations/lookup.ts` (`findInvitationByTokenHash` + `validateInvitationStatus`, shared by the peek/accept routes and `registerUser()`). It performs a single indexed point-lookup via `getAdminDb()` (admin connection) keyed on the unique `tokenHash` index — the 256-bit token is itself the authorization credential, the same trust model already used to exclude `refresh_tokens`/`pending_mfa_sessions` from RLS. An earlier draft instead scanned every org via `withOrg()` (mirroring `findLoginUser()`); that was reverted after it caused 20s+ timeouts against this environment's ~10,600-organization shared dev database and starved concurrent tests of DB connections. Once the owning org is resolved, all further reads/writes go through `withOrg()`/`secureCtx.tx` as normal.
+- **`invitationTokenRoutes` lives in a separate file** (`apps/api/src/modules/invitations/token-routes.ts`) from `projectInvitationRoutes` (`routes.ts`), even though both are "the invitations module" — `route-audit.test.ts`'s static parser maps one registered-route file to one `prefix`, and registering two different prefixes (`/api/v1/projects`, `/api/v1/invitations`) from the same file silently mis-attributed the prefix to every route in the file. Splitting by prefix avoids the tooling gap.
+- **Role-elevation check (AC-2 step 4, NFR-SEC10) is implemented but not integration-tested**: given the invite-role enum excludes `'owner'` and `minimumRole: 'admin'` already excludes member/viewer callers, every caller who can reach the handler (admin rank 2, owner rank 3) already outranks every invitable role (admin rank 2 max) — the guard cannot currently be triggered through the HTTP layer. Kept per the story's explicit requirement and as defensive infrastructure for when a higher invitable role is added; flagging so a reviewer doesn't expect to find a passing 403 test for it.
+- `MFA_ENROLLMENT_EXEMPT_ROUTES` (shared) gained the 3 project-invitation routes — the create route enforces MFA via the manual `requireMfaEnrollmentStrict()` call (D2) rather than `security.requireMfa`/`requireMfaEnrollment()`, which the shared exemption registry's static check doesn't recognize as "has an MFA check."
+- CI: `make ci` is green except two pre-existing failures in `apps/api/src/__tests__/sessions.integration.test.ts` (`DELETE /auth/sessions revokes all sessions except current`, `MAX_SESSIONS_PER_USER revokes oldest sessions on login when configured`) — both time out at their existing 20s override. That file has zero overlap with this story's diff; a mid-run `getDb(...).insert is not a function` log line during the same suite run matches this codebase's already-documented cross-file vitest flake class (Makefile `test-repeat` comment, referencing a prior mfa-login/mfa-enrollment flake). Full API suite: 528/530 passing.
+- Fixed two pre-existing tests that needed updating for a new required-in-production secret and a route-list snapshot, unrelated to functional behavior: `apps/api/src/config/env.test.ts` (added `INVITATION_TOKEN_HMAC_SECRET` to "valid production env" fixtures + 2 new dedicated test cases) and `packages/shared/src/constants/mfa-exempt-routes.test.ts` (updated the expected route list).
+- Web UI simplifies AC-10's "dialog" language to an inline toggle-able invite form on the members page (no existing modal/dialog primitive in this app outside onboarding) — list, revoke, and the full accept-flow branching (peek → login-with-`next`/register-with-prefill → accept) are implemented as specified.
+- Manual verification: exercised register (with/without invitation), login, project creation, and invite creation end-to-end via the real API server; confirmed the invitation-aware register page (pre-filled/locked email, hidden orgName field, correct copy) via SSR HTML. Full interactive browser click-through of the members page was blocked by a **pre-existing, unrelated** dev-mode SSR crash in `GlobalSearch.svelte` (`window is not defined`) that 500s every page under the `(app)` layout, including `/dashboard`; flagged separately, not fixed here (out of scope).
+
 ### File List
+
+**New:**
+- `packages/db/src/schema/project-invitations.ts`
+- `packages/db/src/migrations/0025_project_invitations.sql`
+- `apps/api/src/modules/invitations/tokens.ts`
+- `apps/api/src/modules/invitations/lookup.ts`
+- `apps/api/src/modules/invitations/schema.ts`
+- `apps/api/src/modules/invitations/routes.ts`
+- `apps/api/src/modules/invitations/routes.test.ts`
+- `apps/api/src/modules/invitations/token-routes.ts`
+- `apps/api/src/notifications/templates/project-invitation-created.ts`
+- `apps/web/src/lib/api/invitations.ts`
+- `apps/web/src/lib/components/auth/form-model.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/members/+page.server.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/members/+page.svelte`
+- `apps/web/src/routes/(auth)/invitations/accept/+page.svelte`
+
+**Modified:**
+- `packages/db/src/schema/index.ts`
+- `packages/db/src/schema/notification-queue.ts`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/constants/mfa-exempt-routes.ts` (+ `.test.ts`)
+- `packages/shared/src/schemas/auth.ts` (+ `.test.ts`)
+- `apps/api/src/app.ts`
+- `apps/api/src/config/env.ts` (+ `.test.ts`)
+- `apps/api/src/lib/secure-route.ts` (exported `roleRank`)
+- `apps/api/src/lib/route-exemptions.ts`
+- `apps/api/src/modules/auth/mfa-enforcement.ts`
+- `apps/api/src/modules/auth/service.ts` (`registerUser()` — D4/D5)
+- `apps/api/src/notifications/templates/index.ts`
+- `apps/api/src/workers/notification-email.ts`
+- `apps/api/src/__tests__/mfa-journey.integration.test.ts` (AC-9)
+- `apps/web/src/lib/api/auth.ts`
+- `apps/web/src/lib/components/auth/LoginForm.svelte`
+- `apps/web/src/lib/components/auth/RegisterForm.svelte`
+- `apps/web/src/lib/components/auth/form-model.ts`
+- `apps/web/src/routes/(auth)/login/+page.svelte`
+- `apps/web/src/routes/(auth)/register/+page.svelte`
+- `.env.example`

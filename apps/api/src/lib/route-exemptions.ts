@@ -357,6 +357,33 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'User dismisses own inbox entry (soft delete); no credential or secret data removed.',
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/projects/:projectId/invitations': {
+    action: 'mutation',
+    auditEvent: 'project.invitation_created',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
+  'GET /api/v1/projects/:projectId/invitations': {
+    action: 'read',
+    auditOmissionReason:
+      'Pending invitation list is admin-scoped and never returns the invitation token.',
+    reviewer: SECURITY_OWNER,
+  },
+  'DELETE /api/v1/projects/:projectId/invitations/:id': {
+    action: 'mutation',
+    auditEvent: 'project.invitation_revoked',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
+  'GET /api/v1/invitations/:token': {
+    action: 'read',
+    auditOmissionReason:
+      'Public non-mutating peek used to route the web UI to login vs. registration; reveals only the invited email/project/role to the token holder.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/invitations/:token/accept': {
+    action: 'mutation',
+    auditEvent: 'project.invitation_accepted',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
@@ -414,6 +441,13 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'Cross-org cleanup of expired pending_imports rows; no credential values are read — only metadata rows are deleted.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'modules/invitations/token-routes.ts',
+    classification: 'public-route-support',
+    reason:
+      'The public token-peek and pre-org-scope accept routes cannot know which org an invitation belongs to in advance, so the initial token lookup (in ./lookup.js) uses the admin connection for a single indexed point-lookup by the unique hashed-token index — the 256-bit token is itself the authorization credential, same trust model as the existing RLS exclusion for refresh_tokens/pending_mfa_sessions. Once the owning org is resolved, all further reads/writes on project_invitations go through an org-scoped withOrg()/secureCtx.tx like every other route.',
     reviewer: SECURITY_OWNER,
   },
   {
