@@ -150,14 +150,20 @@
         </p>
       </div>
       <div class="px-6 py-4">
-        <form method="POST" action="?/sendTest" use:enhance>
-          <button
-            type="submit"
-            class="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700"
-          >
-            Send test notification
-          </button>
-        </form>
+        {#if data.canSendTest}
+          <form method="POST" action="?/sendTest" use:enhance>
+            <button
+              type="submit"
+              class="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700"
+            >
+              Send test notification
+            </button>
+          </form>
+        {:else}
+          <p class="text-sm text-gray-500">
+            Enroll in MFA to unlock the test notification action for your admin account.
+          </p>
+        {/if}
 
         {#if form?.testResult}
           <ul class="mt-4 space-y-1 text-sm">

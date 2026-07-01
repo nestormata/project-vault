@@ -28,6 +28,30 @@ describe('check-alert-pending-epic3', () => {
     expect(violations).toHaveLength(1)
   })
 
+  it('flags array-join obfuscation of the marker, where the dot never appears between the words', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, MFA_FIXTURE_PATH, `const eventType = ['alert', 'pending_epic3'].join('.')`)
+
+    const violations = scanAlertPendingEpic3(root)
+
+    expect(violations).toHaveLength(1)
+  })
+
+  it('does not false-positive on unrelated "alert" and "pending" text far apart', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      MFA_FIXTURE_PATH,
+      [
+        "const alert = 'security.mfa_recovery_used'",
+        '// this code has nothing to do with the retired stub',
+        'const pendingEnrollments = await loadPendingEnrollmentForUpdate(db, userId)',
+      ].join('\n')
+    )
+
+    expect(scanAlertPendingEpic3(root)).toHaveLength(0)
+  })
+
   it('ignores docs and _bmad-output content', () => {
     const root = makeFixtureRoot()
     writeFixture(

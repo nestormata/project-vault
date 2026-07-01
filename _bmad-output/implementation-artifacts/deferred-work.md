@@ -126,6 +126,13 @@ UI. Two items remain intentionally open past Epic 3 closure, tracked below.
 
 ---
 
+## Deferred from: code review of story-3.4 (2026-06-30)
+
+- `activeOrgForUser()` (`apps/api/src/modules/auth/mfa.ts`, unchanged by 3.4) iterates all orgs with no `ORDER BY` and returns the first with an active membership — for a user active in two orgs, which org's preferences/notification apply is non-deterministic. Pre-existing since Story 1.x's login flow; not introduced or worsened by 3.4's MFA notification wiring, which reuses this helper as-is.
+- `patchPreferences()`'s `channel: 'none'` handling (Story 3.2) deletes stored override rows rather than persisting a suppression state, so a user selecting "None" for `security.mfa_recovery_used` / `security.mfa_recovery_codes_regenerated` in the personal preferences table (newly exposed by 3.4 AC-6) reverts to the default `email`+`inbox` channels on the next event instead of truly opting out. 3.4 exposes these types per AC-6's explicit "personal channel control" instruction; the underlying preference-persistence gap is pre-existing Story 3.2 scope.
+
+---
+
 ## Deferred from: code review of story-1.12 (2026-06-27)
 
 - Repeated `POST /auth/login` calls reset a pending MFA challenge's `attempt_count` to 0 (delete-then-recreate in `createPendingMfaSession`), so the per-token `MFA_LOGIN_MAX_ATTEMPTS` cap can be bypassed by re-challenging between attempt batches. Deferred: documented two-layer design (ADR-1.12-09) — the Story 1.9 cross-token threshold worker still bounds sustained brute-forcing across all tokens for an account; only the local real-time cap is bypassable.

@@ -1,6 +1,6 @@
 # Story 3.4: Epic 3 Completion — Notification Surface Truth, MFA Alerts & Doc Reconciliation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-06-30 — Epic 3 closure story derived from epic-3-retro-2026-06-30.md.
      Closes G2 product-surface gate gaps: /alerts route truth, dashboard alert counts, MFA alert stubs,
@@ -662,6 +662,56 @@ _bmad-output/
 
 - SMTP test UI on settings page validates operator config before invitation emails (Story 4.1).
 - MFA alerts live — recovery flows no longer silently defer delivery.
+
+### Senior Developer Review (AI) — 2026-06-30
+
+Three parallel adversarial reviewers (Blind Hunter, Edge Case Hunter, Acceptance Auditor) ran
+against `git diff main`. All three independently converged on the same root-cause bug; findings
+below are the confirmed, fixed set.
+
+**Fixed:**
+
+1. **[High] Notification-dispatch failure could roll back a successful MFA operation or leave the
+   user in a confusing half-success state.** `sendPendingMfaNotifications()` (`auth/routes.ts`)
+   previously let any non-`AppError` thrown by `sendNotificationJobs`/`boss.send` propagate
+   unhandled — for `regenerate-recovery-codes` this ran inside the still-open `secureCtx.tx`, so
+   an uncaught throw would roll back the already-successful code regeneration; for `recover`, the
+   session was already committed, so an uncaught throw would return a 500 to a user whose
+   recovery code was already consumed. Fixed by wrapping the dispatch in try/catch that logs to
+   stderr and never propagates — a missed `boss.send()` is safe because the `notification_queue`
+   row is still durable and `notification:deliver-catchup` (10-min cron) picks it up.
+2. **[High] `scripts/check-alert-pending-epic3.ts` had a demonstrated false-negative for
+   array-join obfuscation.** The original `NORMALIZE_PATTERN` stripped quotes/whitespace/`+` but
+   not commas/brackets, so `['alert', 'pending_epic3'].join('.')` — where the dot is inserted at
+   runtime by `Array#join` and never appears between the words in source — was never flagged. This
+   was proven live: the diff's own `mfa-notification.integration.test.ts` used exactly this
+   construction specifically to dodge the guard. Fixed by normalizing to letters/digits/underscore
+   only and checking for the marker with its separating dot removed too — this collapses the
+   array-join case (and any other punctuation-based obfuscation) into a detectable match. Added
+   regression tests for both the array-join case and a "no false positive on unrelated distant
+   text" case. The now-unnecessary marker-avoidance trick in the integration test was removed
+   (the CI guard is a strictly stronger guarantee than a runtime stdout-spy check).
+3. **[Medium] AC-5 lacked a test proving admin sees the test-notification panel and member
+   doesn't.** Extracted the inline `['owner','admin'].includes(orgRole)` check in
+   `+page.server.ts` into `isAdminRole()` in `notification-settings-model.ts` and added tests for
+   both branches.
+4. **[Medium] `data.canSendTest` was computed by `load()` but never used — a non-MFA-enrolled
+   admin would see a "Send test notification" button that always 403s.** Wired `data.canSendTest`
+   into `+page.svelte` to hide the button and show an explanatory message instead, matching the
+   UI-guard-should-match-API-guard intent of AC-5.
+
+**Noted but not fixed (pre-existing, out of scope for this story):**
+
+- `activeOrgForUser()` (`mfa.ts`, unchanged by this diff) iterates all orgs with no `ORDER BY` and
+  returns the first with an active membership — for a user active in two orgs, which org's
+  preferences/notification get used is non-deterministic. Pre-existing behavior from Story 1.x,
+  also used by the login flow; not introduced or worsened by this story.
+- `patchPreferences()`'s `channel: 'none'` handling (Story 3.2) deletes stored override rows
+  rather than persisting a suppression state, so a user selecting "None" for `security.mfa_*` in
+  the newly-exposed personal preferences table reverts to the default `email`+`inbox` channels on
+  the next event rather than truly opting out. This diff makes these two alert types
+  user-configurable per AC-6's explicit "personal channel control" instruction; the underlying
+  preference-persistence gap is pre-existing Story 3.2 scope.
 
 ---
 

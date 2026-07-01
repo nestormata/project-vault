@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { notificationQueue, orgMemberships, totpUsedCodes } from '@project-vault/db/schema'
@@ -28,9 +28,6 @@ const PASSWORD = 'correct-horse-battery-staple'
 const TEST_PASSPHRASE = 'mfa-notification-tests-passphrase'
 const MFA_RECOVERY_USED = 'security.mfa_recovery_used'
 const MFA_RECOVERY_CODES_REGENERATED = 'security.mfa_recovery_codes_regenerated'
-// Built from parts so this integration test doesn't itself trip the AC-13 CI guard
-// that scans apps/api/src for the retired stub event marker.
-const STUB_EVENT_MARKER = ['alert', 'pending_epic3'].join('.')
 
 async function registerAndLogin() {
   return registerAndLoginForMfaTests(createApp, PASSWORD, 'mfa-notify')
@@ -87,20 +84,12 @@ async function expectQueueChannels(
   return rows
 }
 
-function assertNoStubMarkerLogged(stdoutSpy: { mock: { calls: unknown[][] } }): void {
-  // AC-13's CI guard (scripts/check-alert-pending-epic3.ts) is the source-level check for
-  // the removed stub marker; this only confirms the stdout stub no longer fires at runtime.
-  const loggedPayloads = stdoutSpy.mock.calls.map((call) => String(call[0]))
-  expect(loggedPayloads.some((line) => line.includes(STUB_EVENT_MARKER))).toBe(false)
-}
-
 describe.sequential('MFA notification wiring (AC-7e)', () => {
   registerMfaIntegrationLifecycle({ initVault, passphrase: TEST_PASSPHRASE, resetVaultForTest })
 
   it('enqueues a notification_queue row for the affected user when a recovery code is used', async () => {
     const { user, app, recoveryCodes } = await setupEnrolledMfaUser()
 
-    const stdoutSpy = vi.spyOn(process.stdout, 'write')
     const recover = await recoverAsUser(app, user, recoveryCodes[0] as string)
     expect(recover.statusCode).toBe(200)
 
@@ -108,8 +97,6 @@ describe.sequential('MFA notification wiring (AC-7e)', () => {
       email: true,
       inbox: true,
     })
-    assertNoStubMarkerLogged(stdoutSpy)
-    stdoutSpy.mockRestore()
 
     await app.close()
   }, 40_000)
@@ -118,7 +105,6 @@ describe.sequential('MFA notification wiring (AC-7e)', () => {
     const { user, app, cookies, secret } = await setupEnrolledMfaUser()
     await getDb().delete(totpUsedCodes).where(eq(totpUsedCodes.userId, user.userId))
 
-    const stdoutSpy = vi.spyOn(process.stdout, 'write')
     const regenerate = await regenerateAsUser(app, cookies, secret)
     expect(regenerate.statusCode).toBe(200)
 
@@ -126,8 +112,6 @@ describe.sequential('MFA notification wiring (AC-7e)', () => {
       email: true,
       inbox: true,
     })
-    assertNoStubMarkerLogged(stdoutSpy)
-    stdoutSpy.mockRestore()
 
     await app.close()
   }, 40_000)

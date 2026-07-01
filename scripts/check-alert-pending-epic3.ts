@@ -7,14 +7,20 @@ import { toRepoPath, walkFiles } from './lib/scan-utils.js'
 export type Violation = { file: string; line: number; text: string }
 
 const STUB_MARKER_SOURCE_TEXT = ['alert', 'pending_epic3'].join('.')
-// Normalizes away quotes/whitespace/`+` so split-string obfuscation (e.g.
-// 'alert' + '.' + 'pending_epic3') still collapses to a detectable match (Red Team).
-const NORMALIZE_PATTERN = /['"`\s+]/g
+// Strips every character that isn't a letter/digit/underscore, then checks the
+// remaining alphanumeric stream for the marker with its separating dot removed too.
+// This collapses far more obfuscation shapes than a punctuation-only strip would —
+// not just 'alert' + '.' + 'pending_epic3', but also array/join forms like
+// ['alert', 'pending_epic3'].join('.') where the dot is inserted at runtime by
+// Array#join and never appears between the two words in the source text at all
+// (Red Team: reject split-string obfuscation, not just `+`-concatenation).
+const STUB_MARKER_NORMALIZED = STUB_MARKER_SOURCE_TEXT.replace(/\./g, '')
+const NORMALIZE_PATTERN = /[^a-zA-Z0-9_]/g
 const SCANNABLE_EXTENSIONS = ['.ts', '.tsx', '.js']
 
 function fileContainsMarker(content: string): boolean {
   if (content.includes(STUB_MARKER_SOURCE_TEXT)) return true
-  return content.replace(NORMALIZE_PATTERN, '').includes(STUB_MARKER_SOURCE_TEXT)
+  return content.replace(NORMALIZE_PATTERN, '').includes(STUB_MARKER_NORMALIZED)
 }
 
 function lineForFirstMatch(content: string): number {

@@ -12,12 +12,13 @@ import { ApiClientError } from '$lib/api/client.js'
 import {
   canSendTestNotification,
   filterRoutableAlertTypes,
+  isAdminRole,
   isRoutableAlertType,
 } from './notification-settings-model.js'
 import type { Actions, PageServerLoad } from './$types.js'
 
 export const load: PageServerLoad = async ({ fetch, locals }) => {
-  const isAdmin = locals.user ? ['owner', 'admin'].includes(locals.user.orgRole) : false
+  const isAdmin = locals.user ? isAdminRole(locals.user.orgRole) : false
   const canSendTest = locals.user ? canSendTestNotification(locals.user) : false
 
   const preferences = await getNotificationPreferences(fetch)

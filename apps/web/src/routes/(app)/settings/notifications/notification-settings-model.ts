@@ -17,8 +17,13 @@ export function filterRoutableAlertTypes<T extends { alertType: string }>(items:
   return items.filter((item) => isRoutableAlertType(item.alertType))
 }
 
+/** Gates visibility of admin-only sections (org routing table, test-notification panel). */
+export function isAdminRole(orgRole: string): boolean {
+  return ['owner', 'admin'].includes(orgRole)
+}
+
 export function canSendTestNotification(user: { orgRole: string; mfaEnrolled: boolean }): boolean {
-  return ['owner', 'admin'].includes(user.orgRole) && user.mfaEnrolled
+  return isAdminRole(user.orgRole) && user.mfaEnrolled
 }
 
 export type RoutingRoleForm = RoutingRole

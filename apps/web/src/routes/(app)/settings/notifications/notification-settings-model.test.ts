@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canSendTestNotification,
   filterRoutableAlertTypes,
+  isAdminRole,
   isRoutableAlertType,
 } from './notification-settings-model.js'
 
@@ -28,6 +29,18 @@ describe('MFA alert types excluded from org routing UI (AC-6, ADR-3.4-06)', () =
       { alertType: 'security.failed_auth_threshold', routeTo: 'owner' },
       { alertType: 'credential.expiry', routeTo: 'admin' },
     ])
+  })
+})
+
+describe('admin-only panel visibility (AC-5 — org routing table and test-notification panel)', () => {
+  it('shows admin-only panels for owner and admin roles', () => {
+    expect(isAdminRole('owner')).toBe(true)
+    expect(isAdminRole('admin')).toBe(true)
+  })
+
+  it('hides admin-only panels for member and viewer roles', () => {
+    expect(isAdminRole('member')).toBe(false)
+    expect(isAdminRole('viewer')).toBe(false)
   })
 })
 

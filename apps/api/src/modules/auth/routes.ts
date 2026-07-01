@@ -61,6 +61,15 @@ type BossFastify = FastifyApp & { boss?: BossService }
  * pg-boss is decorated on the fastify instance in production (main.ts) but not in
  * integration tests that build the app directly — jobs are still enqueued in
  * notification_queue either way, only the async delivery dispatch is skipped.
+ *
+ * Never let a dispatch failure propagate: for regenerate-recovery-codes this call
+ * happens inside the ambient secureRoute transaction (pre-commit — see Dev Agent
+ * Record), so an uncaught throw here would roll back the already-successful MFA
+ * operation. For recover-with-code the operation has already committed, so an
+ * uncaught throw would return a 500 to a user whose recovery code was already
+ * consumed and session already created. Either way, a missed boss.send() is safe —
+ * the notification_queue row is still durable and notification:deliver-catchup
+ * (10-min cron, main.ts) will pick it up.
  */
 async function sendPendingMfaNotifications(
   fastify: FastifyApp,
@@ -68,7 +77,17 @@ async function sendPendingMfaNotifications(
 ): Promise<void> {
   const boss = (fastify as BossFastify).boss
   if (!boss) return
-  await sendNotificationJobs(boss, jobs)
+  try {
+    await sendNotificationJobs(boss, jobs)
+  } catch (error) {
+    process.stderr.write(
+      `${JSON.stringify({
+        eventType: 'auth.mfa_notification_dispatch_failed',
+        error: error instanceof Error ? error.message : String(error),
+        jobCount: jobs.length,
+      })}\n`
+    )
+  }
 }
 type ParsedBody<T> = { success: true; data: T } | { success: false; reply: FastifyReply }
 type AuthSessionResult = {
