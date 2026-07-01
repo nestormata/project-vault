@@ -27,6 +27,10 @@ export const AuditEvent = {
   PROJECT_INVITATION_CREATED: 'project.invitation_created',
   PROJECT_INVITATION_ACCEPTED: 'project.invitation_accepted',
   PROJECT_INVITATION_REVOKED: 'project.invitation_revoked',
+  ORG_USER_REMOVED: 'org.user_removed',
+  PROJECT_MEMBER_ROLE_CHANGED: 'project.member_role_changed',
+  PROJECT_MEMBER_REMOVED: 'project.member_removed',
+  PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -53,6 +57,10 @@ export type AuditEventType =
   | 'project.invitation_created'
   | 'project.invitation_accepted'
   | 'project.invitation_revoked'
+  | 'org.user_removed'
+  | 'project.member_role_changed'
+  | 'project.member_removed'
+  | 'project.ownership_transferred'
 
 export type AuditEvent = {
   type: AuditEventType

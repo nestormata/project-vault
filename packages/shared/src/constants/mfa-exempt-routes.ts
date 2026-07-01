@@ -1,5 +1,8 @@
 export const MFA_ENROLLMENT_EXEMPT_ROUTES = [
   'GET /api/v1/org/security-alerts',
+  // Read-only org user list (Story 4.2, AC-2): admin-gated but non-mutating, so it uses the
+  // "MFA-exempt: GET status/read paths" precedent (mirrors GET /org/security-alerts above).
+  'GET /api/v1/org/users',
   'GET /api/v1/projects/:projectId/credentials/:credentialId/access',
   'POST /api/v1/projects/:projectId/credentials/import',
   'POST /api/v1/projects/:projectId/credentials/import/confirm',

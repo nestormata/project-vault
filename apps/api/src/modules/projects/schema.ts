@@ -66,7 +66,43 @@ export const ProjectTagUpdateResponseSchema = z
   .object({ data: z.object({ id: z.uuid(), tags: z.array(z.string()) }) })
   .meta({ id: 'ProjectTagUpdateResponse' })
 
+export const ProjectMemberParamsSchema = z
+  .object({ projectId: z.uuid(), userId: z.uuid() })
+  .meta({ id: 'ProjectMemberParams' })
+
+export const TransferOwnershipBodySchema = z
+  .object({ newOwnerId: z.uuid() })
+  .strict()
+  .meta({ id: 'TransferOwnershipBody' })
+
+const projectMemberRoleEnum = z.enum(['owner', 'admin', 'member', 'viewer'])
+
+export const ProjectMembersListResponseSchema = z
+  .object({
+    data: z.array(
+      z.object({
+        userId: z.uuid(),
+        email: z.string(),
+        displayName: z.string(),
+        role: projectMemberRoleEnum,
+      })
+    ),
+  })
+  .meta({ id: 'ProjectMembersListResponse' })
+
+export const TransferOwnershipResponseSchema = z
+  .object({
+    data: z.object({
+      projectId: z.uuid(),
+      previousOwnerId: z.uuid(),
+      newOwnerId: z.uuid(),
+    }),
+  })
+  .meta({ id: 'TransferOwnershipResponse' })
+
 export type CreateProjectBody = z.infer<typeof CreateProjectBodySchema>
 export type PatchProjectBody = z.infer<typeof PatchProjectBodySchema>
 export type ProjectParams = z.infer<typeof ProjectParamsSchema>
+export type ProjectMemberParams = z.infer<typeof ProjectMemberParamsSchema>
+export type TransferOwnershipBody = z.infer<typeof TransferOwnershipBodySchema>
 export type { ProjectDetail, ProjectSummary }

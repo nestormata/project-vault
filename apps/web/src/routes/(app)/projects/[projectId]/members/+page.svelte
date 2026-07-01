@@ -7,6 +7,13 @@
     revokeInvitation,
     type ProjectInvitation,
   } from '$lib/api/invitations.js'
+  import {
+    changeProjectRole,
+    removeProjectMember,
+    transferOwnership,
+    type ProjectMember,
+    type SettableProjectRole,
+  } from '$lib/api/org-users.js'
 
   let { data } = $props()
 
@@ -16,6 +23,58 @@
   let errorMessage = $state<string | null>(null)
   let isSubmitting = $state(false)
   let revokingId = $state<string | null>(null)
+  let memberBusyId = $state<string | null>(null)
+  let memberError = $state<string | null>(null)
+  let transferTarget = $state<string>('')
+
+  const nonOwnerMembers = $derived(data.members.filter((m) => m.role !== 'owner'))
+
+  async function onChangeMemberRole(member: ProjectMember, newRole: SettableProjectRole) {
+    if (memberBusyId) return
+    memberBusyId = member.userId
+    memberError = null
+    try {
+      await changeProjectRole(fetch, member.userId, data.projectId, newRole)
+      await invalidateAll()
+    } catch (error) {
+      memberError = error instanceof Error ? error.message : 'Failed to change role.'
+    } finally {
+      memberBusyId = null
+    }
+  }
+
+  async function onRemoveMember(member: ProjectMember) {
+    if (memberBusyId) return
+    memberBusyId = member.userId
+    memberError = null
+    try {
+      await removeProjectMember(fetch, data.projectId, member.userId)
+      await invalidateAll()
+    } catch (error) {
+      if (error instanceof ApiClientError && error.code === 'last_owner') {
+        memberError = 'Cannot remove the last owner — transfer ownership first.'
+      } else {
+        memberError = error instanceof Error ? error.message : 'Failed to remove member.'
+      }
+    } finally {
+      memberBusyId = null
+    }
+  }
+
+  async function onTransferOwnership() {
+    if (memberBusyId || !transferTarget) return
+    memberBusyId = transferTarget
+    memberError = null
+    try {
+      await transferOwnership(fetch, data.projectId, transferTarget)
+      transferTarget = ''
+      await invalidateAll()
+    } catch (error) {
+      memberError = error instanceof Error ? error.message : 'Failed to transfer ownership.'
+    } finally {
+      memberBusyId = null
+    }
+  }
 
   function relativeExpiry(expiresAt: string): string {
     const ms = new Date(expiresAt).getTime() - Date.now()
@@ -84,9 +143,103 @@
     {/if}
   </div>
 
+  {#if data.canManageMembers}
+    <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold text-slate-950">Team members</h2>
+      </div>
+      {#if memberError}
+        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+          {memberError}
+        </p>
+      {/if}
+      <div class="overflow-hidden rounded-2xl border border-slate-200">
+        <table class="min-w-full text-left text-sm">
+          <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
+            <tr>
+              <th class="px-4 py-3 font-semibold">Email</th>
+              <th class="px-4 py-3 font-semibold">Role</th>
+              <th class="px-4 py-3 font-semibold"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each data.members as member (member.userId)}
+              <tr class="border-b border-slate-100 last:border-b-0">
+                <td class="px-4 py-3">{member.displayName}</td>
+                <td class="px-4 py-3">
+                  {#if member.role === 'owner'}
+                    <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
+                      >owner</span
+                    >
+                  {:else}
+                    <select
+                      class="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                      aria-label={`Role for ${member.email}`}
+                      value={member.role}
+                      disabled={memberBusyId === member.userId}
+                      onchange={(event) =>
+                        onChangeMemberRole(
+                          member,
+                          (event.currentTarget as HTMLSelectElement).value as SettableProjectRole
+                        )}
+                    >
+                      <option value="admin">admin</option>
+                      <option value="member">member</option>
+                      <option value="viewer">viewer</option>
+                    </select>
+                  {/if}
+                </td>
+                <td class="px-4 py-3 text-right">
+                  {#if member.role !== 'owner'}
+                    <button
+                      class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      disabled={memberBusyId === member.userId}
+                      onclick={() => onRemoveMember(member)}
+                    >
+                      Remove
+                    </button>
+                  {/if}
+                </td>
+              </tr>
+            {:else}
+              <tr>
+                <td class="px-4 py-6 text-center text-slate-600" colspan="3">No members yet.</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+      {#if data.canTransferOwnership && nonOwnerMembers.length > 0}
+        <div class="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+          <label class="font-medium text-slate-900" for="transfer-owner">Transfer ownership</label>
+          <select
+            id="transfer-owner"
+            class="rounded-lg border border-slate-300 px-2 py-1 text-sm"
+            bind:value={transferTarget}
+          >
+            <option value="">Select a member…</option>
+            {#each nonOwnerMembers as member (member.userId)}
+              <option value={member.userId}>{member.email}</option>
+            {/each}
+          </select>
+          <button
+            class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            disabled={!transferTarget || memberBusyId !== null}
+            onclick={() => onTransferOwnership()}
+          >
+            Transfer
+          </button>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   {#if !data.canManage}
     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-      <p class="text-slate-600">Only project owners and admins can manage members.</p>
+      <p class="text-slate-600">Only project owners and admins can manage invitations.</p>
     </div>
   {:else}
     {#if showInviteForm}

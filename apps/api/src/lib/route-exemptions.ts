@@ -30,6 +30,7 @@ const SECURITY_ACTION = 'security-action'
 const SESSION_REVOKED = 'SESSION_REVOKED'
 const IDENTITY_CLEANUP_JOB = 'identity-cleanup-job'
 const WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED = 'writeCredentialAuditOrFailClosed'
+const WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED = 'writeHumanAuditEntryOrFailClosed'
 const PLATFORM_JOB = 'platform-job'
 
 export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
@@ -383,6 +384,37 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'mutation',
     auditEvent: 'project.invitation_accepted',
     sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
+  'GET /api/v1/org/users': {
+    action: 'read',
+    auditOmissionReason: 'Org user list read is admin-scoped and does not reveal secret values.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/projects/:projectId/members': {
+    action: 'read',
+    auditOmissionReason:
+      'Project member list read is project-admin/org-admin-scoped and does not reveal secret values.',
+    reviewer: SECURITY_OWNER,
+  },
+  'DELETE /api/v1/org/users/:userId': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org.user_removed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PUT /api/v1/org/users/:userId/projects/:projectId/role': {
+    action: 'mutation',
+    auditEvent: 'project.member_role_changed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'DELETE /api/v1/projects/:projectId/members/:userId': {
+    action: 'mutation',
+    auditEvent: 'project.member_removed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/projects/:projectId/transfer-ownership': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.ownership_transferred',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
 }
 

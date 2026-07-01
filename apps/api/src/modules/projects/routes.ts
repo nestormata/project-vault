@@ -1,11 +1,12 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull, ne } from 'drizzle-orm'
+import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
-import { projectMemberships, projects } from '@project-vault/db/schema'
+import { projectMemberships, projects, users } from '@project-vault/db/schema'
 import {
   CreateProjectBodySchema,
   PatchProjectBodySchema,
@@ -13,9 +14,13 @@ import {
   ProjectCreateResponseSchema,
   ProjectDashboardResponseSchema,
   ProjectListResponseSchema,
+  ProjectMemberParamsSchema,
+  ProjectMembersListResponseSchema,
   ProjectParamsSchema,
   ProjectTagUpdateResponseSchema,
   TagArrayBodySchema,
+  TransferOwnershipBodySchema,
+  TransferOwnershipResponseSchema,
   type CreateProjectBody,
   type PatchProjectBody,
 } from './schema.js'
@@ -26,6 +31,27 @@ import {
 } from './dashboard-stats.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
+
+// Inline project-role lookup — see 4.1 D-notes / 4.4 AC-2 for why this isn't centralized as a
+// cross-module resolver yet; 3rd cross-story occurrence as of 4.2, consider extracting if a 4th
+// consumer appears. This module-local helper only dedupes the identical query across this file's
+// three new handlers (AC-5/AC-6/AC-10); it is not the shared resolver D8 defers.
+async function callerProjectRole(
+  secureCtx: SecureRouteContext,
+  projectId: string
+): Promise<string | undefined> {
+  const [membership] = await secureCtx.tx
+    .select({ role: projectMemberships.role })
+    .from(projectMemberships)
+    .where(
+      and(
+        eq(projectMemberships.projectId, projectId),
+        eq(projectMemberships.userId, secureCtx.auth.userId)
+      )
+    )
+    .limit(1)
+  return membership?.role
+}
 
 function serializeProjectDetail(project: typeof projects.$inferSelect, role: 'owner') {
   return {
@@ -330,6 +356,310 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       })
 
       return { data: updated }
+    },
+  })
+
+  // AC-10: list accepted members of a single project. Authorized on the project-role axis (D1).
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/members',
+    schema: {
+      response: {
+        200: ProjectMembersListResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member', // broad floor — real authorization is the in-handler check below.
+      requireMfa: false,
+      writeAuditEvent: false,
+      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'GET /api/v1/projects/:projectId/members' },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const [project] = await secureCtx.tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, params.projectId))
+        .limit(1)
+      if (!project) return reply.status(404).send(PROJECT_NOT_FOUND)
+
+      const callerRole = await callerProjectRole(secureCtx, params.projectId)
+      const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
+      const isOrgAdminOrOwner =
+        secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
+      if (!isProjectAdminOrOwner && !isOrgAdminOrOwner) {
+        return reply.status(403).send({
+          code: 'insufficient_role',
+          message: 'Only project admins/owners or org admins/owners can view the member list',
+        })
+      }
+
+      const rows = await secureCtx.tx
+        .select({
+          userId: projectMemberships.userId,
+          email: users.email,
+          role: projectMemberships.role,
+        })
+        .from(projectMemberships)
+        .innerJoin(users, eq(users.id, projectMemberships.userId))
+        .where(eq(projectMemberships.projectId, params.projectId))
+
+      return {
+        data: rows.map((row) => ({
+          userId: row.userId,
+          email: row.email,
+          displayName: row.email, // D3
+          role: row.role,
+        })),
+      }
+    },
+  })
+
+  // AC-5: remove a single project membership. Project-admin/owner OR org-admin/owner (D1).
+  secureRoute(fastify, {
+    method: 'DELETE',
+    url: '/:projectId/members/:userId',
+    schema: {
+      response: {
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member', // broad floor — real authorization is the in-handler check below.
+      requireMfa: true,
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 30,
+        timeWindowMs: 60_000,
+        key: 'DELETE /api/v1/projects/:projectId/members/:userId',
+      },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectMemberParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const [targetMembership] = await secureCtx.tx
+        .select({ role: projectMemberships.role })
+        .from(projectMemberships)
+        .where(
+          and(
+            eq(projectMemberships.projectId, params.projectId),
+            eq(projectMemberships.userId, params.userId),
+            eq(projectMemberships.orgId, secureCtx.auth.orgId)
+          )
+        )
+        .limit(1)
+      if (!targetMembership) {
+        return reply
+          .status(404)
+          .send({ code: 'membership_not_found', message: 'User is not a member of this project' })
+      }
+
+      const callerRole = await callerProjectRole(secureCtx, params.projectId)
+      const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
+      const isOrgAdminOrOwner =
+        secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
+      if (!isProjectAdminOrOwner && !isOrgAdminOrOwner) {
+        return reply.status(403).send({
+          code: 'insufficient_role',
+          message: 'Only project admins/owners or org admins/owners can remove project members',
+        })
+      }
+
+      // D5 item 1: never remove the last owner of a project (self-removal is no exception).
+      if (targetMembership.role === 'owner') {
+        const otherOwners = await secureCtx.tx
+          .select({ userId: projectMemberships.userId })
+          .from(projectMemberships)
+          .where(
+            and(
+              eq(projectMemberships.projectId, params.projectId),
+              eq(projectMemberships.role, 'owner'),
+              ne(projectMemberships.userId, params.userId)
+            )
+          )
+          .for('update')
+        if (otherOwners.length === 0) {
+          return reply
+            .status(409)
+            .send({ code: 'last_owner', message: 'Cannot remove the last owner of a project' })
+        }
+      }
+
+      await secureCtx.tx
+        .delete(projectMemberships)
+        .where(
+          and(
+            eq(projectMemberships.projectId, params.projectId),
+            eq(projectMemberships.userId, params.userId)
+          )
+        )
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project_membership',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.PROJECT_MEMBER_REMOVED,
+        resourceId: params.userId,
+        payload: { projectId: params.projectId, removedRole: targetMembership.role },
+        request: req,
+      })
+
+      reply.status(204)
+      return undefined
+    },
+  })
+
+  // AC-6: transfer project ownership. Project owner OR org owner only (D1).
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/transfer-ownership',
+    schema: {
+      body: TransferOwnershipBodySchema,
+      response: {
+        200: TransferOwnershipResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member', // broad floor — real authorization is the in-handler owner check.
+      requireMfa: true,
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/transfer-ownership',
+      },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody(TransferOwnershipBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const callerRole = await callerProjectRole(secureCtx, params.projectId)
+      const isProjectOwner = callerRole === 'owner'
+      const isOrgOwner = secureCtx.auth.orgRole === 'owner'
+      if (!isProjectOwner && !isOrgOwner) {
+        return reply.status(403).send({
+          code: 'insufficient_role',
+          message: 'Only the project owner can transfer ownership',
+        })
+      }
+
+      // Self-transfer no-op rejection (request-shape problem — 422).
+      if (parsed.data.newOwnerId === secureCtx.auth.userId) {
+        return reply
+          .status(422)
+          .send({ code: 'invalid_new_owner', message: 'Cannot transfer ownership to yourself' })
+      }
+
+      // AC-E4c: target must already be an accepted member of the project.
+      const [targetMembership] = await secureCtx.tx
+        .select({ role: projectMemberships.role })
+        .from(projectMemberships)
+        .where(
+          and(
+            eq(projectMemberships.projectId, params.projectId),
+            eq(projectMemberships.userId, parsed.data.newOwnerId),
+            eq(projectMemberships.orgId, secureCtx.auth.orgId)
+          )
+        )
+        .limit(1)
+      if (!targetMembership) {
+        return reply.status(404).send({
+          code: 'not_a_project_member',
+          message: 'Target user is not a member of this project',
+        })
+      }
+      if (targetMembership.role === 'owner') {
+        return reply
+          .status(409)
+          .send({ code: 'already_owner', message: 'User is already the project owner' })
+      }
+
+      // Resolve the *current* owner FOR UPDATE so the race guard works whether the caller is
+      // the owner themselves or an org owner acting on their behalf.
+      const [currentOwner] = await secureCtx.tx
+        .select({ userId: projectMemberships.userId })
+        .from(projectMemberships)
+        .where(
+          and(
+            eq(projectMemberships.projectId, params.projectId),
+            eq(projectMemberships.role, 'owner')
+          )
+        )
+        .for('update')
+        .limit(1)
+      if (!currentOwner) {
+        return reply.status(409).send({
+          code: 'ownership_already_changed',
+          message: 'Project ownership changed concurrently — reload and retry',
+        })
+      }
+
+      const demoted = await secureCtx.tx
+        .update(projectMemberships)
+        .set({ role: 'admin' })
+        .where(
+          and(
+            eq(projectMemberships.projectId, params.projectId),
+            eq(projectMemberships.userId, currentOwner.userId),
+            eq(projectMemberships.role, 'owner')
+          )
+        )
+        .returning({ userId: projectMemberships.userId })
+      if (demoted.length === 0) {
+        return reply.status(409).send({
+          code: 'ownership_already_changed',
+          message: 'Project ownership changed concurrently — reload and retry',
+        })
+      }
+
+      await secureCtx.tx
+        .update(projectMemberships)
+        .set({ role: 'owner' })
+        .where(
+          and(
+            eq(projectMemberships.projectId, params.projectId),
+            eq(projectMemberships.userId, parsed.data.newOwnerId)
+          )
+        )
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.PROJECT_OWNERSHIP_TRANSFERRED,
+        resourceId: params.projectId,
+        payload: { previousOwnerId: currentOwner.userId, newOwnerId: parsed.data.newOwnerId },
+        request: req,
+      })
+
+      return {
+        data: {
+          projectId: params.projectId,
+          previousOwnerId: currentOwner.userId,
+          newOwnerId: parsed.data.newOwnerId,
+        },
+      }
     },
   })
 }
