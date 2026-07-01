@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-06-30  # updated: 3-4 -> review
+last_updated: 2026-07-01  # updated: 4-1 story created ready-for-dev
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -80,8 +80,8 @@ development_status:
   epic-3-retrospective: done
 
   # Epic 4: Team & Organization Management — Roles, Invitations, Access & Lifecycle
-  epic-4: backlog
-  4-1-team-invitations-and-role-assignment: backlog
+  epic-4: in-progress
+  4-1-team-invitations-and-role-assignment: ready-for-dev
   4-2-organization-user-management: backlog
   4-3-account-deactivation-and-recovery: backlog
   4-4-project-archival: ready-for-dev
