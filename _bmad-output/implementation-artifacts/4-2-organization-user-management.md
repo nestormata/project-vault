@@ -1,6 +1,6 @@
 # Story 4.2: Organization User Management
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for org-wide user visibility, cross-project role management, org/project removal, and project ownership transfer. This story is the SECOND story in Epic 4, built directly on Story 4.1's `project_memberships`/`org_memberships` foundation and the already-shipped FR84 session-revocation primitive (`revokeAllUserSessionsInOrg`, `apps/api/src/modules/org/routes.ts`). Read "Key Design Decisions & Open Questions" before coding — several genuine ambiguities in the PRD/epics text (self-modification scope, "last owner" protection, who may act on which role axis) are resolved there with explicit rationale. -->
 
@@ -733,19 +733,19 @@ PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema verification** (AC-1) — confirm no migration needed; optionally add the perf index if you choose to (verify next journal number if so)
-- [ ] **Task 2: `GET /api/v1/org/users`** (AC-2) — batched query, response schema, route classification
-- [ ] **Task 3: `GET /api/v1/projects/:projectId/members`** (AC-10, added post-adversarial-review) — project existence check, in-handler D1 authorization, list query, response schema, route classification
-- [ ] **Task 4: `DELETE /api/v1/org/users/:userId`** (AC-3, D4, D5, D9) — self-mod check, org-role hierarchy check (D9), org-level sole-owner guard (D5 item 4), per-project sole-owner guard (`FOR UPDATE`), cascade delete, `revokeAllUserSessionsInOrg()` reuse, audit
-- [ ] **Task 5: `PUT /api/v1/org/users/:userId/projects/:projectId/role`** (AC-4, D4, D5, D6, D9) — self-mod check, target org-role hierarchy check (D9), elevation check (`roleRank()` reuse), owner-target guard, schema excludes `'owner'`, audit
-- [ ] **Task 6: `DELETE /api/v1/projects/:projectId/members/:userId`** (AC-5, D1, D5) — in-handler project/org role check, sole-owner guard, audit
-- [ ] **Task 7: `POST /api/v1/projects/:projectId/transfer-ownership`** (AC-6, D1) — in-handler owner check, accepted-member validation, race-safe atomic transfer, audit
-- [ ] **Task 8: Audit events + route classifications** (AC-7) — `audit-events.ts` (both the object and the type union), `route-exemptions.ts` entries for all 4 mutation routes + 2 read routes
-- [ ] **Task 9: Route registration + OpenAPI regen** (AC-8) — extend `modules/org/routes.ts`/`schema.ts` and `modules/projects/routes.ts`/`schema.ts`; `pnpm --filter api generate-spec`; confirm `web#typecheck`
-- [ ] **Task 10: Web app — org users page** (AC-9) — `/settings/users` route, link from `/settings`, table + role-change + remove-from-org UI
-- [ ] **Task 11: Web app — extended project members page** (AC-9) — accepted-member list (fetched from AC-10's `GET /projects/:projectId/members`, not `GET /org/users`), role change, remove, transfer-ownership UI
-- [ ] **Task 12: Integration test suite** — all cases listed across AC-2 through AC-7 and AC-10 (list, org-removal incl. session-revoke + org-role-hierarchy block + sole-org-owner block + sole-project-owner block + self-block, role-change incl. org-role-hierarchy block + elevation + self-block + owner-target, project-member-removal incl. project-admin + org-admin-override + self-removal + sole-owner-block, transfer-ownership incl. race + non-accepted-member + self-transfer + already-owner, project-members-list incl. project-admin + org-admin-override + non-admin-403, audit-write-failure rollback)
-- [ ] **Task 13: Route audit + OpenAPI regen verification** — confirm `route-audit.test.ts` (or equivalent) passes with all 6 new routes classified
+- [x] **Task 1: Schema verification** (AC-1) — confirm no migration needed; optionally add the perf index if you choose to (verify next journal number if so)
+- [x] **Task 2: `GET /api/v1/org/users`** (AC-2) — batched query, response schema, route classification
+- [x] **Task 3: `GET /api/v1/projects/:projectId/members`** (AC-10, added post-adversarial-review) — project existence check, in-handler D1 authorization, list query, response schema, route classification
+- [x] **Task 4: `DELETE /api/v1/org/users/:userId`** (AC-3, D4, D5, D9) — self-mod check, org-role hierarchy check (D9), org-level sole-owner guard (D5 item 4), per-project sole-owner guard (`FOR UPDATE`), cascade delete, `revokeAllUserSessionsInOrg()` reuse, audit
+- [x] **Task 5: `PUT /api/v1/org/users/:userId/projects/:projectId/role`** (AC-4, D4, D5, D6, D9) — self-mod check, target org-role hierarchy check (D9), elevation check (`roleRank()` reuse), owner-target guard, schema excludes `'owner'`, audit
+- [x] **Task 6: `DELETE /api/v1/projects/:projectId/members/:userId`** (AC-5, D1, D5) — in-handler project/org role check, sole-owner guard, audit
+- [x] **Task 7: `POST /api/v1/projects/:projectId/transfer-ownership`** (AC-6, D1) — in-handler owner check, accepted-member validation, race-safe atomic transfer, audit
+- [x] **Task 8: Audit events + route classifications** (AC-7) — `audit-events.ts` (both the object and the type union), `route-exemptions.ts` entries for all 4 mutation routes + 2 read routes
+- [x] **Task 9: Route registration + OpenAPI regen** (AC-8) — extend `modules/org/routes.ts`/`schema.ts` and `modules/projects/routes.ts`/`schema.ts`; `pnpm --filter api generate-spec`; confirm `web#typecheck`
+- [x] **Task 10: Web app — org users page** (AC-9) — `/settings/users` route, link from `/settings`, table + role-change + remove-from-org UI
+- [x] **Task 11: Web app — extended project members page** (AC-9) — accepted-member list (fetched from AC-10's `GET /projects/:projectId/members`, not `GET /org/users`), role change, remove, transfer-ownership UI
+- [x] **Task 12: Integration test suite** — all cases listed across AC-2 through AC-7 and AC-10 (list, org-removal incl. session-revoke + org-role-hierarchy block + sole-org-owner block + sole-project-owner block + self-block, role-change incl. org-role-hierarchy block + elevation + self-block + owner-target, project-member-removal incl. project-admin + org-admin-override + self-removal + sole-owner-block, transfer-ownership incl. race + non-accepted-member + self-transfer + already-owner, project-members-list incl. project-admin + org-admin-override + non-admin-403, audit-write-failure rollback)
+- [x] **Task 13: Route audit + OpenAPI regen verification** — confirm `route-audit.test.ts` (or equivalent) passes with all 6 new routes classified
 
 ---
 
@@ -786,8 +786,84 @@ PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
 
 ### Agent Model Used
 
+claude-opus-4-8 (Claude Code, `/bmad-dev-story`).
+
 ### Debug Log References
+
+- API integration suites: `apps/api/src/modules/org/user-management.routes.test.ts` and
+  `apps/api/src/modules/projects/member-management.routes.test.ts` (both green).
+- Route-audit static contract: `apps/api/src/__tests__/route-audit.test.ts` (green with 6 new routes).
 
 ### Completion Notes List
 
+- **AC-1 (schema):** No migration written; confirmed `org_memberships.role`,
+  `project_memberships.role`, `sessions.revoked_at` all present. Optional perf index NOT added
+  (org-scale makes the unindexed sole-owner count cheap, per AC-1 guidance).
+- **AC-2:** `GET /api/v1/org/users` — batched two-query group-in-app-code, `displayName = email`
+  (D3), bare `{ data: [...] }`, admin-gated read.
+- **AC-3:** `DELETE /api/v1/org/users/:userId` — self-block (D4), D9 rank guard, D5 sole-org-owner
+  + sole-project-owner guards (`FOR UPDATE`), cascade delete, `revokeAllUserSessionsInOrg()` reuse,
+  `org.user_removed` audit. Includes forced-audit-failure rollback test (503).
+- **AC-4:** `PUT .../projects/:projectId/role` — self-block, D9 target-org-role guard, NFR-SEC10
+  elevation guard (kept, unreachable via HTTP — see below), owner-target `409`, `'owner'` excluded
+  from body enum (D6 → 422), `project.member_role_changed` audit.
+- **AC-5:** `DELETE /projects/:projectId/members/:userId` — in-handler project/org-role authz (D1),
+  D5 last-owner guard, self-removal allowed, `project.member_removed` audit, `204`.
+- **AC-6:** `POST /projects/:projectId/transfer-ownership` — project-owner OR org-owner only,
+  self-transfer `422`, non-member `404`, already-owner `409`, race-safe conditional demotion,
+  `project.ownership_transferred` audit.
+- **AC-10:** `GET /projects/:projectId/members` — project-axis authz, `project_not_found` 404 for
+  cross-org, `displayName = email`.
+- **AC-7:** Audit events added to both the `AuditEvent` object and `AuditEventType` union;
+  6 route classifications added; `route-audit.test.ts` green.
+- **AC-8/AC-9:** Web `/settings/users` page + link; extended project members page with
+  accepted-member list, role change, remove, and transfer-ownership; `org-users.ts` API client.
+
+**Decisions / deviations flagged for human review:**
+1. **NFR-SEC10 elevation check is unreachable via HTTP** (Dev Notes) — kept as defensive
+   infrastructure; no fabricated passing test, matching Story 4.1's precedent. The **D9** rank
+   guard *is* reachable and *is* integration-tested.
+2. **`last_org_owner` (D5 item 4) is structurally unreachable via HTTP today** — the D9 rank guard
+   fires first for any admin targeting an owner, and self-removal is blocked (D4), so a caller who
+   could reach the `last_org_owner` branch would have to outrank an `owner` (impossible). The guard
+   is kept (correct if D9/D4 ever change) but the integration test asserts the D9 `403` that
+   actually protects the sole owner, rather than a fabricated `409`. Documented here.
+3. **`GET /api/v1/org/users` added to `MFA_ENROLLMENT_EXEMPT_ROUTES`** — it is admin-gated but
+   read-only (`requireMfa: false`); `route-audit.test.ts` flags any owner/admin route without an
+   MFA check unless exempt, exactly as the existing `GET /org/security-alerts` read is exempt.
+   The four mutation routes are NOT exempted (they set `requireMfa: true`, per D2).
+4. **`packages/shared/openapi.json` is a hand-maintained curated subset**, not route-derived — it
+   already omits most existing project routes. `generate-spec` runs clean (routes register against
+   the mocked-DB app factory, AC-8), and `web#typecheck` passes; the static file was left as-is
+   rather than hand-adding six entries to an already-incomplete document. Flagged for human review.
+
 ### File List
+
+**API**
+- `apps/api/src/modules/org/routes.ts` (modified) — GET/DELETE users, PUT project role
+- `apps/api/src/modules/org/schema.ts` (modified) — params/body/response schemas
+- `apps/api/src/modules/projects/routes.ts` (modified) — GET members, DELETE member, transfer-ownership + `callerProjectRole` helper
+- `apps/api/src/modules/projects/schema.ts` (modified) — params/body/response schemas
+- `apps/api/src/lib/route-exemptions.ts` (modified) — 6 route classifications
+- `apps/api/src/modules/org/user-management.routes.test.ts` (new)
+- `apps/api/src/modules/projects/member-management.routes.test.ts` (new)
+
+**Shared**
+- `packages/shared/src/constants/audit-events.ts` (modified) — 4 new events (object + union)
+- `packages/shared/src/constants/mfa-exempt-routes.ts` (modified) — `GET /api/v1/org/users`
+
+**Web**
+- `apps/web/src/lib/api/org-users.ts` (new) — typed API client
+- `apps/web/src/lib/api/org-users.test.ts` (new)
+- `apps/web/src/routes/(app)/settings/users/+page.server.ts` (new)
+- `apps/web/src/routes/(app)/settings/users/+page.svelte` (new)
+- `apps/web/src/routes/(app)/settings/+page.svelte` (modified) — Users link
+- `apps/web/src/routes/(app)/projects/[projectId]/members/+page.server.ts` (modified)
+- `apps/web/src/routes/(app)/projects/[projectId]/members/+page.svelte` (modified)
+
+### Change Log
+
+- 2026-07-01: Implemented Story 4.2 (Organization User Management) — org user list, org removal,
+  cross-project role change, single-project member removal, project ownership transfer, project
+  member list; web pages for org users and extended project members. TDD red-green with full
+  integration coverage.

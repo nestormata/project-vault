@@ -5,6 +5,7 @@ describe('MFA_ENROLLMENT_EXEMPT_ROUTES', () => {
   it('documents the Story 1.9 MFA-exempt owner/admin and enrollment routes', () => {
     expect(MFA_ENROLLMENT_EXEMPT_ROUTES).toEqual([
       'GET /api/v1/org/security-alerts',
+      'GET /api/v1/org/users',
       'GET /api/v1/projects/:projectId/credentials/:credentialId/access',
       'POST /api/v1/projects/:projectId/credentials/import',
       'POST /api/v1/projects/:projectId/credentials/import/confirm',

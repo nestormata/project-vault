@@ -6,6 +6,79 @@ export const OrgUserParamsSchema = z.object({
 
 export type OrgUserParams = z.infer<typeof OrgUserParamsSchema>
 
+export const OrgUserProjectRoleParamsSchema = z.object({
+  userId: z.uuid(),
+  projectId: z.uuid(),
+})
+
+export type OrgUserProjectRoleParams = z.infer<typeof OrgUserProjectRoleParamsSchema>
+
+// D6: 'owner' is intentionally excluded — ownership changes hands only via
+// POST /projects/:projectId/transfer-ownership, never through this role-change endpoint.
+export const ProjectRoleChangeBodySchema = z
+  .object({ role: z.enum(['admin', 'member', 'viewer']) })
+  .strict()
+  .meta({ id: 'ProjectRoleChangeBody' })
+
+export type ProjectRoleChangeBody = z.infer<typeof ProjectRoleChangeBodySchema>
+
+const orgProjectRoleEnum = z.enum(['owner', 'admin', 'member', 'viewer'])
+
+export const OrgUsersListResponseSchema = z
+  .object({
+    data: z.array(
+      z.object({
+        userId: z.uuid(),
+        email: z.string(),
+        displayName: z.string(),
+        orgRole: orgProjectRoleEnum,
+        projects: z.array(
+          z.object({
+            projectId: z.uuid(),
+            projectName: z.string(),
+            role: orgProjectRoleEnum,
+          })
+        ),
+      })
+    ),
+  })
+  .meta({ id: 'OrgUsersListResponse' })
+
+export const OrgUserRemovedResponseSchema = z
+  .object({
+    data: z.object({
+      userId: z.uuid(),
+      revokedSessionCount: z.number().int().nonnegative(),
+    }),
+  })
+  .meta({ id: 'OrgUserRemovedResponse' })
+
+// D5 item 2: the 409 body for a sole-project-owner block carries the offending projects so the
+// caller can transfer ownership. A plain ApiError schema would strip `projects` during response
+// serialization, so this endpoint needs its own 409 shape.
+export const SoleOwnerConflictResponseSchema = z
+  .object({
+    code: z.literal('sole_owner_of_projects'),
+    message: z.string(),
+    projects: z.array(
+      z.object({
+        projectId: z.uuid(),
+        projectName: z.string(),
+      })
+    ),
+  })
+  .meta({ id: 'SoleOwnerConflictResponse' })
+
+export const ProjectRoleChangeResponseSchema = z
+  .object({
+    data: z.object({
+      userId: z.uuid(),
+      projectId: z.uuid(),
+      role: orgProjectRoleEnum,
+    }),
+  })
+  .meta({ id: 'ProjectRoleChangeResponse' })
+
 export const failedAuthThresholdPayloadSchema = z
   .object({
     thresholdType: z.enum(['ip', 'account']),
