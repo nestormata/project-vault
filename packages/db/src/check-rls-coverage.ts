@@ -15,6 +15,10 @@ export const EXCLUDED_TABLES = new Set([
   'platform_security_events',
   // user_onboarding: no RLS — access gated in application layer by auth.userId == userId; org_id is a FK for cascade, not for multi-tenant row filtering.
   'user_onboarding',
+  // account_recovery_tokens: identity-scoped (AC-1) — the row has no org_id column (only an
+  // initiator_org_id FK for audit context), and a recovery token authorizes a credential reset
+  // for a user, not an org-scoped resource. Same reasoning as mfa_recovery_codes/revoked_tokens.
+  'account_recovery_tokens',
 ])
 
 export class RlsCoverageGapError extends Error {

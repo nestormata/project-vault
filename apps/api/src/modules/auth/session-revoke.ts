@@ -18,6 +18,7 @@ export type SessionRevokeScope =
   | 'idle_expiry'
   | 'deactivation'
   | 'security'
+  | 'account_recovery'
 
 type RevokeSessionOptions = {
   actorUserId?: string
@@ -273,7 +274,7 @@ export async function revokeAllUserSessionsInOrg({
   userId: string
   orgId: string
   actorUserId: string
-  reason: 'admin_action' | 'deactivation' | 'security'
+  reason: 'admin_action' | 'deactivation' | 'security' | 'account_recovery'
   tx?: Tx
 }): Promise<{ revokedCount: number }> {
   return runInTx(tx, async (innerTx) => {

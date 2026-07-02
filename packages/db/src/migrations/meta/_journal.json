@@ -183,6 +183,13 @@
       "when": 1782910935179,
       "tag": "0025_project_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783025343283,
+      "tag": "0026_account_recovery_tokens",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { z } from 'zod/v4'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
-import { orgMemberships, projectMemberships } from '@project-vault/db/schema'
+import { orgMemberships, projectMemberships, users } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -11,10 +11,14 @@ import { secureRoute, roleRank, type SecureRouteContext } from '../../lib/secure
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
+import { sendAdminRecoveryLink } from '../auth/recovery.js'
+import { checkActiveRotationsForUser, revokePendingInvitationsSentBy } from './deactivation.js'
 import { listSecurityAlerts } from './security-alerts.js'
 import { listOrgUsers, removeUserFromOrgMemberships } from './user-management.js'
 import { getProjectMembershipRole } from '../projects/member-management.js'
 import {
+  AdminRecoveryLinkResponseSchema,
+  OrgUserDeactivatedResponseSchema,
   OrgUserParamsSchema,
   OrgUserProjectRoleParamsSchema,
   OrgUserRemovedResponseSchema,
@@ -24,6 +28,51 @@ import {
   SecurityAlertsQuerySchema,
   SoleOwnerConflictResponseSchema,
 } from './schema.js'
+
+const USER_NOT_FOUND = { code: 'user_not_found', message: 'User not found' } as const
+
+/** D4-style self-action block, shared by every route that must reject acting on the caller. */
+function blockSelfAction(
+  targetUserId: string,
+  secureCtx: SecureRouteContext,
+  reply: FastifyReply,
+  code: string,
+  message: string
+): boolean {
+  if (targetUserId !== secureCtx.auth.userId) return false
+  reply.status(403).send({ code, message })
+  return true
+}
+
+/** 404s (and narrows away `undefined`) a missing target-membership lookup. */
+function hasTarget<T>(target: T | undefined, reply: FastifyReply): target is T {
+  if (target) return true
+  reply.status(404).send(USER_NOT_FOUND)
+  return false
+}
+
+/** D9 hierarchy guard, shared by every route that acts on a target org member. */
+function blockPeerOrHigherRole(
+  target: { orgRole: string },
+  secureCtx: SecureRouteContext,
+  reply: FastifyReply,
+  message: string
+): boolean {
+  if (roleRank(target.orgRole as OrgRole) < roleRank(secureCtx.auth.orgRole)) return false
+  reply.status(403).send({ code: 'insufficient_role', message })
+  return true
+}
+
+/** Combines the two guards above — the shape every target-mutating org route needs. */
+function isUsableTarget<T extends { orgRole: string }>(
+  target: T | undefined,
+  secureCtx: SecureRouteContext,
+  reply: FastifyReply,
+  hierarchyMessage: string
+): target is T {
+  if (!hasTarget(target, reply)) return false
+  return !blockPeerOrHigherRole(target, secureCtx, reply, hierarchyMessage)
+}
 
 export async function orgRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
@@ -69,7 +118,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         )
         .limit(1)
       if (!targetMembership[0]) {
-        return reply.status(404).send({ code: 'user_not_found', message: 'User not found' })
+        return reply.status(404).send(USER_NOT_FOUND)
       }
 
       const result = await revokeAllUserSessionsInOrg({
@@ -81,6 +130,191 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       })
 
       return { data: { ...result, userId: parsed.data.userId } }
+    },
+  })
+
+  // Story 4.3 AC-2 through AC-8: deactivate a user in this org (immediate session/invitation
+  // revocation; D7-stubbed rotation-block check pending Epic 5).
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/users/:userId/deactivate',
+    schema: {
+      response: {
+        200: OrgUserDeactivatedResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+      },
+    },
+    security: {
+      allowedRoles: ['admin', 'owner'],
+      requireMfa: true,
+      writeAuditEvent: false, // Audit row written inline below, in the same secureCtx.tx.
+      rateLimit: { max: 20, key: 'POST /org/users/:userId/deactivate' },
+    },
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const params = parseParams(OrgUserParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      if (
+        blockSelfAction(
+          params.userId,
+          secureCtx,
+          reply,
+          'cannot_deactivate_self',
+          'You cannot deactivate your own account'
+        )
+      ) {
+        return reply
+      }
+
+      // AC-3 edge case: lock the target row before evaluating hierarchy/idempotency so a
+      // concurrent role change or a racing deactivation call (AC-19) is re-checked, not raced.
+      const [target] = await secureCtx.tx
+        .select({ orgRole: orgMemberships.role, status: orgMemberships.status })
+        .from(orgMemberships)
+        .where(
+          and(
+            eq(orgMemberships.userId, params.userId),
+            eq(orgMemberships.orgId, secureCtx.auth.orgId)
+          )
+        )
+        .for('update')
+        .limit(1)
+      if (
+        !isUsableTarget(
+          target,
+          secureCtx,
+          reply,
+          'Cannot deactivate a user with an equal or higher organization role'
+        )
+      ) {
+        return reply
+      }
+
+      if (target.status === 'deactivated') {
+        return reply
+          .status(409)
+          .send({ code: 'already_deactivated', message: 'User is already deactivated' })
+      }
+
+      await secureCtx.tx
+        .update(orgMemberships)
+        .set({ status: 'deactivated', updatedAt: new Date() })
+        .where(
+          and(
+            eq(orgMemberships.userId, params.userId),
+            eq(orgMemberships.orgId, secureCtx.auth.orgId)
+          )
+        )
+
+      // FR84/PJ3 reuse — revokeAllUserSessionsInOrg is the single, tested session-revocation
+      // primitive (Story 1.7); never reimplement this here.
+      const { revokedCount: revokedSessionCount } = await revokeAllUserSessionsInOrg({
+        userId: params.userId,
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        reason: 'deactivation',
+        tx: secureCtx.tx,
+      })
+
+      const revokedInvitationCount = await revokePendingInvitationsSentBy(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        userId: params.userId,
+      })
+
+      // D7 stub — never blocks today; see deactivation.ts for the Epic 5 forward-dependency note.
+      await checkActiveRotationsForUser(params.userId, secureCtx.auth.orgId, secureCtx.tx)
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'org_membership',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.ORG_USER_DEACTIVATED,
+        resourceId: params.userId,
+        payload: { revokedSessionCount, revokedInvitationCount },
+        request: req,
+      })
+
+      return { data: { userId: params.userId, revokedSessionCount, revokedInvitationCount } }
+    },
+  })
+
+  // Story 4.3 AC-10: admin-initiated recovery link — sends the same 15-minute link a self-
+  // service request would, for a teammate who can't reach the self-service flow (Persona C).
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/users/:userId/recovery/send-link',
+    schema: {
+      response: {
+        200: AdminRecoveryLinkResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+      },
+    },
+    security: {
+      allowedRoles: ['admin', 'owner'],
+      requireMfa: true,
+      writeAuditEvent: false, // Audit row written inline below, in the same secureCtx.tx.
+      rateLimit: { max: 20, key: 'POST /org/users/:userId/recovery/send-link' },
+    },
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const params = parseParams(OrgUserParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const [target] = await secureCtx.tx
+        .select({ email: users.email, orgRole: orgMemberships.role })
+        .from(orgMemberships)
+        .innerJoin(users, eq(users.id, orgMemberships.userId))
+        .where(
+          and(
+            eq(orgMemberships.userId, params.userId),
+            eq(orgMemberships.orgId, secureCtx.auth.orgId)
+          )
+        )
+        .limit(1)
+      // Adversarial-review hardening: a forced credential-reset link is at least as sensitive as
+      // deactivation (AC-3) — apply the same D9 peer-or-higher guard, even though the AC text
+      // for this route doesn't spell it out (it also doesn't rule it out).
+      if (
+        !isUsableTarget(
+          target,
+          secureCtx,
+          reply,
+          'Cannot send a recovery link to a user with an equal or higher organization role'
+        )
+      ) {
+        return reply
+      }
+
+      const [caller] = await secureCtx.tx
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, secureCtx.auth.userId))
+        .limit(1)
+
+      await sendAdminRecoveryLink(secureCtx.tx, {
+        targetUserId: params.userId,
+        targetEmail: target.email,
+        initiatorOrgId: secureCtx.auth.orgId,
+        initiatorEmail: caller?.email ?? '',
+      })
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'account_recovery',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.ACCOUNT_RECOVERY_LINK_SENT,
+        resourceId: params.userId,
+        payload: { targetUserId: params.userId, initiatedBy: 'admin' },
+        request: req,
+      })
+
+      return { data: { userId: params.userId, linkSent: true } }
     },
   })
 
@@ -131,11 +365,16 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
 
       // D4: self-removal is blocked. Cheapest check, before any DB access.
-      if (params.userId === secureCtx.auth.userId) {
-        return reply.status(403).send({
-          code: 'cannot_modify_self',
-          message: 'You cannot remove yourself from the organization',
-        })
+      if (
+        blockSelfAction(
+          params.userId,
+          secureCtx,
+          reply,
+          'cannot_modify_self',
+          'You cannot remove yourself from the organization'
+        )
+      ) {
+        return reply
       }
 
       const [target] = await secureCtx.tx
@@ -148,16 +387,16 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           )
         )
         .limit(1)
-      if (!target) {
-        return reply.status(404).send({ code: 'user_not_found', message: 'User not found' })
-      }
-
       // D9: cannot act on a peer/superior org role.
-      if (roleRank(target.orgRole as OrgRole) >= roleRank(secureCtx.auth.orgRole)) {
-        return reply.status(403).send({
-          code: 'insufficient_role',
-          message: 'Cannot remove a user with an equal or higher organization role',
-        })
+      if (
+        !isUsableTarget(
+          target,
+          secureCtx,
+          reply,
+          'Cannot remove a user with an equal or higher organization role'
+        )
+      ) {
+        return reply
       }
 
       // D5 item 4: never remove the sole org owner (checked before the per-project guard —

@@ -9,7 +9,11 @@ import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.js'
 import { isRateLimitEnforced, validationError } from '../../lib/route-helpers.js'
-import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import {
+  secureRoute,
+  SameTransactionAuditWriteError,
+  type SecureRouteContext,
+} from '../../lib/secure-route.js'
 import { sendNotificationJobs, type NotificationQueueJob } from '../../notifications/dispatcher.js'
 import type { BossService } from '../../lib/boss.js'
 import {
@@ -45,6 +49,24 @@ import {
 } from './service.js'
 import { loadMfaEnforcementStatus } from './mfa-enforcement.js'
 import { revokeAllOtherSessions, revokeSessionById, sessionNotFound } from './session-revoke.js'
+import {
+  RateLimitExceededResponseSchema,
+  RecoveryCompleteBodySchema,
+  RecoveryCompleteResponseSchema,
+  RecoveryMfaStartResponseSchema,
+  RecoveryNoAdminResponseSchema,
+  RecoveryPeekResponseSchema,
+  RecoveryRequestBodySchema,
+  RecoveryRequestResponseSchema,
+  RecoveryTokenParamsSchema,
+  type RecoveryTokenParams,
+} from './recovery-schema.js'
+import {
+  completeAccountRecovery,
+  peekRecoveryToken,
+  requestSelfRecovery,
+  startRecoveryMfa,
+} from './recovery.js'
 
 type JwtFastify = FastifyApp & {
   jwt: {
@@ -181,6 +203,61 @@ async function sendAuthSession(
   })
 }
 
+/** Shared by the three token-scoped recovery routes (peek, mfa/start, complete). */
+function parseRecoveryTokenParams(
+  req: FastifyRequest,
+  reply: FastifyReply
+): RecoveryTokenParams | null {
+  const parsed = RecoveryTokenParamsSchema.safeParse(req.params)
+  if (!parsed.success) {
+    reply.status(422).send(validationError(parsed.error, 'params'))
+    return null
+  }
+  return parsed.data
+}
+
+/** Shared status-error shape all three recovery-lookup results (recovery.ts) resolve to. */
+function sendRecoveryStatusError(
+  reply: FastifyReply,
+  error: { statusCode: number; code: string; message: string }
+): unknown {
+  return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+}
+
+/**
+ * Shared IP-rate-limit + email-normalization prefix for /mfa/recover and /recovery/request —
+ * both public, both keyed by `ip:${req.ip}` via the same DB-backed bucket (AC-11). Returns the
+ * normalized body for the caller's own schema-specific parse, or null once a reply was already
+ * sent (rate-limited or malformed email).
+ */
+async function enforceIpRateLimitAndNormalizeEmailBody(
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<unknown | null> {
+  if (!(await enforceRecoverRateLimit(`ip:${req.ip}`, 10, reply))) return null
+  const normalized = normalizeEmailBodyForRoute(req.body, reply)
+  return normalized.success ? normalized.body : null
+}
+
+/**
+ * Shared schema-parse + email-rate-limit tail for /mfa/recover and /recovery/request — both
+ * validate their (differently-shaped) body, then apply the same per-email DB-backed bucket
+ * (AC-11) keyed off whatever `email` field the parsed body carries.
+ */
+async function parseBodyAndEnforceEmailRateLimit<T extends { email: string }>(
+  schema: z.ZodType<T>,
+  normalizedBody: unknown,
+  reply: FastifyReply
+): Promise<T | null> {
+  const parsed = schema.safeParse(normalizedBody)
+  if (!parsed.success) {
+    reply.status(422).send(validationError(parsed.error, 'body'))
+    return null
+  }
+  if (!(await enforceRecoverRateLimit(`email:${parsed.data.email}`, 5, reply))) return null
+  return parsed.data
+}
+
 async function sendMfaAction<T>(
   reply: FastifyReply,
   action: () => Promise<T>
@@ -208,6 +285,22 @@ function accessTokenExpFromRequest(fastify: FastifyApp, req: FastifyRequest): Da
 
 function sendAppError(reply: FastifyReply, error: AppError) {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+}
+
+/**
+ * AC-16: recovery request/completion self-manage their own transaction (org context isn't known
+ * before token/email resolution — see recovery.ts), so a failed-closed audit write surfaces as a
+ * thrown SameTransactionAuditWriteError instead of SecureRoute's own audit-phase handling. Mirror
+ * SecureRoute's 503 audit_write_failed contract here.
+ */
+function sendRecoveryFailure(reply: FastifyReply, error: unknown): unknown {
+  if (error instanceof SameTransactionAuditWriteError) {
+    return reply
+      .status(503)
+      .send({ code: 'audit_write_failed', message: 'Audit logging is unavailable' })
+  }
+  if (error instanceof AppError) return sendAppError(reply, error)
+  throw error
 }
 
 async function enforceRecoverRateLimit(
@@ -592,23 +685,20 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         200: mfaRecoverResponseSchema,
         401: ApiErrorSchema,
         422: ApiErrorSchema,
-        429: z.object({
-          code: z.literal('rate_limit_exceeded'),
-          message: z.string(),
-          retryAfterSeconds: z.number().int().positive(),
-        }),
+        429: RateLimitExceededResponseSchema,
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      if (!(await enforceRecoverRateLimit(`ip:${req.ip}`, 10, reply))) return reply
-      const normalized = normalizeEmailBodyForRoute(req.body, reply)
-      if (!normalized.success) return normalized.reply
-      const parsed = mfaRecoverBodySchema.safeParse(normalized.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
-      const normalizedEmail = parsed.data.email
-      if (!(await enforceRecoverRateLimit(`email:${normalizedEmail}`, 5, reply))) return reply
+      const normalizedBody = await enforceIpRateLimitAndNormalizeEmailBody(req, reply)
+      if (normalizedBody === null) return reply
+      const parsed = await parseBodyAndEnforceEmailRateLimit(
+        mfaRecoverBodySchema,
+        normalizedBody,
+        reply
+      )
+      if (!parsed) return reply
       try {
-        const result = await recoverWithCode(parsed.data, metaFromRequest(req))
+        const result = await recoverWithCode(parsed, metaFromRequest(req))
         await sendPendingMfaNotifications(fastify, result.notificationJobs)
         return sendAuthSession(fastify, reply, result, {
           remainingRecoveryCodes: result.remainingRecoveryCodes,
@@ -616,6 +706,163 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       } catch (error) {
         if (error instanceof AppError) return sendAppError(reply, error)
         throw error
+      }
+    },
+  })
+
+  // Story 4.3 AC-9/AC-11/AC-12: self-initiated account recovery request. Public, anti-enumeration
+  // (always 202 unless the no-admin boundary applies), dual IP+email rate-limited exactly like
+  // /mfa/recover above.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/recovery/request',
+    schema: {
+      response: {
+        202: RecoveryRequestResponseSchema,
+        404: RecoveryNoAdminResponseSchema,
+        422: ApiErrorSchema,
+        429: RateLimitExceededResponseSchema,
+      },
+    },
+    security: {
+      requireAuth: false,
+      writeAuditEvent: false,
+      // AC-11's dual IP+email bucket scheme is enforced manually below via
+      // enforceRecoverRateLimit (same helper /mfa/recover uses) — disable SecureRoute's own
+      // single-bucket limiter so the two don't double-count.
+      rateLimit: false,
+    },
+    handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const normalizedBody = await enforceIpRateLimitAndNormalizeEmailBody(req, reply)
+      if (normalizedBody === null) return reply
+      const parsed = await parseBodyAndEnforceEmailRateLimit(
+        RecoveryRequestBodySchema,
+        normalizedBody,
+        reply
+      )
+      if (!parsed) return reply
+      try {
+        const result = await requestSelfRecovery(parsed.email, req)
+        if (result.blocked) {
+          return reply.status(404).send({
+            code: 'no_admin_available',
+            message:
+              'This account cannot use self-service recovery. Contact your platform administrator.',
+          })
+        }
+        reply.status(202)
+        return { message: 'If that email is registered, a recovery link has been sent.' }
+      } catch (error) {
+        return sendRecoveryFailure(reply, error)
+      }
+    },
+  })
+
+  // Story 4.3 AC-13: public token peek — masked email, no mutation, used by the web UI to decide
+  // what to render before submitting anything (mirrors GET /invitations/:token's peek role).
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/recovery/:token',
+    schema: {
+      response: {
+        200: RecoveryPeekResponseSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      requireAuth: false,
+      writeAuditEvent: false,
+      rateLimit: { max: 30, timeWindowMs: 60_000, key: 'GET /api/v1/auth/recovery/:token' },
+    },
+    handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const parsed = parseRecoveryTokenParams(req, reply)
+      if (!parsed) return reply
+      const result = await peekRecoveryToken(parsed.token)
+      if (!result.ok) return sendRecoveryStatusError(reply, result.error)
+      return { data: { email: result.email, mfaCurrentlyEnrolled: result.mfaCurrentlyEnrolled } }
+    },
+  })
+
+  // Story 4.3 AC-15/D1: stages a fresh TOTP secret for the recovery token's user. Does not
+  // consume the token — only /recovery/:token/complete does.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/recovery/:token/mfa/start',
+    schema: {
+      response: {
+        200: RecoveryMfaStartResponseSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      requireAuth: false,
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/auth/recovery/:token/mfa/start',
+      },
+    },
+    handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const parsed = parseRecoveryTokenParams(req, reply)
+      if (!parsed) return reply
+      const result = await startRecoveryMfa(parsed.token)
+      if (!result.ok) return sendRecoveryStatusError(reply, result.error)
+      return {
+        data: { otpauthUrl: result.otpauthUrl, secret: result.secret, qrCodeSvg: result.qrCodeSvg },
+      }
+    },
+  })
+
+  // Story 4.3 AC-14/AC-15/AC-19: recovery completion — password reset, optional MFA re-enrollment
+  // confirm, and multi-org session invalidation, all in one transaction (recovery.ts).
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/recovery/:token/complete',
+    schema: {
+      body: RecoveryCompleteBodySchema,
+      response: {
+        200: RecoveryCompleteResponseSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      requireAuth: false,
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/auth/recovery/:token/complete',
+      },
+    },
+    handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const paramsParsed = parseRecoveryTokenParams(req, reply)
+      if (!paramsParsed) return reply
+      const bodyParsed = RecoveryCompleteBodySchema.safeParse(req.body)
+      if (!bodyParsed.success)
+        return reply.status(422).send(validationError(bodyParsed.error, 'body'))
+      try {
+        const result = await completeAccountRecovery(paramsParsed.token, bodyParsed.data, req)
+        if (!result.ok) return sendRecoveryStatusError(reply, result.error)
+        return {
+          data: {
+            email: result.email,
+            sessionsRevoked: result.sessionsRevoked,
+            mfaReEnrolled: result.mfaReEnrolled,
+            recoveryCodes: result.recoveryCodes,
+          },
+        }
+      } catch (error) {
+        return sendRecoveryFailure(reply, error)
       }
     },
   })

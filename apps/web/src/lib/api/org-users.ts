@@ -10,12 +10,26 @@ export type OrgUserProject = {
   role: ProjectRole
 }
 
+export type OrgUserStatus = 'active' | 'deactivated'
+
 export type OrgUser = {
   userId: string
   email: string
   displayName: string
   orgRole: OrgRole
+  status: OrgUserStatus
   projects: OrgUserProject[]
+}
+
+export type DeactivateOrgUserResult = {
+  userId: string
+  revokedSessionCount: number
+  revokedInvitationCount: number
+}
+
+export type SendRecoveryLinkResult = {
+  userId: string
+  linkSent: boolean
 }
 
 export type ProjectMember = {
@@ -38,6 +52,24 @@ export function removeOrgUser(fetchFn: typeof fetch, userId: string) {
     fetchFn,
     `/api/v1/org/users/${userId}`,
     { method: 'DELETE' }
+  )
+}
+
+/** Story 4.3 AC-2: immediate session/invitation revocation, org-scoped, one-way. */
+export function deactivateOrgUser(fetchFn: typeof fetch, userId: string) {
+  return apiFetch<DeactivateOrgUserResult>(
+    fetchFn,
+    `/api/v1/org/users/${userId}/deactivate`,
+    jsonBody('POST')
+  )
+}
+
+/** Story 4.3 AC-10: admin-mediated recovery link, for a teammate who can't reach /recovery themselves. */
+export function sendRecoveryLink(fetchFn: typeof fetch, userId: string) {
+  return apiFetch<SendRecoveryLinkResult>(
+    fetchFn,
+    `/api/v1/org/users/${userId}/recovery/send-link`,
+    jsonBody('POST')
   )
 }
 

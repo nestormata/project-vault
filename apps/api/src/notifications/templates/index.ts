@@ -7,6 +7,10 @@ import {
   renderSecurityMfaRecoveryUsed,
 } from './security-mfa-recovery.js'
 import { renderProjectInvitationCreated } from './project-invitation-created.js'
+import {
+  renderAccountRecoveryLinkCreated,
+  renderAccountRecoveryLinkSent,
+} from './account-recovery.js'
 
 export type EmailRender = {
   subject: string
@@ -50,6 +54,26 @@ const EMAIL_RENDERERS: Record<string, (payload: Record<string, unknown>) => Emai
   },
   'project.invitation_created': (payload) => {
     const { subject, text, html } = renderProjectInvitationCreated(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: text.slice(0, 500),
+    }
+  },
+  'auth.recovery_link_created': (payload) => {
+    const { subject, text, html } = renderAccountRecoveryLinkCreated(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: text.slice(0, 500),
+    }
+  },
+  'auth.recovery_link_sent': (payload) => {
+    const { subject, text, html } = renderAccountRecoveryLinkSent(payload)
     return {
       subject,
       text,

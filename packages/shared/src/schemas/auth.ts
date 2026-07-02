@@ -1,9 +1,13 @@
 import { z } from 'zod/v4'
 
+// Shared account-password strength rule — reused by registration and by account recovery's
+// password reset (Story 4.3 AC-14) so both entry points enforce identical bounds.
+export const PasswordSchema = z.string().min(12).max(256)
+
 export const RegisterRequestSchema = z
   .object({
     email: z.email().max(254),
-    password: z.string().min(12).max(256),
+    password: PasswordSchema,
     orgName: z.string().min(1).max(128).trim().optional(),
     invitationToken: z.string().min(1).max(512).optional(),
   })

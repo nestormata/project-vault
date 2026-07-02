@@ -416,6 +416,46 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'project.ownership_transferred',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  'POST /api/v1/org/users/:userId/deactivate': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org.user_deactivated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/org/users/:userId/recovery/send-link': {
+    action: SECURITY_ACTION,
+    auditEvent: 'auth.recovery_link_sent',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  // Story 4.3: the three public /auth/recovery/* mutations self-manage their own transaction
+  // (recovery.ts) instead of SecureRoute's org-scoped one — org context isn't resolvable before
+  // the token/email is looked up. Audit rows are still written fail-closed inside that
+  // transaction (see recovery.ts's writeRecoveryAuditPerOrg / writeHumanAuditEntryOrFailClosed
+  // calls), just not through the secureCtx.tx shape this registry's opt-out check expects, so
+  // these are documented as an omission here rather than declaring an auditEvent it can't verify.
+  'POST /api/v1/auth/recovery/request': {
+    action: SECURITY_ACTION,
+    auditOmissionReason:
+      'Public, pre-org-context endpoint (org unknown until email/user resolves). Audit rows (auth.recovery_requested / auth.recovery_blocked_no_admin, one per active org membership) are written fail-closed inside a hand-rolled transaction in recovery.ts, not through SecureRoute.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/auth/recovery/:token': {
+    action: 'read',
+    auditOmissionReason:
+      'Public non-mutating peek used to route the web UI before any mutation; reveals only a masked email + MFA-enrolled flag to the token holder (AC-13).',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/auth/recovery/:token/mfa/start': {
+    action: SECURITY_ACTION,
+    auditOmissionReason:
+      'Only stages a pending TOTP secret (does not consume the token or change any confirmed credential state); the security-relevant event is recorded at /complete (auth.recovery_completed) when the enrollment is actually confirmed or the flow otherwise concludes.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/auth/recovery/:token/complete': {
+    action: SECURITY_ACTION,
+    auditOmissionReason:
+      'Public, pre-org-context endpoint. Audit rows (auth.recovery_completed, one per active org membership) are written fail-closed inside a hand-rolled transaction in recovery.ts, not through SecureRoute.',
+    reviewer: SECURITY_OWNER,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
