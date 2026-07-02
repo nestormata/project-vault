@@ -4,6 +4,17 @@
 **Reviewed file:** `_bmad-output/implementation-artifacts/5-2-rotation-checklist-confirmation-and-completion.md`
 **Reviewer:** bmad-review-adversarial-general
 
+## Resolution (2026-07-01)
+
+All `critical`/`high` findings (1-4) were addressed directly in the story file:
+
+- **#1 (critical, rate-limit key ambiguity):** verified against the actual implementation (`apps/api/src/lib/secure-route.ts`, `apps/api/src/lib/route-helpers.ts`) that `enforceUserRateLimit` always prefixes the bucket with `auth.userId`, so the `key: '<METHOD PATH>'` shape never pools requests across users/orgs. The finding's premise (a literal method+path key implies a shared bucket) does not hold against the real code — the story's AC-23 was expanded with an explicit note documenting and citing this, so no implementer re-derives or second-guesses it.
+- **#2 (high, `horizonDays: 0` boundary):** AC-15's org-dashboard bullet now applies an explicit `results.filter((r) => r.status === 'overdue')` step rather than relying on the inclusion-boundary math to coincide with the status label; a boundary test case was added.
+- **#3 (high, no idempotent-retry guidance for `fail`/`retry`):** both invalid-state `409` responses (AC-5, AC-7) now include `lastActedBy`/`lastActedAt`, with guidance paragraphs explaining how a client can use them to distinguish "my own retried call landed" from "someone else raced me," mirroring AC-3's existing `confirm` guidance.
+- **#4 (high, FR65 reference point ignores non-completed rotation history):** AC-14's reference-point computation now uses the most recent rotation row's `completedAt` (if `completed`) or `updatedAt` (any other terminal status) instead of falling back to `credentials.createdAt` whenever no rotation ever reached `completed`. An edge-case bullet + test was added.
+
+Medium/low findings (5-16) were left as-is — none were blocking, and resolving them was out of scope for this pass.
+
 ## Findings
 
 1. **[critical] Rate-limit key is ambiguous and may enable cross-tenant denial of service.** AC-23 specifies the four mutation endpoints use `{ max: 60, timeWindowMs: 60_000, key: '<METHOD PATH>' }` without stating whether the bucket is scoped per-org, per-user, or global across the whole instance. If the key is literally just method+path (as written), a single noisy or malicious tenant can exhaust the shared 60 req/min budget for `confirm`/`fail`/`retry`/`complete`, locking every other org out of rotation-checklist actions. Given the also_consider's explicit focus on tenant isolation, this ambiguity needs to be resolved (e.g., key must include `orgId`) before implementation, not left implicit.

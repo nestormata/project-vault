@@ -274,9 +274,11 @@ POST .../rotations/b2a1c3d4-.../checklist/c1c1c1c1-.../fail
 **Then** the response is:
 ```http
 HTTP 409
-{ "code": "invalid_item_status", "message": "Cannot fail an item with status 'confirmed'.", "currentStatus": "confirmed" }
+{ "code": "invalid_item_status", "message": "Cannot fail an item with status 'confirmed'.", "currentStatus": "confirmed", "lastActedBy": "11111111-1111-4111-8111-111111111111", "lastActedAt": "2026-07-01T14:45:00.000Z" }
 ```
 (An already-`failed` item must go through `retry` first, which resets it to `unconfirmed`, before it can be failed again — this is what makes `retryCount` an accurate count of failure/retry cycles.)
+
+**And**, mirroring AC-3's idempotent-retry guidance for `confirm`, this `409` includes `lastActedBy`/`lastActedAt` specifically so a client that lost the response to its own `fail` call can tell its retry apart from a race: if `lastActedBy` matches the retrying client's own `userId`, the retried call most likely observed its own prior write and can be treated as success (not a strict guarantee — a different user could theoretically act in the gap between the lost response and the retry, so a client that needs certainty should still re-fetch via `GET .../rotations/:rotationId`); if `lastActedBy` is a different user, someone else changed the item's state first. Unlike `confirm`'s single well-known prior state (`already_confirmed`), `fail`'s `409` can be reached from three different prior statuses (`confirmed`, `failed`, `max_retries_exceeded`) — the `currentStatus` field disambiguates which one, so a client that only expects to have raced its own retry (not a genuine `confirmed`/`max_retries_exceeded` transition by someone else) can distinguish that case too.
 
 **Validation table** (request body `FailChecklistItemBodySchema = z.object({ reason: z.string().trim().min(1).max(1024), retryScheduledAt: z.iso.datetime().nullable().optional() }).strict()`):
 
@@ -325,9 +327,9 @@ HTTP 422
 **And** a subsequent `retry` call on the now-`max_retries_exceeded` item (status no longer `failed`) hits the ordinary AC-5-style invalid-state guard:
 ```http
 HTTP 409
-{ "code": "invalid_item_status", "message": "Cannot retry an item with status 'max_retries_exceeded'.", "currentStatus": "max_retries_exceeded" }
+{ "code": "invalid_item_status", "message": "Cannot retry an item with status 'max_retries_exceeded'.", "currentStatus": "max_retries_exceeded", "lastActedBy": "11111111-1111-4111-8111-111111111111", "lastActedAt": "2026-07-01T14:50:00.000Z" }
 ```
-No further alert fires on this second call — the escalation already happened exactly once, at the transition.
+No further alert fires on this second call — the escalation already happened exactly once, at the transition. This `409` includes `lastActedBy`/`lastActedAt` for the same idempotent-retry reasoning documented in AC-5: a client that lost the response to the retry call that caused this escalation can compare `lastActedBy` against its own `userId` to tell "my own retry call caused this" apart from "someone else's retry call raced mine."
 
 **And** the only way out of `max_retries_exceeded` is `confirm` (AC-2 explicitly allows confirming from this status) — there is no "reset retry count" or "un-escalate" endpoint in this story. This is intentional: once escalated, resolution requires either a human directly confirming after manual intervention, or the rotation being abandoned/recovered by Story 5.3's stale-rotation machinery (out of scope here — see AC-25).
 
@@ -453,7 +455,7 @@ HTTP 422
 **Given** credentials in a project may have a `rotationSchedule` cron string (Story 2.4, e.g. `"0 0 1 * *"` — monthly),
 **When** a user with `viewer`+ role calls `GET .../rotations/upcoming?horizon=30d` (query: `UpcomingRotationsQuerySchema = z.object({ horizon: z.enum(['7d','30d','90d']).default('30d') }).strict()`),
 **Then**, for every credential in the project with a non-null `rotationSchedule` **and no currently-active rotation** (`rotations.status IN ('in_progress','stale_recovery')` for that credential — checked via the existing `idx_rotations_credential_status` index from 5.1):
-1. Compute a reference point: the `completedAt` of the credential's most recent `status = 'completed'` rotation, or `credentials.createdAt` if the credential has never completed a rotation.
+1. Compute a reference point: fetch the credential's most recent rotation row (`ORDER BY created_at DESC LIMIT 1`), regardless of status. Because credentials with an `in_progress`/`stale_recovery` rotation are already excluded from this endpoint entirely (see the filter above), any row found here is necessarily in a terminal state (`completed`, or a Story-5.3-introduced terminal state such as `abandoned`/`break_glass_complete`). If a row is found, use its `completedAt` when set (the `completed` case); otherwise use its `updatedAt` (covering non-`completed` terminal transitions — `updatedAt` is used rather than a status-specific timestamp column so this story does not need to depend on schema Story 5.3 has not yet defined). If the credential has no rotation row at all, use `credentials.createdAt`. **This matters:** a credential whose only rotation history is a non-`completed` terminal rotation (e.g. abandoned) must not fall all the way back to `credentials.createdAt` — that would produce a badly stale "next due" date for a credential that in fact has real, recent rotation activity.
 2. Compute `nextDueAt = CronExpressionParser.parse(rotationSchedule, { currentDate: referencePoint }).next().toDate()` (same `cron-parser` library and API 2.4's `validateRotationCron()` already imports — `packages/shared/src/validation/rotation-cron.ts`).
 3. Include the credential if `nextDueAt <= now + horizonDays` (7/30/90 depending on the query param); `status: 'overdue'` if `nextDueAt < now`, else `status: 'pending'`.
 
@@ -476,6 +478,8 @@ Sorted `nextDueAt ASC`.
 
 **Edge case — credential with an active `in_progress` rotation:** excluded, even if its cron-computed due date would otherwise land inside the horizon. Rationale: the live rotation status view (AC-13) is the correct signal once a rotation has actually started; showing it as also "upcoming/overdue" would be a confusing double-signal for the same underlying event.
 
+**Edge case — credential whose only rotation history is a non-`completed` terminal rotation:** the reference point uses that rotation's `updatedAt`, not `credentials.createdAt` (see step 1 above). **Test:** seed a credential, give it one `abandoned` rotation with a recent `updatedAt` and no `completedAt`, and a `rotationSchedule` that would compute as far-overdue if (incorrectly) anchored to `credentials.createdAt`; assert `GET .../rotations/upcoming` computes `nextDueAt` from the abandoned rotation's `updatedAt`, not from `credentials.createdAt`.
+
 ---
 
 ### AC-15: Dashboard Placeholder Wiring — Org & Project
@@ -484,12 +488,12 @@ Sorted `nextDueAt ASC`.
 **When** this story ships,
 **Then** both are wired to a new shared helper, `computeUpcomingRotations(tx, { projectId?: string, horizonDays: number })` (exported from `apps/api/src/modules/rotation/service.ts`, reusing the exact query logic from AC-14 — no duplicated cron-computation code):
 
-- **Org dashboard** (`getOrgDashboardData`, line 121-165): `projectsWithOverdueRotations` — call `computeUpcomingRotations(tx, { horizonDays: 0 })` (no `projectId` = org-wide, across all projects the RLS context can see; `horizonDays: 0` means "only include `status: 'overdue'` items — nothing merely pending"), map to `{ count: results.length, items: results.slice(0, 20) }` (same 20-item cap the adjacent `expiringWithin30Days` slice already uses).
+- **Org dashboard** (`getOrgDashboardData`, line 121-165): `projectsWithOverdueRotations` — call `computeUpcomingRotations(tx, { horizonDays: 0 })` (no `projectId` = org-wide, across all projects the RLS context can see), then **explicitly filter the result to `results.filter((r) => r.status === 'overdue')`** before mapping to `{ count: filtered.length, items: filtered.slice(0, 20) }` (same 20-item cap the adjacent `expiringWithin30Days` slice already uses). **Do not rely on `horizonDays: 0`'s inclusion boundary alone to guarantee "overdue-only"** — AC-14's inclusion rule is `nextDueAt <= now + horizonDays` (inclusive), while its `status` label is `'overdue'` only when `nextDueAt < now` (strict). A credential whose `nextDueAt` lands exactly at `now` is included by the `horizonDays: 0` filter but labeled `'pending'` by that same function; without the explicit `status === 'overdue'` filter here, the org dashboard's overdue bucket could silently include that non-overdue boundary item.
 - **Project dashboard** (`getProjectDashboardData` → `buildProjectDashboard`): `upcomingRotations` — call `computeUpcomingRotations(tx, { projectId, horizonDays: 30 })` (fixed 30-day default, no query-param horizon on the dashboard endpoint — the dashboard is a fixed summary view, not a filterable list).
 
 **And** `buildProjectDashboard`'s existing `isEmpty`/`suggestedActions` computation (line 91, 106) is **not** changed to factor in `upcomingRotations` — a project with zero credentials/services but one upcoming rotation would be a contradiction (rotations only exist for credentials that exist), so this is a non-issue, not a gap; no test needed for that interaction beyond normal coverage.
 
-**Test:** seed a project with one credential past its cron due date and one not-yet-due; assert `GET /api/v1/dashboard` (org) shows the overdue one in `projectsWithOverdueRotations.items` and NOT the pending one (since `horizonDays: 0` excludes non-overdue); assert `GET .../projects/:projectId` dashboard shows **both** in `upcomingRotations` (30-day default horizon includes pending-within-30-days too).
+**Test:** seed a project with one credential past its cron due date and one not-yet-due; assert `GET /api/v1/dashboard` (org) shows the overdue one in `projectsWithOverdueRotations.items` and NOT the pending one (since `horizonDays: 0` excludes non-overdue); assert `GET .../projects/:projectId` dashboard shows **both** in `upcomingRotations` (30-day default horizon includes pending-within-30-days too). **And** a third credential whose `nextDueAt` lands exactly at `now` (the inclusion/status-label boundary) — assert it does **not** appear in `projectsWithOverdueRotations.items`, proving the explicit `status === 'overdue'` filter (not just the `horizonDays: 0` inclusion boundary) is what gates this list.
 
 ---
 
@@ -649,6 +653,8 @@ HTTP 503
 **Given** the repo-wide `120 req/min` default applies unless overridden,
 **When** the five routes are registered,
 **Then**: the four mutation endpoints use `{ max: 60, timeWindowMs: 60_000, key: '<METHOD PATH>' }` — more generous than 5.1's `30/min` initiation limit (checklist confirmation is a routine, frequent action during an active rotation with many dependent systems, unlike the deliberately-infrequent initiation), but still tighter than the `120/min` default. `GET .../rotations/upcoming` uses the standard `120/min` default (no override).
+
+**And** the bucket this `key` selects is never global or org-wide, despite the literal string containing only method+path: `enforceRouteRateLimit`/`enforceUserRateLimit` (`apps/api/src/lib/secure-route.ts`, `apps/api/src/lib/route-helpers.ts`) always prefix the bucket with the caller's `auth.userId` (`` `${userId}:${key}` ``) before applying `max`/`timeWindowMs` — confirmed against the actual implementation, not assumed. The `key` here only distinguishes *which endpoint's* budget a given authenticated user is spending; it does not pool requests across different users or orgs. One noisy or malicious user can only ever exhaust their own 60/min budget for these routes, never another user's or another org's. (5.1's `POST .../rotations` rate limit uses this identical `key` shape for the same reason — this is an established, verified codebase convention, not a new gap introduced by this story.)
 
 ---
 
