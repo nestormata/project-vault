@@ -29,7 +29,7 @@ import {
   getProjectDashboardData,
   lookupProjectStats,
 } from './dashboard-stats.js'
-import { removeProjectMembership } from './member-management.js'
+import { getProjectMembershipRole, removeProjectMembership } from './member-management.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 
@@ -52,6 +52,19 @@ async function callerProjectRole(
     )
     .limit(1)
   return membership?.role
+}
+
+// Shared member-management authorization: a project admin/owner OR an org admin/owner may view and
+// mutate a project's member list (D1). Dedupes the identical check across the GET-members and
+// DELETE-member handlers; each call site keeps its own 403 message.
+async function callerCanManageMembers(
+  secureCtx: SecureRouteContext,
+  projectId: string
+): Promise<boolean> {
+  const callerRole = await callerProjectRole(secureCtx, projectId)
+  const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
+  const isOrgAdminOrOwner = secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
+  return isProjectAdminOrOwner || isOrgAdminOrOwner
 }
 
 function serializeProjectDetail(project: typeof projects.$inferSelect, role: 'owner') {
@@ -393,11 +406,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         .limit(1)
       if (!project) return reply.status(404).send(PROJECT_NOT_FOUND)
 
-      const callerRole = await callerProjectRole(secureCtx, params.projectId)
-      const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
-      const isOrgAdminOrOwner =
-        secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
-      if (!isProjectAdminOrOwner && !isOrgAdminOrOwner) {
+      if (!(await callerCanManageMembers(secureCtx, params.projectId))) {
         return reply.status(403).send({
           code: 'insufficient_role',
           message: 'Only project admins/owners or org admins/owners can view the member list',
@@ -455,28 +464,18 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      const [targetMembership] = await secureCtx.tx
-        .select({ role: projectMemberships.role })
-        .from(projectMemberships)
-        .where(
-          and(
-            eq(projectMemberships.projectId, params.projectId),
-            eq(projectMemberships.userId, params.userId),
-            eq(projectMemberships.orgId, secureCtx.auth.orgId)
-          )
-        )
-        .limit(1)
-      if (!targetMembership) {
+      const targetMembershipRole = await getProjectMembershipRole(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        projectId: params.projectId,
+        userId: params.userId,
+      })
+      if (!targetMembershipRole) {
         return reply
           .status(404)
           .send({ code: 'membership_not_found', message: 'User is not a member of this project' })
       }
 
-      const callerRole = await callerProjectRole(secureCtx, params.projectId)
-      const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
-      const isOrgAdminOrOwner =
-        secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
-      if (!isProjectAdminOrOwner && !isOrgAdminOrOwner) {
+      if (!(await callerCanManageMembers(secureCtx, params.projectId))) {
         return reply.status(403).send({
           code: 'insufficient_role',
           message: 'Only project admins/owners or org admins/owners can remove project members',
@@ -484,7 +483,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       // D5 item 1: never remove the last owner of a project (self-removal is no exception).
-      if (targetMembership.role === 'owner') {
+      if (targetMembershipRole === 'owner') {
         const otherOwners = await secureCtx.tx
           .select({ userId: projectMemberships.userId })
           .from(projectMemberships)
@@ -511,7 +510,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.PROJECT_MEMBER_REMOVED,
         resourceId: params.userId,
-        payload: { projectId: params.projectId, removedRole: targetMembership.role },
+        payload: { projectId: params.projectId, removedRole: targetMembershipRole },
         request: req,
       })
 

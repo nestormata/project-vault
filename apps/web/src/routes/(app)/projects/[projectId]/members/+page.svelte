@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
+  import RoleSelectOptions from '$lib/components/RoleSelectOptions.svelte'
   import {
     createInvitation,
     revokeInvitation,
@@ -183,9 +184,7 @@
                           (event.currentTarget as HTMLSelectElement).value as SettableProjectRole
                         )}
                     >
-                      <option value="admin">admin</option>
-                      <option value="member">member</option>
-                      <option value="viewer">viewer</option>
+                      <RoleSelectOptions />
                     </select>
                   {/if}
                 </td>

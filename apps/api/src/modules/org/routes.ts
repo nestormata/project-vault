@@ -13,6 +13,7 @@ import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { listSecurityAlerts } from './security-alerts.js'
 import { listOrgUsers, removeUserFromOrgMemberships } from './user-management.js'
+import { getProjectMembershipRole } from '../projects/member-management.js'
 import {
   OrgUserParamsSchema,
   OrgUserProjectRoleParamsSchema,
@@ -305,18 +306,12 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
 
-      const [membership] = await secureCtx.tx
-        .select({ role: projectMemberships.role })
-        .from(projectMemberships)
-        .where(
-          and(
-            eq(projectMemberships.projectId, params.projectId),
-            eq(projectMemberships.userId, params.userId),
-            eq(projectMemberships.orgId, secureCtx.auth.orgId)
-          )
-        )
-        .limit(1)
-      if (!membership) {
+      const membershipRole = await getProjectMembershipRole(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        projectId: params.projectId,
+        userId: params.userId,
+      })
+      if (!membershipRole) {
         return reply.status(404).send({
           code: 'membership_not_found',
           message: 'User is not a member of this project',
@@ -324,7 +319,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       // D5 item 3: cannot demote an existing owner via this endpoint.
-      if (membership.role === 'owner') {
+      if (membershipRole === 'owner') {
         return reply.status(409).send({
           code: 'must_transfer_ownership_first',
           message: 'Use transfer-ownership to change the project owner',
@@ -349,7 +344,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         resourceId: params.userId,
         payload: {
           projectId: params.projectId,
-          oldRole: membership.role,
+          oldRole: membershipRole,
           newRole: parsed.data.role,
         },
         request: req,

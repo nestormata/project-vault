@@ -2,16 +2,18 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq, isNull } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
-import { orgMemberships, projectMemberships, sessions, users } from '@project-vault/db/schema'
+import { orgMemberships, projectMemberships, sessions } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
   createProjectViaApi as createProject,
   expectAuditWriteFailed,
-  mintOrgSessionCookies,
-  registerAndLoginViaApi,
   type CookieJar,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import {
+  MEMBERSHIP_TEST_PASSWORD as PASSWORD,
+  createMembershipTestHelpers,
+} from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { bootProjectRouteTestApp } from '../projects/project-route-test-bootstrap.js'
 
@@ -19,60 +21,10 @@ const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
-const PASSWORD = 'correct-horse-battery-staple'
+const { registerOwner, addUserToOrg, addProjectMember, projectRoleOf } =
+  createMembershipTestHelpers({ emailPrefix: 'orgusers', orgNamePrefix: 'OrgUsers' })
+
 const REJECTS_NON_ADMIN = 'rejects a non-admin caller (403)'
-
-function uniqueEmail(label: string): string {
-  return `orgusers-${label}-${randomUUID()}@example.com`
-}
-
-async function enrollMfa(userId: string): Promise<void> {
-  await getDb().update(users).set({ mfaEnrolledAt: new Date() }).where(eq(users.id, userId))
-}
-
-async function registerOwner(app: TestApp, label: string) {
-  const user = await registerAndLoginViaApi(app, {
-    email: uniqueEmail(label),
-    password: PASSWORD,
-    orgName: `OrgUsers ${label} ${randomUUID()}`,
-  })
-  await enrollMfa(user.userId)
-  return user
-}
-
-/** Registers a user in their own org, then grafts them into `orgId` with the given roles. */
-async function addUserToOrg(
-  app: TestApp,
-  orgId: string,
-  label: string,
-  opts: { orgRole?: string } = {}
-): Promise<{ userId: string; email: string; cookies: CookieJar }> {
-  const email = uniqueEmail(label)
-  const user = await registerAndLoginViaApi(app, {
-    email,
-    password: PASSWORD,
-    orgName: `Foreign ${label} ${randomUUID()}`,
-  })
-  await enrollMfa(user.userId)
-  await withOrg(orgId, (tx) =>
-    tx.insert(orgMemberships).values({ orgId, userId: user.userId, role: opts.orgRole ?? 'member' })
-  )
-  // The login cookie above is scoped to the user's *own* org. Re-mint a session bound to the
-  // target org so requests made with these cookies authenticate as a member of `orgId`.
-  const cookies = await mintOrgSessionCookies(app, user.userId, orgId)
-  return { userId: user.userId, email, cookies }
-}
-
-async function addProjectMember(
-  orgId: string,
-  projectId: string,
-  userId: string,
-  role: string
-): Promise<void> {
-  await withOrg(orgId, (tx) =>
-    tx.insert(projectMemberships).values({ orgId, projectId, userId, role })
-  )
-}
 
 async function setProjectRole(
   orgId: string,
@@ -96,22 +48,6 @@ async function orgRoleOf(orgId: string, userId: string): Promise<string | undefi
       .select({ role: orgMemberships.role })
       .from(orgMemberships)
       .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)))
-  )
-  return row?.role
-}
-
-async function projectRoleOf(
-  orgId: string,
-  projectId: string,
-  userId: string
-): Promise<string | undefined> {
-  const [row] = await withOrg(orgId, (tx) =>
-    tx
-      .select({ role: projectMemberships.role })
-      .from(projectMemberships)
-      .where(
-        and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.userId, userId))
-      )
   )
   return row?.role
 }

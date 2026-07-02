@@ -18,3 +18,27 @@ export async function removeProjectMembership(
     .delete(projectMemberships)
     .where(and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.userId, userId)))
 }
+
+/**
+ * Look up a single user's role within a project, scoped to the org. Returns the role string, or
+ * `undefined` when the user is not a member. Shared between org's project-role-change handler and
+ * projects' member-removal handler so the identical `(projectId, userId, orgId)` lookup lives in
+ * one place; each call site keeps its own 404 reply.
+ */
+export async function getProjectMembershipRole(
+  tx: Tx,
+  { orgId, projectId, userId }: { orgId: string; projectId: string; userId: string }
+): Promise<string | undefined> {
+  const [membership] = await tx
+    .select({ role: projectMemberships.role })
+    .from(projectMemberships)
+    .where(
+      and(
+        eq(projectMemberships.projectId, projectId),
+        eq(projectMemberships.userId, userId),
+        eq(projectMemberships.orgId, orgId)
+      )
+    )
+    .limit(1)
+  return membership?.role
+}
