@@ -53,6 +53,22 @@ export const OrgUserRemovedResponseSchema = z
   })
   .meta({ id: 'OrgUserRemovedResponse' })
 
+// D5 item 2: the 409 body for a sole-project-owner block carries the offending projects so the
+// caller can transfer ownership. A plain ApiError schema would strip `projects` during response
+// serialization, so this endpoint needs its own 409 shape.
+export const SoleOwnerConflictResponseSchema = z
+  .object({
+    code: z.literal('sole_owner_of_projects'),
+    message: z.string(),
+    projects: z.array(
+      z.object({
+        projectId: z.uuid(),
+        projectName: z.string(),
+      })
+    ),
+  })
+  .meta({ id: 'SoleOwnerConflictResponse' })
+
 export const ProjectRoleChangeResponseSchema = z
   .object({
     data: z.object({

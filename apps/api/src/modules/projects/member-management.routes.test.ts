@@ -7,6 +7,7 @@ import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
   createProjectViaApi as createProject,
+  mintOrgSessionCookies,
   registerAndLoginViaApi,
   type CookieJar,
 } from '../../__tests__/helpers/auth-test-helpers.js'
@@ -54,7 +55,10 @@ async function addUserToOrg(
   await withOrg(orgId, (tx) =>
     tx.insert(orgMemberships).values({ orgId, userId: user.userId, role: opts.orgRole ?? 'member' })
   )
-  return { userId: user.userId, email, cookies: user.cookies }
+  // The login cookie above is scoped to the user's *own* org. Re-mint a session bound to the
+  // target org so requests made with these cookies authenticate as a member of `orgId`.
+  const cookies = await mintOrgSessionCookies(app, user.userId, orgId)
+  return { userId: user.userId, email, cookies }
 }
 
 async function addProjectMember(

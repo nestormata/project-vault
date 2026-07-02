@@ -373,7 +373,9 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member', // broad floor — real authorization is the in-handler check below.
+      // Broad floor — real authorization is the in-handler project-axis check below. Must admit
+      // org-viewers, since a project admin/owner can be an org-viewer (project-axis wins, D1).
+      minimumRole: 'viewer',
       requireMfa: false,
       writeAuditEvent: false,
       rateLimit: { max: 60, timeWindowMs: 60_000, key: 'GET /api/v1/projects/:projectId/members' },
@@ -436,7 +438,9 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member', // broad floor — real authorization is the in-handler check below.
+      // Broad floor — real authorization is the in-handler project-axis check below. Must admit
+      // org-viewers, since a project admin/owner can be an org-viewer (project-axis wins, D1).
+      minimumRole: 'viewer',
       requireMfa: true,
       writeAuditEvent: false,
       rateLimit: {

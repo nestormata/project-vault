@@ -1,3 +1,4 @@
+import { z } from 'zod/v4'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
@@ -19,6 +20,7 @@ import {
   ProjectRoleChangeBodySchema,
   ProjectRoleChangeResponseSchema,
   SecurityAlertsQuerySchema,
+  SoleOwnerConflictResponseSchema,
 } from './schema.js'
 
 export async function orgRoutes(fastify: FastifyApp): Promise<void> {
@@ -145,7 +147,9 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: ApiErrorSchema,
+        // 409 covers both last_org_owner (plain ApiError) and sole_owner_of_projects (carries
+        // the offending `projects` array). A union keeps `projects` from being serialized away.
+        409: z.union([SoleOwnerConflictResponseSchema, ApiErrorSchema]),
         422: ApiErrorSchema,
       },
     },
