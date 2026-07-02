@@ -91,7 +91,7 @@ development_status:
   epic-5: in-progress
   5-1-rotation-initiation-and-checklist-generation: ready-for-dev
   5-2-rotation-checklist-confirmation-and-completion: ready-for-dev
-  5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: backlog
+  5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: ready-for-dev
   epic-5-retrospective: optional
 
   # Epic 6: Operational Monitoring & Status — Services, Certificates, Domains & Mobile
