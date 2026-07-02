@@ -29,6 +29,7 @@ import {
   getProjectDashboardData,
   lookupProjectStats,
 } from './dashboard-stats.js'
+import { removeProjectMembership } from './member-management.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 
@@ -502,14 +503,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         }
       }
 
-      await secureCtx.tx
-        .delete(projectMemberships)
-        .where(
-          and(
-            eq(projectMemberships.projectId, params.projectId),
-            eq(projectMemberships.userId, params.userId)
-          )
-        )
+      await removeProjectMembership(secureCtx.tx, params.projectId, params.userId)
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
         resourceType: 'project_membership',

@@ -2,7 +2,7 @@ import { z } from 'zod/v4'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
-import { orgMemberships, projectMemberships, projects, users } from '@project-vault/db/schema'
+import { orgMemberships, projectMemberships } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -12,6 +12,7 @@ import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { listSecurityAlerts } from './security-alerts.js'
+import { listOrgUsers, removeUserFromOrgMemberships } from './user-management.js'
 import {
   OrgUserParamsSchema,
   OrgUserProjectRoleParamsSchema,
@@ -97,43 +98,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (ctx) => {
       const secureCtx = ctx as SecureRouteContext
-
-      const orgUsers = await secureCtx.tx
-        .select({ userId: orgMemberships.userId, email: users.email, orgRole: orgMemberships.role })
-        .from(orgMemberships)
-        .innerJoin(users, eq(users.id, orgMemberships.userId))
-        .where(eq(orgMemberships.orgId, secureCtx.auth.orgId))
-
-      const projectRows = await secureCtx.tx
-        .select({
-          userId: projectMemberships.userId,
-          projectId: projectMemberships.projectId,
-          projectName: projects.name,
-          role: projectMemberships.role,
-        })
-        .from(projectMemberships)
-        .innerJoin(projects, eq(projects.id, projectMemberships.projectId))
-        .where(eq(projectMemberships.orgId, secureCtx.auth.orgId))
-
-      const projectsByUser = new Map<
-        string,
-        { projectId: string; projectName: string; role: string }[]
-      >()
-      for (const row of projectRows) {
-        const list = projectsByUser.get(row.userId) ?? []
-        list.push({ projectId: row.projectId, projectName: row.projectName, role: row.role })
-        projectsByUser.set(row.userId, list)
-      }
-
-      return {
-        data: orgUsers.map((u) => ({
-          userId: u.userId,
-          email: u.email,
-          displayName: u.email, // D3: no dedicated profile column; derive from email.
-          orgRole: u.orgRole,
-          projects: projectsByUser.get(u.userId) ?? [],
-        })),
-      }
+      return { data: await listOrgUsers(secureCtx.tx, secureCtx.auth.orgId) }
     },
   })
 
@@ -244,24 +209,11 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
 
-      const removedProjects = await secureCtx.tx
-        .delete(projectMemberships)
-        .where(
-          and(
-            eq(projectMemberships.orgId, secureCtx.auth.orgId),
-            eq(projectMemberships.userId, params.userId)
-          )
-        )
-        .returning({ projectId: projectMemberships.projectId })
-
-      await secureCtx.tx
-        .delete(orgMemberships)
-        .where(
-          and(
-            eq(orgMemberships.orgId, secureCtx.auth.orgId),
-            eq(orgMemberships.userId, params.userId)
-          )
-        )
+      const { removedProjectCount } = await removeUserFromOrgMemberships(
+        secureCtx.tx,
+        secureCtx.auth.orgId,
+        params.userId
+      )
 
       // FR84 reuse — revokeAllUserSessionsInOrg writes its own SESSION_REVOKED audit rows.
       const { revokedCount } = await revokeAllUserSessionsInOrg({
@@ -278,7 +230,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.ORG_USER_REMOVED,
         resourceId: params.userId,
-        payload: { removedProjectCount: removedProjects.length },
+        payload: { removedProjectCount },
         request: req,
       })
 
