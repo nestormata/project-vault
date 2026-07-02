@@ -23,5 +23,17 @@
         <span class="text-gray-400">→</span>
       </a>
     </li>
+    <li>
+      <a
+        href={resolve('/settings/users')}
+        class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+      >
+        <div>
+          <p class="font-medium text-gray-900">Users</p>
+          <p class="text-sm text-gray-500">Org-wide members, project roles, and account removal</p>
+        </div>
+        <span class="text-gray-400">→</span>
+      </a>
+    </li>
   </ul>
 </div>

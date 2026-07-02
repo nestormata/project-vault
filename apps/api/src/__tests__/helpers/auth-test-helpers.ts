@@ -124,6 +124,48 @@ export async function registerAndLoginViaApi(
   }
 }
 
+/**
+ * Mints a real session bound to `orgId` for `userId` and returns its cookie jar.
+ *
+ * `registerAndLoginViaApi` always logs a user into the org they registered, so its cookie is
+ * scoped to that org. Tests that graft a user into a *second* org (multi-org membership) need a
+ * session whose JWT `orgId` claim points at that second org — otherwise every request authenticates
+ * back into the user's original org. This reuses the production session-creation path
+ * (`createLoginSessionInTx`) and the app's JWT signer so the resulting cookie is indistinguishable
+ * from one issued by the login route.
+ */
+export async function mintOrgSessionCookies(
+  app: TestApp,
+  userId: string,
+  orgId: string
+): Promise<CookieJar> {
+  const { withOrg } = await import('@project-vault/db')
+  const { createLoginSessionInTx } = await import('../../modules/auth/service.js')
+  const result = await withOrg(orgId, (tx) =>
+    createLoginSessionInTx(tx, { id: userId, identityTokenId: null }, orgId, {})
+  )
+  const accessJwt = await (
+    app as unknown as {
+      jwt: {
+        sign: (
+          payload: Record<string, unknown>,
+          options: { jti: string; expiresIn: number }
+        ) => Promise<string> | string
+      }
+    }
+  ).jwt.sign(
+    {
+      sub: result.tokens.accessClaims.sub,
+      orgId: result.tokens.accessClaims.orgId,
+      sessionVersion: result.tokens.accessClaims.sessionVersion,
+    },
+    { jti: result.tokens.accessClaims.jti, expiresIn: result.tokens.accessMaxAgeSec }
+  )
+  const jar: CookieJar = { 'access-token': accessJwt }
+  if (result.tokens.refreshOpaque) jar['refresh-token'] = result.tokens.refreshOpaque
+  return jar
+}
+
 export async function createProjectViaApi(
   app: TestApp,
   cookies: CookieJar,
