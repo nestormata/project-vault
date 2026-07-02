@@ -32,6 +32,8 @@ const IDENTITY_CLEANUP_JOB = 'identity-cleanup-job'
 const WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED = 'writeCredentialAuditOrFailClosed'
 const WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED = 'writeHumanAuditEntryOrFailClosed'
 const PLATFORM_JOB = 'platform-job'
+const PUBLIC_ROUTE_SUPPORT = 'public-route-support'
+const TOKEN_IS_CREDENTIAL = 'token-is-the-credential'
 
 export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
@@ -94,6 +96,38 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
       'Public MFA second-factor endpoint; validates a short-lived hashed pending login token before issuing a session.',
     securityOwner: SECURITY_OWNER,
     compensatingControls: [IP_RATE_LIMIT, 'pending-token-attempt-cap', FAILED_AUTH_RECORDING],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/recovery/request',
+    reason:
+      'Public account recovery request endpoint (org unknown until email resolves); guarded by IP and email-specific rate limits.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, 'email-rate-limit', TOKEN_IS_CREDENTIAL],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'GET /api/v1/auth/recovery/:token',
+    reason:
+      'Public, non-mutating recovery-token peek used to route the web UI; reveals only a masked email and MFA-enrolled flag.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [TOKEN_IS_CREDENTIAL, 'masked-email-response'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/recovery/:token/mfa/start',
+    reason:
+      'Public recovery-token-authenticated MFA re-enrollment start; the 256-bit recovery token is itself the authorization credential.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [TOKEN_IS_CREDENTIAL, 'pending-token-attempt-cap'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/recovery/:token/complete',
+    reason:
+      'Public account recovery completion endpoint; guarded by an atomic single-use token claim and IP rate limiting.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, TOKEN_IS_CREDENTIAL, 'atomic-single-use-claim'],
     expiresAfterStory: null,
   },
   {
@@ -461,7 +495,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
   {
     path: 'modules/auth/routes.ts',
-    classification: 'public-route-support',
+    classification: PUBLIC_ROUTE_SUPPORT,
     reason: 'Public MFA recovery rate-limit buckets are identity/IP scoped and not org-scoped.',
     reviewer: SECURITY_OWNER,
   },
@@ -517,9 +551,16 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
   },
   {
     path: 'modules/invitations/token-routes.ts',
-    classification: 'public-route-support',
+    classification: PUBLIC_ROUTE_SUPPORT,
     reason:
       'The public token-peek and pre-org-scope accept routes cannot know which org an invitation belongs to in advance, so the initial token lookup (in ./lookup.js) uses the admin connection for a single indexed point-lookup by the unique hashed-token index — the 256-bit token is itself the authorization credential, same trust model as the existing RLS exclusion for refresh_tokens/pending_mfa_sessions. Once the owning org is resolved, all further reads/writes on project_invitations go through an org-scoped withOrg()/secureCtx.tx like every other route.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'modules/auth/recovery-lookup.ts',
+    classification: PUBLIC_ROUTE_SUPPORT,
+    reason:
+      'The public recovery-token peek, mfa/start, and complete routes cannot know which user/org a recovery token belongs to in advance, so findRecoveryTokenByHash uses the admin connection for a single indexed point-lookup by the unique hashed-token index — the 256-bit recovery token is itself the authorization credential, same trust model as modules/invitations/token-routes.ts. Once the token is resolved, further writes run through the caller-supplied transaction like every other route.',
     reviewer: SECURITY_OWNER,
   },
   {

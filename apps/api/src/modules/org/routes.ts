@@ -225,8 +225,21 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         userId: params.userId,
       })
 
-      // D7 stub — never blocks today; see deactivation.ts for the Epic 5 forward-dependency note.
-      await checkActiveRotationsForUser(params.userId, secureCtx.auth.orgId, secureCtx.tx)
+      // D7 stub — never blocks today (checkActiveRotationsForUser always returns
+      // blocked: false); see deactivation.ts for the Epic 5 forward-dependency note. Branching on
+      // the result now, even though it's always false, means Epic 5 only has to fill in the
+      // function body — this call site won't also need to be remembered and updated.
+      const rotationCheck = await checkActiveRotationsForUser(
+        params.userId,
+        secureCtx.auth.orgId,
+        secureCtx.tx
+      )
+      if (rotationCheck.blocked) {
+        return reply.status(409).send({
+          code: 'active_rotation_blocking',
+          message: 'Cannot deactivate a user with active credential rotations in progress',
+        })
+      }
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
         resourceType: 'org_membership',

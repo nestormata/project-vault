@@ -286,7 +286,11 @@ export async function peekRecoveryToken(token: string): Promise<RecoveryPeek> {
 
 export type RecoveryMfaStartResult =
   | { ok: true; otpauthUrl: string; secret: string; qrCodeSvg: string }
-  | { ok: false; error: RecoveryTokenStatusError }
+  | { ok: false; error: { code: string; message: string; statusCode: number } }
+
+function isUniqueViolation(error: unknown): boolean {
+  return (error as { cause?: { code?: string } }).cause?.code === '23505'
+}
 
 /**
  * AC-15/D1: stages a fresh TOTP secret for the recovery token's user, mirroring enrollMfa's body
@@ -324,12 +328,29 @@ export async function startRecoveryMfa(token: string): Promise<RecoveryMfaStartR
     const encrypted = await encryptTotpSecret(secretBuffer)
     secretBuffer.fill(0)
 
-    await tx.insert(mfaEnrollments).values({
-      userId: user.id,
-      secretEncrypted: encrypted,
-      status: 'pending',
-      label: 'Authenticator',
-    })
+    try {
+      await tx.insert(mfaEnrollments).values({
+        userId: user.id,
+        secretEncrypted: encrypted,
+        status: 'pending',
+        label: 'Authenticator',
+      })
+    } catch (error) {
+      // Two concurrent mfa/start calls for the same recovery token can both pass the delete
+      // above and race on idx_mfa_enrollments_user_pending's insert (adversarial review finding)
+      // — surface it as a domain conflict instead of an uncaught 500.
+      if (isUniqueViolation(error)) {
+        return {
+          ok: false,
+          error: {
+            code: 'mfa_enrollment_conflict',
+            message: 'Another MFA setup attempt is already in progress for this recovery link.',
+            statusCode: 409,
+          },
+        }
+      }
+      throw error
+    }
 
     const otpauthUrl = buildOtpAuthUrl(secret.base32, user.email)
     return {

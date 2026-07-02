@@ -23,6 +23,10 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     DATABASE_URL: VAULT_APP_DATABASE_URL,
     SESSION_SECRET: 'a'.repeat(64),
     REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
+    // Story 4.3: required in production since RECOVERY_TOKEN_HMAC_SECRET's own validation
+    // block landed; baked into the base fixture like SESSION_SECRET/REFRESH_TOKEN_HMAC_SECRET so
+    // every other secret's dedicated-requirement test isn't also tripped by this one being unset.
+    RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -319,6 +323,42 @@ describe('env', () => {
         TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
         MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
         INVITATION_TOKEN_HMAC_SECRET,
+      })
+      await expectInvalidEnv(exitSpy)
+    }
+  })
+
+  it('requires a dedicated recovery token secret in production (Story 4.3)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      {
+        COOKIE_SECURE: 'true',
+        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+        RECOVERY_TOKEN_HMAC_SECRET: undefined,
+      },
+      'RECOVERY_TOKEN_HMAC_SECRET',
+      'f'.repeat(64)
+    )
+  })
+
+  it('rejects placeholder or reused recovery token secrets in production', async () => {
+    for (const RECOVERY_TOKEN_HMAC_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+      'e'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({
+        COOKIE_SECURE: 'true',
+        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+        RECOVERY_TOKEN_HMAC_SECRET,
       })
       await expectInvalidEnv(exitSpy)
     }

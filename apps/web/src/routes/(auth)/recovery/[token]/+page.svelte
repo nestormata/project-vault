@@ -18,6 +18,7 @@
   let isSubmitting = $state(false)
   let isStartingMfa = $state(false)
   let errorMessage = $state<string | null>(null)
+  let issuedRecoveryCodes = $state<string[] | null>(null)
 
   const STATUS_BY_CODE: Record<string, Status> = {
     recovery_token_not_found: 'not_found',
@@ -57,13 +58,24 @@
 
   async function submitForm() {
     if (isSubmitting) return
+    // Guard against silently dropping MFA re-enrollment: if the user opted in and started
+    // staging a secret, an empty/incomplete code must not be swallowed into a plain password
+    // reset with no explanation (adversarial review finding).
+    if (wantsMfa && mfaQrCodeSvg && !/^\d{6}$/.test(totpCode.trim())) {
+      errorMessage = 'Enter the 6-digit code from your authenticator app, or uncheck MFA setup.'
+      return
+    }
     isSubmitting = true
     errorMessage = null
     try {
-      await completeRecovery(fetch, token, {
+      const result = await completeRecovery(fetch, token, {
         newPassword,
         ...(wantsMfa && totpCode ? { totpCode } : {}),
       })
+      if (result.recoveryCodes && result.recoveryCodes.length > 0) {
+        issuedRecoveryCodes = result.recoveryCodes
+        return
+      }
       // eslint-disable-next-line svelte/no-navigation-without-resolve -- dynamic query string
       await goto('/login?reason=recovery-complete')
     } catch (error) {
@@ -74,6 +86,11 @@
     } finally {
       isSubmitting = false
     }
+  }
+
+  async function continueToLogin() {
+    // eslint-disable-next-line svelte/no-navigation-without-resolve -- dynamic query string
+    await goto('/login?reason=recovery-complete')
   }
 
   onMount(() => {
@@ -116,6 +133,28 @@
     <div class="space-y-2">
       <h1 class="text-2xl font-bold">Something went wrong</h1>
       <p class="text-slate-600">We couldn't load this recovery link. Please try again.</p>
+    </div>
+  {:else if issuedRecoveryCodes}
+    <div class="space-y-4">
+      <h1 class="text-2xl font-bold">Save your recovery codes</h1>
+      <p class="text-slate-600">
+        Store these somewhere safe. Each code can be used once if you lose access to your
+        authenticator app. They won't be shown again.
+      </p>
+      <ul
+        class="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm"
+      >
+        {#each issuedRecoveryCodes as code (code)}
+          <li>{code}</li>
+        {/each}
+      </ul>
+      <button
+        class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white"
+        type="button"
+        onclick={() => void continueToLogin()}
+      >
+        Continue to login
+      </button>
     </div>
   {:else}
     <div class="space-y-2">
