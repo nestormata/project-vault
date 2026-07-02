@@ -6,6 +6,18 @@
 
 ---
 
+## Resolution (2026-07-01)
+
+All `critical`/`high` findings (1-5) were addressed directly in the story file:
+
+- **#1 (critical, duplicate active rotation via `stale_recovery` gap):** 5.1's partial unique index `idx_rotations_one_in_progress_per_credential` is widened, in this story's own migration, to `idx_rotations_one_active_per_credential ON rotations(credential_id) WHERE status IN ('in_progress', 'stale_recovery')`. Added as CR8/ADR-5.3-08, wired into AC-1's migration text, the Conflict Resolution table, the AC Quick Reference, Pre-mortem item 8, and a new Anti-Patterns bullet. Since 5.1 has not shipped yet, this lands as a single widened index from the start rather than a follow-up `ALTER`; 5.1's initiation endpoint must map the resulting `23505` to its existing `409 rotation_in_progress` code (documented in CR8/ADR-5.3-08 and AC-1).
+- **#2 (high, AC-5's "at most one row" claim was unenforced):** now a real guarantee under the widened index (#1) — AC-5 step 1's justification text was corrected accordingly.
+- **#3 (high, AC-11 resume's unhandled `23505` risk):** eliminated structurally by the same index widening (#1) — a resumed row was already counted in the constrained set, so its own status flip can never violate the constraint. AC-11 now documents why no defensive handling is needed, rather than requiring new guard code.
+- **#4 (high, AC-5's blocking `FOR UPDATE` could stall behind a concurrent 5.2 call):** AC-5 step 1 now uses `FOR UPDATE NOWAIT`, mapping lock failure to the existing `409 rotation_lock_contention` shape (AC-6 updated to document this second contention source and a new test).
+- **#5 (high, unsanitized `reason` field reaching outbound Slack/email delivery):** AC-7 gained an explicit "Reason-field sanitization" requirement — verify (or add) escaping in `apps/api/src/notifications/templates/index.ts` before wiring the notification payload, with a dedicated test using Slack mrkdwn and HTML-special-character `reason` values. Cross-referenced from "Notification & Alert Routing," Pre-mortem item 10, and a new Anti-Patterns bullet.
+
+Medium/low findings (6-15) were left as-is — none were blocking, and resolving them was out of scope for this pass.
+
 ## Findings
 
 - **[critical]** No mechanism anywhere in this story (or 5.1/5.2) prevents a *normal* `POST .../credentials/:credentialId/rotations` initiation while an existing rotation for that same credential is sitting in `stale_recovery`. The only durable backstop against duplicate active rotations is 5.1's partial unique index `idx_rotations_one_in_progress_per_credential`, which is scoped to `WHERE status = 'in_progress'` **only**. Once AC-9's job flips a rotation to `stale_recovery`, that row falls outside the index's constraint set, and nothing in 5.1's AC-4 initiation flow checks for an existing `stale_recovery` row before inserting a fresh `in_progress` one. The result: a credential can end up with two simultaneously "active" rotations (one `stale_recovery`, one `in_progress`), directly contradicting the "at most one active rotation per credential" invariant this story assumes throughout (see AC-5's "at most one row" claim below). Given a 60-minute default stale threshold and no UI yet to guide an admin to `resume`/`abandon`, an operator retrying rotation via script or API call after seeing a "stuck" rotation is a highly plausible path to trigger this.
