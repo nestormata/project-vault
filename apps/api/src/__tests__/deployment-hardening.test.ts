@@ -20,7 +20,7 @@ describe('deployment hardening configuration', () => {
     const compose = readRepoFile('docker-compose.yml')
 
     expect(compose).not.toContain('"5432:5432"')
-    expect(compose).toContain('"127.0.0.1:5432:5432"')
+    expect(compose).toContain('"127.0.0.1:${DB_HOST_PORT:-5432}:5432"')
   })
 
   it('passes the vault bootstrap token into the api container', () => {
