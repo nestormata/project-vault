@@ -2,6 +2,7 @@
   "$schema": "https://v2-10-2.turborepo.dev/schema.json",
   "ui": "tui",
   "globalEnv": [
+    "ADMIN_DATABASE_URL",
     "API_PORT",
     "CORS_ALLOWED_ORIGINS",
     "DATABASE_URL",

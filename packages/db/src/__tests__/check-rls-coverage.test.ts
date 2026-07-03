@@ -8,9 +8,9 @@ const sql = postgres(
 )
 
 // Database creation/drop requires the superuser — vault_app has no CREATEDB privilege.
-const adminSql = postgres(
+const adminConnectionString =
   process.env['ADMIN_DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
-)
+const adminSql = postgres(adminConnectionString)
 
 // Serialize live-policy mutation against the shared dev/CI Postgres instance. API integration
 // tests authenticate via the sessions table RLS policy; dropping it concurrently yields flaky 401s.
@@ -86,7 +86,9 @@ describe('checkRlsCoverage', () => {
     let emptySql: ReturnType<typeof postgres> | undefined
     try {
       await adminSql.unsafe(`CREATE DATABASE ${emptyDbName}`)
-      emptySql = postgres(`postgresql://postgres:password@localhost:5432/${emptyDbName}`)
+      // Reuse the admin connection's host/port/credentials rather than hardcoding
+      // localhost:5432 — CI/dev may point ADMIN_DATABASE_URL at a non-default port.
+      emptySql = postgres(adminConnectionString.replace(/\/[^/]*$/, `/${emptyDbName}`))
       await expect(checkRlsCoverage(emptySql)).rejects.toThrow(/No tables found/)
     } finally {
       await emptySql?.end()
