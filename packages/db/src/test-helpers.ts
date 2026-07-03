@@ -97,3 +97,14 @@ export async function withTestOrg<T>(
     }
   }
 }
+
+/** Shared by RLS cross-org isolation specs that need two independent orgs in scope at once. */
+export async function withTwoTestOrgs(
+  run: (ctx: { orgAId: string; orgBId: string }) => Promise<void>
+): Promise<void> {
+  await withTestOrg(async ({ orgId: orgAId }) => {
+    await withTestOrg(async ({ orgId: orgBId }) => {
+      await run({ orgAId, orgBId })
+    })
+  })
+}

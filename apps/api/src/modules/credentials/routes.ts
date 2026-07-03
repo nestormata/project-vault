@@ -76,6 +76,7 @@ import {
   stageCredentialImport,
 } from './import-service.js'
 import type { AuditConfig } from '../../lib/secure-route.js'
+import { rejectIfProjectArchived } from '../projects/archive-guards.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType:
@@ -259,6 +260,7 @@ const CREDENTIAL_TAG_ROUTE_SCHEMA = {
     401: ApiErrorSchema,
     403: ApiErrorSchema,
     404: ApiErrorSchema,
+    410: ApiErrorSchema,
     422: ApiErrorSchema,
   },
 } as const
@@ -286,6 +288,9 @@ async function handleCredentialTagUpdate(
   const parsed = parseBody<TagArrayBody>(TagArrayBodySchema, req, reply)
   if (!parsed.success) return reply
   const secureCtx = ctx as SecureRouteContext
+
+  // 4.4 AC-5: credential tags are a mutation of an existing resource within the project.
+  if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
   const result = await updateCredentialTags(secureCtx.tx, {
     ...params,
@@ -385,6 +390,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         201: CredentialDetailResponseSchema,
         401: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -412,6 +418,11 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       ) {
         return reply
       }
+
+      // 4.4 AC-5: reject new credentials on an archived project with 410 before the generic
+      // findProjectInOrg 404 check (which itself excludes archived rows, but 410 is more precise
+      // than conflating "archived" with "does not exist").
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
       if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
@@ -688,6 +699,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -706,6 +718,10 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddVersionBody>(AddVersionBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      // 4.4 AC-5: rotating a credential mutates an existing resource — "read-only" covers this,
+      // not just creation of brand-new credentials.
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       let version
       try {
@@ -886,6 +902,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -905,6 +922,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddDependencyBody>(AddDependencyBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const result = await addCredentialDependency(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
@@ -997,6 +1016,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -1013,6 +1033,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(DependencyParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const result = await archiveCredentialDependency(secureCtx.tx, {
         userId: secureCtx.auth.userId,

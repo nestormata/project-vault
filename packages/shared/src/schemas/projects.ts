@@ -13,8 +13,25 @@ export const ProjectSummarySchema = z
     expiringCount: z.number().int().nonnegative(),
     alertCount: z.number().int().nonnegative(),
     createdAt: z.iso.datetime(),
+    // 4.4 AC-3: archivedAt is null for active projects; isArchived is derived in the handler
+    // (archivedAt !== null), not stored. Both required — a contract change to ProjectSummary.
+    archivedAt: z.iso.datetime().nullable(),
+    isArchived: z.boolean(),
   })
   .meta({ id: 'ProjectSummary' })
+
+/** 4.4 AC-8: minimal archive/unarchive route response representation. */
+export const ProjectArchiveStateSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    archivedAt: z.iso.datetime().nullable(),
+    isArchived: z.boolean(),
+  })
+  .meta({ id: 'ProjectArchiveState' })
+
+export type ProjectArchiveState = z.infer<typeof ProjectArchiveStateSchema>
 
 export const ProjectDetailSchema = z
   .object({
