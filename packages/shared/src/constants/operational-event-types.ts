@@ -57,6 +57,12 @@ export const OperationalEvent = {
   CREDENTIAL_IMPORT_EXPIRED_ON_CONFIRM: 'credential.import.expired_on_confirm',
   CREDENTIAL_IMPORT_CLEANUP_RUN: 'credential.import.cleanup_run',
   CREDENTIAL_IMPORT_AUDIT_WRITE_FAILED: 'credential.import.audit_write_failed',
+
+  // Rotations (Story 5.1)
+  ROTATION_INITIATE_SUCCESS: 'rotation.initiate.success',
+  ROTATION_INITIATE_CONFLICT: 'rotation.initiate.conflict',
+  ROTATION_INITIATE_AUDIT_FAILED: 'rotation.initiate.audit_failed',
+  ROTATION_INITIATE_SAME_VALUE_WARNING: 'rotation.initiate.same_value_warning',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

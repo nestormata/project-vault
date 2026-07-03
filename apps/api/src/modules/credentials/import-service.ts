@@ -15,7 +15,7 @@ import {
   type JsonParseResult,
 } from '@project-vault/shared'
 import { getPrimaryKey } from '../vault/key-service.js'
-import { currentKeyVersion, isUniqueViolation } from './db-helpers.js'
+import { currentKeyVersion, isUniqueViolation, lockCredentialInProject } from './db-helpers.js'
 import { findProjectInOrg } from './service.js'
 
 export const IMPORT_ENTRY_LIMIT = 500
@@ -247,14 +247,10 @@ async function insertImportedVersion(
     item: PendingImportItemRecord
   }
 ): Promise<number> {
-  const [cred] = await tx
-    .select({ id: credentials.id })
-    .from(credentials)
-    .where(
-      and(eq(credentials.id, params.credentialId), eq(credentials.projectId, params.projectId))
-    )
-    .for('update')
-    .limit(1)
+  const cred = await lockCredentialInProject(tx, {
+    credentialId: params.credentialId,
+    projectId: params.projectId,
+  })
   if (!cred) throw new Error('Credential not found for new_version import')
 
   const [maxRow] = await tx

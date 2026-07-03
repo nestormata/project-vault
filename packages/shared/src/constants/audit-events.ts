@@ -38,6 +38,7 @@ export const AuditEvent = {
   ACCOUNT_RECOVERY_LINK_SENT: 'auth.recovery_link_sent',
   ACCOUNT_RECOVERY_COMPLETED: 'auth.recovery_completed',
   ACCOUNT_RECOVERY_BLOCKED: 'auth.recovery_blocked_no_admin',
+  ROTATION_INITIATED: 'rotation.initiated',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -75,6 +76,7 @@ export type AuditEventType =
   | 'auth.recovery_link_sent'
   | 'auth.recovery_completed'
   | 'auth.recovery_blocked_no_admin'
+  | 'rotation.initiated'
 
 export type AuditEvent = {
   type: AuditEventType

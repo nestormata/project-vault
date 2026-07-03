@@ -13,6 +13,7 @@ import type {
   UpdateCredentialLifecycleBody,
 } from './schema.js'
 import { MAX_ACTIVE_DEPENDENCIES } from './schema.js'
+import { credentialExistsInProject, lockCredentialInProject } from './db-helpers.js'
 
 export function serializeDependency(row: typeof credentialDependencies.$inferSelect) {
   const systemType = SystemTypeSchema.safeParse(row.systemType)
@@ -30,21 +31,6 @@ export function serializeDependency(row: typeof credentialDependencies.$inferSel
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
-}
-
-async function credentialInProject(
-  tx: Tx,
-  params: { credentialId: string; projectId: string },
-  lock = false
-): Promise<boolean> {
-  const query = tx
-    .select({ id: credentials.id })
-    .from(credentials)
-    .where(
-      and(eq(credentials.id, params.credentialId), eq(credentials.projectId, params.projectId))
-    )
-  const [cred] = await (lock ? query.for('update') : query).limit(1)
-  return Boolean(cred)
 }
 
 async function hasActiveDependencies(tx: Tx, credentialId: string): Promise<boolean> {
@@ -71,14 +57,10 @@ export async function addCredentialDependency(
     body: AddDependencyBody
   }
 ) {
-  const locked = await credentialInProject(
-    tx,
-    {
-      credentialId: input.credentialId,
-      projectId: input.projectId,
-    },
-    true
-  )
+  const locked = await lockCredentialInProject(tx, {
+    credentialId: input.credentialId,
+    projectId: input.projectId,
+  })
   if (!locked) return { status: 'not_found' as const }
 
   const countResult = await tx
@@ -119,7 +101,7 @@ export async function listCredentialDependencies(
     query: ListDependenciesQuery
   }
 ) {
-  const exists = await credentialInProject(tx, {
+  const exists = await credentialExistsInProject(tx, {
     credentialId: input.credentialId,
     projectId: input.projectId,
   })
@@ -152,7 +134,7 @@ export async function archiveCredentialDependency(
     dependencyId: string
   }
 ) {
-  const exists = await credentialInProject(tx, {
+  const exists = await credentialExistsInProject(tx, {
     credentialId: input.credentialId,
     projectId: input.projectId,
   })
@@ -328,7 +310,7 @@ export async function listCredentialAccess(
   tx: Tx,
   input: { credentialId: string; projectId: string; orgId: string }
 ) {
-  const exists = await credentialInProject(tx, {
+  const exists = await credentialExistsInProject(tx, {
     credentialId: input.credentialId,
     projectId: input.projectId,
   })
