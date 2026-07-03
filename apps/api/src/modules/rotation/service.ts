@@ -197,8 +197,18 @@ export async function initiateRotation(
   }
 }
 
+// Checklist items for a rotation are all written inside the same transaction as a single
+// batch INSERT, and Postgres's `now()` (what `.defaultNow()` uses) is fixed for the entire
+// transaction — every row in the batch gets an IDENTICAL `created_at`. Sorting on `createdAt`
+// alone is therefore not the "stable, deterministic order" AC-4 step 8 requires: a fresh
+// `ORDER BY created_at` query has no guaranteed tie-break and can return a different row order
+// across separate calls. `id` (immutable, never reused) is the tiebreaker that actually makes
+// the order deterministic and repeatable, even though it isn't literal insertion order.
 function orderChecklistItems(items: ChecklistItemRow[]): ChecklistItemRow[] {
-  return [...items].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  return [...items].sort((a, b) => {
+    const byCreatedAt = a.createdAt.getTime() - b.createdAt.getTime()
+    return byCreatedAt !== 0 ? byCreatedAt : a.id.localeCompare(b.id)
+  })
 }
 
 export function serializeRotationDetail(
@@ -249,11 +259,13 @@ export async function getRotationDetail(
     .limit(1)
   if (!rotation) return null
 
+  // See orderChecklistItems' comment: created_at ties are the norm (same-transaction batch
+  // insert), so `id` is required as a secondary sort key for a deterministic, repeatable order.
   const checklistItems = await tx
     .select()
     .from(rotationChecklistItems)
     .where(eq(rotationChecklistItems.rotationId, rotation.id))
-    .orderBy(asc(rotationChecklistItems.createdAt))
+    .orderBy(asc(rotationChecklistItems.createdAt), asc(rotationChecklistItems.id))
 
   return serializeRotationDetail(rotation, checklistItems)
 }
