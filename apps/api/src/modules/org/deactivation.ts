@@ -8,6 +8,10 @@ import { projectInvitations } from '@project-vault/db/schema'
  * call site and return shape the real check will need once Epic 5 lands (mirrors Story 4.4's
  * identical Epic 7 stub for its own forward dependency). Do not mark FR102's rotation-block
  * guarantee "done" in any tracking document until Epic 5 replaces this function body.
+ *
+ * ADR-4.4-04 (reconciled, Epic 4 retro closure): the caller (routes.ts) surfaces `rotationIds`
+ * on a 409 in the exact `{ error: 'active_rotations', rotationIds }` shape Story 4.4's archive
+ * guard uses — both stub call sites are now byte-compatible.
  */
 // TODO: Epic 5 — query the `rotations` table for rows with status = 'in_progress' assigned to
 // this user once Epic 5 ships. Until then, never block.

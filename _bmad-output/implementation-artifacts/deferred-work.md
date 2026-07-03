@@ -174,6 +174,24 @@ UI. Two items remain intentionally open past Epic 3 closure, tracked below.
 - `app.ts`'s global error handler treats `statusCode === 0` as a valid numeric status (`reply.status(0)` would be called). Deferred: no known code path produces this today; a `>= 100` guard would close the theoretical gap.
 - Dockerfile's argon2 native-build toolchain has no automated post-rebuild smoke test in CI (only manually verified via a one-off `docker run` check this session). Deferred: manual verification done; automating it is a nice-to-have for a future CI hardening pass.
 
+## Deferred from: Epic 4 retrospective (2026-07-02) — closed 2026-07-03
+
+Epic 4 (`epic-4`) stories 4.1–4.4 are `done` in sprint-status. The retro below flagged 7 items; verifying each against **current shipped code** (2026-07-03) found 3 were already fixed (the adversarial-review/deferred-work docs were stale) and fixed the remaining 3 directly rather than opening a dedicated closure story:
+
+| ID | Item | Resolution |
+|----|------|--------|
+| CP4-1 | MFA re-enrollment during account recovery (4.3 AC-15) doesn't regenerate `mfa_recovery_codes` | ✅ Already fixed in code — `promoteStagedEnrollmentAndReissueCodes()` in `auth/recovery.ts` regenerates codes |
+| CP4-2 | `POST /org/users/:userId/recovery/send-link` (4.3 AC-10) has no admin-hierarchy guard | ✅ Already fixed in code — `org/routes.ts` calls `isUsableTarget(...)` with the peer-or-higher guard |
+| CP4-3 | 4.3's shipped `checkActiveRotationsForUser` stub returns `{ code, message }`; 4.4 requires `{ error, rotationIds }` (ADR-4.4-04) | ✅ Fixed 2026-07-03 — `ActiveRotationsErrorSchema` moved to `@project-vault/shared`; `org/routes.ts` deactivate handler now returns the same shape as 4.4's archive route |
+| CP4-4 | Sync all four Epic 4 story files' `Status:` header with sprint-status (`done`) | ✅ Fixed 2026-07-03 |
+| CP4-5 | Add `.env.example` entry for `RECOVERY_TOKEN_HMAC_SECRET` | ✅ Already documented in `.env.example` |
+| P4-1 | Extract shared `resolveProjectRole()` helper — inline pattern duplicated across 4.1, 4.2 (×2), 4.4 | ✅ Fixed 2026-07-03 — `getProjectMembershipRole()` already existed and was already used by `org/routes.ts`; `projects/routes.ts`'s `callerProjectRole()` now delegates to it too |
+| P4-3 | Decide whether 4.1 and 4.4 get a retroactive adversarial review | Open — process decision, not code; see retro Team Agreements |
+
+Full detail + verification notes: `_bmad-output/implementation-artifacts/epic-4-retro-2026-07-02.md` (see Addendum).
+
+---
+
 ## Deferred from: Story 4.4 (Project Archival, 2026-07-02)
 
 - **ADR-4.4-02 seam removal (blocker for FR63 sign-off):** `findBlockingRotationIds` in `apps/api/src/modules/projects/archive-guards.ts` degrades to "no block" via a `to_regclass('public.rotations')` table-existence check because Story 5.1 (rotation table) had not shipped when 4.4 was implemented. Once 5.1 lands, replace the raw SQL with a typed Drizzle query against the `rotations` schema object and delete `rotationsTableExists`. `archive-guards.test.ts` has a CI guard test that fails automatically once the `rotations` table exists while the seam is still present — treat that failure as the trigger to do this cleanup. QA must not sign off FR63 as fully complete until this AND the Epic 7 machine-user stub below are both closed.
@@ -182,4 +200,4 @@ UI. Two items remain intentionally open past Epic 3 closure, tracked below.
 - **AC-5 write-guard coverage is complete for all currently-shipped mutation routes** (2.1/2.2/2.3/2.4/4.1/4.2 are all `done`), so no routes were left un-guarded pending a later story. If a future story adds a new mutating route nested under a project (e.g. a standalone credential-delete endpoint per AC-5's scope note), it MUST add the `isProjectArchived`/`rejectIfProjectArchived` guard and a 410 test in that story's own PR.
 - **No standalone `POST /api/v1/projects/:projectId/members` (add member) route exists.** Story 4.2 shipped membership growth only via the invitation-accept path (`POST /api/v1/invitations/:token/accept`), which IS guarded (410 on an archived project). AC-5's table entry for a direct add-member route is therefore not applicable in the current implementation; revisit if a future story adds one.
 - **ADR-4.4-05 authorization-path audit trail:** org owners may archive/unarchive any project without holding a `project_memberships` row. The audit row currently does not distinguish "acted as project owner" vs. "acted via org-owner override" (SecureRoute's `writeHumanAuditEntryOrFailClosed` payload is `{}`  for archive/unarchive). Recoverable today only via the structured `project.archive_denied`-style warn logs on the *denial* path, not on the success path. A follow-up could add `authorizedVia: 'project_owner' | 'org_owner'` to the audit payload.
-- **4.3/4.4 active-rotation block shape divergence:** Story 4.3's actual shipped `checkActiveRotationsForUser` stub (`apps/api/src/modules/org/deactivation.ts`) returns `{ code: 'active_rotation_blocking', message }` (an `ApiErrorSchema`-shaped body), not the `{ error: 'active_rotations', rotationIds }` shape epics.md/ADR-4.4-04 specify. Both are currently stubs that never block (Epic 5 not shipped), so the divergence has no observable effect yet, but once Epic 5 lands and either stub is replaced with a real check, reconcile the two shapes (4.4's `{ error, rotationIds }` matches the epic source of truth; 4.3 should likely be updated to match rather than 4.4 being changed to match 4.3).
+- ~~**4.3/4.4 active-rotation block shape divergence**~~ — **Resolved 2026-07-03** (Epic 4 retro closure): `ActiveRotationsErrorSchema` moved to `@project-vault/shared`; `org/routes.ts`'s deactivate handler now returns `{ error: 'active_rotations', rotationIds }`, matching 4.4's archive route exactly.

@@ -3,7 +3,7 @@ import { and, eq, ne, sql } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import { orgMemberships, projectMemberships, users } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
+import { ActiveRotationsErrorSchema, AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
@@ -144,7 +144,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: ApiErrorSchema,
+        409: z.union([ApiErrorSchema, ActiveRotationsErrorSchema]),
       },
     },
     security: {
@@ -235,10 +235,12 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         secureCtx.tx
       )
       if (rotationCheck.blocked) {
-        return reply.status(409).send({
-          code: 'active_rotation_blocking',
-          message: 'Cannot deactivate a user with active credential rotations in progress',
-        })
+        // ADR-4.4-04: byte-compatible with Story 4.4's archive guard — `error`, not `code`, and
+        // carries `rotationIds` — so clients handle either endpoint's active-rotation block the
+        // same way once Epic 5 replaces both stubs with a real check.
+        return reply
+          .status(409)
+          .send({ error: 'active_rotations', rotationIds: rotationCheck.rotationIds })
       }
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
