@@ -1,4 +1,9 @@
-import type { ProjectDashboard, ProjectDetail, ProjectSummary } from '@project-vault/shared'
+import type {
+  ProjectArchiveState,
+  ProjectDashboard,
+  ProjectDetail,
+  ProjectSummary,
+} from '@project-vault/shared'
 import { apiFetch } from './client.js'
 
 export type CreateProjectRequest = {
@@ -40,8 +45,27 @@ export function createProject(fetchFn: typeof fetch, body: CreateProjectRequest)
   return apiFetch<ProjectDetail>(fetchFn, '/api/v1/projects', jsonMutation('POST', body))
 }
 
-export function listProjects(fetchFn: typeof fetch) {
-  return apiFetch<{ items: ProjectSummary[]; total: number }>(fetchFn, '/api/v1/projects')
+export function listProjects(fetchFn: typeof fetch, options: { includeArchived?: boolean } = {}) {
+  const query = options.includeArchived ? '?includeArchived=true' : ''
+  return apiFetch<{ items: ProjectSummary[]; total: number }>(fetchFn, `/api/v1/projects${query}`)
+}
+
+export function archiveProject(
+  fetchFn: typeof fetch,
+  projectId: string
+): Promise<ProjectArchiveState> {
+  return apiFetch<ProjectArchiveState>(fetchFn, `/api/v1/projects/${projectId}/archive`, {
+    method: 'POST',
+  })
+}
+
+export function unarchiveProject(
+  fetchFn: typeof fetch,
+  projectId: string
+): Promise<ProjectArchiveState> {
+  return apiFetch<ProjectArchiveState>(fetchFn, `/api/v1/projects/${projectId}/unarchive`, {
+    method: 'POST',
+  })
 }
 
 export function getProjectDashboard(fetchFn: typeof fetch, projectId: string) {

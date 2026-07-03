@@ -1,20 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { getDb, withOrg } from '../index.js'
 import { projectMemberships, projects } from '../schema/index.js'
-import { createTestUser, deleteTestUser, withTestOrg } from '../test-helpers.js'
+import { createTestUser, deleteTestUser, withTestOrg, withTwoTestOrgs } from '../test-helpers.js'
 
 const TEAM_PAYMENTS_TAG = 'team-payments'
 const TIER_0_TAG = 'tier-0'
-
-async function withTwoTestOrgs(
-  run: (ctx: { orgAId: string; orgBId: string }) => Promise<void>
-): Promise<void> {
-  await withTestOrg(async ({ orgId: orgAId }) => {
-    await withTestOrg(async ({ orgId: orgBId }) => {
-      await run({ orgAId, orgBId })
-    })
-  })
-}
 
 describe('projects RLS cross-org isolation', () => {
   it('isolates projects rows by org', async () => {

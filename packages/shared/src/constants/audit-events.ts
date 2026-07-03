@@ -31,6 +31,8 @@ export const AuditEvent = {
   PROJECT_MEMBER_ROLE_CHANGED: 'project.member_role_changed',
   PROJECT_MEMBER_REMOVED: 'project.member_removed',
   PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
+  PROJECT_ARCHIVED: 'project.archived',
+  PROJECT_UNARCHIVED: 'project.unarchived',
   ORG_USER_DEACTIVATED: 'org.user_deactivated',
   ACCOUNT_RECOVERY_REQUESTED: 'auth.recovery_requested',
   ACCOUNT_RECOVERY_LINK_SENT: 'auth.recovery_link_sent',
@@ -66,6 +68,8 @@ export type AuditEventType =
   | 'project.member_role_changed'
   | 'project.member_removed'
   | 'project.ownership_transferred'
+  | 'project.archived'
+  | 'project.unarchived'
   | 'org.user_deactivated'
   | 'auth.recovery_requested'
   | 'auth.recovery_link_sent'

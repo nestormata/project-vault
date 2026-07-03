@@ -1,4 +1,5 @@
 import {
+  ProjectArchiveStateSchema,
   ProjectDashboardSchema,
   ProjectDetailSchema,
   ProjectSummarySchema,
@@ -69,6 +70,28 @@ export const ProjectTagUpdateResponseSchema = z
 export const ProjectMemberParamsSchema = z
   .object({ projectId: z.uuid(), userId: z.uuid() })
   .meta({ id: 'ProjectMemberParams' })
+
+// 4.4 AC-8: archive/unarchive routes.
+export const ArchiveResponseSchema = z
+  .object({ data: ProjectArchiveStateSchema })
+  .meta({ id: 'ArchiveResponse' })
+
+// 4.4 AC-4/ADR-4.4-04: active-rotation 409 body — matches Story 4.3's shape verbatim
+// (`error`, not `code`; carries `rotationIds`) for byte-compatible client handling.
+export const ActiveRotationsErrorSchema = z
+  .object({ error: z.literal('active_rotations'), rotationIds: z.array(z.uuid()) })
+  .meta({ id: 'ActiveRotationsError' })
+
+// 4.4 AC-3: `?includeArchived=true` on GET /api/v1/projects.
+export const ListProjectsQuerySchema = z
+  .object({
+    // Do NOT use z.coerce.boolean() — it treats the string "false" as truthy.
+    includeArchived: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
+  })
+  .meta({ id: 'ListProjectsQuery' })
 
 export const TransferOwnershipBodySchema = z
   .object({ newOwnerId: z.uuid() })

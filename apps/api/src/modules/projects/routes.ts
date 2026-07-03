@@ -1,14 +1,23 @@
-import { and, desc, eq, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm'
+import type { FastifyReply, FastifyRequest } from 'fastify'
+import { z } from 'zod/v4'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
-import { parseBody, parseParams } from '../../lib/route-helpers.js'
-import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
+import {
+  secureRoute,
+  type PublicRouteContext,
+  type SecureRouteContext,
+} from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { projectMemberships, projects, users } from '@project-vault/db/schema'
 import {
+  ActiveRotationsErrorSchema,
+  ArchiveResponseSchema,
   CreateProjectBodySchema,
+  ListProjectsQuerySchema,
   PatchProjectBodySchema,
   PatchProjectResponseSchema,
   ProjectCreateResponseSchema,
@@ -30,6 +39,12 @@ import {
   lookupProjectStats,
 } from './dashboard-stats.js'
 import { getProjectMembershipRole, removeProjectMembership } from './member-management.js'
+import {
+  findBlockingRotationIds,
+  hasActiveMachineUserKeys,
+  PROJECT_ARCHIVED_ERROR,
+  rejectIfProjectArchived,
+} from './archive-guards.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 
@@ -65,6 +80,154 @@ async function callerCanManageMembers(
   const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
   const isOrgAdminOrOwner = secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
   return isProjectAdminOrOwner || isOrgAdminOrOwner
+}
+
+// 4.4 AC-2/AC-6/ADR-4.4-05: archive/unarchive is restricted to the project owner OR an org owner
+// (org owners retain authority over every project in their org even without a membership row).
+// Returns which path authorized the caller (or null if neither) so the audit row can record
+// "acted as project owner" vs. "acted via org-owner override" (ADR-4.4-05 consequences).
+async function callerArchiveAuthorization(
+  secureCtx: SecureRouteContext,
+  projectId: string
+): Promise<'project_owner' | 'org_owner' | null> {
+  const callerRole = await callerProjectRole(secureCtx, projectId)
+  if (callerRole === 'owner') return 'project_owner'
+  if (secureCtx.auth.orgRole === 'owner') return 'org_owner'
+  return null
+}
+
+// 4.4 AC-12 "Audit gap (denied/blocked attempts)": SecureRoute's same-tx audit writer only fires
+// on the success path, so 403/409 rejections on this high-impact, MFA-gated lifecycle action are
+// never written to the audit log. Emit a structured application log line instead so security
+// monitoring has a signal for repeated unauthorized/blocked attempts.
+function logArchiveDenied(
+  req: { log: { warn: (payload: Record<string, unknown>, msg?: string) => void } },
+  input: { projectId: string; callerId: string; reason: string }
+): void {
+  req.log.warn(
+    { event: 'project.archive_denied', ...input },
+    'Project archive/unarchive request denied'
+  )
+}
+
+type ArchiveTogglePreflight =
+  | {
+      ok: true
+      params: { projectId: string }
+      secureCtx: SecureRouteContext
+      project: { id: string; archivedAt: Date | null }
+      authorizedVia: 'project_owner' | 'org_owner'
+    }
+  | { ok: false }
+
+/**
+ * Shared preflight for POST /:projectId/archive and /:projectId/unarchive: validates params,
+ * locks the project row FOR UPDATE (AC-4 concurrency note — closes the TOCTOU window between the
+ * active-rotation guard and the archive commit), and enforces the project-owner-or-org-owner
+ * check (AC-2/AC-6, ordering rationale: ownership MUST be checked before either route's
+ * idempotency check, or a non-owner could distinguish archival state from a 403). Extracted so
+ * the two routes' near-identical setup isn't duplicated verbatim.
+ */
+async function loadOwnedProjectForArchiveToggle(
+  ctx: SecureRouteContext | PublicRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  actionVerb: 'archive' | 'unarchive'
+): Promise<ArchiveTogglePreflight> {
+  const params = parseParams(ProjectParamsSchema, req, reply)
+  if (!params) return { ok: false }
+  const secureCtx = ctx as SecureRouteContext
+
+  const [project] = await secureCtx.tx
+    .select({ id: projects.id, archivedAt: projects.archivedAt })
+    .from(projects)
+    .where(eq(projects.id, params.projectId))
+    .for('update')
+    .limit(1)
+  if (!project) {
+    logArchiveDenied(req, {
+      projectId: params.projectId,
+      callerId: secureCtx.auth.userId,
+      reason: 'project_not_found',
+    })
+    reply.status(404).send(PROJECT_NOT_FOUND)
+    return { ok: false }
+  }
+
+  const authorizedVia = await callerArchiveAuthorization(secureCtx, params.projectId)
+  if (!authorizedVia) {
+    logArchiveDenied(req, {
+      projectId: params.projectId,
+      callerId: secureCtx.auth.userId,
+      reason: 'insufficient_role',
+    })
+    reply.status(403).send({
+      code: 'insufficient_role',
+      message: `Only the project owner can ${actionVerb} a project`,
+    })
+    return { ok: false }
+  }
+
+  return { ok: true, params, secureCtx, project, authorizedVia }
+}
+
+type TransferTargetsResult =
+  | { ok: true; targetMembership: { role: string }; currentOwner: { userId: string } }
+  | { ok: false; status: number; body: Record<string, unknown> }
+
+const OWNERSHIP_ALREADY_CHANGED = {
+  code: 'ownership_already_changed',
+  message: 'Project ownership changed concurrently — reload and retry',
+} as const
+
+// Extracted from the transfer-ownership handler purely to keep its cyclomatic complexity under
+// the repo's eslint threshold once the 4.4 archived-project guard was added; behavior unchanged.
+async function resolveTransferTargets(
+  secureCtx: SecureRouteContext,
+  projectId: string,
+  newOwnerId: string
+): Promise<TransferTargetsResult> {
+  const [targetMembership] = await secureCtx.tx
+    .select({ role: projectMemberships.role })
+    .from(projectMemberships)
+    .where(
+      and(
+        eq(projectMemberships.projectId, projectId),
+        eq(projectMemberships.userId, newOwnerId),
+        eq(projectMemberships.orgId, secureCtx.auth.orgId)
+      )
+    )
+    .limit(1)
+  if (!targetMembership) {
+    return {
+      ok: false,
+      status: 404,
+      body: {
+        code: 'not_a_project_member',
+        message: 'Target user is not a member of this project',
+      },
+    }
+  }
+  if (targetMembership.role === 'owner') {
+    return {
+      ok: false,
+      status: 409,
+      body: { code: 'already_owner', message: 'User is already the project owner' },
+    }
+  }
+
+  // Resolve the *current* owner FOR UPDATE so the race guard works whether the caller is the
+  // owner themselves or an org owner acting on their behalf.
+  const [currentOwner] = await secureCtx.tx
+    .select({ userId: projectMemberships.userId })
+    .from(projectMemberships)
+    .where(and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.role, 'owner')))
+    .for('update')
+    .limit(1)
+  if (!currentOwner) {
+    return { ok: false, status: 409, body: OWNERSHIP_ALREADY_CHANGED }
+  }
+  return { ok: true, targetMembership, currentOwner }
 }
 
 function serializeProjectDetail(project: typeof projects.$inferSelect, role: 'owner') {
@@ -165,11 +328,17 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
     method: 'GET',
     url: '',
     schema: {
-      response: { 200: ProjectListResponseSchema, 401: ApiErrorSchema },
+      response: { 200: ProjectListResponseSchema, 401: ApiErrorSchema, 422: ApiErrorSchema },
     },
     security: { minimumRole: 'viewer', writeAuditEvent: false },
-    handler: async (ctx) => {
+    handler: async (ctx, req, reply) => {
       const secureCtx = ctx as SecureRouteContext
+      const parsedQuery = ListProjectsQuerySchema.safeParse(req.query)
+      if (!parsedQuery.success) {
+        return reply.status(422).send(validationError(parsedQuery.error, 'query'))
+      }
+      const { includeArchived } = parsedQuery.data
+
       const rows = await secureCtx.tx
         .select({
           id: projects.id,
@@ -178,6 +347,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           description: projects.description,
           role: projectMemberships.role,
           createdAt: projects.createdAt,
+          archivedAt: projects.archivedAt,
         })
         .from(projects)
         .leftJoin(
@@ -187,7 +357,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
             eq(projectMemberships.userId, secureCtx.auth.userId)
           )
         )
-        .where(isNull(projects.archivedAt))
+        .where(includeArchived ? undefined : isNull(projects.archivedAt))
         .orderBy(desc(projects.createdAt))
 
       const statsByProject = await getBatchedProjectCredentialStats(
@@ -210,6 +380,8 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           // The org dashboard (unresolvedAlertCount) is the truthful aggregate until Epic 6.
           alertCount: 0,
           createdAt: row.createdAt.toISOString(),
+          archivedAt: row.archivedAt?.toISOString() ?? null,
+          isArchived: row.archivedAt !== null,
         }
       })
 
@@ -233,10 +405,12 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(ProjectParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
+      // 4.4 AC-5: reads (including the dashboard) remain fully available on archived projects —
+      // only mutations are guarded. Do not filter on archivedAt here.
       const rows = await secureCtx.tx
         .select({ id: projects.id })
         .from(projects)
-        .where(and(eq(projects.id, params.projectId), isNull(projects.archivedAt)))
+        .where(eq(projects.id, params.projectId))
         .limit(1)
       if (!rows[0]) {
         return reply.status(404).send(PROJECT_NOT_FOUND)
@@ -254,6 +428,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -279,6 +454,17 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       updateSet.updatedAt = new Date()
 
       const secureCtx = ctx as SecureRouteContext
+
+      // 4.4 AC-5: an archived project is read-only — reject metadata edits with 410 (distinct
+      // from 404 "not found"/cross-org), never a silent 404.
+      const [existing] = await secureCtx.tx
+        .select({ archivedAt: projects.archivedAt })
+        .from(projects)
+        .where(eq(projects.id, params.projectId))
+        .limit(1)
+      if (!existing) return reply.status(404).send(PROJECT_NOT_FOUND)
+      if (existing.archivedAt !== null) return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
+
       const [updated] = await secureCtx.tx
         .update(projects)
         .set(updateSet)
@@ -323,6 +509,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -339,13 +526,17 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
 
       const [current] = await secureCtx.tx
-        .select({ id: projects.id, tags: projects.tags })
+        .select({ id: projects.id, tags: projects.tags, archivedAt: projects.archivedAt })
         .from(projects)
-        .where(and(eq(projects.id, params.projectId), isNull(projects.archivedAt)))
+        .where(eq(projects.id, params.projectId))
         .for('update')
         .limit(1)
       if (!current) {
         return reply.status(404).send(PROJECT_NOT_FOUND)
+      }
+      // 4.4 AC-5: tagging is a mutation of an existing resource — reject with 410 if archived.
+      if (current.archivedAt !== null) {
+        return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
       }
 
       const nextTags = dedupeTags(parsed.data.tags)
@@ -531,6 +722,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -561,6 +753,9 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
 
+      // 4.4 AC-5: ownership transfer mutates project membership — reject on an archived project.
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+
       // Self-transfer no-op rejection (request-shape problem — 422).
       if (parsed.data.newOwnerId === secureCtx.auth.userId) {
         return reply
@@ -569,48 +764,13 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       // AC-E4c: target must already be an accepted member of the project.
-      const [targetMembership] = await secureCtx.tx
-        .select({ role: projectMemberships.role })
-        .from(projectMemberships)
-        .where(
-          and(
-            eq(projectMemberships.projectId, params.projectId),
-            eq(projectMemberships.userId, parsed.data.newOwnerId),
-            eq(projectMemberships.orgId, secureCtx.auth.orgId)
-          )
-        )
-        .limit(1)
-      if (!targetMembership) {
-        return reply.status(404).send({
-          code: 'not_a_project_member',
-          message: 'Target user is not a member of this project',
-        })
-      }
-      if (targetMembership.role === 'owner') {
-        return reply
-          .status(409)
-          .send({ code: 'already_owner', message: 'User is already the project owner' })
-      }
-
-      // Resolve the *current* owner FOR UPDATE so the race guard works whether the caller is
-      // the owner themselves or an org owner acting on their behalf.
-      const [currentOwner] = await secureCtx.tx
-        .select({ userId: projectMemberships.userId })
-        .from(projectMemberships)
-        .where(
-          and(
-            eq(projectMemberships.projectId, params.projectId),
-            eq(projectMemberships.role, 'owner')
-          )
-        )
-        .for('update')
-        .limit(1)
-      if (!currentOwner) {
-        return reply.status(409).send({
-          code: 'ownership_already_changed',
-          message: 'Project ownership changed concurrently — reload and retry',
-        })
-      }
+      const targets = await resolveTransferTargets(
+        secureCtx,
+        params.projectId,
+        parsed.data.newOwnerId
+      )
+      if (!targets.ok) return reply.status(targets.status).send(targets.body)
+      const { currentOwner } = targets
 
       const demoted = await secureCtx.tx
         .update(projectMemberships)
@@ -624,10 +784,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         )
         .returning({ userId: projectMemberships.userId })
       if (demoted.length === 0) {
-        return reply.status(409).send({
-          code: 'ownership_already_changed',
-          message: 'Project ownership changed concurrently — reload and retry',
-        })
+        return reply.status(409).send(OWNERSHIP_ALREADY_CHANGED)
       }
 
       await secureCtx.tx
@@ -655,6 +812,198 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           projectId: params.projectId,
           previousOwnerId: currentOwner.userId,
           newOwnerId: parsed.data.newOwnerId,
+        },
+      }
+    },
+  })
+
+  // AC-2: archive a project (owner only). Non-destructive — sets archived_at, deletes nothing.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/archive',
+    schema: {
+      response: {
+        200: ArchiveResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: z.union([ApiErrorSchema, ActiveRotationsErrorSchema]),
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin', // org-level floor; in-handler project-owner check is stricter.
+      requireMfa: true,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/archive',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'archive')
+      if (!preflight.ok) return reply
+      const { params, secureCtx, project, authorizedVia } = preflight
+
+      // Idempotency check runs after ownership (AC-2 ordering rationale): a non-owner must
+      // always get 403 regardless of archival state, or they could distinguish "already
+      // archived" (409) from "not owner" (403) for an arbitrary in-org project id.
+      if (project.archivedAt !== null) {
+        logArchiveDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          reason: 'already_archived',
+        })
+        return reply
+          .status(409)
+          .send({ code: 'already_archived', message: 'Project is already archived' })
+      }
+
+      const blockingRotationIds = await findBlockingRotationIds(secureCtx.tx, params.projectId)
+      if (blockingRotationIds.length > 0) {
+        logArchiveDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          reason: 'active_rotations',
+        })
+        return reply
+          .status(409)
+          .send({ error: 'active_rotations', rotationIds: blockingRotationIds })
+      }
+
+      // Epic 7 stub — always false until machine-user API keys are implemented. The result is
+      // still wired into a real branch (not just awaited-and-discarded) so that once Epic 7
+      // replaces the stub body with a real check, archival is blocked immediately with no
+      // further call-site changes required.
+      if (await hasActiveMachineUserKeys(secureCtx.tx, params.projectId)) {
+        logArchiveDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          reason: 'active_machine_user_keys',
+        })
+        return reply
+          .status(409)
+          .send({
+            code: 'active_machine_user_keys',
+            message: 'Project has active machine-user API keys',
+          })
+      }
+
+      const [archived] = await secureCtx.tx
+        .update(projects)
+        .set({ archivedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(projects.id, params.projectId), isNull(projects.archivedAt)))
+        .returning({
+          id: projects.id,
+          name: projects.name,
+          slug: projects.slug,
+          archivedAt: projects.archivedAt,
+        })
+
+      if (!archived) {
+        // 0 rows means a racing request archived it first between our load and this UPDATE.
+        return reply
+          .status(409)
+          .send({ code: 'already_archived', message: 'Project is already archived' })
+      }
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.PROJECT_ARCHIVED,
+        resourceId: archived.id,
+        // ADR-4.4-05: record which path authorized this action so a security review can
+        // distinguish "acted as project owner" from "acted via org-owner override".
+        payload: { authorizedVia },
+        request: req,
+      })
+
+      return {
+        data: {
+          id: archived.id,
+          name: archived.name,
+          slug: archived.slug,
+          archivedAt: archived.archivedAt?.toISOString() ?? null,
+          isArchived: true,
+        },
+      }
+    },
+  })
+
+  // AC-6: unarchive (restore) a project (owner only).
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/unarchive',
+    schema: {
+      response: {
+        200: ArchiveResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/unarchive',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'unarchive')
+      if (!preflight.ok) return reply
+      const { params, secureCtx, project, authorizedVia } = preflight
+
+      if (project.archivedAt === null) {
+        logArchiveDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          reason: 'not_archived',
+        })
+        return reply.status(409).send({ code: 'not_archived', message: 'Project is not archived' })
+      }
+
+      const [restored] = await secureCtx.tx
+        .update(projects)
+        .set({ archivedAt: null, updatedAt: new Date() })
+        .where(and(eq(projects.id, params.projectId), isNotNull(projects.archivedAt)))
+        .returning({
+          id: projects.id,
+          name: projects.name,
+          slug: projects.slug,
+          archivedAt: projects.archivedAt,
+        })
+
+      if (!restored) {
+        return reply.status(409).send({ code: 'not_archived', message: 'Project is not archived' })
+      }
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'project',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.PROJECT_UNARCHIVED,
+        resourceId: restored.id,
+        // ADR-4.4-05: record which path authorized this action so a security review can
+        // distinguish "acted as project owner" from "acted via org-owner override".
+        payload: { authorizedVia },
+        request: req,
+      })
+
+      return {
+        data: {
+          id: restored.id,
+          name: restored.name,
+          slug: restored.slug,
+          archivedAt: null,
+          isArchived: false,
         },
       }
     },

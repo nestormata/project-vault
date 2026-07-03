@@ -76,6 +76,7 @@ import {
   stageCredentialImport,
 } from './import-service.js'
 import type { AuditConfig } from '../../lib/secure-route.js'
+import { rejectIfProjectArchived } from '../projects/archive-guards.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType:
@@ -217,6 +218,12 @@ const TOO_MANY_TAGS = {
 } as const
 const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
 
+// Extracted purely to keep the lifecycle-PATCH handler's cyclomatic complexity under the repo's
+// eslint threshold once the 4.4 archived-project guard was added; behavior unchanged.
+function hasNoLifecycleUpdateFields(rawBody: Record<string, unknown>): boolean {
+  return !('expiresAt' in rawBody) && !('rotationSchedule' in rawBody)
+}
+
 function invalidRotationScheduleResponse(reason: 'unparseable' | 'too_frequent'): {
   code: 'invalid_cron'
   message: string
@@ -259,6 +266,7 @@ const CREDENTIAL_TAG_ROUTE_SCHEMA = {
     401: ApiErrorSchema,
     403: ApiErrorSchema,
     404: ApiErrorSchema,
+    410: ApiErrorSchema,
     422: ApiErrorSchema,
   },
 } as const
@@ -286,6 +294,9 @@ async function handleCredentialTagUpdate(
   const parsed = parseBody<TagArrayBody>(TagArrayBodySchema, req, reply)
   if (!parsed.success) return reply
   const secureCtx = ctx as SecureRouteContext
+
+  // 4.4 AC-5: credential tags are a mutation of an existing resource within the project.
+  if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
   const result = await updateCredentialTags(secureCtx.tx, {
     ...params,
@@ -385,6 +396,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         201: CredentialDetailResponseSchema,
         401: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -412,6 +424,11 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       ) {
         return reply
       }
+
+      // 4.4 AC-5: reject new credentials on an archived project with 410 before the generic
+      // findProjectInOrg 404 check (which itself excludes archived rows, but 410 is more precise
+      // than conflating "archived" with "does not exist").
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
       if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
@@ -446,6 +463,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ImportErrorResponseSchema,
       },
     },
@@ -463,6 +481,10 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(ProjectScopeParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      // 4.4 AC-5: bulk import staging must not proceed against an archived project — otherwise a
+      // caller could still walk through the import flow to /confirm afterward.
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const upload = await readImportUpload(req, reply)
       if (!upload) return reply
@@ -574,6 +596,10 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<ImportConfirmBody>(ImportConfirmBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      // 4.4 AC-5: this is the step that actually inserts credential rows — an archived project
+      // must not gain new credentials via the bulk-import confirm path either.
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const confirmed = await confirmCredentialImport(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
@@ -688,6 +714,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -706,6 +733,10 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddVersionBody>(AddVersionBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      // 4.4 AC-5: rotating a credential mutates an existing resource — "read-only" covers this,
+      // not just creation of brand-new credentials.
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       let version
       try {
@@ -886,6 +917,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -905,6 +937,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddDependencyBody>(AddDependencyBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const result = await addCredentialDependency(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
@@ -997,6 +1031,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -1013,6 +1048,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(DependencyParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
+
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const result = await archiveCredentialDependency(secureCtx.tx, {
         userId: secureCtx.auth.userId,
@@ -1060,6 +1097,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -1077,13 +1115,18 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       if (!params) return reply
       const rawBody =
         req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {}
-      if (!('expiresAt' in rawBody) && !('rotationSchedule' in rawBody)) {
+      if (hasNoLifecycleUpdateFields(rawBody)) {
         return reply.status(422).send({
           code: 'no_fields_to_update',
           message: 'Provide expiresAt and/or rotationSchedule',
         })
       }
       const secureCtx = ctx as SecureRouteContext
+
+      // 4.4 AC-5: editing a credential's lifecycle fields mutates an existing resource — the same
+      // rationale used to guard the versions/rotate route applies here.
+      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+
       if (
         !rejectInvalidRotationSchedule(rawBody.rotationSchedule, reply, {
           req,

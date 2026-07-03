@@ -97,6 +97,20 @@ function acceptInvitation(app: TestApp, token: string, cookies?: Record<string, 
   })
 }
 
+/** 4.4 test helper: archives a project via the API and asserts the archive itself succeeded. */
+async function archiveProjectViaApi(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string
+): Promise<void> {
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/v1/projects/${projectId}/archive`,
+    headers: { cookie: cookieHeader(cookies) },
+  })
+  expect(res.statusCode).toBe(200)
+}
+
 function registerWithToken(
   app: TestApp,
   body: { email: string; password: string; invitationToken?: string; orgName?: string }
@@ -251,6 +265,20 @@ describe.sequential('project invitation routes', () => {
 
     expect(res.statusCode).toBe(404)
     expect(res.json()).toMatchObject({ code: 'project_not_found' })
+  })
+
+  it('returns 410 project_archived when inviting to an archived project (4.4 AC-5)', async () => {
+    const owner = await registerOwner(app, 'archived-invite')
+    const projectId = await createProject(app, owner.cookies, 'archived-invite-project')
+    await archiveProjectViaApi(app, owner.cookies, projectId)
+
+    const res = await invite(app, owner.cookies, projectId, {
+      email: uniqueEmail('archived-invite'),
+      role: MEMBER_ROLE,
+    })
+
+    expect(res.statusCode).toBe(410)
+    expect(res.json()).toMatchObject({ code: 'project_archived' })
   })
 
   it('lists pending invitations without leaking the token', async () => {
@@ -477,6 +505,29 @@ describe.sequential('project invitation routes', () => {
       const second = await acceptInvitation(app, token, invitee.cookies)
       expect(second.statusCode).toBe(409)
       expect(second.json()).toMatchObject({ code: 'invitation_already_accepted' })
+    })
+
+    it('returns 410 project_archived when the invited project is archived before acceptance (4.4 AC-5)', async () => {
+      const owner = await registerOwner(app, 'accept-archived')
+      const projectId = await createProject(app, owner.cookies, 'accept-archived')
+      const inviteeEmail = uniqueEmail('accept-archived-invitee')
+      const invitee = await registerAndLoginViaApi(app, {
+        email: inviteeEmail,
+        password: PASSWORD,
+        orgName: `Accept Archived Org ${randomUUID()}`,
+      })
+      // Invitation is created while the project is still active — the guard under test is on
+      // *acceptance*, not creation, since this invite predates archival.
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
+        email: inviteeEmail,
+        role: MEMBER_ROLE,
+      })
+
+      await archiveProjectViaApi(app, owner.cookies, projectId)
+
+      const res = await acceptInvitation(app, token, invitee.cookies)
+      expect(res.statusCode).toBe(410)
+      expect(res.json()).toMatchObject({ code: 'project_archived' })
     })
   })
 

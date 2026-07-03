@@ -8,6 +8,7 @@ import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { normalizeEmail } from '../auth/normalize.js'
+import { isProjectArchived, PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
 import { claimInvitation, findInvitationByTokenHash, validateInvitationStatus } from './lookup.js'
 import { hashInvitationToken } from './tokens.js'
 import {
@@ -129,6 +130,12 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
         // token resolves above), so this mirrors the shape by hand for the audit write below.
         const secureCtx: SecureRouteContext = { auth: authCtx.auth, tx, audit: {} }
 
+        // 4.4 AC-5: a user invited before archival must not still be able to join after archival —
+        // this is a distinct guard from invite *creation*'s, since acceptance is token-scoped.
+        if (await isProjectArchived(secureCtx.tx, invitation.projectId)) {
+          return { claimed: false as const, projectArchived: true as const }
+        }
+
         const claimed = await claimInvitation(secureCtx.tx, invitation.id)
         if (!claimed) return { claimed: false as const }
 
@@ -183,6 +190,9 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
       })
 
       if (!outcome.claimed) {
+        if ('projectArchived' in outcome && outcome.projectArchived) {
+          return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
+        }
         return reply.status(409).send({
           code: 'invitation_already_accepted',
           message: 'This invitation has already been accepted',

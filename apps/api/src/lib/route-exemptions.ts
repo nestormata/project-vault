@@ -450,6 +450,16 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'project.ownership_transferred',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  'POST /api/v1/projects/:projectId/archive': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.archived',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/projects/:projectId/unarchive': {
+    action: SECURITY_ACTION,
+    auditEvent: 'project.unarchived',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   'POST /api/v1/org/users/:userId/deactivate': {
     action: SECURITY_ACTION,
     auditEvent: 'org.user_deactivated',

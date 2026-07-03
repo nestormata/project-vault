@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import { ApiClientError } from './client.js'
 import {
+  archiveProject,
   createProject,
   getProjectDashboard,
   listProjects,
   suggestProjectSlug,
+  unarchiveProject,
   updateProject,
 } from './projects.js'
 import { jsonResponse } from '$lib/test/json-response.js'
@@ -51,6 +53,109 @@ describe('project API helpers', () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { items: [], total: 0 } }))
 
     await expect(listProjects(fetchFn)).resolves.toEqual({ items: [], total: 0 })
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/projects', expect.anything())
+  })
+
+  it('listProjects({ includeArchived: true }) appends the query param', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { items: [], total: 0 } }))
+
+    await listProjects(fetchFn, { includeArchived: true })
+
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/projects?includeArchived=true', expect.anything())
+  })
+
+  it('listProjects({ includeArchived: false }) omits the query param', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { items: [], total: 0 } }))
+
+    await listProjects(fetchFn, { includeArchived: false })
+
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/projects', expect.anything())
+  })
+
+  it('archiveProject posts to the archive URL and returns archive state', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: '00000000-0000-4000-8000-000000000010',
+          name: 'Payments API',
+          slug: 'payments-api',
+          archivedAt: '2026-07-01T00:00:00.000Z',
+          isArchived: true,
+        },
+      })
+    )
+
+    const result = await archiveProject(fetchFn, '00000000-0000-4000-8000-000000000010')
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/projects/00000000-0000-4000-8000-000000000010/archive',
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(result.isArchived).toBe(true)
+  })
+
+  it('unarchiveProject posts to the unarchive URL and returns archive state', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: '00000000-0000-4000-8000-000000000010',
+          name: 'Payments API',
+          slug: 'payments-api',
+          archivedAt: null,
+          isArchived: false,
+        },
+      })
+    )
+
+    const result = await unarchiveProject(fetchFn, '00000000-0000-4000-8000-000000000010')
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/projects/00000000-0000-4000-8000-000000000010/unarchive',
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(result.isArchived).toBe(false)
+  })
+
+  it('archiveProject surfaces 409 active_rotations as a catchable ApiClientError carrying rotationIds', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { error: 'active_rotations', rotationIds: ['00000000-0000-4000-8000-000000000099'] },
+          { status: 409 }
+        )
+      )
+
+    try {
+      await archiveProject(fetchFn, '00000000-0000-4000-8000-000000000010')
+      throw new Error('expected archiveProject to reject')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiClientError)
+      expect((error as ApiClientError).status).toBe(409)
+      expect((error as ApiClientError).code).toBe('active_rotations')
+      expect((error as ApiClientError).body).toMatchObject({
+        rotationIds: ['00000000-0000-4000-8000-000000000099'],
+      })
+    }
+  })
+
+  it('archiveProject surfaces 410 project_archived distinctly from 409', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          code: 'project_archived',
+          message: 'This project is archived and cannot be modified. Unarchive it first.',
+        },
+        { status: 410 }
+      )
+    )
+
+    await expect(
+      archiveProject(fetchFn, '00000000-0000-4000-8000-000000000010')
+    ).rejects.toMatchObject({
+      status: 410,
+      code: 'project_archived',
+    } satisfies Partial<ApiClientError>)
   })
 
   it('getProjectDashboard returns dashboard data', async () => {

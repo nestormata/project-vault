@@ -17,6 +17,7 @@ import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed
 import { env } from '../../config/env.js'
 import { requireMfaEnrollmentStrict } from '../auth/mfa-enforcement.js'
 import { normalizeEmail } from '../auth/normalize.js'
+import { PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
 import { generateInvitationToken, hashInvitationToken } from './tokens.js'
 import {
   CreateInvitationBodySchema,
@@ -137,6 +138,7 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
         403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -174,11 +176,13 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
       const email = normalizeEmail(parsed.data.email)
 
       const [project] = await secureCtx.tx
-        .select({ id: projects.id, name: projects.name })
+        .select({ id: projects.id, name: projects.name, archivedAt: projects.archivedAt })
         .from(projects)
-        .where(and(eq(projects.id, params.projectId), isNull(projects.archivedAt)))
+        .where(eq(projects.id, params.projectId))
         .limit(1)
       if (!project) return reply.status(404).send(PROJECT_NOT_FOUND)
+      // 4.4 AC-5: no new invitations after archive.
+      if (project.archivedAt !== null) return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
 
       if (await findExistingProjectMember(secureCtx.tx, params.projectId, email)) {
         return reply
