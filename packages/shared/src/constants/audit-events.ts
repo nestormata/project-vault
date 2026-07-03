@@ -31,6 +31,11 @@ export const AuditEvent = {
   PROJECT_MEMBER_ROLE_CHANGED: 'project.member_role_changed',
   PROJECT_MEMBER_REMOVED: 'project.member_removed',
   PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',
+  ORG_USER_DEACTIVATED: 'org.user_deactivated',
+  ACCOUNT_RECOVERY_REQUESTED: 'auth.recovery_requested',
+  ACCOUNT_RECOVERY_LINK_SENT: 'auth.recovery_link_sent',
+  ACCOUNT_RECOVERY_COMPLETED: 'auth.recovery_completed',
+  ACCOUNT_RECOVERY_BLOCKED: 'auth.recovery_blocked_no_admin',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -61,6 +66,11 @@ export type AuditEventType =
   | 'project.member_role_changed'
   | 'project.member_removed'
   | 'project.ownership_transferred'
+  | 'org.user_deactivated'
+  | 'auth.recovery_requested'
+  | 'auth.recovery_link_sent'
+  | 'auth.recovery_completed'
+  | 'auth.recovery_blocked_no_admin'
 
 export type AuditEvent = {
   type: AuditEventType

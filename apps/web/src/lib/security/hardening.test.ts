@@ -16,6 +16,9 @@ describe('frontend hardening helpers', () => {
       'Your session ended. Sign in again to continue.'
     )
     expect(getLoginReasonMessage('logged-out')).toBe('You have signed out.')
+    expect(getLoginReasonMessage('recovery-complete')).toBe(
+      'Your password has been reset. Sign in with your new password.'
+    )
     expect(getLoginReasonMessage('<script>alert(1)</script>')).toBe('Sign in to continue.')
   })
 

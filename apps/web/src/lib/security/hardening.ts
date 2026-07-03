@@ -13,6 +13,8 @@ export function getLoginReasonMessage(reason: string | null | undefined) {
       return 'Your session ended. Sign in again to continue.'
     case 'logged-out':
       return 'You have signed out.'
+    case 'recovery-complete':
+      return 'Your password has been reset. Sign in with your new password.'
     default:
       return 'Sign in to continue.'
   }

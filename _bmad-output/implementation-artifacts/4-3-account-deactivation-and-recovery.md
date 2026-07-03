@@ -1,6 +1,6 @@
 # Story 4.3: Account Deactivation & Recovery
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for org-admin account deactivation (immediate access revocation, orphan-rotation handling stub) and governed account recovery (self- and admin-initiated, password reset + optional MFA re-enrollment). This is the THIRD story in Epic 4, built directly on Story 1.7's session-revocation primitives (`revokeAllUserSessionsInOrg`, already exported and already anticipates a `'deactivation'` scope) and Story 4.1's `project_invitations` token pattern. Story 4.2 (org user management) is a sibling, not a hard prerequisite — see "Prerequisites" for the exact dependency boundary. Read "Key Design Decisions & Open Questions" before coding — several genuine ambiguities in the PRD/epics text (recovery MFA re-enrollment mechanics, audit scoping for a cross-org account event, the Epic 5 rotation-block forward dependency) are resolved there with explicit rationale, mirroring the precedent set by Story 4.4 for its Epic 7 stub. -->
 
@@ -520,19 +520,19 @@ ACCOUNT_RECOVERY_BLOCKED: 'auth.recovery_blocked_no_admin'
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema** (AC-1) — `account_recovery_tokens` migration + Drizzle schema, `EXCLUDED_TABLES` entry, `SessionRevokeScope` extension, `AuditEvent` constants, `RECOVERY_TOKEN_HMAC_SECRET` env var + production validation
-- [ ] **Task 2: Recovery token helpers** (AC-1, AC-9, AC-13) — `apps/api/src/modules/auth/recovery-tokens.ts`: `generateRecoveryToken`, `hashRecoveryToken`, `recoveryTokensMatch` (mirror `invitations/tokens.ts`); `apps/api/src/modules/auth/recovery-lookup.ts`: `findRecoveryTokenByHash` (admin-connection point lookup, mirror `invitations/lookup.ts`), `validateRecoveryTokenStatus`, `claimRecoveryToken`
-- [ ] **Task 3: `POST /org/users/:userId/deactivate`** (AC-2 through AC-8) — hierarchy/self/sole-owner guards, row lock, status update, session revocation call, invitation revocation, rotation-check stub (D7), audit
-- [ ] **Task 4: `POST /auth/recovery/request`** (self-initiated) (AC-9, AC-11, AC-12) — normalize email, lookup, no-admin check, token create + supersede, rate limits, notification enqueue, per-org audit fan-out
-- [ ] **Task 5: `POST /org/users/:userId/recovery/send-link`** (admin-initiated) (AC-10) — auth guard, token create + supersede, notification enqueue, single-org audit
-- [ ] **Task 6: `GET /auth/recovery/:token`** (peek) (AC-13) — status validation, masked email response
-- [ ] **Task 7: `POST /auth/recovery/:token/mfa/start`** (AC-15/D1) — pending-enrollment cleanup + fresh secret generation, reusing `mfa.ts` helpers without requiring `AuthContext`
-- [ ] **Task 8: `POST /auth/recovery/:token/complete`** (AC-14, AC-15, AC-19) — atomic claim, password reset, optional MFA verify/promote, multi-org session revocation, per-org audit fan-out
-- [ ] **Task 9: Auth-middleware deactivation gate** (AC-6) — org-membership-status check in the request-auth path
-- [ ] **Task 10: Route registration + exemptions + OpenAPI + RLS coverage** (AC-17)
-- [ ] **Task 11: Web — recovery pages** (AC-18) — `(auth)/recovery/+page.svelte`, `(auth)/recovery/[token]/+page.svelte`, `lib/api/recovery.ts`, login-page link
-- [ ] **Task 12: Web — admin controls** (AC-18) — deactivate + send-link actions, either extending 4.2's page or the minimal fallback page, `lib/api/org-users.ts`
-- [ ] **Task 13: Integration test suite** — all cases across AC-2 through AC-19 (deactivation happy path + guards + idempotency + session-revocation verification + invitation-revocation + rotation-stub, recovery request self/admin + rate limits + no-admin boundary, token peek all 4 error states, completion happy path + MFA re-enrollment + password-validation edge + concurrency races, audit-write-failure rollback for at least deactivation and recovery-request)
+- [x] **Task 1: Schema** (AC-1) — `account_recovery_tokens` migration + Drizzle schema, `EXCLUDED_TABLES` entry, `SessionRevokeScope` extension, `AuditEvent` constants, `RECOVERY_TOKEN_HMAC_SECRET` env var + production validation
+- [x] **Task 2: Recovery token helpers** (AC-1, AC-9, AC-13) — `apps/api/src/modules/auth/recovery-tokens.ts`: `generateRecoveryToken`, `hashRecoveryToken`, `recoveryTokensMatch` (mirror `invitations/tokens.ts`); `apps/api/src/modules/auth/recovery-lookup.ts`: `findRecoveryTokenByHash` (admin-connection point lookup, mirror `invitations/lookup.ts`), `validateRecoveryTokenStatus`, `claimRecoveryToken`
+- [x] **Task 3: `POST /org/users/:userId/deactivate`** (AC-2 through AC-8) — hierarchy/self/sole-owner guards, row lock, status update, session revocation call, invitation revocation, rotation-check stub (D7), audit
+- [x] **Task 4: `POST /auth/recovery/request`** (self-initiated) (AC-9, AC-11, AC-12) — normalize email, lookup, no-admin check, token create + supersede, rate limits, notification enqueue, per-org audit fan-out
+- [x] **Task 5: `POST /org/users/:userId/recovery/send-link`** (admin-initiated) (AC-10) — auth guard, token create + supersede, notification enqueue, single-org audit
+- [x] **Task 6: `GET /auth/recovery/:token`** (peek) (AC-13) — status validation, masked email response
+- [x] **Task 7: `POST /auth/recovery/:token/mfa/start`** (AC-15/D1) — pending-enrollment cleanup + fresh secret generation, reusing `mfa.ts` helpers without requiring `AuthContext`
+- [x] **Task 8: `POST /auth/recovery/:token/complete`** (AC-14, AC-15, AC-19) — atomic claim, password reset, optional MFA verify/promote, multi-org session revocation, per-org audit fan-out
+- [x] **Task 9: Auth-middleware deactivation gate** (AC-6) — org-membership-status check in the request-auth path
+- [x] **Task 10: Route registration + exemptions + OpenAPI + RLS coverage** (AC-17)
+- [x] **Task 11: Web — recovery pages** (AC-18) — `(auth)/recovery/+page.svelte`, `(auth)/recovery/[token]/+page.svelte`, `lib/api/recovery.ts`, login-page link
+- [x] **Task 12: Web — admin controls** (AC-18) — deactivate + send-link actions, either extending 4.2's page or the minimal fallback page, `lib/api/org-users.ts`
+- [x] **Task 13: Integration test suite** — all cases across AC-2 through AC-19 (deactivation happy path + guards + idempotency + session-revocation verification + invitation-revocation + rotation-stub, recovery request self/admin + rate limits + no-admin boundary, token peek all 4 error states, completion happy path + MFA re-enrollment + password-validation edge + concurrency races, audit-write-failure rollback for at least deactivation and recovery-request)
 
 ## Dev Notes
 
@@ -567,12 +567,68 @@ ACCOUNT_RECOVERY_BLOCKED: 'auth.recovery_blocked_no_admin'
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-4.5 (via claude code, bmad-dev-story workflow)
 
 ### Debug Log References
+
+- `make db-up` + hand-written `packages/db/src/migrations/0026_account_recovery_tokens.sql` (drizzle-kit generate's snapshot chain is broken in this repo — intermediate `meta/*_snapshot.json` files were never committed for 0001-0024 except a handful, so `drizzle-kit generate` recomputes a diff from a stale base and re-declares unrelated tables; every prior story hand-writes migration SQL instead, confirmed by inspecting `0025_project_invitations.sql`'s style, so this migration was hand-written to match).
+- `apps/api/debug-ac12.mjs` (scratch script, deleted before completion) — used to isolate why AC-12's no-admin test initially returned 202 instead of 404: `addUserToOrg` test helper auto-creates the new user's *own* org as `owner`, which the D2 fan-out logic correctly treats as "a reachable admin exists" (AC-12's own documented multi-org edge case). Fixed by inserting the AC-12 test's member user directly (no auto-created org) instead of via that helper.
+- `pnpm jscpd` (zero-tolerance duplication gate) flagged 11 clones after the first implementation pass — all resolved via extraction: `apps/api/src/lib/opaque-token.ts` (shared HMAC-hash/compare primitives), `parseRecoveryTokenParams`/`sendRecoveryStatusError`/`enforceIpRateLimitAndNormalizeEmailBody`/`parseBodyAndEnforceEmailRateLimit` in `auth/routes.ts`, and `blockSelfAction`/`hasTarget`/`blockPeerOrHigherRole`/`isUsableTarget` in `org/routes.ts` (the last of these also refactors the pre-existing `DELETE /org/users/:userId` handler to reuse the same D9 hierarchy-guard helper, verified via full org-module regression). Final `pnpm jscpd` run: 0 clones.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed — comprehensive developer guide created covering deactivation (immediate session/invitation revocation, stubbed rotation-block per Epic 5 forward dependency), self- and admin-initiated account recovery (password reset, optional two-step MFA re-enrollment), cross-org audit fan-out, anti-enumeration/rate-limiting, route-exemption registry updates, and concurrency guards. Seven Key Design Decisions (D1-D7) resolve genuine PRD/epics ambiguities explicitly rather than leaving them for the dev agent to guess.
+- Implementation follows TDD red-green throughout: every new module (`recovery-tokens.ts`, and each integration-test file) had its test file written and run-to-fail before the implementation landed; `apps/api/src/modules/org/deactivation.routes.test.ts` (21 tests) and `apps/api/src/modules/auth/recovery.routes.test.ts` (24 tests) exercise every AC end-to-end against real PostgreSQL (no DB mocks), including both concurrency races (AC-19), both audit-fail-closed rollback paths (AC-16), and all 4 recovery-token status states (AC-13).
+- Adversarial-review findings addressed in the implementation (not just documented): **HIGH-1** (MFA re-enrollment recreates the lockout it fixes) — recovery completion now regenerates a fresh recovery-code batch and invalidates old ones when `totpCode` is confirmed, mirroring `verifyEnrollment`'s own behavior (`recovery.ts:promoteStagedEnrollmentAndReissueCodes`); also fixes a latent bug the finding didn't call out explicitly — promoting a second confirmed `mfa_enrollments` row without first deleting any prior confirmed row would violate `idx_mfa_enrollments_user_confirmed`. **HIGH-3** (undocumented `RECOVERY_TOKEN_HMAC_SECRET` operator secret) — added to `.env.example` matching the `INVITATION_TOKEN_HMAC_SECRET` precedent. **MEDIUM** (`enforceRecoverRateLimit` is module-private) — resolved by construction: the new public recovery routes live in the same `auth/routes.ts` file rather than a new file, so no export was needed. **MEDIUM** (AC-10 send-link has no hierarchy guard unlike AC-3's deactivation) — added the same D9 peer-or-higher-role block to `POST /org/users/:userId/recovery/send-link`, beyond the literal AC text. **MEDIUM** (admin vs. self-service email copy) — separate `auth.recovery_link_created` / `auth.recovery_link_sent` templates with distinct anti-phishing framing. **MEDIUM** (RLS discipline unstated for the public recovery flow) — resolved with actual code: every RLS-scoped table touch in `recovery.ts` (`org_memberships` enumeration, `notification_queue` insert) explicitly sets `app.current_org_id` per row/target rather than relying on an ambient context, since the public routes self-manage their own transaction. **LOW** (masked-email algorithm underspecified) — implemented and unit-tested (`maskRecoveryEmail`): 2 visible local-part chars, or 1 for a ≤2-char local part, domain untouched. **LOW** (`rotationIds` forward-compat field) — the D7 stub's `{blocked, rotationIds}` shape is already wired through, ready for Epic 5 without a response-schema change.
+- Adversarial-review findings acknowledged but **not** further mitigated beyond the story's own documented acceptance (out of scope for this pass): the residual write-count timing side-channel on AC-11's anti-enumeration guarantee for multi-org users (inherent to D2's per-org audit fan-out; the miss path already performs an equivalent-shape scan per AC-9's own edge case); D2 fan-out has no batching/upper-bound for a hypothetical very-high-org-count user (matches existing `mfa.ts` precedent for the same pre-auth org-scan problem).
+- Web layer: this repo's established testing convention for `apps/web` is `lib/api/*.test.ts` unit tests around the fetch wrappers (mocked `fetch`) — there is no existing Svelte component-rendering test harness anywhere in `apps/web/src` (confirmed: only a placeholder `routes/page.test.ts` exists). `lib/api/recovery.ts` and the `org-users.ts` additions have full unit coverage; the two new Svelte pages and the settings/users page changes were implemented to match this story's AC-18 requirements and manually verified via typecheck/lint/`svelte-kit sync`, but do not have dedicated component-level tests, consistent with (not a regression from) the rest of the codebase.
+- `checkActiveRotationsForUser` (D7/AC-8) is confirmed stubbed exactly as specified — `{ blocked: false, rotationIds: [] }` unconditionally, with a `// TODO: Epic 5` comment at the call site. QA must not mark FR102's rotation-block guarantee `done` until Epic 5 replaces this stub (same caveat the story itself calls out).
+
+### Change Log
+
+| Date | Change |
+|---|---|
+| 2026-07-02 | Story 4.3 implemented end-to-end: schema/migration, recovery-token helpers, deactivation route (AC-2–AC-8), self- and admin-initiated recovery request (AC-9–AC-12), token peek/mfa-start/complete (AC-13–AC-15), auth-middleware deactivation gate confirmed already correct (AC-6), route registration/exemptions/OpenAPI/RLS coverage (AC-17), web recovery pages + admin controls (AC-18), full concurrency/audit-fail-closed integration test suite (AC-16/AC-19). Adversarial-review HIGH/MEDIUM findings addressed in code (see Completion Notes). `pnpm jscpd` duplication gate brought to 0 clones via extracted shared helpers. Status → review. |
 
 ### File List
+
+**New files**
+- `packages/db/src/migrations/0026_account_recovery_tokens.sql`
+- `packages/db/src/schema/account-recovery-tokens.ts`
+- `apps/api/src/lib/opaque-token.ts`
+- `apps/api/src/modules/auth/recovery-tokens.ts`
+- `apps/api/src/modules/auth/recovery-tokens.test.ts`
+- `apps/api/src/modules/auth/recovery-lookup.ts`
+- `apps/api/src/modules/auth/recovery-schema.ts`
+- `apps/api/src/modules/auth/recovery.ts`
+- `apps/api/src/modules/auth/recovery.routes.test.ts`
+- `apps/api/src/modules/org/deactivation.ts`
+- `apps/api/src/modules/org/deactivation.routes.test.ts`
+- `apps/api/src/notifications/templates/account-recovery.ts`
+- `apps/web/src/lib/api/recovery.ts`
+- `apps/web/src/lib/api/recovery.test.ts`
+- `apps/web/src/routes/(auth)/recovery/+page.svelte`
+- `apps/web/src/routes/(auth)/recovery/[token]/+page.svelte`
+
+**Modified files**
+- `.env.example`
+- `packages/db/src/check-rls-coverage.ts`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/db/src/schema/index.ts`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/schemas/auth.ts`
+- `apps/api/src/config/env.ts`
+- `apps/api/src/lib/route-exemptions.ts`
+- `apps/api/src/modules/auth/mfa.ts`
+- `apps/api/src/modules/auth/routes.ts`
+- `apps/api/src/modules/auth/session-revoke.ts`
+- `apps/api/src/modules/org/routes.ts`
+- `apps/api/src/modules/org/schema.ts`
+- `apps/api/src/modules/org/user-management.ts`
+- `apps/api/src/notifications/templates/index.ts`
+- `apps/web/src/lib/api/org-users.ts`
+- `apps/web/src/lib/api/org-users.test.ts`
+- `apps/web/src/lib/security/hardening.ts`
+- `apps/web/src/lib/security/hardening.test.ts`
+- `apps/web/src/routes/(app)/settings/users/+page.svelte`
+- `apps/web/src/routes/(auth)/login/+page.svelte`

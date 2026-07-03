@@ -4,7 +4,9 @@
   import RoleSelectOptions from '$lib/components/RoleSelectOptions.svelte'
   import {
     changeProjectRole,
+    deactivateOrgUser,
     removeOrgUser,
+    sendRecoveryLink,
     type OrgUser,
     type OrgUserProject,
     type SettableProjectRole,
@@ -76,6 +78,51 @@
       busyKey = null
     }
   }
+
+  async function onDeactivateOrgUser(user: OrgUser) {
+    if (busyKey) return
+    const confirmed = confirm(
+      `Deactivate ${user.email}? ${user.email} will be signed out of every session immediately and can no longer log in. Pending invitations ${user.email} sent will be revoked.`
+    )
+    if (!confirmed) return
+    busyKey = user.userId
+    errorMessage = null
+    try {
+      await deactivateOrgUser(fetch, user.userId)
+      await invalidateAll()
+    } catch (error) {
+      errorMessage =
+        error instanceof ApiClientError && error.code === 'already_deactivated'
+          ? `${user.email} is already deactivated.`
+          : error instanceof ApiClientError
+            ? (error.message ?? 'Failed to deactivate account.')
+            : 'Failed to deactivate account.'
+    } finally {
+      busyKey = null
+    }
+  }
+
+  let recoveryLinkSentFor = $state<string | null>(null)
+
+  async function onSendRecoveryLink(user: OrgUser) {
+    if (busyKey) return
+    const confirmed = confirm(`Send ${user.email} a password recovery link?`)
+    if (!confirmed) return
+    busyKey = user.userId
+    errorMessage = null
+    recoveryLinkSentFor = null
+    try {
+      await sendRecoveryLink(fetch, user.userId)
+      recoveryLinkSentFor = user.userId
+    } catch (error) {
+      errorMessage =
+        error instanceof ApiClientError
+          ? (error.message ?? 'Failed to send recovery link.')
+          : 'Failed to send recovery link.'
+    } finally {
+      busyKey = null
+    }
+  }
 </script>
 
 <svelte:head>
@@ -115,7 +162,15 @@
         <tbody>
           {#each data.users as user (user.userId)}
             <tr class="border-b border-slate-100 align-top last:border-b-0">
-              <td class="px-4 py-3 font-medium text-slate-900">{user.displayName}</td>
+              <td class="px-4 py-3 font-medium text-slate-900">
+                {user.displayName}
+                {#if user.status === 'deactivated'}
+                  <span
+                    class="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-normal text-slate-700"
+                    >Deactivated</span
+                  >
+                {/if}
+              </td>
               <td class="px-4 py-3 text-slate-600">{user.orgRole}</td>
               <td class="px-4 py-3">
                 {#if user.projects.length === 0}
@@ -152,19 +207,42 @@
                 {/if}
               </td>
               <td class="px-4 py-3 text-right">
-                <button
-                  class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
-                  type="button"
-                  disabled={busyKey === user.userId}
-                  onclick={() => onRemoveOrgUser(user)}
-                >
-                  Remove from organization
-                </button>
-                {#if blockedRemoval[user.userId]}
-                  <p class="mt-1 text-xs text-amber-800" role="alert">
-                    {blockedRemoval[user.userId]}
-                  </p>
-                {/if}
+                <div class="flex flex-col items-end gap-1">
+                  {#if user.status === 'active'}
+                    <button
+                      class="text-sm font-medium text-amber-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      disabled={busyKey === user.userId}
+                      onclick={() => onDeactivateOrgUser(user)}
+                    >
+                      Deactivate account
+                    </button>
+                  {/if}
+                  <button
+                    class="text-sm font-medium text-slate-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    disabled={busyKey === user.userId}
+                    onclick={() => onSendRecoveryLink(user)}
+                  >
+                    Send recovery link
+                  </button>
+                  {#if recoveryLinkSentFor === user.userId}
+                    <p class="text-xs text-slate-600">Recovery link sent.</p>
+                  {/if}
+                  <button
+                    class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    disabled={busyKey === user.userId}
+                    onclick={() => onRemoveOrgUser(user)}
+                  >
+                    Remove from organization
+                  </button>
+                  {#if blockedRemoval[user.userId]}
+                    <p class="text-xs text-amber-800" role="alert">
+                      {blockedRemoval[user.userId]}
+                    </p>
+                  {/if}
+                </div>
               </td>
             </tr>
           {:else}

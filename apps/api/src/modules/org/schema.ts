@@ -13,6 +13,28 @@ export const OrgUserProjectRoleParamsSchema = z.object({
 
 export type OrgUserProjectRoleParams = z.infer<typeof OrgUserProjectRoleParamsSchema>
 
+// Story 4.3 AC-2: deactivation response — revokedSessionCount/revokedInvitationCount reflect the
+// actual work performed in the same transaction (AC-5/AC-7).
+export const OrgUserDeactivatedResponseSchema = z
+  .object({
+    data: z.object({
+      userId: z.uuid(),
+      revokedSessionCount: z.number().int().nonnegative(),
+      revokedInvitationCount: z.number().int().nonnegative(),
+    }),
+  })
+  .meta({ id: 'OrgUserDeactivatedResponse' })
+
+// Story 4.3 AC-10: admin-initiated recovery link response.
+export const AdminRecoveryLinkResponseSchema = z
+  .object({
+    data: z.object({
+      userId: z.uuid(),
+      linkSent: z.boolean(),
+    }),
+  })
+  .meta({ id: 'AdminRecoveryLinkResponse' })
+
 // D6: 'owner' is intentionally excluded — ownership changes hands only via
 // POST /projects/:projectId/transfer-ownership, never through this role-change endpoint.
 export const ProjectRoleChangeBodySchema = z
@@ -32,6 +54,7 @@ export const OrgUsersListResponseSchema = z
         email: z.string(),
         displayName: z.string(),
         orgRole: orgProjectRoleEnum,
+        status: z.enum(['active', 'deactivated']),
         projects: z.array(
           z.object({
             projectId: z.uuid(),

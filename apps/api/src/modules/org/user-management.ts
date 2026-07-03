@@ -13,7 +13,12 @@ type OrgUserProject = { projectId: string; projectName: string; role: string }
  */
 export async function listOrgUsers(tx: Tx, orgId: string) {
   const orgUsers = await tx
-    .select({ userId: orgMemberships.userId, email: users.email, orgRole: orgMemberships.role })
+    .select({
+      userId: orgMemberships.userId,
+      email: users.email,
+      orgRole: orgMemberships.role,
+      status: orgMemberships.status,
+    })
     .from(orgMemberships)
     .innerJoin(users, eq(users.id, orgMemberships.userId))
     .where(eq(orgMemberships.orgId, orgId))
@@ -41,6 +46,7 @@ export async function listOrgUsers(tx: Tx, orgId: string) {
     email: u.email,
     displayName: u.email, // D3: no dedicated profile column; derive from email.
     orgRole: u.orgRole,
+    status: u.status as 'active' | 'deactivated',
     projects: projectsByUser.get(u.userId) ?? [],
   }))
 }

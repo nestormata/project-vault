@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from './client.js'
 import {
   changeProjectRole,
+  deactivateOrgUser,
   listOrgUsers,
   listProjectMembers,
   removeOrgUser,
   removeProjectMember,
+  sendRecoveryLink,
   transferOwnership,
 } from './org-users.js'
 import { jsonResponse } from '$lib/test/json-response.js'
@@ -23,6 +25,7 @@ describe('org-users API helpers', () => {
             email: 'alex@acme.example',
             displayName: 'alex@acme.example',
             orgRole: 'owner',
+            status: 'active',
             projects: [{ projectId: PROJECT_ID, projectName: 'Payments API', role: 'owner' }],
           },
         ],
@@ -32,6 +35,53 @@ describe('org-users API helpers', () => {
     const result = await listOrgUsers(fetchFn)
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/org/users', expect.objectContaining({}))
     expect(result[0]?.projects[0]?.projectName).toBe('Payments API')
+    expect(result[0]?.status).toBe('active')
+  })
+
+  it('deactivateOrgUser posts to the deactivate endpoint', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { userId: USER_ID, revokedSessionCount: 2, revokedInvitationCount: 1 },
+      })
+    )
+
+    const result = await deactivateOrgUser(fetchFn, USER_ID)
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/org/users/${USER_ID}/deactivate`,
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(result).toEqual({ userId: USER_ID, revokedSessionCount: 2, revokedInvitationCount: 1 })
+  })
+
+  it('deactivateOrgUser surfaces already_deactivated as a catchable ApiClientError', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { code: 'already_deactivated', message: 'Already deactivated' },
+          { status: 409 }
+        )
+      )
+
+    await expect(deactivateOrgUser(fetchFn, USER_ID)).rejects.toMatchObject({
+      status: 409,
+      code: 'already_deactivated',
+    } satisfies Partial<ApiClientError>)
+  })
+
+  it('sendRecoveryLink posts to the recovery/send-link endpoint', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { userId: USER_ID, linkSent: true } }))
+
+    const result = await sendRecoveryLink(fetchFn, USER_ID)
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/org/users/${USER_ID}/recovery/send-link`,
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(result).toEqual({ userId: USER_ID, linkSent: true })
   })
 
   it('removeOrgUser issues a DELETE and returns the revoked count', async () => {

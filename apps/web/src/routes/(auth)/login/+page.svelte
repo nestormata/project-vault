@@ -35,4 +35,9 @@
       >Register</a
     >
   </p>
+  <p class="text-sm text-slate-600">
+    <a class="font-medium text-slate-950 underline" href={resolve('/recovery')}
+      >Can't access your account?</a
+    >
+  </p>
 </div>

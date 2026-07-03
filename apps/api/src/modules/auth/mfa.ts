@@ -124,7 +124,11 @@ async function recoveryCodeRows(userId: string, codes: string[]) {
   return hashed.map((row) => ({ ...row, userId }))
 }
 
-async function insertRecoveryCodes(tx: Tx, userId: string, codes: string[]): Promise<void> {
+// Exported for reuse by account recovery's tokenless MFA completion (Story 4.3 D1/adversarial
+// review HIGH-1) — a recovering user re-enrolling MFA needs a fresh recovery-code batch exactly
+// like a normal verifyEnrollment confirm does; otherwise they're one lost device away from
+// hitting this same recovery flow again with zero codes left.
+export async function insertRecoveryCodes(tx: Tx, userId: string, codes: string[]): Promise<void> {
   await tx.insert(mfaRecoveryCodes).values(await recoveryCodeRows(userId, codes))
 }
 
@@ -149,7 +153,9 @@ async function writeMfaEnrollmentAudit(
   })
 }
 
-async function buildQrCodeSvg(otpauthUrl: string): Promise<string> {
+// Exported for reuse by account recovery's tokenless MFA re-enrollment (Story 4.3 D1), which
+// stages the same "pending secret + QR" shape as enrollMfa without a session-bound AuthContext.
+export async function buildQrCodeSvg(otpauthUrl: string): Promise<string> {
   return QRCode.toString(otpauthUrl, { type: 'svg', margin: 2, width: 256 })
 }
 
@@ -213,7 +219,9 @@ export async function enrollMfa(authContext: AuthContext, meta: RequestMeta = {}
   return tx ? run(tx) : getDb().transaction(run)
 }
 
-async function loadPendingEnrollmentForUpdate(tx: Tx, userId: string) {
+// Exported for reuse by account recovery's tokenless MFA completion (Story 4.3 D1) — locates the
+// pending enrollment staged by the recovery mfa/start endpoint, same shape as enrollMfa's own use.
+export async function loadPendingEnrollmentForUpdate(tx: Tx, userId: string) {
   const rows = await tx
     .select({
       id: mfaEnrollments.id,
@@ -240,7 +248,10 @@ async function loadConfirmedEnrollmentForUpdate(tx: Tx, userId: string) {
   return rows[0]
 }
 
-async function validateEnrollmentTotp(
+// Exported for reuse by account recovery's tokenless MFA completion (Story 4.3 D1) — identical
+// TOTP verification/replay-guard logic verifyEnrollment uses, without the session-bound
+// AuthContext that function requires (a recovering user by definition has no active session).
+export async function validateEnrollmentTotp(
   tx: Tx,
   userId: string,
   enrollment: { id: string; secretEncrypted: EncryptedValue },
