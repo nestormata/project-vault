@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-non-literal-fs-filename */
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -120,7 +119,7 @@ describe('auth routes', () => {
   })
 
   it('passes the SecureRoute transaction into protected MFA service actions', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/modules/auth/routes.ts'), 'utf-8')
+    const source = readFileSync(resolve(import.meta.dirname, 'routes.ts'), 'utf-8')
 
     expect(source).toContain('enrollMfa(secureCtx.auth, metaFromRequest(_req), secureCtx.tx)')
     expect(source).toContain(

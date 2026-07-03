@@ -1,4 +1,4 @@
-FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS builder
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS builder
 
 RUN npm install -g pnpm@11.9.0
 
@@ -27,9 +27,12 @@ RUN pnpm --filter @project-vault/shared build \
 WORKDIR /app
 RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
 
-FROM node:24-alpine@sha256:2bdb65ed1dab192432bc31c95f94155ca5ad7fc1392fb7eb7526ab682fa5bf14 AS runner
+FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
 
 RUN apk add --no-cache curl
+# npm/npx are never invoked at runtime (CMD runs node directly) — dropping them
+# removes their bundled deps (e.g. undici) as a source of image CVEs.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app
 
