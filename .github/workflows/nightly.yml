@@ -12,6 +12,24 @@ jobs:
   mutation:
     name: Mutation Testing (Stryker)
     runs-on: ubuntu-latest
+    # Derived from the postgres: service block below — keep in sync if it changes.
+    env:
+      SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+      VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: project_vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -40,10 +58,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Run database migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+
       - name: Run Stryker mutation tests
         run: pnpm stryker run
         env:
-          DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+          # Must use vault_app, not postgres — the postgres superuser bypasses RLS
+          # entirely, which would make the RLS isolation tests pass even if policies
+          # were broken or missing.
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
   flaky-test-repeat:
     name: Flaky Test Repeat Run

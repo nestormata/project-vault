@@ -36,4 +36,13 @@ export default {
   ],
   tempDirName: '.stryker-tmp',
   cleanTempDir: true,
+  // Without this, the vitest runner auto-discovers every package's vitest.config.ts
+  // in the monorepo (including apps/web's), which crashes on startup: its
+  // tsconfig.json extends ./.svelte-kit/tsconfig.json, a generated file that Stryker
+  // never copies into the sandbox (.svelte-kit is hardcoded in Stryker's
+  // ALWAYS_IGNORE list, like .next/.nuxt). apps/web isn't mutated and has no tests
+  // that matter for this run, so scope vitest to just the mutated projects.
+  vitest: {
+    configFile: 'vitest.stryker.config.ts',
+  },
 }
