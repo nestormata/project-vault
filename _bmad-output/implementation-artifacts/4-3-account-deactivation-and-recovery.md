@@ -1,6 +1,6 @@
 # Story 4.3: Account Deactivation & Recovery
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for org-admin account deactivation (immediate access revocation, orphan-rotation handling stub) and governed account recovery (self- and admin-initiated, password reset + optional MFA re-enrollment). This is the THIRD story in Epic 4, built directly on Story 1.7's session-revocation primitives (`revokeAllUserSessionsInOrg`, already exported and already anticipates a `'deactivation'` scope) and Story 4.1's `project_invitations` token pattern. Story 4.2 (org user management) is a sibling, not a hard prerequisite — see "Prerequisites" for the exact dependency boundary. Read "Key Design Decisions & Open Questions" before coding — several genuine ambiguities in the PRD/epics text (recovery MFA re-enrollment mechanics, audit scoping for a cross-org account event, the Epic 5 rotation-block forward dependency) are resolved there with explicit rationale, mirroring the precedent set by Story 4.4 for its Epic 7 stub. -->
 

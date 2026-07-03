@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-02 (4-4-project-archival: in-progress -> review)
+# last_updated: 2026-07-02 (epic-4-retrospective: optional -> done)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-02  # updated: 4-4 -> done
+last_updated: 2026-07-02  # updated: epic-4-retrospective -> done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -85,7 +85,7 @@ development_status:
   4-2-organization-user-management: done
   4-3-account-deactivation-and-recovery: done
   4-4-project-archival: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
   # Epic 5: Credential Rotation — Safe, Trackable Rotation Workflows
   epic-5: in-progress

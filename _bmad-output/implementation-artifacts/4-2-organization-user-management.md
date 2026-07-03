@@ -1,6 +1,6 @@
 # Story 4.2: Organization User Management
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for org-wide user visibility, cross-project role management, org/project removal, and project ownership transfer. This story is the SECOND story in Epic 4, built directly on Story 4.1's `project_memberships`/`org_memberships` foundation and the already-shipped FR84 session-revocation primitive (`revokeAllUserSessionsInOrg`, `apps/api/src/modules/org/routes.ts`). Read "Key Design Decisions & Open Questions" before coding — several genuine ambiguities in the PRD/epics text (self-modification scope, "last owner" protection, who may act on which role axis) are resolved there with explicit rationale. -->
 

@@ -1,6 +1,6 @@
 # Story 4.4: Project Archival
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-28 — comprehensive developer guide for non-destructive project archival with dependency guards. This story adds two endpoints (archive/unarchive), an `?includeArchived` filter on the project list, a fail-closed write guard that rejects mutations against archived projects (410), an active-rotation dependency check (409), and the Epic 7 machine-user stub. It reconciles a cross-epic dependency: the active-rotation guard reads the `rotations` table created in Epic 5 (Story 5.1). Read "Architecture Conflict Resolution" before coding. -->
 

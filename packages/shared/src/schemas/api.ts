@@ -43,3 +43,10 @@ export const ApiErrorSchema = z
   .meta({ id: 'ApiError' })
 
 export type ApiError = z.infer<typeof ApiErrorSchema>
+
+// Shared 409 body for "blocked by an in-progress credential rotation" (Story 4.3 AC-8 deactivation
+// guard, Story 4.4 AC-4 archive guard). Both stub call sites must return this exact shape so
+// clients handle either endpoint's block the same way once Epic 5 replaces the stubs.
+export const ActiveRotationsErrorSchema = z
+  .object({ error: z.literal('active_rotations'), rotationIds: z.array(z.uuid()) })
+  .meta({ id: 'ActiveRotationsError' })

@@ -52,21 +52,17 @@ const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not fou
 // cross-module resolver yet; 3rd cross-story occurrence as of 4.2, consider extracting if a 4th
 // consumer appears. This module-local helper only dedupes the identical query across this file's
 // three new handlers (AC-5/AC-6/AC-10); it is not the shared resolver D8 defers.
+// Epic 4 retro P4-1: delegates to the same `getProjectMembershipRole` helper org/routes.ts uses,
+// scoped to the caller, so the (projectId, userId, orgId) lookup lives in exactly one place.
 async function callerProjectRole(
   secureCtx: SecureRouteContext,
   projectId: string
 ): Promise<string | undefined> {
-  const [membership] = await secureCtx.tx
-    .select({ role: projectMemberships.role })
-    .from(projectMemberships)
-    .where(
-      and(
-        eq(projectMemberships.projectId, projectId),
-        eq(projectMemberships.userId, secureCtx.auth.userId)
-      )
-    )
-    .limit(1)
-  return membership?.role
+  return getProjectMembershipRole(secureCtx.tx, {
+    orgId: secureCtx.auth.orgId,
+    projectId,
+    userId: secureCtx.auth.userId,
+  })
 }
 
 // Shared member-management authorization: a project admin/owner OR an org admin/owner may view and
@@ -882,12 +878,10 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           callerId: secureCtx.auth.userId,
           reason: 'active_machine_user_keys',
         })
-        return reply
-          .status(409)
-          .send({
-            code: 'active_machine_user_keys',
-            message: 'Project has active machine-user API keys',
-          })
+        return reply.status(409).send({
+          code: 'active_machine_user_keys',
+          message: 'Project has active machine-user API keys',
+        })
       }
 
       const [archived] = await secureCtx.tx

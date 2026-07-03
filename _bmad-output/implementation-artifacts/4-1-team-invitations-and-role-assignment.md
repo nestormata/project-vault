@@ -1,6 +1,6 @@
 # Story 4.1: Team Invitations & Role Assignment
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for project-scoped invitations, MFA-gated invite creation (FR57), and the accept flow for both existing and brand-new users. This story is the FIRST story in Epic 4 and the architectural foundation for `project_memberships` role enforcement that Stories 4.2–4.4 depend on. Read "Key Design Decisions & Open Questions" before coding — this story resolves several contradictions between the PRD, epics.md, the MFA policy matrix, and the code as it exists today. -->
 
