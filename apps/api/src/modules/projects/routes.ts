@@ -84,12 +84,16 @@ async function callerCanManageMembers(
 
 // 4.4 AC-2/AC-6/ADR-4.4-05: archive/unarchive is restricted to the project owner OR an org owner
 // (org owners retain authority over every project in their org even without a membership row).
-async function callerCanArchiveProject(
+// Returns which path authorized the caller (or null if neither) so the audit row can record
+// "acted as project owner" vs. "acted via org-owner override" (ADR-4.4-05 consequences).
+async function callerArchiveAuthorization(
   secureCtx: SecureRouteContext,
   projectId: string
-): Promise<boolean> {
+): Promise<'project_owner' | 'org_owner' | null> {
   const callerRole = await callerProjectRole(secureCtx, projectId)
-  return callerRole === 'owner' || secureCtx.auth.orgRole === 'owner'
+  if (callerRole === 'owner') return 'project_owner'
+  if (secureCtx.auth.orgRole === 'owner') return 'org_owner'
+  return null
 }
 
 // 4.4 AC-12 "Audit gap (denied/blocked attempts)": SecureRoute's same-tx audit writer only fires
@@ -112,6 +116,7 @@ type ArchiveTogglePreflight =
       params: { projectId: string }
       secureCtx: SecureRouteContext
       project: { id: string; archivedAt: Date | null }
+      authorizedVia: 'project_owner' | 'org_owner'
     }
   | { ok: false }
 
@@ -149,7 +154,8 @@ async function loadOwnedProjectForArchiveToggle(
     return { ok: false }
   }
 
-  if (!(await callerCanArchiveProject(secureCtx, params.projectId))) {
+  const authorizedVia = await callerArchiveAuthorization(secureCtx, params.projectId)
+  if (!authorizedVia) {
     logArchiveDenied(req, {
       projectId: params.projectId,
       callerId: secureCtx.auth.userId,
@@ -162,7 +168,7 @@ async function loadOwnedProjectForArchiveToggle(
     return { ok: false }
   }
 
-  return { ok: true, params, secureCtx, project }
+  return { ok: true, params, secureCtx, project, authorizedVia }
 }
 
 type TransferTargetsResult =
@@ -838,7 +844,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
     handler: async (ctx, req, reply) => {
       const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'archive')
       if (!preflight.ok) return reply
-      const { params, secureCtx, project } = preflight
+      const { params, secureCtx, project, authorizedVia } = preflight
 
       // Idempotency check runs after ownership (AC-2 ordering rationale): a non-owner must
       // always get 403 regardless of archival state, or they could distinguish "already
@@ -866,8 +872,23 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           .send({ error: 'active_rotations', rotationIds: blockingRotationIds })
       }
 
-      // Epic 7 stub — always false until machine-user API keys are implemented.
-      await hasActiveMachineUserKeys(secureCtx.tx, params.projectId)
+      // Epic 7 stub — always false until machine-user API keys are implemented. The result is
+      // still wired into a real branch (not just awaited-and-discarded) so that once Epic 7
+      // replaces the stub body with a real check, archival is blocked immediately with no
+      // further call-site changes required.
+      if (await hasActiveMachineUserKeys(secureCtx.tx, params.projectId)) {
+        logArchiveDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          reason: 'active_machine_user_keys',
+        })
+        return reply
+          .status(409)
+          .send({
+            code: 'active_machine_user_keys',
+            message: 'Project has active machine-user API keys',
+          })
+      }
 
       const [archived] = await secureCtx.tx
         .update(projects)
@@ -893,7 +914,9 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.PROJECT_ARCHIVED,
         resourceId: archived.id,
-        payload: {},
+        // ADR-4.4-05: record which path authorized this action so a security review can
+        // distinguish "acted as project owner" from "acted via org-owner override".
+        payload: { authorizedVia },
         request: req,
       })
 
@@ -936,7 +959,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
     handler: async (ctx, req, reply) => {
       const preflight = await loadOwnedProjectForArchiveToggle(ctx, req, reply, 'unarchive')
       if (!preflight.ok) return reply
-      const { params, secureCtx, project } = preflight
+      const { params, secureCtx, project, authorizedVia } = preflight
 
       if (project.archivedAt === null) {
         logArchiveDenied(req, {
@@ -968,7 +991,9 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.PROJECT_UNARCHIVED,
         resourceId: restored.id,
-        payload: {},
+        // ADR-4.4-05: record which path authorized this action so a security review can
+        // distinguish "acted as project owner" from "acted via org-owner override".
+        payload: { authorizedVia },
         request: req,
       })
 

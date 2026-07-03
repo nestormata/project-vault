@@ -34,7 +34,6 @@
     errorMessage = null
     try {
       await archiveProject(fetch, project.id)
-      await invalidateAll()
     } catch (error) {
       if (error instanceof ApiClientError && error.code === 'active_rotations') {
         const rotationIds = (error.body as { rotationIds?: string[] } | null)?.rotationIds ?? []
@@ -45,6 +44,13 @@
             ? (error.message ?? 'Failed to archive project.')
             : 'Failed to archive project.'
       }
+      busyProjectId = null
+      return
+    }
+    // The archive itself already succeeded above — a refresh failure here is not an archive
+    // failure, so it must not surface the "Failed to archive project" error message.
+    try {
+      await invalidateAll()
     } finally {
       busyProjectId = null
     }
@@ -56,12 +62,16 @@
     errorMessage = null
     try {
       await unarchiveProject(fetch, project.id)
-      await invalidateAll()
     } catch (error) {
       errorMessage =
         error instanceof ApiClientError
           ? (error.message ?? 'Failed to unarchive project.')
           : 'Failed to unarchive project.'
+      busyProjectId = null
+      return
+    }
+    try {
+      await invalidateAll()
     } finally {
       busyProjectId = null
     }
