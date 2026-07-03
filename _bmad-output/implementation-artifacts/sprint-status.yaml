@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-02  # updated: epic-4-retrospective -> done
+last_updated: 2026-07-03  # updated: 5-1 -> in-progress
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -89,7 +89,7 @@ development_status:
 
   # Epic 5: Credential Rotation — Safe, Trackable Rotation Workflows
   epic-5: in-progress
-  5-1-rotation-initiation-and-checklist-generation: ready-for-dev
+  5-1-rotation-initiation-and-checklist-generation: in-progress
   5-2-rotation-checklist-confirmation-and-completion: ready-for-dev
   5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: ready-for-dev
   epic-5-retrospective: optional
