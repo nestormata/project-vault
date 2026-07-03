@@ -14,7 +14,7 @@ services:
       retries: 10
       start_period: 10s
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
 
   # One-shot migration runner: creates the vault_app role, RLS policies, and triggers
   # (see packages/db/src/migrations/0001_rls_and_triggers.sql) before `api` starts, so
@@ -60,7 +60,7 @@ services:
       # Envelope mode only: set in .env (not committed). Generate: openssl rand -hex 16
       VAULT_ENVELOPE_KEY_HALF: ${VAULT_ENVELOPE_KEY_HALF:-}
     ports:
-      - "3000:3000"
+      - "${API_HOST_PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy
@@ -82,7 +82,7 @@ services:
       NODE_ENV: production
       API_BASE_URL: http://api:3000
     ports:
-      - "5173:3000"
+      - "${WEB_HOST_PORT:-5173}:3000"
     depends_on:
       - api
 
