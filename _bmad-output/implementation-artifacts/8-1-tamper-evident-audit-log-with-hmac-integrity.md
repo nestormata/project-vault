@@ -17,7 +17,9 @@ so that I can prove to auditors that the log has not been altered since it was w
 - Point-in-time access reports, dormant-user detection, user pseudonymization endpoint — **Story 8.3** (FR44, FR69, FR71, FR102). Story 8.3 depends on this story's backfill-coverage check (AC-13) having already run clean.
 - Data-subject erasure request handling — **Story 8.4**.
 - The separate `platform_audit_events` table, its own HMAC key (`project-vault-platform-audit-v1`), and the platform-operator-only verify endpoint — **Story 9.4**. Do not touch platform audit events in this story; they are a structurally separate table with separate RLS.
-- Audit-signing-key **rotation** (deriving a new `auditKeyVersion` and re-signing/retaining old keys) — deferred to a future story per the comment already in `packages/db/src/schema/vault-state.ts:9-11` ("Old key versions must be retained in a key_history store (Story 9.x)"). This story's verify endpoint must *detect* a key-version mismatch (AC-3) but does not implement rotation itself.
+- Audit-signing-key **rotation** (deriving a new `auditKeyVersion` and re-signing/retaining old keys) — deferred to a future story per the comment already in `packages/db/src/schema/vault-state.ts:9-11` ("Old key versions must be retained in a key_history store (Story 9.x)"). This story's verify endpoint must *detect* a key-version mismatch (AC-3) but does not implement rotation itself. **Known, accepted technical debt (adversarial review finding, high):** AC-3's check (`row.keyVersion === currentAuditKeyVersion(tx)`) is unconditional and permanent — it has no seam for verifying a row against a *retained historical* key. This is intentional for this story (rotation doesn't exist yet, so there is no historical key to check against), but it means **whichever future story implements rotation must also revisit and extend this story's AC-3 comparison** to accept `row.keyVersion` values found in the future `key_history` store, not just the current version — otherwise every pre-rotation row will read as a permanent false "tampering" failure the moment rotation ships. Flag this explicitly in that future story's planning rather than rediscovering it as a bug.
+
+**Threat model boundary (adversarial review finding, critical) — read before assuming this endpoint's guarantee is absolute:** This story's tamper-evidence mechanism protects against **database-level tampering only** — i.e., an actor with direct SQL access to the database (bypassing the application layer) who tries to alter a row's contents after the fact. The append-only trigger + grant REVOKE (D1) make even that hard (see AC-2's edge case: a real "tampered" row can only be simulated by inserting a self-inconsistent row, since `UPDATE`/`DELETE` are blocked outright). It does **not** protect against compromise of the API process itself: an attacker who gains code-execution in the API process, or who otherwise obtains the in-memory audit-signing key cached by `getAuditKey()` (D1), could `INSERT` a fully self-consistent forged row — correct `hmac`, correct `keyVersion` — that this endpoint would report as passed, silently defeating the guarantee. This is a fundamental limitation of any single-key HMAC scheme with no external anchor (e.g., a hash chain periodically published to an external, independently-controlled log, or an HSM-backed signing key that never enters process memory in reconstructable form). Building such an anchor is out of scope for this story; if the threat model needs to extend to API-process compromise, that is a distinct, larger hardening initiative for a future story, not an oversight to fix here. State this boundary plainly to auditors/stakeholders relying on this feature: it proves "no one altered the log via the database," not "no one with API-level access ever could have."
 
 ---
 
@@ -29,7 +31,7 @@ so that I can prove to auditors that the log has not been altered since it was w
 |-------|-------|
 | **Surface scope** | `api` |
 | **Evaluator-visible** | no — this story ships one owner-only verification endpoint consumed via REST API / curl, not a web screen |
-| **Linked UI story** (if API-only) | `TBD` — **blocking note:** no story anywhere in the current epics.md (Epic 8's four stories, or any other epic) scopes a dedicated web UI for the audit log. The PRD's Dana persona journey (`prd.md:241`, "she opens Project Vault's audit log interface") and epics.md's AC-E8c ("displayed in the UI as a paginated table") both imply a UI surface exists somewhere, but no story number is assigned to build it. This is the same category of planning gap Story 7.1 flagged for machine-user management UI — not a decision this story can resolve. Until a UI story exists, org owners consume `GET /api/v1/org/audit/verify` exclusively via the REST API / OpenAPI docs (`/api/v1/docs`). Flagged as an open question below and should be raised at Epic 8 sprint planning before Story 8.2/8.3 (which explicitly mention UI tables) are scoped. |
+| **Linked UI story** (if API-only) | `TBD` — **accepted trade-off for this story, not a blocker to `ready-for-dev`:** no story anywhere in the current epics.md (Epic 8's four stories, or any other epic) scopes a dedicated web UI for the audit log. The PRD's Dana persona journey (`prd.md:241`, "she opens Project Vault's audit log interface") and epics.md's AC-E8c ("displayed in the UI as a paginated table") both imply a UI surface exists somewhere, but no story number is assigned to build it. This is the same category of planning gap Story 7.1 flagged for machine-user management UI. FR40/FR78 (this story's covered requirements) describe an integrity-verification *capability*, satisfiable via API alone — the missing UI story affects Stories 8.2/8.3 (which explicitly need UI tables) more directly than it affects this one. **This story proceeds API-only deliberately**; the gap must still be raised at Epic 8 sprint planning before 8.2/8.3 are scoped, so it doesn't silently resurface as a surprise then. |
 | **Honest placeholder AC** (if UI deferred) | N/A — no UI is being deferred with a placeholder; none exists yet for this surface, and no SvelteKit route should be stubbed in this story (would create dead route code with no linked follow-up story). |
 | **Persona journey** | N/A — API-only, no evaluator-visible UI in this story. Rationale: FR40/FR78 describe an integrity-verification capability consumed by a compliance officer via API/export tooling; there is no human end-user journey through a web surface for this story's scope. |
 
@@ -73,21 +75,31 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
 - Epics.md's PJ6 (`epics.md:1866`) and Story 8.1's literal AC (`epics.md:1896`) describe a backfill check for "`actor_id` values not routed through `user_identity_token`" — i.e., rows storing a raw user UUID instead of a token reference. **This scenario is structurally impossible here**: there is no `actor_id` column at all, only `actor_token_id`, and it is a real foreign key to `user_identity_tokens(id)` (D1). A row with a raw, non-token UUID in that column would be rejected by the FK constraint at insert time — the database itself is the backfill guard for "wrong reference type."
 - **The real gap this check needs to catch:** `actor_token_id` is **nullable**, and `firstActorTokenIdForUser()` (`apps/api/src/modules/audit/actor-token.ts`) returns `null` if a user has no `user_identity_tokens` row. Every user created through the normal registration flow (`apps/api/src/modules/auth/service.ts:383-398`) gets a `user_identity_tokens` row in the *same transaction* as their first audit event, so this should never happen for a properly-onboarded user — but a future story's code path (or a bug) could write a `actorType: 'human'` audit row with `actorTokenId: null`, and such a row can **never be pseudonymized** by Story 8.3's GDPR erasure mechanism (there is no token to alias). That is the real compliance gap PJ6 is protecting against, translated to this schema.
 - **Decision implemented in this story:** the "backfill check" (AC-13/AC-14) queries for `audit_log_entries` rows where `actor_type = 'human' AND actor_token_id IS NULL`. Today this should return zero rows (confirmed by reading every write call site — see D1 table); the check exists so it **stays** zero as new stories are added, and is wired into `make ci` as a hard gate (matching `check-rls-coverage`'s pattern), not left as a one-time manual audit.
+- **Scope boundary, `actor_type = 'human'` only (adversarial review finding, medium):** this check deliberately does not cover `actor_type = 'machine_user'` rows, which Stories 7.1/7.2 (not yet implemented) will start writing to this same table. Machine-user identity is a structurally different model (API-key-based, not `user_identity_tokens`-based), so the same nullability gap and the same GDPR-pseudonymization rationale may not apply unchanged — but that hasn't been designed yet. This is an intentional, explicitly-flagged scope boundary, not a silent gap: **Story 7.1/7.2 or Story 8.3 must revisit whether machine-user audit rows need an analogous coverage check** once that schema exists, rather than assuming this check already covers them.
 
 ### D4 — Verify endpoint range bounding: epics.md doesn't specify a limit; this story adds one
 
 - epics.md's AC (`epics.md:1890`) specifies `GET /api/v1/org/audit/verify?from=<ISO>&to=<ISO>` with no stated bound on range size or row count. Recomputing an HMAC per row is CPU-bound; an org with millions of historical rows calling this with an unbounded range would be a self-inflicted DoS vector and directly touches NFR-PERF-style concerns already established elsewhere in the codebase (e.g., `AUDIT_LOG_STORAGE_LIMIT_GB` guard planned for Story 9.2).
 - **Decision implemented in this story:** the endpoint enforces `to - from <= 90 days` (`AUDIT_VERIFY_MAX_RANGE_DAYS`, a named constant in `verify.ts`, not a magic number) and a hard cap of `AUDIT_VERIFY_MAX_ROWS = 50_000` rows actually recomputed per call; exceeding either returns `422 { code: "range_too_large" }` (see AC-6). A compliance officer verifying a full year needs to make ~4-5 calls across sub-ranges — an acceptable trade-off documented in the response error message itself, not just internal comments.
+- **Row-count check is race-free by construction (adversarial review finding, medium — corrected design):** the row-count guard is **not** implemented as a separate `COUNT(*)` pre-check followed by a second SELECT (which would leave a check-then-act window where concurrent writes land between the two queries, given AC-12 explicitly allows concurrent writes during a verify call). Instead, `verify.ts` issues a **single** query with `LIMIT AUDIT_VERIFY_MAX_ROWS + 1`. If the result set's length exceeds `AUDIT_VERIFY_MAX_ROWS`, the endpoint returns `422 { code: "range_too_large" }` without recomputing any HMACs; otherwise it proceeds directly with the same already-fetched rows. This is both race-free (one query, one snapshot) and strictly cheaper (no redundant COUNT query on the hot path).
+- **Range boundary semantics (adversarial review finding, medium):** the range is **inclusive of `from`, exclusive of `to`** (`created_at >= from AND created_at < to`) — the same half-open convention used elsewhere for time-window queries. This is what makes D4's "stitch adjacent sub-range calls together" guidance gapless and non-duplicating: a compliance officer calling `[T0, T1)`, then `[T1, T2)`, then `[T2, T3)` covers every row exactly once with no missed or double-counted boundary row.
 
 ### D5 — Authorization: owner-only, no additional `requireMfa` flag on this GET
 
 - epics.md is explicit: "the integrity verification endpoint is accessible to `owner` role only" (`epics.md:1892`). This is the **first** `allowedRoles: ['owner']`-only endpoint in the codebase (grep confirms no precedent) — every existing admin-tier endpoint uses `minimumRole: 'admin'` (which also admits `owner`) or `allowedRoles: ['admin', 'owner']`.
-- Per the architecture's blanket MFA-enforcement rule (`architecture.md:319`), any authenticated `owner` without MFA enrolled and past their grace period is already rejected upstream with `403 MFA_ENROLLMENT_REQUIRED` before reaching route-level checks; per `mfa-policy-matrix.md:62`, safety/security-visibility GET endpoints like `GET /org/security-alerts` are **not** additionally gated with `requireMfa: true` at the route level, precisely so admins mid-grace-period can still see security-relevant state. `GET /api/v1/org/audit/verify` is the same category of "let a not-yet-MFA-enrolled-but-in-grace owner see security state" endpoint — **decision: no `requireMfa: true`** on this route, matching the `GET /org/security-alerts` precedent (`modules/org/routes.ts:78-93`) exactly, not the mutating-endpoint pattern.
+- Per the architecture's blanket MFA-enforcement rule (`architecture.md:319`), any authenticated `owner` without MFA enrolled and past their grace period is already rejected upstream with `403 MFA_ENROLLMENT_REQUIRED` before reaching route-level checks; per `mfa-policy-matrix.md:62`, safety/security-visibility GET endpoints are **not** additionally gated with `requireMfa: true` at the route level, precisely so admins/owners mid-grace-period can still see security-relevant state.
+- **Corrected precedent citation (adversarial review finding, medium):** `GET /org/security-alerts` (`modules/org/routes.ts:78-93`) is cited here as the *category* precedent (a security-visibility GET endpoint intentionally left off `requireMfa`), **not** as an exact-audience match — that route's `allowedRoles` is actually `['owner', 'admin']`, a broader audience than this story's owner-only endpoint. Since this is the codebase's first-ever owner-only endpoint, it does not inherit an audience-identical precedent; the independent justification for skipping `requireMfa` here is the general `mfa-policy-matrix.md:62` rule itself (any security-visibility GET, regardless of which roles it admits, is intentionally left off `requireMfa` so a not-yet-MFA-enrolled-but-in-grace user in an allowed role isn't locked out of seeing security state) — **decision: no `requireMfa: true`** on this route, on that general-rule basis rather than a false audience-equivalence claim.
 
 ### D6 — Route-audit classification: `action: 'read'`, not `'sensitive-read'`
 
 - `apps/api/src/lib/route-exemptions.ts`'s `ROUTE_ACTION_CLASSIFICATIONS` requires every route to declare a classification (enforced by `route-audit.test.ts`). The closest precedent is `GET /api/v1/org/security-alerts` (`route-exemptions.ts:199-204`): `action: 'read'`, `auditOmissionReason`, `reviewer: SECURITY_OWNER`. `GET /api/v1/org/audit/verify` returns pass/fail counts and HMAC-mismatch metadata — never a secret value, never a credential — so it is classified the same way, not as `'sensitive-read'` (reserved for endpoints that reveal actual credential plaintext, e.g. `GET .../credentials/:id/value`).
 - **Decision implemented in this story:** add `'GET /api/v1/org/audit/verify': { action: 'read', auditOmissionReason: 'Integrity verification read returns pass/fail counts and event metadata only; never a secret or credential value.', reviewer: SECURITY_OWNER }` to `route-exemptions.ts`.
+
+### D7 — This endpoint's own calls ARE audited (corrected from an earlier "no audit write" assumption)
+
+- **Adversarial review finding (medium):** an earlier draft of this story registered the route with `writeAuditEvent: false` and described no audit entry for calls to the verify endpoint itself. For a compliance-focused feature, "who ran an integrity check, and when" is itself a fact worth auditing — both for due-diligence evidence and for detecting a compromised owner account probing what has/hasn't been detected.
+- **Decision implemented in this story:** the route uses the standard `SecureRoute` default audit writer (`writeAuditEvent: true`, the same-transaction path already shipped by D1 — no new write-path code needed), recording a new `eventType: 'audit.integrity_verify_run'` with `payload: { from, to, rowsChecked, passed, failedCount }` (the true total, not `failed.length` — see AC-2's truncation note). This reuses the existing `defaultAuditWriter`/`writeHumanAuditEntry` path exactly like every other mutating-or-notable route; it does not require the endpoint to be reclassified as a mutation, since audit writes already accompany plenty of GET-shaped security-relevant reads elsewhere in the codebase's `SecureRoute` conventions.
+- Task 3.1 (below) reflects this: `writeAuditEvent: true`, not `false`.
 
 ---
 
@@ -134,12 +146,12 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
 |---|---|
 | Schema | **None new.** `audit_log_entries`, RLS, append-only trigger/grant, `vault_state.audit_key_version` all already exist (D1). |
 | GET `/api/v1/org/audit/verify` | `allowedRoles: ['owner']`, no `requireMfa` flag (D5). Recomputes HMAC for every row in `[from, to]` for the caller's org; returns pass/fail summary. `422` on missing/invalid/inverted/oversized range. |
-| Response shape | `{ summary, rowsChecked, passed, failed: [{ id, eventType, timestamp }], verifiedAt }` — comprehensible without cryptography background (UX-DR13). |
+| Response shape | `{ summary, rowsChecked, passed, failed: [{ id, eventType, timestamp }] (capped at 500), failedCount, failedTruncated, verifiedAt }` — comprehensible without cryptography background (UX-DR13); `failedCount`/`failedTruncated` guard against an unbounded payload on bulk-tamper (see AC-2). |
 | Tamper detection | A row whose stored `hmac` doesn't match the recomputed HMAC over its own stored fields is reported as failed. |
 | Key-version mismatch | A row whose `keyVersion` differs from the org's current `vault_state.auditKeyVersion` is reported as failed (rotation-without-re-signing scenario; not naturally reachable yet since rotation isn't implemented — tests simulate it directly). |
 | Tenant isolation | Verification only ever considers the caller's own org's rows; RLS makes cross-org rows structurally invisible regardless of query construction. |
 | Vault sealed | If the vault is sealed (`getAuditKey()` throws), the endpoint returns `503 { code: "audit_key_unavailable" }`, not a crash or a false-negative "all passed." |
-| Rate limiting | `20/min` per owner (CPU-bound recompute; matches the sensitive-mutation rate-limit tier used elsewhere). |
+| Rate limiting | `20/min` per owner (CPU-bound recompute; tier borrowed from existing mutating-route precedents, e.g. account deactivation/session revocation, chosen for the shared resource-protection rationale, not because this is itself a mutation — see AC-11). |
 | Concurrency | Verification is a point-in-time read; concurrent audit writes during a verify call are unaffected and do not corrupt the count (standard read-committed semantics — no new locking needed). |
 | Backfill/coverage CI guard | New `packages/db/src/check-audit-actor-token-coverage.ts` + `scripts/check-audit-actor-token-coverage.ts`, wired into `make ci` and root `package.json`'s script list the same story it's introduced (product-surface-contract G3). Fails CI if any `actor_type='human'` row has `actor_token_id IS NULL`. |
 | RLS/route-audit CI coverage | New route is classified in `route-exemptions.ts` (D6); `check-rls-coverage.ts` already covers `audit_log_entries` generically — this story adds an explicit assertion test confirming that, rather than relying on the generic check alone. |
@@ -163,12 +175,16 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
     "rowsChecked": 3,
     "passed": 3,
     "failed": [],
+    "failedCount": 0,
+    "failedTruncated": false,
     "verifiedAt": "2026-07-04T18:32:10.104Z"
   }
 }
 ```
 
 **And** each row's HMAC is recomputed via the *existing* `computeAuditHmac()` (`apps/api/src/modules/audit/write-entry.ts`) over exactly the same field set used at write time: `{ orgId, actorTokenId, actorType, eventType, resourceId, resourceType, payload, keyVersion }` — reusing the write-path function guarantees recompute and original-compute can never silently drift apart into two different canonicalization implementations.
+
+**And** the recomputed HMAC is compared to the stored HMAC using a **constant-time comparison** (`crypto.timingSafeEqual`, comparing fixed-length buffers — not a plain `===`/`!==` string comparison), so the security-critical comparison at the center of this endpoint does not reintroduce a timing side-channel (adversarial review finding, medium).
 
 ---
 
@@ -193,12 +209,16 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
         "timestamp": "2026-07-04T17:10:00.000Z"
       }
     ],
+    "failedCount": 1,
+    "failedTruncated": false,
     "verifiedAt": "2026-07-04T18:32:10.104Z"
   }
 }
 ```
 
 **Edge case — integration test guidance:** because `UPDATE`/`DELETE` on `audit_log_entries` are blocked at both the trigger and grant layer (D1), any test that needs a "tampered" row must construct it at **insert time** with a deliberately wrong `hmac` string (e.g., `hmac: 'deadbeef'.repeat(8)`), not attempt to insert-then-corrupt. Attempting an `UPDATE` in a test to simulate tampering will itself throw a permission-denied error before the test even reaches the assertion under test — this is expected and is not a bug in the test.
+
+**Edge case — large-scale failure payload (adversarial review finding, medium):** `rowsChecked` is capped at `AUDIT_VERIFY_MAX_ROWS = 50,000` (D4), but in a systemic-tamper or bulk-corruption scenario the `failed` array itself is otherwise unbounded and could return tens of thousands of entries in one JSON payload. The response caps `failed` at the first `500` entries (ordered by `timestamp` ascending) and adds two fields to the response shape: `failedCount` (the true total, which may exceed `failed.length`) and `failedTruncated: boolean`. The `summary` string still reports the true `failedCount`, not `failed.length`, so the human-readable summary is never misleading even when the array is truncated. See AC-17 for the corresponding schema addition.
 
 ---
 
@@ -211,6 +231,8 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
 **Then** the row is reported in `failed` — **not** because the HMAC recomputation fails (it would actually match, since the test constructs a self-consistent row), but because the row's `keyVersion` does not equal `currentAuditKeyVersion(tx)` (`epics.md:1890`: "the current audit signing key version must match the row's `keyVersion` for verification to pass"). The verify logic must check both conditions independently — `hmacMatches AND row.keyVersion === currentKeyVersion` — a row can fail on either condition alone.
 
 **And** the response's `failed` entry for this row has the same shape as AC-2's tampered-row entry — the caller-facing response does not need to distinguish "wrong HMAC" from "key version mismatch" (both are "integrity could not be confirmed" from an auditor's point of view); the distinction matters only for internal test assertions and pino debug logs, not the API contract.
+
+**Known forward dependency (see "Out of scope" — key rotation):** this equality check is unconditional and has no historical-key seam. Whichever future story implements key rotation must revisit this check to also accept a row's `keyVersion` against a retained historical key, not just the current one — otherwise rotation will retroactively turn every pre-rotation row into a false failure here.
 
 ---
 
@@ -249,10 +271,11 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
 | No `from`/`to` at all | `422 { code: "validation_error", details: { from: [...], to: [...] } }` — both are required, no default range is silently assumed (an auditor must be explicit about what window they're attesting to) |
 | `from=not-a-date&to=2026-07-04T00:00:00.000Z` | `422` — Zod `z.iso.datetime()` rejects the malformed `from` |
 | `from=2026-07-04T00:00:00.000Z&to=2026-07-01T00:00:00.000Z` (to before from) | `422 { code: "invalid_range", message: "..." }` |
+| `from === to` (zero-width range) | **Not an error** — valid, since the range is half-open (`>= from AND < to`, D4); a zero-width window matches zero rows and returns `200` with the empty-range shape from AC-7, not `422` |
 | `from`/`to` spanning 91 days (`AUDIT_VERIFY_MAX_RANGE_DAYS = 90`) | `422 { code: "range_too_large", message: "Range exceeds 90 days; narrow the from/to window and call again" }` (D4) |
-| A valid ≤90-day range that would match more than `AUDIT_VERIFY_MAX_ROWS = 50,000` rows | Same `422 { code: "range_too_large" }` — checked via a cheap `COUNT(*)` before recomputing any HMACs, so the endpoint never starts expensive work it will reject anyway |
+| A valid ≤90-day range that would match more than `AUDIT_VERIFY_MAX_ROWS = 50,000` rows | Same `422 { code: "range_too_large" }` — detected via the single `LIMIT AUDIT_VERIFY_MAX_ROWS + 1` query described in D4 (not a separate `COUNT(*)` pre-check, which would leave a race window against AC-12's concurrent writes); the endpoint never recomputes HMACs for a rejected range |
 
-**Then** each case is verified by an independent test; no case reaches the HMAC-recompute code path.
+**Then** each case is verified by an independent test; the missing/invalid/inverted/oversized-range cases never reach the HMAC-recompute step (the oversized-range case does touch the database — the single bounded-`LIMIT` query itself — but that query's own row count, not an HMAC comparison, is what triggers the rejection).
 
 ---
 
@@ -271,12 +294,14 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
     "rowsChecked": 0,
     "passed": 0,
     "failed": [],
+    "failedCount": 0,
+    "failedTruncated": false,
     "verifiedAt": "2026-07-04T18:32:10.104Z"
   }
 }
 ```
 
-**And** this is explicitly distinct from a validation error — a real, valid range with zero matching rows is a legitimate, common case (e.g., a brand-new org, or a Sunday with no activity), not something to reject.
+**And** this is explicitly distinct from a validation error — a real, valid range with zero matching rows is a legitimate, common case (e.g., a brand-new org, or a Sunday with no activity), not something to reject. **This includes the zero-width case** (`from === to`, AC-6): since the range is half-open (`>= from AND < to`, D4), `from === to` matches zero rows by construction and takes this same empty-range path, not `422`.
 
 ---
 
@@ -288,8 +313,10 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
 
 **Then** the `summary` field is always a complete, grammatically correct English sentence stating the pass count and total count with no jargon (no "HMAC," "hash," "cryptographic" in the summary string itself — those terms are fine in API documentation, not in the runtime response body a compliance officer might paste directly into an audit report). Exact phrasing rules, enforced by unit test on the summary-builder function in `verify.ts`:
 - All pass: `` `All ${rowsChecked} records verified — no tampering detected` ``
-- Some fail: `` `${passed} of ${rowsChecked} records verified — ${failedCount} record${failedCount === 1 ? '' : 's'} failed integrity check` `` (singular/plural handled)
+- Some fail: `` `${passed} of ${rowsChecked} records verified — ${failedCount} record${failedCount === 1 ? '' : 's'} failed integrity check` `` (singular/plural handled, using the true `failedCount` per AC-2's truncation note, not `failed.length`)
 - Zero rows: `"No records found in this range"`
+
+**Scope note (adversarial review finding, low):** this jargon ban applies only to the **runtime `summary` string value** in the response body. It does not extend to the OpenAPI spec's field descriptions, this story's own documentation, or code comments/identifiers — those remain free to use precise technical terms ("HMAC," "hash," "cryptographic") since their audience is a developer/API integrator, not the compliance officer reading the live `summary` text.
 
 ---
 
@@ -299,7 +326,7 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
 
 **When** this story lands,
 
-**Then** add one explicit test to `packages/db/src/__tests__/check-rls-coverage.test.ts` (or confirm an equivalent assertion already exists — read the file first) that specifically names `audit_log_entries` in its expected-covered-tables list, so a future refactor of `EXCLUDED_TABLES` that accidentally added `audit_log_entries` to the exclusion set would be caught by a *named* failure, not just a generic "some table lost coverage" failure. This satisfies epics.md's literal AC text ("the `check-rls-coverage.ts` CI guard must also verify that `audit_events` has an RLS policy") without writing new coverage logic — only a more specific test.
+**Then** the developer MUST read `packages/db/src/__tests__/check-rls-coverage.test.ts` first, and then either (a) add one explicit test naming `audit_log_entries` in its expected-covered-tables list, **or** (b) if such a named assertion already exists, extend/confirm it explicitly in the PR description — "no equivalent assertion found" is not an acceptable outcome; skipping this AC entirely is not permitted (adversarial review finding, low: this is a hard requirement, not an optional either/or). The goal is that a future refactor of `EXCLUDED_TABLES` that accidentally added `audit_log_entries` to the exclusion set is caught by a *named* failure, not just a generic "some table lost coverage" failure. This satisfies epics.md's literal AC text ("the `check-rls-coverage.ts` CI guard must also verify that `audit_events` has an RLS policy") without writing new coverage logic — only a more specific test.
 
 ---
 
@@ -319,7 +346,7 @@ If you find yourself writing a new Drizzle schema file, a new HMAC function, or 
 
 **When** they call it an additional (21st) time within that same window,
 
-**Then** the response is `429` (standard `enforceUserRateLimit` behavior, `rateLimit: { max: 20, timeWindowMs: 60_000, key: 'GET /api/v1/org/audit/verify' }` on the `secureRoute` registration — same mechanism as every other rate-limited route, no new rate-limiting primitive).
+**Then** the response is `429` (standard `enforceUserRateLimit` behavior, `rateLimit: { max: 20, timeWindowMs: 60_000, key: 'GET /api/v1/org/audit/verify' }` on the `secureRoute` registration — same mechanism as every other rate-limited route, no new rate-limiting primitive). **Corrected precedent (adversarial review finding, medium):** the `20/min` figure is drawn from existing **mutating**-route precedents (`POST /users/:userId/deactivate`, `DELETE /users/:userId/sessions`), not from a read-route precedent — this endpoint gets the same tier deliberately because it is CPU-bound (per-row HMAC recomputation), which is the same resource-protection rationale those mutating routes' rate limits exist for, even though this endpoint is itself a `GET`.
 
 **Edge case:** rate limiting is enforced per-user (`auth.userId`), not per-org — two different owners in the same org each get their own 20/min budget, matching the existing `enforceUserRateLimit` keying convention used everywhere else in the codebase.
 
@@ -368,7 +395,11 @@ export async function checkAuditActorTokenCoverage(sql: postgres.Sql): Promise<v
 
 ### AC-14: Backfill/Coverage Check — Dirty Database Fails Loudly
 
-**Given** a test inserts one `audit_log_entries` row directly via raw SQL with `actor_type: 'human'` and `actor_token_id: null` (simulating a hypothetical future bug where a code path forgets to resolve the actor's token),
+**Critical isolation requirement (adversarial review finding, critical):** `checkAuditActorTokenCoverage()` is deliberately **not** org-scoped — it is a database-wide CI gate (correct for its purpose: it must catch a gap anywhere, not just in one test org). But `audit_log_entries` is append-only, and `withTestOrg()`'s cleanup intentionally does **not** delete rows from it (`test-helpers.ts:39-48`) — mirroring production immutability. Combined, these two facts mean a naive test that inserts a dirty row via `withTestOrg()` and never removes it would **permanently poison AC-13's "clean database passes" assertion** for every subsequent test run against that same Postgres instance (any CI environment or local dev setup that doesn't recreate the database from scratch between every single test invocation).
+
+**Given** this test therefore wraps its dirty-row insert **and** its `checkAuditActorTokenCoverage(sql)` call inside a transaction that is explicitly rolled back before the test completes (e.g. `sql.begin(async (tx) => { /* insert dirty row, run the check, assert it throws */ throw new RollbackTestTransaction() }).catch((e) => { if (!(e instanceof RollbackTestTransaction)) throw e })`, or an equivalent named rollback-sentinel/savepoint helper already used elsewhere in this codebase's test suite — read `packages/db/src/test-helpers.ts` for an existing pattern before inventing a new one) — so the dirty row **never persists past this single test**, regardless of whether the surrounding CI/dev database is recreated between runs,
+
+**And** a test inserts one `audit_log_entries` row directly via raw SQL with `actor_type: 'human'` and `actor_token_id: null` (simulating a hypothetical future bug where a code path forgets to resolve the actor's token),
 
 **When** `checkAuditActorTokenCoverage(sql)` runs,
 
@@ -446,6 +477,8 @@ export const AuditVerifyResponseSchema = z
           timestamp: z.iso.datetime(),
         })
       ),
+      failedCount: z.number().int().nonnegative(),
+      failedTruncated: z.boolean(),
       verifiedAt: z.iso.datetime(),
     }),
   })
@@ -462,34 +495,34 @@ export const AuditVerifyResponseSchema = z
 
 **When** the story's test suite runs (`apps/api/src/modules/audit/routes.test.ts` for the endpoint, `packages/db/src/__tests__/check-audit-actor-token-coverage.test.ts` for the CI guard, plus the `check-rls-coverage.test.ts` addition from AC-9),
 
-**Then** integration tests cover, at minimum: verify pass (AC-1), verify fail — tampered row (AC-2), verify fail — key-version mismatch (AC-3), owner-only authz for admin/member/viewer (AC-4) and unauthenticated (AC-4 edge case), cross-org isolation (AC-5), missing/invalid/inverted/oversized-range validation (AC-6, 5 sub-cases), empty range (AC-7), summary string phrasing for all three cases including singular/plural (AC-8), explicit named RLS coverage assertion (AC-9), vault-sealed 503 (AC-10), rate limiting 429 on the 21st call (AC-11), concurrent verify + write internal-consistency (AC-12), backfill check clean (AC-13), backfill check dirty (AC-14), route-audit classification present (AC-15), and confirmation of zero migration diff (AC-16, a repo-inspection assertion rather than a runtime test).
+**Then** integration tests cover, at minimum: verify pass (AC-1), verify fail — tampered row (AC-2), failed-array truncation at 500 entries with correct `failedCount`/`failedTruncated` on a bulk-tamper scenario (AC-2), verify fail — key-version mismatch (AC-3), owner-only authz for admin/member/viewer (AC-4) and unauthenticated (AC-4 edge case), cross-org isolation (AC-5), missing/invalid/inverted/oversized-range validation including the zero-width `from === to` non-error case (AC-6, 6 sub-cases), empty range (AC-7), summary string phrasing for all three cases including singular/plural (AC-8), explicit named RLS coverage assertion (AC-9), vault-sealed 503 (AC-10), rate limiting 429 on the 21st call (AC-11), concurrent verify + write internal-consistency (AC-12), backfill check clean via rolled-back transaction fixture (AC-13), backfill check dirty via rolled-back transaction fixture (AC-14), this route's own call being recorded as an `audit.integrity_verify_run` audit entry (D7), route-audit classification present (AC-15), and confirmation of zero migration diff (AC-16, a repo-inspection assertion rather than a runtime test).
 
 ---
 
 ## Tasks / Subtasks
 
 - [ ] Task 1: Verify endpoint core logic (AC: 1, 2, 3, 7, 8, 10)
-  - [ ] 1.1 Create `apps/api/src/modules/audit/verify.ts` exporting `verifyAuditRange(tx, { orgId, from, to }): Promise<VerifyResult>` — queries `audit_log_entries` for rows in range, recomputes HMAC per row via the existing `computeAuditHmac()`, compares `keyVersion` against `currentAuditKeyVersion(tx)`, builds the pass/fail lists and the comprehensible `summary` string (AC-8's exact phrasing rules)
+  - [ ] 1.1 Create `apps/api/src/modules/audit/verify.ts` exporting `verifyAuditRange(tx, { orgId, from, to }): Promise<VerifyResult>` — queries `audit_log_entries` for rows in range (half-open `>= from AND < to`, D4), recomputes HMAC per row via the existing `computeAuditHmac()`, compares each recomputed HMAC to the stored value using `crypto.timingSafeEqual` (constant-time, not `===`), compares `keyVersion` against `currentAuditKeyVersion(tx)`, builds the pass/fail lists (capping `failed` at 500 entries with a true `failedCount` and `failedTruncated` flag — AC-2) and the comprehensible `summary` string using `failedCount` (AC-8's exact phrasing rules)
   - [ ] 1.2 Handle `getAuditKey()` throwing (vault sealed) by letting the error propagate to the route handler, which maps it to `503 audit_key_unavailable` (AC-10) — do not swallow it inside `verify.ts`
-  - [ ] 1.3 Unit test the summary-string builder in isolation (all three phrasing branches, including 1-failure singular vs N-failure plural)
+  - [ ] 1.3 Unit test the summary-string builder in isolation (all three phrasing branches, including 1-failure singular vs N-failure plural, using `failedCount` not `failed.length`)
 - [ ] Task 2: Query validation and range bounding (AC: 6)
   - [ ] 2.1 Add `AuditVerifyQuerySchema` (`apps/api/src/modules/audit/schema.ts`) with `z.iso.datetime()` for `from`/`to`
-  - [ ] 2.2 In the route handler: `safeParse` → `422 validation_error` on parse failure; explicit `to >= from` check → `422 invalid_range`; explicit day-span and pre-check `COUNT(*)` → `422 range_too_large` for either bound, using named constants `AUDIT_VERIFY_MAX_RANGE_DAYS = 90` and `AUDIT_VERIFY_MAX_ROWS = 50_000`
+  - [ ] 2.2 In the route handler: `safeParse` → `422 validation_error` on parse failure; explicit `to >= from` check → `422 invalid_range` (`from === to` is valid, not rejected — AC-6/AC-7); fetch rows with `LIMIT AUDIT_VERIFY_MAX_ROWS + 1` in the same query used for verification (no separate `COUNT(*)` pre-check — avoids the check-then-act race against AC-12's concurrent writes) and reject with `422 range_too_large` if the day-span exceeds `AUDIT_VERIFY_MAX_RANGE_DAYS = 90` or the result set exceeds `AUDIT_VERIFY_MAX_ROWS = 50_000`
 - [ ] Task 3: Route registration (AC: 4, 5, 11, 15, 17)
-  - [ ] 3.1 Create `apps/api/src/modules/audit/routes.ts` exporting `auditRoutes(fastify)`, one `secureRoute` registration: `method: 'GET'`, `url: '/audit/verify'`, `security: { allowedRoles: ['owner'], writeAuditEvent: false, rateLimit: { max: 20, timeWindowMs: 60_000, key: 'GET /api/v1/org/audit/verify' } }`
+  - [ ] 3.1 Create `apps/api/src/modules/audit/routes.ts` exporting `auditRoutes(fastify)`, one `secureRoute` registration: `method: 'GET'`, `url: '/audit/verify'`, `security: { allowedRoles: ['owner'], writeAuditEvent: true, rateLimit: { max: 20, timeWindowMs: 60_000, key: 'GET /api/v1/org/audit/verify' } }` — audit writes use `eventType: 'audit.integrity_verify_run'` with `payload: { from, to, rowsChecked, passed, failedCount }` (D7)
   - [ ] 3.2 Register `auditRoutes` in `apps/api/src/app.ts` with `{ prefix: '/api/v1/org' }`, alongside the existing `orgRoutes` registration
   - [ ] 3.3 Add `AuditVerifyResponseSchema` to the route's `schema.response[200]`; standard `defaultErrorResponses` (401/403/404/429) plus an explicit `422`/`503` entry
   - [ ] 3.4 Add the `route-exemptions.ts` classification entry (AC-15)
 - [ ] Task 4: RLS coverage explicit assertion (AC: 9)
-  - [ ] 4.1 Read `packages/db/src/__tests__/check-rls-coverage.test.ts`; add or confirm an explicit `audit_log_entries` assertion in the expected-covered-tables list
+  - [ ] 4.1 Read `packages/db/src/__tests__/check-rls-coverage.test.ts`; add an explicit `audit_log_entries` assertion in the expected-covered-tables list, or if one already exists, confirm and reference it explicitly in the PR description — do not skip this task on the assumption coverage is implicit (AC-9)
 - [ ] Task 5: Backfill/coverage CI guard (AC: 13, 14)
-  - [ ] 5.1 Create `packages/db/src/check-audit-actor-token-coverage.ts` (`checkAuditActorTokenCoverage`, `AuditActorTokenCoverageGapError`)
-  - [ ] 5.2 Create `packages/db/src/__tests__/check-audit-actor-token-coverage.test.ts` (clean case + dirty case with a directly-inserted `actor_token_id: null` row)
+  - [ ] 5.1 Create `packages/db/src/check-audit-actor-token-coverage.ts` (`checkAuditActorTokenCoverage`, `AuditActorTokenCoverageGapError`) — scoped to `actor_type = 'human'` only; `actor_type = 'machine_user'` is an explicit non-goal for this story (D3)
+  - [ ] 5.2 Create `packages/db/src/__tests__/check-audit-actor-token-coverage.test.ts` (clean case + dirty case). The dirty case MUST insert its `actor_token_id: null` row and invoke the check inside a transaction that is rolled back before the test ends (AC-14) — never via `withTestOrg()`'s normal insert/cleanup path, since `audit_log_entries` cleanup is a documented no-op and would permanently poison the clean-database case
   - [ ] 5.3 Create `scripts/check-audit-actor-token-coverage.ts` CLI wrapper, mirroring `scripts/check-rls-coverage.ts`'s error formatting
   - [ ] 5.4 Add `"check-audit-actor-token-coverage": "tsx scripts/check-audit-actor-token-coverage.ts"` to root `package.json`
   - [ ] 5.5 Add `pnpm tsx scripts/check-audit-actor-token-coverage.ts` to the `Makefile`'s `ci` target, immediately after `$(MAKE) check-rls`
 - [ ] Task 6: Integration tests for the endpoint (AC: 1, 2, 3, 4, 5, 6, 7, 10, 11, 12)
-  - [ ] 6.1 `apps/api/src/modules/audit/routes.test.ts` — happy path, tampered row (insert-time-only, per AC-2's edge case guidance), key-version mismatch, authz matrix (owner/admin/member/viewer/unauthenticated), cross-org isolation via `withTwoTestOrgs()`, all 5 validation sub-cases, empty range, vault-sealed mock, rate-limit 21st-call rejection, concurrent verify+write consistency check
+  - [ ] 6.1 `apps/api/src/modules/audit/routes.test.ts` — happy path, tampered row (insert-time-only, per AC-2's edge case guidance), failed-array truncation (bulk-tamper scenario, asserting `failedCount`/`failedTruncated`), key-version mismatch, authz matrix (owner/admin/member/viewer/unauthenticated), cross-org isolation via `withTwoTestOrgs()`, all 6 validation sub-cases (including zero-width `from === to`), empty range, vault-sealed mock, rate-limit 21st-call rejection, concurrent verify+write consistency check, this route's own call recorded as an `audit.integrity_verify_run` entry (D7)
 - [ ] Task 7: OpenAPI regeneration and full-suite verification (AC: 16, 17, 18)
   - [ ] 7.1 Run `pnpm generate-spec`; confirm the new endpoint appears in `packages/shared/openapi.json` with no manual edits needed
   - [ ] 7.2 Confirm `git diff --stat packages/db/src/migrations/` is empty before opening the PR (AC-16)
@@ -505,6 +538,10 @@ export const AuditVerifyResponseSchema = z
 - `audit_log_entries` rows inserted by tests are **never actually deleted** by `withTestOrg()`'s cleanup (see `test-helpers.ts:39-48` comment) — this is correct, intentional behavior mirroring production immutability, not a test-hygiene bug to "fix." Each test should use a fresh `withTestOrg()`/`withTwoTestOrgs()` org so row counts stay deterministic within that org's scope, rather than relying on any cleanup of prior rows.
 - Do not add `audit_log_entries` to `check-rls-coverage.ts`'s `EXCLUDED_TABLES` — it should never be excluded; AC-9 exists specifically to make an accidental future exclusion loudly fail a *named* assertion.
 - Keep `apps/api/src/modules/audit/routes.ts` thin: the handler should call `verifyAuditRange()` and translate its result/thrown errors into HTTP responses, with no inline SQL and no HMAC logic in the route file itself — matching how every other route in this codebase delegates to a sibling module file (`human-entry.ts`, `deactivation.ts`, `user-management.ts`, etc.).
+- **Use `crypto.timingSafeEqual` for the HMAC comparison in `verify.ts`, never `===`.** Both buffers must be the same fixed length (both are SHA-256 HMAC hex output) before comparing; a length mismatch (which should never happen given `computeAuditHmac()`'s fixed output size, but guard defensively) should be treated as a failed match, not thrown as an unhandled error.
+- **Range-check the row count via the same query that fetches rows for verification** (`LIMIT AUDIT_VERIFY_MAX_ROWS + 1`), not a separate `COUNT(*)` beforehand — a two-query check-then-act sequence has a race window against concurrent writes (AC-12) that a single bounded query avoids entirely.
+- **AC-14's dirty-row test fixture must be wrapped in a transaction that gets rolled back**, not inserted-and-left, or it will permanently corrupt AC-13's "clean database" assertion for any Postgres instance reused across test runs — see AC-14's isolation requirement for the exact pattern.
+- This route now writes its own audit entry (`eventType: 'audit.integrity_verify_run'`, D7) via the standard `SecureRoute` writer — `writeAuditEvent: true`, not `false`. Don't special-case this route as audit-write-exempt.
 
 ### Project Structure Notes
 
