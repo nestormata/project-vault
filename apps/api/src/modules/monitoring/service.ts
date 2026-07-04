@@ -1,23 +1,43 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   paymentRecords,
   certRecords,
   domainRecords,
   notificationQueue,
+  serviceEndpoints,
+  endpointHealthChecks,
+  monitoringAlerts,
 } from '@project-vault/db/schema'
+import { env } from '../../config/env.js'
+import {
+  assertUrlIsMonitorable,
+  redactUrlForDisplay,
+  UrlNotMonitorableError,
+} from './url-safety.js'
+import {
+  computeStatusTransition,
+  episodeKeyFor,
+  type MonitoringAlertType,
+} from '../../workers/monitoring-alert-shared.js'
 import type {
   CreateCertificateBody,
   CreateDomainRecordBody,
   CreatePaymentRecordBody,
+  CreateServiceEndpointBody,
   UpdateCertificateBody,
   UpdateDomainRecordBody,
   UpdatePaymentRecordBody,
+  UpdateServiceEndpointBody,
+  HealthHistoryQuery,
+  AlertListQuery,
 } from './schema.js'
 
 export const PAYMENT_DEFAULT_ALERT_LEAD_DAYS = [14, 3]
 export const CERTIFICATE_DEFAULT_ALERT_LEAD_DAYS = [30, 7]
 export const DOMAIN_DEFAULT_ALERT_LEAD_DAYS = [30]
+
+export { UrlNotMonitorableError }
 
 /**
  * AC 7: deleting a service/certificate/domain record must cancel any notifications still
@@ -408,4 +428,480 @@ export async function deleteDomainRecord(tx: Tx, params: { domainId: string; pro
     )
     .returning()
   return deleted ?? null
+}
+
+// --- Service endpoints (service_endpoints) — Story 6.2, ADR-6.2-01 ---
+
+export class ServiceEndpointLimitReachedError extends Error {
+  readonly code = 'service_endpoint_limit_reached'
+
+  constructor(limit: number) {
+    super(`This project has reached its maximum of ${limit} monitored endpoints`)
+    this.name = 'ServiceEndpointLimitReachedError'
+  }
+}
+
+/** Identifying + audit-tail fields shared by every monitoring-record serializer. downEpisode-
+ * StartedAt is deliberately excluded (adversarial-review finding 23) — internal bookkeeping. */
+export function serializeServiceEndpoint(row: typeof serviceEndpoints.$inferSelect) {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    projectId: row.projectId,
+    name: row.name,
+    // ADR-6.2-11: never echo the raw URL back if it carries userinfo/secret-shaped params.
+    url: redactUrlForDisplay(row.url),
+    checkFrequencyMinutes: row.checkFrequencyMinutes,
+    downThresholdFailures: row.downThresholdFailures,
+    status: row.status as 'healthy' | 'degraded' | 'down',
+    consecutiveFailures: row.consecutiveFailures,
+    lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+export async function countServiceEndpointsForProject(tx: Tx, projectId: string): Promise<number> {
+  const [row] = await tx
+    .select({ total: count() })
+    .from(serviceEndpoints)
+    .where(eq(serviceEndpoints.projectId, projectId))
+  return row?.total ?? 0
+}
+
+export async function listServiceEndpoints(tx: Tx, projectId: string) {
+  const rows = await tx
+    .select()
+    .from(serviceEndpoints)
+    .where(eq(serviceEndpoints.projectId, projectId))
+    .orderBy(serviceEndpoints.createdAt)
+  return rows.map(serializeServiceEndpoint)
+}
+
+/**
+ * AC 1/ADR-6.2-09: checks the per-project registration cap BEFORE any SSRF validation or DB
+ * write, then AC 1/2: synchronously validates the URL is not private/loopback/reserved.
+ */
+export async function createServiceEndpoint(
+  tx: Tx,
+  input: { orgId: string; projectId: string; userId: string; body: CreateServiceEndpointBody }
+) {
+  const existingCount = await countServiceEndpointsForProject(tx, input.projectId)
+  if (existingCount >= env.MAX_SERVICE_ENDPOINTS_PER_PROJECT) {
+    throw new ServiceEndpointLimitReachedError(env.MAX_SERVICE_ENDPOINTS_PER_PROJECT)
+  }
+
+  await assertUrlIsMonitorable(input.body.url)
+
+  const [row] = await tx
+    .insert(serviceEndpoints)
+    .values({
+      orgId: input.orgId,
+      projectId: input.projectId,
+      name: input.body.name,
+      url: input.body.url,
+      checkFrequencyMinutes: input.body.checkFrequencyMinutes ?? 5,
+      downThresholdFailures: input.body.downThresholdFailures ?? 2,
+      createdBy: input.userId,
+    })
+    .returning()
+  if (!row) throw new Error('Service endpoint insert returned no row')
+  return row
+}
+
+export async function findServiceEndpointInProject(
+  tx: Tx,
+  params: { serviceEndpointId: string; projectId: string }
+) {
+  const [row] = await tx
+    .select()
+    .from(serviceEndpoints)
+    .where(
+      and(
+        eq(serviceEndpoints.id, params.serviceEndpointId),
+        eq(serviceEndpoints.projectId, params.projectId)
+      )
+    )
+    .limit(1)
+  return row ?? null
+}
+
+export async function updateServiceEndpoint(
+  tx: Tx,
+  input: {
+    serviceEndpointId: string
+    projectId: string
+    body: UpdateServiceEndpointBody
+    rawBody: Record<string, unknown>
+  }
+) {
+  const updates: Record<string, unknown> = {}
+  if ('name' in input.rawBody) updates.name = input.body.name
+  if ('url' in input.rawBody && input.body.url !== undefined) {
+    await assertUrlIsMonitorable(input.body.url) // AC 3: re-validated per AC 2
+    updates.url = input.body.url
+  }
+  if ('checkFrequencyMinutes' in input.rawBody) {
+    updates.checkFrequencyMinutes = input.body.checkFrequencyMinutes
+  }
+  if ('downThresholdFailures' in input.rawBody) {
+    updates.downThresholdFailures = input.body.downThresholdFailures
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return findServiceEndpointInProject(tx, {
+      serviceEndpointId: input.serviceEndpointId,
+      projectId: input.projectId,
+    })
+  }
+
+  const [updated] = await tx
+    .update(serviceEndpoints)
+    .set(updates)
+    .where(
+      and(
+        eq(serviceEndpoints.id, input.serviceEndpointId),
+        eq(serviceEndpoints.projectId, input.projectId)
+      )
+    )
+    .returning()
+  return updated ?? null
+}
+
+/**
+ * AC 3: deleting a service-endpoint cascades its health-check history (FK ON DELETE CASCADE),
+ * suppresses any still-pending notification-queue rows for it, and marks any active/snoozed
+ * monitoring_alerts rows for it as a terminal `resolved_by_deletion` status so a dangling
+ * snoozed alert never references a deleted endpoint. The alert-status update MUST run BEFORE
+ * the endpoint delete: monitoring_alerts.serviceEndpointId is ON DELETE SET NULL (a correction
+ * to this story's original ON DELETE CASCADE draft — see monitoring-alerts.ts), so deleting the
+ * endpoint first would already have nulled out the very column this UPDATE filters on.
+ */
+export async function deleteServiceEndpoint(
+  tx: Tx,
+  params: { serviceEndpointId: string; projectId: string; orgId: string }
+) {
+  const endpoint = await findServiceEndpointInProject(tx, params)
+  if (!endpoint) return null
+
+  await tx
+    .update(monitoringAlerts)
+    .set({ status: 'resolved_by_deletion' })
+    .where(
+      and(
+        eq(monitoringAlerts.serviceEndpointId, endpoint.id),
+        sql`${monitoringAlerts.status} IN ('active','snoozed')`
+      )
+    )
+
+  await tx
+    .update(notificationQueue)
+    .set({ status: 'suppressed' })
+    .where(
+      and(
+        eq(notificationQueue.orgId, params.orgId),
+        eq(notificationQueue.status, 'pending'),
+        sql`${notificationQueue.payload}->>'serviceEndpointId' = ${endpoint.id}`
+      )
+    )
+
+  const [deleted] = await tx
+    .delete(serviceEndpoints)
+    .where(
+      and(
+        eq(serviceEndpoints.id, params.serviceEndpointId),
+        eq(serviceEndpoints.projectId, params.projectId)
+      )
+    )
+    .returning()
+  return deleted ?? null
+}
+
+// --- Health history (endpoint_health_checks) — AC 7 ---
+
+export function serializeHealthCheck(row: typeof endpointHealthChecks.$inferSelect) {
+  return {
+    isHealthy: row.isHealthy,
+    statusCode: row.statusCode,
+    latencyMs: row.latencyMs,
+    failureReason: row.failureReason as
+      'timeout' | 'http_error' | 'network_error' | 'ssrf_blocked' | null,
+    checkedAt: row.checkedAt.toISOString(),
+  }
+}
+
+export async function listHealthHistory(
+  tx: Tx,
+  params: { serviceEndpointId: string; query: HealthHistoryQuery }
+) {
+  const conditions = [eq(endpointHealthChecks.serviceEndpointId, params.serviceEndpointId)]
+  if (params.query.from)
+    conditions.push(gte(endpointHealthChecks.checkedAt, new Date(params.query.from)))
+  if (params.query.to)
+    conditions.push(lte(endpointHealthChecks.checkedAt, new Date(params.query.to)))
+  const where = and(...conditions)
+
+  const [totalRow] = await tx.select({ total: count() }).from(endpointHealthChecks).where(where)
+  const total = totalRow?.total ?? 0
+
+  const rows = await tx
+    .select()
+    .from(endpointHealthChecks)
+    .where(where)
+    .orderBy(desc(endpointHealthChecks.checkedAt))
+    .limit(params.query.limit)
+    .offset((params.query.page - 1) * params.query.limit)
+
+  return {
+    items: rows.map(serializeHealthCheck),
+    total,
+    page: params.query.page,
+    limit: params.query.limit,
+    hasNext: params.query.page * params.query.limit < total,
+  }
+}
+
+/**
+ * AC 4-6, ADR-6.2-03/05: applies one health-check result to a service_endpoints row inside the
+ * caller's transaction — inserts the endpoint_health_checks row, computes the pure status
+ * transition (monitoring-alert-shared.ts), and updates the service_endpoints row accordingly.
+ * downEpisodeStartedAt is set on the transition INTO down, cleared on recovery, and left
+ * unchanged on every other check (needed so a still-down episode keeps referencing the same
+ * episodeKey — ADR-6.2-05).
+ */
+export async function applyHealthCheckResult(
+  tx: Tx,
+  input: {
+    serviceEndpoint: typeof serviceEndpoints.$inferSelect
+    isHealthy: boolean
+    statusCode: number | null
+    latencyMs: number
+    failureReason: 'timeout' | 'http_error' | 'network_error' | 'ssrf_blocked' | null
+    checkedAt?: Date
+  }
+): Promise<{
+  alertFired: MonitoringAlertType | null
+  episodeKey: string | null
+  updatedRow: typeof serviceEndpoints.$inferSelect
+}> {
+  const checkedAt = input.checkedAt ?? new Date()
+
+  await tx.insert(endpointHealthChecks).values({
+    serviceEndpointId: input.serviceEndpoint.id,
+    orgId: input.serviceEndpoint.orgId,
+    isHealthy: input.isHealthy,
+    statusCode: input.statusCode,
+    latencyMs: input.latencyMs,
+    failureReason: input.failureReason,
+    checkedAt,
+  })
+
+  const transition = computeStatusTransition({
+    currentStatus: input.serviceEndpoint.status as 'healthy' | 'degraded' | 'down',
+    consecutiveFailures: input.serviceEndpoint.consecutiveFailures,
+    downThresholdFailures: input.serviceEndpoint.downThresholdFailures,
+    isHealthy: input.isHealthy,
+  })
+
+  let downEpisodeStartedAt: Date | null = input.serviceEndpoint.downEpisodeStartedAt
+  let episodeKey: string | null =
+    downEpisodeStartedAt && input.serviceEndpoint.status !== 'healthy'
+      ? episodeKeyFor(input.serviceEndpoint.id, downEpisodeStartedAt)
+      : null
+
+  if (transition.alertFired === 'service.down') {
+    downEpisodeStartedAt = checkedAt
+    episodeKey = episodeKeyFor(input.serviceEndpoint.id, downEpisodeStartedAt)
+  } else if (transition.alertFired === 'service.recovery') {
+    episodeKey = downEpisodeStartedAt
+      ? episodeKeyFor(input.serviceEndpoint.id, downEpisodeStartedAt)
+      : episodeKeyFor(input.serviceEndpoint.id, checkedAt)
+    downEpisodeStartedAt = null
+  }
+
+  const [updatedRow] = await tx
+    .update(serviceEndpoints)
+    .set({
+      status: transition.nextStatus,
+      consecutiveFailures: transition.nextConsecutiveFailures,
+      lastCheckedAt: checkedAt,
+      downEpisodeStartedAt,
+    })
+    .where(eq(serviceEndpoints.id, input.serviceEndpoint.id))
+    .returning()
+  if (!updatedRow) throw new Error('Service endpoint update returned no row')
+
+  return { alertFired: transition.alertFired, episodeKey, updatedRow }
+}
+
+// writeSystemAuditRow (AC 14) moved to ../../lib/system-audit-row.ts — shared by every
+// background job that writes a system-initiated audit row (check-failed-auth-threshold.ts,
+// check-anomalous-access.ts, this module's health-check worker), avoiding the near-identical
+// HMAC/insert boilerplate being copy-pasted into each one (jscpd zero-duplication gate).
+export { writeSystemAuditRow } from '../../lib/system-audit-row.js'
+
+/**
+ * ADR-6.2-05 (corrected, adversarial-review finding 5): atomically checks for an existing
+ * same-episode active/snoozed monitoring_alerts row and, if none blocks it, inserts a new one —
+ * wrapped by the caller in `pg_advisory_xact_lock(hashtext(serviceEndpointId))` so concurrent
+ * processing of the same endpoint can never produce two rows for one episode.
+ */
+export async function createMonitoringAlertIfNotDeduped(
+  tx: Tx,
+  input: {
+    orgId: string
+    projectId: string
+    serviceEndpointId: string
+    alertType: MonitoringAlertType
+    severity: 'info' | 'warning' | 'critical'
+    episodeKey: string
+    payload: Record<string, unknown>
+  }
+): Promise<typeof monitoringAlerts.$inferSelect | null> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.serviceEndpointId}::text))`)
+
+  if (input.alertType === 'service.down') {
+    const now = new Date()
+    const [existing] = await tx
+      .select()
+      .from(monitoringAlerts)
+      .where(
+        and(
+          eq(monitoringAlerts.serviceEndpointId, input.serviceEndpointId),
+          eq(monitoringAlerts.episodeKey, input.episodeKey),
+          sql`${monitoringAlerts.status} IN ('active','snoozed')`
+        )
+      )
+      .limit(1)
+    if (existing) {
+      const stillSnoozed =
+        existing.status === 'snoozed' &&
+        existing.snoozedUntil !== null &&
+        existing.snoozedUntil.getTime() > now.getTime()
+      if (stillSnoozed || existing.status === 'active') return null
+    }
+  }
+
+  const [row] = await tx
+    .insert(monitoringAlerts)
+    .values({
+      orgId: input.orgId,
+      projectId: input.projectId,
+      serviceEndpointId: input.serviceEndpointId,
+      alertType: input.alertType,
+      severity: input.severity,
+      episodeKey: input.episodeKey,
+      payload: input.payload,
+    })
+    .returning()
+  return row ?? null
+}
+
+// --- Monitoring alerts (monitoring_alerts) — AC 9, 10, 17 ---
+
+export function serializeMonitoringAlert(row: typeof monitoringAlerts.$inferSelect) {
+  return {
+    id: row.id,
+    alertType: row.alertType as 'service.down' | 'service.recovery',
+    severity: row.severity as 'info' | 'warning' | 'critical',
+    status: row.status as 'active' | 'snoozed' | 'dismissed' | 'resolved_by_deletion',
+    episodeKey: row.episodeKey,
+    serviceEndpointId: row.serviceEndpointId,
+    snoozedUntil: row.snoozedUntil?.toISOString() ?? null,
+    dismissedBy: row.dismissedBy,
+    dismissedAt: row.dismissedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  }
+}
+
+export async function findMonitoringAlertInProject(
+  tx: Tx,
+  params: { alertId: string; projectId: string }
+) {
+  const [row] = await tx
+    .select()
+    .from(monitoringAlerts)
+    .where(
+      and(eq(monitoringAlerts.id, params.alertId), eq(monitoringAlerts.projectId, params.projectId))
+    )
+    .limit(1)
+  return row ?? null
+}
+
+export class AlertAlreadyDismissedError extends Error {
+  readonly code = 'alert_already_dismissed'
+
+  constructor() {
+    super('This alert has already been dismissed and cannot be snoozed')
+    this.name = 'AlertAlreadyDismissedError'
+  }
+}
+
+/** AC 9: sets status='snoozed'/snoozedUntil; re-snoozing an already-snoozed alert extends/
+ * replaces snoozedUntil (idempotent-style update, not an error — adversarial-review finding 14).
+ * Snoozing an already-dismissed alert is a meaningful state conflict (409). */
+export async function snoozeMonitoringAlert(
+  tx: Tx,
+  params: { alertId: string; projectId: string; durationMinutes: number }
+) {
+  const existing = await findMonitoringAlertInProject(tx, params)
+  if (!existing) return null
+  if (existing.status === 'dismissed') throw new AlertAlreadyDismissedError()
+
+  const snoozedUntil = new Date(Date.now() + params.durationMinutes * 60_000)
+  const [updated] = await tx
+    .update(monitoringAlerts)
+    .set({ status: 'snoozed', snoozedUntil })
+    .where(eq(monitoringAlerts.id, params.alertId))
+    .returning()
+  return updated ?? null
+}
+
+/** AC 10: permanently dismisses an alert — idempotent (re-dismissing an already-dismissed alert
+ * succeeds harmlessly); dismiss always wins over an active snooze. */
+export async function dismissMonitoringAlert(
+  tx: Tx,
+  params: { alertId: string; projectId: string; dismissedBy: string }
+) {
+  const existing = await findMonitoringAlertInProject(tx, params)
+  if (!existing) return null
+
+  const [updated] = await tx
+    .update(monitoringAlerts)
+    .set({ status: 'dismissed', dismissedBy: params.dismissedBy, dismissedAt: new Date() })
+    .where(eq(monitoringAlerts.id, params.alertId))
+    .returning()
+  return updated ?? null
+}
+
+export async function listMonitoringAlerts(
+  tx: Tx,
+  params: { projectId: string; query: AlertListQuery }
+) {
+  const conditions = [eq(monitoringAlerts.projectId, params.projectId)]
+  if (params.query.status) conditions.push(eq(monitoringAlerts.status, params.query.status))
+  if (params.query.serviceEndpointId) {
+    conditions.push(eq(monitoringAlerts.serviceEndpointId, params.query.serviceEndpointId))
+  }
+  const where = and(...conditions)
+
+  const [totalRow] = await tx.select({ total: count() }).from(monitoringAlerts).where(where)
+  const total = totalRow?.total ?? 0
+
+  const rows = await tx
+    .select()
+    .from(monitoringAlerts)
+    .where(where)
+    .orderBy(desc(monitoringAlerts.createdAt))
+    .limit(params.query.limit)
+    .offset((params.query.page - 1) * params.query.limit)
+
+  return {
+    items: rows.map(serializeMonitoringAlert),
+    total,
+    page: params.query.page,
+    limit: params.query.limit,
+    hasNext: params.query.page * params.query.limit < total,
+  }
 }

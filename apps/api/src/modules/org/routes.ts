@@ -13,7 +13,7 @@ import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { sendAdminRecoveryLink } from '../auth/recovery.js'
 import { checkActiveRotationsForUser, revokePendingInvitationsSentBy } from './deactivation.js'
-import { listSecurityAlerts } from './security-alerts.js'
+import { dismissSecurityAlert, listSecurityAlerts } from './security-alerts.js'
 import { listOrgUsers, removeUserFromOrgMemberships } from './user-management.js'
 import { getProjectMembershipRole } from '../projects/member-management.js'
 import {
@@ -25,6 +25,8 @@ import {
   OrgUsersListResponseSchema,
   ProjectRoleChangeBodySchema,
   ProjectRoleChangeResponseSchema,
+  SecurityAlertDismissBodySchema,
+  SecurityAlertParamsSchema,
   SecurityAlertsQuerySchema,
   SoleOwnerConflictResponseSchema,
 } from './schema.js'
@@ -88,6 +90,49 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'query'))
       return {
         data: await listSecurityAlerts(secureCtx.auth.orgId, parsed.data, secureCtx.tx),
+      }
+    },
+  })
+
+  // Story 6.2 AC 18 (ADR-6.2-04's correction): closes the pre-existing gap where Story 3.4
+  // shipped dismissedBy/dismissedAt/dismissalReason columns on security_alerts with no route to
+  // set them. admin+ only — same rationale as the monitoring-alert dismiss route (AC 10): a
+  // security_alerts row is a critical, org-admin-routed signal; allowing a bare `member` to
+  // unilaterally silence it would let a low-privileged or compromised account suppress it.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/security-alerts/:securityAlertId/dismiss',
+    schema: {
+      response: { 401: ApiErrorSchema, 403: ApiErrorSchema, 404: ApiErrorSchema },
+    },
+    security: {
+      allowedRoles: ['owner', 'admin'],
+      requireMfa: true, // route-audit.test.ts AC-5b/5c: every owner/admin route requires MFA.
+      rateLimit: { max: 60, key: 'POST /org/security-alerts/:securityAlertId/dismiss' },
+      writeAuditEvent: false, // dismissSecurityAlert writes the audit row through secureCtx.tx.
+    },
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const params = SecurityAlertParamsSchema.safeParse(req.params)
+      if (!params.success) return reply.status(422).send(validationError(params.error, 'params'))
+      const body = SecurityAlertDismissBodySchema.safeParse(req.body ?? {})
+      if (!body.success) return reply.status(422).send(validationError(body.error, 'body'))
+
+      const updated = await dismissSecurityAlert(secureCtx.tx, {
+        securityAlertId: params.data.securityAlertId,
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        dismissalReason: body.data.dismissalReason,
+        request: req,
+      })
+      if (!updated) {
+        return reply
+          .status(404)
+          .send({ code: 'security_alert_not_found', message: 'Security alert not found' })
+      }
+
+      return {
+        data: { id: updated.id, dismissedAt: updated.dismissedAt?.toISOString() ?? null },
       }
     },
   })

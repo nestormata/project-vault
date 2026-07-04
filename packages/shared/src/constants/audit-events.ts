@@ -48,6 +48,12 @@ export const AuditEvent = {
   DOMAIN_RECORD_CREATED: 'domain_record.created',
   DOMAIN_RECORD_UPDATED: 'domain_record.updated',
   DOMAIN_RECORD_DELETED: 'domain_record.deleted',
+  SERVICE_ENDPOINT_CREATED: 'service_endpoint.created',
+  SERVICE_ENDPOINT_UPDATED: 'service_endpoint.updated',
+  SERVICE_ENDPOINT_DELETED: 'service_endpoint.deleted',
+  MONITORING_ALERT_SNOOZED: 'monitoring_alert.snoozed',
+  MONITORING_ALERT_DISMISSED: 'monitoring_alert.dismissed',
+  SECURITY_ALERT_DISMISSED: 'security_alert.dismissed',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -95,6 +101,12 @@ export type AuditEventType =
   | 'domain_record.created'
   | 'domain_record.updated'
   | 'domain_record.deleted'
+  | 'service_endpoint.created'
+  | 'service_endpoint.updated'
+  | 'service_endpoint.deleted'
+  | 'monitoring_alert.snoozed'
+  | 'monitoring_alert.dismissed'
+  | 'security_alert.dismissed'
 
 export type AuditEvent = {
   type: AuditEventType

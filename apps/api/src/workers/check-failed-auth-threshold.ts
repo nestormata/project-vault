@@ -1,10 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
-import { auditLogEntries, orgMemberships, securityAlerts } from '@project-vault/db/schema'
+import { orgMemberships, securityAlerts } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
-import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
-import { computeAuditHmac } from '../modules/audit/write-entry.js'
-import { getAuditKey } from '../modules/vault/key-service.js'
 import { failedAuthThresholdPayloadSchema } from '../modules/org/schema.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import {
@@ -12,6 +9,7 @@ import {
   sendNotificationJobs,
 } from '../notifications/dispatcher.js'
 import type { BossService } from '../lib/boss.js'
+import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 
 const ALERT_TYPE = 'security.failed_auth_threshold'
 
@@ -176,41 +174,6 @@ async function existingAlert(tx: Tx, breach: Breach, windowStart: Date): Promise
   return rows.length > 0
 }
 
-async function insertAuditRow(
-  tx: Tx,
-  orgId: string,
-  alertId: string,
-  payload: ReturnType<typeof payloadFor>
-): Promise<void> {
-  const keyVersion = await currentAuditKeyVersion(tx)
-  const auditPayload = {
-    alertId,
-    thresholdType: payload.thresholdType,
-    attemptCount: payload.attemptCount,
-    windowSeconds: payload.windowSeconds,
-  }
-  const hmac = computeAuditHmac(
-    {
-      orgId,
-      actorTokenId: null,
-      actorType: 'system',
-      eventType: ALERT_TYPE,
-      payload: auditPayload,
-      keyVersion,
-    },
-    getAuditKey()
-  )
-  await tx.insert(auditLogEntries).values({
-    orgId,
-    actorTokenId: null,
-    actorType: 'system',
-    eventType: ALERT_TYPE,
-    payload: auditPayload,
-    keyVersion,
-    hmac,
-  })
-}
-
 function dedupLockKey(breach: Breach): string {
   const identity = breach.thresholdType === 'ip' ? breach.ipAddress : breach.userId
   return `${breach.orgId}:${ALERT_TYPE}:${breach.thresholdType}:${identity ?? ''}`
@@ -243,7 +206,16 @@ async function createAlertIfNeeded(
         .returning({ id: securityAlerts.id })
       if (!alert) return []
 
-      await insertAuditRow(tx, breach.orgId, alert.id, payload)
+      await writeSystemAuditRow(tx, {
+        orgId: breach.orgId,
+        eventType: ALERT_TYPE,
+        payload: {
+          alertId: alert.id,
+          thresholdType: payload.thresholdType,
+          attemptCount: payload.attemptCount,
+          windowSeconds: payload.windowSeconds,
+        },
+      })
 
       const ids = await enqueueSecurityAlertNotification({
         orgId: breach.orgId,

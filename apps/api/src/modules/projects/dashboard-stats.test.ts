@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { withOrg } from '@project-vault/db'
-import { securityAlerts } from '@project-vault/db/schema'
+import { securityAlerts, serviceEndpoints } from '@project-vault/db/schema'
 import { insertTestProject } from '@project-vault/db/test-helpers'
 import {
   bootstrapRouteIntegrationTest,
@@ -15,6 +15,7 @@ import {
 } from '../credentials/credential-route-test-helpers.js'
 import {
   getBatchedProjectCredentialStats,
+  getBatchedProjectServiceHealthStats,
   getOrgDashboardData,
   getProjectDashboardData,
 } from './dashboard-stats.js'
@@ -283,6 +284,73 @@ describe.sequential('dashboard stats', () => {
     const items = await fetchProjectListItems(app, owner.cookies)
     const payments = items.find((item) => item.id === paymentsId)
     expect(payments?.alertCount).toBe(0)
+  }, 30_000)
+
+  it('project dashboard monitoredServiceHealth reflects real service_endpoints counts (Story 6.2 AC 15)', async () => {
+    const owner = await registerOwner(app, 'service-health')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'svc-health')
+
+    async function insertEndpoint(status: 'healthy' | 'degraded' | 'down') {
+      await withOrg(owner.orgId, (tx) =>
+        tx.insert(serviceEndpoints).values({
+          orgId: owner.orgId,
+          projectId,
+          name: `${status}-endpoint`,
+          url: `https://${status}.example.com/health`,
+          status,
+          consecutiveFailures: status === 'healthy' ? 0 : 1,
+        })
+      )
+    }
+    await insertEndpoint('healthy')
+    await insertEndpoint('healthy')
+    await insertEndpoint('healthy')
+    await insertEndpoint('degraded')
+    await insertEndpoint('down')
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${projectId}/dashboard`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      data: {
+        monitoredServiceHealth: { healthy: 3, degraded: 1, down: 1 },
+        isEmpty: false,
+      },
+    })
+  }, 30_000)
+
+  it('getBatchedProjectServiceHealthStats groups service_endpoints.status per project (Story 6.2 AC 15)', async () => {
+    const owner = await registerOwner(app, 'service-health-batch')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'svc-health-batch')
+
+    await withOrg(owner.orgId, (tx) =>
+      tx.insert(serviceEndpoints).values([
+        {
+          orgId: owner.orgId,
+          projectId,
+          name: 'a',
+          url: 'https://a.example.com/health',
+          status: 'healthy',
+        },
+        {
+          orgId: owner.orgId,
+          projectId,
+          name: 'b',
+          url: 'https://b.example.com/health',
+          status: 'down',
+          consecutiveFailures: 3,
+        },
+      ])
+    )
+
+    await withOrg(owner.orgId, async (tx) => {
+      const stats = await getBatchedProjectServiceHealthStats(tx, [projectId])
+      expect(stats.get(projectId)).toEqual({ healthy: 1, degraded: 0, down: 1 })
+    })
   }, 30_000)
 
   it('project dashboard unresolvedAlertCount mirrors the org-wide count (AC-11, ADR-3.4-01)', async () => {

@@ -148,6 +148,21 @@ describe('env', () => {
     expect(env.FAILED_AUTH_THRESHOLD_WINDOW_SECONDS).toBe(300)
     expect(env.FAILED_AUTH_RETENTION_HOURS).toBe(24)
     expect(env.FAILED_AUTH_RECORD_ENABLED).toBe(true)
+    expect(env.MAX_SERVICE_ENDPOINTS_PER_PROJECT).toBe(25)
+    expect(env.HEALTH_CHECK_MAX_CONCURRENCY).toBe(20)
+    expect(env.ANOMALOUS_ACCESS_THRESHOLD_COUNT).toBe(5)
+    expect(env.ANOMALOUS_ACCESS_WINDOW_SECONDS).toBe(3600)
+  })
+
+  it('Story 6.2: ANOMALOUS_ACCESS_WINDOW_SECONDS can be widened up to 86400 (adversarial-review finding 17)', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ANOMALOUS_ACCESS_WINDOW_SECONDS: '86400',
+    }
+    vi.resetModules()
+    const { env } = await import('./env.js')
+    expect(env.ANOMALOUS_ACCESS_WINDOW_SECONDS).toBe(86400)
   })
 
   it('rejects identical auth secrets', async () => {

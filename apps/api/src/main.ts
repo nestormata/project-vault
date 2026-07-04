@@ -16,6 +16,8 @@ import { pruneRevokedTokens } from './workers/prune-revoked-tokens.js'
 import { pruneTotpUsedCodes } from './workers/prune-totp-used-codes.js'
 import { prunePendingMfaSessions } from './workers/prune-pending-mfa-sessions.js'
 import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-threshold.js'
+import { checkAnomalousAccessHandler } from './workers/check-anomalous-access.js'
+import { healthCheckTickHandler } from './workers/monitoring-health-check.js'
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
@@ -110,6 +112,8 @@ async function main(): Promise<void> {
       'mfa/prune-pending-mfa-sessions': { cron: '0 * * * *' },
       'mfa/prune-pending': { cron: '0 0 * * *' },
       'security/check-failed-auth-threshold': { cron: '* * * * *' },
+      'security/check-anomalous-access': { cron: '* * * * *' },
+      'monitoring/health-check': { cron: '* * * * *' },
       'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
       'credentials/prune-versions': { cron: '0 3 * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
@@ -129,6 +133,8 @@ async function main(): Promise<void> {
       'mfa/prune-pending-mfa-sessions': () => prunePendingMfaSessions(),
       'mfa/prune-pending': () => pruneMfaPendingEnrollments(),
       'security/check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(boss),
+      'security/check-anomalous-access': () => checkAnomalousAccessHandler(boss),
+      'monitoring/health-check': () => healthCheckTickHandler(boss, fastify.log),
       'security/prune-failed-auth-attempts': (job) =>
         withJobLogging(
           fastify.log,

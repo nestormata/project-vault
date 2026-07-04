@@ -32,6 +32,16 @@ export const auditLogEntries = pgTable(
     projectIdx: index('idx_audit_log_entries_project').on(t.projectId, t.createdAt.desc()),
     eventTypeIdx: index('idx_audit_log_entries_event_type').on(t.eventType, t.createdAt.desc()),
     resourceIdx: index('idx_audit_log_entries_resource').on(t.resourceId, t.createdAt.desc()),
+    // Story 6.2 (ADR-6.2-06, adversarial-review finding 16): check-anomalous-access.ts runs a
+    // windowed GROUP BY (org_id, actor_token_id) query every 60 seconds forever against this
+    // ever-growing table — a covering index avoids the "missing index on a forever-running
+    // query" slow-burn production issue AC 8 already guards against for service_endpoints.
+    orgActorEventIdx: index('idx_audit_log_entries_org_actor_event').on(
+      t.orgId,
+      t.actorTokenId,
+      t.eventType,
+      t.createdAt
+    ),
     actorTypeCheck: check(
       'audit_log_entries_actor_type_check',
       sql`${t.actorType} IN ('human','machine_user','system')`

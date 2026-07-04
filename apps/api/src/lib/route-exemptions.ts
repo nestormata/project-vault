@@ -202,6 +202,14 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Security alert list read is admin-scoped and does not reveal secret values.',
     reviewer: SECURITY_OWNER,
   },
+  // Story 6.2 AC 18 (ADR-6.2-04's correction). The route delegates to dismissSecurityAlert(),
+  // which calls writeHumanAuditEntryOrFailClosed() internally — the literal function name
+  // called in the route itself is dismissSecurityAlert (see security-alerts.ts).
+  'POST /api/v1/org/security-alerts/:securityAlertId/dismiss': {
+    action: SECURITY_ACTION,
+    auditEvent: 'security_alert.dismissed',
+    sameTransactionAuditService: 'dismissSecurityAlert',
+  },
   'DELETE /api/v1/org/users/:userId/sessions': {
     action: SECURITY_ACTION,
     auditEvent: SESSION_REVOKED,
@@ -579,6 +587,49 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'domain_record.deleted',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 6.2 — service endpoints (service_endpoints), health history, monitoring alerts.
+  'GET /api/v1/projects/:projectId/service-endpoints': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/service-endpoints': {
+    action: 'mutation',
+    auditEvent: 'service_endpoint.created',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
+    action: 'mutation',
+    auditEvent: 'service_endpoint.updated',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'DELETE /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
+    action: 'mutation',
+    auditEvent: 'service_endpoint.deleted',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId/health-history': {
+    action: 'read',
+    auditOmissionReason:
+      'Health-history read returns per-check status/latency metadata only; never request/response bodies.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/projects/:projectId/alerts': {
+    action: 'read',
+    auditOmissionReason:
+      'Monitoring-alert list read is project-member-scoped and reveals only alert metadata.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/alerts/:alertId/snooze': {
+    action: 'mutation',
+    auditEvent: 'monitoring_alert.snoozed',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/projects/:projectId/alerts/:alertId/dismiss': {
+    action: SECURITY_ACTION,
+    auditEvent: 'monitoring_alert.dismissed',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
@@ -698,6 +749,13 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'Cross-org purge of expired inbox entries via getAdminDb(); bypasses per-user RLS for maintenance operation.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/monitoring-health-check.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Uses getDb() only for the transaction-scoped pg_try_advisory_xact_lock overlap guard (ADR-6.2-09) — no table data is read through it; the due-query and every alert/audit write use runOrgScopedJob for RLS-scoped access.',
     reviewer: SECURITY_OWNER,
   },
 ]

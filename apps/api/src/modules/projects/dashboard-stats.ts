@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { credentials, projects, securityAlerts } from '@project-vault/db/schema'
+import { credentials, projects, securityAlerts, serviceEndpoints } from '@project-vault/db/schema'
 import type { OrgDashboard, ProjectDashboard } from '@project-vault/shared'
 
 const EXPIRED_FILTER = sql`${credentials.expiresAt} IS NOT NULL AND ${credentials.expiresAt} <= now()`
@@ -80,11 +80,58 @@ export async function getUnresolvedSecurityAlertCount(tx: Tx): Promise<number> {
   return Number(count)
 }
 
+export type ProjectServiceHealthStats = { healthy: number; degraded: number; down: number }
+
+const EMPTY_SERVICE_HEALTH_STATS: ProjectServiceHealthStats = {
+  healthy: 0,
+  degraded: 0,
+  down: 0,
+}
+
+export function lookupServiceHealthStats(
+  statsByProject: Map<string, ProjectServiceHealthStats>,
+  projectId: string
+): ProjectServiceHealthStats {
+  return statsByProject.get(projectId) ?? EMPTY_SERVICE_HEALTH_STATS
+}
+
+/**
+ * Story 6.2 AC 15: wires `monitoredServiceHealth` to real per-project service_endpoints.status
+ * counts, mirroring getBatchedProjectCredentialStats's one-query-grouped-by-project_id shape.
+ */
+export async function getBatchedProjectServiceHealthStats(
+  tx: Tx,
+  projectIds: string[]
+): Promise<Map<string, ProjectServiceHealthStats>> {
+  if (projectIds.length === 0) return new Map()
+
+  const rows = await tx
+    .select({
+      projectId: serviceEndpoints.projectId,
+      healthy: sql<number>`count(*) filter (where ${serviceEndpoints.status} = 'healthy')::int`,
+      degraded: sql<number>`count(*) filter (where ${serviceEndpoints.status} = 'degraded')::int`,
+      down: sql<number>`count(*) filter (where ${serviceEndpoints.status} = 'down')::int`,
+    })
+    .from(serviceEndpoints)
+    .where(inArray(serviceEndpoints.projectId, projectIds))
+    .groupBy(serviceEndpoints.projectId)
+
+  return new Map(
+    rows.map(
+      (row) =>
+        [
+          row.projectId,
+          { healthy: Number(row.healthy), degraded: Number(row.degraded), down: Number(row.down) },
+        ] as const
+    )
+  )
+}
+
 function buildProjectDashboard(
   stats: ProjectCredentialStats,
-  unresolvedAlertCount: number
+  unresolvedAlertCount: number,
+  monitoredServiceHealth: ProjectServiceHealthStats
 ): ProjectDashboard {
-  const monitoredServiceHealth = { healthy: 0, degraded: 0, down: 0 }
   const credentialTotal = stats.active + stats.expiringSoon + stats.expired
   const serviceTotal =
     monitoredServiceHealth.healthy + monitoredServiceHealth.degraded + monitoredServiceHealth.down
@@ -111,11 +158,16 @@ export async function getProjectDashboardData(
   tx: Tx,
   projectId: string
 ): Promise<ProjectDashboard> {
-  const [statsByProject, unresolvedAlertCount] = await Promise.all([
+  const [statsByProject, unresolvedAlertCount, serviceHealthByProject] = await Promise.all([
     getBatchedProjectCredentialStats(tx, [projectId]),
     getUnresolvedSecurityAlertCount(tx),
+    getBatchedProjectServiceHealthStats(tx, [projectId]),
   ])
-  return buildProjectDashboard(lookupProjectStats(statsByProject, projectId), unresolvedAlertCount)
+  return buildProjectDashboard(
+    lookupProjectStats(statsByProject, projectId),
+    unresolvedAlertCount,
+    lookupServiceHealthStats(serviceHealthByProject, projectId)
+  )
 }
 
 export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
