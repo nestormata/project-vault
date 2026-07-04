@@ -48,6 +48,9 @@ export const AuditEvent = {
   DOMAIN_RECORD_CREATED: 'domain_record.created',
   DOMAIN_RECORD_UPDATED: 'domain_record.updated',
   DOMAIN_RECORD_DELETED: 'domain_record.deleted',
+  MACHINE_USER_CREATED: 'machine_user.created',
+  MACHINE_USER_API_KEY_ISSUED: 'machine_user.api_key_issued',
+  MACHINE_USER_API_KEY_REVOKED: 'machine_user.api_key_revoked',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -95,6 +98,9 @@ export type AuditEventType =
   | 'domain_record.created'
   | 'domain_record.updated'
   | 'domain_record.deleted'
+  | 'machine_user.created'
+  | 'machine_user.api_key_issued'
+  | 'machine_user.api_key_revoked'
 
 export type AuditEvent = {
   type: AuditEventType

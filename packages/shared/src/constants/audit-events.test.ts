@@ -60,4 +60,10 @@ describe('AuditEvent', () => {
     expect(AuditEvent.DOMAIN_RECORD_UPDATED).toBe('domain_record.updated')
     expect(AuditEvent.DOMAIN_RECORD_DELETED).toBe('domain_record.deleted')
   })
+
+  it('exposes Story 7.1 machine-user audit event names (D7)', () => {
+    expect(AuditEvent.MACHINE_USER_CREATED).toBe('machine_user.created')
+    expect(AuditEvent.MACHINE_USER_API_KEY_ISSUED).toBe('machine_user.api_key_issued')
+    expect(AuditEvent.MACHINE_USER_API_KEY_REVOKED).toBe('machine_user.api_key_revoked')
+  })
 })
