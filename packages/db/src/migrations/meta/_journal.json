@@ -204,6 +204,13 @@
       "when": 1783130400000,
       "tag": "0028_monitoring_records",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1783178763004,
+      "tag": "0029_machine_users_and_api_keys",
+      "breakpoints": true
     }
   ]
 }
