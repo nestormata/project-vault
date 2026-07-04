@@ -597,6 +597,35 @@ function lockOutcomeToFailure(
   return null
 }
 
+/** AC-8/AC-17's uniform entry sequence shared by confirm/fail/retry: acquire + status-check the
+ *  rotation, then look up the item — collapsing the identical lock-then-item preamble each of
+ *  those three functions needs before diverging into its own item-status precondition check. */
+async function acquireLockAndItem(
+  tx: Tx,
+  params: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    rotationId: string
+    itemId: string
+  }
+): Promise<
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_active'; status: string }
+  | { outcome: 'item_not_found' }
+  | { lockResult: { outcome: 'ok'; rotation: RotationRow }; item: ChecklistItemRow }
+> {
+  const lockResult = await acquireAndLoadRotation(tx, params)
+  const earlyResult = lockOutcomeToFailure(lockResult)
+  if (earlyResult) return earlyResult
+  assertRotationLockOk(lockResult)
+
+  const itemResult = await findItemOrNotFound(tx, params)
+  if ('outcome' in itemResult) return itemResult
+  return { lockResult, item: itemResult }
+}
+
 /** AC-2/AC-3: confirm — item -> 'confirmed' from unconfirmed/failed/max_retries_exceeded.
  *  Rejects re-confirming an already-confirmed item with 409 before any write. */
 export async function confirmChecklistItem(
@@ -611,14 +640,10 @@ export async function confirmChecklistItem(
     body: ConfirmChecklistItemBody
   }
 ): Promise<ConfirmChecklistItemResult> {
-  const lockResult = await acquireAndLoadRotation(tx, params)
-  const earlyResult = lockOutcomeToFailure(lockResult)
-  if (earlyResult) return earlyResult
-  assertRotationLockOk(lockResult)
-
-  const itemResult = await findItemOrNotFound(tx, params)
-  if ('outcome' in itemResult) return itemResult
-  if (itemResult.status === 'confirmed') return { outcome: 'already_confirmed', item: itemResult }
+  const acquired = await acquireLockAndItem(tx, params)
+  if ('outcome' in acquired) return acquired
+  const { lockResult, item } = acquired
+  if (item.status === 'confirmed') return { outcome: 'already_confirmed', item }
 
   const now = new Date()
   const result = await reserveVersionAndUpdateItem(
@@ -658,16 +683,10 @@ export async function failChecklistItem(
     body: FailChecklistItemBody
   }
 ): Promise<FailChecklistItemResult> {
-  const lockResult = await acquireAndLoadRotation(tx, params)
-  const earlyResult = lockOutcomeToFailure(lockResult)
-  if (earlyResult) return earlyResult
-  assertRotationLockOk(lockResult)
-
-  const itemResult = await findItemOrNotFound(tx, params)
-  if ('outcome' in itemResult) return itemResult
-  if (itemResult.status !== 'unconfirmed') {
-    return { outcome: 'invalid_item_status', item: itemResult }
-  }
+  const acquired = await acquireLockAndItem(tx, params)
+  if ('outcome' in acquired) return acquired
+  const { lockResult, item } = acquired
+  if (item.status !== 'unconfirmed') return { outcome: 'invalid_item_status', item }
 
   const now = new Date()
   const retryScheduledAt = params.body.retryScheduledAt
@@ -799,15 +818,10 @@ export async function retryChecklistItem(
   tx: Tx,
   params: RetryScopeParams
 ): Promise<RetryChecklistItemResult> {
-  const lockResult = await acquireAndLoadRotation(tx, params)
-  const earlyResult = lockOutcomeToFailure(lockResult)
-  if (earlyResult) return earlyResult
-  assertRotationLockOk(lockResult)
-
-  const itemResult = await findItemOrNotFound(tx, params)
-  if ('outcome' in itemResult) return itemResult
-  if (itemResult.status !== 'failed') return { outcome: 'invalid_item_status', item: itemResult }
-  const item = itemResult
+  const acquired = await acquireLockAndItem(tx, params)
+  if ('outcome' in acquired) return acquired
+  const { lockResult, item } = acquired
+  if (item.status !== 'failed') return { outcome: 'invalid_item_status', item }
 
   // AC-7: read fresh on every call — never cached/snapshotted per rotation or item.
   const maxRetries = env.ROTATION_MAX_RETRIES
