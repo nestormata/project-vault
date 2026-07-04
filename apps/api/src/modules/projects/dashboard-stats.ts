@@ -118,6 +118,11 @@ function buildProjectDashboard(
 // filterable list (no query-param horizon here, unlike GET .../rotations/upcoming).
 const PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS = 30
 
+// Code-review fix: match the org dashboard's 20-item cap on projectsWithOverdueRotations.items
+// (below) — this list was previously returned unbounded, an inconsistent and unnecessary
+// payload-size/pagination gap versus the adjacent org-dashboard slice.
+const PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT = 20
+
 export async function getProjectDashboardData(
   tx: Tx,
   projectId: string
@@ -133,7 +138,9 @@ export async function getProjectDashboardData(
   return buildProjectDashboard(
     lookupProjectStats(statsByProject, projectId),
     unresolvedAlertCount,
-    upcomingRotationResults.map(serializeUpcomingRotation)
+    upcomingRotationResults
+      .slice(0, PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT)
+      .map(serializeUpcomingRotation)
   )
 }
 

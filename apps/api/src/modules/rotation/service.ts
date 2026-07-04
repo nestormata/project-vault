@@ -443,17 +443,24 @@ function assertUpdatedRow<T>(row: T | undefined, context: string): T {
   return row
 }
 
-/** Runs the AC-8 CAS backstop and maps the outcome directly to the caller's result type via
- *  `onSuccess` — keeps the "did the CAS lose the race" branch out of every mutation function's
- *  own cyclomatic complexity count (it's the same three-line shape in confirm/fail/retry). */
-async function withCas<TSuccess>(
+/** Runs the AC-8 CAS backstop *before* the caller performs its item-level write. This ordering
+ *  matters for atomicity: under normal operation the advisory lock already guarantees this CAS
+ *  never loses (it's a backstop, not the primary mechanism — AC-8), but if it ever does lose
+ *  (e.g. the lock is bypassed by a hypothetical direct-DB caller), bumping `rotations.version`
+ *  first means the item-status UPDATE is simply never reached — no compensating "undo" write is
+ *  needed, and the transaction cannot commit a state change the client was told was rejected.
+ *  (An earlier version of this helper ran the item write first and the CAS second, which let a
+ *  lost CAS race commit the item's status change anyway while still replying 409 — fixed here.) */
+async function reserveRotationVersion(
   tx: Tx,
   scopeParams: { projectId: string; credentialId: string; rotationId: string },
-  observedVersion: number,
-  onSuccess: (newVersion: number) => TSuccess | Promise<TSuccess>
-): Promise<TSuccess | { outcome: 'concurrent_modification'; currentVersion: number | null }> {
+  observedVersion: number
+): Promise<
+  | { outcome: 'ok'; rotationVersion: number }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+> {
   const newVersion = await casIncrementRotationVersion(tx, scopeParams.rotationId, observedVersion)
-  if (newVersion !== null) return onSuccess(newVersion)
+  if (newVersion !== null) return { outcome: 'ok', rotationVersion: newVersion }
   const current = await findRotationInScope(tx, scopeParams)
   return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
 }
@@ -573,6 +580,11 @@ export async function confirmChecklistItem(
   if (!item) return { outcome: 'item_not_found' }
   if (item.status === 'confirmed') return { outcome: 'already_confirmed', item }
 
+  // AC-8: reserve the version bump before writing the item so a lost CAS race never leaves a
+  // committed item-status change behind a 409 response (see reserveRotationVersion's doc comment).
+  const cas = await reserveRotationVersion(tx, params, lockResult.rotation.version)
+  if (cas.outcome === 'concurrent_modification') return cas
+
   const now = new Date()
   const [updated] = await tx
     .update(rotationChecklistItems)
@@ -595,11 +607,11 @@ export async function confirmChecklistItem(
   // advisory lock held for this whole transaction rules out any concurrent delete/change.
   const confirmedItem = assertUpdatedRow(updated, 'confirmChecklistItem')
 
-  return withCas(tx, params, lockResult.rotation.version, (rotationVersion) => ({
+  return {
     outcome: 'confirmed' as const,
     item: confirmedItem,
-    rotationVersion,
-  }))
+    rotationVersion: cas.rotationVersion,
+  }
 }
 
 /** AC-4/AC-5/FR75: fail — item 'unconfirmed' -> 'failed'. Alert queued every call. */
@@ -627,6 +639,12 @@ export async function failChecklistItem(
   if (!item) return { outcome: 'item_not_found' }
   if (item.status !== 'unconfirmed') return { outcome: 'invalid_item_status', item }
 
+  // AC-8: reserve the version bump before writing the item — see reserveRotationVersion's doc
+  // comment. This also keeps the alert enqueue (below) strictly on the path where the item write
+  // actually happens, instead of being skippable if a lost CAS race short-circuited it.
+  const cas = await reserveRotationVersion(tx, params, lockResult.rotation.version)
+  if (cas.outcome === 'concurrent_modification') return cas
+
   const now = new Date()
   const retryScheduledAt = params.body.retryScheduledAt
     ? new Date(params.body.retryScheduledAt)
@@ -651,22 +669,25 @@ export async function failChecklistItem(
   // Safe to assert non-null — see confirmChecklistItem's identical comment above.
   const failedItem = assertUpdatedRow(updated, 'failChecklistItem')
 
-  return withCas(tx, params, lockResult.rotation.version, async (rotationVersion) => {
-    const jobs = await enqueueSecurityAlertNotification({
-      orgId: params.orgId,
-      templateId: 'rotation.confirmation_failed',
-      payload: {
-        rotationId: params.rotationId,
-        itemId: params.itemId,
-        credentialId: params.credentialId,
-        systemName: failedItem.systemName,
-        reason: params.body.reason,
-      },
-      severity: 'warning',
-      tx,
-    })
-    return { outcome: 'failed' as const, item: failedItem, rotationVersion, jobs }
+  const jobs = await enqueueSecurityAlertNotification({
+    orgId: params.orgId,
+    templateId: 'rotation.confirmation_failed',
+    payload: {
+      rotationId: params.rotationId,
+      itemId: params.itemId,
+      credentialId: params.credentialId,
+      systemName: failedItem.systemName,
+      reason: params.body.reason,
+    },
+    severity: 'warning',
+    tx,
   })
+  return {
+    outcome: 'failed' as const,
+    item: failedItem,
+    rotationVersion: cas.rotationVersion,
+    jobs,
+  }
 }
 
 type RetryScopeParams = {
@@ -687,6 +708,12 @@ async function applyMaxRetriesExceeded(
   observedVersion: number,
   maxRetries: number
 ): Promise<RetryChecklistItemResult> {
+  // AC-8: reserve the version bump before writing the item — see reserveRotationVersion's doc
+  // comment. Also keeps the critical alert enqueue strictly on the path where the escalating
+  // item write actually happens.
+  const cas = await reserveRotationVersion(tx, params, observedVersion)
+  if (cas.outcome === 'concurrent_modification') return cas
+
   const now = new Date()
   const [updated] = await tx
     .update(rotationChecklistItems)
@@ -702,28 +729,26 @@ async function applyMaxRetriesExceeded(
   // Safe to assert non-null — see confirmChecklistItem's identical comment.
   const exceededItem = assertUpdatedRow(updated, 'applyMaxRetriesExceeded')
 
-  return withCas(tx, params, observedVersion, async (_rotationVersion) => {
-    const jobs = await enqueueSecurityAlertNotification({
-      orgId: params.orgId,
-      templateId: 'rotation.max_retries_exceeded',
-      payload: {
-        rotationId: params.rotationId,
-        itemId: params.itemId,
-        credentialId: params.credentialId,
-        systemName: exceededItem.systemName,
-        retryCount: exceededItem.retryCount,
-      },
-      severity: 'critical',
-      tx,
-    })
-    return {
-      outcome: 'max_retries_exceeded' as const,
-      item: exceededItem,
+  const jobs = await enqueueSecurityAlertNotification({
+    orgId: params.orgId,
+    templateId: 'rotation.max_retries_exceeded',
+    payload: {
+      rotationId: params.rotationId,
+      itemId: params.itemId,
+      credentialId: params.credentialId,
+      systemName: exceededItem.systemName,
       retryCount: exceededItem.retryCount,
-      maxRetries,
-      jobs,
-    }
+    },
+    severity: 'critical',
+    tx,
   })
+  return {
+    outcome: 'max_retries_exceeded' as const,
+    item: exceededItem,
+    retryCount: exceededItem.retryCount,
+    maxRetries,
+    jobs,
+  }
 }
 
 /** The ordinary retry transition: item 'failed' -> 'unconfirmed', retryCount += 1. */
@@ -732,6 +757,11 @@ async function applyRetry(
   params: RetryScopeParams,
   observedVersion: number
 ): Promise<RetryChecklistItemResult> {
+  // AC-8: reserve the version bump before writing the item — see reserveRotationVersion's doc
+  // comment.
+  const cas = await reserveRotationVersion(tx, params, observedVersion)
+  if (cas.outcome === 'concurrent_modification') return cas
+
   const now = new Date()
   const [updated] = await tx
     .update(rotationChecklistItems)
@@ -752,11 +782,7 @@ async function applyRetry(
   // Safe to assert non-null — see confirmChecklistItem's identical comment.
   const retriedItem = assertUpdatedRow(updated, 'applyRetry')
 
-  return withCas(tx, params, observedVersion, (rotationVersion) => ({
-    outcome: 'retried' as const,
-    item: retriedItem,
-    rotationVersion,
-  }))
+  return { outcome: 'retried' as const, item: retriedItem, rotationVersion: cas.rotationVersion }
 }
 
 /** AC-6/AC-7/AC-E5b: retry — item 'failed' -> 'unconfirmed' (retryCount += 1), or, once the
@@ -894,6 +920,15 @@ type ScheduledCredentialRow = {
   createdAt: Date
 }
 
+// Edge-case fix: computeUpcomingRotations' two internal queries previously had no LIMIT — only
+// the final results array was capped (to 20) after the fact by callers. For an org with many
+// scheduled credentials, or long-lived credentials with a large rotation history, this was
+// unbounded per-request DB read work on every dashboard load (getOrgDashboardData runs it with
+// no projectId, i.e. org-wide, on every request). These caps are a deterministic (ordered)
+// operational safety valve, not a correctness requirement.
+const MAX_SCHEDULED_CREDENTIALS_PER_QUERY = 1000
+const MAX_ROTATION_HISTORY_ROWS_PER_QUERY = 5000
+
 async function fetchCredentialsWithSchedule(
   tx: Tx,
   projectId?: string
@@ -911,6 +946,8 @@ async function fetchCredentialsWithSchedule(
         ? and(isNotNull(credentials.rotationSchedule), eq(credentials.projectId, projectId))
         : isNotNull(credentials.rotationSchedule)
     )
+    .orderBy(asc(credentials.id))
+    .limit(MAX_SCHEDULED_CREDENTIALS_PER_QUERY)
 }
 
 type LatestRotationByCredential = Map<string, { completedAt: Date | null; updatedAt: Date }>
@@ -937,6 +974,7 @@ async function fetchRotationSummaryByCredential(
     .from(rotations)
     .where(inArray(rotations.credentialId, credentialIds))
     .orderBy(rotations.credentialId, desc(rotations.createdAt))
+    .limit(MAX_ROTATION_HISTORY_ROWS_PER_QUERY)
 
   for (const row of rotationRows) {
     if (!latestByCredential.has(row.credentialId)) {
