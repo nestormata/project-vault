@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
 import { credentials, credentialVersions, projects, rotations } from '@project-vault/db/schema'
+import { eq } from 'drizzle-orm'
 import {
   bootstrapRouteIntegrationTest,
   registerAndLoginViaApi,
@@ -15,53 +15,6 @@ import {
   hasActiveMachineUserKeys,
   isProjectArchived,
 } from './archive-guards.js'
-
-/** Seeds a credential + two versions + a rotation row so findBlockingRotationIds has a real row. */
-async function seedRotation(
-  orgId: string,
-  projectId: string,
-  userId: string,
-  status?: string
-): Promise<string> {
-  const [credential] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(credentials)
-      .values({ orgId, projectId, name: `cred-${randomUUID()}`, createdBy: userId })
-      .returning({ id: credentials.id })
-  )
-  if (!credential) throw new Error('expected test credential to be inserted')
-
-  const [previousVersion] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(credentialVersions)
-      .values({ orgId, credentialId: credential.id, versionNumber: 1, createdBy: userId })
-      .returning({ id: credentialVersions.id })
-  )
-  const [newVersion] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(credentialVersions)
-      .values({ orgId, credentialId: credential.id, versionNumber: 2, createdBy: userId })
-      .returning({ id: credentialVersions.id })
-  )
-  if (!previousVersion || !newVersion) throw new Error('expected test versions to be inserted')
-
-  const [rotation] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(rotations)
-      .values({
-        orgId,
-        projectId,
-        credentialId: credential.id,
-        newVersionId: newVersion.id,
-        previousVersionId: previousVersion.id,
-        initiatedBy: userId,
-        ...(status !== undefined ? { status } : {}),
-      })
-      .returning({ id: rotations.id })
-  )
-  if (!rotation) throw new Error('expected test rotation to be inserted')
-  return rotation.id
-}
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -88,6 +41,53 @@ describe('archive-guards', () => {
     await resetVaultForTest()
   })
 
+  /**
+   * Inserts a credential with two versions and a rotation row at the given status, scoped to
+   * `projectId`. Each call creates a fresh credential so multiple 'in_progress' rotations in the
+   * same test don't collide with idx_rotations_one_in_progress_per_credential.
+   */
+  async function insertTestRotation(projectId: string, status: string): Promise<string> {
+    return withOrg(orgId, async (tx) => {
+      const [credential] = await tx
+        .insert(credentials)
+        .values({
+          orgId,
+          projectId,
+          name: `rotation-guard-cred-${randomUUID()}`,
+          createdBy: userId,
+        })
+        .returning({ id: credentials.id })
+      if (!credential) throw new Error('expected credential to be inserted')
+
+      const [previousVersion] = await tx
+        .insert(credentialVersions)
+        .values({ orgId, credentialId: credential.id, versionNumber: 1, createdBy: userId })
+        .returning({ id: credentialVersions.id })
+      const [newVersion] = await tx
+        .insert(credentialVersions)
+        .values({ orgId, credentialId: credential.id, versionNumber: 2, createdBy: userId })
+        .returning({ id: credentialVersions.id })
+      if (!previousVersion || !newVersion) {
+        throw new Error('expected credential versions to be inserted')
+      }
+
+      const [rotation] = await tx
+        .insert(rotations)
+        .values({
+          orgId,
+          projectId,
+          credentialId: credential.id,
+          newVersionId: newVersion.id,
+          previousVersionId: previousVersion.id,
+          initiatedBy: userId,
+          status,
+        })
+        .returning({ id: rotations.id })
+      if (!rotation) throw new Error('expected rotation to be inserted')
+      return rotation.id
+    })
+  }
+
   describe('findBlockingRotationIds', () => {
     it('returns [] for a project with no rotations', async () => {
       const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-none' })
@@ -97,29 +97,44 @@ describe('archive-guards', () => {
       expect(blockingIds).toEqual([])
     })
 
-    it('returns the id of an in_progress rotation', async () => {
+    it('blocks on an in_progress rotation', async () => {
       const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-progress' })
-      const rotationId = await seedRotation(orgId, project.id, userId)
+      const rotationId = await insertTestRotation(project.id, 'in_progress')
 
       const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
 
       expect(blockingIds).toEqual([rotationId])
     })
 
-    it('returns the id of a stale_recovery rotation', async () => {
+    it('blocks on a stale_recovery rotation', async () => {
       const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-stale' })
-      const rotationId = await seedRotation(orgId, project.id, userId, 'stale_recovery')
+      const rotationId = await insertTestRotation(project.id, 'stale_recovery')
 
       const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
 
       expect(blockingIds).toEqual([rotationId])
     })
 
-    it('does not block on a completed rotation', async () => {
-      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-completed' })
-      await seedRotation(orgId, project.id, userId, 'completed')
+    it('does not block on completed, abandoned, or break_glass_complete rotations', async () => {
+      const project = await insertTestProject(orgId, {
+        userId,
+        slug: 'rotation-guard-nonblocking',
+      })
+      await insertTestRotation(project.id, 'completed')
+      await insertTestRotation(project.id, 'abandoned')
+      await insertTestRotation(project.id, 'break_glass_complete')
 
       const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
+
+      expect(blockingIds).toEqual([])
+    })
+
+    it('only returns rotations belonging to the given project', async () => {
+      const projectA = await insertTestProject(orgId, { userId, slug: 'rotation-guard-scope-a' })
+      const projectB = await insertTestProject(orgId, { userId, slug: 'rotation-guard-scope-b' })
+      await insertTestRotation(projectA.id, 'in_progress')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, projectB.id))
 
       expect(blockingIds).toEqual([])
     })

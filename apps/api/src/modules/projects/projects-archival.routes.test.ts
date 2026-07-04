@@ -131,10 +131,11 @@ describe.sequential('project archival routes (4.4)', () => {
       ).toBe(false)
     })
 
-    it('archives successfully when the project has no rotations to block it', async () => {
-      // findBlockingRotationIds's typed-query behavior (including blocking vs. non-blocking
-      // statuses) is unit-tested directly in archive-guards.test.ts. This test documents the
-      // API-level consequence: archival is not blocked when there are no rotation rows at all.
+    it('archives a project with no rotations (active-rotation guard finds nothing to block on)', async () => {
+      // The rotation-blocking behavior itself (in_progress/stale_recovery rows blocking, other
+      // statuses not blocking) is unit-tested directly against findBlockingRotationIds in
+      // archive-guards.test.ts. This test documents the API-level baseline: a project with zero
+      // rotation rows archives cleanly.
       const owner = await registerOwner(app, 'archive-no-rotations-table')
       const projectId = await createProject(app, owner.cookies, 'archive-no-rotations')
 
