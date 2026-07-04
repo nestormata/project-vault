@@ -64,6 +64,30 @@ export const OperationalEvent = {
   ROTATION_INITIATE_AUDIT_FAILED: 'rotation.initiate.audit_failed',
   ROTATION_INITIATE_SAME_VALUE_WARNING: 'rotation.initiate.same_value_warning',
 
+  // Rotation checklist confirm/fail/retry/complete (Story 5.2)
+  ROTATION_CHECKLIST_CONFIRM_SUCCESS: 'rotation.checklist.confirm.success',
+  ROTATION_CHECKLIST_CONFIRM_ALREADY_CONFIRMED: 'rotation.checklist.confirm.already_confirmed',
+  ROTATION_CHECKLIST_CONFIRM_INVALID_STATE: 'rotation.checklist.confirm.invalid_state',
+  ROTATION_CHECKLIST_CONFIRM_CONCURRENT_MODIFICATION:
+    'rotation.checklist.confirm.concurrent_modification',
+  ROTATION_CHECKLIST_CONFIRM_AUDIT_FAILED: 'rotation.checklist.confirm.audit_failed',
+  ROTATION_CHECKLIST_FAIL_SUCCESS: 'rotation.checklist.fail.success',
+  ROTATION_CHECKLIST_FAIL_INVALID_STATE: 'rotation.checklist.fail.invalid_state',
+  ROTATION_CHECKLIST_FAIL_CONCURRENT_MODIFICATION:
+    'rotation.checklist.fail.concurrent_modification',
+  ROTATION_CHECKLIST_FAIL_AUDIT_FAILED: 'rotation.checklist.fail.audit_failed',
+  ROTATION_CHECKLIST_RETRY_SUCCESS: 'rotation.checklist.retry.success',
+  ROTATION_CHECKLIST_RETRY_MAX_EXCEEDED: 'rotation.checklist.retry.max_exceeded',
+  ROTATION_CHECKLIST_RETRY_INVALID_STATE: 'rotation.checklist.retry.invalid_state',
+  ROTATION_CHECKLIST_RETRY_CONCURRENT_MODIFICATION:
+    'rotation.checklist.retry.concurrent_modification',
+  ROTATION_CHECKLIST_RETRY_AUDIT_FAILED: 'rotation.checklist.retry.audit_failed',
+  ROTATION_COMPLETE_SUCCESS: 'rotation.complete.success',
+  ROTATION_COMPLETE_CHECKLIST_INCOMPLETE: 'rotation.complete.checklist_incomplete',
+  ROTATION_COMPLETE_ACKNOWLEDGEMENT_REQUIRED: 'rotation.complete.acknowledgement_required',
+  ROTATION_COMPLETE_CONCURRENT_MODIFICATION: 'rotation.complete.concurrent_modification',
+  ROTATION_COMPLETE_AUDIT_FAILED: 'rotation.complete.audit_failed',
+
   // Operational monitoring expiry alerts (Story 6.1)
   MONITORING_EXPIRY_ALERT_ROW_FAILED: 'monitoring.expiry_alert_row_failed',
 } as const

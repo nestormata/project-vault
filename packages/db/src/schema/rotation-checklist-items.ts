@@ -1,4 +1,13 @@
-import { pgTable, uuid, text, timestamp, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  timestamp,
+  index,
+  uniqueIndex,
+  check,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { orgScoped } from './helpers.js'
 import { users } from './users.js'
@@ -29,6 +38,16 @@ export const rotationChecklistItems = pgTable(
     confirmedBy: uuid('confirmed_by').references(() => users.id, { onDelete: 'set null' }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     notes: text('notes'),
+    // Story 5.2 additions below — a permanent record of how many automated retry cycles this
+    // item went through (never reset, even by a subsequent manual `confirm` — AC-1).
+    retryCount: integer('retry_count').notNull().default(0),
+    // Operator-visibility only (AC-4/AC-25) — no scheduler ever reads this to trigger a retry.
+    retryScheduledAt: timestamp('retry_scheduled_at', { withTimezone: true }),
+    lastFailureReason: text('last_failure_reason'),
+    // Broader than confirmedBy/confirmedAt: updates on every mutation (confirm/fail/retry),
+    // regardless of the resulting status — FR66's "who last acted on the checklist" (AC-1).
+    lastActedBy: uuid('last_acted_by').references(() => users.id, { onDelete: 'set null' }),
+    lastActedAt: timestamp('last_acted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { securityAlerts } from '@project-vault/db/schema'
+import { credentials, securityAlerts } from '@project-vault/db/schema'
 import { insertTestProject } from '@project-vault/db/test-helpers'
 import {
   bootstrapRouteIntegrationTest,
@@ -12,13 +13,40 @@ import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js
 import {
   createCredentialViaApi,
   createCredentialTestProject,
+  credentialLifecycleUrl,
 } from '../credentials/credential-route-test-helpers.js'
 import {
+  computeUpcomingRotations,
   getBatchedProjectCredentialStats,
   getOrgDashboardData,
   getProjectDashboardData,
 } from './dashboard-stats.js'
 import { bootProjectRouteTestApp } from './project-route-test-bootstrap.js'
+
+/** Backdates a credential's createdAt so a fresh cron schedule computes as already-overdue
+ *  relative to "now" (a brand-new credential's reference point is otherwise always "now",
+ *  which can never be overdue for a schedule with a >= 1 hour minimum interval). */
+async function backdateCredentialCreatedAt(orgId: string, credentialId: string, createdAt: Date) {
+  await withOrg(orgId, (tx) =>
+    tx.update(credentials).set({ createdAt }).where(eq(credentials.id, credentialId))
+  )
+}
+
+async function setRotationScheduleViaApi(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  credentialId: string,
+  rotationSchedule: string
+) {
+  const response = await app.inject({
+    method: 'PATCH',
+    url: credentialLifecycleUrl(projectId, credentialId),
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { rotationSchedule },
+  })
+  expect(response.statusCode).toBe(200)
+}
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -298,6 +326,81 @@ describe.sequential('dashboard stats', () => {
       const infraDashboard = await getProjectDashboardData(tx, infraId)
       expect(paymentsDashboard.unresolvedAlertCount).toBe(2)
       expect(infraDashboard.unresolvedAlertCount).toBe(2)
+    })
+  }, 30_000)
+
+  it('Story 5.2 AC-15: org dashboard shows only overdue rotations, project dashboard shows both overdue and pending', async () => {
+    const owner = await registerOwner(app, 'rotation-dashboard')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'rotation-dash')
+
+    // Overdue: hourly schedule, backdated far enough that "now" is well past the next tick.
+    const overdue = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Overdue Rotation Credential',
+      value: 'overdue-value',
+    })
+    await setRotationScheduleViaApi(app, owner.cookies, projectId, overdue.id, '0 * * * *')
+    await backdateCredentialCreatedAt(owner.orgId, overdue.id, new Date('2020-01-01T00:00:00.000Z'))
+
+    // Pending: monthly schedule computed from "now" — due well within 30 days but not overdue.
+    const pending = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Pending Rotation Credential',
+      value: 'pending-value',
+    })
+    await setRotationScheduleViaApi(app, owner.cookies, projectId, pending.id, '0 0 1 * *')
+
+    const orgResponse = await app.inject({
+      method: 'GET',
+      url: DASHBOARD_URL,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(orgResponse.statusCode).toBe(200)
+    const orgBody = orgResponse.json<{
+      data: { projectsWithOverdueRotations: { count: number; items: { credentialId: string }[] } }
+    }>()
+    const overdueIds = orgBody.data.projectsWithOverdueRotations.items.map(
+      (item) => item.credentialId
+    )
+    expect(overdueIds).toContain(overdue.id)
+    expect(overdueIds).not.toContain(pending.id)
+
+    const projectResponse = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${projectId}/dashboard`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(projectResponse.statusCode).toBe(200)
+    const projectBody = projectResponse.json<{
+      data: { upcomingRotations: { credentialId: string; status: string }[] }
+    }>()
+    const projectCredentialIds = projectBody.data.upcomingRotations.map((item) => item.credentialId)
+    expect(projectCredentialIds).toEqual(expect.arrayContaining([overdue.id, pending.id]))
+  }, 30_000)
+
+  it('Story 5.2 AC-14: computeUpcomingRotations excludes a credential with an active in_progress rotation', async () => {
+    const owner = await registerOwner(app, 'rotation-active-exclude')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'rotation-active')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Active Rotation Credential',
+      value: 'active-value',
+    })
+    await setRotationScheduleViaApi(app, owner.cookies, projectId, credential.id, '0 * * * *')
+    await backdateCredentialCreatedAt(
+      owner.orgId,
+      credential.id,
+      new Date('2020-01-01T00:00:00.000Z')
+    )
+
+    const initiateResponse = await app.inject({
+      method: 'POST',
+      url: `${PROJECTS_URL}/${projectId}/credentials/${credential.id}/rotations`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { newValue: 'rotated-value' },
+    })
+    expect(initiateResponse.statusCode).toBe(201)
+
+    await withOrg(owner.orgId, async (tx) => {
+      const results = await computeUpcomingRotations(tx, { projectId, horizonDays: 30 })
+      expect(results.map((r) => r.credentialId)).not.toContain(credential.id)
     })
   }, 30_000)
 })

@@ -1,21 +1,32 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentialDependencies,
+  credentials,
   credentialVersions,
   rotationChecklistItems,
   rotations,
 } from '@project-vault/db/schema'
 import { withSecret } from '@project-vault/crypto'
+import { nextCronOccurrence } from '@project-vault/shared'
+import { env } from '../../config/env.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
+import { enqueueSecurityAlertNotification } from '../../notifications/dispatcher.js'
+import type { NotificationQueueJob } from '../../notifications/dispatcher.js'
 import {
   credentialExistsInProject,
   currentKeyVersion,
   isUniqueViolation,
   lockCredentialInProject,
 } from '../credentials/db-helpers.js'
-import type { InitiateRotationBody, ListRotationsQuery } from './schema.js'
+import type {
+  CompleteRotationBody,
+  ConfirmChecklistItemBody,
+  FailChecklistItemBody,
+  InitiateRotationBody,
+  ListRotationsQuery,
+} from './schema.js'
 
 export class RotationConflictError extends Error {
   constructor(public readonly rotationId: string | null) {
@@ -211,6 +222,26 @@ function orderChecklistItems(items: ChecklistItemRow[]): ChecklistItemRow[] {
   })
 }
 
+// Story 5.2 AC-1/AC-13: extended with retryCount/retryScheduledAt/lastFailureReason/
+// lastActedBy/lastActedAt (FR66) and notes (surfaced in the confirm/fail/retry mutation
+// responses — AC-2/AC-4).
+export function serializeChecklistItem(item: ChecklistItemRow) {
+  return {
+    id: item.id,
+    dependencyId: item.dependencyId,
+    systemName: item.systemName,
+    status: item.status,
+    confirmedBy: item.confirmedBy,
+    confirmedAt: item.confirmedAt?.toISOString() ?? null,
+    retryCount: item.retryCount,
+    retryScheduledAt: item.retryScheduledAt?.toISOString() ?? null,
+    lastFailureReason: item.lastFailureReason,
+    lastActedBy: item.lastActedBy,
+    lastActedAt: item.lastActedAt?.toISOString() ?? null,
+    notes: item.notes,
+  }
+}
+
 export function serializeRotationDetail(
   rotation: RotationRow,
   checklistItems: ChecklistItemRow[],
@@ -229,14 +260,7 @@ export function serializeRotationDetail(
     ...(extra.sameValueAsPrevious !== undefined
       ? { sameValueAsPrevious: extra.sameValueAsPrevious }
       : {}),
-    checklistItems: orderChecklistItems(checklistItems).map((item) => ({
-      id: item.id,
-      dependencyId: item.dependencyId,
-      systemName: item.systemName,
-      status: item.status,
-      confirmedBy: item.confirmedBy,
-      confirmedAt: item.confirmedAt?.toISOString() ?? null,
-    })),
+    checklistItems: orderChecklistItems(checklistItems).map(serializeChecklistItem),
   }
 }
 
@@ -336,4 +360,684 @@ export async function listRotationHistory(
       confirmedCount: countsByRotation.get(row.id)?.confirmedCount ?? 0,
     })),
   }
+}
+
+// ============================================================================
+// Story 5.2 — checklist confirm/fail/retry/complete + upcoming rotations
+// ============================================================================
+
+/** AC-8/ADR-5.2-01: rotation-scoped (not item-scoped) advisory lock — same
+ *  pg_try_advisory_xact_lock(hashtextextended(...)) pattern as 5.1's tryAcquireRotationLock,
+ *  keyed by rotationId instead of credentialId. A genuinely different resource, so no
+ *  keyspace collision concern despite sharing the 'rotation:' prefix. */
+async function tryAcquireRotationScopedLock(
+  tx: Tx,
+  orgId: string,
+  rotationId: string
+): Promise<boolean> {
+  const rows = await tx.execute(
+    sql`SELECT pg_try_advisory_xact_lock(hashtextextended('rotation:' || ${orgId} || ':' || ${rotationId}, 0)) AS locked`
+  )
+  return Boolean((rows[0] as { locked: boolean } | undefined)?.locked)
+}
+
+async function findRotationInScope(
+  tx: Tx,
+  params: { projectId: string; credentialId: string; rotationId: string }
+): Promise<RotationRow | null> {
+  const [rotation] = await tx
+    .select()
+    .from(rotations)
+    .where(
+      and(
+        eq(rotations.id, params.rotationId),
+        eq(rotations.credentialId, params.credentialId),
+        eq(rotations.projectId, params.projectId)
+      )
+    )
+    .limit(1)
+  return rotation ?? null
+}
+
+async function findChecklistItemInScope(
+  tx: Tx,
+  params: { rotationId: string; itemId: string }
+): Promise<ChecklistItemRow | null> {
+  const [item] = await tx
+    .select()
+    .from(rotationChecklistItems)
+    .where(
+      and(
+        eq(rotationChecklistItems.id, params.itemId),
+        eq(rotationChecklistItems.rotationId, params.rotationId)
+      )
+    )
+    .limit(1)
+  return item ?? null
+}
+
+/** AC-8 step 4: the CAS backstop. Returns the new version, or null if the row was not found
+ *  at the expected observed version (lock bypassed by a hypothetical direct-DB caller). */
+async function casIncrementRotationVersion(
+  tx: Tx,
+  rotationId: string,
+  observedVersion: number
+): Promise<number | null> {
+  const [row] = await tx
+    .update(rotations)
+    .set({ version: observedVersion + 1, updatedAt: new Date() })
+    .where(and(eq(rotations.id, rotationId), eq(rotations.version, observedVersion)))
+    .returning({ version: rotations.version })
+  return row?.version ?? null
+}
+
+/** The `WHERE id = ... AND rotation_id = ... AND status = '<expected>'` UPDATEs in confirm/fail/
+ *  retry can only return zero rows if the item's status changed between our own read and write
+ *  within this same locked transaction — impossible given the rotation-scoped advisory lock is
+ *  held for the whole transaction. Throws (never returns undefined) so callers can destructure
+ *  the row without a `!` non-null assertion (forbidden by this repo's eslint config). */
+function assertUpdatedRow<T>(row: T | undefined, context: string): T {
+  if (row === undefined) {
+    throw new Error(`${context}: expected UPDATE ... RETURNING to return exactly one row`)
+  }
+  return row
+}
+
+/** Runs the AC-8 CAS backstop and maps the outcome directly to the caller's result type via
+ *  `onSuccess` — keeps the "did the CAS lose the race" branch out of every mutation function's
+ *  own cyclomatic complexity count (it's the same three-line shape in confirm/fail/retry). */
+async function withCas<TSuccess>(
+  tx: Tx,
+  scopeParams: { projectId: string; credentialId: string; rotationId: string },
+  observedVersion: number,
+  onSuccess: (newVersion: number) => TSuccess | Promise<TSuccess>
+): Promise<TSuccess | { outcome: 'concurrent_modification'; currentVersion: number | null }> {
+  const newVersion = await casIncrementRotationVersion(tx, scopeParams.rotationId, observedVersion)
+  if (newVersion !== null) return onSuccess(newVersion)
+  const current = await findRotationInScope(tx, scopeParams)
+  return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
+}
+
+type RotationLockOutcome =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'not_found' }
+  | { outcome: 'not_active'; rotation: RotationRow }
+  | { outcome: 'ok'; rotation: RotationRow }
+
+/** Narrows a resolved RotationLockOutcome to its 'ok' variant, or throws — used after every
+ *  early-return check on lockOutcomeToFailure()'s result already ruled out the other three
+ *  variants, so this should only ever fire if a new outcome is added to RotationLockOutcome
+ *  without updating lockOutcomeToFailure() to match. */
+function assertRotationLockOk(
+  lockResult: RotationLockOutcome
+): asserts lockResult is { outcome: 'ok'; rotation: RotationRow } {
+  if (lockResult.outcome !== 'ok') throw new Error('unreachable rotation lock outcome')
+}
+
+/** AC-8's uniform entry sequence for all four mutation endpoints: acquire the rotation-scoped
+ *  advisory lock, then resolve + status-check the rotation (tenant-scoped by
+ *  projectId/credentialId/rotationId together, per AC-17). */
+async function acquireAndLoadRotation(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+): Promise<RotationLockOutcome> {
+  const locked = await tryAcquireRotationScopedLock(tx, params.orgId, params.rotationId)
+  if (!locked) {
+    const existing = await findRotationInScope(tx, params)
+    return { outcome: 'locked_conflict', currentVersion: existing?.version ?? null }
+  }
+  const rotation = await findRotationInScope(tx, params)
+  if (!rotation) return { outcome: 'not_found' }
+  if (rotation.status !== 'in_progress') return { outcome: 'not_active', rotation }
+  return { outcome: 'ok', rotation }
+}
+
+// Shared across confirm/fail/retry — the AC-8 uniform lock/scope failure variants. Each
+// operation's own result type below unions this with its operation-specific outcomes only, so
+// TypeScript can exhaustively narrow a route handler without any cross-operation outcome
+// (e.g. confirm's route never has to account for 'max_retries_exceeded').
+export type ChecklistLockFailure =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_active'; status: string }
+  | { outcome: 'item_not_found' }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+
+export type ConfirmChecklistItemResult =
+  | ChecklistLockFailure
+  | { outcome: 'already_confirmed'; item: ChecklistItemRow }
+  | { outcome: 'confirmed'; item: ChecklistItemRow; rotationVersion: number }
+
+export type FailChecklistItemResult =
+  | ChecklistLockFailure
+  | { outcome: 'invalid_item_status'; item: ChecklistItemRow }
+  | {
+      outcome: 'failed'
+      item: ChecklistItemRow
+      rotationVersion: number
+      jobs: NotificationQueueJob[]
+    }
+
+export type RetryChecklistItemResult =
+  | ChecklistLockFailure
+  | { outcome: 'invalid_item_status'; item: ChecklistItemRow }
+  | { outcome: 'retried'; item: ChecklistItemRow; rotationVersion: number }
+  | {
+      outcome: 'max_retries_exceeded'
+      item: ChecklistItemRow
+      retryCount: number
+      maxRetries: number
+      jobs: NotificationQueueJob[]
+    }
+
+function lockOutcomeToFailure(
+  lockResult: RotationLockOutcome
+):
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_active'; status: string }
+  | null {
+  if (lockResult.outcome === 'locked_conflict') {
+    return { outcome: 'locked_conflict', currentVersion: lockResult.currentVersion }
+  }
+  if (lockResult.outcome === 'not_found') return { outcome: 'rotation_not_found' }
+  if (lockResult.outcome === 'not_active') {
+    return { outcome: 'rotation_not_active', status: lockResult.rotation.status }
+  }
+  return null
+}
+
+/** AC-2/AC-3: confirm — item -> 'confirmed' from unconfirmed/failed/max_retries_exceeded.
+ *  Rejects re-confirming an already-confirmed item with 409 before any write. */
+export async function confirmChecklistItem(
+  tx: Tx,
+  params: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    rotationId: string
+    itemId: string
+    userId: string
+    body: ConfirmChecklistItemBody
+  }
+): Promise<ConfirmChecklistItemResult> {
+  const lockResult = await acquireAndLoadRotation(tx, params)
+  const earlyResult = lockOutcomeToFailure(lockResult)
+  if (earlyResult) return earlyResult
+  assertRotationLockOk(lockResult)
+
+  const item = await findChecklistItemInScope(tx, {
+    rotationId: params.rotationId,
+    itemId: params.itemId,
+  })
+  if (!item) return { outcome: 'item_not_found' }
+  if (item.status === 'confirmed') return { outcome: 'already_confirmed', item }
+
+  const now = new Date()
+  const [updated] = await tx
+    .update(rotationChecklistItems)
+    .set({
+      status: 'confirmed',
+      confirmedBy: params.userId,
+      confirmedAt: now,
+      lastActedBy: params.userId,
+      lastActedAt: now,
+      ...(params.body.notes ? { notes: params.body.notes } : {}),
+    })
+    .where(
+      and(
+        eq(rotationChecklistItems.id, params.itemId),
+        eq(rotationChecklistItems.rotationId, params.rotationId)
+      )
+    )
+    .returning()
+  // Safe to assert non-null: the item was already confirmed to exist (above), and the
+  // advisory lock held for this whole transaction rules out any concurrent delete/change.
+  const confirmedItem = assertUpdatedRow(updated, 'confirmChecklistItem')
+
+  return withCas(tx, params, lockResult.rotation.version, (rotationVersion) => ({
+    outcome: 'confirmed' as const,
+    item: confirmedItem,
+    rotationVersion,
+  }))
+}
+
+/** AC-4/AC-5/FR75: fail — item 'unconfirmed' -> 'failed'. Alert queued every call. */
+export async function failChecklistItem(
+  tx: Tx,
+  params: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    rotationId: string
+    itemId: string
+    userId: string
+    body: FailChecklistItemBody
+  }
+): Promise<FailChecklistItemResult> {
+  const lockResult = await acquireAndLoadRotation(tx, params)
+  const earlyResult = lockOutcomeToFailure(lockResult)
+  if (earlyResult) return earlyResult
+  assertRotationLockOk(lockResult)
+
+  const item = await findChecklistItemInScope(tx, {
+    rotationId: params.rotationId,
+    itemId: params.itemId,
+  })
+  if (!item) return { outcome: 'item_not_found' }
+  if (item.status !== 'unconfirmed') return { outcome: 'invalid_item_status', item }
+
+  const now = new Date()
+  const retryScheduledAt = params.body.retryScheduledAt
+    ? new Date(params.body.retryScheduledAt)
+    : null
+  const [updated] = await tx
+    .update(rotationChecklistItems)
+    .set({
+      status: 'failed',
+      lastFailureReason: params.body.reason,
+      retryScheduledAt,
+      lastActedBy: params.userId,
+      lastActedAt: now,
+    })
+    .where(
+      and(
+        eq(rotationChecklistItems.id, params.itemId),
+        eq(rotationChecklistItems.rotationId, params.rotationId),
+        eq(rotationChecklistItems.status, 'unconfirmed')
+      )
+    )
+    .returning()
+  // Safe to assert non-null — see confirmChecklistItem's identical comment above.
+  const failedItem = assertUpdatedRow(updated, 'failChecklistItem')
+
+  return withCas(tx, params, lockResult.rotation.version, async (rotationVersion) => {
+    const jobs = await enqueueSecurityAlertNotification({
+      orgId: params.orgId,
+      templateId: 'rotation.confirmation_failed',
+      payload: {
+        rotationId: params.rotationId,
+        itemId: params.itemId,
+        credentialId: params.credentialId,
+        systemName: failedItem.systemName,
+        reason: params.body.reason,
+      },
+      severity: 'warning',
+      tx,
+    })
+    return { outcome: 'failed' as const, item: failedItem, rotationVersion, jobs }
+  })
+}
+
+type RetryScopeParams = {
+  orgId: string
+  projectId: string
+  credentialId: string
+  rotationId: string
+  itemId: string
+  userId: string
+}
+
+/** The over-limit transition (AC-7/AC-E5b): item 'failed' -> 'max_retries_exceeded'. A real,
+ *  alerted state transition even though the request itself is rejected — split out of
+ *  retryChecklistItem to keep that function's own branching count small. */
+async function applyMaxRetriesExceeded(
+  tx: Tx,
+  params: RetryScopeParams,
+  observedVersion: number,
+  maxRetries: number
+): Promise<RetryChecklistItemResult> {
+  const now = new Date()
+  const [updated] = await tx
+    .update(rotationChecklistItems)
+    .set({ status: 'max_retries_exceeded', lastActedBy: params.userId, lastActedAt: now })
+    .where(
+      and(
+        eq(rotationChecklistItems.id, params.itemId),
+        eq(rotationChecklistItems.rotationId, params.rotationId),
+        eq(rotationChecklistItems.status, 'failed')
+      )
+    )
+    .returning()
+  // Safe to assert non-null — see confirmChecklistItem's identical comment.
+  const exceededItem = assertUpdatedRow(updated, 'applyMaxRetriesExceeded')
+
+  return withCas(tx, params, observedVersion, async (_rotationVersion) => {
+    const jobs = await enqueueSecurityAlertNotification({
+      orgId: params.orgId,
+      templateId: 'rotation.max_retries_exceeded',
+      payload: {
+        rotationId: params.rotationId,
+        itemId: params.itemId,
+        credentialId: params.credentialId,
+        systemName: exceededItem.systemName,
+        retryCount: exceededItem.retryCount,
+      },
+      severity: 'critical',
+      tx,
+    })
+    return {
+      outcome: 'max_retries_exceeded' as const,
+      item: exceededItem,
+      retryCount: exceededItem.retryCount,
+      maxRetries,
+      jobs,
+    }
+  })
+}
+
+/** The ordinary retry transition: item 'failed' -> 'unconfirmed', retryCount += 1. */
+async function applyRetry(
+  tx: Tx,
+  params: RetryScopeParams,
+  observedVersion: number
+): Promise<RetryChecklistItemResult> {
+  const now = new Date()
+  const [updated] = await tx
+    .update(rotationChecklistItems)
+    .set({
+      status: 'unconfirmed',
+      retryCount: sql`${rotationChecklistItems.retryCount} + 1`,
+      lastActedBy: params.userId,
+      lastActedAt: now,
+    })
+    .where(
+      and(
+        eq(rotationChecklistItems.id, params.itemId),
+        eq(rotationChecklistItems.rotationId, params.rotationId),
+        eq(rotationChecklistItems.status, 'failed')
+      )
+    )
+    .returning()
+  // Safe to assert non-null — see confirmChecklistItem's identical comment.
+  const retriedItem = assertUpdatedRow(updated, 'applyRetry')
+
+  return withCas(tx, params, observedVersion, (rotationVersion) => ({
+    outcome: 'retried' as const,
+    item: retriedItem,
+    rotationVersion,
+  }))
+}
+
+/** AC-6/AC-7/AC-E5b: retry — item 'failed' -> 'unconfirmed' (retryCount += 1), or, once the
+ *  cap is reached, 'failed' -> 'max_retries_exceeded' (a rejected request with a real,
+ *  alerted state transition as a side effect). */
+export async function retryChecklistItem(
+  tx: Tx,
+  params: RetryScopeParams
+): Promise<RetryChecklistItemResult> {
+  const lockResult = await acquireAndLoadRotation(tx, params)
+  const earlyResult = lockOutcomeToFailure(lockResult)
+  if (earlyResult) return earlyResult
+  assertRotationLockOk(lockResult)
+
+  const item = await findChecklistItemInScope(tx, {
+    rotationId: params.rotationId,
+    itemId: params.itemId,
+  })
+  if (!item) return { outcome: 'item_not_found' }
+  if (item.status !== 'failed') return { outcome: 'invalid_item_status', item }
+
+  // AC-7: read fresh on every call — never cached/snapshotted per rotation or item.
+  const maxRetries = env.ROTATION_MAX_RETRIES
+  if (item.retryCount >= maxRetries) {
+    return applyMaxRetriesExceeded(tx, params, lockResult.rotation.version, maxRetries)
+  }
+  return applyRetry(tx, params, lockResult.rotation.version)
+}
+
+export type CompleteRotationResult =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_active'; status: string }
+  | {
+      outcome: 'checklist_incomplete'
+      pendingItems: { id: string; systemName: string; status: string }[]
+      totalItemCount: number
+    }
+  | { outcome: 'acknowledgement_required' }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | { outcome: 'completed'; rotation: RotationRow; checklistItems: ChecklistItemRow[] }
+
+/** AC-9/AC-10/AC-11/AC-12: complete — blocked unless every item is confirmed (or the caller
+ *  acknowledges a zero-dependency rotation). On success, retires the superseded credential
+ *  version by clearing rotation_locked_at (ADR-5.2-02) atomically with the status transition. */
+export async function completeRotation(
+  tx: Tx,
+  params: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    rotationId: string
+    userId: string
+    body: CompleteRotationBody
+  }
+): Promise<CompleteRotationResult> {
+  const lockResult = await acquireAndLoadRotation(tx, params)
+  if (lockResult.outcome === 'locked_conflict') {
+    return { outcome: 'locked_conflict', currentVersion: lockResult.currentVersion }
+  }
+  if (lockResult.outcome === 'not_found') return { outcome: 'rotation_not_found' }
+  if (lockResult.outcome === 'not_active') {
+    return { outcome: 'rotation_not_active', status: lockResult.rotation.status }
+  }
+
+  const items = await tx
+    .select()
+    .from(rotationChecklistItems)
+    .where(eq(rotationChecklistItems.rotationId, params.rotationId))
+    .orderBy(asc(rotationChecklistItems.createdAt), asc(rotationChecklistItems.id))
+
+  const pending = items.filter((item) => item.status !== 'confirmed')
+  if (pending.length > 0) {
+    return {
+      outcome: 'checklist_incomplete',
+      pendingItems: pending.map((item) => ({
+        id: item.id,
+        systemName: item.systemName,
+        status: item.status,
+      })),
+      totalItemCount: items.length,
+    }
+  }
+
+  if (items.length === 0 && params.body.acknowledgedNoDependencies !== true) {
+    return { outcome: 'acknowledgement_required' }
+  }
+
+  // AC-9 step 3: status transition and the CAS version bump happen in the single UPDATE, so a
+  // lost race (version mismatch) simply returns zero rows — same CAS semantics as AC-8's other
+  // three mutations, no separate version-only UPDATE needed.
+  const [updatedRotation] = await tx
+    .update(rotations)
+    .set({
+      status: 'completed',
+      completedAt: new Date(),
+      version: lockResult.rotation.version + 1,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(rotations.id, params.rotationId), eq(rotations.version, lockResult.rotation.version))
+    )
+    .returning()
+  if (!updatedRotation) {
+    const current = await findRotationInScope(tx, params)
+    return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
+  }
+
+  // ADR-5.2-02: "retiring" the superseded version means clearing rotation_locked_at, not
+  // setting a status column (credential_versions has no status column — confirmed against
+  // the actual Story 2.2 schema).
+  await tx
+    .update(credentialVersions)
+    .set({ rotationLockedAt: null })
+    .where(eq(credentialVersions.id, lockResult.rotation.previousVersionId))
+
+  return {
+    outcome: 'completed',
+    rotation: updatedRotation,
+    checklistItems: items,
+  }
+}
+
+export type UpcomingRotationResult = {
+  credentialId: string
+  credentialName: string
+  nextDueAt: Date
+  status: 'pending' | 'overdue'
+}
+
+type ScheduledCredentialRow = {
+  id: string
+  name: string
+  rotationSchedule: string | null
+  createdAt: Date
+}
+
+async function fetchCredentialsWithSchedule(
+  tx: Tx,
+  projectId?: string
+): Promise<ScheduledCredentialRow[]> {
+  return tx
+    .select({
+      id: credentials.id,
+      name: credentials.name,
+      rotationSchedule: credentials.rotationSchedule,
+      createdAt: credentials.createdAt,
+    })
+    .from(credentials)
+    .where(
+      projectId
+        ? and(isNotNull(credentials.rotationSchedule), eq(credentials.projectId, projectId))
+        : isNotNull(credentials.rotationSchedule)
+    )
+}
+
+type LatestRotationByCredential = Map<string, { completedAt: Date | null; updatedAt: Date }>
+
+/** Single query for every rotation belonging to the given credentials, ordered so the first
+ *  row per credentialId is that credential's most recent rotation (createdAt DESC) — avoids an
+ *  N+1 "latest rotation per credential" query. Also returns which credentials currently have an
+ *  active (in_progress/stale_recovery) rotation, from the same result set. */
+async function fetchRotationSummaryByCredential(
+  tx: Tx,
+  credentialIds: string[]
+): Promise<{ latestByCredential: LatestRotationByCredential; activeCredentialIds: Set<string> }> {
+  const latestByCredential: LatestRotationByCredential = new Map()
+  const activeCredentialIds = new Set<string>()
+  if (credentialIds.length === 0) return { latestByCredential, activeCredentialIds }
+
+  const rotationRows = await tx
+    .select({
+      credentialId: rotations.credentialId,
+      status: rotations.status,
+      completedAt: rotations.completedAt,
+      updatedAt: rotations.updatedAt,
+    })
+    .from(rotations)
+    .where(inArray(rotations.credentialId, credentialIds))
+    .orderBy(rotations.credentialId, desc(rotations.createdAt))
+
+  for (const row of rotationRows) {
+    if (!latestByCredential.has(row.credentialId)) {
+      latestByCredential.set(row.credentialId, {
+        completedAt: row.completedAt,
+        updatedAt: row.updatedAt,
+      })
+    }
+    if (row.status === 'in_progress' || row.status === 'stale_recovery') {
+      activeCredentialIds.add(row.credentialId)
+    }
+  }
+  return { latestByCredential, activeCredentialIds }
+}
+
+/** AC-14 step 1: completedAt if the most recent rotation is 'completed', else updatedAt
+ *  (covers non-completed terminal transitions), else the credential's own createdAt if it has
+ *  no rotation history at all. */
+function resolveReferencePoint(
+  cred: ScheduledCredentialRow,
+  latest: { completedAt: Date | null; updatedAt: Date } | undefined
+): Date {
+  if (!latest) return cred.createdAt
+  return latest.completedAt ?? latest.updatedAt
+}
+
+/** AC-14 steps 2-3: compute the next due date and decide inclusion/status, or null if the
+ *  credential has no schedule, an unparseable schedule, or falls outside the horizon. */
+function resolveUpcomingRotation(
+  cred: ScheduledCredentialRow,
+  referencePoint: Date,
+  now: number,
+  horizonMs: number
+): UpcomingRotationResult | null {
+  if (!cred.rotationSchedule) return null
+
+  let nextDueAt: Date
+  try {
+    nextDueAt = nextCronOccurrence(cred.rotationSchedule, referencePoint)
+  } catch {
+    // Malformed/unparseable cron (shouldn't happen given write-time validation, but skip
+    // rather than take down the whole dashboard/upcoming-rotations response).
+    return null
+  }
+  if (nextDueAt.getTime() > now + horizonMs) return null
+
+  return {
+    credentialId: cred.id,
+    credentialName: cred.name,
+    nextDueAt,
+    status: nextDueAt.getTime() < now ? 'overdue' : 'pending',
+  }
+}
+
+/** FR65/AC-14/AC-15: shared helper for the upcoming-rotations read endpoint AND both dashboard
+ *  placeholders (org "overdue rotations", project "upcoming rotations") — one cron-computation
+ *  code path, no duplication. `projectId` omitted means org-wide (within RLS scope). */
+export async function computeUpcomingRotations(
+  tx: Tx,
+  opts: { projectId?: string; horizonDays: number }
+): Promise<UpcomingRotationResult[]> {
+  const credentialRows = await fetchCredentialsWithSchedule(tx, opts.projectId)
+  if (credentialRows.length === 0) return []
+
+  const { latestByCredential, activeCredentialIds } = await fetchRotationSummaryByCredential(
+    tx,
+    credentialRows.map((row) => row.id)
+  )
+
+  const now = Date.now()
+  const horizonMs = opts.horizonDays * 24 * 60 * 60 * 1000
+  const results: UpcomingRotationResult[] = []
+
+  for (const cred of credentialRows) {
+    if (activeCredentialIds.has(cred.id)) continue
+    const referencePoint = resolveReferencePoint(cred, latestByCredential.get(cred.id))
+    const resolved = resolveUpcomingRotation(cred, referencePoint, now, horizonMs)
+    if (resolved) results.push(resolved)
+  }
+
+  results.sort((a, b) => a.nextDueAt.getTime() - b.nextDueAt.getTime())
+  return results
+}
+
+export function serializeUpcomingRotation(item: UpcomingRotationResult) {
+  return {
+    credentialId: item.credentialId,
+    credentialName: item.credentialName,
+    scheduledAt: item.nextDueAt.toISOString(),
+    status: item.status,
+  }
+}
+
+/** GET /api/v1/projects/:projectId/rotations/upcoming (FR65/AC-14) */
+export async function getUpcomingRotations(
+  tx: Tx,
+  params: { projectId: string; horizonDays: number }
+): Promise<ReturnType<typeof serializeUpcomingRotation>[]> {
+  const results = await computeUpcomingRotations(tx, {
+    projectId: params.projectId,
+    horizonDays: params.horizonDays,
+  })
+  return results.map(serializeUpcomingRotation)
 }

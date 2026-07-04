@@ -49,6 +49,16 @@ describe('AuditEvent', () => {
     expect(AuditEvent.ROTATION_INITIATED).toBe('rotation.initiated')
   })
 
+  it('exposes Story 5.2 rotation checklist/completion audit event names', () => {
+    expect(AuditEvent.ROTATION_CHECKLIST_ITEM_CONFIRMED).toBe('rotation.checklist_item_confirmed')
+    expect(AuditEvent.ROTATION_CHECKLIST_ITEM_FAILED).toBe('rotation.checklist_item_failed')
+    expect(AuditEvent.ROTATION_CHECKLIST_ITEM_RETRIED).toBe('rotation.checklist_item_retried')
+    expect(AuditEvent.ROTATION_CHECKLIST_ITEM_MAX_RETRIES_EXCEEDED).toBe(
+      'rotation.checklist_item_max_retries_exceeded'
+    )
+    expect(AuditEvent.ROTATION_COMPLETED).toBe('rotation.completed')
+  })
+
   it('exposes Story 6.1 payment/certificate/domain record audit event names', () => {
     expect(AuditEvent.PAYMENT_RECORD_CREATED).toBe('payment_record.created')
     expect(AuditEvent.PAYMENT_RECORD_UPDATED).toBe('payment_record.updated')

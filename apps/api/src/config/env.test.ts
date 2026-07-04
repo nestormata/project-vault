@@ -150,6 +150,28 @@ describe('env', () => {
     expect(env.FAILED_AUTH_THRESHOLD_WINDOW_SECONDS).toBe(300)
     expect(env.FAILED_AUTH_RETENTION_HOURS).toBe(24)
     expect(env.FAILED_AUTH_RECORD_ENABLED).toBe(true)
+    expect(env.ROTATION_MAX_RETRIES).toBe(3)
+  })
+
+  it('accepts a custom Story 5.2 ROTATION_MAX_RETRIES within bounds', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ROTATION_MAX_RETRIES: '10',
+    }
+    const { env } = await import('./env.js')
+    expect(env.ROTATION_MAX_RETRIES).toBe(10)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects an out-of-bounds Story 5.2 ROTATION_MAX_RETRIES', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ROTATION_MAX_RETRIES: '11',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
   })
 
   it('rejects identical auth secrets', async () => {

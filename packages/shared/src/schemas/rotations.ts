@@ -23,6 +23,12 @@ export const RotationChecklistItemSchema = z
     status: RotationChecklistItemStatusSchema,
     confirmedBy: z.uuid().nullable(),
     confirmedAt: z.iso.datetime().nullable(),
+    retryCount: z.number().int().nonnegative(),
+    retryScheduledAt: z.iso.datetime().nullable(),
+    lastFailureReason: z.string().nullable(),
+    lastActedBy: z.uuid().nullable(),
+    lastActedAt: z.iso.datetime().nullable(),
+    notes: z.string().nullable().optional(),
   })
   .meta({ id: 'RotationChecklistItem' })
 
@@ -53,6 +59,55 @@ export const RotationSummarySchema = z
     confirmedCount: z.number().int().nonnegative(),
   })
   .meta({ id: 'RotationSummary' })
+
+// Identical trim/transform idiom to InitiateRotationBodySchema's `notes` field (5.1) — fixes
+// the same whitespace-vs-null inconsistency for this story's own notes/reason fields.
+export const ConfirmChecklistItemBodySchema = z
+  .object({
+    notes: z
+      .string()
+      .max(1024)
+      .trim()
+      .nullable()
+      .optional()
+      .transform((v) => (v ? v : null)),
+  })
+  .strict()
+  .meta({ id: 'ConfirmChecklistItemBody' })
+
+export const FailChecklistItemBodySchema = z
+  .object({
+    reason: z.string().trim().min(1).max(1024),
+    retryScheduledAt: z.iso.datetime().nullable().optional(),
+  })
+  .strict()
+  .meta({ id: 'FailChecklistItemBody' })
+
+// An explicit empty object — {} is the only valid body (omitting the body entirely is also
+// accepted by parseBody, per the same Fastify+Zod convention as other bodyless-intent POSTs).
+export const RetryChecklistItemBodySchema = z.object({}).strict().meta({
+  id: 'RetryChecklistItemBody',
+})
+
+export const CompleteRotationBodySchema = z
+  .object({
+    acknowledgedNoDependencies: z.boolean().optional(),
+  })
+  .strict()
+  .meta({ id: 'CompleteRotationBody' })
+
+export const UpcomingRotationsQuerySchema = z
+  .object({
+    horizon: z.enum(['7d', '30d', '90d']).default('30d'),
+  })
+  .strict()
+  .meta({ id: 'UpcomingRotationsQuery' })
+
+export type ConfirmChecklistItemBody = z.infer<typeof ConfirmChecklistItemBodySchema>
+export type FailChecklistItemBody = z.infer<typeof FailChecklistItemBodySchema>
+export type RetryChecklistItemBody = z.infer<typeof RetryChecklistItemBodySchema>
+export type CompleteRotationBody = z.infer<typeof CompleteRotationBodySchema>
+export type UpcomingRotationsQuery = z.infer<typeof UpcomingRotationsQuerySchema>
 
 export type RotationStatus = z.infer<typeof RotationStatusSchema>
 export type RotationChecklistItemStatus = z.infer<typeof RotationChecklistItemStatusSchema>
