@@ -39,6 +39,15 @@ export const AuditEvent = {
   ACCOUNT_RECOVERY_COMPLETED: 'auth.recovery_completed',
   ACCOUNT_RECOVERY_BLOCKED: 'auth.recovery_blocked_no_admin',
   ROTATION_INITIATED: 'rotation.initiated',
+  PAYMENT_RECORD_CREATED: 'payment_record.created',
+  PAYMENT_RECORD_UPDATED: 'payment_record.updated',
+  PAYMENT_RECORD_DELETED: 'payment_record.deleted',
+  CERTIFICATE_CREATED: 'certificate.created',
+  CERTIFICATE_UPDATED: 'certificate.updated',
+  CERTIFICATE_DELETED: 'certificate.deleted',
+  DOMAIN_RECORD_CREATED: 'domain_record.created',
+  DOMAIN_RECORD_UPDATED: 'domain_record.updated',
+  DOMAIN_RECORD_DELETED: 'domain_record.deleted',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -77,6 +86,15 @@ export type AuditEventType =
   | 'auth.recovery_completed'
   | 'auth.recovery_blocked_no_admin'
   | 'rotation.initiated'
+  | 'payment_record.created'
+  | 'payment_record.updated'
+  | 'payment_record.deleted'
+  | 'certificate.created'
+  | 'certificate.updated'
+  | 'certificate.deleted'
+  | 'domain_record.created'
+  | 'domain_record.updated'
+  | 'domain_record.deleted'
 
 export type AuditEvent = {
   type: AuditEventType

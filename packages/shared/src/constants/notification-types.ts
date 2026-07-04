@@ -10,6 +10,9 @@ export const NOTIFICATION_ALERT_TYPES = [
   'machine_key.expiry',
   'security.anomalous_access',
   'machine_cache.activated',
+  'payment.expiry',
+  'certificate.expiry',
+  'domain.expiry',
 ] as const
 
 export type NotificationAlertType = (typeof NOTIFICATION_ALERT_TYPES)[number]

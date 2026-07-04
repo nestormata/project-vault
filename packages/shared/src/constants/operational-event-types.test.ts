@@ -43,4 +43,10 @@ describe('OperationalEvent', () => {
       'security.mfa_enrollment_required_denied'
     )
   })
+
+  it('exposes the Story 6.1 monitoring expiry-alert row-failure event type', () => {
+    expect(OperationalEvent.MONITORING_EXPIRY_ALERT_ROW_FAILED).toBe(
+      'monitoring.expiry_alert_row_failed'
+    )
+  })
 })
