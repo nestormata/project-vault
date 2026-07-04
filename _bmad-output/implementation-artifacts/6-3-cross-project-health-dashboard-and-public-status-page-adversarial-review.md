@@ -38,3 +38,26 @@
 
 - **`low`** — Continuing naming/domain-model debt: the "services" shown on both the internal health dashboard and the public status page are sourced from a table literally named `payment_records` (a 6.1 legacy), and this story doubles down on that mismatch rather than flagging it for eventual rename — increasing the gap between the domain language used in ACs/UI copy ("services") and the physical schema.
 
+## Resolution Log (post-review fixes applied 2026-07-04)
+
+All 16 findings were addressed directly in the story file. Summary of fixes:
+
+1. **`critical` (status contradiction)** — Story header changed from `Status: ready-for-dev` to `Status: backlog (blocked on Story 6.2 ...)`; `sprint-status.yaml` reverted to `backlog` with an inline comment. The story is honestly gated until 6.2 ships.
+2. **`critical` (RLS mechanism undefined)** — Added new **ADR-6.3-09**, grounded in the actual codebase precedent (`apps/api/src/modules/invitations/lookup.ts`'s `findInvitationByTokenHash()`, which already solves this exact problem for the RLS-protected `project_invitations` table via `getAdminDb()`). Specifies a `findStatusPageByTokenHash()` admin-connection point lookup, followed by `withOrg(orgId, ...)` for the `status_page_services` join, plus a required RLS-coverage-exception test. Task 7 updated to match.
+3. **`high` (speculative ServiceHealthStatus contract)** — ADR-6.3-02 extended with an explicit delivery-risk paragraph: Task 0 must re-derive ADR-6.3-02/03 and ACs 1-3/7 if 6.2's actual shape differs materially, and must stop for re-planning rather than force-fit a mismatched contract.
+4. **`high` (no sanitization/escaping requirement)** — AC 15 extended with an explicit injection example: `displayName` is stored verbatim but must render via Svelte's default auto-escaping only (never `{@html}`), with required test coverage in both the API round-trip test and a Task 10 component test.
+5. **`high` (persona/UI inconsistency)** — Task 9 rewritten to gate the UI section on the same project-owner-or-org-owner condition as the backend (ADR-6.3-07), not project-owner alone.
+6. **`medium` (rate-limit rigor gap)** — Added AC 10a stating the concrete `WRITE_RATE_LIMIT` value (`{max: 60, timeWindowMs: 60_000}`, sourced from `apps/api/src/modules/monitoring/routes.ts:95`) for the four mutation routes.
+7. **`medium` (zero enumeration visibility)** — Added a Known Scope Boundary explicitly documenting reliance on standard Fastify access logs and explaining why dedicated abuse-metrics tooling is out of scope.
+8. **`medium` (eligibility drift)** — Added a Known Scope Boundary specifying that a service missing from `getServiceHealthStatuses()`'s result map (e.g., `url` cleared post-PUT) must be reported as `status: 'down'`, not omitted; added corresponding test requirement to Task 11.
+9. **`medium` (ambiguous batching granularity)** — Task 3 rewritten to mandate exactly one org-wide batched `getServiceHealthStatuses()` call, explicitly prohibiting a per-project N+1 pattern.
+10. **`medium` (concurrent-regenerate audit double-write)** — Added an explicit AC 11 example stating two audit rows on a regenerate race is intentional and must not be suppressed/deduplicated.
+11. **`medium` (shared per-IP rate-limit trade-off)** — Added an explicit "accepted availability trade-off" note to AC 13.
+12. **`medium` (MFA fallback gap)** — Added an explicit note to AC 9 clarifying this is pre-existing `requireMfa` behavior, not a new gap, and out of scope to change.
+13. **`low` (AuditEvent dual-listing debt)** — Added a Known Scope Boundary acknowledging the debt is continued, not fixed, and explaining why (cross-story refactor scope).
+14. **`low` (no CORS/embeddability/caching guidance)** — Added a Known Scope Boundary + Task 7 requirement: `Cache-Control: no-store` on the public GET response; explicit no-op decision on CORS/frame-ancestors.
+15. **`low` (no notification on link revocation)** — Added a Known Scope Boundary documenting the generic-404 behavior as intentional given no viewer identity exists to notify.
+16. **`low` (payment_records naming debt)** — Added a Known Scope Boundary acknowledging the continued mismatch and scoping a rename as a separate tech-debt item.
+
+Two pre-existing broken cross-references (`see AC 29`, `see AC 21` — this story only has ACs 1-20 plus the new 10a) were also corrected to their actual targets (AC 18, AC 16) while editing nearby text; these were not part of the original 16 findings but were caught in the course of this pass.
+

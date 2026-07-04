@@ -98,7 +98,7 @@ development_status:
   epic-6: in-progress
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: backlog
-  6-3-cross-project-health-dashboard-and-public-status-page: ready-for-dev
+  6-3-cross-project-health-dashboard-and-public-status-page: backlog # blocked on 6-2 (see ADR-6.3-01) — flip to ready-for-dev once 6-2 is done
   epic-6-retrospective: optional
 
   # Epic 7: Machine User Access & CI/CD Integration
