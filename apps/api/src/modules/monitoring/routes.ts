@@ -1,9 +1,14 @@
-import type { FastifyRequest } from 'fastify'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Tx } from '@project-vault/db'
+import type { ZodType } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
-import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import {
+  secureRoute,
+  type PublicRouteContext,
+  type SecureRouteContext,
+} from '../../lib/secure-route.js'
 import {
   writeHumanAuditEntryOrFailClosed,
   type SameTransactionAuditInput,
@@ -27,12 +32,6 @@ import {
   UpdateCertificateBodySchema,
   UpdateDomainRecordBodySchema,
   UpdatePaymentRecordBodySchema,
-  type CreateCertificateBody,
-  type CreateDomainRecordBody,
-  type CreatePaymentRecordBody,
-  type UpdateCertificateBody,
-  type UpdateDomainRecordBody,
-  type UpdatePaymentRecordBody,
 } from './schema.js'
 import {
   createCertificateRecord,
@@ -95,6 +94,96 @@ function rawBodyOf(req: FastifyRequest): Record<string, unknown> {
 const LIST_RATE_LIMIT = { max: 120, timeWindowMs: 60_000 }
 const WRITE_RATE_LIMIT = { max: 60, timeWindowMs: 60_000 }
 
+type MonitoringRouteHandler = (
+  ctx: SecureRouteContext | PublicRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply
+) => Promise<unknown>
+
+// --- Shared handler factories -----------------------------------------------------------
+// The services/certificates/domains route trios (GET list, POST create, PATCH update, DELETE)
+// are identical in shape and differ only in which schema/service function/audit event applies —
+// see the 6.1 code-review notes on the repo's zero-duplication jscpd gate. Each `secureRoute`
+// call below still owns its own url/schema/security config; only the handler body is shared.
+
+/** 404s and returns false if the project isn't found in the caller's org; true otherwise. */
+async function requireProjectInOrg(
+  tx: Tx,
+  projectId: string,
+  reply: FastifyReply
+): Promise<boolean> {
+  if (await findProjectInOrg(tx, projectId)) return true
+  reply.status(404).send(PROJECT_NOT_FOUND)
+  return false
+}
+
+function makeListHandler<Row>(listFn: (tx: Tx, projectId: string) => Promise<Row[]>) {
+  const handler: MonitoringRouteHandler = async (ctx, req, reply) => {
+    const params = parseParams(ProjectScopeParamsSchema, req, reply)
+    if (!params) return reply
+    const secureCtx = ctx as SecureRouteContext
+    if (!(await requireProjectInOrg(secureCtx.tx, params.projectId, reply))) return reply
+    const items = await listFn(secureCtx.tx, params.projectId)
+    return { data: { items } }
+  }
+  return handler
+}
+
+const WRITE_REQUEST_HANDLED = Symbol('write-request-handled')
+
+/**
+ * Shared prelude for the create/update handlers: parses params + body, and rejects an archived
+ * project (ADR-4.4-01). Returns WRITE_REQUEST_HANDLED once `reply` has already been sent (the
+ * caller must return `reply` in that case) so both factories don't repeat this control flow.
+ */
+async function parseWriteRequest<Params extends { projectId: string }, Body>(
+  ctx: SecureRouteContext | PublicRouteContext,
+  paramsSchema: ZodType<Params>,
+  bodySchema: ZodType<Body>,
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<
+  { params: Params; body: Body; secureCtx: SecureRouteContext } | typeof WRITE_REQUEST_HANDLED
+> {
+  const params = parseParams(paramsSchema, req, reply)
+  if (!params) return WRITE_REQUEST_HANDLED
+  const parsed = parseBody<Body>(bodySchema, req, reply)
+  if (!parsed.success) return WRITE_REQUEST_HANDLED
+  const secureCtx = ctx as SecureRouteContext
+  if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) {
+    return WRITE_REQUEST_HANDLED
+  }
+  return { params, body: parsed.data, secureCtx }
+}
+
+/**
+ * Shared prelude for the delete handlers: parses params and rejects an archived project
+ * (ADR-4.4-01). Mirrors `parseWriteRequest` but without a body to parse.
+ */
+async function parseDeleteRequest<Params extends { projectId: string }>(
+  ctx: SecureRouteContext | PublicRouteContext,
+  paramsSchema: ZodType<Params>,
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<{ params: Params; secureCtx: SecureRouteContext } | typeof WRITE_REQUEST_HANDLED> {
+  const params = parseParams(paramsSchema, req, reply)
+  if (!params) return WRITE_REQUEST_HANDLED
+  const secureCtx = ctx as SecureRouteContext
+  if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) {
+    return WRITE_REQUEST_HANDLED
+  }
+  return { params, secureCtx }
+}
+
+// Note: the create/update/delete handlers below are intentionally NOT factored into shared
+// handler functions the way makeListHandler is. route-audit.test.ts's
+// assertAuditedActionOptOutsAreJustified check requires each `writeAuditEvent: false` route to
+// have its same-transaction audit call (writeMonitoringAuditOrFailClosed(..., secureCtx.tx, ...))
+// textually present in that route's own registration, as static proof the audit write is real
+// and in-transaction. Hiding it inside a shared factory (as GET/list safely can, since list
+// routes carry no audit event) would make that proof unverifiable by inspection. Only the
+// audit-free prelude (parseWriteRequest/parseDeleteRequest) is shared here.
+
 export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
   // --- Services (payment_records) — FR24 ---
 
@@ -109,16 +198,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/services' },
     },
-    handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectScopeParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-      if (!(await findProjectInOrg(secureCtx.tx, params.projectId))) {
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
-      const items = await listPaymentRecords(secureCtx.tx, params.projectId)
-      return { data: { items } }
-    },
+    handler: makeListHandler(listPaymentRecords),
   })
 
   secureRoute(fastify, {
@@ -139,22 +219,23 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectScopeParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody<CreatePaymentRecordBody>(CreatePaymentRecordBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
+      const parsedReq = await parseWriteRequest(
+        ctx,
+        ProjectScopeParamsSchema,
+        CreatePaymentRecordBodySchema,
+        req,
+        reply
+      )
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, body, secureCtx } = parsedReq
 
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
-      if (!(await findProjectInOrg(secureCtx.tx, params.projectId))) {
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
+      if (!(await requireProjectInOrg(secureCtx.tx, params.projectId, reply))) return reply
 
       const row = await createPaymentRecord(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         projectId: params.projectId,
         userId: secureCtx.auth.userId,
-        body: parsed.data,
+        body,
       })
 
       await writeMonitoringAuditOrFailClosed(req, secureCtx.tx, {
@@ -193,18 +274,19 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ServiceParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody<UpdatePaymentRecordBody>(UpdatePaymentRecordBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      const parsedReq = await parseWriteRequest(
+        ctx,
+        ServiceParamsSchema,
+        UpdatePaymentRecordBodySchema,
+        req,
+        reply
+      )
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, body, secureCtx } = parsedReq
 
       const updated = await updatePaymentRecord(secureCtx.tx, {
-        serviceId: params.serviceId,
-        projectId: params.projectId,
-        body: parsed.data,
+        ...params,
+        body,
         rawBody: rawBodyOf(req),
       })
       if (!updated) return reply.status(404).send(SERVICE_NOT_FOUND)
@@ -243,11 +325,9 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ServiceParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      const parsedReq = await parseDeleteRequest(ctx, ServiceParamsSchema, req, reply)
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, secureCtx } = parsedReq
 
       const deleted = await deletePaymentRecord(secureCtx.tx, params)
       if (!deleted) return reply.status(404).send(SERVICE_NOT_FOUND)
@@ -293,16 +373,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/certificates' },
     },
-    handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectScopeParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-      if (!(await findProjectInOrg(secureCtx.tx, params.projectId))) {
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
-      const items = await listCertificateRecords(secureCtx.tx, params.projectId)
-      return { data: { items } }
-    },
+    handler: makeListHandler(listCertificateRecords),
   })
 
   secureRoute(fastify, {
@@ -323,22 +394,23 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectScopeParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody<CreateCertificateBody>(CreateCertificateBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
+      const parsedReq = await parseWriteRequest(
+        ctx,
+        ProjectScopeParamsSchema,
+        CreateCertificateBodySchema,
+        req,
+        reply
+      )
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, body, secureCtx } = parsedReq
 
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
-      if (!(await findProjectInOrg(secureCtx.tx, params.projectId))) {
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
+      if (!(await requireProjectInOrg(secureCtx.tx, params.projectId, reply))) return reply
 
       const row = await createCertificateRecord(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         projectId: params.projectId,
         userId: secureCtx.auth.userId,
-        body: parsed.data,
+        body,
       })
 
       await writeMonitoringAuditOrFailClosed(req, secureCtx.tx, {
@@ -377,18 +449,19 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(CertificateParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody<UpdateCertificateBody>(UpdateCertificateBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      const parsedReq = await parseWriteRequest(
+        ctx,
+        CertificateParamsSchema,
+        UpdateCertificateBodySchema,
+        req,
+        reply
+      )
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, body, secureCtx } = parsedReq
 
       const updated = await updateCertificateRecord(secureCtx.tx, {
-        certificateId: params.certificateId,
-        projectId: params.projectId,
-        body: parsed.data,
+        ...params,
+        body,
         rawBody: rawBodyOf(req),
       })
       if (!updated) return reply.status(404).send(CERTIFICATE_NOT_FOUND)
@@ -427,11 +500,9 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(CertificateParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      const parsedReq = await parseDeleteRequest(ctx, CertificateParamsSchema, req, reply)
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, secureCtx } = parsedReq
 
       const deleted = await deleteCertificateRecord(secureCtx.tx, params)
       if (!deleted) return reply.status(404).send(CERTIFICATE_NOT_FOUND)
@@ -473,16 +544,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/domains' },
     },
-    handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectScopeParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-      if (!(await findProjectInOrg(secureCtx.tx, params.projectId))) {
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
-      const items = await listDomainRecords(secureCtx.tx, params.projectId)
-      return { data: { items } }
-    },
+    handler: makeListHandler(listDomainRecords),
   })
 
   secureRoute(fastify, {
@@ -503,22 +565,23 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectScopeParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody<CreateDomainRecordBody>(CreateDomainRecordBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
+      const parsedReq = await parseWriteRequest(
+        ctx,
+        ProjectScopeParamsSchema,
+        CreateDomainRecordBodySchema,
+        req,
+        reply
+      )
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, body, secureCtx } = parsedReq
 
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
-      if (!(await findProjectInOrg(secureCtx.tx, params.projectId))) {
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
+      if (!(await requireProjectInOrg(secureCtx.tx, params.projectId, reply))) return reply
 
       const row = await createDomainRecord(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         projectId: params.projectId,
         userId: secureCtx.auth.userId,
-        body: parsed.data,
+        body,
       })
 
       await writeMonitoringAuditOrFailClosed(req, secureCtx.tx, {
@@ -557,18 +620,19 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(DomainRecordParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody<UpdateDomainRecordBody>(UpdateDomainRecordBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      const parsedReq = await parseWriteRequest(
+        ctx,
+        DomainRecordParamsSchema,
+        UpdateDomainRecordBodySchema,
+        req,
+        reply
+      )
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, body, secureCtx } = parsedReq
 
       const updated = await updateDomainRecord(secureCtx.tx, {
-        domainId: params.domainId,
-        projectId: params.projectId,
-        body: parsed.data,
+        ...params,
+        body,
         rawBody: rawBodyOf(req),
       })
       if (!updated) return reply.status(404).send(DOMAIN_RECORD_NOT_FOUND)
@@ -607,11 +671,9 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(DomainRecordParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      const parsedReq = await parseDeleteRequest(ctx, DomainRecordParamsSchema, req, reply)
+      if (parsedReq === WRITE_REQUEST_HANDLED) return reply
+      const { params, secureCtx } = parsedReq
 
       const deleted = await deleteDomainRecord(secureCtx.tx, params)
       if (!deleted) return reply.status(404).send(DOMAIN_RECORD_NOT_FOUND)

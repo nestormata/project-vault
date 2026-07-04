@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
-import { projects } from '@project-vault/db/schema'
-import { eq } from 'drizzle-orm'
+import { credentials, credentialVersions, projects, rotations } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   registerAndLoginViaApi,
@@ -16,6 +15,53 @@ import {
   hasActiveMachineUserKeys,
   isProjectArchived,
 } from './archive-guards.js'
+
+/** Seeds a credential + two versions + a rotation row so findBlockingRotationIds has a real row. */
+async function seedRotation(
+  orgId: string,
+  projectId: string,
+  userId: string,
+  status?: string
+): Promise<string> {
+  const [credential] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(credentials)
+      .values({ orgId, projectId, name: `cred-${randomUUID()}`, createdBy: userId })
+      .returning({ id: credentials.id })
+  )
+  if (!credential) throw new Error('expected test credential to be inserted')
+
+  const [previousVersion] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(credentialVersions)
+      .values({ orgId, credentialId: credential.id, versionNumber: 1, createdBy: userId })
+      .returning({ id: credentialVersions.id })
+  )
+  const [newVersion] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(credentialVersions)
+      .values({ orgId, credentialId: credential.id, versionNumber: 2, createdBy: userId })
+      .returning({ id: credentialVersions.id })
+  )
+  if (!previousVersion || !newVersion) throw new Error('expected test versions to be inserted')
+
+  const [rotation] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(rotations)
+      .values({
+        orgId,
+        projectId,
+        credentialId: credential.id,
+        newVersionId: newVersion.id,
+        previousVersionId: previousVersion.id,
+        initiatedBy: userId,
+        ...(status !== undefined ? { status } : {}),
+      })
+      .returning({ id: rotations.id })
+  )
+  if (!rotation) throw new Error('expected test rotation to be inserted')
+  return rotation.id
+}
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -42,33 +88,40 @@ describe('archive-guards', () => {
     await resetVaultForTest()
   })
 
-  describe('findBlockingRotationIds (ADR-4.4-02 table-existence seam)', () => {
-    it('returns [] when the `rotations` table does not exist yet (Epic 5 not delivered)', async () => {
-      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard' })
+  describe('findBlockingRotationIds', () => {
+    it('returns [] for a project with no rotations', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-none' })
 
       const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
 
       expect(blockingIds).toEqual([])
     })
 
-    it('CI guard (ADR-4.4-02): fails if `rotations` now exists but the seam is still present', async () => {
-      // Once Story 5.1 ships the `rotations` table, this assertion starts failing on purpose —
-      // that failure is the signal to replace findBlockingRotationIds's raw-SQL seam with a typed
-      // Drizzle query and delete this test along with the seam (see archive-guards.ts).
-      const [row] = await withOrg(orgId, (tx) =>
-        tx.execute(sql`SELECT to_regclass('public.rotations') AS reg`)
-      )
-      const rotationsTableExists = (row as { reg: string | null } | undefined)?.reg !== null
+    it('returns the id of an in_progress rotation', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-progress' })
+      const rotationId = await seedRotation(orgId, project.id, userId)
 
-      if (rotationsTableExists) {
-        throw new Error(
-          'The `rotations` table now exists (Story 5.1 shipped) but findBlockingRotationIds ' +
-            '(apps/api/src/modules/projects/archive-guards.ts) still contains the ADR-4.4-02 ' +
-            'table-existence seam. Replace it with a typed Drizzle query against the rotations ' +
-            'schema and delete rotationsTableExists per the story dev notes.'
-        )
-      }
-      expect(rotationsTableExists).toBe(false)
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
+
+      expect(blockingIds).toEqual([rotationId])
+    })
+
+    it('returns the id of a stale_recovery rotation', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-stale' })
+      const rotationId = await seedRotation(orgId, project.id, userId, 'stale_recovery')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
+
+      expect(blockingIds).toEqual([rotationId])
+    })
+
+    it('does not block on a completed rotation', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-completed' })
+      await seedRotation(orgId, project.id, userId, 'completed')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
+
+      expect(blockingIds).toEqual([])
     })
   })
 

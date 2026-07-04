@@ -1,7 +1,7 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import type { Tx } from '@project-vault/db'
-import { projects } from '@project-vault/db/schema'
+import { projects, rotations } from '@project-vault/db/schema'
 
 /** Standard 410 body every write guard on an archived project MUST return (ADR-4.4-01). */
 export const PROJECT_ARCHIVED_ERROR = {
@@ -10,38 +10,26 @@ export const PROJECT_ARCHIVED_ERROR = {
 } as const
 
 /**
- * ADR-4.4-02 table-existence seam: the `rotations` table is created in Epic 5 (Story 5.1), which
- * has not shipped yet at the time 4.4 was implemented. Detects whether the table exists so
- * `findBlockingRotationIds` can degrade to "no block" instead of failing to build/run.
- *
- * Once Story 5.1 ships, replace `findBlockingRotationIds`'s raw SQL with a typed Drizzle query
- * against the `rotations` schema object and delete this function — see
- * `apps/api/src/modules/projects/archive-guards.test.ts` for the CI guard that catches drift.
- */
-async function rotationsTableExists(tx: Tx): Promise<boolean> {
-  const res = await tx.execute(sql`SELECT to_regclass('public.rotations') AS reg`)
-  return (res as unknown as Array<{ reg: string | null }>)[0]?.reg !== null
-}
-
-/**
  * Returns the ids of rotations that block archival for a project.
  * Blocking statuses: 'in_progress' (active workflow) and 'stale_recovery' (unresolved; would be
  * orphaned by archival). 'break_glass_overlap' does NOT block — it is a self-expiring drain
  * window past the human-action point (ADR-4.4-03).
  *
- * Cross-epic seam (ADR-4.4-02): if the `rotations` table does not yet exist (4.4 built before
- * 5.1), this returns [] (no block) and QA must hold FR63 sign-off until Epic 5 is delivered.
+ * Story 5.1 has shipped and the `rotations` table now exists, so this queries it directly via a
+ * typed Drizzle query (the former ADR-4.4-02 table-existence seam was removed per the CI guard in
+ * `apps/api/src/modules/projects/archive-guards.test.ts`).
  */
 export async function findBlockingRotationIds(tx: Tx, projectId: string): Promise<string[]> {
-  const tableExists = await rotationsTableExists(tx)
-  if (!tableExists) return [] // Epic 5 not yet delivered — documented degradation (ADR-4.4-02)
-
-  const rows = await tx.execute(sql`
-    SELECT id FROM rotations
-    WHERE project_id = ${projectId}
-      AND status IN ('in_progress', 'stale_recovery')
-  `)
-  return (rows as unknown as Array<{ id: string }>).map((r) => r.id)
+  const rows = await tx
+    .select({ id: rotations.id })
+    .from(rotations)
+    .where(
+      and(
+        eq(rotations.projectId, projectId),
+        inArray(rotations.status, ['in_progress', 'stale_recovery'])
+      )
+    )
+  return rows.map((r) => r.id)
 }
 
 /**

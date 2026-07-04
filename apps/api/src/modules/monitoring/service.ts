@@ -41,51 +41,102 @@ export async function suppressPendingNotificationsForAsset(
     )
 }
 
+/**
+ * AC 6: writing a new expiry/renewal date resets the alert cycle — only when the request body
+ * actually included that field (distinguishes "explicitly cleared" from "not sent").
+ */
+function applyDateReset(
+  updates: Record<string, unknown>,
+  dateField: string,
+  rawBody: Record<string, unknown>,
+  newValue: string | null | undefined
+): void {
+  if (!(dateField in rawBody)) return
+  updates[dateField] = newValue ? new Date(newValue) : null
+  updates.notifiedLeadDays = []
+}
+
+/**
+ * Builds the Drizzle `.set()` payload for a monitoring-record PATCH: copies the one asset-
+ * specific text field (`url`/`domain`/`domainName`) plus alertLeadDays when the request body
+ * included them, and applies the AC 6 date-reset (see `applyDateReset`) for the expiry/renewal
+ * date field. Shared across payment/certificate/domain since the shape is identical and only
+ * the field *names* differ.
+ */
+function buildMonitoringUpdates(
+  rawBody: Record<string, unknown>,
+  simpleField: { key: string; value: unknown },
+  dateField: { key: string; value: string | null | undefined },
+  alertLeadDays: number[] | undefined
+): Record<string, unknown> {
+  const updates: Record<string, unknown> = {}
+  if (simpleField.key in rawBody) updates[simpleField.key] = simpleField.value
+  applyDateReset(updates, dateField.key, rawBody, dateField.value)
+  if ('alertLeadDays' in rawBody) updates.alertLeadDays = alertLeadDays
+  return updates
+}
+
+/**
+ * Applies a built `updates` payload, or falls back to a plain read when it's empty (AC 6):
+ * an empty request body must not hand Drizzle an invalid `.set({})` with zero assignments.
+ * Still 404s via the caller (through `onNoop`) if the row isn't found.
+ */
+async function applyMonitoringUpdate<Row>(
+  updates: Record<string, unknown>,
+  onNoop: () => Promise<Row | null>,
+  onUpdate: (updates: Record<string, unknown>) => Promise<Row | null>
+): Promise<Row | null> {
+  if (Object.keys(updates).length === 0) return onNoop()
+  return onUpdate(updates)
+}
+
 // --- Serializers ---
 
-export function serializePaymentRecord(row: typeof paymentRecords.$inferSelect) {
+/** Identity + audit-tail fields shared by every monitoring-record serializer. */
+function baseRecordFields(row: {
+  id: string
+  orgId: string
+  projectId: string
+  alertLeadDays: number[]
+  notifiedLeadDays: number[]
+  createdBy: string | null
+  createdAt: Date
+  updatedAt: Date
+}) {
   return {
     id: row.id,
     orgId: row.orgId,
     projectId: row.projectId,
-    name: row.name,
-    url: row.url,
-    renewalDate: row.renewalDate?.toISOString() ?? null,
     alertLeadDays: row.alertLeadDays,
     notifiedLeadDays: row.notifiedLeadDays,
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+export function serializePaymentRecord(row: typeof paymentRecords.$inferSelect) {
+  return {
+    ...baseRecordFields(row),
+    name: row.name,
+    url: row.url,
+    renewalDate: row.renewalDate?.toISOString() ?? null,
   }
 }
 
 export function serializeCertificateRecord(row: typeof certRecords.$inferSelect) {
   return {
-    id: row.id,
-    orgId: row.orgId,
-    projectId: row.projectId,
+    ...baseRecordFields(row),
     domain: row.domain,
     expiresAt: row.expiresAt?.toISOString() ?? null,
-    alertLeadDays: row.alertLeadDays,
-    notifiedLeadDays: row.notifiedLeadDays,
-    createdBy: row.createdBy,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
   }
 }
 
 export function serializeDomainRecord(row: typeof domainRecords.$inferSelect) {
   return {
-    id: row.id,
-    orgId: row.orgId,
-    projectId: row.projectId,
+    ...baseRecordFields(row),
     domainName: row.domainName,
     renewalDate: row.renewalDate?.toISOString() ?? null,
-    alertLeadDays: row.alertLeadDays,
-    notifiedLeadDays: row.notifiedLeadDays,
-    createdBy: row.createdBy,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
   }
 }
 
@@ -143,33 +194,28 @@ export async function updatePaymentRecord(
     rawBody: Record<string, unknown>
   }
 ) {
-  const updates: Partial<typeof paymentRecords.$inferInsert> = {}
-  if ('url' in input.rawBody) updates.url = input.body.url ?? null
-  if ('renewalDate' in input.rawBody) {
-    updates.renewalDate = input.body.renewalDate ? new Date(input.body.renewalDate) : null
-    // AC 6: any change to the renewal date resets the alert cycle.
-    updates.notifiedLeadDays = []
-  }
-  if ('alertLeadDays' in input.rawBody) updates.alertLeadDays = input.body.alertLeadDays
+  const updates = buildMonitoringUpdates(
+    input.rawBody,
+    { key: 'url', value: input.body.url ?? null },
+    { key: 'renewalDate', value: input.body.renewalDate },
+    input.body.alertLeadDays
+  )
 
-  if (Object.keys(updates).length === 0) {
-    // No recognized fields in the request body — treat as a no-op read rather than handing
-    // Drizzle an empty `.set({})`, which builds an invalid `UPDATE ... SET` with zero
-    // assignments and fails at the database. Still 404s via the caller if the row isn't found.
-    return findPaymentRecordInProject(tx, {
-      serviceId: input.serviceId,
-      projectId: input.projectId,
-    })
-  }
-
-  const [updated] = await tx
-    .update(paymentRecords)
-    .set(updates)
-    .where(
-      and(eq(paymentRecords.id, input.serviceId), eq(paymentRecords.projectId, input.projectId))
-    )
-    .returning()
-  return updated ?? null
+  return applyMonitoringUpdate(
+    updates,
+    () =>
+      findPaymentRecordInProject(tx, { serviceId: input.serviceId, projectId: input.projectId }),
+    async (setValues) => {
+      const [updated] = await tx
+        .update(paymentRecords)
+        .set(setValues)
+        .where(
+          and(eq(paymentRecords.id, input.serviceId), eq(paymentRecords.projectId, input.projectId))
+        )
+        .returning()
+      return updated ?? null
+    }
+  )
 }
 
 export async function deletePaymentRecord(
@@ -238,29 +284,31 @@ export async function updateCertificateRecord(
     rawBody: Record<string, unknown>
   }
 ) {
-  const updates: Partial<typeof certRecords.$inferInsert> = {}
-  if ('domain' in input.rawBody) updates.domain = input.body.domain
-  if ('expiresAt' in input.rawBody) {
-    updates.expiresAt = input.body.expiresAt ? new Date(input.body.expiresAt) : null
-    // AC 6: any change to the expiry date resets the alert cycle.
-    updates.notifiedLeadDays = []
-  }
-  if ('alertLeadDays' in input.rawBody) updates.alertLeadDays = input.body.alertLeadDays
+  const updates = buildMonitoringUpdates(
+    input.rawBody,
+    { key: 'domain', value: input.body.domain },
+    { key: 'expiresAt', value: input.body.expiresAt },
+    input.body.alertLeadDays
+  )
 
-  if (Object.keys(updates).length === 0) {
-    // See updatePaymentRecord — avoid an empty `.set({})` reaching Drizzle/Postgres.
-    return findCertificateRecordInProject(tx, {
-      certificateId: input.certificateId,
-      projectId: input.projectId,
-    })
-  }
-
-  const [updated] = await tx
-    .update(certRecords)
-    .set(updates)
-    .where(and(eq(certRecords.id, input.certificateId), eq(certRecords.projectId, input.projectId)))
-    .returning()
-  return updated ?? null
+  return applyMonitoringUpdate(
+    updates,
+    () =>
+      findCertificateRecordInProject(tx, {
+        certificateId: input.certificateId,
+        projectId: input.projectId,
+      }),
+    async (setValues) => {
+      const [updated] = await tx
+        .update(certRecords)
+        .set(setValues)
+        .where(
+          and(eq(certRecords.id, input.certificateId), eq(certRecords.projectId, input.projectId))
+        )
+        .returning()
+      return updated ?? null
+    }
+  )
 }
 
 export async function deleteCertificateRecord(
@@ -329,29 +377,27 @@ export async function updateDomainRecord(
     rawBody: Record<string, unknown>
   }
 ) {
-  const updates: Partial<typeof domainRecords.$inferInsert> = {}
-  if ('domainName' in input.rawBody) updates.domainName = input.body.domainName
-  if ('renewalDate' in input.rawBody) {
-    updates.renewalDate = input.body.renewalDate ? new Date(input.body.renewalDate) : null
-    // AC 6: any change to the renewal date resets the alert cycle.
-    updates.notifiedLeadDays = []
-  }
-  if ('alertLeadDays' in input.rawBody) updates.alertLeadDays = input.body.alertLeadDays
+  const updates = buildMonitoringUpdates(
+    input.rawBody,
+    { key: 'domainName', value: input.body.domainName },
+    { key: 'renewalDate', value: input.body.renewalDate },
+    input.body.alertLeadDays
+  )
 
-  if (Object.keys(updates).length === 0) {
-    // See updatePaymentRecord — avoid an empty `.set({})` reaching Drizzle/Postgres.
-    return findDomainRecordInProject(tx, {
-      domainId: input.domainId,
-      projectId: input.projectId,
-    })
-  }
-
-  const [updated] = await tx
-    .update(domainRecords)
-    .set(updates)
-    .where(and(eq(domainRecords.id, input.domainId), eq(domainRecords.projectId, input.projectId)))
-    .returning()
-  return updated ?? null
+  return applyMonitoringUpdate(
+    updates,
+    () => findDomainRecordInProject(tx, { domainId: input.domainId, projectId: input.projectId }),
+    async (setValues) => {
+      const [updated] = await tx
+        .update(domainRecords)
+        .set(setValues)
+        .where(
+          and(eq(domainRecords.id, input.domainId), eq(domainRecords.projectId, input.projectId))
+        )
+        .returning()
+      return updated ?? null
+    }
+  )
 }
 
 export async function deleteDomainRecord(tx: Tx, params: { domainId: string; projectId: string }) {

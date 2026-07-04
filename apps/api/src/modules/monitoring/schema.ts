@@ -9,6 +9,20 @@ export const MAX_ALERT_LEAD_DAYS = 10
 
 const alertLeadDaysSchema = z.array(z.number().int().positive()).max(MAX_ALERT_LEAD_DAYS)
 
+// Shared field groups — see AC 6 note on each Create/Update body schema: url/renewalDate/
+// alertLeadDays (services & domains) or the equivalent expiresAt+alertLeadDays shape (certs)
+// are identical across the update-body variants, and every *RecordSchema shares the same
+// identity/audit tail fields. Spreading these avoids re-typing the same field list 3x, which
+// otherwise trips the repo's zero-duplication jscpd gate (see 6.1 code-review notes).
+const recordIdentityFields = { id: z.uuid(), orgId: z.uuid(), projectId: z.uuid() }
+const recordAuditTailFields = {
+  alertLeadDays: z.array(z.number()),
+  notifiedLeadDays: z.array(z.number()),
+  createdBy: z.uuid().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+}
+
 export const ServiceParamsSchema = z
   .object({ projectId: z.uuid(), serviceId: z.uuid() })
   .meta({ id: 'ServiceParams' })
@@ -21,38 +35,29 @@ export const DomainRecordParamsSchema = z
 
 // --- Services (payment_records) — FR24 ---
 
+const paymentRenewalFields = {
+  url: z.string().trim().min(1).max(2048).nullable().optional(),
+  renewalDate: z.iso.datetime().nullable().optional(),
+  alertLeadDays: alertLeadDaysSchema.optional(),
+}
+
 export const CreatePaymentRecordBodySchema = z
-  .object({
-    name: z.string().trim().min(1).max(256),
-    url: z.string().trim().min(1).max(2048).nullable().optional(),
-    renewalDate: z.iso.datetime().nullable().optional(),
-    alertLeadDays: alertLeadDaysSchema.optional(),
-  })
+  .object({ name: z.string().trim().min(1).max(256), ...paymentRenewalFields })
   .strict()
   .meta({ id: 'CreatePaymentRecordBody' })
 
 export const UpdatePaymentRecordBodySchema = z
-  .object({
-    url: z.string().trim().min(1).max(2048).nullable().optional(),
-    renewalDate: z.iso.datetime().nullable().optional(),
-    alertLeadDays: alertLeadDaysSchema.optional(),
-  })
+  .object(paymentRenewalFields)
   .strict()
   .meta({ id: 'UpdatePaymentRecordBody' })
 
 export const PaymentRecordSchema = z
   .object({
-    id: z.uuid(),
-    orgId: z.uuid(),
-    projectId: z.uuid(),
+    ...recordIdentityFields,
     name: z.string(),
     url: z.string().nullable(),
     renewalDate: z.iso.datetime().nullable(),
-    alertLeadDays: z.array(z.number()),
-    notifiedLeadDays: z.array(z.number()),
-    createdBy: z.uuid().nullable(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
+    ...recordAuditTailFields,
   })
   .meta({ id: 'PaymentRecord' })
 
@@ -85,16 +90,10 @@ export const UpdateCertificateBodySchema = z
 
 export const CertificateRecordSchema = z
   .object({
-    id: z.uuid(),
-    orgId: z.uuid(),
-    projectId: z.uuid(),
+    ...recordIdentityFields,
     domain: z.string(),
     expiresAt: z.iso.datetime().nullable(),
-    alertLeadDays: z.array(z.number()),
-    notifiedLeadDays: z.array(z.number()),
-    createdBy: z.uuid().nullable(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
+    ...recordAuditTailFields,
   })
   .meta({ id: 'CertificateRecord' })
 
@@ -127,16 +126,10 @@ export const UpdateDomainRecordBodySchema = z
 
 export const DomainRecordSchema = z
   .object({
-    id: z.uuid(),
-    orgId: z.uuid(),
-    projectId: z.uuid(),
+    ...recordIdentityFields,
     domainName: z.string(),
     renewalDate: z.iso.datetime().nullable(),
-    alertLeadDays: z.array(z.number()),
-    notifiedLeadDays: z.array(z.number()),
-    createdBy: z.uuid().nullable(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
+    ...recordAuditTailFields,
   })
   .meta({ id: 'DomainRecord' })
 
