@@ -103,7 +103,7 @@ development_status:
 
   # Epic 7: Machine User Access & CI/CD Integration
   epic-7: in-progress
-  7-1-machine-user-identity-and-api-key-management: ready-for-dev
+  7-1-machine-user-identity-and-api-key-management: done
   7-2-machine-user-authentication-and-programmatic-secret-retrieval: ready-for-dev
   7-3-github-actions-cicd-integration: ready-for-dev
   epic-7-retrospective: optional
