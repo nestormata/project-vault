@@ -26,6 +26,7 @@ import { searchRoutes } from './modules/search/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
+import { machineUserRoutes } from './modules/machine-users/routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
 import authenticatePlugin from './plugins/authenticate.js'
@@ -205,6 +206,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(searchRoutes, { prefix: '/api/v1' })
   await fastify.register(adminRoutes, { prefix: '/api/v1/admin' })
   await fastify.register(notificationRoutes, { prefix: '/api/v1' })
+  await fastify.register(machineUserRoutes, { prefix: '/api/v1' })
 
   return fastify
 }

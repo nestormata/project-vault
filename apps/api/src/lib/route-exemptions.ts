@@ -579,6 +579,39 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'domain_record.deleted',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 7.1 — machine user identity and API key management.
+  'POST /api/v1/projects/:projectId/machine-users': {
+    action: 'mutation',
+    auditEvent: 'machine_user.created',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/machine-users': {
+    action: 'read',
+    auditOmissionReason:
+      'Machine-user list read is org-scoped and does not reveal API key secrets.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/machine-users/:machineUserId': {
+    action: 'read',
+    auditOmissionReason:
+      'Machine-user detail read is org-scoped and does not reveal API key secrets.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/machine-users/:machineUserId/api-keys': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.api_key_issued',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/machine-users/:machineUserId/api-keys': {
+    action: 'read',
+    auditOmissionReason: 'API key list returns metadata only (AC-12) — never keyHash or plaintext.',
+    reviewer: SECURITY_OWNER,
+  },
+  'DELETE /api/v1/machine-users/:machineUserId/api-keys/:keyId': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.api_key_revoked',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
