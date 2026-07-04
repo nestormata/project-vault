@@ -19,6 +19,7 @@ import { projectInvitationRoutes } from './modules/invitations/routes.js'
 import { invitationTokenRoutes } from './modules/invitations/token-routes.js'
 import { credentialRoutes } from './modules/credentials/routes.js'
 import { rotationRoutes } from './modules/rotation/routes.js'
+import { monitoringRoutes } from './modules/monitoring/routes.js'
 import { onboardingRoutes } from './modules/onboarding/routes.js'
 import { usersRoutes } from './modules/users/routes.js'
 import { searchRoutes } from './modules/search/routes.js'
@@ -196,6 +197,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(invitationTokenRoutes, { prefix: '/api/v1/invitations' })
   await fastify.register(credentialRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(rotationRoutes, { prefix: '/api/v1/projects' })
+  await fastify.register(monitoringRoutes, { prefix: '/api/v1/projects' })
   /* eslint-enable sonarjs/no-duplicate-string */
   await fastify.register(dashboardRoutes, { prefix: '/api/v1/dashboard' })
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })

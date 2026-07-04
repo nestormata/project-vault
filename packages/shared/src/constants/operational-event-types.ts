@@ -63,6 +63,9 @@ export const OperationalEvent = {
   ROTATION_INITIATE_CONFLICT: 'rotation.initiate.conflict',
   ROTATION_INITIATE_AUDIT_FAILED: 'rotation.initiate.audit_failed',
   ROTATION_INITIATE_SAME_VALUE_WARNING: 'rotation.initiate.same_value_warning',
+
+  // Operational monitoring expiry alerts (Story 6.1)
+  MONITORING_EXPIRY_ALERT_ROW_FAILED: 'monitoring.expiry_alert_row_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

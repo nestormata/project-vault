@@ -14,6 +14,10 @@ export const PROJECT_ARCHIVED_ERROR = {
  * Blocking statuses: 'in_progress' (active workflow) and 'stale_recovery' (unresolved; would be
  * orphaned by archival). 'break_glass_overlap' does NOT block — it is a self-expiring drain
  * window past the human-action point (ADR-4.4-03).
+ *
+ * Story 5.1 has shipped and the `rotations` table now exists, so this queries it directly via a
+ * typed Drizzle query (the former ADR-4.4-02 table-existence seam was removed per the CI guard in
+ * `apps/api/src/modules/projects/archive-guards.test.ts`).
  */
 export async function findBlockingRotationIds(tx: Tx, projectId: string): Promise<string[]> {
   const rows = await tx

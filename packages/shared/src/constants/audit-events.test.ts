@@ -48,4 +48,16 @@ describe('AuditEvent', () => {
   it('exposes Story 5.1 rotation audit event name', () => {
     expect(AuditEvent.ROTATION_INITIATED).toBe('rotation.initiated')
   })
+
+  it('exposes Story 6.1 payment/certificate/domain record audit event names', () => {
+    expect(AuditEvent.PAYMENT_RECORD_CREATED).toBe('payment_record.created')
+    expect(AuditEvent.PAYMENT_RECORD_UPDATED).toBe('payment_record.updated')
+    expect(AuditEvent.PAYMENT_RECORD_DELETED).toBe('payment_record.deleted')
+    expect(AuditEvent.CERTIFICATE_CREATED).toBe('certificate.created')
+    expect(AuditEvent.CERTIFICATE_UPDATED).toBe('certificate.updated')
+    expect(AuditEvent.CERTIFICATE_DELETED).toBe('certificate.deleted')
+    expect(AuditEvent.DOMAIN_RECORD_CREATED).toBe('domain_record.created')
+    expect(AuditEvent.DOMAIN_RECORD_UPDATED).toBe('domain_record.updated')
+    expect(AuditEvent.DOMAIN_RECORD_DELETED).toBe('domain_record.deleted')
+  })
 })

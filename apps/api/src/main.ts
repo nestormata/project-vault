@@ -19,6 +19,9 @@ import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-thr
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
+import { runPaymentExpiryAlertJob } from './workers/payment-expiry-alert.js'
+import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
+import { runDomainExpiryAlertJob } from './workers/domain-expiry-alert.js'
 import {
   notificationEmailCatchupHandler,
   notificationEmailHandler,
@@ -110,6 +113,9 @@ async function main(): Promise<void> {
       'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
       'credentials/prune-versions': { cron: '0 3 * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
+      'payment:expiry-alert': { cron: '0 8 * * *' },
+      'cert:expiry-alert': { cron: '0 8 * * *' },
+      'domain:expiry-alert': { cron: '0 8 * * *' },
       'notification:email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
@@ -137,6 +143,18 @@ async function main(): Promise<void> {
       'import/cleanup-expired': (job) =>
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>
           importCleanupExpired(fastify.log)
+        ),
+      'payment:expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'payment:expiry-alert', job.id ?? 'unknown', () =>
+          runPaymentExpiryAlertJob(boss, fastify.log)
+        ),
+      'cert:expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'cert:expiry-alert', job.id ?? 'unknown', () =>
+          runCertExpiryAlertJob(boss, fastify.log)
+        ),
+      'domain:expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'domain:expiry-alert', job.id ?? 'unknown', () =>
+          runDomainExpiryAlertJob(boss, fastify.log)
         ),
       'notification:email': {
         handler: (job) => notificationEmailHandler(job, fastify.log),

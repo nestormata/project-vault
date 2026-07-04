@@ -30,10 +30,13 @@ const SECURITY_ACTION = 'security-action'
 const SESSION_REVOKED = 'SESSION_REVOKED'
 const IDENTITY_CLEANUP_JOB = 'identity-cleanup-job'
 const WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED = 'writeCredentialAuditOrFailClosed'
+const WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED = 'writeMonitoringAuditOrFailClosed'
 const WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED = 'writeHumanAuditEntryOrFailClosed'
 const PLATFORM_JOB = 'platform-job'
 const PUBLIC_ROUTE_SUPPORT = 'public-route-support'
 const TOKEN_IS_CREDENTIAL = 'token-is-the-credential'
+const MONITORING_LIST_READ_OMISSION_REASON =
+  'List read returns operational metadata only; no secret values.'
 
 export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
@@ -514,6 +517,67 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditOmissionReason:
       'Public, pre-org-context endpoint. Audit rows (auth.recovery_completed, one per active org membership) are written fail-closed inside a hand-rolled transaction in recovery.ts, not through SecureRoute.',
     reviewer: SECURITY_OWNER,
+  },
+  // Story 6.1 — services (payment_records), certificates (cert_records), domains (domain_records).
+  'GET /api/v1/projects/:projectId/services': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/services': {
+    action: 'mutation',
+    auditEvent: 'payment_record.created',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/projects/:projectId/services/:serviceId': {
+    action: 'mutation',
+    auditEvent: 'payment_record.updated',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'DELETE /api/v1/projects/:projectId/services/:serviceId': {
+    action: 'mutation',
+    auditEvent: 'payment_record.deleted',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/certificates': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/certificates': {
+    action: 'mutation',
+    auditEvent: 'certificate.created',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/projects/:projectId/certificates/:certificateId': {
+    action: 'mutation',
+    auditEvent: 'certificate.updated',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'DELETE /api/v1/projects/:projectId/certificates/:certificateId': {
+    action: 'mutation',
+    auditEvent: 'certificate.deleted',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/domains': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/domains': {
+    action: 'mutation',
+    auditEvent: 'domain_record.created',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/projects/:projectId/domains/:domainId': {
+    action: 'mutation',
+    auditEvent: 'domain_record.updated',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'DELETE /api/v1/projects/:projectId/domains/:domainId': {
+    action: 'mutation',
+    auditEvent: 'domain_record.deleted',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
 }
 
