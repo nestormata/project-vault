@@ -131,12 +131,11 @@ describe.sequential('project archival routes (4.4)', () => {
       ).toBe(false)
     })
 
-    it('returns [] from the active-rotation guard because the `rotations` table (Epic 5) does not exist yet (ADR-4.4-02)', async () => {
-      // Story 5.1 hasn't shipped in this environment, so there is no rotations table to seed a
-      // blocking row against. The table-existence seam itself is unit-tested directly in
-      // archive-guards.test.ts (including the CI guard that fails once the table appears but the
-      // seam is still present). This test documents the API-level consequence: archival is never
-      // blocked by rotations while the table is absent.
+    it('archives a project with no rotations (active-rotation guard finds nothing to block on)', async () => {
+      // The rotation-blocking behavior itself (in_progress/stale_recovery rows blocking, other
+      // statuses not blocking) is unit-tested directly against findBlockingRotationIds in
+      // archive-guards.test.ts. This test documents the API-level baseline: a project with zero
+      // rotation rows archives cleanly.
       const owner = await registerOwner(app, 'archive-no-rotations-table')
       const projectId = await createProject(app, owner.cookies, 'archive-no-rotations')
 
