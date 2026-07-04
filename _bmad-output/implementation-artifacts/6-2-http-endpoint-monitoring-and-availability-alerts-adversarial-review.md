@@ -53,3 +53,36 @@
 23. **[low]** The `downEpisodeStartedAt` column added to `service_endpoints` (Task 2) is never mentioned as part of any GET/list response shape in AC 1, 3, or elsewhere — it's unclear whether this is purely internal bookkeeping or intended to be part of the public API contract.
 
 24. **[low]** The Known Scope Boundary explicitly leaves `security_alerts` dismiss/snooze routes unbuilt even though this story implements the exact dismiss/snooze machinery pattern needed and the target table has had unused `dismissedBy`/`dismissedAt`/`dismissalReason` columns sitting idle since Story 3.4. Wiring even a bare dismiss route would have been a comparatively small incremental addition; deferring it again grows accumulated tech debt on a security-relevant surface for a second story in a row.
+
+## Resolution Log
+
+**Date:** 2026-07-04 (same session, after initial review). All 24 findings below were resolved by revising the story file directly — this review file is left unmodified as the historical record of the first-draft review; the story file itself now reflects the fixes.
+
+| # | Severity | Resolution | Where in the story |
+|---|---|---|---|
+| 1 | critical | Redirect hops re-validated against the SSRF blocklist before being followed; bounded to 5 hops | ADR-6.2-08, AC 4, Task 6 |
+| 2 | critical | Outbound connection pinned to the DNS-validated IP via a custom `undici.Agent` (`createSsrfSafeDispatcher`), closing the TOCTOU gap | ADR-6.2-08, AC 2/4, Task 3/6 |
+| 3 | critical | Per-project endpoint registration cap (`MAX_SERVICE_ENDPOINTS_PER_PROJECT`, default 25) | ADR-6.2-09, AC 1, Task 4/6 |
+| 4 | high | `degraded` redefined as the half-open range `1 ≤ consecutiveFailures < downThresholdFailures` | ADR-6.2-03 (amended), AC 16, Task 6 |
+| 5 | high | Episode-dedup check-then-insert wrapped in `pg_advisory_xact_lock` | ADR-6.2-05 (amended), AC 5, Task 6 |
+| 6 | high | Non-blocking `pg_advisory_lock` overlap guard + bounded per-tick concurrency (`HEALTH_CHECK_MAX_CONCURRENCY`) | ADR-6.2-09, AC 8, Task 6 |
+| 7 | high | IPv4-mapped IPv6 and decimal/hex/octal IP-literal encodings normalized and rejected | ADR-6.2-08, AC 2, Task 3 |
+| 8 | high | New `GET /:projectId/alerts` discovery endpoint | ADR-6.2-10, AC 17, Task 4/5 |
+| 9 | high | `anomalousAccessPayloadSchema` gains `revealedCredentialIds` (capped at 50) | ADR-6.2-06 (amended), AC 11, Task 1/7 |
+| 10 | high | Monitoring-alert and security-alert dismiss routes restricted to `admin`+ role | AC 10/18, Task 5 |
+| 11 | high | `redactUrlForDisplay` strips userinfo/secret-shaped query params before persistence-adjacent surfaces echo the URL | ADR-6.2-11, AC 1/14, Task 3/4 |
+| 12 | medium | Clarified the scheduler uses a per-org `fetchAllOrgIds` + `runOrgScopedJob` loop, never a single cross-org query bypassing RLS | ADR-6.2-09 (RLS clarification), Task 6 |
+| 13 | medium | New `failureReason` diagnostic column on `endpoint_health_checks`, exposed in health-history | ADR-6.2-12, AC 4/7, Task 2 |
+| 14 | medium | Re-snooze extends `snoozedUntil`; dismiss-while-snoozed transitions to `dismissed` | AC 9/10 |
+| 15 | medium | Anomalous-access alert severity raised to `critical` | ADR-6.2-06 (amended), AC 11, Task 7 |
+| 16 | medium | Index added for `audit_log_entries (org_id, actor_token_id, event_type, created_at)` if missing | ADR-6.2-06 (amended), Task 2 |
+| 17 | medium | `ANOMALOUS_ACCESS_WINDOW_SECONDS` max raised from `3600` (equal to default) to `86400` | ADR-6.2-06 (amended), Task 7 |
+| 18 | medium | Added an explicit pre-merge re-verification step for the migration number, beyond the original one-time check | Task 2 |
+| 19 | medium | Resolved by the combination of findings 3 and 6's fixes (bounded endpoint count × bounded per-check timeout × bounded concurrency); no separate circuit-breaker added (documented as a deliberate v1 scope decision) | ADR-6.2-09, Known Scope Boundary |
+| 20 | medium | Notification template context now includes the firing `monitoring_alerts.id`/`security_alerts.id` | ADR-6.2-10, AC 5/6/11, Task 6/7 |
+| 21 | low | `HealthHistoryQuerySchema.limit` now defaults to `50` | AC 7, Task 4 |
+| 22 | low | AC 16's test list extended to cover redirect-SSRF bypass, overlap-guard skip, and the corrected `degraded` range, plus every other new/changed behavior | AC 16, Task 9 |
+| 23 | low | Explicitly documented `downEpisodeStartedAt` as internal-only, excluded from every response schema | AC 1, Task 2/4 |
+| 24 | low | Added a bare, org-admin-only `POST /organizations/:orgId/security-alerts/:securityAlertId/dismiss` route (snooze intentionally still out of scope) | ADR-6.2-04 (amended), AC 18, Task 1/4/5/9 |
+
+**Outcome: 24/24 findings resolved (3 critical, 8 high, 10 medium, 3 low).** No findings were dismissed or deferred as out-of-scope except where explicitly noted (finding 19's circuit-breaker decision, finding 24's snooze-for-security_alerts decision) — both are documented trade-offs in the story's Known Scope Boundary, not silently dropped gaps.
