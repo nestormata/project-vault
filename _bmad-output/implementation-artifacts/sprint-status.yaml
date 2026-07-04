@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-04 (7-2-machine-user-authentication-and-programmatic-secret-retrieval: backlog -> ready-for-dev)
+# last_updated: 2026-07-04 (8-1-tamper-evident-audit-log-with-hmac-integrity: backlog -> ready-for-dev)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-04  # updated: 7-2-machine-user-authentication-and-programmatic-secret-retrieval -> ready-for-dev
+last_updated: 2026-07-04  # updated: 8-1-tamper-evident-audit-log-with-hmac-integrity -> ready-for-dev
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -109,8 +109,8 @@ development_status:
   epic-7-retrospective: optional
 
   # Epic 8: Compliance, Audit & Governance
-  epic-8: backlog
-  8-1-tamper-evident-audit-log-with-hmac-integrity: backlog
+  epic-8: in-progress
+  8-1-tamper-evident-audit-log-with-hmac-integrity: ready-for-dev
   8-2-audit-log-search-export-and-external-forwarding: backlog
   8-3-access-reports-dormant-users-and-audit-pii-management: backlog
   8-4-data-subject-erasure-request-handling: backlog
