@@ -8,7 +8,11 @@ import type { Tx } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
-import { buildPaginationMeta, paginationOffset, parsePagination } from '../../lib/pagination.js'
+import {
+  buildPaginationMeta,
+  PAGE_OUT_OF_RANGE_ERROR,
+  resolvePaginationOffset,
+} from '../../lib/pagination.js'
 import {
   secureRoute,
   type PublicRouteContext,
@@ -368,14 +372,13 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
       if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
 
-      const pagination = parsePagination(parsedQuery.data.page, parsedQuery.data.limit)
-      const offset = paginationOffset(pagination)
-      if (offset > MAX_CREDENTIAL_LIST_OFFSET) {
-        return reply.status(422).send({
-          code: 'page_out_of_range',
-          message: 'Page is too deep; narrow your filters',
-        })
-      }
+      const resolved = resolvePaginationOffset(
+        parsedQuery.data.page,
+        parsedQuery.data.limit,
+        MAX_CREDENTIAL_LIST_OFFSET
+      )
+      if (!resolved) return reply.status(422).send(PAGE_OUT_OF_RANGE_ERROR)
+      const { pagination, offset } = resolved
 
       const { items, total } = await listCredentials(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,

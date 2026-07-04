@@ -1,9 +1,14 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
-import { buildPaginationMeta, paginationOffset, parsePagination } from '../../lib/pagination.js'
+import {
+  buildPaginationMeta,
+  PAGE_OUT_OF_RANGE_ERROR,
+  resolvePaginationOffset,
+} from '../../lib/pagination.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { findProjectInOrg } from '../credentials/service.js'
@@ -51,7 +56,7 @@ function scopeBoundaryFor(row: Pick<MachineUserRow, 'projectId' | 'name'>) {
   }
 }
 
-function toMachineUserDetail(row: MachineUserRow): MachineUserDetail {
+function machineUserSummaryFields(row: MachineUserRow): MachineUserSummary {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -61,21 +66,15 @@ function toMachineUserDetail(row: MachineUserRow): MachineUserDetail {
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
     deactivatedAt: row.deactivatedAt?.toISOString() ?? null,
-    scopeBoundary: scopeBoundaryFor(row),
   }
 }
 
+function toMachineUserDetail(row: MachineUserRow): MachineUserDetail {
+  return { ...machineUserSummaryFields(row), scopeBoundary: scopeBoundaryFor(row) }
+}
+
 function toMachineUserSummary(row: MachineUserRow): MachineUserSummary {
-  return {
-    id: row.id,
-    projectId: row.projectId,
-    name: row.name,
-    description: row.description,
-    role: row.role as 'member' | 'viewer',
-    createdBy: row.createdBy,
-    createdAt: row.createdAt.toISOString(),
-    deactivatedAt: row.deactivatedAt?.toISOString() ?? null,
-  }
+  return machineUserSummaryFields(row)
 }
 
 function toApiKeyIssued(row: ApiKeyRow, plaintext: string): ApiKeyIssued {
@@ -112,8 +111,38 @@ async function findMachineUserById(
   return rows[0]
 }
 
+/** Parses page/limit query params and resolves a bounded offset, replying with 422 on either
+ * validation or an out-of-range page. Shared by both list endpoints in this module. */
+function parseListQuery(
+  req: FastifyRequest,
+  reply: FastifyReply
+): { pagination: { page: number; limit: number }; offset: number } | null {
+  const parsedQuery = PaginationQuerySchema.safeParse(req.query)
+  if (!parsedQuery.success) {
+    reply.status(422).send(validationError(parsedQuery.error, 'query'))
+    return null
+  }
+  const resolved = resolvePaginationOffset(
+    parsedQuery.data.page,
+    parsedQuery.data.limit,
+    MAX_MACHINE_USER_LIST_OFFSET
+  )
+  if (!resolved) {
+    reply.status(422).send(PAGE_OUT_OF_RANGE_ERROR)
+    return null
+  }
+  return resolved
+}
+
 const MACHINE_USERS_RATE_LIMIT_WINDOW_MS = 60_000
 const MACHINE_USER_MUTATION_RATE_LIMIT = 10
+
+// Shared by every read-only route in this module (detail + both list endpoints): identical
+// error-response tail and security config, so call sites spread these instead of repeating the
+// same object literal (avoids a near-duplicate handler-preamble clone between the two flat
+// /machine-users/:machineUserId... routes, which otherwise share an identical params schema).
+const READ_ERROR_RESPONSES = { 401: ApiErrorSchema, 404: ApiErrorSchema, 422: ApiErrorSchema }
+const READ_SECURITY = { minimumRole: 'viewer', writeAuditEvent: false } as const
 
 export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
   // AC-3/AC-4/AC-5/AC-6: create a machine user, project-nested.
@@ -185,35 +214,18 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/projects/:projectId/machine-users',
-    schema: {
-      response: {
-        200: MachineUserListResponseSchema,
-        401: ApiErrorSchema,
-        404: ApiErrorSchema,
-        422: ApiErrorSchema,
-      },
-    },
-    security: { minimumRole: 'viewer', writeAuditEvent: false },
+    schema: { response: { 200: MachineUserListResponseSchema, ...READ_ERROR_RESPONSES } },
+    security: READ_SECURITY,
     handler: async (ctx, req, reply) => {
       const params = parseParams(ProjectScopeParamsSchema, req, reply)
       if (!params) return reply
-      const parsedQuery = PaginationQuerySchema.safeParse(req.query)
-      if (!parsedQuery.success) {
-        return reply.status(422).send(validationError(parsedQuery.error, 'query'))
-      }
+      const resolvedQuery = parseListQuery(req, reply)
+      if (!resolvedQuery) return reply
+      const { pagination, offset } = resolvedQuery
       const secureCtx = ctx as SecureRouteContext
 
       const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
       if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
-
-      const pagination = parsePagination(parsedQuery.data.page, parsedQuery.data.limit)
-      const offset = paginationOffset(pagination)
-      if (offset > MAX_MACHINE_USER_LIST_OFFSET) {
-        return reply.status(422).send({
-          code: 'page_out_of_range',
-          message: 'Page is too deep; narrow your filters',
-        })
-      }
 
       const [{ total } = { total: 0 }] = await secureCtx.tx
         .select({ total: sql<number>`count(*)` })
@@ -240,15 +252,8 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/machine-users/:machineUserId',
-    schema: {
-      response: {
-        200: MachineUserResponseSchema,
-        401: ApiErrorSchema,
-        404: ApiErrorSchema,
-        422: ApiErrorSchema,
-      },
-    },
-    security: { minimumRole: 'viewer', writeAuditEvent: false },
+    schema: { response: { 200: MachineUserResponseSchema, ...READ_ERROR_RESPONSES } },
+    security: READ_SECURITY,
     handler: async (ctx, req, reply) => {
       const params = parseParams(MachineUserParamsSchema, req, reply)
       if (!params) return reply
@@ -335,35 +340,18 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/machine-users/:machineUserId/api-keys',
-    schema: {
-      response: {
-        200: ListApiKeysResponseSchema,
-        401: ApiErrorSchema,
-        404: ApiErrorSchema,
-        422: ApiErrorSchema,
-      },
-    },
-    security: { minimumRole: 'viewer', writeAuditEvent: false },
+    schema: { response: { 200: ListApiKeysResponseSchema, ...READ_ERROR_RESPONSES } },
+    security: READ_SECURITY,
     handler: async (ctx, req, reply) => {
       const params = parseParams(MachineUserParamsSchema, req, reply)
       if (!params) return reply
-      const parsedQuery = PaginationQuerySchema.safeParse(req.query)
-      if (!parsedQuery.success) {
-        return reply.status(422).send(validationError(parsedQuery.error, 'query'))
-      }
+      const resolvedQuery = parseListQuery(req, reply)
+      if (!resolvedQuery) return reply
+      const { pagination, offset } = resolvedQuery
       const secureCtx = ctx as SecureRouteContext
 
       const machineUser = await findMachineUserById(secureCtx.tx, params.machineUserId)
       if (!machineUser) return reply.status(404).send(MACHINE_USER_NOT_FOUND)
-
-      const pagination = parsePagination(parsedQuery.data.page, parsedQuery.data.limit)
-      const offset = paginationOffset(pagination)
-      if (offset > MAX_MACHINE_USER_LIST_OFFSET) {
-        return reply.status(422).send({
-          code: 'page_out_of_range',
-          message: 'Page is too deep; narrow your filters',
-        })
-      }
 
       const [{ total } = { total: 0 }] = await secureCtx.tx
         .select({ total: sql<number>`count(*)` })

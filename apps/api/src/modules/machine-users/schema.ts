@@ -12,6 +12,7 @@ import {
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
 import { ProjectScopeParamsSchema } from '../credentials/schema.js'
+import { PageLimitQueryShape } from '../../lib/pagination.js'
 
 export { ProjectScopeParamsSchema, MAX_MACHINE_USER_LIST_OFFSET }
 
@@ -38,10 +39,7 @@ export const ApiKeyParamsSchema = z
   .meta({ id: 'ApiKeyParams' })
 
 export const PaginationQuerySchema = z
-  .object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
-  })
+  .object(PageLimitQueryShape)
   .strict()
   .meta({ id: 'MachineUserPaginationQuery' })
 

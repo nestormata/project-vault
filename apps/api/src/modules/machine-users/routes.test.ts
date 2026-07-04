@@ -131,6 +131,19 @@ function revokeApiKey(
   })
 }
 
+async function machineUserTotalCount(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string
+): Promise<number> {
+  const list = await app.inject({
+    method: 'GET',
+    url: machineUsersUrl(projectId),
+    headers: { cookie: cookieHeader(cookies) },
+  })
+  return list.json<{ data: { total: number } }>().data.total
+}
+
 async function expireMfaGracePeriod(orgId: string, userId: string): Promise<void> {
   await withOrg(orgId, (tx) =>
     tx
@@ -211,12 +224,7 @@ describe.sequential('machine-user routes (7.1)', () => {
         expect(res.json()).toMatchObject({ code: 'validation_error' })
       }
 
-      const list = await app.inject({
-        method: 'GET',
-        url: machineUsersUrl(projectId),
-        headers: { cookie: cookieHeader(owner.cookies) },
-      })
-      expect(list.json<{ data: { total: number } }>().data.total).toBe(0)
+      expect(await machineUserTotalCount(app, owner.cookies, projectId)).toBe(0)
     })
 
     it('allows a duplicate name within the same project (AC-4)', async () => {
@@ -296,12 +304,7 @@ describe.sequential('machine-user routes (7.1)', () => {
         const res = await createMachineUser(app, owner.cookies, projectId)
         expectAuditWriteFailed(res)
 
-        const list = await app.inject({
-          method: 'GET',
-          url: machineUsersUrl(projectId),
-          headers: { cookie: cookieHeader(owner.cookies) },
-        })
-        expect(list.json<{ data: { total: number } }>().data.total).toBe(0)
+        expect(await machineUserTotalCount(app, owner.cookies, projectId)).toBe(0)
       } finally {
         auditSpy.mockRestore()
       }

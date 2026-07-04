@@ -366,17 +366,22 @@ describe('env', () => {
     }
   })
 
+  // Story 7.1: API_KEY_HMAC_SECRET is the 5th dedicated-secret requirement, so satisfying its
+  // own fixture now needs every earlier secret's context baked in too — spreading a shared
+  // constant here (instead of repeating the literal object) avoids duplicating the identical
+  // multi-line context the recovery-token block above already contains (jscpd).
+  const priorSecretsSatisfied = {
+    COOKIE_SECURE: 'true',
+    TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+    MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+    INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+    RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
+  }
+
   it('requires a dedicated API key secret in production (Story 7.1, D3)', async () => {
     await expectDedicatedSecretRequired(
       exitSpy,
-      {
-        COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
-        RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
-        API_KEY_HMAC_SECRET: undefined,
-      },
+      { ...priorSecretsSatisfied, API_KEY_HMAC_SECRET: undefined },
       'API_KEY_HMAC_SECRET',
       'g'.repeat(64)
     )
@@ -393,14 +398,7 @@ describe('env', () => {
       'f'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
-      process.env = productionEnv({
-        COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
-        RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
-        API_KEY_HMAC_SECRET,
-      })
+      process.env = productionEnv({ ...priorSecretsSatisfied, API_KEY_HMAC_SECRET })
       await expectInvalidEnv(exitSpy)
     }
   })
