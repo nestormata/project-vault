@@ -47,7 +47,7 @@ so that CI/CD pipelines and applications can access secrets without using human 
 ### D2 — API key format: epics.md says `pvk_` + base62, architecture.md says `pk_` + base64url — **use `pk_` + base64url**
 
 - Same conflict category as D1, and the **exact same resolution Story 4.1 already made** for its invitation token (`4-1-team-invitations-and-role-assignment.md` D6): *"reuse the exact `randomBytes(32).toString('base64url')` ... pattern, not a hand-rolled base62 encoder. Entropy target (256-bit) is met either way ... keeps one crypto helper pattern in the codebase instead of two."*
-- **Decision implemented in this story:** `generateApiKey()` returns `` `pk_${randomBytes(32).toString('base64url')}` `` (architecture-canonical prefix, `architecture.md:604-607`; ~49 chars total). Do not implement a base62 encoder.
+- **Decision implemented in this story:** `generateApiKey()` returns `` `pk_${randomBytes(32).toString('base64url')}` `` (architecture-canonical prefix, `architecture.md:604-607`; 46 chars total — `pk_` is 3 chars + unpadded base64url of 32 bytes is 43 chars). Do not implement a base62 encoder.
 
 ### D3 — New per-purpose HMAC secret: `API_KEY_HMAC_SECRET`
 
@@ -90,6 +90,18 @@ so that CI/CD pipelines and applications can access secrets without using human 
   ```
   (Purely additive — do not rename or touch any existing entry.)
 
+### D8 — `api_keys` RLS: standard org-scoped policy now, explicit "RLS-exception" flag for 7.2 to resolve
+
+- Story 7.2's machine-token exchange endpoint (`POST /api/v1/auth/machine-token`) must look up an `api_keys` row by `keyHash` **alone** — before it knows which org the caller belongs to (that's the entire point of authenticating with an opaque key). `architecture.md` documents exactly this chicken-and-egg problem for `sessions`/`refresh_tokens` and explicitly carves them out as "RLS exception tables," accessed only via `withAdminAccess()` rather than the normal org-scoped RLS session context.
+- **Decision implemented in this story:** `api_keys` still gets the standard org-scoped `api_keys_isolation` RLS policy in AC-2 — every read/write this story implements (list, issue, revoke) always has an authenticated caller with a known `orgId`, so the standard policy is correct for 7.1's own endpoints. **This story explicitly does not resolve** whether the table needs `sessions`/`refresh_tokens`-style RLS-exception treatment for 7.2's pre-auth hash lookup — that decision belongs to 7.2, which owns the endpoint that needs it, and must read this section before writing its lookup query. Flagged here so it is a known, named handoff rather than a decision 7.2 discovers cold.
+- **Action for 7.2:** before implementing the token-exchange lookup, confirm whether querying `api_keys` by `keyHash` under the standard RLS policy (with no org context set yet) returns zero rows by construction (in which case 7.2 needs `withAdminAccess()` or an equivalent bypass for that one query), and document the resolution in 7.2's own Key Design Decisions section.
+
+### D9 — Audit table naming: epics.md says `audit_events`, actual shipped table is `audit_log_entries` — **use `audit_log_entries`**
+
+- epics.md's Epic 7 preamble (PJ4) mandates that machine-user audit events land in a shared table named `audit_events`. The actual, already-shipped table every other epic writes to is `audit_log_entries` (`packages/db/src/schema/audit-log-entries.ts:8`).
+- This is the same category of epics.md-vs-reality conflict as D1/D2/D7 (hashing algorithm, key format, event-name casing), resolved the same way: established, actually-enforced code wins over an epics.md literal that was never implemented under that name.
+- **Decision implemented in this story:** all three new audit events (`machine_user.created`, `machine_user.api_key_issued`, `machine_user.api_key_revoked`) are written to the existing `audit_log_entries` table via `writeHumanAuditEntryOrFailClosed`, exactly like every other epic's audit events. No new table is created; `audit_events` as a table name does not exist anywhere in this codebase and this story does not introduce it.
+
 ---
 
 ## Prerequisites
@@ -110,7 +122,7 @@ so that CI/CD pipelines and applications can access secrets without using human 
 
 | Story | Relationship to 7.1 |
 |---|---|
-| 7.2 (Machine User Authentication & Programmatic Secret Retrieval, `backlog`) | Consumes `machine_users`/`api_keys` created here: the machine-token exchange endpoint (`POST /api/v1/auth/machine-token`) hashes an incoming `pk_...` key with **this story's `hashApiKey()`/`apiKeysMatch()`** and looks up `api_keys` by `keyHash`. 7.2 also implements zero-downtime rotation, emergency revoke, dormancy detection, and the offline cache — none of that is built here. 7.2 also completes the Story 4.4 archival stub (`GET .../machine-users/active-keys`) against the tables this story creates. |
+| 7.2 (Machine User Authentication & Programmatic Secret Retrieval, `backlog`) | Consumes `machine_users`/`api_keys` created here: the machine-token exchange endpoint (`POST /api/v1/auth/machine-token`) hashes an incoming `pk_...` key with **this story's `hashApiKey()`/`apiKeysMatch()`** and looks up `api_keys` by `keyHash`. **Must read D8 before implementing that lookup** — this story leaves open whether `api_keys` needs `sessions`/`refresh_tokens`-style RLS-exception treatment for a pre-auth, org-unknown lookup; 7.2 owns that decision. 7.2 also implements zero-downtime rotation, emergency revoke, dormancy detection, and the offline cache — none of that is built here. 7.2 also completes the Story 4.4 archival stub (`GET .../machine-users/active-keys`) against the tables this story creates. |
 | 7.3 (GitHub Actions CI/CD Integration, `backlog`) | The published action authenticates using a `pk_...` key issued by this story's `POST .../api-keys` endpoint, via 7.2's token exchange. No direct schema/code dependency on 7.1 beyond the key format. |
 | 4.4 (Project Archival, `done`) | Ships a permanent stub `hasActiveMachineUserKeys()` returning `false` with `// TODO: Epic 7 — check for active machine user API key access` (`4-4-project-archival.md:324-336`). This story does **not** wire that stub up — 7.2 does. Do not touch `apps/api/src/modules/projects/archival-guards.ts` (or wherever that stub lives — confirm exact path before starting) in this story. |
 | 6.1 (Service/Certificate/Domain Record Management, `done`) | Source of the `alertLeadDays`/`notifiedLeadDays` jsonb-array expiry-alert pattern (D6) and `expiry-alert-shared.ts` this story's pg-boss job reuses verbatim. |
@@ -129,6 +141,8 @@ so that CI/CD pipelines and applications can access secrets without using human 
 | architecture.md module layout `routes.ts/service.ts/schema.ts/repository.ts` | New `modules/machine-users/{routes.ts, schema.ts, tokens.ts}` — no forced `service.ts`/`repository.ts` split | Matches `modules/projects/`, `modules/invitations/` precedent; inventing an unused 4-file layout adds inconsistency, not clarity |
 | architecture.md: "Project members `project_memberships` — User/machine-user ↔ project + role" | `role` is a direct column on the new `machine_users` table; `project_memberships` is untouched (see D4) | Avoids a high-risk schema change to a table load-bearing for 5 already-`done` stories; epics.md's concrete AC is unambiguous and lower-risk |
 | architecture.md: 400 for validation errors | 422, matching every route in this codebase (`ProjectCreateResponseSchema`/`ApiErrorSchema` 422 responses throughout `modules/projects/routes.ts`, `modules/credentials/routes.ts`) | Established, actually-enforced convention |
+| architecture.md: `sessions`/`refresh_tokens` are carved out as RLS-exception tables for pre-auth lookups | `api_keys` keeps the standard org-scoped RLS policy in this story; whether it also needs RLS-exception treatment for 7.2's by-hash lookup is an explicit open handoff, not resolved here (see D8) | 7.1 has no pre-auth lookup of its own; inventing a bypass for a query this story doesn't implement would be speculative |
+| epics.md (PJ4): shared audit table named `audit_events` | `audit_log_entries` (already-shipped table every other epic writes to) (see D9) | Same resolution pattern as D1/D2/D7 — established code over an unimplemented epics.md literal |
 
 ---
 
@@ -148,7 +162,7 @@ so that CI/CD pipelines and applications can access secrets without using human 
 | Expiry alert | Daily pg-boss job `machine-key:expiry-alert` (cron `0 8 * * *`), reusing `runExpiryAlertJob()`; default lead days `[14, 3]`; alert type `machine_key.expiry`. |
 | Audit | `machine_user.created`, `machine_user.api_key_issued`, `machine_user.api_key_revoked` — same-transaction, fail-closed via `writeHumanAuditEntryOrFailClosed`. Plaintext key is never included in any audit payload. |
 | RLS / tenant isolation | `machine_users`/`api_keys` covered by `check-rls-coverage`; cross-org access to any endpoint returns `404`, never `403` (no resource-existence leak) or `200` with foreign data. |
-| Rate limiting | Sensitive mutations (create, issue key, revoke key) rate-limited at `10/min` per admin, matching the `POST .../archive` precedent. |
+| Rate limiting | Sensitive mutations (create, issue key, revoke key) rate-limited at `10/min` per admin **per route** (shared across every machine user that admin manages, not a separate budget per machine user), matching the `POST .../archive` precedent. |
 | Concurrency | Two simultaneous key-issue calls both succeed with distinct keys; two simultaneous revoke calls on the same key both return `200` and the key ends up revoked exactly once (no double-audit-write race). |
 | Migration safety | Purely additive migration; no existing table is altered; `EXCLUDED_TABLES` in `check-rls-coverage.ts` is untouched. |
 | Integration tests | Cover every AC below: creation + scope boundary, validation errors, authz (org-role + MFA), tenant isolation, key issuance (plaintext-once), key listing (no hash leak), revocation (+ idempotent double-revoke), expiry-alert firing + dedupe + org isolation, audit-write-fails-closed, rate limiting, concurrent issuance/revocation, RLS coverage, route-audit coverage. |
@@ -265,6 +279,8 @@ ALTER TABLE machine_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_keys       ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 
+-- WITH CHECK defaults to USING for command-less ALL policies (see 0013_projects.sql /
+-- 0014_credentials.sql precedent) — omission here is intentional, not a gap.
 CREATE POLICY machine_users_isolation
   ON machine_users
   USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
@@ -273,6 +289,8 @@ CREATE POLICY api_keys_isolation
   ON api_keys
   USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
 ```
+
+**Note on `api_keys`' RLS scope:** the policy above governs this story's own endpoints (list/issue/revoke), which always run with an authenticated caller's `orgId` already set. It does **not** address Story 7.2's pre-auth by-`keyHash` lookup — that is an explicit open handoff, see D8.
 
 **Edge case:** if the migration is generated without both `ENABLE ROW LEVEL SECURITY` statements, `packages/db/src/check-rls-coverage.ts`'s `checkRlsCoverage()` must fail CI (`db#check-rls` Turborepo task) — verify this locally by running the check-rls script against a freshly migrated test database before opening a PR; do not add `machine_users`/`api_keys` to `EXCLUDED_TABLES`.
 
@@ -292,6 +310,7 @@ CREATE POLICY api_keys_isolation
     "name": "ci-deploy-bot",
     "description": "GitHub Actions deploy pipeline",
     "role": "member",
+    "createdBy": "c4d2...-uuid",
     "createdAt": "2026-07-04T18:00:00.000Z",
     "deactivatedAt": null,
     "scopeBoundary": {
@@ -304,7 +323,7 @@ CREATE POLICY api_keys_isolation
 
 **And** the `scopeBoundary` block is shown **before any API key exists for this machine user** — it is part of the creation response itself, not a separate call (UX-DR11, `epics.md:1778`).
 
-**And** a `machine_user.created` audit row is written in the **same transaction** as the insert, via `writeHumanAuditEntryOrFailClosed(secureCtx.tx, { resourceType: 'machine_user', resourceId: newMachineUser.id, eventType: AuditEvent.MACHINE_USER_CREATED, payload: { name, role }, ... })` — matching the `POST /api/v1/projects` pattern (`modules/projects/routes.ts:303-320`) exactly, since the resource id doesn't exist until after the insert (`security: { writeAuditEvent: false }` in the route config, manual call in the handler).
+**And** a `machine_user.created` audit row is written in the **same transaction** as the insert, via `writeHumanAuditEntryOrFailClosed(secureCtx.tx, { resourceType: 'machine_user', resourceId: newMachineUser.id, eventType: AuditEvent.MACHINE_USER_CREATED, payload: { name, role, description }, ... })` — matching the `POST /api/v1/projects` pattern (`modules/projects/routes.ts:303-320`) exactly, since the resource id doesn't exist until after the insert (`security: { writeAuditEvent: false }` in the route config, manual call in the handler). Include `description` in the payload even though there is no update endpoint to change it later — the audit row should reflect the actual submitted payload in full, not an arbitrary subset.
 
 ---
 
@@ -321,7 +340,7 @@ CREATE POLICY api_keys_isolation
 | `name: ""` (empty string) | `validation_error` |
 | `name` omitted | `validation_error` |
 | `name` longer than 128 chars | `validation_error` |
-| `description` longer than 1024 chars (pick a reasonable cap consistent with `credentials.ts`'s description field length, confirm exact value in that schema before hardcoding a new one) | `validation_error` |
+| `description` longer than the max length enforced by `credentials.ts`'s description field | `validation_error` (read `credentials.ts`'s schema for the exact character cap and reuse it verbatim — do not hardcode a guessed number in this story or its tests) |
 
 **And** a duplicate `name` within the same project is **allowed** (epics.md does not specify uniqueness, and human-readable labels for CI bots commonly repeat across environments, e.g. two `"staging-deploy"` bots in different projects) — do not add a uniqueness constraint that isn't specified.
 
@@ -367,6 +386,8 @@ CREATE POLICY api_keys_isolation
 **when** the same request is made,
 **then** the response is `404`, matching AC-6's isolation behavior.
 
+**And** this endpoint accepts `page`/`limit` query params via the existing `parsePagination`/`paginationOffset` helpers (`apps/api/src/lib/pagination.ts`), the same pattern `GET /api/v1/projects/:projectId/credentials` already uses — do not build a bespoke pagination scheme. Cap the offset with a `MAX_MACHINE_USER_LIST_OFFSET` constant in `packages/shared/src/schemas/machine-users.ts`, mirroring `MAX_CREDENTIAL_LIST_OFFSET`'s precedent (`modules/credentials/schema.ts:74`).
+
 ---
 
 ### AC-8: Get Single Machine User Detail
@@ -395,14 +416,14 @@ CREATE POLICY api_keys_isolation
     "id": "e5a2...-uuid",
     "machineUserId": "b3f1...-uuid",
     "name": "prod-deploy-key",
-    "key": "pk_9f3a...base64url...==",
+    "key": "pk_9f3aB7xQ...46-chars-total-no-padding",
     "expiresAt": "2027-01-01T00:00:00.000Z",
     "createdAt": "2026-07-04T18:05:00.000Z"
   }
 }
 ```
 
-**And** `plaintextKey` (the `key` field above) is returned in this **one** response and **never persisted anywhere** — not in the database, not in application logs (`request.log`/`fastify.log` calls in this handler must never include the raw key; the `FORBIDDEN_AUDIT_KEYS` set in `secure-route.ts` already strips any payload key named `apiKey`, but this route does not rely on that alone — it must simply never place the plaintext into any object that reaches a logger or the audit payload builder in the first place).
+**And** `plaintextKey` (the `key` field above) is returned in this **one** response and **never persisted anywhere** — not in the database, not in application logs (`request.log`/`fastify.log` calls in this handler must never include the raw key). **Important:** the `FORBIDDEN_AUDIT_KEYS`/`sanitizeAuditPayload` redaction in `secure-route.ts` only runs inside `defaultAuditWriter`, which is used exclusively by the *declarative* `security.writeAuditEvent` config path. This route (like AC-3/AC-13) uses the **manual** `writeHumanAuditEntryOrFailClosed` call instead (`security: { writeAuditEvent: false }`), and that call chain applies **zero** redaction — there is no runtime safety net on this code path at all. Correctness depends entirely on the handler never placing the plaintext into any object that reaches a logger or the manually-constructed audit payload; AC-15's test assertion is the **only** protection, not a backstop on top of an existing one.
 
 **And** a `machine_user.api_key_issued` audit row is written same-transaction (manual `writeHumanAuditEntryOrFailClosed` call, `writeAuditEvent: false` in the route config, same reasoning as AC-3 — the key id doesn't exist until after insert), with `payload: { name, expiresAt }` — **never** `keyHash` or the plaintext.
 
@@ -422,6 +443,10 @@ CREATE POLICY api_keys_isolation
 **when** the key is issued,
 **then** the response is `422 { code: "validation_error" }`.
 
+**And**, given the request body's `name` field is empty, omitted, or longer than 128 chars (matching `api_keys`' `nameLenCheck` constraint, AC-2),
+**when** the key-issue endpoint is called,
+**then** the response is `422 { code: "validation_error" }` and no key row is inserted — mirroring AC-4's machine-user-name validation exactly; do not skip this validation just because it's a different table's `name` column. Task 10's integration-test list must include this case explicitly.
+
 ---
 
 ### AC-11: Issue API Key — Not Found / Cross-Org / Deactivated Machine User
@@ -433,6 +458,8 @@ CREATE POLICY api_keys_isolation
 **And**, given a machine user whose `deactivatedAt` is **not null** (reserved for a future story per AC-1 — but the column exists now, so this guard is cheap to add and prevents a real footgun if a later story sets it without this endpoint knowing about it),
 **when** a key-issue request is made,
 **then** the response is `409 { code: "machine_user_deactivated" }` — issuing new credentials for a deactivated identity would be a security-relevant gap even though nothing in this story sets `deactivatedAt` yet.
+
+**Test note:** since no endpoint in this story sets `deactivatedAt`, this branch cannot be exercised end-to-end through the API alone — the integration test must set up its fixture by writing `deactivatedAt` directly via a DB/repository call before issuing the request, not by first calling a (nonexistent) deactivation endpoint. This is expected: the branch is forward-compatible dead code today, activated once a future story adds a deactivation endpoint.
 
 ---
 
@@ -458,17 +485,19 @@ CREATE POLICY api_keys_isolation
 
 **And** `isRevoked` is computed as `revokedAt !== null` in the response mapper, never a separately-stored boolean that could drift from `revokedAt`.
 
+**And** this endpoint accepts `page`/`limit` query params via the same `parsePagination`/`paginationOffset` helpers and `MAX_MACHINE_USER_LIST_OFFSET` cap as AC-7 — CI/CD-heavy orgs that mint many short-lived keys (see AC-17's key-rotation-overlap scenario) can accumulate enough rows that an unbounded list response becomes a latent scalability problem.
+
 ---
 
 ### AC-13: Revoke API Key — Happy Path + Idempotency
 
 **Given** an org admin and an active (non-revoked) key belonging to their org,
 **When** they call `DELETE /api/v1/machine-users/:machineUserId/api-keys/:keyId`,
-**Then** the server sets `revokedAt = now()` and returns `200 { "data": { "id": "e5a2...", "revokedAt": "2026-07-04T18:10:00.000Z" } }`, with a `machine_user.api_key_revoked` audit row written same-transaction (this route **does** have `keyId` in its params, so it may use the declarative `security.writeAuditEvent: { eventType: AuditEvent.MACHINE_USER_API_KEY_REVOKED, resourceType: 'api_key', resourceIdFromParams: 'keyId' }` form — or the manual call for consistency with AC-3/AC-9; pick whichever the surrounding module ends up using consistently and document the choice in Dev Notes).
+**Then** the server captures the current time **application-side** (`const revokedAt = new Date()` — not SQL `now()`, see AC-17 for why this matters) and sets `revokedAt` to that value, returning `200 { "data": { "id": "e5a2...", "revokedAt": "2026-07-04T18:10:00.000Z" } }`, with a `machine_user.api_key_revoked` audit row written same-transaction (this route **does** have `keyId` in its params, so it may use the declarative `security.writeAuditEvent: { eventType: AuditEvent.MACHINE_USER_API_KEY_REVOKED, resourceType: 'api_key', resourceIdFromParams: 'keyId' }` form — or the manual call for consistency with AC-3/AC-9; pick whichever the surrounding module ends up using consistently and document the choice in Dev Notes).
 
 **And**, given the same key is revoked a **second** time (double-click, retried request, or two concurrent callers — see AC-17),
 **when** `DELETE` is called again,
-**then** the response is still `200` with the **original** `revokedAt` timestamp unchanged (idempotent — `revokedAt = COALESCE(revoked_at, now())` semantics, not an overwrite), and **no second audit row is written** for the redundant call (only the state transition that actually changed `revokedAt` from null writes an audit event; detect "already revoked" before deciding whether to audit-write).
+**then** the response is still `200` with the **original** `revokedAt` timestamp unchanged (idempotent — `revokedAt = COALESCE(revoked_at, $revokedAt)` semantics with the app-captured timestamp bound as a parameter, not an overwrite), and **no second audit row is written** for the redundant call (only the state transition that actually changed `revokedAt` from null writes an audit event; detect "already revoked" before deciding whether to audit-write — see AC-17 for the exact comparison).
 
 **Note on enforcement scope:** this story sets `revokedAt` and exposes it via `GET .../api-keys` (`isRevoked: true`). It does **not** implement the actual `401` rejection of a revoked key on use — that check lives in Story 7.2's `POST /api/v1/auth/machine-token` (which doesn't exist yet). Do not write an integration test asserting a `401` from an authentication endpoint that this story doesn't build; test only that the DB state (`revokedAt`) and the list-endpoint's `isRevoked` flag update correctly.
 
@@ -525,17 +554,17 @@ fetchRows: (orgId) =>
 **When** the audit-log write inside the same transaction throws (e.g. a simulated DB error in a test harness),
 **Then** `writeHumanAuditEntryOrFailClosed` rewraps the error as `SameTransactionAuditWriteError`, `SecureRoute` catches it and returns `503 { code: "audit_write_failed" }`, and the **entire transaction rolls back** — the machine user/key is **not** created/revoked despite the handler logic having "succeeded" before the audit write. This is the same fail-closed contract every other mutation in this codebase already relies on (`secure-route.ts:419-430`); no new test harness pattern is needed — reuse whatever mechanism Story 4.1/4.4's integration tests use to simulate an audit-write failure (grep for `SameTransactionAuditWriteError` usage in existing `*.integration.test.ts` files).
 
-**And** every audit payload for these three event types is asserted in tests to **not** contain a `key`, `apiKey`, `keyHash`, `plaintext`, or `value` field — a regression here (e.g. an incautious future refactor that spreads the full request body into the audit payload) must fail a test, not just rely on `FORBIDDEN_AUDIT_KEYS`'s runtime redaction as the only safety net.
+**And** every audit payload for these three event types is asserted in tests to **not** contain a `key`, `apiKey`, `keyHash`, `plaintext`, or `value` field — a regression here (e.g. an incautious future refactor that spreads the full request body into the audit payload) must fail a test. Per AC-9: `FORBIDDEN_AUDIT_KEYS`'s runtime redaction does **not** apply to this story's manual `writeHumanAuditEntryOrFailClosed` call sites — this test is the only protection these payloads have, not a second layer on top of an existing one.
 
 ---
 
 ### AC-16: Rate Limiting on Sensitive Mutations
 
 **Given** the three mutation endpoints (create machine user, issue key, revoke key) each set `security.rateLimit: { max: 10, timeWindowMs: 60_000, key: '<METHOD> <route>' }` — matching the exact precedent of `POST /api/v1/projects/:projectId/archive` (`modules/projects/routes.ts:833-837`),
-**When** the same admin issues an 11th key-creation request for the same machine user within 60 seconds,
-**Then** the 11th request receives `429` (standard `@fastify/rate-limit` response via `enforceUserRateLimit`, keyed per-admin-per-route — confirm the exact 429 body shape by reading `apps/api/src/lib/route-helpers.ts`'s `enforceUserRateLimit` before hardcoding a test assertion).
+**When** the same admin issues an 11th key-creation request within 60 seconds,
+**Then** the 11th request receives `429` (standard `@fastify/rate-limit` response via `enforceUserRateLimit`, keyed per-admin-per-route — confirm the exact 429 body shape by reading `apps/api/src/lib/route-helpers.ts`'s `enforceUserRateLimit` before hardcoding a test assertion). **Note the scope carefully:** the key is `<admin> + <route template>`, not `<admin> + <machineUserId>` — the budget is shared across every machine user that admin manages. An admin issuing keys for several machine users in quick succession can exhaust the shared 10/min budget and be blocked from issuing a key for an unrelated machine user for up to 60 seconds; this matches the existing `POST .../archive` precedent and is not a defect to fix in this story, but do not write a test asserting per-machine-user isolation of the rate limit — there is none.
 
-**And** the read endpoints (list/get) use the `SecureRoute` default (`{ max: 60, timeWindowMs: 60_000 }`) — no bespoke tightening, consistent with every other read-only route in this codebase.
+**And** the read endpoints (list/get) use the `SecureRoute` default (`{ max: 60, timeWindowMs: 60_000 }`) — no bespoke tightening, consistent with every other read-only route in this codebase. Confirm the default's exact scoping (per-admin vs. per-IP vs. global) by reading `SecureRoute`'s default rate-limit configuration before hardcoding a test assumption — do not assume it matches the write-path's per-admin-per-route scoping without checking.
 
 ---
 
@@ -547,7 +576,7 @@ fetchRows: (orgId) =>
 
 **And**, given two concurrent `DELETE .../api-keys/:keyId` requests for the **same** key (double-click, or a retried request after a dropped response),
 **when** both complete,
-**then** both return `200`, `revokedAt` is set exactly once (to whichever request's transaction commits first — use `UPDATE ... SET revoked_at = COALESCE(revoked_at, now()) WHERE id = $1 RETURNING revoked_at` so the second transaction's `UPDATE` is a no-op that still returns the already-set value rather than racing to overwrite it), and **exactly one** `machine_user.api_key_revoked` audit row is written — detect "no rows actually changed" (e.g. by comparing the `RETURNING` result's `revokedAt` against what the transaction itself set, or checking `revokedAt` was already non-null on a `SELECT ... FOR UPDATE` read before the `UPDATE`) to decide whether to audit-write, mirroring the idempotency requirement in AC-13.
+**then** both return `200`, `revokedAt` is set exactly once (to whichever request's transaction commits first). **Capture the timestamp application-side before running the query** (`const revokedAt = new Date()`) and pass it as a bound parameter rather than calling SQL `now()` inline: `UPDATE ... SET revoked_at = COALESCE(revoked_at, $2) WHERE id = $1 RETURNING revoked_at`, with `$2` = the app-captured `revokedAt`. This is required for the idempotency check to work at all — comparing `RETURNING`'s `revokedAt` against SQL-generated `now()` is meaningless, since `now()` is evaluated fresh inside each transaction and can never equal a prior transaction's value by construction. With an app-captured, parameter-bound timestamp: if the `RETURNING` value equals what this transaction passed in, this transaction's write won the race and it should audit-write; if it doesn't match, another transaction already set `revokedAt` first and this call must **not** write a second audit row. (An equally valid alternative: a `SELECT ... FOR UPDATE` read before the `UPDATE`, checking whether `revokedAt` was already non-null.) This mirrors the idempotency requirement in AC-13.
 
 ---
 
@@ -586,13 +615,13 @@ fetchRows: (orgId) =>
   - [ ] `API_KEY_HMAC_SECRET` env wiring in `apps/api/src/config/env.ts` (+ `.env.example`)
   - [ ] `apps/api/src/modules/machine-users/tokens.ts` — `generateApiKey()`, `hashApiKey()`, `apiKeysMatch()`, mirroring `auth/tokens.ts`
 - [ ] **Task 3: Audit event constants** (D7) — add `MACHINE_USER_CREATED`, `MACHINE_USER_API_KEY_ISSUED`, `MACHINE_USER_API_KEY_REVOKED` to `packages/shared/src/constants/audit-events.ts` (additive only)
-- [ ] **Task 4: Shared response schemas** — `packages/shared/src/schemas/machine-users.ts` (create/list/detail/key-issue/key-list response shapes, explicitly excluding `keyHash`/plaintext from any read schema)
+- [ ] **Task 4: Shared response schemas** — `packages/shared/src/schemas/machine-users.ts` (create/list/detail/key-issue/key-list response shapes, explicitly excluding `keyHash`/plaintext from any read schema; `MAX_MACHINE_USER_LIST_OFFSET` constant per AC-7/AC-12)
 - [ ] **Task 5: Machine user routes** (AC-3 to AC-8) — `apps/api/src/modules/machine-users/routes.ts`, `schema.ts`; wire into `apps/api/src/app.ts`; add `ROUTE_ACTION_CLASSIFICATIONS` entries
 - [ ] **Task 6: API key routes** (AC-9 to AC-13, AC-16, AC-17) — issue/list/revoke handlers in the same module
 - [ ] **Task 7: Expiry alert job** (AC-14, D6) — `apps/api/src/workers/machine-key-expiry-alert.ts` calling `runExpiryAlertJob()`; register cron schedule + worker in `apps/api/src/main.ts` alongside the other three expiry-alert jobs
 - [ ] **Task 8: Audit wiring** (AC-15) — manual `writeHumanAuditEntryOrFailClosed` calls at each mutation's insert/update site; verify payload never includes secret material
 - [ ] **Task 9: RLS + route-audit CI gates** (AC-18) — confirm `check-rls-coverage` passes; confirm `route-audit.test.ts` passes with new `ROUTE_ACTION_CLASSIFICATIONS` entries
-- [ ] **Task 10: Integration test suite** — all cases across AC-3 through AC-19 (creation + scope boundary, validation, authz, tenant isolation, list/detail, key issuance + plaintext-once + hash-only storage, key listing no-leak, revocation + idempotency, expiry-alert firing/dedupe/org-isolation, audit fail-closed + payload sanitization, rate limiting, concurrency, migration additivity)
+- [ ] **Task 10: Integration test suite** — all cases across AC-3 through AC-19 (creation + scope boundary, validation, authz, tenant isolation, list/detail + pagination, key issuance + plaintext-once + hash-only storage + key-name validation (AC-10), key listing no-leak, revocation + idempotency (app-captured-timestamp comparison, AC-13/AC-17), deactivated-machine-user key-issue rejection (fixture-set `deactivatedAt` directly, AC-11), expiry-alert firing/dedupe/org-isolation, audit fail-closed + payload sanitization (no runtime redaction safety net, AC-9/AC-15), rate limiting (shared per-admin-per-route budget, not per-machine-user), concurrency, migration additivity)
 - [ ] **Task 11: Route audit + OpenAPI regen** — `pnpm --filter api generate-spec`, confirm `web#typecheck` picks up new types (even with no web UI consuming them yet, per the Product Surface Contract's `TBD` note)
 
 ---
@@ -607,6 +636,9 @@ fetchRows: (orgId) =>
 - Do **not** build any SvelteKit page for machine-user management — the Product Surface Contract's `TBD` note documents this as a genuine planning gap, not something to silently patch over with an unscoped UI addition.
 - The plaintext API key must never reach `request.log`/`fastify.log`, the audit payload, or any response other than the single `201` from the issue-key endpoint. Grep your own diff for the variable holding the plaintext before opening a PR to confirm it doesn't escape that one response path.
 - `alertLeadDays`/`notifiedLeadDays` on `api_keys` intentionally mirror `cert_records`/`domain_records`/`payment_records` exactly (same jsonb-array shape, same default-pair rationale referenced in those files' comments) so that `expiry-alert-shared.ts`'s generic types apply with zero adaptation.
+- `keyHash`'s non-unique index (AC-2) is a conscious choice, not an oversight: at 256-bit HMAC-SHA256 entropy a genuine collision is cryptographically negligible, so no DB-level uniqueness backstop is added. This is framed the same way as AC-1's `role` CHECK constraint — a defense-in-depth backstop is nice-to-have but not load-bearing here, since the primary guarantee (crypto correctness) doesn't depend on it.
+- No route in this codebase hard-deletes a `projects` row today (only archival, Story 4.4) — so the `ON DELETE CASCADE` from `projects` to `machine_users`/`api_keys` is currently unreachable in practice, not an active audit gap. If a future story adds project hard-deletion, that story is responsible for deciding whether the cascade needs its own audit trail entry (e.g. "N machine users and M keys were also removed") — out of scope here.
+- The missing machine-user web UI (Product Surface Contract, above) is a genuine planning gap, not something this story can fix. If it isn't picked up by the time 7.2/7.3 ship, machine-user management will be a permanently curl-only admin feature — worth escalating to whoever owns Epic 7/8 sprint planning rather than letting it go unnoticed.
 
 ### Project Structure Notes
 
