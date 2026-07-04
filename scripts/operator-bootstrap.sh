@@ -6,9 +6,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-DB_URL_SUPERUSER="${DB_URL_SUPERUSER:-postgresql://postgres:password@localhost:5432/project_vault}"
-DB_URL_APP="${DB_URL_APP:-postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault}"
-API_URL="${API_URL:-http://localhost:3000}"
+# Auto-resolve host port conflicts (concurrent worktrees, standalone test stacks) before
+# computing any localhost:<port> URLs below. See AGENTS.md "Docker port isolation".
+"$ROOT/scripts/docker-ports.sh" fix
+
+env_port() {
+  local key="$1" default="$2" line
+  line="$(grep -m1 "^${key}=" "$ROOT/.env" 2>/dev/null || true)"
+  if [[ -n "$line" ]]; then echo "${line#*=}"; else echo "$default"; fi
+}
+
+DB_HOST_PORT="$(env_port DB_HOST_PORT 5432)"
+API_HOST_PORT="$(env_port API_HOST_PORT 3000)"
+WEB_HOST_PORT="$(env_port WEB_HOST_PORT 5173)"
+
+DB_URL_SUPERUSER="${DB_URL_SUPERUSER:-postgresql://postgres:password@localhost:${DB_HOST_PORT}/project_vault}"
+DB_URL_APP="${DB_URL_APP:-postgresql://vault_app:dev-only-change-in-prod@localhost:${DB_HOST_PORT}/project_vault}"
+API_URL="${API_URL:-http://localhost:${API_HOST_PORT}}"
 MODE="dev"
 INIT_VAULT=false
 START_API=false
@@ -47,7 +61,7 @@ need_cmd() {
 
 wait_for_postgres() {
   local tries="${1:-60}"
-  log "Waiting for Postgres at localhost:5432..."
+  log "Waiting for Postgres at localhost:${DB_HOST_PORT}..."
   for ((i = 1; i <= tries; i++)); do
     if docker compose exec -T db pg_isready -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-project_vault}" >/dev/null 2>&1; then
       log "Postgres is ready"
@@ -163,7 +177,7 @@ print_next_steps() {
 Bootstrap complete.
 
 Next steps:
-  1. Web UI:  http://localhost:5173
+  1. Web UI:  http://localhost:${WEB_HOST_PORT}
   2. API:     ${API_URL}
   3. Readiness: curl -sf ${API_URL}/ready
 

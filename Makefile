@@ -6,17 +6,25 @@ SHELL := /usr/bin/env bash
 #   make bootstrap-docker  — full Docker stack
 # Pass ARGS to bootstrap targets, e.g. make bootstrap ARGS="--start-api --init-vault"
 
+# --- Host ports (multiple worktrees / standalone test stacks) --------------
+# Read from .env so `make test`/`make db-migrate`/etc. talk to the same host
+# port docker-compose.yml actually published (which may have been bumped by
+# `make fix-ports` to dodge a conflict). Override on the command line, e.g.
+# `make test DB_HOST_PORT=5433`. See AGENTS.md "Docker port isolation".
+DB_HOST_PORT  := $(shell grep -m1 '^DB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)
+DB_HOST_PORT  := $(if $(DB_HOST_PORT),$(DB_HOST_PORT),5432)
+
 # --- DB connection strings -----------------------------------------------
 # postgres = superuser, only used to run migrations (creates the vault_app
 # role, RLS policies, and triggers). vault_app = the app role; using the
 # superuser anywhere else bypasses RLS entirely and silently invalidates
 # the isolation tests. See .env.example and docs/operator-quickstart.md.
-DB_URL_SUPERUSER ?= postgresql://postgres:password@localhost:5432/project_vault
-DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+DB_URL_SUPERUSER ?= postgresql://postgres:password@localhost:$(DB_HOST_PORT)/project_vault
+DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@localhost:$(DB_HOST_PORT)/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit \
         db-up db-down db-migrate check-rls test test-repeat stryker ci \
-        bootstrap bootstrap-docker \
+        bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-prod docker-prod-down \
         clean
 
@@ -109,7 +117,13 @@ ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap fi
 
 # --- Docker -----------------------------------------------------------------
 
-docker-up: ## Build and start the full stack (db, migrate, api, web)
+check-ports: ## Check DB/API/WEB host ports are free (fails with a hint if not; see AGENTS.md)
+	./scripts/docker-ports.sh check
+
+fix-ports: ## Auto-bump any busy DB/API/WEB host port to the next free one and write .env
+	./scripts/docker-ports.sh fix
+
+docker-up: fix-ports ## Build and start the full stack (db, migrate, api, web)
 	docker compose up --build -d
 
 docker-down: ## Stop the full stack
@@ -124,7 +138,7 @@ docker-build: ## Build the api and web images without starting containers
 docker-logs: ## Follow logs for the full stack
 	docker compose logs -f
 
-docker-smoke: ## Build, start, and curl /health + /ready end-to-end
+docker-smoke: fix-ports ## Build, start, and curl /health + /ready end-to-end
 	pnpm docker:smoke
 
 docker-prod: ## Start the stack with production overrides
