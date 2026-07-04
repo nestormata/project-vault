@@ -44,4 +44,8 @@ describe('AuditEvent', () => {
     expect(AuditEvent.CREDENTIAL_TAGS_UPDATED).toBe('credential.tags_updated')
     expect(AuditEvent.PROJECT_TAGS_UPDATED).toBe('project.tags_updated')
   })
+
+  it('exposes Story 5.1 rotation audit event name', () => {
+    expect(AuditEvent.ROTATION_INITIATED).toBe('rotation.initiated')
+  })
 })

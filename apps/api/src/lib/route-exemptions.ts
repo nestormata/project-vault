@@ -298,6 +298,21 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Access list returns org-role metadata only; never any credential value (ADR-2.4-06).',
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations': {
+    action: 'mutation',
+    auditEvent: 'rotation.initiated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId': {
+    action: 'read',
+    auditOmissionReason: 'Rotation status read does not expose credential values.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/rotations': {
+    action: 'read',
+    auditOmissionReason: 'Rotation history list does not expose credential values.',
+    reviewer: SECURITY_OWNER,
+  },
   'POST /api/v1/projects/:projectId/credentials/import': {
     action: 'mutation',
     auditEvent: 'credential.bulk_import_initiated',

@@ -7,6 +7,7 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   'envelopeKeyPath',
   'secret',
   'value',
+  'newValue',
   'refreshToken',
   'accessToken',
   'totp',

@@ -6,10 +6,10 @@ import {
   projects,
   credentialDependencies,
 } from '@project-vault/db/schema'
-import { encrypt, withSecret, type EncryptedValue } from '@project-vault/crypto'
+import { withSecret } from '@project-vault/crypto'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
-import { getPrimaryKey } from '../vault/key-service.js'
-import { currentKeyVersion, isUniqueViolation } from './db-helpers.js'
+import { encryptValue } from '../../lib/encrypt-value.js'
+import { currentKeyVersion, isUniqueViolation, lockCredentialInProject } from './db-helpers.js'
 import type {
   AddVersionBody,
   CreateCredentialBody,
@@ -35,17 +35,6 @@ type CredentialListParams = {
   offset: number
 }
 type TagUpdateMode = 'replace' | 'append'
-
-async function encryptValue(value: string): Promise<EncryptedValue> {
-  const plaintext = Buffer.from(value, 'utf8')
-  const key = getPrimaryKey()
-  try {
-    return await encrypt(plaintext, key)
-  } finally {
-    plaintext.fill(0)
-    key.fill(0)
-  }
-}
 
 export function serializeCredentialDetail(
   credential: typeof credentials.$inferSelect,
@@ -327,12 +316,10 @@ export async function addCredentialVersion(
     body: AddVersionBody
   }
 ) {
-  const [cred] = await tx
-    .select({ id: credentials.id })
-    .from(credentials)
-    .where(and(eq(credentials.id, input.credentialId), eq(credentials.projectId, input.projectId)))
-    .for('update')
-    .limit(1)
+  const cred = await lockCredentialInProject(tx, {
+    credentialId: input.credentialId,
+    projectId: input.projectId,
+  })
   if (!cred) return null
 
   const [maxRow] = await tx

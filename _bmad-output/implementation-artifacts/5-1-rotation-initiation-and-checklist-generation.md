@@ -1,6 +1,6 @@
 # Story 5.1: Rotation Initiation & Checklist Generation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for the FIRST story in Epic 5 (Credential Rotation). This story creates the `rotations` + `rotation_checklist_items` tables (the foundational schema every later Epic 5 story builds on), the rotation-initiation endpoint (advisory-lock-guarded, atomic new-version + rotation + checklist write), the rotation-detail and rotation-history read endpoints, and activates the `rotation_locked_at` retention-exemption seam Story 2.2 built specifically for this story to fill in. Stories 4.3 and 4.4 (already `ready-for-dev`, not yet implemented) contain STUBBED forward-references to the exact `rotations` table shape this story must produce — read "Cross-Epic Coordination" below before touching the schema. -->
 
@@ -666,38 +666,38 @@ The following are **intentionally not implemented** in this story — each is a 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema** (AC-1, AC-2, AC-3)
-  - [ ] `packages/db/src/schema/rotations.ts`
-  - [ ] `packages/db/src/schema/rotation-checklist-items.ts`
-  - [ ] Export both from `packages/db/src/schema/index.ts`
-  - [ ] Generate/author migration `0026_rotations.sql` (verify actual next-free number against `meta/_journal.json` first)
-  - [ ] `pnpm --filter @project-vault/db check-rls` clean; `pnpm --filter @project-vault/db migrate` succeeds locally
-- [ ] **Task 2: Shared Zod schemas** (packages/shared)
-  - [ ] `packages/shared/src/schemas/rotations.ts`: `RotationStatusSchema`, `RotationChecklistItemStatusSchema`, `RotationChecklistItemSchema`, `RotationDetailSchema`, `RotationSummarySchema` (for history list)
-  - [ ] Export from `packages/shared/src/index.ts`
-  - [ ] Add `AuditEvent.ROTATION_INITIATED` to `packages/shared/src/constants/audit-events.ts` (const + type union)
-- [ ] **Task 3: `apps/api/src/modules/rotation/` module**
-  - [ ] `schema.ts`: `InitiateRotationBodySchema`, `RotationParamsSchema` (`{ projectId, credentialId, rotationId }`), `ListRotationsQuerySchema`
-  - [ ] `service.ts`: `initiateRotation(tx, input)` implementing AC-4/AC-5/AC-13 step-by-step; `getRotationDetail(tx, params)`; `listRotationHistory(tx, params)`
-  - [ ] `routes.ts`: `rotationRoutes(fastify)` registering all three endpoints via `secureRoute()` (AC-4 through AC-12, AC-16, AC-17)
-  - [ ] Register `rotationRoutes` in `apps/api/src/app.ts`
-- [ ] **Task 4: Route audit + classification** (AC-16)
-  - [ ] Add 3 entries to `ROUTE_ACTION_CLASSIFICATIONS`
-  - [ ] `route-audit.test.ts` passes
-- [ ] **Task 5: Metrics/logging** (AC-18)
-  - [ ] `rotation_initiations_total` counter; structured pino events; verify `redact-secrets.ts` covers `newValue`
-- [ ] **Task 6: Integration & unit tests** (AC-4 through AC-15, AC-Quick-Reference "Tests" row)
-  - [ ] Happy path (single dependency, multi-dependency, zero-dependency)
-  - [ ] Concurrent initiation: both the lock-contention path and the partial-unique-index backstop path
-  - [ ] Role enforcement (403 member/viewer; 201 admin/owner)
-  - [ ] Cross-org/cross-project/nonexistent-credential 404 (all three endpoints)
-  - [ ] Sealed vault 503
-  - [ ] Validation 422s (table in AC-10)
-  - [ ] Retention-lock verified against the real purge-candidate query (AC-13, with `retentionCount: 1`)
-  - [ ] Rotation detail read (found + 404 for nonexistent/cross-tenant rotation ID)
-  - [ ] Rotation history pagination (empty history, single page, deep page beyond total)
-  - [ ] RLS cross-org isolation, direct-query style (AC-15)
-  - [ ] Audit-write-failure rollback (AC-14) — assert zero rows across all three affected tables
+- [x] **Task 1: Schema** (AC-1, AC-2, AC-3)
+  - [x] `packages/db/src/schema/rotations.ts`
+  - [x] `packages/db/src/schema/rotation-checklist-items.ts`
+  - [x] Export both from `packages/db/src/schema/index.ts`
+  - [x] Generate/author migration `0027_rotations.sql` (R1: journal was already at idx 26 — `0026_account_recovery_tokens` — when this story started, so this story's migration is `0027`, not the `0026` placeholder the story text illustrated; `drizzle-kit generate`'s intermediate snapshot history has gaps for several already-merged hand-authored migrations, so the migration was hand-authored matching drizzle-kit's emitted style instead of trusting a `generate` run, which would have re-declared several already-existing tables)
+  - [x] `pnpm --filter @project-vault/db check-rls` clean; `pnpm --filter @project-vault/db migrate` succeeds locally
+- [x] **Task 2: Shared Zod schemas** (packages/shared)
+  - [x] `packages/shared/src/schemas/rotations.ts`: `RotationStatusSchema`, `RotationChecklistItemStatusSchema`, `RotationChecklistItemSchema`, `RotationDetailSchema`, `RotationSummarySchema` (for history list)
+  - [x] Export from `packages/shared/src/index.ts`
+  - [x] Add `AuditEvent.ROTATION_INITIATED` to `packages/shared/src/constants/audit-events.ts` (const + type union)
+- [x] **Task 3: `apps/api/src/modules/rotation/` module**
+  - [x] `schema.ts`: `InitiateRotationBodySchema`, `RotationParamsSchema` (`{ projectId, credentialId, rotationId }`), `ListRotationsQuerySchema` (also added `RotationCredentialParamsSchema` for the two credential-scoped routes and `RotationConflictResponseSchema` so the 409 `rotationId` field survives Fastify/Zod response serialization)
+  - [x] `service.ts`: `initiateRotation(tx, input)` implementing AC-4/AC-5/AC-13 step-by-step; `getRotationDetail(tx, params)`; `listRotationHistory(tx, params)`
+  - [x] `routes.ts`: `rotationRoutes(fastify)` registering all three endpoints via `secureRoute()` (AC-4 through AC-12, AC-16, AC-17)
+  - [x] Register `rotationRoutes` in `apps/api/src/app.ts`
+- [x] **Task 4: Route audit + classification** (AC-16)
+  - [x] Add 3 entries to `ROUTE_ACTION_CLASSIFICATIONS`
+  - [x] `route-audit.test.ts` passes
+- [x] **Task 5: Metrics/logging** (AC-18)
+  - [x] `rotation_initiations_total` counter; `credential_versions_locked_by_rotation_total` gauge (getAdminDb()-backed, periodic collect()); structured pino events; added `newValue` to `redact-paths.ts`'s `BODY_SENSITIVE_LOG_FIELDS` (it was not covered by a substring match — the redaction list uses exact key matching, not substring)
+- [x] **Task 6: Integration & unit tests** (AC-4 through AC-15, AC-Quick-Reference "Tests" row)
+  - [x] Happy path (single dependency, multi-dependency, zero-dependency)
+  - [x] Concurrent initiation: both the lock-contention path (`Promise.all`) and the partial-unique-index backstop path (sequential retry after the winner already committed — see Completion Notes for why this, not a held-lock-in-a-separate-connection unit test, was chosen)
+  - [x] Role enforcement (403 member/viewer; 201 admin/owner) + MFA-enrollment-required 403 test (AC-7)
+  - [x] Cross-org/cross-project/nonexistent-credential 404 (all three endpoints) + malformed-UUID 422
+  - [x] Sealed vault 503
+  - [x] Validation 422s (unit-level exhaustive table in `schema.test.ts`; wiring-level smoke test in `routes.test.ts`)
+  - [x] Retention-lock verified against the real purge-candidate query (AC-13, with `retentionCount: 1`, via `pruneCredentialVersions()`)
+  - [x] Rotation detail read (found + 404 for nonexistent/cross-tenant rotation ID)
+  - [x] Rotation history pagination (empty history, single page, deep page beyond total)
+  - [x] RLS cross-org isolation, direct-query style (AC-15, DB-layer test in `packages/db`)
+  - [x] Audit-write-failure rollback (AC-14) — assert zero rows across all three affected tables
 
 ---
 
@@ -834,10 +834,81 @@ If Story 2.4's dependency `systemName` is edited after a rotation completes (2.4
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+claude-sonnet-4.5 (via Claude Code)
 
 ### Debug Log References
 
+- `pnpm --filter @project-vault/db vitest run src/schema/rotations-schema.test.ts src/__tests__/rotations-rls-isolation.test.ts` — 7/7 passing (schema smoke test + AC-15 cross-org isolation/unique-index/CHECK tests).
+- `DATABASE_URL=postgresql://vault_app:... ADMIN_DATABASE_URL=postgresql://postgres:... pnpm --filter @project-vault/db vitest run` — 76/76 passing (full db-package regression, no impact on existing schema tests).
+- `pnpm --filter @project-vault/shared vitest run` — 81/81 passing (new `rotations.test.ts` schema tests + `ROTATION_INITIATED` audit-event test).
+- `pnpm --filter @project-vault/api vitest run src/modules/rotation/` — 31/31 passing (schema.test.ts, service exercised via routes.test.ts, metrics.test.ts, routes.test.ts).
+- `pnpm --filter @project-vault/api vitest run src/modules/credentials src/modules/rotation src/__tests__/route-audit.test.ts` — 117/117 passing after the jscpd-driven refactor (confirms `lockCredentialInProject`/`credentialExistsInProject`/`encryptValue` extraction didn't regress the credentials module).
+- `DATABASE_URL=... ADMIN_DATABASE_URL=... pnpm --filter @project-vault/api vitest run` (full apps/api regression) — 695/697 passing. The 2 failures are pre-existing/expected, not caused by this story (both flagged as separate follow-up tasks rather than fixed here, per the story's own "Cross-Epic Coordination" instruction not to touch 4.3/4.4):
+  1. `src/modules/projects/archive-guards.test.ts` — "CI guard (ADR-4.4-02): fails if `rotations` now exists but the seam is still present" is a **deliberate tripwire** Story 4.4 wrote for exactly this moment (its own error message says so); it now fires because the `rotations` table exists. Flagged as a follow-up task to swap `findBlockingRotationIds`'s raw-SQL seam for a typed query.
+  2. `src/__tests__/deployment-hardening.test.ts` — "does not expose Postgres on every host interface" was already broken on `main` before this story started (commit `fbbda11` parameterized `docker-compose.yml`'s Postgres port to `${DB_HOST_PORT:-5432}` without updating this test's literal-string assertion). Unrelated to rotation work; flagged as a separate follow-up task.
+- `pnpm turbo typecheck` / `pnpm turbo lint` (repo root) — clean (0 errors; only pre-existing `security/detect-object-injection` warnings in unrelated files).
+- `pnpm jscpd` (repo root) — 0 clones. Initially found 3 clones from the new rotation module duplicating existing `credentials` module patterns (`encryptValue`, the credential-row `FOR UPDATE` lock query); resolved by extracting shared `apps/api/src/lib/encrypt-value.ts` and `lockCredentialInProject`/`credentialExistsInProject` helpers in `apps/api/src/modules/credentials/db-helpers.ts`, which also let `apps/api/src/modules/credentials/import-service.ts` and `dependencies-service.ts` drop their own pre-existing near-duplicate versions of the same query (their duplication had been below the threshold that would have flagged it before this story's change gave jscpd a third near-identical copy to compare against).
+- `pnpm --filter @project-vault/db check-rls` (against a real local Postgres, `vault_app` role) — "all org_id tables have RLS policies — OK", confirms `rotations`/`rotation_checklist_items` are not accidentally excluded.
+- `pnpm --filter @project-vault/db db:migrate` (superuser) — migration `0027_rotations.sql` applies cleanly end-to-end from a fresh database.
+
 ### Completion Notes List
 
+- **Migration number**: the journal was already at idx 26 (`0026_account_recovery_tokens`) when this story started, so the migration is `0027_rotations.sql`, not the story's illustrative `0026`. `drizzle-kit generate`'s own snapshot history has gaps for several already-merged, hand-authored migrations (idx 17, 18, 20–26 have no `meta/*_snapshot.json`), so running `generate` naively would have redeclared several already-existing tables (notification_queue, notification_preferences, notification_inbox, project_invitations, account_recovery_tokens) as new. The migration was hand-authored instead, matching drizzle-kit's emitted SQL style and reusing the exact table/FK/index DDL `generate` produced for the two new tables, with the pre-existing-table noise stripped out. No new `meta/0027_snapshot.json` was added, consistent with the existing gaps in the snapshot history.
+- **MFA on rotation initiation**: the story's Dev Notes claimed "MFA enforcement... is already handled globally by the auth middleware... no route-level `requireMfa` option is needed." This is not accurate against the current `secure-route.ts` implementation — `requireMfa` there is opt-in per route (defaults to not-enforced when omitted), and several credential-mutation routes (`POST .../credentials`, `.../import`, `.../dependencies`) explicitly set `requireMfa: false`. Given rotation initiation is comparably or more sensitive than project archive/unarchive/transfer-ownership/member-removal (all of which set `requireMfa: true`), `POST .../rotations` was implemented with `requireMfa: true`, matching that higher-sensitivity precedent, and a dedicated integration test (mirroring `projects-archival.routes.test.ts`'s MFA test pattern) proves the enforced branch actually rejects an admin session with no MFA enrollment and no grace period.
+- **AC-5(b) partial-unique-index backstop test**: rather than a lower-level unit test that manually holds the advisory lock open on a separate connection, the backstop is exercised via a realistic black-box HTTP sequence: two *sequential* (not concurrent) `POST .../rotations` calls against the same credential. By the time the second call runs, the first request's transaction (and its advisory lock) has already committed and released, so the second call's own `pg_try_advisory_xact_lock` succeeds — the only thing that can still reject it is the partial unique index. This is combined with a separate `Promise.all` test that exercises genuine lock contention, giving both paths AC-5 asks for without needing to manipulate raw connections/savepoints from the test side.
+- **Cross-module dedup**: extracted `encryptValue` (`apps/api/src/lib/encrypt-value.ts`) and `lockCredentialInProject`/`credentialExistsInProject` (`apps/api/src/modules/credentials/db-helpers.ts`) so the rotation module reuses the exact `credentials` module primitives instead of re-implementing them, and updated `credentials/service.ts`, `import-service.ts`, and `dependencies-service.ts` to consume the same shared helpers (jscpd-driven; see Debug Log References).
+- **409 response shape**: `AC-5`'s `{ code, message, rotationId }` 409 body needed its own `RotationConflictResponseSchema` (not the generic `ApiErrorSchema`) — Fastify's Zod response serializer strips fields not declared in the registered response schema, so reusing `ApiErrorSchema` for the `409` route entry silently dropped `rotationId` from the wire response (caught by the routes.test.ts concurrency tests during TDD).
+- **Rotation-locked-versions gauge**: `credential_versions_locked_by_rotation_total` uses `getAdminDb()` (bypasses per-org RLS), not the default `getDb()` — this is a genuine cross-org operational count with no `app.current_org_id` in scope outside a request/job, the same justification already used by `workers/notification-inbox-purge.ts`'s cross-org scan.
+- Left the two known-and-flagged pre-existing/expected test failures (`archive-guards.test.ts`'s ADR-4.4-02 tripwire, `deployment-hardening.test.ts`'s stale docker-compose port assertion) unfixed per the story's explicit "flag it, don't do it" instruction re: 4.3/4.4, and because the deployment-hardening one is unrelated to this story's scope — both flagged as separate follow-up tasks (see spawned task chips) rather than silently left undocumented.
+- Every AC-19 "Explicit Out of Scope" item was honored: no checklist confirm/fail/retry, no completion endpoint, no `version` increments beyond the initial `1`, no `upcoming` endpoint, no break-glass/stale-recovery writes, no `rotation_locked_at` clearing, no 4.3/4.4 stub edits, no web/UI screens, no `rotation:recover` job.
+
 ### File List
+
+**New — packages/db:**
+- `packages/db/src/schema/rotations.ts`
+- `packages/db/src/schema/rotation-checklist-items.ts`
+- `packages/db/src/schema/rotations-schema.test.ts`
+- `packages/db/src/migrations/0027_rotations.sql`
+- `packages/db/src/__tests__/rotations-rls-isolation.test.ts`
+
+**Modified — packages/db:**
+- `packages/db/src/schema/index.ts` (export the two new schema modules)
+- `packages/db/src/migrations/meta/_journal.json` (idx 27 entry)
+
+**New — packages/shared:**
+- `packages/shared/src/schemas/rotations.ts`
+- `packages/shared/src/schemas/rotations.test.ts`
+
+**Modified — packages/shared:**
+- `packages/shared/src/index.ts` (export `schemas/rotations.js`)
+- `packages/shared/src/constants/audit-events.ts` (`AuditEvent.ROTATION_INITIATED` + `AuditEventType` union member)
+- `packages/shared/src/constants/audit-events.test.ts` (new assertion)
+- `packages/shared/src/constants/operational-event-types.ts` (`ROTATION_INITIATE_SUCCESS`/`_CONFLICT`/`_AUDIT_FAILED`/`_SAME_VALUE_WARNING`)
+
+**New — apps/api:**
+- `apps/api/src/lib/encrypt-value.ts`
+- `apps/api/src/modules/rotation/schema.ts`
+- `apps/api/src/modules/rotation/schema.test.ts`
+- `apps/api/src/modules/rotation/service.ts`
+- `apps/api/src/modules/rotation/routes.ts`
+- `apps/api/src/modules/rotation/routes.test.ts`
+- `apps/api/src/modules/rotation/metrics.ts`
+- `apps/api/src/modules/rotation/metrics.test.ts`
+- `apps/api/src/modules/rotation/rotation-integration-context.ts`
+
+**Modified — apps/api:**
+- `apps/api/src/app.ts` (register `rotationRoutes` at `/api/v1/projects`)
+- `apps/api/src/lib/route-exemptions.ts` (3 `ROUTE_ACTION_CLASSIFICATIONS` entries for the rotation routes)
+- `apps/api/src/lib/redact-paths.ts` (added `newValue` to `BODY_SENSITIVE_LOG_FIELDS`)
+- `apps/api/src/modules/credentials/db-helpers.ts` (`lockCredentialInProject`, `credentialExistsInProject` — shared with rotation module)
+- `apps/api/src/modules/credentials/service.ts` (use shared `encryptValue`/`lockCredentialInProject` instead of local copies)
+- `apps/api/src/modules/credentials/import-service.ts` (use shared `lockCredentialInProject`)
+- `apps/api/src/modules/credentials/dependencies-service.ts` (use shared `credentialExistsInProject`/`lockCredentialInProject`, removed local `credentialInProject`)
+
+**Docs:**
+- `_bmad-output/implementation-artifacts/5-1-rotation-initiation-and-checklist-generation.md` (this file — Tasks/Subtasks, Dev Agent Record, Status)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (5-1-rotation-initiation-and-checklist-generation: in-progress → review)
+
+### Change Log
+
+- 2026-07-03: Implemented Story 5.1 (Rotation Initiation & Checklist Generation) end-to-end via TDD — `rotations`/`rotation_checklist_items` schema + migration `0027_rotations.sql` with the full Epic 5 status vocabulary and RLS, the advisory-lock-guarded + partial-unique-index-backstopped `POST .../rotations` initiate endpoint (atomic new-version + retention-lock + checklist snapshot + audit), the `GET .../rotations/:rotationId` and `GET .../rotations` read endpoints, operational metrics/logging, and route classification. Deviated from the story's Dev Notes on one point (see Completion Notes): set `requireMfa: true` on the initiate route rather than relying on an inaccurate "handled globally" assumption. Left two pre-existing/expected test failures unfixed and flagged as separate follow-up tasks, per the story's own instruction not to touch the 4.3/4.4 stub seams. Status: ready-for-dev → review.
