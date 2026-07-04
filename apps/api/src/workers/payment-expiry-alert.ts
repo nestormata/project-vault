@@ -76,27 +76,43 @@ export async function runPaymentExpiryAlertJob(
   const allJobs: NotificationQueueJob[] = []
 
   for (const orgId of orgIds) {
-    const rows = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
-      tx
-        .select()
-        .from(paymentRecords)
-        .where(and(eq(paymentRecords.orgId, orgId), isNotNull(paymentRecords.renewalDate)))
-    )
+    // AC 5 failure isolation: a failure fetching one org's rows (transient DB error, RLS
+    // context issue) must not abort the whole job and silently skip every subsequent org's
+    // alerts for the day — so the fetch itself is inside the per-org try/catch, not just the
+    // per-row processing below.
+    try {
+      const rows = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
+        tx
+          .select()
+          .from(paymentRecords)
+          .where(and(eq(paymentRecords.orgId, orgId), isNotNull(paymentRecords.renewalDate)))
+      )
 
-    for (const row of rows) {
-      try {
-        const jobs = await processRow(orgId, row, now)
-        allJobs.push(...jobs)
-      } catch (error) {
-        if (logger) {
-          operationalLog(
-            logger,
-            'error',
-            OperationalEvent.MONITORING_EXPIRY_ALERT_ROW_FAILED,
-            'payment expiry alert row failed',
-            { orgId, assetType: 'payment_record', assetId: row.id, err: serializeLogError(error) }
-          )
+      for (const row of rows) {
+        try {
+          const jobs = await processRow(orgId, row, now)
+          allJobs.push(...jobs)
+        } catch (error) {
+          if (logger) {
+            operationalLog(
+              logger,
+              'error',
+              OperationalEvent.MONITORING_EXPIRY_ALERT_ROW_FAILED,
+              'payment expiry alert row failed',
+              { orgId, assetType: 'payment_record', assetId: row.id, err: serializeLogError(error) }
+            )
+          }
         }
+      }
+    } catch (error) {
+      if (logger) {
+        operationalLog(
+          logger,
+          'error',
+          OperationalEvent.MONITORING_EXPIRY_ALERT_ROW_FAILED,
+          'payment expiry alert row fetch failed for org',
+          { orgId, assetType: 'payment_record', assetId: 'n/a', err: serializeLogError(error) }
+        )
       }
     }
   }

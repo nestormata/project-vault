@@ -353,6 +353,25 @@ describe('monitoring routes (services/certificates/domains)', () => {
       )
       expect(rows.some((row) => row.resourceId === created['id'])).toBe(true)
     })
+
+    it('treats an empty body as a no-op and returns the record unchanged (200, not a DB error)', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, `${resource.key}-patch-empty`)
+      const created = await createRecordExpect201(app, owner.cookies, projectId, resource)
+
+      const res = await patchRecord(
+        app,
+        owner.cookies,
+        projectId,
+        resource,
+        created['id'] as string,
+        {}
+      )
+      expect(res.statusCode).toBe(200)
+      const data = res.json<{ data: Record<string, unknown> }>().data
+      expect(data['id']).toBe(created['id'])
+      expect(data['alertLeadDays']).toEqual(created['alertLeadDays'])
+      expect(data['notifiedLeadDays']).toEqual(created['notifiedLeadDays'])
+    })
   })
 
   describe.each(RESOURCES)('DELETE $key/:id', (resource) => {

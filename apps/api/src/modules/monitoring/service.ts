@@ -152,6 +152,16 @@ export async function updatePaymentRecord(
   }
   if ('alertLeadDays' in input.rawBody) updates.alertLeadDays = input.body.alertLeadDays
 
+  if (Object.keys(updates).length === 0) {
+    // No recognized fields in the request body — treat as a no-op read rather than handing
+    // Drizzle an empty `.set({})`, which builds an invalid `UPDATE ... SET` with zero
+    // assignments and fails at the database. Still 404s via the caller if the row isn't found.
+    return findPaymentRecordInProject(tx, {
+      serviceId: input.serviceId,
+      projectId: input.projectId,
+    })
+  }
+
   const [updated] = await tx
     .update(paymentRecords)
     .set(updates)
@@ -237,6 +247,14 @@ export async function updateCertificateRecord(
   }
   if ('alertLeadDays' in input.rawBody) updates.alertLeadDays = input.body.alertLeadDays
 
+  if (Object.keys(updates).length === 0) {
+    // See updatePaymentRecord — avoid an empty `.set({})` reaching Drizzle/Postgres.
+    return findCertificateRecordInProject(tx, {
+      certificateId: input.certificateId,
+      projectId: input.projectId,
+    })
+  }
+
   const [updated] = await tx
     .update(certRecords)
     .set(updates)
@@ -319,6 +337,14 @@ export async function updateDomainRecord(
     updates.notifiedLeadDays = []
   }
   if ('alertLeadDays' in input.rawBody) updates.alertLeadDays = input.body.alertLeadDays
+
+  if (Object.keys(updates).length === 0) {
+    // See updatePaymentRecord — avoid an empty `.set({})` reaching Drizzle/Postgres.
+    return findDomainRecordInProject(tx, {
+      domainId: input.domainId,
+      projectId: input.projectId,
+    })
+  }
 
   const [updated] = await tx
     .update(domainRecords)
