@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-04 (7-2-machine-user-authentication-and-programmatic-secret-retrieval: backlog -> ready-for-dev)
+# last_updated: 2026-07-04 (7-3-github-actions-cicd-integration: backlog -> ready-for-dev)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-04  # updated: 7-2-machine-user-authentication-and-programmatic-secret-retrieval -> ready-for-dev
+last_updated: 2026-07-04  # updated: 7-3-github-actions-cicd-integration -> ready-for-dev
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -105,7 +105,7 @@ development_status:
   epic-7: in-progress
   7-1-machine-user-identity-and-api-key-management: ready-for-dev
   7-2-machine-user-authentication-and-programmatic-secret-retrieval: ready-for-dev
-  7-3-github-actions-cicd-integration: backlog
+  7-3-github-actions-cicd-integration: ready-for-dev
   epic-7-retrospective: optional
 
   # Epic 8: Compliance, Audit & Governance
