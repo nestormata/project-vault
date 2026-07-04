@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentialDependencies,
@@ -270,17 +270,7 @@ export async function getRotationDetail(
   tx: Tx,
   params: { credentialId: string; projectId: string; rotationId: string }
 ) {
-  const [rotation] = await tx
-    .select()
-    .from(rotations)
-    .where(
-      and(
-        eq(rotations.id, params.rotationId),
-        eq(rotations.credentialId, params.credentialId),
-        eq(rotations.projectId, params.projectId)
-      )
-    )
-    .limit(1)
+  const rotation = await findRotationInScope(tx, params)
   if (!rotation) return null
 
   // See orderChecklistItems' comment: created_at ties are the norm (same-transaction batch
@@ -416,6 +406,29 @@ async function findChecklistItemInScope(
   return item ?? null
 }
 
+/** Shared by confirm/fail/retry: the "item_not_found" branch is identical across all three. */
+async function findItemOrNotFound(
+  tx: Tx,
+  params: { rotationId: string; itemId: string }
+): Promise<ChecklistItemRow | { outcome: 'item_not_found' }> {
+  const item = await findChecklistItemInScope(tx, params)
+  return item ?? { outcome: 'item_not_found' }
+}
+
+/** Builds the WHERE clause every checklist-item status UPDATE shares: scoped to the item +
+ *  rotation, optionally guarded by the item's current status (the CAS-adjacent status guard
+ *  fail/retry rely on; confirm's equivalent guard already happened via its own status check). */
+function itemScopeWhere(
+  params: { itemId: string; rotationId: string },
+  status?: ChecklistItemRow['status']
+) {
+  const base = [
+    eq(rotationChecklistItems.id, params.itemId),
+    eq(rotationChecklistItems.rotationId, params.rotationId),
+  ]
+  return status ? and(...base, eq(rotationChecklistItems.status, status)) : and(...base)
+}
+
 /** AC-8 step 4: the CAS backstop. Returns the new version, or null if the row was not found
  *  at the expected observed version (lock bypassed by a hypothetical direct-DB caller). */
 async function casIncrementRotationVersion(
@@ -463,6 +476,36 @@ async function reserveRotationVersion(
   if (newVersion !== null) return { outcome: 'ok', rotationVersion: newVersion }
   const current = await findRotationInScope(tx, scopeParams)
   return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
+}
+
+/** Shared by confirm/fail/retry/max-retries-exceeded: reserve the AC-8 CAS version bump (see
+ *  reserveRotationVersion's doc comment for why that must happen first), then perform the
+ *  item's own status-transition UPDATE guarded by `fromStatus` (when the caller hasn't already
+ *  ruled out other statuses via its own precondition check). */
+async function reserveVersionAndUpdateItem(
+  tx: Tx,
+  params: { itemId: string; rotationId: string; projectId: string; credentialId: string },
+  rotationVersion: number,
+  fromStatus: ChecklistItemRow['status'] | undefined,
+  setFields: Partial<{
+    [K in keyof typeof rotationChecklistItems.$inferInsert]:
+      (typeof rotationChecklistItems.$inferInsert)[K] | SQL
+  }>,
+  label: string
+): Promise<
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | { item: ChecklistItemRow; rotationVersion: number }
+> {
+  const cas = await reserveRotationVersion(tx, params, rotationVersion)
+  if (cas.outcome === 'concurrent_modification') return cas
+  const [updated] = await tx
+    .update(rotationChecklistItems)
+    .set(setFields)
+    .where(itemScopeWhere(params, fromStatus))
+    .returning()
+  // Safe to assert non-null: the advisory lock held for this whole transaction rules out any
+  // concurrent delete/status-change between the caller's own precondition check and this write.
+  return { item: assertUpdatedRow(updated, label), rotationVersion: cas.rotationVersion }
 }
 
 type RotationLockOutcome =
@@ -573,44 +616,32 @@ export async function confirmChecklistItem(
   if (earlyResult) return earlyResult
   assertRotationLockOk(lockResult)
 
-  const item = await findChecklistItemInScope(tx, {
-    rotationId: params.rotationId,
-    itemId: params.itemId,
-  })
-  if (!item) return { outcome: 'item_not_found' }
-  if (item.status === 'confirmed') return { outcome: 'already_confirmed', item }
-
-  // AC-8: reserve the version bump before writing the item so a lost CAS race never leaves a
-  // committed item-status change behind a 409 response (see reserveRotationVersion's doc comment).
-  const cas = await reserveRotationVersion(tx, params, lockResult.rotation.version)
-  if (cas.outcome === 'concurrent_modification') return cas
+  const itemResult = await findItemOrNotFound(tx, params)
+  if ('outcome' in itemResult) return itemResult
+  if (itemResult.status === 'confirmed') return { outcome: 'already_confirmed', item: itemResult }
 
   const now = new Date()
-  const [updated] = await tx
-    .update(rotationChecklistItems)
-    .set({
+  const result = await reserveVersionAndUpdateItem(
+    tx,
+    params,
+    lockResult.rotation.version,
+    undefined,
+    {
       status: 'confirmed',
       confirmedBy: params.userId,
       confirmedAt: now,
       lastActedBy: params.userId,
       lastActedAt: now,
       ...(params.body.notes ? { notes: params.body.notes } : {}),
-    })
-    .where(
-      and(
-        eq(rotationChecklistItems.id, params.itemId),
-        eq(rotationChecklistItems.rotationId, params.rotationId)
-      )
-    )
-    .returning()
-  // Safe to assert non-null: the item was already confirmed to exist (above), and the
-  // advisory lock held for this whole transaction rules out any concurrent delete/change.
-  const confirmedItem = assertUpdatedRow(updated, 'confirmChecklistItem')
+    },
+    'confirmChecklistItem'
+  )
+  if ('outcome' in result) return result
 
   return {
     outcome: 'confirmed' as const,
-    item: confirmedItem,
-    rotationVersion: cas.rotationVersion,
+    item: result.item,
+    rotationVersion: result.rotationVersion,
   }
 }
 
@@ -632,42 +663,34 @@ export async function failChecklistItem(
   if (earlyResult) return earlyResult
   assertRotationLockOk(lockResult)
 
-  const item = await findChecklistItemInScope(tx, {
-    rotationId: params.rotationId,
-    itemId: params.itemId,
-  })
-  if (!item) return { outcome: 'item_not_found' }
-  if (item.status !== 'unconfirmed') return { outcome: 'invalid_item_status', item }
-
-  // AC-8: reserve the version bump before writing the item — see reserveRotationVersion's doc
-  // comment. This also keeps the alert enqueue (below) strictly on the path where the item write
-  // actually happens, instead of being skippable if a lost CAS race short-circuited it.
-  const cas = await reserveRotationVersion(tx, params, lockResult.rotation.version)
-  if (cas.outcome === 'concurrent_modification') return cas
+  const itemResult = await findItemOrNotFound(tx, params)
+  if ('outcome' in itemResult) return itemResult
+  if (itemResult.status !== 'unconfirmed') {
+    return { outcome: 'invalid_item_status', item: itemResult }
+  }
 
   const now = new Date()
   const retryScheduledAt = params.body.retryScheduledAt
     ? new Date(params.body.retryScheduledAt)
     : null
-  const [updated] = await tx
-    .update(rotationChecklistItems)
-    .set({
+  // The alert enqueue below is intentionally strictly after this: reserveVersionAndUpdateItem
+  // reserves the AC-8 CAS bump before writing, so a lost race returns here and never reaches it.
+  const result = await reserveVersionAndUpdateItem(
+    tx,
+    params,
+    lockResult.rotation.version,
+    'unconfirmed',
+    {
       status: 'failed',
       lastFailureReason: params.body.reason,
       retryScheduledAt,
       lastActedBy: params.userId,
       lastActedAt: now,
-    })
-    .where(
-      and(
-        eq(rotationChecklistItems.id, params.itemId),
-        eq(rotationChecklistItems.rotationId, params.rotationId),
-        eq(rotationChecklistItems.status, 'unconfirmed')
-      )
-    )
-    .returning()
-  // Safe to assert non-null — see confirmChecklistItem's identical comment above.
-  const failedItem = assertUpdatedRow(updated, 'failChecklistItem')
+    },
+    'failChecklistItem'
+  )
+  if ('outcome' in result) return result
+  const failedItem = result.item
 
   const jobs = await enqueueSecurityAlertNotification({
     orgId: params.orgId,
@@ -685,7 +708,7 @@ export async function failChecklistItem(
   return {
     outcome: 'failed' as const,
     item: failedItem,
-    rotationVersion: cas.rotationVersion,
+    rotationVersion: result.rotationVersion,
     jobs,
   }
 }
@@ -708,26 +731,19 @@ async function applyMaxRetriesExceeded(
   observedVersion: number,
   maxRetries: number
 ): Promise<RetryChecklistItemResult> {
-  // AC-8: reserve the version bump before writing the item — see reserveRotationVersion's doc
-  // comment. Also keeps the critical alert enqueue strictly on the path where the escalating
-  // item write actually happens.
-  const cas = await reserveRotationVersion(tx, params, observedVersion)
-  if (cas.outcome === 'concurrent_modification') return cas
-
   const now = new Date()
-  const [updated] = await tx
-    .update(rotationChecklistItems)
-    .set({ status: 'max_retries_exceeded', lastActedBy: params.userId, lastActedAt: now })
-    .where(
-      and(
-        eq(rotationChecklistItems.id, params.itemId),
-        eq(rotationChecklistItems.rotationId, params.rotationId),
-        eq(rotationChecklistItems.status, 'failed')
-      )
-    )
-    .returning()
-  // Safe to assert non-null — see confirmChecklistItem's identical comment.
-  const exceededItem = assertUpdatedRow(updated, 'applyMaxRetriesExceeded')
+  // The critical alert enqueue below is intentionally strictly after this: a lost CAS race
+  // returns here (see reserveVersionAndUpdateItem's doc comment) and never reaches it.
+  const result = await reserveVersionAndUpdateItem(
+    tx,
+    params,
+    observedVersion,
+    'failed',
+    { status: 'max_retries_exceeded', lastActedBy: params.userId, lastActedAt: now },
+    'applyMaxRetriesExceeded'
+  )
+  if ('outcome' in result) return result
+  const exceededItem = result.item
 
   const jobs = await enqueueSecurityAlertNotification({
     orgId: params.orgId,
@@ -757,32 +773,23 @@ async function applyRetry(
   params: RetryScopeParams,
   observedVersion: number
 ): Promise<RetryChecklistItemResult> {
-  // AC-8: reserve the version bump before writing the item — see reserveRotationVersion's doc
-  // comment.
-  const cas = await reserveRotationVersion(tx, params, observedVersion)
-  if (cas.outcome === 'concurrent_modification') return cas
-
   const now = new Date()
-  const [updated] = await tx
-    .update(rotationChecklistItems)
-    .set({
+  const result = await reserveVersionAndUpdateItem(
+    tx,
+    params,
+    observedVersion,
+    'failed',
+    {
       status: 'unconfirmed',
       retryCount: sql`${rotationChecklistItems.retryCount} + 1`,
       lastActedBy: params.userId,
       lastActedAt: now,
-    })
-    .where(
-      and(
-        eq(rotationChecklistItems.id, params.itemId),
-        eq(rotationChecklistItems.rotationId, params.rotationId),
-        eq(rotationChecklistItems.status, 'failed')
-      )
-    )
-    .returning()
-  // Safe to assert non-null — see confirmChecklistItem's identical comment.
-  const retriedItem = assertUpdatedRow(updated, 'applyRetry')
+    },
+    'applyRetry'
+  )
+  if ('outcome' in result) return result
 
-  return { outcome: 'retried' as const, item: retriedItem, rotationVersion: cas.rotationVersion }
+  return { outcome: 'retried' as const, item: result.item, rotationVersion: result.rotationVersion }
 }
 
 /** AC-6/AC-7/AC-E5b: retry — item 'failed' -> 'unconfirmed' (retryCount += 1), or, once the
@@ -797,12 +804,10 @@ export async function retryChecklistItem(
   if (earlyResult) return earlyResult
   assertRotationLockOk(lockResult)
 
-  const item = await findChecklistItemInScope(tx, {
-    rotationId: params.rotationId,
-    itemId: params.itemId,
-  })
-  if (!item) return { outcome: 'item_not_found' }
-  if (item.status !== 'failed') return { outcome: 'invalid_item_status', item }
+  const itemResult = await findItemOrNotFound(tx, params)
+  if ('outcome' in itemResult) return itemResult
+  if (itemResult.status !== 'failed') return { outcome: 'invalid_item_status', item: itemResult }
+  const item = itemResult
 
   // AC-7: read fresh on every call — never cached/snapshotted per rotation or item.
   const maxRetries = env.ROTATION_MAX_RETRIES
@@ -840,13 +845,9 @@ export async function completeRotation(
   }
 ): Promise<CompleteRotationResult> {
   const lockResult = await acquireAndLoadRotation(tx, params)
-  if (lockResult.outcome === 'locked_conflict') {
-    return { outcome: 'locked_conflict', currentVersion: lockResult.currentVersion }
-  }
-  if (lockResult.outcome === 'not_found') return { outcome: 'rotation_not_found' }
-  if (lockResult.outcome === 'not_active') {
-    return { outcome: 'rotation_not_active', status: lockResult.rotation.status }
-  }
+  const earlyResult = lockOutcomeToFailure(lockResult)
+  if (earlyResult) return earlyResult
+  assertRotationLockOk(lockResult)
 
   const items = await tx
     .select()

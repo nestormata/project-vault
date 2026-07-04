@@ -190,6 +190,22 @@ function replyForCommonLockOutcome(
   return reply.status(404).send(CHECKLIST_ITEM_NOT_FOUND)
 }
 
+/** confirm/fail/retry/complete all build this identical scope-and-actor params object from the
+ *  parsed route params + secure context before adding their own operation-specific `body`. */
+function itemActionScope(
+  secureCtx: SecureRouteContext,
+  params: { projectId: string; credentialId: string; rotationId: string; itemId: string }
+) {
+  return {
+    orgId: secureCtx.auth.orgId,
+    projectId: params.projectId,
+    credentialId: params.credentialId,
+    rotationId: params.rotationId,
+    itemId: params.itemId,
+    userId: secureCtx.auth.userId,
+  }
+}
+
 // AC-24: rotation_checklist_confirmations_total{outcome="...|invalid_state|concurrent_modification"}
 // — maps the shared lock-failure outcomes onto confirm's specific metric label vocabulary.
 const CONFIRM_LOCK_OUTCOME_METRIC: Partial<
@@ -430,12 +446,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
 
       const result = await confirmChecklistItem(secureCtx.tx, {
-        orgId: secureCtx.auth.orgId,
-        projectId: params.projectId,
-        credentialId: params.credentialId,
-        rotationId: params.rotationId,
-        itemId: params.itemId,
-        userId: secureCtx.auth.userId,
+        ...itemActionScope(secureCtx, params),
         body: parsed.data,
       })
 
@@ -527,12 +538,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
 
       const result = await failChecklistItem(secureCtx.tx, {
-        orgId: secureCtx.auth.orgId,
-        projectId: params.projectId,
-        credentialId: params.credentialId,
-        rotationId: params.rotationId,
-        itemId: params.itemId,
-        userId: secureCtx.auth.userId,
+        ...itemActionScope(secureCtx, params),
         body: parsed.data,
       })
 
@@ -628,14 +634,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      const result = await retryChecklistItem(secureCtx.tx, {
-        orgId: secureCtx.auth.orgId,
-        projectId: params.projectId,
-        credentialId: params.credentialId,
-        rotationId: params.rotationId,
-        itemId: params.itemId,
-        userId: secureCtx.auth.userId,
-      })
+      const result = await retryChecklistItem(secureCtx.tx, itemActionScope(secureCtx, params))
 
       if (isCommonLockOutcome(result)) {
         return replyForCommonLockOutcome(reply, req, result, params, {

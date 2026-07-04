@@ -2,6 +2,7 @@ import {
   CompleteRotationBodySchema,
   ConfirmChecklistItemBodySchema,
   FailChecklistItemBodySchema,
+  optionalTrimmedNotes,
   RetryChecklistItemBodySchema,
   RotationChecklistItemSchema,
   RotationChecklistItemStatusSchema,
@@ -25,13 +26,7 @@ export {
 export const InitiateRotationBodySchema = z
   .object({
     newValue: z.string().min(1).max(65536),
-    notes: z
-      .string()
-      .max(1024)
-      .trim()
-      .nullable()
-      .optional()
-      .transform((v) => (v ? v : null)),
+    notes: optionalTrimmedNotes(1024),
   })
   .strict()
   .meta({ id: 'InitiateRotationBody' })

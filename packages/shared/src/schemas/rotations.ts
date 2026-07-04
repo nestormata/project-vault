@@ -1,5 +1,18 @@
 import { z } from 'zod/v4'
 
+/** Shared by InitiateRotationBodySchema (api/schema.ts, 5.1) and ConfirmChecklistItemBodySchema
+ *  below: an optional free-text notes field that treats whitespace-only input the same as
+ *  omitted input (both become `null`) rather than persisting an empty/whitespace string. */
+export function optionalTrimmedNotes(maxLength: number) {
+  return z
+    .string()
+    .max(maxLength)
+    .trim()
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null))
+}
+
 export const RotationStatusSchema = z.enum([
   'in_progress',
   'completed',
@@ -60,17 +73,9 @@ export const RotationSummarySchema = z
   })
   .meta({ id: 'RotationSummary' })
 
-// Identical trim/transform idiom to InitiateRotationBodySchema's `notes` field (5.1) — fixes
-// the same whitespace-vs-null inconsistency for this story's own notes/reason fields.
 export const ConfirmChecklistItemBodySchema = z
   .object({
-    notes: z
-      .string()
-      .max(1024)
-      .trim()
-      .nullable()
-      .optional()
-      .transform((v) => (v ? v : null)),
+    notes: optionalTrimmedNotes(1024),
   })
   .strict()
   .meta({ id: 'ConfirmChecklistItemBody' })

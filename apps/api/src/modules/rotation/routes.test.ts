@@ -139,46 +139,38 @@ function upcomingRotationsUrl(projectId: string, suffix = '') {
   return `/api/v1/projects/${projectId}/rotations/upcoming${suffix}`
 }
 
-async function confirmChecklistItemViaApi(
-  app: TestApp,
-  cookies: Record<string, string>,
-  ids: { projectId: string; credentialId: string; rotationId: string; itemId: string },
-  body: Record<string, unknown> = {}
+/** confirm/fail/retry are identical thin wrappers around the same checklist-item POST shape,
+ *  differing only in the URL's action segment and each action's own default body. */
+function checklistActionViaApi(
+  action: 'confirm' | 'fail' | 'retry',
+  defaultBody: Record<string, unknown> = {}
 ) {
-  return app.inject({
-    method: 'POST',
-    url: checklistItemUrl(ids.projectId, ids.credentialId, ids.rotationId, ids.itemId, 'confirm'),
-    headers: { cookie: cookieHeader(cookies) },
-    payload: body,
-  })
+  return async function (
+    app: TestApp,
+    cookies: Record<string, string>,
+    ids: { projectId: string; credentialId: string; rotationId: string; itemId: string },
+    body: Record<string, unknown> = defaultBody
+  ) {
+    return app.inject({
+      method: 'POST',
+      url: checklistItemUrl(ids.projectId, ids.credentialId, ids.rotationId, ids.itemId, action),
+      headers: { cookie: cookieHeader(cookies) },
+      payload: body,
+    })
+  }
 }
 
-async function failChecklistItemViaApi(
-  app: TestApp,
-  cookies: Record<string, string>,
-  ids: { projectId: string; credentialId: string; rotationId: string; itemId: string },
-  body: Record<string, unknown> = { reason: 'target system not yet updated' }
-) {
-  return app.inject({
-    method: 'POST',
-    url: checklistItemUrl(ids.projectId, ids.credentialId, ids.rotationId, ids.itemId, 'fail'),
-    headers: { cookie: cookieHeader(cookies) },
-    payload: body,
-  })
-}
+const confirmChecklistItemViaApi = checklistActionViaApi('confirm')
+const failChecklistItemViaApi = checklistActionViaApi('fail', {
+  reason: 'target system not yet updated',
+})
+const retryChecklistItemViaApi = checklistActionViaApi('retry')
 
-async function retryChecklistItemViaApi(
-  app: TestApp,
-  cookies: Record<string, string>,
-  ids: { projectId: string; credentialId: string; rotationId: string; itemId: string },
-  body: Record<string, unknown> = {}
-) {
-  return app.inject({
-    method: 'POST',
-    url: checklistItemUrl(ids.projectId, ids.credentialId, ids.rotationId, ids.itemId, 'retry'),
-    headers: { cookie: cookieHeader(cookies) },
-    payload: body,
-  })
+/** Shared by confirm/fail/retry success-path assertions: every one of those routes replies with
+ *  this same { item, rotationVersion } envelope on 200. */
+function expectItemMutationSuccess(res: Awaited<ReturnType<TestApp['inject']>>) {
+  expect(res.statusCode).toBe(200)
+  return res.json<{ data: { item: Record<string, unknown>; rotationVersion: number } }>()
 }
 
 async function completeRotationViaApi(
@@ -245,6 +237,19 @@ async function createRotationWithDependenciesFixture(
     rotationId: body.data.id,
     items: body.data.checklistItems,
   }
+}
+
+/** Shared setup step across several tests below: confirm the fixture's first checklist item and
+ *  assert the confirm itself succeeded, before the test moves on to its own actual assertion. */
+async function confirmFirstItem(
+  app: TestApp,
+  cookies: Record<string, string>,
+  fixture: Awaited<ReturnType<typeof createRotationWithDependenciesFixture>>
+) {
+  const item = must(fixture.items[0])
+  const res = await confirmChecklistItemViaApi(app, cookies, { ...fixture, itemId: item.id })
+  expect(res.statusCode).toBe(200)
+  return { item, res }
 }
 
 describe.sequential('rotation routes', () => {
@@ -735,10 +740,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       { ...fixture, itemId: item.id },
       { notes: 'Verified manually' }
     )
-    expect(res.statusCode).toBe(200)
-    const body = res.json<{
-      data: { item: Record<string, unknown>; rotationVersion: number }
-    }>()
+    const body = expectItemMutationSuccess(res)
     expect(body.data.item).toMatchObject({
       id: item.id,
       status: 'confirmed',
@@ -815,12 +817,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'confirm-409',
       1
     )
-    const item = must(fixture.items[0])
-    const first = await confirmChecklistItemViaApi(app, owner.cookies, {
-      ...fixture,
-      itemId: item.id,
-    })
-    expect(first.statusCode).toBe(200)
+    const { item, res: first } = await confirmFirstItem(app, owner.cookies, fixture)
     const firstBody = first.json<{ data: { item: { confirmedAt: string } } }>()
 
     const second = await confirmChecklistItemViaApi(app, owner.cookies, {
@@ -837,12 +834,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
 
   it('confirm/fail/retry against a rotation that is no longer in_progress returns 422 rotation_not_active, taking precedence over item-level checks', async () => {
     const fixture = await createRotationWithDependenciesFixture(app, owner.cookies, 'not-active', 1)
-    const item = must(fixture.items[0])
-    const confirmRes = await confirmChecklistItemViaApi(app, owner.cookies, {
-      ...fixture,
-      itemId: item.id,
-    })
-    expect(confirmRes.statusCode).toBe(200)
+    const { item } = await confirmFirstItem(app, owner.cookies, fixture)
 
     const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
     expect(completeRes.statusCode).toBe(200)
@@ -871,8 +863,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
         retryScheduledAt: '2026-07-01T16:00:00.000Z',
       }
     )
-    expect(res.statusCode).toBe(200)
-    const body = res.json<{ data: { item: Record<string, unknown>; rotationVersion: number } }>()
+    const body = expectItemMutationSuccess(res)
     expect(body.data.item).toMatchObject({
       status: 'failed',
       lastFailureReason: 'GitHub Actions still using the old key',
