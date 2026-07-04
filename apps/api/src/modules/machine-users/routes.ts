@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -415,35 +415,51 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      // AC-17: capture the timestamp application-side and bind it as a parameter rather than
-      // calling SQL now() inline — required for the idempotency comparison below to be
-      // meaningful (now() is evaluated fresh per-transaction and can never match a prior one).
+      // AC-17: capture the timestamp application-side. The UPDATE is gated on `revokedAt IS
+      // NULL` so at most one of two concurrent callers can ever claim the row — Postgres blocks
+      // the second UPDATE behind the first's row lock, then re-evaluates the WHERE clause
+      // against the just-committed row, so the loser's WHERE simply matches 0 rows. This avoids
+      // any timestamp-equality tie-break ambiguity (two concurrent calls can legitimately
+      // capture the same millisecond).
       const revokedAt = new Date()
-      const [updated] = await secureCtx.tx
+      const [claimed] = await secureCtx.tx
         .update(apiKeys)
-        .set({ revokedAt: sql`COALESCE(${apiKeys.revokedAt}, ${revokedAt})` })
-        .where(and(eq(apiKeys.id, params.keyId), eq(apiKeys.machineUserId, params.machineUserId)))
+        .set({ revokedAt })
+        .where(
+          and(
+            eq(apiKeys.id, params.keyId),
+            eq(apiKeys.machineUserId, params.machineUserId),
+            isNull(apiKeys.revokedAt)
+          )
+        )
         .returning({ id: apiKeys.id, revokedAt: apiKeys.revokedAt })
 
-      if (!updated) return reply.status(404).send(API_KEY_NOT_FOUND)
-
-      // This transaction's write only "won" the race if the RETURNING value equals what it
-      // passed in — otherwise another transaction already revoked the key first, and writing a
-      // second audit row for a no-op would misrepresent the audit trail (AC-13).
-      const wonRace = updated.revokedAt?.getTime() === revokedAt.getTime()
-      if (wonRace) {
+      let result: { id: string; revokedAt: Date | null }
+      if (claimed) {
+        result = claimed
         await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
           resourceType: 'api_key',
           orgId: secureCtx.auth.orgId,
           actorUserId: secureCtx.auth.userId,
           eventType: AuditEvent.MACHINE_USER_API_KEY_REVOKED,
-          resourceId: updated.id,
+          resourceId: claimed.id,
           payload: {},
           request: req,
         })
+      } else {
+        // Either the key doesn't exist/isn't in this org, or it was already revoked (by this
+        // request retried, or a concurrent caller that won the race) — in both cases no audit
+        // write happens here; re-read to distinguish "not found" from "already revoked".
+        const [existing] = await secureCtx.tx
+          .select({ id: apiKeys.id, revokedAt: apiKeys.revokedAt })
+          .from(apiKeys)
+          .where(and(eq(apiKeys.id, params.keyId), eq(apiKeys.machineUserId, params.machineUserId)))
+          .limit(1)
+        if (!existing) return reply.status(404).send(API_KEY_NOT_FOUND)
+        result = existing
       }
 
-      return { data: { id: updated.id, revokedAt: (updated.revokedAt ?? revokedAt).toISOString() } }
+      return { data: { id: result.id, revokedAt: (result.revokedAt ?? revokedAt).toISOString() } }
     },
   })
 }
