@@ -1,6 +1,6 @@
 # Story 7.1: Machine User Identity & API Key Management
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for creating project-scoped machine user identities and issuing/revoking their API keys. This is the FIRST story in Epic 7 and the schema/crypto foundation Stories 7.2 (machine authentication + programmatic retrieval) and 7.3 (GitHub Actions integration) build on. Read "Key Design Decisions & Open Questions" before coding — this story resolves several concrete conflicts between epics.md's literal Story 7.1 AC text and architecture.md's canonical technical decisions, always in favor of architecture.md + established codebase precedent, mirroring the resolution pattern Story 4.1 set for Epic 4. -->
 
@@ -606,23 +606,23 @@ fetchRows: (orgId) =>
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema** (AC-1, AC-2)
-  - [ ] `packages/db/src/schema/machine-users.ts` — new table
-  - [ ] `packages/db/src/schema/api-keys.ts` — new table
-  - [ ] Add both to `packages/db/src/schema/index.ts`
-  - [ ] Verify next migration number in `_journal.json`, generate migration (DDL + RLS policies in one file), run `db#check-rls`, run `db#migrate`
-- [ ] **Task 2: Env + token helpers** (D1-D3, AC-9)
-  - [ ] `API_KEY_HMAC_SECRET` env wiring in `apps/api/src/config/env.ts` (+ `.env.example`)
-  - [ ] `apps/api/src/modules/machine-users/tokens.ts` — `generateApiKey()`, `hashApiKey()`, `apiKeysMatch()`, mirroring `auth/tokens.ts`
-- [ ] **Task 3: Audit event constants** (D7) — add `MACHINE_USER_CREATED`, `MACHINE_USER_API_KEY_ISSUED`, `MACHINE_USER_API_KEY_REVOKED` to `packages/shared/src/constants/audit-events.ts` (additive only)
-- [ ] **Task 4: Shared response schemas** — `packages/shared/src/schemas/machine-users.ts` (create/list/detail/key-issue/key-list response shapes, explicitly excluding `keyHash`/plaintext from any read schema; `MAX_MACHINE_USER_LIST_OFFSET` constant per AC-7/AC-12)
-- [ ] **Task 5: Machine user routes** (AC-3 to AC-8) — `apps/api/src/modules/machine-users/routes.ts`, `schema.ts`; wire into `apps/api/src/app.ts`; add `ROUTE_ACTION_CLASSIFICATIONS` entries
-- [ ] **Task 6: API key routes** (AC-9 to AC-13, AC-16, AC-17) — issue/list/revoke handlers in the same module
-- [ ] **Task 7: Expiry alert job** (AC-14, D6) — `apps/api/src/workers/machine-key-expiry-alert.ts` calling `runExpiryAlertJob()`; register cron schedule + worker in `apps/api/src/main.ts` alongside the other three expiry-alert jobs
-- [ ] **Task 8: Audit wiring** (AC-15) — manual `writeHumanAuditEntryOrFailClosed` calls at each mutation's insert/update site; verify payload never includes secret material
-- [ ] **Task 9: RLS + route-audit CI gates** (AC-18) — confirm `check-rls-coverage` passes; confirm `route-audit.test.ts` passes with new `ROUTE_ACTION_CLASSIFICATIONS` entries
-- [ ] **Task 10: Integration test suite** — all cases across AC-3 through AC-19 (creation + scope boundary, validation, authz, tenant isolation, list/detail + pagination, key issuance + plaintext-once + hash-only storage + key-name validation (AC-10), key listing no-leak, revocation + idempotency (app-captured-timestamp comparison, AC-13/AC-17), deactivated-machine-user key-issue rejection (fixture-set `deactivatedAt` directly, AC-11), expiry-alert firing/dedupe/org-isolation, audit fail-closed + payload sanitization (no runtime redaction safety net, AC-9/AC-15), rate limiting (shared per-admin-per-route budget, not per-machine-user), concurrency, migration additivity)
-- [ ] **Task 11: Route audit + OpenAPI regen** — `pnpm --filter api generate-spec`, confirm `web#typecheck` picks up new types (even with no web UI consuming them yet, per the Product Surface Contract's `TBD` note)
+- [x] **Task 1: Schema** (AC-1, AC-2)
+  - [x] `packages/db/src/schema/machine-users.ts` — new table
+  - [x] `packages/db/src/schema/api-keys.ts` — new table
+  - [x] Add both to `packages/db/src/schema/index.ts`
+  - [x] Verify next migration number in `_journal.json`, generate migration (DDL + RLS policies in one file), run `db#check-rls`, run `db#migrate`
+- [x] **Task 2: Env + token helpers** (D1-D3, AC-9)
+  - [x] `API_KEY_HMAC_SECRET` env wiring in `apps/api/src/config/env.ts` (+ `.env.example`)
+  - [x] `apps/api/src/modules/machine-users/tokens.ts` — `generateApiKey()`, `hashApiKey()`, `apiKeysMatch()`, mirroring `auth/tokens.ts`
+- [x] **Task 3: Audit event constants** (D7) — add `MACHINE_USER_CREATED`, `MACHINE_USER_API_KEY_ISSUED`, `MACHINE_USER_API_KEY_REVOKED` to `packages/shared/src/constants/audit-events.ts` (additive only)
+- [x] **Task 4: Shared response schemas** — `packages/shared/src/schemas/machine-users.ts` (create/list/detail/key-issue/key-list response shapes, explicitly excluding `keyHash`/plaintext from any read schema; `MAX_MACHINE_USER_LIST_OFFSET` constant per AC-7/AC-12)
+- [x] **Task 5: Machine user routes** (AC-3 to AC-8) — `apps/api/src/modules/machine-users/routes.ts`, `schema.ts`; wire into `apps/api/src/app.ts`; add `ROUTE_ACTION_CLASSIFICATIONS` entries
+- [x] **Task 6: API key routes** (AC-9 to AC-13, AC-16, AC-17) — issue/list/revoke handlers in the same module
+- [x] **Task 7: Expiry alert job** (AC-14, D6) — `apps/api/src/workers/machine-key-expiry-alert.ts` calling `runExpiryAlertJob()`; register cron schedule + worker in `apps/api/src/main.ts` alongside the other three expiry-alert jobs
+- [x] **Task 8: Audit wiring** (AC-15) — manual `writeHumanAuditEntryOrFailClosed` calls at each mutation's insert/update site; verify payload never includes secret material
+- [x] **Task 9: RLS + route-audit CI gates** (AC-18) — confirm `check-rls-coverage` passes; confirm `route-audit.test.ts` passes with new `ROUTE_ACTION_CLASSIFICATIONS` entries
+- [x] **Task 10: Integration test suite** — all cases across AC-3 through AC-19 (creation + scope boundary, validation, authz, tenant isolation, list/detail + pagination, key issuance + plaintext-once + hash-only storage + key-name validation (AC-10), key listing no-leak, revocation + idempotency (app-captured-timestamp comparison, AC-13/AC-17), deactivated-machine-user key-issue rejection (fixture-set `deactivatedAt` directly, AC-11), expiry-alert firing/dedupe/org-isolation, audit fail-closed + payload sanitization (no runtime redaction safety net, AC-9/AC-15), rate limiting (shared per-admin-per-route budget, not per-machine-user), concurrency, migration additivity)
+- [x] **Task 11: Route audit + OpenAPI regen** — `pnpm --filter api generate-spec`, confirm `web#typecheck` picks up new types (even with no web UI consuming them yet, per the Product Surface Contract's `TBD` note)
 
 ---
 
@@ -673,6 +673,48 @@ Claude Sonnet 4.6
 
 ### Debug Log References
 
+- The revoke-key handler's original implementation used `sql\`COALESCE(${apiKeys.revokedAt}, ${revokedAt})\`` with a bare JS `Date` bound into a type-less `sql` template — postgres.js threw `TypeError [ERR_INVALID_ARG_TYPE]` because it didn't know to serialize the Date as a timestamp parameter. Root-caused via a standalone drizzle/postgres.js repro script; fixed by switching to a plain `.set({ revokedAt })` gated on `WHERE revoked_at IS NULL` (AC-17's "equally valid alternative"), which also eliminates a millisecond-tie race the COALESCE/timestamp-equality approach had (two concurrent revokes could legitimately capture the identical `Date.now()` millisecond and both conclude they "won").
+- `jscpd` (repo-wide 0%-duplication gate) flagged 9 clones after the first implementation pass — mostly the two list endpoints' near-identical pagination/offset-check/mapper code, and a 5th "reject placeholder secret" env test bringing its context fixture into exact alignment with the 4th (recovery) block. Resolved by extracting `resolvePaginationOffset`/`PAGE_OUT_OF_RANGE_ERROR`/`PageLimitQueryShape` into `lib/pagination.ts` (also adopted by `credentials/routes.ts` and `rotation/schema.ts`), a shared `machineUserSummaryFields` mapper base, a shared `READ_ERROR_RESPONSES`/`READ_SECURITY` pair, and a shared env-test fixture constant — all behavior-preserving.
+- `drizzle-kit generate` initially re-emitted `CREATE TABLE` for all 37 existing tables because the repo's migration snapshots for `0020`-`0028` were never committed (only `0000`/`0013`-`0016`/`0019` exist on disk) — a pre-existing gap unrelated to this story. Hand-wrote migration `0029` to contain only the actual new DDL (`machine_users`/`api_keys` + FKs/indexes/RLS), while keeping drizzle-kit's generated `0029_snapshot.json` (which is a correct, complete 37-table snapshot reflecting current `schema/index.ts`) — this incidentally repairs the snapshot chain for future `generate` runs.
+
 ### Completion Notes List
 
+- All 19 ACs implemented and covered by tests: schema+RLS (AC-1/AC-2), create/list/detail (AC-3/AC-4/AC-5/AC-6/AC-7/AC-8), key issue/list/revoke (AC-9..AC-13), expiry-alert worker (AC-14), audit fail-closed + payload sanitization (AC-15), rate limiting (AC-16), concurrency (AC-17), RLS/route-audit CI gates (AC-18), migration additivity (AC-19).
+- D1-D9 decisions implemented exactly as specified in the story (HMAC-SHA256, `pk_` + base64url, `api_keys` table name, direct `role` column on `machine_users`, org-admin+MFA gate, shared expiry-alert runner, lowercase-dotted audit events, standard RLS policy with D8 handoff to 7.2, `audit_log_entries` not a new table).
+- Per AC-1's explicit note, `deactivatedAt` is schema-only in this story — no endpoint sets it (the AC-11 "deactivated machine user" test fixtures the column directly via a DB update, exactly as the story instructs, since no deactivation endpoint exists yet).
+- Per D8, this story does not resolve whether `api_keys` needs RLS-exception treatment for Story 7.2's pre-auth by-`keyHash` lookup — flagged in the story text as an explicit handoff for 7.2 to read before implementing that lookup.
+- Product Surface Contract's `TBD` web-UI gap (no story currently scopes a machine-user management UI) is unchanged by this story, as documented in the contract table — no SvelteKit page was added, consistent with the "do not build an unscoped UI" instruction.
+- Test status: `packages/db` 83/83, `packages/shared` 92/92 pass. `apps/api` machine-users-specific suites 34/34 (`modules/machine-users/tokens.test.ts` 8, `modules/machine-users/routes.test.ts` 22, `workers/machine-key-expiry-alert.test.ts` 4), plus `config/env.test.ts` 32/32 and `__tests__/route-audit.test.ts` 10/10 green. Full `apps/api` suite (`pnpm turbo test` equivalent) run clean with exit code 0. `make check-rls`, `pnpm jscpd` (0% duplication), `pnpm tsx scripts/check-env-example.ts`, `pnpm tsx scripts/check-audit-baseline.ts`, `pnpm tsx scripts/check-search-index.ts`, `pnpm tsx scripts/check-alert-pending-epic3.ts`, and `pnpm --filter web typecheck` all pass.
+
 ### File List
+
+**New files:**
+- `packages/db/src/schema/machine-users.ts`
+- `packages/db/src/schema/machine-users-schema.test.ts`
+- `packages/db/src/schema/api-keys.ts`
+- `packages/db/src/migrations/0029_machine_users_and_api_keys.sql`
+- `packages/db/src/migrations/meta/0029_snapshot.json`
+- `packages/shared/src/schemas/machine-users.ts`
+- `packages/shared/src/schemas/machine-users.test.ts`
+- `apps/api/src/modules/machine-users/tokens.ts`
+- `apps/api/src/modules/machine-users/tokens.test.ts`
+- `apps/api/src/modules/machine-users/schema.ts`
+- `apps/api/src/modules/machine-users/routes.ts`
+- `apps/api/src/modules/machine-users/routes.test.ts`
+- `apps/api/src/modules/machine-users/machine-user-route-test-bootstrap.ts`
+- `apps/api/src/workers/machine-key-expiry-alert.ts`
+- `apps/api/src/workers/machine-key-expiry-alert.test.ts`
+
+**Modified files:**
+- `packages/db/src/schema/index.ts` (export new schemas)
+- `packages/db/src/migrations/meta/_journal.json` (new migration entry)
+- `packages/shared/src/index.ts` (export new schema module)
+- `packages/shared/src/constants/audit-events.ts` / `.test.ts` (D7 machine_user.* events)
+- `apps/api/src/config/env.ts` / `.test.ts` (`API_KEY_HMAC_SECRET` wiring + validation, D3)
+- `apps/api/src/app.ts` (register `machineUserRoutes`)
+- `apps/api/src/main.ts` (register `machine-key:expiry-alert` schedule + worker)
+- `apps/api/src/lib/route-exemptions.ts` (6 new `ROUTE_ACTION_CLASSIFICATIONS` entries)
+- `apps/api/src/lib/pagination.ts` (shared `resolvePaginationOffset`/`PAGE_OUT_OF_RANGE_ERROR`/`PageLimitQueryShape`, jscpd dedup)
+- `apps/api/src/modules/credentials/routes.ts` (adopted shared pagination helper, jscpd dedup, no behavior change)
+- `apps/api/src/modules/rotation/schema.ts` (adopted shared `PageLimitQueryShape`, jscpd dedup, no behavior change)
+- `.env.example` (`API_KEY_HMAC_SECRET` entry)
