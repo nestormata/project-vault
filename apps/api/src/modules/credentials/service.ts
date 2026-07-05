@@ -147,7 +147,13 @@ export async function listCredentials(tx: Tx, params: CredentialListParams) {
           .where(
             and(
               inArray(credentialVersions.credentialId, credentialIds),
-              isNull(credentialVersions.purgedAt)
+              isNull(credentialVersions.purgedAt),
+              // Story 5.3 AC-13/AC-14 regression fix: without this, an abandoned version (higher
+              // versionNumber, never renumbered — CR5) would be reported as "current" here even
+              // though revealCurrentValue()/listVersionHistory() correctly roll back to the prior
+              // version — the exact currentVersionNumber-disagreement failure mode the story's
+              // own Pre-mortem Failure Mode #2 warns about, just at this call site instead.
+              isNull(credentialVersions.abandonedAt)
             )
           )
           .groupBy(credentialVersions.credentialId)
@@ -239,7 +245,9 @@ export async function getCredentialDetail(
     .where(
       and(
         eq(credentialVersions.credentialId, params.credentialId),
-        isNull(credentialVersions.purgedAt)
+        isNull(credentialVersions.purgedAt),
+        // Story 5.3 AC-13/AC-14 regression fix — see listCredentials' identical comment above.
+        isNull(credentialVersions.abandonedAt)
       )
     )
 

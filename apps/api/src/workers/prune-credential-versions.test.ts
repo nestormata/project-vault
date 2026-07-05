@@ -31,7 +31,7 @@ async function seedVersion(
   orgId: string,
   credentialId: string,
   versionNumber: number,
-  opts: { rotationLockedAt?: Date } = {}
+  opts: { rotationLockedAt?: Date; abandonedAt?: Date } = {}
 ): Promise<string> {
   const [version] = await withOrg(orgId, (tx) =>
     tx
@@ -48,6 +48,7 @@ async function seedVersion(
         },
         keyVersion: 1,
         rotationLockedAt: opts.rotationLockedAt ?? null,
+        abandonedAt: opts.abandonedAt ?? null,
       })
       .returning({ id: credentialVersions.id })
   )
@@ -135,6 +136,36 @@ describe.sequential('pruneCredentialVersions', () => {
       const versions = await versionsFor(orgId, credentialId)
       const purged = versions.filter((v) => v.purgedAt !== null)
       expect(purged).toHaveLength(0)
+    })
+  }, 20_000)
+
+  // Story 5.3 regression: an abandoned version (AC-12/CR5) can have a HIGHER versionNumber than
+  // the actual current version (abandonment never renumbers anything), which previously let the
+  // abandoned version occupy a retention "keep" slot by rank while the real current version got
+  // purged out from under it. The current version must survive regardless of its numeric rank.
+  it('never purges the actual current version, even when a higher-numbered version is abandoned (retentionCount=1)', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const projectId = await seedProject(orgId)
+      const credentialId = await seedCredential(orgId, projectId, 1)
+      // v1: old historical version — legitimately eligible for purge under retentionCount=1.
+      await seedVersion(orgId, credentialId, 1)
+      // v2: the real, live "current" version (never abandoned, never locked) — must survive.
+      await seedVersion(orgId, credentialId, 2)
+      // v3: a HIGHER-numbered version that was abandoned (e.g. a stale-recovery abandon or a
+      // break-glass supersede that ran after v2 became current) — ranking purge-eligibility by
+      // versionNumber DESC alone would rank v3 above v2, pushing the real current version (v2)
+      // out of the retention window and purging it instead of the abandoned dead-end.
+      await seedVersion(orgId, credentialId, 3, { abandonedAt: new Date() })
+
+      await pruneCredentialVersions()
+
+      const versions = await versionsFor(orgId, credentialId)
+      const byNumber = new Map(versions.map((v) => [v.versionNumber, v]))
+      // v1 (genuinely stale history) is purged — retention still works normally.
+      expect(byNumber.get(1)?.purgedAt).not.toBeNull()
+      // v2 (the actual current version) must never be purged, regardless of v3's higher number.
+      expect(byNumber.get(2)?.purgedAt).toBeNull()
+      expect(byNumber.get(2)?.encryptedValue).not.toBeNull()
     })
   }, 20_000)
 

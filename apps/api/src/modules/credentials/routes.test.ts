@@ -701,6 +701,47 @@ describe.sequential('credential routes', () => {
     expect(valueRes.json<{ data: { value: string } }>().data.value).toBe('pre-rotation-baseline')
   }, 20_000)
 
+  // Regression: listCredentials/getCredentialDetail compute currentVersionNumber via
+  // MAX(versionNumber) WHERE purgedAt IS NULL — before this fix they did NOT also exclude
+  // abandonedAt, unlike revealCurrentValue()/listVersionHistory() (AC-13/AC-14). That let an
+  // abandoned (never-validated) version's higher versionNumber be reported as "current" here
+  // while GET .../value and GET .../versions correctly rolled back to the prior version — the
+  // exact currentVersionNumber-disagreement failure mode the story's Pre-mortem Failure Mode #2
+  // warns about, just at these two call sites instead of AC-13/AC-14's.
+  it('GET credentials list reports the correct currentVersionNumber after an abandonment (not the abandoned version)', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'abandon-list-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Abandon List Key',
+      value: 'list-baseline-v1',
+    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'list-abandoned-v2')
+    await abandonVersion(owner.orgId, credential.id, 2)
+
+    const res = await listCredentials(app, owner.cookies, projectId)
+    expect(res.statusCode).toBe(200)
+    const body = res.json<{ data: { items: { id: string; currentVersionNumber: number }[] } }>()
+    const item = body.data.items.find((entry) => entry.id === credential.id)
+    expect(item?.currentVersionNumber).toBe(1)
+  }, 20_000)
+
+  it('GET credential detail reports the correct currentVersionNumber after an abandonment (not the abandoned version)', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'abandon-detail-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Abandon Detail Key',
+      value: 'detail-baseline-v1',
+    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'detail-abandoned-v2')
+    await abandonVersion(owner.orgId, credential.id, 2)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credential.id}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ data: { currentVersionNumber: number } }>().data.currentVersionNumber).toBe(1)
+  }, 20_000)
+
   it('GET credentials returns an empty paginated list for a real project', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'list-empty-project')
 
