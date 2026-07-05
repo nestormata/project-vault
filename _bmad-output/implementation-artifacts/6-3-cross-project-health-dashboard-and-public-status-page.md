@@ -1,6 +1,6 @@
 # Story 6.3: Cross-Project Health Dashboard & Public Status Page
 
-Status: backlog (blocked on Story 6.2 — see ADR-6.3-01; flip to `ready-for-dev` in `sprint-status.yaml` and this header once `6-2-http-endpoint-monitoring-and-availability-alerts` is confirmed `done`)
+Status: ready-for-dev (Story 6.2 — `6-2-http-endpoint-monitoring-and-availability-alerts` — is now `done`; ADR-6.3-01's prerequisite is satisfied)
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for the
 THIRD story in Epic 6. This story creates the org-wide `GET /api/v1/health-dashboard` endpoint, a
