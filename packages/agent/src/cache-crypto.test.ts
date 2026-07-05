@@ -48,4 +48,21 @@ describe('cache-crypto', () => {
       VaultCacheDecryptionError
     )
   })
+
+  it('rejects an incorrectly-sized key in encryptForCache', () => {
+    const shortKey = Buffer.alloc(16)
+    expect(() => encryptForCache(SECRET_VALUE, shortKey)).toThrow(
+      /encryptForCache: key must be 32 bytes, got 16/
+    )
+  })
+
+  it('rejects an incorrectly-sized key in decryptFromCache', () => {
+    const key = deriveCacheKey('pk_size-test-key-aaaaaaaaaaaaaaaaaa')
+    const encrypted = encryptForCache(SECRET_VALUE, key)
+    const shortKey = Buffer.alloc(16)
+
+    expect(() => decryptFromCache(encrypted, shortKey)).toThrow(
+      /decryptFromCache: key must be 32 bytes, got 16/
+    )
+  })
 })
