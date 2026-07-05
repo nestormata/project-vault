@@ -7,7 +7,17 @@ import type { PageServerLoad } from './$types.js'
 // AC-2: a credential is treated as having an active rotation whenever its most recent rotation
 // (the first item of `GET .../rotations?limit=1`, already ordered most-recent-first per 5.1) is
 // in one of these non-terminal-for-UI-purposes statuses.
-const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery', 'break_glass_complete'])
+//
+// `break_glass_complete` is intentionally excluded: it is a terminal status (the API never
+// transitions it to anything else — confirmed via `apps/api/src/modules/rotation/service.ts`),
+// and `previousVersionOverlap` (the only signal that could indicate a still-"live" overlap
+// window) is only ever present in the synchronous break-glass POST response — it is never
+// included in `GET .../rotations` (list) or `GET .../rotations/:id` (detail) afterwards, and the
+// backend's own `409 rotation_in_progress` guard on `POST .../rotations` never fires against a
+// `break_glass_complete` rotation either. Treating it as "active" here has no server-side
+// backing and previously caused a permanent dead end: a credential that ever underwent a
+// break-glass rotation could never have another rotation initiated through this UI again.
+const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery'])
 
 export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
   const orgRole = requireUser(locals).orgRole

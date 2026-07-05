@@ -7,7 +7,11 @@ import type { PageServerLoad } from './$types.js'
 
 // Mirrors the credential detail page's active-rotation detection (AC-2) — used here as a
 // no-dead-end guard so a direct URL visit to /rotate never lands on a form that would just 409.
-const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery', 'break_glass_complete'])
+// `break_glass_complete` is deliberately excluded — see the matching comment in the credential
+// detail page's `+page.server.ts`: it is a terminal status the backend never blocks a new
+// `POST .../rotations` against, and treating it as "active" here previously made it impossible
+// to ever start another rotation on a credential once it had been break-glass rotated.
+const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery'])
 
 export const load: PageServerLoad = async ({ params, fetch, locals }) => {
   const orgRole = requireUser(locals).orgRole

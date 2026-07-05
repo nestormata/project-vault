@@ -87,29 +87,47 @@ describe('credential detail +page.server.ts rotation section', () => {
     expect(result.activeRotationId).toBe(rotationId)
   })
 
-  it.each(['stale_recovery', 'break_glass_complete'])(
-    'treats %s as an active rotation status',
-    async (status) => {
-      listRotationsMock.mockResolvedValueOnce({
-        items: [{ id: rotationId, status }],
-        page: 1,
-        limit: 1,
-        total: 1,
-        hasMore: false,
-      })
-      listRotationsMock.mockResolvedValueOnce({
-        items: [{ id: rotationId, status }],
-        page: 1,
-        limit: 10,
-        total: 1,
-        hasMore: false,
-      })
+  it('treats stale_recovery as an active rotation status', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'stale_recovery' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'stale_recovery' }],
+      page: 1,
+      limit: 10,
+      total: 1,
+      hasMore: false,
+    })
 
-      const result = await load(makeEvent())
+    const result = await load(makeEvent())
 
-      expect(result.activeRotationId).toBe(rotationId)
-    }
-  )
+    expect(result.activeRotationId).toBe(rotationId)
+  })
+
+  it('does not treat break_glass_complete as active — it is terminal and must not permanently block starting a new rotation', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'break_glass_complete' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'break_glass_complete' }],
+      page: 1,
+      limit: 10,
+      total: 1,
+      hasMore: false,
+    })
+
+    const result = await load(makeEvent())
+
+    expect(result.activeRotationId).toBeNull()
+  })
 
   it('reports no active rotation and empty history for a brand-new credential', async () => {
     listRotationsMock.mockResolvedValueOnce({

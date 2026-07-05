@@ -44,6 +44,23 @@
     maxRetriesMessage = null
   }
 
+  // AC-8: "confirmedBy (resolved to a display name if available, else the raw id truncated ...
+  // falling back gracefully if no name-resolution endpoint is wired for this id)". This story
+  // wires no name-resolution endpoint, so the fallback (truncated id) is always what renders.
+  function shortActorId(id: string): string {
+    return id.length > 8 ? `${id.slice(0, 8)}…` : id
+  }
+
+  function formatDate(value: string): string {
+    return new Date(value).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
   function handleSealedOrGeneric(error: unknown, fallback: string): string {
     if (error instanceof ApiClientError) {
       if (error.status === 503) return onboardingCopy.vaultSealedMessage
@@ -89,6 +106,16 @@
         error.code === 'concurrent_modification'
       ) {
         onConcurrentModification()
+      } else if (
+        error instanceof ApiClientError &&
+        error.status === 422 &&
+        error.code === 'rotation_not_active'
+      ) {
+        // Ground-Truth API Surface documents this code for confirm/fail/retry — it fires when
+        // the rotation itself moved out of `in_progress` (completed/abandoned/stale) between
+        // this row rendering and the click landing. Same remediation as AC-15's concurrent-
+        // modification banner: surface it and refetch so stale action buttons disappear.
+        onConcurrentModification()
       } else {
         errorMessage = handleSealedOrGeneric(error, 'Could not confirm item.')
       }
@@ -132,6 +159,12 @@
         error.code === 'concurrent_modification'
       ) {
         onConcurrentModification()
+      } else if (
+        error instanceof ApiClientError &&
+        error.status === 422 &&
+        error.code === 'rotation_not_active'
+      ) {
+        onConcurrentModification()
       } else {
         errorMessage = handleSealedOrGeneric(error, 'Could not report a problem.')
       }
@@ -165,6 +198,12 @@
         error.code === 'concurrent_modification'
       ) {
         onConcurrentModification()
+      } else if (
+        error instanceof ApiClientError &&
+        error.status === 422 &&
+        error.code === 'rotation_not_active'
+      ) {
+        onConcurrentModification()
       } else {
         errorMessage = handleSealedOrGeneric(error, 'Could not retry item.')
       }
@@ -182,6 +221,13 @@
     </span>
   </div>
 
+  {#if item.status === 'confirmed' && item.confirmedAt}
+    <p class="mt-1 text-xs text-slate-600">
+      confirmed{item.confirmedBy ? ` by ${shortActorId(item.confirmedBy)}` : ''} at {formatDate(
+        item.confirmedAt
+      )}
+    </p>
+  {/if}
   {#if item.retryCount > 0}
     <p class="mt-1 text-xs text-slate-600">retry: {item.retryCount}</p>
   {/if}

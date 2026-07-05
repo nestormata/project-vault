@@ -113,6 +113,12 @@
           acknowledgedNoDependencies = false
         } else if (error.status === 409 && error.code === 'concurrent_modification') {
           await handleConcurrentModification()
+        } else if (error.status === 422 && error.code === 'rotation_not_active') {
+          // Ground-Truth API Surface: complete shares the same `rotation_not_active` outcome as
+          // confirm/fail/retry — fires when the rotation moved out of `in_progress` between load
+          // and this click. Same remediation as the concurrent-modification banner: refetch so
+          // the page reflects the rotation's real, current state.
+          await handleConcurrentModification()
         } else if (error.status === 503) {
           completeError = onboardingCopy.vaultSealedMessage
         } else {

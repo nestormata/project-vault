@@ -82,4 +82,23 @@ describe('/rotate +page.server.ts', () => {
     )
     expect(listCredentialDependenciesMock).not.toHaveBeenCalled()
   })
+
+  it('does not redirect away for a break_glass_complete rotation — it is terminal and must not permanently block a new rotation', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'break_glass_complete' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listCredentialDependenciesMock.mockResolvedValueOnce({
+      items: [],
+      hasDependencies: false,
+    })
+
+    const result = await load(makeEvent('admin'))
+
+    expect(result.canManage).toBe(true)
+    expect(listCredentialDependenciesMock).toHaveBeenCalled()
+  })
 })

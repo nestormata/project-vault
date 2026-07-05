@@ -330,6 +330,38 @@ describe('/rotations/[rotationId] +page.svelte', () => {
     await waitFor(() => expect(getRotationMock).toHaveBeenCalledTimes(1))
   })
 
+  it('422 rotation_not_active on complete triggers the same refetch remediation as concurrent_modification', async () => {
+    completeRotationMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'rotation_not_active',
+          message: 'This rotation is not in progress.',
+          status: 'abandoned',
+        },
+        'This rotation is not in progress.'
+      )
+    )
+    getRotationMock.mockResolvedValue(
+      makeRotation({
+        status: 'abandoned',
+        checklistItems: [makeItem({ id: 'i1', status: 'confirmed' })],
+      })
+    )
+
+    render(RotationDetailPage, {
+      props: {
+        data: baseData({
+          rotation: makeRotation({ checklistItems: [makeItem({ id: 'i1', status: 'confirmed' })] }),
+        }),
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /complete rotation/i }))
+
+    await waitFor(() => expect(getRotationMock).toHaveBeenCalledTimes(1))
+  })
+
   it('AC-16: renders StaleRecoveryBanner and hides per-item action buttons while stale_recovery', () => {
     render(RotationDetailPage, {
       props: {

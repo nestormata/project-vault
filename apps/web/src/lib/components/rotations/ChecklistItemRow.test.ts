@@ -231,4 +231,74 @@ describe('ChecklistItemRow', () => {
     await waitFor(() => expect(onConcurrentModification).toHaveBeenCalledTimes(1))
     expect(onUpdate).not.toHaveBeenCalled()
   })
+
+  it('AC-8: a confirmed item displays confirmedBy (truncated) and confirmedAt', () => {
+    renderRow({
+      status: 'confirmed',
+      confirmedBy: 'user-123456789',
+      confirmedAt: '2026-07-01T15:00:00.000Z',
+    })
+
+    expect(screen.getByText(/confirmed by user-123/i)).toBeTruthy()
+  })
+
+  it('422 rotation_not_active on confirm triggers onConcurrentModification (same remediation as a 409)', async () => {
+    confirmChecklistItemMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'rotation_not_active',
+          message: 'This rotation is not in progress.',
+          status: 'completed',
+        },
+        'This rotation is not in progress.'
+      )
+    )
+    const { onUpdate, onConcurrentModification } = renderRow()
+
+    await fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }))
+
+    await waitFor(() => expect(onConcurrentModification).toHaveBeenCalledTimes(1))
+    expect(onUpdate).not.toHaveBeenCalled()
+  })
+
+  it('422 rotation_not_active on retry triggers onConcurrentModification', async () => {
+    retryChecklistItemMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'rotation_not_active',
+          message: 'This rotation is not in progress.',
+          status: 'abandoned',
+        },
+        'This rotation is not in progress.'
+      )
+    )
+    const { onConcurrentModification } = renderRow({ status: 'failed', lastFailureReason: 'x' })
+
+    await fireEvent.click(screen.getByRole('button', { name: /^retry$/i }))
+
+    await waitFor(() => expect(onConcurrentModification).toHaveBeenCalledTimes(1))
+  })
+
+  it('422 rotation_not_active on report-a-problem triggers onConcurrentModification', async () => {
+    failChecklistItemMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'rotation_not_active',
+          message: 'This rotation is not in progress.',
+          status: 'stale_recovery',
+        },
+        'This rotation is not in progress.'
+      )
+    )
+    const { onConcurrentModification } = renderRow()
+
+    await fireEvent.click(screen.getByRole('button', { name: /report a problem/i }))
+    await fireEvent.input(screen.getByLabelText(/reason/i), { target: { value: 'still broken' } })
+    await fireEvent.click(screen.getByRole('button', { name: /submit/i }))
+
+    await waitFor(() => expect(onConcurrentModification).toHaveBeenCalledTimes(1))
+  })
 })
