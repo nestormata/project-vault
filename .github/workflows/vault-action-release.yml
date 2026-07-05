@@ -1,0 +1,78 @@
+name: vault-action Release
+
+# D7/AC-15 — the first tag-triggered release workflow in this repo (ci.yml/nightly.yml are both
+# push/PR/schedule-triggered only). Builds/tests packages/vault-action, re-verifies dist/
+# freshness AT THE TAGGED REF (not an ephemeral, never-compared rebuild — see AC-15's rationale),
+# and only on success force-moves the mutable major-version convenience tag (e.g. pushing
+# vault-action-v1.2.0 moves vault-action-v1 to the same commit), mirroring actions/checkout's own
+# well-known "mutable major tag" convention.
+#
+# OPERATIONAL REQUIREMENT (cannot be enforced by this file's contents alone — D7): this workflow
+# file and the branch it releases from must sit behind this repo's standard branch-protection /
+# required-review settings, so moving the mutable vault-action-v1 tag always traces back to a
+# reviewed change, not a unilateral push. Verify this repo-configuration step manually; flagged
+# again in packages/vault-action/README.md and this story's Completion Notes.
+
+on:
+  push:
+    tags:
+      - 'vault-action-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, test, and move the major tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build vault-action (and its @project-vault/agent dependency)
+        run: pnpm --filter "@project-vault/vault-action..." build
+
+      - name: Test vault-action
+        run: pnpm --filter @project-vault/vault-action test
+
+      # AC-15 — re-runs the SAME freshness check ci.yml already enforces at PR time, but here
+      # against the exact commit this tag points at, so a tag pushed from a commit where dist/
+      # had drifted from src/ (e.g. a manual commit that bypassed PR review) never moves the
+      # mutable major tag.
+      - name: Re-verify dist/ freshness at the tagged ref (D6/AC-11/AC-15)
+        run: pnpm check-vault-action-dist
+
+      - name: Determine major-version convenience tag
+        id: major-tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # e.g. vault-action-v1.2.3 -> vault-action-v1
+          if [[ ! "$TAG" =~ ^vault-action-v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: tag '$TAG' does not match the required vault-action-vMAJOR.MINOR.PATCH format" >&2
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          echo "full_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "major_tag=vault-action-v${MAJOR}" >> "$GITHUB_OUTPUT"
+
+      - name: Move the major-version tag (e.g. vault-action-v1) to this commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "${{ steps.major-tag.outputs.major_tag }}" "${{ steps.major-tag.outputs.full_tag }}"
+          git push origin "${{ steps.major-tag.outputs.major_tag }}" --force

@@ -1,0 +1,23 @@
+name: 'Project Vault Action'
+description: 'Retrieve secrets from Project Vault and export them as masked environment variables'
+author: 'Project Vault'
+branding:
+  icon: 'lock'
+  color: 'blue'
+inputs:
+  vault-url:
+    description: 'Base URL of your Project Vault instance'
+    required: true
+  api-key:
+    description: 'Machine user API key (pk_...) issued via Project Vault'
+    required: true
+  secrets:
+    description: 'One mapping per line: PROJECT_ID/CREDENTIAL_NAME as ENV_VAR_NAME'
+    required: true
+  continue-on-error:
+    description: 'If true, warn (not fail) when the vault is unreachable'
+    required: false
+    default: 'false'
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
