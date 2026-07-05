@@ -27,6 +27,7 @@ import { dashboardRoutes } from './modules/dashboard/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
+import { machineTokenExchangeRoutes } from './modules/machine-users/token-exchange-routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
 import { machineJwtPlugin } from './plugins/machine-jwt.js'
@@ -192,6 +193,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Registered always (regardless of guard) so vault endpoints appear in the OpenAPI spec.
   await fastify.register(vaultRoutes)
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
+  await fastify.register(machineTokenExchangeRoutes, { prefix: '/api/v1/auth' })
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
   /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
      literal prefix strings; a shared constant would make them invisible to that parser. */
