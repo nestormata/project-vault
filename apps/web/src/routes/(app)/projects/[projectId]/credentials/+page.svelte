@@ -54,6 +54,20 @@
       <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Credentials</p>
       <h1 class="mt-2 text-3xl font-bold text-slate-950">Project credentials</h1>
       <p class="mt-2 text-slate-600">Browse and manage secrets for this project.</p>
+      <nav class="mt-3 flex gap-4 text-sm">
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(`/projects/${data.projectId}/members`)}
+        >
+          Members
+        </a>
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(`/projects/${data.projectId}/status-page`)}
+        >
+          Public status page
+        </a>
+      </nav>
     </div>
     <div class="flex flex-col gap-2 sm:flex-row">
       {#if canCreate}

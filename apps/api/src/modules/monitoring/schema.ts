@@ -316,3 +316,44 @@ export type AlertParams = z.infer<typeof AlertParamsSchema>
 // CHECK_FREQUENCY_MINUTES retained for reference/tests; the union literal schema above enforces
 // the same [1,5,15,30] domain declaratively.
 export { CHECK_FREQUENCY_MINUTES }
+
+// --- Status pages (status_pages/status_page_services) — Story 6.3 ---
+// Request-body schemas stay module-local (Dev Notes: 6.1 already established this exception to
+// architecture.md's general "import from packages/shared" guidance for request bodies). Response
+// types the web app must consume live in packages/shared/src/schemas/status-page.ts instead.
+
+export const StatusPageProjectParamsSchema = z
+  .object({ projectId: z.uuid() })
+  .meta({ id: 'StatusPageProjectParams' })
+
+// AC 15: arbitrary reasonable cap (undocumented in epics.md/architecture.md, same style of
+// documented-but-unsourced bound as 6.1's alertLeadDays max-10 cap) bounding public-page
+// rendering size.
+export const MAX_STATUS_PAGE_SERVICES = 50
+
+const statusPageServiceInputSchema = z.object({
+  serviceId: z.uuid(),
+  // AC 15 (realignment-review finding): trim before length-checking so a whitespace-only name
+  // can't slip through as a non-empty string and silently render as a blank public label.
+  displayName: z.string().trim().min(1).max(100),
+})
+
+export const UpdateStatusPageBodySchema = z
+  .object({
+    services: z
+      .array(statusPageServiceInputSchema)
+      .max(MAX_STATUS_PAGE_SERVICES)
+      .refine((services) => new Set(services.map((s) => s.serviceId)).size === services.length, {
+        message: 'Duplicate serviceId in request',
+      }),
+  })
+  .strict()
+  .meta({ id: 'UpdateStatusPageBody' })
+
+export type UpdateStatusPageBody = z.infer<typeof UpdateStatusPageBodySchema>
+export type StatusPageProjectParams = z.infer<typeof StatusPageProjectParamsSchema>
+
+export const StatusPageTokenParamsSchema = z
+  .object({ token: z.string().min(1) })
+  .meta({ id: 'StatusPageTokenParams' })
+export type StatusPageTokenParams = z.infer<typeof StatusPageTokenParamsSchema>

@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-05 (epic-5-retrospective: optional -> done; epic-4: in-progress -> done per 2026-07-03 closure addendum; 5-4-rotation-workflow-web-ui: added, backlog; 5-4-rotation-workflow-web-ui: backlog -> ready-for-dev, story file created)
+# last_updated: 2026-07-05 (epic-5-retrospective: optional -> done; epic-4: in-progress -> done per 2026-07-03 closure addendum; 5-4-rotation-workflow-web-ui: added, backlog; 5-4-rotation-workflow-web-ui: backlog -> ready-for-dev, story file created; 6-3-cross-project-health-dashboard-and-public-status-page: in-progress -> review)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -100,7 +100,7 @@ development_status:
   epic-6: in-progress
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: done
-  6-3-cross-project-health-dashboard-and-public-status-page: in-progress
+  6-3-cross-project-health-dashboard-and-public-status-page: review
   epic-6-retrospective: optional
 
   # Epic 7: Machine User Access & CI/CD Integration
