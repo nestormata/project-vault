@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import { getAdminDb } from '../../lib/db.js'
+import { isMachineKeyLive } from './key-validity.js'
 
 export type ApiKeyByHashRow = {
   id: string
@@ -61,10 +62,7 @@ export function isApiKeyValidForExchange(
   row: Pick<ApiKeyByHashRow, 'revokedAt' | 'expiresAt' | 'machineUserDeactivatedAt'>,
   now: Date = new Date()
 ): boolean {
-  if (row.revokedAt !== null) return false
-  if (row.machineUserDeactivatedAt !== null) return false
-  if (row.expiresAt !== null && row.expiresAt <= now) return false
-  return true
+  return isMachineKeyLive(row, now)
 }
 
 /**

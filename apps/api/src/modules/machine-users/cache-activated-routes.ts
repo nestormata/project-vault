@@ -6,7 +6,7 @@ import { enforceUserRateLimit, parseBody } from '../../lib/route-helpers.js'
 import { secureRoute, SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 import { writeMachineAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { createOrgAdminNotificationEntries } from '../../notifications/dispatcher.js'
-import { verifyMachineRequest } from './machine-auth.js'
+import { MANUAL_MACHINE_AUTH_SECURITY, verifyMachineRequest } from './machine-auth.js'
 import {
   CacheActivatedBodySchema,
   CacheActivatedResponseSchema,
@@ -47,9 +47,7 @@ export async function cacheActivatedRoutes(fastify: FastifyApp): Promise<void> {
         503: ApiErrorSchema,
       },
     },
-    // D13: machine-authenticated via manual verifyMachineRequest() inside the requireAuth:false
-    // public path — see route-exemptions.ts for the documented compensating controls.
-    security: { requireAuth: false, writeAuditEvent: false, rateLimit: false },
+    security: MANUAL_MACHINE_AUTH_SECURITY,
     handler: async (_ctx, req, reply) => {
       const verified = await verifyMachineRequest(req, reply)
       if (!verified) return reply

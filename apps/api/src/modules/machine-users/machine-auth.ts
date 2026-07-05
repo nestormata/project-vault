@@ -4,6 +4,7 @@ import { withOrg } from '@project-vault/db'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import type { MachineJwtVerifiedClaims } from '../../plugins/machine-jwt.js'
 import { extractBearerToken } from './bearer-token.js'
+import { isMachineKeyLive } from './key-validity.js'
 
 const ACCESS_TOKEN_MISSING = {
   code: 'access_token_missing',
@@ -21,6 +22,17 @@ export type VerifiedMachineRequest = {
   keyId: string
   role: 'member' | 'viewer'
 }
+
+/**
+ * Shared by every route that's manually machine-JWT-authenticated (D4/D13): registered on the
+ * requireAuth:false public path, with verifyMachineRequest() as the handler's first action — see
+ * route-exemptions.ts for the documented compensating controls.
+ */
+export const MANUAL_MACHINE_AUTH_SECURITY = {
+  requireAuth: false,
+  writeAuditEvent: false,
+  rateLimit: false,
+} as const
 
 type MachineJwtVerifyFastify = {
   machineJwtVerify: (token: string) => Promise<MachineJwtVerifiedClaims>
@@ -45,16 +57,8 @@ type LiveKeyState = {
   machineUserDeactivatedAt: Date | null
 }
 
-/**
- * Story 7.2 — a live key is usable exactly when non-revoked, non-expired, and its owning machine
- * user is non-deactivated. Mirrors `isApiKeyValidForExchange()` (token-exchange-lookup.ts) and
- * `activeMachineUserKeysQuery()` (archival-check.ts)'s validity condition.
- */
 function isLiveKeyStateValid(row: LiveKeyState, now: Date = new Date()): boolean {
-  if (row.revokedAt !== null) return false
-  if (row.machineUserDeactivatedAt !== null) return false
-  if (row.expiresAt !== null && row.expiresAt <= now) return false
-  return true
+  return isMachineKeyLive(row, now)
 }
 
 async function findLiveKeyState(orgId: string, keyId: string): Promise<LiveKeyState | null> {
