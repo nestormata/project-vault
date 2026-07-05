@@ -29,6 +29,9 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
     // Story 7.1: same reasoning as RECOVERY_TOKEN_HMAC_SECRET above.
     API_KEY_HMAC_SECRET: 'g'.repeat(64),
+    // Story 7.2 D3: same reasoning — baked into the base fixture so unrelated production tests
+    // aren't also tripped by this newest dedicated secret being unset.
+    MACHINE_JWT_SECRET: 'h'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -436,6 +439,38 @@ describe('env', () => {
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({ ...priorSecretsSatisfied, API_KEY_HMAC_SECRET })
+      await expectInvalidEnv(exitSpy)
+    }
+  })
+
+  // Story 7.2 D3: MACHINE_JWT_SECRET is the 6th dedicated-secret requirement.
+  const priorSecretsSatisfiedWithApiKey = {
+    ...priorSecretsSatisfied,
+    API_KEY_HMAC_SECRET: 'g'.repeat(64),
+  }
+
+  it('requires a dedicated machine JWT secret in production (Story 7.2, D3)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      { ...priorSecretsSatisfiedWithApiKey, MACHINE_JWT_SECRET: undefined },
+      'MACHINE_JWT_SECRET',
+      'h'.repeat(64)
+    )
+  })
+
+  it('rejects placeholder or reused machine JWT secrets in production', async () => {
+    for (const MACHINE_JWT_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+      'e'.repeat(64),
+      'f'.repeat(64),
+      'g'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({ ...priorSecretsSatisfiedWithApiKey, MACHINE_JWT_SECRET })
       await expectInvalidEnv(exitSpy)
     }
   })

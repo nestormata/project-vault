@@ -29,6 +29,7 @@ import { notificationRoutes } from './modules/notifications/routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
+import { machineJwtPlugin } from './plugins/machine-jwt.js'
 import authenticatePlugin from './plugins/authenticate.js'
 import { structuredLoggingPlugin } from './plugins/structured-logging.js'
 import { httpMetricsPlugin } from './plugins/http-metrics.js'
@@ -175,6 +176,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     limits: { fileSize: 1_048_576 },
   })
   await fastify.register(jwtPlugin)
+  await fastify.register(machineJwtPlugin)
   await fastify.register(authenticatePlugin)
   await fastify.register(structuredLoggingPlugin)
   await fastify.register(httpMetricsPlugin)

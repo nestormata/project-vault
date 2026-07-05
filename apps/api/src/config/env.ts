@@ -6,6 +6,7 @@ const DEV_MFA_PENDING_SESSION_HMAC_SECRET = 'd'.repeat(64)
 const DEV_INVITATION_TOKEN_HMAC_SECRET = 'e'.repeat(64)
 const DEV_RECOVERY_TOKEN_HMAC_SECRET = 'f'.repeat(64)
 const DEV_API_KEY_HMAC_SECRET = 'g'.repeat(64)
+const DEV_MACHINE_JWT_SECRET = 'h'.repeat(64)
 const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
@@ -26,6 +27,7 @@ type ProductionEnv = {
   INVITATION_TOKEN_HMAC_SECRET?: string
   RECOVERY_TOKEN_HMAC_SECRET?: string
   API_KEY_HMAC_SECRET?: string
+  MACHINE_JWT_SECRET?: string
   LOG_LEVEL: string
 }
 
@@ -188,6 +190,32 @@ function validateApiKeyProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx
   }
 }
 
+function validateMachineJwtProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (!env.MACHINE_JWT_SECRET) {
+    addEnvIssue(ctx, 'MACHINE_JWT_SECRET', 'MACHINE_JWT_SECRET is required in production')
+  } else if (
+    env.MACHINE_JWT_SECRET === env.SESSION_SECRET ||
+    env.MACHINE_JWT_SECRET === env.REFRESH_TOKEN_HMAC_SECRET ||
+    env.MACHINE_JWT_SECRET === env.TOTP_REPLAY_HMAC_SECRET ||
+    env.MACHINE_JWT_SECRET === env.MFA_PENDING_SESSION_HMAC_SECRET ||
+    env.MACHINE_JWT_SECRET === env.INVITATION_TOKEN_HMAC_SECRET ||
+    env.MACHINE_JWT_SECRET === env.RECOVERY_TOKEN_HMAC_SECRET ||
+    env.MACHINE_JWT_SECRET === env.API_KEY_HMAC_SECRET
+  ) {
+    addEnvIssue(
+      ctx,
+      'MACHINE_JWT_SECRET',
+      'MACHINE_JWT_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.MACHINE_JWT_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'MACHINE_JWT_SECRET',
+      'MACHINE_JWT_SECRET must not be a placeholder secret in production'
+    )
+  }
+}
+
 function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateProductionBasics(env, ctx)
   validateTotpReplayProductionSecret(env, ctx)
@@ -195,6 +223,7 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateInvitationTokenProductionSecret(env, ctx)
   validateRecoveryTokenProductionSecret(env, ctx)
   validateApiKeyProductionSecret(env, ctx)
+  validateMachineJwtProductionSecret(env, ctx)
 }
 
 function validateDummyPasswordHash(
@@ -321,6 +350,13 @@ const envSchema = z
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
+    // Story 7.2 D3: dedicated HS256 secret for the machine-token exchange JWT — never shared
+    // with the human-session fastify.jwt instance's SESSION_SECRET.
+    MACHINE_JWT_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
+    MACHINE_JWT_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(3600),
     WEB_BASE_URL: z.url().default('http://localhost:5173'),
     MFA_PRIVILEGED_ROLE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
     FAILED_AUTH_THRESHOLD_COUNT: z.coerce.number().int().min(3).max(100).default(10),
@@ -454,12 +490,14 @@ export type Env = Omit<
   | 'INVITATION_TOKEN_HMAC_SECRET'
   | 'RECOVERY_TOKEN_HMAC_SECRET'
   | 'API_KEY_HMAC_SECRET'
+  | 'MACHINE_JWT_SECRET'
 > & {
   TOTP_REPLAY_HMAC_SECRET: string
   MFA_PENDING_SESSION_HMAC_SECRET: string
   INVITATION_TOKEN_HMAC_SECRET: string
   RECOVERY_TOKEN_HMAC_SECRET: string
   API_KEY_HMAC_SECRET: string
+  MACHINE_JWT_SECRET: string
 }
 
 function loadEnv(): Env {
@@ -500,6 +538,12 @@ function loadEnv(): Env {
       '[env] API_KEY_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
     )
     data.API_KEY_HMAC_SECRET = DEV_API_KEY_HMAC_SECRET
+  }
+  if (!data.MACHINE_JWT_SECRET) {
+    process.stderr.write(
+      '[env] MACHINE_JWT_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
+    )
+    data.MACHINE_JWT_SECRET = DEV_MACHINE_JWT_SECRET
   }
   return data as Env
 }

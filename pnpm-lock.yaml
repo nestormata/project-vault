@@ -101,6 +101,9 @@ importers:
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
+      fast-jwt:
+        specifier: ^6.2.4
+        version: 6.2.4
       fastify:
         specifier: 5.8.5
         version: 5.8.5
