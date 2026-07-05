@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-05  # updated: 6-3 -> ready-for-dev (6-2 prerequisite now done); 5-4 -> ready-for-dev (story file created)
+last_updated: 2026-07-05  # updated: 6-3 -> ready-for-dev (6-2 prerequisite now done); 5-4 -> ready-for-dev (story file created); 7-3 -> in-progress
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -107,7 +107,7 @@ development_status:
   epic-7: in-progress
   7-1-machine-user-identity-and-api-key-management: done
   7-2-machine-user-authentication-and-programmatic-secret-retrieval: done
-  7-3-github-actions-cicd-integration: ready-for-dev
+  7-3-github-actions-cicd-integration: in-progress
   epic-7-retrospective: optional
 
   # Epic 8: Compliance, Audit & Governance
