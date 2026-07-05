@@ -90,6 +90,10 @@ export const OperationalEvent = {
 
   // Operational monitoring expiry alerts (Story 6.1)
   MONITORING_EXPIRY_ALERT_ROW_FAILED: 'monitoring.expiry_alert_row_failed',
+
+  // HTTP endpoint monitoring health-check scheduler (Story 6.2, ADR-6.2-09)
+  MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP: 'monitoring.health_check_tick_skipped_overlap',
+  MONITORING_HEALTH_CHECK_ROW_FAILED: 'monitoring.health_check_row_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

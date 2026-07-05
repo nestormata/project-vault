@@ -218,6 +218,13 @@
       "when": 1783149412772,
       "tag": "0030_rotation_checklist_state",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783218481996,
+      "tag": "0031_service_endpoints_monitoring",
+      "breakpoints": true
     }
   ]
 }

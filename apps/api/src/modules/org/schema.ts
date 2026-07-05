@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
 export const OrgUserParamsSchema = z.object({
   userId: z.uuid(),
@@ -116,6 +117,34 @@ export const failedAuthThresholdPayloadSchema = z
   })
   .strict()
 
+// Story 6.2 AC 11/12, ADR-6.2-06/ADR-6.2-07: payload shape for `security.anomalous_access`
+// alerts — distinct from failedAuthThresholdPayloadSchema above, which is why
+// listSecurityAlertsWithTx must select a schema by alertType rather than hardcoding one.
+export const anomalousAccessPayloadSchema = z
+  .object({
+    actorTokenId: z.uuid().nullable(),
+    revealedCount: z.number().int(),
+    // Capped at 50 (adversarial-review finding 9): a best-effort investigative aid, not a
+    // complete audit trail — the full detail remains queryable via audit_log_entries directly.
+    revealedCredentialIds: z.array(z.uuid()).max(50),
+    windowSeconds: z.number().int(),
+    windowStart: z.iso.datetime(),
+    windowEnd: z.iso.datetime(),
+  })
+  .strict()
+
+// Story 6.2 AC 18 (ADR-6.2-04's correction): org-admin-only dismiss for the pre-existing
+// security_alerts table's unused dismissedBy/dismissedAt/dismissalReason columns.
+export const SecurityAlertDismissBodySchema = z
+  .object({ dismissalReason: z.string().max(1000).optional() })
+  .strict()
+  .meta({ id: 'SecurityAlertDismissBody' })
+
+export type SecurityAlertDismissBody = z.infer<typeof SecurityAlertDismissBodySchema>
+
+export const SecurityAlertParamsSchema = z.object({ securityAlertId: z.uuid() })
+export type SecurityAlertParams = z.infer<typeof SecurityAlertParamsSchema>
+
 export const SecurityAlertsQuerySchema = z.object({
   status: z.enum(['PENDING_DELIVERY', 'delivered', 'dismissed', 'all']).default('all'),
   severity: z.enum(['info', 'warning', 'critical']).optional(),
@@ -136,10 +165,7 @@ export const securityAlertsResponseSchema = z.object({
         createdAt: z.iso.datetime(),
       })
     ),
-    total: z.number().int().min(0),
-    page: z.number().int().min(1),
-    limit: z.number().int().min(1),
-    hasNext: z.boolean(),
+    ...paginatedListMetaFields,
   }),
 })
 

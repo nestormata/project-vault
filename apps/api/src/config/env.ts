@@ -397,6 +397,18 @@ const envSchema = z
     ),
     NOTIFICATION_DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(8),
     INBOX_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(90),
+
+    // Story 6.2 ADR-6.2-09: hard per-project registration cap — bounds worst-case exposure
+    // (registered-endpoint count x per-check timeout x per-tick concurrency).
+    MAX_SERVICE_ENDPOINTS_PER_PROJECT: z.coerce.number().int().min(1).max(1000).default(25),
+    // Story 6.2 ADR-6.2-09: bounded per-tick concurrency so a large due-batch can't blow past
+    // the 60-second health-check tick interval.
+    HEALTH_CHECK_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),
+    // Story 6.2 ADR-6.2-06 (FR31): raw volume threshold for the anomalous-access detection job —
+    // mirrors FAILED_AUTH_THRESHOLD_COUNT/_WINDOW_SECONDS. Max corrected to 86400 (24h) per
+    // adversarial-review finding 17 so the window is genuinely widenable, not just narrowable.
+    ANOMALOUS_ACCESS_THRESHOLD_COUNT: z.coerce.number().int().min(2).max(100).default(5),
+    ANOMALOUS_ACCESS_WINDOW_SECONDS: z.coerce.number().int().min(60).max(86_400).default(3600),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {

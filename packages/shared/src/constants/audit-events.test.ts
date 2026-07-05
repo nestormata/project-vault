@@ -71,6 +71,15 @@ describe('AuditEvent', () => {
     expect(AuditEvent.DOMAIN_RECORD_DELETED).toBe('domain_record.deleted')
   })
 
+  it('exposes Story 6.2 service-endpoint/monitoring-alert/security-alert audit event names', () => {
+    expect(AuditEvent.SERVICE_ENDPOINT_CREATED).toBe('service_endpoint.created')
+    expect(AuditEvent.SERVICE_ENDPOINT_UPDATED).toBe('service_endpoint.updated')
+    expect(AuditEvent.SERVICE_ENDPOINT_DELETED).toBe('service_endpoint.deleted')
+    expect(AuditEvent.MONITORING_ALERT_SNOOZED).toBe('monitoring_alert.snoozed')
+    expect(AuditEvent.MONITORING_ALERT_DISMISSED).toBe('monitoring_alert.dismissed')
+    expect(AuditEvent.SECURITY_ALERT_DISMISSED).toBe('security_alert.dismissed')
+  })
+
   it('exposes Story 7.1 machine-user audit event names (D7)', () => {
     expect(AuditEvent.MACHINE_USER_CREATED).toBe('machine_user.created')
     expect(AuditEvent.MACHINE_USER_API_KEY_ISSUED).toBe('machine_user.api_key_issued')

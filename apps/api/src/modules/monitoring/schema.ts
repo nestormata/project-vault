@@ -1,7 +1,15 @@
 import { z } from 'zod/v4'
 import { ProjectScopeParamsSchema } from '../credentials/schema.js'
+import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
 export { ProjectScopeParamsSchema }
+
+// AC 7/17: shared page-based pagination query fields (mirrors SecurityAlertsQuerySchema's
+// convention) — used by both HealthHistoryQuerySchema and AlertListQuerySchema below.
+const pageBasedPaginationQueryFields = {
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  page: z.coerce.number().int().min(1).default(1),
+}
 
 // Arbitrary reasonable cap (not specified numerically in epics.md/architecture.md) bounding
 // worst-case daily-job iteration per asset — see Dev Notes in the 6.1 story file.
@@ -140,6 +148,157 @@ export const DomainRecordListResponseSchema = z
   .object({ data: z.object({ items: z.array(DomainRecordSchema) }) })
   .meta({ id: 'DomainRecordListResponse' })
 
+// --- Service endpoints (service_endpoints) — Story 6.2, ADR-6.2-01 ---
+
+export const ServiceEndpointParamsSchema = z
+  .object({ projectId: z.uuid(), serviceEndpointId: z.uuid() })
+  .meta({ id: 'ServiceEndpointParams' })
+
+const CHECK_FREQUENCY_MINUTES = [1, 5, 15, 30] as const
+
+const serviceEndpointWriteFields = {
+  name: z.string().trim().min(1).max(256),
+  url: z.string().trim().min(1).max(2048),
+  checkFrequencyMinutes: z.union([z.literal(1), z.literal(5), z.literal(15), z.literal(30)]),
+  downThresholdFailures: z.number().int().min(1).max(10),
+}
+
+export const CreateServiceEndpointBodySchema = z
+  .object({
+    name: serviceEndpointWriteFields.name,
+    url: serviceEndpointWriteFields.url,
+    checkFrequencyMinutes: serviceEndpointWriteFields.checkFrequencyMinutes.optional(),
+    downThresholdFailures: serviceEndpointWriteFields.downThresholdFailures.optional(),
+  })
+  .strict()
+  .meta({ id: 'CreateServiceEndpointBody' })
+
+export const UpdateServiceEndpointBodySchema = z
+  .object({
+    name: serviceEndpointWriteFields.name.optional(),
+    url: serviceEndpointWriteFields.url.optional(),
+    checkFrequencyMinutes: serviceEndpointWriteFields.checkFrequencyMinutes.optional(),
+    downThresholdFailures: serviceEndpointWriteFields.downThresholdFailures.optional(),
+  })
+  .strict()
+  .meta({ id: 'UpdateServiceEndpointBody' })
+
+// downEpisodeStartedAt is deliberately excluded (adversarial-review finding 23) — internal
+// bookkeeping only, never part of the public API contract.
+export const ServiceEndpointSchema = z
+  .object({
+    id: z.uuid(),
+    orgId: z.uuid(),
+    projectId: z.uuid(),
+    name: z.string(),
+    url: z.string(),
+    checkFrequencyMinutes: z.number().int(),
+    downThresholdFailures: z.number().int(),
+    status: z.enum(['healthy', 'degraded', 'down']),
+    consecutiveFailures: z.number().int(),
+    lastCheckedAt: z.iso.datetime().nullable(),
+    createdBy: z.uuid().nullable(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'ServiceEndpoint' })
+
+export const ServiceEndpointResponseSchema = z
+  .object({ data: ServiceEndpointSchema })
+  .meta({ id: 'ServiceEndpointResponse' })
+export const ServiceEndpointListResponseSchema = z
+  .object({ data: z.object({ items: z.array(ServiceEndpointSchema) }) })
+  .meta({ id: 'ServiceEndpointListResponse' })
+
+// --- Health history (endpoint_health_checks) — AC 7 ---
+
+export const HealthHistoryQuerySchema = z.object({
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
+  // Explicit default (adversarial-review finding 21) rather than relying on undefined handling.
+  ...pageBasedPaginationQueryFields,
+})
+export type HealthHistoryQuery = z.infer<typeof HealthHistoryQuerySchema>
+
+export const HealthHistoryEntrySchema = z
+  .object({
+    isHealthy: z.boolean(),
+    statusCode: z.number().int().nullable(),
+    latencyMs: z.number().int(),
+    failureReason: z.enum(['timeout', 'http_error', 'network_error', 'ssrf_blocked']).nullable(),
+    checkedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'HealthHistoryEntry' })
+
+export const HealthHistoryResponseSchema = z
+  .object({
+    data: z.object({
+      items: z.array(HealthHistoryEntrySchema),
+      ...paginatedListMetaFields,
+    }),
+  })
+  .meta({ id: 'HealthHistoryResponse' })
+
+// --- Monitoring alerts (monitoring_alerts) — AC 9, 10, 17 ---
+
+export const AlertParamsSchema = z
+  .object({ projectId: z.uuid(), alertId: z.uuid() })
+  .meta({ id: 'AlertParams' })
+
+export const SnoozeAlertBodySchema = z
+  .object({ durationMinutes: z.number().int().positive().max(10_080) })
+  .strict()
+  .meta({ id: 'SnoozeAlertBody' })
+export type SnoozeAlertBody = z.infer<typeof SnoozeAlertBodySchema>
+
+export const MonitoringAlertStatusSchema = z.enum([
+  'active',
+  'snoozed',
+  'dismissed',
+  'resolved_by_deletion',
+])
+
+// AC 17: page-based pagination (mirrors AC 7's convention and SecurityAlertsQuerySchema); the
+// literal `cursor=` in epics.md's URL example is prose imprecision from the now-superseded
+// unified-assetId model — `page` is the real, already-established pagination mechanism.
+export const AlertListQuerySchema = z.object({
+  status: MonitoringAlertStatusSchema.optional(),
+  serviceEndpointId: z.uuid().optional(),
+  ...pageBasedPaginationQueryFields,
+})
+export type AlertListQuery = z.infer<typeof AlertListQuerySchema>
+
+export const MonitoringAlertSchema = z
+  .object({
+    id: z.uuid(),
+    alertType: z.enum(['service.down', 'service.recovery']),
+    severity: z.enum(['info', 'warning', 'critical']),
+    status: MonitoringAlertStatusSchema,
+    episodeKey: z.string(),
+    // Nullable: ON DELETE SET NULL on the underlying FK (see monitoring-alerts.ts) — an alert
+    // whose service_endpoints row was later deleted survives as a historical record with this
+    // field cleared, rather than being cascade-deleted itself.
+    serviceEndpointId: z.uuid().nullable(),
+    snoozedUntil: z.iso.datetime().nullable(),
+    dismissedBy: z.uuid().nullable(),
+    dismissedAt: z.iso.datetime().nullable(),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ id: 'MonitoringAlert' })
+
+export const MonitoringAlertResponseSchema = z
+  .object({ data: MonitoringAlertSchema })
+  .meta({ id: 'MonitoringAlertResponse' })
+
+export const AlertListResponseSchema = z
+  .object({
+    data: z.object({
+      items: z.array(MonitoringAlertSchema),
+      ...paginatedListMetaFields,
+    }),
+  })
+  .meta({ id: 'AlertListResponse' })
+
 export type CreatePaymentRecordBody = z.infer<typeof CreatePaymentRecordBodySchema>
 export type UpdatePaymentRecordBody = z.infer<typeof UpdatePaymentRecordBodySchema>
 export type CreateCertificateBody = z.infer<typeof CreateCertificateBodySchema>
@@ -149,3 +308,11 @@ export type UpdateDomainRecordBody = z.infer<typeof UpdateDomainRecordBodySchema
 export type ServiceParams = z.infer<typeof ServiceParamsSchema>
 export type CertificateParams = z.infer<typeof CertificateParamsSchema>
 export type DomainRecordParams = z.infer<typeof DomainRecordParamsSchema>
+export type CreateServiceEndpointBody = z.infer<typeof CreateServiceEndpointBodySchema>
+export type UpdateServiceEndpointBody = z.infer<typeof UpdateServiceEndpointBodySchema>
+export type ServiceEndpointParams = z.infer<typeof ServiceEndpointParamsSchema>
+export type AlertParams = z.infer<typeof AlertParamsSchema>
+
+// CHECK_FREQUENCY_MINUTES retained for reference/tests; the union literal schema above enforces
+// the same [1,5,15,30] domain declaratively.
+export { CHECK_FREQUENCY_MINUTES }

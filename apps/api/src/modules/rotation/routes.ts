@@ -693,12 +693,13 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
 
         await sendPendingRotationNotifications(fastify, req, result.jobs)
 
-        return reply.status(422).send({
+        reply.status(422)
+        return {
           code: 'max_retries_exceeded',
           message: `Maximum retry attempts (${result.maxRetries}) reached for this item. Escalate or confirm manually.`,
           retryCount: result.retryCount,
           maxRetries: result.maxRetries,
-        })
+        }
       }
 
       try {

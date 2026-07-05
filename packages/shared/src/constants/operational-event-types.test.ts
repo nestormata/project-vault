@@ -62,4 +62,13 @@ describe('OperationalEvent', () => {
       'monitoring.expiry_alert_row_failed'
     )
   })
+
+  it('exposes the Story 6.2 health-check scheduler/row event types', () => {
+    expect(OperationalEvent.MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP).toBe(
+      'monitoring.health_check_tick_skipped_overlap'
+    )
+    expect(OperationalEvent.MONITORING_HEALTH_CHECK_ROW_FAILED).toBe(
+      'monitoring.health_check_row_failed'
+    )
+  })
 })
