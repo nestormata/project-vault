@@ -15,7 +15,9 @@ import { findProjectInOrg } from '../credentials/service.js'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import type { Tx } from '@project-vault/db'
 import { generateApiKey, hashApiKey } from './tokens.js'
+import { activeMachineUserKeysQuery } from './archival-check.js'
 import {
+  ActiveMachineUserKeysResponseSchema,
   ApiKeyParamsSchema,
   CreateMachineUserBodySchema,
   IssueApiKeyBodySchema,
@@ -207,6 +209,25 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
 
       reply.status(201)
       return { data: toMachineUserDetail(newMachineUser) }
+    },
+  })
+
+  // Story 7.2 AC-23: archival guard closure — same query hasActiveMachineUserKeys() delegates to.
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/projects/:projectId/machine-users/active-keys',
+    schema: { response: { 200: ActiveMachineUserKeysResponseSchema, ...READ_ERROR_RESPONSES } },
+    security: READ_SECURITY,
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectScopeParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
+      if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
+
+      const items = await activeMachineUserKeysQuery(secureCtx.tx, params.projectId)
+      return { data: { items, total: items.length } }
     },
   })
 

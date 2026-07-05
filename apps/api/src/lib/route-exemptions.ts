@@ -725,6 +725,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       "Machine-authenticated public route (D4) — org context is not resolvable until verifyMachineRequest() resolves the JWT, so the handler opens its own withOrg() transaction rather than SecureRoute's declarative one. A credential.value_revealed audit row (actorType: machine_user) is still written fail-closed via writeMachineAuditEntryOrFailClosed() inside that same transaction (AC-9), just not through the secureCtx.tx path this registry's opt-out check expects.",
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/projects/:projectId/machine-users/active-keys': {
+    action: 'read',
+    auditOmissionReason:
+      'Archival-guard read endpoint (AC-23) — returns only machineUserId/keyId pairs, never API key secrets.',
+    reviewer: SECURITY_OWNER,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [

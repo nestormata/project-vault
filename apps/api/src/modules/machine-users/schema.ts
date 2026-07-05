@@ -92,6 +92,16 @@ export const RevokeApiKeyResponseSchema = z
   .object({ data: z.object({ id: z.uuid(), revokedAt: z.iso.datetime() }) })
   .meta({ id: 'RevokeApiKeyResponse' })
 
+// Story 7.2 AC-23 — archival guard closure read endpoint.
+export const ActiveMachineUserKeysResponseSchema = z
+  .object({
+    data: z.object({
+      items: z.array(z.object({ machineUserId: z.uuid(), keyId: z.uuid() })),
+      total: z.number().int().nonnegative(),
+    }),
+  })
+  .meta({ id: 'ActiveMachineUserKeysResponse' })
+
 export type CreateMachineUserBody = z.infer<typeof CreateMachineUserBodySchema>
 export type MachineUserParams = z.infer<typeof MachineUserParamsSchema>
 export type ApiKeyParams = z.infer<typeof ApiKeyParamsSchema>

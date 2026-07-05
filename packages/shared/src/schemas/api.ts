@@ -50,3 +50,13 @@ export type ApiError = z.infer<typeof ApiErrorSchema>
 export const ActiveRotationsErrorSchema = z
   .object({ error: z.literal('active_rotations'), rotationIds: z.array(z.uuid()) })
   .meta({ id: 'ActiveRotationsError' })
+
+// Story 7.2 D12/AC-23 — archive-guard block shape for active machine-user API keys, matching
+// ActiveRotationsErrorSchema's `{ error, ... }` field-naming precedent (not `{ code, ... }`)
+// since this is the same project-archival block-response family (4.4 ADR-4.4-04).
+export const ActiveMachineUserKeysErrorSchema = z
+  .object({
+    error: z.literal('active_machine_user_keys'),
+    machineUserIds: z.array(z.uuid()),
+  })
+  .meta({ id: 'ActiveMachineUserKeysError' })
