@@ -38,18 +38,31 @@ function hasWellFormedMachineClaims(claims: MachineJwtVerifiedClaims): boolean {
   )
 }
 
-async function findLiveKeyState(
-  orgId: string,
-  keyId: string
-): Promise<{
+type LiveKeyState = {
   revokedAt: Date | null
+  expiresAt: Date | null
   machineUserRole: string
   machineUserDeactivatedAt: Date | null
-} | null> {
+}
+
+/**
+ * Story 7.2 — a live key is usable exactly when non-revoked, non-expired, and its owning machine
+ * user is non-deactivated. Mirrors `isApiKeyValidForExchange()` (token-exchange-lookup.ts) and
+ * `activeMachineUserKeysQuery()` (archival-check.ts)'s validity condition.
+ */
+function isLiveKeyStateValid(row: LiveKeyState, now: Date = new Date()): boolean {
+  if (row.revokedAt !== null) return false
+  if (row.machineUserDeactivatedAt !== null) return false
+  if (row.expiresAt !== null && row.expiresAt <= now) return false
+  return true
+}
+
+async function findLiveKeyState(orgId: string, keyId: string): Promise<LiveKeyState | null> {
   const rows = await withOrg(orgId, (tx) =>
     tx
       .select({
         revokedAt: apiKeys.revokedAt,
+        expiresAt: apiKeys.expiresAt,
         machineUserRole: machineUsers.role,
         machineUserDeactivatedAt: machineUsers.deactivatedAt,
       })
@@ -71,8 +84,11 @@ async function findLiveKeyState(
  *
  * Steps: (1) extract `Authorization: Bearer`, 401 if missing/malformed; (2) verify the machine
  * JWT signature/expiry via `machineJwtVerify()`, 401 on any failure; (3) re-validate the
- * referenced `api_keys` row is still non-revoked and its machine user non-deactivated via a
- * fresh, org-scoped `withOrg(claims.orgId, ...)` lookup by `id = claims.keyId AND org_id =
+ * referenced `api_keys` row is still non-revoked, non-expired (`expiresAt`, matching the same
+ * validity condition `isApiKeyValidForExchange()`/`activeMachineUserKeysQuery()` already check —
+ * an explicitly time-boxed key must stop authenticating at its `expiresAt`, not linger for up to
+ * the JWT's own `MACHINE_JWT_TTL_SECONDS` past that point), and its machine user non-deactivated
+ * via a fresh, org-scoped `withOrg(claims.orgId, ...)` lookup by `id = claims.keyId AND org_id =
  * claims.orgId` (AC-25: an org mismatch yields zero rows via the WHERE clause itself, not an RLS
  * leak) — this live DB recheck is what catches revoke-after-issue within the JWT's <=1h window,
  * since the JWT itself carries no revocation state.
@@ -103,7 +119,7 @@ export async function verifyMachineRequest(
   const keyId = claims.keyId
   const orgId = claims.orgId
   const row = await findLiveKeyState(orgId, keyId)
-  if (!row || row.revokedAt !== null || row.machineUserDeactivatedAt !== null) {
+  if (!row || !isLiveKeyStateValid(row)) {
     reply.status(401).send(INVALID_MACHINE_TOKEN)
     return null
   }

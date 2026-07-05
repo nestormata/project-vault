@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { auditLogEntries } from '@project-vault/db/schema'
+import { apiKeys, auditLogEntries } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -258,6 +258,36 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
       const res = await app.inject({
         method: 'GET',
         url: machineCredentialValueUrl(projectId, 'REVOKED_MID'),
+        headers: { authorization: `Bearer ${jwt}` },
+      })
+
+      expect(res.statusCode).toBe(401)
+      expect(res.json()).toMatchObject({ code: 'invalid_machine_token' })
+    })
+
+    it('returns 401 invalid_machine_token when the key expires after JWT issuance (live recheck)', async () => {
+      const owner = await registerOwner(app, 'expired-mid')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'machine-cred-expiredmid')
+      await createCredentialViaApi(app, owner.cookies, projectId, 'EXPIRED_MID', 'value')
+      const { machineUserId, key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const listRes = await app.inject({
+        method: 'GET',
+        url: apiKeysUrl(machineUserId),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      const keyId = listRes.json<{ data: { items: { id: string }[] } }>().data.items[0]?.id
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(apiKeys)
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where(eq(apiKeys.id, keyId as string))
+      )
+
+      const res = await app.inject({
+        method: 'GET',
+        url: machineCredentialValueUrl(projectId, 'EXPIRED_MID'),
         headers: { authorization: `Bearer ${jwt}` },
       })
 
