@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-04 (6-2-http-endpoint-monitoring-and-availability-alerts: in-progress -> done; 8-2-audit-log-search-export-and-external-forwarding: backlog -> ready-for-dev)
+# last_updated: 2026-07-05 (epic-5-retrospective: optional -> done; epic-4: in-progress -> done per 2026-07-03 closure addendum; 5-4-rotation-workflow-web-ui: added, backlog)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-05  # updated: 5-3 -> done
+last_updated: 2026-07-05  # updated: epic-5-retrospective -> done; epic-4 -> done; 5-4 added (backlog); 5-5 added (ready-for-dev)
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -80,7 +80,7 @@ development_status:
   epic-3-retrospective: done
 
   # Epic 4: Team & Organization Management — Roles, Invitations, Access & Lifecycle
-  epic-4: in-progress
+  epic-4: done # closed 2026-07-05 — retro debt (CP4-1..CP4-5) confirmed resolved per 2026-07-03 addendum
   4-1-team-invitations-and-role-assignment: done
   4-2-organization-user-management: done
   4-3-account-deactivation-and-recovery: done
@@ -88,11 +88,13 @@ development_status:
   epic-4-retrospective: done
 
   # Epic 5: Credential Rotation — Safe, Trackable Rotation Workflows
-  epic-5: in-progress
+  epic-5: in-progress # held open pending 5-4 (rotation workflow web UI, scheduled at retro)
   5-1-rotation-initiation-and-checklist-generation: done
   5-2-rotation-checklist-confirmation-and-completion: done
   5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: done
-  epic-5-retrospective: optional
+  5-4-rotation-workflow-web-ui: backlog # scheduled at epic-5 retro 2026-07-05 — no dedicated web story existed for initiate/checklist/break-glass, unlike Epic 2's API+web pairing
+  5-5-epic-5-completion-rotation-hardening-and-technical-debt: ready-for-dev # closure story bundling the 2026-07-05 retro's risk/gap/contradiction/technical-debt audit (13 findings) + the carried-forward Epic 4 TOCTOU gap
+  epic-5-retrospective: done
 
   # Epic 6: Operational Monitoring & Status — Services, Certificates, Domains & Mobile
   epic-6: in-progress
