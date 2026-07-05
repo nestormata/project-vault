@@ -6,9 +6,20 @@ import { credentials, credentialVersions, projects } from '@project-vault/db/sch
 import { createTestUser, deleteTestUser, withTestOrg } from '@project-vault/db/test-helpers'
 import {
   CREDENTIAL_VERSIONS_LOCKED_BY_ROTATION_METRIC_NAME,
+  ROTATION_CHECKLIST_CONFIRMATIONS_TOTAL_METRIC_NAME,
+  ROTATION_CHECKLIST_FAILURES_TOTAL_METRIC_NAME,
+  ROTATION_CHECKLIST_ITEMS_PENDING_TOTAL_METRIC_NAME,
+  ROTATION_CHECKLIST_RETRIES_TOTAL_METRIC_NAME,
+  ROTATION_COMPLETIONS_TOTAL_METRIC_NAME,
   ROTATION_INITIATIONS_TOTAL_METRIC_NAME,
+  rotationChecklistConfirmationsTotal,
+  rotationChecklistFailuresTotal,
+  rotationChecklistRetriesTotal,
+  rotationCompletionsTotal,
   rotationInitiationsTotal,
 } from './metrics.js'
+
+const SUCCESS_OUTCOME_LINE = 'outcome="success"} 1'
 
 async function insertTestProject(orgId: string): Promise<string> {
   const [project] = await withOrg(orgId, (tx) =>
@@ -35,6 +46,10 @@ async function insertTestCredential(orgId: string, projectId: string): Promise<s
 describe('rotation metrics', () => {
   afterEach(() => {
     rotationInitiationsTotal.reset()
+    rotationChecklistConfirmationsTotal.reset()
+    rotationChecklistFailuresTotal.reset()
+    rotationChecklistRetriesTotal.reset()
+    rotationCompletionsTotal.reset()
   })
 
   it('increments rotation_initiations_total labeled by outcome', async () => {
@@ -43,7 +58,7 @@ describe('rotation metrics', () => {
     const metric = await promRegister.getSingleMetricAsString(
       ROTATION_INITIATIONS_TOTAL_METRIC_NAME
     )
-    expect(metric).toContain('outcome="success"} 1')
+    expect(metric).toContain(SUCCESS_OUTCOME_LINE)
     expect(metric).toContain('outcome="conflict"} 1')
   })
 
@@ -68,6 +83,94 @@ describe('rotation metrics', () => {
         // Fixed, non-dynamic pattern (metric name is a compile-time constant import, but a
         // literal RegExp keeps the security/detect-non-literal-regexp rule happy).
         const match = metric.match(/^credential_versions_locked_by_rotation_total\s+(\d+)/m)
+        expect(Number(match?.[1] ?? 0)).toBeGreaterThanOrEqual(1)
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('increments the Story 5.2 checklist confirmations/retries counters labeled by outcome', async () => {
+    rotationChecklistConfirmationsTotal.inc({ outcome: 'success' })
+    rotationChecklistConfirmationsTotal.inc({ outcome: 'already_confirmed' })
+    rotationChecklistRetriesTotal.inc({ outcome: 'success' })
+    rotationChecklistRetriesTotal.inc({ outcome: 'max_exceeded' })
+
+    const confirmMetric = await promRegister.getSingleMetricAsString(
+      ROTATION_CHECKLIST_CONFIRMATIONS_TOTAL_METRIC_NAME
+    )
+    expect(confirmMetric).toContain(SUCCESS_OUTCOME_LINE)
+    expect(confirmMetric).toContain('outcome="already_confirmed"} 1')
+
+    const retryMetric = await promRegister.getSingleMetricAsString(
+      ROTATION_CHECKLIST_RETRIES_TOTAL_METRIC_NAME
+    )
+    expect(retryMetric).toContain(SUCCESS_OUTCOME_LINE)
+    expect(retryMetric).toContain('outcome="max_exceeded"} 1')
+  })
+
+  it('increments rotation_checklist_failures_total (no outcome label) on every fail call', async () => {
+    rotationChecklistFailuresTotal.inc()
+    rotationChecklistFailuresTotal.inc()
+    const metric = await promRegister.getSingleMetricAsString(
+      ROTATION_CHECKLIST_FAILURES_TOTAL_METRIC_NAME
+    )
+    const match = metric.match(/^rotation_checklist_failures_total\s+(\d+)/m)
+    expect(Number(match?.[1] ?? 0)).toBe(2)
+  })
+
+  it('increments rotation_completions_total labeled by outcome', async () => {
+    rotationCompletionsTotal.inc({ outcome: 'success' })
+    rotationCompletionsTotal.inc({ outcome: 'checklist_incomplete' })
+    const metric = await promRegister.getSingleMetricAsString(
+      ROTATION_COMPLETIONS_TOTAL_METRIC_NAME
+    )
+    expect(metric).toContain(SUCCESS_OUTCOME_LINE)
+    expect(metric).toContain('outcome="checklist_incomplete"} 1')
+  })
+
+  it('reports the current count of pending checklist items via a periodic gauge', async () => {
+    const userId = await createTestUser('rotation-pending-metrics')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const projectId = await insertTestProject(orgId)
+        const credentialId = await insertTestCredential(orgId, projectId)
+        const {
+          credentialVersions: cv,
+          rotations: rotationsTable,
+          rotationChecklistItems,
+        } = await import('@project-vault/db/schema')
+        const [version] = await withOrg(orgId, (tx) =>
+          tx.insert(cv).values({ orgId, credentialId, versionNumber: 1 }).returning({ id: cv.id })
+        )
+        if (!version) throw new Error('expected credential version insert')
+        const [rotation] = await withOrg(orgId, (tx) =>
+          tx
+            .insert(rotationsTable)
+            .values({
+              orgId,
+              projectId,
+              credentialId,
+              newVersionId: version.id,
+              previousVersionId: version.id,
+              status: 'in_progress',
+            })
+            .returning({ id: rotationsTable.id })
+        )
+        if (!rotation) throw new Error('expected rotation insert')
+        await withOrg(orgId, (tx) =>
+          tx.insert(rotationChecklistItems).values({
+            orgId,
+            rotationId: rotation.id,
+            systemName: 'pending-metrics-system',
+            status: 'unconfirmed',
+          })
+        )
+
+        const metric = await promRegister.getSingleMetricAsString(
+          ROTATION_CHECKLIST_ITEMS_PENDING_TOTAL_METRIC_NAME
+        )
+        const match = metric.match(/^rotation_checklist_items_pending_total\s+(\d+)/m)
         expect(Number(match?.[1] ?? 0)).toBeGreaterThanOrEqual(1)
       })
     } finally {

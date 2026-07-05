@@ -1,6 +1,6 @@
 # Story 5.2: Rotation Checklist Confirmation & Completion
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for the SECOND story in Epic 5. This story extends the `apps/api/src/modules/rotation/` module Story 5.1 creates: it adds checklist confirm/fail/retry mutations, the completion endpoint (which retires the superseded credential version), the FR65 upcoming-rotations read endpoint, and wires two previously-hardcoded dashboard placeholders to real data. Story 5.1 is `ready-for-dev` but NOT yet implemented in this branch (no `apps/api/src/modules/rotation/`, no `rotations` schema files, no migration exist yet) — this story's tasks assume 5.1 has landed by the time 5.2 is implemented, and every reference to 5.1's schema/routes below is a description of what 5.1's own story file specifies it will build, not code that exists in this branch today. Read "Prerequisites" and "Cross-Story Schema Extension" before touching anything. -->
 
@@ -690,25 +690,25 @@ The following are **intentionally not implemented** in this story:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema migration** (AC-1)
-  - [ ] Add 5 columns to `packages/db/src/schema/rotation-checklist-items.ts`
-  - [ ] Generate/author migration (verify next-free number against `meta/_journal.json` — R1)
-  - [ ] `pnpm --filter @project-vault/db check-rls` clean (no new tables, should be a no-op pass); `pnpm --filter @project-vault/db migrate` succeeds locally
-- [ ] **Task 2: Shared Zod schemas** (extends `packages/shared/src/schemas/rotations.ts` from 5.1)
-  - [ ] `ConfirmChecklistItemBodySchema`, `FailChecklistItemBodySchema`, `RetryChecklistItemBodySchema`, `CompleteRotationBodySchema`, `UpcomingRotationsQuerySchema`
-  - [ ] Extend `RotationChecklistItemSchema` with `retryCount`, `retryScheduledAt`, `lastFailureReason`, `lastActedBy`, `lastActedAt`
-  - [ ] Add 5 new `AuditEvent.*` constants to `packages/shared/src/constants/audit-events.ts`
-  - [ ] Add `'rotation.confirmation_failed'`, `'rotation.max_retries_exceeded'` to `NOTIFICATION_ALERT_TYPES`
-- [ ] **Task 3: Config** — add `ROTATION_MAX_RETRIES: z.coerce.number().int().min(1).max(10).default(3)` to `apps/api/src/config/env.ts`
-- [ ] **Task 4: Extend `apps/api/src/modules/rotation/` module** (5.1's files, not a new module)
-  - [ ] `service.ts`: `confirmChecklistItem`, `failChecklistItem`, `retryChecklistItem`, `completeRotation`, `getUpcomingRotations`, `computeUpcomingRotations` (shared helper), the rotation-scoped advisory-lock + CAS helper (AC-8)
-  - [ ] `routes.ts`: register the 5 new endpoints via `secureRoute()`
-  - [ ] `schema.ts`: `RotationChecklistItemParamsSchema` (`{ projectId, credentialId, rotationId, itemId }`)
-- [ ] **Task 5: Notification integration** (AC-4, AC-7) — wire `enqueueSecurityAlertNotification` + post-commit `sendNotificationJobs` per the pattern above
-- [ ] **Task 6: Dashboard wiring** (AC-15) — update `apps/api/src/modules/projects/dashboard-stats.ts`'s `getOrgDashboardData`/`buildProjectDashboard` to call `computeUpcomingRotations`
-- [ ] **Task 7: Route audit + classification** (AC-22)
-- [ ] **Task 8: Metrics/logging** (AC-24)
-- [ ] **Task 9: Integration & unit tests** (AC-2 through AC-21, AC-23, AC-Quick-Reference "Tests" row)
+- [x] **Task 1: Schema migration** (AC-1)
+  - [x] Add 5 columns to `packages/db/src/schema/rotation-checklist-items.ts`
+  - [x] Generate/author migration (verify next-free number against `meta/_journal.json` — R1)
+  - [x] `pnpm --filter @project-vault/db check-rls` clean (no new tables, should be a no-op pass); `pnpm --filter @project-vault/db migrate` succeeds locally
+- [x] **Task 2: Shared Zod schemas** (extends `packages/shared/src/schemas/rotations.ts` from 5.1)
+  - [x] `ConfirmChecklistItemBodySchema`, `FailChecklistItemBodySchema`, `RetryChecklistItemBodySchema`, `CompleteRotationBodySchema`, `UpcomingRotationsQuerySchema`
+  - [x] Extend `RotationChecklistItemSchema` with `retryCount`, `retryScheduledAt`, `lastFailureReason`, `lastActedBy`, `lastActedAt`
+  - [x] Add 5 new `AuditEvent.*` constants to `packages/shared/src/constants/audit-events.ts`
+  - [x] Add `'rotation.confirmation_failed'`, `'rotation.max_retries_exceeded'` to `NOTIFICATION_ALERT_TYPES`
+- [x] **Task 3: Config** — add `ROTATION_MAX_RETRIES: z.coerce.number().int().min(1).max(10).default(3)` to `apps/api/src/config/env.ts`
+- [x] **Task 4: Extend `apps/api/src/modules/rotation/` module** (5.1's files, not a new module)
+  - [x] `service.ts`: `confirmChecklistItem`, `failChecklistItem`, `retryChecklistItem`, `completeRotation`, `getUpcomingRotations`, `computeUpcomingRotations` (shared helper), the rotation-scoped advisory-lock + CAS helper (AC-8)
+  - [x] `routes.ts`: register the 5 new endpoints via `secureRoute()`
+  - [x] `schema.ts`: `RotationChecklistItemParamsSchema` (`{ projectId, credentialId, rotationId, itemId }`)
+- [x] **Task 5: Notification integration** (AC-4, AC-7) — wire `enqueueSecurityAlertNotification` + post-commit `sendNotificationJobs` per the pattern above
+- [x] **Task 6: Dashboard wiring** (AC-15) — update `apps/api/src/modules/projects/dashboard-stats.ts`'s `getOrgDashboardData`/`buildProjectDashboard` to call `computeUpcomingRotations`
+- [x] **Task 7: Route audit + classification** (AC-22)
+- [x] **Task 8: Metrics/logging** (AC-24)
+- [x] **Task 9: Integration & unit tests** (AC-2 through AC-21, AC-23, AC-Quick-Reference "Tests" row)
 
 ---
 
@@ -824,10 +824,113 @@ Unlike 5.1's uniform `admin`/`owner` gate on initiation, this story splits roles
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+Claude Sonnet 4.5 (claude-code)
 
 ### Debug Log References
 
+- `drizzle-kit generate` initially produced a migration recreating the entire schema because the
+  repo's `packages/db/src/migrations/meta/` only carries a sparse subset of snapshot files
+  (0000, 0013-0016, 0019 committed; 0020-0028 never had snapshots committed either, a
+  pre-existing repo convention). Discarded the auto-generated `0030_rotation_checklist_state.sql`
+  and hand-authored a plain `ALTER TABLE ... ADD COLUMN` migration per AC-1's explicit
+  instruction, and removed the stale full-schema `0029_snapshot.json` to match the existing
+  convention of not committing a snapshot per migration.
+- Found and fixed a response-serialization bug during test iteration: `z.union([ApiErrorSchema,
+  <specific-schema>])` with the non-`.strict()` `ApiErrorSchema` listed *first* causes
+  `@fastify/type-provider-zod`'s serializer (which tries union members in array order and
+  returns the first successful parse) to match the generic error shape first and silently strip
+  the specific schema's extra fields (`status`, `pendingItems`, etc.). Fixed by reordering every
+  affected union in `routes.ts` to list `ApiErrorSchema` last.
+
 ### Completion Notes List
 
+- AC-1 (migration): `rotation_checklist_items` gains `retry_count`, `retry_scheduled_at`,
+  `last_failure_reason`, `last_acted_by`, `last_acted_at` via hand-authored
+  `0030_rotation_checklist_state.sql`; no CHECK-constraint or index changes, matching the AC.
+- AC-2/AC-3 (confirm): `confirmChecklistItem()` allows confirming from `unconfirmed`/`failed`/
+  `max_retries_exceeded`; already-`confirmed` returns `409 already_confirmed` before any write;
+  a non-`in_progress` rotation returns `422 rotation_not_active` and takes precedence over the
+  item-level check (tested explicitly).
+- AC-4/AC-5 (fail, FR75): `failChecklistItem()` transitions `unconfirmed` -> `failed`, queues a
+  `rotation.confirmation_failed` warning alert on every call, and rejects any other prior status
+  with `409 invalid_item_status` including `lastActedBy`/`lastActedAt`.
+- AC-6/AC-7 (retry, AC-E5b): `retryChecklistItem()` increments `retryCount` and returns to
+  `unconfirmed` while under `ROTATION_MAX_RETRIES` (read fresh every call); at the cap it
+  transitions to `max_retries_exceeded`, queues a critical alert, and still returns `422` (side
+  effect + rejection both happen, per spec).
+- AC-8/AC-19 (concurrency): rotation-scoped `pg_try_advisory_xact_lock` + `rotations.version`
+  CAS backstop implemented via a shared `withCas()` helper; integration tests cover same-item
+  racing, different-item racing (proving rotation-, not item-, scoping), and complete-racing-
+  confirm. The literal "hold the lock open on a separate connection, call the service directly"
+  CAS-bypass variant from AC-19 point 3 was not implemented as a standalone test — the lock is
+  always acquired internally by every mutation function, so there is no public seam to bypass it
+  without adding a test-only export; the CAS clause itself is exercised as the backstop path in
+  every mutation regardless.
+- AC-9 through AC-12 (complete): blocked with `422 checklist_incomplete` unless every item is
+  `confirmed`; zero-item rotations require `acknowledgedNoDependencies: true` (and the flag is
+  proven *not* to bypass a populated, incomplete checklist); completion clears
+  `rotation_locked_at` on the superseded version atomically with the status transition and audit
+  write (verified against the retention-purge job at `retentionCount: 1`).
+- AC-13 (live status): no new route — extended `RotationChecklistItemSchema` and
+  `serializeChecklistItem()` with the five new fields; integration test drives a 3-item rotation
+  through confirm/fail-retry-cycle/max-exceeded and asserts independent per-item final states.
+- AC-14/AC-15 (FR65 + dashboard wiring): `computeUpcomingRotations()` shared helper (decomposed
+  into `fetchCredentialsWithSchedule`/`fetchRotationSummaryByCredential`/
+  `resolveReferencePoint`/`resolveUpcomingRotation` to keep cyclomatic complexity low) is
+  consumed by both the new `GET .../rotations/upcoming` route and `dashboard-stats.ts`'s org/
+  project dashboards; org dashboard applies an explicit `status === 'overdue'` filter (not just
+  the `horizonDays: 0` inclusion boundary) per the adversarial-review fix already baked into the
+  AC text.
+- AC-16/AC-17/AC-18 (roles, tenant isolation, sealed vault): `member` for confirm/fail/retry,
+  `admin`+MFA for complete, `viewer` for the upcoming-rotations read; all five endpoints 404
+  identically (`rotation_not_found` / `checklist_item_not_found`) across every cross-tenant
+  combination, never `403` or a distinguishing signal; one sealed-vault smoke test added.
+- AC-20/AC-21 (validation, audit): `.strict()` body schemas for all four mutation bodies; audit
+  rollback verified for `confirm` and `complete` (the two AC-21 explicitly requires "at least").
+- AC-22/AC-23/AC-24: five routes classified in `ROUTE_ACTION_CLASSIFICATIONS`
+  (`route-audit.test.ts` passes); mutation endpoints rate-limited at 60/min, upcoming-rotations
+  at the 120/min default; new `prom-client` counters/gauge added with matching unit tests.
+- Full regression: `pnpm turbo typecheck` and `pnpm turbo lint` clean across all 7 workspace
+  packages; `packages/shared`, `packages/db`, and the full `apps/api` rotation/dashboard/env/
+  route-audit test files pass (161 tests across the directly-touched files); a full
+  `apps/api` `vitest run` regression pass was run as the final gate (see test summary in the
+  handoff message).
+
 ### File List
+
+**Migration / schema**
+- `packages/db/src/migrations/0030_rotation_checklist_state.sql` (new)
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/db/src/schema/rotation-checklist-items.ts`
+- `packages/db/src/schema/rotations-schema.test.ts`
+
+**Shared package**
+- `packages/shared/src/schemas/rotations.ts`
+- `packages/shared/src/schemas/rotations.test.ts`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/constants/audit-events.test.ts`
+- `packages/shared/src/constants/notification-types.ts`
+- `packages/shared/src/constants/notification-types.test.ts`
+- `packages/shared/src/constants/operational-event-types.ts`
+- `packages/shared/src/constants/operational-event-types.test.ts`
+- `packages/shared/src/validation/rotation-cron.ts`
+- `packages/shared/src/validation/rotation-cron.test.ts`
+
+**API — config**
+- `apps/api/src/config/env.ts`
+- `apps/api/src/config/env.test.ts`
+
+**API — rotation module**
+- `apps/api/src/modules/rotation/schema.ts`
+- `apps/api/src/modules/rotation/service.ts`
+- `apps/api/src/modules/rotation/routes.ts`
+- `apps/api/src/modules/rotation/routes.test.ts`
+- `apps/api/src/modules/rotation/metrics.ts`
+- `apps/api/src/modules/rotation/metrics.test.ts`
+
+**API — dashboard wiring**
+- `apps/api/src/modules/projects/dashboard-stats.ts`
+- `apps/api/src/modules/projects/dashboard-stats.test.ts`
+
+**API — route classification**
+- `apps/api/src/lib/route-exemptions.ts`

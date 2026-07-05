@@ -1,5 +1,5 @@
 {
-  "id": "bcd58489-7ea5-4616-9a16-0ad8f4054767",
+  "id": "6e1abf9d-19da-48da-a405-1fbed7d0850d",
   "prevId": "a294e726-09f8-4444-a37f-707d18a4e539",
   "version": "7",
   "dialect": "postgresql",
@@ -4194,6 +4194,37 @@
           "primaryKey": false,
           "notNull": false
         },
+        "retry_count": {
+          "name": "retry_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "retry_scheduled_at": {
+          "name": "retry_scheduled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_failure_reason": {
+          "name": "last_failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_acted_by": {
+          "name": "last_acted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_acted_at": {
+          "name": "last_acted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4308,6 +4339,19 @@
           "tableTo": "users",
           "columnsFrom": [
             "confirmed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "rotation_checklist_items_last_acted_by_users_id_fk": {
+          "name": "rotation_checklist_items_last_acted_by_users_id_fk",
+          "tableFrom": "rotation_checklist_items",
+          "tableTo": "users",
+          "columnsFrom": [
+            "last_acted_by"
           ],
           "columnsTo": [
             "id"

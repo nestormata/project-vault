@@ -1,5 +1,18 @@
 import { z } from 'zod/v4'
 
+/** Shared by InitiateRotationBodySchema (api/schema.ts, 5.1) and ConfirmChecklistItemBodySchema
+ *  below: an optional free-text notes field that treats whitespace-only input the same as
+ *  omitted input (both become `null`) rather than persisting an empty/whitespace string. */
+export function optionalTrimmedNotes(maxLength: number) {
+  return z
+    .string()
+    .max(maxLength)
+    .trim()
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null))
+}
+
 export const RotationStatusSchema = z.enum([
   'in_progress',
   'completed',
@@ -23,6 +36,12 @@ export const RotationChecklistItemSchema = z
     status: RotationChecklistItemStatusSchema,
     confirmedBy: z.uuid().nullable(),
     confirmedAt: z.iso.datetime().nullable(),
+    retryCount: z.number().int().nonnegative(),
+    retryScheduledAt: z.iso.datetime().nullable(),
+    lastFailureReason: z.string().nullable(),
+    lastActedBy: z.uuid().nullable(),
+    lastActedAt: z.iso.datetime().nullable(),
+    notes: z.string().nullable().optional(),
   })
   .meta({ id: 'RotationChecklistItem' })
 
@@ -53,6 +72,47 @@ export const RotationSummarySchema = z
     confirmedCount: z.number().int().nonnegative(),
   })
   .meta({ id: 'RotationSummary' })
+
+export const ConfirmChecklistItemBodySchema = z
+  .object({
+    notes: optionalTrimmedNotes(1024),
+  })
+  .strict()
+  .meta({ id: 'ConfirmChecklistItemBody' })
+
+export const FailChecklistItemBodySchema = z
+  .object({
+    reason: z.string().trim().min(1).max(1024),
+    retryScheduledAt: z.iso.datetime().nullable().optional(),
+  })
+  .strict()
+  .meta({ id: 'FailChecklistItemBody' })
+
+// An explicit empty object — {} is the only valid body (omitting the body entirely is also
+// accepted by parseBody, per the same Fastify+Zod convention as other bodyless-intent POSTs).
+export const RetryChecklistItemBodySchema = z.object({}).strict().meta({
+  id: 'RetryChecklistItemBody',
+})
+
+export const CompleteRotationBodySchema = z
+  .object({
+    acknowledgedNoDependencies: z.boolean().optional(),
+  })
+  .strict()
+  .meta({ id: 'CompleteRotationBody' })
+
+export const UpcomingRotationsQuerySchema = z
+  .object({
+    horizon: z.enum(['7d', '30d', '90d']).default('30d'),
+  })
+  .strict()
+  .meta({ id: 'UpcomingRotationsQuery' })
+
+export type ConfirmChecklistItemBody = z.infer<typeof ConfirmChecklistItemBodySchema>
+export type FailChecklistItemBody = z.infer<typeof FailChecklistItemBodySchema>
+export type RetryChecklistItemBody = z.infer<typeof RetryChecklistItemBodySchema>
+export type CompleteRotationBody = z.infer<typeof CompleteRotationBodySchema>
+export type UpcomingRotationsQuery = z.infer<typeof UpcomingRotationsQuerySchema>
 
 export type RotationStatus = z.infer<typeof RotationStatusSchema>
 export type RotationChecklistItemStatus = z.infer<typeof RotationChecklistItemStatusSchema>

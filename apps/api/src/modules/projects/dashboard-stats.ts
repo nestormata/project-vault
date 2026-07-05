@@ -2,6 +2,9 @@ import { and, asc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { credentials, projects, securityAlerts, serviceEndpoints } from '@project-vault/db/schema'
 import type { OrgDashboard, ProjectDashboard } from '@project-vault/shared'
+import { computeUpcomingRotations, serializeUpcomingRotation } from '../rotation/service.js'
+
+export { computeUpcomingRotations }
 
 const EXPIRED_FILTER = sql`${credentials.expiresAt} IS NOT NULL AND ${credentials.expiresAt} <= now()`
 const EXPIRING_FILTER = sql`${credentials.expiresAt} IS NOT NULL AND ${credentials.expiresAt} > now() AND ${credentials.expiresAt} <= now() + make_interval(days => 30)`
@@ -130,11 +133,15 @@ export async function getBatchedProjectServiceHealthStats(
 function buildProjectDashboard(
   stats: ProjectCredentialStats,
   unresolvedAlertCount: number,
-  monitoredServiceHealth: ProjectServiceHealthStats
+  monitoredServiceHealth: ProjectServiceHealthStats,
+  upcomingRotations: ProjectDashboard['upcomingRotations']
 ): ProjectDashboard {
   const credentialTotal = stats.active + stats.expiringSoon + stats.expired
   const serviceTotal =
     monitoredServiceHealth.healthy + monitoredServiceHealth.degraded + monitoredServiceHealth.down
+  // Story 5.2 AC-15: a project with zero credentials/services can never have an upcoming
+  // rotation (rotations only exist for credentials that exist) — isEmpty/suggestedActions
+  // deliberately do not factor upcomingRotations in.
   const isEmpty = credentialTotal === 0 && serviceTotal === 0
 
   return {
@@ -143,7 +150,7 @@ function buildProjectDashboard(
       expiringSoon: stats.expiringSoon,
       expired: stats.expired,
     },
-    upcomingRotations: [],
+    upcomingRotations,
     monitoredServiceHealth,
     recentAccessEvents: [],
     // ADR-3.4-01: security_alerts has no project_id — project dashboard mirrors the
@@ -154,19 +161,36 @@ function buildProjectDashboard(
   }
 }
 
+// Story 5.2 AC-15: fixed 30-day default horizon — the dashboard is a fixed summary view, not a
+// filterable list (no query-param horizon here, unlike GET .../rotations/upcoming).
+const PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS = 30
+
+// Code-review fix: match the org dashboard's 20-item cap on projectsWithOverdueRotations.items
+// (below) — this list was previously returned unbounded, an inconsistent and unnecessary
+// payload-size/pagination gap versus the adjacent org-dashboard slice.
+const PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT = 20
+
 export async function getProjectDashboardData(
   tx: Tx,
   projectId: string
 ): Promise<ProjectDashboard> {
-  const [statsByProject, unresolvedAlertCount, serviceHealthByProject] = await Promise.all([
-    getBatchedProjectCredentialStats(tx, [projectId]),
-    getUnresolvedSecurityAlertCount(tx),
-    getBatchedProjectServiceHealthStats(tx, [projectId]),
-  ])
+  const [statsByProject, unresolvedAlertCount, serviceHealthByProject, upcomingRotationResults] =
+    await Promise.all([
+      getBatchedProjectCredentialStats(tx, [projectId]),
+      getUnresolvedSecurityAlertCount(tx),
+      getBatchedProjectServiceHealthStats(tx, [projectId]),
+      computeUpcomingRotations(tx, {
+        projectId,
+        horizonDays: PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS,
+      }),
+    ])
   return buildProjectDashboard(
     lookupProjectStats(statsByProject, projectId),
     unresolvedAlertCount,
-    lookupServiceHealthStats(serviceHealthByProject, projectId)
+    lookupServiceHealthStats(serviceHealthByProject, projectId),
+    upcomingRotationResults
+      .slice(0, PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT)
+      .map(serializeUpcomingRotation)
   )
 }
 
@@ -199,6 +223,14 @@ export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
 
   const unresolvedAlertCount = await getUnresolvedSecurityAlertCount(tx)
 
+  // Story 5.2 AC-15: org-wide (no projectId), horizonDays: 0. Do NOT rely on the horizonDays:0
+  // inclusion boundary alone to mean "overdue-only" — AC-14's inclusion rule is
+  // `nextDueAt <= now + horizonDays` (inclusive) while its status label is 'overdue' only when
+  // `nextDueAt < now` (strict), so a credential landing exactly at "now" would otherwise slip
+  // into this bucket unlabeled as overdue. The explicit filter below is the actual gate.
+  const upcomingRotationResults = await computeUpcomingRotations(tx, { horizonDays: 0 })
+  const overdueRotations = upcomingRotationResults.filter((r) => r.status === 'overdue')
+
   return {
     totalCredentials: Number(totalCredentials),
     expiringWithin30Days: {
@@ -211,7 +243,10 @@ export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
         expiresAt: row.expiresAt?.toISOString() ?? new Date(0).toISOString(),
       })),
     },
-    projectsWithOverdueRotations: { count: 0, items: [] },
+    projectsWithOverdueRotations: {
+      count: overdueRotations.length,
+      items: overdueRotations.slice(0, 20).map(serializeUpcomingRotation),
+    },
     unresolvedAlertCount,
   }
 }

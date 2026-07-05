@@ -39,6 +39,11 @@ export const AuditEvent = {
   ACCOUNT_RECOVERY_COMPLETED: 'auth.recovery_completed',
   ACCOUNT_RECOVERY_BLOCKED: 'auth.recovery_blocked_no_admin',
   ROTATION_INITIATED: 'rotation.initiated',
+  ROTATION_CHECKLIST_ITEM_CONFIRMED: 'rotation.checklist_item_confirmed',
+  ROTATION_CHECKLIST_ITEM_FAILED: 'rotation.checklist_item_failed',
+  ROTATION_CHECKLIST_ITEM_RETRIED: 'rotation.checklist_item_retried',
+  ROTATION_CHECKLIST_ITEM_MAX_RETRIES_EXCEEDED: 'rotation.checklist_item_max_retries_exceeded',
+  ROTATION_COMPLETED: 'rotation.completed',
   PAYMENT_RECORD_CREATED: 'payment_record.created',
   PAYMENT_RECORD_UPDATED: 'payment_record.updated',
   PAYMENT_RECORD_DELETED: 'payment_record.deleted',
@@ -95,6 +100,11 @@ export type AuditEventType =
   | 'auth.recovery_completed'
   | 'auth.recovery_blocked_no_admin'
   | 'rotation.initiated'
+  | 'rotation.checklist_item_confirmed'
+  | 'rotation.checklist_item_failed'
+  | 'rotation.checklist_item_retried'
+  | 'rotation.checklist_item_max_retries_exceeded'
+  | 'rotation.completed'
   | 'payment_record.created'
   | 'payment_record.updated'
   | 'payment_record.deleted'

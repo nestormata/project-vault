@@ -324,6 +324,35 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditOmissionReason: 'Rotation history list does not expose credential values.',
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/checklist/:itemId/confirm':
+    {
+      action: 'mutation',
+      auditEvent: 'rotation.checklist_item_confirmed',
+      sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+    },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/checklist/:itemId/fail':
+    {
+      action: 'mutation',
+      auditEvent: 'rotation.checklist_item_failed',
+      sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+    },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/checklist/:itemId/retry':
+    {
+      action: 'mutation',
+      auditEvent: 'rotation.checklist_item_retried',
+      sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+    },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/complete': {
+    action: 'mutation',
+    auditEvent: 'rotation.completed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/rotations/upcoming': {
+    action: 'read',
+    auditOmissionReason:
+      'Upcoming-rotation schedule read is metadata-only; never exposes a credential value.',
+    reviewer: SECURITY_OWNER,
+  },
   'POST /api/v1/projects/:projectId/credentials/import': {
     action: 'mutation',
     auditEvent: 'credential.bulk_import_initiated',

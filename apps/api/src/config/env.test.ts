@@ -154,6 +154,7 @@ describe('env', () => {
     expect(env.HEALTH_CHECK_MAX_CONCURRENCY).toBe(20)
     expect(env.ANOMALOUS_ACCESS_THRESHOLD_COUNT).toBe(5)
     expect(env.ANOMALOUS_ACCESS_WINDOW_SECONDS).toBe(3600)
+    expect(env.ROTATION_MAX_RETRIES).toBe(3)
   })
 
   it('Story 6.2: ANOMALOUS_ACCESS_WINDOW_SECONDS can be widened up to 86400 (adversarial-review finding 17)', async () => {
@@ -165,6 +166,27 @@ describe('env', () => {
     vi.resetModules()
     const { env } = await import('./env.js')
     expect(env.ANOMALOUS_ACCESS_WINDOW_SECONDS).toBe(86400)
+  })
+
+  it('accepts a custom Story 5.2 ROTATION_MAX_RETRIES within bounds', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ROTATION_MAX_RETRIES: '10',
+    }
+    const { env } = await import('./env.js')
+    expect(env.ROTATION_MAX_RETRIES).toBe(10)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects an out-of-bounds Story 5.2 ROTATION_MAX_RETRIES', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ROTATION_MAX_RETRIES: '11',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
   })
 
   it('rejects identical auth secrets', async () => {

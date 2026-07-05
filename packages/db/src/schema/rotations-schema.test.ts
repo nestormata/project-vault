@@ -34,6 +34,14 @@ describe('rotations schema', () => {
     expect(rotationChecklistItems.updatedAt).toBeDefined()
   })
 
+  it('exposes Story 5.2 checklist-item state columns (retry/failure/last-acted)', () => {
+    expect(rotationChecklistItems.retryCount).toBeDefined()
+    expect(rotationChecklistItems.retryScheduledAt).toBeDefined()
+    expect(rotationChecklistItems.lastFailureReason).toBeDefined()
+    expect(rotationChecklistItems.lastActedBy).toBeDefined()
+    expect(rotationChecklistItems.lastActedAt).toBeDefined()
+  })
+
   it('keeps rotation tables subject to RLS coverage', () => {
     expect(EXCLUDED_TABLES.has('rotations')).toBe(false)
     expect(EXCLUDED_TABLES.has('rotation_checklist_items')).toBe(false)

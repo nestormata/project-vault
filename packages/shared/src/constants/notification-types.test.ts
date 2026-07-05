@@ -8,6 +8,13 @@ describe('MFA alert types in shared registry (AC-6)', () => {
   })
 })
 
+describe('Story 5.2 rotation checklist alert types', () => {
+  it('registers the confirmation-failed and max-retries-exceeded alert type IDs', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('rotation.confirmation_failed')
+    expect(NOTIFICATION_ALERT_TYPES).toContain('rotation.max_retries_exceeded')
+  })
+})
+
 describe('Story 6.1 operational monitoring alert types', () => {
   it('registers payment/certificate/domain expiry alert type IDs', () => {
     expect(NOTIFICATION_ALERT_TYPES).toContain('payment.expiry')
