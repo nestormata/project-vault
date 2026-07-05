@@ -26,6 +26,11 @@ import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
 import { runDomainExpiryAlertJob } from './workers/domain-expiry-alert.js'
 import { runMachineKeyExpiryAlertJob } from './workers/machine-key-expiry-alert.js'
 import {
+  runMachineKeyOverlapAlertJob,
+  runMachineKeyOverlapRevokeJob,
+} from './workers/machine-key-overlap-revoke.js'
+import { runMachineKeyDormancyCheckJob } from './workers/machine-key-dormancy-check.js'
+import {
   notificationEmailCatchupHandler,
   notificationEmailHandler,
 } from './workers/notification-email.js'
@@ -122,6 +127,13 @@ async function main(): Promise<void> {
       'cert:expiry-alert': { cron: '0 8 * * *' },
       'domain:expiry-alert': { cron: '0 8 * * *' },
       'machine-key:expiry-alert': { cron: '0 8 * * *' },
+      // AC-18: split cadence — 5-minute revoke check bounds cron-granularity overshoot to at
+      // most 5 minutes even for the shortest permitted overlapMinutes (1); the pre-revocation
+      // alert only needs to fire "around" 1 hour ahead, so hourly is sufficient there.
+      'machine-key:overlap-revoke': { cron: '*/5 * * * *' },
+      'machine-key:overlap-alert': { cron: '0 * * * *' },
+      // AC-21: daily dormancy detection job.
+      'machine-key:dormancy-check': { cron: '0 9 * * *' },
       'notification:email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
@@ -167,6 +179,18 @@ async function main(): Promise<void> {
       'machine-key:expiry-alert': (job) =>
         withJobLogging(fastify.log, 'machine-key:expiry-alert', job.id ?? 'unknown', () =>
           runMachineKeyExpiryAlertJob(boss, fastify.log)
+        ),
+      'machine-key:overlap-revoke': (job) =>
+        withJobLogging(fastify.log, 'machine-key:overlap-revoke', job.id ?? 'unknown', () =>
+          runMachineKeyOverlapRevokeJob(fastify.log)
+        ),
+      'machine-key:overlap-alert': (job) =>
+        withJobLogging(fastify.log, 'machine-key:overlap-alert', job.id ?? 'unknown', () =>
+          runMachineKeyOverlapAlertJob(boss, fastify.log)
+        ),
+      'machine-key:dormancy-check': (job) =>
+        withJobLogging(fastify.log, 'machine-key:dormancy-check', job.id ?? 'unknown', () =>
+          runMachineKeyDormancyCheckJob(boss, fastify.log)
         ),
       'notification:email': {
         handler: (job) => notificationEmailHandler(job, fastify.log),

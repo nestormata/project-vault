@@ -1,10 +1,11 @@
-import { and, count, desc, eq, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, ne, type SQL } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import { securityAlerts } from '@project-vault/db/schema'
 import { z, type ZodType } from 'zod/v4'
 import {
   anomalousAccessPayloadSchema,
   failedAuthThresholdPayloadSchema,
+  machineKeyDormantPayloadSchema,
   type SecurityAlertsQuery,
 } from './schema.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
@@ -28,6 +29,7 @@ function deliveryStatusFor(
 const PAYLOAD_SCHEMA_BY_ALERT_TYPE: Record<string, ZodType> = {
   'security.failed_auth_threshold': failedAuthThresholdPayloadSchema,
   'security.anomalous_access': anomalousAccessPayloadSchema,
+  'machine_key.dormant': machineKeyDormantPayloadSchema,
 }
 const PASSTHROUGH_PAYLOAD_SCHEMA = z.record(z.string(), z.unknown())
 
@@ -143,4 +145,43 @@ export async function dismissSecurityAlert(
   })
 
   return updated
+}
+
+export type DismissSecurityAlertResult =
+  { status: 'dismissed'; id: string } | { status: 'not_found' } | { status: 'already_dismissed' }
+
+/**
+ * Story 7.2 D9/AC-22 — generic dismiss endpoint's write path: this is the first-ever write
+ * against `security_alerts.dismissedBy/dismissedAt/dismissalReason`, columns shipped in Epic 1
+ * but never consumed until this story. Works identically for any future `alertType`.
+ *
+ * Named distinctly from `dismissSecurityAlert` above (Story 6.2's org-admin dismiss route,
+ * keyed by securityAlertId+orgId+actorUserId) since both dismiss the same table via
+ * independent routes/call conventions that coexist rather than one superseding the other.
+ */
+export async function dismissSecurityAlertByToken(
+  tx: Tx,
+  params: { alertId: string; actorTokenId: string | null; reason: string }
+): Promise<DismissSecurityAlertResult> {
+  const [claimed] = await tx
+    .update(securityAlerts)
+    .set({
+      status: 'dismissed',
+      dismissedBy: params.actorTokenId,
+      dismissedAt: new Date(),
+      dismissalReason: params.reason,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(securityAlerts.id, params.alertId), ne(securityAlerts.status, 'dismissed')))
+    .returning({ id: securityAlerts.id })
+
+  if (claimed) return { status: 'dismissed', id: claimed.id }
+
+  const [existing] = await tx
+    .select({ id: securityAlerts.id, status: securityAlerts.status })
+    .from(securityAlerts)
+    .where(eq(securityAlerts.id, params.alertId))
+    .limit(1)
+  if (!existing) return { status: 'not_found' }
+  return { status: 'already_dismissed' }
 }

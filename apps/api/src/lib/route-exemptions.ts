@@ -741,6 +741,21 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'machine_user.api_key_emergency_revoked',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/extend-dormancy': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.dormancy_extended',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/security-alerts/:alertId/dismiss': {
+    action: SECURITY_ACTION,
+    auditEvent: 'security_alert.dismissed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/organizations/:orgId/machine-key-settings': {
+    action: 'mutation',
+    auditEvent: 'organization.machine_key_settings_updated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [

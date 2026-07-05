@@ -22,6 +22,8 @@ import {
   ApiKeyParamsSchema,
   CreateMachineUserBodySchema,
   EmergencyRevokeResponseSchema,
+  ExtendDormancyBodySchema,
+  ExtendDormancyResponseSchema,
   IssueApiKeyBodySchema,
   IssueApiKeyResponseSchema,
   ListApiKeysResponseSchema,
@@ -607,6 +609,65 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
 
       return {
         data: { revokedKeyId: oldKey.id, newKey: result.plaintext, newKeyId: result.newKeyId },
+      }
+    },
+  })
+
+  // AC-22: snoozes dormancy detection for a specific key without touching lastUsedAt.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/machine-users/:machineUserId/api-keys/:keyId/extend-dormancy',
+    schema: {
+      body: ExtendDormancyBodySchema,
+      response: {
+        200: ExtendDormancyResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: MACHINE_USER_MUTATION_RATE_LIMIT,
+        timeWindowMs: MACHINE_USERS_RATE_LIMIT_WINDOW_MS,
+        key: 'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/extend-dormancy',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ApiKeyParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody(ExtendDormancyBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const dormancySnoozedUntil = new Date(Date.now() + parsed.data.days * 86_400_000)
+      const [updated] = await secureCtx.tx
+        .update(apiKeys)
+        .set({ dormancySnoozedUntil })
+        .where(and(eq(apiKeys.id, params.keyId), eq(apiKeys.machineUserId, params.machineUserId)))
+        .returning({ id: apiKeys.id })
+      if (!updated) return reply.status(404).send(API_KEY_NOT_FOUND)
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'api_key',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.MACHINE_USER_DORMANCY_EXTENDED,
+        resourceId: updated.id,
+        payload: {
+          keyId: updated.id,
+          days: parsed.data.days,
+          newSnoozeUntil: dormancySnoozedUntil.toISOString(),
+        },
+        request: req,
+      })
+
+      return {
+        data: { keyId: updated.id, dormancySnoozedUntil: dormancySnoozedUntil.toISOString() },
       }
     },
   })
