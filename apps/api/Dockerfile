@@ -15,6 +15,7 @@ COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/db/package.json ./packages/db/
 COPY packages/crypto/package.json ./packages/crypto/
+COPY packages/agent/package.json ./packages/agent/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 
 RUN pnpm install --frozen-lockfile
@@ -24,12 +25,14 @@ COPY packages/tsconfig ./packages/tsconfig
 COPY packages/shared ./packages/shared
 COPY packages/db ./packages/db
 COPY packages/crypto ./packages/crypto
+COPY packages/agent ./packages/agent
 COPY packages/eslint-config ./packages/eslint-config
 
 WORKDIR /app
 RUN pnpm --filter @project-vault/shared build \
  && pnpm --filter @project-vault/crypto build \
  && pnpm --filter @project-vault/db build \
+ && pnpm --filter @project-vault/agent build \
  && pnpm --filter @project-vault/api build
 
 # Bundle the api and its production deps into a self-contained directory.
