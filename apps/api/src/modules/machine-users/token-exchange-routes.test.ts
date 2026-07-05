@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { apiKeys, machineUsers } from '@project-vault/db/schema'
+import { apiKeys, auditLogEntries, machineUsers } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -261,5 +261,93 @@ describe('POST /api/v1/auth/machine-token', () => {
         resetKeyHashRateLimitStateForTest()
       }
     }, 30_000)
+  })
+
+  describe('AC-19: rotation anomaly detection', () => {
+    it('fires an anomaly audit row when the old key is used after the new key has already been used', async () => {
+      const owner = await registerOwner(app, 'anomaly')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'token-exchange-anomaly')
+      const { machineUserId, key: oldKey } = await issueMachineUserAndKey(
+        app,
+        owner.cookies,
+        projectId
+      )
+
+      const listRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/machine-users/${machineUserId}/api-keys`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      const originalKeyId = listRes
+        .json<{ data: { items: { id: string; name: string }[] } }>()
+        .data.items.find((item) => item.name === 'ci-key')?.id
+      expect(originalKeyId).toBeDefined()
+
+      const rotateApiRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/machine-users/${machineUserId}/api-keys/${originalKeyId}/rotate`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: {},
+      })
+      expect(rotateApiRes.statusCode).toBe(201)
+      const newKey = rotateApiRes.json<{ data: { key: string } }>().data.key
+
+      // New key adopted first (normal rotation-rollout behavior).
+      const newExchange = await exchangeToken(app, newKey)
+      expect(newExchange.statusCode).toBe(200)
+
+      // Old key used again after the new key was already adopted — anomalous.
+      const oldExchange = await exchangeToken(app, oldKey)
+      expect(oldExchange.statusCode).toBe(200)
+
+      const auditRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'machine_user.rotation_anomaly_detected'))
+      )
+      expect(auditRows.length).toBeGreaterThan(0)
+      expect(auditRows[0]?.actorType).toBe('machine_user')
+    })
+
+    it('does not fire when the old key is used before the new key has ever been used', async () => {
+      const owner = await registerOwner(app, 'no-anomaly')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'token-exchange-noanomaly')
+      const { machineUserId, key: oldKey } = await issueMachineUserAndKey(
+        app,
+        owner.cookies,
+        projectId
+      )
+      const listRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/machine-users/${machineUserId}/api-keys`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      const originalKeyId = listRes
+        .json<{ data: { items: { id: string; name: string }[] } }>()
+        .data.items.find((item) => item.name === 'ci-key')?.id
+
+      const rotateRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/machine-users/${machineUserId}/api-keys/${originalKeyId}/rotate`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: {},
+      })
+      expect(rotateRes.statusCode).toBe(201)
+
+      // Old key used again — new key never adopted yet, so this is normal overlap usage.
+      const oldExchange = await exchangeToken(app, oldKey)
+      expect(oldExchange.statusCode).toBe(200)
+
+      const auditRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'machine_user.rotation_anomaly_detected'))
+      )
+      expect(
+        auditRows.filter((r) => (r.payload as { oldKeyId?: string })?.oldKeyId === originalKeyId)
+      ).toHaveLength(0)
+    })
   })
 })

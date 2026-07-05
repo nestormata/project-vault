@@ -731,6 +731,16 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Archival-guard read endpoint (AC-23) — returns only machineUserId/keyId pairs, never API key secrets.',
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/rotate': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.api_key_rotated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/emergency-revoke': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.api_key_emergency_revoked',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [

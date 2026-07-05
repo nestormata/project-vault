@@ -16,10 +16,12 @@ import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import type { Tx } from '@project-vault/db'
 import { generateApiKey, hashApiKey } from './tokens.js'
 import { activeMachineUserKeysQuery } from './archival-check.js'
+import { emergencyRevokeApiKey, lockApiKeyForUpdate, rotateApiKey } from './rotation.js'
 import {
   ActiveMachineUserKeysResponseSchema,
   ApiKeyParamsSchema,
   CreateMachineUserBodySchema,
+  EmergencyRevokeResponseSchema,
   IssueApiKeyBodySchema,
   IssueApiKeyResponseSchema,
   ListApiKeysResponseSchema,
@@ -30,6 +32,8 @@ import {
   PaginationQuerySchema,
   ProjectScopeParamsSchema,
   RevokeApiKeyResponseSchema,
+  RotateApiKeyBodySchema,
+  RotateApiKeyResponseSchema,
   type ApiKeyIssued,
   type ApiKeyMetadata,
   type MachineUserDetail,
@@ -42,6 +46,15 @@ const MACHINE_USER_NOT_FOUND = {
   message: 'Machine user not found',
 } as const
 const API_KEY_NOT_FOUND = { code: 'api_key_not_found', message: 'API key not found' } as const
+// Shared by rotate (AC-17) and emergency-revoke (AC-20) — both reject an already-revoked key.
+const API_KEY_ALREADY_REVOKED = {
+  code: 'api_key_already_revoked',
+  message: 'This key has already been revoked',
+} as const
+const API_KEY_ALREADY_ROTATED = {
+  code: 'api_key_already_rotated',
+  message: 'This key has already been rotated',
+} as const
 const MACHINE_USER_DEACTIVATED = {
   code: 'machine_user_deactivated',
   message: 'Machine user is deactivated',
@@ -469,6 +482,132 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       return { data: { id: result.id, revokedAt: (result.revokedAt ?? revokedAt).toISOString() } }
+    },
+  })
+
+  // AC-16/AC-17/AC-26: zero-downtime key rotation, row-locked to close the concurrent-rotation
+  // TOCTOU window.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/machine-users/:machineUserId/api-keys/:keyId/rotate',
+    schema: {
+      body: RotateApiKeyBodySchema,
+      response: {
+        201: RotateApiKeyResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: MACHINE_USER_MUTATION_RATE_LIMIT,
+        timeWindowMs: MACHINE_USERS_RATE_LIMIT_WINDOW_MS,
+        key: 'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/rotate',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ApiKeyParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody(RotateApiKeyBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const oldKey = await lockApiKeyForUpdate(secureCtx.tx, params)
+      if (!oldKey) return reply.status(404).send(API_KEY_NOT_FOUND)
+      if (oldKey.revokedAt !== null) return reply.status(409).send(API_KEY_ALREADY_REVOKED)
+      if (oldKey.overlapExpiresAt !== null) return reply.status(409).send(API_KEY_ALREADY_ROTATED)
+
+      const result = await rotateApiKey(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        machineUserId: params.machineUserId,
+        oldKey,
+        overlapMinutes: parsed.data.overlapMinutes,
+      })
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'api_key',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.MACHINE_USER_API_KEY_ROTATED,
+        resourceId: result.newKeyId,
+        payload: {
+          oldKeyId: oldKey.id,
+          newKeyId: result.newKeyId,
+          overlapMinutes: parsed.data.overlapMinutes,
+        },
+        request: req,
+      })
+
+      reply.status(201)
+      return {
+        data: {
+          newKeyId: result.newKeyId,
+          key: result.plaintext,
+          oldKeyId: oldKey.id,
+          overlapExpiresAt: result.overlapExpiresAt.toISOString(),
+        },
+      }
+    },
+  })
+
+  // AC-20/AC-26: emergency revocation — atomic revoke-old + issue-new, no overlap window.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/machine-users/:machineUserId/api-keys/:keyId/emergency-revoke',
+    schema: {
+      response: {
+        200: EmergencyRevokeResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: MACHINE_USER_MUTATION_RATE_LIMIT,
+        timeWindowMs: MACHINE_USERS_RATE_LIMIT_WINDOW_MS,
+        key: 'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/emergency-revoke',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ApiKeyParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const oldKey = await lockApiKeyForUpdate(secureCtx.tx, params)
+      if (!oldKey) return reply.status(404).send(API_KEY_NOT_FOUND)
+      if (oldKey.revokedAt !== null) return reply.status(409).send(API_KEY_ALREADY_REVOKED)
+
+      const result = await emergencyRevokeApiKey(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        machineUserId: params.machineUserId,
+        oldKey,
+      })
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'api_key',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.MACHINE_USER_API_KEY_EMERGENCY_REVOKED,
+        resourceId: result.newKeyId,
+        payload: { revokedKeyId: oldKey.id, newKeyId: result.newKeyId },
+        request: req,
+      })
+
+      return {
+        data: { revokedKeyId: oldKey.id, newKey: result.plaintext, newKeyId: result.newKeyId },
+      }
     },
   })
 }

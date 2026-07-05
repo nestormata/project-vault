@@ -14,6 +14,7 @@ import {
 } from './token-exchange-lookup.js'
 import { isKeyHashRateLimited, recordFailedKeyHashAttempt } from './token-exchange-rate-limit.js'
 import { MachineTokenResponseSchema } from './token-exchange-schema.js'
+import { checkRotationAnomaly } from './rotation.js'
 
 const API_KEY_PREFIX = 'pk_'
 
@@ -78,6 +79,22 @@ export async function machineTokenExchangeRoutes(fastify: FastifyApp): Promise<v
 
       const now = new Date()
       await touchApiKeyLastUsed(row.id, now)
+
+      // AC-19: purely detective, never preventive — a failure here must never block the
+      // exchange that's already succeeded (e.g. no admin recipient configured for the org yet).
+      try {
+        await checkRotationAnomaly(row.orgId, {
+          oldKeyId: row.id,
+          machineUserId: row.machineUserId,
+          usedAt: now,
+        })
+      } catch (error) {
+        req.log.warn({
+          eventType: 'machine_token.rotation_anomaly_check_failed',
+          keyId: row.id,
+          err: error,
+        })
+      }
 
       const jti = randomUUID()
       const accessToken = await (fastify as unknown as MachineJwtSignFastify).machineJwtSign({
