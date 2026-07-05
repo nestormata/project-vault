@@ -40,6 +40,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@project-vault/agent": "workspace:*",
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/bcrypt": "^6.0.0",
