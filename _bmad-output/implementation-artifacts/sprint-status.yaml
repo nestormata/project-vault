@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-05  # updated: 6-3 -> ready-for-dev (6-2 prerequisite now done); 5-4 -> ready-for-dev (story file created); 8-3 -> ready-for-dev (story file created; hard prereq on 8-1/8-2 done)
+last_updated: 2026-07-05  # updated: 6-3 -> in-progress
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -100,7 +100,7 @@ development_status:
   epic-6: in-progress
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: done
-  6-3-cross-project-health-dashboard-and-public-status-page: ready-for-dev
+  6-3-cross-project-health-dashboard-and-public-status-page: in-progress
   epic-6-retrospective: optional
 
   # Epic 7: Machine User Access & CI/CD Integration

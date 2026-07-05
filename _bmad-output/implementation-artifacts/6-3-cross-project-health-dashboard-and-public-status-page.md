@@ -1,6 +1,6 @@
 # Story 6.3: Cross-Project Health Dashboard & Public Status Page
 
-Status: ready-for-dev (Story 6.2 — `6-2-http-endpoint-monitoring-and-availability-alerts` — is now `done`; ADR-6.3-01's prerequisite is satisfied)
+Status: in-progress (Story 6.2 — `6-2-http-endpoint-monitoring-and-availability-alerts` — is `done`; ADR-6.3-01's prerequisite is satisfied)
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for the
 THIRD story in Epic 6. This story creates the org-wide `GET /api/v1/health-dashboard` endpoint, a
