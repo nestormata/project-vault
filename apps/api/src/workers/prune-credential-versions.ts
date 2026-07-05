@@ -24,7 +24,11 @@ async function purgeCandidatesForCredential(
   retentionCount: number
 ): Promise<PurgeCandidate[]> {
   const versions = await tx
-    .select({ id: credentialVersions.id, versionNumber: credentialVersions.versionNumber })
+    .select({
+      id: credentialVersions.id,
+      versionNumber: credentialVersions.versionNumber,
+      abandonedAt: credentialVersions.abandonedAt,
+    })
     .from(credentialVersions)
     .where(
       and(
@@ -35,14 +39,28 @@ async function purgeCandidatesForCredential(
     )
     .orderBy(desc(credentialVersions.versionNumber))
 
+  // Story 5.3 fix: an abandoned version (AC-12/CR5) can carry a HIGHER version number than the
+  // actual "current" version — abandonment never renumbers anything (AC-13's anti-pattern
+  // guard) — so ranking purge-eligibility purely by versionNumber DESC can push the real
+  // current version out of the keep window while a defunct abandoned version occupies a
+  // retention slot instead. `revealCurrentValue()`/`listVersionHistory()`'s "current" definition
+  // (highest versionNumber with purgedAt AND abandonedAt both null) must never be purged
+  // regardless of its rank in this list — abandoned versions still age out on the normal
+  // schedule (AC-1's "NOT purged early — stays queryable in history"), they just can't be
+  // allowed to protect themselves ahead of the version that's actually live.
+  const currentVersionId = versions.find((version) => version.abandonedAt === null)?.id ?? null
+
   // Keep-≥-1 invariant (F1): never purge the single highest non-purged version, even if
   // retentionCount somehow resolves below 1 (the DB CHECK prevents this, but guard anyway).
   const keepCount = Math.max(retentionCount, 1)
-  return versions.slice(keepCount).map((version) => ({
-    id: version.id,
-    credentialId,
-    versionNumber: version.versionNumber,
-  }))
+  return versions
+    .slice(keepCount)
+    .filter((version) => version.id !== currentVersionId)
+    .map((version) => ({
+      id: version.id,
+      credentialId,
+      versionNumber: version.versionNumber,
+    }))
 }
 
 async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): Promise<boolean> {

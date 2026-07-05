@@ -232,6 +232,13 @@
       "when": 1783210280189,
       "tag": "0032_machine_key_rotation_dormancy_cacheable",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1783217894943,
+      "tag": "0033_break_glass_and_stale_recovery",
+      "breakpoints": true
     }
   ]
 }

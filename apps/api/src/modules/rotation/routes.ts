@@ -1,7 +1,7 @@
 import { z } from 'zod/v4'
 import { eq } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { projects } from '@project-vault/db/schema'
+import { projects, securityAlerts } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -10,8 +10,17 @@ import { buildPaginationMeta, paginationOffset, parsePagination } from '../../li
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import type { BossService } from '../../lib/boss.js'
-import { sendNotificationJobs, type NotificationQueueJob } from '../../notifications/dispatcher.js'
 import {
+  enqueueSecurityAlertNotification,
+  sendNotificationJobs,
+  type NotificationQueueJob,
+} from '../../notifications/dispatcher.js'
+import { env } from '../../config/env.js'
+import {
+  AbandonRotationBodySchema,
+  AbandonRotationResponseSchema,
+  BreakGlassRotationBodySchema,
+  BreakGlassRotationResponseSchema,
   CompleteRotationBodySchema,
   CompleteRotationResponseSchema,
   ConfirmChecklistItemBodySchema,
@@ -27,6 +36,8 @@ import {
   InvalidItemStatusResponseSchema,
   ListRotationsQuerySchema,
   MaxRetriesExceededResponseSchema,
+  ResumeRotationBodySchema,
+  ResumeRotationResponseSchema,
   RetryChecklistItemBodySchema,
   RetryChecklistItemResponseSchema,
   RotationChecklistItemParamsSchema,
@@ -34,17 +45,25 @@ import {
   RotationCredentialParamsSchema,
   RotationDetailResponseSchema,
   RotationHistoryResponseSchema,
+  RotationLockContentionResponseSchema,
   RotationNotActiveResponseSchema,
+  RotationNotStaleResponseSchema,
   RotationParamsSchema,
   UpcomingRotationsQuerySchema,
   UpcomingRotationsResponseSchema,
+  type AbandonRotationBody,
+  type BreakGlassRotationBody,
   type CompleteRotationBody,
   type ConfirmChecklistItemBody,
   type FailChecklistItemBody,
   type InitiateRotationBody,
+  type ResumeRotationBody,
+  type RotationParams,
 } from './schema.js'
 import {
   RotationConflictError,
+  abandonRotation,
+  breakGlassRotation,
   completeRotation,
   confirmChecklistItem,
   failChecklistItem,
@@ -53,16 +72,20 @@ import {
   getUpcomingRotations,
   initiateRotation,
   listRotationHistory,
+  resumeRotation,
   retryChecklistItem,
+  serializeBreakGlassRotation,
   serializeChecklistItem,
   serializeRotationDetail,
 } from './service.js'
 import {
+  rotationBreakGlassTotal,
   rotationChecklistConfirmationsTotal,
   rotationChecklistFailuresTotal,
   rotationChecklistRetriesTotal,
   rotationCompletionsTotal,
   rotationInitiationsTotal,
+  rotationResolutionsTotal,
 } from './metrics.js'
 
 const CREDENTIAL_NOT_FOUND = {
@@ -77,6 +100,70 @@ const CHECKLIST_ITEM_NOT_FOUND = {
   code: 'checklist_item_not_found',
   message: 'Checklist item not found',
 } as const
+
+/** Shared by initiate and break-glass: both service calls return `status:
+ *  'credential_not_found'` for the same cross-org/nonexistent-credential case. A type predicate
+ *  (rather than a plain boolean) so the caller's `result` narrows to the non-not-found variant
+ *  after the guard, same as the inline `if (result.status === 'credential_not_found')` it replaces. */
+function isCredentialFound<T extends { status: string }>(
+  result: T
+): result is Exclude<T, { status: 'credential_not_found' }> {
+  return result.status !== 'credential_not_found'
+}
+
+/** Every audit write in this file shares orgId/actorUserId (from secureCtx.auth), resourceType
+ *  ('rotation'), and request — only eventType/resourceId/payload vary per call site.
+ *
+ *  Takes `tx`/`auth` rather than the whole `secureCtx` (and callers pass `secureCtx.tx` /
+ *  `secureCtx.auth` explicitly) so route-audit.test.ts's same-transaction-delegation check —
+ *  which greps each route's own source for a literal `secureCtx.tx` following the delegated
+ *  call — can still verify the audit write shares the route's transaction. */
+function writeRotationAuditEntry(
+  tx: SecureRouteContext['tx'],
+  auth: SecureRouteContext['auth'],
+  req: FastifyRequest,
+  input: { eventType: string; resourceId?: string; payload: Record<string, unknown> }
+): Promise<void> {
+  return writeHumanAuditEntryOrFailClosed(tx, {
+    orgId: auth.orgId,
+    actorUserId: auth.userId,
+    resourceType: 'rotation',
+    request: req,
+    ...input,
+  })
+}
+
+/** Shared by resume and abandon: identical params schema and empty-body validation. */
+function parseResolutionRequest<TBody>(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  bodySchema: z.ZodType<TBody>
+): RotationParams | undefined {
+  const params = parseParams(RotationParamsSchema, req, reply)
+  if (!params) return undefined
+  const parsed = parseBody<TBody>(bodySchema, req, reply)
+  if (!parsed.success) return undefined
+  return params
+}
+
+/** Shared by resume and abandon: both build the identical
+ *  {orgId, projectId, credentialId, rotationId} service args from `params` — only the service
+ *  function invoked (resumeRotation vs abandonRotation) differs. */
+function callResolutionService<TResult>(
+  serviceFn: (
+    tx: SecureRouteContext['tx'],
+    args: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+  ) => Promise<TResult>,
+  secureCtx: SecureRouteContext,
+  params: RotationParams
+): Promise<TResult> {
+  return serviceFn(secureCtx.tx, {
+    orgId: secureCtx.auth.orgId,
+    projectId: params.projectId,
+    credentialId: params.credentialId,
+    rotationId: params.rotationId,
+  })
+}
 
 const INITIATE_ROTATION_RATE_LIMIT = {
   max: 30,
@@ -109,6 +196,101 @@ async function sendPendingRotationNotifications(
     await sendNotificationJobs(boss, jobs)
   } catch (error) {
     request.log.warn({ err: error }, 'rotation notification dispatch failed')
+  }
+}
+
+// Story 5.3 AC-7: `apps/api/src/notifications/templates/index.ts`'s generic fallback renderer
+// (used by `rotation.break_glass` — no dedicated template file, same precedent as 5.2's
+// "Notification Integration Pattern" decision) interpolates `JSON.stringify(payload, null, 2)`
+// directly into an HTML `<pre>` block with NO escaping — verified by reading the actual
+// renderer, not assumed. `reason` is admin-controlled free text (AC-4), so without this,
+// Slack mrkdwn/HTML control sequences (`<!channel>`, `<script>...`) would reach an external
+// channel unescaped. Applied ONLY at the point `reason` enters the outbound notification
+// payload — the audit/security_alerts payloads keep the raw, unmodified string for fidelity.
+function sanitizeReasonForOutboundNotification(reason: string): string {
+  return reason
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+// Story 5.3 AC-11/AC-12/AC-17: resume/abandon share this identical set of lock/scope/state
+// failure outcomes — centralizing the reply/logging dispatch here keeps each route handler
+// down to just its own success-path logic (audit write + metric + response shape).
+type ResolutionFailureOutcome =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_stale'; status: string }
+
+function isResolutionFailure<T extends { outcome: string }>(
+  result: T
+): result is Extract<T, ResolutionFailureOutcome> {
+  return (
+    result.outcome === 'locked_conflict' ||
+    result.outcome === 'concurrent_modification' ||
+    result.outcome === 'rotation_not_found' ||
+    result.outcome === 'rotation_not_stale'
+  )
+}
+
+function replyForResolutionFailure(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  outcome: ResolutionFailureOutcome,
+  logParams: Record<string, unknown>,
+  events: { concurrentEvent: string; notStaleEvent: string }
+): unknown {
+  if (outcome.outcome === 'locked_conflict' || outcome.outcome === 'concurrent_modification') {
+    req.log.info(
+      { eventType: events.concurrentEvent, ...logParams },
+      'Rotation resolution rejected — concurrent modification'
+    )
+    return reply.status(409).send(concurrentModificationResponse(outcome.currentVersion))
+  }
+  if (outcome.outcome === 'rotation_not_found') return reply.status(404).send(ROTATION_NOT_FOUND)
+  req.log.info(
+    { eventType: events.notStaleEvent, ...logParams },
+    'Rotation resolution rejected — not awaiting stale-recovery resolution'
+  )
+  return reply.status(422).send({
+    code: 'rotation_not_stale' as const,
+    message: 'This rotation is not awaiting stale-recovery resolution.',
+    status: outcome.status,
+  })
+}
+
+/** AC-11/AC-12: resume/abandon's shared success-path audit write — fail-closed, with the
+ *  identical audit-failure metric/log/rethrow shape, differing only in eventType/metric outcome
+ *  label/event constant/log message between the two callers.
+ *
+ *  Takes `tx`/`auth` (see writeRotationAuditEntry) rather than `secureCtx` so
+ *  route-audit.test.ts's literal `secureCtx.tx` check still passes at the call site. */
+async function writeResolutionAuditOrThrow(
+  tx: SecureRouteContext['tx'],
+  auth: SecureRouteContext['auth'],
+  req: FastifyRequest,
+  params: Record<string, unknown>,
+  config: {
+    eventType: string
+    resourceId: string
+    payload: Record<string, unknown>
+    auditFailedMetricOutcome: string
+    auditFailedEvent: string
+    auditFailedMessage: string
+  }
+): Promise<void> {
+  try {
+    await writeRotationAuditEntry(tx, auth, req, {
+      eventType: config.eventType,
+      resourceId: config.resourceId,
+      payload: config.payload,
+    })
+  } catch (error) {
+    rotationResolutionsTotal.inc({ outcome: config.auditFailedMetricOutcome })
+    req.log.error({ eventType: config.auditFailedEvent, ...params }, config.auditFailedMessage)
+    throw error
   }
 }
 
@@ -276,23 +458,19 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         throw error
       }
 
-      if (result.status === 'credential_not_found') {
+      if (!isCredentialFound(result)) {
         return reply.status(404).send(CREDENTIAL_NOT_FOUND)
       }
 
       try {
-        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
-          orgId: secureCtx.auth.orgId,
-          actorUserId: secureCtx.auth.userId,
+        await writeRotationAuditEntry(secureCtx.tx, secureCtx.auth, req, {
           eventType: AuditEvent.ROTATION_INITIATED,
           resourceId: result.rotation.id,
-          resourceType: 'rotation',
           payload: {
             credentialId: params.credentialId,
             projectId: params.projectId,
             checklistItemCount: result.checklistItems.length,
           },
-          request: req,
         })
       } catch (error) {
         rotationInitiationsTotal.inc({ outcome: 'audit_failed' })
@@ -335,6 +513,172 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
           sameValueAsPrevious: result.sameValueAsPrevious,
         }),
       }
+    },
+  })
+
+  // Story 5.3 AC-23: rarer, higher-blast-radius than normal initiation's 30/min — a legitimate
+  // incident responder needs at most a handful of break-glass calls per minute across an org.
+  const BREAK_GLASS_RATE_LIMIT = {
+    max: 10,
+    timeWindowMs: 60_000,
+    key: 'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/break-glass',
+  } as const
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/rotations/break-glass',
+    schema: {
+      response: {
+        201: BreakGlassRotationResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: RotationLockContentionResponseSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      // CR4/ADR-5.3-03: "org_admin" resolves to minimumRole: 'admin' (admin + owner) — no
+      // project-role dimension is ever consulted by rotation routes.
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: BREAK_GLASS_RATE_LIMIT,
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(RotationCredentialParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody<BreakGlassRotationBody>(BreakGlassRotationBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await breakGlassRotation(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        projectId: params.projectId,
+        credentialId: params.credentialId,
+        userId: secureCtx.auth.userId,
+        body: parsed.data,
+        overlapMinutes: env.BREAK_GLASS_OVERLAP_MINUTES,
+      })
+
+      if (result.status === 'lock_contention') {
+        rotationBreakGlassTotal.inc({ outcome: 'conflict' })
+        req.log.info(
+          {
+            eventType: OperationalEvent.ROTATION_BREAK_GLASS_LOCK_CONTENTION,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+          },
+          'Break-glass rejected — lock contention'
+        )
+        return reply.status(409).send({
+          code: 'rotation_lock_contention' as const,
+          message: 'Another rotation operation is in progress for this credential. Retry.',
+          credentialId: params.credentialId,
+        })
+      }
+      if (!isCredentialFound(result)) {
+        return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      }
+
+      try {
+        await writeRotationAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+          eventType: AuditEvent.ROTATION_BREAK_GLASS_INITIATED,
+          resourceId: result.rotation.id,
+          payload: {
+            credentialId: params.credentialId,
+            projectId: params.projectId,
+            reason: parsed.data.reason,
+            supersededRotationId: result.supersededRotationId,
+          },
+        })
+
+        if (result.supersededRotationId) {
+          await writeRotationAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+            eventType: AuditEvent.ROTATION_SUPERSEDED_BY_BREAK_GLASS,
+            resourceId: result.rotation.id,
+            payload: {
+              supersededRotationId: result.supersededRotationId,
+              supersedingRotationId: result.rotation.id,
+            },
+          })
+          rotationBreakGlassTotal.inc({ outcome: 'superseded' })
+          req.log.info(
+            {
+              eventType: OperationalEvent.ROTATION_BREAK_GLASS_SUPERSEDED,
+              orgId: secureCtx.auth.orgId,
+              credentialId: params.credentialId,
+              supersededRotationId: result.supersededRotationId,
+              rotationId: result.rotation.id,
+            },
+            'Break-glass superseded an existing active rotation'
+          )
+        }
+
+        // AC-7: paired critical security_alerts row — represents FR108's "high-severity audit
+        // event" (audit_log_entries has no literal severity column).
+        await secureCtx.tx.insert(securityAlerts).values({
+          orgId: secureCtx.auth.orgId,
+          alertType: 'rotation.break_glass',
+          severity: 'critical',
+          status: 'delivered',
+          payload: {
+            rotationId: result.rotation.id,
+            credentialId: params.credentialId,
+            projectId: params.projectId,
+            reason: parsed.data.reason,
+            dependentSystems: result.dependentSystems.map((dep) => dep.systemName),
+          },
+        })
+      } catch (error) {
+        rotationBreakGlassTotal.inc({ outcome: 'audit_failed' })
+        req.log.error(
+          {
+            eventType: OperationalEvent.ROTATION_BREAK_GLASS_AUDIT_FAILED,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+          },
+          'Break-glass audit write failed — transaction will roll back'
+        )
+        throw error
+      }
+
+      // AC-7 sweep-checklist notification. `reason` is admin-controlled free text that will be
+      // rendered into an outbound Slack/email message via the generic fallback renderer
+      // (apps/api/src/notifications/templates/index.ts), which interpolates the JSON-stringified
+      // payload directly into an HTML `<pre>` block with no escaping — sanitize it here, at the
+      // point it enters the OUTBOUND payload only (the audit/security_alerts payload above keeps
+      // the raw, unmodified text for audit fidelity).
+      const jobs = await enqueueSecurityAlertNotification({
+        orgId: secureCtx.auth.orgId,
+        templateId: 'rotation.break_glass',
+        payload: {
+          rotationId: result.rotation.id,
+          credentialId: params.credentialId,
+          projectId: params.projectId,
+          reason: sanitizeReasonForOutboundNotification(parsed.data.reason),
+          dependentSystems: result.dependentSystems.map((dep) => dep.systemName),
+        },
+        severity: 'critical',
+        tx: secureCtx.tx,
+      })
+
+      rotationBreakGlassTotal.inc({ outcome: 'success' })
+      req.log.info(
+        {
+          eventType: OperationalEvent.ROTATION_BREAK_GLASS_SUCCESS,
+          orgId: secureCtx.auth.orgId,
+          credentialId: params.credentialId,
+          rotationId: result.rotation.id,
+          supersededRotationId: result.supersededRotationId,
+        },
+        'Break-glass rotation completed'
+      )
+
+      await sendPendingRotationNotifications(fastify, req, jobs)
+
+      reply.status(201)
+      return { data: serializeBreakGlassRotation(result) }
     },
   })
 
@@ -866,6 +1210,133 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       return {
         data: serializeRotationDetail(result.rotation, result.checklistItems),
       }
+    },
+  })
+
+  // Story 5.3 AC-23: resume/abandon match normal initiation's cadence (occasional admin
+  // decisions, not routine bookkeeping) — 30/min, tighter than the 60/min checklist-mutation
+  // bucket but more generous than break-glass's 10/min.
+  function resolutionRateLimit(key: string) {
+    return { max: 30, timeWindowMs: 60_000, key } as const
+  }
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/rotations/:rotationId/resume',
+    schema: {
+      response: {
+        200: ResumeRotationResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ConcurrentModificationResponseSchema,
+        422: z.union([RotationNotStaleResponseSchema, ApiErrorSchema]),
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: resolutionRateLimit(
+        'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/resume'
+      ),
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseResolutionRequest<ResumeRotationBody>(
+        req,
+        reply,
+        ResumeRotationBodySchema
+      )
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await callResolutionService(resumeRotation, secureCtx, params)
+
+      if (isResolutionFailure(result)) {
+        return replyForResolutionFailure(reply, req, result, params, {
+          concurrentEvent: OperationalEvent.ROTATION_RESUME_CONCURRENT_MODIFICATION,
+          notStaleEvent: OperationalEvent.ROTATION_RESUME_NOT_STALE,
+        })
+      }
+
+      await writeResolutionAuditOrThrow(secureCtx.tx, secureCtx.auth, req, params, {
+        eventType: AuditEvent.ROTATION_RESUMED,
+        resourceId: result.rotation.id,
+        payload: { credentialId: params.credentialId, previousStatus: 'stale_recovery' },
+        auditFailedMetricOutcome: 'resume_audit_failed',
+        auditFailedEvent: OperationalEvent.ROTATION_RESUME_AUDIT_FAILED,
+        auditFailedMessage: 'Rotation resume audit write failed — transaction will roll back',
+      })
+
+      rotationResolutionsTotal.inc({ outcome: 'resumed' })
+      req.log.info(
+        { eventType: OperationalEvent.ROTATION_RESUME_SUCCESS, ...params },
+        'Rotation resumed'
+      )
+
+      return { data: serializeRotationDetail(result.rotation, result.checklistItems) }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/rotations/:rotationId/abandon',
+    schema: {
+      response: {
+        200: AbandonRotationResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ConcurrentModificationResponseSchema,
+        422: z.union([RotationNotStaleResponseSchema, ApiErrorSchema]),
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: resolutionRateLimit(
+        'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/abandon'
+      ),
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseResolutionRequest<AbandonRotationBody>(
+        req,
+        reply,
+        AbandonRotationBodySchema
+      )
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await callResolutionService(abandonRotation, secureCtx, params)
+
+      if (isResolutionFailure(result)) {
+        return replyForResolutionFailure(reply, req, result, params, {
+          concurrentEvent: OperationalEvent.ROTATION_ABANDON_CONCURRENT_MODIFICATION,
+          notStaleEvent: OperationalEvent.ROTATION_ABANDON_NOT_STALE,
+        })
+      }
+
+      await writeResolutionAuditOrThrow(secureCtx.tx, secureCtx.auth, req, params, {
+        eventType: AuditEvent.ROTATION_ABANDONED,
+        resourceId: result.rotation.id,
+        payload: {
+          credentialId: params.credentialId,
+          abandonedVersionId: result.rotation.newVersionId,
+          restoredCurrentVersionId: result.rotation.previousVersionId,
+        },
+        auditFailedMetricOutcome: 'abandon_audit_failed',
+        auditFailedEvent: OperationalEvent.ROTATION_ABANDON_AUDIT_FAILED,
+        auditFailedMessage: 'Rotation abandon audit write failed — transaction will roll back',
+      })
+
+      rotationResolutionsTotal.inc({ outcome: 'abandoned' })
+      req.log.info(
+        { eventType: OperationalEvent.ROTATION_ABANDON_SUCCESS, ...params },
+        'Rotation abandoned'
+      )
+
+      return { data: serializeRotationDetail(result.rotation, result.checklistItems) }
     },
   })
 

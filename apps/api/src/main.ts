@@ -20,6 +20,8 @@ import { checkAnomalousAccessHandler } from './workers/check-anomalous-access.js
 import { healthCheckTickHandler } from './workers/monitoring-health-check.js'
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
+import { runBreakGlassOverlapExpiryJob } from './workers/rotation-break-glass-expire.js'
+import { runStaleRotationRecoveryJob } from './workers/rotation-recover.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
 import { runPaymentExpiryAlertJob } from './workers/payment-expiry-alert.js'
 import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
@@ -55,6 +57,9 @@ import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
 
 const NOTIFICATION_CATCHUP_CRON = '*/10 * * * *'
+// Story 5.3 AC-8/AC-9 job names, referenced at multiple registration sites below.
+const ROTATION_BREAK_GLASS_EXPIRE_JOB = 'rotation:break-glass-expire'
+const ROTATION_RECOVER_JOB = 'rotation:recover'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
@@ -122,6 +127,8 @@ async function main(): Promise<void> {
       'monitoring/health-check': { cron: '* * * * *' },
       'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
       'credentials/prune-versions': { cron: '0 3 * * *' },
+      [ROTATION_BREAK_GLASS_EXPIRE_JOB]: { cron: '* * * * *' },
+      [ROTATION_RECOVER_JOB]: { cron: '*/15 * * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
       'payment:expiry-alert': { cron: '0 8 * * *' },
       'cert:expiry-alert': { cron: '0 8 * * *' },
@@ -159,6 +166,14 @@ async function main(): Promise<void> {
       'credentials/prune-versions': (job) =>
         withJobLogging(fastify.log, 'credentials/prune-versions', job.id ?? 'unknown', () =>
           pruneCredentialVersions(fastify.log)
+        ),
+      [ROTATION_BREAK_GLASS_EXPIRE_JOB]: (job) =>
+        withJobLogging(fastify.log, ROTATION_BREAK_GLASS_EXPIRE_JOB, job.id ?? 'unknown', () =>
+          runBreakGlassOverlapExpiryJob()
+        ),
+      [ROTATION_RECOVER_JOB]: (job) =>
+        withJobLogging(fastify.log, ROTATION_RECOVER_JOB, job.id ?? 'unknown', () =>
+          runStaleRotationRecoveryJob(boss)
         ),
       'import/cleanup-expired': (job) =>
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>
@@ -214,6 +229,9 @@ async function main(): Promise<void> {
       'notification:send-digest': () => notificationDigestHandler(fastify.log),
     })
     await boss.send('notification:backfill-pending-delivery', {})
+    // Story 5.3 AC-9: startup-once enqueue, deduplicated via singletonKey so a hot-reload/
+    // restart never queues a duplicate immediate run alongside the 15-minute cron.
+    await boss.send(ROTATION_RECOVER_JOB, {}, { singletonKey: ROTATION_RECOVER_JOB })
     bossRegistered = true
   }
   setOnVaultUnsealed(startBossAndRegisterWorkers)

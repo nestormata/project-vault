@@ -1,6 +1,12 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+
+// Only fall back to the default local port when DATABASE_URL isn't already set (e.g. by
+// `make test`, which points at whatever host port this worktree's Postgres actually uses —
+// see prune-credential-versions.test.ts for the same pattern).
+process.env['DATABASE_URL'] ??=
+  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 
 let createApp: typeof import('../../app.js').createApp
 
@@ -10,10 +16,6 @@ type OpenApiDocument = {
 
 describe('auth routes', () => {
   beforeAll(async () => {
-    vi.stubEnv(
-      'DATABASE_URL',
-      'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-    )
     createApp = (await import('../../app.js')).createApp
   })
 

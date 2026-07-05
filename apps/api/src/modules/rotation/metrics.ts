@@ -88,3 +88,51 @@ export const rotationChecklistItemsPendingTotal = new Gauge({
     this.set(Number(row?.count ?? 0))
   },
 })
+
+// Story 5.3 (AC-24) — break-glass/stale-recovery operational metrics, following the exact
+// Counter/Gauge patterns established above by 5.1/5.2.
+export const ROTATION_BREAK_GLASS_TOTAL_METRIC_NAME = 'rotation_break_glass_total'
+export const rotationBreakGlassTotal = new Counter({
+  name: ROTATION_BREAK_GLASS_TOTAL_METRIC_NAME,
+  help: 'Total number of break-glass emergency rotation attempts, labeled by outcome',
+  labelNames: ['outcome'],
+})
+
+export const ROTATION_STALE_DETECTIONS_TOTAL_METRIC_NAME = 'rotation_stale_detections_total'
+// Incremented once per rotation transitioned to stale_recovery by the stale-detection job — the
+// primary operational health signal for "how often do rotations go unattended".
+export const rotationStaleDetectionsTotal = new Counter({
+  name: ROTATION_STALE_DETECTIONS_TOTAL_METRIC_NAME,
+  help: 'Total number of rotations transitioned to stale_recovery by the stale-detection job',
+})
+
+export const ROTATION_RESOLUTIONS_TOTAL_METRIC_NAME = 'rotation_resolutions_total'
+export const rotationResolutionsTotal = new Counter({
+  name: ROTATION_RESOLUTIONS_TOTAL_METRIC_NAME,
+  help: 'Total number of stale_recovery rotations resolved, labeled by outcome (resumed/abandoned)',
+  labelNames: ['outcome'],
+})
+
+export const ROTATION_BREAK_GLASS_OVERLAP_EXPIRATIONS_TOTAL_METRIC_NAME =
+  'rotation_break_glass_overlap_expirations_total'
+export const rotationBreakGlassOverlapExpirationsTotal = new Counter({
+  name: ROTATION_BREAK_GLASS_OVERLAP_EXPIRATIONS_TOTAL_METRIC_NAME,
+  help: 'Total number of credential_versions rows auto-retired by the break-glass overlap-expiry job',
+})
+
+export const ROTATIONS_STALE_RECOVERY_PENDING_TOTAL_METRIC_NAME =
+  'rotations_stale_recovery_pending_total'
+// Periodic-query-backed gauge (not a per-request counter) — current count of rotations rows
+// awaiting a human resume/abandon decision. Uses getAdminDb() (bypasses per-org RLS), same
+// justification as the two gauges above: platform-wide operational count, not a single tenant's.
+export const rotationsStaleRecoveryPendingTotal = new Gauge({
+  name: ROTATIONS_STALE_RECOVERY_PENDING_TOTAL_METRIC_NAME,
+  help: 'Number of rotations rows currently in stale_recovery, awaiting a human resume/abandon decision',
+  async collect() {
+    const [row] = await getAdminDb()
+      .select({ count: sql<number>`count(*)` })
+      .from(rotations)
+      .where(sql`${rotations.status} = 'stale_recovery'`)
+    this.set(Number(row?.count ?? 0))
+  },
+})

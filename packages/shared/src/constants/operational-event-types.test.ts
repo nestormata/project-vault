@@ -57,6 +57,33 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 5.3 break-glass/stale-recovery event types', () => {
+    expect(OperationalEvent.ROTATION_BREAK_GLASS_SUCCESS).toBe('rotation.break_glass.success')
+    expect(OperationalEvent.ROTATION_BREAK_GLASS_LOCK_CONTENTION).toBe(
+      'rotation.break_glass.lock_contention'
+    )
+    expect(OperationalEvent.ROTATION_BREAK_GLASS_AUDIT_FAILED).toBe(
+      'rotation.break_glass.audit_failed'
+    )
+    expect(OperationalEvent.ROTATION_BREAK_GLASS_SUPERSEDED).toBe('rotation.break_glass.superseded')
+    expect(OperationalEvent.ROTATION_BREAK_GLASS_OVERLAP_EXPIRED).toBe(
+      'rotation.break_glass.overlap_expired'
+    )
+    expect(OperationalEvent.ROTATION_STALE_DETECTED).toBe('rotation.stale.detected')
+    expect(OperationalEvent.ROTATION_RESUME_SUCCESS).toBe('rotation.resume.success')
+    expect(OperationalEvent.ROTATION_RESUME_NOT_STALE).toBe('rotation.resume.not_stale')
+    expect(OperationalEvent.ROTATION_RESUME_CONCURRENT_MODIFICATION).toBe(
+      'rotation.resume.concurrent_modification'
+    )
+    expect(OperationalEvent.ROTATION_RESUME_AUDIT_FAILED).toBe('rotation.resume.audit_failed')
+    expect(OperationalEvent.ROTATION_ABANDON_SUCCESS).toBe('rotation.abandon.success')
+    expect(OperationalEvent.ROTATION_ABANDON_NOT_STALE).toBe('rotation.abandon.not_stale')
+    expect(OperationalEvent.ROTATION_ABANDON_CONCURRENT_MODIFICATION).toBe(
+      'rotation.abandon.concurrent_modification'
+    )
+    expect(OperationalEvent.ROTATION_ABANDON_AUDIT_FAILED).toBe('rotation.abandon.audit_failed')
+  })
+
   it('exposes the Story 6.1 monitoring expiry-alert row-failure event type', () => {
     expect(OperationalEvent.MONITORING_EXPIRY_ALERT_ROW_FAILED).toBe(
       'monitoring.expiry_alert_row_failed'

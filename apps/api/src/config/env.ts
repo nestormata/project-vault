@@ -367,6 +367,15 @@ const envSchema = z
     // rotation) — same env-var-as-admin-configurable-threshold convention as
     // FAILED_AUTH_THRESHOLD_COUNT/MFA_LOGIN_MAX_ATTEMPTS.
     ROTATION_MAX_RETRIES: z.coerce.number().int().min(1).max(10).default(3),
+    // Story 5.3 AC-8/CR1: the break-glass "emergency overlap" window (epics.md AC-E5c) — how
+    // long the superseded credential version stays purge-protected before the overlap-expiry
+    // job auto-retires it. Read fresh at break-glass time only (AC-8's edge case: lowering this
+    // later never retroactively shortens an already-stored break_glass_overlap_expires_at).
+    BREAK_GLASS_OVERLAP_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
+    // Story 5.3 AC-9 (CR2/ADR-5.3-02): the stale-rotation detection job's time threshold — an
+    // in_progress rotation older than this is transitioned to stale_recovery. Read fresh on
+    // every job run (never cached), same convention as ROTATION_MAX_RETRIES.
+    STALE_ROTATION_THRESHOLD_MINUTES: z.coerce.number().int().min(15).max(10080).default(60),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(19456).max(262144).default(65536),
     ARGON2_TIME_COST: z.coerce.number().int().min(2).default(3),
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(4),

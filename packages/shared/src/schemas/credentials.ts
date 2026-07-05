@@ -33,6 +33,10 @@ export const CredentialVersionSummarySchema = z
     createdAt: z.iso.datetime(),
     isCurrent: z.boolean(),
     purgedAt: z.iso.datetime().nullable(),
+    // Story 5.3 AC-14: set when this version was abandoned (either via a manual `abandon` call
+    // on a stale_recovery rotation, or superseded by a break-glass call) — additive alongside
+    // purgedAt, distinct signal ("never validated as good" vs. "cryptographically purged").
+    abandonedAt: z.iso.datetime().nullable(),
   })
   .meta({ id: 'CredentialVersionSummary' })
 

@@ -12,15 +12,21 @@ import { withSecret } from '@project-vault/crypto'
 import { nextCronOccurrence } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
+import {
+  tryAcquireCredentialScopedLock,
+  tryAcquireRotationScopedLock,
+} from '../../lib/rotation-locks.js'
 import { enqueueSecurityAlertNotification } from '../../notifications/dispatcher.js'
 import type { NotificationQueueJob } from '../../notifications/dispatcher.js'
 import {
   credentialExistsInProject,
   currentKeyVersion,
+  isLockNotAvailable,
   isUniqueViolation,
   lockCredentialInProject,
 } from '../credentials/db-helpers.js'
 import type {
+  BreakGlassRotationBody,
   CompleteRotationBody,
   ConfirmChecklistItemBody,
   FailChecklistItemBody,
@@ -54,17 +60,6 @@ function constantTimeEqual(a: string, b: string): boolean {
   return timingSafeEqual(digestA, digestB)
 }
 
-async function tryAcquireRotationLock(
-  tx: Tx,
-  orgId: string,
-  credentialId: string
-): Promise<boolean> {
-  const rows = await tx.execute(
-    sql`SELECT pg_try_advisory_xact_lock(hashtextextended('rotation:' || ${orgId} || ':' || ${credentialId}, 0)) AS locked`
-  )
-  return Boolean((rows[0] as { locked: boolean } | undefined)?.locked)
-}
-
 async function findInProgressRotationId(tx: Tx, credentialId: string): Promise<string | null> {
   const [row] = await tx
     .select({ id: rotations.id })
@@ -94,7 +89,7 @@ export async function initiateRotation(
     body: InitiateRotationBody
   }
 ): Promise<InitiateRotationResult> {
-  const locked = await tryAcquireRotationLock(tx, input.orgId, input.credentialId)
+  const locked = await tryAcquireCredentialScopedLock(tx, input.orgId, input.credentialId)
   if (!locked) {
     throw new RotationConflictError(await findInProgressRotationId(tx, input.credentialId))
   }
@@ -356,21 +351,6 @@ export async function listRotationHistory(
 // Story 5.2 — checklist confirm/fail/retry/complete + upcoming rotations
 // ============================================================================
 
-/** AC-8/ADR-5.2-01: rotation-scoped (not item-scoped) advisory lock — same
- *  pg_try_advisory_xact_lock(hashtextextended(...)) pattern as 5.1's tryAcquireRotationLock,
- *  keyed by rotationId instead of credentialId. A genuinely different resource, so no
- *  keyspace collision concern despite sharing the 'rotation:' prefix. */
-async function tryAcquireRotationScopedLock(
-  tx: Tx,
-  orgId: string,
-  rotationId: string
-): Promise<boolean> {
-  const rows = await tx.execute(
-    sql`SELECT pg_try_advisory_xact_lock(hashtextextended('rotation:' || ${orgId} || ':' || ${rotationId}, 0)) AS locked`
-  )
-  return Boolean((rows[0] as { locked: boolean } | undefined)?.locked)
-}
-
 async function findRotationInScope(
   tx: Tx,
   params: { projectId: string; credentialId: string; rotationId: string }
@@ -524,13 +504,19 @@ function assertRotationLockOk(
   if (lockResult.outcome !== 'ok') throw new Error('unreachable rotation lock outcome')
 }
 
-/** AC-8's uniform entry sequence for all four mutation endpoints: acquire the rotation-scoped
- *  advisory lock, then resolve + status-check the rotation (tenant-scoped by
- *  projectId/credentialId/rotationId together, per AC-17). */
-async function acquireAndLoadRotation(
+type RotationScopedLockResult =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'not_found' }
+  | { outcome: 'found'; rotation: RotationRow }
+
+/** Shared by every rotation-scoped-lock mutation (5.2's confirm/fail/retry/complete AND 5.3's
+ *  resume/abandon, AC-15): acquire the advisory lock, then resolve the rotation (tenant-scoped
+ *  by projectId/credentialId/rotationId together, per AC-17) — callers apply their own
+ *  status-eligibility check (in_progress vs. stale_recovery) on top of this shared shape. */
+async function acquireRotationScopedLockAndFind(
   tx: Tx,
   params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
-): Promise<RotationLockOutcome> {
+): Promise<RotationScopedLockResult> {
   const locked = await tryAcquireRotationScopedLock(tx, params.orgId, params.rotationId)
   if (!locked) {
     const existing = await findRotationInScope(tx, params)
@@ -538,8 +524,20 @@ async function acquireAndLoadRotation(
   }
   const rotation = await findRotationInScope(tx, params)
   if (!rotation) return { outcome: 'not_found' }
-  if (rotation.status !== 'in_progress') return { outcome: 'not_active', rotation }
-  return { outcome: 'ok', rotation }
+  return { outcome: 'found', rotation }
+}
+
+/** AC-8's uniform entry sequence for all four checklist mutation endpoints. */
+async function acquireAndLoadRotation(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+): Promise<RotationLockOutcome> {
+  const result = await acquireRotationScopedLockAndFind(tx, params)
+  if (result.outcome !== 'found') return result
+  if (result.rotation.status !== 'in_progress') {
+    return { outcome: 'not_active', rotation: result.rotation }
+  }
+  return { outcome: 'ok', rotation: result.rotation }
 }
 
 // Shared across confirm/fail/retry — the AC-8 uniform lock/scope failure variants. Each
@@ -1072,6 +1070,350 @@ export async function computeUpcomingRotations(
 
   results.sort((a, b) => a.nextDueAt.getTime() - b.nextDueAt.getTime())
   return results
+}
+
+// ============================================================================
+// Story 5.3 — break-glass emergency rotation + stale-recovery resume/abandon
+// ============================================================================
+
+type DependentSystemRow = { id: string; systemName: string }
+
+export type BreakGlassResult =
+  | { status: 'lock_contention' }
+  | { status: 'credential_not_found' }
+  | {
+      status: 'ok'
+      rotation: RotationRow
+      supersededRotationId: string | null
+      previousVersionOverlap: { versionNumber: number; breakGlassOverlapExpiresAt: Date }
+      dependentSystems: DependentSystemRow[]
+    }
+
+async function activeDependentSystems(tx: Tx, orgId: string, credentialId: string) {
+  return tx
+    .select({ id: credentialDependencies.id, systemName: credentialDependencies.systemName })
+    .from(credentialDependencies)
+    .where(
+      and(
+        eq(credentialDependencies.orgId, orgId),
+        eq(credentialDependencies.credentialId, credentialId),
+        isNull(credentialDependencies.archivedAt)
+      )
+    )
+}
+
+/** AC-5/CR6: if an existing rotation is `in_progress` or `stale_recovery` for this credential,
+ *  abandon it (identical mechanics to the manual `abandon` endpoint, AC-12) before break-glass
+ *  inserts its own rotation row. `FOR UPDATE NOWAIT` (not a blocking read) is deliberate — see
+ *  AC-5/AC-6: a concurrent 5.2 confirm/fail/retry/complete call holds a *rotation*-scoped
+ *  advisory lock, a different key domain break-glass's *credential*-scoped lock never serializes
+ *  against, so a blocking row-lock read here could silently stall break-glass behind an
+ *  unrelated in-flight human action — defeating its "act in seconds" premise. Returns the
+ *  superseded rotation's id, or null if there was nothing active to supersede. Throws (for the
+ *  caller to map to 409 rotation_lock_contention) if the NOWAIT lock acquisition fails. */
+async function supersedeActiveRotation(
+  tx: Tx,
+  params: { orgId: string; credentialId: string }
+): Promise<string | null> {
+  const [active] = await tx
+    .select({
+      id: rotations.id,
+      version: rotations.version,
+      newVersionId: rotations.newVersionId,
+      previousVersionId: rotations.previousVersionId,
+    })
+    .from(rotations)
+    .where(
+      and(
+        eq(rotations.credentialId, params.credentialId),
+        inArray(rotations.status, ['in_progress', 'stale_recovery'])
+      )
+    )
+    .for('update', { noWait: true })
+    .limit(1)
+  if (!active) return null
+
+  await tx
+    .update(rotations)
+    .set({ status: 'abandoned', version: active.version + 1, updatedAt: new Date() })
+    .where(eq(rotations.id, active.id))
+  await tx
+    .update(credentialVersions)
+    .set({ abandonedAt: new Date() })
+    .where(eq(credentialVersions.id, active.newVersionId))
+  await tx
+    .update(credentialVersions)
+    .set({ rotationLockedAt: null })
+    .where(eq(credentialVersions.id, active.previousVersionId))
+
+  return active.id
+}
+
+/** AC-2/AC-5/AC-6: break-glass emergency rotation — immediately writes a new live value,
+ *  supersedes (auto-abandons) any existing active rotation for the credential (CR6), and puts
+ *  the superseded version into a purge-protected overlap window (CR1) rather than retiring it
+ *  immediately (contradicting PRD FR108's literal "immediately retires" text — see ADR-5.3-01).
+ *  No checklist items are created — break-glass's entire premise is skipping the checklist. */
+export async function breakGlassRotation(
+  tx: Tx,
+  input: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    userId: string
+    body: BreakGlassRotationBody
+    overlapMinutes: number
+  }
+): Promise<BreakGlassResult> {
+  const locked = await tryAcquireCredentialScopedLock(tx, input.orgId, input.credentialId)
+  if (!locked) return { status: 'lock_contention' }
+
+  const credential = await lockCredentialInProject(tx, {
+    credentialId: input.credentialId,
+    projectId: input.projectId,
+  })
+  if (!credential) return { status: 'credential_not_found' }
+
+  let supersededRotationId: string | null
+  try {
+    supersededRotationId = await supersedeActiveRotation(tx, {
+      orgId: input.orgId,
+      credentialId: input.credentialId,
+    })
+  } catch (error) {
+    if (isLockNotAvailable(error)) return { status: 'lock_contention' }
+    throw error
+  }
+
+  // AC-2 step 1 (reuses the identical FOR UPDATE pattern as 5.1's normal initiation). Excludes
+  // abandonedAt too (CR5) — critical when supersedeActiveRotation just abandoned the previously
+  // "highest" version above: this correctly resolves back to whatever was current before either
+  // rotation started, not the just-abandoned half-finished value (AC-5).
+  const [previousVersion] = await tx
+    .select({ id: credentialVersions.id, versionNumber: credentialVersions.versionNumber })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.credentialId, input.credentialId),
+        isNull(credentialVersions.purgedAt),
+        isNull(credentialVersions.abandonedAt)
+      )
+    )
+    .orderBy(desc(credentialVersions.versionNumber))
+    .for('update')
+    .limit(1)
+  if (!previousVersion) {
+    throw new Error(
+      `breakGlassRotation: credential ${input.credentialId} has no non-purged/non-abandoned version to supersede`
+    )
+  }
+
+  // Anti-pattern guard (Dev Notes): version numbers stay strictly monotonic regardless of
+  // abandonment — MUST be MAX(version_number)+1 across ALL rows (including abandoned ones), NOT
+  // previousVersion.versionNumber+1. If supersedeActiveRotation just abandoned an existing
+  // rotation's new version above, that version's number is still "used" and must never be
+  // reissued (same invariant addCredentialVersion's next-version computation already protects).
+  const [maxVersionRow] = await tx
+    .select({ max: sql<number>`COALESCE(MAX(${credentialVersions.versionNumber}), 0)` })
+    .from(credentialVersions)
+    .where(eq(credentialVersions.credentialId, input.credentialId))
+  const nextVersionNumber = Number(maxVersionRow?.max ?? 0) + 1
+
+  const keyVersion = await currentKeyVersion(tx)
+  const encryptedValue = await encryptValue(input.body.newValue)
+  const [newVersion] = await tx
+    .insert(credentialVersions)
+    .values({
+      orgId: input.orgId,
+      credentialId: input.credentialId,
+      encryptedValue,
+      keyVersion,
+      versionNumber: nextVersionNumber,
+      createdBy: input.userId,
+    })
+    .returning()
+  if (!newVersion)
+    throw new Error('breakGlassRotation: new credential version insert returned no row')
+
+  const breakGlassOverlapExpiresAt = new Date(Date.now() + input.overlapMinutes * 60_000)
+  await tx
+    .update(credentialVersions)
+    .set({ rotationLockedAt: new Date(), breakGlassOverlapExpiresAt })
+    .where(eq(credentialVersions.id, previousVersion.id))
+
+  const dependentSystems = await activeDependentSystems(tx, input.orgId, input.credentialId)
+
+  const [rotation] = await tx
+    .insert(rotations)
+    .values({
+      orgId: input.orgId,
+      projectId: input.projectId,
+      credentialId: input.credentialId,
+      newVersionId: newVersion.id,
+      previousVersionId: previousVersion.id,
+      status: 'break_glass_complete',
+      initiatedBy: input.userId,
+      notes: input.body.reason,
+    })
+    .returning()
+  if (!rotation) throw new Error('breakGlassRotation: rotation insert returned no row')
+
+  return {
+    status: 'ok',
+    rotation,
+    supersededRotationId,
+    previousVersionOverlap: {
+      versionNumber: previousVersion.versionNumber,
+      breakGlassOverlapExpiresAt,
+    },
+    dependentSystems,
+  }
+}
+
+export function serializeBreakGlassRotation(result: {
+  rotation: RotationRow
+  previousVersionOverlap: { versionNumber: number; breakGlassOverlapExpiresAt: Date }
+}) {
+  return {
+    ...serializeRotationDetail(result.rotation, []),
+    previousVersionOverlap: {
+      versionNumber: result.previousVersionOverlap.versionNumber,
+      breakGlassOverlapExpiresAt:
+        result.previousVersionOverlap.breakGlassOverlapExpiresAt.toISOString(),
+    },
+  }
+}
+
+type StaleRotationLockOutcome =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_stale'; status: string }
+  | { outcome: 'ok'; rotation: RotationRow }
+
+/** AC-11/AC-12/AC-15/AC-17: shared entry sequence for resume/abandon — acquire 5.2's
+ *  rotation-scoped advisory lock, then resolve + status-check the rotation (must be
+ *  stale_recovery, checked immediately, before any other write — AC-17). */
+async function acquireAndLoadStaleRotation(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+): Promise<StaleRotationLockOutcome> {
+  const result = await acquireRotationScopedLockAndFind(tx, params)
+  if (result.outcome === 'locked_conflict') return result
+  if (result.outcome === 'not_found') return { outcome: 'rotation_not_found' }
+  if (result.rotation.status !== 'stale_recovery') {
+    return { outcome: 'rotation_not_stale', status: result.rotation.status }
+  }
+  return { outcome: 'ok', rotation: result.rotation }
+}
+
+export type ResumeRotationResult =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_stale'; status: string }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | { outcome: 'resumed'; rotation: RotationRow; checklistItems: ChecklistItemRow[] }
+
+/** AC-11: stale_recovery -> in_progress. Checklist items are left exactly as they are — "checklist
+ *  preserved" per epics.md; no additional item mutation happens on resume. */
+/** AC-11/AC-12/AC-15: the CAS-guarded status transition shared by resume ('in_progress') and
+ *  abandon ('abandoned') — both leave stale_recovery via an identical UPDATE...RETURNING shape,
+ *  differing only in the target status. A zero-row result means either a lost CAS race or (in
+ *  practice, ruled out by the advisory lock held for this whole transaction) a status that
+ *  changed underneath the caller — both map to the identical 409 concurrent_modification. */
+async function transitionOutOfStaleRecovery(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string },
+  observedVersion: number,
+  toStatus: 'in_progress' | 'abandoned'
+): Promise<
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | { outcome: 'ok'; rotation: RotationRow }
+> {
+  const [updated] = await tx
+    .update(rotations)
+    .set({ status: toStatus, version: observedVersion + 1, updatedAt: new Date() })
+    .where(
+      and(
+        eq(rotations.id, params.rotationId),
+        eq(rotations.status, 'stale_recovery'),
+        eq(rotations.version, observedVersion)
+      )
+    )
+    .returning()
+  if (!updated) {
+    const current = await findRotationInScope(tx, params)
+    return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
+  }
+  return { outcome: 'ok', rotation: updated }
+}
+
+export async function resumeRotation(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+): Promise<ResumeRotationResult> {
+  const lockResult = await acquireAndLoadStaleRotation(tx, params)
+  if (lockResult.outcome !== 'ok') return lockResult
+
+  const transition = await transitionOutOfStaleRecovery(
+    tx,
+    params,
+    lockResult.rotation.version,
+    'in_progress'
+  )
+  if (transition.outcome !== 'ok') return transition
+  const updated = transition.rotation
+
+  const checklistItems = await tx
+    .select()
+    .from(rotationChecklistItems)
+    .where(eq(rotationChecklistItems.rotationId, params.rotationId))
+    .orderBy(asc(rotationChecklistItems.createdAt), asc(rotationChecklistItems.id))
+
+  return { outcome: 'resumed', rotation: updated, checklistItems }
+}
+
+export type AbandonRotationResult =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_stale'; status: string }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | { outcome: 'abandoned'; rotation: RotationRow; checklistItems: ChecklistItemRow[] }
+
+/** AC-12/CR5: stale_recovery -> abandoned. The never-completed new version is marked
+ *  abandonedAt (excluded from "current" per AC-13/AC-14); the old version's rotationLockedAt is
+ *  cleared, restoring it as "current" and once again subject to normal retention rules. */
+export async function abandonRotation(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+): Promise<AbandonRotationResult> {
+  const lockResult = await acquireAndLoadStaleRotation(tx, params)
+  if (lockResult.outcome !== 'ok') return lockResult
+
+  const transition = await transitionOutOfStaleRecovery(
+    tx,
+    params,
+    lockResult.rotation.version,
+    'abandoned'
+  )
+  if (transition.outcome !== 'ok') return transition
+  const updated = transition.rotation
+
+  await tx
+    .update(credentialVersions)
+    .set({ abandonedAt: new Date() })
+    .where(eq(credentialVersions.id, updated.newVersionId))
+  await tx
+    .update(credentialVersions)
+    .set({ rotationLockedAt: null })
+    .where(eq(credentialVersions.id, updated.previousVersionId))
+
+  const checklistItems = await tx
+    .select()
+    .from(rotationChecklistItems)
+    .where(eq(rotationChecklistItems.rotationId, params.rotationId))
+    .orderBy(asc(rotationChecklistItems.createdAt), asc(rotationChecklistItems.id))
+
+  return { outcome: 'abandoned', rotation: updated, checklistItems }
 }
 
 export function serializeUpcomingRotation(item: UpcomingRotationResult) {

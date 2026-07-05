@@ -45,6 +45,16 @@ export const RotationChecklistItemSchema = z
   })
   .meta({ id: 'RotationChecklistItem' })
 
+// Story 5.3 AC-2/AC-5: present only on a break-glass rotation's response — describes the
+// superseded (previous) version's purge-protected overlap window (CR1's non-blocking
+// "emergency overlap" design, not the immediate-retirement PRD text — see ADR-5.3-01).
+export const RotationPreviousVersionOverlapSchema = z
+  .object({
+    versionNumber: z.number().int().positive(),
+    breakGlassOverlapExpiresAt: z.iso.datetime(),
+  })
+  .meta({ id: 'RotationPreviousVersionOverlap' })
+
 export const RotationDetailSchema = z
   .object({
     id: z.uuid(),
@@ -58,6 +68,7 @@ export const RotationDetailSchema = z
     notes: z.string().nullable(),
     sameValueAsPrevious: z.boolean().optional(),
     checklistItems: z.array(RotationChecklistItemSchema),
+    previousVersionOverlap: RotationPreviousVersionOverlapSchema.optional(),
   })
   .meta({ id: 'RotationDetail' })
 
@@ -118,4 +129,5 @@ export type RotationStatus = z.infer<typeof RotationStatusSchema>
 export type RotationChecklistItemStatus = z.infer<typeof RotationChecklistItemStatusSchema>
 export type RotationChecklistItem = z.infer<typeof RotationChecklistItemSchema>
 export type RotationDetail = z.infer<typeof RotationDetailSchema>
+export type RotationPreviousVersionOverlap = z.infer<typeof RotationPreviousVersionOverlapSchema>
 export type RotationSummary = z.infer<typeof RotationSummarySchema>

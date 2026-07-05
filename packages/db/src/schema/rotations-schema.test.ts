@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rotationChecklistItems, rotations } from './index.js'
+import { credentialVersions, rotationChecklistItems, rotations } from './index.js'
 import { EXCLUDED_TABLES } from '../check-rls-coverage.js'
 
 describe('rotations schema', () => {
@@ -45,5 +45,10 @@ describe('rotations schema', () => {
   it('keeps rotation tables subject to RLS coverage', () => {
     expect(EXCLUDED_TABLES.has('rotations')).toBe(false)
     expect(EXCLUDED_TABLES.has('rotation_checklist_items')).toBe(false)
+  })
+
+  it('exposes Story 5.3 credential_versions break-glass/abandonment columns', () => {
+    expect(credentialVersions.breakGlassOverlapExpiresAt).toBeDefined()
+    expect(credentialVersions.abandonedAt).toBeDefined()
   })
 })

@@ -91,6 +91,23 @@ describe('BossService', () => {
     )
   })
 
+  it('passes singletonKey through to the underlying send call (Story 5.3 Task 4)', async () => {
+    const ROTATION_RECOVER_JOB = 'rotation:recover'
+    const send = vi.fn().mockResolvedValue('job-1')
+    const boss = createBossWithMocks({ send })
+
+    await boss.start()
+    await boss.send(ROTATION_RECOVER_JOB, {}, { singletonKey: ROTATION_RECOVER_JOB })
+
+    expect(send).toHaveBeenCalledWith(
+      ROTATION_RECOVER_JOB,
+      {},
+      {
+        singletonKey: ROTATION_RECOVER_JOB,
+      }
+    )
+  })
+
   it('registers workers with concurrency options', async () => {
     const work = vi.fn().mockResolvedValue(undefined)
     const boss = createBossWithMocks({ work })

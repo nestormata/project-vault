@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import {
   auditLogEntries,
@@ -9,6 +9,7 @@ import {
   notificationQueue,
   rotationChecklistItems,
   rotations,
+  securityAlerts,
 } from '@project-vault/db/schema'
 import {
   addCredentialDependencyViaApi,
@@ -37,6 +38,7 @@ import {
 } from './rotation-integration-context.js'
 
 const TEST_PASSPHRASE = 'rotation-routes-passphrase'
+const BREAK_GLASS_ALERT_TYPE = 'rotation.break_glass'
 
 function rotationsUrl(projectId: string, credentialId: string, suffix = '') {
   return `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations${suffix}`
@@ -101,6 +103,89 @@ async function getRotationHistoryViaApi(
     url: rotationsUrl(projectId, credentialId, suffix),
     headers: { cookie: cookieHeader(cookies) },
   })
+}
+
+/** Asserts the credential's current live value via the real reveal endpoint. */
+async function expectCredentialValue(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  credentialId: string,
+  expectedValue: string
+): Promise<void> {
+  const valueRes = await app.inject({
+    method: 'GET',
+    url: credentialValueUrl(projectId, credentialId),
+    headers: { cookie: cookieHeader(cookies) },
+  })
+  expect(valueRes.statusCode).toBe(200)
+  expect(valueRes.json<{ data: { value: string } }>().data.value).toBe(expectedValue)
+}
+
+/** Shared by the break-glass audit tests: performs break-glass, asserts 201, and fetches the
+ *  resulting audit row's payload. */
+async function breakGlassAndFetchAuditPayload(
+  app: TestApp,
+  cookies: Record<string, string>,
+  orgId: string,
+  projectId: string,
+  credentialId: string,
+  body: Record<string, unknown>
+): Promise<{ reason?: string } | undefined> {
+  const res = await breakGlassViaApi(app, cookies, projectId, credentialId, body)
+  expect(res.statusCode).toBe(201)
+  const rotationId = res.json<{ data: { id: string } }>().data.id
+  return findBreakGlassAuditPayload(orgId, rotationId)
+}
+
+/** Shared by the break-glass audit tests: finds the `rotation.break_glass_initiated` audit row
+ *  for a given rotation and returns its payload. */
+async function findBreakGlassAuditPayload(
+  orgId: string,
+  rotationId: string
+): Promise<{ reason?: string } | undefined> {
+  const auditRows = await withOrg(orgId, (tx) =>
+    tx
+      .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
+      .from(auditLogEntries)
+      .where(eq(auditLogEntries.eventType, 'rotation.break_glass_initiated'))
+  )
+  return auditRows.find((row) => row.resourceId === rotationId)?.payload as
+    { reason?: string } | undefined
+}
+
+/** Shared by the break-glass security_alerts tests. */
+async function findBreakGlassAlertRows(orgId: string, credentialId: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select({
+        id: securityAlerts.id,
+        severity: securityAlerts.severity,
+        payload: securityAlerts.payload,
+      })
+      .from(securityAlerts)
+      .where(
+        and(
+          eq(securityAlerts.alertType, BREAK_GLASS_ALERT_TYPE),
+          sql`${securityAlerts.payload}->>'credentialId' = ${credentialId}`
+        )
+      )
+  )
+}
+
+/** Shared by the break-glass notification-queue tests. */
+async function findBreakGlassQueueRows(orgId: string, credentialId: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select({ payload: notificationQueue.payload })
+      .from(notificationQueue)
+      .where(
+        and(
+          eq(notificationQueue.templateId, BREAK_GLASS_ALERT_TYPE),
+          sql`${notificationQueue.payload}->>'credentialId' = ${credentialId}`
+        )
+      )
+  )
 }
 
 async function rowCounts(orgId: string, credentialId: string) {
@@ -252,6 +337,148 @@ async function confirmFirstItem(
   return { item, res }
 }
 
+// ============================================================================
+// Story 5.3 — break-glass emergency rotation + stale-recovery resume/abandon
+// ============================================================================
+
+function breakGlassUrl(projectId: string, credentialId: string) {
+  return rotationsUrl(projectId, credentialId, '/break-glass')
+}
+
+async function breakGlassViaApi(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  credentialId: string,
+  body: Record<string, unknown> = { newValue: `emergency-${randomUUID()}`, reason: 'incident' }
+) {
+  return app.inject({
+    method: 'POST',
+    url: breakGlassUrl(projectId, credentialId),
+    headers: { cookie: cookieHeader(cookies) },
+    payload: body,
+  })
+}
+
+function resolutionUrl(
+  projectId: string,
+  credentialId: string,
+  rotationId: string,
+  action: 'resume' | 'abandon'
+) {
+  return `${rotationsUrl(projectId, credentialId)}/${rotationId}/${action}`
+}
+
+async function resolutionViaApi(
+  app: TestApp,
+  cookies: Record<string, string>,
+  ids: { projectId: string; credentialId: string; rotationId: string },
+  action: 'resume' | 'abandon'
+) {
+  return app.inject({
+    method: 'POST',
+    url: resolutionUrl(ids.projectId, ids.credentialId, ids.rotationId, action),
+    headers: { cookie: cookieHeader(cookies) },
+    payload: {},
+  })
+}
+
+/** Shared by the AC-17 invalid-state tests: asserts resume/abandon is rejected 422
+ *  rotation_not_stale with the given current status. */
+async function expectResolutionRejectedNotStale(
+  app: TestApp,
+  cookies: Record<string, string>,
+  ids: { projectId: string; credentialId: string; rotationId: string },
+  action: 'resume' | 'abandon',
+  currentStatus: string
+): Promise<void> {
+  const res = await resolutionViaApi(app, cookies, ids, action)
+  expect(res.statusCode).toBe(422)
+  expect(res.json()).toMatchObject({ code: 'rotation_not_stale', status: currentStatus })
+}
+
+/** Directly transitions a rotation to `stale_recovery` — simulates what the AC-9 stale-detection
+ *  job does, without depending on that job's own threshold-scan timing in these route-level
+ *  tests (the job itself is covered by its own dedicated worker test file). */
+async function forceStaleRecovery(orgId: string, rotationId: string): Promise<void> {
+  await withOrg(orgId, (tx) =>
+    tx.update(rotations).set({ status: 'stale_recovery' }).where(eq(rotations.id, rotationId))
+  )
+}
+
+/** Shared by every resume/abandon test below: seeds a project + credential, initiates a
+ *  rotation, and forces it into stale_recovery (simulating the AC-9 job's own transition —
+ *  covered independently by its dedicated worker test file). */
+async function createStaleRotationFixture(
+  app: TestApp,
+  cookies: Record<string, string>,
+  orgId: string,
+  slug: string
+) {
+  const fixture = await createInitiatedRotationFixture(app, cookies, slug)
+  await forceStaleRecovery(orgId, fixture.rotationId)
+  return fixture
+}
+
+async function credentialVersionRow(orgId: string, versionId: string) {
+  const [row] = await withOrg(orgId, (tx) =>
+    tx
+      .select({
+        rotationLockedAt: credentialVersions.rotationLockedAt,
+        abandonedAt: credentialVersions.abandonedAt,
+        breakGlassOverlapExpiresAt: credentialVersions.breakGlassOverlapExpiresAt,
+      })
+      .from(credentialVersions)
+      .where(eq(credentialVersions.id, versionId))
+  )
+  return row
+}
+
+/** Shared by every sealed-vault smoke test in this file (5.1/5.2/5.3): after
+ *  assertRoutesFailClosedWhileSealed's own sealed-app assertions, close the sealed app, restore
+ *  the vault, and hand back a fresh unsealed app for the remaining tests in the describe block. */
+async function reinitAppAfterSealedTest(app: TestApp): Promise<TestApp> {
+  await app.close()
+  await initVaultForTest(initVault, TEST_PASSPHRASE)
+  return createApp({ logger: false, vaultGuardEnabled: true })
+}
+
+/** Shared by every "N racing requests -> exactly one success, one conflict" test: asserts the
+ *  statusCode pair and returns the conflicting (non-2xx) response for the caller's own
+ *  code-specific assertion. */
+function assertExactlyOneConflict(
+  first: Awaited<ReturnType<TestApp['inject']>>,
+  second: Awaited<ReturnType<TestApp['inject']>>,
+  successCode: number,
+  conflictCode: number
+) {
+  const statuses = [first.statusCode, second.statusCode].sort()
+  expect(statuses).toEqual([successCode, conflictCode].sort())
+  return first.statusCode === conflictCode ? first : second
+}
+
+/** Shared by every "role gate rejects member/viewer before any DB write" test. */
+async function expectForbiddenForMemberAndViewer(
+  app: TestApp,
+  labelPrefix: string,
+  action: (cookies: Record<string, string>) => Promise<Awaited<ReturnType<TestApp['inject']>>>
+): Promise<void> {
+  for (const role of ['member', 'viewer'] as const) {
+    const user = await createDirectAuthenticatedUser(app, `${labelPrefix}-${role}`, role)
+    const res = await action(user.cookies)
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'insufficient_role' })
+  }
+}
+
+/** Shared by both audit-write-failure rollback tests: asserts the transaction left zero new
+ *  rotation rows and only the credential's original version behind. */
+async function expectRotationNotPersisted(orgId: string, credentialId: string): Promise<void> {
+  const counts = await rowCounts(orgId, credentialId)
+  expect(counts.rotations).toBe(0)
+  expect(counts.versions).toBe(1) // only the original version from credential creation
+}
+
 describe.sequential('rotation routes', () => {
   let app: TestApp
   let owner: RegisteredUser
@@ -321,13 +548,11 @@ describe.sequential('rotation routes', () => {
     expect(lockedVersion[0]?.rotationLockedAt).not.toBeNull()
 
     // The new value is live immediately (reveal always serves the highest non-purged version).
-    const valueRes = await app.inject({
-      method: 'GET',
-      url: credentialValueUrl(projectId, credential.id),
-      headers: { cookie: cookieHeader(owner.cookies) },
-    })
-    expect(valueRes.statusCode).toBe(200)
-    expect(valueRes.json<{ data: { value: string } }>().data.value).toBe(
+    await expectCredentialValue(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
       'sk_live_ROTATED_not_a_real_key'
     )
 
@@ -380,9 +605,7 @@ describe.sequential('rotation routes', () => {
         newValue: 'value-b',
       }),
     ])
-    const statuses = [first.statusCode, second.statusCode].sort()
-    expect(statuses).toEqual([201, 409])
-    const conflict = first.statusCode === 409 ? first : second
+    const conflict = assertExactlyOneConflict(first, second, 201, 409)
     expect(conflict.json()).toMatchObject({ code: 'rotation_in_progress' })
     expect(conflict.json<{ rotationId: string | null }>().rotationId).toBeTypeOf('string')
   })
@@ -409,12 +632,9 @@ describe.sequential('rotation routes', () => {
     const projectId = await createCredentialTestProject(app, owner.cookies, 'rotate-role')
     const credential = await createCredentialViaApi(app, owner.cookies, projectId)
 
-    for (const role of ['member', 'viewer'] as const) {
-      const user = await createDirectAuthenticatedUser(app, `rotate-${role}`, role)
-      const res = await initiateRotationViaApi(app, user.cookies, projectId, credential.id)
-      expect(res.statusCode).toBe(403)
-      expect(res.json()).toMatchObject({ code: 'insufficient_role' })
-    }
+    await expectForbiddenForMemberAndViewer(app, 'rotate', (cookies) =>
+      initiateRotationViaApi(app, cookies, projectId, credential.id)
+    )
     const counts = await rowCounts(owner.orgId, credential.id)
     expect(counts.rotations).toBe(0)
   })
@@ -617,9 +837,7 @@ describe.sequential('rotation routes', () => {
         },
       ]
     )
-    await app.close()
-    await initVaultForTest(initVault, TEST_PASSPHRASE)
-    app = await createApp({ logger: false, vaultGuardEnabled: true })
+    app = await reinitAppAfterSealedTest(app)
   }, 20_000)
 
   it('retention seam: superseded version stays excluded from the retention purge job while locked', async () => {
@@ -673,9 +891,7 @@ describe.sequential('rotation routes', () => {
       const res = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id)
       expectAuditWriteFailed(res)
 
-      const counts = await rowCounts(owner.orgId, credential.id)
-      expect(counts.rotations).toBe(0)
-      expect(counts.versions).toBe(1) // only the original version from credential creation
+      await expectRotationNotPersisted(owner.orgId, credential.id)
 
       // Scoped by dependencyId (not a bare org-wide select) — `owner`'s org accumulates
       // checklist items from earlier tests in this sequential suite.
@@ -1489,9 +1705,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
         },
       ]
     )
-    await app.close()
-    await initVaultForTest(initVault, TEST_PASSPHRASE)
-    app = await createApp({ logger: false, vaultGuardEnabled: true })
+    app = await reinitAppAfterSealedTest(app)
   }, 20_000)
 
   it('GET rotations/upcoming: happy path with horizon filtering, viewer-role read access, and 404 for cross-org project', async () => {
@@ -1569,3 +1783,714 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     ).not.toContain(credential.id)
   })
 })
+
+describe.sequential(
+  'Story 5.3 — break-glass emergency rotation + stale-recovery resume/abandon',
+  () => {
+    let app: TestApp
+    let owner: RegisteredUser
+    let other: RegisteredUser
+
+    beforeAll(async () => {
+      ;({ app, owner, other } = await bootstrapCredentialRouteOwners(
+        createApp,
+        initVault,
+        TEST_PASSPHRASE,
+        PASSWORD,
+        'break-glass'
+      ))
+    })
+
+    afterAll(async () => {
+      await app.close()
+      await resetVaultForTest()
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-2: happy path
+    // ---------------------------------------------------------------------------------------
+
+    it('POST break-glass immediately writes a new live value, puts the superseded version in overlap, and creates no checklist', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-happy')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Break Glass Key',
+        value: 'pre-incident-value',
+      })
+
+      const res = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'sk_live_EMERGENCY_ROTATED',
+        reason: 'Key found in a public gist — rotating immediately, INC-4471',
+      })
+      expect(res.statusCode).toBe(201)
+      const body = res.json<{
+        data: {
+          status: string
+          checklistItems: unknown[]
+          notes: string
+          previousVersionOverlap: { versionNumber: number; breakGlassOverlapExpiresAt: string }
+        }
+      }>()
+      expect(body.data.status).toBe('break_glass_complete')
+      expect(body.data.checklistItems).toEqual([])
+      expect(body.data.notes).toContain('INC-4471')
+      expect(body.data.previousVersionOverlap).toMatchObject({ versionNumber: 1 })
+
+      await expectCredentialValue(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        'sk_live_EMERGENCY_ROTATED'
+      )
+
+      const versionRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({
+            versionNumber: credentialVersions.versionNumber,
+            rotationLockedAt: credentialVersions.rotationLockedAt,
+            breakGlassOverlapExpiresAt: credentialVersions.breakGlassOverlapExpiresAt,
+          })
+          .from(credentialVersions)
+          .where(eq(credentialVersions.credentialId, credential.id))
+          .orderBy(credentialVersions.versionNumber)
+      )
+      const supersededVersion = versionRows.find((v) => v.versionNumber === 1)
+      expect(supersededVersion?.rotationLockedAt).not.toBeNull()
+      expect(supersededVersion?.breakGlassOverlapExpiresAt).not.toBeNull()
+    }, 20_000)
+
+    // ---------------------------------------------------------------------------------------
+    // AC-3: role enforcement + MFA
+    // ---------------------------------------------------------------------------------------
+
+    it('POST break-glass is rejected with 403 for member/viewer roles before any DB write', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-role')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      await expectForbiddenForMemberAndViewer(app, 'bg', (cookies) =>
+        breakGlassViaApi(app, cookies, projectId, credential.id)
+      )
+      const counts = await rowCounts(owner.orgId, credential.id)
+      expect(counts.rotations).toBe(0)
+    })
+
+    it('POST break-glass permits owner (admin-tier, not literal exclusion of owner)', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-owner-allowed')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      const res = await breakGlassViaApi(app, owner.cookies, projectId, credential.id)
+      expect(res.statusCode).toBe(201)
+    })
+
+    it('POST break-glass rejects a user whose PROJECT role is admin but whose ORG role is member (CR4 structural guarantee)', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-project-admin')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      const member = await createDirectAuthenticatedUser(app, 'bg-org-member', 'member')
+      // Directly seeds a project-level 'admin' membership — CR4's point is that rotation routes
+      // have never consulted ProjectRoleSchema at all (5.1 AC-7 precedent), so this project-role
+      // row must have zero effect on the org-role gate below.
+      const { projectMemberships } = await import('@project-vault/db/schema')
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .insert(projectMemberships)
+          .values({ orgId: owner.orgId, projectId, userId: member.userId, role: 'admin' })
+      )
+
+      const res = await breakGlassViaApi(app, member.cookies, projectId, credential.id)
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'insufficient_role' })
+    })
+
+    it('POST break-glass is rejected with 403 mfa_required for an admin session without MFA enrollment', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-mfa')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      const unenrolledAdmin = await createDirectAuthenticatedUser(app, 'bg-mfa', 'admin')
+      const res = await breakGlassViaApi(app, unenrolledAdmin.cookies, projectId, credential.id)
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'mfa_required' })
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-4: validation
+    // ---------------------------------------------------------------------------------------
+
+    it('POST break-glass validates the body: missing/empty/whitespace reason, empty/oversized newValue, unknown keys', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-validation')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const cases: Record<string, unknown>[] = [
+        {},
+        { newValue: 'x' },
+        { newValue: 'x', reason: '' },
+        { newValue: 'x', reason: '   ' },
+        { newValue: '', reason: 'incident' },
+        { newValue: 'x'.repeat(65537), reason: 'incident' },
+        { newValue: 'x', reason: 'x'.repeat(1025) },
+        { newValue: 'x', reason: 'incident', extra: true },
+      ]
+      for (const body of cases) {
+        const res = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, body)
+        expect(res.statusCode).toBe(422)
+        expect(res.json()).toMatchObject({ code: 'validation_error' })
+      }
+      const counts = await rowCounts(owner.orgId, credential.id)
+      expect(counts.rotations).toBe(0)
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-5: supersede an existing active rotation
+    // ---------------------------------------------------------------------------------------
+
+    it('POST break-glass supersedes (auto-abandons) an existing in_progress rotation for the same credential', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-supersede')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Supersede Key',
+        value: 'v1-original',
+      })
+      await addCredentialDependencyViaApi(app, owner.cookies, projectId, credential.id, {
+        systemName: 'supersede-dependency',
+      })
+
+      const initiate = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'v2-half-finished',
+      })
+      expect(initiate.statusCode).toBe(201)
+      const originalRotationId = initiate.json<{ data: { id: string } }>().data.id
+
+      const breakGlass = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'v3-emergency',
+        reason: 'supersede test',
+      })
+      expect(breakGlass.statusCode).toBe(201)
+
+      const originalRotation = await withOrg(owner.orgId, (tx) =>
+        tx.select().from(rotations).where(eq(rotations.id, originalRotationId))
+      )
+      expect(originalRotation[0]?.status).toBe('abandoned')
+
+      const valueRes = await app.inject({
+        method: 'GET',
+        url: credentialValueUrl(projectId, credential.id),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(valueRes.json<{ data: { value: string } }>().data.value).toBe('v3-emergency')
+
+      const breakGlassRotationId = breakGlass.json<{ data: { id: string } }>().data.id
+      const breakGlassRotationRow = await withOrg(owner.orgId, (tx) =>
+        tx.select().from(rotations).where(eq(rotations.id, breakGlassRotationId))
+      )
+      // previousVersionId must resolve back to version 1 (before EITHER rotation started), not
+      // the abandoned rotation's half-finished version 2.
+      const previousVersion = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ versionNumber: credentialVersions.versionNumber })
+          .from(credentialVersions)
+          .where(eq(credentialVersions.id, breakGlassRotationRow[0]?.previousVersionId ?? ''))
+      )
+      expect(previousVersion[0]?.versionNumber).toBe(1)
+
+      const abandonedVersionRow = await credentialVersionRow(
+        owner.orgId,
+        originalRotation[0]?.newVersionId ?? ''
+      )
+      expect(abandonedVersionRow?.abandonedAt).not.toBeNull()
+
+      const supersedeAudit = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ payload: auditLogEntries.payload })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'rotation.superseded_by_break_glass'))
+      )
+      expect(
+        supersedeAudit.some(
+          (row) =>
+            (row.payload as { supersededRotationId?: string }).supersededRotationId ===
+              originalRotationId &&
+            (row.payload as { supersedingRotationId?: string }).supersedingRotationId ===
+              breakGlassRotationId
+        )
+      ).toBe(true)
+    }, 20_000)
+
+    // ---------------------------------------------------------------------------------------
+    // AC-6: concurrency
+    // ---------------------------------------------------------------------------------------
+
+    it('POST two racing break-glass calls on the same credential: exactly one 201, one 409 rotation_lock_contention', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-race')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const [first, second] = await Promise.all([
+        breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+          newValue: 'race-a',
+          reason: 'race',
+        }),
+        breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+          newValue: 'race-b',
+          reason: 'race',
+        }),
+      ])
+      const conflict = assertExactlyOneConflict(first, second, 201, 409)
+      expect(conflict.json()).toMatchObject({ code: 'rotation_lock_contention' })
+    })
+
+    it('POST break-glass racing a concurrent normal-initiate call on the same credential: exactly one succeeds', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-race-initiate')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const [breakGlass, initiate] = await Promise.all([
+        breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+          newValue: 'race-bg',
+          reason: 'race',
+        }),
+        initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
+          newValue: 'race-initiate',
+        }),
+      ])
+      const outcomes = [breakGlass.statusCode, initiate.statusCode]
+      expect(outcomes.filter((code) => code === 201)).toHaveLength(1)
+      expect(outcomes.filter((code) => code === 409)).toHaveLength(1)
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-7: audit, security alert, notification, audit-failure rollback, reason sanitization
+    // ---------------------------------------------------------------------------------------
+
+    it('POST break-glass writes audit + security_alerts + notification payload listing all dependent systems', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-audit')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      for (let i = 0; i < 3; i += 1) {
+        await addCredentialDependencyViaApi(app, owner.cookies, projectId, credential.id, {
+          systemName: `bg-dependency-${i}`,
+        })
+      }
+
+      const auditPayload = await breakGlassAndFetchAuditPayload(
+        app,
+        owner.cookies,
+        owner.orgId,
+        projectId,
+        credential.id,
+        { newValue: 'audited-value', reason: 'audit test incident' }
+      )
+      expect(auditPayload).toBeDefined()
+      expect(auditPayload?.reason).toBe('audit test incident')
+
+      const alertRows = await findBreakGlassAlertRows(owner.orgId, credential.id)
+      expect(alertRows).toHaveLength(1)
+      expect(alertRows[0]?.severity).toBe('critical')
+
+      const queueRows = await findBreakGlassQueueRows(owner.orgId, credential.id)
+      expect(queueRows.length).toBeGreaterThan(0)
+      const dependentSystems = (queueRows[0]?.payload as { dependentSystems?: string[] })
+        ?.dependentSystems
+      expect(dependentSystems).toHaveLength(3)
+    }, 20_000)
+
+    it('POST break-glass zero-dependency credential still gets full audit/alert treatment with an empty sweep list', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-zero-dep')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const res = await breakGlassViaApi(app, owner.cookies, projectId, credential.id)
+      expect(res.statusCode).toBe(201)
+
+      const alertRows = await findBreakGlassAlertRows(owner.orgId, credential.id)
+      expect(alertRows).toHaveLength(1)
+      expect((alertRows[0]?.payload as { dependentSystems?: unknown[] })?.dependentSystems).toEqual(
+        []
+      )
+    })
+
+    it('AUDIT-FAILURE ROLLBACK: break-glass audit-write failure rolls back the whole transaction — no rotation/version/security_alerts rows persist', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-audit-fail')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const auditSpy = vi
+        .spyOn(humanAudit, 'writeHumanAuditEntry')
+        .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+      try {
+        const res = await breakGlassViaApi(app, owner.cookies, projectId, credential.id)
+        expectAuditWriteFailed(res)
+
+        await expectRotationNotPersisted(owner.orgId, credential.id)
+
+        const alertRows = await findBreakGlassAlertRows(owner.orgId, credential.id)
+        expect(alertRows).toHaveLength(0)
+      } finally {
+        auditSpy.mockRestore()
+      }
+    }, 20_000)
+
+    it('POST break-glass with a Slack-mrkdwn/HTML control sequence in reason: raw text preserved in audit, HTML-escaped in the outbound notification payload', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-sanitize')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      const dangerousReason = '<!channel> <script>alert(1)</script> & "quoted"'
+
+      const auditPayload = await breakGlassAndFetchAuditPayload(
+        app,
+        owner.cookies,
+        owner.orgId,
+        projectId,
+        credential.id,
+        { newValue: 'sanitize-value', reason: dangerousReason }
+      )
+      // Audit fidelity: raw, unmodified text — never lossy.
+      expect(auditPayload?.reason).toBe(dangerousReason)
+
+      const queueRows = await findBreakGlassQueueRows(owner.orgId, credential.id)
+      expect(queueRows.length).toBeGreaterThan(0)
+      const outboundReason = (queueRows[0]?.payload as { reason?: string })?.reason
+      expect(outboundReason).not.toContain('<script>')
+      expect(outboundReason).not.toContain('<!channel>')
+      expect(outboundReason).toContain('&lt;script&gt;')
+    }, 20_000)
+
+    // ---------------------------------------------------------------------------------------
+    // AC-19: cross-tenant isolation
+    // ---------------------------------------------------------------------------------------
+
+    it("POST break-glass/resume/abandon against another org's credential/rotation return 404, not 403", async () => {
+      const { projectId, credentialId, rotationId } = await createInitiatedRotationFixture(
+        app,
+        owner.cookies,
+        'bg-cross-org'
+      )
+
+      const breakGlassCrossOrg = await breakGlassViaApi(app, other.cookies, projectId, credentialId)
+      expect(breakGlassCrossOrg.statusCode).toBe(404)
+      expect(breakGlassCrossOrg.json()).toMatchObject({ code: 'credential_not_found' })
+
+      const resumeCrossOrg = await resolutionViaApi(
+        app,
+        other.cookies,
+        { projectId, credentialId, rotationId },
+        'resume'
+      )
+      expect(resumeCrossOrg.statusCode).toBe(404)
+      expect(resumeCrossOrg.json()).toMatchObject({ code: 'rotation_not_found' })
+
+      const abandonCrossOrg = await resolutionViaApi(
+        app,
+        other.cookies,
+        { projectId, credentialId, rotationId },
+        'abandon'
+      )
+      expect(abandonCrossOrg.statusCode).toBe(404)
+      expect(abandonCrossOrg.json()).toMatchObject({ code: 'rotation_not_found' })
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-20: sealed vault
+    // ---------------------------------------------------------------------------------------
+
+    it('sealed vault fails closed with 503 for break-glass/resume/abandon', async () => {
+      const projectId = randomUUID()
+      const credentialId = randomUUID()
+      const rotationId = randomUUID()
+      app = await assertRoutesFailClosedWhileSealed(
+        app,
+        () => createApp({ logger: false, vaultGuardEnabled: true }),
+        [
+          {
+            method: 'POST',
+            url: breakGlassUrl(projectId, credentialId),
+            headers: { cookie: cookieHeader(owner.cookies) },
+            payload: { newValue: 'x', reason: 'incident' },
+          },
+          {
+            method: 'POST',
+            url: resolutionUrl(projectId, credentialId, rotationId, 'resume'),
+            headers: { cookie: cookieHeader(owner.cookies) },
+            payload: {},
+          },
+          {
+            method: 'POST',
+            url: resolutionUrl(projectId, credentialId, rotationId, 'abandon'),
+            headers: { cookie: cookieHeader(owner.cookies) },
+            payload: {},
+          },
+        ]
+      )
+      app = await reinitAppAfterSealedTest(app)
+    }, 20_000)
+
+    // ---------------------------------------------------------------------------------------
+    // AC-11: resume happy path
+    // ---------------------------------------------------------------------------------------
+
+    it('POST resume: stale_recovery -> in_progress, checklist preserved exactly as-is', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'resume-happy')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      await addCredentialDependencyViaApi(app, owner.cookies, projectId, credential.id, {
+        systemName: 'resume-dependency',
+      })
+      const initiate = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id)
+      const rotationId = initiate.json<{ data: { id: string } }>().data.id
+      await forceStaleRecovery(owner.orgId, rotationId)
+
+      const res = await resolutionViaApi(
+        app,
+        owner.cookies,
+        { projectId, credentialId: credential.id, rotationId },
+        'resume'
+      )
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{
+        data: { status: string; checklistItems: { status: string }[] }
+      }>()
+      expect(body.data.status).toBe('in_progress')
+      expect(body.data.checklistItems).toHaveLength(1)
+      expect(body.data.checklistItems[0]?.status).toBe('unconfirmed')
+
+      const auditRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ resourceId: auditLogEntries.resourceId })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'rotation.resumed'))
+      )
+      expect(auditRows.some((row) => row.resourceId === rotationId)).toBe(true)
+    }, 20_000)
+
+    // ---------------------------------------------------------------------------------------
+    // AC-12: abandon happy path (+ reveal round-trip, CR5/AC-13 wiring via the real endpoint)
+    // ---------------------------------------------------------------------------------------
+
+    it('POST abandon: stale_recovery -> abandoned; the never-completed new value stops being current, the old value is restored', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'abandon-happy')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Abandon Endpoint Key',
+        value: 'pre-rotation-value',
+      })
+      const initiate = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'never-validated-value',
+      })
+      const rotationId = initiate.json<{ data: { id: string } }>().data.id
+      await forceStaleRecovery(owner.orgId, rotationId)
+
+      const beforeAbandon = await app.inject({
+        method: 'GET',
+        url: credentialValueUrl(projectId, credential.id),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(beforeAbandon.json<{ data: { value: string } }>().data.value).toBe(
+        'never-validated-value'
+      )
+
+      const res = await resolutionViaApi(
+        app,
+        owner.cookies,
+        { projectId, credentialId: credential.id, rotationId },
+        'abandon'
+      )
+      expect(res.statusCode).toBe(200)
+      expect(res.json<{ data: { status: string } }>().data.status).toBe('abandoned')
+
+      const afterAbandon = await app.inject({
+        method: 'GET',
+        url: credentialValueUrl(projectId, credential.id),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(afterAbandon.json<{ data: { value: string } }>().data.value).toBe('pre-rotation-value')
+
+      const auditRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ resourceId: auditLogEntries.resourceId })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'rotation.abandoned'))
+      )
+      expect(auditRows.some((row) => row.resourceId === rotationId)).toBe(true)
+    }, 20_000)
+
+    // ---------------------------------------------------------------------------------------
+    // AC-15: resume/abandon concurrency
+    // ---------------------------------------------------------------------------------------
+
+    it('POST two racing resume/abandon calls on the same stale_recovery rotation: exactly one 200, one 409', async () => {
+      const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+        app,
+        owner.cookies,
+        owner.orgId,
+        'resolve-race'
+      )
+
+      const [resumeRes, abandonRes] = await Promise.all([
+        resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'resume'),
+        resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'abandon'),
+      ])
+      const conflict = assertExactlyOneConflict(resumeRes, abandonRes, 200, 409)
+      expect(conflict.json()).toMatchObject({ code: 'concurrent_modification' })
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-17: resume/abandon invalid-state 422
+    // ---------------------------------------------------------------------------------------
+
+    it('POST resume/abandon against a non-stale rotation returns 422 rotation_not_stale', async () => {
+      const { projectId, credentialId, rotationId } = await createInitiatedRotationFixture(
+        app,
+        owner.cookies,
+        'resolve-not-stale'
+      )
+
+      const ids = { projectId, credentialId, rotationId }
+      await expectResolutionRejectedNotStale(app, owner.cookies, ids, 'resume', 'in_progress')
+      await expectResolutionRejectedNotStale(app, owner.cookies, ids, 'abandon', 'in_progress')
+    })
+
+    it('POST resume immediately after a successful abandon of the same rotation returns 422 (now abandoned, not stale_recovery)', async () => {
+      const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+        app,
+        owner.cookies,
+        owner.orgId,
+        'resolve-post-abandon'
+      )
+
+      const abandonRes = await resolutionViaApi(
+        app,
+        owner.cookies,
+        { projectId, credentialId, rotationId },
+        'abandon'
+      )
+      expect(abandonRes.statusCode).toBe(200)
+
+      await expectResolutionRejectedNotStale(
+        app,
+        owner.cookies,
+        { projectId, credentialId, rotationId },
+        'resume',
+        'abandoned'
+      )
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-18: resume/abandon role enforcement + MFA
+    // ---------------------------------------------------------------------------------------
+
+    it('POST resume/abandon reject member/viewer roles with 403', async () => {
+      const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+        app,
+        owner.cookies,
+        owner.orgId,
+        'resolve-role'
+      )
+
+      await expectForbiddenForMemberAndViewer(app, 'resolve-role-resume', (cookies) =>
+        resolutionViaApi(app, cookies, { projectId, credentialId, rotationId }, 'resume')
+      )
+      await expectForbiddenForMemberAndViewer(app, 'resolve-role-abandon', (cookies) =>
+        resolutionViaApi(app, cookies, { projectId, credentialId, rotationId }, 'abandon')
+      )
+    })
+
+    it('POST resume/abandon reject an admin session without MFA enrollment', async () => {
+      const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+        app,
+        owner.cookies,
+        owner.orgId,
+        'resolve-mfa'
+      )
+
+      const unenrolledAdmin = await createDirectAuthenticatedUser(app, 'resolve-mfa', 'admin')
+      const resumeRes = await resolutionViaApi(
+        app,
+        unenrolledAdmin.cookies,
+        { projectId, credentialId, rotationId },
+        'resume'
+      )
+      expect(resumeRes.statusCode).toBe(403)
+      expect(resumeRes.json()).toMatchObject({ code: 'mfa_required' })
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // AC-16 / FR104: dependency archival already implemented (Story 2.4) — end-to-end regression
+    // ---------------------------------------------------------------------------------------
+
+    it('FR104: archived dependencies are excluded from new checklists but preserved in historical ones', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'fr104-e2e')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      const dep1 = await addCredentialDependencyViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        {
+          systemName: 'fr104-dependency-one',
+        }
+      )
+      const dep2 = await addCredentialDependencyViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        {
+          systemName: 'fr104-dependency-two',
+        }
+      )
+      const dep1Id = dep1.json<{ data: { id: string } }>().data.id
+      const dep2Id = dep2.json<{ data: { id: string } }>().data.id
+
+      const firstRotation = await initiateRotationViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id
+      )
+      expect(firstRotation.statusCode).toBe(201)
+      const firstBody = firstRotation.json<{
+        data: { id: string; checklistItems: { id: string; systemName: string }[] }
+      }>()
+      expect(firstBody.data.checklistItems).toHaveLength(2)
+
+      for (const item of firstBody.data.checklistItems) {
+        const confirmRes = await confirmChecklistItemViaApi(app, owner.cookies, {
+          projectId,
+          credentialId: credential.id,
+          rotationId: firstBody.data.id,
+          itemId: item.id,
+        })
+        expect(confirmRes.statusCode).toBe(200)
+      }
+      const completeRes = await completeRotationViaApi(app, owner.cookies, {
+        projectId,
+        credentialId: credential.id,
+        rotationId: firstBody.data.id,
+      })
+      expect(completeRes.statusCode).toBe(200)
+
+      // Archive dependency 1 — Story 2.4's already-shipped endpoint.
+      const archiveRes = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/projects/${projectId}/credentials/${credential.id}/dependencies/${dep1Id}`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(archiveRes.statusCode).toBe(200)
+
+      const secondRotation = await initiateRotationViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id
+      )
+      expect(secondRotation.statusCode).toBe(201)
+      const secondBody = secondRotation.json<{
+        data: { checklistItems: { systemName: string; dependencyId: string | null }[] }
+      }>()
+      expect(secondBody.data.checklistItems).toHaveLength(1)
+      expect(secondBody.data.checklistItems[0]?.dependencyId).toBe(dep2Id)
+
+      const historicalDetail = await getRotationDetailViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        firstBody.data.id
+      )
+      const historicalBody = historicalDetail.json<{
+        data: { checklistItems: { systemName: string; dependencyId: string | null }[] }
+      }>()
+      expect(historicalBody.data.checklistItems).toHaveLength(2)
+      expect(historicalBody.data.checklistItems.map((item) => item.systemName)).toEqual(
+        expect.arrayContaining(['fr104-dependency-one', 'fr104-dependency-two'])
+      )
+    }, 20_000)
+  }
+)

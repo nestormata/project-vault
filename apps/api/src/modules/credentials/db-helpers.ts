@@ -8,6 +8,16 @@ export function isUniqueViolation(error: unknown): boolean {
   return (cause as { code?: string }).code === '23505'
 }
 
+// Story 5.3 AC-5/AC-6: `55P03 lock_not_available` — raised by `FOR UPDATE NOWAIT` when the row
+// is already locked by a concurrent transaction (e.g. a 5.2 confirm/fail/retry/complete call
+// holding the rotation-scoped advisory lock). Break-glass's supersede lookup maps this to the
+// same `409 rotation_lock_contention` shape as advisory-lock contention (AC-6).
+export function isLockNotAvailable(error: unknown): boolean {
+  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
+  if (!cause || typeof cause !== 'object') return false
+  return (cause as { code?: string }).code === '55P03'
+}
+
 export async function currentKeyVersion(tx: Tx): Promise<number> {
   const [vs] = await tx.select({ keyVersion: vaultState.keyVersion }).from(vaultState).limit(1)
   return vs?.keyVersion ?? 1
