@@ -66,6 +66,7 @@ export const AuditEvent = {
   MACHINE_USER_API_KEY_EMERGENCY_REVOKED: 'machine_user.api_key_emergency_revoked',
   MACHINE_USER_ROTATION_ANOMALY_DETECTED: 'machine_user.rotation_anomaly_detected',
   MACHINE_USER_DORMANCY_EXTENDED: 'machine_user.dormancy_extended',
+  MACHINE_CACHE_ACTIVATED: 'machine_cache.activated',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -131,6 +132,7 @@ export type AuditEventType =
   | 'machine_user.api_key_emergency_revoked'
   | 'machine_user.rotation_anomaly_detected'
   | 'machine_user.dormancy_extended'
+  | 'machine_cache.activated'
 
 export type AuditEvent = {
   type: AuditEventType

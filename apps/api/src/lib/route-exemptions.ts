@@ -167,6 +167,18 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     ],
     expiresAfterStory: null,
   },
+  {
+    route: 'POST /api/v1/machine/cache-activated',
+    reason:
+      "Story 7.2 D13 — machine-authenticated offline-agent cache-activation beacon. Registered with SecureRoute's requireAuth:false public path because the caller presents a machine JWT via Authorization: Bearer, not a human session cookie; the handler's first action is the same manual verifyMachineRequest() call as the credential-value route (D4).",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      'machine-jwt-verification',
+      'live-revocation-recheck',
+      TOKEN_IS_CREDENTIAL,
+    ],
+    expiresAfterStory: null,
+  },
 ]
 
 export const HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS = {
@@ -755,6 +767,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'mutation',
     auditEvent: 'organization.machine_key_settings_updated',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/machine/cache-activated': {
+    action: 'mutation',
+    auditOmissionReason:
+      "Machine-authenticated public route (D13) — org context is not resolvable until verifyMachineRequest() resolves the JWT, so the handler opens its own withOrg() transaction rather than SecureRoute's declarative one. A machine_cache.activated audit row (actorType: machine_user) is still written fail-closed via writeMachineAuditEntryOrFailClosed() inside that same transaction (AC-15), just not through the secureCtx.tx path this registry's opt-out check expects.",
+    reviewer: SECURITY_OWNER,
   },
 }
 

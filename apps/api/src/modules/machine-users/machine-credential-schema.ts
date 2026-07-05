@@ -25,3 +25,20 @@ export const AmbiguousCredentialNameErrorSchema = z
     matchCount: z.number().int().min(2),
   })
   .meta({ id: 'AmbiguousCredentialNameError' })
+
+// Story 7.2 D13/AC-15 — the offline agent's fallback-mode activation beacon. `activatedAt` is the
+// ISO-8601 timestamp fallback mode began (not the report time); `threshold` is the effective
+// `VAULT_FALLBACK_THRESHOLD` that triggered it. `projectId` is not part of the body — it is
+// already carried in the machine JWT's `scope` claim that authenticates the call.
+export const CacheActivatedBodySchema = z
+  .object({
+    activatedAt: z.iso.datetime(),
+    threshold: z.number().int().positive(),
+  })
+  .meta({ id: 'CacheActivatedBody' })
+
+export const CacheActivatedResponseSchema = z
+  .object({
+    data: z.object({ recorded: z.literal(true) }),
+  })
+  .meta({ id: 'CacheActivatedResponse' })

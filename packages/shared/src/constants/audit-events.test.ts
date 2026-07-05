@@ -96,4 +96,8 @@ describe('AuditEvent', () => {
     )
     expect(AuditEvent.MACHINE_USER_DORMANCY_EXTENDED).toBe('machine_user.dormancy_extended')
   })
+
+  it('exposes Story 7.2 cache-activation beacon audit event name (D13/AC-15)', () => {
+    expect(AuditEvent.MACHINE_CACHE_ACTIVATED).toBe('machine_cache.activated')
+  })
 })

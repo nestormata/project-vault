@@ -29,6 +29,7 @@ import { notificationRoutes } from './modules/notifications/routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
 import { machineTokenExchangeRoutes } from './modules/machine-users/token-exchange-routes.js'
 import { machineCredentialRoutes } from './modules/machine-users/machine-credential-routes.js'
+import { cacheActivatedRoutes } from './modules/machine-users/cache-activated-routes.js'
 import { securityAlertActionsRoutes } from './modules/org/security-alert-actions-routes.js'
 import { organizationSettingsRoutes } from './modules/org/organization-settings-routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
@@ -215,6 +216,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(notificationRoutes, { prefix: '/api/v1' })
   await fastify.register(machineUserRoutes, { prefix: '/api/v1' })
   await fastify.register(machineCredentialRoutes, { prefix: '/api/v1/machine' })
+  await fastify.register(cacheActivatedRoutes, { prefix: '/api/v1/machine' })
   await fastify.register(securityAlertActionsRoutes, { prefix: '/api/v1/security-alerts' })
   await fastify.register(organizationSettingsRoutes, { prefix: '/api/v1/organizations' })
 
