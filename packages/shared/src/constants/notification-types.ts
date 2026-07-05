@@ -12,6 +12,7 @@ export const NOTIFICATION_ALERT_TYPES = [
   'machine_key.expiry',
   'security.anomalous_access',
   'machine_cache.activated',
+  'machine_key.dormant',
   'payment.expiry',
   'certificate.expiry',
   'domain.expiry',
