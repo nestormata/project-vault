@@ -65,6 +65,28 @@ const MACHINE_USER_DEACTIVATED = {
 type MachineUserRow = typeof machineUsers.$inferSelect
 type ApiKeyRow = typeof apiKeys.$inferSelect
 
+/**
+ * Shared by rotate/emergency-revoke (AC-17/AC-20/AC-26): row-locks the key and rejects a
+ * not-found or already-revoked key with the response the caller already sent. Returns the row
+ * on success, or null after the reply has been sent.
+ */
+async function lockAndRejectIfRevoked(
+  secureCtx: SecureRouteContext,
+  params: { machineUserId: string; keyId: string },
+  reply: FastifyReply
+): Promise<ApiKeyRow | null> {
+  const oldKey = await lockApiKeyForUpdate(secureCtx.tx, params)
+  if (!oldKey) {
+    reply.status(404).send(API_KEY_NOT_FOUND)
+    return null
+  }
+  if (oldKey.revokedAt !== null) {
+    reply.status(409).send(API_KEY_ALREADY_REVOKED)
+    return null
+  }
+  return oldKey
+}
+
 // UX-DR11: the scope-boundary block shown on creation (before any key exists) and detail views.
 function scopeBoundaryFor(row: Pick<MachineUserRow, 'projectId' | 'name'>) {
   return {
@@ -520,9 +542,8 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      const oldKey = await lockApiKeyForUpdate(secureCtx.tx, params)
-      if (!oldKey) return reply.status(404).send(API_KEY_NOT_FOUND)
-      if (oldKey.revokedAt !== null) return reply.status(409).send(API_KEY_ALREADY_REVOKED)
+      const oldKey = await lockAndRejectIfRevoked(secureCtx, params, reply)
+      if (!oldKey) return reply
       if (oldKey.overlapExpiresAt !== null) return reply.status(409).send(API_KEY_ALREADY_ROTATED)
 
       const result = await rotateApiKey(secureCtx.tx, {
@@ -587,9 +608,8 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      const oldKey = await lockApiKeyForUpdate(secureCtx.tx, params)
-      if (!oldKey) return reply.status(404).send(API_KEY_NOT_FOUND)
-      if (oldKey.revokedAt !== null) return reply.status(409).send(API_KEY_ALREADY_REVOKED)
+      const oldKey = await lockAndRejectIfRevoked(secureCtx, params, reply)
+      if (!oldKey) return reply
 
       const result = await emergencyRevokeApiKey(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,

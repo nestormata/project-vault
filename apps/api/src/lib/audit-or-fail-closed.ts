@@ -9,6 +9,17 @@ import {
 } from '../modules/audit/machine-entry.js'
 import { SameTransactionAuditWriteError } from './secure-route.js'
 
+/** Shared by every `write*AuditEntryOrFailClosed` wrapper below: any audit-write error is
+ * rewrapped as `SameTransactionAuditWriteError` so SecureRoute (or a job's own transaction) rolls
+ * back and fails closed instead of completing a mutation without an audit record. */
+async function rethrowAsSameTransactionAuditWriteError(write: () => Promise<void>): Promise<void> {
+  try {
+    await write()
+  } catch (error) {
+    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
+  }
+}
+
 export type SameTransactionAuditInput = {
   orgId: string
   actorUserId: string
@@ -28,7 +39,7 @@ export async function writeHumanAuditEntryOrFailClosed(
   tx: Tx,
   input: SameTransactionAuditInput
 ): Promise<void> {
-  try {
+  await rethrowAsSameTransactionAuditWriteError(async () => {
     const actorTokenId = await firstActorTokenIdForUser(tx, input.actorUserId)
     await writeHumanAuditEntry(tx, {
       orgId: input.orgId,
@@ -45,9 +56,7 @@ export async function writeHumanAuditEntryOrFailClosed(
             : null,
       },
     })
-  } catch (error) {
-    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
-  }
+  })
 }
 
 export type MachineAuditInput = {
@@ -69,8 +78,8 @@ export async function writeMachineAuditEntryOrFailClosed(
   tx: Tx,
   input: MachineAuditInput
 ): Promise<void> {
-  try {
-    await writeMachineAuditEntry(tx, {
+  await rethrowAsSameTransactionAuditWriteError(() =>
+    writeMachineAuditEntry(tx, {
       orgId: input.orgId,
       eventType: input.eventType,
       resourceId: input.resourceId,
@@ -86,9 +95,7 @@ export async function writeMachineAuditEntryOrFailClosed(
             : null,
       },
     })
-  } catch (error) {
-    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
-  }
+  )
 }
 
 /**
@@ -100,9 +107,5 @@ export async function writeSystemAuditEntryOrFailClosed(
   tx: Tx,
   input: SystemAuditFields
 ): Promise<void> {
-  try {
-    await writeSystemAuditEntry(tx, input)
-  } catch (error) {
-    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
-  }
+  await rethrowAsSameTransactionAuditWriteError(() => writeSystemAuditEntry(tx, input))
 }

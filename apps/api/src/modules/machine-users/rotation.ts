@@ -34,6 +34,32 @@ export type RotateApiKeyResult = {
   overlapExpiresAt: Date
 }
 
+export type EmergencyRevokeResult = {
+  newKeyId: string
+  plaintext: string
+}
+
+/** Shared by `rotateApiKey`/`emergencyRevokeApiKey`: inserts the successor key row. */
+async function issueSuccessorKey(
+  tx: Tx,
+  params: { orgId: string; machineUserId: string; oldKeyId: string; name: string },
+  keyHash: string
+): Promise<{ id: string }> {
+  const [newKey] = await tx
+    .insert(apiKeys)
+    .values({
+      orgId: params.orgId,
+      machineUserId: params.machineUserId,
+      name: params.name,
+      keyHash,
+      hmacKeyVersion: 1,
+      rotatedFromKeyId: params.oldKeyId,
+    })
+    .returning({ id: apiKeys.id })
+  if (!newKey) throw new Error('issueSuccessorKey: new key insert returned no row')
+  return newKey
+}
+
 /**
  * Story 7.2 AC-16/D8 — zero-downtime rotation: inserts a new key (`rotatedFromKeyId` pointing at
  * the old key) and sets the OLD key's `overlapExpiresAt` — the old key's `revokedAt` stays null
@@ -45,30 +71,21 @@ export async function rotateApiKey(
   params: { orgId: string; machineUserId: string; oldKey: ApiKeyRow; overlapMinutes: number }
 ): Promise<RotateApiKeyResult> {
   const plaintext = generateApiKey()
-  const keyHash = hashApiKey(plaintext)
   const overlapExpiresAt = new Date(Date.now() + params.overlapMinutes * 60_000)
 
-  const [newKey] = await tx
-    .insert(apiKeys)
-    .values({
+  const newKey = await issueSuccessorKey(
+    tx,
+    {
       orgId: params.orgId,
       machineUserId: params.machineUserId,
+      oldKeyId: params.oldKey.id,
       name: params.oldKey.name,
-      keyHash,
-      hmacKeyVersion: 1,
-      rotatedFromKeyId: params.oldKey.id,
-    })
-    .returning({ id: apiKeys.id })
-  if (!newKey) throw new Error('rotateApiKey: new key insert returned no row')
-
+    },
+    hashApiKey(plaintext)
+  )
   await tx.update(apiKeys).set({ overlapExpiresAt }).where(eq(apiKeys.id, params.oldKey.id))
 
   return { newKeyId: newKey.id, plaintext, overlapExpiresAt }
-}
-
-export type EmergencyRevokeResult = {
-  newKeyId: string
-  plaintext: string
 }
 
 /**
@@ -82,23 +99,18 @@ export async function emergencyRevokeApiKey(
   params: { orgId: string; machineUserId: string; oldKey: ApiKeyRow }
 ): Promise<EmergencyRevokeResult> {
   const plaintext = generateApiKey()
-  const keyHash = hashApiKey(plaintext)
 
   await tx.update(apiKeys).set({ revokedAt: new Date() }).where(eq(apiKeys.id, params.oldKey.id))
-
-  const [newKey] = await tx
-    .insert(apiKeys)
-    .values({
+  const newKey = await issueSuccessorKey(
+    tx,
+    {
       orgId: params.orgId,
       machineUserId: params.machineUserId,
+      oldKeyId: params.oldKey.id,
       name: params.oldKey.name,
-      keyHash,
-      hmacKeyVersion: 1,
-      rotatedFromKeyId: params.oldKey.id,
-      overlapExpiresAt: null,
-    })
-    .returning({ id: apiKeys.id })
-  if (!newKey) throw new Error('emergencyRevokeApiKey: new key insert returned no row')
+    },
+    hashApiKey(plaintext)
+  )
 
   return { newKeyId: newKey.id, plaintext }
 }
