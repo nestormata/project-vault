@@ -211,6 +211,13 @@
       "when": 1783178763004,
       "tag": "0029_machine_users_and_api_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783149412772,
+      "tag": "0030_rotation_checklist_state",
+      "breakpoints": true
     }
   ]
 }

@@ -44,6 +44,19 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 5.2 rotation checklist confirm/fail/retry/complete event types', () => {
+    expect(OperationalEvent.ROTATION_CHECKLIST_CONFIRM_SUCCESS).toBe(
+      'rotation.checklist.confirm.success'
+    )
+    expect(OperationalEvent.ROTATION_CHECKLIST_RETRY_MAX_EXCEEDED).toBe(
+      'rotation.checklist.retry.max_exceeded'
+    )
+    expect(OperationalEvent.ROTATION_COMPLETE_SUCCESS).toBe('rotation.complete.success')
+    expect(OperationalEvent.ROTATION_COMPLETE_CHECKLIST_INCOMPLETE).toBe(
+      'rotation.complete.checklist_incomplete'
+    )
+  })
+
   it('exposes the Story 6.1 monitoring expiry-alert row-failure event type', () => {
     expect(OperationalEvent.MONITORING_EXPIRY_ALERT_ROW_FAILED).toBe(
       'monitoring.expiry_alert_row_failed'

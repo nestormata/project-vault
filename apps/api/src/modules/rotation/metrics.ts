@@ -1,6 +1,6 @@
 import { Counter, Gauge } from 'prom-client'
-import { isNotNull, sql } from 'drizzle-orm'
-import { credentialVersions } from '@project-vault/db/schema'
+import { and, inArray, isNotNull, sql } from 'drizzle-orm'
+import { credentialVersions, rotationChecklistItems, rotations } from '@project-vault/db/schema'
 import { getAdminDb } from '../../lib/db.js'
 
 export const ROTATION_INITIATIONS_TOTAL_METRIC_NAME = 'rotation_initiations_total'
@@ -30,6 +30,61 @@ export const credentialVersionsLockedByRotationTotal = new Gauge({
       .select({ count: sql<number>`count(*)` })
       .from(credentialVersions)
       .where(isNotNull(credentialVersions.rotationLockedAt))
+    this.set(Number(row?.count ?? 0))
+  },
+})
+
+// Story 5.2 (AC-24) — one counter per checklist mutation outcome, plus a completions counter
+// and a periodic-query-backed pending-work gauge, following the same label/collect() patterns
+// already established above for rotation initiation.
+export const ROTATION_CHECKLIST_CONFIRMATIONS_TOTAL_METRIC_NAME =
+  'rotation_checklist_confirmations_total'
+export const rotationChecklistConfirmationsTotal = new Counter({
+  name: ROTATION_CHECKLIST_CONFIRMATIONS_TOTAL_METRIC_NAME,
+  help: 'Total number of checklist-item confirm attempts, labeled by outcome',
+  labelNames: ['outcome'],
+})
+
+export const ROTATION_CHECKLIST_FAILURES_TOTAL_METRIC_NAME = 'rotation_checklist_failures_total'
+export const rotationChecklistFailuresTotal = new Counter({
+  name: ROTATION_CHECKLIST_FAILURES_TOTAL_METRIC_NAME,
+  help: 'Total number of checklist-item fail calls — the operational signal for rotation friction',
+})
+
+export const ROTATION_CHECKLIST_RETRIES_TOTAL_METRIC_NAME = 'rotation_checklist_retries_total'
+export const rotationChecklistRetriesTotal = new Counter({
+  name: ROTATION_CHECKLIST_RETRIES_TOTAL_METRIC_NAME,
+  help: 'Total number of checklist-item retry attempts, labeled by outcome',
+  labelNames: ['outcome'],
+})
+
+export const ROTATION_COMPLETIONS_TOTAL_METRIC_NAME = 'rotation_completions_total'
+export const rotationCompletionsTotal = new Counter({
+  name: ROTATION_COMPLETIONS_TOTAL_METRIC_NAME,
+  help: 'Total number of rotation completion attempts, labeled by outcome',
+  labelNames: ['outcome'],
+})
+
+export const ROTATION_CHECKLIST_ITEMS_PENDING_TOTAL_METRIC_NAME =
+  'rotation_checklist_items_pending_total'
+// Periodic-query-backed gauge (not a per-request counter) — current count of
+// rotation_checklist_items rows still needing action across all in_progress rotations.
+// Uses getAdminDb() (bypasses per-org RLS), same justification as the gauge above: this is a
+// platform-wide operational count, not a single tenant's view.
+export const rotationChecklistItemsPendingTotal = new Gauge({
+  name: ROTATION_CHECKLIST_ITEMS_PENDING_TOTAL_METRIC_NAME,
+  help: 'Number of rotation_checklist_items rows still unconfirmed/failed/max_retries_exceeded across in_progress rotations',
+  async collect() {
+    const [row] = await getAdminDb()
+      .select({ count: sql<number>`count(*)` })
+      .from(rotationChecklistItems)
+      .innerJoin(rotations, sql`${rotations.id} = ${rotationChecklistItems.rotationId}`)
+      .where(
+        and(
+          sql`${rotations.status} = 'in_progress'`,
+          inArray(rotationChecklistItems.status, ['unconfirmed', 'failed', 'max_retries_exceeded'])
+        )
+      )
     this.set(Number(row?.count ?? 0))
   },
 })

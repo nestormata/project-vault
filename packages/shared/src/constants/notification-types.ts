@@ -6,6 +6,8 @@ export const NOTIFICATION_ALERT_TYPES = [
   'service.down',
   'service.recovery',
   'rotation.stale',
+  'rotation.confirmation_failed',
+  'rotation.max_retries_exceeded',
   'backup.failure',
   'machine_key.expiry',
   'security.anomalous_access',
