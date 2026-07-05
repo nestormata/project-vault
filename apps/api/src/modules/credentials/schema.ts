@@ -30,6 +30,8 @@ export const MAX_ACTIVE_DEPENDENCIES = 200
 const lifecycleFieldsSchema = z.object({
   expiresAt: z.iso.datetime().nullable().optional(),
   rotationSchedule: z.string().trim().nullable().optional(),
+  // Story 7.2 D7 — opt-out of the offline agent's local cache for high-sensitivity credentials.
+  cacheable: z.boolean().optional(),
 })
 
 export const CreateCredentialBodySchema = z
@@ -172,6 +174,7 @@ export const CredentialLifecycleResponseSchema = z
       id: z.uuid(),
       expiresAt: z.iso.datetime().nullable(),
       rotationSchedule: z.string().nullable(),
+      cacheable: z.boolean(),
       updatedAt: z.iso.datetime(),
     }),
   })

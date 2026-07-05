@@ -155,6 +155,18 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     compensatingControls: [TOKEN_IS_CREDENTIAL, IP_RATE_LIMIT, 'per-key-lockout'],
     expiresAfterStory: null,
   },
+  {
+    route: 'GET /api/v1/machine/projects/:projectId/credentials/:name/value',
+    reason:
+      "Story 7.2 D4 — machine-authenticated credential retrieval. Registered with SecureRoute's requireAuth:false public path because the caller presents a machine JWT via Authorization: Bearer, not a human session cookie; the handler's first action is a manual verifyMachineRequest() call that re-verifies the JWT and live-rechecks the referenced api_keys row is still non-revoked.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      'machine-jwt-verification',
+      'live-revocation-recheck',
+      TOKEN_IS_CREDENTIAL,
+    ],
+    expiresAfterStory: null,
+  },
 ]
 
 export const HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS = {
@@ -705,6 +717,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'read',
     auditOmissionReason:
       'Public pre-auth token exchange; no audit row is written here (no org context is resolvable yet). lastUsedAt is updated via the admin connection, not an audited mutation.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/machine/projects/:projectId/credentials/:name/value': {
+    action: 'sensitive-read',
+    auditOmissionReason:
+      "Machine-authenticated public route (D4) — org context is not resolvable until verifyMachineRequest() resolves the JWT, so the handler opens its own withOrg() transaction rather than SecureRoute's declarative one. A credential.value_revealed audit row (actorType: machine_user) is still written fail-closed via writeMachineAuditEntryOrFailClosed() inside that same transaction (AC-9), just not through the secureCtx.tx path this registry's opt-out check expects.",
     reviewer: SECURITY_OWNER,
   },
 }
