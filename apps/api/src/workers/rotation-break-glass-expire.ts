@@ -3,7 +3,7 @@ import type { Tx } from '@project-vault/db'
 import { credentialVersions } from '@project-vault/db/schema'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { tryAcquireCredentialScopedLock } from '../lib/rotation-locks.js'
-import { writeSystemActorAuditRow } from '../lib/system-actor-audit.js'
+import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { rotationBreakGlassOverlapExpirationsTotal } from '../modules/rotation/metrics.js'
 
 const EVENT_TYPE = 'rotation.break_glass_overlap_expired'
@@ -49,7 +49,7 @@ async function expireOneVersion(orgId: string, candidate: ExpiredVersionRow): Pr
       .returning({ id: credentialVersions.id })
     if (!updated) return
 
-    await writeSystemActorAuditRow(tx, {
+    await writeSystemAuditRow(tx, {
       orgId,
       eventType: EVENT_TYPE,
       payload: { credentialVersionId: candidate.id, credentialId: candidate.credentialId },

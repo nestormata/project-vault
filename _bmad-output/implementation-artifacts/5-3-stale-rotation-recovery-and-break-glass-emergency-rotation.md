@@ -910,7 +910,6 @@ Claude Sonnet 4.6 (via `/bmad-dev-story`, resumed and finalized directly in the 
 
 **API — lib / config / wiring**
 - `apps/api/src/lib/rotation-locks.ts` (new)
-- `apps/api/src/lib/system-actor-audit.ts` (new)
 - `apps/api/src/lib/boss.ts` (+ test)
 - `apps/api/src/lib/route-exemptions.ts`
 - `apps/api/src/config/env.ts` (+ test)

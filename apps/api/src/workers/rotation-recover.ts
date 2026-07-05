@@ -4,7 +4,7 @@ import { rotationChecklistItems, rotations } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { tryAcquireRotationScopedLock } from '../lib/rotation-locks.js'
-import { writeSystemActorAuditRow } from '../lib/system-actor-audit.js'
+import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import {
   dispatchDirectUserNotification,
   enqueueSecurityAlertNotification,
@@ -77,7 +77,7 @@ async function recoverOneRotation(
       )
       .returning({ id: rotationChecklistItems.id })
 
-    await writeSystemActorAuditRow(tx, {
+    await writeSystemAuditRow(tx, {
       orgId,
       eventType: EVENT_TYPE,
       payload: {
