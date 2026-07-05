@@ -1,6 +1,6 @@
 # Story 5.3: Stale Rotation Recovery & Break-Glass Emergency Rotation
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for the THIRD and final story in Epic 5 (Credential Rotation). Stories 5.1 and 5.2 are `ready-for-dev` but NOT YET IMPLEMENTED in this branch (confirmed via `ls`: no `apps/api/src/modules/rotation/`, no `packages/db/src/schema/rotations.ts` exist yet) — every reference below to `rotations`/`rotation_checklist_items` schema, the advisory-lock pattern, or the confirm/fail/retry/complete endpoints describes what 5.1's and 5.2's own story files specify they will build, not code that exists in this branch today. This story's own new code (break-glass, stale-recovery job, resume/abandon) assumes 5.1 AND 5.2 have both landed first. Read "Prerequisites" and "Conflict Resolution & Design Decisions" before touching anything — this story resolves several real conflicts between `architecture.md`, `prd.md`, and `epics.md` that the exhaustive research for this story surfaced, and modifies one already-shipped Story 2.2 function (`revealCurrentValue`). -->
 
