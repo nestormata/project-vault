@@ -103,7 +103,11 @@ export async function runMachineKeyOverlapRevokeJob(logger?: WorkerLogger): Prom
  * established (not a fourth near-duplicate alert type) — `reason: 'rotation_overlap_ending'`
  * differentiates it from 7.1's own `reason: 'natural_expiry'` use of the same template.
  * `overlap_alert_sent` is the dedupe flag (a simple boolean, not a lead-days array, since there's
- * only one threshold here).
+ * only one threshold here) — claimed via a conditional `WHERE overlap_alert_sent = false` CAS
+ * update *before* queuing the notification (mirroring the revoke job's own `WHERE revokedAt IS
+ * NULL` idempotency pattern just above), so two overlapping/concurrent runs of this job can never
+ * both send the same alert for the same key: the loser's WHERE simply matches 0 rows once the
+ * winner's update has committed.
  */
 export async function runMachineKeyOverlapAlertJob(
   boss: BossService,
@@ -140,7 +144,17 @@ export async function runMachineKeyOverlapAlertJob(
       for (const row of rows) {
         try {
           const jobs = await runOrgScopedJob(orgId, ALERT_JOB_NAME, async ({ tx }) => {
-            const entries = await createOrgAdminNotificationEntries({
+            // Claim the row first: a concurrent/overlapping run of this same job racing on the
+            // same key finds 0 rows matched here once this transaction commits, so the alert is
+            // never sent twice for the same key.
+            const [claimed] = await tx
+              .update(apiKeys)
+              .set({ overlapAlertSent: true })
+              .where(and(eq(apiKeys.id, row.id), eq(apiKeys.overlapAlertSent, false)))
+              .returning({ id: apiKeys.id })
+            if (!claimed) return []
+
+            return createOrgAdminNotificationEntries({
               orgId,
               tx,
               template: {
@@ -156,8 +170,6 @@ export async function runMachineKeyOverlapAlertJob(
                 },
               },
             })
-            await tx.update(apiKeys).set({ overlapAlertSent: true }).where(eq(apiKeys.id, row.id))
-            return entries
           })
           allJobs.push(...jobs)
         } catch (error) {
