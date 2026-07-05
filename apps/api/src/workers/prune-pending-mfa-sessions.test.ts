@@ -1,15 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { organizations, pendingMfaSessions, users } from '@project-vault/db/schema'
-
-vi.stubEnv(
-  'DATABASE_URL',
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-)
-
-const { prunePendingMfaSessions } = await import('./prune-pending-mfa-sessions.js')
+import { prunePendingMfaSessions } from './prune-pending-mfa-sessions.js'
 
 async function createUserAndOrg(label: string) {
   const [org] = await getDb()

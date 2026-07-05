@@ -203,7 +203,7 @@ function buildLifecyclePatch(
   body: UpdateCredentialLifecycleBody
 ) {
   const updates: Partial<typeof credentials.$inferInsert> = {}
-  const changed: Array<'expiresAt' | 'rotationSchedule'> = []
+  const changed: Array<'expiresAt' | 'rotationSchedule' | 'cacheable'> = []
 
   if ('expiresAt' in rawBody) {
     changed.push('expiresAt')
@@ -213,6 +213,10 @@ function buildLifecyclePatch(
   if ('rotationSchedule' in rawBody) {
     changed.push('rotationSchedule')
     updates.rotationSchedule = body.rotationSchedule ?? null
+  }
+  if ('cacheable' in rawBody) {
+    changed.push('cacheable')
+    updates.cacheable = body.cacheable ?? true
   }
 
   return { updates, changed }
@@ -226,6 +230,7 @@ function lifecycleValuesEqual(
   existing: {
     expiresAt: Date | null
     rotationSchedule: string | null
+    cacheable: boolean
   },
   updates: Partial<typeof credentials.$inferInsert>
 ): boolean {
@@ -236,6 +241,9 @@ function lifecycleValuesEqual(
     'rotationSchedule' in updates &&
     (updates.rotationSchedule ?? null) !== existing.rotationSchedule
   ) {
+    return false
+  }
+  if ('cacheable' in updates && updates.cacheable !== existing.cacheable) {
     return false
   }
   return true
@@ -257,6 +265,7 @@ export async function updateCredentialLifecycle(
       id: credentials.id,
       expiresAt: credentials.expiresAt,
       rotationSchedule: credentials.rotationSchedule,
+      cacheable: credentials.cacheable,
       updatedAt: credentials.updatedAt,
     })
     .from(credentials)
@@ -272,6 +281,7 @@ export async function updateCredentialLifecycle(
         id: existing.id,
         expiresAt: existing.expiresAt?.toISOString() ?? null,
         rotationSchedule: existing.rotationSchedule,
+        cacheable: existing.cacheable,
         updatedAt: existing.updatedAt.toISOString(),
       },
     }
@@ -285,6 +295,7 @@ export async function updateCredentialLifecycle(
       id: credentials.id,
       expiresAt: credentials.expiresAt,
       rotationSchedule: credentials.rotationSchedule,
+      cacheable: credentials.cacheable,
       updatedAt: credentials.updatedAt,
     })
 
@@ -296,12 +307,14 @@ export async function updateCredentialLifecycle(
       id: updated.id,
       expiresAt: updated.expiresAt?.toISOString() ?? null,
       rotationSchedule: updated.rotationSchedule,
+      cacheable: updated.cacheable,
       updatedAt: updated.updatedAt.toISOString(),
     },
     auditPayload: {
       changed,
       expiresAt: updated.expiresAt?.toISOString() ?? null,
       rotationSchedule: updated.rotationSchedule,
+      cacheable: updated.cacheable,
     },
   }
 }

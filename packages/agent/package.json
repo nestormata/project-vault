@@ -1,0 +1,36 @@
+{
+  "name": "@project-vault/agent",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./cache-crypto": {
+      "types": "./dist/cache-crypto.d.ts",
+      "default": "./dist/cache-crypto.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --coverage",
+    "build": "tsc"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/tsconfig": "workspace:*",
+    "@types/node": "^26.0.1",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^10.6.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

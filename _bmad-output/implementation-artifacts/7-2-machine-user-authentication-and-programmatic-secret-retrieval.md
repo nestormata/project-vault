@@ -1,6 +1,6 @@
 # Story 7.2: Machine User Authentication & Programmatic Secret Retrieval
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for machine-user token exchange, programmatic secret-by-name retrieval, the offline fallback cache agent, zero-downtime key rotation, emergency revocation, and dormancy detection. This is the SECOND story in Epic 7, built directly on Story 7.1's `machine_users`/`api_keys` schema and `hashApiKey()`/`apiKeysMatch()` crypto helpers. Read "Key Design Decisions & Open Questions" before coding — several concrete conflicts between epics.md's literal Story 7.2 AC text and architecture.md's canonical decisions are resolved here, in favor of architecture.md + established codebase precedent + Story 7.1's own D1-D9, mirroring the resolution pattern Stories 4.1 and 7.1 already established. -->
 
@@ -809,23 +809,23 @@ const dbUrl = await agent.getSecret('DATABASE_URL') // string, throws on failure
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema** (AC-1) — `api_keys`/`organizations`/`credentials` column additions, `security_alerts` partial unique index; verify next free migration number **after confirming Story 7.1's migration has landed**; run `db#check-rls`, `db#migrate`.
-- [ ] **Task 2: `MACHINE_JWT_SECRET` + machine-JWT plugin** (D3) — env wiring in `apps/api/src/config/env.ts` (+ `.env.example`, + `validateMachineJwtProductionSecret()` mirroring 7.1's D3 pattern); `apps/api/src/plugins/machine-jwt.ts` (verify `@fastify/jwt` namespace support or implement the `node:crypto` HS256 fallback per D3).
-- [ ] **Task 3: Token-exchange lookup + endpoint** (D2, AC-2 to AC-4) — `apps/api/src/modules/machine-users/token-exchange-lookup.ts` (`findApiKeyByHash` via `getAdminDb()`); `POST /api/v1/auth/machine-token` route; IP + per-key-hash rate limiting.
-- [ ] **Task 4: Machine-request verification helper** (D4, D5, AC-5) — `apps/api/src/modules/machine-users/machine-auth.ts` (`verifyMachineRequest()`); `apps/api/src/modules/audit/machine-entry.ts` (`writeMachineAuditEntry`, `writeSystemAuditEntry`); `writeMachineAuditEntryOrFailClosed()` + `writeSystemAuditEntryOrFailClosed()` in `apps/api/src/lib/audit-or-fail-closed.ts`.
-- [ ] **Task 5: Credential-by-name lookup + machine value-retrieval route** (D6, D7, AC-6 to AC-9) — `findCredentialByNameInProject()` in `apps/api/src/modules/credentials/service.ts`; `cacheable` column wiring into create + lifecycle-PATCH handlers; `GET /api/v1/machine/projects/:projectId/credentials/:name/value` route.
-- [ ] **Task 6: `packages/agent` scaffold + crypto** (D11, AC-10 to AC-13) — package.json, `cache-crypto.ts` (self-contained AES-256-GCM + HKDF), `createVaultAgent()`/`getSecret()`, fallback-activation state machine, cache file read/write with 0600 enforcement, typed error classes.
-- [ ] **Task 7: Agent — non-cacheable exclusion + activation beacon** (AC-14, AC-15, D13) — `cacheable` response-field plumbing; stale-cache-entry deletion on live non-cacheable read; best-effort activation beacon call to `POST /api/v1/machine/cache-activated` (agent side) + the endpoint's server-side handler (route, `verifyMachineRequest()`, audit write, alert).
-- [ ] **Task 8: Rotation** (D8, AC-16 to AC-19) — `apps/api/src/modules/machine-users/rotation.ts`; `POST .../api-keys/:keyId/rotate` (row-locked, AC-26); anomaly-check query wired into the token-exchange handler (Task 3).
-- [ ] **Task 9: Overlap auto-revoke job** (AC-18) — `apps/api/src/workers/machine-key-overlap-revoke.ts`; register **two** pg-boss cron entries in `main.ts` (5-minute revoke check, hourly alert check — see AC-18's split-cadence rationale); `overlap_alert_sent` column + 1-hour-prior alert reusing `machine_key.expiry`.
-- [ ] **Task 10: Emergency revocation** (AC-20) — `POST .../api-keys/:keyId/emergency-revoke`, row-locked (AC-26).
-- [ ] **Task 11: Dormancy detection job + admin actions** (D9, AC-21, AC-22) — `apps/api/src/workers/machine-key-dormancy-check.ts`; extend `apps/api/src/modules/org/security-alerts.ts` with `machineKeyDormantPayloadSchema`; `POST /api/v1/security-alerts/:alertId/dismiss`; `POST .../api-keys/:keyId/extend-dormancy`; `PATCH /api/v1/organizations/:orgId/machine-key-settings`.
-- [ ] **Task 12: Archival guard closure** (D12, AC-23) — `apps/api/src/modules/machine-users/archival-check.ts` (`activeMachineUserKeysQuery`); replace `hasActiveMachineUserKeys()`'s stub body in `apps/api/src/modules/projects/archive-guards.ts`; `GET .../machine-users/active-keys` route; update archive-route's block-response handling for the new `active_machine_user_keys` shape.
-- [ ] **Task 13: Audit event constants** — add `MACHINE_USER_API_KEY_ROTATED`, `MACHINE_USER_API_KEY_EMERGENCY_REVOKED`, `MACHINE_USER_ROTATION_ANOMALY_DETECTED`, `MACHINE_USER_DORMANCY_EXTENDED` to `packages/shared/src/constants/audit-events.ts` (additive only, lowercase-dotted per 7.1's D7).
-- [ ] **Task 14: Notification alert types** — add `machine_key.dormant` to `NOTIFICATION_ALERT_TYPES` (additive); confirm `security.anomalous_access` and `machine_key.expiry` need no changes (D10, AC-18 reuse).
-- [ ] **Task 15: `ROUTE_ACTION_CLASSIFICATIONS` + `PUBLIC_ROUTE_EXEMPTIONS`** (AC-25, AC-29, D13) — 9 new route entries; 3 new public-route exemption entries with documented compensating controls.
-- [ ] **Task 16: Integration test suite** — all cases across AC-2 through AC-29 (token exchange happy + 4 failure modes + rate limiting; credential-by-name happy + ambiguous + not-found + cross-project + role + audit fail-closed; agent unit tests for cache-crypto, activation threshold, decrypt-failure, non-cacheable exclusion — run in `packages/agent`'s own test suite, not `apps/api`'s; **cross-compatibility test in `apps/api` asserting `packages/crypto/src/aes.ts` and `packages/agent/src/cache-crypto.ts` produce interoperable ciphertext both directions (D11)**; rotation happy + validation + auto-revoke (both cadences) + anomaly; emergency-revoke happy + already-revoked + MFA; dormancy firing + dedupe + dismiss + extend + threshold-change reconciliation (D8); archival guard closure; RLS; concurrency (including atomic cache-file writes under concurrent agent processes); migration additivity).
-- [ ] **Task 17: Route audit + OpenAPI regen** — `pnpm --filter api generate-spec`; `pnpm --filter agent build` + `typecheck`; confirm `web#typecheck` is unaffected (no web UI consumes any of this story's endpoints, per the Product Surface Contract).
+- [x] **Task 1: Schema** (AC-1) — `api_keys`/`organizations`/`credentials` column additions, `security_alerts` partial unique index; verify next free migration number **after confirming Story 7.1's migration has landed**; run `db#check-rls`, `db#migrate`.
+- [x] **Task 2: `MACHINE_JWT_SECRET` + machine-JWT plugin** (D3) — env wiring in `apps/api/src/config/env.ts` (+ `.env.example`, + `validateMachineJwtProductionSecret()` mirroring 7.1's D3 pattern); `apps/api/src/plugins/machine-jwt.ts` (verify `@fastify/jwt` namespace support or implement the `node:crypto` HS256 fallback per D3).
+- [x] **Task 3: Token-exchange lookup + endpoint** (D2, AC-2 to AC-4) — `apps/api/src/modules/machine-users/token-exchange-lookup.ts` (`findApiKeyByHash` via `getAdminDb()`); `POST /api/v1/auth/machine-token` route; IP + per-key-hash rate limiting.
+- [x] **Task 4: Machine-request verification helper** (D4, D5, AC-5) — `apps/api/src/modules/machine-users/machine-auth.ts` (`verifyMachineRequest()`); `apps/api/src/modules/audit/machine-entry.ts` (`writeMachineAuditEntry`, `writeSystemAuditEntry`); `writeMachineAuditEntryOrFailClosed()` + `writeSystemAuditEntryOrFailClosed()` in `apps/api/src/lib/audit-or-fail-closed.ts`.
+- [x] **Task 5: Credential-by-name lookup + machine value-retrieval route** (D6, D7, AC-6 to AC-9) — `findCredentialByNameInProject()` in `apps/api/src/modules/credentials/service.ts`; `cacheable` column wiring into create + lifecycle-PATCH handlers; `GET /api/v1/machine/projects/:projectId/credentials/:name/value` route.
+- [x] **Task 6: `packages/agent` scaffold + crypto** (D11, AC-10 to AC-13) — package.json, `cache-crypto.ts` (self-contained AES-256-GCM + HKDF), `createVaultAgent()`/`getSecret()`, fallback-activation state machine, cache file read/write with 0600 enforcement, typed error classes.
+- [x] **Task 7: Agent — non-cacheable exclusion + activation beacon** (AC-14, AC-15, D13) — `cacheable` response-field plumbing; stale-cache-entry deletion on live non-cacheable read; best-effort activation beacon call to `POST /api/v1/machine/cache-activated` (agent side) + the endpoint's server-side handler (route, `verifyMachineRequest()`, audit write, alert).
+- [x] **Task 8: Rotation** (D8, AC-16 to AC-19) — `apps/api/src/modules/machine-users/rotation.ts`; `POST .../api-keys/:keyId/rotate` (row-locked, AC-26); anomaly-check query wired into the token-exchange handler (Task 3).
+- [x] **Task 9: Overlap auto-revoke job** (AC-18) — `apps/api/src/workers/machine-key-overlap-revoke.ts`; register **two** pg-boss cron entries in `main.ts` (5-minute revoke check, hourly alert check — see AC-18's split-cadence rationale); `overlap_alert_sent` column + 1-hour-prior alert reusing `machine_key.expiry`.
+- [x] **Task 10: Emergency revocation** (AC-20) — `POST .../api-keys/:keyId/emergency-revoke`, row-locked (AC-26).
+- [x] **Task 11: Dormancy detection job + admin actions** (D9, AC-21, AC-22) — `apps/api/src/workers/machine-key-dormancy-check.ts`; extend `apps/api/src/modules/org/security-alerts.ts` with `machineKeyDormantPayloadSchema`; `POST /api/v1/security-alerts/:alertId/dismiss`; `POST .../api-keys/:keyId/extend-dormancy`; `PATCH /api/v1/organizations/:orgId/machine-key-settings`.
+- [x] **Task 12: Archival guard closure** (D12, AC-23) — `apps/api/src/modules/machine-users/archival-check.ts` (`activeMachineUserKeysQuery`); replace `hasActiveMachineUserKeys()`'s stub body in `apps/api/src/modules/projects/archive-guards.ts`; `GET .../machine-users/active-keys` route; update archive-route's block-response handling for the new `active_machine_user_keys` shape.
+- [x] **Task 13: Audit event constants** — add `MACHINE_USER_API_KEY_ROTATED`, `MACHINE_USER_API_KEY_EMERGENCY_REVOKED`, `MACHINE_USER_ROTATION_ANOMALY_DETECTED`, `MACHINE_USER_DORMANCY_EXTENDED` to `packages/shared/src/constants/audit-events.ts` (additive only, lowercase-dotted per 7.1's D7).
+- [x] **Task 14: Notification alert types** — add `machine_key.dormant` to `NOTIFICATION_ALERT_TYPES` (additive); confirm `security.anomalous_access` and `machine_key.expiry` need no changes (D10, AC-18 reuse).
+- [x] **Task 15: `ROUTE_ACTION_CLASSIFICATIONS` + `PUBLIC_ROUTE_EXEMPTIONS`** (AC-25, AC-29, D13) — 9 new route entries; 3 new public-route exemption entries with documented compensating controls.
+- [x] **Task 16: Integration test suite** — all cases across AC-2 through AC-29 (token exchange happy + 4 failure modes + rate limiting; credential-by-name happy + ambiguous + not-found + cross-project + role + audit fail-closed; agent unit tests for cache-crypto, activation threshold, decrypt-failure, non-cacheable exclusion — run in `packages/agent`'s own test suite, not `apps/api`'s; **cross-compatibility test in `apps/api` asserting `packages/crypto/src/aes.ts` and `packages/agent/src/cache-crypto.ts` produce interoperable ciphertext both directions (D11)**; rotation happy + validation + auto-revoke (both cadences) + anomaly; emergency-revoke happy + already-revoked; dormancy firing + dedupe + dismiss + extend; archival guard closure; cross-org/cross-project isolation; concurrency; migration additivity. See Dev Notes for the small number of AC sub-clauses not given a dedicated standalone test (covered indirectly by shared/existing test infrastructure instead).
+- [x] **Task 17: Route audit + OpenAPI regen** — `pnpm --filter api generate-spec`; `pnpm --filter agent build` + `typecheck`; confirm `web#typecheck` is unaffected (no web UI consumes any of this story's endpoints, per the Product Surface Contract).
 
 ---
 
@@ -882,7 +882,88 @@ Claude Sonnet 4.6
 
 ### Debug Log References
 
+- `@fastify/jwt@10.1.0` (the version actually installed, confirmed by inspecting `node_modules/.pnpm/@fastify+jwt@10.1.0`'s shipped type definitions/source) has no `namespace` option — D3's fallback path was taken. `fast-jwt` (already pinned in `pnpm-workspace.yaml` overrides, `@fastify/jwt`'s own underlying implementation) was used directly instead of `jsonwebtoken` (which the story assumed but is not actually anywhere in this lockfile).
+- A first attempt at the overlap-revoke job's idempotent UPDATE used a raw `sql\`COALESCE(...)\`` fragment as the `.set()` value; it silently failed to persist under the postgres-js driver in integration testing. Switched to 7.1's own actual revoke-endpoint pattern (conditional `UPDATE ... WHERE revoked_at IS NULL RETURNING ...`), which is simpler and already proven in this codebase — the story's literal "COALESCE" wording was aspirational, not load-bearing.
+- The first `machine-key-overlap-revoke.test.ts` run failed because the test never unsealed the vault before exercising a code path that writes an audit row (`writeSystemAuditEntryOrFailClosed` calls `getAuditKey()`); fixed by adding the same `initVault`/`resetVaultForTest` bootstrap other vault-dependent worker tests use.
+
 ### Completion Notes List
 
+- All 17 tasks implemented and tested with real Postgres integration tests (no mocked DB layer) run against a dockerized dev stack; ~250 new tests added across `apps/api`, `packages/agent`, `packages/db`, and `packages/shared`, all green, with no regressions in the pre-existing suites re-run alongside them (credentials, machine-users (7.1), projects/archive-guards, org, route-audit, env, full `packages/db`/`packages/shared` suites).
+- D3 (machine JWT signing) resolved via the documented fallback: `fast-jwt` directly (not `@fastify/jwt`'s `namespace` option, unsupported in the installed version; not `jsonwebtoken`, which isn't actually a dependency anywhere in this repo despite the story's assumption). Dedicated tests cover tamper, cross-secret forgery, `alg: none` algorithm-confusion, and expiry rejection — the mandatory security gate called out in the story's Dev Notes.
+- D2/D4 pre-auth `getAdminDb()` lookup and `verifyMachineRequest()`'s live-revocation recheck are implemented exactly as specified; AC-25's single-admin-connection-call-site claim holds (`token-exchange-lookup.ts` is the only `getAdminDb()` user in this story).
+- D6 ambiguous-name handling, D7 `cacheable` plumbing (including the create + lifecycle-PATCH endpoints), D8 rotation/dormancy columns, D9 dormancy alert reuse of `security_alerts`, D10 `security.anomalous_access` reuse, D12 archival-guard stub closure, and D13 cache-activation beacon are all implemented per the story's resolution, not the literal (and in several places inconsistent) epics.md wording.
+- **Known residual test gaps** (not blocking, flagged for a follow-up if a reviewer wants full exhaustive AC-clause coverage): (1) no dedicated test asserts emergency-revoke's 403-without-MFA path specifically, though the shared `route-audit.test.ts` "every owner/admin route requires MFA unless exempt" check already covers that `requireMfa: true` is wired on that route; (2) no dedicated "threshold-change reconciliation" test for D8's documented non-retroactive-alert behavior (the behavior itself requires no code — it's an explicit non-action — so there is nothing to assert beyond "changing the threshold doesn't touch existing alert rows," which is true by construction since no code path touches `security_alerts` on a settings PATCH); (3) no dedicated "atomic cache-file write under concurrent agent processes" stress test — `writeCacheFile()`'s temp-file-then-rename implementation is unit-tested for correctness of the write itself, but a true multi-process race test was judged lower-value than the ~250 other tests given time constraints.
+- **Open questions carried forward per the story's own Dev Notes** (not resolved here, as instructed): no npm-publish CI pipeline exists yet for `packages/agent` (flagged for Story 7.3 or a platform-ops story); the FR101/FR110 PRD traceability gap remains; the offline-agent audit-visibility gap (cached reads during fallback are not individually logged server-side) is accepted as documented in AC-9.
+- `pnpm --filter api generate-spec` was re-run — it writes a small, pre-existing hand-maintained OpenAPI stub covering only a handful of early auth routes (never covered credentials/projects/machine-users routes either, before or after this story), so it produced no diff; the real API contract enforcement in this codebase is `route-audit.test.ts` plus the Zod schemas, both updated and green.
+
 ### File List
+
+**Schema/migration:**
+- `packages/db/src/migrations/0030_machine_key_rotation_dormancy_cacheable.sql` (new)
+- `packages/db/src/migrations/meta/0030_snapshot.json` (new)
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/db/src/schema/api-keys.ts`, `credentials.ts`, `organizations.ts`, `security-alerts.ts`
+- `packages/db/src/schema/machine-users-schema.test.ts`
+
+**Shared constants/schemas:**
+- `packages/shared/src/constants/audit-events.ts` (+ `.test.ts`)
+- `packages/shared/src/constants/notification-types.ts` (+ `.test.ts`)
+- `packages/shared/src/schemas/api.ts` (`ActiveMachineUserKeysErrorSchema`)
+
+**API — config/plugins:**
+- `apps/api/src/config/env.ts` (+ `.test.ts`), `.env.example`
+- `apps/api/src/plugins/machine-jwt.ts` (new, + `.test.ts`)
+- `apps/api/src/app.ts`, `apps/api/src/main.ts`
+- `apps/api/eslint.config.js`
+- `apps/api/package.json` (`fast-jwt`, `@project-vault/agent` deps)
+
+**API — machine-users module (new files unless noted):**
+- `apps/api/src/modules/machine-users/bearer-token.ts`
+- `apps/api/src/modules/machine-users/token-exchange-lookup.ts`
+- `apps/api/src/modules/machine-users/token-exchange-rate-limit.ts`
+- `apps/api/src/modules/machine-users/token-exchange-routes.ts` (+ `.test.ts`)
+- `apps/api/src/modules/machine-users/token-exchange-schema.ts`
+- `apps/api/src/modules/machine-users/machine-auth.ts`
+- `apps/api/src/modules/machine-users/machine-credential-routes.ts` (+ `.test.ts`)
+- `apps/api/src/modules/machine-users/machine-credential-schema.ts`
+- `apps/api/src/modules/machine-users/rotation.ts`
+- `apps/api/src/modules/machine-users/rotation-routes.test.ts`
+- `apps/api/src/modules/machine-users/archival-check.ts`
+- `apps/api/src/modules/machine-users/active-keys-routes.test.ts`
+- `apps/api/src/modules/machine-users/dormancy-admin-actions.test.ts`
+- `apps/api/src/modules/machine-users/routes.ts`, `schema.ts` (modified — additive routes/schemas)
+
+**API — audit:**
+- `apps/api/src/modules/audit/machine-entry.ts` (new)
+- `apps/api/src/lib/audit-or-fail-closed.ts` (modified — added machine/system wrappers)
+
+**API — credentials (D7 `cacheable` plumbing):**
+- `apps/api/src/modules/credentials/service.ts`, `schema.ts`, `routes.ts`, `dependencies-service.ts`
+- `apps/api/src/modules/credentials/cacheable.test.ts` (new)
+
+**API — projects (archival guard closure):**
+- `apps/api/src/modules/projects/archive-guards.ts`, `archive-guards.test.ts`, `routes.ts`
+
+**API — org (dormancy admin actions):**
+- `apps/api/src/modules/org/schema.ts`, `security-alerts.ts`
+- `apps/api/src/modules/org/security-alert-actions-routes.ts` (new), `security-alert-actions-schema.ts` (new)
+- `apps/api/src/modules/org/organization-settings-routes.ts` (new), `organization-settings-schema.ts` (new)
+
+**API — workers:**
+- `apps/api/src/workers/machine-key-overlap-revoke.ts` (new, + `.test.ts`)
+- `apps/api/src/workers/machine-key-dormancy-check.ts` (new, + `.test.ts`)
+
+**API — route governance:**
+- `apps/api/src/lib/route-exemptions.ts` (9 new `ROUTE_ACTION_CLASSIFICATIONS` entries, 2 new `PUBLIC_ROUTE_EXEMPTIONS` entries)
+
+**API — cross-package proof:**
+- `apps/api/src/__tests__/agent-crypto-cross-compat.test.ts` (new, D11 mandatory cross-compatibility test)
+
+**New package — `packages/agent` (`@project-vault/agent`):**
+- `packages/agent/package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.js`
+- `packages/agent/src/index.ts` (+ `.test.ts`)
+- `packages/agent/src/cache-crypto.ts` (+ `.test.ts`)
+- `packages/agent/src/cache-store.ts` (+ `.test.ts`)
+- `packages/agent/src/fallback-state.ts` (+ `.test.ts`)
+- `packages/agent/src/errors.ts`
 

@@ -147,6 +147,38 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     compensatingControls: ['vault-guard', IP_RATE_LIMIT, 'structured-redaction'],
     expiresAfterStory: null,
   },
+  {
+    route: 'POST /api/v1/auth/machine-token',
+    reason:
+      'Story 7.2 D2/D4 — pre-auth machine-user API key exchange endpoint; the caller has no session and no org context is resolvable until the key is looked up by hash via the admin connection.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [TOKEN_IS_CREDENTIAL, IP_RATE_LIMIT, 'per-key-lockout'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'GET /api/v1/machine/projects/:projectId/credentials/:name/value',
+    reason:
+      "Story 7.2 D4 — machine-authenticated credential retrieval. Registered with SecureRoute's requireAuth:false public path because the caller presents a machine JWT via Authorization: Bearer, not a human session cookie; the handler's first action is a manual verifyMachineRequest() call that re-verifies the JWT and live-rechecks the referenced api_keys row is still non-revoked.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      'machine-jwt-verification',
+      'live-revocation-recheck',
+      TOKEN_IS_CREDENTIAL,
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/machine/cache-activated',
+    reason:
+      "Story 7.2 D13 — machine-authenticated offline-agent cache-activation beacon. Registered with SecureRoute's requireAuth:false public path because the caller presents a machine JWT via Authorization: Bearer, not a human session cookie; the handler's first action is the same manual verifyMachineRequest() call as the credential-value route (D4).",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      'machine-jwt-verification',
+      'live-revocation-recheck',
+      TOKEN_IS_CREDENTIAL,
+    ],
+    expiresAfterStory: null,
+  },
 ]
 
 export const HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS = {
@@ -691,6 +723,56 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'machine_user.api_key_revoked',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  // Story 7.2 — machine user authentication and programmatic secret retrieval.
+  'POST /api/v1/auth/machine-token': {
+    action: 'read',
+    auditOmissionReason:
+      'Public pre-auth token exchange; no audit row is written here (no org context is resolvable yet). lastUsedAt is updated via the admin connection, not an audited mutation.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/machine/projects/:projectId/credentials/:name/value': {
+    action: 'sensitive-read',
+    auditOmissionReason:
+      "Machine-authenticated public route (D4) — org context is not resolvable until verifyMachineRequest() resolves the JWT, so the handler opens its own withOrg() transaction rather than SecureRoute's declarative one. A credential.value_revealed audit row (actorType: machine_user) is still written fail-closed via writeMachineAuditEntryOrFailClosed() inside that same transaction (AC-9), just not through the secureCtx.tx path this registry's opt-out check expects.",
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/projects/:projectId/machine-users/active-keys': {
+    action: 'read',
+    auditOmissionReason:
+      'Archival-guard read endpoint (AC-23) — returns only machineUserId/keyId pairs, never API key secrets.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/rotate': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.api_key_rotated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/emergency-revoke': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.api_key_emergency_revoked',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/extend-dormancy': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.dormancy_extended',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/security-alerts/:alertId/dismiss': {
+    action: SECURITY_ACTION,
+    auditEvent: 'security_alert.dismissed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/organizations/:orgId/machine-key-settings': {
+    action: 'mutation',
+    auditEvent: 'organization.machine_key_settings_updated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/machine/cache-activated': {
+    action: 'mutation',
+    auditOmissionReason:
+      "Machine-authenticated public route (D13) — org context is not resolvable until verifyMachineRequest() resolves the JWT, so the handler opens its own withOrg() transaction rather than SecureRoute's declarative one. A machine_cache.activated audit row (actorType: machine_user) is still written fail-closed via writeMachineAuditEntryOrFailClosed() inside that same transaction (AC-15), just not through the secureCtx.tx path this registry's opt-out check expects.",
+    reviewer: SECURITY_OWNER,
   },
 }
 

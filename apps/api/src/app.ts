@@ -27,8 +27,14 @@ import { dashboardRoutes } from './modules/dashboard/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
+import { machineTokenExchangeRoutes } from './modules/machine-users/token-exchange-routes.js'
+import { machineCredentialRoutes } from './modules/machine-users/machine-credential-routes.js'
+import { cacheActivatedRoutes } from './modules/machine-users/cache-activated-routes.js'
+import { securityAlertActionsRoutes } from './modules/org/security-alert-actions-routes.js'
+import { organizationSettingsRoutes } from './modules/org/organization-settings-routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
+import { machineJwtPlugin } from './plugins/machine-jwt.js'
 import authenticatePlugin from './plugins/authenticate.js'
 import { structuredLoggingPlugin } from './plugins/structured-logging.js'
 import { httpMetricsPlugin } from './plugins/http-metrics.js'
@@ -175,6 +181,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     limits: { fileSize: 1_048_576 },
   })
   await fastify.register(jwtPlugin)
+  await fastify.register(machineJwtPlugin)
   await fastify.register(authenticatePlugin)
   await fastify.register(structuredLoggingPlugin)
   await fastify.register(httpMetricsPlugin)
@@ -190,6 +197,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Registered always (regardless of guard) so vault endpoints appear in the OpenAPI spec.
   await fastify.register(vaultRoutes)
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
+  await fastify.register(machineTokenExchangeRoutes, { prefix: '/api/v1/auth' })
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
   /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
      literal prefix strings; a shared constant would make them invisible to that parser. */
@@ -207,6 +215,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(adminRoutes, { prefix: '/api/v1/admin' })
   await fastify.register(notificationRoutes, { prefix: '/api/v1' })
   await fastify.register(machineUserRoutes, { prefix: '/api/v1' })
+  await fastify.register(machineCredentialRoutes, { prefix: '/api/v1/machine' })
+  await fastify.register(cacheActivatedRoutes, { prefix: '/api/v1/machine' })
+  await fastify.register(securityAlertActionsRoutes, { prefix: '/api/v1/security-alerts' })
+  await fastify.register(organizationSettingsRoutes, { prefix: '/api/v1/organizations' })
 
   return fastify
 }

@@ -145,6 +145,26 @@ export type SecurityAlertDismissBody = z.infer<typeof SecurityAlertDismissBodySc
 export const SecurityAlertParamsSchema = z.object({ securityAlertId: z.uuid() })
 export type SecurityAlertParams = z.infer<typeof SecurityAlertParamsSchema>
 
+// Story 7.2 D9 — dormancy alerts reuse security_alerts; this is the first-ever payload schema
+// for a machine-key alert type, extending the previously failed-auth-threshold-only union so the
+// existing list endpoint can render both alert types without a schema-mismatch warning.
+export const machineKeyDormantPayloadSchema = z
+  .object({
+    keyId: z.uuid(),
+    machineUserId: z.uuid(),
+    machineUserName: z.string(),
+    lastUsedAt: z.iso.datetime().nullable(),
+    projectId: z.uuid(),
+    keyName: z.string(),
+  })
+  .strict()
+
+export const securityAlertPayloadSchema = z.union([
+  failedAuthThresholdPayloadSchema,
+  anomalousAccessPayloadSchema,
+  machineKeyDormantPayloadSchema,
+])
+
 export const SecurityAlertsQuerySchema = z.object({
   status: z.enum(['PENDING_DELIVERY', 'delivered', 'dismissed', 'all']).default('all'),
   severity: z.enum(['info', 'warning', 'critical']).optional(),
@@ -160,7 +180,7 @@ export const securityAlertsResponseSchema = z.object({
         alertType: z.string(),
         severity: z.enum(['info', 'warning', 'critical']),
         status: z.enum(['PENDING_DELIVERY', 'delivered', 'dismissed']),
-        payload: failedAuthThresholdPayloadSchema,
+        payload: securityAlertPayloadSchema,
         deliveryStatus: z.enum(['pending_notification_channel', 'delivered', 'dismissed']),
         createdAt: z.iso.datetime(),
       })

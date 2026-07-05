@@ -1,7 +1,7 @@
 import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod/v4'
-import { AuditEvent } from '@project-vault/shared'
+import { ActiveMachineUserKeysErrorSchema, AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
@@ -41,10 +41,10 @@ import {
 import { getProjectMembershipRole, removeProjectMembership } from './member-management.js'
 import {
   findBlockingRotationIds,
-  hasActiveMachineUserKeys,
   PROJECT_ARCHIVED_ERROR,
   rejectIfProjectArchived,
 } from './archive-guards.js'
+import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 
@@ -823,7 +823,11 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: z.union([ApiErrorSchema, ActiveRotationsErrorSchema]),
+        409: z.union([
+          ApiErrorSchema,
+          ActiveRotationsErrorSchema,
+          ActiveMachineUserKeysErrorSchema,
+        ]),
         422: ApiErrorSchema,
       },
     },
@@ -868,19 +872,19 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           .send({ error: 'active_rotations', rotationIds: blockingRotationIds })
       }
 
-      // Epic 7 stub — always false until machine-user API keys are implemented. The result is
-      // still wired into a real branch (not just awaited-and-discarded) so that once Epic 7
-      // replaces the stub body with a real check, archival is blocked immediately with no
-      // further call-site changes required.
-      if (await hasActiveMachineUserKeys(secureCtx.tx, params.projectId)) {
+      // Story 7.2 D12: activeMachineUserKeysQuery() is the same query hasActiveMachineUserKeys()
+      // (archive-guards.ts) delegates to — queried directly here (not via the boolean helper)
+      // since the block response needs the actual machineUserIds, matching AC-23's exact shape.
+      const activeMachineUserKeys = await activeMachineUserKeysQuery(secureCtx.tx, params.projectId)
+      if (activeMachineUserKeys.length > 0) {
         logArchiveDenied(req, {
           projectId: params.projectId,
           callerId: secureCtx.auth.userId,
           reason: 'active_machine_user_keys',
         })
         return reply.status(409).send({
-          code: 'active_machine_user_keys',
-          message: 'Project has active machine-user API keys',
+          error: 'active_machine_user_keys' as const,
+          machineUserIds: activeMachineUserKeys.map((row) => row.machineUserId),
         })
       }
 

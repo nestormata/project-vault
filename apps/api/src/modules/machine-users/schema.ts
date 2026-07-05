@@ -92,6 +92,54 @@ export const RevokeApiKeyResponseSchema = z
   .object({ data: z.object({ id: z.uuid(), revokedAt: z.iso.datetime() }) })
   .meta({ id: 'RevokeApiKeyResponse' })
 
+// Story 7.2 AC-17 — overlapMinutes 1-1440 (24h cap), default 240 (4h). min(1) rejects 0/negative.
+export const RotateApiKeyBodySchema = z
+  .object({ overlapMinutes: z.number().int().min(1).max(1440).default(240) })
+  .strict()
+  .meta({ id: 'RotateApiKeyBody' })
+
+export const RotateApiKeyResponseSchema = z
+  .object({
+    data: z.object({
+      newKeyId: z.uuid(),
+      key: z.string(),
+      oldKeyId: z.uuid(),
+      overlapExpiresAt: z.iso.datetime(),
+    }),
+  })
+  .meta({ id: 'RotateApiKeyResponse' })
+
+export const EmergencyRevokeResponseSchema = z
+  .object({
+    data: z.object({
+      revokedKeyId: z.uuid(),
+      newKey: z.string(),
+      newKeyId: z.uuid(),
+    }),
+  })
+  .meta({ id: 'EmergencyRevokeResponse' })
+
+export const ExtendDormancyBodySchema = z
+  .object({ days: z.number().int().min(1).max(365) })
+  .strict()
+  .meta({ id: 'ExtendDormancyBody' })
+
+export const ExtendDormancyResponseSchema = z
+  .object({
+    data: z.object({ keyId: z.uuid(), dormancySnoozedUntil: z.iso.datetime() }),
+  })
+  .meta({ id: 'ExtendDormancyResponse' })
+
+// Story 7.2 AC-23 — archival guard closure read endpoint.
+export const ActiveMachineUserKeysResponseSchema = z
+  .object({
+    data: z.object({
+      items: z.array(z.object({ machineUserId: z.uuid(), keyId: z.uuid() })),
+      total: z.number().int().nonnegative(),
+    }),
+  })
+  .meta({ id: 'ActiveMachineUserKeysResponse' })
+
 export type CreateMachineUserBody = z.infer<typeof CreateMachineUserBodySchema>
 export type MachineUserParams = z.infer<typeof MachineUserParamsSchema>
 export type ApiKeyParams = z.infer<typeof ApiKeyParamsSchema>

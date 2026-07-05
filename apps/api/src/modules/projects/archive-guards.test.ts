@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
-import { credentials, credentialVersions, projects, rotations } from '@project-vault/db/schema'
+import {
+  apiKeys,
+  credentials,
+  credentialVersions,
+  machineUsers,
+  projects,
+  rotations,
+} from '@project-vault/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   bootstrapRouteIntegrationTest,
@@ -15,6 +22,8 @@ import {
   hasActiveMachineUserKeys,
   isProjectArchived,
 } from './archive-guards.js'
+
+const MACHINE_USER_INSERT_FAILED = 'machine user insert returned no row'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -140,9 +149,71 @@ describe('archive-guards', () => {
     })
   })
 
-  describe('hasActiveMachineUserKeys (Epic 7 stub)', () => {
-    it('always returns false until Epic 7 ships', async () => {
-      const project = await insertTestProject(orgId, { userId, slug: 'machine-user-guard' })
+  describe('hasActiveMachineUserKeys (Story 7.2 D12 — closed stub)', () => {
+    it('returns false when the project has no machine users at all', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'machine-user-guard-none' })
+      const result = await withOrg(orgId, (tx) => hasActiveMachineUserKeys(tx, project.id))
+      expect(result).toBe(false)
+    })
+
+    it('returns true when the project has a non-revoked, non-expired machine-user key', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'machine-user-guard-active' })
+      await withOrg(orgId, async (tx) => {
+        const [mu] = await tx
+          .insert(machineUsers)
+          .values({ orgId, projectId: project.id, name: 'bot', role: 'member', createdBy: userId })
+          .returning()
+        if (!mu) throw new Error(MACHINE_USER_INSERT_FAILED)
+        await tx.insert(apiKeys).values({
+          orgId,
+          machineUserId: mu.id,
+          name: 'key',
+          keyHash: randomUUID(),
+        })
+      })
+
+      const result = await withOrg(orgId, (tx) => hasActiveMachineUserKeys(tx, project.id))
+      expect(result).toBe(true)
+    })
+
+    it('returns false when the only key is revoked', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'machine-user-guard-revoked' })
+      await withOrg(orgId, async (tx) => {
+        const [mu] = await tx
+          .insert(machineUsers)
+          .values({ orgId, projectId: project.id, name: 'bot', role: 'member', createdBy: userId })
+          .returning()
+        if (!mu) throw new Error(MACHINE_USER_INSERT_FAILED)
+        await tx.insert(apiKeys).values({
+          orgId,
+          machineUserId: mu.id,
+          name: 'key',
+          keyHash: randomUUID(),
+          revokedAt: new Date(),
+        })
+      })
+
+      const result = await withOrg(orgId, (tx) => hasActiveMachineUserKeys(tx, project.id))
+      expect(result).toBe(false)
+    })
+
+    it('returns false when the only key has naturally expired (expiresAt in the past, revokedAt null)', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'machine-user-guard-expired' })
+      await withOrg(orgId, async (tx) => {
+        const [mu] = await tx
+          .insert(machineUsers)
+          .values({ orgId, projectId: project.id, name: 'bot', role: 'member', createdBy: userId })
+          .returning()
+        if (!mu) throw new Error(MACHINE_USER_INSERT_FAILED)
+        await tx.insert(apiKeys).values({
+          orgId,
+          machineUserId: mu.id,
+          name: 'key',
+          keyHash: randomUUID(),
+          expiresAt: new Date(Date.now() - 1000),
+        })
+      })
+
       const result = await withOrg(orgId, (tx) => hasActiveMachineUserKeys(tx, project.id))
       expect(result).toBe(false)
     })

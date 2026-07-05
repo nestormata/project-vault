@@ -85,4 +85,19 @@ describe('AuditEvent', () => {
     expect(AuditEvent.MACHINE_USER_API_KEY_ISSUED).toBe('machine_user.api_key_issued')
     expect(AuditEvent.MACHINE_USER_API_KEY_REVOKED).toBe('machine_user.api_key_revoked')
   })
+
+  it('exposes Story 7.2 rotation/dormancy audit event names (Task 13)', () => {
+    expect(AuditEvent.MACHINE_USER_API_KEY_ROTATED).toBe('machine_user.api_key_rotated')
+    expect(AuditEvent.MACHINE_USER_API_KEY_EMERGENCY_REVOKED).toBe(
+      'machine_user.api_key_emergency_revoked'
+    )
+    expect(AuditEvent.MACHINE_USER_ROTATION_ANOMALY_DETECTED).toBe(
+      'machine_user.rotation_anomaly_detected'
+    )
+    expect(AuditEvent.MACHINE_USER_DORMANCY_EXTENDED).toBe('machine_user.dormancy_extended')
+  })
+
+  it('exposes Story 7.2 cache-activation beacon audit event name (D13/AC-15)', () => {
+    expect(AuditEvent.MACHINE_CACHE_ACTIVATED).toBe('machine_cache.activated')
+  })
 })

@@ -2,7 +2,23 @@ import type { FastifyRequest } from 'fastify'
 import type { Tx } from '@project-vault/db'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { writeHumanAuditEntry } from '../modules/audit/human-entry.js'
+import {
+  writeMachineAuditEntry,
+  writeSystemAuditEntry,
+  type SystemAuditFields,
+} from '../modules/audit/machine-entry.js'
 import { SameTransactionAuditWriteError } from './secure-route.js'
+
+/** Shared by every `write*AuditEntryOrFailClosed` wrapper below: any audit-write error is
+ * rewrapped as `SameTransactionAuditWriteError` so SecureRoute (or a job's own transaction) rolls
+ * back and fails closed instead of completing a mutation without an audit record. */
+async function rethrowAsSameTransactionAuditWriteError(write: () => Promise<void>): Promise<void> {
+  try {
+    await write()
+  } catch (error) {
+    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
+  }
+}
 
 export type SameTransactionAuditInput = {
   orgId: string
@@ -23,7 +39,7 @@ export async function writeHumanAuditEntryOrFailClosed(
   tx: Tx,
   input: SameTransactionAuditInput
 ): Promise<void> {
-  try {
+  await rethrowAsSameTransactionAuditWriteError(async () => {
     const actorTokenId = await firstActorTokenIdForUser(tx, input.actorUserId)
     await writeHumanAuditEntry(tx, {
       orgId: input.orgId,
@@ -40,7 +56,56 @@ export async function writeHumanAuditEntryOrFailClosed(
             : null,
       },
     })
-  } catch (error) {
-    throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
-  }
+  })
+}
+
+export type MachineAuditInput = {
+  orgId: string
+  eventType: string
+  resourceId?: string
+  resourceType: string
+  payload: Record<string, unknown>
+  machineUserId: string
+  keyId: string
+  request: FastifyRequest
+}
+
+/**
+ * Story 7.2 D5 — same fail-closed/SameTransactionAuditWriteError contract as
+ * `writeHumanAuditEntryOrFailClosed`, for machine-originated events (`actorType: 'machine_user'`).
+ */
+export async function writeMachineAuditEntryOrFailClosed(
+  tx: Tx,
+  input: MachineAuditInput
+): Promise<void> {
+  await rethrowAsSameTransactionAuditWriteError(() =>
+    writeMachineAuditEntry(tx, {
+      orgId: input.orgId,
+      eventType: input.eventType,
+      resourceId: input.resourceId,
+      resourceType: input.resourceType,
+      payload: input.payload,
+      machineUserId: input.machineUserId,
+      keyId: input.keyId,
+      meta: {
+        ipAddress: input.request.ip,
+        userAgent:
+          typeof input.request.headers['user-agent'] === 'string'
+            ? input.request.headers['user-agent']
+            : null,
+      },
+    })
+  )
+}
+
+/**
+ * Story 7.2 D5/AC-18 — same fail-closed contract, for system/job-initiated events
+ * (`actorType: 'system'`, e.g. the overlap-window auto-revoke job). No HTTP request exists for
+ * these, so there is no IP/user-agent metadata to attach.
+ */
+export async function writeSystemAuditEntryOrFailClosed(
+  tx: Tx,
+  input: SystemAuditFields
+): Promise<void> {
+  await rethrowAsSameTransactionAuditWriteError(() => writeSystemAuditEntry(tx, input))
 }

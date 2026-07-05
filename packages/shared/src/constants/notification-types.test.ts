@@ -34,3 +34,9 @@ describe('Story 6.2 HTTP endpoint monitoring alert types (ADR-6.2-02)', () => {
     expect(NOTIFICATION_ALERT_TYPES).not.toContain('service.recovered')
   })
 })
+
+describe('Story 7.2 machine-key dormancy alert type (D9/AC-21, Task 14)', () => {
+  it('registers the machine_key.dormant alert type ID', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('machine_key.dormant')
+  })
+})

@@ -15,9 +15,15 @@ import { findProjectInOrg } from '../credentials/service.js'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import type { Tx } from '@project-vault/db'
 import { generateApiKey, hashApiKey } from './tokens.js'
+import { activeMachineUserKeysQuery } from './archival-check.js'
+import { emergencyRevokeApiKey, lockApiKeyForUpdate, rotateApiKey } from './rotation.js'
 import {
+  ActiveMachineUserKeysResponseSchema,
   ApiKeyParamsSchema,
   CreateMachineUserBodySchema,
+  EmergencyRevokeResponseSchema,
+  ExtendDormancyBodySchema,
+  ExtendDormancyResponseSchema,
   IssueApiKeyBodySchema,
   IssueApiKeyResponseSchema,
   ListApiKeysResponseSchema,
@@ -28,6 +34,8 @@ import {
   PaginationQuerySchema,
   ProjectScopeParamsSchema,
   RevokeApiKeyResponseSchema,
+  RotateApiKeyBodySchema,
+  RotateApiKeyResponseSchema,
   type ApiKeyIssued,
   type ApiKeyMetadata,
   type MachineUserDetail,
@@ -40,6 +48,15 @@ const MACHINE_USER_NOT_FOUND = {
   message: 'Machine user not found',
 } as const
 const API_KEY_NOT_FOUND = { code: 'api_key_not_found', message: 'API key not found' } as const
+// Shared by rotate (AC-17) and emergency-revoke (AC-20) — both reject an already-revoked key.
+const API_KEY_ALREADY_REVOKED = {
+  code: 'api_key_already_revoked',
+  message: 'This key has already been revoked',
+} as const
+const API_KEY_ALREADY_ROTATED = {
+  code: 'api_key_already_rotated',
+  message: 'This key has already been rotated',
+} as const
 const MACHINE_USER_DEACTIVATED = {
   code: 'machine_user_deactivated',
   message: 'Machine user is deactivated',
@@ -47,6 +64,28 @@ const MACHINE_USER_DEACTIVATED = {
 
 type MachineUserRow = typeof machineUsers.$inferSelect
 type ApiKeyRow = typeof apiKeys.$inferSelect
+
+/**
+ * Shared by rotate/emergency-revoke (AC-17/AC-20/AC-26): row-locks the key and rejects a
+ * not-found or already-revoked key with the response the caller already sent. Returns the row
+ * on success, or null after the reply has been sent.
+ */
+async function lockAndRejectIfRevoked(
+  secureCtx: SecureRouteContext,
+  params: { machineUserId: string; keyId: string },
+  reply: FastifyReply
+): Promise<ApiKeyRow | null> {
+  const oldKey = await lockApiKeyForUpdate(secureCtx.tx, params)
+  if (!oldKey) {
+    reply.status(404).send(API_KEY_NOT_FOUND)
+    return null
+  }
+  if (oldKey.revokedAt !== null) {
+    reply.status(409).send(API_KEY_ALREADY_REVOKED)
+    return null
+  }
+  return oldKey
+}
 
 // UX-DR11: the scope-boundary block shown on creation (before any key exists) and detail views.
 function scopeBoundaryFor(row: Pick<MachineUserRow, 'projectId' | 'name'>) {
@@ -207,6 +246,25 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
 
       reply.status(201)
       return { data: toMachineUserDetail(newMachineUser) }
+    },
+  })
+
+  // Story 7.2 AC-23: archival guard closure — same query hasActiveMachineUserKeys() delegates to.
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/projects/:projectId/machine-users/active-keys',
+    schema: { response: { 200: ActiveMachineUserKeysResponseSchema, ...READ_ERROR_RESPONSES } },
+    security: READ_SECURITY,
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectScopeParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
+      if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
+
+      const items = await activeMachineUserKeysQuery(secureCtx.tx, params.projectId)
+      return { data: { items, total: items.length } }
     },
   })
 
@@ -448,6 +506,189 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       return { data: { id: result.id, revokedAt: (result.revokedAt ?? revokedAt).toISOString() } }
+    },
+  })
+
+  // AC-16/AC-17/AC-26: zero-downtime key rotation, row-locked to close the concurrent-rotation
+  // TOCTOU window.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/machine-users/:machineUserId/api-keys/:keyId/rotate',
+    schema: {
+      body: RotateApiKeyBodySchema,
+      response: {
+        201: RotateApiKeyResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: MACHINE_USER_MUTATION_RATE_LIMIT,
+        timeWindowMs: MACHINE_USERS_RATE_LIMIT_WINDOW_MS,
+        key: 'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/rotate',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ApiKeyParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody(RotateApiKeyBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const oldKey = await lockAndRejectIfRevoked(secureCtx, params, reply)
+      if (!oldKey) return reply
+      if (oldKey.overlapExpiresAt !== null) return reply.status(409).send(API_KEY_ALREADY_ROTATED)
+
+      const result = await rotateApiKey(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        machineUserId: params.machineUserId,
+        oldKey,
+        overlapMinutes: parsed.data.overlapMinutes,
+      })
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'api_key',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.MACHINE_USER_API_KEY_ROTATED,
+        resourceId: result.newKeyId,
+        payload: {
+          oldKeyId: oldKey.id,
+          newKeyId: result.newKeyId,
+          overlapMinutes: parsed.data.overlapMinutes,
+        },
+        request: req,
+      })
+
+      reply.status(201)
+      return {
+        data: {
+          newKeyId: result.newKeyId,
+          key: result.plaintext,
+          oldKeyId: oldKey.id,
+          overlapExpiresAt: result.overlapExpiresAt.toISOString(),
+        },
+      }
+    },
+  })
+
+  // AC-20/AC-26: emergency revocation — atomic revoke-old + issue-new, no overlap window.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/machine-users/:machineUserId/api-keys/:keyId/emergency-revoke',
+    schema: {
+      response: {
+        200: EmergencyRevokeResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: MACHINE_USER_MUTATION_RATE_LIMIT,
+        timeWindowMs: MACHINE_USERS_RATE_LIMIT_WINDOW_MS,
+        key: 'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/emergency-revoke',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ApiKeyParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const oldKey = await lockAndRejectIfRevoked(secureCtx, params, reply)
+      if (!oldKey) return reply
+
+      const result = await emergencyRevokeApiKey(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        machineUserId: params.machineUserId,
+        oldKey,
+      })
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'api_key',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.MACHINE_USER_API_KEY_EMERGENCY_REVOKED,
+        resourceId: result.newKeyId,
+        payload: { revokedKeyId: oldKey.id, newKeyId: result.newKeyId },
+        request: req,
+      })
+
+      return {
+        data: { revokedKeyId: oldKey.id, newKey: result.plaintext, newKeyId: result.newKeyId },
+      }
+    },
+  })
+
+  // AC-22: snoozes dormancy detection for a specific key without touching lastUsedAt.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/machine-users/:machineUserId/api-keys/:keyId/extend-dormancy',
+    schema: {
+      body: ExtendDormancyBodySchema,
+      response: {
+        200: ExtendDormancyResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: MACHINE_USER_MUTATION_RATE_LIMIT,
+        timeWindowMs: MACHINE_USERS_RATE_LIMIT_WINDOW_MS,
+        key: 'POST /api/v1/machine-users/:machineUserId/api-keys/:keyId/extend-dormancy',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ApiKeyParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody(ExtendDormancyBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const dormancySnoozedUntil = new Date(Date.now() + parsed.data.days * 86_400_000)
+      const [updated] = await secureCtx.tx
+        .update(apiKeys)
+        .set({ dormancySnoozedUntil })
+        .where(and(eq(apiKeys.id, params.keyId), eq(apiKeys.machineUserId, params.machineUserId)))
+        .returning({ id: apiKeys.id })
+      if (!updated) return reply.status(404).send(API_KEY_NOT_FOUND)
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'api_key',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.MACHINE_USER_DORMANCY_EXTENDED,
+        resourceId: updated.id,
+        payload: {
+          keyId: updated.id,
+          days: parsed.data.days,
+          newSnoozeUntil: dormancySnoozedUntil.toISOString(),
+        },
+        request: req,
+      })
+
+      return {
+        data: { keyId: updated.id, dormancySnoozedUntil: dormancySnoozedUntil.toISOString() },
+      }
     },
   })
 }

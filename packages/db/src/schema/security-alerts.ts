@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, jsonb, check, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { orgScoped } from './helpers.js'
 import { userIdentityTokens } from './user-identity-tokens.js'
@@ -30,5 +30,9 @@ export const securityAlerts = pgTable(
       'security_alerts_status_check',
       sql`${t.status} IN ('PENDING_DELIVERY','delivered','dismissed')`
     ),
+    // Story 7.2 AC-21 — dedupe: at most one non-dismissed machine_key.dormant alert per key.
+    dormantKeyUniqueIdx: uniqueIndex('idx_security_alerts_dormant_key')
+      .on(sql`(${t.payload}->>'keyId')`)
+      .where(sql`${t.alertType} = 'machine_key.dormant' AND ${t.status} != 'dismissed'`),
   })
 )

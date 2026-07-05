@@ -225,7 +225,7 @@ const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
 // Extracted purely to keep the lifecycle-PATCH handler's cyclomatic complexity under the repo's
 // eslint threshold once the 4.4 archived-project guard was added; behavior unchanged.
 function hasNoLifecycleUpdateFields(rawBody: Record<string, unknown>): boolean {
-  return !('expiresAt' in rawBody) && !('rotationSchedule' in rawBody)
+  return !('expiresAt' in rawBody) && !('rotationSchedule' in rawBody) && !('cacheable' in rawBody)
 }
 
 function invalidRotationScheduleResponse(reason: 'unparseable' | 'too_frequent'): {
@@ -1121,7 +1121,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       if (hasNoLifecycleUpdateFields(rawBody)) {
         return reply.status(422).send({
           code: 'no_fields_to_update',
-          message: 'Provide expiresAt and/or rotationSchedule',
+          message: 'Provide expiresAt, rotationSchedule, and/or cacheable',
         })
       }
       const secureCtx = ctx as SecureRouteContext

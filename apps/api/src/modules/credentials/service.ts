@@ -205,6 +205,8 @@ export async function createCredentialWithFirstVersion(
       tags: input.body.tags ?? [],
       expiresAt: input.body.expiresAt ? new Date(input.body.expiresAt) : null,
       rotationSchedule: input.body.rotationSchedule ?? null,
+      // Story 7.2 D7 — defaults to true (opt-out, not opt-in) if omitted.
+      cacheable: input.body.cacheable ?? true,
       createdBy: input.userId,
     })
     .returning()
@@ -257,6 +259,22 @@ export async function findCredentialInProject(
     )
     .limit(1)
   return credential ?? null
+}
+
+/**
+ * Story 7.2 D6 — `credentials.name` has no uniqueness constraint (Epic 2 never added one), so
+ * this returns ALL matches rather than guessing "most recent" or "first alphabetically" on
+ * ambiguity; the machine value-retrieval handler (AC-6/AC-7) is responsible for turning a
+ * multi-row result into a 409 `ambiguous_credential_name` response.
+ */
+export async function findCredentialByNameInProject(
+  tx: Tx,
+  params: { projectId: string; name: string }
+) {
+  return tx
+    .select()
+    .from(credentials)
+    .where(and(eq(credentials.projectId, params.projectId), eq(credentials.name, params.name)))
 }
 
 export async function updateCredentialTags(

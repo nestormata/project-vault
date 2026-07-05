@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import type { Tx } from '@project-vault/db'
 import { projects, rotations } from '@project-vault/db/schema'
+import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 
 /** Standard 410 body every write guard on an archived project MUST return (ADR-4.4-01). */
 export const PROJECT_ARCHIVED_ERROR = {
@@ -33,12 +34,14 @@ export async function findBlockingRotationIds(tx: Tx, projectId: string): Promis
 }
 
 /**
- * Returns whether the project has active machine-user API keys that would block archival.
- * STUBBED until Epic 7 delivers GET /api/v1/projects/:projectId/machine-users/active-keys.
+ * Story 7.2 D12 — closes the stub: returns whether the project has any active (non-revoked,
+ * non-expired) machine-user API key that would block archival. Delegates to
+ * `activeMachineUserKeysQuery()` so this guard and `GET .../machine-users/active-keys` (AC-23)
+ * never drift into disagreeing about what counts as "active".
  */
-// TODO: Epic 7 — check for active machine user API key access
-export async function hasActiveMachineUserKeys(_tx: Tx, _projectId: string): Promise<false> {
-  return false
+export async function hasActiveMachineUserKeys(tx: Tx, projectId: string): Promise<boolean> {
+  const rows = await activeMachineUserKeysQuery(tx, projectId)
+  return rows.length > 0
 }
 
 /** Returns true if the project is archived (caller should reject the mutation with 410). */

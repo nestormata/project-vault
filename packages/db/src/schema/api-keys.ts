@@ -1,5 +1,16 @@
 import { sql } from 'drizzle-orm'
-import { check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import {
+  boolean,
+  check,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core'
 import { orgScoped } from './helpers.js'
 import { machineUsers } from './machine-users.js'
 
@@ -30,6 +41,15 @@ export const apiKeys = pgTable(
       .$type<number[]>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    // Story 7.2 D8 — zero-downtime rotation/dormancy columns (additive, all nullable).
+    // Set on the OLD key at rotation time; the overlap-revoke job auto-revokes once this passes.
+    overlapExpiresAt: timestamp('overlap_expires_at', { withTimezone: true }),
+    // Set on the NEW key at rotation/emergency-revoke time, pointing at the key it superseded.
+    rotatedFromKeyId: uuid('rotated_from_key_id'),
+    // Set by the admin "extend dormancy" action; excludes the key from the dormancy job's WHERE.
+    dormancySnoozedUntil: timestamp('dormancy_snoozed_until', { withTimezone: true }),
+    // AC-18: dedupe flag for the hourly pre-revocation alert (one threshold, no lead-days array).
+    overlapAlertSent: boolean('overlap_alert_sent').notNull().default(false),
   },
   (t) => ({
     machineUserIdx: index('idx_api_keys_machine_user').on(t.machineUserId),
@@ -38,6 +58,14 @@ export const apiKeys = pgTable(
     // cryptographically negligible — no DB-level uniqueness backstop needed.
     keyHashIdx: index('idx_api_keys_key_hash').on(t.keyHash),
     nameLenCheck: check('api_keys_name_len_check', sql`char_length(${t.name}) BETWEEN 1 AND 128`),
+    rotatedFromKeyIdFk: foreignKey({
+      columns: [t.rotatedFromKeyId],
+      foreignColumns: [t.id],
+      name: 'api_keys_rotated_from_key_id_fk',
+    }),
+    overlapExpiresIdx: index('idx_api_keys_overlap_expires')
+      .on(t.overlapExpiresAt)
+      .where(sql`${t.overlapExpiresAt} IS NOT NULL`),
   })
 )
 

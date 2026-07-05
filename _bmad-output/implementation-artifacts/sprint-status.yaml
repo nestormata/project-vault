@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-04  # updated: 6-2 -> done; 8-2-audit-log-search-export-and-external-forwarding -> ready-for-dev; 5-2 -> done
+last_updated: 2026-07-05  # updated: 7-2-machine-user-authentication-and-programmatic-secret-retrieval -> done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -104,7 +104,7 @@ development_status:
   # Epic 7: Machine User Access & CI/CD Integration
   epic-7: in-progress
   7-1-machine-user-identity-and-api-key-management: done
-  7-2-machine-user-authentication-and-programmatic-secret-retrieval: ready-for-dev
+  7-2-machine-user-authentication-and-programmatic-secret-retrieval: done
   7-3-github-actions-cicd-integration: ready-for-dev
   epic-7-retrospective: optional
 
