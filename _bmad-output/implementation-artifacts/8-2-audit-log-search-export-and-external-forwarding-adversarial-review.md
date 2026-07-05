@@ -45,3 +45,39 @@
 - **[low] No validation/sanitization is described for the S3 forwarding config's `bucket`/`prefix` fields, which are used directly to construct the uploaded object key.** AC-19 builds the destination as `s3://{bucket}/{prefix}{date}.jsonl.gz` with no mention of Zod-level constraints on `prefix` (e.g., disallowing path-traversal-like segments or control characters) before it's interpolated into the S3 key.
 
 - **[low] The migration-index-30 collision risk is dismissed as merely "informational" despite a concrete, present-tense sequencing hazard.** The Prerequisites table flags that migration `0030` must still be free "at implementation time," noting Story 8.1 (this story's hard prerequisite) claims no migration of its own — but both stories are explicitly unmerged and under active, possibly parallel, worktree development (this review is itself running inside such a worktree). Downgrading this to "informational" understates the real risk of two stories racing to claim the same migration index before either merges.
+
+## Resolution (2026-07-04, applied directly to the story file)
+
+All 7 critical/high findings were accepted and resolved by editing the story file's design
+decisions and acceptance criteria before merge. Medium/low findings were left as-is (documented
+risk, not blocking).
+
+- **[critical] SECURITY DEFINER `p_org_id` trust gap** — resolved in **D2**: the function now
+  checks the caller's transaction-scoped `app.current_org_id` against `p_org_id` and raises if
+  they don't match; the retention worker is required to run inside a per-org RLS-scoped
+  transaction (mirroring `prune-credential-versions.ts`/`prune-revoked-tokens.ts`). New regression
+  test added to **AC-23** asserting a mismatched `p_org_id` call raises and deletes nothing.
+- **[high] DNS-rebinding TOCTOU in `safeFetchExternal`** — resolved in **D4**: the validated IP
+  is now pinned for the actual connection via a custom `lookup` override passed to the HTTP
+  client, instead of letting the client re-resolve the hostname independently. New edge case added
+  to **AC-17**.
+- **[high] No redirect handling, SSRF bypass via 3xx** — resolved in **D4**: fetches now use
+  `redirect: 'manual'`; any `3xx` is treated as a plain delivery failure, never followed. New edge
+  case added to **AC-17**.
+- **[high] S3 `endpoint` field unprotected against SSRF** — resolved in **D4**/**D9**: the
+  hostname-validation logic is extracted into a reusable `assertPublicHostname()` and is now also
+  called against `config.endpoint` at `PUT /audit/forwarding` configuration time. New edge case
+  added to **AC-17**, and **AC-19**'s Minio edge case now references it.
+- **[high] S3 daily batch has no retry/failure/alerting model** — resolved in **D3**/**AC-19**:
+  `audit_forwarding_config` gains `s3LastForwardedDate`/`s3ConsecutiveFailureCount`; the daily cron
+  now uses a watermark-cursor-plus-bounded-failure design symmetric with the webhook path
+  (auto-disables after `AUDIT_S3_MAX_CONSECUTIVE_FAILURES = 5` consecutive failed days).
+- **[high] `actor_display_name` cross-org bleed via platform-level `user_identity_tokens`** —
+  not architecturally fixed in this story (would require touching Story 1.6/8.3's identity model,
+  out of scope per D1). Instead, explicitly documented as a known, flagged limitation in **AC-13**
+  and the **Epic Cross-Story Context** table's Story 8.3 row, requiring Story 8.3 to make an
+  explicit decision about it rather than rediscovering it as a surprise bug.
+
+Verify these resolutions by re-reading D2, D3, D4, D9, AC-13, AC-17, AC-19, AC-23, and the Epic
+Cross-Story Context table in the story file — do not treat this addendum as a substitute for
+reading the actual updated sections.
