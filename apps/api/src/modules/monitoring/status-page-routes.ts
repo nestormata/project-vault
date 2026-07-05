@@ -50,7 +50,8 @@ async function isProjectOwnerOrOrgOwner(
 }
 
 type ProjectPreflight =
-  { ok: true; params: StatusPageProjectParams; secureCtx: SecureRouteContext } | { ok: false }
+  | { ok: true; projectId: StatusPageProjectParams['projectId']; secureCtx: SecureRouteContext }
+  | { ok: false }
 
 /**
  * Shared preflight for every status-page route: parse params, reject an archived project (410,
@@ -75,7 +76,50 @@ async function preflightOwnedProject(
     reply.status(403).send(INSUFFICIENT_ROLE)
     return { ok: false }
   }
-  return { ok: true, params, secureCtx: ctx }
+  return { ok: true, projectId: params.projectId, secureCtx: ctx }
+}
+
+/**
+ * Wraps a status-page handler with the shared ownership preflight so every route below only has
+ * to describe its own logic — avoids re-stating the "run preflight, bail on !ok, unpack
+ * projectId/secureCtx" boilerplate at every call site (previously flagged by jscpd as duplicated
+ * across the POST/PUT/DELETE handlers).
+ */
+function withOwnedProject(
+  fn: (
+    secureCtx: SecureRouteContext,
+    projectId: StatusPageProjectParams['projectId'],
+    req: FastifyRequest,
+    reply: FastifyReply
+  ) => Promise<unknown>
+) {
+  return async (ctx: unknown, req: FastifyRequest, reply: FastifyReply) => {
+    const preflight = await preflightOwnedProject(ctx as SecureRouteContext, req, reply)
+    if (!preflight.ok) return reply
+    return fn(preflight.secureCtx, preflight.projectId, req, reply)
+  }
+}
+
+/**
+ * Sends the mapped error response for the first matching known error class and returns true, or
+ * returns false so the caller can `throw error` for anything unrecognized. Collapses the
+ * repeated "if (error instanceof X) { reply.status(n).send(...); return reply }" blocks that
+ * jscpd flagged as duplicated across the enable/regenerate/update handlers below.
+ */
+function sendKnownError(
+  reply: FastifyReply,
+  error: unknown,
+  mappings: ReadonlyArray<readonly [new (...args: never[]) => Error, number]>
+): boolean {
+  for (const [ErrorClass, status] of mappings) {
+    if (error instanceof ErrorClass) {
+      reply
+        .status(status)
+        .send({ code: (error as Error & { code: string }).code, message: error.message })
+      return true
+    }
+  }
+  return false
 }
 
 export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
@@ -97,12 +141,9 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/status-page' },
     },
-    handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const preflight = await preflightOwnedProject(secureCtx, req, reply)
-      if (!preflight.ok) return reply
-      return { data: await getStatusPageConfig(secureCtx.tx, preflight.params.projectId) }
-    },
+    handler: withOwnedProject(async (secureCtx, projectId) => {
+      return { data: await getStatusPageConfig(secureCtx.tx, projectId) }
+    }),
   })
 
   // --- POST /:projectId/status-page (AC 8, 9, 10, 10a) ---
@@ -125,12 +166,7 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: { ...WRITE_RATE_LIMIT, key: 'POST /api/v1/projects/:projectId/status-page' },
     },
-    handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const preflight = await preflightOwnedProject(secureCtx, req, reply)
-      if (!preflight.ok) return reply
-      const { projectId } = preflight.params
-
+    handler: withOwnedProject(async (secureCtx, projectId, req, reply) => {
       let enabled: Awaited<ReturnType<typeof enableStatusPage>>
       try {
         enabled = await enableStatusPage(secureCtx.tx, {
@@ -139,10 +175,7 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
           userId: secureCtx.auth.userId,
         })
       } catch (error) {
-        if (error instanceof StatusPageAlreadyEnabledError) {
-          reply.status(409).send({ code: error.code, message: error.message })
-          return reply
-        }
+        if (sendKnownError(reply, error, [[StatusPageAlreadyEnabledError, 409]])) return reply
         throw error
       }
 
@@ -158,7 +191,7 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
 
       reply.status(201)
       return { data: { token: enabled.token, createdAt: enabled.createdAt } }
-    },
+    }),
   })
 
   // --- POST /:projectId/status-page/regenerate (AC 11) ---
@@ -183,20 +216,12 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
         key: 'POST /api/v1/projects/:projectId/status-page/regenerate',
       },
     },
-    handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const preflight = await preflightOwnedProject(secureCtx, req, reply)
-      if (!preflight.ok) return reply
-      const { projectId } = preflight.params
-
+    handler: withOwnedProject(async (secureCtx, projectId, req, reply) => {
       let regenerated: Awaited<ReturnType<typeof regenerateStatusPageToken>>
       try {
         regenerated = await regenerateStatusPageToken(secureCtx.tx, projectId)
       } catch (error) {
-        if (error instanceof StatusPageNotFoundError) {
-          reply.status(404).send({ code: error.code, message: error.message })
-          return reply
-        }
+        if (sendKnownError(reply, error, [[StatusPageNotFoundError, 404]])) return reply
         throw error
       }
 
@@ -211,7 +236,7 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       })
 
       return { data: { token: regenerated.token, updatedAt: regenerated.updatedAt } }
-    },
+    }),
   })
 
   // --- PUT /:projectId/status-page (AC 15) ---
@@ -234,12 +259,7 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: { ...WRITE_RATE_LIMIT, key: 'PUT /api/v1/projects/:projectId/status-page' },
     },
-    handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const preflight = await preflightOwnedProject(secureCtx, req, reply)
-      if (!preflight.ok) return reply
-      const { projectId } = preflight.params
-
+    handler: withOwnedProject(async (secureCtx, projectId, req, reply) => {
       const body = parseBody(UpdateStatusPageBodySchema, req, reply)
       if (!body.success) return reply
 
@@ -251,14 +271,13 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
           body: body.data,
         })
       } catch (error) {
-        if (error instanceof StatusPageNotFoundError) {
-          reply.status(404).send({ code: error.code, message: error.message })
+        if (
+          sendKnownError(reply, error, [
+            [StatusPageNotFoundError, 404],
+            [InvalidServiceReferenceError, 422],
+          ])
+        )
           return reply
-        }
-        if (error instanceof InvalidServiceReferenceError) {
-          reply.status(422).send({ code: error.code, message: error.message })
-          return reply
-        }
         throw error
       }
 
@@ -279,7 +298,7 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       })
 
       return { data: { services: result.services } }
-    },
+    }),
   })
 
   // --- DELETE /:projectId/status-page (AC 16) ---
@@ -299,12 +318,7 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: { ...WRITE_RATE_LIMIT, key: 'DELETE /api/v1/projects/:projectId/status-page' },
     },
-    handler: async (ctx, req, reply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const preflight = await preflightOwnedProject(secureCtx, req, reply)
-      if (!preflight.ok) return reply
-      const { projectId } = preflight.params
-
+    handler: withOwnedProject(async (secureCtx, projectId, req, reply) => {
       const disabled = await disableStatusPage(secureCtx.tx, projectId)
       if (!disabled) return reply.status(404).send(STATUS_PAGE_NOT_FOUND)
 
@@ -324,6 +338,6 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
 
       reply.status(204)
       return undefined
-    },
+    }),
   })
 }
