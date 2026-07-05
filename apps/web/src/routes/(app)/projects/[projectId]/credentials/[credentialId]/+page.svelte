@@ -4,6 +4,11 @@
   import { revealCredentialValue } from '$lib/api/credentials.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
+  import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
+  import {
+    rotationCopy,
+    rotationStatusBadgeClass,
+  } from '$lib/components/rotations/rotation-copy.js'
 
   let { data } = $props()
 
@@ -13,6 +18,7 @@
   let revealError = $state<string | null>(null)
 
   const canReveal = $derived(canCreateCredential(data.orgRole))
+  const canManageRotation = $derived(canManageRotations(data.orgRole))
 
   onDestroy(() => {
     revealedValue = null
@@ -176,6 +182,67 @@
             </li>
           {/each}
         </ul>
+      {/if}
+    </section>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold text-slate-950">Rotation</h2>
+
+      {#if data.activeRotationId}
+        <a
+          class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+          href={resolve(
+            `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${data.activeRotationId}`
+          )}
+        >
+          View active rotation
+        </a>
+      {:else if canManageRotation}
+        <a
+          class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+          href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}/rotate`)}
+        >
+          Start rotation
+        </a>
+      {:else}
+        <p class="mt-3 text-sm text-slate-600">{rotationCopy.startRotationRequiresAdmin}</p>
+      {/if}
+
+      <h3 class="mt-6 font-semibold text-slate-950">History</h3>
+      {#if data.rotations.length === 0}
+        <p class="mt-3 text-sm text-slate-600">{rotationCopy.noRotationsYet}</p>
+      {:else}
+        <ul class="mt-4 space-y-2">
+          {#each data.rotations as rotation (rotation.id)}
+            <li
+              class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
+            >
+              <a
+                class="font-medium text-slate-950 underline"
+                href={resolve(
+                  `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${rotation.id}`
+                )}
+              >
+                initiated {formatDate(rotation.initiatedAt)}
+              </a>
+              <span class={rotationStatusBadgeClass(rotation.status)}>{rotation.status}</span>
+              <span class="text-slate-600">completed {formatDate(rotation.completedAt)}</span>
+              <span class="text-slate-600">
+                {rotation.confirmedCount}/{rotation.itemCount} confirmed
+              </span>
+            </li>
+          {/each}
+        </ul>
+        {#if data.rotationsHasMore}
+          <a
+            class="mt-3 inline-block text-sm font-medium text-slate-700 underline"
+            href={resolve(
+              `/projects/${data.projectId}/credentials/${data.credentialId}?page=${data.rotationsPage + 1}`
+            )}
+          >
+            Show more
+          </a>
+        {/if}
       {/if}
     </section>
 
