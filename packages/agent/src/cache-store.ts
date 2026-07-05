@@ -96,3 +96,14 @@ export function buildCacheEntry(
 ): CacheEntry {
   return { encryptedValue, versionNumber, cachedAt: new Date().toISOString(), ttlSeconds }
 }
+
+/**
+ * A cache entry is expired once `cachedAt + ttlSeconds` has passed — `ttlSeconds`/`cachedAt` are
+ * written into every entry (AC-12's exact cache-file shape) specifically to bound how long a
+ * secret may be served offline; an entry surviving past its own recorded TTL must stop being
+ * servable rather than being read forever once fallback mode is entered.
+ */
+export function isEntryExpired(entry: CacheEntry, now: Date = new Date()): boolean {
+  const expiresAtMs = new Date(entry.cachedAt).getTime() + entry.ttlSeconds * 1000
+  return now.getTime() >= expiresAtMs
+}

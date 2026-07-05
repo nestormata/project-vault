@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createVaultAgent, VaultCacheDecryptionError } from './index.js'
-import { readCacheFile } from './cache-store.js'
+import { createVaultAgent, VaultCacheDecryptionError, VaultCacheExpiredError } from './index.js'
+import { readCacheFile, writeCacheFile, type CacheFile } from './cache-store.js'
 
 const BASE_URL = 'https://vault.example.test'
 const PROJECT_ID = 'project-abc'
@@ -217,6 +217,58 @@ describe('createVaultAgent().getSecret — offline fallback (AC-11/AC-12/AC-13)'
     await expect(agent.getSecret('NEVER_CACHED')).rejects.toMatchObject({
       code: 'vault_unreachable',
     })
+  })
+
+  it('throws VaultCacheExpiredError when offline and the cached entry has outlived its ttlSeconds', async () => {
+    const seedAgent = createVaultAgent({
+      apiKey: API_KEY,
+      baseUrl: BASE_URL,
+      projectId: PROJECT_ID,
+      cachePath,
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === TOKEN_URL)
+          return jsonResponse(200, { data: { accessToken: FIRST_ACCESS_TOKEN } })
+        return jsonResponse(200, {
+          data: { name: 'STALE', value: CACHED_OFFLINE_VALUE, versionNumber: 1, cacheable: true },
+        })
+      })
+    )
+    await seedAgent.getSecret('STALE')
+
+    // Backdate the cache entry past its ttlSeconds without touching the encrypted payload.
+    const cache = readCacheFile(cachePath)
+    const entry = cache['STALE']
+    if (!entry) throw new Error('test setup: expected a seeded STALE cache entry')
+    const backdated: CacheFile = {
+      ...cache,
+      STALE: {
+        ...entry,
+        cachedAt: new Date(Date.now() - (entry.ttlSeconds + 60) * 1000).toISOString(),
+      },
+    }
+    writeCacheFile(cachePath, backdated)
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === TOKEN_URL)
+          return jsonResponse(200, { data: { accessToken: FIRST_ACCESS_TOKEN } })
+        throw new TypeError(NETWORK_FAILURE_MESSAGE)
+      })
+    )
+    const agent = createVaultAgent({
+      apiKey: API_KEY,
+      baseUrl: BASE_URL,
+      projectId: PROJECT_ID,
+      cachePath,
+      fallbackThreshold: 1,
+    })
+
+    await expect(agent.getSecret('STALE')).rejects.toBeInstanceOf(VaultCacheExpiredError)
+    await expect(agent.getSecret('STALE')).rejects.toMatchObject({ code: 'cache_expired' })
   })
 
   it('throws VaultCacheDecryptionError (never plaintext) when the cache was encrypted under a different key', async () => {

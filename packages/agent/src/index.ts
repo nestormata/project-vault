@@ -3,6 +3,7 @@ import {
   buildCacheEntry,
   defaultCachePath,
   getEntry,
+  isEntryExpired,
   readCacheFile,
   withEntry,
   withoutEntry,
@@ -17,6 +18,7 @@ import {
 } from './fallback-state.js'
 import {
   VaultAgentError,
+  VaultCacheExpiredError,
   VaultUnreachableError,
   VaultUnreachableNonCacheableError,
 } from './errors.js'
@@ -25,6 +27,7 @@ export {
   VaultAgentError,
   VaultCacheDecryptionError,
   VaultCacheCorruptedError,
+  VaultCacheExpiredError,
   VaultUnreachableError,
   VaultUnreachableNonCacheableError,
 } from './errors.js'
@@ -153,6 +156,10 @@ export function createVaultAgent(config: VaultAgentConfig): VaultAgent {
       if (nonCacheableNames.has(name)) throw new VaultUnreachableNonCacheableError(name)
       throw new VaultUnreachableError(name)
     }
+    // The cache-file's own ttlSeconds/cachedAt fields (AC-12's shape) are a hard bound on how
+    // long a secret may be served offline — an entry that has outlived its recorded TTL must stop
+    // being servable, not be read indefinitely for the remainder of a long-lived fallback mode.
+    if (isEntryExpired(entry)) throw new VaultCacheExpiredError(name)
     // AC-13: never falls back to plaintext — decryptFromCache throws VaultCacheDecryptionError on
     // any auth-tag/parse failure, which propagates as-is to the caller.
     return decryptFromCache(entry.encryptedValue, cacheKey)

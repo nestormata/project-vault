@@ -56,3 +56,19 @@ export class VaultUnreachableError extends VaultAgentError {
     this.name = 'VaultUnreachableError'
   }
 }
+
+/**
+ * Vault unreachable and a cache entry exists for this name, but it has outlived its own recorded
+ * `ttlSeconds` (default 24h from the moment it was cached) — distinct from `VaultUnreachableError`
+ * so the operator knows a cached value did exist but is now considered too stale to serve,
+ * rather than "never cached at all".
+ */
+export class VaultCacheExpiredError extends VaultAgentError {
+  constructor(name: string) {
+    super(
+      'cache_expired',
+      `Vault is unreachable and the cached value for "${name}" has exceeded its cache TTL.`
+    )
+    this.name = 'VaultCacheExpiredError'
+  }
+}
