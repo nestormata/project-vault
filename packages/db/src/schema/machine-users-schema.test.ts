@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiKeys, machineUsers } from './index.js'
+import { apiKeys, credentials, machineUsers, organizations, securityAlerts } from './index.js'
 import { EXCLUDED_TABLES } from '../check-rls-coverage.js'
 
 describe('machine_users schema', () => {
@@ -37,5 +37,36 @@ describe('Story 7.1 machine-user tables remain subject to RLS coverage', () => {
   it('does not exclude machine_users/api_keys from RLS coverage checks', () => {
     expect(EXCLUDED_TABLES.has('machine_users')).toBe(false)
     expect(EXCLUDED_TABLES.has('api_keys')).toBe(false)
+  })
+})
+
+// Story 7.2 AC-1 — additive rotation/dormancy columns on api_keys, dormancy threshold on
+// organizations, cacheable on credentials. No existing column is altered.
+describe('api_keys schema — Story 7.2 rotation/dormancy columns', () => {
+  it('exposes overlapExpiresAt, rotatedFromKeyId, dormancySnoozedUntil, overlapAlertSent', () => {
+    expect(apiKeys.overlapExpiresAt).toBeDefined()
+    expect(apiKeys.rotatedFromKeyId).toBeDefined()
+    expect(apiKeys.dormancySnoozedUntil).toBeDefined()
+    expect(apiKeys.overlapAlertSent).toBeDefined()
+  })
+})
+
+describe('organizations schema — Story 7.2 dormancy threshold', () => {
+  it('exposes machineKeyDormancyThresholdDays', () => {
+    expect(organizations.machineKeyDormancyThresholdDays).toBeDefined()
+  })
+})
+
+describe('credentials schema — Story 7.2 cacheable flag', () => {
+  it('exposes cacheable', () => {
+    expect(credentials.cacheable).toBeDefined()
+  })
+})
+
+describe('security_alerts schema — Story 7.2 dormancy dedupe index', () => {
+  it('still exposes payload/status/alertType used by the dormancy dedupe query', () => {
+    expect(securityAlerts.payload).toBeDefined()
+    expect(securityAlerts.status).toBeDefined()
+    expect(securityAlerts.alertType).toBeDefined()
   })
 })

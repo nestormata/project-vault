@@ -225,6 +225,13 @@
       "when": 1783218481996,
       "tag": "0031_service_endpoints_monitoring",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783210280189,
+      "tag": "0032_machine_key_rotation_dormancy_cacheable",
+      "breakpoints": true
     }
   ]
 }

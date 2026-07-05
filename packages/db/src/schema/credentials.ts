@@ -1,4 +1,14 @@
-import { pgTable, uuid, text, timestamp, integer, jsonb, index, check } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  integer,
+  jsonb,
+  index,
+  check,
+  boolean,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { orgScoped } from './helpers.js'
 import { users } from './users.js'
@@ -27,6 +37,8 @@ export const credentials = pgTable(
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // Story 7.2 D7 — opt-out flag for the offline agent's local cache (default cacheable).
+    cacheable: boolean('cacheable').notNull().default(true),
   },
   (t) => ({
     projectCreatedIdx: index('idx_credentials_project_created').on(t.projectId, t.createdAt.desc()),
