@@ -54,6 +54,9 @@ export const AuditEvent = {
   MONITORING_ALERT_SNOOZED: 'monitoring_alert.snoozed',
   MONITORING_ALERT_DISMISSED: 'monitoring_alert.dismissed',
   SECURITY_ALERT_DISMISSED: 'security_alert.dismissed',
+  MACHINE_USER_CREATED: 'machine_user.created',
+  MACHINE_USER_API_KEY_ISSUED: 'machine_user.api_key_issued',
+  MACHINE_USER_API_KEY_REVOKED: 'machine_user.api_key_revoked',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -107,6 +110,9 @@ export type AuditEventType =
   | 'monitoring_alert.snoozed'
   | 'monitoring_alert.dismissed'
   | 'security_alert.dismissed'
+  | 'machine_user.created'
+  | 'machine_user.api_key_issued'
+  | 'machine_user.api_key_revoked'
 
 export type AuditEvent = {
   type: AuditEventType

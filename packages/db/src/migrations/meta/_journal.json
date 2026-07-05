@@ -208,8 +208,15 @@
     {
       "idx": 29,
       "version": "7",
-      "when": 1783200000000,
-      "tag": "0029_service_endpoints_monitoring",
+      "when": 1783178763004,
+      "tag": "0029_machine_users_and_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783215792746,
+      "tag": "0030_service_endpoints_monitoring",
       "breakpoints": true
     }
   ]

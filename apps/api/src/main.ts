@@ -24,6 +24,7 @@ import { importCleanupExpired } from './workers/import-cleanup.js'
 import { runPaymentExpiryAlertJob } from './workers/payment-expiry-alert.js'
 import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
 import { runDomainExpiryAlertJob } from './workers/domain-expiry-alert.js'
+import { runMachineKeyExpiryAlertJob } from './workers/machine-key-expiry-alert.js'
 import {
   notificationEmailCatchupHandler,
   notificationEmailHandler,
@@ -120,6 +121,7 @@ async function main(): Promise<void> {
       'payment:expiry-alert': { cron: '0 8 * * *' },
       'cert:expiry-alert': { cron: '0 8 * * *' },
       'domain:expiry-alert': { cron: '0 8 * * *' },
+      'machine-key:expiry-alert': { cron: '0 8 * * *' },
       'notification:email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
@@ -161,6 +163,10 @@ async function main(): Promise<void> {
       'domain:expiry-alert': (job) =>
         withJobLogging(fastify.log, 'domain:expiry-alert', job.id ?? 'unknown', () =>
           runDomainExpiryAlertJob(boss, fastify.log)
+        ),
+      'machine-key:expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'machine-key:expiry-alert', job.id ?? 'unknown', () =>
+          runMachineKeyExpiryAlertJob(boss, fastify.log)
         ),
       'notification:email': {
         handler: (job) => notificationEmailHandler(job, fastify.log),

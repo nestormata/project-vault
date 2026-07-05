@@ -27,6 +27,8 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     // block landed; baked into the base fixture like SESSION_SECRET/REFRESH_TOKEN_HMAC_SECRET so
     // every other secret's dedicated-requirement test isn't also tripped by this one being unset.
     RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
+    // Story 7.1: same reasoning as RECOVERY_TOKEN_HMAC_SECRET above.
+    API_KEY_HMAC_SECRET: 'g'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -375,6 +377,43 @@ describe('env', () => {
         INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
         RECOVERY_TOKEN_HMAC_SECRET,
       })
+      await expectInvalidEnv(exitSpy)
+    }
+  })
+
+  // Story 7.1: API_KEY_HMAC_SECRET is the 5th dedicated-secret requirement, so satisfying its
+  // own fixture now needs every earlier secret's context baked in too — spreading a shared
+  // constant here (instead of repeating the literal object) avoids duplicating the identical
+  // multi-line context the recovery-token block above already contains (jscpd).
+  const priorSecretsSatisfied = {
+    COOKIE_SECURE: 'true',
+    TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+    MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+    INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+    RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
+  }
+
+  it('requires a dedicated API key secret in production (Story 7.1, D3)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      { ...priorSecretsSatisfied, API_KEY_HMAC_SECRET: undefined },
+      'API_KEY_HMAC_SECRET',
+      'g'.repeat(64)
+    )
+  })
+
+  it('rejects placeholder or reused API key secrets in production', async () => {
+    for (const API_KEY_HMAC_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+      'e'.repeat(64),
+      'f'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({ ...priorSecretsSatisfied, API_KEY_HMAC_SECRET })
       await expectInvalidEnv(exitSpy)
     }
   })

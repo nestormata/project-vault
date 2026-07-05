@@ -1,5 +1,6 @@
 import { RotationDetailSchema, RotationSummarySchema } from '@project-vault/shared'
 import { z } from 'zod/v4'
+import { PageLimitQueryShape } from '../../lib/pagination.js'
 
 export const InitiateRotationBodySchema = z
   .object({
@@ -24,10 +25,7 @@ export const RotationCredentialParamsSchema = z
   .meta({ id: 'RotationCredentialParams' })
 
 export const ListRotationsQuerySchema = z
-  .object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
-  })
+  .object(PageLimitQueryShape)
   .strict()
   .meta({ id: 'ListRotationsQuery' })
 

@@ -52,42 +52,22 @@ CREATE TABLE "monitoring_alerts" (
 	CONSTRAINT "monitoring_alerts_status_check" CHECK ("monitoring_alerts"."status" IN ('active','snoozed','dismissed','resolved_by_deletion'))
 );
 --> statement-breakpoint
-ALTER TABLE "service_endpoints" ADD CONSTRAINT "service_endpoints_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "service_endpoints" ADD CONSTRAINT "service_endpoints_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "service_endpoints" ADD CONSTRAINT "service_endpoints_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "endpoint_health_checks" ADD CONSTRAINT "endpoint_health_checks_service_endpoint_id_service_endpoints_id_fk" FOREIGN KEY ("service_endpoint_id") REFERENCES "public"."service_endpoints"("id") ON DELETE cascade ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "endpoint_health_checks" ADD CONSTRAINT "endpoint_health_checks_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_service_endpoint_id_service_endpoints_id_fk" FOREIGN KEY ("service_endpoint_id") REFERENCES "public"."service_endpoints"("id") ON DELETE set null ON UPDATE no action;
---> statement-breakpoint
-ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_dismissed_by_users_id_fk" FOREIGN KEY ("dismissed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
---> statement-breakpoint
-CREATE INDEX "idx_service_endpoints_org" ON "service_endpoints" USING btree ("org_id");
---> statement-breakpoint
-CREATE INDEX "idx_service_endpoints_due_query" ON "service_endpoints" USING btree ("check_frequency_minutes","last_checked_at");
---> statement-breakpoint
-CREATE INDEX "idx_endpoint_health_checks_endpoint_checked" ON "endpoint_health_checks" USING btree ("service_endpoint_id","checked_at");
---> statement-breakpoint
-CREATE INDEX "idx_endpoint_health_checks_org" ON "endpoint_health_checks" USING btree ("org_id");
---> statement-breakpoint
-CREATE INDEX "idx_monitoring_alerts_org" ON "monitoring_alerts" USING btree ("org_id");
---> statement-breakpoint
-CREATE INDEX "idx_monitoring_alerts_endpoint_episode" ON "monitoring_alerts" USING btree ("service_endpoint_id","episode_key");
---> statement-breakpoint
-
--- Story 6.2 ADR-6.2-06 / adversarial-review finding 16: covering index for
--- check-anomalous-access.ts's windowed GROUP BY (org_id, actor_token_id) query, which runs
--- every 60 seconds forever against the ever-growing audit_log_entries table.
-CREATE INDEX "idx_audit_log_entries_org_actor_event" ON "audit_log_entries" USING btree ("org_id","actor_token_id","event_type","created_at");
---> statement-breakpoint
+ALTER TABLE "service_endpoints" ADD CONSTRAINT "service_endpoints_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "service_endpoints" ADD CONSTRAINT "service_endpoints_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "service_endpoints" ADD CONSTRAINT "service_endpoints_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "endpoint_health_checks" ADD CONSTRAINT "endpoint_health_checks_service_endpoint_id_service_endpoints_id_fk" FOREIGN KEY ("service_endpoint_id") REFERENCES "public"."service_endpoints"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "endpoint_health_checks" ADD CONSTRAINT "endpoint_health_checks_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_service_endpoint_id_service_endpoints_id_fk" FOREIGN KEY ("service_endpoint_id") REFERENCES "public"."service_endpoints"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "monitoring_alerts" ADD CONSTRAINT "monitoring_alerts_dismissed_by_users_id_fk" FOREIGN KEY ("dismissed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_service_endpoints_org" ON "service_endpoints" USING btree ("org_id");--> statement-breakpoint
+CREATE INDEX "idx_service_endpoints_due_query" ON "service_endpoints" USING btree ("check_frequency_minutes","last_checked_at");--> statement-breakpoint
+CREATE INDEX "idx_endpoint_health_checks_endpoint_checked" ON "endpoint_health_checks" USING btree ("service_endpoint_id","checked_at");--> statement-breakpoint
+CREATE INDEX "idx_endpoint_health_checks_org" ON "endpoint_health_checks" USING btree ("org_id");--> statement-breakpoint
+CREATE INDEX "idx_monitoring_alerts_org" ON "monitoring_alerts" USING btree ("org_id");--> statement-breakpoint
+CREATE INDEX "idx_monitoring_alerts_endpoint_episode" ON "monitoring_alerts" USING btree ("service_endpoint_id","episode_key");--> statement-breakpoint
+CREATE INDEX "idx_audit_log_entries_org_actor_event" ON "audit_log_entries" USING btree ("org_id","actor_token_id","event_type","created_at");--> statement-breakpoint
 
 ALTER TABLE service_endpoints       ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint

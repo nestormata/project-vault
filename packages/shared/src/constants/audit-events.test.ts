@@ -69,4 +69,10 @@ describe('AuditEvent', () => {
     expect(AuditEvent.MONITORING_ALERT_DISMISSED).toBe('monitoring_alert.dismissed')
     expect(AuditEvent.SECURITY_ALERT_DISMISSED).toBe('security_alert.dismissed')
   })
+
+  it('exposes Story 7.1 machine-user audit event names (D7)', () => {
+    expect(AuditEvent.MACHINE_USER_CREATED).toBe('machine_user.created')
+    expect(AuditEvent.MACHINE_USER_API_KEY_ISSUED).toBe('machine_user.api_key_issued')
+    expect(AuditEvent.MACHINE_USER_API_KEY_REVOKED).toBe('machine_user.api_key_revoked')
+  })
 })
