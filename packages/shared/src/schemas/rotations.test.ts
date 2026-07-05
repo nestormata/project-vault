@@ -118,6 +118,26 @@ describe('rotation response schemas', () => {
     expect(parsed.sameValueAsPrevious).toBe(true)
   })
 
+  it('parses a rotation detail response with a Story 5.3 previousVersionOverlap', () => {
+    const parsed = RotationDetailSchema.parse({
+      id: ROTATION_ID,
+      credentialId: CREDENTIAL_ID,
+      projectId: PROJECT_ID,
+      status: 'break_glass_complete',
+      version: 1,
+      initiatedBy: USER_ID,
+      initiatedAt: INITIATED_AT,
+      completedAt: null,
+      notes: 'incident INC-4471',
+      checklistItems: [],
+      previousVersionOverlap: {
+        versionNumber: 4,
+        breakGlassOverlapExpiresAt: '2026-07-01T16:10:00.000Z',
+      },
+    })
+    expect(parsed.previousVersionOverlap).toMatchObject({ versionNumber: 4 })
+  })
+
   it('rejects a non-positive rotation version', () => {
     expect(() =>
       RotationDetailSchema.parse({

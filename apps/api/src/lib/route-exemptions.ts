@@ -344,7 +344,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations': {
     action: 'mutation',
     auditEvent: 'rotation.initiated',
-    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+    sameTransactionAuditService: 'writeRotationAuditEntry',
   },
   'GET /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId': {
     action: 'read',
@@ -384,6 +384,21 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditOmissionReason:
       'Upcoming-rotation schedule read is metadata-only; never exposes a credential value.',
     reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/break-glass': {
+    action: 'mutation',
+    auditEvent: 'rotation.break_glass_initiated',
+    sameTransactionAuditService: 'writeRotationAuditEntry',
+  },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/resume': {
+    action: 'mutation',
+    auditEvent: 'rotation.resumed',
+    sameTransactionAuditService: 'writeResolutionAuditOrThrow',
+  },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/abandon': {
+    action: 'mutation',
+    auditEvent: 'rotation.abandoned',
+    sameTransactionAuditService: 'writeResolutionAuditOrThrow',
   },
   'POST /api/v1/projects/:projectId/credentials/import': {
     action: 'mutation',

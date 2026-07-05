@@ -15,6 +15,13 @@ describe('Story 5.2 rotation checklist alert types', () => {
   })
 })
 
+describe('Story 5.3 break-glass/stale-recovery alert types', () => {
+  it('registers the break-glass alert type ID and confirms rotation.stale is already reserved', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('rotation.break_glass')
+    expect(NOTIFICATION_ALERT_TYPES).toContain('rotation.stale')
+  })
+})
+
 describe('Story 6.1 operational monitoring alert types', () => {
   it('registers payment/certificate/domain expiry alert type IDs', () => {
     expect(NOTIFICATION_ALERT_TYPES).toContain('payment.expiry')

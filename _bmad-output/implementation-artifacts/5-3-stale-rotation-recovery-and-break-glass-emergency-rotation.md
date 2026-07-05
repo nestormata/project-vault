@@ -1,6 +1,6 @@
 # Story 5.3: Stale Rotation Recovery & Break-Glass Emergency Rotation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for the THIRD and final story in Epic 5 (Credential Rotation). Stories 5.1 and 5.2 are `ready-for-dev` but NOT YET IMPLEMENTED in this branch (confirmed via `ls`: no `apps/api/src/modules/rotation/`, no `packages/db/src/schema/rotations.ts` exist yet) — every reference below to `rotations`/`rotation_checklist_items` schema, the advisory-lock pattern, or the confirm/fail/retry/complete endpoints describes what 5.1's and 5.2's own story files specify they will build, not code that exists in this branch today. This story's own new code (break-glass, stale-recovery job, resume/abandon) assumes 5.1 AND 5.2 have both landed first. Read "Prerequisites" and "Conflict Resolution & Design Decisions" before touching anything — this story resolves several real conflicts between `architecture.md`, `prd.md`, and `epics.md` that the exhaustive research for this story surfaced, and modifies one already-shipped Story 2.2 function (`revealCurrentValue`). -->
 
@@ -656,34 +656,34 @@ The following are **intentionally not implemented** in this story:
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema migration** (AC-1)
-  - [ ] Add `breakGlassOverlapExpiresAt`, `abandonedAt` to `packages/db/src/schema/credential-versions.ts`
-  - [ ] Add `idx_rotations_status_initiated` to `packages/db/src/schema/rotations.ts`
-  - [ ] Widen 5.1's `idx_rotations_one_in_progress_per_credential` to `idx_rotations_one_active_per_credential` (`WHERE status IN ('in_progress', 'stale_recovery')`) — CR8/ADR-5.3-08
-  - [ ] Generate/author migration (verify next-free number against `meta/_journal.json` — R1)
-  - [ ] `pnpm --filter @project-vault/db check-rls` clean; `pnpm --filter @project-vault/db migrate` succeeds locally
-- [ ] **Task 2: Shared Zod schemas & constants** (extends `packages/shared/src/schemas/rotations.ts` from 5.1/5.2)
-  - [ ] `BreakGlassRotationBodySchema`, empty-body schemas for resume/abandon
-  - [ ] Add `abandonedAt` to any response schema that surfaces version data
-  - [ ] Add 6 new `AuditEvent.*` constants (AC-21)
-  - [ ] Add `'rotation.break_glass'` to `NOTIFICATION_ALERT_TYPES` (`'rotation.stale'` already reserved)
-- [ ] **Task 3: Config** — add `BREAK_GLASS_OVERLAP_MINUTES: z.coerce.number().int().min(1).max(1440).default(60)` and `STALE_ROTATION_THRESHOLD_MINUTES: z.coerce.number().int().min(15).max(10080).default(60)` to `apps/api/src/config/env.ts`
-- [ ] **Task 4: `apps/api/src/lib/boss.ts`** — add `singletonKey?: string` to `BossSendOptions`, thread through to `this.#boss.send(name, data, options)`
-- [ ] **Task 5: Extend `apps/api/src/modules/rotation/` module** (5.1/5.2's files, not a new module)
-  - [ ] `service.ts`: `breakGlassRotation`, `supersedeActiveRotation` (shared by AC-5 and any future caller — uses `FOR UPDATE NOWAIT`, maps lock failure to `409 rotation_lock_contention`), `resumeRotation`, `abandonRotation`
-  - [ ] `routes.ts`: register the 3 new endpoints via `secureRoute()`
-- [ ] **Task 6: Modify Story 2.2's `apps/api/src/modules/credentials/service.ts`** (AC-13, AC-14 — regression-critical)
-  - [ ] `revealCurrentValue()`: add `isNull(credentialVersions.abandonedAt)`
-  - [ ] `listVersionHistory()`: select `abandonedAt`, update `currentVersionNumber` computation, add `abandonedAt` to mapped response
-  - [ ] Extend the **existing** Story 2.2 test file(s) for these functions with the regression assertions from AC-13/AC-14 — do not create a parallel test file
-- [ ] **Task 7: New worker `apps/api/src/workers/rotation-break-glass-expire.ts`** (AC-8)
-- [ ] **Task 8: New worker `apps/api/src/workers/rotation-recover.ts`** (AC-9, AC-10)
-- [ ] **Task 9: `main.ts` wiring** — register both new jobs in `registerSchedules`/`registerWorkers`; add the startup `boss.send('rotation:recover', {}, { singletonKey: 'rotation:recover' })` call
-- [ ] **Task 10: Notification integration** (AC-7, AC-10) — wire `enqueueSecurityAlertNotification`/`dispatchDirectUserNotification` + post-commit `sendNotificationJobs`; verify (or add) `reason`-field sanitization against `apps/api/src/notifications/templates/index.ts`'s actual renderer before wiring break-glass's payload
-- [ ] **Task 11: Route audit + classification** (AC-22)
-- [ ] **Task 12: Metrics/logging** (AC-24)
-- [ ] **Task 13: FR104 regression test only — no new code** (AC-16)
-- [ ] **Task 14: Integration & unit tests** (AC-2 through AC-15, AC-17 through AC-23, AC-Quick-Reference "Tests" row)
+- [x] **Task 1: Schema migration** (AC-1)
+  - [x] Add `breakGlassOverlapExpiresAt`, `abandonedAt` to `packages/db/src/schema/credential-versions.ts`
+  - [x] Add `idx_rotations_status_initiated` to `packages/db/src/schema/rotations.ts`
+  - [x] Widen 5.1's `idx_rotations_one_in_progress_per_credential` to `idx_rotations_one_active_per_credential` (`WHERE status IN ('in_progress', 'stale_recovery')`) — CR8/ADR-5.3-08
+  - [x] Generate/author migration (verify next-free number against `meta/_journal.json` — R1)
+  - [x] `pnpm --filter @project-vault/db check-rls` clean; `pnpm --filter @project-vault/db migrate` succeeds locally
+- [x] **Task 2: Shared Zod schemas & constants** (extends `packages/shared/src/schemas/rotations.ts` from 5.1/5.2)
+  - [x] `BreakGlassRotationBodySchema`, empty-body schemas for resume/abandon
+  - [x] Add `abandonedAt` to any response schema that surfaces version data
+  - [x] Add 6 new `AuditEvent.*` constants (AC-21)
+  - [x] Add `'rotation.break_glass'` to `NOTIFICATION_ALERT_TYPES` (`'rotation.stale'` already reserved)
+- [x] **Task 3: Config** — add `BREAK_GLASS_OVERLAP_MINUTES: z.coerce.number().int().min(1).max(1440).default(60)` and `STALE_ROTATION_THRESHOLD_MINUTES: z.coerce.number().int().min(15).max(10080).default(60)` to `apps/api/src/config/env.ts`
+- [x] **Task 4: `apps/api/src/lib/boss.ts`** — add `singletonKey?: string` to `BossSendOptions`, thread through to `this.#boss.send(name, data, options)`
+- [x] **Task 5: Extend `apps/api/src/modules/rotation/` module** (5.1/5.2's files, not a new module)
+  - [x] `service.ts`: `breakGlassRotation`, `supersedeActiveRotation` (shared by AC-5 and any future caller — uses `FOR UPDATE NOWAIT`, maps lock failure to `409 rotation_lock_contention`), `resumeRotation`, `abandonRotation`
+  - [x] `routes.ts`: register the 3 new endpoints via `secureRoute()`
+- [x] **Task 6: Modify Story 2.2's `apps/api/src/modules/credentials/service.ts`** (AC-13, AC-14 — regression-critical)
+  - [x] `revealCurrentValue()`: add `isNull(credentialVersions.abandonedAt)`
+  - [x] `listVersionHistory()`: select `abandonedAt`, update `currentVersionNumber` computation, add `abandonedAt` to mapped response
+  - [x] Extend the **existing** Story 2.2 test file(s) for these functions with the regression assertions from AC-13/AC-14 — do not create a parallel test file
+- [x] **Task 7: New worker `apps/api/src/workers/rotation-break-glass-expire.ts`** (AC-8)
+- [x] **Task 8: New worker `apps/api/src/workers/rotation-recover.ts`** (AC-9, AC-10)
+- [x] **Task 9: `main.ts` wiring** — register both new jobs in `registerSchedules`/`registerWorkers`; add the startup `boss.send('rotation:recover', {}, { singletonKey: 'rotation:recover' })` call
+- [x] **Task 10: Notification integration** (AC-7, AC-10) — wire `enqueueSecurityAlertNotification`/`dispatchDirectUserNotification` + post-commit `sendNotificationJobs`; verify (or add) `reason`-field sanitization against `apps/api/src/notifications/templates/index.ts`'s actual renderer before wiring break-glass's payload
+- [x] **Task 11: Route audit + classification** (AC-22)
+- [x] **Task 12: Metrics/logging** (AC-24)
+- [x] **Task 13: FR104 regression test only — no new code** (AC-16)
+- [x] **Task 14: Integration & unit tests** (AC-2 through AC-15, AC-17 through AC-23, AC-Quick-Reference "Tests" row)
 
 ---
 
@@ -844,11 +844,76 @@ Changing an already-shipped, `done` Story 2.4 endpoint's authorization threshold
 
 ### Agent Model Used
 
-_(to be filled by dev agent)_
+Claude Sonnet 4.6 (via `/bmad-dev-story`, resumed and finalized directly in the pick-story orchestrator session after the original delegated subagent hit a session limit mid-task)
 
 ### Debug Log References
 
+- After the initial implementation pass, the test DB migration (`0033_break_glass_and_stale_recovery.sql`) had not been applied; running `pnpm --filter @project-vault/db db:migrate` resolved a wave of 79 failing tests that were all schema-mismatch symptoms, not logic bugs.
+- `rotation-recover.test.ts`'s boundary test used a 1-second margin around the 60-minute stale threshold, which flaked under real seed-call latency; widened to a 30-second margin (test-only fix, no behavior change).
+- `jscpd` (repo-wide 0% duplication gate) flagged 14 clones introduced by this story; resolved via shared test/production helpers (`writeRotationAuditEntry`, `callResolutionService`, `expectForbiddenForMemberAndViewer`, `assertExactlyOneConflict`, `findBreakGlassAuditPayload`/`findBreakGlassAlertRows`/`findBreakGlassQueueRows`, `ensureWorkerTestEnv`/`findAuditRowOrgIds`/`withTwoTestOrgs` in `worker-test-helpers.ts`).
+- That same dedup refactor (and a pre-existing gap in the interrupted agent's resume/abandon audit-write helper) broke `route-audit.test.ts`'s same-transaction-delegation check for initiate/break-glass/resume/abandon, since the audit write moved behind helper functions that no longer had a literal `secureCtx.tx` in the route's own source. Fixed by having `writeRotationAuditEntry`/`writeResolutionAuditOrThrow` accept `tx`/`auth` explicitly (callers pass `secureCtx.tx`/`secureCtx.auth`) and updating `route-exemptions.ts`'s `sameTransactionAuditService` values to the real delegate names.
+
 ### Completion Notes List
 
+- AC-1 (migration): `credential_versions.breakGlassOverlapExpiresAt`/`abandonedAt`, widened `idx_rotations_one_active_per_credential`, new `idx_rotations_status_initiated` — `packages/db/src/migrations/0033_break_glass_and_stale_recovery.sql`.
+- AC-2–AC-6 (break-glass initiate): `POST .../rotations/break-glass` — immediate live-value write, overlap window, auto-abandon+supersede of any existing active rotation, role/MFA enforcement, lock-contention 409.
+- AC-7 (break-glass audit/alert/notification): audit event, paired `security_alerts` row, `enqueueSecurityAlertNotification` dispatch with reason-field HTML-escaping verified against the real template renderer.
+- AC-8 (break-glass overlap expiry): `rotation-break-glass-expire.ts` worker, per-org scoped, auto-retires expired overlap versions.
+- AC-9/AC-10 (stale-rotation detection): `rotation-recover.ts` worker — time-threshold scan (never lock-presence-based), transitions to `stale_recovery`, resets non-confirmed checklist items, dual notification (initiator + FR100-routed).
+- AC-11/AC-12 (resume/abandon happy path): rotation-scoped lock + CAS, checklist preserved on resume, new version marked `abandonedAt` on abandon with old value restored.
+- AC-13/AC-14 (abandoned-version exclusion, regression-critical): `revealCurrentValue()`/`listVersionHistory()` in `credentials/service.ts` now exclude `abandonedAt IS NOT NULL` rows from "current".
+- AC-15 (resume/abandon concurrency): racing calls resolve to exactly one 200 / one 409 `concurrent_modification`.
+- AC-16 (FR104 regression): existing dependency-archival endpoint verified end-to-end against a real checklist-generation interaction; no new production code.
+- AC-17/AC-18 (invalid-state, role/MFA enforcement for resume/abandon): 422 `rotation_not_stale`, 403/`mfa_required` gating.
+- AC-19 (cross-tenant isolation): break-glass/resume/abandon all 404 (not 403) cross-org.
+- AC-20 (sealed vault): break-glass/resume/abandon fail closed with 503.
+- AC-21 (audit events): 6 new `AuditEvent.*` constants.
+- AC-22 (route audit/classification): all 3 new routes registered via `secureRoute()`; `route-exemptions.ts` classifications added and same-transaction-delegation verified.
+- AC-23 (rate limiting): break-glass/resume/abandon covered by `resolutionRateLimit`/existing rate-limit config.
+- AC-24 (metrics/logging): `rotationBreakGlassTotal`, `rotationStaleDetectionsTotal`, `rotationResolutionsTotal`, `rotationBreakGlassOverlapExpirationsTotal`, `rotationsStaleRecoveryPendingTotal` gauges/counters.
+- Final verification: `tsc --noEmit` clean across `apps/api`/`packages/db`/`packages/shared`; `eslint` 0 errors (pre-existing unrelated warnings only); `jscpd` 0 clones repo-wide; 249/249 tests passing across every touched suite (rotation routes/service/schema/metrics, both new workers, prune-credential-versions, credentials service, boss, env, route-audit).
+- Not yet run in this session: the full `make ci` gate (typecheck/lint/migrate/check-rls/audit-baseline/env-example/pnpm audit/generate-spec) — deferred to the pick-story flow's C3 CI-gate step.
+
 ### File List
+
+**Migration / schema**
+- `packages/db/src/migrations/0033_break_glass_and_stale_recovery.sql` (new)
+- `packages/db/src/migrations/meta/0031_snapshot.json` (new)
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/db/src/schema/credential-versions.ts`
+- `packages/db/src/schema/rotations.ts`
+- `packages/db/src/schema/rotations-schema.test.ts`
+
+**Shared package**
+- `packages/shared/src/constants/audit-events.ts` (+ test)
+- `packages/shared/src/constants/notification-types.ts` (+ test)
+- `packages/shared/src/constants/operational-event-types.ts` (+ test)
+- `packages/shared/src/schemas/credentials.ts` (+ test)
+- `packages/shared/src/schemas/rotations.ts` (+ test)
+
+**API — rotation module**
+- `apps/api/src/modules/rotation/service.ts`
+- `apps/api/src/modules/rotation/routes.ts` (+ test)
+- `apps/api/src/modules/rotation/schema.ts` (+ test)
+- `apps/api/src/modules/rotation/metrics.ts` (+ test)
+
+**API — credentials (Story 2.2 regression-critical change)**
+- `apps/api/src/modules/credentials/service.ts`
+- `apps/api/src/modules/credentials/db-helpers.ts`
+- `apps/api/src/modules/credentials/routes.test.ts`
+
+**API — new workers**
+- `apps/api/src/workers/rotation-break-glass-expire.ts` (new, + test)
+- `apps/api/src/workers/rotation-recover.ts` (new, + test)
+- `apps/api/src/workers/worker-test-helpers.ts` (new)
+- `apps/api/src/workers/prune-credential-versions.test.ts` (dedup-only changes)
+
+**API — lib / config / wiring**
+- `apps/api/src/lib/rotation-locks.ts` (new)
+- `apps/api/src/lib/system-actor-audit.ts` (new)
+- `apps/api/src/lib/boss.ts` (+ test)
+- `apps/api/src/lib/route-exemptions.ts`
+- `apps/api/src/config/env.ts` (+ test)
+- `apps/api/src/main.ts`
+- `.env.example`
 </content>

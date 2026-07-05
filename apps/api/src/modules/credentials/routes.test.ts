@@ -158,6 +158,24 @@ async function purgeVersion(orgId: string, credentialId: string, versionNumber: 
   )
 }
 
+// Story 5.3 AC-13/AC-14 regression tests: simulates what break-glass/abandon (Story 5.3's own
+// service code) sets on a credential_versions row — directly manipulated here since those
+// endpoints don't exist yet in this test file's scope (Story 2.2's reveal/history functions are
+// what's under test, not the not-yet-written rotation abandon flow).
+async function abandonVersion(orgId: string, credentialId: string, versionNumber: number) {
+  await withOrg(orgId, (tx) =>
+    tx
+      .update(credentialVersions)
+      .set({ abandonedAt: new Date() })
+      .where(
+        and(
+          eq(credentialVersions.credentialId, credentialId),
+          eq(credentialVersions.versionNumber, versionNumber)
+        )
+      )
+  )
+}
+
 async function credentialTagAuditRows(orgId: string, credentialId: string) {
   return withOrg(orgId, (tx) =>
     tx
@@ -587,6 +605,100 @@ describe.sequential('credential routes', () => {
 
     const res = await listVersions(app, owner.cookies, projectId, randomUUID())
     expect(res.statusCode).toBe(404)
+  }, 20_000)
+
+  // ==========================================================================================
+  // Story 5.3 AC-13/AC-14 regression tests: revealCurrentValue()/listVersionHistory() (Story
+  // 2.2, already shipped) are extended to exclude abandonedAt-set versions from "current".
+  // These live here, next to the pre-existing reveal/versions tests they modify, per the
+  // story's explicit "extend the existing file, do not create a parallel test file" directive.
+  // ==========================================================================================
+
+  it('REGRESSION (AC-13/AC-14): a non-rotation credential is byte-for-byte unaffected — abandonedAt is always null and isCurrent/value resolution is unchanged', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'abandon-regression-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Never Rotated Key',
+      value: 'plain-value-v1',
+    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'plain-value-v2')
+    await addVersion(app, owner.cookies, projectId, credential.id, 'plain-value-v3')
+
+    const valueRes = await revealValue(app, owner.cookies, projectId, credential.id)
+    expect(valueRes.statusCode).toBe(200)
+    expect(valueRes.json<{ data: { value: string; versionNumber: number } }>().data).toMatchObject({
+      value: 'plain-value-v3',
+      versionNumber: 3,
+    })
+
+    const versionsRes = await listVersions(app, owner.cookies, projectId, credential.id)
+    const body = versionsRes.json<{
+      data: { items: { versionNumber: number; isCurrent: boolean; abandonedAt: string | null }[] }
+    }>()
+    expect(body.data.items).toHaveLength(3)
+    expect(body.data.items.every((item) => item.abandonedAt === null)).toBe(true)
+    expect(body.data.items.find((item) => item.versionNumber === 3)?.isCurrent).toBe(true)
+  }, 20_000)
+
+  it('GET value falls back to the previous version when the highest version is abandoned (AC-13)', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'abandon-reveal-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Abandoned Rotation Key',
+      value: 'good-value-v1',
+    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'never-validated-v2')
+
+    const beforeAbandon = await revealValue(app, owner.cookies, projectId, credential.id)
+    expect(beforeAbandon.json<{ data: { value: string } }>().data.value).toBe('never-validated-v2')
+
+    await abandonVersion(owner.orgId, credential.id, 2)
+
+    const afterAbandon = await revealValue(app, owner.cookies, projectId, credential.id)
+    expect(afterAbandon.statusCode).toBe(200)
+    expect(
+      afterAbandon.json<{ data: { value: string; versionNumber: number } }>().data
+    ).toMatchObject({ value: 'good-value-v1', versionNumber: 1 })
+  }, 20_000)
+
+  it('GET versions marks isCurrent on the highest non-abandoned/non-purged version and surfaces abandonedAt (AC-14)', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'abandon-versions-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Abandon History Key',
+      value: 'baseline-v1',
+    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'abandoned-v2')
+
+    await abandonVersion(owner.orgId, credential.id, 2)
+
+    const res = await listVersions(app, owner.cookies, projectId, credential.id)
+    const body = res.json<{
+      data: { items: { versionNumber: number; isCurrent: boolean; abandonedAt: string | null }[] }
+    }>()
+    expect(body.data.items).toMatchObject([
+      { versionNumber: 2, isCurrent: false },
+      { versionNumber: 1, isCurrent: true },
+    ])
+    expect(body.data.items[0]?.abandonedAt).not.toBeNull()
+    expect(body.data.items[1]?.abandonedAt).toBeNull()
+  }, 20_000)
+
+  it("EDGE CASE (AC-14): the credential's very first (and only) rotation was abandoned — isCurrent falls all the way back to version 1", async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'abandon-first-rotation-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'First Rotation Abandoned Key',
+      value: 'pre-rotation-baseline',
+    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'abandoned-first-rotation-value')
+    await abandonVersion(owner.orgId, credential.id, 2)
+
+    const versionsRes = await listVersions(app, owner.cookies, projectId, credential.id)
+    const body = versionsRes.json<{
+      data: { items: { versionNumber: number; isCurrent: boolean }[] }
+    }>()
+    expect(body.data.items.find((item) => item.versionNumber === 1)?.isCurrent).toBe(true)
+    expect(body.data.items.find((item) => item.versionNumber === 2)?.isCurrent).toBe(false)
+
+    const valueRes = await revealValue(app, owner.cookies, projectId, credential.id)
+    expect(valueRes.json<{ data: { value: string } }>().data.value).toBe('pre-rotation-baseline')
   }, 20_000)
 
   it('GET credentials returns an empty paginated list for a real project', async () => {

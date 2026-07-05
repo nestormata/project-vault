@@ -27,6 +27,19 @@ export const credentialVersions = pgTable(
     rotationLockedAt: timestamp('rotation_locked_at', { withTimezone: true }),
     // Set when the version's value has been cryptographically purged by the retention job.
     purgedAt: timestamp('purged_at', { withTimezone: true }),
+    // Story 5.3 AC-1: set by break-glass (AC-2) on the SUPERSEDED version; cleared by the
+    // overlap-expiry job (AC-8) when it also clears rotationLockedAt. Non-null = "this version
+    // is in its break-glass overlap window, protected from purge until this timestamp, then
+    // auto-retired."
+    breakGlassOverlapExpiresAt: timestamp('break_glass_overlap_expires_at', {
+      withTimezone: true,
+    }),
+    // Story 5.3 AC-1/CR5: set by abandon (AC-12) on the NEW version created at the abandoned
+    // rotation's initiation (or by break-glass's supersede path, AC-5). Non-null = "this
+    // version was never validated as good; excluded from revealCurrentValue()/
+    // listVersionHistory()'s 'current' computation (AC-13/AC-14), but NOT purged early — it
+    // stays queryable in history."
+    abandonedAt: timestamp('abandoned_at', { withTimezone: true }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

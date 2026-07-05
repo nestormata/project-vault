@@ -8,6 +8,7 @@ export const NOTIFICATION_ALERT_TYPES = [
   'rotation.stale',
   'rotation.confirmation_failed',
   'rotation.max_retries_exceeded',
+  'rotation.break_glass',
   'backup.failure',
   'machine_key.expiry',
   'security.anomalous_access',

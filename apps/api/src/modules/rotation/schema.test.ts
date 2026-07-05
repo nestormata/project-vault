@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AbandonRotationBodySchema,
+  BreakGlassRotationBodySchema,
   InitiateRotationBodySchema,
   ListRotationsQuerySchema,
+  ResumeRotationBodySchema,
   RotationCredentialParamsSchema,
   RotationParamsSchema,
 } from './schema.js'
@@ -82,6 +85,52 @@ describe('rotation params schemas', () => {
     expect(() =>
       RotationCredentialParamsSchema.parse({ projectId: PROJECT_ID, credentialId: 'nope' })
     ).toThrow()
+  })
+})
+
+describe('break-glass rotation body schema (Story 5.3 AC-4)', () => {
+  it('accepts a minimal valid body with a required reason', () => {
+    expect(
+      BreakGlassRotationBodySchema.parse({ newValue: 'sk_live_emergency', reason: 'incident' })
+    ).toMatchObject({ newValue: 'sk_live_emergency', reason: 'incident' })
+  })
+
+  it('rejects a missing newValue and/or reason', () => {
+    expect(() => BreakGlassRotationBodySchema.parse({})).toThrow()
+    expect(() => BreakGlassRotationBodySchema.parse({ newValue: 'x' })).toThrow()
+  })
+
+  it('rejects an empty/whitespace-only reason', () => {
+    expect(() => BreakGlassRotationBodySchema.parse({ newValue: 'x', reason: '' })).toThrow()
+    expect(() => BreakGlassRotationBodySchema.parse({ newValue: 'x', reason: '   ' })).toThrow()
+  })
+
+  it('rejects an empty newValue', () => {
+    expect(() => BreakGlassRotationBodySchema.parse({ newValue: '', reason: 'incident' })).toThrow()
+  })
+
+  it('rejects an oversized newValue or reason', () => {
+    expect(() =>
+      BreakGlassRotationBodySchema.parse({ newValue: 'x'.repeat(65537), reason: 'incident' })
+    ).toThrow()
+    expect(() =>
+      BreakGlassRotationBodySchema.parse({ newValue: 'x', reason: 'x'.repeat(1025) })
+    ).toThrow()
+  })
+
+  it('rejects unknown keys (.strict)', () => {
+    expect(() =>
+      BreakGlassRotationBodySchema.parse({ newValue: 'x', reason: 'incident', extra: true })
+    ).toThrow()
+  })
+})
+
+describe('resume/abandon rotation body schemas (Story 5.3 AC-11/AC-12)', () => {
+  it('accepts only an empty object', () => {
+    expect(ResumeRotationBodySchema.parse({})).toEqual({})
+    expect(() => ResumeRotationBodySchema.parse({ anything: true })).toThrow()
+    expect(AbandonRotationBodySchema.parse({})).toEqual({})
+    expect(() => AbandonRotationBodySchema.parse({ anything: true })).toThrow()
   })
 })
 

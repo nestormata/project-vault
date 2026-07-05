@@ -59,6 +59,17 @@ describe('AuditEvent', () => {
     expect(AuditEvent.ROTATION_COMPLETED).toBe('rotation.completed')
   })
 
+  it('exposes Story 5.3 break-glass/stale-recovery rotation audit event names', () => {
+    expect(AuditEvent.ROTATION_BREAK_GLASS_INITIATED).toBe('rotation.break_glass_initiated')
+    expect(AuditEvent.ROTATION_SUPERSEDED_BY_BREAK_GLASS).toBe('rotation.superseded_by_break_glass')
+    expect(AuditEvent.ROTATION_BREAK_GLASS_OVERLAP_EXPIRED).toBe(
+      'rotation.break_glass_overlap_expired'
+    )
+    expect(AuditEvent.ROTATION_STALE_DETECTED).toBe('rotation.stale_detected')
+    expect(AuditEvent.ROTATION_RESUMED).toBe('rotation.resumed')
+    expect(AuditEvent.ROTATION_ABANDONED).toBe('rotation.abandoned')
+  })
+
   it('exposes Story 6.1 payment/certificate/domain record audit event names', () => {
     expect(AuditEvent.PAYMENT_RECORD_CREATED).toBe('payment_record.created')
     expect(AuditEvent.PAYMENT_RECORD_UPDATED).toBe('payment_record.updated')

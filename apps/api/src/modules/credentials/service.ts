@@ -385,7 +385,11 @@ export async function revealCurrentValue(
     .where(
       and(
         eq(credentialVersions.credentialId, params.credentialId),
-        isNull(credentialVersions.purgedAt)
+        isNull(credentialVersions.purgedAt),
+        // Story 5.3 AC-13/CR5: excludes a version abandoned by a stale-recovery `abandon` call
+        // or superseded by break-glass (ADR-5.3-04) from ever being served as "current" —
+        // always-true no-op for any credential that has never had a rotation/abandonment.
+        isNull(credentialVersions.abandonedAt)
       )
     )
     .orderBy(desc(credentialVersions.versionNumber))
@@ -415,12 +419,19 @@ export async function listVersionHistory(
       createdBy: credentialVersions.createdBy,
       createdAt: credentialVersions.createdAt,
       purgedAt: credentialVersions.purgedAt,
+      abandonedAt: credentialVersions.abandonedAt,
     })
     .from(credentialVersions)
     .where(eq(credentialVersions.credentialId, params.credentialId))
     .orderBy(desc(credentialVersions.versionNumber))
 
-  const currentVersionNumber = rows.find((row) => row.purgedAt === null)?.versionNumber
+  // Story 5.3 AC-14/CR5: "current" also excludes abandoned versions — can fall all the way back
+  // to the credential's original (pre-rotation) version if its only rotation was abandoned
+  // (the "smallest possible abandon case" edge case). Always-true no-op (identical to the
+  // pre-5.3 behavior) for any credential that has never had an abandonment.
+  const currentVersionNumber = rows.find(
+    (row) => row.purgedAt === null && row.abandonedAt === null
+  )?.versionNumber
 
   return rows.map((row) => ({
     versionNumber: row.versionNumber,
@@ -428,5 +439,6 @@ export async function listVersionHistory(
     createdAt: row.createdAt.toISOString(),
     isCurrent: row.versionNumber === currentVersionNumber,
     purgedAt: row.purgedAt?.toISOString() ?? null,
+    abandonedAt: row.abandonedAt?.toISOString() ?? null,
   }))
 }

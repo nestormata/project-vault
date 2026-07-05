@@ -31,6 +31,21 @@ export const InitiateRotationBodySchema = z
   .strict()
   .meta({ id: 'InitiateRotationBody' })
 
+// Story 5.3 AC-4: reason is REQUIRED (unlike normal initiation's optional notes) — FR108's
+// audit trail depends on always having an incident reason on record.
+export const BreakGlassRotationBodySchema = z
+  .object({
+    newValue: z.string().min(1).max(65536),
+    reason: z.string().trim().min(1).max(1024),
+  })
+  .strict()
+  .meta({ id: 'BreakGlassRotationBody' })
+
+// Story 5.3 AC-11/AC-12: resume/abandon take no body — an explicit empty object is the only
+// valid payload (same convention as RetryChecklistItemBodySchema).
+export const ResumeRotationBodySchema = z.object({}).strict().meta({ id: 'ResumeRotationBody' })
+export const AbandonRotationBodySchema = z.object({}).strict().meta({ id: 'AbandonRotationBody' })
+
 export const RotationParamsSchema = z
   .object({ projectId: z.uuid(), credentialId: z.uuid(), rotationId: z.uuid() })
   .meta({ id: 'RotationParams' })
@@ -187,7 +202,42 @@ export const AcknowledgementRequiredResponseSchema = z
   })
   .meta({ id: 'AcknowledgementRequiredResponse' })
 
+// Story 5.3 AC-6: credential-scoped advisory-lock contention (break-glass initiation), OR
+// (AC-5/AC-6) a lost `FOR UPDATE NOWAIT` row-lock race against a concurrent 5.2 checklist
+// mutation on the rotation being superseded — both map to this identical 409 shape.
+export const RotationLockContentionResponseSchema = z
+  .object({
+    code: z.literal('rotation_lock_contention'),
+    message: z.string(),
+    credentialId: z.uuid(),
+  })
+  .meta({ id: 'RotationLockContentionResponse' })
+
+// Story 5.3 AC-17: resume/abandon called against a rotation whose status isn't stale_recovery.
+export const RotationNotStaleResponseSchema = z
+  .object({
+    code: z.literal('rotation_not_stale'),
+    message: z.string(),
+    status: RotationStatusSchema,
+  })
+  .meta({ id: 'RotationNotStaleResponse' })
+
+export const BreakGlassRotationResponseSchema = z
+  .object({ data: RotationDetailSchema })
+  .meta({ id: 'BreakGlassRotationResponse' })
+
+export const ResumeRotationResponseSchema = z
+  .object({ data: RotationDetailSchema })
+  .meta({ id: 'ResumeRotationResponse' })
+
+export const AbandonRotationResponseSchema = z
+  .object({ data: RotationDetailSchema })
+  .meta({ id: 'AbandonRotationResponse' })
+
 export type InitiateRotationBody = z.infer<typeof InitiateRotationBodySchema>
+export type BreakGlassRotationBody = z.infer<typeof BreakGlassRotationBodySchema>
+export type ResumeRotationBody = z.infer<typeof ResumeRotationBodySchema>
+export type AbandonRotationBody = z.infer<typeof AbandonRotationBodySchema>
 export type RotationParams = z.infer<typeof RotationParamsSchema>
 export type RotationCredentialParams = z.infer<typeof RotationCredentialParamsSchema>
 export type ListRotationsQuery = z.infer<typeof ListRotationsQuerySchema>

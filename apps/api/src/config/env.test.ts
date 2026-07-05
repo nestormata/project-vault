@@ -158,6 +158,41 @@ describe('env', () => {
     expect(env.ANOMALOUS_ACCESS_THRESHOLD_COUNT).toBe(5)
     expect(env.ANOMALOUS_ACCESS_WINDOW_SECONDS).toBe(3600)
     expect(env.ROTATION_MAX_RETRIES).toBe(3)
+    expect(env.BREAK_GLASS_OVERLAP_MINUTES).toBe(60)
+    expect(env.STALE_ROTATION_THRESHOLD_MINUTES).toBe(60)
+  })
+
+  it('accepts custom Story 5.3 BREAK_GLASS_OVERLAP_MINUTES/STALE_ROTATION_THRESHOLD_MINUTES within bounds', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      BREAK_GLASS_OVERLAP_MINUTES: '30',
+      STALE_ROTATION_THRESHOLD_MINUTES: '120',
+    }
+    const { env } = await import('./env.js')
+    expect(env.BREAK_GLASS_OVERLAP_MINUTES).toBe(30)
+    expect(env.STALE_ROTATION_THRESHOLD_MINUTES).toBe(120)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects an out-of-bounds Story 5.3 BREAK_GLASS_OVERLAP_MINUTES', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      BREAK_GLASS_OVERLAP_MINUTES: '1441',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('rejects an out-of-bounds Story 5.3 STALE_ROTATION_THRESHOLD_MINUTES', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      STALE_ROTATION_THRESHOLD_MINUTES: '14',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
   })
 
   it('Story 6.2: ANOMALOUS_ACCESS_WINDOW_SECONDS can be widened up to 86400 (adversarial-review finding 17)', async () => {

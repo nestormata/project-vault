@@ -61,17 +61,25 @@ export const rotations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    // Backstop for the advisory-lock race (see AC-4/AC-5): the DB, not the lock, is the
-    // durable source of truth for "at most one in_progress rotation per credential".
-    oneInProgressPerCredential: uniqueIndex('idx_rotations_one_in_progress_per_credential')
+    // Story 5.3 CR8/ADR-5.3-08: widened from 5.1's original idx_rotations_one_in_progress_per_
+    // credential (in_progress only) to cover stale_recovery too — 'in_progress'/'stale_recovery'
+    // are BOTH "active" statuses once 5.3 introduces stale_recovery, and this single index (not
+    // an application-level pre-check) is the durable backstop guaranteeing at most one active
+    // rotation per credential, even under concurrent requests. 5.1's initiation endpoint maps the
+    // resulting 23505 unique-violation to its existing 409 rotation_in_progress response.
+    oneActivePerCredential: uniqueIndex('idx_rotations_one_active_per_credential')
       .on(t.credentialId)
-      .where(sql`${t.status} = 'in_progress'`),
+      .where(sql`${t.status} IN ('in_progress', 'stale_recovery')`),
     projectInitiatedIdx: index('idx_rotations_project_initiated').on(
       t.projectId,
       t.initiatedAt.desc()
     ),
     credentialStatusIdx: index('idx_rotations_credential_status').on(t.credentialId, t.status),
     orgIdx: index('idx_rotations_org').on(t.orgId),
+    // Story 5.3 AC-1/AC-9: supports the stale-detection job's org-wide, credential-agnostic
+    // `WHERE status = 'in_progress' AND initiated_at < $threshold` scan — the existing
+    // (credentialId, status) index above isn't useful for that query shape.
+    statusInitiatedIdx: index('idx_rotations_status_initiated').on(t.status, t.initiatedAt),
     statusCheck: check(
       'rotations_status_check',
       sql`${t.status} IN ('in_progress','completed','abandoned','stale_recovery','break_glass_complete')`

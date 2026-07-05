@@ -100,6 +100,7 @@ describe('credential response schemas', () => {
         createdAt: CREATED_AT,
         isCurrent: false,
         purgedAt: CREATED_AT,
+        abandonedAt: null,
       })
     ).toMatchObject({ isCurrent: false, purgedAt: CREATED_AT })
   })
@@ -112,7 +113,21 @@ describe('credential response schemas', () => {
         createdAt: CREATED_AT,
         isCurrent: false,
         purgedAt: null,
+        abandonedAt: null,
       })
     ).toThrow()
+  })
+
+  it('parses a Story 5.3 version summary item with abandonedAt set', () => {
+    expect(
+      CredentialVersionSummarySchema.parse({
+        versionNumber: 2,
+        createdBy: USER_ID,
+        createdAt: CREATED_AT,
+        isCurrent: false,
+        purgedAt: null,
+        abandonedAt: CREATED_AT,
+      })
+    ).toMatchObject({ isCurrent: false, abandonedAt: CREATED_AT })
   })
 })

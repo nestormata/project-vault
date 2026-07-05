@@ -44,6 +44,12 @@ export const AuditEvent = {
   ROTATION_CHECKLIST_ITEM_RETRIED: 'rotation.checklist_item_retried',
   ROTATION_CHECKLIST_ITEM_MAX_RETRIES_EXCEEDED: 'rotation.checklist_item_max_retries_exceeded',
   ROTATION_COMPLETED: 'rotation.completed',
+  ROTATION_BREAK_GLASS_INITIATED: 'rotation.break_glass_initiated',
+  ROTATION_SUPERSEDED_BY_BREAK_GLASS: 'rotation.superseded_by_break_glass',
+  ROTATION_BREAK_GLASS_OVERLAP_EXPIRED: 'rotation.break_glass_overlap_expired',
+  ROTATION_STALE_DETECTED: 'rotation.stale_detected',
+  ROTATION_RESUMED: 'rotation.resumed',
+  ROTATION_ABANDONED: 'rotation.abandoned',
   PAYMENT_RECORD_CREATED: 'payment_record.created',
   PAYMENT_RECORD_UPDATED: 'payment_record.updated',
   PAYMENT_RECORD_DELETED: 'payment_record.deleted',
@@ -110,6 +116,12 @@ export type AuditEventType =
   | 'rotation.checklist_item_retried'
   | 'rotation.checklist_item_max_retries_exceeded'
   | 'rotation.completed'
+  | 'rotation.break_glass_initiated'
+  | 'rotation.superseded_by_break_glass'
+  | 'rotation.break_glass_overlap_expired'
+  | 'rotation.stale_detected'
+  | 'rotation.resumed'
+  | 'rotation.abandoned'
   | 'payment_record.created'
   | 'payment_record.updated'
   | 'payment_record.deleted'

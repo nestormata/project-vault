@@ -1,11 +1,17 @@
-import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { credentialVersions, credentials, projects } from '@project-vault/db/schema'
+import { credentialVersions } from '@project-vault/db/schema'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { withTestOrg } from '@project-vault/db/test-helpers'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
+import {
+  findAuditRowOrgIds,
+  seedWorkerCredential,
+  seedWorkerProject,
+  unsealWorkerTestVault,
+  withTwoTestOrgs,
+} from './worker-test-helpers.js'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
@@ -17,39 +23,9 @@ const { pruneCredentialVersions } = await import('./prune-credential-versions.js
 const TEST_PASSPHRASE = 'prune-credential-versions-passphrase'
 const VERSION_PURGED = 'credential.version_purged'
 
-async function unsealTestVault(): Promise<void> {
-  try {
-    await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
-  } catch (error) {
-    if ((error as { code?: string }).code !== 'ALREADY_INITIALIZED') throw error
-  }
-}
-
-async function seedProject(orgId: string): Promise<string> {
-  const [project] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(projects)
-      .values({ orgId, name: 'Prune Project', slug: `prune-${randomUUID()}` })
-      .returning({ id: projects.id })
-  )
-  if (!project) throw new Error('expected test project to be inserted')
-  return project.id
-}
-
-async function seedCredential(
-  orgId: string,
-  projectId: string,
-  retentionCount = 3
-): Promise<string> {
-  const [credential] = await withOrg(orgId, (tx) =>
-    tx
-      .insert(credentials)
-      .values({ orgId, projectId, name: 'Prune Credential', retentionCount })
-      .returning({ id: credentials.id })
-  )
-  if (!credential) throw new Error('expected test credential to be inserted')
-  return credential.id
-}
+const seedProject = (orgId: string) => seedWorkerProject(orgId, 'Prune')
+const seedCredential = (orgId: string, projectId: string, retentionCount = 3) =>
+  seedWorkerCredential(orgId, projectId, 'Prune', retentionCount)
 
 async function seedVersion(
   orgId: string,
@@ -110,7 +86,7 @@ async function versionsFor(orgId: string, credentialId: string) {
 describe.sequential('pruneCredentialVersions', () => {
   beforeAll(async () => {
     await resetVaultForTest()
-    await unsealTestVault()
+    await unsealWorkerTestVault(initVault, TEST_PASSPHRASE)
   })
 
   afterAll(async () => {
@@ -202,34 +178,22 @@ describe.sequential('pruneCredentialVersions', () => {
   }, 20_000)
 
   it('attributes each purge audit row to its own org (no cross-attribution)', async () => {
-    await withTestOrg(async ({ orgId: orgAId }) => {
-      await withTestOrg(async ({ orgId: orgBId }) => {
-        const projectAId = await seedProject(orgAId)
-        const projectBId = await seedProject(orgBId)
-        const credentialAId = await seedCredential(orgAId, projectAId, 1)
-        const credentialBId = await seedCredential(orgBId, projectBId, 1)
-        await seedVersion(orgAId, credentialAId, 1)
-        await seedVersion(orgAId, credentialAId, 2)
-        await seedVersion(orgBId, credentialBId, 1)
-        await seedVersion(orgBId, credentialBId, 2)
+    await withTwoTestOrgs(async (orgAId, orgBId) => {
+      const projectAId = await seedProject(orgAId)
+      const projectBId = await seedProject(orgBId)
+      const credentialAId = await seedCredential(orgAId, projectAId, 1)
+      const credentialBId = await seedCredential(orgBId, projectBId, 1)
+      await seedVersion(orgAId, credentialAId, 1)
+      await seedVersion(orgAId, credentialAId, 2)
+      await seedVersion(orgBId, credentialBId, 1)
+      await seedVersion(orgBId, credentialBId, 2)
 
-        await pruneCredentialVersions()
+      await pruneCredentialVersions()
 
-        const auditRowsA = await withOrg(orgAId, (tx) =>
-          tx
-            .select({ orgId: auditLogEntries.orgId })
-            .from(auditLogEntries)
-            .where(eq(auditLogEntries.eventType, VERSION_PURGED))
-        )
-        const auditRowsB = await withOrg(orgBId, (tx) =>
-          tx
-            .select({ orgId: auditLogEntries.orgId })
-            .from(auditLogEntries)
-            .where(eq(auditLogEntries.eventType, VERSION_PURGED))
-        )
-        expect(auditRowsA.every((row) => row.orgId === orgAId)).toBe(true)
-        expect(auditRowsB.every((row) => row.orgId === orgBId)).toBe(true)
-      })
+      const auditRowsA = await findAuditRowOrgIds(orgAId, VERSION_PURGED)
+      const auditRowsB = await findAuditRowOrgIds(orgBId, VERSION_PURGED)
+      expect(auditRowsA.every((id) => id === orgAId)).toBe(true)
+      expect(auditRowsB.every((id) => id === orgBId)).toBe(true)
     })
   }, 20_000)
 

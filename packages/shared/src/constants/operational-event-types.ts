@@ -88,6 +88,22 @@ export const OperationalEvent = {
   ROTATION_COMPLETE_CONCURRENT_MODIFICATION: 'rotation.complete.concurrent_modification',
   ROTATION_COMPLETE_AUDIT_FAILED: 'rotation.complete.audit_failed',
 
+  // Break-glass / stale-recovery (Story 5.3)
+  ROTATION_BREAK_GLASS_SUCCESS: 'rotation.break_glass.success',
+  ROTATION_BREAK_GLASS_LOCK_CONTENTION: 'rotation.break_glass.lock_contention',
+  ROTATION_BREAK_GLASS_AUDIT_FAILED: 'rotation.break_glass.audit_failed',
+  ROTATION_BREAK_GLASS_SUPERSEDED: 'rotation.break_glass.superseded',
+  ROTATION_BREAK_GLASS_OVERLAP_EXPIRED: 'rotation.break_glass.overlap_expired',
+  ROTATION_STALE_DETECTED: 'rotation.stale.detected',
+  ROTATION_RESUME_SUCCESS: 'rotation.resume.success',
+  ROTATION_RESUME_NOT_STALE: 'rotation.resume.not_stale',
+  ROTATION_RESUME_CONCURRENT_MODIFICATION: 'rotation.resume.concurrent_modification',
+  ROTATION_RESUME_AUDIT_FAILED: 'rotation.resume.audit_failed',
+  ROTATION_ABANDON_SUCCESS: 'rotation.abandon.success',
+  ROTATION_ABANDON_NOT_STALE: 'rotation.abandon.not_stale',
+  ROTATION_ABANDON_CONCURRENT_MODIFICATION: 'rotation.abandon.concurrent_modification',
+  ROTATION_ABANDON_AUDIT_FAILED: 'rotation.abandon.audit_failed',
+
   // Operational monitoring expiry alerts (Story 6.1)
   MONITORING_EXPIRY_ALERT_ROW_FAILED: 'monitoring.expiry_alert_row_failed',
 
