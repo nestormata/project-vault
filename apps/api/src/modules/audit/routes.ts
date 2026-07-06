@@ -5,10 +5,9 @@ import { validationError } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
+import { VaultSealedError } from '../vault/key-service.js'
 import { AuditVerifyQuerySchema, AuditVerifyResponseSchema } from './schema.js'
 import { InvalidRangeError, RangeTooLargeError, verifyAuditRange } from './verify.js'
-
-const AUDIT_KEY_UNAVAILABLE_MESSAGE = 'getAuditKey: vault is sealed — audit key unavailable'
 
 export async function auditRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
@@ -65,7 +64,7 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
         if (error instanceof RangeTooLargeError) {
           return reply.status(422).send({ code: 'range_too_large', message: error.message })
         }
-        if (error instanceof Error && error.message === AUDIT_KEY_UNAVAILABLE_MESSAGE) {
+        if (error instanceof VaultSealedError) {
           return reply.status(503).send({
             code: 'audit_key_unavailable',
             message: 'Audit key is unavailable while the vault is sealed',
