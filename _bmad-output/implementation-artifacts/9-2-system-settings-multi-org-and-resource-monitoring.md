@@ -47,8 +47,8 @@ If a dev agent picks up this story before Story 9.1 has merged, **implement Stor
 
 **Resolution:**
 1. Register this story's routes in a **new** module, `apps/api/src/modules/platform-admin/` (`settings-routes.ts`, `orgs-routes.ts`, `resource-usage-routes.ts`, `schema.ts`, `service.ts`) — do **not** add them to the existing `apps/api/src/modules/admin/` module, to keep the org-scoped and platform-scoped route families physically separate and reduce the chance of copy-paste privilege escalation.
-2. Every new route in this story uses `security: { requireOrgScope: false }` plus the `requirePlatformOperator()` preHandler (mirrors Story 9.1's backup routes exactly) — **never** `allowedRoles`/`requireOrgRole` for these endpoints.
-3. Add a route-audit regression test (extends `apps/api/src/__tests__/route-audit.test.ts`'s existing style, or a new sibling `platform-admin-route-audit.test.ts`) asserting: every route whose URL matches `/^\/api\/v1\/admin\//` and lives in `modules/platform-admin/` has `requireOrgScope: false` and no `allowedRoles` entry — and every route in `modules/admin/` (the pre-existing org-scoped module) is unaffected. This test is the load-bearing guard against a future refactor accidentally merging the two families.
+2. Every new route in this story uses `security: { requireOrgScope: false, requireMfa: true }` plus the `requirePlatformOperator()` preHandler — **never** `allowedRoles`/`requireOrgRole` for these endpoints. **`requireMfa: true` is mandatory, not optional**: these routes are more sensitive than the existing org-scoped `POST /api/v1/admin/notifications/test`, which already requires MFA (`apps/api/src/modules/admin/routes.ts`) — shipping instance-wide SMTP-credential/org-provisioning endpoints with *weaker* auth than an existing lower-stakes endpoint would be a security regression, not a neutral omission. (This diverges from Story 9.1's backup routes only if those routes themselves lack `requireMfa` — if so, flag that as a gap in 9.1, not a precedent to copy here.)
+3. Add a route-audit regression test (extends `apps/api/src/__tests__/route-audit.test.ts`'s existing style, or a new sibling `platform-admin-route-audit.test.ts`) asserting: every route whose URL matches `/^\/api\/v1\/admin\//` and lives in `modules/platform-admin/` has `requireOrgScope: false`, `requireMfa: true`, and no `allowedRoles` entry — and every route in `modules/admin/` (the pre-existing org-scoped module) is unaffected. This test is the load-bearing guard against a future refactor accidentally merging the two families or dropping the MFA requirement.
 4. Document the distinction in a comment at the top of `modules/platform-admin/settings-routes.ts`: `// Platform-operator-scoped (instance-wide). Do NOT confuse with apps/api/src/modules/admin/ (org-scoped org-admin routes under the same /admin/ URL prefix — see Story 9.2 D2).`
 
 ### D3 — System settings persistence: a new singleton `system_settings` table, env vars remain the fallback default (resolves deferred-work.md E3-1)
@@ -79,7 +79,7 @@ Today, SMTP configuration (`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP
    ```
    A single row is upserted (`INSERT ... ON CONFLICT (id) DO UPDATE`) on first `PUT`; `GET` returns defaults (all-null / instance-default values) if the row does not exist yet — **never** 404 (matches AC-8's "list backups" empty-collection-is-200 discipline from Story 9.1).
 2. **Precedence rule (must be implemented in one place, `resolveEffectiveSettings()` in `modules/platform-admin/service.ts`, and reused everywhere settings are consumed):** for each field, if the `system_settings` row has a non-null value, use it; otherwise fall back to the corresponding env var (or its hardcoded default). This is additive and backward-compatible — an instance that never calls `PUT /admin/settings` behaves byte-for-byte as it does today (E3-1's explicit requirement).
-3. `instancePolicy.maxOrgs`/`maxUsersPerOrg`/`sessionIdleTimeoutMinutes` have **no** pre-existing env var equivalent (there is no existing instance-policy concept in the codebase at all — confirmed by grep: no `tier`/`subscription` concept exists anywhere in `packages/`/`apps/`, only `payment-records.ts`/`service-endpoints.ts` use the word "tier" in unrelated comments). These are genuinely new instance-level knobs this story introduces; sensible v1 defaults are `maxOrgs: 10`, `maxUsersPerOrg: 50`, `sessionIdleTimeoutMinutes` falling back to whatever the existing idle-session-timeout mechanism (FR85, Story 1.7) already uses as its default.
+3. `instancePolicy.maxOrgs`/`maxUsersPerOrg`/`sessionIdleTimeoutMinutes` have **no** pre-existing env var equivalent (there is no existing instance-policy concept in the codebase at all — confirmed by grep: no `tier`/`subscription` concept exists anywhere in `packages/`/`apps/`, only `payment-records.ts`/`service-endpoints.ts` use the word "tier" in unrelated comments). These are genuinely new instance-level knobs this story introduces; sensible v1 defaults are `maxOrgs: 10`, `maxUsersPerOrg: 50`, `sessionIdleTimeoutMinutes` falling back to whatever the existing idle-session-timeout mechanism (FR85, Story 1.7) already uses as its default. **`maxOrgs` and `maxUsersPerOrg` are intentionally *not* symmetric in v1:** `maxOrgs` is hard-enforced (AC-10, 422 rejection on the Nth+1 org) because org creation is exclusively platform-operator-initiated through this story's own new endpoint, making enforcement a single, easy chokepoint. `maxUsersPerOrg` is **alert-only in v1** (AC-13) — it is *not* enforced as a hard cap on the Nth+1 user joining an org, because doing so would require adding a rejection path to every existing org-join mechanism (project-invitation acceptance, `token-routes.ts`; the new `POST /admin/orgs` existing-user path) rather than a single new endpoint, which is a larger scope change than this story's boundary. This is a deliberate, documented v1 scope decision, not an oversight — a platform operator configuring `maxUsersPerOrg` should be told explicitly (via its field description in `GET /admin/settings`'s response schema/OpenAPI doc, e.g. `"maxUsersPerOrg (advisory only in v1 — alerts at 80/90/95%, does not block new members)"`) that it is advisory, so as not to create a false expectation of a hard cap. Hard enforcement of `maxUsersPerOrg` is flagged as a follow-up in Open Questions below.
 4. **Do not conflate "subscription tier" (PRD's SaaS-v2/rate-limiting language, `prd.md` "Limits vary by subscription tier" under API Architecture) with this story's `instancePolicy`.** Self-hosted v1 has no billing/subscription concept — `instancePolicy` is an **operator-configured instance limit**, not a purchased tier. `GET /admin/resource-usage`'s `{ limit }` fields report against `instancePolicy`, never against a SaaS tier table (which does not exist in v1).
 
 ### D4 — SMTP password: encrypted at rest, masked in responses, and the transport cache must be invalidated on update
@@ -110,7 +110,7 @@ Today, the **only** way a user joins an org is (a) registering fresh, which alwa
 **Resolution:**
 1. `POST /api/v1/admin/orgs` body: `{ name: string, ownerEmail: string }`.
 2. **Reuse `allocateOrganizationSlug(tx, slugify(name))`** from `apps/api/src/modules/auth/service.ts` verbatim (exported if not already) — do not re-implement slug collision retry logic.
-3. **If `ownerEmail` matches an existing `users` row:** insert an `org_memberships` row `{ orgId: newOrg.id, userId: existingUser.id, role: 'owner', status: 'active' }` in the same transaction as the org insert. Response includes `ownerAccountAction: 'existing_user_added'`. This is the first place in the codebase a single user can belong to `org_memberships` rows in more than one org — verify no existing query assumes "a user has exactly one org" (e.g. `apps/api/src/@types/fastify.d.ts`'s `AuthContext.orgId` is populated per-session/per-JWT from the org the user authenticated into, not "the" org — confirm this at implementation time by searching for `.orgId` usages that do a bare `users` join without an explicit `org_memberships` filter).
+3. **If `ownerEmail` matches an existing `users` row:** insert an `org_memberships` row `{ orgId: newOrg.id, userId: existingUser.id, role: 'owner', status: 'active' }` in the same transaction as the org insert. Response includes `ownerAccountAction: 'existing_user_added'`. **Correction: this is *not* the first place in the codebase a user can hold `org_memberships` rows in more than one org** — `apps/api/src/modules/invitations/token-routes.ts`'s existing project-invitation-acceptance path already inserts an org-scoped `org_memberships` row with no check that the accepting user has no other org membership, so a user accepting project invitations from two different orgs today already ends up multi-org. What *is* new here is that this story's flow is the first **platform-operator-initiated, deliberate** path to multi-org membership (as opposed to an incidental side effect of invitation acceptance) — this distinction does not reduce the risk below, it means the risk already exists in production today and this story is not creating a new class of bug, only a new, more visible way to trigger it. `AuthContext.orgId` (`apps/api/src/@types/fastify.d.ts`) is populated per-session/per-JWT from the org the user authenticated into, not "the" org — **this must be verified with an actual regression test (AC-23b below), not left as an implementation-time prose reminder**, since the underlying multi-org-membership case is already reachable in production and has apparently never been tested for cross-org leakage.
 4. **If `ownerEmail` does not match any existing user:** create a new `users` row (`is_platform_operator: false`, a securely-random, permanently-unusable `password_hash` sentinel — same discipline as the existing dummy-password-hash pattern already validated in `apps/api/src/config/env.ts`'s `validateDummyPasswordHash`) plus the `org_memberships` owner row, then issue a "set your initial password" link reusing the **existing `account_recovery_tokens` mechanism** (Story 4.3) rather than inventing a second token table: insert an `account_recovery_tokens` row with `initiatedBy: 'admin'` (this value is already a valid enum member — no schema change needed for the enum itself; `initiator_org_id` = the platform operator's own current org context, or `NULL` if they have none), `expiresAt: now + 72h` (matches Story 4.1's invitation TTL for consistency), and email the link using the same delivery pipeline `POST /api/v1/auth/recovery/request` uses. The recipient completes it via the **existing, unmodified** `POST /api/v1/auth/recovery/:token/complete` endpoint (Story 4.3) — no new completion endpoint needed. Response includes `ownerAccountAction: 'invited_new_user'`.
 5. This design deliberately reuses three existing mechanisms (`allocateOrganizationSlug`, `account_recovery_tokens`, the recovery-complete endpoint) instead of inventing a parallel "org invitation" system — flagged explicitly so a dev agent doesn't reinvent an `org_invitations` table that would duplicate `account_recovery_tokens`' exact purpose (a single-use, expiring, hashed token that lets an identified email address establish first-time or replacement account credentials).
 
@@ -124,17 +124,26 @@ Today, the **only** way a user joins an org is (a) registering fresh, which alwa
 
 FR86's full text is "Administrators can configure system-level settings **through the product UI**." This story ships the API only (Product Surface Contract, above) — same accepted gap Story 9.1 already established for FR88-92 (backup/restore has no UI either). This is not a new problem this story introduces; it is the same, already-acknowledged Epic 9 pattern, restated here so it is not mistaken for an oversight specific to this story.
 
+### D10 — Audit-storage maintenance mode (AC-17): instance-wide monitoring creates a cross-tenant blast radius; must not blind the audit trail on the exact events that matter most
+
+`audit_log_entries` is a single shared table across every org on the instance (D5) — there is no per-org partitioning or quota. This means AC-17's 95%-utilization maintenance mode is triggered by **aggregate** storage pressure, and any single org (or a single compromised/scripted account within it) generating an unusually high volume of audited actions can push the **entire instance** into maintenance mode, silently suspending audit writes for every other org. This is a genuine tenant-isolation gap, not merely an operational capacity concern, and must not be treated as one implicitly.
+
+**Resolution (v1 scope — full per-org quota/rate-limiting is out of scope for this story, flagged as a follow-up below):**
+1. **Security-critical audit event types are never suppressed by maintenance mode, even at 100% utilization.** The interception point (AC-17) must classify event types before deciding to skip a write: MFA enrollment/recovery-code usage (`apps/api/src/modules/auth/mfa.ts`, `mfa-login.ts`), machine-user API-key rotation (`apps/api/src/modules/machine-users/rotation.ts`), and any other event type already written via a direct `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry` call rather than through the `*OrFailClosed` wrappers, are **always written**, regardless of maintenance-mode state — these are exactly the events you most need intact during an anomaly (which storage pressure may itself be a symptom of). Only "routine" audit categories (e.g. credential-reveal, resource CRUD) are eligible for suspension. Maintain an explicit `SECURITY_CRITICAL_AUDIT_EVENT_TYPES` allowlist (not a denylist) so any newly-added event type defaults to "suppressible" only if a developer consciously omits it from the allowlist — the safer default given this table's stakes is to require an explicit decision either way, reviewed at PR time.
+2. **The daily `audit-storage:check` job (AC-15/16) also computes and stores a per-org breakdown of `audit_log_entries` row-count/byte growth since the previous check**, included in the `admin_alerts` payload for the 90%/95% tiers (`payload.topContributingOrgs: [{ orgId, bytesAdded, rowsAdded }]`, top 5 by growth). This does not prevent the cross-tenant DoS, but converts it from *silent and unattributable* to *immediately diagnosable* — an operator investigating a storage-pressure alert can identify the responsible org without ad hoc SQL.
+3. **Explicitly out of scope for this story, flagged as an open question below:** per-org audit-write rate limiting or storage quotas. Full resolution of the underlying tenant-isolation gap requires either partitioning `audit_log_entries` by org with independent capacity tracking, or a per-org write-rate cap — both are a larger design change than this story's scope and should be scoped as a dedicated follow-up (candidate for Epic 9 retro or Story 9.4).
+
 ---
 
 ## Acceptance Criteria
 
-### AC-1 — Platform operator authorization on all new endpoints (D1, D2)
+### AC-1 — Platform operator authorization on all new endpoints, MFA required (D1, D2)
 
 **Given** all six new endpoints (`GET`/`PUT /admin/settings`, `POST`/`GET /admin/orgs`, `GET /admin/resource-usage`) exist,
 **When** any is called,
-**Then** it requires `authContext.isPlatformOperator === true` (via `requirePlatformOperator()`) and `requireOrgScope: false` — never `allowedRoles`/`requireOrgRole`.
+**Then** it requires `authContext.isPlatformOperator === true` (via `requirePlatformOperator()`), `requireOrgScope: false`, **and** `requireMfa: true` — never `allowedRoles`/`requireOrgRole`. **These are the most privileged routes in the codebase** (instance-wide SMTP credentials, org provisioning, cross-org resource visibility) — they must not be *less* protected than the existing org-scoped `POST /api/v1/admin/notifications/test`, which already sets `security: { requireMfa: true, ... }` (`apps/api/src/modules/admin/routes.ts`). A platform-operator session compromised or coerced without a second factor must not be sufficient on its own to read/write instance-wide state.
 
-**Example (positive):** the platform operator's access token (from the instance's first-ever registration, per Story 9.1's bootstrap) succeeds on every endpoint.
+**Example (positive):** the platform operator's access token (from the instance's first-ever registration, per Story 9.1's bootstrap), issued from a session that has completed MFA, succeeds on every endpoint.
 
 **Example (negative — org admin, not platform operator):**
 ```
@@ -143,9 +152,16 @@ Authorization: Bearer <org Owner's token, isPlatformOperator=false>
 → 403 { "code": "platform_operator_required", "message": "This endpoint requires platform operator privileges." }
 ```
 
+**Example (negative — platform operator, MFA not completed for this session):**
+```
+PUT /api/v1/admin/settings
+Authorization: Bearer <platform operator's token, isPlatformOperator=true, mfaVerified=false>
+→ 403 { "code": "mfa_required", "message": "This endpoint requires a session with MFA verified." }
+```
+
 **Example (negative — unauthenticated):** any of the six endpoints with no `Authorization` header → `401 { "code": "access_token_missing", ... }`.
 
-**Example (regression guard, D2):** the route-audit test asserts zero routes registered under `modules/platform-admin/` have an `allowedRoles` entry, and zero routes registered under the pre-existing `modules/admin/` (org-scoped) module were modified by this story.
+**Example (regression guard, D2):** the route-audit test asserts every route registered under `modules/platform-admin/` has both `requireOrgScope: false` and `requireMfa: true`, zero have an `allowedRoles` entry, and zero routes registered under the pre-existing `modules/admin/` (org-scoped) module were modified by this story.
 
 ---
 
@@ -297,7 +313,7 @@ POST /api/v1/admin/orgs
   "ownerAccountAction": "existing_user_added", "ownerUserId": "<alice's existing id>"
 }
 ```
-`SELECT * FROM org_memberships WHERE user_id = '<alice's id>' AND org_id = '8b2c...'` → one row, `role='owner'`, confirming Alice now belongs to **two** orgs (her original + this new one) — the first multi-org membership in the instance's history.
+`SELECT * FROM org_memberships WHERE user_id = '<alice's id>' AND org_id = '8b2c...'` → one row, `role='owner'`, confirming Alice now belongs to **two** orgs (her original + this new one) — multi-org membership was already reachable today via project-invitation acceptance (see D7 point 3's correction); this endpoint is a new, deliberate path to the same state, not a new category of state.
 
 **Example (edge — duplicate org name, different slug):** creating a second org also named "Acme Subsidiary" succeeds with slug `acme-subsidiary-2` (reuses `allocateOrganizationSlug`'s existing collision-retry loop verbatim — org **names** are not required to be globally unique, only **slugs** are, matching the existing registration-flow behavior).
 
@@ -405,7 +421,9 @@ GET /api/v1/admin/resource-usage
 
 ---
 
-### AC-13 — Resource usage threshold alerts: per-org `usersPerOrg` (80/90/95%)
+### AC-13 — Resource usage threshold alerts: per-org `usersPerOrg` (80/90/95%, advisory-only — D3)
+
+**Note:** `maxUsersPerOrg` is alert-only in v1 (D3) — crossing 100% does **not** block new members from joining; only `maxOrgs` (AC-10) is a hard-enforced cap. This is intentional and documented, not a gap.
 
 **Given** an org has `usersPerOrg.current / limit >= 0.80`,
 **When** the resource-usage check runs (piggybacks on the existing hourly-cadence job family, or its own dedicated hourly job — implementer's choice, document which),
@@ -453,20 +471,43 @@ GET /api/v1/admin/resource-usage
 
 ---
 
-### AC-17 — Audit log storage: 95% maintenance mode suspends writes (D5)
+### AC-17 — Audit log storage: 95% maintenance mode suspends *routine* writes only; security-critical events always written; per-org attribution included (D5, D10)
 
 **Given** utilization reaches ≥ 95%,
 **When** the daily check detects this,
-**Then** in addition to AC-16's critical alert, a maintenance-mode flag is activated: subsequent attempts to write to `audit_log_entries` (via `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry`, `apps/api/src/modules/audit/*.ts`) are intercepted **before** the INSERT, the write is skipped, and a `WARN`-level structured operational log entry is emitted in its place (`OperationalEvent.AUDIT_WRITE_SUSPENDED`, payload includes the event type and org id that would have been written) — this is a deliberate trade-off (write availability over completeness) that must be documented prominently, since it is the **one** place in the entire codebase where the otherwise-absolute "audit write failure fails the whole request closed" invariant (`SameTransactionAuditWriteError`, `audit-or-fail-closed.ts`) is intentionally suspended, not by failure but by design, to prevent a full storage outage from also taking down every audited write path in the product.
+**Then** in addition to AC-16's critical alert, a maintenance-mode flag is activated: subsequent attempts to write a **routine** (non-security-critical, per D10's `SECURITY_CRITICAL_AUDIT_EVENT_TYPES` allowlist) audit event to `audit_log_entries` (via `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry`, `apps/api/src/modules/audit/*.ts`) are intercepted **before** the INSERT, the write is skipped, and a `WARN`-level structured operational log entry is emitted in its place (`OperationalEvent.AUDIT_WRITE_SUSPENDED`, payload includes the event type and org id that would have been written). **Events on the `SECURITY_CRITICAL_AUDIT_EVENT_TYPES` allowlist (D10) — MFA enrollment/recovery-code usage, machine-key rotation, and any event type not explicitly marked suppressible — are always written, regardless of maintenance-mode state.** This is a deliberate trade-off (routine-write availability over completeness) that must be documented prominently, since it is the **one** place in the entire codebase where the otherwise-absolute "audit write failure fails the whole request closed" invariant (`SameTransactionAuditWriteError`, `audit-or-fail-closed.ts`) is intentionally suspended for routine events, not by failure but by design, to prevent a full storage outage from also taking down every audited write path in the product — while never suspending the events most likely to matter during an anomaly.
 
-**Example (positive — maintenance mode active, a credential is revealed):**
+**Example (positive — maintenance mode active, a credential is revealed — routine event, suppressed):**
 ```
 GET /api/v1/projects/:id/credentials/:credId/reveal   // while maintenance mode is active
 → 200 { ...secret value... }   // the reveal itself still succeeds
 ```
 Operational log: `{ event: "audit.write_suspended", level: "warn", eventType: "credential.revealed", orgId: "...", reason: "audit_storage_maintenance_mode" }` — **no** `audit_log_entries` row is written for this reveal.
 
-**Example (negative/edge — resuming normal operation):** the operator exports-and-prunes old audit entries (out of scope to build export tooling in this story — reuses Story 8.2's existing export mechanism), utilization drops back below 95%. The next daily check detects this and deactivates maintenance mode — subsequent audit writes resume normally, verified by a test asserting a write immediately after mode deactivation produces a real `audit_log_entries` row again.
+**Example (positive — maintenance mode active, MFA recovery code used — security-critical, NOT suppressed):**
+```
+POST /api/v1/auth/mfa/recover   // while maintenance mode is active
+→ 200 { ... }
+```
+A real `audit_log_entries` row **is** written for this event (verified by a test asserting `SECURITY_CRITICAL_AUDIT_EVENT_TYPES` membership bypasses the maintenance-mode check entirely) — the interception point checks event-type membership before the storage-pressure check, not after.
+
+**Example (positive — 90%/95% alert includes per-org attribution, D10):**
+```json
+// admin_alerts row at 95%
+{
+  "alertType": "audit_storage.critical",
+  "payload": {
+    "currentBytes": 51000000000, "limitBytes": 53687091200, "utilizationPct": 95,
+    "topContributingOrgs": [
+      { "orgId": "8b2c...", "bytesAdded": 4200000000, "rowsAdded": 18400 },
+      { "orgId": "9c3d...", "bytesAdded": 310000000, "rowsAdded": 900 }
+    ]
+  }
+}
+```
+An operator can immediately see which org is responsible for the growth, without ad hoc SQL.
+
+**Example (negative/edge — resuming normal operation):** the operator exports-and-prunes old audit entries (out of scope to build export tooling in this story — reuses Story 8.2's existing export mechanism), utilization drops back below 95%. The next daily check detects this and deactivates maintenance mode — subsequent routine audit writes resume normally, verified by a test asserting a write immediately after mode deactivation produces a real `audit_log_entries` row again.
 
 **Example (edge — maintenance mode must not silently persist forever if the check job itself fails):** if the daily `audit-storage:check` job errors out (e.g., transient DB issue) while maintenance mode is active, mode remains active (fails safe — better to keep suspending non-critical audit writes than to guess) but the job failure itself is logged at `error` level so it surfaces in operational monitoring, distinct from the routine "still at 96%, staying in maintenance mode" no-op case.
 
@@ -569,6 +610,22 @@ Startup succeeds; both weekly/daily schedules register under `onVaultUnsealed`, 
 
 ---
 
+### AC-23b — Regression test: multi-org user session correctly scopes to only their JWT's org (D7 point 3, tenant isolation)
+
+**Given** a user holds `org_memberships` rows in two different orgs (reachable today via project-invitation acceptance, and newly via `POST /admin/orgs`, D7 point 3),
+**When** that user authenticates and receives a JWT scoped to org A (`AuthContext.orgId = orgA.id`),
+**Then** every existing org-scoped endpoint that reads `AuthContext.orgId` must return **only** org A's data — none of org B's — even though the same `user_id` also holds a valid, active `org_memberships` row for org B.
+
+**Example (positive — the case this test must catch if it regresses):** the multi-org user has 3 projects in org A and 5 projects in org B. Authenticating with an org-A-scoped JWT and calling `GET /api/v1/projects` returns exactly the 3 org-A projects — never all 8, never the 5 org-B projects.
+
+**Example (negative — the bug this test exists to prevent):** any org-scoped query implemented as a bare `users` join (e.g. `SELECT ... FROM projects JOIN users ON ...` without an explicit `org_memberships`/`org_id` filter) would, for a multi-org user, return **cross-org data** — the test suite must include at least one query-level assertion per major org-scoped resource (projects, credentials, service endpoints) proving this cannot happen, not just an end-to-end happy-path check.
+
+**Example (edge — switching org context via re-authentication):** the same user re-authenticates and selects org B (or receives an org-B-scoped JWT via whatever org-switching mechanism exists) — subsequent calls now return only org B's data, and a previously-issued org-A-scoped JWT (if still unexpired) continues to return only org A's data if reused; the two sessions never bleed into each other.
+
+This AC exists because this story's `POST /admin/orgs` deliberately increases how often multi-org membership occurs, and no existing test previously covered this case (D7 point 3) despite it already being reachable via project invitations — shipping this endpoint without closing that gap would knowingly ship on top of an untested tenant-isolation assumption in a credential vault.
+
+---
+
 ### AC-24 — Migration and backward compatibility: existing single-org instances are unaffected (D3, D6, D7)
 
 **Given** an existing single-org deployment upgrading to this story's version,
@@ -624,7 +681,7 @@ New `OperationalEvent` constants: `PLATFORM_SETTINGS_UPDATED`, `PLATFORM_ORG_CRE
 
 **Given** the full feature set above,
 **When** the integration test suite runs (`apps/api/src/modules/platform-admin/*.test.ts` and `apps/api/src/__tests__/`),
-**Then** it covers, at minimum: (1) platform-operator authz on all six routes + org-admin 403 + unauthenticated 401 (AC-1); (2) settings GET effective-value precedence, env-only and DB-override cases (AC-2, AC-4); (3) settings PUT partial update, SMTP password write-only + `"[configured]"` sentinel guard + validation errors (AC-3); (4) SMTP password encrypted at rest, never plaintext in DB or response (AC-5); (5) SMTP transport cache invalidation on update, and non-invalidation on unrelated update (AC-6); (6) `system_settings`/`vault_state.key_rotated_at` migration + RLS-exclusion regression + backfill (AC-7); (7) org creation for existing user, multi-org membership (AC-8); (8) org creation for new user via recovery-token reuse, expired-token case, deactivated-owner rejection (AC-9); (9) `maxOrgs` enforcement + limit-increase retry (AC-10); (10) org listing, single-org and multi-org cases (AC-11); (11) resource-usage happy path + honest nulls (AC-12); (12) per-org and instance-wide threshold alerts + idempotency (AC-13, AC-14); (13) audit storage monitoring queries the real table name (AC-15, regression guard for D5); (14) tiered alerts + cross-org fan-out (AC-16); (15) 95% maintenance mode suspends writes + resumes + fail-safe on job error (AC-17); (16) `/ready` warnings field, additive and backward-compatible (AC-18); (17) key custody alert both triggers, combined-trigger payload, idempotency (AC-19, AC-20); (18) env var validation (AC-21); (19) concurrent settings PUT does not lose updates (AC-22); (20) concurrent org creation for the same new email (AC-23); (21) migration backward compatibility, no auto-created settings row (AC-24); (22) operational log events emitted (AC-25); (23) sealed-vault 503 on all six routes (AC-26); (24) route classification/OpenAPI tagging (AC-27).
+**Then** it covers, at minimum: (1) platform-operator authz on all six routes + org-admin 403 + unauthenticated 401 (AC-1); (2) settings GET effective-value precedence, env-only and DB-override cases (AC-2, AC-4); (3) settings PUT partial update, SMTP password write-only + `"[configured]"` sentinel guard + validation errors (AC-3); (4) SMTP password encrypted at rest, never plaintext in DB or response (AC-5); (5) SMTP transport cache invalidation on update, and non-invalidation on unrelated update (AC-6); (6) `system_settings`/`vault_state.key_rotated_at` migration + RLS-exclusion regression + backfill (AC-7); (7) org creation for existing user, multi-org membership (AC-8); (8) org creation for new user via recovery-token reuse, expired-token case, deactivated-owner rejection (AC-9); (9) `maxOrgs` enforcement + limit-increase retry (AC-10); (10) org listing, single-org and multi-org cases (AC-11); (11) resource-usage happy path + honest nulls (AC-12); (12) per-org and instance-wide threshold alerts + idempotency (AC-13, AC-14); (13) audit storage monitoring queries the real table name (AC-15, regression guard for D5); (14) tiered alerts + cross-org fan-out (AC-16); (15) 95% maintenance mode suspends writes + resumes + fail-safe on job error (AC-17); (16) `/ready` warnings field, additive and backward-compatible (AC-18); (17) key custody alert both triggers, combined-trigger payload, idempotency (AC-19, AC-20); (18) env var validation (AC-21); (19) concurrent settings PUT does not lose updates (AC-22); (20) concurrent org creation for the same new email (AC-23); (20b) multi-org user session scopes to only their JWT's org across projects/credentials/service-endpoints — query-level assertions, not just end-to-end (AC-23b); (21) migration backward compatibility, no auto-created settings row (AC-24); (22) operational log events emitted (AC-25); (23) sealed-vault 503 on all six routes (AC-26); (24) route classification/OpenAPI tagging (AC-27).
 
 ---
 
@@ -638,8 +695,8 @@ New `OperationalEvent` constants: `PLATFORM_SETTINGS_UPDATED`, `PLATFORM_ORG_CRE
   - [ ] Export `allocateOrganizationSlug` from `apps/api/src/modules/auth/service.ts` if not already exported, for reuse (D7)
 - [ ] **Task 2 — Platform-admin route module (D2)**
   - [ ] New module `apps/api/src/modules/platform-admin/` (`settings-routes.ts`, `orgs-routes.ts`, `resource-usage-routes.ts`, `service.ts`, `schema.ts`)
-  - [ ] Every route: `security: { requireOrgScope: false }` + `requirePlatformOperator()` preHandler
-  - [ ] Route-audit regression test distinguishing this module from `modules/admin/` (D2)
+  - [ ] Every route: `security: { requireOrgScope: false, requireMfa: true }` + `requirePlatformOperator()` preHandler
+  - [ ] Route-audit regression test distinguishing this module from `modules/admin/`, asserting `requireMfa: true` on all six routes (D2)
 - [ ] **Task 3 — Settings service (D3, D4, AC-2 through AC-7)**
   - [ ] `resolveEffectiveSettings()` — DB-override-then-env-fallback precedence, single implementation reused everywhere
   - [ ] SMTP password encrypt/mask/`"[configured]"`-sentinel handling
@@ -651,15 +708,17 @@ New `OperationalEvent` constants: `PLATFORM_SETTINGS_UPDATED`, `PLATFORM_ORG_CRE
   - [ ] `maxOrgs` enforcement (422)
   - [ ] `GET /admin/orgs` listing with `memberCount`
   - [ ] Concurrent-same-new-email race handling (unique-violation catch + retry-as-existing-user)
+  - [ ] Cross-org data-isolation regression test for multi-org users across projects/credentials/service-endpoints (AC-23b)
 - [ ] **Task 5 — Resource usage endpoint and threshold alerts (AC-12 through AC-14)**
   - [ ] `GET /admin/resource-usage` aggregation queries
   - [ ] Hourly (or piggybacked) threshold-check job: per-org `usersPerOrg` (org-routed alert) and instance-wide `orgs` (admin_alerts only)
   - [ ] Add `'resource.users_near_limit'`/`'resource.secrets_near_limit'` to `NOTIFICATION_ALERT_TYPES`
   - [ ] Episode-key idempotency helper (reusable across AC-13/14/16/19/20)
-- [ ] **Task 6 — Audit log storage monitoring + maintenance mode (D5, AC-15 through AC-18)**
+- [ ] **Task 6 — Audit log storage monitoring + maintenance mode (D5, D10, AC-15 through AC-18)**
   - [ ] Daily `audit-storage:check` job — `pg_total_relation_size('audit_log_entries')` (real table name, D5)
+  - [ ] Per-org storage-growth breakdown (`topContributingOrgs`, D10) computed alongside the daily check and included in 90%/95% alert payloads
   - [ ] Tiered alerts (80/90/95%) + cross-org fan-out; add `'audit_storage.warning'`/`'audit_storage.critical'` to `NOTIFICATION_ALERT_TYPES`
-  - [ ] Maintenance-mode flag + interception point in `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry` (or a shared lower-level chokepoint)
+  - [ ] `SECURITY_CRITICAL_AUDIT_EVENT_TYPES` allowlist (D10) + maintenance-mode flag + interception point in `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry` (or a shared lower-level chokepoint) that always writes allowlisted event types regardless of maintenance-mode state
   - [ ] `GET /ready` `warnings` array extension (additive, backward-compatible)
 - [ ] **Task 7 — Key custody risk alerting (D8, AC-19, AC-20)**
   - [ ] Weekly `key-custody:check` job + startup check
@@ -732,6 +791,8 @@ New `OperationalEvent` constants: `PLATFORM_SETTINGS_UPDATED`, `PLATFORM_ORG_CRE
 3. D8's key-rotation-execution gap: no story yet ships a code path that updates `vault_state.key_rotated_at` — Story 9.5's manual runbook procedure is documentation-only. A future story must decide whether to (a) add a minimal admin endpoint that lets an operator record "I manually rotated the key" (updating the timestamp without automating rotation itself), or (b) leave the age-based alert permanently tied to `initialized_at` until true rotation automation ships.
 4. AC-14's instance-wide `resource.orgs_near_limit` alert currently has no notification-delivery destination (admin_alerts row only, no email/Slack) since there is no "platform operator's own notification preferences" concept yet — confirm whether this is acceptable for v1 or whether a minimal "notify the platform operator's own email" delivery path should be added.
 5. Story 9.4 (Platform Operator Audit Log, not yet written) must retroactively add `platform_audit_events` coverage for this story's actions (settings updates, org creation) — flag explicitly when 9.4 is created, and additionally extend its audit-log-storage monitoring to cover the `platform_audit_events` table once it exists (D5).
+6. **`maxUsersPerOrg` hard enforcement (D3):** v1 ships this as alert-only. A future story should decide whether to add a hard-enforcement check to every org-join path (project-invitation acceptance, `POST /admin/orgs` existing-user path) once there's real-world signal on whether alert-only is sufficient operator control.
+7. **Per-org audit-storage rate limiting / quotas (D10):** this story's maintenance-mode circuit breaker (AC-17) is instance-wide, so any single org's audit-write volume can push every other org into suspended (routine) audit writes. D10 mitigates this by (a) never suppressing security-critical event types and (b) attributing storage growth to specific orgs in the alert payload — but does not add actual per-org rate limits or quotas. Scope a dedicated follow-up story (candidate: Epic 9 retro, or bundled into Story 9.4) to evaluate per-org write-rate caps or `audit_log_entries` partitioning if this proves to be an actual operational problem.
 
 ## Dev Agent Record
 
