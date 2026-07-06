@@ -22,14 +22,28 @@ export async function insertTestProject(
   return project
 }
 
-/** Inserts a bare test user (RLS isolation specs only need a valid created_by FK target). */
+/**
+ * Inserts a test user and a matching user_identity_tokens row — mirroring what the production
+ * registration flow (auth/service.ts's registerUser) does in the same transaction. Many callers
+ * only need a valid created_by FK target (RLS isolation specs), but plenty of others (e.g.
+ * org-role-test-helpers.ts's loginExistingUserInOrg) pair this with a real login, which writes a
+ * genuine actor_type='human' audit_log_entries row. Without an identity token, that row's
+ * actor_token_id is permanently NULL — audit_log_entries is append-only, so there is no cleanup
+ * path — which check-audit-actor-token-coverage (Story 8.1, D3) treats as an unrepairable gap.
+ */
 export async function createTestUser(label: string): Promise<string> {
+  const email = `${label}-${crypto.randomUUID()}@example.com`
   const [user] = await getDb().execute(
     sql`INSERT INTO users (email, password_hash)
-        VALUES (${`${label}-${crypto.randomUUID()}@example.com`}, 'x')
+        VALUES (${email}, 'x')
         RETURNING id`
   )
-  return (user as { id: string }).id
+  const userId = (user as { id: string }).id
+  await getDb().execute(
+    sql`INSERT INTO user_identity_tokens (user_id, display_name)
+        VALUES (${userId}, ${email})`
+  )
+  return userId
 }
 
 export async function deleteTestUser(userId: string): Promise<void> {

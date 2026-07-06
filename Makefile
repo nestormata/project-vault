@@ -80,6 +80,9 @@ db-migrate: ## Run migrations as the postgres superuser (creates vault_app role 
 check-rls: ## Verify every table has RLS policy coverage (must run as vault_app)
 	DATABASE_URL=$(DB_URL_APP) pnpm check-rls
 
+check-audit-actor-token-coverage: ## Verify no human-actor audit row lacks actor_token_id (database-wide gate — must run as superuser to bypass per-org RLS, see Story 8.1 AC-14)
+	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm check-audit-actor-token-coverage
+
 # --- Tests / quality gates --------------------------------------------------
 
 test: ## Run the test suite (must run as vault_app — postgres bypasses RLS)
@@ -105,6 +108,7 @@ ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap fi
 	pnpm turbo lint
 	$(MAKE) db-migrate
 	$(MAKE) check-rls
+	$(MAKE) check-audit-actor-token-coverage
 	pnpm check-search-index
 	pnpm check-alert-pending-epic3
 	$(MAKE) test

@@ -400,10 +400,18 @@ export async function unsealVault(
   return { unsealed: true, keyVersion: state.keyVersion, kmsType: state.kmsType as KmsType }
 }
 
+/** Thrown by `getAuditKey()`/`getPrimaryKey()` when the vault is sealed or uninitialized. A typed
+ * class (rather than a plain `Error` matched by callers on its `.message` text) lets callers use
+ * `instanceof VaultSealedError` — so the check can't silently break if the message text is ever
+ * edited in this file without a corresponding change at the call site (code review finding,
+ * Story 8.1: `apps/api/src/modules/audit/routes.ts` originally matched a duplicated string
+ * literal). */
+export class VaultSealedError extends Error {}
+
 /** Returns a copy of the audit log encryption key. Throws if vault is sealed. */
 export function getAuditKey(): Buffer {
   if (!_auditKey || _status !== 'unsealed') {
-    throw new Error('getAuditKey: vault is sealed — audit key unavailable')
+    throw new VaultSealedError('getAuditKey: vault is sealed — audit key unavailable')
   }
   return Buffer.from(_auditKey)
 }

@@ -234,6 +234,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Security alert list read is admin-scoped and does not reveal secret values.',
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/org/audit/verify': {
+    action: 'read',
+    auditOmissionReason:
+      'Integrity verification read returns pass/fail counts and event metadata only; never a secret or credential value.',
+    reviewer: SECURITY_OWNER,
+  },
   // Story 6.2 AC 18 (ADR-6.2-04's correction). The route delegates to dismissSecurityAlert(),
   // which calls writeHumanAuditEntryOrFailClosed() internally — the literal function name
   // called in the route itself is dismissSecurityAlert (see security-alerts.ts).

@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { sql } from 'drizzle-orm'
 import { createTestUser, deleteTestUser, insertTestProject, withTestOrg } from './test-helpers.js'
 import { getDb, withOrg } from './index.js'
-import { projects, securityAlerts, auditLogEntries } from './schema/index.js'
+import { projects, securityAlerts, auditLogEntries, userIdentityTokens } from './schema/index.js'
 
 describe('withTestOrg', () => {
   it('calls fn with a valid orgId and a usable tx', async () => {
@@ -80,6 +81,29 @@ describe('withTestOrg', () => {
       sql`SELECT id FROM organizations WHERE id = ${capturedOrgId}`
     )
     expect(orgRows).toHaveLength(1)
+  })
+})
+
+describe('createTestUser', () => {
+  // Story 8.1 (check-audit-actor-token-coverage) treats a human-actor audit_log_entries row
+  // with no actor_token_id as a permanent, unrepairable gap (the table is append-only). Many
+  // test files pair createTestUser with a real login helper (e.g. loginExistingUserInOrg),
+  // which writes a genuine SESSION_CREATED audit row. createTestUser must mint a
+  // user_identity_tokens row — mirroring what the production registration flow
+  // (auth/service.ts's registerUser) does in the same transaction — so that any subsequent
+  // login for this user has a real token to attribute the audit row to.
+  it('creates a corresponding user_identity_tokens row for the new user', async () => {
+    const userId = await createTestUser('identity-token-coverage')
+    try {
+      const rows = await getDb()
+        .select({ id: userIdentityTokens.id, userId: userIdentityTokens.userId })
+        .from(userIdentityTokens)
+        .where(eq(userIdentityTokens.userId, userId))
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.userId).toBe(userId)
+    } finally {
+      await deleteTestUser(userId)
+    }
   })
 })
 

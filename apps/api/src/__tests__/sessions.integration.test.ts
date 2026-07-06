@@ -18,6 +18,7 @@ configureAuthIntegrationEnv()
 const { createApp } = await import('../app.js')
 const { initVault } = await import('../modules/vault/key-service.js')
 const { createLoginSessionInTx } = await import('../modules/auth/service.js')
+const { firstActorTokenIdForUser } = await import('../modules/audit/actor-token.js')
 const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
@@ -323,12 +324,12 @@ describe.sequential('Session management integration', () => {
         role: 'member',
         status: 'active',
       })
-      return createLoginSessionInTx(
-        tx,
-        { id: target.userId, identityTokenId: null },
-        admin.orgId,
-        {}
-      )
+      // Story 8.1: look up target's real identity token (registerAndLoginViaApi already
+      // minted one) instead of hardcoding identityTokenId: null — a null actor_token_id on
+      // this actor_type='human' SESSION_CREATED row permanently fails
+      // checkAuditActorTokenCoverage, since audit_log_entries is append-only.
+      const identityTokenId = await firstActorTokenIdForUser(tx, target.userId)
+      return createLoginSessionInTx(tx, { id: target.userId, identityTokenId }, admin.orgId, {})
     })
 
     const app = await createApp({ logger: false })

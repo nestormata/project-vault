@@ -141,9 +141,18 @@ export async function mintOrgSessionCookies(
 ): Promise<CookieJar> {
   const { withOrg } = await import('@project-vault/db')
   const { createLoginSessionInTx } = await import('../../modules/auth/service.js')
-  const result = await withOrg(orgId, (tx) =>
-    createLoginSessionInTx(tx, { id: userId, identityTokenId: null }, orgId, {})
-  )
+  const { firstActorTokenIdForUser } = await import('../../modules/audit/actor-token.js')
+  const result = await withOrg(orgId, async (tx) => {
+    // Code-review finding (Story 8.1): look up the user's real identity token instead of
+    // hardcoding identityTokenId: null — this helper mints a session for an already-registered
+    // user (who already has a real user_identity_tokens row from registration) being granted a
+    // session scoped to a second org. Hardcoding null silently discarded that real token. A null
+    // actor_token_id on an actor_type='human' row permanently fails
+    // checkAuditActorTokenCoverage (packages/db/src/check-audit-actor-token-coverage.ts), since
+    // audit_log_entries is append-only and never cleaned up between test runs.
+    const identityTokenId = await firstActorTokenIdForUser(tx, userId)
+    return createLoginSessionInTx(tx, { id: userId, identityTokenId }, orgId, {})
+  })
   const accessJwt = await (
     app as unknown as {
       jwt: {
