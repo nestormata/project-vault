@@ -12,6 +12,7 @@
     canManageRotations,
   } from '$lib/components/rotations/rotation-permissions.js'
   import {
+    formatDateTime,
     rotationCopy,
     rotationStatusBadgeClass,
   } from '$lib/components/rotations/rotation-copy.js'
@@ -42,17 +43,6 @@
   const totalCount = $derived(rotation ? rotation.checklistItems.length : 0)
   const allConfirmed = $derived(totalCount > 0 && confirmedCount === totalCount)
   const canPerformItemActions = $derived(canAct && rotation?.status === 'in_progress')
-
-  function formatDate(value: string | null): string {
-    if (!value) return '—'
-    return new Date(value).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
 
   async function refetch() {
     try {
@@ -196,9 +186,9 @@
         <span class={rotationStatusBadgeClass(rotation.status)}>{rotation.status}</span>
       </div>
       <p class="mt-2 text-sm text-slate-600">
-        Initiated {formatDate(rotation.initiatedAt)}
+        Initiated {formatDateTime(rotation.initiatedAt)}
         {#if rotation.completedAt}
-          · Completed {formatDate(rotation.completedAt)}
+          · Completed {formatDateTime(rotation.completedAt)}
         {/if}
       </p>
       {#if rotation.notes}

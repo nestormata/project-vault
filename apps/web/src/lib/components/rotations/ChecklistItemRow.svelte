@@ -8,7 +8,11 @@
     type MaxRetriesExceededErrorBody,
   } from '$lib/api/rotations.js'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
-  import { checklistItemStatusBadgeClass, checklistItemStatusLabel } from './rotation-copy.js'
+  import {
+    checklistItemStatusBadgeClass,
+    checklistItemStatusLabel,
+    formatDateTime,
+  } from './rotation-copy.js'
   import type { RotationChecklistItem } from '@project-vault/shared'
 
   let {
@@ -51,22 +55,23 @@
     return id.length > 8 ? `${id.slice(0, 8)}…` : id
   }
 
-  function formatDate(value: string): string {
-    return new Date(value).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-
   function handleSealedOrGeneric(error: unknown, fallback: string): string {
     if (error instanceof ApiClientError) {
       if (error.status === 503) return onboardingCopy.vaultSealedMessage
       return error.message
     }
     return error instanceof Error ? error.message : fallback
+  }
+
+  // Ground-Truth API Surface documents this code for confirm/fail/retry — it fires when the
+  // rotation itself moved out of `in_progress` (completed/abandoned/stale) between this row
+  // rendering and the click landing. Same remediation as AC-15's concurrent-modification banner:
+  // surface it and refetch so stale action buttons disappear. Shared across confirm/fail/retry
+  // since all three catch blocks otherwise repeated this check (jscpd-flagged duplication).
+  function isConcurrentModificationError(error: unknown): boolean {
+    if (!(error instanceof ApiClientError)) return false
+    if (error.status === 409 && error.code === 'concurrent_modification') return true
+    return error.status === 422 && error.code === 'rotation_not_active'
   }
 
   async function confirm() {
@@ -100,21 +105,7 @@
           },
           undefined
         )
-      } else if (
-        error instanceof ApiClientError &&
-        error.status === 409 &&
-        error.code === 'concurrent_modification'
-      ) {
-        onConcurrentModification()
-      } else if (
-        error instanceof ApiClientError &&
-        error.status === 422 &&
-        error.code === 'rotation_not_active'
-      ) {
-        // Ground-Truth API Surface documents this code for confirm/fail/retry — it fires when
-        // the rotation itself moved out of `in_progress` (completed/abandoned/stale) between
-        // this row rendering and the click landing. Same remediation as AC-15's concurrent-
-        // modification banner: surface it and refetch so stale action buttons disappear.
+      } else if (isConcurrentModificationError(error)) {
         onConcurrentModification()
       } else {
         errorMessage = handleSealedOrGeneric(error, 'Could not confirm item.')
@@ -153,17 +144,7 @@
       onUpdate(result.item, result.rotationVersion)
       cancelFail()
     } catch (error) {
-      if (
-        error instanceof ApiClientError &&
-        error.status === 409 &&
-        error.code === 'concurrent_modification'
-      ) {
-        onConcurrentModification()
-      } else if (
-        error instanceof ApiClientError &&
-        error.status === 422 &&
-        error.code === 'rotation_not_active'
-      ) {
+      if (isConcurrentModificationError(error)) {
         onConcurrentModification()
       } else {
         errorMessage = handleSealedOrGeneric(error, 'Could not report a problem.')
@@ -192,17 +173,7 @@
           { ...item, status: 'max_retries_exceeded', retryCount: body.retryCount },
           undefined
         )
-      } else if (
-        error instanceof ApiClientError &&
-        error.status === 409 &&
-        error.code === 'concurrent_modification'
-      ) {
-        onConcurrentModification()
-      } else if (
-        error instanceof ApiClientError &&
-        error.status === 422 &&
-        error.code === 'rotation_not_active'
-      ) {
+      } else if (isConcurrentModificationError(error)) {
         onConcurrentModification()
       } else {
         errorMessage = handleSealedOrGeneric(error, 'Could not retry item.')
@@ -223,7 +194,7 @@
 
   {#if item.status === 'confirmed' && item.confirmedAt}
     <p class="mt-1 text-xs text-slate-600">
-      confirmed{item.confirmedBy ? ` by ${shortActorId(item.confirmedBy)}` : ''} at {formatDate(
+      confirmed{item.confirmedBy ? ` by ${shortActorId(item.confirmedBy)}` : ''} at {formatDateTime(
         item.confirmedAt
       )}
     </p>

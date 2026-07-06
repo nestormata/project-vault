@@ -9,6 +9,20 @@ export const rotationCopy = {
     'You have read access to this rotation. Confirming, completing, or resolving rotations requires Member access or higher.',
 } as const
 
+// Shared by ChecklistItemRow, BreakGlassPanel, and the credential/rotation detail pages so the
+// "Mon D, YYYY, HH:MM" timestamp formatting stays in one place instead of being reimplemented
+// per component (jscpd flagged the drift as duplication).
+export function formatDateTime(value: string | null): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function checklistItemStatusLabel(status: RotationChecklistItemStatus): string {
   if (status === 'max_retries_exceeded') return 'max retries exceeded'
   return status

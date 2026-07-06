@@ -6,6 +6,7 @@
   import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
   import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
   import {
+    formatDateTime,
     rotationCopy,
     rotationStatusBadgeClass,
   } from '$lib/components/rotations/rotation-copy.js'
@@ -24,17 +25,6 @@
     revealedValue = null
     revealVersion = null
   })
-
-  function formatDate(value: string | null): string {
-    if (!value) return '—'
-    return new Date(value).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
 
   async function revealValue() {
     if (revealing || !canReveal || !data.credential) return
@@ -99,7 +89,7 @@
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Expires</dt>
-          <dd class="font-medium text-slate-950">{formatDate(data.credential.expiresAt)}</dd>
+          <dd class="font-medium text-slate-950">{formatDateTime(data.credential.expiresAt)}</dd>
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Current version</dt>
@@ -107,7 +97,7 @@
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Updated</dt>
-          <dd class="font-medium text-slate-950">{formatDate(data.credential.updatedAt)}</dd>
+          <dd class="font-medium text-slate-950">{formatDateTime(data.credential.updatedAt)}</dd>
         </div>
       </dl>
     </div>
@@ -171,7 +161,7 @@
               class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm"
             >
               <span class="font-medium">Version {version.versionNumber}</span>
-              <span class="text-slate-600">{formatDate(version.createdAt)}</span>
+              <span class="text-slate-600">{formatDateTime(version.createdAt)}</span>
               {#if version.isCurrent}
                 <span
                   class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800"
@@ -223,10 +213,10 @@
                   `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${rotation.id}`
                 )}
               >
-                initiated {formatDate(rotation.initiatedAt)}
+                initiated {formatDateTime(rotation.initiatedAt)}
               </a>
               <span class={rotationStatusBadgeClass(rotation.status)}>{rotation.status}</span>
-              <span class="text-slate-600">completed {formatDate(rotation.completedAt)}</span>
+              <span class="text-slate-600">completed {formatDateTime(rotation.completedAt)}</span>
               <span class="text-slate-600">
                 {rotation.confirmedCount}/{rotation.itemCount} confirmed
               </span>

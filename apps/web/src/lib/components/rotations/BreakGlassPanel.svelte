@@ -4,6 +4,7 @@
   import { listCredentialDependencies } from '$lib/api/credentials.js'
   import { breakGlassRotation } from '$lib/api/rotations.js'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
+  import { formatDateTime } from '$lib/components/rotations/rotation-copy.js'
   import type { CredentialDependency, RotationDetail } from '@project-vault/shared'
 
   let { projectId, credentialId }: { projectId: string; credentialId: string } = $props()
@@ -18,16 +19,6 @@
   let errorMessage = $state<string | null>(null)
   let result = $state<RotationDetail | null>(null)
   let sweepDependencies = $state<CredentialDependency[]>([])
-
-  function formatDate(value: string): string {
-    return new Date(value).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
 
   function requestConfirmation() {
     reasonError = null
@@ -105,7 +96,7 @@
         </p>
         {#if result.previousVersionOverlap}
           <p class="text-sm text-red-800">
-            The previous version remains accessible until {formatDate(
+            The previous version remains accessible until {formatDateTime(
               result.previousVersionOverlap.breakGlassOverlapExpiresAt
             )} to let in-flight systems finish using it.
           </p>
