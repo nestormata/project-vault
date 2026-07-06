@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-06  # updated: 8-1 -> done
+last_updated: 2026-07-06  # updated: 8-1 -> done; epic-5 -> done (5.4/5.5 both landed, retro rechecked); new 8-5 story added for 5.4's unresolved adversarial-review findings
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -88,7 +88,7 @@ development_status:
   epic-4-retrospective: done
 
   # Epic 5: Credential Rotation — Safe, Trackable Rotation Workflows
-  epic-5: in-progress # held open pending 5-4 (rotation workflow web UI, scheduled at retro)
+  epic-5: done # flipped 2026-07-06 — both 5-4 and 5-5 landed; retro rechecked. 5.4 shipped with 4 unresolved adversarial-review findings (sealed-vault handling on GET routes, missing mfa_required 403 UX, 429 handling, break-glass secrets-clearing), tracked as new Story 8-5 rather than blocking epic-5 closure — see epic-5-retro-2026-07-05.md addendum
   5-1-rotation-initiation-and-checklist-generation: done
   5-2-rotation-checklist-confirmation-and-completion: done
   5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: done
@@ -116,6 +116,7 @@ development_status:
   8-2-audit-log-search-export-and-external-forwarding: ready-for-dev
   8-3-access-reports-dormant-users-and-audit-pii-management: ready-for-dev # story file created 2026-07-05; hard-prerequisite on 8-1/8-2 reaching done before implementation starts (D7)
   8-4-data-subject-erasure-request-handling: ready-for-dev # story file created 2026-07-05 — API-only (no dedicated UI story exists, same accepted Epic 8 gap as 8.1/8.2); depends on 8.1's audit_log_entries/writeHumanAuditEntryOrFailClosed and 4.3's revokeAllUserSessionsInOrg/account_recovery_tokens; does NOT block on 8.3 (still backlog) — builds its own reusable pseudonymization primitive for 8.3 to reuse later
+  8-5-rotation-web-ui-hardening: backlog # added 2026-07-06 from the epic-5 retro recheck — bundles Story 5.4's 4 unresolved adversarial-review findings: sealed-vault (503) handling missing on GET .../rotations|dependencies|upcoming page loads despite those routes being vault-guarded (contradicts 5.4's own AC-24 text); mfa_required (403) never handled in rotation web UI despite 5 of 11 endpoints requiring MFA; 429 rate-limit responses unhandled (highest-risk on break-glass); break-glass new-value field has no client-side secrets-clearing on submit/teardown. See 5-4-rotation-workflow-web-ui-adversarial-review.md and epic-5-retro-2026-07-05.md addendum.
   epic-8-retrospective: optional
 
   # Epic 9: Platform Operations, API & Self-Hosting
