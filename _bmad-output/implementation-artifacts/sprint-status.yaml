@@ -92,7 +92,7 @@ development_status:
   5-1-rotation-initiation-and-checklist-generation: done
   5-2-rotation-checklist-confirmation-and-completion: done
   5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: done
-  5-4-rotation-workflow-web-ui: ready-for-dev # scheduled at epic-5 retro 2026-07-05 — no dedicated web story existed for initiate/checklist/break-glass, unlike Epic 2's API+web pairing; story file created 2026-07-05
+  5-4-rotation-workflow-web-ui: done # implemented 2026-07-05 — web UI for initiate/checklist/break-glass/history/dashboard; zero apps/api or packages/db diff (AC-27); code review + CI gate passed
   5-5-epic-5-completion-rotation-hardening-and-technical-debt: ready-for-dev # closure story bundling the 2026-07-05 retro's risk/gap/contradiction/technical-debt audit (13 findings) + the carried-forward Epic 4 TOCTOU gap
   epic-5-retrospective: done
 
