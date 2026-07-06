@@ -1,4 +1,5 @@
 import type {
+  CredentialDependency,
   CredentialDetail,
   CredentialSummary,
   CredentialValue,
@@ -104,6 +105,22 @@ export function listCredentialVersions(
   return apiFetch<{ items: CredentialVersionSummary[] }>(
     fetchFn,
     `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`
+  )
+}
+
+export type ListCredentialDependenciesResponse = {
+  items: CredentialDependency[]
+  hasDependencies: boolean
+}
+
+export function listCredentialDependencies(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string
+) {
+  return apiFetch<ListCredentialDependenciesResponse>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies`
   )
 }
 

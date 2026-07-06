@@ -4,6 +4,12 @@
   import { revealCredentialValue } from '$lib/api/credentials.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
+  import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
+  import {
+    formatDateTime,
+    rotationCopy,
+    rotationStatusBadgeClass,
+  } from '$lib/components/rotations/rotation-copy.js'
 
   let { data } = $props()
 
@@ -13,22 +19,12 @@
   let revealError = $state<string | null>(null)
 
   const canReveal = $derived(canCreateCredential(data.orgRole))
+  const canManageRotation = $derived(canManageRotations(data.orgRole))
 
   onDestroy(() => {
     revealedValue = null
     revealVersion = null
   })
-
-  function formatDate(value: string | null): string {
-    if (!value) return '—'
-    return new Date(value).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
 
   async function revealValue() {
     if (revealing || !canReveal || !data.credential) return
@@ -93,7 +89,7 @@
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Expires</dt>
-          <dd class="font-medium text-slate-950">{formatDate(data.credential.expiresAt)}</dd>
+          <dd class="font-medium text-slate-950">{formatDateTime(data.credential.expiresAt)}</dd>
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Current version</dt>
@@ -101,7 +97,7 @@
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Updated</dt>
-          <dd class="font-medium text-slate-950">{formatDate(data.credential.updatedAt)}</dd>
+          <dd class="font-medium text-slate-950">{formatDateTime(data.credential.updatedAt)}</dd>
         </div>
       </dl>
     </div>
@@ -165,7 +161,7 @@
               class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm"
             >
               <span class="font-medium">Version {version.versionNumber}</span>
-              <span class="text-slate-600">{formatDate(version.createdAt)}</span>
+              <span class="text-slate-600">{formatDateTime(version.createdAt)}</span>
               {#if version.isCurrent}
                 <span
                   class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800"
@@ -176,6 +172,67 @@
             </li>
           {/each}
         </ul>
+      {/if}
+    </section>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold text-slate-950">Rotation</h2>
+
+      {#if data.activeRotationId}
+        <a
+          class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+          href={resolve(
+            `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${data.activeRotationId}`
+          )}
+        >
+          View active rotation
+        </a>
+      {:else if canManageRotation}
+        <a
+          class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+          href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}/rotate`)}
+        >
+          Start rotation
+        </a>
+      {:else}
+        <p class="mt-3 text-sm text-slate-600">{rotationCopy.startRotationRequiresAdmin}</p>
+      {/if}
+
+      <h3 class="mt-6 font-semibold text-slate-950">History</h3>
+      {#if data.rotations.length === 0}
+        <p class="mt-3 text-sm text-slate-600">{rotationCopy.noRotationsYet}</p>
+      {:else}
+        <ul class="mt-4 space-y-2">
+          {#each data.rotations as rotation (rotation.id)}
+            <li
+              class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
+            >
+              <a
+                class="font-medium text-slate-950 underline"
+                href={resolve(
+                  `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${rotation.id}`
+                )}
+              >
+                initiated {formatDateTime(rotation.initiatedAt)}
+              </a>
+              <span class={rotationStatusBadgeClass(rotation.status)}>{rotation.status}</span>
+              <span class="text-slate-600">completed {formatDateTime(rotation.completedAt)}</span>
+              <span class="text-slate-600">
+                {rotation.confirmedCount}/{rotation.itemCount} confirmed
+              </span>
+            </li>
+          {/each}
+        </ul>
+        {#if data.rotationsHasMore}
+          <a
+            class="mt-3 inline-block text-sm font-medium text-slate-700 underline"
+            href={resolve(
+              `/projects/${data.projectId}/credentials/${data.credentialId}?page=${data.rotationsPage + 1}`
+            )}
+          >
+            Show more
+          </a>
+        {/if}
       {/if}
     </section>
 

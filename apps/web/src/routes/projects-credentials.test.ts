@@ -178,6 +178,10 @@ describe('project credential routes', () => {
             updatedAt: '2026-06-01T00:00:00.000Z',
           },
           versions: [],
+          rotations: [],
+          rotationsPage: 1,
+          rotationsHasMore: false,
+          activeRotationId: null,
         },
       },
     })
@@ -247,6 +251,129 @@ describe('project credential routes', () => {
     await waitFor(() => expect(confirmCredentialImportMock).toHaveBeenCalled())
     expect(await screen.findByText(/Import complete/i)).toBeTruthy()
     expect(screen.getByText(/Imported: 2/i)).toBeTruthy()
+  })
+
+  function baseCredentialDetailData(overrides: Record<string, unknown> = {}) {
+    return {
+      projectId,
+      credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      orgRole: 'admin' as const,
+      credential: {
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        projectId,
+        orgId: '11111111-1111-4111-8111-111111111111',
+        name: 'Stripe Secret Key',
+        description: null,
+        tags: [],
+        expiresAt: '2026-07-15T00:00:00.000Z',
+        rotationSchedule: null,
+        retentionCount: 5,
+        currentVersionNumber: 1,
+        createdBy: null,
+        createdAt: '2026-06-01T00:00:00.000Z',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+      },
+      versions: [],
+      rotations: [],
+      rotationsPage: 1,
+      rotationsHasMore: false,
+      activeRotationId: null,
+      ...overrides,
+    }
+  }
+
+  it('AC-1: admin sees "Start rotation" when there is no active rotation', () => {
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    const link = screen.getByRole('link', { name: 'Start rotation' })
+    expect(link.getAttribute('href')).toBe(
+      `/projects/${projectId}/credentials/cccccccc-cccc-4ccc-8ccc-cccccccccccc/rotate`
+    )
+  })
+
+  it('AC-1: member/viewer sees explanatory text instead of a "Start rotation" link', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseCredentialDetailData({ orgRole: 'member' as const }) },
+    })
+
+    expect(screen.queryByRole('link', { name: 'Start rotation' })).toBeNull()
+    expect(screen.getByText('Starting a rotation requires Admin access or higher.')).toBeTruthy()
+  })
+
+  it('AC-1: brand-new credential with zero rotations shows the empty-state history message', () => {
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    expect(screen.getByText('No rotations yet.')).toBeTruthy()
+  })
+
+  it('AC-2: any role sees "View active rotation" (never "Start rotation") while one is active', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          orgRole: 'viewer' as const,
+          activeRotationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        }),
+      },
+    })
+
+    const link = screen.getByRole('link', { name: 'View active rotation' })
+    expect(link.getAttribute('href')).toBe(
+      `/projects/${projectId}/credentials/cccccccc-cccc-4ccc-8ccc-cccccccccccc/rotations/dddddddd-dddd-4ddd-8ddd-dddddddddddd`
+    )
+    expect(screen.queryByRole('link', { name: 'Start rotation' })).toBeNull()
+  })
+
+  it('AC-18: rotation history section lists prior rotations most-recent-first with a link to each', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          rotations: [
+            {
+              id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+              status: 'completed',
+              initiatedBy: null,
+              initiatedAt: '2026-06-01T09:00:00.000Z',
+              completedAt: '2026-06-01T09:45:00.000Z',
+              itemCount: 3,
+              confirmedCount: 3,
+            },
+          ],
+        }),
+      },
+    })
+
+    expect(screen.getByText('3/3 confirmed', { exact: false })).toBeTruthy()
+    const rotationLink = screen.getByRole('link', { name: /initiated/i })
+    expect(rotationLink.getAttribute('href')).toBe(
+      `/projects/${projectId}/credentials/cccccccc-cccc-4ccc-8ccc-cccccccccccc/rotations/ffffffff-ffff-4fff-8fff-ffffffffffff`
+    )
+  })
+
+  it('AC-18: shows a "Show more" link that appends ?page= when hasMore is true', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          rotations: [
+            {
+              id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+              status: 'completed',
+              initiatedBy: null,
+              initiatedAt: '2026-06-01T09:00:00.000Z',
+              completedAt: '2026-06-01T09:45:00.000Z',
+              itemCount: 1,
+              confirmedCount: 1,
+            },
+          ],
+          rotationsPage: 1,
+          rotationsHasMore: true,
+        }),
+      },
+    })
+
+    const showMore = screen.getByRole('link', { name: 'Show more' })
+    expect(showMore.getAttribute('href')).toBe(
+      `/projects/${projectId}/credentials/cccccccc-cccc-4ccc-8ccc-cccccccccccc?page=2`
+    )
   })
 
   it('import page shows forbidden message for members', () => {
