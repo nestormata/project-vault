@@ -1,12 +1,17 @@
 <script lang="ts">
-  import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteServiceEndpoint } from '$lib/api/service-endpoints.js'
   import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
-  import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
   import ServiceStatusItem from '$lib/components/dashboard/ServiceStatusItem.svelte'
-  import ActiveAlertsPanel from '$lib/components/monitoring/ActiveAlertsPanel.svelte'
-  import { canManageMonitoredAssets } from '$lib/monitoring/permissions.js'
+  import {
+    ActiveAlertsPanel,
+    AssetListHeader,
+    AssetRowActions,
+    EmptyAssetState,
+    FormErrorBanner,
+    ProjectNotFoundBanner,
+  } from '$lib/components/monitoring/index.js'
+  import { canManageMonitoredAssets } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
@@ -38,31 +43,19 @@
 </svelte:head>
 
 <section class="space-y-6">
-  <div
-    class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+  <AssetListHeader
+    eyebrow="Endpoints"
+    title="HTTP endpoint monitors"
+    addHref={`/projects/${data.projectId}/service-endpoints/new`}
+    addLabel="Add endpoint"
+    {canManage}
   >
-    <div>
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Endpoints</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-950">HTTP endpoint monitors</h1>
-      <p class="mt-2 text-slate-600">
-        Endpoints checked on a schedule; status feeds the org-wide health dashboard and public
-        status page.
-      </p>
-    </div>
-    {#if canManage}
-      <a
-        class="rounded-xl bg-slate-950 px-4 py-3 text-center font-semibold text-white"
-        href={resolve(`/projects/${data.projectId}/service-endpoints/new`)}
-      >
-        Add endpoint
-      </a>
-    {/if}
-  </div>
+    Endpoints checked on a schedule; status feeds the org-wide health dashboard and public status
+    page.
+  </AssetListHeader>
 
   {#if data.notFound}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <p class="text-red-800">This project was not found or you do not have access.</p>
-    </div>
+    <ProjectNotFoundBanner />
   {:else}
     <ActiveAlertsPanel
       alerts={data.alerts}
@@ -72,15 +65,9 @@
     />
 
     {#if endpoints.length === 0}
-      <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
-        <p class="text-slate-600">No service endpoints registered yet.</p>
-      </div>
+      <EmptyAssetState message="No service endpoints registered yet." />
     {:else}
-      {#if deleteError}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {deleteError}
-        </p>
-      {/if}
+      <FormErrorBanner message={deleteError} />
       <ul class="space-y-3">
         {#each endpoints as endpoint (endpoint.id)}
           <li
@@ -96,18 +83,11 @@
               <p>Down after {endpoint.downThresholdFailures} consecutive failures</p>
             </div>
             {#if canManage}
-              <div class="flex items-center gap-2">
-                <a
-                  class="font-medium text-slate-700 underline"
-                  href={resolve(`/projects/${data.projectId}/service-endpoints/${endpoint.id}`)}
-                >
-                  Edit
-                </a>
-                <ConfirmDeleteButton
-                  confirmLabel="Confirm delete? This will also resolve any active alerts for it."
-                  onConfirm={() => handleDelete(endpoint.id)}
-                />
-              </div>
+              <AssetRowActions
+                editHref={`/projects/${data.projectId}/service-endpoints/${endpoint.id}`}
+                confirmLabel="Confirm delete? This will also resolve any active alerts for it."
+                onDelete={() => handleDelete(endpoint.id)}
+              />
             {/if}
           </li>
         {/each}

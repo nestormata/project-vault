@@ -4,41 +4,39 @@
   import { createDomain } from '$lib/api/domains.js'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import { mapMonitoringSubmitError } from '$lib/monitoring/form-errors.js'
-  import { canManageMonitoredAssets } from '$lib/monitoring/permissions.js'
-  import { parseAlertLeadDaysInput, toIsoDate } from '$lib/monitoring/form-helpers.js'
+  import {
+    AssetForm,
+    DomainFormFields,
+    DomainFormState,
+    FormErrorBanner,
+  } from '$lib/components/monitoring/index.js'
+  import {
+    canManageMonitoredAssets,
+    mapMonitoringSubmitError,
+    parseAlertLeadDaysInput,
+    toIsoDate,
+    validateDomainFields,
+  } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
-  let domainName = $state('')
-  let renewalDate = $state('')
-  let alertLeadDays = $state('')
-  let submitting = $state(false)
-  let errorMessage = $state<string | null>(null)
-  let fieldErrors = $state<{ domainName?: string; renewalDate?: string }>({})
+  const form = new DomainFormState()
 
   const canCreate = $derived(canManageMonitoredAssets(data.orgRole))
 
-  function validate(): { domainName?: string; renewalDate?: string } {
-    const errors: { domainName?: string; renewalDate?: string } = {}
-    if (!domainName.trim()) errors.domainName = 'Domain name is required'
-    if (!renewalDate) errors.renewalDate = 'Renewal date is required'
-    return errors
-  }
-
   async function submitForm() {
-    if (submitting || !canCreate) return
-    fieldErrors = validate()
-    if (fieldErrors.domainName || fieldErrors.renewalDate) return
+    if (form.submitting || !canCreate) return
+    form.fieldErrors = validateDomainFields(form.domainName, form.renewalDate)
+    if (form.fieldErrors.domainName || form.fieldErrors.renewalDate) return
 
-    submitting = true
-    errorMessage = null
+    form.submitting = true
+    form.errorMessage = null
     try {
       const body: { domainName: string; renewalDate: string; alertLeadDays?: number[] } = {
-        domainName: domainName.trim(),
-        renewalDate: toIsoDate(renewalDate),
+        domainName: form.domainName.trim(),
+        renewalDate: toIsoDate(form.renewalDate),
       }
-      const parsedLeadDays = parseAlertLeadDaysInput(alertLeadDays)
+      const parsedLeadDays = parseAlertLeadDaysInput(form.alertLeadDays)
       if (parsedLeadDays) body.alertLeadDays = parsedLeadDays
 
       const created = await createDomain(fetch, data.projectId, body)
@@ -48,10 +46,10 @@
         error,
         'You do not have permission to create domains.'
       )
-      fieldErrors = mapped.fieldErrors
-      errorMessage = mapped.errorMessage
+      form.fieldErrors = mapped.fieldErrors
+      form.errorMessage = mapped.errorMessage
     } finally {
-      submitting = false
+      form.submitting = false
     }
   }
 </script>
@@ -74,66 +72,23 @@
       backLabel="Back to domains"
     />
   {:else}
-    <form
-      class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      onsubmit={(event) => {
-        event.preventDefault()
-        void submitForm()
-      }}
-    >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="domain-name">Domain name</label>
-        <input
-          id="domain-name"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          bind:value={domainName}
-        />
-        {#if fieldErrors.domainName}
-          <p class="text-sm text-red-700">{fieldErrors.domainName}</p>
-        {/if}
-      </div>
+    <AssetForm onsubmit={submitForm}>
+      <DomainFormFields
+        bind:domainName={form.domainName}
+        bind:renewalDate={form.renewalDate}
+        bind:alertLeadDays={form.alertLeadDays}
+        fieldErrors={form.fieldErrors}
+        alertLeadDaysPlaceholder="30"
+      />
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="domain-renewal-date"
-          >Renewal date</label
-        >
-        <input
-          id="domain-renewal-date"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="date"
-          bind:value={renewalDate}
-        />
-        {#if fieldErrors.renewalDate}
-          <p class="text-sm text-red-700">{fieldErrors.renewalDate}</p>
-        {/if}
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="domain-alert-lead-days">
-          Alert me before renewal (days, comma-separated)
-        </label>
-        <input
-          id="domain-alert-lead-days"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          placeholder="30"
-          bind:value={alertLeadDays}
-        />
-      </div>
-
-      {#if errorMessage}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {errorMessage}
-        </p>
-      {/if}
+      <FormErrorBanner message={form.errorMessage} />
 
       <FormSubmitRow
         submitLabel="Create domain"
         pendingLabel="Creating…"
         cancelHref={`/projects/${data.projectId}/domains`}
-        {submitting}
+        submitting={form.submitting}
       />
-    </form>
+    </AssetForm>
   {/if}
 </section>

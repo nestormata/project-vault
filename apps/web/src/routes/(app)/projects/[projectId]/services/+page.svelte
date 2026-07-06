@@ -1,10 +1,20 @@
 <script lang="ts">
-  import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteService } from '$lib/api/services.js'
   import type { PaymentRecord } from '$lib/api/services.js'
-  import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
-  import { canManageMonitoredAssets } from '$lib/monitoring/permissions.js'
+  import {
+    AssetListHeader,
+    AssetRowActions,
+    AssetTable,
+    EmptyAssetState,
+    FormErrorBanner,
+    ProjectNotFoundBanner,
+  } from '$lib/components/monitoring/index.js'
+  import {
+    canManageMonitoredAssets,
+    formatAlertLeadDays,
+    formatDate,
+  } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
@@ -17,20 +27,6 @@
   let deleteError = $state<string | null>(null)
 
   const canManage = $derived(canManageMonitoredAssets(data.orgRole))
-
-  function formatDate(value: string | null): string {
-    if (!value) return '—'
-    return new Date(value).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  }
-
-  function formatAlertLeadDays(days: number[]): string {
-    if (days.length === 0) return '—'
-    return `Alerts at ${days.join(', ')} days before`
-  }
 
   async function handleDelete(serviceId: string) {
     deleteError = null
@@ -52,75 +48,39 @@
 </svelte:head>
 
 <section class="space-y-6">
-  <div
-    class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+  <AssetListHeader
+    eyebrow="Services"
+    title="Monitored services"
+    addHref={`/projects/${data.projectId}/services/new`}
+    addLabel="Add service"
+    {canManage}
   >
-    <div>
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Services</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-950">Monitored services</h1>
-      <p class="mt-2 text-slate-600">Billing/hosting services tracked for renewal alerting.</p>
-    </div>
-    {#if canManage}
-      <a
-        class="rounded-xl bg-slate-950 px-4 py-3 text-center font-semibold text-white"
-        href={resolve(`/projects/${data.projectId}/services/new`)}
-      >
-        Add service
-      </a>
-    {/if}
-  </div>
+    Billing/hosting services tracked for renewal alerting.
+  </AssetListHeader>
 
   {#if data.notFound}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <p class="text-red-800">This project was not found or you do not have access.</p>
-    </div>
+    <ProjectNotFoundBanner />
   {:else if services.length === 0}
-    <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
-      <p class="text-slate-600">No services registered yet.</p>
-    </div>
+    <EmptyAssetState message="No services registered yet." />
   {:else}
-    {#if deleteError}
-      <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-        {deleteError}
-      </p>
-    {/if}
-    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <table class="min-w-full text-left text-sm">
-        <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
-          <tr>
-            <th class="px-4 py-3 font-semibold">Name</th>
-            <th class="px-4 py-3 font-semibold">URL</th>
-            <th class="px-4 py-3 font-semibold">Renewal date</th>
-            <th class="px-4 py-3 font-semibold">Alert lead days</th>
-            {#if canManage}
-              <th class="px-4 py-3 font-semibold">Actions</th>
-            {/if}
-          </tr>
-        </thead>
-        <tbody>
-          {#each services as service (service.id)}
-            <tr class="border-b border-slate-100 last:border-b-0">
-              <td class="px-4 py-3 font-semibold text-slate-950">{service.name}</td>
-              <td class="px-4 py-3 text-slate-600">{service.url ?? '—'}</td>
-              <td class="px-4 py-3 text-slate-600">{formatDate(service.renewalDate)}</td>
-              <td class="px-4 py-3 text-slate-600">{formatAlertLeadDays(service.alertLeadDays)}</td>
-              {#if canManage}
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <a
-                      class="font-medium text-slate-700 underline"
-                      href={resolve(`/projects/${data.projectId}/services/${service.id}`)}
-                    >
-                      Edit
-                    </a>
-                    <ConfirmDeleteButton onConfirm={() => handleDelete(service.id)} />
-                  </div>
-                </td>
-              {/if}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+    <FormErrorBanner message={deleteError} />
+    <AssetTable columns={['Name', 'URL', 'Renewal date', 'Alert lead days']} {canManage}>
+      {#each services as service (service.id)}
+        <tr class="border-b border-slate-100 last:border-b-0">
+          <td class="px-4 py-3 font-semibold text-slate-950">{service.name}</td>
+          <td class="px-4 py-3 text-slate-600">{service.url ?? '—'}</td>
+          <td class="px-4 py-3 text-slate-600">{formatDate(service.renewalDate)}</td>
+          <td class="px-4 py-3 text-slate-600">{formatAlertLeadDays(service.alertLeadDays)}</td>
+          {#if canManage}
+            <td class="px-4 py-3">
+              <AssetRowActions
+                editHref={`/projects/${data.projectId}/services/${service.id}`}
+                onDelete={() => handleDelete(service.id)}
+              />
+            </td>
+          {/if}
+        </tr>
+      {/each}
+    </AssetTable>
   {/if}
 </section>

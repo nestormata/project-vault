@@ -4,41 +4,41 @@
   import { CHECK_FREQUENCY_MINUTES, createServiceEndpoint } from '$lib/api/service-endpoints.js'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import { mapMonitoringSubmitError } from '$lib/monitoring/form-errors.js'
-  import { canManageMonitoredAssets } from '$lib/monitoring/permissions.js'
+  import {
+    AssetForm,
+    FieldInput,
+    FormErrorBanner,
+    ServiceEndpointFormState,
+    ServiceEndpointFrequencyThresholdFields,
+  } from '$lib/components/monitoring/index.js'
+  import { canManageMonitoredAssets, mapMonitoringSubmitError } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
-  let name = $state('')
-  let url = $state('')
-  let checkFrequencyMinutes = $state(5)
-  let downThresholdFailures = $state(2)
-  let submitting = $state(false)
-  let errorMessage = $state<string | null>(null)
-  let fieldErrors = $state<{ name?: string; url?: string }>({})
+  const form = new ServiceEndpointFormState()
 
   const canCreate = $derived(canManageMonitoredAssets(data.orgRole))
 
   function validate(): { name?: string; url?: string } {
     const errors: { name?: string; url?: string } = {}
-    if (!name.trim()) errors.name = 'Name is required'
-    if (!url.trim()) errors.url = 'URL is required'
+    if (!form.name.trim()) errors.name = 'Name is required'
+    if (!form.url.trim()) errors.url = 'URL is required'
     return errors
   }
 
   async function submitForm() {
-    if (submitting || !canCreate) return
-    fieldErrors = validate()
-    if (fieldErrors.name || fieldErrors.url) return
+    if (form.submitting || !canCreate) return
+    form.fieldErrors = validate()
+    if (form.fieldErrors.name || form.fieldErrors.url) return
 
-    submitting = true
-    errorMessage = null
+    form.submitting = true
+    form.errorMessage = null
     try {
       const created = await createServiceEndpoint(fetch, data.projectId, {
-        name: name.trim(),
-        url: url.trim(),
-        checkFrequencyMinutes,
-        downThresholdFailures,
+        name: form.name.trim(),
+        url: form.url.trim(),
+        checkFrequencyMinutes: form.checkFrequencyMinutes,
+        downThresholdFailures: form.downThresholdFailures,
       })
       await goto(resolve(`/projects/${data.projectId}/service-endpoints/${created.id}`))
     } catch (error) {
@@ -46,10 +46,10 @@
         error,
         'You do not have permission to create service endpoints.'
       )
-      fieldErrors = mapped.fieldErrors
-      errorMessage = mapped.errorMessage
+      form.fieldErrors = mapped.fieldErrors
+      form.errorMessage = mapped.errorMessage
     } finally {
-      submitting = false
+      form.submitting = false
     }
   }
 </script>
@@ -72,81 +72,34 @@
       backLabel="Back to endpoints"
     />
   {:else}
-    <form
-      class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      onsubmit={(event) => {
-        event.preventDefault()
-        void submitForm()
-      }}
-    >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-name">Name</label>
-        <input
-          id="endpoint-name"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          bind:value={name}
-        />
-        {#if fieldErrors.name}
-          <p class="text-sm text-red-700">{fieldErrors.name}</p>
-        {/if}
-      </div>
+    <AssetForm onsubmit={submitForm}>
+      <FieldInput
+        id="endpoint-name"
+        label="Name"
+        bind:value={form.name}
+        error={form.fieldErrors.name}
+      />
+      <FieldInput
+        id="endpoint-url"
+        label="URL"
+        placeholder="https://api.example.com/health"
+        bind:value={form.url}
+        error={form.fieldErrors.url}
+      />
+      <ServiceEndpointFrequencyThresholdFields
+        frequencyOptions={CHECK_FREQUENCY_MINUTES}
+        bind:checkFrequencyMinutes={form.checkFrequencyMinutes}
+        bind:downThresholdFailures={form.downThresholdFailures}
+      />
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-url">URL</label>
-        <input
-          id="endpoint-url"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          placeholder="https://api.example.com/health"
-          bind:value={url}
-        />
-        {#if fieldErrors.url}
-          <p class="text-sm text-red-700">{fieldErrors.url}</p>
-        {/if}
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-frequency">
-          Check frequency (minutes)
-        </label>
-        <select
-          id="endpoint-frequency"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          bind:value={checkFrequencyMinutes}
-        >
-          {#each CHECK_FREQUENCY_MINUTES as minutes (minutes)}
-            <option value={minutes}>{minutes}</option>
-          {/each}
-        </select>
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-threshold">
-          Failures before "down" (1-10)
-        </label>
-        <input
-          id="endpoint-threshold"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="number"
-          min="1"
-          max="10"
-          bind:value={downThresholdFailures}
-        />
-      </div>
-
-      {#if errorMessage}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {errorMessage}
-        </p>
-      {/if}
+      <FormErrorBanner message={form.errorMessage} />
 
       <FormSubmitRow
         submitLabel="Create endpoint"
         pendingLabel="Creating…"
         cancelHref={`/projects/${data.projectId}/service-endpoints`}
-        {submitting}
+        submitting={form.submitting}
       />
-    </form>
+    </AssetForm>
   {/if}
 </section>

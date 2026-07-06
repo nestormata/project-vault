@@ -4,9 +4,13 @@
   import { createService } from '$lib/api/services.js'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import { mapMonitoringSubmitError } from '$lib/monitoring/form-errors.js'
-  import { canManageMonitoredAssets } from '$lib/monitoring/permissions.js'
-  import { parseAlertLeadDaysInput, toIsoDate } from '$lib/monitoring/form-helpers.js'
+  import { AssetForm, FieldInput, FormErrorBanner } from '$lib/components/monitoring/index.js'
+  import {
+    canManageMonitoredAssets,
+    mapMonitoringSubmitError,
+    parseAlertLeadDaysInput,
+    toIsoDate,
+  } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
@@ -72,66 +76,23 @@
       backLabel="Back to services"
     />
   {:else}
-    <form
-      class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      onsubmit={(event) => {
-        event.preventDefault()
-        void submitForm()
-      }}
-    >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="service-name">Name</label>
-        <input
-          id="service-name"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          bind:value={name}
-        />
-        {#if fieldErrors.name}
-          <p class="text-sm text-red-700">{fieldErrors.name}</p>
-        {/if}
-      </div>
+    <AssetForm onsubmit={submitForm}>
+      <FieldInput id="service-name" label="Name" bind:value={name} error={fieldErrors.name} />
+      <FieldInput id="service-url" label="URL (optional)" bind:value={url} />
+      <FieldInput
+        id="service-renewal-date"
+        label="Renewal date (optional)"
+        type="date"
+        bind:value={renewalDate}
+      />
+      <FieldInput
+        id="service-alert-lead-days"
+        label="Alert me before renewal (days, comma-separated)"
+        placeholder="14, 3"
+        bind:value={alertLeadDays}
+      />
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="service-url">URL (optional)</label>
-        <input
-          id="service-url"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          bind:value={url}
-        />
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="service-renewal-date">
-          Renewal date (optional)
-        </label>
-        <input
-          id="service-renewal-date"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="date"
-          bind:value={renewalDate}
-        />
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="service-alert-lead-days">
-          Alert me before renewal (days, comma-separated)
-        </label>
-        <input
-          id="service-alert-lead-days"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          placeholder="14, 3"
-          bind:value={alertLeadDays}
-        />
-      </div>
-
-      {#if errorMessage}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {errorMessage}
-        </p>
-      {/if}
+      <FormErrorBanner message={errorMessage} />
 
       <FormSubmitRow
         submitLabel="Create service"
@@ -139,6 +100,6 @@
         cancelHref={`/projects/${data.projectId}/services`}
         {submitting}
       />
-    </form>
+    </AssetForm>
   {/if}
 </section>

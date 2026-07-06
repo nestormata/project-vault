@@ -4,42 +4,41 @@
   import { createCertificate } from '$lib/api/certificates.js'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import { mapMonitoringSubmitError } from '$lib/monitoring/form-errors.js'
-  import { canManageMonitoredAssets } from '$lib/monitoring/permissions.js'
-  import { parseAlertLeadDaysInput, toIsoDate } from '$lib/monitoring/form-helpers.js'
+  import {
+    AssetForm,
+    CertificateFormFields,
+    CertificateFormState,
+    FormErrorBanner,
+  } from '$lib/components/monitoring/index.js'
+  import {
+    canManageMonitoredAssets,
+    mapMonitoringSubmitError,
+    parseAlertLeadDaysInput,
+    toIsoDate,
+    validateCertificateFields,
+  } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
-  let domain = $state('')
-  let expiresAt = $state('')
-  let alertLeadDays = $state('')
-  let submitting = $state(false)
-  let errorMessage = $state<string | null>(null)
-  let fieldErrors = $state<{ domain?: string; expiresAt?: string }>({})
+  const form = new CertificateFormState()
 
   const canCreate = $derived(canManageMonitoredAssets(data.orgRole))
 
-  function validate(): { domain?: string; expiresAt?: string } {
-    const errors: { domain?: string; expiresAt?: string } = {}
-    if (!domain.trim()) errors.domain = 'Domain is required'
-    else if (domain.trim().length > 253) errors.domain = 'Domain must be 253 characters or fewer'
-    if (!expiresAt) errors.expiresAt = 'Expiry date is required'
-    return errors
-  }
-
   async function submitForm() {
-    if (submitting || !canCreate) return
-    fieldErrors = validate()
-    if (fieldErrors.domain || fieldErrors.expiresAt) return
+    if (form.submitting || !canCreate) return
+    form.fieldErrors = validateCertificateFields(form.domain, form.expiresAt, {
+      maxDomainLength: 253,
+    })
+    if (form.fieldErrors.domain || form.fieldErrors.expiresAt) return
 
-    submitting = true
-    errorMessage = null
+    form.submitting = true
+    form.errorMessage = null
     try {
       const body: { domain: string; expiresAt: string; alertLeadDays?: number[] } = {
-        domain: domain.trim(),
-        expiresAt: toIsoDate(expiresAt),
+        domain: form.domain.trim(),
+        expiresAt: toIsoDate(form.expiresAt),
       }
-      const parsedLeadDays = parseAlertLeadDaysInput(alertLeadDays)
+      const parsedLeadDays = parseAlertLeadDaysInput(form.alertLeadDays)
       if (parsedLeadDays) body.alertLeadDays = parsedLeadDays
 
       const created = await createCertificate(fetch, data.projectId, body)
@@ -49,10 +48,10 @@
         error,
         'You do not have permission to create certificates.'
       )
-      fieldErrors = mapped.fieldErrors
-      errorMessage = mapped.errorMessage
+      form.fieldErrors = mapped.fieldErrors
+      form.errorMessage = mapped.errorMessage
     } finally {
-      submitting = false
+      form.submitting = false
     }
   }
 </script>
@@ -75,66 +74,23 @@
       backLabel="Back to certificates"
     />
   {:else}
-    <form
-      class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      onsubmit={(event) => {
-        event.preventDefault()
-        void submitForm()
-      }}
-    >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="certificate-domain">Domain</label>
-        <input
-          id="certificate-domain"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          bind:value={domain}
-        />
-        {#if fieldErrors.domain}
-          <p class="text-sm text-red-700">{fieldErrors.domain}</p>
-        {/if}
-      </div>
+    <AssetForm onsubmit={submitForm}>
+      <CertificateFormFields
+        bind:domain={form.domain}
+        bind:expiresAt={form.expiresAt}
+        bind:alertLeadDays={form.alertLeadDays}
+        fieldErrors={form.fieldErrors}
+        alertLeadDaysPlaceholder="30, 7"
+      />
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="certificate-expires-at"
-          >Expiry date</label
-        >
-        <input
-          id="certificate-expires-at"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="date"
-          bind:value={expiresAt}
-        />
-        {#if fieldErrors.expiresAt}
-          <p class="text-sm text-red-700">{fieldErrors.expiresAt}</p>
-        {/if}
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="certificate-alert-lead-days">
-          Alert me before expiry (days, comma-separated)
-        </label>
-        <input
-          id="certificate-alert-lead-days"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3"
-          type="text"
-          placeholder="30, 7"
-          bind:value={alertLeadDays}
-        />
-      </div>
-
-      {#if errorMessage}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {errorMessage}
-        </p>
-      {/if}
+      <FormErrorBanner message={form.errorMessage} />
 
       <FormSubmitRow
         submitLabel="Create certificate"
         pendingLabel="Creating…"
         cancelHref={`/projects/${data.projectId}/certificates`}
-        {submitting}
+        submitting={form.submitting}
       />
-    </form>
+    </AssetForm>
   {/if}
 </section>

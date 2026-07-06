@@ -2,89 +2,74 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { deleteCertificate, updateCertificate } from '$lib/api/certificates.js'
-  import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
-  import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
-  import { mapMonitoringSubmitError } from '$lib/monitoring/form-errors.js'
-  import { parseAlertLeadDaysInput, toIsoDate } from '$lib/monitoring/form-helpers.js'
-  import { canManageMonitoredAssets } from '$lib/monitoring/permissions.js'
+  import {
+    AssetDetailFooter,
+    AssetForm,
+    CertificateFormFields,
+    CertificateFormState,
+    DetailTitleCard,
+    EntityNotFoundBanner,
+    ReadOnlyField,
+    ReadOnlyPanel,
+    SaveChangesFooter,
+  } from '$lib/components/monitoring/index.js'
+  import {
+    canManageMonitoredAssets,
+    formatAlertLeadDays,
+    formatDate,
+    mapMonitoringSubmitError,
+    parseAlertLeadDaysInput,
+    toDateInputValue,
+    toIsoDate,
+    validateCertificateFields,
+  } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
   const canManage = $derived(canManageMonitoredAssets(data.orgRole))
 
-  function toDateInputValue(value: string | null): string {
-    if (!value) return ''
-    return value.slice(0, 10)
-  }
-
-  function formatDate(value: string | null): string {
-    if (!value) return '—'
-    return new Date(value).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  }
-
-  function formatAlertLeadDays(days: number[]): string {
-    if (days.length === 0) return '—'
-    return `Alerts at ${days.join(', ')} days before`
-  }
-
-  let domain = $state('')
-  let expiresAt = $state('')
-  let alertLeadDays = $state('')
-  let submitting = $state(false)
-  let errorMessage = $state<string | null>(null)
-  let fieldErrors = $state<{ domain?: string; expiresAt?: string }>({})
+  const form = new CertificateFormState()
   let deleteError = $state<string | null>(null)
 
   // Reset the edit form whenever `data` changes (new load/navigation) — see services' detail page
   // for why: SvelteKit reuses this component instance across navigations to the same route shape.
   $effect(() => {
-    domain = data.certificate?.domain ?? ''
-    expiresAt = toDateInputValue(data.certificate?.expiresAt ?? null)
-    alertLeadDays = (data.certificate?.alertLeadDays ?? []).join(', ')
+    form.domain = data.certificate?.domain ?? ''
+    form.expiresAt = toDateInputValue(data.certificate?.expiresAt ?? null)
+    form.alertLeadDays = (data.certificate?.alertLeadDays ?? []).join(', ')
   })
 
-  function validate(): { domain?: string; expiresAt?: string } {
-    const errors: { domain?: string; expiresAt?: string } = {}
-    if (!domain.trim()) errors.domain = 'Domain is required'
-    if (!expiresAt) errors.expiresAt = 'Expiry date is required'
-    return errors
-  }
-
   async function submitForm() {
-    if (submitting || !canManage || !data.certificate) return
-    fieldErrors = validate()
-    if (fieldErrors.domain || fieldErrors.expiresAt) return
+    if (form.submitting || !canManage || !data.certificate) return
+    form.fieldErrors = validateCertificateFields(form.domain, form.expiresAt)
+    if (form.fieldErrors.domain || form.fieldErrors.expiresAt) return
 
-    submitting = true
-    errorMessage = null
+    form.submitting = true
+    form.errorMessage = null
     try {
       // Code-review finding: a blank alert-lead-days field must omit the key (leaving the
       // server's current value untouched on this partial PATCH) rather than sending an explicit
       // `[]`, which would silently disable expiry alerting — the same "blank omits the field"
       // semantics the create form already uses (see form-helpers.ts's parseAlertLeadDaysInput).
-      const parsedAlertLeadDays = parseAlertLeadDaysInput(alertLeadDays)
+      const parsedAlertLeadDays = parseAlertLeadDaysInput(form.alertLeadDays)
       const updated = await updateCertificate(fetch, data.projectId, data.certificate.id, {
-        domain: domain.trim(),
-        expiresAt: toIsoDate(expiresAt),
+        domain: form.domain.trim(),
+        expiresAt: toIsoDate(form.expiresAt),
         ...(parsedAlertLeadDays !== undefined ? { alertLeadDays: parsedAlertLeadDays } : {}),
       })
       data = { ...data, certificate: updated }
-      domain = updated.domain
-      expiresAt = toDateInputValue(updated.expiresAt)
-      alertLeadDays = updated.alertLeadDays.join(', ')
+      form.domain = updated.domain
+      form.expiresAt = toDateInputValue(updated.expiresAt)
+      form.alertLeadDays = updated.alertLeadDays.join(', ')
     } catch (error) {
       const mapped = mapMonitoringSubmitError(
         error,
         'You do not have permission to edit certificates.'
       )
-      fieldErrors = mapped.fieldErrors
-      errorMessage = mapped.errorMessage
+      form.fieldErrors = mapped.fieldErrors
+      form.errorMessage = mapped.errorMessage
     } finally {
-      submitting = false
+      form.submitting = false
     }
   }
 
@@ -106,119 +91,47 @@
 
 <section class="mx-auto max-w-2xl space-y-6">
   {#if data.notFound || !data.certificate}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <h1 class="text-xl font-semibold text-red-900">Certificate not found</h1>
-      <p class="mt-2 text-red-800">This certificate does not exist or you do not have access.</p>
-      <a
-        class="mt-4 inline-block font-medium text-slate-950 underline"
-        href={resolve(`/projects/${data.projectId}/certificates`)}
-      >
-        Back to certificates
-      </a>
-    </div>
+    <EntityNotFoundBanner
+      title="Certificate not found"
+      message="This certificate does not exist or you do not have access."
+      backHref={`/projects/${data.projectId}/certificates`}
+      backLabel="Back to certificates"
+    />
   {:else}
-    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Certificate</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-950">{data.certificate.domain}</h1>
-    </div>
+    <DetailTitleCard eyebrow="Certificate" title={data.certificate.domain} />
 
     {#if canManage}
-      <form
-        class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-        onsubmit={(event) => {
-          event.preventDefault()
-          void submitForm()
-        }}
-      >
-        <div class="space-y-2">
-          <label class="block font-medium text-slate-900" for="certificate-domain">Domain</label>
-          <input
-            id="certificate-domain"
-            class="w-full rounded-xl border border-slate-300 px-3 py-3"
-            type="text"
-            bind:value={domain}
-          />
-          {#if fieldErrors.domain}
-            <p class="text-sm text-red-700">{fieldErrors.domain}</p>
-          {/if}
-        </div>
-
-        <div class="space-y-2">
-          <label class="block font-medium text-slate-900" for="certificate-expires-at"
-            >Expiry date</label
-          >
-          <input
-            id="certificate-expires-at"
-            class="w-full rounded-xl border border-slate-300 px-3 py-3"
-            type="date"
-            bind:value={expiresAt}
-          />
-          {#if fieldErrors.expiresAt}
-            <p class="text-sm text-red-700">{fieldErrors.expiresAt}</p>
-          {/if}
-        </div>
-
-        <div class="space-y-2">
-          <label class="block font-medium text-slate-900" for="certificate-alert-lead-days">
-            Alert me before expiry (days, comma-separated)
-          </label>
-          <input
-            id="certificate-alert-lead-days"
-            class="w-full rounded-xl border border-slate-300 px-3 py-3"
-            type="text"
-            bind:value={alertLeadDays}
-          />
-        </div>
-
-        {#if errorMessage}
-          <p
-            class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-            role="alert"
-          >
-            {errorMessage}
-          </p>
-        {/if}
-
-        <FormSubmitRow
-          submitLabel="Save changes"
-          pendingLabel="Saving…"
-          cancelHref={`/projects/${data.projectId}/certificates`}
-          {submitting}
+      <AssetForm onsubmit={submitForm}>
+        <CertificateFormFields
+          bind:domain={form.domain}
+          bind:expiresAt={form.expiresAt}
+          bind:alertLeadDays={form.alertLeadDays}
+          fieldErrors={form.fieldErrors}
         />
-      </form>
+
+        <SaveChangesFooter
+          errorMessage={form.errorMessage}
+          cancelHref={`/projects/${data.projectId}/certificates`}
+          submitting={form.submitting}
+        />
+      </AssetForm>
     {:else}
-      <!-- AC-I1/code-review finding: a viewer must not see a disabled-but-visible mutation form
-           (which invites a stale-role 403 on click) — show a plain read-only view instead. -->
-      <div class="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div>
-          <p class="text-sm font-medium text-slate-900">Domain</p>
-          <p class="text-slate-700">{data.certificate.domain}</p>
-        </div>
-        <div>
-          <p class="text-sm font-medium text-slate-900">Expires on</p>
-          <p class="text-slate-700">{formatDate(data.certificate.expiresAt)}</p>
-        </div>
-        <div>
-          <p class="text-sm font-medium text-slate-900">Alert lead days</p>
-          <p class="text-slate-700">{formatAlertLeadDays(data.certificate.alertLeadDays)}</p>
-        </div>
-      </div>
+      <ReadOnlyPanel>
+        <ReadOnlyField label="Domain" value={data.certificate.domain} />
+        <ReadOnlyField label="Expires on" value={formatDate(data.certificate.expiresAt)} />
+        <ReadOnlyField
+          label="Alert lead days"
+          value={formatAlertLeadDays(data.certificate.alertLeadDays)}
+        />
+      </ReadOnlyPanel>
     {/if}
 
-    {#if canManage}
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        {#if deleteError}
-          <p class="mb-3 text-sm text-red-700" role="alert">{deleteError}</p>
-        {/if}
-        <ConfirmDeleteButton onConfirm={handleDelete} />
-      </div>
-    {/if}
-
-    <a
-      class="inline-block font-medium text-slate-700 underline"
-      href={resolve(`/projects/${data.projectId}/certificates`)}
-    >
-      Back to certificates
-    </a>
+    <AssetDetailFooter
+      {canManage}
+      {deleteError}
+      onDelete={handleDelete}
+      backHref={`/projects/${data.projectId}/certificates`}
+      backLabel="Back to certificates"
+    />
   {/if}
 </section>
