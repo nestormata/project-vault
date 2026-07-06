@@ -48,6 +48,12 @@
             >
               {project.projectName}
             </a>
+            <a
+              class="text-sm font-medium text-slate-700 underline"
+              href={resolve(`/projects/${project.projectId}/service-endpoints`)}
+            >
+              Manage endpoints
+            </a>
           </div>
           <ul class="mt-3 space-y-2">
             {#each project.services as service (service.id)}
@@ -69,7 +75,16 @@
     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
       <p class="text-slate-600">No services monitored yet.</p>
       <p class="mt-1 text-sm text-slate-500">
-        Register a service endpoint on a project to see its live status here.
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(
+            data.singleProjectId
+              ? `/projects/${data.singleProjectId}/service-endpoints`
+              : '/projects'
+          )}
+        >
+          Register a service endpoint on a project to see its live status here.
+        </a>
       </p>
     </div>
   {/if}

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-06  # updated: 8-2 -> done
+last_updated: 2026-07-06  # updated: 8-1 -> done; epic-5 -> done (5.4/5.5 both landed, retro rechecked); new 8-5 story added for 5.4's unresolved adversarial-review findings; epic-6-retrospective optional -> done; 6-4 added (backlog); epic-6 held in-progress; story Status: headers synced for 6-1/6-2/7-1/7-2/7-3/8-1; epic-7-retrospective optional -> done; epic-7 comment added (G2 hold reason); new 8-6 story added for the machine-user web UI gap + Epic 7 hardening findings; 8-5 story file created (backlog -> ready-for-dev); 6-4 -> in-progress; 6-4 -> done; epic-6 -> done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -97,11 +97,11 @@ development_status:
   epic-5-retrospective: done
 
   # Epic 6: Operational Monitoring & Status — Services, Certificates, Domains & Mobile
-  epic-6: in-progress # held open pending 6-4 (monitored-asset management UI, scheduled at retro)
+  epic-6: done # flipped 2026-07-06 — 6-4 landed, closing the epic; all stories + retrospective done
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: done
   6-3-cross-project-health-dashboard-and-public-status-page: done
-  6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt: ready-for-dev # story file created 2026-07-06 — closes the Story 6.1 Product Surface Contract gap (web UI for services/certificates/domains/service-endpoints CRUD + monitoring-alerts snooze/dismiss) + stale "available in Epic 6" placeholder copy + AuditEvent dual-listing consolidation (P6-3)
+  6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt: done # implemented 2026-07-06 — closes the Story 6.1 Product Surface Contract gap (web UI for services/certificates/domains/service-endpoints CRUD + monitoring-alerts snooze/dismiss) + stale "available in Epic 6" placeholder copy + AuditEvent dual-listing consolidation (P6-3); code review fixed 4 high findings; CI fixed via jscpd-driven shared-component refactor
   epic-6-retrospective: done
 
   # Epic 7: Machine User Access & CI/CD Integration

@@ -90,6 +90,14 @@
           <dt class="text-sm text-slate-500">Alerts</dt>
           <dd class="text-2xl font-bold text-slate-950">{data.dashboard.unresolvedAlertCount}</dd>
         </div>
+        <div class="rounded-2xl bg-slate-50 p-4">
+          <dt class="text-sm text-slate-500">Monitored services</dt>
+          <dd class="text-lg font-bold text-slate-950">
+            {data.dashboard.monitoredServiceHealth.healthy} healthy ·
+            {data.dashboard.monitoredServiceHealth.degraded} degraded ·
+            {data.dashboard.monitoredServiceHealth.down} down
+          </dd>
+        </div>
       </dl>
     </section>
 

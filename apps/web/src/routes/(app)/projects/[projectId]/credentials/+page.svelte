@@ -67,6 +67,30 @@
         >
           Public status page
         </a>
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(`/projects/${data.projectId}/services`)}
+        >
+          Services
+        </a>
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(`/projects/${data.projectId}/certificates`)}
+        >
+          Certificates
+        </a>
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(`/projects/${data.projectId}/domains`)}
+        >
+          Domains
+        </a>
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(`/projects/${data.projectId}/service-endpoints`)}
+        >
+          Endpoints
+        </a>
       </nav>
     </div>
     <div class="flex flex-col gap-2 sm:flex-row">
