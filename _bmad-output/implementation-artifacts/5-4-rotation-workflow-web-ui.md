@@ -1,6 +1,6 @@
 # Story 5.4: Rotation Workflow Web UI
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-05 — comprehensive developer guide for the web-UI companion to Stories 5.1/5.2/5.3 (all `done`, all API-only). This story adds ZERO new backend routes, ZERO new DB migrations, ZERO new audit events — every mutation this story's UI performs calls an already-shipped, already-tested Epic 5 endpoint verbatim. Confirmed via direct inspection of `apps/api/src/modules/rotation/routes.ts` (migration `0033_break_glass_and_stale_recovery` is the latest in `packages/db/src/migrations/meta/_journal.json` — 5.1/5.2/5.3's full schema is live) that every endpoint referenced below exists today with the exact path, role gate, and error-code shape documented here. This story is scheduled per the 2026-07-05 Epic 5 retrospective specifically to close the Product-Surface-Contract gap all three prior stories flagged as `TBD` — see `_bmad-output/implementation-artifacts/deferred-work.md` line 68. -->
 

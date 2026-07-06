@@ -1,6 +1,6 @@
 # Story 7.1: Machine User Identity & API Key Management
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for creating project-scoped machine user identities and issuing/revoking their API keys. This is the FIRST story in Epic 7 and the schema/crypto foundation Stories 7.2 (machine authentication + programmatic retrieval) and 7.3 (GitHub Actions integration) build on. Read "Key Design Decisions & Open Questions" before coding — this story resolves several concrete conflicts between epics.md's literal Story 7.1 AC text and architecture.md's canonical technical decisions, always in favor of architecture.md + established codebase precedent, mirroring the resolution pattern Story 4.1 set for Epic 4. -->
 

@@ -1,6 +1,6 @@
 # Story 6.1: Service, Certificate & Domain Record Management
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-03 — comprehensive developer guide for the FIRST story in Epic 6 (Operational Monitoring & Status). This story creates the `payment_records`, `cert_records`, and `domain_records` tables plus their CRUD API and a daily proactive-expiry-alert job. It deliberately does NOT create `service_endpoints` (HTTP uptime monitoring) — that table and its health-check worker belong to Story 6.2. Read "Architecture Conflict Resolution" below before touching the schema: epics.md's draft AC text and architecture.md's canonical schema disagree on table shape, and this story resolves that disagreement in favor of architecture.md with documented rationale. -->
 

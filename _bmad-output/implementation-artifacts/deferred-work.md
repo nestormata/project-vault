@@ -67,6 +67,8 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 | Playwright E2E suite | — | Not implemented (2.8 out of scope) | Test automation epic / CI hardening |
 | Rotation workflow (initiate, checklist confirm/fail/retry/complete, break-glass) | 5.1/5.2/5.3 | API-only — no dedicated web story exists (unlike Epic 2's API+web pairing); 5.1's Product Surface Contract flagged this decision as due before `epic-5-retrospective` | **Resolved 2026-07-05 (Epic 5 retro):** scheduled as `5-4-rotation-workflow-web-ui` (backlog, `sprint-status.yaml`) rather than deferred indefinitely — `epic-5` held `in-progress` until it lands |
 | Epic 5 retro risk/gap/contradiction/technical-debt audit (12 findings: self-attestation, reveal-regression safety net, break-glass idempotency, NULL `initiatedBy`, malformed cron handling, unbounded dashboard scan, missing `org_id` index, background-job audit-failure handling, missing CAS on `abandon`, ambiguous audit payload, missing rollback tests, missing version IDs on `rotation.completed`) | 5.2/5.3 adversarial reviews (medium/low findings left "not blocking") | Documented in `epic-5-retro-2026-07-05.md`'s Significant Discovery Alert | **Tracked as Story 5.5** (`5-5-epic-5-completion-rotation-hardening-and-technical-debt.md`, `ready-for-dev`) — AC-2 through AC-13 |
+| Monitored-asset management (services/certificates/domains CRUD) | 6.1 | API-only — no dedicated web story exists; 6.1's Product Surface Contract flagged this as due before `epic-6-retrospective`; `dashboard-copy.ts`'s `add_service` label still says "available in Epic 6" though the epic shipped without it | **Resolved 2026-07-06 (Epic 6 retro):** scheduled as `6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt` (backlog, `sprint-status.yaml`) — `epic-6` held `in-progress` until it lands |
+| Machine-user management (create/list machine users, issue/list/revoke API keys, rotation, dormancy alerts) | 7.1/7.2 | API-only — no dedicated web story exists anywhere in `epics.md` (Epic 7, 8, or 9); both 7.1's and 7.2's Product Surface Contract sections flagged this as "a genuine planning gap" and said it should be escalated, but neither was turned into a tracked entry until the Epic 7 retro | **Resolved 2026-07-06 (Epic 7 retro):** scheduled as `8-6-epic-7-completion-machine-user-web-ui-and-hardening` (`ready-for-dev`, `sprint-status.yaml`, following the same cross-epic-hardening-bucket pattern as `8-5`) — `epic-7` held `in-progress` until it lands |
 
 ### Shell placeholders (future epics — tracked, not silent)
 
@@ -194,11 +196,36 @@ Full detail + verification notes: `_bmad-output/implementation-artifacts/epic-4-
 
 ---
 
+## Deferred from: Epic 6 retrospective (2026-07-06)
+
+Epic 6 (`epic-6`) stories 6.1-6.3 are `done`, but the epic itself stays `in-progress` in
+`sprint-status.yaml` pending a closure story — same pattern as Epic 2 (2.8), Epic 3 (3.4), and
+Epic 5 (5.5).
+
+| ID | Item | Resolution |
+|----|------|--------|
+| A6-1 | Story 6.1's own Product Surface Contract flagged no web UI story exists for services/certificates/domains management ("flag it at Epic 6 retro time so a UI story gets added before epic-6: done") — never converted to a backlog item until this retro | Scheduled as `6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt` (`sprint-status.yaml`, `backlog`) — `epic-6` held `in-progress` until it lands |
+| A6-2 | `apps/web/src/lib/components/dashboard/dashboard-copy.ts`'s `add_service` label ("Add first service - available in Epic 6") is now a false claim — Epic 6 shipped without delivering this UI | Rolled into `6-4`'s AC list |
+| A6-3 | Story-file `Status:` headers out of sync with `sprint-status.yaml` (`done` in sprint-status, `review` in the story file) for 6-1, 6-2, 7-1, 7-2, 7-3, 8-1 — same defect class as Epic 4's CP4-4 | ✅ Fixed directly 2026-07-06 (headers now read `done`) |
+
+### Open (Epic 6 retro)
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| P6-1 | No automated check catches story-file `Status:` header vs `sprint-status.yaml` drift — this is the 2nd time (Epic 4, now Epic 6/7/8) it's been caught only by a manual retro sweep | Dev | CI check / `make` target |
+| TD6-1 | `payment_records` physical table name vs. "services" domain language used everywhere else (UI, ACs, dashboard) | Dev | Rename follow-up, not yet scheduled |
+| TD6-2 | `AuditEvent` object + type-union dual-listing pattern reproduced a 3rd time (6.1, 6.2, 6.3) without consolidation | Dev | Derive union from object (`keyof typeof`) |
+| TD6-3 | Public status page (6.3): no enumeration/abuse visibility beyond access logs, shared (non-token-keyed) per-IP rate limit, no CORS/embeddability guidance | Dev | v1-accepted trade-off; revisit if status pages become externally load-bearing |
+
+Full detail: `_bmad-output/implementation-artifacts/epic-6-retro-2026-07-06.md`.
+
+---
+
 ## Deferred from: Story 4.4 (Project Archival, 2026-07-02)
 
-- **ADR-4.4-02 seam removal (blocker for FR63 sign-off):** `findBlockingRotationIds` in `apps/api/src/modules/projects/archive-guards.ts` degrades to "no block" via a `to_regclass('public.rotations')` table-existence check because Story 5.1 (rotation table) had not shipped when 4.4 was implemented. Once 5.1 lands, replace the raw SQL with a typed Drizzle query against the `rotations` schema object and delete `rotationsTableExists`. `archive-guards.test.ts` has a CI guard test that fails automatically once the `rotations` table exists while the seam is still present — treat that failure as the trigger to do this cleanup. QA must not sign off FR63 as fully complete until this AND the Epic 7 machine-user stub below are both closed.
+- ~~**ADR-4.4-02 seam removal (blocker for FR63 sign-off):** `findBlockingRotationIds` in `apps/api/src/modules/projects/archive-guards.ts` degrades to "no block" via a `to_regclass('public.rotations')` table-existence check because Story 5.1 (rotation table) had not shipped when 4.4 was implemented.~~ — **Resolved.** Retired in Story 6.1 (commit `830730e`, during that story's CI fixes) — no `rotationsTableExists` helper remains in the codebase. Confirmed via git history during Story 5.5's implementation and re-confirmed in the Epic 5 retro recheck (2026-07-06); `deferred-work.md` had not been updated to reflect this until now (the D5-1 action item from the 2026-07-05 retro).
 - **Epic 7 machine-user stub:** `hasActiveMachineUserKeys` in `archive-guards.ts` is a permanent stub (`// TODO: Epic 7`) returning `false` until Epic 7 Story 7.1 ships `GET /api/v1/projects/:projectId/machine-users/active-keys`. Replace the stub body with a real check once available.
-- **Story 5.1 rotation-creation handler must close the archive/commit TOCTOU race:** per AC-4's concurrency note, 4.4's archive/unarchive handlers lock the project row `FOR UPDATE` for the duration of the transaction. Story 5.1's rotation-creation handler must take the same `SELECT ... FOR UPDATE` lock on the parent project row (or re-check `isProjectArchived`) before inserting a new `in_progress` rotation, or a rotation can still be created in the gap between 4.4's guard check and its archive commit. **Status (Epic 5 retro, 2026-07-05): confirmed still open** — 5.1 shipped only a credential-row lock (AC-4 step 2), never the project-row lock this note asks for; the ADR-4.4-02 CI tripwire above is firing as a result. **Tracked as Story 5.5, AC-1** (`5-5-epic-5-completion-rotation-hardening-and-technical-debt.md`, `sprint-status.yaml`).
+- ~~**Story 5.1 rotation-creation handler must close the archive/commit TOCTOU race:**~~ — **Resolved 2026-07-05** (Story 5.5, AC-1): `initiateRotation` now takes a `FOR UPDATE` lock on the parent `projects` row before any checklist/version writes, returning a new `project_archived` outcome mapped to `410`. Verified deterministic (never both succeed, never both fail) since 4.4's archive path already takes the identical lock at the top of its own transaction — the two operations fully serialize on that one row.
 - **AC-5 write-guard coverage is complete for all currently-shipped mutation routes** (2.1/2.2/2.3/2.4/4.1/4.2 are all `done`), so no routes were left un-guarded pending a later story. If a future story adds a new mutating route nested under a project (e.g. a standalone credential-delete endpoint per AC-5's scope note), it MUST add the `isProjectArchived`/`rejectIfProjectArchived` guard and a 410 test in that story's own PR.
 - **No standalone `POST /api/v1/projects/:projectId/members` (add member) route exists.** Story 4.2 shipped membership growth only via the invitation-accept path (`POST /api/v1/invitations/:token/accept`), which IS guarded (410 on an archived project). AC-5's table entry for a direct add-member route is therefore not applicable in the current implementation; revisit if a future story adds one.
 - **ADR-4.4-05 authorization-path audit trail:** org owners may archive/unarchive any project without holding a `project_memberships` row. The audit row currently does not distinguish "acted as project owner" vs. "acted via org-owner override" (SecureRoute's `writeHumanAuditEntryOrFailClosed` payload is `{}`  for archive/unarchive). Recoverable today only via the structured `project.archive_denied`-style warn logs on the *denial* path, not on the success path. A follow-up could add `authorizedVia: 'project_owner' | 'org_owner'` to the audit payload.

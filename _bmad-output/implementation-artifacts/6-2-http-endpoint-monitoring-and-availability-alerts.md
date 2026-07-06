@@ -1,6 +1,6 @@
 # Story 6.2: HTTP Endpoint Monitoring & Availability Alerts
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for the SECOND story in Epic 6 (Operational Monitoring & Status). Story 6.1 (service-certificate-and-domain-record-management, status: review) created payment_records/cert_records/domain_records for *expiry-based* alerting and explicitly deferred `service_endpoints` (HTTP uptime monitoring) plus the security.anomalous_access job to this story. Read "Architecture Conflict Resolution" below before touching schema/naming — several genuine ambiguities between epics.md's draft AC text, architecture.md's canonical schema, and code that already exists on disk (NOTIFICATION_ALERT_TYPES already lists `service.down`/`service.recovery`/`security.anomalous_access`; a `security_alerts` table with dismiss-but-no-snooze columns already exists from Story 3.4) are resolved here so the dev agent doesn't have to re-derive them mid-implementation. -->
 
