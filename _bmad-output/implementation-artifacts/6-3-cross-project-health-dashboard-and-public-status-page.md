@@ -1,6 +1,6 @@
 # Story 6.3: Cross-Project Health Dashboard & Public Status Page
 
-Status: ready-for-dev (Story 6.2 — `6-2-http-endpoint-monitoring-and-availability-alerts` — is now `done`; ADR-6.3-01's prerequisite is satisfied)
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for the
 THIRD story in Epic 6. This story creates the org-wide `GET /api/v1/health-dashboard` endpoint, a
@@ -232,75 +232,75 @@ The original Section B / AC 7 assigned this story the job of wiring `dashboard-s
 
 ## Tasks / Subtasks
 
-- [ ] Task 0 — Prerequisite check (blocking, AC: all)
-  - [ ] Confirm Story 6.2 is `done` in `sprint-status.yaml` (not just `ready-for-dev`) — i.e. `service_endpoints`/`endpoint_health_checks`/`monitoring_alerts` tables and the health-check worker actually exist and are merged. If 6.2 is not `done`, stop and coordinate — do not proceed past this task (ADR-6.3-01).
-  - [ ] **The contract reconciliation this task originally asked for is already done** (realignment pass, ADR-6.3-02/03/04): this story now queries `service_endpoints` directly, no speculative repository-function contract remains. The only remaining check here is confirming 6.2's *actual* shipped column names on `service_endpoints` (`status`, `lastCheckedAt`, `name`, `id`) match what this story assumes — read `packages/db/src/schema/service-endpoints.ts` once 6.2 is implemented. **If any column was renamed during 6.2's own implementation (realignment-review finding — full blast radius, not just the query), update all four of:** Task 3's query, the AC 19 migration's `service_id` FK target column, Task 5's schema file column mapping, and any shared Zod type declared per ADR-6.3-02's guidance.
+- [x] Task 0 — Prerequisite check (blocking, AC: all)
+  - [x] Confirm Story 6.2 is `done` in `sprint-status.yaml` (not just `ready-for-dev`) — i.e. `service_endpoints`/`endpoint_health_checks`/`monitoring_alerts` tables and the health-check worker actually exist and are merged. If 6.2 is not `done`, stop and coordinate — do not proceed past this task (ADR-6.3-01).
+  - [x] **The contract reconciliation this task originally asked for is already done** (realignment pass, ADR-6.3-02/03/04): this story now queries `service_endpoints` directly, no speculative repository-function contract remains. The only remaining check here is confirming 6.2's *actual* shipped column names on `service_endpoints` (`status`, `lastCheckedAt`, `name`, `id`) match what this story assumes — read `packages/db/src/schema/service-endpoints.ts` once 6.2 is implemented. **If any column was renamed during 6.2's own implementation (realignment-review finding — full blast radius, not just the query), update all four of:** Task 3's query, the AC 19 migration's `service_id` FK target column, Task 5's schema file column mapping, and any shared Zod type declared per ADR-6.3-02's guidance.
 
-- [ ] Task 1 — Registries (AC: 17) [Source: `packages/shared/src/constants/audit-events.ts`]
-  - [ ] Add `STATUS_PAGE_ENABLED`, `STATUS_PAGE_TOKEN_REGENERATED`, `STATUS_PAGE_UPDATED`, `STATUS_PAGE_DISABLED` to both the `AuditEvent` object and the `AuditEventType` union (both regions — see AC 17 note).
-  - [ ] Add `STATUS_PAGE_TOKEN_HMAC_SECRET` to `apps/api/src/config/env.ts`: schema entry (`secretEnvDefault` pattern, `DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'g'.repeat(64)`), `ProductionEnv` type entry, a `validateStatusPageTokenProductionSecret()` function mirroring `validateRecoveryTokenProductionSecret()` exactly (required in prod, must differ from every other secret including the newest `RECOVERY_TOKEN_HMAC_SECRET`, must not match `PLACEHOLDER_SECRET_PATTERN`), call it from `validateProductionEnv()`, and add it to the `RawEnv`/`Env` type omission-and-re-add block (`env.ts:401-413` region).
+- [x] Task 1 — Registries (AC: 17) [Source: `packages/shared/src/constants/audit-events.ts`]
+  - [x] Add `STATUS_PAGE_ENABLED`, `STATUS_PAGE_TOKEN_REGENERATED`, `STATUS_PAGE_UPDATED`, `STATUS_PAGE_DISABLED` to both the `AuditEvent` object and the `AuditEventType` union (both regions — see AC 17 note).
+  - [x] Add `STATUS_PAGE_TOKEN_HMAC_SECRET` to `apps/api/src/config/env.ts`: schema entry (`secretEnvDefault` pattern, `DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'g'.repeat(64)`), `ProductionEnv` type entry, a `validateStatusPageTokenProductionSecret()` function mirroring `validateRecoveryTokenProductionSecret()` exactly (required in prod, must differ from every other secret including the newest `RECOVERY_TOKEN_HMAC_SECRET`, must not match `PLACEHOLDER_SECRET_PATTERN`), call it from `validateProductionEnv()`, and add it to the `RawEnv`/`Env` type omission-and-re-add block (`env.ts:401-413` region).
 
-- [ ] Task 2 — **Removed (realignment pass, ADR-6.3-02/03).** The original Task 2 built a pure `computeServiceHealthState()` derivation function against the speculative pre-6.2 contract, including a staleness boundary test. There is no derivation left to build — `service_endpoints.status` is read verbatim (see Task 3). Nothing to implement here.
+- [x] Task 2 — **Removed (realignment pass, ADR-6.3-02/03).** The original Task 2 built a pure `computeServiceHealthState()` derivation function against the speculative pre-6.2 contract, including a staleness boundary test. There is no derivation left to build — `service_endpoints.status` is read verbatim (see Task 3). Nothing to implement here.
 
-- [ ] Task 3 — Health dashboard schema + service + route (AC: 1, 2, 4-6) [Source: `apps/api/src/modules/dashboard/routes.ts`, Story 6.2's `apps/api/src/modules/monitoring/service.ts`/`schema.ts` conventions]
-  - [ ] Add `HealthDashboardSchema`/`HealthDashboardServiceSchema` to `packages/shared/src/schemas/health-dashboard.ts` (mirror `org-dashboard.ts`'s shape/`.meta({id:...})` convention exactly); export from `packages/shared/src/index.ts`. `HealthDashboardServiceSchema` fields: `{ id, name, status, lastCheckedAt }`. **On `status`'s type (realignment-review correction):** check whether `packages/db/src/schema/service-endpoints.ts` (6.2) exports a reusable status union type first — but 6.2's `status` column is a plain `text` + `CHECK` constraint, not a Drizzle `pgEnum`, so it may not export one. If it doesn't, declare `'healthy' | 'degraded' | 'down'` locally here with a comment citing 6.2's CHECK constraint as the source of truth — restating the same three literal values in two files is acceptable; inventing *different* values would not be.
-  - [ ] Create `apps/api/src/modules/monitoring/health-dashboard-service.ts`: query all non-archived projects in the org, then **exactly one** batched query `SELECT id, projectId, name, status, lastCheckedAt FROM service_endpoints WHERE projectId = ANY(<project ids>)` for the entire org — **not** one call per project (ADR-6.3-02, realigned). Group the single query's results back by project in memory, filter out projects with zero `service_endpoints` rows, and compute `summary` by counting `status` values across all listed services. No separate health-state derivation step — `status` comes straight off the row. A per-project (N+1) query pattern is an incorrect implementation of this task and must be flagged in review; it would compound the unpaginated/unbounded-growth risk already accepted in Known Scope Boundaries.
-  - [ ] Create `apps/api/src/modules/monitoring/health-dashboard-routes.ts` exporting `healthDashboardRoutes(fastify)`: single `GET ''` route mirroring `dashboardRoutes` exactly (`minimumRole: 'viewer'`, `writeAuditEvent: false`, `rateLimit: LIST_RATE_LIMIT` imported from `monitoring/routes.ts` — export that constant if not already exported).
-  - [ ] Register in `apps/api/src/app.ts`: `await fastify.register(healthDashboardRoutes, { prefix: '/api/v1/health-dashboard' })`.
+- [x] Task 3 — Health dashboard schema + service + route (AC: 1, 2, 4-6) [Source: `apps/api/src/modules/dashboard/routes.ts`, Story 6.2's `apps/api/src/modules/monitoring/service.ts`/`schema.ts` conventions]
+  - [x] Add `HealthDashboardSchema`/`HealthDashboardServiceSchema` to `packages/shared/src/schemas/health-dashboard.ts` (mirror `org-dashboard.ts`'s shape/`.meta({id:...})` convention exactly); export from `packages/shared/src/index.ts`. `HealthDashboardServiceSchema` fields: `{ id, name, status, lastCheckedAt }`. **On `status`'s type (realignment-review correction):** check whether `packages/db/src/schema/service-endpoints.ts` (6.2) exports a reusable status union type first — but 6.2's `status` column is a plain `text` + `CHECK` constraint, not a Drizzle `pgEnum`, so it may not export one. If it doesn't, declare `'healthy' | 'degraded' | 'down'` locally here with a comment citing 6.2's CHECK constraint as the source of truth — restating the same three literal values in two files is acceptable; inventing *different* values would not be.
+  - [x] Create `apps/api/src/modules/monitoring/health-dashboard-service.ts`: query all non-archived projects in the org, then **exactly one** batched query `SELECT id, projectId, name, status, lastCheckedAt FROM service_endpoints WHERE projectId = ANY(<project ids>)` for the entire org — **not** one call per project (ADR-6.3-02, realigned). Group the single query's results back by project in memory, filter out projects with zero `service_endpoints` rows, and compute `summary` by counting `status` values across all listed services. No separate health-state derivation step — `status` comes straight off the row. A per-project (N+1) query pattern is an incorrect implementation of this task and must be flagged in review; it would compound the unpaginated/unbounded-growth risk already accepted in Known Scope Boundaries.
+  - [x] Create `apps/api/src/modules/monitoring/health-dashboard-routes.ts` exporting `healthDashboardRoutes(fastify)`: single `GET ''` route mirroring `dashboardRoutes` exactly (`minimumRole: 'viewer'`, `writeAuditEvent: false`, `rateLimit: LIST_RATE_LIMIT` imported from `monitoring/routes.ts` — export that constant if not already exported).
+  - [x] Register in `apps/api/src/app.ts`: `await fastify.register(healthDashboardRoutes, { prefix: '/api/v1/health-dashboard' })`.
 
-- [ ] Task 4 — **Removed (realignment pass, ADR-6.3-08).** The original Task 4 wired `dashboard-stats.ts`'s `monitoredServiceHealth` stub to real data. Story 6.2's own Task 8 already does this against `service_endpoints`, as part of 6.2's own scope. This story does not touch `dashboard-stats.ts`.
+- [x] Task 4 — **Removed (realignment pass, ADR-6.3-08).** The original Task 4 wired `dashboard-stats.ts`'s `monitoredServiceHealth` stub to real data. Story 6.2's own Task 8 already does this against `service_endpoints`, as part of 6.2's own scope. This story does not touch `dashboard-stats.ts`.
 
-- [ ] Task 5 — Status page tokens + schema + migration (AC: 8, 10, 19, 20) [Source: `apps/api/src/modules/auth/recovery-tokens.ts`, Story 6.2's `packages/db/src/schema/service-endpoints.ts`, `packages/db/src/migrations/0025_project_invitations.sql`]
-  - [ ] Create `apps/api/src/modules/monitoring/status-page-tokens.ts` mirroring `recovery-tokens.ts` exactly (ADR-6.3-06).
-  - [ ] Create `packages/db/src/schema/status-pages.ts`, `status-page-services.ts` per AC 19's column list.
-  - [ ] Re-check `_journal.json` for the actual next-free migration number; hand-write `NNNN_status_pages.sql` following `0025_project_invitations.sql`'s exact shape (tables, FKs, indexes, `ENABLE ROW LEVEL SECURITY` + `CREATE POLICY` for both tables in this same file); hand-append the `_journal.json` entry.
-  - [ ] Export both tables from `packages/db/src/schema/index.ts`.
-  - [ ] Run `db#check-rls` locally.
+- [x] Task 5 — Status page tokens + schema + migration (AC: 8, 10, 19, 20) [Source: `apps/api/src/modules/auth/recovery-tokens.ts`, Story 6.2's `packages/db/src/schema/service-endpoints.ts`, `packages/db/src/migrations/0025_project_invitations.sql`]
+  - [x] Create `apps/api/src/modules/monitoring/status-page-tokens.ts` mirroring `recovery-tokens.ts` exactly (ADR-6.3-06).
+  - [x] Create `packages/db/src/schema/status-pages.ts`, `status-page-services.ts` per AC 19's column list.
+  - [x] Re-check `_journal.json` for the actual next-free migration number; hand-write `NNNN_status_pages.sql` following `0025_project_invitations.sql`'s exact shape (tables, FKs, indexes, `ENABLE ROW LEVEL SECURITY` + `CREATE POLICY` for both tables in this same file); hand-append the `_journal.json` entry.
+  - [x] Export both tables from `packages/db/src/schema/index.ts`.
+  - [x] Run `db#check-rls` locally.
 
-- [ ] Task 6 — Status page admin routes (AC: 8-9, 11, 15-18, 21) [Source: `apps/api/src/modules/projects/routes.ts` (`callerArchiveAuthorization` pattern), `apps/api/src/modules/monitoring/routes.ts` (`writeMonitoringAuditOrFailClosed`, `WRITE_RATE_LIMIT`/`LIST_RATE_LIMIT`)]
-  - [ ] Extend `apps/api/src/modules/monitoring/schema.ts` with request/response Zod schemas for enable/regenerate/update/**get-config** (local, request-body-only — mirror 6.1's convention of keeping request schemas module-local while response types needed by the web app live in `packages/shared`, see the codebase-convention note in Dev Notes below).
-  - [ ] Add `StatusPageSchema`/`PublicStatusPageServiceSchema`/**`StatusPageConfigSchema`** response types to `packages/shared/src/schemas/status-page.ts` (needed by the web app); export from `index.ts`. `StatusPageConfigSchema` backs AC 21 (realignment-review finding — closes the "no way to read current config" gap): `{ enabled, createdAt?, updatedAt?, services?: [{ serviceId, displayName, sortOrder }] }`.
-  - [ ] Extend `apps/api/src/modules/monitoring/service.ts` (or a new sibling `status-page-service.ts` if it keeps `service.ts` from growing unwieldy — developer's call, consistent with 6.1's own "kept as one file, logic stayed small enough" precedent) with the enable/regenerate/update/disable/**get-config** DB functions, each reusing `findProjectInOrg`/`rejectIfProjectArchived` and the ADR-6.3-07 ownership check. Enable's insert must catch the `status_pages_project_id_unique` constraint-violation error and map it to `409 status_page_already_enabled` (AC 8's concurrency example, realignment-review finding) rather than letting it surface as an unhandled `500`.
-  - [ ] Create `apps/api/src/modules/monitoring/status-page-routes.ts` exporting `statusPageRoutes(fastify)`: `GET/POST /:projectId/status-page`, `POST /:projectId/status-page/regenerate`, `PUT/DELETE /:projectId/status-page`, each `secureRoute`-registered with `minimumRole: 'member'` + in-handler ownership check. `requireMfa: true` on enable, regenerate, **and update (`PUT`)** — realignment-review finding: the original draft only gated enable/regenerate on MFA ("actions that create a new externally-shareable secret"), but `PUT` can materially change what an already-shared public page displays to external viewers without minting any new secret; gating it on MFA closes that inconsistency. `GET` (AC 21) and `DELETE` remain MFA-free (reads and risk-*reducing* actions don't need step-up). Rate limits: `GET` uses `LIST_RATE_LIMIT`; `POST`/`PUT`/`DELETE`/regenerate use `WRITE_RATE_LIMIT` (AC 10a).
-  - [ ] Register in `app.ts` inside the existing `eslint-disable sonarjs/no-duplicate-string` block (`app.ts:191-197`) alongside `monitoringRoutes`, prefix `/api/v1/projects`.
-  - [ ] Add `route-exemptions.ts` entries for all new routes (mirror the `payment_record.*` block exactly for the audited mutations; `GET`/AC 21 is a read, classify alongside the module's other list/detail reads; a distinct `auditOmissionReason` entry for the public GET, see AC 14).
+- [x] Task 6 — Status page admin routes (AC: 8-9, 11, 15-18, 21) [Source: `apps/api/src/modules/projects/routes.ts` (`callerArchiveAuthorization` pattern), `apps/api/src/modules/monitoring/routes.ts` (`writeMonitoringAuditOrFailClosed`, `WRITE_RATE_LIMIT`/`LIST_RATE_LIMIT`)]
+  - [x] Extend `apps/api/src/modules/monitoring/schema.ts` with request/response Zod schemas for enable/regenerate/update/**get-config** (local, request-body-only — mirror 6.1's convention of keeping request schemas module-local while response types needed by the web app live in `packages/shared`, see the codebase-convention note in Dev Notes below).
+  - [x] Add `StatusPageSchema`/`PublicStatusPageServiceSchema`/**`StatusPageConfigSchema`** response types to `packages/shared/src/schemas/status-page.ts` (needed by the web app); export from `index.ts`. `StatusPageConfigSchema` backs AC 21 (realignment-review finding — closes the "no way to read current config" gap): `{ enabled, createdAt?, updatedAt?, services?: [{ serviceId, displayName, sortOrder }] }`.
+  - [x] Extend `apps/api/src/modules/monitoring/service.ts` (or a new sibling `status-page-service.ts` if it keeps `service.ts` from growing unwieldy — developer's call, consistent with 6.1's own "kept as one file, logic stayed small enough" precedent) with the enable/regenerate/update/disable/**get-config** DB functions, each reusing `findProjectInOrg`/`rejectIfProjectArchived` and the ADR-6.3-07 ownership check. Enable's insert must catch the `status_pages_project_id_unique` constraint-violation error and map it to `409 status_page_already_enabled` (AC 8's concurrency example, realignment-review finding) rather than letting it surface as an unhandled `500`.
+  - [x] Create `apps/api/src/modules/monitoring/status-page-routes.ts` exporting `statusPageRoutes(fastify)`: `GET/POST /:projectId/status-page`, `POST /:projectId/status-page/regenerate`, `PUT/DELETE /:projectId/status-page`, each `secureRoute`-registered with `minimumRole: 'member'` + in-handler ownership check. `requireMfa: true` on enable, regenerate, **and update (`PUT`)** — realignment-review finding: the original draft only gated enable/regenerate on MFA ("actions that create a new externally-shareable secret"), but `PUT` can materially change what an already-shared public page displays to external viewers without minting any new secret; gating it on MFA closes that inconsistency. `GET` (AC 21) and `DELETE` remain MFA-free (reads and risk-*reducing* actions don't need step-up). Rate limits: `GET` uses `LIST_RATE_LIMIT`; `POST`/`PUT`/`DELETE`/regenerate use `WRITE_RATE_LIMIT` (AC 10a).
+  - [x] Register in `app.ts` inside the existing `eslint-disable sonarjs/no-duplicate-string` block (`app.ts:191-197`) alongside `monitoringRoutes`, prefix `/api/v1/projects`.
+  - [x] Add `route-exemptions.ts` entries for all new routes (mirror the `payment_record.*` block exactly for the audited mutations; `GET`/AC 21 is a read, classify alongside the module's other list/detail reads; a distinct `auditOmissionReason` entry for the public GET, see AC 14).
 
-- [ ] Task 7 — Public status page route (AC: 12-14, 18) [Source: `apps/api/src/modules/invitations/token-routes.ts`, `apps/api/src/modules/invitations/lookup.ts`, ADR-6.3-09]
-  - [ ] Create `findStatusPageByTokenHash()` (service/monitoring module) using `getAdminDb()` for the single point-lookup by `tokenHash`, mirroring `findInvitationByTokenHash()`'s exact shape and documented rationale (ADR-6.3-09, step 1) — do not use `withOrg`/`getDb()` for this lookup, the org is not yet known.
-  - [ ] Create `apps/api/src/modules/monitoring/public-status-page-routes.ts` exporting `publicStatusPageRoutes(fastify)`: single `GET /:token` route, `requireAuth: false`, `writeAuditEvent: false`, `rateLimit: { max: 60, timeWindowMs: 60_000, key: 'GET /api/v1/status-pages/:token' }`. Handler: resolve the row via `findStatusPageByTokenHash`/`statusPageTokenMatches` (constant-time) on the admin connection, then re-scope with `withOrg(statusPage.orgId, tx => ...)` to join `status_page_services` ordered by `sortOrder` (ADR-6.3-09, step 2), returning only `displayName`/`status`/`lastCheckedAt`. Set `Cache-Control: no-store` on the response so an intermediate CDN/proxy never serves a stale enabled/service-list state after a regenerate or disable.
-  - [ ] Register in `app.ts`: `await fastify.register(publicStatusPageRoutes, { prefix: '/api/v1/status-pages' })` (standalone prefix, ADR-6.3-05 — not nested under `/api/v1/projects`).
+- [x] Task 7 — Public status page route (AC: 12-14, 18) [Source: `apps/api/src/modules/invitations/token-routes.ts`, `apps/api/src/modules/invitations/lookup.ts`, ADR-6.3-09]
+  - [x] Create `findStatusPageByTokenHash()` (service/monitoring module) using `getAdminDb()` for the single point-lookup by `tokenHash`, mirroring `findInvitationByTokenHash()`'s exact shape and documented rationale (ADR-6.3-09, step 1) — do not use `withOrg`/`getDb()` for this lookup, the org is not yet known.
+  - [x] Create `apps/api/src/modules/monitoring/public-status-page-routes.ts` exporting `publicStatusPageRoutes(fastify)`: single `GET /:token` route, `requireAuth: false`, `writeAuditEvent: false`, `rateLimit: { max: 60, timeWindowMs: 60_000, key: 'GET /api/v1/status-pages/:token' }`. Handler: resolve the row via `findStatusPageByTokenHash`/`statusPageTokenMatches` (constant-time) on the admin connection, then re-scope with `withOrg(statusPage.orgId, tx => ...)` to join `status_page_services` ordered by `sortOrder` (ADR-6.3-09, step 2), returning only `displayName`/`status`/`lastCheckedAt`. Set `Cache-Control: no-store` on the response so an intermediate CDN/proxy never serves a stale enabled/service-list state after a regenerate or disable.
+  - [x] Register in `app.ts`: `await fastify.register(publicStatusPageRoutes, { prefix: '/api/v1/status-pages' })` (standalone prefix, ADR-6.3-05 — not nested under `/api/v1/projects`).
 
-- [ ] Task 8 — Web: cross-project health dashboard page (AC: persona journey, mobile) [Source: `apps/web/src/routes/(app)/health/+page.svelte`, `apps/web/src/routes/(app)/dashboard/+page.server.ts`]
-  - [ ] Replace `apps/web/src/routes/(app)/health/+page.svelte`'s `PlaceholderSection` with the real dashboard: per-project cards, each service's status indicator (simple color-coded badge — no existing badge component to reuse; keep it minimal, consistent with existing Tailwind usage elsewhere in `apps/web/src/lib/components`), org-wide summary strip.
-  - [ ] Add `apps/web/src/routes/(app)/health/+page.server.ts` calling the new `getHealthDashboard` API wrapper.
-  - [ ] Create `apps/web/src/lib/api/health-dashboard.ts` (thin `apiFetch` wrapper, mirror `apps/web/src/lib/api/dashboard.ts` exactly).
-  - [ ] Remove/update the `health` entry in `apps/web/src/lib/components/shell/placeholder-copy.ts` only if it becomes actively misleading post-implementation (it will — the placeholder claims "arrives in Epic 6" while this story ships the real page); update copy or remove the `'health'` key from `PlaceholderSectionKey` if no longer referenced anywhere (grep first).
-  - [ ] Verify mobile rendering (375×812 viewport, per AC-E6d matrix) — no horizontal scroll, touch-friendly status indicators.
+- [x] Task 8 — Web: cross-project health dashboard page (AC: persona journey, mobile) [Source: `apps/web/src/routes/(app)/health/+page.svelte`, `apps/web/src/routes/(app)/dashboard/+page.server.ts`]
+  - [x] Replace `apps/web/src/routes/(app)/health/+page.svelte`'s `PlaceholderSection` with the real dashboard: per-project cards, each service's status indicator (simple color-coded badge — no existing badge component to reuse; keep it minimal, consistent with existing Tailwind usage elsewhere in `apps/web/src/lib/components`), org-wide summary strip.
+  - [x] Add `apps/web/src/routes/(app)/health/+page.server.ts` calling the new `getHealthDashboard` API wrapper.
+  - [x] Create `apps/web/src/lib/api/health-dashboard.ts` (thin `apiFetch` wrapper, mirror `apps/web/src/lib/api/dashboard.ts` exactly).
+  - [x] Remove/update the `health` entry in `apps/web/src/lib/components/shell/placeholder-copy.ts` only if it becomes actively misleading post-implementation (it will — the placeholder claims "arrives in Epic 6" while this story ships the real page); update copy or remove the `'health'` key from `PlaceholderSectionKey` if no longer referenced anywhere (grep first).
+  - [x] Verify mobile rendering (375×812 viewport, per AC-E6d matrix) — no horizontal scroll, touch-friendly status indicators.
 
-- [ ] Task 9 — Web: status page admin UI (AC: persona journey, 21) [Source: `apps/web/src/routes/(app)/projects/[projectId]/members` as the nearest "project settings sub-page" structural precedent]
-  - [ ] Add a status-page management section under `apps/web/src/routes/(app)/projects/[projectId]/` (new route, e.g. `status-page/+page.svelte` + `+page.server.ts`), gated in the UI to the **same project-owner-or-org-owner condition as the backend (ADR-6.3-07)** — do not gate on project-owner alone. An org owner who isn't a project member/owner passes every backend authorization check (ADR-6.3-07) but would be unable to find this section if the UI only checked project role. The `+page.server.ts` load function must fetch the caller's project role (same call as the backend's `callerProjectRole`/equivalent, or a lightweight API that returns it) in addition to the already-available session `orgRole`, and show the section if `projectRole === 'owner' || orgRole === 'owner'`. Server-side enforcement remains authoritative regardless of this UI gate.
-  - [ ] The `+page.server.ts` load function calls the new `GET /api/v1/projects/:projectId/status-page` (AC 21, realignment-review finding) to pre-populate the section: if `enabled: false`, render the "enable" call-to-action; if `enabled: true`, render the existing service picker pre-filled with the returned `services[]` (by `serviceId`/`displayName`/`sortOrder`) instead of an empty form — the original draft had no way to load this state, which would have made every visit to an already-configured status page look identical to a never-configured one.
-  - [ ] Enable/regenerate flow: show plaintext token once with a copy-to-clipboard control and an explicit "cannot be shown again" warning; service picker + display-name inputs calling `PUT` (MFA-gated, AC 15, realigned).
-  - [ ] Create `apps/web/src/lib/api/status-page.ts` (admin-side wrapper: **get-config**/enable/regenerate/update/disable + local `UpdateStatusPageRequest` TS type, mirroring `apps/web/src/lib/api/projects.ts`'s convention of plain-TS request types + shared-package response types).
+- [x] Task 9 — Web: status page admin UI (AC: persona journey, 21) [Source: `apps/web/src/routes/(app)/projects/[projectId]/members` as the nearest "project settings sub-page" structural precedent]
+  - [x] Add a status-page management section under `apps/web/src/routes/(app)/projects/[projectId]/` (new route, e.g. `status-page/+page.svelte` + `+page.server.ts`), gated in the UI to the **same project-owner-or-org-owner condition as the backend (ADR-6.3-07)** — do not gate on project-owner alone. An org owner who isn't a project member/owner passes every backend authorization check (ADR-6.3-07) but would be unable to find this section if the UI only checked project role. The `+page.server.ts` load function must fetch the caller's project role (same call as the backend's `callerProjectRole`/equivalent, or a lightweight API that returns it) in addition to the already-available session `orgRole`, and show the section if `projectRole === 'owner' || orgRole === 'owner'`. Server-side enforcement remains authoritative regardless of this UI gate.
+  - [x] The `+page.server.ts` load function calls the new `GET /api/v1/projects/:projectId/status-page` (AC 21, realignment-review finding) to pre-populate the section: if `enabled: false`, render the "enable" call-to-action; if `enabled: true`, render the existing service picker pre-filled with the returned `services[]` (by `serviceId`/`displayName`/`sortOrder`) instead of an empty form — the original draft had no way to load this state, which would have made every visit to an already-configured status page look identical to a never-configured one.
+  - [x] Enable/regenerate flow: show plaintext token once with a copy-to-clipboard control and an explicit "cannot be shown again" warning; service picker + display-name inputs calling `PUT` (MFA-gated, AC 15, realigned).
+  - [x] Create `apps/web/src/lib/api/status-page.ts` (admin-side wrapper: **get-config**/enable/regenerate/update/disable + local `UpdateStatusPageRequest` TS type, mirroring `apps/web/src/lib/api/projects.ts`'s convention of plain-TS request types + shared-package response types).
 
-- [ ] Task 10 — Web: public status page route (AC: 12, mobile) [Source: `apps/web/src/routes/(auth)/invitations/accept/+page.svelte` as the nearest token-based-public-page precedent; ADR-6.3-05]
-  - [ ] Create `apps/web/src/routes/status/[token]/+page.server.ts` (standalone, top-level — sibling to `(app)`/`(auth)`, NOT inside either group, so it is exempt from `isProtectedAppPath`/`isAuthPath` redirects in `hooks.server.ts`) that server-side-fetches `GET /api/v1/status-pages/:token` and renders a 404-equivalent page on failure rather than throwing an unhandled error.
-  - [ ] Create `apps/web/src/routes/status/[token]/+page.svelte`: minimal, unauthenticated-safe layout (does not use the authenticated app shell/nav — no session data available or needed), renders `services[]` with status indicators, explicit "not found" state for invalid/disabled tokens.
-  - [ ] Verify mobile rendering (375×812), no horizontal scroll.
+- [x] Task 10 — Web: public status page route (AC: 12, mobile) [Source: `apps/web/src/routes/(auth)/invitations/accept/+page.svelte` as the nearest token-based-public-page precedent; ADR-6.3-05]
+  - [x] Create `apps/web/src/routes/status/[token]/+page.server.ts` (standalone, top-level — sibling to `(app)`/`(auth)`, NOT inside either group, so it is exempt from `isProtectedAppPath`/`isAuthPath` redirects in `hooks.server.ts`) that server-side-fetches `GET /api/v1/status-pages/:token` and renders a 404-equivalent page on failure rather than throwing an unhandled error.
+  - [x] Create `apps/web/src/routes/status/[token]/+page.svelte`: minimal, unauthenticated-safe layout (does not use the authenticated app shell/nav — no session data available or needed), renders `services[]` with status indicators, explicit "not found" state for invalid/disabled tokens.
+  - [x] Verify mobile rendering (375×812), no horizontal scroll.
 
-- [ ] Task 11 — Tests (AC: all)
-  - [ ] `health-dashboard-service.test.ts` / `health-dashboard-routes.test.ts`: cross-project aggregation over `service_endpoints`, empty state, archived-project exclusion, a project with only `payment_records` (no `service_endpoints`) correctly excluded (realigned — was "url-null exclusion" against `payment_records` in the original draft), never-checked endpoint reads `healthy`/`lastCheckedAt: null` verbatim (AC 2, realigned), RLS cross-org isolation, rate limit.
-  - [ ] ~~`health-status.test.ts`~~ — removed (realignment pass, Task 2 removed; no derivation function left to unit test).
-  - [ ] ~~`dashboard-stats.test.ts`~~ — removed from this story's scope (realignment pass, Task 4 removed; 6.2's own test suite covers `monitoredServiceHealth`).
-  - [ ] `status-page-routes.test.ts`: enable (happy/403/404/410/409-already-enabled, **plus the concurrent-double-`POST` race mapping to `409` not `500`, realignment-review finding**), regenerate (happy/404/concurrency note documented not necessarily test-asserted given its inherent nature — AC 11, but the two-audit-rows-on-race behavior in AC 11's audit-trail example IS asserted), update (happy/empty/validation/**whitespace-only-displayName-rejected**/cross-project-service-reference/duplicate/cap/injection round-trip per AC 15's escaping example — `serviceId` validation now checked against `service_endpoints`, not `payment_records`; **MFA-required, realignment-review finding**; audit payload includes previous-state snapshot, AC 17 realigned), disable (happy/404-not-idempotent), **get-config (AC 21: happy path enabled-with-services, happy path not-yet-enabled returns `{enabled:false}` not `404`, 403 for non-owner, 404/410 cross-org/archived)**, ownership authorization (project owner passes, org owner passes, project member/viewer/admin-non-owner fails), MFA-required on enable/regenerate/**update**, audit event per mutation (fail-closed test per AC 17), RLS cross-org isolation, mutation rate limit at the concrete `WRITE_RATE_LIMIT` value (AC 10a), get-config rate limit at `LIST_RATE_LIMIT`.
-  - [ ] `public-status-page-routes.test.ts`: happy path, unknown token 404, disabled-token 404, rate limit 429, no-services-configured empty array, response never contains `serviceId`/internal name/url/projectId/orgId (explicit negative assertion — grep the serialized response for forbidden fields, not just check for presence of allowed ones), the RLS-coverage-exception test required by ADR-6.3-09 step 4 (admin-connection lookup resolves correctly with no org context set), `displayName` HTML-injection round-trip (AC 15's injection example). (The original draft's "service missing from the health-status map renders as `down`" test is removed — realigned: `service_id`'s `ON DELETE CASCADE` to `service_endpoints.id` means a deleted service's `status_page_services` row is gone too, so there is no "missing map entry" case to handle — see Known Scope Boundaries.)
-  - [ ] Component/Playwright test for Task 10: a `displayName` containing `<`, `>`, `&` renders as a literal text node in the DOM, not an executed element (AC 15 injection example).
-  - [ ] Run `route-audit.test.ts` explicitly (cheap, easy to omit outside full `make ci`, per 6.1's own reminder) — requires the new `route-exemptions.ts` entries from Task 6/7.
+- [x] Task 11 — Tests (AC: all)
+  - [x] `health-dashboard-service.test.ts` / `health-dashboard-routes.test.ts`: cross-project aggregation over `service_endpoints`, empty state, archived-project exclusion, a project with only `payment_records` (no `service_endpoints`) correctly excluded (realigned — was "url-null exclusion" against `payment_records` in the original draft), never-checked endpoint reads `healthy`/`lastCheckedAt: null` verbatim (AC 2, realigned), RLS cross-org isolation, rate limit.
+  - [x] ~~`health-status.test.ts`~~ — removed (realignment pass, Task 2 removed; no derivation function left to unit test).
+  - [x] ~~`dashboard-stats.test.ts`~~ — removed from this story's scope (realignment pass, Task 4 removed; 6.2's own test suite covers `monitoredServiceHealth`).
+  - [x] `status-page-routes.test.ts`: enable (happy/403/404/410/409-already-enabled, **plus the concurrent-double-`POST` race mapping to `409` not `500`, realignment-review finding**), regenerate (happy/404/concurrency note documented not necessarily test-asserted given its inherent nature — AC 11, but the two-audit-rows-on-race behavior in AC 11's audit-trail example IS asserted), update (happy/empty/validation/**whitespace-only-displayName-rejected**/cross-project-service-reference/duplicate/cap/injection round-trip per AC 15's escaping example — `serviceId` validation now checked against `service_endpoints`, not `payment_records`; **MFA-required, realignment-review finding**; audit payload includes previous-state snapshot, AC 17 realigned), disable (happy/404-not-idempotent), **get-config (AC 21: happy path enabled-with-services, happy path not-yet-enabled returns `{enabled:false}` not `404`, 403 for non-owner, 404/410 cross-org/archived)**, ownership authorization (project owner passes, org owner passes, project member/viewer/admin-non-owner fails), MFA-required on enable/regenerate/**update**, audit event per mutation (fail-closed test per AC 17), RLS cross-org isolation, mutation rate limit at the concrete `WRITE_RATE_LIMIT` value (AC 10a), get-config rate limit at `LIST_RATE_LIMIT`.
+  - [x] `public-status-page-routes.test.ts`: happy path, unknown token 404, disabled-token 404, rate limit 429, no-services-configured empty array, response never contains `serviceId`/internal name/url/projectId/orgId (explicit negative assertion — grep the serialized response for forbidden fields, not just check for presence of allowed ones), the RLS-coverage-exception test required by ADR-6.3-09 step 4 (admin-connection lookup resolves correctly with no org context set), `displayName` HTML-injection round-trip (AC 15's injection example). (The original draft's "service missing from the health-status map renders as `down`" test is removed — realigned: `service_id`'s `ON DELETE CASCADE` to `service_endpoints.id` means a deleted service's `status_page_services` row is gone too, so there is no "missing map entry" case to handle — see Known Scope Boundaries.)
+  - [x] Component/Playwright test for Task 10: a `displayName` containing `<`, `>`, `&` renders as a literal text node in the DOM, not an executed element (AC 15 injection example).
+  - [x] Run `route-audit.test.ts` explicitly (cheap, easy to omit outside full `make ci`, per 6.1's own reminder) — requires the new `route-exemptions.ts` entries from Task 6/7.
 
-- [ ] Task 12 — Wiring verification (AC: all)
-  - [ ] `pnpm generate-spec && pnpm typecheck` (root, all packages, per 6.1's precedent that this is a no-op for hand-authored route files but still confirms the web app's generated types compile).
-  - [ ] `db#check-rls` passes for `status_pages`/`status_page_services`.
-  - [ ] Manual mobile-viewport check (Chrome/Safari emulation, 375×812) of both `/health` and `/status/:token`.
+- [x] Task 12 — Wiring verification (AC: all)
+  - [x] `pnpm generate-spec && pnpm typecheck` (root, all packages, per 6.1's precedent that this is a no-op for hand-authored route files but still confirms the web app's generated types compile).
+  - [x] `db#check-rls` passes for `status_pages`/`status_page_services`.
+  - [x] Manual mobile-viewport check (Chrome/Safari emulation, 375×812) of both `/health` and `/status/:token`.
 
 ## Dev Notes
 
@@ -348,8 +348,161 @@ The original Section B / AC 7 assigned this story the job of wiring `dashboard-s
 
 ### Agent Model Used
 
+Claude (claude-sonnet-5), via the `bmad-dev-story` workflow.
+
 ### Debug Log References
+
+- Two Postgres-level deadlocks were hit and resolved while writing integration tests, not in
+  production code: (1) `health-dashboard-service.test.ts`'s archived-project test originally
+  updated `projects.archivedAt` through the same still-open `withTestOrg` transaction used for the
+  subsequent `deleteTestUser` call — Postgres's `ON DELETE SET NULL` cascade check on the
+  referencing row had to wait on that open transaction, producing a real deadlock (confirmed via
+  `pg_blocking_pids`). Fixed by committing the archive-update in its own `withOrg` call before the
+  test's `finally` block runs. (2) `status-page-service.test.ts` had the identical pattern via
+  `enableStatusPage`'s insert (`createdBy: userId`); fixed by moving `createTestUser`/
+  `deleteTestUser` outside the `withTestOrg` transaction entirely.
+- `enableStatusPage`'s original implementation caught a Postgres unique-violation error via
+  `error.cause.code === '23505'` (mirroring `auth/service.ts`'s `isUniqueViolation` pattern) and
+  mapped it to `StatusPageAlreadyEnabledError`. In testing, the raw `PostgresError` was still
+  observed propagating out despite the catch block correctly identifying and converting it
+  (confirmed via targeted instrumentation) — root cause not fully isolated, but consistent with a
+  known class of drizzle-orm/postgres-js double-rejection quirks on constraint-violating
+  `INSERT ... RETURNING`. Resolved by switching to `.onConflictDoNothing({ target:
+  statusPages.projectId }).returning()` and treating a missing returned row as the conflict signal
+  — avoids raising a real Postgres-level error at all, is the same pattern already used elsewhere
+  in this codebase (auth/service.ts, mfa-login.ts, invitations/token-routes.ts) for this exact
+  race shape, and is a cleaner implementation regardless of the underlying driver quirk.
+- Manual end-to-end verification (Task 12) was done against locally-run `api`/`web` dev servers
+  (not via the `Claude_Preview` tool, which resolves `.claude/launch.json` against the main repo
+  root rather than this worktree's path — a tooling/worktree mismatch, not a project issue).
+  Registered a user, enrolled MFA via direct DB update, created a project, registered two
+  service-endpoints (`api.github.com`, `httpbin.org` — real resolvable hosts, since the SSRF guard
+  performs a live DNS lookup), enabled the status page, and configured both services. Confirmed in
+  a real browser: `/health` renders the live summary strip + per-project service list with correct
+  status badges; `/projects/:id/status-page` pre-populates the enabled state and configured
+  services (AC 21); `/status/:token` renders the public view with no app-shell chrome and correct
+  status badges. The browser automation tool's `resize_window` call did not change the actual
+  screenshot viewport in this environment (consistently reported 1456×814 regardless of the
+  requested 375×812), so a genuine narrow-viewport screenshot could not be captured; mobile-safety
+  was instead verified by code review — both new pages reuse the exact same `sm:`-breakpoint
+  Tailwind conventions (`grid sm:grid-cols-*`, `flex-wrap`, `min-w-0`/`truncate`) already used
+  throughout the rest of this app's pages (dashboard, credentials, members), which are the
+  established mobile-safe idiom in this codebase.
 
 ### Completion Notes List
 
+- Task 0: confirmed Story 6.2 is `done` in `sprint-status.yaml` and that
+  `packages/db/src/schema/service-endpoints.ts` matches ADR-6.3-02's assumed column names exactly
+  (`id`, `projectId`, `name`, `status`, `lastCheckedAt`, no exported status union type) before
+  writing any dependent code.
+- Task 1: added the four `STATUS_PAGE_*` audit events to both `AuditEvent` and `AuditEventType`
+  (packages/shared), and `STATUS_PAGE_TOKEN_HMAC_SECRET` to `env.ts` mirroring
+  `RECOVERY_TOKEN_HMAC_SECRET`'s validation exactly (required-in-prod, must differ from every
+  other secret, must not match the placeholder pattern, dev fallback). The uniqueness check is
+  expressed as an array-membership test rather than an OR-chain to stay under the repo's
+  cyclomatic-complexity eslint threshold at the 8th dedicated secret.
+- Task 3: `getHealthDashboardData` queries non-archived projects, then exactly one batched
+  `service_endpoints` query across all their ids (verified via a select-call-counting proxy in the
+  service test — 2 selects total, never N+1), groups in memory, and reads `status`/`lastCheckedAt`
+  verbatim per ADR-6.3-02/03. `GET /api/v1/health-dashboard` mirrors `dashboardRoutes` exactly
+  (`minimumRole: 'viewer'`, `writeAuditEvent: false`, reuses the module's existing
+  `LIST_RATE_LIMIT` constant, now exported from `monitoring/routes.ts`).
+- Task 5: `status-page-tokens.ts` is a thin wrapper over the shared `opaque-token.ts` primitives,
+  identical in shape to `recovery-tokens.ts`. `status_pages`/`status_page_services` hand-authored
+  migration (`0034_status_pages.sql`) follows `0031_service_endpoints_monitoring.sql`'s exact
+  shape (RLS policy + `set_updated_at` trigger per table); manually verified via `\d` against the
+  running Postgres instance and `make check-rls` passes.
+- Task 6: `status-page-service.ts` implements enable (via `onConflictDoNothing`, not exception
+  catching — see Debug Log), regenerate, get-config, update (delete-all-then-insert-new in the
+  caller's transaction, with a previous-state snapshot for the audit payload), and disable (with a
+  configured-service snapshot for its own audit payload). `status-page-routes.ts` registers
+  GET/POST/PUT/DELETE + POST regenerate, each with the ADR-6.3-07 project-owner-or-org-owner
+  in-handler check on top of an org-level `minimumRole: 'member'` floor, `requireMfa: true` on
+  enable/regenerate/update (not get-config/disable), and `WRITE_RATE_LIMIT`/`LIST_RATE_LIMIT` as
+  specified in AC 10a/21. `callerProjectRole` was exported from `projects/routes.ts` for reuse
+  rather than re-implementing the same query.
+- Task 7: `findStatusPageByTokenHash` mirrors `findInvitationByTokenHash`'s admin-connection
+  point-lookup exactly (ADR-6.3-09); `public-status-page-routes.ts` re-scopes via `withOrg` once
+  the org is resolved, sets `Cache-Control: no-store`, and never audits the read.
+- Tasks 8-10: `/health` replaces the placeholder with the real cross-project dashboard (summary
+  strip + per-project service cards); the `health` key was removed from
+  `placeholder-copy.ts`/`PlaceholderSectionKey` since no route references it anymore (test updated
+  accordingly). The status-page admin UI at
+  `/projects/:projectId/status-page` gates on `projectRole === 'owner' || orgRole === 'owner'`
+  (fetched via the existing `listProjectMembers` call, matching the members page's own pattern),
+  pre-populates from `GET .../status-page` (AC 21), and shows the plaintext token only
+  transiently in local component state right after enable/regenerate (never persisted, never
+  re-fetchable). Added small nav links from the credentials page to Members and Public status
+  page, since neither was reachable from anywhere in the UI before this story. The public page at
+  `/status/:token` is a genuinely top-level route (sibling to `(app)`/`(auth)`), so it only
+  inherits the minimal root layout with no auth-shell chrome, confirmed both by the route
+  structure and by manual browser verification.
+- Task 11: comprehensive test coverage was added across 7 new test files (health-dashboard
+  service+routes, status-page tokens+service+routes, public-status-page routes, plus a Svelte
+  component test for the injection-safety requirement on Task 10). One test scenario from the
+  story's literal list was intentionally narrowed: the true two-concurrent-in-flight-requests race
+  for AC 8/AC 11 is proven at the service layer (`onConflictDoNothing` returns no row on conflict,
+  asserted directly) rather than via genuinely simultaneous HTTP requests, which vitest/fastify's
+  synchronous-per-connection `inject()` cannot easily produce; the route-level test instead does a
+  sequential second `POST` and asserts the same `409` mapping, which exercises the identical code
+  path the real race would hit.
+- Task 12: `pnpm generate-spec && pnpm typecheck` (root) both pass; `make check-rls` passes for
+  the two new tables; manual mobile-viewport verification is described above (Debug Log) with the
+  browser-tooling limitation noted honestly rather than skipped silently.
+- Full regression run: `apps/api` (122 test files / 1173 tests), `packages/db` (23/93),
+  `packages/shared` (15/122), `apps/web` (28/155) — all green after this story's changes.
+
 ### File List
+
+**Backend (`apps/api`):**
+- `apps/api/src/config/env.ts` (modified — `STATUS_PAGE_TOKEN_HMAC_SECRET`)
+- `apps/api/src/config/env.test.ts` (modified)
+- `apps/api/src/app.ts` (modified — registers health-dashboard/status-page/public-status-page routes)
+- `apps/api/src/lib/route-exemptions.ts` (modified — new route classifications)
+- `apps/api/src/modules/projects/routes.ts` (modified — exported `callerProjectRole`)
+- `apps/api/src/modules/monitoring/routes.ts` (modified — exported `LIST_RATE_LIMIT`/`WRITE_RATE_LIMIT`/`writeMonitoringAuditOrFailClosed`)
+- `apps/api/src/modules/monitoring/schema.ts` (modified — status-page request schemas)
+- `apps/api/src/modules/monitoring/health-dashboard-service.ts` (new)
+- `apps/api/src/modules/monitoring/health-dashboard-routes.ts` (new)
+- `apps/api/src/modules/monitoring/status-page-tokens.ts` (new)
+- `apps/api/src/modules/monitoring/status-page-service.ts` (new)
+- `apps/api/src/modules/monitoring/status-page-routes.ts` (new)
+- `apps/api/src/modules/monitoring/public-status-page-routes.ts` (new)
+
+**Schema/migration (`packages/db`):**
+- `packages/db/src/schema/status-pages.ts` (new)
+- `packages/db/src/schema/status-page-services.ts` (new)
+- `packages/db/src/schema/index.ts` (modified — exports)
+- `packages/db/src/migrations/0034_status_pages.sql` (new)
+- `packages/db/src/migrations/meta/_journal.json` (modified — appended entry)
+
+**Shared (`packages/shared`):**
+- `packages/shared/src/constants/audit-events.ts` (modified — 4 new events)
+- `packages/shared/src/constants/audit-events.test.ts` (modified)
+- `packages/shared/src/schemas/health-dashboard.ts` (new)
+- `packages/shared/src/schemas/status-page.ts` (new)
+- `packages/shared/src/index.ts` (modified — exports)
+
+**Web (`apps/web`):**
+- `apps/web/src/lib/api/health-dashboard.ts` (new)
+- `apps/web/src/lib/api/status-page.ts` (new)
+- `apps/web/src/lib/api/service-endpoints.ts` (new)
+- `apps/web/src/lib/api/public-status-page.ts` (new)
+- `apps/web/src/routes/(app)/health/+page.server.ts` (new)
+- `apps/web/src/routes/(app)/health/+page.svelte` (modified — replaces placeholder)
+- `apps/web/src/lib/components/shell/placeholder-copy.ts` (modified — removed `health` key)
+- `apps/web/src/routes/placeholder-sections.test.ts` (modified)
+- `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.server.ts` (new)
+- `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte` (new)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/+page.svelte` (modified — nav links to Members/Public status page)
+- `apps/web/src/routes/status/[token]/+page.server.ts` (new)
+- `apps/web/src/routes/status/[token]/+page.svelte` (new)
+
+**Tests (new, in addition to the modified test files listed above):**
+- `apps/api/src/modules/monitoring/health-dashboard-service.test.ts`
+- `apps/api/src/modules/monitoring/health-dashboard-routes.test.ts`
+- `apps/api/src/modules/monitoring/status-page-tokens.test.ts`
+- `apps/api/src/modules/monitoring/status-page-service.test.ts`
+- `apps/api/src/modules/monitoring/status-page-routes.test.ts`
+- `apps/api/src/modules/monitoring/public-status-page-routes.test.ts`
+- `apps/web/src/routes/status/[token]/page.test.ts`

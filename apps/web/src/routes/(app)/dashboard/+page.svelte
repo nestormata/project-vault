@@ -93,6 +93,44 @@
       </dl>
     </section>
 
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold text-slate-950">Upcoming rotations</h2>
+      {#if data.dashboard.upcomingRotations.length === 0}
+        <p class="mt-3 text-sm text-slate-600">
+          No credentials have an upcoming rotation scheduled.
+        </p>
+      {:else}
+        <ul class="mt-4 space-y-2">
+          {#each data.dashboard.upcomingRotations as rotation (rotation.credentialId)}
+            <li
+              class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
+            >
+              <a
+                class="font-semibold text-slate-950 underline"
+                href={resolve(
+                  `/projects/${data.selectedProject.id}/credentials/${rotation.credentialId}`
+                )}
+              >
+                {rotation.credentialName}
+              </a>
+              <span class="text-slate-600">{formatDate(rotation.scheduledAt)}</span>
+              {#if rotation.status === 'overdue'}
+                <span class="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800">
+                  Overdue
+                </span>
+              {:else}
+                <span
+                  class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+                >
+                  Scheduled
+                </span>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+
     <DashboardPlaceholderGrid />
 
     {#if data.dashboard.isEmpty}

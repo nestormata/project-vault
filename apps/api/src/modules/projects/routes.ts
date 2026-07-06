@@ -54,7 +54,9 @@ const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not fou
 // three new handlers (AC-5/AC-6/AC-10); it is not the shared resolver D8 defers.
 // Epic 4 retro P4-1: delegates to the same `getProjectMembershipRole` helper org/routes.ts uses,
 // scoped to the caller, so the (projectId, userId, orgId) lookup lives in exactly one place.
-async function callerProjectRole(
+// Exported (Story 6.3 ADR-6.3-07) so the status-page admin routes reuse this exact query shape
+// instead of diverging on a second "who is this project's owner" answer.
+export async function callerProjectRole(
   secureCtx: SecureRouteContext,
   projectId: string
 ): Promise<string | undefined> {

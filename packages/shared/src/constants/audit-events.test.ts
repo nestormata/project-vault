@@ -111,4 +111,11 @@ describe('AuditEvent', () => {
   it('exposes Story 7.2 cache-activation beacon audit event name (D13/AC-15)', () => {
     expect(AuditEvent.MACHINE_CACHE_ACTIVATED).toBe('machine_cache.activated')
   })
+
+  it('exposes Story 6.3 status-page audit event names (AC 17)', () => {
+    expect(AuditEvent.STATUS_PAGE_ENABLED).toBe('status_page.enabled')
+    expect(AuditEvent.STATUS_PAGE_TOKEN_REGENERATED).toBe('status_page.token_regenerated')
+    expect(AuditEvent.STATUS_PAGE_UPDATED).toBe('status_page.updated')
+    expect(AuditEvent.STATUS_PAGE_DISABLED).toBe('status_page.disabled')
+  })
 })

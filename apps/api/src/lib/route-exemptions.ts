@@ -706,6 +706,47 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'monitoring_alert.dismissed',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 6.3 — cross-project health dashboard (service_endpoints, ADR-6.3-02).
+  'GET /api/v1/health-dashboard': {
+    action: 'read',
+    auditOmissionReason:
+      'Cross-project health-status read is org-scoped and reveals only service_endpoints status/lastCheckedAt metadata, never secret values (mirrors GET /api/v1/dashboard).',
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 6.3 — public status page enable/regenerate/update/disable/get-config admin routes.
+  'GET /api/v1/projects/:projectId/status-page': {
+    action: 'read',
+    auditOmissionReason:
+      'Admin config read (AC 21) is project-owner-or-org-owner-scoped and never returns the plaintext token or tokenHash.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/status-page': {
+    action: SECURITY_ACTION,
+    auditEvent: 'status_page.enabled',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/projects/:projectId/status-page/regenerate': {
+    action: SECURITY_ACTION,
+    auditEvent: 'status_page.token_regenerated',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PUT /api/v1/projects/:projectId/status-page': {
+    action: 'mutation',
+    auditEvent: 'status_page.updated',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'DELETE /api/v1/projects/:projectId/status-page': {
+    action: 'mutation',
+    auditEvent: 'status_page.disabled',
+    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  // Story 6.3 AC 14/18 (ADR-6.3-05/09) — public, unauthenticated, high-frequency status page view.
+  'GET /api/v1/status-pages/:token': {
+    action: 'read',
+    auditOmissionReason:
+      'Public, unauthenticated, high-frequency status page view — auditing every view would create unbounded audit-log growth from external, non-actor traffic; see Known Scope Boundaries in 6-3 story file.',
+    reviewer: SECURITY_OWNER,
+  },
   // Story 7.1 — machine user identity and API key management.
   'POST /api/v1/projects/:projectId/machine-users': {
     action: 'mutation',

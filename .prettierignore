@@ -1,0 +1,5 @@
+# packages/vault-action/dist/ is a committed, generated bundle (ncc output) — the literal
+# artifact GitHub Actions executes for every vault-action consumer. Formatting it would
+# desynchronize it from ncc's raw output and immediately fail the dist-freshness CI check
+# (scripts/check-vault-action-dist-fresh.ts) on every commit that touches it.
+**/dist/**

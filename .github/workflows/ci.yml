@@ -17,7 +17,7 @@ jobs:
   quality-gates:
     name: Quality Gates
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       # Derived from the postgres: service block below — keep in sync if it changes.
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
@@ -152,6 +152,9 @@ jobs:
           pnpm generate-spec
           git diff --exit-code packages/shared/openapi.json || \
             (echo "ERROR: openapi.json is stale - run pnpm generate-spec and commit" && exit 1)
+
+      - name: Check vault-action dist/ freshness (D6/AC-11)
+        run: pnpm check-vault-action-dist
 
   docker-build:
     name: Docker Build (${{ matrix.arch }})

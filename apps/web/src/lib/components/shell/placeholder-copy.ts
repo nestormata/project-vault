@@ -1,4 +1,6 @@
-export type PlaceholderSectionKey = 'projects' | 'credentials' | 'health' | 'settings'
+// Story 6.3 Task 8: 'health' removed — /health now renders the real cross-project health
+// dashboard instead of a placeholder, so its old "arrives in Epic 6" copy no longer applies.
+export type PlaceholderSectionKey = 'projects' | 'credentials' | 'settings'
 
 export type PlaceholderSectionCopy = {
   title: string
@@ -13,10 +15,6 @@ const placeholderSections: Record<PlaceholderSectionKey, PlaceholderSectionCopy>
   credentials: {
     title: 'Credentials',
     copy: 'Choose a project to manage credentials.',
-  },
-  health: {
-    title: 'Health',
-    copy: 'No monitored services configured yet. Service and endpoint monitoring arrives in Epic 6.',
   },
   settings: {
     title: 'Settings',
@@ -34,8 +32,6 @@ export function getPlaceholderSection(key: PlaceholderSectionKey) {
       return placeholderSections.projects
     case 'credentials':
       return placeholderSections.credentials
-    case 'health':
-      return placeholderSections.health
     case 'settings':
       return placeholderSections.settings
   }

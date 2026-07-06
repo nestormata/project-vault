@@ -7,6 +7,7 @@ const DEV_INVITATION_TOKEN_HMAC_SECRET = 'e'.repeat(64)
 const DEV_RECOVERY_TOKEN_HMAC_SECRET = 'f'.repeat(64)
 const DEV_API_KEY_HMAC_SECRET = 'g'.repeat(64)
 const DEV_MACHINE_JWT_SECRET = 'h'.repeat(64)
+const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
 const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
@@ -28,6 +29,7 @@ type ProductionEnv = {
   RECOVERY_TOKEN_HMAC_SECRET?: string
   API_KEY_HMAC_SECRET?: string
   MACHINE_JWT_SECRET?: string
+  STATUS_PAGE_TOKEN_HMAC_SECRET?: string
   LOG_LEVEL: string
 }
 
@@ -216,6 +218,47 @@ function validateMachineJwtProductionSecret(env: ProductionEnv, ctx: z.Refinemen
   }
 }
 
+// Story 6.3 is the 8th dedicated-secret requirement — an OR-chain mirroring the other
+// validate*ProductionSecret functions' exact style would push this function's cyclomatic
+// complexity past the repo's eslint threshold, so this one instead checks membership against an
+// array of the other auth secrets (same comparison set, just expressed without one branch per
+// secret).
+function statusPageTokenSharesAnotherAuthSecret(env: ProductionEnv): boolean {
+  const otherSecrets = [
+    env.SESSION_SECRET,
+    env.REFRESH_TOKEN_HMAC_SECRET,
+    env.TOTP_REPLAY_HMAC_SECRET,
+    env.MFA_PENDING_SESSION_HMAC_SECRET,
+    env.INVITATION_TOKEN_HMAC_SECRET,
+    env.RECOVERY_TOKEN_HMAC_SECRET,
+    env.API_KEY_HMAC_SECRET,
+    env.MACHINE_JWT_SECRET,
+  ]
+  return otherSecrets.includes(env.STATUS_PAGE_TOKEN_HMAC_SECRET)
+}
+
+function validateStatusPageTokenProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (!env.STATUS_PAGE_TOKEN_HMAC_SECRET) {
+    addEnvIssue(
+      ctx,
+      'STATUS_PAGE_TOKEN_HMAC_SECRET',
+      'STATUS_PAGE_TOKEN_HMAC_SECRET is required in production'
+    )
+  } else if (statusPageTokenSharesAnotherAuthSecret(env)) {
+    addEnvIssue(
+      ctx,
+      'STATUS_PAGE_TOKEN_HMAC_SECRET',
+      'STATUS_PAGE_TOKEN_HMAC_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.STATUS_PAGE_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'STATUS_PAGE_TOKEN_HMAC_SECRET',
+      'STATUS_PAGE_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  }
+}
+
 function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateProductionBasics(env, ctx)
   validateTotpReplayProductionSecret(env, ctx)
@@ -224,6 +267,7 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateRecoveryTokenProductionSecret(env, ctx)
   validateApiKeyProductionSecret(env, ctx)
   validateMachineJwtProductionSecret(env, ctx)
+  validateStatusPageTokenProductionSecret(env, ctx)
 }
 
 function validateDummyPasswordHash(
@@ -357,6 +401,13 @@ const envSchema = z
       z.string().min(32).optional()
     ),
     MACHINE_JWT_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(3600),
+    // Story 6.3 ADR-6.3-06: dedicated HMAC secret for the public status-page opaque token,
+    // reusing opaque-token.ts's shared generate/hash/compare primitives (mirrors
+    // RECOVERY_TOKEN_HMAC_SECRET's exact shape).
+    STATUS_PAGE_TOKEN_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
     WEB_BASE_URL: z.url().default('http://localhost:5173'),
     MFA_PRIVILEGED_ROLE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
     FAILED_AUTH_THRESHOLD_COUNT: z.coerce.number().int().min(3).max(100).default(10),
@@ -500,6 +551,7 @@ export type Env = Omit<
   | 'RECOVERY_TOKEN_HMAC_SECRET'
   | 'API_KEY_HMAC_SECRET'
   | 'MACHINE_JWT_SECRET'
+  | 'STATUS_PAGE_TOKEN_HMAC_SECRET'
 > & {
   TOTP_REPLAY_HMAC_SECRET: string
   MFA_PENDING_SESSION_HMAC_SECRET: string
@@ -507,6 +559,7 @@ export type Env = Omit<
   RECOVERY_TOKEN_HMAC_SECRET: string
   API_KEY_HMAC_SECRET: string
   MACHINE_JWT_SECRET: string
+  STATUS_PAGE_TOKEN_HMAC_SECRET: string
 }
 
 function loadEnv(): Env {
@@ -553,6 +606,12 @@ function loadEnv(): Env {
       '[env] MACHINE_JWT_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
     )
     data.MACHINE_JWT_SECRET = DEV_MACHINE_JWT_SECRET
+  }
+  if (!data.STATUS_PAGE_TOKEN_HMAC_SECRET) {
+    process.stderr.write(
+      '[env] STATUS_PAGE_TOKEN_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
+    )
+    data.STATUS_PAGE_TOKEN_HMAC_SECRET = DEV_STATUS_PAGE_TOKEN_HMAC_SECRET
   }
   return data as Env
 }

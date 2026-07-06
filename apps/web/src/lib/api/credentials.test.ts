@@ -5,6 +5,7 @@ import {
   confirmCredentialImport,
   createCredential,
   getCredential,
+  listCredentialDependencies,
   listCredentialVersions,
   listCredentials,
   previewCredentialImport,
@@ -206,6 +207,38 @@ describe('credential API helpers', () => {
         }),
       })
     )
+  })
+
+  it('listCredentialDependencies returns items and hasDependencies', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          items: [
+            {
+              id: 'd1',
+              credentialId,
+              systemName: 'billing-worker (production)',
+              systemType: 'service',
+              notes: null,
+              createdBy: null,
+              archivedAt: null,
+              createdAt: '2026-06-01T00:00:00.000Z',
+              updatedAt: '2026-06-01T00:00:00.000Z',
+            },
+          ],
+          hasDependencies: true,
+        },
+      })
+    )
+
+    const result = await listCredentialDependencies(fetchFn, projectId, credentialId)
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies`,
+      expect.objectContaining({ credentials: 'include' })
+    )
+    expect(result.hasDependencies).toBe(true)
+    expect(result.items[0]?.systemName).toBe('billing-worker (production)')
   })
 
   it('surfaces API errors from reveal', async () => {
