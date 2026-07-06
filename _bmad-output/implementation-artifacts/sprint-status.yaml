@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-05 (9-1-encrypted-backup-and-restore: backlog -> ready-for-dev; epic-9: backlog -> in-progress)
+# last_updated: 2026-07-06 (9-2-system-settings-multi-org-and-resource-monitoring: backlog -> ready-for-dev)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -124,7 +124,7 @@ development_status:
   # Epic 9: Platform Operations, API & Self-Hosting
   epic-9: in-progress # first story (9-1) created 2026-07-05
   9-1-encrypted-backup-and-restore: ready-for-dev # story file created 2026-07-05 — introduces platform-operator authorization primitive (users.is_platform_operator), backup_runs/admin_alerts platform tables, and a required BACKUP_DATABASE_URL RLS-bypass credential for pg_dump/restore; see story's Key Design Decisions (D1-D8) for full rationale
-  9-2-system-settings-multi-org-and-resource-monitoring: backlog
+  9-2-system-settings-multi-org-and-resource-monitoring: ready-for-dev # story file created 2026-07-06 — hard prerequisite on 9-1's is_platform_operator/requirePlatformOperator()/admin_alerts primitives landing first (D1); introduces a new system_settings singleton table + vault_state.key_rotated_at column, a separate modules/platform-admin/ route family (deliberately distinct from the existing org-scoped modules/admin/ to avoid a privilege-escalation naming collision, D2), and reuses account_recovery_tokens for multi-org owner provisioning (D7); see story's Key Design Decisions (D1-D9) for full rationale
   9-3-in-place-version-upgrades-and-api-parity-verification: backlog
   9-4-platform-operator-audit-log: backlog
   9-5-operational-runbook-and-deployment-guide: backlog
