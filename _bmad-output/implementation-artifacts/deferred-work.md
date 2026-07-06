@@ -67,6 +67,7 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 | Playwright E2E suite | — | Not implemented (2.8 out of scope) | Test automation epic / CI hardening |
 | Rotation workflow (initiate, checklist confirm/fail/retry/complete, break-glass) | 5.1/5.2/5.3 | API-only — no dedicated web story exists (unlike Epic 2's API+web pairing); 5.1's Product Surface Contract flagged this decision as due before `epic-5-retrospective` | **Resolved 2026-07-05 (Epic 5 retro):** scheduled as `5-4-rotation-workflow-web-ui` (backlog, `sprint-status.yaml`) rather than deferred indefinitely — `epic-5` held `in-progress` until it lands |
 | Epic 5 retro risk/gap/contradiction/technical-debt audit (12 findings: self-attestation, reveal-regression safety net, break-glass idempotency, NULL `initiatedBy`, malformed cron handling, unbounded dashboard scan, missing `org_id` index, background-job audit-failure handling, missing CAS on `abandon`, ambiguous audit payload, missing rollback tests, missing version IDs on `rotation.completed`) | 5.2/5.3 adversarial reviews (medium/low findings left "not blocking") | Documented in `epic-5-retro-2026-07-05.md`'s Significant Discovery Alert | **Tracked as Story 5.5** (`5-5-epic-5-completion-rotation-hardening-and-technical-debt.md`, `ready-for-dev`) — AC-2 through AC-13 |
+| Monitored-asset management (services/certificates/domains CRUD) | 6.1 | API-only — no dedicated web story exists; 6.1's Product Surface Contract flagged this as due before `epic-6-retrospective`; `dashboard-copy.ts`'s `add_service` label still says "available in Epic 6" though the epic shipped without it | **Resolved 2026-07-06 (Epic 6 retro):** scheduled as `6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt` (backlog, `sprint-status.yaml`) — `epic-6` held `in-progress` until it lands |
 
 ### Shell placeholders (future epics — tracked, not silent)
 
@@ -191,6 +192,31 @@ Epic 4 (`epic-4`) stories 4.1–4.4 are `done` in sprint-status. The retro below
 | P4-3 | Decide whether 4.1 and 4.4 get a retroactive adversarial review | Open — process decision, not code; see retro Team Agreements |
 
 Full detail + verification notes: `_bmad-output/implementation-artifacts/epic-4-retro-2026-07-02.md` (see Addendum).
+
+---
+
+## Deferred from: Epic 6 retrospective (2026-07-06)
+
+Epic 6 (`epic-6`) stories 6.1-6.3 are `done`, but the epic itself stays `in-progress` in
+`sprint-status.yaml` pending a closure story — same pattern as Epic 2 (2.8), Epic 3 (3.4), and
+Epic 5 (5.5).
+
+| ID | Item | Resolution |
+|----|------|--------|
+| A6-1 | Story 6.1's own Product Surface Contract flagged no web UI story exists for services/certificates/domains management ("flag it at Epic 6 retro time so a UI story gets added before epic-6: done") — never converted to a backlog item until this retro | Scheduled as `6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt` (`sprint-status.yaml`, `backlog`) — `epic-6` held `in-progress` until it lands |
+| A6-2 | `apps/web/src/lib/components/dashboard/dashboard-copy.ts`'s `add_service` label ("Add first service - available in Epic 6") is now a false claim — Epic 6 shipped without delivering this UI | Rolled into `6-4`'s AC list |
+| A6-3 | Story-file `Status:` headers out of sync with `sprint-status.yaml` (`done` in sprint-status, `review` in the story file) for 6-1, 6-2, 7-1, 7-2, 7-3, 8-1 — same defect class as Epic 4's CP4-4 | ✅ Fixed directly 2026-07-06 (headers now read `done`) |
+
+### Open (Epic 6 retro)
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| P6-1 | No automated check catches story-file `Status:` header vs `sprint-status.yaml` drift — this is the 2nd time (Epic 4, now Epic 6/7/8) it's been caught only by a manual retro sweep | Dev | CI check / `make` target |
+| TD6-1 | `payment_records` physical table name vs. "services" domain language used everywhere else (UI, ACs, dashboard) | Dev | Rename follow-up, not yet scheduled |
+| TD6-2 | `AuditEvent` object + type-union dual-listing pattern reproduced a 3rd time (6.1, 6.2, 6.3) without consolidation | Dev | Derive union from object (`keyof typeof`) |
+| TD6-3 | Public status page (6.3): no enumeration/abuse visibility beyond access logs, shared (non-token-keyed) per-IP rate limit, no CORS/embeddability guidance | Dev | v1-accepted trade-off; revisit if status pages become externally load-bearing |
+
+Full detail: `_bmad-output/implementation-artifacts/epic-6-retro-2026-07-06.md`.
 
 ---
 
