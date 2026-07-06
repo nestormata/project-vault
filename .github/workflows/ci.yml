@@ -153,6 +153,9 @@ jobs:
           git diff --exit-code packages/shared/openapi.json || \
             (echo "ERROR: openapi.json is stale - run pnpm generate-spec and commit" && exit 1)
 
+      - name: Check vault-action dist/ freshness (D6/AC-11)
+        run: pnpm check-vault-action-dist
+
   docker-build:
     name: Docker Build (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}

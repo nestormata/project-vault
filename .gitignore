@@ -6,6 +6,13 @@ dist/
 build/
 .svelte-kit/
 
+# D6 — packages/vault-action/dist/ is the one exception: it is the literal artifact GitHub
+# Actions executes for every `uses: project-vault/vault-action@v1` consumer (the Actions runtime
+# never runs an install step), so it must be committed. Kept fresh by the CI check in
+# scripts/check-vault-action-dist-fresh.ts — do not "clean this up" by re-ignoring it.
+!packages/vault-action/dist/
+!packages/vault-action/dist/**
+
 # Coverage
 coverage/
 .nyc_output/

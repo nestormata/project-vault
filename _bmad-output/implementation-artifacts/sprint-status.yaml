@@ -107,7 +107,7 @@ development_status:
   epic-7: in-progress
   7-1-machine-user-identity-and-api-key-management: done
   7-2-machine-user-authentication-and-programmatic-secret-retrieval: done
-  7-3-github-actions-cicd-integration: ready-for-dev
+  7-3-github-actions-cicd-integration: done
   epic-7-retrospective: optional
 
   # Epic 8: Compliance, Audit & Governance

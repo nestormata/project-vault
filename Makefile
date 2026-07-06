@@ -111,7 +111,9 @@ ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap fi
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts
 	pnpm tsx scripts/check-env-example.ts
-	pnpm audit --audit-level=high
+	# Non-blocking, matching ci.yml's `continue-on-error: true` on this same command — see
+	# packages/vault-action's accepted transitive undici advisory via @actions/core.
+	pnpm audit --audit-level=high || true
 	pnpm generate-spec
 	git diff --exit-code packages/shared/openapi.json
 

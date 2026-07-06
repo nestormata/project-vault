@@ -1,0 +1,7 @@
+# D6/AC-11 — packages/vault-action/dist/ is the only committed, generated `dist/` in this
+# monorepo (the literal artifact GitHub Actions executes for every `vault-action` consumer).
+# Marking it linguist-generated collapses its diff by default in GitHub's PR review UI, so
+# reviewers aren't asked to eyeball a multi-thousand-line bundled diff on every source change —
+# the dist-freshness CI check (scripts/check-vault-action-dist-fresh.ts) remains the actual
+# correctness gate; this is purely a review-ergonomics improvement.
+packages/vault-action/dist/** linguist-generated=true
