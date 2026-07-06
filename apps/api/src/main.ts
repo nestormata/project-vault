@@ -48,6 +48,10 @@ import {
   notificationInboxPurgeHandler,
 } from './workers/notification-inbox-purge.js'
 import { notificationDigestHandler } from './workers/notification-digest.js'
+import { pruneExpiredAuditLogEntries } from './workers/audit-retention-prune.js'
+import { runAuditExport } from './modules/audit/export.js'
+import { runWebhookForwardCatchup } from './modules/audit/forwarding.js'
+import { runS3ForwardDaily } from './modules/audit/s3-forward.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
@@ -147,6 +151,12 @@ async function main(): Promise<void> {
       'notification:deliver-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:inbox-purge': { cron: '0 3 * * *' },
       'notification:send-digest': { cron: `0 ${env.NOTIFICATION_DIGEST_HOUR} * * *` },
+      // Story 8.2 D3/D2 — every-minute watermark-cursor catchup (webhook), daily S3 batch, and
+      // daily retention prune. `audit:export` is NOT a schedule — it's triggered per-request via
+      // boss.send() from POST /audit/export (registered as a worker only, below).
+      'audit:webhook-forward-catchup': { cron: '* * * * *' },
+      'audit:s3-forward-daily': { cron: '0 1 * * *' },
+      'audit:retention-prune': { cron: '0 2 * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
@@ -227,6 +237,23 @@ async function main(): Promise<void> {
       'notification:deliver-catchup': () => notificationDeliverCatchupJobHandler(boss, fastify.log),
       'notification:inbox-purge': () => notificationInboxPurgeHandler(fastify.log),
       'notification:send-digest': () => notificationDigestHandler(fastify.log),
+      // Story 8.2 — audit search/export/forwarding/retention background jobs.
+      'audit:export': (job) =>
+        withJobLogging(fastify.log, 'audit:export', job.id ?? 'unknown', () =>
+          runAuditExport(job.data as { exportId: string; orgId: string })
+        ),
+      'audit:webhook-forward-catchup': (job) =>
+        withJobLogging(fastify.log, 'audit:webhook-forward-catchup', job.id ?? 'unknown', () =>
+          runWebhookForwardCatchup(fastify.log)
+        ),
+      'audit:s3-forward-daily': (job) =>
+        withJobLogging(fastify.log, 'audit:s3-forward-daily', job.id ?? 'unknown', () =>
+          runS3ForwardDaily(fastify.log)
+        ),
+      'audit:retention-prune': (job) =>
+        withJobLogging(fastify.log, 'audit:retention-prune', job.id ?? 'unknown', () =>
+          pruneExpiredAuditLogEntries(fastify.log)
+        ),
     })
     await boss.send('notification:backfill-pending-delivery', {})
     // Story 5.3 AC-9: startup-once enqueue, deduplicated via singletonKey so a hot-reload/

@@ -17,7 +17,7 @@ type TestAppWithJwt = TestApp & {
 
 export async function loginExistingUserInOrg(
   app: TestApp,
-  input: { userId: string; orgId: string; role: 'viewer' | 'member' | 'admin' }
+  input: { userId: string; orgId: string; role: 'viewer' | 'member' | 'admin' | 'owner' }
 ) {
   const result = await withOrg(input.orgId, async (tx) => {
     await tx.insert(orgMemberships).values({
@@ -52,7 +52,7 @@ export async function loginExistingUserInOrg(
 export async function createDirectAuthenticatedUser(
   app: TestApp,
   label: string,
-  role: 'viewer' | 'member' | 'admin' = 'member',
+  role: 'viewer' | 'member' | 'admin' | 'owner' = 'member',
   emailPrefix = 'role-test'
 ) {
   const orgId = randomUUID()
