@@ -4,6 +4,13 @@ export const MFA_ENROLLMENT_EXEMPT_ROUTES = [
   // reachable during MFA grace period" rationale as GET /org/security-alerts above, per
   // mfa-policy-matrix.md:62.
   'GET /api/v1/org/audit/verify',
+  // Story 8.2 — same rationale as GET /audit/verify above: owner-only, read/status-polling
+  // endpoints stay reachable during an owner's MFA grace period. POST /audit/export and the two
+  // PUT config endpoints (forwarding/retention) are NOT exempt — those are mutations with
+  // requireMfa: true per AC-9/AC-17/AC-21.
+  'GET /api/v1/org/audit/events',
+  'GET /api/v1/org/audit/exports/:jobId',
+  'GET /api/v1/org/audit/exports/:jobId/download',
   // Read-only org user list (Story 4.2, AC-2): admin-gated but non-mutating, so it uses the
   // "MFA-exempt: GET status/read paths" precedent (mirrors GET /org/security-alerts above).
   'GET /api/v1/org/users',

@@ -22,8 +22,10 @@ import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js
 import { createLoginSessionInTx } from '../auth/service.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
+import { writeHumanAuditEntry } from './human-entry.js'
 import { computeAuditHmac } from './write-entry.js'
 import { AUDIT_VERIFY_MAX_RANGE_DAYS, AUDIT_VERIFY_MAX_ROWS } from './verify.js'
+import { AUDIT_EVENTS_MAX_OFFSET } from './routes.js'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -43,6 +45,7 @@ const TEST_PASSPHRASE = 'audit-verify-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const VERIFY_URL = '/api/v1/org/audit/verify'
 const TAMPERED_HMAC = 'deadbeef'.repeat(8)
+const CREDENTIAL_VALUE_REVEALED = 'credential.value_revealed'
 
 function verifyUrl(from: string, to: string): string {
   return `${VERIFY_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
@@ -201,7 +204,7 @@ describe.sequential('audit verify route', () => {
     const owner = await registerOwner(app, 'verify-tampered')
     const clean = await insertRawAuditRow(owner.orgId, { eventType: 'test.clean' })
     const tampered = await insertRawAuditRow(owner.orgId, {
-      eventType: 'credential.value_revealed',
+      eventType: CREDENTIAL_VALUE_REVEALED,
       hmac: TAMPERED_HMAC,
     })
 
@@ -218,7 +221,7 @@ describe.sequential('audit verify route', () => {
     expect(body.failed).toEqual([
       {
         id: tampered.id,
-        eventType: 'credential.value_revealed',
+        eventType: CREDENTIAL_VALUE_REVEALED,
         timestamp: tampered.createdAt.toISOString(),
       },
     ])
@@ -488,4 +491,432 @@ describe.sequential('audit verify route', () => {
     await initVaultForTest(initVault, TEST_PASSPHRASE)
     app = await createApp({ logger: false, vaultGuardEnabled: true })
   }, 20_000)
+})
+
+// --- Story 8.2: GET /audit/events (search) -------------------------------------------------
+
+const EVENTS_URL = '/api/v1/org/audit/events'
+const ROTATION_INITIATED = 'rotation.initiated'
+const VALIDATION_ERROR_CODE = 'validation_error'
+const CONCURRENCY_SEED_EVENT = 'concurrency.seed'
+const NOT_A_UUID = 'not-a-uuid'
+
+type EventsBody = {
+  data: {
+    id: string
+    eventType: string
+    actorDisplayName: string
+    resourceId: string | null
+    resourceType: string | null
+    projectId: string | null
+    ipAddress: string | null
+    createdAt: string
+  }[]
+  page: number
+  limit: number
+  total: number
+  hasNext: boolean
+}
+
+function eventsUrl(query: Record<string, string | number | undefined>): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) params.set(key, String(value))
+  }
+  const qs = params.toString()
+  return qs ? `${EVENTS_URL}?${qs}` : EVENTS_URL
+}
+
+async function callSearch(
+  app: TestApp,
+  cookies: Cookies,
+  query: Record<string, string | number | undefined> = {}
+) {
+  return app.inject({
+    method: 'GET',
+    url: eventsUrl(query),
+    headers: { cookie: cookieHeader(cookies) },
+  })
+}
+
+/** Full-control raw insert for search tests: unlike insertRawAuditRow above (routes.test.ts's
+ * verify-suite helper, actor_type: 'system' only, no resource/project/actor fields), search
+ * tests need actorTokenId/resourceId/resourceType/projectId/createdAt control to exercise every
+ * filter dimension independently (AC-1). */
+async function insertSearchAuditRow(
+  orgId: string,
+  input: {
+    eventType: string
+    actorTokenId?: string | null
+    resourceId?: string
+    resourceType?: string
+    projectId?: string
+    createdAt?: Date
+  }
+): Promise<{ id: string; createdAt: Date }> {
+  return withOrg(orgId, async (tx) => {
+    const keyVersion = await currentAuditKeyVersion(tx)
+    const actorType = input.actorTokenId ? 'human' : 'system'
+    const hmac = computeAuditHmac(
+      {
+        orgId,
+        actorTokenId: input.actorTokenId ?? null,
+        actorType,
+        eventType: input.eventType,
+        resourceId: input.resourceId,
+        resourceType: input.resourceType,
+        payload: {},
+        keyVersion,
+      },
+      getAuditKey()
+    )
+    const [row] = await tx
+      .insert(auditLogEntries)
+      .values({
+        orgId,
+        actorTokenId: input.actorTokenId ?? null,
+        actorType,
+        eventType: input.eventType,
+        resourceId: input.resourceId,
+        resourceType: input.resourceType,
+        projectId: input.projectId,
+        payload: {},
+        keyVersion,
+        hmac,
+        ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+      })
+      .returning({ id: auditLogEntries.id, createdAt: auditLogEntries.createdAt })
+    if (!row) throw new Error('expected search test audit row to be inserted')
+    return row
+  })
+}
+
+async function insertIdentityToken(displayName: string): Promise<{ id: string; userId: string }> {
+  const [user] = await getDb()
+    .insert(users)
+    .values({ email: `${randomUUID()}@example.com`, passwordHash: 'x' })
+    .returning({ id: users.id })
+  if (!user) throw new Error('expected test user to be inserted')
+  const [token] = await getDb()
+    .insert(userIdentityTokens)
+    .values({ userId: user.id, displayName })
+    .returning({ id: userIdentityTokens.id })
+  if (!token) throw new Error('expected identity token to be inserted')
+  return { id: token.id, userId: user.id }
+}
+
+describe.sequential('audit search route (GET /audit/events)', () => {
+  let app: TestApp
+
+  beforeAll(async () => {
+    await resetVaultForTest()
+    await initVaultForTest(initVault, TEST_PASSPHRASE)
+    app = await createApp({ logger: false, vaultGuardEnabled: true })
+  })
+
+  afterAll(async () => {
+    await app.close()
+    await resetVaultForTest()
+  })
+
+  it(
+    'returns only the row matching all five filter dimensions simultaneously, excluding ' +
+      'three near-miss rows each differing in exactly one dimension (AC-1)',
+    async () => {
+      const owner = await registerOwner(app, 'search-all-dims')
+      const alice = await insertIdentityToken('Alice Chen')
+      const bob = await insertIdentityToken('Bob Singh')
+      const resourceId = randomUUID()
+      const otherResourceId = randomUUID()
+      const projectId = await createProjectViaApi(app, owner.cookies, 'search-ac1-a')
+      const otherProjectId = await createProjectViaApi(app, owner.cookies, 'search-ac1-b')
+      const from = new Date('2026-07-01T00:00:00.000Z')
+      const inRange = new Date('2026-07-03T14:22:01.000Z')
+      const outOfRange = new Date('2026-07-10T00:00:00.000Z')
+
+      const match = await insertSearchAuditRow(owner.orgId, {
+        eventType: CREDENTIAL_VALUE_REVEALED,
+        actorTokenId: alice.id,
+        resourceId,
+        resourceType: 'credential',
+        projectId,
+        createdAt: inRange,
+      })
+      // Near-miss: wrong actor
+      await insertSearchAuditRow(owner.orgId, {
+        eventType: CREDENTIAL_VALUE_REVEALED,
+        actorTokenId: bob.id,
+        resourceId,
+        resourceType: 'credential',
+        projectId,
+        createdAt: inRange,
+      })
+      // Near-miss: wrong event type
+      await insertSearchAuditRow(owner.orgId, {
+        eventType: 'credential.created',
+        actorTokenId: alice.id,
+        resourceId,
+        resourceType: 'credential',
+        projectId,
+        createdAt: inRange,
+      })
+      // Near-miss: wrong resource
+      await insertSearchAuditRow(owner.orgId, {
+        eventType: CREDENTIAL_VALUE_REVEALED,
+        actorTokenId: alice.id,
+        resourceId: otherResourceId,
+        resourceType: 'credential',
+        projectId,
+        createdAt: inRange,
+      })
+      // Near-miss: wrong project
+      await insertSearchAuditRow(owner.orgId, {
+        eventType: CREDENTIAL_VALUE_REVEALED,
+        actorTokenId: alice.id,
+        resourceId,
+        resourceType: 'credential',
+        projectId: otherProjectId,
+        createdAt: inRange,
+      })
+      // Near-miss: outside the date range
+      await insertSearchAuditRow(owner.orgId, {
+        eventType: CREDENTIAL_VALUE_REVEALED,
+        actorTokenId: alice.id,
+        resourceId,
+        resourceType: 'credential',
+        projectId,
+        createdAt: outOfRange,
+      })
+
+      const res = await callSearch(app, owner.cookies, {
+        actorId: alice.userId,
+        eventType: CREDENTIAL_VALUE_REVEALED,
+        resourceId,
+        projectId,
+        from: from.toISOString(),
+        to: new Date('2026-07-04T23:59:59.999Z').toISOString(),
+        page: 1,
+        limit: 20,
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json<EventsBody>()
+      expect(body.data).toHaveLength(1)
+      expect(body.data[0]).toMatchObject({
+        id: match.id,
+        eventType: CREDENTIAL_VALUE_REVEALED,
+        actorDisplayName: 'Alice Chen',
+        resourceId,
+        resourceType: 'credential',
+        projectId,
+      })
+      expect(body.total).toBe(1)
+      expect(body.hasNext).toBe(false)
+    },
+    20_000
+  )
+
+  it('resolves actorId through user_identity_tokens, never a raw actor_token_id (AC-2)', async () => {
+    const owner = await registerOwner(app, 'search-actor-resolve')
+    const alice = await insertIdentityToken('Alice Resolve')
+    for (let i = 0; i < 3; i += 1) {
+      await insertSearchAuditRow(owner.orgId, {
+        eventType: `alice.event.${i}`,
+        actorTokenId: alice.id,
+      })
+    }
+
+    const res = await callSearch(app, owner.cookies, { actorId: alice.userId })
+    expect(res.statusCode).toBe(200)
+    expect(res.json<EventsBody>().total).toBe(3)
+  })
+
+  it('returns an empty 200 result (not 404/422) for a valid-shaped, never-tokenized actorId (AC-2)', async () => {
+    const owner = await registerOwner(app, 'search-actor-unknown')
+    const unknownActorId = randomUUID()
+
+    const res = await callSearch(app, owner.cookies, { actorId: unknownActorId })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json<EventsBody>()).toMatchObject({ data: [], total: 0 })
+  })
+
+  it('returns rows for either of two token rows sharing the same user_id (AC-2 defensive case)', async () => {
+    const owner = await registerOwner(app, 'search-actor-multi-token')
+    const sharedUserId = randomUUID()
+    await getDb()
+      .insert(users)
+      .values({ id: sharedUserId, email: `${randomUUID()}@example.com`, passwordHash: 'x' })
+    const [tokenA] = await getDb()
+      .insert(userIdentityTokens)
+      .values({ userId: sharedUserId, displayName: 'Shared A' })
+      .returning({ id: userIdentityTokens.id })
+    const [tokenB] = await getDb()
+      .insert(userIdentityTokens)
+      .values({ userId: sharedUserId, displayName: 'Shared B' })
+      .returning({ id: userIdentityTokens.id })
+    if (!tokenA || !tokenB) throw new Error('expected both tokens to be inserted')
+
+    await insertSearchAuditRow(owner.orgId, { eventType: 'shared.a', actorTokenId: tokenA.id })
+    await insertSearchAuditRow(owner.orgId, { eventType: 'shared.b', actorTokenId: tokenB.id })
+
+    const res = await callSearch(app, owner.cookies, { actorId: sharedUserId })
+    expect(res.statusCode).toBe(200)
+    expect(res.json<EventsBody>().total).toBe(2)
+  })
+
+  it('returns historical rows written before this story shipped, with no special-casing (AC-3)', async () => {
+    const owner = await registerOwner(app, 'search-historical')
+    const backdated = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+    // A real actor token, not `null` — checkAuditActorTokenCoverage (Story 8.1 D3) is a
+    // database-wide gate over the shared, never-cleaned-up dev/test Postgres instance; a
+    // human-actor row with a null actor_token_id would permanently fail that check for every
+    // future test run. `writeHumanAuditEntry()` always writes actor_type: 'human', so this
+    // simulated "pre-8.2" row needs a real token to stay coverage-clean, exactly like the real
+    // write path (Story 1.6) always provides one.
+    const historicalActor = await insertIdentityToken('Historical Actor')
+    await withOrg(owner.orgId, (tx) =>
+      writeHumanAuditEntry(tx, {
+        orgId: owner.orgId,
+        actorTokenId: historicalActor.id,
+        eventType: ROTATION_INITIATED,
+        payload: {},
+      })
+    )
+    await insertSearchAuditRow(owner.orgId, {
+      eventType: ROTATION_INITIATED,
+      createdAt: backdated,
+    })
+
+    const res = await callSearch(app, owner.cookies, { eventType: ROTATION_INITIATED })
+    expect(res.statusCode).toBe(200)
+    expect(res.json<EventsBody>().total).toBe(2)
+  })
+
+  it('validates query parameters independently (AC-4)', async () => {
+    const owner = await registerOwner(app, 'search-validation')
+
+    const cases: [Record<string, string>, number, Record<string, unknown>?][] = [
+      [{ actorId: NOT_A_UUID }, 422, { code: VALIDATION_ERROR_CODE }],
+      [{ resourceId: NOT_A_UUID }, 422, { code: VALIDATION_ERROR_CODE }],
+      [{ projectId: NOT_A_UUID }, 422, { code: VALIDATION_ERROR_CODE }],
+      [{ from: 'garbage', to: new Date().toISOString() }, 422, { code: VALIDATION_ERROR_CODE }],
+      [{ page: '0' }, 422],
+      [{ page: '-1' }, 422],
+      [{ limit: '101' }, 422],
+    ]
+
+    for (const [query, status, shape] of cases) {
+      const res = await callSearch(app, owner.cookies, query)
+      expect(res.statusCode).toBe(status)
+      if (shape) expect(res.json()).toMatchObject(shape)
+    }
+
+    const now = new Date()
+    const invertedRange = await callSearch(app, owner.cookies, {
+      from: now.toISOString(),
+      to: new Date(now.getTime() - 3_600_000).toISOString(),
+    })
+    expect(invertedRange.statusCode).toBe(422)
+    expect(invertedRange.json()).toMatchObject({ code: 'invalid_range' })
+
+    const noFilters = await callSearch(app, owner.cookies, {})
+    expect(noFilters.statusCode).toBe(200)
+  })
+
+  it(`rejects an offset beyond ${AUDIT_EVENTS_MAX_OFFSET}, accepts one within it (AC-5)`, async () => {
+    const owner = await registerOwner(app, 'search-page-depth')
+
+    const tooDeep = await callSearch(app, owner.cookies, { page: 2001, limit: 20 })
+    expect(tooDeep.statusCode).toBe(422)
+    expect(tooDeep.json()).toMatchObject({ code: 'page_out_of_range' })
+
+    const withinCap = await callSearch(app, owner.cookies, { page: 500, limit: 20 })
+    expect(withinCap.statusCode).toBe(200)
+  })
+
+  it('rejects admin/member/viewer with 403, isolates by org via RLS (AC-6)', async () => {
+    const authzEmailPrefix = 'audit-search-authz'
+    const admin = await createDirectAuthenticatedUser(app, 'admin', 'admin', authzEmailPrefix)
+    const member = await createDirectAuthenticatedUser(app, 'member', 'member', authzEmailPrefix)
+    const viewer = await createDirectAuthenticatedUser(app, 'viewer', 'viewer', authzEmailPrefix)
+
+    for (const user of [admin, member, viewer]) {
+      const res = await callSearch(app, user.cookies)
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'insufficient_role' })
+    }
+
+    await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+      for (let i = 0; i < 5; i += 1) {
+        await insertSearchAuditRow(orgAId, { eventType: `orgA.event.${i}` })
+      }
+      for (let i = 0; i < 3; i += 1) {
+        await insertSearchAuditRow(orgBId, { eventType: `orgB.event.${i}` })
+      }
+
+      const ownerACookies = await mintOwnerSessionForOrg(app, orgAId, 'search-isolation-a')
+      const res = await callSearch(app, ownerACookies, { limit: 100 })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json<EventsBody>()
+      // +1 for the owner's own SESSION_CREATED row from mintOwnerSessionForOrg's login.
+      expect(body.total).toBe(6)
+    })
+  })
+
+  it('writes an audit.search_run entry for its own call (AC-7)', async () => {
+    const owner = await registerOwner(app, 'search-self-audit')
+
+    const res = await callSearch(app, owner.cookies, { eventType: 'nonexistent.event' })
+    expect(res.statusCode).toBe(200)
+
+    const rows = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ payload: auditLogEntries.payload })
+        .from(auditLogEntries)
+        .where(sql`${auditLogEntries.eventType} = 'audit.search_run'`)
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.payload).toMatchObject({ resultCount: expect.any(Number) })
+  })
+
+  it('enforces 60/min and returns 429 on the 61st call within the window (AC-7)', async () => {
+    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    try {
+      const owner = await registerOwner(app, 'search-rate-limit')
+      let last: Awaited<ReturnType<typeof callSearch>> | undefined
+      for (let i = 0; i < 61; i += 1) {
+        last = await callSearch(app, owner.cookies)
+      }
+      expect(last?.statusCode).toBe(429)
+    } finally {
+      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+    }
+  }, 30_000)
+
+  it(
+    'remains internally consistent (sum of pages vs. point-in-time total) under a concurrent ' +
+      'write (AC-8)',
+    async () => {
+      const owner = await registerOwner(app, 'search-concurrency')
+      for (let i = 0; i < 10; i += 1) {
+        await insertSearchAuditRow(owner.orgId, { eventType: CONCURRENCY_SEED_EVENT })
+      }
+
+      const [page1, , page2] = await Promise.all([
+        callSearch(app, owner.cookies, { eventType: CONCURRENCY_SEED_EVENT, page: 1, limit: 5 }),
+        insertSearchAuditRow(owner.orgId, { eventType: CONCURRENCY_SEED_EVENT }),
+        callSearch(app, owner.cookies, { eventType: CONCURRENCY_SEED_EVENT, page: 2, limit: 5 }),
+      ])
+
+      expect(page1.statusCode).toBe(200)
+      expect(page2.statusCode).toBe(200)
+      const total1 = page1.json<EventsBody>().total
+      const total2 = page2.json<EventsBody>().total
+      // Both snapshots see either 10 or 11 rows depending on race timing — never anything else.
+      expect([10, 11]).toContain(total1)
+      expect([10, 11]).toContain(total2)
+    }
+  )
 })

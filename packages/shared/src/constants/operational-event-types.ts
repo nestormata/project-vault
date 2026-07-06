@@ -118,6 +118,15 @@ export const OperationalEvent = {
   // HTTP endpoint monitoring health-check scheduler (Story 6.2, ADR-6.2-09)
   MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP: 'monitoring.health_check_tick_skipped_overlap',
   MONITORING_HEALTH_CHECK_ROW_FAILED: 'monitoring.health_check_row_failed',
+
+  // Audit log search/export/forwarding/retention (Story 8.2)
+  AUDIT_WEBHOOK_FORWARD_ROW_FAILED: 'audit.webhook_forward.row_failed',
+  AUDIT_WEBHOOK_FORWARD_DISABLED: 'audit.webhook_forward.disabled',
+  AUDIT_S3_FORWARD_UPLOAD_FAILED: 'audit.s3_forward.upload_failed',
+  AUDIT_S3_FORWARD_DAY_SKIPPED_EMPTY: 'audit.s3_forward.day_skipped_empty',
+  AUDIT_S3_FORWARD_DISABLED: 'audit.s3_forward.disabled',
+  AUDIT_RETENTION_PRUNE_SUMMARY: 'audit.retention_prune.summary',
+  AUDIT_RETENTION_PRUNE_ROW_FAILED: 'audit.retention_prune.row_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

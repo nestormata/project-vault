@@ -240,6 +240,44 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Integrity verification read returns pass/fail counts and event metadata only; never a secret or credential value.',
     reviewer: SECURITY_OWNER,
   },
+  // Story 8.2 AC-7/AC-24 — unlike GET /audit/verify above, this search endpoint DOES write its
+  // own audit event ('audit.search_run', "who searched the audit log" is itself forensic
+  // evidence) — classified as a mutation-shaped action with an explicit auditEvent, not an
+  // omission reason.
+  'GET /api/v1/org/audit/events': {
+    action: 'mutation',
+    auditEvent: 'audit.search_run',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/org/audit/export': {
+    action: 'mutation',
+    auditEvent: 'audit.export_requested',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/org/audit/exports/:jobId': {
+    action: 'read',
+    auditOmissionReason:
+      'Export job status/polling read returns job metadata only; never a secret or the CSV body.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/org/audit/exports/:jobId/download': {
+    action: 'read',
+    auditOmissionReason:
+      'CSV download streams already-generated, already-verified export content; auditing every ' +
+      'poll/retry of a download would create unbounded audit-log growth with no new forensic ' +
+      'signal beyond the export request itself, which is already audited.',
+    reviewer: SECURITY_OWNER,
+  },
+  'PUT /api/v1/org/audit/forwarding': {
+    action: 'mutation',
+    auditEvent: 'audit.forwarding_configured',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PUT /api/v1/org/audit/retention': {
+    action: 'mutation',
+    auditEvent: 'audit.retention_configured',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   // Story 6.2 AC 18 (ADR-6.2-04's correction). The route delegates to dismissSecurityAlert(),
   // which calls writeHumanAuditEntryOrFailClosed() internally — the literal function name
   // called in the route itself is dismissSecurityAlert (see security-alerts.ts).
