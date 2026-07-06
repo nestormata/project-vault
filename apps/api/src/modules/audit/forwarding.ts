@@ -13,6 +13,7 @@ import {
   type SafeFetchResult,
 } from '../../lib/safe-fetch.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../../middleware/rls.js'
+import { applyForwardingConfigUpdate } from './forwarding-config-update.js'
 
 /** Injectable so tests can substitute a delivery double instead of making a real, SSRF-guarded
  * network call (which would itself reject a local test-server loopback address). Defaults to the
@@ -193,14 +194,10 @@ async function recordWebhookFailure(
   logger: WorkerLogger | undefined
 ): Promise<void> {
   const disable = consecutiveFailureCount >= AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES
-  await tx
-    .update(auditForwardingConfig)
-    .set({
-      consecutiveFailureCount,
-      enabled: disable ? false : config.enabled,
-      updatedAt: new Date(),
-    })
-    .where(eq(auditForwardingConfig.orgId, config.orgId))
+  await applyForwardingConfigUpdate(tx, config.orgId, {
+    consecutiveFailureCount,
+    enabled: disable ? false : config.enabled,
+  })
   if (!logger) return
   operationalLog(
     logger,

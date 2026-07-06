@@ -9,6 +9,7 @@ import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyBaseLogger } from 'fastify'
 import { operationalLog } from '../../lib/logger.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../../middleware/rls.js'
+import { applyForwardingConfigUpdate } from './forwarding-config-update.js'
 
 /** D3 — five consecutive failed daily attempts (a longer failure window than the webhook's
  * once-a-minute AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES=10, matched to a once-a-day cadence). */
@@ -159,14 +160,10 @@ async function recordS3DayFailure(
 ): Promise<void> {
   const s3ConsecutiveFailureCount = config.s3ConsecutiveFailureCount + 1
   const disable = s3ConsecutiveFailureCount >= AUDIT_S3_MAX_CONSECUTIVE_FAILURES
-  await tx
-    .update(auditForwardingConfig)
-    .set({
-      s3ConsecutiveFailureCount,
-      enabled: disable ? false : config.enabled,
-      updatedAt: new Date(),
-    })
-    .where(eq(auditForwardingConfig.orgId, config.orgId))
+  await applyForwardingConfigUpdate(tx, config.orgId, {
+    s3ConsecutiveFailureCount,
+    enabled: disable ? false : config.enabled,
+  })
   if (!logger) return
   operationalLog(
     logger,

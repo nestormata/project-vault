@@ -49,6 +49,32 @@ type BossFastify = FastifyApp & { boss?: BossService }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
+type AuditExportRow = typeof auditExports.$inferSelect
+
+/** Shared by the export status and download routes: resolves `:jobId` to its row, or sends the
+ * appropriate error response (422 invalid params via parseParams, 404 not found — RLS makes a
+ * cross-org row invisible rather than a 403, matching Story 8.1's import_not_found precedent)
+ * and returns undefined. Callers must `return reply` when this returns undefined. */
+async function loadExportJobOrNotFound(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<AuditExportRow | undefined> {
+  const params = parseParams(AuditExportJobParamsSchema, req, reply)
+  if (!params) return undefined
+
+  const [row] = await secureCtx.tx
+    .select()
+    .from(auditExports)
+    .where(eq(auditExports.id, params.jobId))
+    .limit(1)
+  if (!row) {
+    reply.status(404).send({ code: 'export_not_found', message: 'Export not found' })
+    return undefined
+  }
+  return row
+}
+
 export async function auditRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
@@ -318,19 +344,8 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
       const secureCtx = ctx as SecureRouteContext
-      const params = parseParams(AuditExportJobParamsSchema, req, reply)
-      if (!params) return reply
-
-      const [row] = await secureCtx.tx
-        .select()
-        .from(auditExports)
-        .where(eq(auditExports.id, params.jobId))
-        .limit(1)
-      // AC-15 — cross-org access attempt: RLS makes the row invisible, and this codebase's
-      // convention (Story 8.1's import_not_found precedent) is 404, not 403, for cross-tenant
-      // resource-existence probes.
-      if (!row)
-        return reply.status(404).send({ code: 'export_not_found', message: 'Export not found' })
+      const row = await loadExportJobOrNotFound(secureCtx, req, reply)
+      if (!row) return reply
 
       return {
         data: {
@@ -366,16 +381,8 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
       const secureCtx = ctx as SecureRouteContext
-      const params = parseParams(AuditExportJobParamsSchema, req, reply)
-      if (!params) return reply
-
-      const [row] = await secureCtx.tx
-        .select()
-        .from(auditExports)
-        .where(eq(auditExports.id, params.jobId))
-        .limit(1)
-      if (!row)
-        return reply.status(404).send({ code: 'export_not_found', message: 'Export not found' })
+      const row = await loadExportJobOrNotFound(secureCtx, req, reply)
+      if (!row) return reply
       if (row.status !== 'completed' || !row.fileContent) {
         return reply.status(404).send({
           code: 'export_not_ready',
