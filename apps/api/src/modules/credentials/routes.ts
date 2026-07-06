@@ -81,6 +81,7 @@ import {
 } from './import-service.js'
 import type { AuditConfig } from '../../lib/secure-route.js'
 import { rejectIfProjectArchived } from '../projects/archive-guards.js'
+import { credentialRevealAbandonedVersionExcludedTotal } from '../rotation/metrics.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType:
@@ -840,6 +841,22 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
           CREDENTIAL_REVEAL_FAILED_MESSAGE
         )
         return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      }
+
+      // Story 5.5 AC-3: revealCurrentValue() excluding an abandoned version to serve an earlier
+      // one is Story 5.3's own self-described "single highest-risk change" — this is the
+      // production visibility a regression in that filter would otherwise lack.
+      if (revealed.abandonedVersionExcluded) {
+        credentialRevealAbandonedVersionExcludedTotal.inc()
+        req.log.warn(
+          {
+            eventType: OperationalEvent.CREDENTIAL_REVEAL_ABANDONED_VERSION_EXCLUDED,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+            servedVersionNumber: revealed.versionNumber,
+          },
+          'Credential value reveal excluded an abandoned version to serve an earlier one'
+        )
       }
 
       try {

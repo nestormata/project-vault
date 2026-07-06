@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import postgres from 'postgres'
 import { withOrg } from '@project-vault/db'
@@ -66,7 +66,7 @@ async function seedInProgressRotation(
   orgId: string,
   projectId: string,
   credentialId: string,
-  initiatedBy: string,
+  initiatedBy: string | null,
   initiatedAt: Date
 ): Promise<string> {
   const previousVersionId = await seedVersion(orgId, credentialId, 1)
@@ -337,6 +337,104 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       // Once the lock is released, the next run picks it up.
       await runStaleRotationRecoveryJob(noopBoss())
       expect((await rotationState(orgId, rotationId))?.status).toBe('stale_recovery')
+    })
+  }, 20_000)
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-5: NULL initiatedBy (the initiating user's account was deleted, `initiatedBy`
+  // is `onDelete: 'set null'`) must not throw — the job must skip only the direct-user
+  // notification and keep processing.
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-5: a stale rotation with a since-deleted initiating user (NULL initiatedBy) completes without error and still sends the FR100-routed alert', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const adminUserId = await seedUser('recover-ac5-admin')
+      await seedOwnerMembership(orgId, adminUserId)
+      const projectId = await seedProject(orgId)
+      const credentialId = await seedCredential(orgId, projectId)
+      const rotationId = await seedInProgressRotation(
+        orgId,
+        projectId,
+        credentialId,
+        null,
+        new Date(Date.now() - 90 * MINUTES)
+      )
+
+      await expect(runStaleRotationRecoveryJob(noopBoss())).resolves.not.toThrow()
+
+      const state = await rotationState(orgId, rotationId)
+      expect(state?.status).toBe('stale_recovery')
+
+      const routedRows = await withOrg(orgId, (tx) =>
+        tx
+          .select({ recipientUserId: notificationQueue.recipientUserId })
+          .from(notificationQueue)
+          .where(eq(notificationQueue.templateId, 'rotation.stale'))
+      )
+      // No initiating user to notify directly, but the FR100-routed alert must still fire.
+      expect(routedRows.length).toBeGreaterThanOrEqual(1)
+      expect(routedRows.every((row) => row.recipientUserId !== null)).toBe(true)
+    })
+  }, 20_000)
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-9: an audit-write failure for one org/rotation must roll back only that row
+  // and never abort the rest of the same job run (other orgs/rotations must still be
+  // processed, and the job itself must not throw uncaught).
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-9: an audit-write failure for one org rolls back only that org, and other orgs are still processed in the same run', async () => {
+    await withTestOrg(async ({ orgId: orgA }) => {
+      await withTestOrg(async ({ orgId: orgB }) => {
+        const userA = await seedUser('recover-ac9-a')
+        const userB = await seedUser('recover-ac9-b')
+        const projectA = await seedProject(orgA)
+        const projectB = await seedProject(orgB)
+        const credentialA = await seedCredential(orgA, projectA)
+        const credentialB = await seedCredential(orgB, projectB)
+        const rotationA = await seedInProgressRotation(
+          orgA,
+          projectA,
+          credentialA,
+          userA,
+          new Date(Date.now() - 90 * MINUTES)
+        )
+        const rotationB = await seedInProgressRotation(
+          orgB,
+          projectB,
+          credentialB,
+          userB,
+          new Date(Date.now() - 90 * MINUTES)
+        )
+
+        const systemAuditRow = await import('../lib/system-audit-row.js')
+        // Captured BEFORE spying — a plain closure reference to the real implementation, not a
+        // live lookup on the (about to be mocked) shared module object. Delegating via
+        // `systemAuditRow.writeSystemAuditRow` here instead would recurse into the mock itself.
+        const originalWriteSystemAuditRow = systemAuditRow.writeSystemAuditRow
+        const spy = vi
+          .spyOn(systemAuditRow, 'writeSystemAuditRow')
+          .mockImplementation(async (tx, input) => {
+            if (input.orgId === orgA) throw new Error('forced audit failure for org A')
+            return originalWriteSystemAuditRow(tx, input)
+          })
+
+        try {
+          await expect(runStaleRotationRecoveryJob(noopBoss())).resolves.not.toThrow()
+        } finally {
+          spy.mockRestore()
+        }
+
+        // Org A's row rolled back cleanly — still in_progress, not stale_recovery.
+        expect((await rotationState(orgA, rotationA))?.status).toBe('in_progress')
+        // Org B was still processed despite org A's failure in the same run.
+        expect((await rotationState(orgB, rotationB))?.status).toBe('stale_recovery')
+
+        // Confirm org A really did retry-eligible next run (proves the failure didn't leave it
+        // in some half-transitioned state) once the forced failure is no longer active.
+        await runStaleRotationRecoveryJob(noopBoss())
+        expect((await rotationState(orgA, rotationA))?.status).toBe('stale_recovery')
+      })
     })
   }, 20_000)
 })

@@ -1,10 +1,13 @@
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
+import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import { credentialVersions } from '@project-vault/db/schema'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { tryAcquireCredentialScopedLock } from '../lib/rotation-locks.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
+import { operationalLog, serializeLogError } from '../lib/logger.js'
 import { rotationBreakGlassOverlapExpirationsTotal } from '../modules/rotation/metrics.js'
+import type { WorkerLogger } from './expiry-alert-shared.js'
 
 const EVENT_TYPE = 'rotation.break_glass_overlap_expired'
 const JOB_NAME = 'rotation:break-glass-expire'
@@ -58,21 +61,50 @@ async function expireOneVersion(orgId: string, candidate: ExpiredVersionRow): Pr
   })
 }
 
-async function expireOverlapForOrg(orgId: string): Promise<void> {
+async function expireOverlapForOrg(orgId: string, logger?: WorkerLogger): Promise<void> {
   const candidates = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
     findExpiredOverlapVersions(tx, orgId)
   )
   for (const candidate of candidates) {
-    await expireOneVersion(orgId, candidate)
+    // Story 5.5 AC-9: same rationale as rotation-recover.ts's identical try/catch — each
+    // candidate already runs in its own transaction (runOrgScopedJob), so a thrown error here
+    // already rolls back only that one row; without this catch, though, the throw would still
+    // propagate out of this loop and abort every other candidate/org left in the same run.
+    try {
+      await expireOneVersion(orgId, candidate)
+    } catch (error) {
+      if (logger) {
+        operationalLog(
+          logger,
+          'error',
+          OperationalEvent.ROTATION_BREAK_GLASS_EXPIRE_ROW_FAILED,
+          'Break-glass overlap expiry failed for one candidate — skipping and continuing',
+          { orgId, credentialVersionId: candidate.id, err: serializeLogError(error) }
+        )
+      }
+    }
   }
 }
 
 /** `rotation:break-glass-expire` (AC-8) — pg-boss job, cron `* * * * *` (every minute, matching
  *  security/check-failed-auth-threshold's cadence). No vault-seal gating: this is backend-worker
  *  bookkeeping (rotationLockedAt/breakGlassOverlapExpiresAt), no plaintext is touched. */
-export async function runBreakGlassOverlapExpiryJob(): Promise<void> {
+export async function runBreakGlassOverlapExpiryJob(logger?: WorkerLogger): Promise<void> {
   const orgIds = await fetchAllOrgIds()
   for (const orgId of orgIds) {
-    await expireOverlapForOrg(orgId)
+    // Story 5.5 AC-9: org-level equivalent of the per-candidate catch above.
+    try {
+      await expireOverlapForOrg(orgId, logger)
+    } catch (error) {
+      if (logger) {
+        operationalLog(
+          logger,
+          'error',
+          OperationalEvent.ROTATION_BREAK_GLASS_EXPIRE_ROW_FAILED,
+          'Break-glass overlap expiry failed for one org — skipping and continuing',
+          { orgId, err: serializeLogError(error) }
+        )
+      }
+    }
   }
 }

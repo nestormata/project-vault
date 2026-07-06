@@ -16,6 +16,7 @@ import {
   type NotificationQueueJob,
 } from '../../notifications/dispatcher.js'
 import { env } from '../../config/env.js'
+import { PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
 import {
   AbandonRotationBodySchema,
   AbandonRotationResponseSchema,
@@ -410,6 +411,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: RotationConflictResponseSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -456,6 +458,20 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
           })
         }
         throw error
+      }
+
+      if (result.status === 'project_archived') {
+        rotationInitiationsTotal.inc({ outcome: 'project_archived' })
+        req.log.info(
+          {
+            eventType: OperationalEvent.ROTATION_INITIATE_PROJECT_ARCHIVED,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+            projectId: params.projectId,
+          },
+          'Rotation initiation rejected — project is archived'
+        )
+        return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
       }
 
       if (!isCredentialFound(result)) {
@@ -559,6 +575,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         userId: secureCtx.auth.userId,
         body: parsed.data,
         overlapMinutes: env.BREAK_GLASS_OVERLAP_MINUTES,
+        idempotencyWindowSeconds: env.BREAK_GLASS_IDEMPOTENCY_WINDOW_SECONDS,
       })
 
       if (result.status === 'lock_contention') {
@@ -579,6 +596,25 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       }
       if (!isCredentialFound(result)) {
         return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      }
+
+      // Story 5.5 AC-4: a rapid double-submit — this is really the same logical event as the
+      // first call, so it must not re-write the audit/security-alert/notification side effects
+      // a second time (that would be its own kind of duplication bug).
+      if (result.deduped) {
+        rotationBreakGlassTotal.inc({ outcome: 'deduped' })
+        req.log.info(
+          {
+            eventType: OperationalEvent.ROTATION_BREAK_GLASS_SUCCESS,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+            rotationId: result.rotation.id,
+            deduped: true,
+          },
+          'Break-glass rejected as a duplicate — returning the already-created rotation'
+        )
+        reply.status(201)
+        return { data: serializeBreakGlassRotation(result) }
       }
 
       try {
@@ -1186,6 +1222,13 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
             projectId: params.projectId,
             checklistItemCount: result.checklistItems.length,
             confirmedCount,
+            // Story 5.5 AC-13: the two credential-version ids this completion retired/promoted —
+            // both already present on the `rotations` row (Story 5.1 schema) — so a completion
+            // event's version history no longer requires a manual join against `rotations`.
+            previousVersionId: result.rotation.previousVersionId,
+            newVersionId: result.rotation.newVersionId,
+            // Story 5.5 AC-2: visible-but-not-blocking single-actor self-attestation flag.
+            singleActorAttested: result.singleActorAttested,
           },
           request: req,
         })

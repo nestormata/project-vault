@@ -69,6 +69,12 @@ export const RotationDetailSchema = z
     sameValueAsPrevious: z.boolean().optional(),
     checklistItems: z.array(RotationChecklistItemSchema),
     previousVersionOverlap: RotationPreviousVersionOverlapSchema.optional(),
+    // Story 5.5 AC-4 code-review fix: present (true) only on a break-glass response that was
+    // short-circuited as a duplicate of a very recent prior call — lets the caller tell a
+    // deduped replay apart from a fresh success, since a second, genuinely different incident
+    // responder's newValue/reason is silently discarded on a dedup and would otherwise look
+    // identical to a real success in the response body.
+    deduped: z.boolean().optional(),
   })
   .meta({ id: 'RotationDetail' })
 

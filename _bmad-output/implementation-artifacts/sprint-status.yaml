@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-06 (8-1-tamper-evident-audit-log-with-hmac-integrity: review -> done)
+# last_updated: 2026-07-05 (9-1-encrypted-backup-and-restore: backlog -> ready-for-dev; epic-9: backlog -> in-progress)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -93,7 +93,7 @@ development_status:
   5-2-rotation-checklist-confirmation-and-completion: done
   5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: done
   5-4-rotation-workflow-web-ui: done # implemented 2026-07-05 — web UI for initiate/checklist/break-glass/history/dashboard; zero apps/api or packages/db diff (AC-27); code review + CI gate passed
-  5-5-epic-5-completion-rotation-hardening-and-technical-debt: ready-for-dev # closure story bundling the 2026-07-05 retro's risk/gap/contradiction/technical-debt audit (13 findings) + the carried-forward Epic 4 TOCTOU gap
+  5-5-epic-5-completion-rotation-hardening-and-technical-debt: done # closure story bundling the 2026-07-05 retro's risk/gap/contradiction/technical-debt audit (13 findings) + the carried-forward Epic 4 TOCTOU gap; all 13 ACs implemented, code review fixed 2 high findings, make ci green
   epic-5-retrospective: done
 
   # Epic 6: Operational Monitoring & Status — Services, Certificates, Domains & Mobile
@@ -119,8 +119,8 @@ development_status:
   epic-8-retrospective: optional
 
   # Epic 9: Platform Operations, API & Self-Hosting
-  epic-9: backlog
-  9-1-encrypted-backup-and-restore: backlog
+  epic-9: in-progress # first story (9-1) created 2026-07-05
+  9-1-encrypted-backup-and-restore: ready-for-dev # story file created 2026-07-05 — introduces platform-operator authorization primitive (users.is_platform_operator), backup_runs/admin_alerts platform tables, and a required BACKUP_DATABASE_URL RLS-bypass credential for pg_dump/restore; see story's Key Design Decisions (D1-D8) for full rationale
   9-2-system-settings-multi-org-and-resource-monitoring: backlog
   9-3-in-place-version-upgrades-and-api-parity-verification: backlog
   9-4-platform-operator-audit-log: backlog
