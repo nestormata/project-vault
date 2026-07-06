@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditLogEntries, credentialVersions } from '@project-vault/db/schema'
@@ -161,6 +161,63 @@ describe.sequential('runBreakGlassOverlapExpiryJob', () => {
       const auditRowsB = await findAuditRowOrgIds(orgBId, OVERLAP_EXPIRED)
       expect(auditRowsA.every((id) => id === orgAId)).toBe(true)
       expect(auditRowsB.every((id) => id === orgBId)).toBe(true)
+    })
+  }, 20_000)
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-9: an audit-write failure for one org/row must roll back only that row and
+  // never abort the rest of the same job run.
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-9: an audit-write failure for one org rolls back only that org, and other orgs are still processed in the same run', async () => {
+    await withTwoTestOrgs(async (orgAId, orgBId) => {
+      const projectAId = await seedProject(orgAId)
+      const projectBId = await seedProject(orgBId)
+      const credentialAId = await seedCredential(orgAId, projectAId)
+      const credentialBId = await seedCredential(orgBId, projectBId)
+      const versionAId = await seedOverlappingVersion(
+        orgAId,
+        credentialAId,
+        1,
+        new Date(Date.now() - 1000)
+      )
+      const versionBId = await seedOverlappingVersion(
+        orgBId,
+        credentialBId,
+        1,
+        new Date(Date.now() - 1000)
+      )
+
+      const systemAuditRow = await import('../lib/system-audit-row.js')
+      const originalWriteSystemAuditRow = systemAuditRow.writeSystemAuditRow
+      const spy = vi
+        .spyOn(systemAuditRow, 'writeSystemAuditRow')
+        .mockImplementation(async (tx, input) => {
+          if (input.orgId === orgAId) throw new Error('forced audit failure for org A')
+          return originalWriteSystemAuditRow(tx, input)
+        })
+
+      try {
+        await expect(runBreakGlassOverlapExpiryJob()).resolves.not.toThrow()
+      } finally {
+        spy.mockRestore()
+      }
+
+      // Org A's row rolled back cleanly — still has its overlap fields set, untouched.
+      const stateA = await versionState(orgAId, versionAId)
+      expect(stateA?.rotationLockedAt).not.toBeNull()
+      expect(stateA?.breakGlassOverlapExpiresAt).not.toBeNull()
+
+      // Org B was still processed despite org A's failure in the same run.
+      const stateB = await versionState(orgBId, versionBId)
+      expect(stateB?.rotationLockedAt).toBeNull()
+      expect(stateB?.breakGlassOverlapExpiresAt).toBeNull()
+
+      // Org A retries cleanly on the next run once the forced failure is gone.
+      await runBreakGlassOverlapExpiryJob()
+      const stateARetried = await versionState(orgAId, versionAId)
+      expect(stateARetried?.rotationLockedAt).toBeNull()
+      expect(stateARetried?.breakGlassOverlapExpiresAt).toBeNull()
     })
   }, 20_000)
 })

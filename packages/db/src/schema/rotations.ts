@@ -76,10 +76,17 @@ export const rotations = pgTable(
     ),
     credentialStatusIdx: index('idx_rotations_credential_status').on(t.credentialId, t.status),
     orgIdx: index('idx_rotations_org').on(t.orgId),
-    // Story 5.3 AC-1/AC-9: supports the stale-detection job's org-wide, credential-agnostic
-    // `WHERE status = 'in_progress' AND initiated_at < $threshold` scan — the existing
-    // (credentialId, status) index above isn't useful for that query shape.
-    statusInitiatedIdx: index('idx_rotations_status_initiated').on(t.status, t.initiatedAt),
+    // Story 5.3 AC-1/AC-9, widened by Story 5.5 AC-8: supports the stale-detection job's
+    // per-org `WHERE org_id = $orgId AND status = 'in_progress' AND initiated_at < $threshold`
+    // scan (apps/api/src/workers/rotation-recover.ts's findStaleRotations, called once per org
+    // via fetchAllOrgIds()/runOrgScopedJob()). Originally shipped as (status, initiated_at) —
+    // widened to lead with org_id so each org's scoped scan hits an efficient index range
+    // instead of a full-index scan filtered by RLS/the org_id predicate after the fact.
+    statusInitiatedIdx: index('idx_rotations_status_initiated').on(
+      t.orgId,
+      t.status,
+      t.initiatedAt
+    ),
     statusCheck: check(
       'rotations_status_check',
       sql`${t.status} IN ('in_progress','completed','abandoned','stale_recovery','break_glass_complete')`

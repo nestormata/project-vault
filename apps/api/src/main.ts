@@ -169,11 +169,11 @@ async function main(): Promise<void> {
         ),
       [ROTATION_BREAK_GLASS_EXPIRE_JOB]: (job) =>
         withJobLogging(fastify.log, ROTATION_BREAK_GLASS_EXPIRE_JOB, job.id ?? 'unknown', () =>
-          runBreakGlassOverlapExpiryJob()
+          runBreakGlassOverlapExpiryJob(fastify.log)
         ),
       [ROTATION_RECOVER_JOB]: (job) =>
         withJobLogging(fastify.log, ROTATION_RECOVER_JOB, job.id ?? 'unknown', () =>
-          runStaleRotationRecoveryJob(boss)
+          runStaleRotationRecoveryJob(boss, fastify.log)
         ),
       'import/cleanup-expired': (job) =>
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>
