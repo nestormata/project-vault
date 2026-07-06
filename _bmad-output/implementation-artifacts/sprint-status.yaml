@@ -101,7 +101,7 @@ development_status:
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: done
   6-3-cross-project-health-dashboard-and-public-status-page: done
-  6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt: backlog # added 2026-07-06 retro — closes the Story 6.1 Product Surface Contract gap (no web UI for services/certificates/domains CRUD) + stale "available in Epic 6" placeholder copy + AuditEvent dual-listing consolidation
+  6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt: ready-for-dev # story file created 2026-07-06 — closes the Story 6.1 Product Surface Contract gap (web UI for services/certificates/domains/service-endpoints CRUD + monitoring-alerts snooze/dismiss) + stale "available in Epic 6" placeholder copy + AuditEvent dual-listing consolidation (P6-3)
   epic-6-retrospective: done
 
   # Epic 7: Machine User Access & CI/CD Integration
