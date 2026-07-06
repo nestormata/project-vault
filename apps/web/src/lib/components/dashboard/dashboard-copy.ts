@@ -16,6 +16,6 @@ export const forbiddenDashboardClaims = ['All systems healthy', '0 alerts', '100
 
 export const suggestedActionLabels = {
   add_credential: 'Add first credential',
-  add_service: 'Add first service - available in Epic 6',
+  add_service: 'Add first service',
   import_credentials: 'Import .env or JSON',
 } as const

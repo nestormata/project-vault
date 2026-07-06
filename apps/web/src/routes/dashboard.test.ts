@@ -28,9 +28,27 @@ describe('dashboard empty state', () => {
   it('labels suggested actions without story deferrals', () => {
     expect(suggestedActionLabels).toEqual({
       add_credential: 'Add first credential',
-      add_service: 'Add first service - available in Epic 6',
+      add_service: 'Add first service',
       import_credentials: 'Import .env or JSON',
     })
+  })
+
+  // AC-H1 (Story 6.4): the "Add first service" label used to read "...- available in Epic 6" —
+  // a claim that stopped being true the moment 6.1 shipped its API, and is fully false now that
+  // 6.4 ships the services/certificates/domains/service-endpoints UI. No residual "Epic 6" or
+  // "coming soon" language should remain anywhere in this copy file after the fix.
+  it('AC-H1: no residual "Epic 6" or "coming soon" language remains in dashboard-copy.ts', () => {
+    const allCopy = JSON.stringify({ dashboardEmptyStateCopy, suggestedActionLabels })
+    expect(allCopy).not.toContain('Epic 6')
+    expect(allCopy).not.toContain('coming soon')
+  })
+
+  // AC-H2: pre-existing honest empty-state copy is explicitly left unchanged by this story.
+  it('AC-H2: noCertificates/noServices empty-state copy is unchanged (already honest, not a "coming soon" claim)', () => {
+    expect(dashboardEmptyStateCopy.noCertificates).toBe(
+      'No certificate or domain records added yet.'
+    )
+    expect(dashboardEmptyStateCopy.noServices).toBe('No monitored services configured yet.')
   })
 })
 
@@ -110,5 +128,35 @@ describe('/dashboard +page.svelte — upcoming rotations widget (AC-23, G3)', ()
     for (const claim of forbiddenDashboardClaims) {
       expect(screen.queryByText(claim)).toBeNull()
     }
+  })
+})
+
+describe('/dashboard +page.svelte — monitoredServiceHealth tile (AC-G1, G3 dashboard truth)', () => {
+  afterEach(() => cleanup())
+
+  it('AC-G1 happy path: shows the real healthy/degraded/down breakdown sourced from data.dashboard', () => {
+    render(DashboardPage, {
+      props: {
+        data: baseDashboardData({
+          monitoredServiceHealth: { healthy: 3, degraded: 1, down: 0 },
+        }),
+      },
+    })
+
+    expect(screen.getByText('Monitored services')).toBeTruthy()
+    expect(screen.getByText('3 healthy · 1 degraded · 0 down')).toBeTruthy()
+  })
+
+  it('AC-G1 edge: zero endpoints registered shows an honest real zero, not a hidden/omitted tile', () => {
+    render(DashboardPage, {
+      props: {
+        data: baseDashboardData({
+          monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
+        }),
+      },
+    })
+
+    expect(screen.getByText('Monitored services')).toBeTruthy()
+    expect(screen.getByText('0 healthy · 0 degraded · 0 down')).toBeTruthy()
   })
 })

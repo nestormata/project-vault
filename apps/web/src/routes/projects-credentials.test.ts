@@ -120,6 +120,35 @@ describe('project credential routes', () => {
     expect(screen.queryByText('Import')).toBeNull()
   })
 
+  it('AC-A1: sub-nav gains Services/Certificates/Domains/Endpoints links resolving to real routes', () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'viewer' as const,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          filters: { q: '', status: '', page: 1 },
+        },
+      },
+    })
+
+    expect(screen.getByRole('link', { name: 'Services' }).getAttribute('href')).toBe(
+      `/projects/${projectId}/services`
+    )
+    expect(screen.getByRole('link', { name: 'Certificates' }).getAttribute('href')).toBe(
+      `/projects/${projectId}/certificates`
+    )
+    expect(screen.getByRole('link', { name: 'Domains' }).getAttribute('href')).toBe(
+      `/projects/${projectId}/domains`
+    )
+    expect(screen.getByRole('link', { name: 'Endpoints' }).getAttribute('href')).toBe(
+      `/projects/${projectId}/service-endpoints`
+    )
+    // Pre-existing links must still be present, unmodified.
+    expect(screen.getByRole('link', { name: 'Members' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Public status page' })).toBeTruthy()
+  })
+
   it('create form clears value input after submit', async () => {
     createCredentialMock.mockResolvedValue({
       id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
   import {
@@ -222,7 +223,14 @@
         <h2 class="text-xl font-semibold text-slate-950">Services shown on the public page</h2>
         {#if data.serviceEndpoints.length === 0}
           <p class="text-slate-600">
-            No monitored service endpoints exist for this project yet — register one first.
+            No monitored service endpoints exist for this project yet —
+            <a
+              class="font-medium text-slate-950 underline"
+              href={resolve(`/projects/${data.projectId}/service-endpoints`)}
+            >
+              register one first
+            </a>
+            .
           </p>
         {:else}
           <ul class="space-y-3">

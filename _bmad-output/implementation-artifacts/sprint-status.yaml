@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-06 (9-2-system-settings-multi-org-and-resource-monitoring: backlog -> ready-for-dev)
+# last_updated: 2026-07-06 (6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt: in-progress -> review)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -101,7 +101,7 @@ development_status:
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: done
   6-3-cross-project-health-dashboard-and-public-status-page: done
-  6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt: in-progress # story file created 2026-07-06 — closes the Story 6.1 Product Surface Contract gap (web UI for services/certificates/domains/service-endpoints CRUD + monitoring-alerts snooze/dismiss) + stale "available in Epic 6" placeholder copy + AuditEvent dual-listing consolidation (P6-3)
+  6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt: review # implemented 2026-07-06 — closes the Story 6.1 Product Surface Contract gap (web UI for services/certificates/domains/service-endpoints CRUD + monitoring-alerts snooze/dismiss) + stale "available in Epic 6" placeholder copy + AuditEvent dual-listing consolidation (P6-3)
   epic-6-retrospective: done
 
   # Epic 7: Machine User Access & CI/CD Integration

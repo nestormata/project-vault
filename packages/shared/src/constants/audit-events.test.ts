@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { AuditEvent } from './audit-events.js'
+import type { AuditEventType, AuthAuditEventType } from './audit-events.js'
+
+// AC-J1/J3 (Story 6.4, P6-3): AuditEventType must be *derived* from the AuditEvent object
+// (via AuthAuditEventType) rather than hand-restating every string a second time. This
+// compile-time equality check fails `pnpm typecheck` the moment the two types diverge again —
+// e.g. if a future edit hand-adds a member to one type but not the object, or reintroduces a
+// stale literal (like the removed 'user.login'/'user.logout') into the union.
+type AssertExactlyEqual<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false
+
+const _auditEventTypeIsExactlyAuthAuditEventType: AssertExactlyEqual<
+  AuditEventType,
+  AuthAuditEventType
+> = true
+
+function assertValidAuditEventType(value: AuditEventType): AuditEventType {
+  return value
+}
 
 describe('AuditEvent', () => {
   it('exposes Story 1.6 authentication audit event constants', () => {
@@ -117,5 +135,16 @@ describe('AuditEvent', () => {
     expect(AuditEvent.STATUS_PAGE_TOKEN_REGENERATED).toBe('status_page.token_regenerated')
     expect(AuditEvent.STATUS_PAGE_UPDATED).toBe('status_page.updated')
     expect(AuditEvent.STATUS_PAGE_DISABLED).toBe('status_page.disabled')
+  })
+
+  it('derives AuditEventType from every current AuditEvent value (AC-J1/J3, single source of truth)', () => {
+    for (const value of Object.values(AuditEvent)) {
+      expect(assertValidAuditEventType(value)).toBe(value)
+    }
+  })
+
+  it('no longer carries the dead user.login/user.logout literals in the object (AC-J2)', () => {
+    expect(Object.values(AuditEvent)).not.toContain('user.login')
+    expect(Object.values(AuditEvent)).not.toContain('user.logout')
   })
 })

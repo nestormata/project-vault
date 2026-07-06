@@ -1,6 +1,6 @@
 # Story 6.4: Epic 6 Completion — Monitored Asset Management UI & Technical Debt
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-06 — Epic 6 closure story derived from
 epic-6-retro-2026-07-06.md's action items (A6-1, A6-2, P6-3), mirroring the closure-story pattern
@@ -277,60 +277,60 @@ No AC in `_bmad-output/planning-artifacts/epics.md`'s Epic 6 section (lines 1653
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Project sub-nav wiring (AC: A1, A2, A3)
-  - [ ] Add "Services" / "Certificates" / "Domains" / "Endpoints" links to the `<nav>` block in `apps/web/src/routes/(app)/projects/[projectId]/credentials/+page.svelte` (mirror the existing "Members"/"Public status page" links exactly).
-  - [ ] Update `apps/web/src/routes/(app)/health/+page.svelte`'s empty-state copy and per-project cards per AC-A2.
-  - [ ] Update `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte`'s service-picker empty state per AC-A3.
+- [x] Task 1 — Project sub-nav wiring (AC: A1, A2, A3)
+  - [x] Add "Services" / "Certificates" / "Domains" / "Endpoints" links to the `<nav>` block in `apps/web/src/routes/(app)/projects/[projectId]/credentials/+page.svelte` (mirror the existing "Members"/"Public status page" links exactly).
+  - [x] Update `apps/web/src/routes/(app)/health/+page.svelte`'s empty-state copy and per-project cards per AC-A2.
+  - [x] Update `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte`'s service-picker empty state per AC-A3.
 
-- [ ] Task 2 — API wrappers [Source: `apps/api/src/modules/monitoring/schema.ts` — read directly for exact field names/types before writing any wrapper]
-  - [ ] Create `apps/web/src/lib/api/services.ts` (list/get/create/update/delete against `/api/v1/projects/:projectId/services`, mirroring `credentials.ts`'s wrapper shape).
-  - [ ] Create `apps/web/src/lib/api/certificates.ts` (same shape, `/certificates`).
-  - [ ] Create `apps/web/src/lib/api/domains.ts` (same shape, `/domains`).
-  - [ ] Extend (do not replace) `apps/web/src/lib/api/service-endpoints.ts` with `createServiceEndpoint`/`updateServiceEndpoint`/`deleteServiceEndpoint`/`getServiceEndpoint`/`getHealthHistory`.
-  - [ ] Create `apps/web/src/lib/api/monitoring-alerts.ts` (`listAlerts`/`snoozeAlert`/`dismissAlert` against `/api/v1/projects/:projectId/alerts`).
-  - [ ] Add a small role-gating helper alongside `apps/web/src/lib/credentials/permissions.ts` (or a new sibling file, e.g. `apps/web/src/lib/monitoring/permissions.ts`) exposing `canManageMonitoredAssets(orgRole)` (`member`+) and `canDismissAlert(orgRole)` (`admin`+) — reuse across all new pages rather than inlining role checks per-component.
+- [x] Task 2 — API wrappers [Source: `apps/api/src/modules/monitoring/schema.ts` — read directly for exact field names/types before writing any wrapper]
+  - [x] Create `apps/web/src/lib/api/services.ts` (list/get/create/update/delete against `/api/v1/projects/:projectId/services`, mirroring `credentials.ts`'s wrapper shape).
+  - [x] Create `apps/web/src/lib/api/certificates.ts` (same shape, `/certificates`).
+  - [x] Create `apps/web/src/lib/api/domains.ts` (same shape, `/domains`).
+  - [x] Extend (do not replace) `apps/web/src/lib/api/service-endpoints.ts` with `createServiceEndpoint`/`updateServiceEndpoint`/`deleteServiceEndpoint`/`getServiceEndpoint`/`getHealthHistory`.
+  - [x] Create `apps/web/src/lib/api/monitoring-alerts.ts` (`listAlerts`/`snoozeAlert`/`dismissAlert` against `/api/v1/projects/:projectId/alerts`).
+  - [x] Add a small role-gating helper alongside `apps/web/src/lib/credentials/permissions.ts` (or a new sibling file, e.g. `apps/web/src/lib/monitoring/permissions.ts`) exposing `canManageMonitoredAssets(orgRole)` (`member`+) and `canDismissAlert(orgRole)` (`admin`+) — reuse across all new pages rather than inlining role checks per-component.
 
-- [ ] Task 3 — Services pages (AC: B1-B5)
-  - [ ] `apps/web/src/routes/(app)/projects/[projectId]/services/+page.server.ts` + `+page.svelte` (list).
-  - [ ] `.../services/new/+page.svelte` (create form, no `+page.server.ts` needed if it mirrors `credentials/new`'s client-only-submit pattern).
-  - [ ] `.../services/[serviceId]/+page.server.ts` + `+page.svelte` (detail/edit/delete).
+- [x] Task 3 — Services pages (AC: B1-B5)
+  - [x] `apps/web/src/routes/(app)/projects/[projectId]/services/+page.server.ts` + `+page.svelte` (list).
+  - [x] `.../services/new/+page.svelte` (create form, no `+page.server.ts` needed if it mirrors `credentials/new`'s client-only-submit pattern).
+  - [x] `.../services/[serviceId]/+page.server.ts` + `+page.svelte` (detail/edit/delete).
 
-- [ ] Task 4 — Certificates pages (AC: C1-C2) — same structure as Task 3, under `certificates/`.
+- [x] Task 4 — Certificates pages (AC: C1-C2) — same structure as Task 3, under `certificates/`.
 
-- [ ] Task 5 — Domains pages (AC: D1) — same structure as Task 3, under `domains/`.
+- [x] Task 5 — Domains pages (AC: D1) — same structure as Task 3, under `domains/`.
 
-- [ ] Task 6 — Service endpoints pages (AC: E1-E6) — same structure as Task 3, under `service-endpoints/`, plus:
-  - [ ] Reuse `$lib/components/dashboard/ServiceStatusItem.svelte` for status badges (do not build a second status-badge component).
-  - [ ] `.../service-endpoints/[serviceEndpointId]/+page.svelte` includes the health-history list (AC-E6) with pagination.
+- [x] Task 6 — Service endpoints pages (AC: E1-E6) — same structure as Task 3, under `service-endpoints/`, plus:
+  - [x] Reuse `$lib/components/dashboard/ServiceStatusItem.svelte` for status badges (do not build a second status-badge component).
+  - [x] `.../service-endpoints/[serviceEndpointId]/+page.svelte` includes the health-history list (AC-E6) with pagination.
 
-- [ ] Task 7 — Monitoring alerts panel (AC: F1-F3)
-  - [ ] Build the "Active alerts" panel as a component embedded in the service-endpoints list page (not a separate route) — e.g. `apps/web/src/lib/components/monitoring/ActiveAlertsPanel.svelte`.
-  - [ ] Wire snooze (duration presets) and dismiss (role-gated, two-step confirm) actions.
+- [x] Task 7 — Monitoring alerts panel (AC: F1-F3)
+  - [x] Build the "Active alerts" panel as a component embedded in the service-endpoints list page (not a separate route) — e.g. `apps/web/src/lib/components/monitoring/ActiveAlertsPanel.svelte`.
+  - [x] Wire snooze (duration presets) and dismiss (role-gated, two-step confirm) actions.
 
-- [ ] Task 8 — Dashboard `monitoredServiceHealth` tile (AC: G1) [Source: `apps/web/src/routes/(app)/dashboard/+page.svelte`]
-  - [ ] Add the new stat tile to the existing per-project dashboard `<dl>` grid, sourced from `data.dashboard.monitoredServiceHealth` (already present in the load data, no new fetch).
+- [x] Task 8 — Dashboard `monitoredServiceHealth` tile (AC: G1) [Source: `apps/web/src/routes/(app)/dashboard/+page.svelte`]
+  - [x] Add the new stat tile to the existing per-project dashboard `<dl>` grid, sourced from `data.dashboard.monitoredServiceHealth` (already present in the load data, no new fetch).
 
-- [ ] Task 9 — Stale copy correction (AC: H1-H3) [Source: `apps/web/src/lib/components/dashboard/dashboard-copy.ts`]
-  - [ ] Change `suggestedActionLabels.add_service` only; verify no other string in the file needs touching per AC-H2/H3's explicit boundary.
+- [x] Task 9 — Stale copy correction (AC: H1-H3) [Source: `apps/web/src/lib/components/dashboard/dashboard-copy.ts`]
+  - [x] Change `suggestedActionLabels.add_service` only; verify no other string in the file needs touching per AC-H2/H3's explicit boundary.
 
-- [ ] Task 10 — Role gating verification (AC: I1-I2)
-  - [ ] Every new `+page.server.ts` calls `requireUser(locals)`.
-  - [ ] Every mutation control conditionally rendered via the Task 2 permissions helper, not `disabled`.
+- [x] Task 10 — Role gating verification (AC: I1-I2)
+  - [x] Every new `+page.server.ts` calls `requireUser(locals)`.
+  - [x] Every mutation control conditionally rendered via the Task 2 permissions helper, not `disabled`.
 
-- [ ] Task 11 — `AuditEvent` consolidation (AC: J1-J3) [Source: `packages/shared/src/constants/audit-events.ts`, `audit-events.test.ts`]
-  - [ ] Derive `AuditEventType` from the `AuditEvent` object; remove the hand-duplicated union members.
-  - [ ] Confirm `'user.login'`/`'user.logout'` removal has zero effect on `packages/db`'s test suite (these appear only as arbitrary text-fixture literals, not against the registry — re-verify via grep before assuming, per AC-J2).
-  - [ ] Run `pnpm typecheck` (root, all packages) and the full `packages/shared`/`packages/db` test suites.
+- [x] Task 11 — `AuditEvent` consolidation (AC: J1-J3) [Source: `packages/shared/src/constants/audit-events.ts`, `audit-events.test.ts`]
+  - [x] Derive `AuditEventType` from the `AuditEvent` object; remove the hand-duplicated union members.
+  - [x] Confirm `'user.login'`/`'user.logout'` removal has zero effect on `packages/db`'s test suite (these appear only as arbitrary text-fixture literals, not against the registry — re-verify via grep before assuming, per AC-J2).
+  - [x] Run `pnpm typecheck` (root, all packages) and the full `packages/shared`/`packages/db` test suites.
 
-- [ ] Task 12 — Tests (AC: all)
-  - [ ] Component tests (`@testing-library/svelte`, mirror `apps/web/src/routes/status/[token]/page.test.ts`'s pattern) for: services/certificates/domains/service-endpoints list+create+edit+delete happy/edge/failure paths; role-gated control visibility (viewer/member/admin); alerts panel snooze/dismiss; dashboard tile rendering (zero and non-zero cases); dashboard-copy regression test asserting `suggestedActionLabels.add_service` no longer contains "Epic 6".
-  - [ ] `packages/shared/src/constants/audit-events.test.ts` — all existing assertions still pass; add a test asserting `AuditEventType`/`AuthAuditEventType` are structurally the same type going forward (e.g. a compile-time check or a runtime assertion that every `AuditEvent` value is assignable to the union) so a future entry added to the object can't silently diverge from the type again.
-  - [ ] Manual mobile-viewport check (375×812) of the new pages — reuse the existing `sm:`-breakpoint Tailwind conventions already used throughout the app (per 6.3's own precedent, code-review-verified rather than a captured screenshot, given the noted browser-tooling viewport limitation).
+- [x] Task 12 — Tests (AC: all)
+  - [x] Component tests (`@testing-library/svelte`, mirror `apps/web/src/routes/status/[token]/page.test.ts`'s pattern) for: services/certificates/domains/service-endpoints list+create+edit+delete happy/edge/failure paths; role-gated control visibility (viewer/member/admin); alerts panel snooze/dismiss; dashboard tile rendering (zero and non-zero cases); dashboard-copy regression test asserting `suggestedActionLabels.add_service` no longer contains "Epic 6".
+  - [x] `packages/shared/src/constants/audit-events.test.ts` — all existing assertions still pass; add a test asserting `AuditEventType`/`AuthAuditEventType` are structurally the same type going forward (e.g. a compile-time check or a runtime assertion that every `AuditEvent` value is assignable to the union) so a future entry added to the object can't silently diverge from the type again.
+  - [x] Manual mobile-viewport check (375×812) of the new pages — reuse the existing `sm:`-breakpoint Tailwind conventions already used throughout the app (per 6.3's own precedent, code-review-verified rather than a captured screenshot, given the noted browser-tooling viewport limitation). Verified: every new page reuses the exact `flex-col sm:flex-row`/`sm:items-center`/`sm:justify-between`/list-table-in-`overflow-hidden`-wrapper conventions already shipped on the credentials pages — no new responsive pattern introduced.
 
-- [ ] Task 13 — Wiring verification (AC: all)
-  - [ ] `pnpm typecheck` (root, all packages).
-  - [ ] `pnpm --filter @project-vault/web test`, `pnpm --filter @project-vault/shared test`, `pnpm --filter @project-vault/db test` all green.
-  - [ ] No `route-audit.test.ts` impact expected (no new backend routes) — run it anyway as a cheap regression check.
+- [x] Task 13 — Wiring verification (AC: all)
+  - [x] `pnpm typecheck` (root, all packages) — all 12 package typecheck tasks pass.
+  - [x] `pnpm --filter @project-vault/web test`, `pnpm --filter @project-vault/shared test`, `pnpm --filter @project-vault/db test` all green (380/380, 124/124, 97/97 respectively). Also ran `pnpm --filter @project-vault/api test` per the adversarial review's finding that `apps/api` is a real (if type-only) consumer of the AuditEvent registry: 1221/1221 green.
+  - [x] No `route-audit.test.ts` impact expected (no new backend routes) — ran it anyway: 10/10 green, zero impact confirmed.
 
 ---
 
@@ -376,10 +376,54 @@ No AC in `_bmad-output/planning-artifacts/epics.md`'s Epic 6 section (lines 1653
 
 ### Agent Model Used
 
-_To be filled in by the dev agent during implementation._
+Claude (Sonnet 4.5), via Claude Code, following this repo's `/bmad-dev-story` workflow and strict TDD red-green per `AGENTS.md`.
 
 ### Debug Log References
 
+- Postgres for `packages/db`/`apps/api` integration tests was brought up via `make docker-up`; the bundled `migrate` compose service failed on an unrelated pnpm/TTY issue in this sandbox (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`), so migrations were applied directly from the host against the already-healthy `db` container (`pnpm --filter @project-vault/db db:migrate` with `DATABASE_URL` pointed at `localhost:5432`) instead. This is an environment workaround, not a story-scoped change — no `docker-compose.yml`/Dockerfile edits were made.
+- `packages/db`, `packages/crypto`, `packages/agent`, and `packages/shared` needed a local `tsc` build (`pnpm --filter <pkg> build`) before `apps/api`'s test suite could resolve them via Vite; this is a one-time local workspace-link step, not a code change.
+
 ### Completion Notes List
 
+- **AC-A1/A2/A3 (nav wiring):** Added Services/Certificates/Domains/Endpoints links to the credentials sub-nav; `/health`'s empty-state sentence is now a link (to `/projects`, or directly to the sole project's `/service-endpoints` page when the org has exactly one project — resolved via a new `+page.server.ts` `listProjects` call); the status-page picker's empty state now links to the new endpoints registration page.
+- **AC-B1-B5 (Services):** Full list/create/edit/delete UI over `payment_records` via a new `services.ts` API wrapper; edit form has no Name field (server-enforced immutability); two-step `ConfirmDeleteButton` delete.
+- **AC-C1/C2 (Certificates):** Same shape as Services; `domain`+`expiresAt` both required on create; `domain` renamable on edit (contrast with Services); list labels the column "Expires on."
+- **AC-D1 (Domains):** Same shape; `domainName`+`renewalDate` both required; duplicate `domainName` rows are not deduplicated/rejected client-side (Story 6.1 AC 3).
+- **AC-E1-E6 (Service endpoints):** List/create/edit/delete plus paginated health-history on the detail page; reuses `ServiceStatusItem.svelte` for status badges; edit form diffs against loaded values and PATCHes only changed fields, with `url` starting blank (fresh-entry-only, never pre-filled with the redacted display value); create form's `checkFrequencyMinutes` select is constrained to the mirrored `CHECK_FREQUENCY_MINUTES` constant (apps/web has no dependency on apps/api, so this is intentionally re-declared, matching the existing `ServiceEndpoint` type's own precedent); `failureReason` values render distinct diagnostic labels (e.g. "Blocked (unsafe address)" for `ssrf_blocked`).
+- **AC-F1-F3 (Alerts panel):** New `ActiveAlertsPanel.svelte` embedded on the service-endpoints list page; snooze (member+, preset durations) and dismiss (admin+ only, two-step confirm) wired against a new `monitoring-alerts.ts` wrapper; alerts with a deleted origin endpoint render "Endpoint deleted" instead of crashing.
+- **AC-G1 (Dashboard tile):** Added a "Monitored services" stat tile to the existing project dashboard `<dl>`, sourced from the already-present `data.dashboard.monitoredServiceHealth` — no new fetch; renders a real "0 healthy · 0 degraded · 0 down" rather than hiding when empty.
+- **AC-H1-H3 (Copy fix):** `suggestedActionLabels.add_service` corrected to `'Add first service'`; `dashboardEmptyStateCopy` and `DashboardPlaceholderGrid.svelte` left untouched per the AC's explicit boundary.
+- **AC-I1/I2 (Role gating):** New `$lib/monitoring/permissions.ts` (`canManageMonitoredAssets` = member+, `canDismissAlert` = admin+) reused across every new page instead of inline role checks; every new `+page.server.ts` calls `requireUser(locals)`.
+- **AC-J1-J3 (AuditEvent consolidation):** `AuditEventType` is now `= AuthAuditEventType` (derived from the `AuditEvent` object) instead of a hand-duplicated 70+ member union; this also drops the two dead `'user.login'`/`'user.logout'` literals that nothing in the object ever produced. Verified via a compile-time type-equality assertion in `audit-events.test.ts` (fails `pnpm typecheck` if the two types ever diverge again) plus the full `packages/shared`, `packages/db`, and `packages/api` suites (the last one run specifically because the adversarial review flagged it as a real, if type-only, consumer of the registry) — all green, zero behavior change.
+- A shared `ConfirmDeleteButton.svelte` (two-step relabel-and-reclick, no `window.confirm()`) is used for every delete/dismiss site instead of five bespoke implementations, per Dev Notes.
+- Fixed a dynamic-route stale-data risk flagged by the adversarial review (finding #3): every new list/detail page uses a *writable* `$derived` (not a `$state` initializer) for data sourced from the SvelteKit `data` prop, so local editable/optimistic state correctly resets when navigating between sibling routes of the same shape instead of only capturing the first-mounted value.
+- Final verification: root `pnpm typecheck` (12/12 package tasks green), `apps/web` test suite (380/380), `packages/shared` (124/124), `packages/db` (97/97), `apps/api` (1221/1221, including the two suites that needed a local package build to resolve `@project-vault/agent`), `route-audit.test.ts` (10/10, zero impact confirmed), and `apps/web`'s `eslint` (clean).
+
 ### File List
+
+**New files:**
+- `apps/web/src/lib/api/services.ts` (+ `.test.ts`)
+- `apps/web/src/lib/api/certificates.ts` (+ `.test.ts`)
+- `apps/web/src/lib/api/domains.ts` (+ `.test.ts`)
+- `apps/web/src/lib/api/monitoring-alerts.ts` (+ `.test.ts`)
+- `apps/web/src/lib/monitoring/permissions.ts` (+ `.test.ts`)
+- `apps/web/src/lib/monitoring/form-errors.ts` (+ `.test.ts`)
+- `apps/web/src/lib/monitoring/form-helpers.ts` (+ `.test.ts`)
+- `apps/web/src/lib/components/forms/ConfirmDeleteButton.svelte` (+ `.test.ts`)
+- `apps/web/src/lib/components/monitoring/ActiveAlertsPanel.svelte` (+ `.test.ts`)
+- `apps/web/src/routes/(app)/projects/[projectId]/services/+page.server.ts`, `+page.svelte`, `services-list-page.server.test.ts`, `new/+page.svelte`, `[serviceId]/+page.server.ts`, `[serviceId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/certificates/+page.server.ts`, `+page.svelte`, `certificates-list-page.server.test.ts`, `new/+page.svelte`, `[certificateId]/+page.server.ts`, `[certificateId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/domains/+page.server.ts`, `+page.svelte`, `domains-list-page.server.test.ts`, `new/+page.svelte`, `[domainId]/+page.server.ts`, `[domainId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/service-endpoints/+page.server.ts`, `+page.svelte`, `service-endpoints-list-page.server.test.ts`, `new/+page.svelte`, `[serviceEndpointId]/+page.server.ts`, `[serviceEndpointId]/+page.svelte`
+- `apps/web/src/routes/monitored-services.test.ts`, `monitored-certificates.test.ts`, `monitored-domains.test.ts`, `monitored-service-endpoints.test.ts`, `health-dashboard.test.ts`, `status-page-admin.test.ts`
+
+**Modified files:**
+- `apps/web/src/lib/api/service-endpoints.ts` (extended with create/update/delete/get/health-history + `listServiceEndpointDetails`/`CHECK_FREQUENCY_MINUTES`)
+- `apps/web/src/lib/components/dashboard/dashboard-copy.ts` (AC-H1 string fix)
+- `apps/web/src/routes/(app)/dashboard/+page.svelte` (AC-G1 tile)
+- `apps/web/src/routes/(app)/health/+page.server.ts`, `+page.svelte` (AC-A2)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/+page.svelte` (AC-A1 sub-nav links)
+- `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte` (AC-A3 picker empty-state link)
+- `apps/web/src/routes/dashboard.test.ts`, `projects-credentials.test.ts` (regression coverage for the above)
+- `packages/shared/src/constants/audit-events.ts`, `audit-events.test.ts` (AC-J consolidation)
+- `_bmad-output/implementation-artifacts/6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt.md` (this file)
