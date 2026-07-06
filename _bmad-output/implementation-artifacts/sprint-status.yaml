@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-05 (6-3-cross-project-health-dashboard-and-public-status-page: review -> done)
+# last_updated: 2026-07-05 (9-1-encrypted-backup-and-restore: backlog -> ready-for-dev; epic-9: backlog -> in-progress)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -115,12 +115,12 @@ development_status:
   8-1-tamper-evident-audit-log-with-hmac-integrity: ready-for-dev
   8-2-audit-log-search-export-and-external-forwarding: ready-for-dev
   8-3-access-reports-dormant-users-and-audit-pii-management: ready-for-dev # story file created 2026-07-05; hard-prerequisite on 8-1/8-2 reaching done before implementation starts (D7)
-  8-4-data-subject-erasure-request-handling: backlog
+  8-4-data-subject-erasure-request-handling: ready-for-dev # story file created 2026-07-05 — API-only (no dedicated UI story exists, same accepted Epic 8 gap as 8.1/8.2); depends on 8.1's audit_log_entries/writeHumanAuditEntryOrFailClosed and 4.3's revokeAllUserSessionsInOrg/account_recovery_tokens; does NOT block on 8.3 (still backlog) — builds its own reusable pseudonymization primitive for 8.3 to reuse later
   epic-8-retrospective: optional
 
   # Epic 9: Platform Operations, API & Self-Hosting
-  epic-9: backlog
-  9-1-encrypted-backup-and-restore: backlog
+  epic-9: in-progress # first story (9-1) created 2026-07-05
+  9-1-encrypted-backup-and-restore: ready-for-dev # story file created 2026-07-05 — introduces platform-operator authorization primitive (users.is_platform_operator), backup_runs/admin_alerts platform tables, and a required BACKUP_DATABASE_URL RLS-bypass credential for pg_dump/restore; see story's Key Design Decisions (D1-D8) for full rationale
   9-2-system-settings-multi-org-and-resource-monitoring: backlog
   9-3-in-place-version-upgrades-and-api-parity-verification: backlog
   9-4-platform-operator-audit-log: backlog
