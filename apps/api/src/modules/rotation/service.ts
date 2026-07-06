@@ -865,6 +865,34 @@ export type CompleteRotationResult =
       singleActorAttested: boolean
     }
 
+/** Story 5.5 AC-2: surfaces (doesn't block — see the AC's "flag, don't block" precedent) the
+ *  case where the same user both initiated the rotation and confirmed every checklist item
+ *  themselves, so a completion built entirely on one person's self-attestation is visible after
+ *  the fact without a manual confirmedBy-vs-initiatedBy cross-reference. Vacuously false for a
+ *  zero-dependency (acknowledged) completion — there is no checklist self-confirmation to flag
+ *  in that case, only the separate acknowledgedNoDependencies gate.
+ *
+ *  Code-review fix: both confirmedBy and initiatedBy are nullable (onDelete: 'set null') — a
+ *  naive Set-membership check would false-positive to `true` whenever every confirming user's
+ *  AND the initiating user's accounts have since been deleted (NULL === NULL), even though
+ *  those were, by definition, different (now-gone) people. Require the sole confirmer to be a
+ *  real, non-null user id that matches the initiator. Split out of completeRotation purely to
+ *  keep that function's own cyclomatic complexity down (this repo's eslint `complexity` rule
+ *  caps at 10) — same rationale as breakGlassRotation's split-out helpers above. */
+function computeSingleActorAttested(
+  items: ChecklistItemRow[],
+  initiatedBy: string | null
+): boolean {
+  const confirmedByUsers = new Set(items.map((item) => item.confirmedBy))
+  const [soleConfirmedBy] = confirmedByUsers
+  return (
+    items.length > 0 &&
+    confirmedByUsers.size === 1 &&
+    soleConfirmedBy !== null &&
+    soleConfirmedBy === initiatedBy
+  )
+}
+
 /** AC-9/AC-10/AC-11/AC-12: complete — blocked unless every item is confirmed (or the caller
  *  acknowledges a zero-dependency rotation). On success, retires the superseded credential
  *  version by clearing rotation_locked_at (ADR-5.2-02) atomically with the status transition. */
@@ -935,23 +963,11 @@ export async function completeRotation(
     .set({ rotationLockedAt: null })
     .where(eq(credentialVersions.id, lockResult.rotation.previousVersionId))
 
-  // Story 5.5 AC-2: surfaces (doesn't block — see the AC's "flag, don't block" precedent) the
-  // case where the same user both initiated the rotation and confirmed every checklist item
-  // themselves, so a completion built entirely on one person's self-attestation is visible
-  // after the fact without a manual confirmedBy-vs-initiatedBy cross-reference. Vacuously false
-  // for a zero-dependency (acknowledged) completion — there is no checklist self-confirmation to
-  // flag in that case, only the separate acknowledgedNoDependencies gate.
-  const confirmedByUsers = new Set(items.map((item) => item.confirmedBy))
-  const singleActorAttested =
-    items.length > 0 &&
-    confirmedByUsers.size === 1 &&
-    confirmedByUsers.has(lockResult.rotation.initiatedBy)
-
   return {
     outcome: 'completed',
     rotation: updatedRotation,
     checklistItems: items,
-    singleActorAttested,
+    singleActorAttested: computeSingleActorAttested(items, lockResult.rotation.initiatedBy),
   }
 }
 
@@ -1405,6 +1421,12 @@ export async function breakGlassRotation(
 export function serializeBreakGlassRotation(result: {
   rotation: RotationRow
   previousVersionOverlap: { versionNumber: number; breakGlassOverlapExpiresAt: Date }
+  // Story 5.5 AC-4 code-review fix: surfaced in the response only when true (same "flag,
+  // don't block", present-only-when-true convention as sameValueAsPrevious above) — a
+  // deduped call returns the FIRST call's rotation, so without this the caller has no way to
+  // tell their own submission (newValue/reason) was silently discarded in favor of an earlier
+  // one, which the response body would otherwise look identical to a real success.
+  deduped?: boolean
 }) {
   return {
     ...serializeRotationDetail(result.rotation, []),
@@ -1413,6 +1435,7 @@ export function serializeBreakGlassRotation(result: {
       breakGlassOverlapExpiresAt:
         result.previousVersionOverlap.breakGlassOverlapExpiresAt.toISOString(),
     },
+    ...(result.deduped ? { deduped: true as const } : {}),
   }
 }
 

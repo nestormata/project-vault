@@ -1580,6 +1580,45 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     expect(payload?.singleActorAttested).toBe(false)
   })
 
+  // Code-review fix: singleActorAttested must not false-positive when the rotation's
+  // initiator AND every checklist confirmer are different since-deleted users — `initiatedBy`
+  // and `confirmedBy` are both nullable (`onDelete: 'set null'`), so a naive
+  // `Set(confirmedBy values).has(initiatedBy)` check collides on NULL === NULL even though the
+  // underlying (now-gone) actors were never actually the same person.
+  it('AC-2: rotation.completed flags singleActorAttested=false when initiatedBy and every confirmedBy are NULL (distinct deleted users, not a real single-actor match)', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'single-actor-null-collision',
+      2
+    )
+    for (const item of fixture.items) {
+      const res = await confirmChecklistItemViaApi(app, owner.cookies, {
+        ...fixture,
+        itemId: item.id,
+      })
+      expect(res.statusCode).toBe(200)
+    }
+
+    // Simulate both the initiating user's and the confirming user's accounts having since been
+    // deleted — a direct DB write, same pattern as the AC-5 stale-recovery NULL-initiatedBy test.
+    await withOrg(owner.orgId, (tx) =>
+      tx.update(rotations).set({ initiatedBy: null }).where(eq(rotations.id, fixture.rotationId))
+    )
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(rotationChecklistItems)
+        .set({ confirmedBy: null })
+        .where(eq(rotationChecklistItems.rotationId, fixture.rotationId))
+    )
+
+    const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
+    expect(completeRes.statusCode).toBe(200)
+
+    const payload = await findRotationCompletedAuditPayload(owner.orgId, fixture.rotationId)
+    expect(payload?.singleActorAttested).toBe(false)
+  })
+
   // ---------------------------------------------------------------------------------------
   // Story 5.5 AC-13: rotation.completed audit payload carries the retired version ids
   // ---------------------------------------------------------------------------------------
@@ -2475,6 +2514,13 @@ describe.sequential(
 
       expect(secondRotationId).toBe(firstRotationId)
 
+      // Story 5.5 AC-4 code-review fix: the caller must be able to tell a deduped replay
+      // apart from a fresh success — otherwise a second, genuinely different incident
+      // responder's call (different newValue/reason) looks identical to a real success even
+      // though their submitted value was silently discarded.
+      expect(first.json<{ data: { deduped?: boolean } }>().data.deduped).toBeFalsy()
+      expect(second.json<{ data: { deduped?: boolean } }>().data.deduped).toBe(true)
+
       const liveRotations = await withOrg(owner.orgId, (tx) =>
         tx
           .select({ id: rotations.id })
@@ -2530,6 +2576,9 @@ describe.sequential(
       expect(second.json<{ data: { id: string } }>().data.id).not.toBe(
         first.json<{ data: { id: string } }>().data.id
       )
+      // Neither call was deduped — both are independent, fresh break-glass rotations.
+      expect(first.json<{ data: { deduped?: boolean } }>().data.deduped).toBeFalsy()
+      expect(second.json<{ data: { deduped?: boolean } }>().data.deduped).toBeFalsy()
 
       const liveRotations = await withOrg(owner.orgId, (tx) =>
         tx
