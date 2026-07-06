@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-05 (epic-5-retrospective: optional -> done; epic-4: in-progress -> done per 2026-07-03 closure addendum; 5-4-rotation-workflow-web-ui: added, backlog; 5-4-rotation-workflow-web-ui: backlog -> ready-for-dev, story file created; 5-4-rotation-workflow-web-ui: in-progress -> review, implementation complete; 5-4-rotation-workflow-web-ui: review -> done, code review + CI gate passed)
+# last_updated: 2026-07-05 (6-3-cross-project-health-dashboard-and-public-status-page: review -> done)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-05  # updated: 6-3 -> ready-for-dev (6-2 prerequisite now done); 5-4 -> ready-for-dev (story file created); 8-3 -> ready-for-dev (story file created; hard prereq on 8-1/8-2 done); 5-4 -> in-progress (pick-story); 5-4 -> review (dev-story); 5-4 -> done (pick-story, CI green)
+last_updated: 2026-07-05  # updated: 6-3 -> done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -100,7 +100,7 @@ development_status:
   epic-6: in-progress
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: done
-  6-3-cross-project-health-dashboard-and-public-status-page: ready-for-dev
+  6-3-cross-project-health-dashboard-and-public-status-page: done
   epic-6-retrospective: optional
 
   # Epic 7: Machine User Access & CI/CD Integration

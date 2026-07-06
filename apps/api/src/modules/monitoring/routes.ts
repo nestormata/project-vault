@@ -111,7 +111,7 @@ type MonitoringAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   resourceType: string
 }
 
-async function writeMonitoringAuditOrFailClosed(
+export async function writeMonitoringAuditOrFailClosed(
   req: FastifyRequest,
   tx: Tx,
   input: MonitoringAuditInput
@@ -135,8 +135,8 @@ function rawBodyOf(req: FastifyRequest): Record<string, unknown> {
   return req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {}
 }
 
-const LIST_RATE_LIMIT = { max: 120, timeWindowMs: 60_000 }
-const WRITE_RATE_LIMIT = { max: 60, timeWindowMs: 60_000 }
+export const LIST_RATE_LIMIT = { max: 120, timeWindowMs: 60_000 }
+export const WRITE_RATE_LIMIT = { max: 60, timeWindowMs: 60_000 }
 
 type MonitoringRouteHandler = (
   ctx: SecureRouteContext | PublicRouteContext,

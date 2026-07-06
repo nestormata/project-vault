@@ -32,6 +32,9 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     // Story 7.2 D3: same reasoning — baked into the base fixture so unrelated production tests
     // aren't also tripped by this newest dedicated secret being unset.
     MACHINE_JWT_SECRET: 'h'.repeat(64),
+    // Story 6.3 ADR-6.3-06: same reasoning — baked into the base fixture so unrelated production
+    // tests aren't also tripped by this newest dedicated secret being unset.
+    STATUS_PAGE_TOKEN_HMAC_SECRET: 'i'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -506,6 +509,42 @@ describe('env', () => {
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({ ...priorSecretsSatisfiedWithApiKey, MACHINE_JWT_SECRET })
+      await expectInvalidEnv(exitSpy)
+    }
+  })
+
+  // Story 6.3 ADR-6.3-06: STATUS_PAGE_TOKEN_HMAC_SECRET is the 7th dedicated-secret requirement.
+  const priorSecretsSatisfiedWithMachineJwt = {
+    ...priorSecretsSatisfiedWithApiKey,
+    MACHINE_JWT_SECRET: 'h'.repeat(64),
+  }
+
+  it('requires a dedicated status page token secret in production (Story 6.3, ADR-6.3-06)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      { ...priorSecretsSatisfiedWithMachineJwt, STATUS_PAGE_TOKEN_HMAC_SECRET: undefined },
+      'STATUS_PAGE_TOKEN_HMAC_SECRET',
+      'i'.repeat(64)
+    )
+  })
+
+  it('rejects placeholder or reused status page token secrets in production', async () => {
+    for (const STATUS_PAGE_TOKEN_HMAC_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+      'e'.repeat(64),
+      'f'.repeat(64),
+      'g'.repeat(64),
+      'h'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithMachineJwt,
+        STATUS_PAGE_TOKEN_HMAC_SECRET,
+      })
       await expectInvalidEnv(exitSpy)
     }
   })
