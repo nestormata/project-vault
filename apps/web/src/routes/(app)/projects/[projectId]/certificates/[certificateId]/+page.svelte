@@ -17,6 +17,20 @@
     return value.slice(0, 10)
   }
 
+  function formatDate(value: string | null): string {
+    if (!value) return '—'
+    return new Date(value).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  }
+
+  function formatAlertLeadDays(days: number[]): string {
+    if (days.length === 0) return '—'
+    return `Alerts at ${days.join(', ')} days before`
+  }
+
   let domain = $state('')
   let expiresAt = $state('')
   let alertLeadDays = $state('')
@@ -48,10 +62,15 @@
     submitting = true
     errorMessage = null
     try {
+      // Code-review finding: a blank alert-lead-days field must omit the key (leaving the
+      // server's current value untouched on this partial PATCH) rather than sending an explicit
+      // `[]`, which would silently disable expiry alerting — the same "blank omits the field"
+      // semantics the create form already uses (see form-helpers.ts's parseAlertLeadDaysInput).
+      const parsedAlertLeadDays = parseAlertLeadDaysInput(alertLeadDays)
       const updated = await updateCertificate(fetch, data.projectId, data.certificate.id, {
         domain: domain.trim(),
         expiresAt: toIsoDate(expiresAt),
-        alertLeadDays: parseAlertLeadDaysInput(alertLeadDays) ?? [],
+        ...(parsedAlertLeadDays !== undefined ? { alertLeadDays: parsedAlertLeadDays } : {}),
       })
       data = { ...data, certificate: updated }
       domain = updated.domain
@@ -103,71 +122,88 @@
       <h1 class="mt-2 text-3xl font-bold text-slate-950">{data.certificate.domain}</h1>
     </div>
 
-    <form
-      class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      onsubmit={(event) => {
-        event.preventDefault()
-        void submitForm()
-      }}
-    >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="certificate-domain">Domain</label>
-        <input
-          id="certificate-domain"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="text"
-          bind:value={domain}
-          disabled={!canManage}
-        />
-        {#if fieldErrors.domain}
-          <p class="text-sm text-red-700">{fieldErrors.domain}</p>
+    {#if canManage}
+      <form
+        class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+        onsubmit={(event) => {
+          event.preventDefault()
+          void submitForm()
+        }}
+      >
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="certificate-domain">Domain</label>
+          <input
+            id="certificate-domain"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="text"
+            bind:value={domain}
+          />
+          {#if fieldErrors.domain}
+            <p class="text-sm text-red-700">{fieldErrors.domain}</p>
+          {/if}
+        </div>
+
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="certificate-expires-at"
+            >Expiry date</label
+          >
+          <input
+            id="certificate-expires-at"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="date"
+            bind:value={expiresAt}
+          />
+          {#if fieldErrors.expiresAt}
+            <p class="text-sm text-red-700">{fieldErrors.expiresAt}</p>
+          {/if}
+        </div>
+
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="certificate-alert-lead-days">
+            Alert me before expiry (days, comma-separated)
+          </label>
+          <input
+            id="certificate-alert-lead-days"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="text"
+            bind:value={alertLeadDays}
+          />
+        </div>
+
+        {#if errorMessage}
+          <p
+            class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+            role="alert"
+          >
+            {errorMessage}
+          </p>
         {/if}
-      </div>
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="certificate-expires-at"
-          >Expiry date</label
-        >
-        <input
-          id="certificate-expires-at"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="date"
-          bind:value={expiresAt}
-          disabled={!canManage}
-        />
-        {#if fieldErrors.expiresAt}
-          <p class="text-sm text-red-700">{fieldErrors.expiresAt}</p>
-        {/if}
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="certificate-alert-lead-days">
-          Alert me before expiry (days, comma-separated)
-        </label>
-        <input
-          id="certificate-alert-lead-days"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="text"
-          bind:value={alertLeadDays}
-          disabled={!canManage}
-        />
-      </div>
-
-      {#if errorMessage}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {errorMessage}
-        </p>
-      {/if}
-
-      {#if canManage}
         <FormSubmitRow
           submitLabel="Save changes"
           pendingLabel="Saving…"
           cancelHref={`/projects/${data.projectId}/certificates`}
           {submitting}
         />
-      {/if}
-    </form>
+      </form>
+    {:else}
+      <!-- AC-I1/code-review finding: a viewer must not see a disabled-but-visible mutation form
+           (which invites a stale-role 403 on click) — show a plain read-only view instead. -->
+      <div class="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div>
+          <p class="text-sm font-medium text-slate-900">Domain</p>
+          <p class="text-slate-700">{data.certificate.domain}</p>
+        </div>
+        <div>
+          <p class="text-sm font-medium text-slate-900">Expires on</p>
+          <p class="text-slate-700">{formatDate(data.certificate.expiresAt)}</p>
+        </div>
+        <div>
+          <p class="text-sm font-medium text-slate-900">Alert lead days</p>
+          <p class="text-slate-700">{formatAlertLeadDays(data.certificate.alertLeadDays)}</p>
+        </div>
+      </div>
+    {/if}
 
     {#if canManage}
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

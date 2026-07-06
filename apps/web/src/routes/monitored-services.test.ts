@@ -245,6 +245,21 @@ describe('/projects/:projectId/services/:serviceId (AC-B4)', () => {
     )
   })
 
+  it('code-review finding: clearing the alert-lead-days field omits it from the PATCH instead of silently zeroing it out', async () => {
+    updateServiceMock.mockResolvedValue(makeService())
+    render(ServiceDetailPage, {
+      props: { data: { projectId, orgRole: 'member', service: makeService(), notFound: false } },
+    })
+
+    const alertLeadDaysInput = screen.getByLabelText(/Alert me before renewal/i)
+    await fireEvent.input(alertLeadDaysInput, { target: { value: '' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(updateServiceMock).toHaveBeenCalled())
+    const body = updateServiceMock.mock.calls[0]?.[3]
+    expect(body).not.toHaveProperty('alertLeadDays')
+  })
+
   it('AC-B4 failure: a not-found service shows the not-found notice', () => {
     render(ServiceDetailPage, {
       props: { data: { projectId, orgRole: 'member', service: null, notFound: true } },
@@ -258,5 +273,15 @@ describe('/projects/:projectId/services/:serviceId (AC-B4)', () => {
     })
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
+  })
+
+  it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
+    render(ServiceDetailPage, {
+      props: { data: { projectId, orgRole: 'viewer', service: makeService(), notFound: false } },
+    })
+    expect(screen.queryByLabelText(/^URL$/i)).toBeNull()
+    expect(screen.queryByLabelText(/Renewal date/i)).toBeNull()
+    expect(screen.queryByLabelText(/Alert me before renewal/i)).toBeNull()
+    expect(screen.getByText('https://console.aws.amazon.com/billing')).toBeTruthy()
   })
 })

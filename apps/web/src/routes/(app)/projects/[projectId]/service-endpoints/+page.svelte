@@ -103,7 +103,10 @@
                 >
                   Edit
                 </a>
-                <ConfirmDeleteButton onConfirm={() => handleDelete(endpoint.id)} />
+                <ConfirmDeleteButton
+                  confirmLabel="Confirm delete? This will also resolve any active alerts for it."
+                  onConfirm={() => handleDelete(endpoint.id)}
+                />
               </div>
             {/if}
           </li>

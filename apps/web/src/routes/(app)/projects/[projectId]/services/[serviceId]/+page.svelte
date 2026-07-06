@@ -17,6 +17,20 @@
     return value.slice(0, 10)
   }
 
+  function formatDate(value: string | null): string {
+    if (!value) return '—'
+    return new Date(value).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  }
+
+  function formatAlertLeadDays(days: number[]): string {
+    if (days.length === 0) return '—'
+    return `Alerts at ${days.join(', ')} days before`
+  }
+
   let url = $state('')
   let renewalDate = $state('')
   let alertLeadDays = $state('')
@@ -39,10 +53,15 @@
     submitting = true
     errorMessage = null
     try {
+      // Code-review finding: a blank alert-lead-days field must omit the key (leaving the
+      // server's current value untouched on this partial PATCH) rather than sending an explicit
+      // `[]`, which would silently disable renewal alerting — the same "blank omits the field"
+      // semantics the create form already uses (see form-helpers.ts's parseAlertLeadDaysInput).
+      const parsedAlertLeadDays = parseAlertLeadDaysInput(alertLeadDays)
       const updated = await updateService(fetch, data.projectId, data.service.id, {
         url: url.trim() ? url.trim() : null,
         renewalDate: renewalDate ? toIsoDate(renewalDate) : null,
-        alertLeadDays: parseAlertLeadDaysInput(alertLeadDays) ?? [],
+        ...(parsedAlertLeadDays !== undefined ? { alertLeadDays: parsedAlertLeadDays } : {}),
       })
       data = { ...data, service: updated }
       url = updated.url ?? ''
@@ -93,65 +112,82 @@
       </p>
     </div>
 
-    <form
-      class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      onsubmit={(event) => {
-        event.preventDefault()
-        void submitForm()
-      }}
-    >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="service-url">URL</label>
-        <input
-          id="service-url"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="text"
-          bind:value={url}
-          disabled={!canManage}
-        />
-      </div>
+    {#if canManage}
+      <form
+        class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+        onsubmit={(event) => {
+          event.preventDefault()
+          void submitForm()
+        }}
+      >
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="service-url">URL</label>
+          <input
+            id="service-url"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="text"
+            bind:value={url}
+          />
+        </div>
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="service-renewal-date"
-          >Renewal date</label
-        >
-        <input
-          id="service-renewal-date"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="date"
-          bind:value={renewalDate}
-          disabled={!canManage}
-        />
-      </div>
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="service-renewal-date"
+            >Renewal date</label
+          >
+          <input
+            id="service-renewal-date"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="date"
+            bind:value={renewalDate}
+          />
+        </div>
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="service-alert-lead-days">
-          Alert me before renewal (days, comma-separated)
-        </label>
-        <input
-          id="service-alert-lead-days"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="text"
-          bind:value={alertLeadDays}
-          disabled={!canManage}
-        />
-      </div>
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="service-alert-lead-days">
+            Alert me before renewal (days, comma-separated)
+          </label>
+          <input
+            id="service-alert-lead-days"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="text"
+            bind:value={alertLeadDays}
+          />
+        </div>
 
-      {#if errorMessage}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {errorMessage}
-        </p>
-      {/if}
+        {#if errorMessage}
+          <p
+            class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+            role="alert"
+          >
+            {errorMessage}
+          </p>
+        {/if}
 
-      {#if canManage}
         <FormSubmitRow
           submitLabel="Save changes"
           pendingLabel="Saving…"
           cancelHref={`/projects/${data.projectId}/services`}
           {submitting}
         />
-      {/if}
-    </form>
+      </form>
+    {:else}
+      <!-- AC-I1/code-review finding: a viewer must not see a disabled-but-visible mutation form
+           (which invites a stale-role 403 on click) — show a plain read-only view instead. -->
+      <div class="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div>
+          <p class="text-sm font-medium text-slate-900">URL</p>
+          <p class="text-slate-700">{data.service.url ?? '—'}</p>
+        </div>
+        <div>
+          <p class="text-sm font-medium text-slate-900">Renewal date</p>
+          <p class="text-slate-700">{formatDate(data.service.renewalDate)}</p>
+        </div>
+        <div>
+          <p class="text-sm font-medium text-slate-900">Alert lead days</p>
+          <p class="text-slate-700">{formatAlertLeadDays(data.service.alertLeadDays)}</p>
+        </div>
+      </div>
+    {/if}
 
     {#if canManage}
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

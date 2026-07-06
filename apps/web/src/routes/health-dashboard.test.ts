@@ -49,6 +49,16 @@ describe('/health +page.server.ts (AC-A2)', () => {
     })
     expect((await load(makeEvent())).singleProjectId).toBeNull()
   })
+
+  it('code-review finding: a listProjects failure does not take down the whole /health page', async () => {
+    listProjectsMock.mockRejectedValue(new Error('transient upstream failure'))
+    const result = await load(makeEvent())
+    expect(result.dashboard).toEqual({
+      summary: { healthy: 0, degraded: 0, down: 0 },
+      projects: [],
+    })
+    expect(result.singleProjectId).toBeNull()
+  })
 })
 
 describe('/health +page.svelte (AC-A2)', () => {

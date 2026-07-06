@@ -164,87 +164,101 @@
       <p class="mt-2 text-sm text-slate-600">Current URL: {data.endpoint.url}</p>
     </div>
 
-    <form
-      class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      onsubmit={(event) => {
-        event.preventDefault()
-        void submitForm()
-      }}
-    >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-name">Name</label>
-        <input
-          id="endpoint-name"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="text"
-          bind:value={name}
-          disabled={!canManage}
-        />
-        {#if fieldErrors.name}
-          <p class="text-sm text-red-700">{fieldErrors.name}</p>
+    {#if canManage}
+      <form
+        class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+        onsubmit={(event) => {
+          event.preventDefault()
+          void submitForm()
+        }}
+      >
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="endpoint-name">Name</label>
+          <input
+            id="endpoint-name"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="text"
+            bind:value={name}
+          />
+          {#if fieldErrors.name}
+            <p class="text-sm text-red-700">{fieldErrors.name}</p>
+          {/if}
+        </div>
+
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="endpoint-url">
+            New URL (leave blank to keep current)
+          </label>
+          <input
+            id="endpoint-url"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="text"
+            placeholder="https://api.example.com/health"
+            bind:value={url}
+          />
+        </div>
+
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="endpoint-frequency">
+            Check frequency (minutes)
+          </label>
+          <select
+            id="endpoint-frequency"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            bind:value={checkFrequencyMinutes}
+          >
+            {#each CHECK_FREQUENCY_MINUTES as minutes (minutes)}
+              <option value={minutes}>{minutes}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="endpoint-threshold">
+            Failures before "down" (1-10)
+          </label>
+          <input
+            id="endpoint-threshold"
+            class="w-full rounded-xl border border-slate-300 px-3 py-3"
+            type="number"
+            min="1"
+            max="10"
+            bind:value={downThresholdFailures}
+          />
+        </div>
+
+        {#if errorMessage}
+          <p
+            class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+            role="alert"
+          >
+            {errorMessage}
+          </p>
         {/if}
-      </div>
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-url">
-          New URL (leave blank to keep current)
-        </label>
-        <input
-          id="endpoint-url"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="text"
-          placeholder="https://api.example.com/health"
-          bind:value={url}
-          disabled={!canManage}
-        />
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-frequency">
-          Check frequency (minutes)
-        </label>
-        <select
-          id="endpoint-frequency"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          bind:value={checkFrequencyMinutes}
-          disabled={!canManage}
-        >
-          {#each CHECK_FREQUENCY_MINUTES as minutes (minutes)}
-            <option value={minutes}>{minutes}</option>
-          {/each}
-        </select>
-      </div>
-
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="endpoint-threshold">
-          Failures before "down" (1-10)
-        </label>
-        <input
-          id="endpoint-threshold"
-          class="w-full rounded-xl border border-slate-300 px-3 py-3 disabled:bg-slate-50"
-          type="number"
-          min="1"
-          max="10"
-          bind:value={downThresholdFailures}
-          disabled={!canManage}
-        />
-      </div>
-
-      {#if errorMessage}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {errorMessage}
-        </p>
-      {/if}
-
-      {#if canManage}
         <FormSubmitRow
           submitLabel="Save changes"
           pendingLabel="Saving…"
           cancelHref={`/projects/${data.projectId}/service-endpoints`}
           {submitting}
         />
-      {/if}
-    </form>
+      </form>
+    {:else}
+      <!-- AC-I1/code-review finding: a viewer must not see a disabled-but-visible mutation form
+           (which invites a stale-role 403 on click) — show a plain read-only view instead. -->
+      <div class="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div>
+          <p class="text-sm font-medium text-slate-900">Check frequency</p>
+          <p class="text-slate-700">Checked every {data.endpoint.checkFrequencyMinutes} min</p>
+        </div>
+        <div>
+          <p class="text-sm font-medium text-slate-900">Failure threshold</p>
+          <p class="text-slate-700">
+            Down after {data.endpoint.downThresholdFailures} consecutive failures
+          </p>
+        </div>
+      </div>
+    {/if}
 
     {#if canManage}
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

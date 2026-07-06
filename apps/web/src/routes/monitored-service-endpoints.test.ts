@@ -111,7 +111,7 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     expect(screen.getByRole('button', { name: /Snooze 1 hour/i })).toBeTruthy()
   })
 
-  it('two-step delete removes the row without a full reload', async () => {
+  it('two-step delete removes the row without a full reload, disclosing the alert-resolution effect (AC-E5)', async () => {
     deleteServiceEndpointMock.mockResolvedValue(undefined)
     render(ServiceEndpointsListPage, {
       props: {
@@ -125,7 +125,10 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
       },
     })
     await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm delete?' }))
+    // AC-E5/code-review finding: the list page's delete control must carry the same
+    // alert-resolution disclosure as the detail page's, not a bare "Confirm delete?".
+    const confirmButton = screen.getByRole('button', { name: /resolve any active alerts/i })
+    await fireEvent.click(confirmButton)
     await waitFor(() =>
       expect(deleteServiceEndpointMock).toHaveBeenCalledWith(
         expect.anything(),
@@ -320,5 +323,17 @@ describe('/projects/:projectId/service-endpoints/:serviceEndpointId (AC-E4/E5/E6
       props: { data: { projectId, orgRole: 'member', endpoint: null, notFound: true } },
     })
     expect(screen.getByText(/endpoint.*not found/i)).toBeTruthy()
+  })
+
+  it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
+    render(ServiceEndpointDetailPage, {
+      props: { data: { projectId, orgRole: 'viewer', endpoint: makeEndpoint(), notFound: false } },
+    })
+    expect(screen.queryByLabelText(/^Name$/i)).toBeNull()
+    expect(screen.queryByLabelText(/New URL/i)).toBeNull()
+    expect(screen.queryByLabelText(/Check frequency/i)).toBeNull()
+    expect(screen.queryByLabelText(/Failures before/i)).toBeNull()
+    expect(screen.getByText('Checked every 5 min')).toBeTruthy()
+    expect(screen.getByText('Down after 2 consecutive failures')).toBeTruthy()
   })
 })

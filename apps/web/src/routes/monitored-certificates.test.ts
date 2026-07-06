@@ -179,10 +179,39 @@ describe('/projects/:projectId/certificates/:certificateId (AC-C1 edit)', () => 
     )
   })
 
+  it('code-review finding: clearing the alert-lead-days field omits it from the PATCH instead of silently zeroing it out', async () => {
+    updateCertificateMock.mockResolvedValue(makeCertificate())
+    render(CertificateDetailPage, {
+      props: {
+        data: { projectId, orgRole: 'member', certificate: makeCertificate(), notFound: false },
+      },
+    })
+
+    const alertLeadDaysInput = screen.getByLabelText(/Alert me before expiry/i)
+    await fireEvent.input(alertLeadDaysInput, { target: { value: '' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(updateCertificateMock).toHaveBeenCalled())
+    const body = updateCertificateMock.mock.calls[0]?.[3]
+    expect(body).not.toHaveProperty('alertLeadDays')
+  })
+
   it('failure: not-found shows the not-found notice', () => {
     render(CertificateDetailPage, {
       props: { data: { projectId, orgRole: 'member', certificate: null, notFound: true } },
     })
     expect(screen.getByText(/certificate.*not found/i)).toBeTruthy()
+  })
+
+  it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
+    render(CertificateDetailPage, {
+      props: {
+        data: { projectId, orgRole: 'viewer', certificate: makeCertificate(), notFound: false },
+      },
+    })
+    expect(screen.queryByLabelText(/^Domain$/i)).toBeNull()
+    expect(screen.queryByLabelText(/Expiry date/i)).toBeNull()
+    expect(screen.queryByLabelText(/Alert me before expiry/i)).toBeNull()
+    expect(screen.getByText('Alerts at 30, 7 days before')).toBeTruthy()
   })
 })

@@ -151,10 +151,35 @@ describe('/projects/:projectId/domains/:domainId (AC-D1 edit)', () => {
     )
   })
 
+  it('code-review finding: clearing the alert-lead-days field omits it from the PATCH instead of silently zeroing it out', async () => {
+    updateDomainMock.mockResolvedValue(makeDomain())
+    render(DomainDetailPage, {
+      props: { data: { projectId, orgRole: 'member', domain: makeDomain(), notFound: false } },
+    })
+
+    const alertLeadDaysInput = screen.getByLabelText(/Alert me before renewal/i)
+    await fireEvent.input(alertLeadDaysInput, { target: { value: '' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(updateDomainMock).toHaveBeenCalled())
+    const body = updateDomainMock.mock.calls[0]?.[3]
+    expect(body).not.toHaveProperty('alertLeadDays')
+  })
+
   it('failure: not-found shows the not-found notice', () => {
     render(DomainDetailPage, {
       props: { data: { projectId, orgRole: 'member', domain: null, notFound: true } },
     })
     expect(screen.getByText(/domain.*not found/i)).toBeTruthy()
+  })
+
+  it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
+    render(DomainDetailPage, {
+      props: { data: { projectId, orgRole: 'viewer', domain: makeDomain(), notFound: false } },
+    })
+    expect(screen.queryByLabelText(/Domain name/i)).toBeNull()
+    expect(screen.queryByLabelText(/Renewal date/i)).toBeNull()
+    expect(screen.queryByLabelText(/Alert me before renewal/i)).toBeNull()
+    expect(screen.getByText('Alerts at 30 days before')).toBeTruthy()
   })
 })
