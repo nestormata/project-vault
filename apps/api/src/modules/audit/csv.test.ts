@@ -47,6 +47,24 @@ describe('toCsvRow (D9, AC-12)', () => {
     )
   })
 
+  it('neutralizes a leading = (CSV/formula injection, e.g. via a user-controlled actor_display_name)', () => {
+    expect(toCsvRow(['=cmd|calc'])).toBe("'=cmd|calc")
+  })
+
+  it('neutralizes a leading +, -, and @ the same way', () => {
+    expect(toCsvRow(['+1+1'])).toBe("'+1+1")
+    expect(toCsvRow(['-1+1'])).toBe("'-1+1")
+    expect(toCsvRow(['@SUM(1;2)'])).toBe("'@SUM(1;2)")
+  })
+
+  it('does not prefix a field where =/+/-/@ appears mid-field, not at the start', () => {
+    expect(toCsvRow(['a=b'])).toBe('a=b')
+  })
+
+  it('combines formula-neutralization with RFC 4180 quoting when the field also needs it', () => {
+    expect(toCsvRow(['=1,2'])).toBe('"\'=1,2"')
+  })
+
   it('exports the fixed 8-column header in the AC-E8c order', () => {
     expect(AUDIT_EXPORT_CSV_HEADER).toBe(
       'timestamp,actor_display_name,event_type,resource_id,resource_type,org_id,project_id,ip_address'

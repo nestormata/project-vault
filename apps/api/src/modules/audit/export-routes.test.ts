@@ -130,13 +130,32 @@ describe.sequential('audit export routes', () => {
     expect(countRows).toHaveLength(0)
   })
 
-  it('requires MFA and owner role (AC-21-equivalent for export)', async () => {
+  it('requires owner role — an admin (not owner) is rejected with 403 (AC-21-equivalent for export)', async () => {
     const { createDirectAuthenticatedUser } =
       await import('../../__tests__/helpers/org-role-test-helpers.js')
     const admin = await createDirectAuthenticatedUser(app, 'admin', 'admin', 'export-authz')
     const { from, to } = wideRange()
     const res = await callExport(app, admin.cookies, { from, to, format: 'csv' })
+    // Role is checked before MFA (secure-route.ts's enforceProtectedGuards), so a non-owner
+    // is always rejected for insufficient_role here regardless of MFA-enrollment status —
+    // this test only proves the role gate; the MFA gate is proven separately below with a
+    // genuine unenrolled *owner* session, which is required to even reach the MFA check.
     expect(res.statusCode).toBe(403)
+  })
+
+  it('rejects an owner session that has not completed MFA enrollment with 403 mfa_required (AC-21-equivalent for export)', async () => {
+    const { createDirectAuthenticatedUser } =
+      await import('../../__tests__/helpers/org-role-test-helpers.js')
+    // createDirectAuthenticatedUser grants no MFA grace period, unlike registerAndLoginViaApi —
+    // exercises the enforced branch of requireMfaEnrollment() directly (mirrors
+    // rotation/routes.test.ts's equivalent AC-7 test for this same SecureRoute mechanism). Must
+    // be an *owner* session, not admin, since role is checked before MFA and this route is
+    // allowedRoles: ['owner'] — an admin session would never reach the MFA check at all.
+    const unenrolledOwner = await createDirectAuthenticatedUser(app, 'owner', 'owner', 'export-mfa')
+    const { from, to } = wideRange()
+    const res = await callExport(app, unenrolledOwner.cookies, { from, to, format: 'csv' })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'mfa_required' })
   })
 
   it('runs verification, generates CSV + integrity summary on a clean range (AC-9/10/12/13)', async () => {
@@ -215,6 +234,49 @@ describe.sequential('audit export routes', () => {
 
     const downloadRes = await callDownload(app, owner.cookies, jobId)
     expect(downloadRes.statusCode).toBe(404)
+  }, 20_000)
+
+  it('verifies a row whose created_at lands exactly on the requested `to` boundary (AC-10/11 boundary regression)', async () => {
+    // fetchExportRows (this file, export.ts) is inclusive of `to` (`lte`), but Story 8.1's
+    // verifyAuditRange() treats `to` as exclusive (`lt`). A row landing exactly on the boundary
+    // must still be integrity-checked before it can appear in the export — otherwise a tampered
+    // boundary row would silently ship in the CSV while the job reports a clean "all verified"
+    // result, defeating AC-11's fail-closed guarantee.
+    const owner = await registerOwner(app, 'export-boundary')
+    const to = new Date(Date.now() + 3_600_000)
+    const from = new Date(Date.now() - 3_600_000)
+    // Self-inconsistent HMAC (same technique as the AC-11 test above), created_at pinned to
+    // exactly the export's `to` boundary.
+    await withOrg(owner.orgId, (tx) =>
+      tx.execute(sql`
+        INSERT INTO audit_log_entries (org_id, actor_type, event_type, key_version, hmac, payload, created_at)
+        VALUES (${owner.orgId}, 'system', 'test.tampered_at_boundary', 1, ${'deadbeef'.repeat(8)}, '{}'::jsonb, ${to.toISOString()}::timestamptz)
+      `)
+    )
+
+    const triggerRes = await callExport(app, owner.cookies, {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      format: 'csv',
+    })
+    const jobId = triggerRes.json<{ data: { jobId: string } }>().data.jobId
+
+    await runAuditExport({ exportId: jobId, orgId: owner.orgId })
+
+    const statusRes = await callStatus(app, owner.cookies, jobId)
+    const statusBody = statusRes.json<{
+      data: { status: string; errorReason: string; integritySummary: { failedCount: number } }
+    }>().data
+    // If the boundary row were silently skipped by verification, this would incorrectly read
+    // "completed" with failedCount 0 while still exporting the tampered row.
+    expect(statusBody.status).toBe('failed')
+    expect(statusBody.errorReason).toBe('integrity_check_failed')
+    expect(statusBody.integritySummary.failedCount).toBeGreaterThan(0)
+
+    const [row] = await withOrg(owner.orgId, (tx) =>
+      tx.select().from(auditExports).where(eq(auditExports.id, jobId))
+    )
+    expect(row?.fileContent).toBeNull()
   }, 20_000)
 
   it('returns 404 for an unknown jobId and for cross-org access (AC-15)', async () => {

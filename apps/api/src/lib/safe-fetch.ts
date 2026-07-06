@@ -36,19 +36,109 @@ export function isPrivateIPv4(ip: string): boolean {
   return PRIVATE_V4_CIDRS.some(([base, bits]) => cidrV4Matches(ip, base, bits))
 }
 
-/** IPv6 D4 ranges: ::1 (loopback), fc00::/7 (unique local), fe80::/10 (link-local). Also
- * rejects an IPv4-mapped IPv6 address (::ffff:a.b.c.d) whose embedded v4 address is private. */
+function ipv4PartToGroups(ipv4: string): [number, number] | null {
+  const octets = ipv4.split('.')
+  if (octets.length !== 4) return null
+  const bytes = octets.map(Number)
+  if (bytes.some((b) => !Number.isInteger(b) || b < 0 || b > 255)) return null
+  return [((bytes[0] ?? 0) << 8) | (bytes[1] ?? 0), ((bytes[2] ?? 0) << 8) | (bytes[3] ?? 0)]
+}
+
+function parseHexGroups(part: string): number[] | null {
+  if (part === '') return []
+  const parsed: number[] = []
+  for (const g of part.split(':')) {
+    if (!/^[0-9a-f]{1,4}$/i.test(g)) return null
+    parsed.push(parseInt(g, 16))
+  }
+  return parsed
+}
+
+/** Mixed notation (e.g. "::ffff:127.0.0.1"): folds a trailing IPv4 literal into two hex groups
+ * so the rest of expandIPv6Groups only ever deals with plain hex groups. Returns the address
+ * unchanged if there's no dotted-decimal tail, or null if the tail is present but malformed. */
+function foldIPv4Tail(address: string): string | null {
+  const lastColon = address.lastIndexOf(':')
+  const tail = lastColon >= 0 ? address.slice(lastColon + 1) : address
+  if (!tail.includes('.')) return address
+  const v4Groups = ipv4PartToGroups(tail)
+  if (!v4Groups) return null
+  return `${address.slice(0, lastColon + 1)}${v4Groups[0].toString(16)}:${v4Groups[1].toString(16)}`
+}
+
+/**
+ * Expands a canonical/compressed IPv6 address string (as returned by dns.lookup — which may
+ * render the same address as e.g. "fe80::1", "::ffff:127.0.0.1", or "::ffff:7f00:1") into its 8
+ * 16-bit groups. Regression-driven (adversarial review): a textual-prefix regex over the raw
+ * string is fragile in both directions — it under-blocks an IPv4-mapped address written in hex
+ * group form instead of dotted-decimal (::ffff:7f00:1 is the same address as ::ffff:127.0.0.1),
+ * and it over-blocks a canonical address whose leading zero is compressed away (e.g. "fc1::1" is
+ * 0x0fc1, nowhere near fc00::/7, but a naive "starts with fc" check flags it anyway). Parsing to
+ * actual 16-bit numeric groups and comparing with bitmasks is correct regardless of how the
+ * resolver chose to render the text. Returns null if the input isn't a well-formed IPv6 address.
+ */
+function expandSingleIPv6Part(part: string): number[] | null {
+  const groups = parseHexGroups(part)
+  return groups && groups.length === 8 ? groups : null
+}
+
+/** The `::`-compressed case: `head` and `tail` are the groups either side of the compression
+ * point; the missing groups in between are all-zero. */
+function expandCompressedIPv6Parts(headPart: string, tailPart: string): number[] | null {
+  const head = parseHexGroups(headPart)
+  const tail = parseHexGroups(tailPart)
+  if (!head || !tail) return null
+  if (head.length + tail.length > 7) return null
+  const missing = 8 - head.length - tail.length
+  return [...head, ...new Array(missing).fill(0), ...tail]
+}
+
+function expandIPv6Groups(address: string): number[] | null {
+  const withoutZone = address.split('%')[0] ?? address
+  const folded = foldIPv4Tail(withoutZone)
+  if (folded === null) return null
+
+  const doubleColonParts = folded.split('::')
+  if (doubleColonParts.length > 2) return null
+  if (doubleColonParts.length === 2) {
+    return expandCompressedIPv6Parts(doubleColonParts[0] ?? '', doubleColonParts[1] ?? '')
+  }
+  return expandSingleIPv6Part(doubleColonParts[0] ?? '')
+}
+
+function isIPv6Loopback(groups: number[]): boolean {
+  return groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1
+}
+
+function isUniqueLocalIPv6(groups: number[]): boolean {
+  return ((groups[0] ?? 0) & 0xfe00) === 0xfc00 // fc00::/7
+}
+
+function isLinkLocalIPv6(groups: number[]): boolean {
+  return ((groups[0] ?? 0) & 0xffc0) === 0xfe80 // fe80::/10
+}
+
+/** Returns the embedded dotted-decimal IPv4 address if `groups` is an IPv4-mapped IPv6 address
+ * (::ffff:0:0/96), or null otherwise. */
+function ipv4MappedAddress(groups: number[]): string | null {
+  const isMapped = groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff
+  if (!isMapped) return null
+  const g6 = groups[6] ?? 0
+  const g7 = groups[7] ?? 0
+  return `${(g6 >> 8) & 0xff}.${g6 & 0xff}.${(g7 >> 8) & 0xff}.${g7 & 0xff}`
+}
+
+/** IPv6 D4 ranges: ::1 (loopback), fc00::/7 (unique local), fe80::/10 (link-local), and any
+ * IPv4-mapped IPv6 address (::ffff:0:0/96) whose embedded v4 address is private — matched by
+ * parsing to numeric 16-bit groups (expandIPv6Groups) rather than a fragile textual prefix, so
+ * detection is correct regardless of hex-vs-dotted rendering or leading-zero compression. */
 export function isPrivateIPv6(ip: string): boolean {
-  const normalized = ip.toLowerCase()
-  if (normalized === '::1') return true
-  const firstGroup = normalized.split(':')[0] ?? ''
-  // fc00::/7 covers first 7 bits = 1111 110x -> first hex nibble 'fc'..'fd'
-  if (/^f[cd][0-9a-f]{0,2}$/.test(firstGroup)) return true
-  // fe80::/10 -> first 10 bits = 1111 1110 10 -> fe8x, fe9x, feax, febx
-  if (/^fe[89ab][0-9a-f]{0,2}$/.test(firstGroup)) return true
-  const mappedV4 = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(normalized)
-  if (mappedV4?.[1]) return isPrivateIPv4(mappedV4[1])
-  return false
+  const groups = expandIPv6Groups(ip.toLowerCase())
+  // Not a parseable IPv6 address at all — refuse rather than silently allow.
+  if (!groups) return true
+  if (isIPv6Loopback(groups) || isUniqueLocalIPv6(groups) || isLinkLocalIPv6(groups)) return true
+  const mappedV4 = ipv4MappedAddress(groups)
+  return mappedV4 !== null && isPrivateIPv4(mappedV4)
 }
 
 export function isPrivateOrReservedAddress(address: string): boolean {

@@ -41,6 +41,17 @@ describe('isPrivateIPv6 (D4)', () => {
     ['::ffff:127.0.0.1', true],
     ['::ffff:10.0.0.5', true],
     ['2606:4700:4700::1111', false], // Cloudflare public IPv6
+    // Regression: an IPv4-mapped IPv6 address written in hex-group form (the same value as
+    // ::ffff:127.0.0.1 / ::ffff:10.0.0.5, just not dotted-decimal) must still be rejected — a
+    // textual-prefix-only check that only recognizes the dotted form is bypassable by any DNS
+    // resolver/response that renders the mapped address in hex.
+    ['::ffff:7f00:1', true], // hex form of ::ffff:127.0.0.1
+    ['::ffff:a00:5', true], // hex form of ::ffff:10.0.0.5
+    // Regression: a real public address whose first group's leading zero is compressed away
+    // (canonical textual form) must not be misclassified as fc00::/7 just because the remaining
+    // text happens to start with "fc"/"fd" — the true numeric value (0x0fc1) is far outside that
+    // range's actual bit pattern (its top nibble is 0, not f).
+    ['fc1::1', false],
   ])('%s -> private=%s', (ip, expected) => {
     expect(isPrivateIPv6(ip)).toBe(expected)
   })

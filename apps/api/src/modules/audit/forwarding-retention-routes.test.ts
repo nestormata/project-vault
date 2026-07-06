@@ -155,6 +155,24 @@ describe.sequential('PUT /audit/forwarding', () => {
     expect(res.statusCode).toBe(403)
   })
 
+  it('rejects an admin session that has not completed MFA enrollment with 403 mfa_required (AC-21)', async () => {
+    // createDirectAuthenticatedUser grants no MFA grace period, unlike registerAndLoginViaApi —
+    // exercises the enforced branch of requireMfaEnrollment() directly (mirrors
+    // rotation/routes.test.ts's equivalent AC-7 test for this same SecureRoute mechanism).
+    const unenrolledAdmin = await createDirectAuthenticatedUser(
+      app,
+      'admin',
+      'admin',
+      'forwarding-mfa'
+    )
+    const res = await putForwarding(app, unenrolledAdmin.cookies, {
+      type: 'webhook',
+      config: { url: PUBLIC_WEBHOOK_URL, secretHeader: 'x' },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'mfa_required' })
+  })
+
   it('writes an audit.forwarding_configured entry with type/enabled but never the secret (AC-18)', async () => {
     const owner = await registerOwner(app, 'forwarding-self-audit')
     await putForwarding(app, owner.cookies, {
@@ -226,6 +244,18 @@ describe.sequential('PUT /audit/retention', () => {
     const viewer = await createDirectAuthenticatedUser(app, 'viewer', 'viewer', 'retention-authz')
     const res = await putRetention(app, viewer.cookies, { retentionDays: 90 })
     expect(res.statusCode).toBe(403)
+  })
+
+  it('rejects an admin session that has not completed MFA enrollment with 403 mfa_required (AC-21)', async () => {
+    const unenrolledAdmin = await createDirectAuthenticatedUser(
+      app,
+      'admin',
+      'admin',
+      'retention-mfa'
+    )
+    const res = await putRetention(app, unenrolledAdmin.cookies, { retentionDays: 90 })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'mfa_required' })
   })
 
   it('writes an audit.retention_configured entry (AC-22)', async () => {

@@ -140,6 +140,15 @@ export async function runAuditExport(input: { exportId: string; orgId: string })
       .where(eq(auditExports.id, input.exportId))
 
     const chunks = chunkExportRange(row.fromDate, row.toDate, AUDIT_VERIFY_MAX_RANGE_DAYS)
+    // verifyAuditRange() treats `to` as exclusive (Story 8.1, D4: `lt(createdAt, toDate)`), but
+    // fetchExportRows() below — and this export's own [from, to] request contract (AC-9) — is
+    // inclusive of `to` (`lte`). Without this, a row whose created_at lands exactly on the
+    // requested `to` boundary would be exported without ever being integrity-verified, silently
+    // defeating AC-11's "an export must never appear to succeed while integrity verification
+    // failed" guarantee. Append one more 1ms "boundary" chunk covering exactly that instant —
+    // it never overlaps the preceding chunks (which already end, exclusive, at `to`), so no row
+    // is double-verified or double-counted in the aggregate.
+    chunks.push([row.toDate, new Date(row.toDate.getTime() + 1)])
     let rowsChecked = 0
     let passed = 0
     let failedCount = 0

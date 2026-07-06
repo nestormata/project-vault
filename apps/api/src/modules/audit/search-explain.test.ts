@@ -15,9 +15,16 @@ import { getDb, withOrg } from '@project-vault/db'
  * this suite doesn't attempt to work around that for a throwaway perf-seeded org either.
  */
 const SEEDED_ROW_COUNT = 20_000
+const INDEX_SCAN_PATTERN = /Index( Only)? Scan|Bitmap (Heap|Index) Scan/
+
+function assertIndexScanUsed(rows: unknown): void {
+  const plan = (rows as { 'QUERY PLAN': string }[]).map((r) => r['QUERY PLAN']).join('\n')
+  expect(plan).toMatch(INDEX_SCAN_PATTERN)
+}
 
 describe('audit_log_entries query plans use indexed scans at seeded volume (AC-1, D5)', () => {
   let orgId: string
+  let actorTokenId: string
 
   beforeAll(async () => {
     orgId = randomUUID()
@@ -25,12 +32,22 @@ describe('audit_log_entries query plans use indexed scans at seeded volume (AC-1
     await getDb().execute(
       sql`INSERT INTO organizations (id, name, slug) VALUES (${orgId}, ${'perf-org-' + suffix}, ${'perf-' + suffix})`
     )
+    // D5's whole raison d'être is idx_audit_log_entries_actor_token (actor_token_id, created_at
+    // DESC) — one real user_identity_tokens row (user_id may be NULL, D6) so a highly-selective
+    // subset of the seeded rows carry a real actor_token_id FK value to filter on below.
+    const tokenRows = (await getDb().execute(
+      sql`INSERT INTO user_identity_tokens (display_name) VALUES ('perf-actor-' || ${suffix}) RETURNING id`
+    )) as unknown as { id: string }[]
+    actorTokenId = tokenRows[0]?.id ?? ''
+    expect(actorTokenId).toBeTruthy()
+
     await withOrg(orgId, (tx) =>
       tx.execute(sql`
-        INSERT INTO audit_log_entries (org_id, actor_type, event_type, resource_id, project_id, key_version, hmac)
+        INSERT INTO audit_log_entries (org_id, actor_token_id, actor_type, event_type, resource_id, project_id, key_version, hmac)
         SELECT
           ${orgId},
-          'system',
+          CASE WHEN n % 400 = 0 THEN ${actorTokenId}::uuid ELSE NULL END,
+          CASE WHEN n % 400 = 0 THEN 'human' ELSE 'system' END,
           'perf.event.' || (n % 50),
           gen_random_uuid(),
           NULL,
@@ -47,10 +64,7 @@ describe('audit_log_entries query plans use indexed scans at seeded volume (AC-1
         sql`EXPLAIN ANALYZE SELECT * FROM audit_log_entries WHERE event_type = 'perf.event.7' ORDER BY created_at DESC LIMIT 20`
       )
     )
-    const plan = (rows as unknown as { 'QUERY PLAN': string }[])
-      .map((r) => r['QUERY PLAN'])
-      .join('\n')
-    expect(plan).toMatch(/Index( Only)? Scan|Bitmap (Heap|Index) Scan/)
+    assertIndexScanUsed(rows)
   }, 20_000)
 
   it('uses an index scan for a resourceId-only filter', async () => {
@@ -65,9 +79,15 @@ describe('audit_log_entries query plans use indexed scans at seeded volume (AC-1
         sql`EXPLAIN ANALYZE SELECT * FROM audit_log_entries WHERE resource_id = ${sampleResourceId} ORDER BY created_at DESC LIMIT 20`
       )
     )
-    const plan = (rows as unknown as { 'QUERY PLAN': string }[])
-      .map((r) => r['QUERY PLAN'])
-      .join('\n')
-    expect(plan).toMatch(/Index( Only)? Scan|Bitmap (Heap|Index) Scan/)
+    assertIndexScanUsed(rows)
+  }, 20_000)
+
+  it('uses an index scan for an actorId-only filter (D5 — idx_audit_log_entries_actor_token)', async () => {
+    const rows = await withOrg(orgId, (tx) =>
+      tx.execute(
+        sql`EXPLAIN ANALYZE SELECT * FROM audit_log_entries WHERE actor_token_id = ${actorTokenId}::uuid ORDER BY created_at DESC LIMIT 20`
+      )
+    )
+    assertIndexScanUsed(rows)
   }, 20_000)
 })
