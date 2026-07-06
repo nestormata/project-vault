@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-05 (epic-5-retrospective: optional -> done; epic-4: in-progress -> done per 2026-07-03 closure addendum; 5-4-rotation-workflow-web-ui: added, backlog; 5-4-rotation-workflow-web-ui: backlog -> ready-for-dev, story file created; 5-4-rotation-workflow-web-ui: in-progress -> review, implementation complete)
+# last_updated: 2026-07-05 (epic-5-retrospective: optional -> done; epic-4: in-progress -> done per 2026-07-03 closure addendum; 5-4-rotation-workflow-web-ui: added, backlog; 5-4-rotation-workflow-web-ui: backlog -> ready-for-dev, story file created; 5-4-rotation-workflow-web-ui: in-progress -> review, implementation complete; 5-4-rotation-workflow-web-ui: review -> done, code review + CI gate passed)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-05  # updated: 6-3 -> ready-for-dev (6-2 prerequisite now done); 5-4 -> ready-for-dev (story file created); 5-4 -> in-progress (pick-story)
+last_updated: 2026-07-05  # updated: 6-3 -> ready-for-dev (6-2 prerequisite now done); 5-4 -> ready-for-dev (story file created); 5-4 -> in-progress (pick-story); 5-4 -> review (dev-story); 5-4 -> done (pick-story, CI green)
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -92,7 +92,7 @@ development_status:
   5-1-rotation-initiation-and-checklist-generation: done
   5-2-rotation-checklist-confirmation-and-completion: done
   5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: done
-  5-4-rotation-workflow-web-ui: review # implemented 2026-07-05 — web UI for initiate/checklist/break-glass/history/dashboard; zero apps/api or packages/db diff (AC-27)
+  5-4-rotation-workflow-web-ui: done # implemented 2026-07-05 — web UI for initiate/checklist/break-glass/history/dashboard; zero apps/api or packages/db diff (AC-27); code review + CI gate passed
   5-5-epic-5-completion-rotation-hardening-and-technical-debt: ready-for-dev # closure story bundling the 2026-07-05 retro's risk/gap/contradiction/technical-debt audit (13 findings) + the carried-forward Epic 4 TOCTOU gap
   epic-5-retrospective: done
 
