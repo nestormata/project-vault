@@ -1,6 +1,6 @@
 # Story 7.3: GitHub Actions CI/CD Integration
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for the official `project-vault/vault-action` GitHub Action: a thin, bundled TypeScript wrapper around Story 7.2's `@project-vault/agent` package and machine-token auth flow. This is the THIRD and FINAL story in Epic 7. It ships almost no new backend code — no new DB migration, no new API routes — its entire surface is a new workspace package (`packages/vault-action/`) plus documentation. Read "Key Design Decisions & Open Questions" before coding: several concrete conflicts between epics.md's literal Story 7.3 wording, architecture.md's aspirational OIDC-integration design, and Stories 7.1/7.2's already-committed `@project-vault/agent`-based design are resolved here, following the exact resolution discipline Stories 4.1, 7.1, and 7.2 established. -->
 

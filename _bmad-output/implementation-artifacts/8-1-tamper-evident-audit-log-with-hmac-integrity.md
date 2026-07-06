@@ -1,6 +1,6 @@
 # Story 8.1: Tamper-Evident Audit Log with HMAC Integrity
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for the audit-log HMAC integrity verification endpoint and its supporting CI guard. This is the FIRST story in Epic 8, but it is NOT a greenfield story: the `audit_log_entries` schema, the HMAC write path, the append-only RLS/trigger/grant stack, and the audit-signing-key derivation were all built incrementally by Epics 1–7 in anticipation of this epic (per epics.md PJ4/PJ5/PJ6). Read "Key Design Decisions & Open Questions" before writing any code — the single biggest risk on this story is reinventing infrastructure that already ships. -->
 

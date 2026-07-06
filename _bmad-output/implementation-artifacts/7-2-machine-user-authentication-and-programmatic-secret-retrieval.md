@@ -1,6 +1,6 @@
 # Story 7.2: Machine User Authentication & Programmatic Secret Retrieval
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for machine-user token exchange, programmatic secret-by-name retrieval, the offline fallback cache agent, zero-downtime key rotation, emergency revocation, and dormancy detection. This is the SECOND story in Epic 7, built directly on Story 7.1's `machine_users`/`api_keys` schema and `hashApiKey()`/`apiKeysMatch()` crypto helpers. Read "Key Design Decisions & Open Questions" before coding — several concrete conflicts between epics.md's literal Story 7.2 AC text and architecture.md's canonical decisions are resolved here, in favor of architecture.md + established codebase precedent + Story 7.1's own D1-D9, mirroring the resolution pattern Stories 4.1 and 7.1 already established. -->
 
