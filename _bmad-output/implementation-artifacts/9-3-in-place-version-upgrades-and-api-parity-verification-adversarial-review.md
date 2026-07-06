@@ -4,6 +4,20 @@
 - **Reviewed file:** `_bmad-output/implementation-artifacts/9-3-in-place-version-upgrades-and-api-parity-verification.md`
 - **Reviewer:** bmad-review-adversarial-general
 
+## Resolution (2026-07-06)
+
+Both `critical` findings and all five `high` findings were addressed directly in the story file:
+
+- **Critical #1** (destructive-scan blind spots): D2's `findDestructiveStatements()` scope expanded to also cover `TRUNCATE`, `DELETE FROM`, `DROP CONSTRAINT`, `DROP DEFAULT`, `ALTER COLUMN ... TYPE` (flagged conservatively, any change), and `ADD COLUMN ... NOT NULL` without `DEFAULT`; re-verified against all 35 existing migrations (zero matches, confirmed by direct grep). Also added comment/string-literal stripping to reduce the false-negative/positive surface flagged by High #4.
+- **Critical #2** (`--allow-destructive` unreachable via `docker compose up -d`): D2 point 4 now documents the concrete bypass mechanism — `docker compose run --rm migrate pnpm --filter @project-vault/db db:migrate --allow-destructive` — which requires zero `docker-compose.yml` changes since `docker compose run` overrides a service's command inline.
+- **High** (D9/9.1/9.2 sequencing contradiction): D6/D9 now describe a feature-detected platform-operator session bootstrap in the contract suite, so the suite degrades gracefully (skip + log) if 9.1/9.2 haven't landed yet, resolving the "any order" claim concretely instead of asserting it.
+- **High** (weak regex scan): comment/block-comment/string-literal stripping added as a preprocessing step before keyword matching (D2 point 1); new AC-3 false-positive examples added for comment/string-literal contexts.
+- **High** (D8.4 breaking change deferred): verified directly — `apps/web/src/lib/api/inbox.ts` and `apps/web/src/routes/(app)/notifications/+page.server.ts` are confirmed real consumers of the old bare-array shape. Story now requires updating both files in the same PR (Task 6), no longer deferred to "implementation time."
+- **High** (NODE_ENV fail-open gating): D5's gate changed from `NODE_ENV !== 'production'` to an explicit fail-closed allowlist (`ENABLE_API_DOCS === true || NODE_ENV === 'development' || NODE_ENV === 'test'`); AC-6 updated to match.
+- **High** (no cross-tenant/RLS check in contract suite): new AC-22 added, requiring the contract suite to bootstrap two separate orgs and assert org B's session cannot read org A's resources on representative org-scoped routes; wired into Task 5 and the AC-21 integration-test checklist.
+
+Medium/low findings were left as-is (not required for merge, no `critical`/`high` blockers remain).
+
 ## Findings
 
 - **[CRITICAL]** D2's `findDestructiveStatements()` is explicitly scoped to only four keyword patterns (`DROP COLUMN`, `DROP TABLE`, `RENAME COLUMN`, `RENAME TO`/`ALTER TABLE ... RENAME`), but this leaves genuinely destructive operations completely undetected by the safety guard whose entire purpose is to prevent data loss: `TRUNCATE`, `DELETE FROM`, `DROP CONSTRAINT`, `ALTER COLUMN ... TYPE` narrowing (e.g. `varchar(50)` → `varchar(10)`, which silently truncates/errors on existing data), `DROP DEFAULT` combined with a `NOT NULL` addition, and `ADD COLUMN ... NOT NULL` without a `DEFAULT` (which fails or requires a backfill against existing rows). AC-18's edge case only worries about false positives on `ALTER COLUMN` length changes, never the false-negative risk that a narrowing type change is itself destructive. A guard that ships as "the destructive-migration safety net" with these blind spots creates false confidence that all dangerous schema changes are caught.
