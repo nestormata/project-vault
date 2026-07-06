@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-07-05 (epic-5-retrospective: optional -> done; epic-4: in-progress -> done per 2026-07-03 closure addendum; 5-4-rotation-workflow-web-ui: added, backlog; 5-4-rotation-workflow-web-ui: backlog -> ready-for-dev, story file created)
+# last_updated: 2026-07-05 (6-3-cross-project-health-dashboard-and-public-status-page: review -> done)
 # project: Project Vault
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-05  # updated: 6-3 -> ready-for-dev (6-2 prerequisite now done); 5-4 -> ready-for-dev (story file created); 7-3 -> in-progress -> review -> done
+last_updated: 2026-07-05  # updated: 6-3 -> done
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -92,7 +92,7 @@ development_status:
   5-1-rotation-initiation-and-checklist-generation: done
   5-2-rotation-checklist-confirmation-and-completion: done
   5-3-stale-rotation-recovery-and-break-glass-emergency-rotation: done
-  5-4-rotation-workflow-web-ui: ready-for-dev # scheduled at epic-5 retro 2026-07-05 — no dedicated web story existed for initiate/checklist/break-glass, unlike Epic 2's API+web pairing; story file created 2026-07-05
+  5-4-rotation-workflow-web-ui: done # implemented 2026-07-05 — web UI for initiate/checklist/break-glass/history/dashboard; zero apps/api or packages/db diff (AC-27); code review + CI gate passed
   5-5-epic-5-completion-rotation-hardening-and-technical-debt: ready-for-dev # closure story bundling the 2026-07-05 retro's risk/gap/contradiction/technical-debt audit (13 findings) + the carried-forward Epic 4 TOCTOU gap
   epic-5-retrospective: done
 
@@ -100,7 +100,7 @@ development_status:
   epic-6: in-progress
   6-1-service-certificate-and-domain-record-management: done
   6-2-http-endpoint-monitoring-and-availability-alerts: done
-  6-3-cross-project-health-dashboard-and-public-status-page: ready-for-dev
+  6-3-cross-project-health-dashboard-and-public-status-page: done
   epic-6-retrospective: optional
 
   # Epic 7: Machine User Access & CI/CD Integration
@@ -114,7 +114,7 @@ development_status:
   epic-8: in-progress
   8-1-tamper-evident-audit-log-with-hmac-integrity: ready-for-dev
   8-2-audit-log-search-export-and-external-forwarding: ready-for-dev
-  8-3-access-reports-dormant-users-and-audit-pii-management: backlog
+  8-3-access-reports-dormant-users-and-audit-pii-management: ready-for-dev # story file created 2026-07-05; hard-prerequisite on 8-1/8-2 reaching done before implementation starts (D7)
   8-4-data-subject-erasure-request-handling: backlog
   epic-8-retrospective: optional
 

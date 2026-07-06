@@ -73,6 +73,10 @@ export const AuditEvent = {
   MACHINE_USER_ROTATION_ANOMALY_DETECTED: 'machine_user.rotation_anomaly_detected',
   MACHINE_USER_DORMANCY_EXTENDED: 'machine_user.dormancy_extended',
   MACHINE_CACHE_ACTIVATED: 'machine_cache.activated',
+  STATUS_PAGE_ENABLED: 'status_page.enabled',
+  STATUS_PAGE_TOKEN_REGENERATED: 'status_page.token_regenerated',
+  STATUS_PAGE_UPDATED: 'status_page.updated',
+  STATUS_PAGE_DISABLED: 'status_page.disabled',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -145,6 +149,10 @@ export type AuditEventType =
   | 'machine_user.rotation_anomaly_detected'
   | 'machine_user.dormancy_extended'
   | 'machine_cache.activated'
+  | 'status_page.enabled'
+  | 'status_page.token_regenerated'
+  | 'status_page.updated'
+  | 'status_page.disabled'
 
 export type AuditEvent = {
   type: AuditEventType

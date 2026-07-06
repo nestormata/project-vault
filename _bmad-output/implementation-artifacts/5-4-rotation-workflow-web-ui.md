@@ -1,6 +1,6 @@
 # Story 5.4: Rotation Workflow Web UI
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-05 — comprehensive developer guide for the web-UI companion to Stories 5.1/5.2/5.3 (all `done`, all API-only). This story adds ZERO new backend routes, ZERO new DB migrations, ZERO new audit events — every mutation this story's UI performs calls an already-shipped, already-tested Epic 5 endpoint verbatim. Confirmed via direct inspection of `apps/api/src/modules/rotation/routes.ts` (migration `0033_break_glass_and_stale_recovery` is the latest in `packages/db/src/migrations/meta/_journal.json` — 5.1/5.2/5.3's full schema is live) that every endpoint referenced below exists today with the exact path, role gate, and error-code shape documented here. This story is scheduled per the 2026-07-05 Epic 5 retrospective specifically to close the Product-Surface-Contract gap all three prior stories flagged as `TBD` — see `_bmad-output/implementation-artifacts/deferred-work.md` line 68. -->
 
@@ -477,40 +477,40 @@ Upcoming rotations
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: API client module** (AC-25)
-  - [ ] `apps/web/src/lib/api/rotations.ts` — 11 typed functions per "Ground-Truth API Surface"
-  - [ ] `apps/web/src/lib/api/rotations.test.ts` — mocked-fetch coverage for every function's success + error-mapping path
-  - [ ] Extend `apps/web/src/lib/api/credentials.ts` (or a new `dependencies.ts`) with a `listCredentialDependencies` client function if one does not already exist under that name — verify current export names before adding a duplicate
+- [x] **Task 1: API client module** (AC-25)
+  - [x] `apps/web/src/lib/api/rotations.ts` — 11 typed functions per "Ground-Truth API Surface"
+  - [x] `apps/web/src/lib/api/rotations.test.ts` — mocked-fetch coverage for every function's success + error-mapping path
+  - [x] Extend `apps/web/src/lib/api/credentials.ts` (or a new `dependencies.ts`) with a `listCredentialDependencies` client function if one does not already exist under that name — verify current export names before adding a duplicate
 
-- [ ] **Task 2: Credential detail page — Rotation section** (AC-1, AC-2, AC-18)
-  - [ ] Extend `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` to also fetch `listRotations(fetch, projectId, credentialId, { limit: 10 })`
-  - [ ] Extend the corresponding `+page.svelte` with a new "Rotation" section: start/view-active CTA + history list, role-gated per AC-1/AC-6
+- [x] **Task 2: Credential detail page — Rotation section** (AC-1, AC-2, AC-18)
+  - [x] Extend `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` to also fetch `listRotations(fetch, projectId, credentialId, { limit: 10 })`
+  - [x] Extend the corresponding `+page.svelte` with a new "Rotation" section: start/view-active CTA + history list, role-gated per AC-1/AC-6
 
-- [ ] **Task 3: Initiate rotation page** (AC-3, AC-4, AC-5, AC-6)
-  - [ ] `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.server.ts` — `requireUser`, role check, dependency preview fetch, active-rotation redirect guard
-  - [ ] `.../rotate/+page.svelte` — form, preview list, submit handler, error mapping
-  - [ ] Component/route tests
+- [x] **Task 3: Initiate rotation page** (AC-3, AC-4, AC-5, AC-6)
+  - [x] `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.server.ts` — `requireUser`, role check, dependency preview fetch, active-rotation redirect guard
+  - [x] `.../rotate/+page.svelte` — form, preview list, submit handler, error mapping
+  - [x] Component/route tests
 
-- [ ] **Task 4: Break-glass panel** (AC-19, AC-20, AC-21, AC-22)
-  - [ ] `apps/web/src/lib/components/rotations/BreakGlassPanel.svelte` — collapsible, `CONFIRM`-gated, role-hidden for non-admins
-  - [ ] Wire into the `/rotate` page from Task 3
-  - [ ] Component tests including the `CONFIRM` friction gate and the independent post-success `dependencies` fetch
+- [x] **Task 4: Break-glass panel** (AC-19, AC-20, AC-21, AC-22)
+  - [x] `apps/web/src/lib/components/rotations/BreakGlassPanel.svelte` — collapsible, `CONFIRM`-gated, role-hidden for non-admins
+  - [x] Wire into the `/rotate` page from Task 3
+  - [x] Component tests including the `CONFIRM` friction gate and the independent post-success `dependencies` fetch
 
-- [ ] **Task 5: Rotation detail / checklist page** (AC-7 through AC-17)
-  - [ ] `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.server.ts`
-  - [ ] `.../rotations/[rotationId]/+page.svelte` + a `ChecklistItemRow.svelte` component (per-item `$state` for D5's granular in-flight handling)
-  - [ ] Stale-recovery banner (`StaleRecoveryBanner.svelte`) with resume/abandon
-  - [ ] 15-second poll while `in_progress`/`stale_recovery`, paused on `document.visibilityState === 'hidden'` (D1)
-  - [ ] Component/route tests for every AC-7–AC-17 scenario
+- [x] **Task 5: Rotation detail / checklist page** (AC-7 through AC-17)
+  - [x] `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.server.ts`
+  - [x] `.../rotations/[rotationId]/+page.svelte` + a `ChecklistItemRow.svelte` component (per-item `$state` for D5's granular in-flight handling)
+  - [x] Stale-recovery banner (`StaleRecoveryBanner.svelte`) with resume/abandon
+  - [x] 15-second poll while `in_progress`/`stale_recovery`, paused on `document.visibilityState === 'hidden'` (D1)
+  - [x] Component/route tests for every AC-7–AC-17 scenario
 
-- [ ] **Task 6: Dashboard widget** (AC-23)
-  - [ ] Extend `apps/web/src/routes/(app)/dashboard/+page.svelte` with the "Upcoming rotations" section
-  - [ ] Extend the dashboard test file with the G3 regression-critical test from AC-23
+- [x] **Task 6: Dashboard widget** (AC-23)
+  - [x] Extend `apps/web/src/routes/(app)/dashboard/+page.svelte` with the "Upcoming rotations" section
+  - [x] Extend the dashboard test file with the G3 regression-critical test from AC-23
 
-- [ ] **Task 7: Shared error/empty-state copy and a11y pass** (AC-24, AC-26, AC-27)
-  - [ ] Sealed-vault message reused verbatim from existing precedent
-  - [ ] Full `getByRole` audit across new components
-  - [ ] Confirm zero `apps/api`/`packages/db` diff before opening the PR
+- [x] **Task 7: Shared error/empty-state copy and a11y pass** (AC-24, AC-26, AC-27)
+  - [x] Sealed-vault message reused verbatim from existing precedent
+  - [x] Full `getByRole` audit across new components
+  - [x] Confirm zero `apps/api`/`packages/db` diff before opening the PR
 
 ---
 
@@ -610,12 +610,65 @@ Confirmed via direct file inspection (not commit-log guessing, since this worktr
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-5 (Claude Code)
 
 ### Debug Log References
+
+- TDD red-green followed per task: wrote/updated tests first (confirmed red — missing modules/behavior), then implemented, then reran focused tests to green, then the full `apps/web` suite.
+- `svelte-kit sync` initially failed with "Files prefixed with + are reserved" because colocated server-load tests were named `+page.server.test.ts`; renamed to `credential-detail-page.server.test.ts`, `rotate-page.server.test.ts`, and `rotation-page.server.test.ts` (SvelteKit treats any `+`-prefixed file under `routes/` as a route file, matching the existing `alerts-redirect.test.ts` naming precedent rather than `+`-prefixed test files).
+- `eslint` flagged `svelte/prefer-writable-derived` on the rotation detail page's `$state` + `$effect` sync-from-props pattern; rewrote to a writable `$derived(data.rotation)` (Svelte 5.25+ overridable-derived pattern), which is both more idiomatic and resolves the lint error.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed 2026-07-05 — comprehensive developer guide created. This story closes the Product-Surface-Contract gap flagged identically by Stories 5.1, 5.2, and 5.3, all resolved via the 2026-07-05 Epic 5 retrospective's decision to schedule a dedicated web-UI story rather than defer indefinitely.
+- Implementation completed 2026-07-05. All 27 ACs implemented against the already-shipped Epic 5 API surface (Stories 5.1/5.2/5.3) with zero new backend routes, migrations, or audit events — confirmed via `git status` showing zero diff under `apps/api/**`/`packages/db/**` (AC-27).
+- `$lib/api/rotations.ts` wraps all 11 rotation endpoints with the existing `apiFetch`/`ApiClientError` pattern; `listCredentialDependencies` was added to the existing `$lib/api/credentials.ts` (no separate `dependencies.ts` needed, no duplicate export existed).
+- Credential detail page's new "Rotation" section determines the active-rotation CTA via a dedicated `GET .../rotations?limit=1` call (AC-2's literal guidance), decoupled from the paginated (`?page=`) history list fetch (AC-18).
+- `/rotate` combines the normal initiate form and the break-glass panel on one route per Design Decision D3; a server-side active-rotation guard redirects straight to the in-progress rotation's detail page rather than rendering a form that would just 409.
+- `BreakGlassPanel.svelte` implements the literal `CONFIRM`-text friction gate (AC-20) and independently re-fetches dependencies after a successful break-glass response, since the response body never carries the sweep checklist (5.3 AC-7 nuance, documented in the story's "Ground-Truth API Surface" section).
+- Rotation detail page uses a writable `$derived` local working copy of the rotation so per-item confirm/fail/retry (via `ChecklistItemRow.svelte`) can patch a single row (D5) while complete/resume/abandon replace the whole rotation view; a 15s `setInterval` poll runs while `status` is `in_progress`/`stale_recovery`, paused via the `visibilitychange` event when the tab is hidden (D1 — no new SSE wiring).
+- Dashboard's previously-fetched-but-unrendered `data.dashboard.upcomingRotations` is now rendered for the first time, closing the G3 gap `deferred-work.md` line 53 documented; includes an explicit non-empty-string empty state and a dedicated regression test asserting the literal text "Overdue" renders.
+- All role gates (admin/owner for initiate/complete/break-glass/resume/abandon, member+ for confirm/fail/retry, viewer+ for reads) are UX-only mirrors of the already-shipped server gates (`rotation-permissions.ts`), with every AC's corresponding server-rejection path (403/409/422/503) explicitly handled and tested, not just the happy path.
+- Test suite: 33 new/modified test files-worth of coverage across API client, permission/copy helpers, components, and routes — final `apps/web` run: 249 tests passed, 0 failed. `tsc --noEmit` and `eslint .` both clean.
 
 ### File List
+
+**New files:**
+- `apps/web/src/lib/api/rotations.ts`
+- `apps/web/src/lib/api/rotations.test.ts`
+- `apps/web/src/lib/components/rotations/rotation-permissions.ts`
+- `apps/web/src/lib/components/rotations/rotation-permissions.test.ts`
+- `apps/web/src/lib/components/rotations/rotation-copy.ts`
+- `apps/web/src/lib/components/rotations/rotation-copy.test.ts`
+- `apps/web/src/lib/components/rotations/BreakGlassPanel.svelte`
+- `apps/web/src/lib/components/rotations/BreakGlassPanel.test.ts`
+- `apps/web/src/lib/components/rotations/ChecklistItemRow.svelte`
+- `apps/web/src/lib/components/rotations/ChecklistItemRow.test.ts`
+- `apps/web/src/lib/components/rotations/StaleRecoveryBanner.svelte`
+- `apps/web/src/lib/components/rotations/StaleRecoveryBanner.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.server.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.server.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/rotate-page.server.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.server.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/rotation-page.server.test.ts`
+- `apps/web/src/routes/rotate-page.test.ts`
+- `apps/web/src/routes/rotation-detail-page.test.ts`
+
+**Modified files:**
+- `apps/web/src/lib/api/credentials.ts` (added `listCredentialDependencies`)
+- `apps/web/src/lib/api/credentials.test.ts` (added coverage for `listCredentialDependencies`)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` (rotation history + active-rotation detection)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` (new "Rotation" section)
+- `apps/web/src/routes/projects-credentials.test.ts` (rotation-section coverage; extended existing detail-page fixture)
+- `apps/web/src/routes/(app)/dashboard/+page.svelte` (new "Upcoming rotations" widget)
+- `apps/web/src/routes/dashboard.test.ts` (AC-23 regression-critical widget tests)
+
+**Non-code (bookkeeping):**
+- `_bmad-output/implementation-artifacts/5-4-rotation-workflow-web-ui.md` (this file — Status, Tasks, Dev Agent Record, Change Log)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (5-4: in-progress → review)
+
+### Change Log
+
+- 2026-07-05: Implemented all 27 acceptance criteria (initiate/checklist/complete/break-glass/history/dashboard-widget web UI over the already-shipped Epic 5 API). Zero `apps/api`/`packages/db` diff. 249/249 `apps/web` tests passing, `tsc --noEmit` and `eslint .` clean. Status: `ready-for-dev` → `review`; `sprint-status.yaml` updated in lockstep (P3).
