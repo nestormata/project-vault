@@ -1,9 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { withTwoTestOrgs } from '@project-vault/db/test-helpers'
-import { auditLogEntries, orgMemberships, users } from '@project-vault/db/schema'
+import {
+  auditLogEntries,
+  orgMemberships,
+  userIdentityTokens,
+  users,
+} from '@project-vault/db/schema'
+import { AuditEvent } from '@project-vault/shared'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -114,17 +120,29 @@ async function mintOwnerSessionForOrg(
   orgId: string,
   label: string
 ): Promise<Cookies> {
+  const email = `${label}-${randomUUID()}@example.com`
   const [user] = await getDb()
     .insert(users)
-    .values({ email: `${label}-${randomUUID()}@example.com`, passwordHash: 'x' })
+    .values({ email, passwordHash: 'x' })
     .returning({ id: users.id })
   if (!user) throw new Error('expected test user to be inserted')
+
+  // Code-review finding (Story 8.1): a real user_identity_tokens row, mirroring the actual
+  // registration flow — a bare `users` insert with no identity token means this owner's
+  // SESSION_CREATED audit row is written with actor_token_id: null, permanently failing
+  // checkAuditActorTokenCoverage on any reused local dev database (audit_log_entries is
+  // append-only and never cleaned up between test runs).
+  const [identityToken] = await getDb()
+    .insert(userIdentityTokens)
+    .values({ userId: user.id, displayName: email })
+    .returning({ id: userIdentityTokens.id })
+  if (!identityToken) throw new Error('expected identity token to be inserted')
 
   const result = await withOrg(orgId, async (tx) => {
     await tx
       .insert(orgMemberships)
       .values({ orgId, userId: user.id, role: 'owner', status: 'active' })
-    return createLoginSessionInTx(tx, { id: user.id, identityTokenId: null }, orgId, {})
+    return createLoginSessionInTx(tx, { id: user.id, identityTokenId: identityToken.id }, orgId, {})
   })
   const jwt = await (
     app as unknown as {
@@ -288,6 +306,21 @@ describe.sequential('audit verify route', () => {
       // createLoginSessionInTx, on top of the 5 synthetic org A rows — never org B's 3.
       expect(body.rowsChecked).toBe(6)
       expect(body.passed).toBe(6)
+
+      // Code-review finding (Story 8.1): mintOwnerSessionForOrg used to mint this SESSION_CREATED
+      // row with actor_token_id: null, permanently failing checkAuditActorTokenCoverage
+      // (packages/db/src/check-audit-actor-token-coverage.ts) for any reused local dev database,
+      // since audit_log_entries is append-only and never cleaned up between test runs.
+      const sessionRows = await withOrg(orgAId, (tx) =>
+        tx
+          .select({ actorTokenId: auditLogEntries.actorTokenId })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, AuditEvent.SESSION_CREATED))
+      )
+      expect(sessionRows.length).toBeGreaterThan(0)
+      for (const row of sessionRows) {
+        expect(row.actorTokenId).not.toBeNull()
+      }
     })
   }, 20_000)
 

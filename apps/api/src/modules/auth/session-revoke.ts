@@ -4,6 +4,7 @@ import { auditLogEntries, refreshTokens, revokedTokens, sessions } from '@projec
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
+import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
@@ -62,10 +63,18 @@ async function writeSessionRevokedAudit(
     bulk: fields.bulk,
     revokedCount: fields.revokedCount,
   }
+  // Code-review finding (Story 8.1): this used to hardcode actorTokenId: null unconditionally,
+  // which meant every real session revocation (logout, deactivation, admin_action, idle_expiry,
+  // security, account_recovery) permanently violated checkAuditActorTokenCoverage
+  // (packages/db/src/check-audit-actor-token-coverage.ts) for an actor who typically already has
+  // a real user_identity_tokens row — audit_log_entries is append-only, so this was a live,
+  // unbounded production gap, not a test-only issue. Resolve the acting user's real token the
+  // same way every other human-actor audit write does (firstActorTokenIdForUser).
+  const actorTokenId = await firstActorTokenIdForUser(tx, fields.actorUserId)
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
-      actorTokenId: null,
+      actorTokenId,
       actorType: 'human',
       eventType: AuditEvent.SESSION_REVOKED,
       payload,
@@ -76,7 +85,7 @@ async function writeSessionRevokedAudit(
 
   await tx.insert(auditLogEntries).values({
     orgId: fields.orgId,
-    actorTokenId: null,
+    actorTokenId,
     actorType: 'human',
     eventType: AuditEvent.SESSION_REVOKED,
     payload,

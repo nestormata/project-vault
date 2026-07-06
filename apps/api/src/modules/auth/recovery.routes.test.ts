@@ -9,6 +9,7 @@ import {
   mfaRecoveryCodes,
   notificationQueue,
   orgMemberships,
+  userIdentityTokens,
   users,
 } from '@project-vault/db/schema'
 import {
@@ -129,7 +130,7 @@ async function opaqueTokenFromQueue(
 async function auditRowsFor(orgId: string, eventType: string) {
   return withOrg(orgId, (tx) =>
     tx
-      .select({ id: auditLogEntries.id })
+      .select({ id: auditLogEntries.id, actorTokenId: auditLogEntries.actorTokenId })
       .from(auditLogEntries)
       .where(and(eq(auditLogEntries.orgId, orgId), eq(auditLogEntries.eventType, eventType)))
   )
@@ -229,6 +230,13 @@ describe.sequential('account recovery routes', () => {
         .values({ email: memberEmail, passwordHash: 'unused-in-this-test' })
         .returning({ id: users.id })
       expect(memberUser).toBeDefined()
+      // Code-review finding (Story 8.1): a real user_identity_tokens row, incidental to what
+      // this test actually exercises (the no-reachable-admin 404 path) but required so the
+      // resulting auth.recovery_blocked_no_admin audit row doesn't permanently fail
+      // checkAuditActorTokenCoverage (packages/db/src/check-audit-actor-token-coverage.ts).
+      await getDb()
+        .insert(userIdentityTokens)
+        .values({ userId: memberUser?.id as string, displayName: memberEmail })
       await withOrg(owner.orgId, (tx) =>
         tx.insert(orgMemberships).values({
           orgId: owner.orgId,
@@ -256,6 +264,13 @@ describe.sequential('account recovery routes', () => {
 
       const auditRows = await auditRowsFor(owner.orgId, 'auth.recovery_blocked_no_admin')
       expect(auditRows).toHaveLength(1)
+      // Code-review finding (Story 8.1): this fixture used to insert memberUser with no backing
+      // user_identity_tokens row, incidental to what this test actually exercises (the
+      // no-reachable-admin 404 path) — writeHumanAuditEntryOrFailClosed correctly, faithfully
+      // reported that real absence as actor_token_id: null, permanently failing
+      // checkAuditActorTokenCoverage (audit_log_entries is append-only, never cleaned up between
+      // test runs).
+      expect(auditRows[0]?.actorTokenId).not.toBeNull()
     })
 
     it('rate-limits by IP after 10 requests (429, AC-11)', async () => {
