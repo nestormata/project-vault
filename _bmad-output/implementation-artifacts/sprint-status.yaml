@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-07-06  # updated: 8-1 -> done; epic-5 -> done (5.4/5.5 both landed, retro rechecked); new 8-5 story added for 5.4's unresolved adversarial-review findings; epic-6-retrospective optional -> done; 6-4 added (backlog); epic-6 held in-progress; story Status: headers synced for 6-1/6-2/7-1/7-2/7-3/8-1
+last_updated: 2026-07-06  # updated: 8-1 -> done; epic-5 -> done (5.4/5.5 both landed, retro rechecked); new 8-5 story added for 5.4's unresolved adversarial-review findings; epic-6-retrospective optional -> done; 6-4 added (backlog); epic-6 held in-progress; story Status: headers synced for 6-1/6-2/7-1/7-2/7-3/8-1; epic-7-retrospective optional -> done; epic-7 comment added (G2 hold reason); new 8-6 story added for the machine-user web UI gap + Epic 7 hardening findings
 project: Project Vault
 project_key: NOKEY
 tracking_system: file-system
@@ -105,11 +105,11 @@ development_status:
   epic-6-retrospective: done
 
   # Epic 7: Machine User Access & CI/CD Integration
-  epic-7: in-progress
+  epic-7: in-progress # held open pending G2 — no linked follow-up story yet for the machine-user management web UI gap flagged by 7.1/7.2 (see deferred-work.md, epic-7-retro-2026-07-06.md)
   7-1-machine-user-identity-and-api-key-management: done
   7-2-machine-user-authentication-and-programmatic-secret-retrieval: done
   7-3-github-actions-cicd-integration: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 
   # Epic 8: Compliance, Audit & Governance
   epic-8: in-progress
@@ -118,6 +118,7 @@ development_status:
   8-3-access-reports-dormant-users-and-audit-pii-management: ready-for-dev # story file created 2026-07-05; hard-prerequisite on 8-1/8-2 reaching done before implementation starts (D7)
   8-4-data-subject-erasure-request-handling: ready-for-dev # story file created 2026-07-05 — API-only (no dedicated UI story exists, same accepted Epic 8 gap as 8.1/8.2); depends on 8.1's audit_log_entries/writeHumanAuditEntryOrFailClosed and 4.3's revokeAllUserSessionsInOrg/account_recovery_tokens; does NOT block on 8.3 (still backlog) — builds its own reusable pseudonymization primitive for 8.3 to reuse later
   8-5-rotation-web-ui-hardening: backlog # added 2026-07-06 from the epic-5 retro recheck — bundles Story 5.4's 4 unresolved adversarial-review findings: sealed-vault (503) handling missing on GET .../rotations|dependencies|upcoming page loads despite those routes being vault-guarded (contradicts 5.4's own AC-24 text); mfa_required (403) never handled in rotation web UI despite 5 of 11 endpoints requiring MFA; 429 rate-limit responses unhandled (highest-risk on break-glass); break-glass new-value field has no client-side secrets-clearing on submit/teardown. See 5-4-rotation-workflow-web-ui-adversarial-review.md and epic-5-retro-2026-07-05.md addendum.
+  8-6-epic-7-completion-machine-user-web-ui-and-hardening: ready-for-dev # story file created 2026-07-06 from the epic-7 retro — closes the machine-user management web UI gap flagged (never tracked) by 7.1/7.2, plus 6 hardening findings: no deactivation endpoint, untested offline-cache concurrency race, missing failed-lookup rate limit, unverified main branch protection, unfiled Marketplace-publish tracked issue, undocumented cache-crypto cross-release sync. epic-7 held in-progress until this lands (G2).
   epic-8-retrospective: optional
 
   # Epic 9: Platform Operations, API & Self-Hosting
