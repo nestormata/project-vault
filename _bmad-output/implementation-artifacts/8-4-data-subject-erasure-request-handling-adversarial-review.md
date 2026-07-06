@@ -3,6 +3,7 @@
 - **Date:** 2026-07-05
 - **Reviewed file:** `_bmad-output/implementation-artifacts/8-4-data-subject-erasure-request-handling.md`
 - **Reviewer:** bmad-review-adversarial-general
+- **Resolution status (2026-07-05):** All 14 findings accepted and addressed directly in the story file (not deferred). See D2 (remediation path), D3 (collision retry), D6 (keyed HMAC + `/register` guard), D9 (request-creation race), D10 (request-creation audit event), D12 (sessions PII scrub, new), D13 (randomized password sentinel, new), AC-3 (timing side-channel), AC-6 (strict `confirm` validation), AC-14 (`piiRetained` real table names), AC-17B (new — self-registration bypass), AC-20 (tighter `execute` rate-limit tier), AC-21 (owner-no-MFA clarification).
 
 ## Findings
 

@@ -41,6 +41,8 @@ so that **I can demonstrate compliance with data subject erasure obligations wit
 
 **Resolution (v1 scope, must be implemented as a hard precondition — AC-8):** Erasure **execution** (not the read-only PII-inventory step) is blocked with `409 { code: "user_has_other_org_memberships", otherOrgCount: N }` unless the target user's **only** `org_memberships` row (with `status = 'active'` or `'deactivated'` — any row at all) is the requesting org's. This makes global-identity erasure (email/password/MFA/sessions) safe by construction: if it proceeds, the calling org is provably the only org with a stake in that user's identity. If an admin needs to erase a user who belongs to multiple orgs, they must coordinate with the other orgs first (out of scope for this story — an ops/process concern, not an application feature, mirroring Story 4.3's D4 precedent for its own descoped reactivation feature). Document this limitation plainly in the erasure-request response so admins aren't surprised by the 409.
 
+**Remediation path (do not leave this as a silent dead end):** the `409` response body must include `remediation: "Contact support to coordinate removal of this user's membership in the other org(s) before erasure can proceed."`, and Dev Notes must document the operational runbook: support/ops removes (or has the other org's owner remove) the stale/other-org `org_memberships` row out-of-band, after which a retry of `execute` succeeds per AC-8's "positive/happy-path confirmation" case. If the other org is dissolved, abandoned, or unreachable for more than 30 days, this is escalated as an Epic 8 retrospective gap (same "raise it, don't silently accept it" discipline already applied to the deferred web-UI gap in the Product Surface Contract section above) rather than left as an unresolvable request. This does not require new application code beyond the `remediation` string in the error body — it is a process guarantee, not a feature — but it must never be presented to the admin as a dead end with no path forward.
+
 This guard also **simplifies** the re-invite-block design (D6): since only single-org-membership users can ever be fully erased, "cannot be re-invited to any project in **the org**" (epics.md:1983) is automatically the only org that could ever matter for that user — there is no scenario where a fully-erased user still has a live membership elsewhere that the block would need to account for.
 
 ### D3 — Story 8.3's pseudonymization mechanism doesn't exist yet; build the shared primitive here, let 8.3 reuse it
@@ -58,6 +60,7 @@ export async function pseudonymizeUserIdentityToken(
 
 - Finds **all** `user_identity_tokens` rows with `user_id = :userId` (there can be more than one historically, though in practice each user has exactly one — do not assume uniqueness without checking; no unique constraint exists on `user_identity_tokens.user_id` in the current schema).
 - For each row: generates an alias `user_<8-random-lowercase-alphanumeric-chars>` (crypto-random, not `Math.random()` — reuse the codebase's existing random-token helper used by invitation/recovery tokens, e.g. `packages/db` or `apps/api/src/lib/crypto.ts`'s existing secure-random utility rather than adding a new one), sets `display_name = alias`, sets `pseudonymized_at = NOW()`.
+- **Collision handling (do not skip):** before committing, check whether the generated alias already exists as another row's `user_identity_tokens.display_name` (`SELECT 1 FROM user_identity_tokens WHERE display_name = :alias`, inside the same transaction). On collision, regenerate a fresh 8-char alias and retry, up to 5 attempts; if all 5 collide (astronomically unlikely at this alphabet size, but must fail loudly rather than silently produce a duplicate display name), throw and let the transaction roll back rather than proceeding with a non-unique alias — a collision would otherwise let two different pseudonymized users share one audit-search display alias (Story 8.2), silently and undetectably.
 - **Idempotent**: if a row's `pseudonymized_at` is already set, re-running replaces the alias with a **new** one and updates `pseudonymized_at` again (matches AC-E8d's "repeated pseudonymization" contract that Story 8.3 will also need — do not special-case "already pseudonymized" as a no-op, since Story 8.3's own AC explicitly wants idempotent *re*-pseudonymization to succeed, not silently skip).
 - Does **not** touch `audit_log_entries` — the FK (`actor_token_id`) is stable; only the referenced row's `display_name` changes (this is the whole point of the design — HMAC values in `audit_log_entries` are computed over `actor_token_id`, `payload`, etc., never over `display_name`, so changing `display_name` cannot invalidate any HMAC — confirm this by re-reading `computeAuditHmac`'s field list in `apps/api/src/modules/audit/write-entry.ts` before coding, per D-note precedent in Story 8.1).
 
@@ -80,7 +83,11 @@ When Story 8.3 is written later, its `POST /pseudonymize` route should import an
 
 `epics.md:1983`'s "a user with a pending or completed erasure request cannot be re-invited to any project in the org" is checked at `POST /api/v1/projects/:projectId/invitations` (`apps/api/src/modules/invitations/routes.ts:130-191`), which validates against `parsed.data.email` (the *invitee's* email, normalized — see `normalizeEmail`). But by the time an admin tries to re-invite, the erased user's `users.email` has already been overwritten to `erased_<hash>@erased.invalid` (epics.md step 2) — **the original email is gone**, so a plain `WHERE users.email = :invitedEmail` lookup against erased users will never match.
 
-**Resolution:** at erasure-**request** creation time (`AC-1`, before any PII is touched), compute and store `original_email_hash = SHA-256(normalizeEmail(currentEmail))` on the new `data_erasure_requests` row. The invitation-creation handler, after its existing `archivedAt`/`already_member` checks (`invitations/routes.ts:183-191`), adds one more check: hash the invitee email the same way and look for a `data_erasure_requests` row in this project's org with `status IN ('pending','in_progress','completed')` and a matching `original_email_hash`. If found, return `410 { code: "user_erased" }` (matches the existing 410 response schema already declared for this route — `CreateInvitationResponseSchema`'s sibling error schemas at `invitations/routes.ts:141`, no schema migration needed, just a new response case).
+**Resolution:** at erasure-**request** creation time (`AC-1`, before any PII is touched), compute and store `original_email_hash = HMAC-SHA256(ERASURE_EMAIL_HASH_SECRET, normalizeEmail(currentEmail))` on the new `data_erasure_requests` row — a **keyed** hash, not a bare digest (see below for why), using a new dedicated server-side secret (`ERASURE_EMAIL_HASH_SECRET`, loaded the same way other secrets in this codebase are loaded — env var / secrets manager, never hardcoded; do not reuse the audit-log HMAC key from Story 8.1, since that key's rotation lifecycle is scoped to audit integrity, not this unrelated purpose). The invitation-creation handler, after its existing `archivedAt`/`already_member` checks (`invitations/routes.ts:183-191`), adds one more check: hash the invitee email the same way and look for a `data_erasure_requests` row in this project's org with `status IN ('pending','in_progress','completed')` and a matching `original_email_hash`. If found, return `410 { code: "user_erased" }` (matches the existing 410 response schema already declared for this route — `CreateInvitationResponseSchema`'s sibling error schemas at `invitations/routes.ts:141`, no schema migration needed, just a new response case).
+
+**Why keyed, not a bare hash:** a plain `SHA-256(normalizeEmail(email))` is trivially brute-forceable — email addresses are low-entropy and guessable, especially once an org's email domain convention is known, so anyone with read access to `data_erasure_requests` could confirm whether a specific individual was ever erased by hashing candidate addresses offline. A server-side-secret-keyed HMAC removes that offline dictionary-attack surface entirely (verification is still possible, but only by a caller who already holds the server secret and can compute the same HMAC — not by brute-forcing candidate plaintexts against a public hash).
+
+**Second enforcement point — self-registration, not just invitations:** `apps/api/src/modules/auth/routes.ts`'s `POST /register` endpoint lets a person create an account directly, independent of the project-invitation flow. Once erasure execution overwrites `users.email` to `erased_<hash>@erased.invalid`, the original email becomes free again against `users.email`'s unique constraint — so without a second check, anyone could immediately self-register with the erased person's original email, undermining the same "cannot re-enter under the erased identity" intent D6 exists to enforce for invitations. `POST /register`'s handler must apply the **identical** `original_email_hash` lookup (same HMAC, same `status IN ('pending','in_progress','completed')` match, scoped to the registering org if the registration flow is org-scoped, or globally if it isn't — confirm at implementation time) and return `410 { code: "user_erased" }` under the same conditions as the invitation check, before creating the new `users` row.
 
 **Accepted, documented limitation (do not "fix" beyond this):** because the check is by email hash, if a *different* real person legitimately owns that same email address after erasure (e.g., a shared/generic mailbox, or the org's email convention gets reassigned), they will also be blocked from being invited under that address. This is judged an acceptable false-positive rate for a GDPR compliance safety net (erring toward over-blocking, never silently under-blocking) — same "accepted risk, documented, not silently discovered later" posture the codebase already takes elsewhere (e.g., Story 8.2's cross-org display-name bleed note).
 
@@ -99,13 +106,27 @@ Unlike Stories 8.1 (`FR40, FR78`), 8.2 (`FR41, FR42, FR43, FR70`), and 8.3 (`FR4
 
 Two owners could call `execute` for the same `requestId` at nearly the same time (mirrors Story 4.3 AC-19's "two admins race to deactivate the same user" pattern, and Story 8.1 finding 5's check-then-act race concern). Guard with a status-transition compare-and-set inside the transaction: `UPDATE data_erasure_requests SET status = 'in_progress' WHERE id = :requestId AND status = 'pending' RETURNING id` (or `SELECT ... FOR UPDATE` then check in application code — either is acceptable, but the check-then-transition must happen atomically inside the same transaction that performs steps 1-7/8, not as a separate pre-check). If zero rows are affected, another request already claimed it — return `409 { code: "erasure_already_in_progress" }` (or `already_completed` if it's already `completed` — distinguish the two in the response) and perform **zero** mutation.
 
+**Request-*creation* also needs a race guard, not just execution.** Two admins calling `POST .../erasure-request` for the same user at nearly the same time could both pass a naive "no existing pending row" read before either write commits, producing two `data_erasure_requests` rows for one user. Close this with a **partial unique index**: `CREATE UNIQUE INDEX ... ON data_erasure_requests (user_id) WHERE status IN ('pending', 'in_progress')` (Task 1.1/1.3). The insert then relies on the DB constraint rather than a check-then-write race: on a unique-violation error, catch it and fall back to AC-4's existing "return the existing request" behavior instead of a raw 500.
+
 ### D10 — `audit_log_entries.actor_token_id` for the erasure event itself: the actor is the *admin*, the resource is the *erased user*
 
 The `user.erasure_executed` privileged audit event (epics.md:1977) must be written via `writeHumanAuditEntryOrFailClosed` (`apps/api/src/lib/audit-or-fail-closed.ts`) with `actorTokenId` = the **executing owner's** identity token (i.e., resolve the *caller's* `user_identity_tokens` row, exactly like every other audit-writing route already does), **not** the erased user's token. `resourceId` = the erased user's `id` (or their now-pseudonymized `user_identity_tokens.id` — pick the erased user's `users.id`, since that's stable and matches how other stories reference "the user acted upon" as `resourceId`, e.g. Story 4.3's `org.user_deactivated` event). `resourceType: 'user'`. `payload` must **not** contain any PII (no email, no display name) — only structural facts: `{ dataErasureRequestId, tablesErased: [...], revokedSessionCount }`.
 
+**A second, separate audit event is required at request-*creation* time**, not just at execution. Creating an erasure request exposes a full PII inventory for a named user and flags them for eventual erasure — a compliance-sensitive action in its own right, and if a request is created but never executed (or executed by a different admin later), there must still be a trail of who initiated it and when. Write `user.erasure_requested` via the same `writeHumanAuditEntryOrFailClosed` helper, `actorTokenId` = the requesting admin/owner's token, `resourceId` = the target user's `users.id`, `resourceType: 'user'`, `payload: { dataErasureRequestId, reason }` (no PII beyond the admin-supplied `reason` text, which by construction should not contain the target's PII — same no-PII discipline as the execution event).
+
 ### D11 — No "un-erasure" endpoint; this is a one-way door (matches Story 4.3's precedent for its own one-way decisions)
 
 Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-...md:68`), this story does not build any reversal mechanism. Once `completed`, a `data_erasure_requests` row and its effects are permanent. If a future story needs reversal (extremely unlikely to ever be a legitimate GDPR need — erasure is meant to be permanent), that is new, out-of-scope work requiring its own product decision. Flag for the PM if raised.
+
+### D12 — CRITICAL GAP CLOSED: `sessions.ip_address`/`sessions.user_agent` are directly-identifying PII and were not accounted for anywhere in the original erasure design
+
+`packages/db/src/schema/sessions.ts` gives every `sessions` row real `ip_address` and `user_agent` text columns. Step 6/D4's `revokeAllUserSessionsInOrg` call **revokes** sessions (sets `revoked_at`, bumps `session_version`) but never touches these two columns — so without an explicit fix, a "fully erased" user's IP history and user-agent strings survive indefinitely, unlisted in both the PII inventory (AC-1) and the compliance report (AC-14), which is the exact artifact meant to prove to a regulator that PII was removed or its retention justified.
+
+**Resolution — new erasure step, additional to D5's account-recovery-tokens fix:** as part of the same transaction, after (or alongside) the `revokeAllUserSessionsInOrg` call, run `UPDATE sessions SET ip_address = NULL, user_agent = NULL WHERE user_id = :userId` for **all** of the user's session rows in this org (not just active ones — revoked/expired historical rows carry the same PII). This does not touch `revokeAllUserSessionsInOrg` itself (still reused verbatim per D4) — it's a separate, additive UPDATE alongside it. This becomes erasure step 6 in the renumbered 9-step sequence in AC-5; `sessions` must be added to the PII inventory (AC-1), the field-by-field purge-completeness check (AC-13), and the compliance report's `piiRemoved` list (AC-14).
+
+### D13 — Password-hash sentinel must be per-row random, not one fixed shared constant (fingerprinting avoidance)
+
+A single fixed sentinel `password_hash` value reused across every erased user creates a trivial fingerprinting query: `SELECT * FROM users WHERE password_hash = :sentinel` instantly enumerates every erased account to anyone with DB read access. This is easily avoided at no cost: generate a fresh, structurally-valid-but-never-matching bcrypt-shaped hash **per erasure** (e.g., bcrypt-hash a cryptographically random 32-byte value, discard the plaintext immediately — the resulting hash is unique per user and cannot be reverse-matched against any real password, same non-functional guarantee as a fixed constant, but without the shared-fingerprint side effect). Document this as "randomized non-functional sentinel, unique per erased user" in Dev Notes rather than "the fixed constant `X`."
 
 ---
 
@@ -147,8 +168,8 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 | `epics.md:1971`: step 1 "pseudonymized (Story 8.3 mechanism)" | Standalone `pseudonymizeUserIdentityToken()` helper built in **this** story (D3), reused by 8.3 later | Story 8.3 doesn't exist yet; do not block or duplicate |
 | `epics.md:1975`: "all active sessions are revoked (FR84 path)" | `revokeAllUserSessionsInOrg({ ..., scope: 'erasure', ... })` — new `'erasure'` literal added to `SessionRevokeScope` (D4) | Reuse Story 1.7's tested primitive; distinguish erasure-triggered revocation from other scopes in audit payloads |
 | `epics.md:1974`: "TOTP secret and MFA recovery codes are deleted" | Delete all `mfa_enrollments` rows + all `mfa_recovery_codes` rows for the user; set `users.mfa_enrolled_at = NULL` (D5) | No single "TOTP secret" column exists; the real schema splits this across two tables plus one `users` column |
-| `epics.md:1970-1977`: 7 numbered erasure steps | 8 steps — adds "delete `account_recovery_tokens` rows for the user" (D5) | epics.md omits this; a live, unexpired recovery token surviving erasure is a security hole (attacker could reset credentials for an "erased" identity) |
-| `epics.md:1983`: "cannot be re-invited to any project in the org" | Checked via `original_email_hash` stored on `data_erasure_requests` at request-creation time, compared against the invitee email's hash at invite-creation time (D6) | The literal email is gone by execution time (overwritten to `erased_<hash>@erased.invalid`); a hash captured *before* erasure is the only way to make this check possible later |
+| `epics.md:1970-1977`: 7 numbered erasure steps | 9 steps — adds "delete `account_recovery_tokens` rows for the user" (D5) and "null `sessions.ip_address`/`sessions.user_agent`" (D12) | epics.md omits both: a live, unexpired recovery token surviving erasure is a security hole (attacker could reset credentials for an "erased" identity), and IP/user-agent are directly-identifying PII the original design never accounted for |
+| `epics.md:1983`: "cannot be re-invited to any project in the org" | Checked via `original_email_hash` — a **keyed HMAC**, not a bare hash — stored on `data_erasure_requests` at request-creation time, compared against the invitee email's hash both at invite-creation time (D6) **and** at self-registration time (`POST /register`) | The literal email is gone by execution time (overwritten to `erased_<hash>@erased.invalid`); a hash captured *before* erasure is the only way to make this check possible later. A bare unsalted hash would be brute-forceable, and the invitation-only check left direct self-registration as an unguarded bypass |
 | `epics.md:1966`: "an org admin is authenticated" (no execution-authority distinction) | Request creation: `admin`+`owner`. Execution: `owner`-only (D7) | Execution is irreversible and cross-cutting (global identity fields); mirrors Story 8.1's precedent of reserving the highest-stakes endpoint for `owner` only |
 | No FR number in `epics.md` for this story | Sourced from `prd.md:294` and `prd.md:631-632` narrative GDPR requirement (D8) | Unlike Stories 8.1-8.3, this story has no numbered FR; document the narrative source instead of inventing one |
 
@@ -163,8 +184,9 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 **When** Riley calls `POST /api/v1/org/users/:userId/erasure-request` with body `{ "reason": "GDPR Article 17 request received via support ticket #4821", "requestedBy": "Sam <sam@example.com> via privacy@example-org.com" }`,
 
 **Then** the system:
-1. Creates a `data_erasure_requests` row: `id` (new uuid), `userId: Sam's id`, `orgId: Org A's id`, `requestedBy` (as given), `reason` (as given), `status: 'pending'`, `originalEmailHash: SHA-256(normalizeEmail('sam@example.com'))` (D6), `createdAt: now`, `completedAt: null`.
-2. Computes and returns a PII inventory covering every table with erasable PII for Sam:
+1. Creates a `data_erasure_requests` row: `id` (new uuid), `userId: Sam's id`, `orgId: Org A's id`, `requestedBy` (as given), `reason` (as given), `status: 'pending'`, `originalEmailHash: HMAC-SHA256(ERASURE_EMAIL_HASH_SECRET, normalizeEmail('sam@example.com'))` (D6 — keyed hash, not a bare digest), `createdAt: now`, `completedAt: null`.
+2. Writes a `user.erasure_requested` audit event (D10) — `actorTokenId`: Riley's identity token, `resourceId`: Sam's `users.id`, `payload: { dataErasureRequestId, reason }`.
+3. Computes and returns a PII inventory covering every table with erasable PII for Sam:
 
 ```json
 {
@@ -177,16 +199,17 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
         { "table": "user_identity_tokens", "rowCount": 1, "piiFields": ["displayName"] },
         { "table": "mfa_enrollments", "rowCount": 1, "piiFields": ["secretEncrypted"] },
         { "table": "mfa_recovery_codes", "rowCount": 2, "piiFields": ["codeHash"] },
-        { "table": "account_recovery_tokens", "rowCount": 0, "piiFields": ["tokenHash"] }
+        { "table": "account_recovery_tokens", "rowCount": 0, "piiFields": ["tokenHash"] },
+        { "table": "sessions", "rowCount": 1, "piiFields": ["ipAddress", "userAgent"] }
       ]
     }
   }
 }
 ```
 
-3. Returns `201` with this payload so the admin can review scope **before** calling execute.
+4. Returns `201` with this payload so the admin can review scope **before** calling execute.
 
-**And** integration test confirms all five table rows are counted accurately by seeding known row counts (e.g., 2 `mfa_recovery_codes` rows) and asserting the returned `rowCount` matches exactly.
+**And** integration test confirms all six table rows are counted accurately by seeding known row counts (e.g., 2 `mfa_recovery_codes` rows) and asserting the returned `rowCount` matches exactly.
 
 ---
 
@@ -218,6 +241,8 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 
 **Then** the endpoint returns `404 { code: "user_not_found" }` (tenant-isolation-safe error — do not leak whether the user exists globally, only whether they're a member of *this* org, mirroring the existing `PROJECT_NOT_FOUND`-style pattern used elsewhere in the codebase).
 
+**Timing side-channel note:** both cases — `userId` doesn't exist at all, and `userId` exists but has no Org A membership — must resolve through the **same query path** (a single join query across `users` and `org_memberships` scoped to `orgId`, not an "if user exists, then separately check membership" two-query branch) so the two "doesn't exist" reasons aren't distinguishable by response timing, the same discipline already applied to the response body itself.
+
 **Edge case — Sam was already fully erased (org membership row is gone or `data_erasure_requests` already `completed`):** since erasure does **not** delete the `org_memberships` row (epics.md explicitly retains it, D2/"what is NOT erased"), the membership lookup still succeeds. This case is instead caught by AC-4 (duplicate request guard), not AC-3.
 
 ---
@@ -234,23 +259,26 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 
 **Edge case — existing request is `status: 'in_progress'` (execution is mid-flight, see AC-9/AC-10):** returns `409 { code: "erasure_execution_in_progress", requestId: "<existing id>" }`.
 
+**Edge case — two admins call `POST .../erasure-request` for the same user at nearly the same time (concurrent creation race, D9):** the partial unique index `(user_id) WHERE status IN ('pending','in_progress')` (Task 1.3) guarantees only one insert succeeds; the second request's insert raises a unique-violation, which the handler catches and converts into the same `409 erasure_request_already_pending` response as the sequential case, returning the winning request's id and freshly-recomputed inventory — never a raw 500 or a second row.
+
 ---
 
-### AC-5: Execute Erasure — Happy Path (8 Atomic Steps)
+### AC-5: Execute Erasure — Happy Path (9 Steps: 6 PII-Erasure + 1 Reused-Primitive Call + 2 Bookkeeping)
 
 **Given** Sam's `data_erasure_requests` row exists with `status: 'pending'`, Riley is the org `owner` (D7), and Sam has exactly one `org_memberships` row total (Org A only — satisfies D2's cross-org guard),
 
 **When** Riley calls `POST /api/v1/org/users/:userId/erasure-request/:requestId/execute` with `{ "confirm": true }`,
 
 **Then**, in a single database transaction:
-1. `pseudonymizeUserIdentityToken(tx, Sam.id)` runs (D3) — Sam's `user_identity_tokens.display_name` becomes e.g. `user_a3f9b2c1`, `pseudonymized_at = now()`.
+1. `pseudonymizeUserIdentityToken(tx, Sam.id)` runs (D3, with its collision-retry guard) — Sam's `user_identity_tokens.display_name` becomes e.g. `user_a3f9b2c1`, `pseudonymized_at = now()`.
 2. `users.email` for Sam is set to `erased_<12-hex-chars>@erased.invalid` (hash derived from Sam's original user id + a random salt, not reversible to the original email).
-3. `users.password_hash` is overwritten with a fixed sentinel value (a constant, non-functional bcrypt-shaped string such that no password will ever match it — e.g., reuse the same sentinel pattern the codebase uses elsewhere for "impossible to authenticate" placeholder hashes, or document a new one clearly in Dev Notes if none exists yet).
+3. `users.password_hash` is overwritten with a **freshly-generated, per-user random** sentinel value (D13) — a non-functional bcrypt-shaped hash of a discarded cryptographically random 32-byte value, unique per erased user (not a single shared constant — a shared constant would let anyone with DB read access fingerprint every erased account with one `WHERE password_hash = :sentinel` query).
 4. `users.mfa_enrolled_at` is set to `NULL`; **all** `mfa_enrollments` rows for Sam are deleted; **all** `mfa_recovery_codes` rows for Sam are deleted.
 5. **All** `account_recovery_tokens` rows for Sam are deleted (D5 gap-fix, beyond epics.md's literal 7 steps).
-6. `revokeAllUserSessionsInOrg({ userId: Sam.id, orgId: Org A.id, actorUserId: Riley.id, reason: 'erasure', scope: 'erasure', tx })` is called (D4) — reused verbatim, not reimplemented.
-7. `data_erasure_requests.status` is set to `'completed'`, `completedAt = now()`.
-8. One `user.erasure_executed` privileged audit event is written via `writeHumanAuditEntryOrFailClosed` (D10): `actorTokenId` = Riley's identity token, `resourceId` = Sam's `users.id`, `resourceType: 'user'`, `payload: { dataErasureRequestId, tablesErased: ["users","user_identity_tokens","mfa_enrollments","mfa_recovery_codes","account_recovery_tokens"], revokedSessionCount }`.
+6. **All** `sessions` rows for Sam in this org have `ip_address` and `user_agent` set to `NULL` (D12 gap-fix) — a direct `UPDATE`, separate from and in addition to step 7's revocation call, covering historical/revoked rows too, not just active ones.
+7. `revokeAllUserSessionsInOrg({ userId: Sam.id, orgId: Org A.id, actorUserId: Riley.id, reason: 'erasure', scope: 'erasure', tx })` is called (D4) — reused verbatim, not reimplemented.
+8. `data_erasure_requests.status` is set to `'completed'`, `completedAt = now()`.
+9. One `user.erasure_executed` privileged audit event is written via `writeHumanAuditEntryOrFailClosed` (D10): `actorTokenId` = Riley's identity token, `resourceId` = Sam's `users.id`, `resourceType: 'user'`, `payload: { dataErasureRequestId, tablesErased: ["users","user_identity_tokens","mfa_enrollments","mfa_recovery_codes","account_recovery_tokens","sessions"], revokedSessionCount }`.
 
 **And** the response is `200`:
 ```json
@@ -268,6 +296,8 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 **When** Riley calls execute with `{ "confirm": false }` or omits `confirm` entirely,
 
 **Then** the endpoint returns `400 { code: "confirmation_required", message: "Erasure is irreversible; confirm: true is required" }` and performs **zero** mutation (no status change, no audit row, no session revocation).
+
+**Validation contract (schema-level, not just a truthiness check):** the request body schema declares `confirm` as a **strict boolean** (`z.boolean()` or equivalent) with `.strict()`/no-unknown-keys on the containing object. `{ "confirm": "true" }` (string), `{ "confirm": 1 }` (number), and any unexpected extra body fields are all rejected at schema validation with `400 { code: "validation_error" }`, before the handler's own `confirm === true` check ever runs — do not accept any non-boolean truthy value as satisfying the confirmation gate.
 
 ---
 
@@ -297,7 +327,7 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 
 **When** Riley (Org A owner) calls execute,
 
-**Then** the endpoint returns `409 { code: "user_has_other_org_memberships", otherOrgCount: 1 }` and performs **zero** mutation — Sam's `users.email`, `password_hash`, sessions, and MFA data are all left untouched; the `data_erasure_requests` row remains `status: 'pending'` (not transitioned to `in_progress` or `completed`).
+**Then** the endpoint returns `409 { code: "user_has_other_org_memberships", otherOrgCount: 1, remediation: "Contact support to coordinate removal of this user's membership in the other org(s) before erasure can proceed." }` (D2's remediation path — never a dead-end 409 with no next step) and performs **zero** mutation — Sam's `users.email`, `password_hash`, sessions, and MFA data are all left untouched; the `data_erasure_requests` row remains `status: 'pending'` (not transitioned to `in_progress` or `completed`).
 
 **Edge case — Sam's Org B membership is `status: 'deactivated'` (not active):** the guard **still blocks** — a deactivated-but-present membership row still represents a live stake in Sam's global identity (Org B could reactivate access via direct DB action per Story 4.3's D4, or Sam could still exist in Org B's audit history) and the epics.md "what is NOT erased" list explicitly retains membership rows for referential integrity. `otherOrgCount` counts membership rows regardless of `status`.
 
@@ -313,7 +343,7 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 
 **When** Riley calls execute again for the same `requestId`,
 
-**Then** the endpoint returns `409 { code: "already_completed", completedAt: "<original timestamp>" }` and performs **zero** additional mutation — no second `user.erasure_executed` audit event, no re-running of steps 1-8, no double session-revocation.
+**Then** the endpoint returns `409 { code: "already_completed", completedAt: "<original timestamp>" }` and performs **zero** additional mutation — no second `user.erasure_executed` audit event, no re-running of steps 1-9, no double session-revocation.
 
 ---
 
@@ -323,7 +353,7 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 
 **When** two owners, Riley and Jordan, call execute for the same `requestId` at nearly the same time (simulated in a test via two concurrent transactions),
 
-**Then** exactly **one** call succeeds (`200`, full 8-step execution) and the other receives `409 { code: "erasure_already_in_progress" }` (or `already_completed`, depending on timing relative to the winner's commit) — the status-transition compare-and-set (D9: `UPDATE ... WHERE status = 'pending'` or `SELECT ... FOR UPDATE`) guarantees only one transaction can claim the `pending → in_progress` transition. Integration test asserts: exactly one `user.erasure_executed` audit row exists afterward, exactly one session-revocation occurred (not two), and `users.email`/`password_hash` were touched exactly once (assert via a `updated_at`-style check or by counting side effects, since the value itself is deterministic either way).
+**Then** exactly **one** call succeeds (`200`, full 9-step execution) and the other receives `409 { code: "erasure_already_in_progress" }` (or `already_completed`, depending on timing relative to the winner's commit) — the status-transition compare-and-set (D9: `UPDATE ... WHERE status = 'pending'` or `SELECT ... FOR UPDATE`) guarantees only one transaction can claim the `pending → in_progress` transition. Integration test asserts: exactly one `user.erasure_executed` audit row exists afterward, exactly one session-revocation occurred (not two), and `users.email`/`password_hash` were touched exactly once (assert via a `updated_at`-style check or by counting side effects, since the value itself is deterministic either way).
 
 ---
 
@@ -356,7 +386,7 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
 **When** erasure executes,
 
 **Then**, verified field-by-field in an integration test:
-- Both `sessions` rows: `revoked_at` set, `session_version` incremented (via `revokeAllUserSessionsInOrg`, not new logic).
+- Both `sessions` rows: `revoked_at` set, `session_version` incremented (via `revokeAllUserSessionsInOrg`, not new logic), **and** `ip_address`/`user_agent` both `NULL` (D12 gap-fix; without this check, a regression that skips step 6 would go unnoticed).
 - Both `mfa_enrollments` rows (pending **and** confirmed): deleted — `SELECT count(*) FROM mfa_enrollments WHERE user_id = :samId` returns `0`.
 - All 3 `mfa_recovery_codes` rows (used and unused): deleted — count returns `0`.
 - The `account_recovery_tokens` row: deleted — count returns `0` (D5 gap-fix; without this check, a regression that forgets step 5/8 would go unnoticed).
@@ -383,12 +413,14 @@ Like Story 4.3's deliberate choice not to build a reactivation endpoint (`4-3-..
       { "table": "user_identity_tokens", "fields": ["displayName"], "method": "replaced with pseudonymous alias" },
       { "table": "mfa_enrollments", "fields": ["secretEncrypted"], "method": "rows deleted" },
       { "table": "mfa_recovery_codes", "fields": ["codeHash"], "method": "rows deleted" },
-      { "table": "account_recovery_tokens", "fields": ["tokenHash"], "method": "rows deleted" }
+      { "table": "account_recovery_tokens", "fields": ["tokenHash"], "method": "rows deleted" },
+      { "table": "sessions", "fields": ["ipAddress", "userAgent"], "method": "nulled in place (rows retained for revocation history, PII columns scrubbed)" }
     ],
     "piiRetained": [
       { "table": "audit_log_entries", "reason": "audit log integrity — tamper-evident log (Story 8.1); identity pseudonymized via user_identity_tokens, not this table" },
       { "table": "org_memberships", "reason": "referential integrity — role/project history retained; display identity pseudonymized" },
-      { "table": "rotation history / project_invitations.invitedBy", "reason": "referential integrity for historical operational records" }
+      { "table": "rotations.initiated_by", "reason": "referential integrity for historical rotation records — FK to users.id, no cascade delete" },
+      { "table": "project_invitations.invited_by", "reason": "referential integrity for historical invitation records — FK to users.id, no cascade delete" }
     ],
     "retentionJustification": "audit log integrity",
     "auditEventId": "..."
@@ -444,6 +476,18 @@ This is the machine-readable compliance artifact a regulator or DPO would receiv
 
 ---
 
+### AC-17B: Re-Invite Block — Self-Registration Bypass Closed (D6)
+
+**Given** Sam's erasure request is `status: 'completed'` with `original_email_hash` stored for `sam@example.com`,
+
+**When** anyone calls `POST /register` (self-service account registration, `apps/api/src/modules/auth/routes.ts`) with `{ "email": "sam@example.com", ... }` — i.e. **not** via a project invitation,
+
+**Then** the endpoint returns `410 { code: "user_erased" }` and creates **no** new `users` row — the same `original_email_hash` lookup used for invitations (AC-17) is also applied at self-registration, since `users.email`'s unique constraint no longer blocks Sam's original address once it's been overwritten to `erased_<hash>@erased.invalid`, and without this check anyone could immediately claim the erased identity's original email by registering directly instead of being invited.
+
+**Edge case — a different, never-erased user registers with an unrelated email:** registration succeeds normally, same false-positive-avoidance guarantee as AC-18.
+
+---
+
 ### AC-19: `data_erasure_requests` Table — RLS / Tenant Isolation (D1)
 
 **Given** `data_erasure_requests` is a new, org-scoped table (has `org_id`),
@@ -460,9 +504,11 @@ This is the machine-readable compliance artifact a regulator or DPO would receiv
 
 **Given** the sensitive-mutation rate-limit tier already used for comparable high-stakes admin actions (`POST /org/users/:userId/deactivate`, `DELETE /org/users/:userId/sessions` — both `max: 20` per Story 4.3/1.7 precedent),
 
-**When** the erasure-request, execute, and report routes are registered via `secureRoute()`,
+**When** the erasure-request and report routes are registered via `secureRoute()`,
 
-**Then** each gets `rateLimit: { max: 20, timeWindowMs: 60_000, key: 'POST /api/v1/org/users/:userId/erasure-request' }` (and the equivalent per-route key for execute/report) — do not invent a new, unjustified rate-limit tier without citing this precedent (mirrors Story 8.1 finding 10's critique of switching precedents without acknowledgment — this story picks the mutating-admin-action precedent explicitly, not the read-only one, since even the "read-only" report endpoint exposes compliance-sensitive completion data).
+**Then** each gets `rateLimit: { max: 20, timeWindowMs: 60_000, key: 'POST /api/v1/org/users/:userId/erasure-request' }` (and the equivalent per-route key for report) — do not invent a new, unjustified rate-limit tier without citing this precedent for these two routes (mirrors Story 8.1 finding 10's critique of switching precedents without acknowledgment — this story picks the mutating-admin-action precedent explicitly, not the read-only one, since even the "read-only" report endpoint exposes compliance-sensitive completion data).
+
+**The `execute` route gets its own, tighter tier — not the routine-admin-action precedent.** Unlike deactivation or session revocation, erasure execution is irreversible (D11 — no un-erasure endpoint) and `owner`-only (D7); a limit sized for frequent, reversible admin actions (20/min) is a strange ceiling to accept by default for a permanent, one-way-door action. `execute` gets `rateLimit: { max: 5, timeWindowMs: 60_000, key: 'POST /api/v1/org/users/:userId/erasure-request/:requestId/execute' }` — tight enough to prevent runaway/scripted mass-erasure, loose enough not to block a legitimate single-user erasure or a rare burst of a few in short succession.
 
 ---
 
@@ -473,6 +519,8 @@ This is the machine-readable compliance artifact a regulator or DPO would receiv
 **When** the execute route is registered,
 
 **Then** `security.requireMfa: true` (standard grace-respecting gate, matching the majority of `owner`-role mutating routes in `org/routes.ts`) — request-creation and report routes may use the same `requireMfa: true` default for consistency, since there's no cost to requiring it and it avoids the exact ambiguity Story 8.1 finding 9 flagged about borrowing a weaker analogy to justify skipping MFA.
+
+**Owner-with-no-MFA-enrolled case:** this story does not introduce new MFA-gate behavior — `requireMfa: true` inherits the platform's existing, already-shipped grace-respecting gate semantics (Story 1.9's role/MFA enforcement), which prompts an unenrolled caller toward enrollment rather than a hard, unrecoverable lockout. This story does not need to (and must not) special-case "owner has no MFA" beyond using the same gate every other `requireMfa: true` route already uses — a single-owner org facing a time-boxed regulatory deadline is in the same position as any other unenrolled owner hitting any other MFA-gated route today, which is a platform-wide concern already addressed once, not something this story should re-solve or work around.
 
 ---
 
@@ -489,14 +537,17 @@ This is the machine-readable compliance artifact a regulator or DPO would receiv
 ### AC-23: Integration Test Coverage Summary
 
 Integration tests must cover, at minimum, one test per AC above, plus:
-- PII inventory generation accuracy (AC-1) with non-trivial row counts (not just 0/1) for at least one many-rows table (`mfa_recovery_codes`).
-- Full 8-step erasure execution (AC-5) with **every** field verified post-execution (AC-13), not just a status-code check.
+- PII inventory generation accuracy (AC-1) with non-trivial row counts (not just 0/1) for at least one many-rows table (`mfa_recovery_codes`), including the `sessions` row.
+- Full 9-step erasure execution (AC-5) with **every** field verified post-execution (AC-13, including the new `sessions.ip_address`/`user_agent` nulling), not just a status-code check.
 - Audit event preserved and HMAC-verifiable post-erasure (AC-11) — this requires Story 8.1's verify endpoint to exist; if 8.1 isn't merged yet when this story's tests are written, assert directly against `computeAuditHmac` recomputation instead of calling the not-yet-existing HTTP endpoint, and add a `// TODO(8.1 merge): replace with GET /org/audit/verify call` comment.
-- Re-invite blocked (AC-17) and not-blocked-for-unrelated-users (AC-18).
+- Both audit events exist: `user.erasure_requested` at request creation and `user.erasure_executed` at execution (D10), with correct actor/resource on each.
+- Re-invite blocked via invitations (AC-17), via self-registration (AC-17B), and not-blocked-for-unrelated-users on both paths (AC-18).
 - Cross-org guard (AC-8) — this is the single highest-value test in this story; do not skip it.
-- Concurrent execute race (AC-10).
-- Compliance report format (AC-14) matches the documented shape exactly (snapshot-style assertion on keys present).
+- Concurrent execute race (AC-10) and concurrent request-*creation* race (AC-4's D9 edge case, via the partial unique index).
+- Pseudonymization alias collision retry (D3) — force a collision deterministically in a unit test (e.g. stub the random-alias generator) and assert the retry produces a distinct alias.
+- Compliance report format (AC-14) matches the documented shape exactly (snapshot-style assertion on keys present), including the corrected `piiRetained` entries (`rotations.initiated_by`, `project_invitations.invited_by`) and the new `sessions` row in `piiRemoved`.
 - RLS/tenant isolation (AC-19) — cross-org 404, not 403.
+- Confirm-gate strict validation (AC-6) — non-boolean `confirm` values and unexpected extra body fields are rejected at the schema layer.
 
 ---
 
@@ -505,39 +556,42 @@ Integration tests must cover, at minimum, one test per AC above, plus:
 - [ ] Task 1: Schema (AC: 1, 19)
   - [ ] 1.1 Create `packages/db/src/schema/data-erasure-requests.ts` — org-scoped, `id`, `userId` (FK → `users.id`, no cascade delete since `users` row is never hard-deleted), `orgId`, `requestedBy`, `reason`, `status` (`check` constraint `IN ('pending','in_progress','completed')`), `originalEmailHash`, `createdAt`, `completedAt`.
   - [ ] 1.2 Add RLS policy for `data_erasure_requests` scoped to `org_id`; do **not** add to `EXCLUDED_TABLES`.
-  - [ ] 1.3 Add indexes: `(org_id, user_id)`, `(status, created_at)` for the pending/in-progress lookup in AC-4.
+  - [ ] 1.3 Add indexes: `(org_id, user_id)`, `(status, created_at)` for the pending/in-progress lookup in AC-4; **add a partial unique index** `(user_id) WHERE status IN ('pending','in_progress')` to close the request-creation race (D9).
   - [ ] 1.4 Add migration; confirm next-free index in `_journal.json` at implementation time.
   - [ ] 1.5 Add to `packages/db/src/schema/index.ts` barrel export.
+  - [ ] 1.6 Add `ERASURE_EMAIL_HASH_SECRET` to the project's secret-loading config (env var / secrets manager, following the existing pattern for other server-side secrets) — used by D6's keyed `original_email_hash`.
 
 - [ ] Task 2: Pseudonymization primitive (AC: 5, 11; D3)
-  - [ ] 2.1 Create `apps/api/src/modules/compliance/pseudonymize-identity.ts` with `pseudonymizeUserIdentityToken(tx, userId)`.
+  - [ ] 2.1 Create `apps/api/src/modules/compliance/pseudonymize-identity.ts` with `pseudonymizeUserIdentityToken(tx, userId)`, including the collision-check-and-retry loop (up to 5 attempts) against `user_identity_tokens.display_name`.
   - [ ] 2.2 Confirm via test/read that `computeAuditHmac`'s field list excludes `display_name` (AC-11 depends on this).
 
 - [ ] Task 3: PII inventory + request creation (AC: 1, 2, 3, 4)
-  - [ ] 3.1 `erasure-service.ts`: `computePiiInventory(tx, orgId, userId)` — queries row counts across `users`, `user_identity_tokens`, `mfa_enrollments`, `mfa_recovery_codes`, `account_recovery_tokens`.
-  - [ ] 3.2 `erasure-routes.ts`: `POST /users/:userId/erasure-request` — thin handler, `minimumRole: 'admin'`, calls service.
+  - [ ] 3.1 `erasure-service.ts`: `computePiiInventory(tx, orgId, userId)` — queries row counts across `users`, `user_identity_tokens`, `mfa_enrollments`, `mfa_recovery_codes`, `account_recovery_tokens`, `sessions`.
+  - [ ] 3.2 `erasure-routes.ts`: `POST /users/:userId/erasure-request` — thin handler, `minimumRole: 'admin'`, calls service; catches the Task 1.3 unique-violation and converts it to the AC-4 duplicate-request response.
+  - [ ] 3.3 Write the `user.erasure_requested` audit event (D10) via `writeHumanAuditEntryOrFailClosed` inside the same request-creation transaction.
 
-- [ ] Task 4: Execution (AC: 5-13; D2, D4, D5, D9, D10)
-  - [ ] 4.1 `erasure-service.ts`: `executeErasure(tx, { requestId, orgId, actorUserId, actorTokenId })` — cross-org guard (D2) → status compare-and-set (D9) → 8 steps → audit write.
+- [ ] Task 4: Execution (AC: 5-13, 17B; D2, D4, D5, D9, D10, D12, D13)
+  - [ ] 4.1 `erasure-service.ts`: `executeErasure(tx, { requestId, orgId, actorUserId, actorTokenId })` — cross-org guard (D2, with `remediation` string in the 409 body) → status compare-and-set (D9) → 9 steps (including the `sessions.ip_address`/`user_agent` nulling, D12, and the per-user-random password sentinel, D13) → audit write.
   - [ ] 4.2 Add `'erasure'` to `SessionRevokeScope` union in `session-revoke.ts` (D4).
-  - [ ] 4.3 `erasure-routes.ts`: `POST /users/:userId/erasure-request/:requestId/execute` — `minimumRole: 'owner'`, `requireMfa: true`.
+  - [ ] 4.3 `erasure-routes.ts`: `POST /users/:userId/erasure-request/:requestId/execute` — `minimumRole: 'owner'`, `requireMfa: true`, strict-boolean `confirm` schema.
 
 - [ ] Task 5: Compliance report (AC: 14, 15, 16)
-  - [ ] 5.1 `erasure-service.ts`: `buildErasureReport(tx, requestId)`.
+  - [ ] 5.1 `erasure-service.ts`: `buildErasureReport(tx, requestId)` — `piiRemoved` includes `sessions`; `piiRetained` uses real table names (`rotations.initiated_by`, `project_invitations.invited_by`), not placeholders.
   - [ ] 5.2 `erasure-routes.ts`: `GET /users/:userId/erasure-request/:requestId/report` — `minimumRole: 'admin'`.
 
-- [ ] Task 6: Re-invite block (AC: 17, 18; D6)
-  - [ ] 6.1 Add `original_email_hash` lookup helper in `erasure-service.ts` (or a small shared `erasure-lookup.ts`).
+- [ ] Task 6: Re-invite block (AC: 17, 17B, 18; D6)
+  - [ ] 6.1 Add `original_email_hash` lookup helper (keyed HMAC via `ERASURE_EMAIL_HASH_SECRET`) in `erasure-service.ts` (or a small shared `erasure-lookup.ts`).
   - [ ] 6.2 Modify `apps/api/src/modules/invitations/routes.ts` to check this after the existing `archivedAt`/`already_member` checks, before creating the invitation.
+  - [ ] 6.3 Modify `apps/api/src/modules/auth/routes.ts`'s `POST /register` handler to run the same check before creating the new `users` row (AC-17B — closes the self-registration bypass).
 
 - [ ] Task 7: Registration and CI guards (AC: 19, 20, 21, 22)
   - [ ] 7.1 Register `erasure-routes.ts` in `app.ts` with `prefix: '/api/v1/org'`.
-  - [ ] 7.2 Add all three routes to `route-exemptions.ts`'s classification map.
+  - [ ] 7.2 Add all three routes to `route-exemptions.ts`'s classification map; give `execute` its own tighter rate-limit tier (`max: 5`/min, AC-20).
   - [ ] 7.3 Run `check-rls-coverage.ts` and `route-audit.test.ts` locally; fix any gaps before marking `review`.
 
 - [ ] Task 8: Tests (AC: 23 — all ACs)
-  - [ ] 8.1 Unit tests for `pseudonymizeUserIdentityToken`, `computePiiInventory`, `executeErasure`, `buildErasureReport`.
-  - [ ] 8.2 Integration tests per AC-1 through AC-22 (see AC-23 checklist).
+  - [ ] 8.1 Unit tests for `pseudonymizeUserIdentityToken` (including collision retry), `computePiiInventory`, `executeErasure`, `buildErasureReport`.
+  - [ ] 8.2 Integration tests per AC-1 through AC-22 plus AC-17B (see AC-23 checklist).
   - [ ] 8.3 `make ci` passes, including RLS/route-audit CI guards.
 
 ---
@@ -547,14 +601,17 @@ Integration tests must cover, at minimum, one test per AC above, plus:
 - **Do not reimplement session revocation, HMAC computation, or invitation validation** — reuse `revokeAllUserSessionsInOrg`, `writeHumanAuditEntryOrFailClosed`/`computeAuditHmac`, and the existing `invitations/routes.ts` validation chain respectively. This story is additive to all three.
 - **Keep `erasure-routes.ts` thin** — per this repo's route-audit convention (bare `.get()`/`.post()` handlers should delegate to `erasure-service.ts`; do not inline DB queries or the 8-step transaction logic directly in the route file).
 - **`users` rows are never hard-deleted** by this story — only specific columns are overwritten/nulled. This preserves every FK relationship (`org_memberships.user_id`, `project_invitations.invited_by`, `sessions.user_id`, etc.) without cascade complications.
-- **The sentinel `password_hash` value** must be a fixed, well-documented constant that can never validate against any real password (e.g., a hash of a value that's structurally valid bcrypt-shape but whose plaintext is an unguessable, unused constant) — check whether an existing sentinel/placeholder pattern already exists elsewhere in the auth module before inventing a new format.
+- **The sentinel `password_hash` value** must be **freshly generated per erasure, not a single fixed shared constant** (D13) — a bcrypt-hash of a discarded cryptographically random 32-byte value, unique per erased user, so it can never validate against any real password *and* can't be used to fingerprint every erased account with one `WHERE password_hash = :sentinel` query the way a shared constant would.
+- **`original_email_hash` (D6) is a keyed HMAC-SHA256**, not a bare `SHA-256` digest — requires a new `ERASURE_EMAIL_HASH_SECRET` server-side secret (Task 1.6). A bare hash is brute-forceable against low-entropy email addresses; do not downgrade this to a plain digest for convenience.
+- **The re-invite block (D6) has two enforcement points, not one**: `invitations/routes.ts` (AC-17) *and* `auth/routes.ts`'s `POST /register` (AC-17B). Implementing only the invitation-path check leaves self-registration as an unguarded bypass around the entire erasure re-entry protection.
+- **`sessions.ip_address`/`user_agent` must be nulled during erasure execution (D12)**, not just left alone after session revocation — `revokeAllUserSessionsInOrg` only revokes, it does not scrub these PII columns.
 - **Do not build any UI in this story** (Product Surface Contract: `api`-only, gap already accepted at Epic 8 level per Stories 8.1/8.2 precedent).
 
 ### Project Structure Notes
 
 - New module: `apps/api/src/modules/compliance/` (routes.ts, service.ts, pseudonymize-identity.ts) — first story to introduce this module directory; follows the existing per-feature module convention (`modules/audit/`, `modules/invitations/`, `modules/rotation/`, etc.).
 - New schema file: `packages/db/src/schema/data-erasure-requests.ts`.
-- Modified files: `apps/api/src/modules/auth/session-revoke.ts` (add `'erasure'` scope), `apps/api/src/modules/invitations/routes.ts` (add re-invite check), `apps/api/src/lib/route-exemptions.ts` (classify new routes), `apps/api/src/app.ts` (register new routes), `packages/db/src/schema/index.ts` (barrel export), `packages/db/src/check-rls-coverage.ts` (no change needed if RLS policy is correctly applied — just confirm the guard passes).
+- Modified files: `apps/api/src/modules/auth/session-revoke.ts` (add `'erasure'` scope), `apps/api/src/modules/invitations/routes.ts` (add re-invite check, D6), `apps/api/src/modules/auth/routes.ts` (add the same re-invite/erased-identity check to `POST /register`, AC-17B), `apps/api/src/lib/route-exemptions.ts` (classify new routes), `apps/api/src/app.ts` (register new routes), `packages/db/src/schema/index.ts` (barrel export), `packages/db/src/check-rls-coverage.ts` (no change needed if RLS policy is correctly applied — just confirm the guard passes), project secret-loading config (add `ERASURE_EMAIL_HASH_SECRET`, Task 1.6).
 
 ### Testing Standards Summary
 
@@ -577,6 +634,9 @@ Integration tests must cover, at minimum, one test per AC above, plus:
 - [Source: `apps/api/src/modules/auth/session-revoke.ts`] — `SessionRevokeScope` union (D4).
 - [Source: `apps/api/src/lib/audit-or-fail-closed.ts`, `apps/api/src/modules/audit/human-entry.ts`] — `writeHumanAuditEntryOrFailClosed`/`writeHumanAuditEntry` this story's audit write reuses.
 - [Source: `apps/api/src/modules/invitations/routes.ts` lines 129-191] — re-invite check insertion point (D6).
+- [Source: `apps/api/src/modules/auth/routes.ts`] — `POST /register` self-service registration endpoint; second re-invite/erased-identity check insertion point (D6/AC-17B).
+- [Source: `packages/db/src/schema/sessions.ts`] — `ip_address`/`user_agent` columns this story's D12 gap-fix scrubs.
+- [Source: `packages/db/src/schema/rotations.ts`, `project-invitations.ts`] — real table/column names (`rotations.initiated_by`, `project_invitations.invited_by`) for the compliance report's `piiRetained` list (AC-14), replacing epics.md-era placeholder wording.
 - [Source: `packages/db/src/check-rls-coverage.ts` lines 4-22] — `EXCLUDED_TABLES` precedent this story's `data_erasure_requests` table deliberately does **not** join (D1/AC-19).
 - Product surface rules: [Source: `_bmad-output/implementation-artifacts/product-surface-contract.md`]
 
