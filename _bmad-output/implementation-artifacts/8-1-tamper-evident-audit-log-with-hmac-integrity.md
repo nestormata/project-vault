@@ -1,6 +1,6 @@
 # Story 8.1: Tamper-Evident Audit Log with HMAC Integrity
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for the audit-log HMAC integrity verification endpoint and its supporting CI guard. This is the FIRST story in Epic 8, but it is NOT a greenfield story: the `audit_log_entries` schema, the HMAC write path, the append-only RLS/trigger/grant stack, and the audit-signing-key derivation were all built incrementally by Epics 1–7 in anticipation of this epic (per epics.md PJ4/PJ5/PJ6). Read "Key Design Decisions & Open Questions" before writing any code — the single biggest risk on this story is reinventing infrastructure that already ships. -->
 
@@ -501,32 +501,32 @@ export const AuditVerifyResponseSchema = z
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Verify endpoint core logic (AC: 1, 2, 3, 7, 8, 10)
-  - [ ] 1.1 Create `apps/api/src/modules/audit/verify.ts` exporting `verifyAuditRange(tx, { orgId, from, to }): Promise<VerifyResult>` — queries `audit_log_entries` for rows in range (half-open `>= from AND < to`, D4), recomputes HMAC per row via the existing `computeAuditHmac()`, compares each recomputed HMAC to the stored value using `crypto.timingSafeEqual` (constant-time, not `===`), compares `keyVersion` against `currentAuditKeyVersion(tx)`, builds the pass/fail lists (capping `failed` at 500 entries with a true `failedCount` and `failedTruncated` flag — AC-2) and the comprehensible `summary` string using `failedCount` (AC-8's exact phrasing rules)
-  - [ ] 1.2 Handle `getAuditKey()` throwing (vault sealed) by letting the error propagate to the route handler, which maps it to `503 audit_key_unavailable` (AC-10) — do not swallow it inside `verify.ts`
-  - [ ] 1.3 Unit test the summary-string builder in isolation (all three phrasing branches, including 1-failure singular vs N-failure plural, using `failedCount` not `failed.length`)
-- [ ] Task 2: Query validation and range bounding (AC: 6)
-  - [ ] 2.1 Add `AuditVerifyQuerySchema` (`apps/api/src/modules/audit/schema.ts`) with `z.iso.datetime()` for `from`/`to`
-  - [ ] 2.2 In the route handler: `safeParse` → `422 validation_error` on parse failure; explicit `to >= from` check → `422 invalid_range` (`from === to` is valid, not rejected — AC-6/AC-7); fetch rows with `LIMIT AUDIT_VERIFY_MAX_ROWS + 1` in the same query used for verification (no separate `COUNT(*)` pre-check — avoids the check-then-act race against AC-12's concurrent writes) and reject with `422 range_too_large` if the day-span exceeds `AUDIT_VERIFY_MAX_RANGE_DAYS = 90` or the result set exceeds `AUDIT_VERIFY_MAX_ROWS = 50_000`
-- [ ] Task 3: Route registration (AC: 4, 5, 11, 15, 17)
-  - [ ] 3.1 Create `apps/api/src/modules/audit/routes.ts` exporting `auditRoutes(fastify)`, one `secureRoute` registration: `method: 'GET'`, `url: '/audit/verify'`, `security: { allowedRoles: ['owner'], writeAuditEvent: true, rateLimit: { max: 20, timeWindowMs: 60_000, key: 'GET /api/v1/org/audit/verify' } }` — audit writes use `eventType: 'audit.integrity_verify_run'` with `payload: { from, to, rowsChecked, passed, failedCount }` (D7)
-  - [ ] 3.2 Register `auditRoutes` in `apps/api/src/app.ts` with `{ prefix: '/api/v1/org' }`, alongside the existing `orgRoutes` registration
-  - [ ] 3.3 Add `AuditVerifyResponseSchema` to the route's `schema.response[200]`; standard `defaultErrorResponses` (401/403/404/429) plus an explicit `422`/`503` entry
-  - [ ] 3.4 Add the `route-exemptions.ts` classification entry (AC-15)
-- [ ] Task 4: RLS coverage explicit assertion (AC: 9)
-  - [ ] 4.1 Read `packages/db/src/__tests__/check-rls-coverage.test.ts`; add an explicit `audit_log_entries` assertion in the expected-covered-tables list, or if one already exists, confirm and reference it explicitly in the PR description — do not skip this task on the assumption coverage is implicit (AC-9)
-- [ ] Task 5: Backfill/coverage CI guard (AC: 13, 14)
-  - [ ] 5.1 Create `packages/db/src/check-audit-actor-token-coverage.ts` (`checkAuditActorTokenCoverage`, `AuditActorTokenCoverageGapError`) — scoped to `actor_type = 'human'` only; `actor_type = 'machine_user'` is an explicit non-goal for this story (D3)
-  - [ ] 5.2 Create `packages/db/src/__tests__/check-audit-actor-token-coverage.test.ts` (clean case + dirty case). The dirty case MUST insert its `actor_token_id: null` row and invoke the check inside a transaction that is rolled back before the test ends (AC-14) — never via `withTestOrg()`'s normal insert/cleanup path, since `audit_log_entries` cleanup is a documented no-op and would permanently poison the clean-database case
-  - [ ] 5.3 Create `scripts/check-audit-actor-token-coverage.ts` CLI wrapper, mirroring `scripts/check-rls-coverage.ts`'s error formatting
-  - [ ] 5.4 Add `"check-audit-actor-token-coverage": "tsx scripts/check-audit-actor-token-coverage.ts"` to root `package.json`
-  - [ ] 5.5 Add `pnpm tsx scripts/check-audit-actor-token-coverage.ts` to the `Makefile`'s `ci` target, immediately after `$(MAKE) check-rls`
-- [ ] Task 6: Integration tests for the endpoint (AC: 1, 2, 3, 4, 5, 6, 7, 10, 11, 12)
-  - [ ] 6.1 `apps/api/src/modules/audit/routes.test.ts` — happy path, tampered row (insert-time-only, per AC-2's edge case guidance), failed-array truncation (bulk-tamper scenario, asserting `failedCount`/`failedTruncated`), key-version mismatch, authz matrix (owner/admin/member/viewer/unauthenticated), cross-org isolation via `withTwoTestOrgs()`, all 6 validation sub-cases (including zero-width `from === to`), empty range, vault-sealed mock, rate-limit 21st-call rejection, concurrent verify+write consistency check, this route's own call recorded as an `audit.integrity_verify_run` entry (D7)
-- [ ] Task 7: OpenAPI regeneration and full-suite verification (AC: 16, 17, 18)
-  - [ ] 7.1 Run `pnpm generate-spec`; confirm the new endpoint appears in `packages/shared/openapi.json` with no manual edits needed
-  - [ ] 7.2 Confirm `git diff --stat packages/db/src/migrations/` is empty before opening the PR (AC-16)
-  - [ ] 7.3 Run `make ci` locally end-to-end, confirming the two new CI guard lines (check-rls's existing generic pass + the new backfill check) both succeed against a freshly migrated test database
+- [x] Task 1: Verify endpoint core logic (AC: 1, 2, 3, 7, 8, 10)
+  - [x] 1.1 Create `apps/api/src/modules/audit/verify.ts` exporting `verifyAuditRange(tx, { orgId, from, to }): Promise<VerifyResult>` — queries `audit_log_entries` for rows in range (half-open `>= from AND < to`, D4), recomputes HMAC per row via the existing `computeAuditHmac()`, compares each recomputed HMAC to the stored value using `crypto.timingSafeEqual` (constant-time, not `===`), compares `keyVersion` against `currentAuditKeyVersion(tx)`, builds the pass/fail lists (capping `failed` at 500 entries with a true `failedCount` and `failedTruncated` flag — AC-2) and the comprehensible `summary` string using `failedCount` (AC-8's exact phrasing rules)
+  - [x] 1.2 Handle `getAuditKey()` throwing (vault sealed) by letting the error propagate to the route handler, which maps it to `503 audit_key_unavailable` (AC-10) — do not swallow it inside `verify.ts`
+  - [x] 1.3 Unit test the summary-string builder in isolation (all three phrasing branches, including 1-failure singular vs N-failure plural, using `failedCount` not `failed.length`)
+- [x] Task 2: Query validation and range bounding (AC: 6)
+  - [x] 2.1 Add `AuditVerifyQuerySchema` (`apps/api/src/modules/audit/schema.ts`) with `z.iso.datetime()` for `from`/`to`
+  - [x] 2.2 In the route handler: `safeParse` → `422 validation_error` on parse failure; explicit `to >= from` check → `422 invalid_range` (`from === to` is valid, not rejected — AC-6/AC-7); fetch rows with `LIMIT AUDIT_VERIFY_MAX_ROWS + 1` in the same query used for verification (no separate `COUNT(*)` pre-check — avoids the check-then-act race against AC-12's concurrent writes) and reject with `422 range_too_large` if the day-span exceeds `AUDIT_VERIFY_MAX_RANGE_DAYS = 90` or the result set exceeds `AUDIT_VERIFY_MAX_ROWS = 50_000`
+- [x] Task 3: Route registration (AC: 4, 5, 11, 15, 17)
+  - [x] 3.1 Create `apps/api/src/modules/audit/routes.ts` exporting `auditRoutes(fastify)`, one `secureRoute` registration: `method: 'GET'`, `url: '/audit/verify'`, `security: { allowedRoles: ['owner'], writeAuditEvent: true, rateLimit: { max: 20, timeWindowMs: 60_000, key: 'GET /api/v1/org/audit/verify' } }` — audit writes use `eventType: 'audit.integrity_verify_run'` with `payload: { from, to, rowsChecked, passed, failedCount }` (D7)
+  - [x] 3.2 Register `auditRoutes` in `apps/api/src/app.ts` with `{ prefix: '/api/v1/org' }`, alongside the existing `orgRoutes` registration
+  - [x] 3.3 Add `AuditVerifyResponseSchema` to the route's `schema.response[200]`; standard `defaultErrorResponses` (401/403/404/429) plus an explicit `422`/`503` entry
+  - [x] 3.4 Add the `route-exemptions.ts` classification entry (AC-15)
+- [x] Task 4: RLS coverage explicit assertion (AC: 9)
+  - [x] 4.1 Read `packages/db/src/__tests__/check-rls-coverage.test.ts`; add an explicit `audit_log_entries` assertion in the expected-covered-tables list, or if one already exists, confirm and reference it explicitly in the PR description — do not skip this task on the assumption coverage is implicit (AC-9)
+- [x] Task 5: Backfill/coverage CI guard (AC: 13, 14)
+  - [x] 5.1 Create `packages/db/src/check-audit-actor-token-coverage.ts` (`checkAuditActorTokenCoverage`, `AuditActorTokenCoverageGapError`) — scoped to `actor_type = 'human'` only; `actor_type = 'machine_user'` is an explicit non-goal for this story (D3)
+  - [x] 5.2 Create `packages/db/src/__tests__/check-audit-actor-token-coverage.test.ts` (clean case + dirty case). The dirty case MUST insert its `actor_token_id: null` row and invoke the check inside a transaction that is rolled back before the test ends (AC-14) — never via `withTestOrg()`'s normal insert/cleanup path, since `audit_log_entries` cleanup is a documented no-op and would permanently poison the clean-database case
+  - [x] 5.3 Create `scripts/check-audit-actor-token-coverage.ts` CLI wrapper, mirroring `scripts/check-rls-coverage.ts`'s error formatting
+  - [x] 5.4 Add `"check-audit-actor-token-coverage": "tsx scripts/check-audit-actor-token-coverage.ts"` to root `package.json`
+  - [x] 5.5 Add `pnpm tsx scripts/check-audit-actor-token-coverage.ts` to the `Makefile`'s `ci` target, immediately after `$(MAKE) check-rls`
+- [x] Task 6: Integration tests for the endpoint (AC: 1, 2, 3, 4, 5, 6, 7, 10, 11, 12)
+  - [x] 6.1 `apps/api/src/modules/audit/routes.test.ts` — happy path, tampered row (insert-time-only, per AC-2's edge case guidance), failed-array truncation (bulk-tamper scenario, asserting `failedCount`/`failedTruncated`), key-version mismatch, authz matrix (owner/admin/member/viewer/unauthenticated), cross-org isolation via `withTwoTestOrgs()`, all 6 validation sub-cases (including zero-width `from === to`), empty range, vault-sealed mock, rate-limit 21st-call rejection, concurrent verify+write consistency check, this route's own call recorded as an `audit.integrity_verify_run` entry (D7)
+- [x] Task 7: OpenAPI regeneration and full-suite verification (AC: 16, 17, 18)
+  - [x] 7.1 Run `pnpm generate-spec`; confirm the new endpoint appears in `packages/shared/openapi.json` with no manual edits needed
+  - [x] 7.2 Confirm `git diff --stat packages/db/src/migrations/` is empty before opening the PR (AC-16)
+  - [x] 7.3 Run `make ci` locally end-to-end, confirming the two new CI guard lines (check-rls's existing generic pass + the new backfill check) both succeed against a freshly migrated test database
 
 ---
 
@@ -569,10 +569,53 @@ export const AuditVerifyResponseSchema = z
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-5
 
 ### Debug Log References
 
+- Full `apps/api` suite: 371 test files, 1196 tests, 0 failures (clean DB, single run).
+- `packages/db` suite: 95 tests, 0 failures.
+- `pnpm turbo typecheck`, `pnpm turbo lint`, `pnpm jscpd`, `pnpm generate-spec` all pass.
+- `git diff --stat packages/db/src/migrations/` is empty (AC-16).
+
 ### Completion Notes List
 
+- All 18 ACs implemented and verified by integration/unit tests in `apps/api/src/modules/audit/routes.test.ts` (14 cases) and `apps/api/src/modules/audit/verify.test.ts` (6 summary-builder unit cases).
+- **AC-9 (RLS coverage explicit assertion):** confirmed an existing named assertion already exists — `packages/db/src/__tests__/check-rls-coverage.test.ts`'s `'includes audit_log_entries in the gap list when its policy is missing'` test. Per the story's Task 4.1 instruction ("if one already exists, confirm and reference it explicitly"), no new test was added; this is that explicit confirmation.
+- **D7 audit-write mechanism deviation (corrected during implementation):** the story's Task 3.1 literally specifies `writeAuditEvent: true`. Implemented instead as `writeAuditEvent: false` plus an inline `writeHumanAuditEntryOrFailClosed()` call in the route handler. Reason: `SecureRoute`'s default audit writer's `AuditConfig.payload` callback only receives the request's `params`/`query`, never the handler's computed result — there is no mechanism to plumb `rowsChecked`/`passed`/`failedCount` (only known after the handler runs) into a `writeAuditEvent: true`/`{eventType}` registration. Every existing route in the codebase needing a handler-computed audit payload uses this exact `writeAuditEvent: false` + inline `writeHumanAuditEntryOrFailClosed` pattern (e.g. `POST /org/users/:userId/deactivate`); this route now matches that established convention. Behavior is otherwise identical to D7's intent: same transaction, same `eventType: 'audit.integrity_verify_run'`, fail-closed via `SameTransactionAuditWriteError` → `503 audit_write_failed` on audit-write failure.
+- **AC-17 / `generate-spec.ts` correction:** `apps/api/src/scripts/generate-spec.ts` (note: actual path is `src/scripts/`, not `apps/api/scripts/` as the story text states) is a small, fully hand-curated static JSON generator covering only the handful of pre-auth bootstrap routes (register/login/refresh/vault init.../mfa recover) — it does not introspect the running app and does not include any `SecureRoute`-registered endpoint added since Epic 2 (confirmed: none of dozens of existing routes like `GET /org/security-alerts` appear in it either). Running `pnpm generate-spec` correctly produces no diff for this route. AC-17 was instead verified directly against the live `@fastify/swagger` document (`app.swagger()`), which correctly includes `GET /api/v1/org/audit/verify` with its full response schema.
+- **Route-level querystring schema omitted deliberately:** `AuditVerifyQuerySchema` is exported from `schema.ts` and used for the handler's own manual `safeParse`, but is intentionally NOT wired into the route's `schema.querystring`. Fastify's own schema-based query validator runs before `attachValidation` applies (which `secure-route.ts` only wires for `schema.body`), and a missing/invalid required field there produces a `400 { error: ... }` shape that doesn't match `ApiErrorSchema`'s `{code, message}` — the resulting response-serialization failure surfaced as an opaque `500` instead of AC-6's required `422 { code: "validation_error" }`. Matches the existing `GET /org/security-alerts` precedent (manual `safeParse` only, no `schema.querystring`).
+- **Null vs. undefined subtlety (caught by TDD, not just designed around):** the write path omits `resourceId`/`resourceType` from the HMAC input entirely when unset (`undefined`, filtered out of the canonical JSON by `sortKeys`), while a fresh DB read of an unset nullable column yields `null`. `verify.ts` converts `row.resourceId ?? undefined` / `row.resourceType ?? undefined` before recomputing — without this, AC-1's happy-path test (real rows from registration/login, which never set a resource) would have failed with false "tampered" results on nearly every ordinary row. This was caught by using real write-path fixtures in the AC-1 test rather than fully-synthetic rows.
+- **`pnpm jscpd` clone-detection fix:** the new `scripts/check-audit-actor-token-coverage.ts` CLI wrapper initially duplicated ~12 lines/52 tokens of boilerplate (env-var check, `postgres()` connect, try/finally) against the pre-existing `scripts/check-rls-coverage.ts` — expected, since the story explicitly asks the wrapper to mirror that script's shape. Resolved by extracting the shared boilerplate into a new `scripts/lib/run-db-check.ts` helper and refactoring both CLI scripts to use it (behavior-preserving; both re-verified end-to-end against a live Postgres instance, clean and dirty cases).
+- Vault-sealed test (AC-10) exercises the route's own `getAuditKey()`-catch fail-closed logic directly (`vaultGuardEnabled: false`), since the global `vaultGuardPlugin` would otherwise intercept every request with a generic `503 {status:'sealed'}` before this route's handler ever runs — that global-guard behavior is already covered elsewhere (e.g. `projects/routes.test.ts`).
+
 ### File List
+
+**New files:**
+- `apps/api/src/modules/audit/verify.ts`
+- `apps/api/src/modules/audit/verify.test.ts`
+- `apps/api/src/modules/audit/schema.ts`
+- `apps/api/src/modules/audit/routes.ts`
+- `apps/api/src/modules/audit/routes.test.ts`
+- `packages/db/src/check-audit-actor-token-coverage.ts`
+- `packages/db/src/__tests__/check-audit-actor-token-coverage.test.ts`
+- `scripts/check-audit-actor-token-coverage.ts`
+- `scripts/lib/run-db-check.ts`
+
+**Modified files:**
+- `apps/api/src/app.ts` (register `auditRoutes` at `/api/v1/org`)
+- `apps/api/src/lib/route-exemptions.ts` (new `GET /api/v1/org/audit/verify` classification, D6/AC-15)
+- `packages/shared/src/constants/mfa-exempt-routes.ts` (new entry, D5)
+- `packages/shared/src/constants/mfa-exempt-routes.test.ts` (updated expected list)
+- `scripts/check-rls-coverage.ts` (refactored to use the new shared `runDbCheck` helper; behavior unchanged)
+- `package.json` (new `check-audit-actor-token-coverage` script)
+- `Makefile` (new `check-audit-actor-token-coverage` target; wired into `ci` immediately after `check-rls`)
+
+**Not modified (confirmed):**
+- `packages/db/src/migrations/` — zero diff (AC-16)
+- `packages/db/src/schema/` — no changes
+- `packages/db/src/__tests__/check-rls-coverage.test.ts` — pre-existing explicit `audit_log_entries` assertion already satisfies AC-9
+
+### Change Log
+
+- 2026-07-06: Implemented Story 8.1 — `GET /api/v1/org/audit/verify` HMAC integrity verification endpoint, backfill/coverage CI guard (`checkAuditActorTokenCoverage`), and full integration/unit test coverage for all 18 ACs. All tasks/subtasks complete.
