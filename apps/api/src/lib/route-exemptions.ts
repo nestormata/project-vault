@@ -611,6 +611,25 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'org.user_deactivated',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 8.4: GDPR/CCPA right-to-erasure workflow. Request creation is a mutation (creates a
+  // data_erasure_requests row + writes user.erasure_requested); execute is the irreversible,
+  // owner-only security action (D7/D11); report is a read-only compliance artifact.
+  'POST /api/v1/org/users/:userId/erasure-request': {
+    action: 'mutation',
+    auditEvent: 'user.erasure_requested',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/org/users/:userId/erasure-request/:requestId/execute': {
+    action: SECURITY_ACTION,
+    auditEvent: 'user.erasure_executed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/org/users/:userId/erasure-request/:requestId/report': {
+    action: 'read',
+    auditOmissionReason:
+      'Read-only post-execution compliance artifact; no PII beyond what user.erasure_executed already audited at execution time.',
+    reviewer: SECURITY_OWNER,
+  },
   'POST /api/v1/org/users/:userId/recovery/send-link': {
     action: SECURITY_ACTION,
     auditEvent: 'auth.recovery_link_sent',

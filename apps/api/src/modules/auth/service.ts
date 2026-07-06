@@ -21,6 +21,7 @@ import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
+import { findErasedRequestForEmailGlobally } from '../compliance/erasure-lookup.js'
 import {
   claimInvitation,
   findInvitationByTokenHash,
@@ -361,6 +362,17 @@ async function buildRegisterResult(
  */
 export async function registerUser(input: RegisterInput): Promise<RegisterResult> {
   const email = normalizeEmail(input.email)
+
+  // Story 8.4 D6/AC-17B: once erasure execution overwrites users.email to
+  // erased_<hash>@erased.invalid, the original address becomes free again against the unique
+  // constraint — without this check, anyone could immediately self-register under an erased
+  // identity's original email instead of being invited. Checked globally (not org-scoped): this
+  // flow isn't reliably org-scoped (self-signup creates a brand new org), same reasoning as
+  // AC-17's invitation-path check but via the admin connection (see erasure-lookup.ts).
+  if (await findErasedRequestForEmailGlobally(email)) {
+    throw new AppError('user_erased', 'This user has been erased and cannot register', 410)
+  }
+
   const invitation = await resolveRegistrationInvitation(input, email)
   const passwordHash = await hashUserPassword(input.password)
 
