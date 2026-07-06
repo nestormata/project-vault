@@ -1,6 +1,6 @@
 # Story 8.2: Audit Log Search, Export & External Forwarding
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for audit log search/filter, mandatory-integrity-verified CSV export, webhook/S3 external forwarding, and retention pruning. This story builds ON TOP of Story 8.1's `audit_log_entries` table, HMAC write path, and `verifyAuditRange()` — it does not touch the write path itself. Read "Key Design Decisions & Open Questions" before writing any code: two of the decisions below (D2 retention-vs-append-only-trigger conflict, D3 forwarding delivery mechanism) resolve genuine conflicts between epics.md's literal wording and infrastructure Story 8.1 already ships. Skipping them will produce code that cannot pass CI or, worse, code that silently violates the append-only guarantee Story 8.1 just built. -->
 
@@ -620,42 +620,42 @@ rows_checked,3,passed,3,failed,0,verified_at,2026-07-04T18:32:10.104Z
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Migration `0030` (AC: 24, D2, D5)
-  - [ ] 1.1 Add `idx_audit_log_entries_actor_token` index to `audit-log-entries.ts` schema + migration
-  - [ ] 1.2 Create `packages/db/src/schema/audit-exports.ts`, `audit-forwarding-config.ts`, `audit-retention-config.ts` — all org-scoped, matching the `orgScoped()` helper and index-naming conventions of `0029_machine_users_and_api_keys.sql`
-  - [ ] 1.3 Write migration SQL: three `CREATE TABLE`s + RLS enable + isolation policies (exact pattern from `0029`), `CREATE OR REPLACE FUNCTION purge_expired_audit_log_entries(...)` **including the `app.current_org_id`-vs-`p_org_id` session-context check** (D2's critical fix), `CREATE OR REPLACE FUNCTION prevent_audit_log_mutation()` (amended per D2), `GRANT EXECUTE ... TO vault_app`
-  - [ ] 1.4 Add named RLS-coverage assertions in `check-rls-coverage.test.ts` for the three new tables (AC-24)
-  - [ ] 1.5 Regression test: raw `DELETE FROM audit_log_entries` without the session flag still raises (AC-23)
-  - [ ] 1.6 Regression test: `purge_expired_audit_log_entries()` called with a `p_org_id` that does not match the transaction's `app.current_org_id` raises and deletes nothing (AC-23, D2 critical fix)
-- [ ] Task 2: Search endpoint (AC: 1, 2, 3, 4, 5, 6, 7, 8)
-  - [ ] 2.1 `apps/api/src/modules/audit/search.ts` — `searchAuditEvents(tx, { orgId, actorId?, eventType?, resourceId?, projectId?, from?, to?, page, limit })`, resolves `actorId` via `user_identity_tokens` (D6) before querying `audit_log_entries`
-  - [ ] 2.2 Add `AuditEventsQuerySchema`/`AuditEventsResponseSchema` to `modules/audit/schema.ts`
-  - [ ] 2.3 Add `GET /audit/events` to `modules/audit/routes.ts`: `allowedRoles: ['owner']`, `writeAuditEvent: { eventType: 'audit.search_run', ... }`, `rateLimit: { max: 60, timeWindowMs: 60_000 }`, using `resolvePaginationOffset()` with `AUDIT_EVENTS_MAX_OFFSET = 10_000`
-  - [ ] 2.4 Seeded-volume `EXPLAIN ANALYZE` perf test (AC-1)
-- [ ] Task 3: Export trigger, worker, CSV, download (AC: 9, 10, 11, 12, 13, 14, 15, 16)
-  - [ ] 3.1 `apps/api/src/modules/audit/csv.ts` — `toCsvRow()`, unit-tested against comma/quote/`\r`/`\n`/plain cases (D9)
-  - [ ] 3.2 `apps/api/src/modules/audit/export.ts` — `runAuditExport(exportId)`: chunked `verifyAuditRange()` calls (≤90-day sub-ranges), aggregate pass/fail, CSV generation with `actor_display_name` resolution + fallback (AC-13), gzip, write to `audit_exports.file_content`
-  - [ ] 3.3 `POST /audit/export` route: validation (`AUDIT_EXPORT_MAX_RANGE_DAYS = 400`), `audit_exports` row insert, post-commit `boss.send('audit:export', { exportId })`
-  - [ ] 3.4 `GET /audit/exports/:jobId` route: status/summary response, `404` for unknown/cross-org
-  - [ ] 3.5 `GET /audit/exports/:jobId/download` route: streams decompressed CSV, correct `Content-Type`/`Content-Disposition`
-  - [ ] 3.6 Register `audit:export` worker in `main.ts`
-- [ ] Task 4: Webhook forwarding config + SSRF-safe delivery (AC: 17, 18, 20, 21)
-  - [ ] 4.1 `apps/api/src/lib/safe-fetch.ts` — `safeFetchExternal()`: HTTPS-only, DNS-resolution private-range rejection, **IP-pinned connection via a custom `lookup` override (closes the DNS-rebinding TOCTOU gap)**, `redirect: 'manual'` (3xx never auto-followed), timeout, bounded response read (D4); also exports `assertPublicHostname(hostnameOrUrl)` (the standalone DNS/private-range check with no fetch, reused by S3 `endpoint` validation in Task 4.3); unit tests for each blocked-range case, the pinned-connection case, and the manual-redirect case
-  - [ ] 4.2 `apps/api/src/modules/audit/forwarding.ts` — `configureForwarding()` (upsert, encrypts secrets via `encryptValue()`, calls `assertPublicHostname()` against `config.endpoint` when an S3 config supplies one), `runWebhookForwardCatchup()` (watermark cursor, bounded-failure auto-disable, D3)
-  - [ ] 4.3 `PUT /audit/forwarding` route: `minimumRole: 'admin'`, `requireMfa: true`, never echoes secrets; validates both webhook `url` and S3 `endpoint` (when present) via `assertPublicHostname()`
-  - [ ] 4.4 Register `audit:webhook-forward-catchup` schedule (`* * * * *`) + worker in `main.ts`
-- [ ] Task 5: S3 forwarding (AC: 19)
-  - [ ] 5.1 Add `@aws-sdk/client-s3` to `apps/api/package.json`
-  - [ ] 5.2 `apps/api/src/modules/audit/s3-forward.ts` — daily batch job with **watermark cursor (`s3LastForwardedDate`) and bounded-failure auto-disable (`s3ConsecutiveFailureCount`, `AUDIT_S3_MAX_CONSECUTIVE_FAILURES = 5`)**, mirroring the webhook catchup's D3 design: query the oldest not-yet-forwarded UTC day, JSONL + gzip, `PutObjectCommand`, Minio-compatible `endpoint`/`forcePathStyle` support
-  - [ ] 5.3 Register `audit:s3-forward-daily` schedule (`0 1 * * *`) + worker in `main.ts`
-- [ ] Task 6: Retention config + pruning (AC: 22, 23)
-  - [ ] 6.1 `apps/api/src/modules/audit/retention.ts` — `configureRetention()` (bounds validation, D7), `apps/api/src/workers/audit-retention-prune.ts` — daily per-org loop calling the SECURITY DEFINER function via `tx.execute(sql\`...\`)`
-  - [ ] 6.2 `PUT /audit/retention` route: `minimumRole: 'admin'`, `requireMfa: true`
-  - [ ] 6.3 Register `audit:retention-prune` schedule (`0 2 * * *`) + worker in `main.ts`
-- [ ] Task 7: Route-exemptions, OpenAPI, full-suite verification (AC: 24, 25)
-  - [ ] 7.1 Add all six route classifications to `route-exemptions.ts`
-  - [ ] 7.2 Run `pnpm generate-spec`; confirm all new endpoints appear
-  - [ ] 7.3 Run `make ci` locally end-to-end
+- [x] Task 1: Migration `0030` (AC: 24, D2, D5)
+  - [x] 1.1 Add `idx_audit_log_entries_actor_token` index to `audit-log-entries.ts` schema + migration
+  - [x] 1.2 Create `packages/db/src/schema/audit-exports.ts`, `audit-forwarding-config.ts`, `audit-retention-config.ts` — all org-scoped, matching the `orgScoped()` helper and index-naming conventions of `0029_machine_users_and_api_keys.sql`
+  - [x] 1.3 Write migration SQL: three `CREATE TABLE`s + RLS enable + isolation policies (exact pattern from `0029`), `CREATE OR REPLACE FUNCTION purge_expired_audit_log_entries(...)` **including the `app.current_org_id`-vs-`p_org_id` session-context check** (D2's critical fix), `CREATE OR REPLACE FUNCTION prevent_audit_log_mutation()` (amended per D2), `GRANT EXECUTE ... TO vault_app`
+  - [x] 1.4 Add named RLS-coverage assertions in `check-rls-coverage.test.ts` for the three new tables (AC-24)
+  - [x] 1.5 Regression test: raw `DELETE FROM audit_log_entries` without the session flag still raises (AC-23)
+  - [x] 1.6 Regression test: `purge_expired_audit_log_entries()` called with a `p_org_id` that does not match the transaction's `app.current_org_id` raises and deletes nothing (AC-23, D2 critical fix)
+- [x] Task 2: Search endpoint (AC: 1, 2, 3, 4, 5, 6, 7, 8)
+  - [x] 2.1 `apps/api/src/modules/audit/search.ts` — `searchAuditEvents(tx, { orgId, actorId?, eventType?, resourceId?, projectId?, from?, to?, page, limit })`, resolves `actorId` via `user_identity_tokens` (D6) before querying `audit_log_entries`
+  - [x] 2.2 Add `AuditEventsQuerySchema`/`AuditEventsResponseSchema` to `modules/audit/schema.ts`
+  - [x] 2.3 Add `GET /audit/events` to `modules/audit/routes.ts`: `allowedRoles: ['owner']`, self-audited inline (`audit.search_run`), `rateLimit: { max: 60, timeWindowMs: 60_000 }`, using `resolvePaginationOffset()` with `AUDIT_EVENTS_MAX_OFFSET = 10_000`
+  - [x] 2.4 Seeded-volume `EXPLAIN ANALYZE` perf test (AC-1) — `search-explain.test.ts`, 20,000-row seed (documented scale trade-off vs. epics.md's 1M-row NFR-PERF6 citation)
+- [x] Task 3: Export trigger, worker, CSV, download (AC: 9, 10, 11, 12, 13, 14, 15, 16)
+  - [x] 3.1 `apps/api/src/modules/audit/csv.ts` — `toCsvRow()`, unit-tested against comma/quote/`\r`/`\n`/plain cases (D9)
+  - [x] 3.2 `apps/api/src/modules/audit/export.ts` — `runAuditExport({exportId, orgId})`: chunked `verifyAuditRange()` calls (≤90-day sub-ranges), aggregate pass/fail, CSV generation with `actor_display_name` resolution + fallback (AC-13), gzip, write to `audit_exports.file_content`
+  - [x] 3.3 `POST /audit/export` route: validation (`AUDIT_EXPORT_MAX_RANGE_DAYS = 400`), `audit_exports` row insert, post-insert `boss.send('audit:export', { exportId, orgId })` with retry/singletonKey to absorb the enqueue-before-commit race
+  - [x] 3.4 `GET /audit/exports/:jobId` route: status/summary response, `404` for unknown/cross-org
+  - [x] 3.5 `GET /audit/exports/:jobId/download` route: streams decompressed CSV, correct `Content-Type`/`Content-Disposition`
+  - [x] 3.6 Register `audit:export` worker in `main.ts`
+- [x] Task 4: Webhook forwarding config + SSRF-safe delivery (AC: 17, 18, 20, 21)
+  - [x] 4.1 `apps/api/src/lib/safe-fetch.ts` — `safeFetchExternal()`: HTTPS-only, DNS-resolution private-range rejection, **IP-pinned connection via a custom `lookup` override (closes the DNS-rebinding TOCTOU gap)**, `redirect: 'manual'` (3xx never auto-followed), timeout, bounded response read (D4); also exports `assertPublicHostname(hostnameOrUrl)`; unit tests for each blocked-range case, the pinned-connection case (via `buildPinnedLookupHandler`), and the manual-redirect case
+  - [x] 4.2 `apps/api/src/modules/audit/forwarding.ts` — `configureForwarding()` (upsert, encrypts secrets via `encryptValue()`, calls `assertPublicHostname()` against `config.endpoint` when an S3 config supplies one), `runWebhookForwardCatchup()` (watermark cursor, bounded-failure auto-disable, D3)
+  - [x] 4.3 `PUT /audit/forwarding` route: `minimumRole: 'admin'`, `requireMfa: true`, never echoes secrets; validates both webhook `url` and S3 `endpoint` (when present) via `assertPublicHostname()`
+  - [x] 4.4 Register `audit:webhook-forward-catchup` schedule (`* * * * *`) + worker in `main.ts`
+- [x] Task 5: S3 forwarding (AC: 19)
+  - [x] 5.1 Add `@aws-sdk/client-s3` to `apps/api/package.json`
+  - [x] 5.2 `apps/api/src/modules/audit/s3-forward.ts` — daily batch job with **watermark cursor (`s3LastForwardedDate`) and bounded-failure auto-disable (`s3ConsecutiveFailureCount`, `AUDIT_S3_MAX_CONSECUTIVE_FAILURES = 5`)**, mirroring the webhook catchup's D3 design: query the oldest not-yet-forwarded UTC day, JSONL + gzip, `PutObjectCommand`, Minio-compatible `endpoint`/`forcePathStyle` support
+  - [x] 5.3 Register `audit:s3-forward-daily` schedule (`0 1 * * *`) + worker in `main.ts`
+- [x] Task 6: Retention config + pruning (AC: 22, 23)
+  - [x] 6.1 `apps/api/src/modules/audit/retention.ts` — `configureRetention()` (bounds validation via Zod, D7), `apps/api/src/workers/audit-retention-prune.ts` — daily per-org loop calling the SECURITY DEFINER function via `tx.execute(sql\`...\`)`
+  - [x] 6.2 `PUT /audit/retention` route: `minimumRole: 'admin'`, `requireMfa: true`
+  - [x] 6.3 Register `audit:retention-prune` schedule (`0 2 * * *`) + worker in `main.ts`
+- [x] Task 7: Route-exemptions, OpenAPI, full-suite verification (AC: 24, 25)
+  - [x] 7.1 Add all six route classifications to `route-exemptions.ts` (and the four MFA-exempt GET routes to `mfa-exempt-routes.ts`)
+  - [x] 7.2 Ran `pnpm generate-spec` — no diff: this codebase's `generate-spec.ts` is a hand-maintained stub covering only `/auth/*` and two `/org/*` routes; it does not document any `/audit/*` route, including Story 8.1's already-shipped `GET /audit/verify`. Extending it to cover this story's six routes would be a scope expansion inconsistent with the existing convention (no other feature module's routes are in it either) — flagged here rather than silently worked around.
+  - [ ] 7.3 `make ci` — intentionally NOT run per this task's explicit instructions ("do not attempt to... run a full CI gate — that happens in a later phase"). Instead ran targeted verification: full `apps/api` and `packages/db` vitest suites, `tsc --noEmit` on `apps/api`, and `eslint` on all new/modified files — all green (see Dev Agent Record → Completion Notes for exact commands/results).
 
 ---
 
@@ -694,10 +694,77 @@ rows_checked,3,passed,3,failed,0,verified_at,2026-07-04T18:32:10.104Z
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-5
 
 ### Debug Log References
 
+- `apps/api` targeted suites (search/export/forwarding/retention/safe-fetch/route-audit): 134 tests, 0 failures — re-verified multiple times, including on a freshly recreated Postgres instance.
+- `apps/api` full `pnpm vitest run`: 3 separate full-suite runs across the session completed with exit code 0 (0 failures); see below for an actor-token-coverage cross-suite issue these runs helped surface and fix.
+- `packages/db` full suite (109 tests, includes `check-rls-coverage.test.ts`, `audit-retention-purge.test.ts`, `check-audit-actor-token-coverage.test.ts`, and the new `migration-0036-safety.test.ts`): 0 failures on a freshly recreated DB.
+- `packages/shared` full suite (`mfa-exempt-routes.test.ts` and all others): 122 tests, 0 failures — this is where the `MFA_ENROLLMENT_EXEMPT_ROUTES` exact-match test caught the 3 new exempt-route entries needing a corresponding test update.
+- **Cross-suite bug caught and fixed:** two of this story's own tests (`routes.test.ts`'s AC-3 "historical rows" case, `export-routes.test.ts`'s AC-9/10/12/13 happy-path case) originally called `writeHumanAuditEntry()` with `actorTokenId: null` to simulate a pre-existing row. Since `audit_log_entries` is append-only and this local Postgres instance is shared and never reset between test files within a run, that permanently poisoned `check-audit-actor-token-coverage.test.ts` (Story 8.1's database-wide gate: every `actor_type: 'human'` row must have a non-null `actor_token_id`) for every subsequent run against that DB instance. Fixed both tests to use a real actor token (mirroring what the real write path always provides) instead of `null`; verified clean by recreating the DB from scratch (`docker compose down -v db && make db-up && make db-migrate`) and re-running the full `packages/db` suite.
+- `tsc --noEmit` on `apps/api`: clean.
+- `eslint` on all new/modified files across `apps/api`, `packages/db`, `packages/shared`: 0 errors (a handful of pre-existing `security/detect-object-injection` warnings remain, none newly introduced blocking).
+- `make db-migrate` (migration 0036) applied cleanly against a fresh `db-up` Postgres instance; verified table/column/constraint/policy shapes via `\d` afterward.
+- `pnpm generate-spec`: ran, produced no diff (see Task 7.2 note — this script does not document any `/audit/*` route today, including Story 8.1's own `/audit/verify`).
+- Did **not** run `make ci` end-to-end — explicitly out of scope per this task's own instructions ("do not attempt to ... run a full CI gate — that happens in a later phase").
+
 ### Completion Notes List
 
+- **All 25 ACs implemented** with integration/unit test coverage. New test files: `search.ts`'s coverage lives in `routes.test.ts` (extended) + `search-explain.test.ts`; `export.test.ts` + `export-routes.test.ts`; `csv.test.ts`; `forwarding.test.ts` + `forwarding-retention-routes.test.ts`; `s3-forward.test.ts`; `retention.test.ts`; `safe-fetch.test.ts`; `audit-retention-prune.test.ts`; plus `packages/db`'s `audit-retention-purge.test.ts` and 3 new named assertions in `check-rls-coverage.test.ts`.
+- **Pre-existing repo issue discovered, not fixed (out of scope):** `packages/db`'s drizzle-kit snapshot chain has a genuine branch collision (`0031_snapshot.json` and `0032_snapshot.json` both point to `0029`'s snapshot id as `prevId`), which blocks `drizzle-kit generate` from running at all (`Error: ... are pointing to a parent snapshot ... which is a collision`). This predates this story and is unrelated to it. Worked around by hand-writing migration `0036_audit_search_export_forwarding.sql` directly and updating `_journal.json` by hand — the same approach the majority of this repo's existing 36 migrations already use (only 11 of 37 migrations have a corresponding snapshot file, confirming hand-written migrations are the established norm here, not a deviation). Flagged for a future story to actually fix the snapshot chain if `drizzle-kit generate` needs to work again.
+- **D2 critical fix verified with a direct regression test, not just documentation:** `packages/db/src/__tests__/audit-retention-purge.test.ts` proves (a) a raw `DELETE` without the session-local flag still raises the append-only exception even for a superuser bypassing table grants, and (b) `purge_expired_audit_log_entries()` called with a `p_org_id` that doesn't match the transaction's `app.current_org_id` raises and deletes nothing — the exact two adversarial-review-driven regression tests AC-23 calls out as "the single most important" and "the regression test proving the critical adversarial-review fix."
+- **D3/D4 DNS-rebinding proof is a pure-function unit test, not a live network test:** `safeFetchExternal()`/`assertPublicHostname()`/`buildPinnedLookupHandler()` accept an injectable DNS `lookup` and `fetchImpl` specifically so the pinning guarantee (never re-resolves at connect time) can be proven without a real socket or a local test server — which would itself be rejected by the SSRF check as loopback. `buildPinnedLookupHandler` is tested standalone: it always returns the pre-validated addresses regardless of the hostname undici passes at connect time.
+- **Webhook/S3 forwarding workers accept an injectable delivery function** (`WebhookDeliverFn` / `S3PutObjectFn`) for the same reason — tests substitute a double instead of making real outbound network calls. Both workers also wrap each org's processing in try/catch so one org's failure (e.g. an undecryptable secret left over from a different test file's vault session) never blocks every other org's tick — a resilience property this story's tests incidentally forced into the open (a shared, non-reset-per-test Postgres instance across the whole session, combined with vault-key resets between test files, produces genuinely undecryptable leftover ciphertext from unrelated runs).
+- **Complexity/lint pass:** `searchAuditEvents`, `safeFetchExternal`, `processOrgWebhookTick`, and `processOrgS3Day` were each refactored into smaller extracted helper functions after `eslint`'s `complexity`/`sonarjs/cognitive-complexity` rules flagged them over threshold — behavior-preserving, re-verified green after each refactor.
+- **Judgment call — `PUT /audit/forwarding` / `PUT /audit/retention` / `POST /audit/export` use `writeAuditEvent: false` + inline `writeHumanAuditEntryOrFailClosed()`,** not the `writeAuditEvent: { eventType, ... }` config object initially attempted for `POST /audit/export`: `SecureRoute`'s audit-send-guard makes any handler with a truthy audit config throw if it calls `reply.status(422).send(...)` directly during a validation/early-exit path (audited handlers must `return` data, not send replies) — every other body-validated mutation route in this codebase (e.g. `POST /projects/:projectId/credentials`) already uses this same `writeAuditEvent: false` + manual audit-write pattern for exactly this reason, confirmed by reading `credentials/routes.ts` before implementing.
+- **Judgment call — AC-1's EXPLAIN ANALYZE perf test seeds 20,000 rows, not epics.md's cited 1M** (documented in the story's own AC-1 text as an accepted scale trade-off): asserts `Index Scan`/`Bitmap Index Scan` appears for `eventType`-only and `resourceId`-only filters at that volume, sufficient to force the planner off a sequential scan without a multi-minute CI seed step.
+- **Judgment call — `nextDayToForward`/S3 daily cron never forwards "today" or a future day,** only fully-elapsed UTC days — not explicitly called out in the AC text but necessary for correctness (forwarding a partial day-in-progress would produce an incomplete/misleading batch that could never be corrected once the watermark advances past it).
+
 ### File List
+
+**New files:**
+- `packages/db/src/schema/audit-exports.ts`
+- `packages/db/src/schema/audit-forwarding-config.ts`
+- `packages/db/src/schema/audit-retention-config.ts`
+- `packages/db/src/migrations/0036_audit_search_export_forwarding.sql`
+- `packages/db/src/__tests__/audit-retention-purge.test.ts`
+- `packages/db/src/__tests__/migration-0036-safety.test.ts`
+- `apps/api/src/modules/audit/search.ts`
+- `apps/api/src/modules/audit/actor-display-name.ts`
+- `apps/api/src/modules/audit/search-explain.test.ts`
+- `apps/api/src/modules/audit/export.ts`
+- `apps/api/src/modules/audit/export.test.ts`
+- `apps/api/src/modules/audit/export-routes.test.ts`
+- `apps/api/src/modules/audit/csv.ts`
+- `apps/api/src/modules/audit/csv.test.ts`
+- `apps/api/src/modules/audit/forwarding.ts`
+- `apps/api/src/modules/audit/forwarding.test.ts`
+- `apps/api/src/modules/audit/forwarding-retention-routes.test.ts`
+- `apps/api/src/modules/audit/s3-forward.ts`
+- `apps/api/src/modules/audit/s3-forward.test.ts`
+- `apps/api/src/modules/audit/retention.ts`
+- `apps/api/src/modules/audit/retention.test.ts`
+- `apps/api/src/lib/safe-fetch.ts`
+- `apps/api/src/lib/safe-fetch.test.ts`
+- `apps/api/src/workers/audit-retention-prune.ts`
+- `apps/api/src/workers/audit-retention-prune.test.ts`
+
+**Modified files:**
+- `packages/db/src/schema/audit-log-entries.ts` (new `actorTokenIdx` index only, D5)
+- `packages/db/src/schema/index.ts` (export the 3 new schema files)
+- `packages/db/src/migrations/meta/_journal.json` (new entry for migration 0036)
+- `packages/db/src/__tests__/check-rls-coverage.test.ts` (3 new named RLS-gap assertions, AC-24)
+- `apps/api/src/modules/audit/routes.ts` (6 new routes: `GET /audit/events`, `POST /audit/export`, `GET /audit/exports/:jobId`, `GET /audit/exports/:jobId/download`, `PUT /audit/forwarding`, `PUT /audit/retention`)
+- `apps/api/src/modules/audit/routes.test.ts` (extended with the new search-route test suite)
+- `apps/api/src/modules/audit/schema.ts` (new Zod schemas for all 6 routes)
+- `apps/api/src/lib/route-exemptions.ts` (6 new route classifications)
+- `apps/api/src/main.ts` (4 new pg-boss schedules + workers: `audit:export`, `audit:webhook-forward-catchup`, `audit:s3-forward-daily`, `audit:retention-prune`)
+- `apps/api/package.json` (new `@aws-sdk/client-s3` dependency)
+- `packages/shared/src/constants/mfa-exempt-routes.ts` (3 new exempt GET routes)
+- `packages/shared/src/constants/mfa-exempt-routes.test.ts` (updated expected list)
+- `packages/shared/src/constants/operational-event-types.ts` (new `AUDIT_*` operational events for forwarding/retention logging)
+
+### Change Log
+
+- 2026-07-06: Implemented Story 8.2 — audit log search (`GET /audit/events`), mandatory-integrity-verified CSV export (`POST /audit/export` + status/download routes), webhook forwarding with SSRF-guarded delivery (`safeFetchExternal`, `PUT /audit/forwarding`, `audit:webhook-forward-catchup`), S3/Minio daily batch forwarding (`audit:s3-forward-daily`), and retention configuration + SECURITY DEFINER-gated pruning (`PUT /audit/retention`, `audit:retention-prune`). All 7 tasks / 25 ACs implemented and tested; `make ci` intentionally deferred to a later phase per task instructions.

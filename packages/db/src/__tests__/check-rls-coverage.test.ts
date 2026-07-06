@@ -43,6 +43,28 @@ describe('checkRlsCoverage', () => {
       EXCEPTION WHEN duplicate_object THEN NULL;
       END $$
     `
+    // Story 8.2 AC-24: restore the three new tables' policies the same way.
+    await adminSql`
+      DO $$ BEGIN
+        CREATE POLICY audit_exports_isolation ON audit_exports
+          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$
+    `
+    await adminSql`
+      DO $$ BEGIN
+        CREATE POLICY audit_forwarding_config_isolation ON audit_forwarding_config
+          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$
+    `
+    await adminSql`
+      DO $$ BEGIN
+        CREATE POLICY audit_retention_config_isolation ON audit_retention_config
+          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$
+    `
   })
 
   it('resolves when every org_id table has an RLS policy', async () => {
@@ -80,6 +102,26 @@ describe('checkRlsCoverage', () => {
       expect((caught as RlsCoverageGapError).gaps).toContain('audit_log_entries')
     })
   })
+
+  // Story 8.2 AC-24: named regression tests for the three new tables, following Story 8.1's
+  // AC-9 precedent of never relying on the generic mechanism alone.
+  for (const table of ['audit_exports', 'audit_forwarding_config', 'audit_retention_config']) {
+    it(`includes ${table} in the gap list when its policy is missing`, async () => {
+      await withRlsPolicyMutationLock(async () => {
+        await adminSql.unsafe(`DROP POLICY ${table}_isolation ON ${table}`)
+
+        let caught: unknown
+        try {
+          await checkRlsCoverage(sql)
+        } catch (error) {
+          caught = error
+        }
+
+        expect(caught).toBeInstanceOf(RlsCoverageGapError)
+        expect((caught as RlsCoverageGapError).gaps).toContain(table)
+      })
+    })
+  }
 
   it('throws when no tables exist in the target database', async () => {
     const emptyDbName = `check_rls_empty_${Date.now()}`

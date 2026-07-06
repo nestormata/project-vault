@@ -32,6 +32,14 @@ export const auditLogEntries = pgTable(
     projectIdx: index('idx_audit_log_entries_project').on(t.projectId, t.createdAt.desc()),
     eventTypeIdx: index('idx_audit_log_entries_event_type').on(t.eventType, t.createdAt.desc()),
     resourceIdx: index('idx_audit_log_entries_resource').on(t.resourceId, t.createdAt.desc()),
+    // D5 (Story 8.2) — epics.md's literal AC requires an (actor_id, timestamp)-shaped index;
+    // this codebase's equivalent column is actor_token_id, and it was previously unindexed on
+    // its own (only reachable as a prefix of the composite orgActorEventIdx below, which isn't
+    // useful for an actorId-only filter with no orgId/eventType narrowing).
+    actorTokenIdx: index('idx_audit_log_entries_actor_token').on(
+      t.actorTokenId,
+      t.createdAt.desc()
+    ),
     // Story 6.2 (ADR-6.2-06, adversarial-review finding 16): check-anomalous-access.ts runs a
     // windowed GROUP BY (org_id, actor_token_id) query every 60 seconds forever against this
     // ever-growing table — a covering index avoids the "missing index on a forever-running
