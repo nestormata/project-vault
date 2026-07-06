@@ -394,6 +394,20 @@ describe('run() — scenario 13: multi-line secret masking (AC-6 edge case)', ()
     const lastSetSecretIdx = calls.reduce((max, c, idx) => (c.fn === 'setSecret' ? idx : max), -1)
     expect(lastSetSecretIdx).toBeLessThan(exportIdx)
   })
+
+  it('masks each line without a trailing carriage return for a CRLF multi-line secret', async () => {
+    setInputs({ secrets: `${PROJECT_A}/PEM_KEY as PEM_KEY` })
+    const crlfMultiline = '-----BEGIN KEY-----\r\nline-one\r\nline-two\r\n-----END KEY-----'
+    state.getSecretImpl = async () => crlfMultiline
+
+    await run()
+
+    const setSecretCalls = calls.filter((c) => c.fn === 'setSecret').map((c) => c.args[0])
+    expect(setSecretCalls).toContain('line-one')
+    expect(setSecretCalls).toContain('line-two')
+    expect(setSecretCalls).not.toContain('line-one\r')
+    expect(setSecretCalls).not.toContain('line-two\r')
+  })
 })
 
 describe("run() — scenario 14: typo'd continue-on-error value", () => {

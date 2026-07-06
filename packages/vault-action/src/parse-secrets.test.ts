@@ -96,6 +96,8 @@ describe('parseSecrets', () => {
       'PATH',
       'LD_PRELOAD',
       'LD_LIBRARY_PATH',
+      'DYLD_INSERT_LIBRARIES',
+      'DYLD_LIBRARY_PATH',
       'NODE_OPTIONS',
       'HOME',
       'SHELL',

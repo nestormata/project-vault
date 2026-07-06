@@ -28,9 +28,17 @@ const SAFE_ENV_VAR_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /** AC-3 — exact, case-insensitive reserved names. Prefixes (GITHUB_/ACTIONS_) checked separately. */
 const RESERVED_ENV_VAR_NAMES = new Set(
-  ['PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'NODE_OPTIONS', 'HOME', 'SHELL', 'GITHUB_TOKEN'].map(
-    (name) => name.toUpperCase()
-  )
+  [
+    'PATH',
+    'LD_PRELOAD',
+    'LD_LIBRARY_PATH',
+    'DYLD_INSERT_LIBRARIES',
+    'DYLD_LIBRARY_PATH',
+    'NODE_OPTIONS',
+    'HOME',
+    'SHELL',
+    'GITHUB_TOKEN',
+  ].map((name) => name.toUpperCase())
 )
 
 const RESERVED_ENV_VAR_PREFIXES = ['GITHUB_', 'ACTIONS_']

@@ -18950,9 +18950,17 @@ function createVaultAgent(A) {
 }
 const d = /^[A-Za-z_][A-Za-z0-9_]*$/
 const f = new Set(
-  ['PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'NODE_OPTIONS', 'HOME', 'SHELL', 'GITHUB_TOKEN'].map(
-    (A) => A.toUpperCase()
-  )
+  [
+    'PATH',
+    'LD_PRELOAD',
+    'LD_LIBRARY_PATH',
+    'DYLD_INSERT_LIBRARIES',
+    'DYLD_LIBRARY_PATH',
+    'NODE_OPTIONS',
+    'HOME',
+    'SHELL',
+    'GITHUB_TOKEN',
+  ].map((A) => A.toUpperCase())
 )
 const p = ['GITHUB_', 'ACTIONS_']
 function isReservedEnvVarName(A) {
@@ -19130,7 +19138,7 @@ function perEntryMessage(A, e, t, r) {
 }
 function maskValue(A) {
   s.setSecret(A)
-  for (const e of A.split('\n')) {
+  for (const e of A.split(/\r?\n/)) {
     if (e.length > 0) s.setSecret(e)
   }
 }

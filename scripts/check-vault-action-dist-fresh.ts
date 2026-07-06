@@ -77,8 +77,18 @@ export function compareDistDirectories(committedDir: string, freshDir: string): 
 /**
  * Rebuilds `packages/vault-action` into `outDir` instead of its normal `dist/` location. The ncc
  * flags below must be kept in sync with `packages/vault-action/package.json`'s own `build` script.
+ *
+ * ncc bundles `@project-vault/agent` via its `dist/` build output (see agent's package.json
+ * `main`/`exports`), so that dependency must be built first. This is rebuilt explicitly here
+ * rather than relying on an earlier CI step (e.g. `turbo test`'s `^build` dependency) having
+ * already done it — that ordering is incidental, not guaranteed, and this script must give a
+ * correct answer when run standalone (e.g. from the tag-triggered release workflow, or locally).
  */
 export function buildFreshDist(repoRoot: string, outDir: string): void {
+  execFileSync('pnpm', ['--filter', '@project-vault/agent', 'build'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  })
   execFileSync(
     'pnpm',
     [

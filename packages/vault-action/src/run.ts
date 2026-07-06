@@ -14,7 +14,7 @@ type Failure = {
  * emitted piecemeal by a later log line is still redacted, not just a verbatim reproduction. */
 function maskValue(value: string): void {
   core.setSecret(value)
-  for (const line of value.split('\n')) {
+  for (const line of value.split(/\r?\n/)) {
     if (line.length > 0) core.setSecret(line)
   }
 }

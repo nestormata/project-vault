@@ -21,33 +21,60 @@ on:
 permissions:
   contents: write
 
+# Two release tags pushed close together must not race two runs that both force-move the mutable
+# major tag with no ordering guarantee about which SHA wins.
+concurrency:
+  group: vault-action-release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Build, test, and move the major tag
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # This workflow's own last step force-pushes the mutable major tag (e.g. vault-action-v1),
+      # which matches this workflow's own `vault-action-v*` trigger and would otherwise spawn a
+      # second, guaranteed-failing run against a tag that isn't MAJOR.MINOR.PATCH. Detect and skip
+      # that self-triggered run cleanly (success, not failure) before doing any other work.
+      - name: Check whether this is a full release tag (vs. the major-tag move triggering itself)
+        id: tagcheck
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" =~ ^vault-action-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "is_full_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_full_release=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: '$TAG' is not a MAJOR.MINOR.PATCH release tag — this is the major-tag move this workflow just performed, not a new release."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: '24'
 
       - name: Setup pnpm
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         uses: pnpm/action-setup@v6
         with:
           version: 11.9.0
 
       - name: Install dependencies
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Build vault-action (and its @project-vault/agent dependency)
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         run: pnpm --filter "@project-vault/vault-action..." build
 
       - name: Test vault-action
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         run: pnpm --filter @project-vault/vault-action test
 
       # AC-15 — re-runs the SAME freshness check ci.yml already enforces at PR time, but here
@@ -55,9 +82,11 @@ jobs:
       # had drifted from src/ (e.g. a manual commit that bypassed PR review) never moves the
       # mutable major tag.
       - name: Re-verify dist/ freshness at the tagged ref (D6/AC-11/AC-15)
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         run: pnpm check-vault-action-dist
 
       - name: Determine major-version convenience tag
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         id: major-tag
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
@@ -71,6 +100,7 @@ jobs:
           echo "major_tag=vault-action-v${MAJOR}" >> "$GITHUB_OUTPUT"
 
       - name: Move the major-version tag (e.g. vault-action-v1) to this commit
+        if: steps.tagcheck.outputs.is_full_release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
