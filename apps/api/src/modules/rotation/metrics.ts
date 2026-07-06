@@ -120,6 +120,20 @@ export const rotationBreakGlassOverlapExpirationsTotal = new Counter({
   help: 'Total number of credential_versions rows auto-retired by the break-glass overlap-expiry job',
 })
 
+// Story 5.5 AC-3: Story 5.3's own text calls the revealCurrentValue()/listVersionHistory()
+// abandoned-version-exclusion change "the single highest-risk change" in that story — a hot-path
+// change affecting every credential reveal in the system, not just rotation-touched ones. This
+// counter (incremented from apps/api/src/modules/credentials/routes.ts, not this module — kept
+// here to match every other rotation-adjacent metric's location/naming convention) is the
+// production signal that would catch a regression in that filter before it silently breaks
+// credential reveal at scale.
+export const CREDENTIAL_REVEAL_ABANDONED_VERSION_EXCLUDED_TOTAL_METRIC_NAME =
+  'credential_reveal_abandoned_version_excluded_total'
+export const credentialRevealAbandonedVersionExcludedTotal = new Counter({
+  name: CREDENTIAL_REVEAL_ABANDONED_VERSION_EXCLUDED_TOTAL_METRIC_NAME,
+  help: 'Total number of revealCurrentValue() calls that excluded an abandoned (stale-recovery-abandoned or break-glass-superseded) version to serve an earlier one',
+})
+
 export const ROTATIONS_STALE_RECOVERY_PENDING_TOTAL_METRIC_NAME =
   'rotations_stale_recovery_pending_total'
 // Periodic-query-backed gauge (not a per-request counter) — current count of rotations rows

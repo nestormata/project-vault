@@ -44,6 +44,8 @@ export const OperationalEvent = {
   CREDENTIAL_REVEAL_ATTEMPT: 'credential.reveal.attempt',
   CREDENTIAL_REVEAL_SUCCESS: 'credential.reveal.success',
   CREDENTIAL_REVEAL_FAILURE: 'credential.reveal.failure',
+  // Story 5.5 AC-3: revealCurrentValue() fell back past an abandoned version.
+  CREDENTIAL_REVEAL_ABANDONED_VERSION_EXCLUDED: 'credential.reveal.abandoned_version_excluded',
   CREDENTIAL_AUDIT_WRITE_FAILED: 'credential.audit_write_failed',
   CREDENTIAL_RETENTION_SUMMARY: 'credential.retention.summary',
   CREDENTIAL_RETENTION_DRY_RUN: 'credential.retention.dry_run',
@@ -63,6 +65,8 @@ export const OperationalEvent = {
   ROTATION_INITIATE_CONFLICT: 'rotation.initiate.conflict',
   ROTATION_INITIATE_AUDIT_FAILED: 'rotation.initiate.audit_failed',
   ROTATION_INITIATE_SAME_VALUE_WARNING: 'rotation.initiate.same_value_warning',
+  // Story 5.5 AC-1: rejected — project archived concurrently with (or before) this initiation.
+  ROTATION_INITIATE_PROJECT_ARCHIVED: 'rotation.initiate.project_archived',
 
   // Rotation checklist confirm/fail/retry/complete (Story 5.2)
   ROTATION_CHECKLIST_CONFIRM_SUCCESS: 'rotation.checklist.confirm.success',
@@ -95,6 +99,10 @@ export const OperationalEvent = {
   ROTATION_BREAK_GLASS_SUPERSEDED: 'rotation.break_glass.superseded',
   ROTATION_BREAK_GLASS_OVERLAP_EXPIRED: 'rotation.break_glass.overlap_expired',
   ROTATION_STALE_DETECTED: 'rotation.stale.detected',
+  // Story 5.5 AC-9: one candidate row's transaction failed (e.g. an audit-write throw) — logged
+  // and skipped so the rest of the same job run (other orgs/rotations) still gets processed.
+  ROTATION_STALE_DETECTION_ROW_FAILED: 'rotation.stale.detection_row_failed',
+  ROTATION_BREAK_GLASS_EXPIRE_ROW_FAILED: 'rotation.break_glass.expire_row_failed',
   ROTATION_RESUME_SUCCESS: 'rotation.resume.success',
   ROTATION_RESUME_NOT_STALE: 'rotation.resume.not_stale',
   ROTATION_RESUME_CONCURRENT_MODIFICATION: 'rotation.resume.concurrent_modification',

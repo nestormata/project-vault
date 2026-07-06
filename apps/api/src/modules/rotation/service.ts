@@ -1,10 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentialDependencies,
   credentials,
   credentialVersions,
+  projects,
   rotationChecklistItems,
   rotations,
 } from '@project-vault/db/schema'
@@ -45,6 +46,7 @@ type RotationRow = typeof rotations.$inferSelect
 
 type InitiateRotationResult =
   | { status: 'credential_not_found' }
+  | { status: 'project_archived' }
   | {
       status: 'initiated'
       rotation: RotationRow
@@ -96,6 +98,22 @@ export async function initiateRotation(
 
   try {
     return await tx.transaction(async (trx) => {
+      // Story 5.5 AC-1: closes the TOCTOU race between Story 4.4's project archive/unarchive
+      // handlers (which lock the project row `FOR UPDATE` for their whole transaction, checking
+      // `archivedAt` immediately after acquiring it) and rotation initiation. Taking the SAME
+      // `FOR UPDATE` lock on the identical row here — before any checklist/version writes —
+      // guarantees the two operations serialize: whichever transaction acquires the lock first
+      // commits, and the other sees its result (either an archived project, or a newly-created
+      // blocking rotation) once it proceeds. Never both succeed.
+      const [projectRow] = await trx
+        .select({ archivedAt: projects.archivedAt })
+        .from(projects)
+        .where(eq(projects.id, input.projectId))
+        .for('update')
+        .limit(1)
+      if (!projectRow) return { status: 'credential_not_found' as const }
+      if (projectRow.archivedAt !== null) return { status: 'project_archived' as const }
+
       const credential = await lockCredentialInProject(trx, {
         credentialId: input.credentialId,
         projectId: input.projectId,
@@ -840,7 +858,12 @@ export type CompleteRotationResult =
     }
   | { outcome: 'acknowledgement_required' }
   | { outcome: 'concurrent_modification'; currentVersion: number | null }
-  | { outcome: 'completed'; rotation: RotationRow; checklistItems: ChecklistItemRow[] }
+  | {
+      outcome: 'completed'
+      rotation: RotationRow
+      checklistItems: ChecklistItemRow[]
+      singleActorAttested: boolean
+    }
 
 /** AC-9/AC-10/AC-11/AC-12: complete — blocked unless every item is confirmed (or the caller
  *  acknowledges a zero-dependency rotation). On success, retires the superseded credential
@@ -912,10 +935,23 @@ export async function completeRotation(
     .set({ rotationLockedAt: null })
     .where(eq(credentialVersions.id, lockResult.rotation.previousVersionId))
 
+  // Story 5.5 AC-2: surfaces (doesn't block — see the AC's "flag, don't block" precedent) the
+  // case where the same user both initiated the rotation and confirmed every checklist item
+  // themselves, so a completion built entirely on one person's self-attestation is visible
+  // after the fact without a manual confirmedBy-vs-initiatedBy cross-reference. Vacuously false
+  // for a zero-dependency (acknowledged) completion — there is no checklist self-confirmation to
+  // flag in that case, only the separate acknowledgedNoDependencies gate.
+  const confirmedByUsers = new Set(items.map((item) => item.confirmedBy))
+  const singleActorAttested =
+    items.length > 0 &&
+    confirmedByUsers.size === 1 &&
+    confirmedByUsers.has(lockResult.rotation.initiatedBy)
+
   return {
     outcome: 'completed',
     rotation: updatedRotation,
     checklistItems: items,
+    singleActorAttested,
   }
 }
 
@@ -1087,6 +1123,11 @@ export type BreakGlassResult =
       supersededRotationId: string | null
       previousVersionOverlap: { versionNumber: number; breakGlassOverlapExpiresAt: Date }
       dependentSystems: DependentSystemRow[]
+      // Story 5.5 AC-4: true when this call was a rapid double-submit within the idempotency
+      // window and `rotation` is the FIRST call's already-created rotation, not a new one —
+      // callers (routes.ts) use this to skip re-writing audit/security-alert/notification
+      // side effects a second time for what is really the same logical event.
+      deduped: boolean
     }
 
 async function activeDependentSystems(tx: Tx, orgId: string, credentialId: string) {
@@ -1149,46 +1190,80 @@ async function supersedeActiveRotation(
   return active.id
 }
 
-/** AC-2/AC-5/AC-6: break-glass emergency rotation — immediately writes a new live value,
- *  supersedes (auto-abandons) any existing active rotation for the credential (CR6), and puts
- *  the superseded version into a purge-protected overlap window (CR1) rather than retiring it
- *  immediately (contradicting PRD FR108's literal "immediately retires" text — see ADR-5.3-01).
- *  No checklist items are created — break-glass's entire premise is skipping the checklist. */
-export async function breakGlassRotation(
+/** Story 5.5 AC-4: a rotation in `break_glass_complete` status doesn't match
+ *  `supersedeActiveRotation`'s filter (`in_progress`/`stale_recovery` only — break-glass is
+ *  already terminal the instant it's created), so two SEQUENTIAL break-glass calls close
+ *  together in time (e.g. a double-click or client retry — NOT the true-concurrency case the
+ *  credential-scoped advisory lock already catches, since that lock releases the instant the
+ *  first call's transaction commits) would otherwise each independently succeed, silently
+ *  consuming two credential versions. Returns the most recent `break_glass_complete` rotation
+ *  for this credential if one was created within `windowMs`, else null. */
+async function findRecentDuplicateBreakGlass(
   tx: Tx,
-  input: {
-    orgId: string
-    projectId: string
-    credentialId: string
-    userId: string
-    body: BreakGlassRotationBody
-    overlapMinutes: number
-  }
+  credentialId: string,
+  windowMs: number
+): Promise<RotationRow | null> {
+  const [row] = await tx
+    .select()
+    .from(rotations)
+    .where(
+      and(
+        eq(rotations.credentialId, credentialId),
+        eq(rotations.status, 'break_glass_complete'),
+        gt(rotations.initiatedAt, new Date(Date.now() - windowMs))
+      )
+    )
+    .orderBy(desc(rotations.initiatedAt))
+    .limit(1)
+  return row ?? null
+}
+
+/** Reconstructs the AC-4 idempotent-replay result from the first call's already-created
+ *  rotation — split out of `breakGlassRotation` purely to keep that function's own cyclomatic
+ *  complexity down (this repo's eslint `complexity` rule caps at 10). */
+async function buildDedupedBreakGlassResult(
+  tx: Tx,
+  orgId: string,
+  credentialId: string,
+  duplicate: RotationRow
 ): Promise<BreakGlassResult> {
-  const locked = await tryAcquireCredentialScopedLock(tx, input.orgId, input.credentialId)
-  if (!locked) return { status: 'lock_contention' }
-
-  const credential = await lockCredentialInProject(tx, {
-    credentialId: input.credentialId,
-    projectId: input.projectId,
-  })
-  if (!credential) return { status: 'credential_not_found' }
-
-  let supersededRotationId: string | null
-  try {
-    supersededRotationId = await supersedeActiveRotation(tx, {
-      orgId: input.orgId,
-      credentialId: input.credentialId,
+  const [previousVersion] = await tx
+    .select({
+      versionNumber: credentialVersions.versionNumber,
+      breakGlassOverlapExpiresAt: credentialVersions.breakGlassOverlapExpiresAt,
     })
-  } catch (error) {
-    if (isLockNotAvailable(error)) return { status: 'lock_contention' }
-    throw error
+    .from(credentialVersions)
+    .where(eq(credentialVersions.id, duplicate.previousVersionId))
+    .limit(1)
+  const dependentSystems = await activeDependentSystems(tx, orgId, credentialId)
+  return {
+    status: 'ok',
+    rotation: duplicate,
+    supersededRotationId: null,
+    previousVersionOverlap: {
+      versionNumber: previousVersion?.versionNumber ?? 0,
+      breakGlassOverlapExpiresAt: previousVersion?.breakGlassOverlapExpiresAt ?? new Date(),
+    },
+    dependentSystems,
+    deduped: true,
   }
+}
 
-  // AC-2 step 1 (reuses the identical FOR UPDATE pattern as 5.1's normal initiation). Excludes
-  // abandonedAt too (CR5) — critical when supersedeActiveRotation just abandoned the previously
-  // "highest" version above: this correctly resolves back to whatever was current before either
-  // rotation started, not the just-abandoned half-finished value (AC-5).
+type BreakGlassVersionResult = {
+  previousVersion: { id: string; versionNumber: number }
+  newVersion: { id: string }
+}
+
+/** AC-2 step 1 (reuses the identical FOR UPDATE pattern as 5.1's normal initiation) plus the
+ *  new-version insert — split out of `breakGlassRotation` purely to keep that function's own
+ *  cyclomatic complexity down (this repo's eslint `complexity` rule caps at 10). */
+async function createBreakGlassVersion(
+  tx: Tx,
+  input: { orgId: string; credentialId: string; userId: string; newValue: string }
+): Promise<BreakGlassVersionResult> {
+  // Excludes abandonedAt too (CR5) — critical when supersedeActiveRotation just abandoned the
+  // previously "highest" version above: this correctly resolves back to whatever was current
+  // before either rotation started, not the just-abandoned half-finished value (AC-5).
   const [previousVersion] = await tx
     .select({ id: credentialVersions.id, versionNumber: credentialVersions.versionNumber })
     .from(credentialVersions)
@@ -1220,7 +1295,7 @@ export async function breakGlassRotation(
   const nextVersionNumber = Number(maxVersionRow?.max ?? 0) + 1
 
   const keyVersion = await currentKeyVersion(tx)
-  const encryptedValue = await encryptValue(input.body.newValue)
+  const encryptedValue = await encryptValue(input.newValue)
   const [newVersion] = await tx
     .insert(credentialVersions)
     .values({
@@ -1234,6 +1309,62 @@ export async function breakGlassRotation(
     .returning()
   if (!newVersion)
     throw new Error('breakGlassRotation: new credential version insert returned no row')
+
+  return { previousVersion, newVersion }
+}
+
+/** AC-2/AC-5/AC-6: break-glass emergency rotation — immediately writes a new live value,
+ *  supersedes (auto-abandons) any existing active rotation for the credential (CR6), and puts
+ *  the superseded version into a purge-protected overlap window (CR1) rather than retiring it
+ *  immediately (contradicting PRD FR108's literal "immediately retires" text — see ADR-5.3-01).
+ *  No checklist items are created — break-glass's entire premise is skipping the checklist. */
+export async function breakGlassRotation(
+  tx: Tx,
+  input: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    userId: string
+    body: BreakGlassRotationBody
+    overlapMinutes: number
+    idempotencyWindowSeconds: number
+  }
+): Promise<BreakGlassResult> {
+  const locked = await tryAcquireCredentialScopedLock(tx, input.orgId, input.credentialId)
+  if (!locked) return { status: 'lock_contention' }
+
+  const credential = await lockCredentialInProject(tx, {
+    credentialId: input.credentialId,
+    projectId: input.projectId,
+  })
+  if (!credential) return { status: 'credential_not_found' }
+
+  const duplicate = await findRecentDuplicateBreakGlass(
+    tx,
+    input.credentialId,
+    input.idempotencyWindowSeconds * 1000
+  )
+  if (duplicate) {
+    return buildDedupedBreakGlassResult(tx, input.orgId, input.credentialId, duplicate)
+  }
+
+  let supersededRotationId: string | null
+  try {
+    supersededRotationId = await supersedeActiveRotation(tx, {
+      orgId: input.orgId,
+      credentialId: input.credentialId,
+    })
+  } catch (error) {
+    if (isLockNotAvailable(error)) return { status: 'lock_contention' }
+    throw error
+  }
+
+  const { previousVersion, newVersion } = await createBreakGlassVersion(tx, {
+    orgId: input.orgId,
+    credentialId: input.credentialId,
+    userId: input.userId,
+    newValue: input.body.newValue,
+  })
 
   const breakGlassOverlapExpiresAt = new Date(Date.now() + input.overlapMinutes * 60_000)
   await tx
@@ -1267,6 +1398,7 @@ export async function breakGlassRotation(
       breakGlassOverlapExpiresAt,
     },
     dependentSystems,
+    deduped: false,
   }
 }
 

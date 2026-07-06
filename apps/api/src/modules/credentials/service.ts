@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentialVersions,
@@ -24,7 +24,15 @@ export class VersionConflictError extends Error {
 }
 
 type RevealCurrentValueResult =
-  | { status: 'found'; value: string; versionNumber: number }
+  | {
+      status: 'found'
+      value: string
+      versionNumber: number
+      // Story 5.5 AC-3: true when a higher-numbered, non-purged version exists but was excluded
+      // because it was abandoned (stale-recovery abandon or break-glass supersession) — the
+      // caller (routes.ts) uses this to emit the AC-3 structured log/metric.
+      abandonedVersionExcluded: boolean
+    }
   | { status: 'not_found'; reason: 'not_found' | 'all_versions_purged' }
 
 type CredentialListParams = {
@@ -407,11 +415,28 @@ export async function revealCurrentValue(
     return { status: 'not_found', reason: 'all_versions_purged' }
   }
 
+  // Story 5.5 AC-3: a single cheap, indexed (credential_id) lookup — proportional to the risk
+  // being instrumented, not a second round-trip on every reveal that duplicates real work. Only
+  // ever true for a credential that has actually had a rotation abandoned/superseded.
+  const [higherAbandonedVersion] = await tx
+    .select({ versionNumber: credentialVersions.versionNumber })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.credentialId, params.credentialId),
+        isNull(credentialVersions.purgedAt),
+        isNotNull(credentialVersions.abandonedAt),
+        gt(credentialVersions.versionNumber, version.versionNumber)
+      )
+    )
+    .limit(1)
+  const abandonedVersionExcluded = Boolean(higherAbandonedVersion)
+
   // reveal path: Buffer->string permitted here (the one sanctioned conversion site)
   const value = await withSecret(version.encryptedValue, async (plaintext) =>
     plaintext.toString('utf8')
   )
-  return { status: 'found', value, versionNumber: version.versionNumber }
+  return { status: 'found', value, versionNumber: version.versionNumber, abandonedVersionExcluded }
 }
 
 export async function listVersionHistory(

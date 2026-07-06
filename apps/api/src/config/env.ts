@@ -427,6 +427,14 @@ const envSchema = z
     // in_progress rotation older than this is transitioned to stale_recovery. Read fresh on
     // every job run (never cached), same convention as ROTATION_MAX_RETRIES.
     STALE_ROTATION_THRESHOLD_MINUTES: z.coerce.number().int().min(15).max(10080).default(60),
+    // Story 5.5 AC-4: break-glass double-submit idempotency window — a second break-glass call
+    // for the same credential within this many seconds of the first returns the already-created
+    // rotation instead of creating an independent second one. Deliberately short: the endpoint's
+    // entire premise is acting "in seconds" during an incident (epics.md AC-E5c) — this only
+    // needs to cover an accidental double-click/client-retry, not a legitimate follow-up
+    // break-glass minutes later. Read fresh on every call, same convention as
+    // ROTATION_MAX_RETRIES/STALE_ROTATION_THRESHOLD_MINUTES.
+    BREAK_GLASS_IDEMPOTENCY_WINDOW_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(19456).max(262144).default(65536),
     ARGON2_TIME_COST: z.coerce.number().int().min(2).default(3),
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(4),

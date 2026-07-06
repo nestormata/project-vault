@@ -1,10 +1,12 @@
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import { rotationChecklistItems, rotations } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { tryAcquireRotationScopedLock } from '../lib/rotation-locks.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
+import { operationalLog, serializeLogError } from '../lib/logger.js'
 import {
   dispatchDirectUserNotification,
   enqueueSecurityAlertNotification,
@@ -13,6 +15,7 @@ import {
 } from '../notifications/dispatcher.js'
 import type { BossService } from '../lib/boss.js'
 import { rotationStaleDetectionsTotal } from '../modules/rotation/metrics.js'
+import type { WorkerLogger } from './expiry-alert-shared.js'
 
 const EVENT_TYPE = 'rotation.stale_detected'
 const JOB_NAME = 'rotation:recover'
@@ -49,7 +52,8 @@ async function findStaleRotations(tx: Tx, orgId: string): Promise<StaleRotationR
  *  concurrent human action on the same rotation. */
 async function recoverOneRotation(
   orgId: string,
-  candidate: StaleRotationRow
+  candidate: StaleRotationRow,
+  logger?: WorkerLogger
 ): Promise<NotificationQueueJob[] | null> {
   return runOrgScopedJob(orgId, JOB_NAME, async ({ tx }) => {
     const locked = await tryAcquireRotationScopedLock(tx, orgId, candidate.id)
@@ -102,6 +106,17 @@ async function recoverOneRotation(
         tx,
       })
       jobs.push(...directJobs)
+    } else if (logger) {
+      // Story 5.5 AC-5: `initiatedBy` is nullable (`onDelete: 'set null'`) — the initiating
+      // user's account was deleted before this rotation went stale. Skip (never throw) the
+      // direct-user notification; the org-wide FR100-routed alert below still fires.
+      operationalLog(
+        logger,
+        'info',
+        OperationalEvent.ROTATION_STALE_DETECTED,
+        'Skipping direct-user stale-rotation notification — initiating user no longer exists',
+        { orgId, rotationId: candidate.id }
+      )
     }
     const routedJobs = await enqueueSecurityAlertNotification({
       orgId,
@@ -116,14 +131,36 @@ async function recoverOneRotation(
   })
 }
 
-async function recoverStaleRotationsForOrg(orgId: string, boss: BossService): Promise<void> {
+async function recoverStaleRotationsForOrg(
+  orgId: string,
+  boss: BossService,
+  logger?: WorkerLogger
+): Promise<void> {
   const candidates = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
     findStaleRotations(tx, orgId)
   )
   for (const candidate of candidates) {
-    const jobs = await recoverOneRotation(orgId, candidate)
-    if (jobs && jobs.length > 0) {
-      await sendNotificationJobs(boss, jobs)
+    // Story 5.5 AC-9: recoverOneRotation() already runs each candidate in its OWN transaction
+    // (via runOrgScopedJob), so an audit-write (or any other) failure inside it already rolls
+    // back only that one row's state transition — but without this try/catch, the thrown error
+    // would still propagate out of this loop and abort every other candidate (in this org AND
+    // every other org still to come in the same job run). Catching here, logging, and moving on
+    // is what actually makes "a single row's failure never aborts the entire job run" true.
+    try {
+      const jobs = await recoverOneRotation(orgId, candidate, logger)
+      if (jobs && jobs.length > 0) {
+        await sendNotificationJobs(boss, jobs)
+      }
+    } catch (error) {
+      if (logger) {
+        operationalLog(
+          logger,
+          'error',
+          OperationalEvent.ROTATION_STALE_DETECTION_ROW_FAILED,
+          'Stale-rotation recovery failed for one candidate — skipping and continuing',
+          { orgId, rotationId: candidate.id, err: serializeLogError(error) }
+        )
+      }
     }
   }
 }
@@ -134,9 +171,27 @@ async function recoverStaleRotationsForOrg(orgId: string, boss: BossService): Pr
  *  transaction-scoped and releases the instant initiation commits; there is no lock left to
  *  check by the time a rotation is stale. Never auto-resolves (AC-E5d) — only ever transitions
  *  in_progress -> stale_recovery, leaving resume/abandon to a human decision. */
-export async function runStaleRotationRecoveryJob(boss: BossService): Promise<void> {
+export async function runStaleRotationRecoveryJob(
+  boss: BossService,
+  logger?: WorkerLogger
+): Promise<void> {
   const orgIds = await fetchAllOrgIds()
   for (const orgId of orgIds) {
-    await recoverStaleRotationsForOrg(orgId, boss)
+    // Story 5.5 AC-9: same rationale as the per-candidate try/catch above, one level up — an
+    // unexpected failure scanning/processing one org (not just a single candidate row within it)
+    // must not prevent every other org from being processed in the same run.
+    try {
+      await recoverStaleRotationsForOrg(orgId, boss, logger)
+    } catch (error) {
+      if (logger) {
+        operationalLog(
+          logger,
+          'error',
+          OperationalEvent.ROTATION_STALE_DETECTION_ROW_FAILED,
+          'Stale-rotation recovery failed for one org — skipping and continuing',
+          { orgId, err: serializeLogError(error) }
+        )
+      }
+    }
   }
 }

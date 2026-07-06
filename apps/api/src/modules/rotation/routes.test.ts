@@ -224,6 +224,8 @@ function upcomingRotationsUrl(projectId: string, suffix = '') {
   return `/api/v1/projects/${projectId}/rotations/upcoming${suffix}`
 }
 
+const HORIZON_90D_QUERY = '?horizon=90d'
+
 /** confirm/fail/retry are identical thin wrappers around the same checklist-item POST shape,
  *  differing only in the URL's action segment and each action's own default body. */
 function checklistActionViaApi(
@@ -919,6 +921,67 @@ describe.sequential('rotation routes', () => {
       auditSpy.mockRestore()
     }
   }, 20_000)
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-1: TOCTOU race between project archival and rotation initiation
+  // ---------------------------------------------------------------------------------------
+
+  it('POST rejects rotation initiation on an already-archived project with 410 project_archived', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'rotate-archived')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+    const archiveRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${projectId}/archive`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(archiveRes.statusCode).toBe(200)
+
+    const res = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id)
+    expect(res.statusCode).toBe(410)
+    expect(res.json()).toMatchObject({ code: 'project_archived' })
+
+    const counts = await rowCounts(owner.orgId, credential.id)
+    expect(counts.rotations).toBe(0)
+  })
+
+  it('POST rotation-initiate racing a concurrent project-archive call resolves deterministically — exactly one succeeds, never both', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'rotate-archive-race')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+    const [archiveRes, initiateRes] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/archive`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      }),
+      initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'archive-race-value',
+      }),
+    ])
+
+    const archiveSucceeded = archiveRes.statusCode === 200
+    const initiateSucceeded = initiateRes.statusCode === 201
+    // Exactly one of the two operations must win — the row-lock serialization on the parent
+    // `projects` row (archive's pre-existing `FOR UPDATE` + this story's new equivalent lock in
+    // `initiateRotation`) guarantees this, never both succeeding and never both failing.
+    expect(archiveSucceeded).not.toBe(initiateSucceeded)
+
+    if (archiveSucceeded) {
+      // Archive committed first: initiate's own re-check inside its transaction must see the
+      // now-archived project and cleanly reject — never silently create a dangling rotation on
+      // an archived project.
+      expect(initiateRes.statusCode).toBe(410)
+      expect(initiateRes.json()).toMatchObject({ code: 'project_archived' })
+    } else {
+      // Initiate committed first: archive's own pre-existing `findBlockingRotationIds` check
+      // (running after archive's own project-row lock is acquired) must now see the freshly
+      // committed in_progress rotation and reject — never archive a project out from under an
+      // active rotation.
+      expect(archiveRes.statusCode).toBe(409)
+      expect(archiveRes.json()).toMatchObject({ error: 'active_rotations' })
+    }
+  })
 })
 
 describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming rotations', () => {
@@ -1431,6 +1494,124 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     expect(previousAfterPrune?.purgedAt).not.toBeNull()
   }, 20_000)
 
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-2: single-actor self-attestation flag on rotation.completed
+  // ---------------------------------------------------------------------------------------
+
+  async function findRotationCompletedAuditPayload(orgId: string, rotationId: string) {
+    const rows = await withOrg(orgId, (tx) =>
+      tx
+        .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'rotation.completed'))
+    )
+    return rows.find((row) => row.resourceId === rotationId)?.payload as
+      | {
+          singleActorAttested?: boolean
+          previousVersionId?: string
+          newVersionId?: string
+        }
+      | undefined
+  }
+
+  it('AC-2: rotation.completed flags singleActorAttested=true when the initiator also confirmed every checklist item', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'single-actor-true',
+      2
+    )
+    for (const item of fixture.items) {
+      const res = await confirmChecklistItemViaApi(app, owner.cookies, {
+        ...fixture,
+        itemId: item.id,
+      })
+      expect(res.statusCode).toBe(200)
+    }
+
+    const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
+    expect(completeRes.statusCode).toBe(200)
+
+    const payload = await findRotationCompletedAuditPayload(owner.orgId, fixture.rotationId)
+    expect(payload?.singleActorAttested).toBe(true)
+  })
+
+  it('AC-2: rotation.completed flags singleActorAttested=false when a different user confirmed the checklist', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'single-actor-false',
+      2
+    )
+    const memberUser = await createDirectAuthenticatedUser(app, 'single-actor-member', 'member')
+    const memberCookies = await loginExistingUserInOrg(app, {
+      userId: memberUser.userId,
+      orgId: owner.orgId,
+      role: 'member',
+    })
+    for (const item of fixture.items) {
+      const res = await confirmChecklistItemViaApi(app, memberCookies, {
+        ...fixture,
+        itemId: item.id,
+      })
+      expect(res.statusCode).toBe(200)
+    }
+
+    const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
+    expect(completeRes.statusCode).toBe(200)
+
+    const payload = await findRotationCompletedAuditPayload(owner.orgId, fixture.rotationId)
+    expect(payload?.singleActorAttested).toBe(false)
+  })
+
+  it('AC-2: rotation.completed flags singleActorAttested=false for a zero-dependency (acknowledged) completion', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'single-actor-zero-dep',
+      0
+    )
+    const completeRes = await completeRotationViaApi(app, owner.cookies, fixture, {
+      acknowledgedNoDependencies: true,
+    })
+    expect(completeRes.statusCode).toBe(200)
+
+    const payload = await findRotationCompletedAuditPayload(owner.orgId, fixture.rotationId)
+    expect(payload?.singleActorAttested).toBe(false)
+  })
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-13: rotation.completed audit payload carries the retired version ids
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-13 (5.5): rotation.completed audit payload includes previousVersionId and newVersionId matching the rotation row', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'version-ids',
+      1
+    )
+    for (const item of fixture.items) {
+      const res = await confirmChecklistItemViaApi(app, owner.cookies, {
+        ...fixture,
+        itemId: item.id,
+      })
+      expect(res.statusCode).toBe(200)
+    }
+    const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
+    expect(completeRes.statusCode).toBe(200)
+
+    const rotationRow = await withOrg(owner.orgId, (tx) =>
+      tx.select().from(rotations).where(eq(rotations.id, fixture.rotationId))
+    )
+    const previousVersionId = rotationRow[0]?.previousVersionId
+    const newVersionId = rotationRow[0]?.newVersionId
+
+    const payload = await findRotationCompletedAuditPayload(owner.orgId, fixture.rotationId)
+    expect(payload?.previousVersionId).toBe(previousVersionId)
+    expect(payload?.newVersionId).toBe(newVersionId)
+  })
+
   it('AC-13: GET rotation detail shows the full independent state machine after confirm/fail/retry/max-exceeded on a mixed rotation', async () => {
     const fixture = await createRotationWithDependenciesFixture(
       app,
@@ -1680,6 +1861,149 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     }
   }, 20_000)
 
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-12: fail/retry/max_retries_exceeded get the identical fail-closed audit
+  // rollback test coverage confirm/complete already had — following that exact pattern.
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-12: audit write failure rolls back fail atomically', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'audit-fail-fail',
+      1
+    )
+    const item = must(fixture.items[0])
+    const auditSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    try {
+      const res = await failChecklistItemViaApi(app, owner.cookies, { ...fixture, itemId: item.id })
+      expectAuditWriteFailed(res)
+
+      const itemRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ status: rotationChecklistItems.status })
+          .from(rotationChecklistItems)
+          .where(eq(rotationChecklistItems.id, item.id))
+      )
+      expect(itemRows[0]?.status).toBe('unconfirmed')
+
+      const rotationRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ version: rotations.version })
+          .from(rotations)
+          .where(eq(rotations.id, fixture.rotationId))
+      )
+      expect(rotationRows[0]?.version).toBe(1)
+    } finally {
+      auditSpy.mockRestore()
+    }
+  }, 20_000)
+
+  it('AC-12: audit write failure rolls back retry atomically', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'audit-fail-retry',
+      1
+    )
+    const item = must(fixture.items[0])
+    const failRes = await failChecklistItemViaApi(app, owner.cookies, {
+      ...fixture,
+      itemId: item.id,
+    })
+    expect(failRes.statusCode).toBe(200)
+    const versionAfterFail = failRes.json<{ data: { rotationVersion: number } }>().data
+      .rotationVersion
+
+    const auditSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    try {
+      const res = await retryChecklistItemViaApi(app, owner.cookies, {
+        ...fixture,
+        itemId: item.id,
+      })
+      expectAuditWriteFailed(res)
+
+      const itemRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({
+            status: rotationChecklistItems.status,
+            retryCount: rotationChecklistItems.retryCount,
+          })
+          .from(rotationChecklistItems)
+          .where(eq(rotationChecklistItems.id, item.id))
+      )
+      expect(itemRows[0]?.status).toBe('failed')
+      expect(itemRows[0]?.retryCount).toBe(0)
+
+      const rotationRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ version: rotations.version })
+          .from(rotations)
+          .where(eq(rotations.id, fixture.rotationId))
+      )
+      expect(rotationRows[0]?.version).toBe(versionAfterFail)
+    } finally {
+      auditSpy.mockRestore()
+    }
+  }, 20_000)
+
+  it('AC-12: audit write failure rolls back the max_retries_exceeded transition atomically', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'audit-fail-max-exceeded',
+      1
+    )
+    const item = must(fixture.items[0])
+    const ids = { ...fixture, itemId: item.id }
+
+    // 3 successful fail+retry cycles bring retryCount to the default cap (3) — see the
+    // identical pattern in the AC-13 "full independent state machine" test above.
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      await failChecklistItemViaApi(app, owner.cookies, ids)
+      await retryChecklistItemViaApi(app, owner.cookies, ids)
+    }
+    const finalFail = await failChecklistItemViaApi(app, owner.cookies, ids)
+    expect(finalFail.statusCode).toBe(200)
+    const versionBeforeExceeded = finalFail.json<{ data: { rotationVersion: number } }>().data
+      .rotationVersion
+
+    const auditSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    try {
+      // The 4th retry call is the one that would transition failed -> max_retries_exceeded.
+      const res = await retryChecklistItemViaApi(app, owner.cookies, ids)
+      expectAuditWriteFailed(res)
+
+      const itemRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({
+            status: rotationChecklistItems.status,
+            retryCount: rotationChecklistItems.retryCount,
+          })
+          .from(rotationChecklistItems)
+          .where(eq(rotationChecklistItems.id, item.id))
+      )
+      expect(itemRows[0]?.status).toBe('failed')
+      expect(itemRows[0]?.retryCount).toBe(3)
+
+      const rotationRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ version: rotations.version })
+          .from(rotations)
+          .where(eq(rotations.id, fixture.rotationId))
+      )
+      expect(rotationRows[0]?.version).toBe(versionBeforeExceeded)
+    } finally {
+      auditSpy.mockRestore()
+    }
+  }, 20_000)
+
   it('sealed vault fails closed with 503 for the checklist mutation and upcoming-rotations routes', async () => {
     const fixture = await createRotationWithDependenciesFixture(
       app,
@@ -1728,7 +2052,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       orgId: owner.orgId,
       role: 'viewer',
     })
-    const res = await getUpcomingRotationsViaApi(app, viewerCookies, projectId, '?horizon=90d')
+    const res = await getUpcomingRotationsViaApi(app, viewerCookies, projectId, HORIZON_90D_QUERY)
     expect(res.statusCode).toBe(200)
     const body = res.json<{ data: { items: { credentialId: string }[] } }>()
     expect(body.data.items.map((i) => i.credentialId)).toContain(credential.id)
@@ -1774,7 +2098,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     const initiate = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id)
     expect(initiate.statusCode).toBe(201)
 
-    const res = await getUpcomingRotationsViaApi(app, owner.cookies, projectId, '?horizon=90d')
+    const res = await getUpcomingRotationsViaApi(app, owner.cookies, projectId, HORIZON_90D_QUERY)
     expect(res.statusCode).toBe(200)
     expect(
       res
@@ -1782,6 +2106,79 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
         .data.items.map((i) => i.credentialId)
     ).not.toContain(credential.id)
   })
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-6: malformed rotationSchedule cron strings degrade gracefully
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-6: GET rotations/upcoming skips a credential with a malformed rotationSchedule (data drift, bypassing write-time validation) and still returns the valid ones', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'upcoming-malformed')
+    const validCredential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Valid Schedule Cred',
+      value: SENTINEL_VALUE,
+    })
+    const malformedCredential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Malformed Schedule Cred',
+      value: SENTINEL_VALUE,
+    })
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/projects/${projectId}/credentials/${validCredential.id}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { rotationSchedule: '0 0 1 * *' },
+    })
+    expect(patchRes.statusCode).toBe(200)
+
+    // Direct DB write — bypasses the route's write-time cron validation entirely, simulating
+    // data drift (a stored value that was valid under an older cron-parser version, or written
+    // by a process that skipped validation).
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(credentials)
+        .set({ rotationSchedule: 'not a valid cron expression' })
+        .where(eq(credentials.id, malformedCredential.id))
+    )
+
+    const res = await getUpcomingRotationsViaApi(app, owner.cookies, projectId, HORIZON_90D_QUERY)
+    expect(res.statusCode).toBe(200)
+    const credentialIds = res
+      .json<{ data: { items: { credentialId: string }[] } }>()
+      .data.items.map((i) => i.credentialId)
+    expect(credentialIds).toContain(validCredential.id)
+    expect(credentialIds).not.toContain(malformedCredential.id)
+  })
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.5 AC-7: org-dashboard upcoming-rotations computation is bounded
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-7: computeUpcomingRotations completes for 100+ scheduled credentials without unbounded per-request cost', async () => {
+    const { computeUpcomingRotations } = await import('./service.js')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'upcoming-bound')
+    const credentialCount = 120
+
+    await withOrg(owner.orgId, async (tx) => {
+      const rows = Array.from({ length: credentialCount }, (_, i) => ({
+        orgId: owner.orgId,
+        projectId,
+        name: `Bound Cred ${i}`,
+        createdBy: owner.userId,
+        rotationSchedule: '0 0 1 * *',
+      }))
+      await tx.insert(credentials).values(rows)
+    })
+
+    const start = Date.now()
+    const results = await withOrg(owner.orgId, (tx) =>
+      computeUpcomingRotations(tx, { horizonDays: 3650 })
+    )
+    const elapsedMs = Date.now() - start
+
+    expect(results.length).toBeGreaterThanOrEqual(credentialCount)
+    // Not a strict perf assertion (CI-timing-sensitive) — just confirms this didn't hang/time
+    // out processing an unbounded per-credential result set.
+    expect(elapsedMs).toBeLessThan(15_000)
+  }, 20_000)
 })
 
 describe.sequential(
@@ -2052,6 +2449,103 @@ describe.sequential(
     })
 
     // ---------------------------------------------------------------------------------------
+    // Story 5.5 AC-4: break-glass idempotency (rapid double-submit, NOT the true-concurrency
+    // lock-contention case above — this covers two SEQUENTIAL calls close in time, where the
+    // first call's transaction has already committed (releasing the credential-scoped advisory
+    // lock) before the second call starts, so the lock alone can't catch it).
+    // ---------------------------------------------------------------------------------------
+
+    it('POST a rapid double-submit break-glass call within the idempotency window returns the same rotation instead of creating a second one', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-idempotent')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const first = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'idempotent-a',
+        reason: 'double-submit test',
+      })
+      expect(first.statusCode).toBe(201)
+      const firstRotationId = first.json<{ data: { id: string } }>().data.id
+
+      const second = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'idempotent-b',
+        reason: 'double-submit test',
+      })
+      expect(second.statusCode).toBe(201)
+      const secondRotationId = second.json<{ data: { id: string } }>().data.id
+
+      expect(secondRotationId).toBe(firstRotationId)
+
+      const liveRotations = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ id: rotations.id })
+          .from(rotations)
+          .where(
+            and(
+              eq(rotations.credentialId, credential.id),
+              eq(rotations.status, 'break_glass_complete')
+            )
+          )
+      )
+      expect(liveRotations).toHaveLength(1)
+
+      const versionRows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ id: credentialVersions.id })
+          .from(credentialVersions)
+          .where(eq(credentialVersions.credentialId, credential.id))
+      )
+      // Original version (1) + exactly one break-glass version (2) — the duplicate call must
+      // not have consumed a second credential version.
+      expect(versionRows).toHaveLength(2)
+
+      // The credential's live value must still be the FIRST call's write — a second write from
+      // the duplicate would silently discard the first responder's value.
+      await expectCredentialValue(app, owner.cookies, projectId, credential.id, 'idempotent-a')
+    })
+
+    it('POST break-glass calls further apart than the idempotency window each create independent rotations (not incorrectly deduped)', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-not-idempotent')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const first = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'window-a',
+        reason: 'outside window test',
+      })
+      expect(first.statusCode).toBe(201)
+
+      // Push the first rotation's initiatedAt back outside the idempotency window instead of
+      // sleeping in the test — deterministic and fast.
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(rotations)
+          .set({ initiatedAt: new Date(Date.now() - 60_000) })
+          .where(eq(rotations.credentialId, credential.id))
+      )
+
+      const second = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'window-b',
+        reason: 'outside window test',
+      })
+      expect(second.statusCode).toBe(201)
+      expect(second.json<{ data: { id: string } }>().data.id).not.toBe(
+        first.json<{ data: { id: string } }>().data.id
+      )
+
+      const liveRotations = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ id: rotations.id })
+          .from(rotations)
+          .where(
+            and(
+              eq(rotations.credentialId, credential.id),
+              eq(rotations.status, 'break_glass_complete')
+            )
+          )
+      )
+      expect(liveRotations).toHaveLength(2)
+    })
+
+    // ---------------------------------------------------------------------------------------
     // AC-7: audit, security alert, notification, audit-failure rollback, reason sanitization
     // ---------------------------------------------------------------------------------------
 
@@ -2318,6 +2812,36 @@ describe.sequential(
       ])
       const conflict = assertExactlyOneConflict(resumeRes, abandonRes, 200, 409)
       expect(conflict.json()).toMatchObject({ code: 'concurrent_modification' })
+    })
+
+    // ---------------------------------------------------------------------------------------
+    // Story 5.5 AC-10: `abandon` gets the same rotations.version CAS check every sibling
+    // transition (resume/confirm/fail/retry/complete) already has — this races TWO abandon
+    // calls against EACH OTHER (not abandon-vs-resume, already covered above) to prove the CAS
+    // specifically catches an abandon-vs-abandon conflict, not just cross-operation contention.
+    // ---------------------------------------------------------------------------------------
+
+    it('POST two racing abandon calls on the same stale_recovery rotation: exactly one 200, one 409 concurrent_modification', async () => {
+      const { projectId, credentialId, rotationId } = await createStaleRotationFixture(
+        app,
+        owner.cookies,
+        owner.orgId,
+        'abandon-race'
+      )
+
+      const [first, second] = await Promise.all([
+        resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'abandon'),
+        resolutionViaApi(app, owner.cookies, { projectId, credentialId, rotationId }, 'abandon'),
+      ])
+      const conflict = assertExactlyOneConflict(first, second, 200, 409)
+      expect(conflict.json()).toMatchObject({ code: 'concurrent_modification' })
+
+      // Exactly one abandon actually took effect — the rotation ends up abandoned, not
+      // double-processed.
+      const finalRotation = await withOrg(owner.orgId, (tx) =>
+        tx.select({ status: rotations.status }).from(rotations).where(eq(rotations.id, rotationId))
+      )
+      expect(finalRotation[0]?.status).toBe('abandoned')
     })
 
     // ---------------------------------------------------------------------------------------

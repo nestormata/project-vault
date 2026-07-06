@@ -16,6 +16,11 @@ import {
   loginExistingUserInOrg,
 } from '../../__tests__/helpers/org-role-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import { register as promRegister } from 'prom-client'
+import {
+  CREDENTIAL_REVEAL_ABANDONED_VERSION_EXCLUDED_TOTAL_METRIC_NAME,
+  credentialRevealAbandonedVersionExcludedTotal,
+} from '../rotation/metrics.js'
 import {
   bootstrapCredentialRouteOwners,
   createCredentialTestProject,
@@ -657,6 +662,47 @@ describe.sequential('credential routes', () => {
     expect(
       afterAbandon.json<{ data: { value: string; versionNumber: number } }>().data
     ).toMatchObject({ value: 'good-value-v1', versionNumber: 1 })
+  }, 20_000)
+
+  // Story 5.5 AC-3: instrumentation for the "single highest-risk change" in Story 5.3 —
+  // revealCurrentValue() excluding an abandoned version must be visible in production
+  // metrics/logs, not just provable in a regression test.
+  it('AC-3 (5.5): GET value increments credential_reveal_abandoned_version_excluded_total when it falls back past an abandoned version', async () => {
+    credentialRevealAbandonedVersionExcludedTotal.reset()
+    const projectId = await createTestProject(app, owner.cookies, 'abandon-metric-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Abandon Metric Key',
+      value: 'metric-good-v1',
+    })
+    await addVersion(app, owner.cookies, projectId, credential.id, 'metric-abandoned-v2')
+    await abandonVersion(owner.orgId, credential.id, 2)
+
+    const res = await revealValue(app, owner.cookies, projectId, credential.id)
+    expect(res.statusCode).toBe(200)
+
+    const metric = await promRegister.getSingleMetricAsString(
+      CREDENTIAL_REVEAL_ABANDONED_VERSION_EXCLUDED_TOTAL_METRIC_NAME
+    )
+    const match = metric.match(/^credential_reveal_abandoned_version_excluded_total\s+(\d+)/m)
+    expect(Number(match?.[1] ?? 0)).toBeGreaterThanOrEqual(1)
+  }, 20_000)
+
+  it('AC-3 (5.5): GET value does NOT increment credential_reveal_abandoned_version_excluded_total for a never-rotated credential', async () => {
+    credentialRevealAbandonedVersionExcludedTotal.reset()
+    const projectId = await createTestProject(app, owner.cookies, 'no-abandon-metric-project')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'No Abandon Metric Key',
+      value: 'plain-metric-v1',
+    })
+
+    const res = await revealValue(app, owner.cookies, projectId, credential.id)
+    expect(res.statusCode).toBe(200)
+
+    const metric = await promRegister.getSingleMetricAsString(
+      CREDENTIAL_REVEAL_ABANDONED_VERSION_EXCLUDED_TOTAL_METRIC_NAME
+    )
+    const match = metric.match(/^credential_reveal_abandoned_version_excluded_total\s+(\d+)/m)
+    expect(Number(match?.[1] ?? 0)).toBe(0)
   }, 20_000)
 
   it('GET versions marks isCurrent on the highest non-abandoned/non-purged version and surfaces abandonedAt (AC-14)', async () => {
