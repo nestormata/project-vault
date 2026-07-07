@@ -77,6 +77,19 @@ describe('findDestructiveStatements', () => {
     expect(spaced.some((f) => /ALTER COLUMN.*TYPE/i.test(f))).toBe(true)
   })
 
+  it('finds a statement following a double-quoted identifier containing "--" (regression, edge-case review)', () => {
+    // A double-quoted identifier is not tracked as its own token, so an embedded "--" inside it
+    // was previously misinterpreted by the line-comment scanner as a real comment opener,
+    // masking everything through end-of-line — including a real destructive statement on the
+    // same line — and silently swallowing it.
+    const findings = findDestructiveStatements(
+      'ALTER TABLE users RENAME COLUMN "note--legacy" TO note; DROP TABLE secrets;'
+    )
+    expect(findings.some((f) => /RENAME COLUMN/i.test(f))).toBe(true)
+    expect(findings.some((f) => /DROP TABLE/i.test(f))).toBe(true)
+    expect(findings).toHaveLength(2)
+  })
+
   it('does not flag ALTER COLUMN ... SET NOT NULL (distinct from a TYPE change)', () => {
     const findings = findDestructiveStatements(
       'ALTER TABLE refresh_tokens ALTER COLUMN org_id SET NOT NULL;'
@@ -134,11 +147,36 @@ describe('findDestructiveStatements', () => {
     expect(findings).toEqual([])
   })
 
-  it('does not flag a destructive keyword appearing only inside a dollar-quoted string', () => {
+  it('flags a destructive keyword inside a dollar-quoted block (regression, edge-case review)', () => {
+    // A dollar-quoted region is executable PLpgSQL when it's a DO/CREATE FUNCTION body, not
+    // inert string data — a naive implementation that masks all dollar-quoted content wholesale
+    // (matching single-quoted-string handling) lets a destructive statement wrapped in one bypass
+    // this guard entirely. Deliberately conservative (module design): dollar-quoted *data*
+    // strings that happen to contain a matching keyword substring will now also be flagged, which
+    // is an acceptable false positive for a fail-closed guard.
+    const doBlock = findDestructiveStatements('DO $$ BEGIN DROP TABLE credentials; END $$;')
+    expect(doBlock.some((f) => /DROP TABLE/i.test(f))).toBe(true)
+
+    const createFunction = findDestructiveStatements(
+      'CREATE FUNCTION purge() RETURNS void AS $$ BEGIN TRUNCATE sessions; END $$ LANGUAGE plpgsql;'
+    )
+    expect(createFunction.some((f) => /TRUNCATE/i.test(f))).toBe(true)
+  })
+
+  it('still strips nested comments and string literals inside a dollar-quoted block', () => {
     const findings = findDestructiveStatements(
-      "SELECT set_config('app.note', $$this mentions DROP TABLE but is just text$$, true);"
+      'DO $$ BEGIN -- TODO: consider a future DROP TABLE cleanup\n' +
+        "PERFORM set_config('app.note', 'a DROP TABLE mention inside a string', true); END $$;"
     )
     expect(findings).toEqual([])
+  })
+
+  it('resumes correctly after a dollar-quoted block, finding a destructive statement that follows it', () => {
+    const findings = findDestructiveStatements(
+      "DO $$ BEGIN PERFORM 1; -- don't touch this\nEND $$;\nDROP TABLE legacy_widgets;"
+    )
+    expect(findings.some((f) => /DROP TABLE/i.test(f))).toBe(true)
+    expect(findings).toHaveLength(1)
   })
 
   it('still flags a genuine destructive statement alongside an unrelated comment mentioning the same keyword', () => {

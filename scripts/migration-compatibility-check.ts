@@ -10,9 +10,12 @@
  * all, unlike `guarded-migrate.ts` which needs a live connection to determine pending state.
  */
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { findDestructiveStatements } from '../packages/db/src/lib/migration-safety.js'
+import {
+  findDestructiveStatements,
+  KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS,
+} from '../packages/db/src/lib/migration-safety.js'
 import { toRepoPath, walkFiles } from './lib/scan-utils.js'
 
 export type MigrationViolation = { file: string; findings: string[] }
@@ -23,6 +26,8 @@ export function scanMigrationCompatibility(rootDir = process.cwd()): MigrationVi
   const violations: MigrationViolation[] = []
 
   for (const file of walkFiles(migrationsDir, (path) => path.endsWith('.sql'))) {
+    const tag = basename(file, '.sql')
+    if (tag in KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS) continue
     const findings = findDestructiveStatements(readFileSync(file, 'utf-8'))
     if (findings.length > 0) {
       violations.push({ file: toRepoPath(root, file), findings })

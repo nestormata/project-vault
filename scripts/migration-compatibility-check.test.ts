@@ -54,6 +54,25 @@ describe('scanMigrationCompatibility', () => {
     const root = makeFixtureRoot()
     expect(scanMigrationCompatibility(`${root}/does-not-exist`)).toEqual([])
   })
+
+  it('skips a migration listed in KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS but still flags an unrelated one with the same statement', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      'packages/db/src/migrations/0036_audit_search_export_forwarding.sql',
+      'DELETE FROM audit_log_entries WHERE org_id = $1;'
+    )
+    writeFixture(
+      root,
+      'packages/db/src/migrations/0099_unrelated_delete.sql',
+      'DELETE FROM audit_log_entries;'
+    )
+
+    const violations = scanMigrationCompatibility(root)
+    expect(violations.map((v) => v.file)).toEqual([
+      'packages/db/src/migrations/0099_unrelated_delete.sql',
+    ])
+  })
 })
 
 describe('scanMigrationCompatibility against the real repository (AC-4, AC-18)', () => {

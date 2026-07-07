@@ -42,14 +42,19 @@ const tryBlockComment: TokenConsumer = (sql, i, n) => {
   return close === -1 ? n : close + 2
 }
 
-/** Dollar-quoted string: "$tag$ ... $tag$" (tag may be empty, e.g. plain "$$...$$"). */
-const tryDollarQuotedString: TokenConsumer = (sql, i, n) => {
+/** Finds a dollar-quote boundary starting at `i` (tag may be empty, e.g. plain "$$"). Returns
+ * the tag text and the index where the matching closing tag begins, or `null` if `i` isn't the
+ * start of one (`closeStart` is -1 if the tag never closes). */
+function matchDollarQuoteBoundary(
+  sql: string,
+  i: number
+): { tag: string; closeStart: number } | null {
   if (sql[i] !== '$') return null
   const tagMatch = DOLLAR_TAG_RE.exec(sql.slice(i))
   if (!tagMatch) return null
   const tag = tagMatch[0]
-  const close = sql.indexOf(tag, i + tag.length)
-  return close === -1 ? n : close + tag.length
+  const closeStart = sql.indexOf(tag, i + tag.length)
+  return { tag, closeStart }
 }
 
 /** Single-quoted string literal, with standard SQL '' escaping. */
@@ -67,18 +72,50 @@ const trySingleQuotedString: TokenConsumer = (sql, i, n) => {
   return j
 }
 
-const TOKEN_CONSUMERS: TokenConsumer[] = [
+/** Double-quoted identifier: `"..."`, with standard SQL `""`-escaping. Unlike the maskable
+ * consumers below, the caller preserves this token's content verbatim rather than masking it —
+ * see stripCommentsAndStrings for why. */
+const tryDoubleQuotedIdentifier: TokenConsumer = (sql, i, n) => {
+  if (sql[i] !== '"') return null
+  let j = i + 1
+  while (j < n) {
+    if (sql[j] === '"' && sql[j + 1] === '"') {
+      j += 2
+      continue
+    }
+    if (sql[j] === '"') return j + 1
+    j++
+  }
+  return j
+}
+
+const MASKING_TOKEN_CONSUMERS: TokenConsumer[] = [
   tryLineComment,
   tryBlockComment,
-  tryDollarQuotedString,
   trySingleQuotedString,
 ]
 
 /**
- * Strips SQL line comments (`-- ...`), block comments (`/* ... *\/`), single-quoted string
- * literals (with `''`-escaping), and dollar-quoted strings (`$$...$$` / `$tag$...$tag$`) from
- * `sql`, replacing each with whitespace of identical length so every remaining character's index
- * (and therefore line number) is unchanged from the original input.
+ * Strips SQL line comments (`-- ...`), block comments (`/* ... *\/`), and single-quoted string
+ * literals (with `''`-escaping) from `sql`, replacing each with whitespace of identical length so
+ * every remaining character's index (and therefore line number) is unchanged from the original
+ * input.
+ *
+ * Two token kinds are handled separately from the generic masking pass above, both because they
+ * need un-masked content preserved and because letting the generic scanners see their raw
+ * characters causes desyncs (found via edge-case review, regression-tested below):
+ *  - Double-quoted identifiers (`"..."`) are boundary-matched but copied through verbatim, so an
+ *    embedded `--`/`'`/`$` inside a quoted identifier (e.g. `"note--legacy"`) can't be
+ *    misinterpreted as the start of a comment/string/dollar-quote and swallow real statements
+ *    that follow on the same line. Identifier text must also survive intact for the
+ *    `ALTER COLUMN "quoted-name" TYPE` pattern below to still match it.
+ *  - Dollar-quoted blocks (`$$...$$` / `$tag$...$tag$`) are boundary-matched and their interior
+ *    is *recursively* stripped rather than masked wholesale. A `DO $$ ... $$` or
+ *    `CREATE FUNCTION ... $$ ... $$` body is executable PLpgSQL, not inert string data — masking
+ *    it let a destructive statement wrapped in a dollar-quoted block bypass this guard entirely.
+ *    Recursing still strips genuine nested comments/string-literal contents (so those don't
+ *    produce false positives or desync the scan) while leaving destructive keywords in the block
+ *    body visible to the outer pattern scan.
  */
 function stripCommentsAndStrings(sql: string): string {
   let result = ''
@@ -86,7 +123,30 @@ function stripCommentsAndStrings(sql: string): string {
   const n = sql.length
 
   while (i < n) {
-    const j = TOKEN_CONSUMERS.reduce<number | null>(
+    const identifierEnd = tryDoubleQuotedIdentifier(sql, i, n)
+    if (identifierEnd !== null) {
+      result += sql.slice(i, identifierEnd)
+      i = identifierEnd
+      continue
+    }
+
+    const boundary = matchDollarQuoteBoundary(sql, i)
+    if (boundary) {
+      const { tag, closeStart } = boundary
+      if (closeStart === -1) {
+        result += maskPreservingNewlines(sql.slice(i, n))
+        i = n
+        continue
+      }
+      const openEnd = i + tag.length
+      const inner = sql.slice(openEnd, closeStart)
+      result +=
+        maskPreservingNewlines(tag) + stripCommentsAndStrings(inner) + maskPreservingNewlines(tag)
+      i = closeStart + tag.length
+      continue
+    }
+
+    const j = MASKING_TOKEN_CONSUMERS.reduce<number | null>(
       (found, consume) => found ?? consume(sql, i, n),
       null
     )
@@ -205,4 +265,31 @@ export function findDestructiveStatements(sql: string): string[] {
   findings.sort((a, b) => a.index - b.index)
 
   return findings.map(({ label, index }) => `${label} (line ${lineForIndex(sql, index)})`)
+}
+
+/**
+ * Deliberately narrow, file-scoped allowlist (mirrors `apps/api/src/lib/route-exemptions.ts`'s
+ * pattern) for already-shipped, already-reviewed migrations that are newly caught by tightened
+ * scanning here, not by an accidental destructive change. Keyed by migration tag (filename minus
+ * `.sql`) so both call sites (`guarded-migrate.ts`'s pending-only runtime guard and
+ * `migration-compatibility-check.ts`'s full-history CI gate) can share one source of truth. A file
+ * is only ever added here with a documented reason — this must never become a way to silently wave
+ * through a genuinely new destructive migration.
+ *
+ * `0036_audit_search_export_forwarding`: `stripCommentsAndStrings` now recurses into
+ * dollar-quoted (`$$...$$`) blocks instead of masking them wholesale, so a destructive statement
+ * hidden inside a `DO`/`CREATE FUNCTION` body can no longer bypass this guard (closed via
+ * edge-case review — see the regression tests above). That closes a real gap, but it also makes
+ * this migration newly "destructive" under the tightened scan: its
+ * `purge_expired_audit_log_entries()` `SECURITY DEFINER` function body contains a
+ * `DELETE FROM audit_log_entries`, the sanctioned, narrowly-scoped exception to the audit log's
+ * append-only trigger (Story 8.1/8.2 design) — not an accidental schema change. Left unlisted,
+ * this would (a) block every brand-new self-hosted install's very first `db:migrate` run, since
+ * `guarded-migrate.ts` treats a fresh database's entire local history as "pending", and (b) break
+ * AC-18's full-history zero-findings guarantee for a migration that was reviewed and merged before
+ * this story existed.
+ */
+export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
+  '0036_audit_search_export_forwarding':
+    "purge_expired_audit_log_entries()'s DELETE FROM audit_log_entries is the sanctioned, RLS-context-checked exception to the append-only trigger (Story 8.1/8.2) — reviewed and merged before Story 9.3 tightened dollar-quoted-block scanning.",
 }

@@ -104,6 +104,34 @@ describe('scanPendingForDestructive', () => {
     const pending = [{ tag: '0000_safe', sql: SQL_CREATE_TABLE_A, folderMillis: 100 }]
     expect(scanPendingForDestructive(pending)).toEqual([])
   })
+
+  it('skips a migration tag in KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS, so a fresh-database install is never blocked by it', () => {
+    // A brand-new self-hosted install's very first db:migrate run treats its entire local
+    // history as "pending" (resolvePendingMigrations returns `all` when lastAppliedMillis is
+    // null) — an unlisted already-reviewed migration here would block every fresh install, not
+    // just in-place upgrades.
+    const pending = [
+      {
+        tag: '0036_audit_search_export_forwarding',
+        sql: 'DELETE FROM audit_log_entries WHERE org_id = $1;',
+        folderMillis: 100,
+      },
+    ]
+    expect(scanPendingForDestructive(pending)).toEqual([])
+  })
+
+  it('does not let the allowlist suppress an unrelated migration with a similar destructive statement', () => {
+    const pending = [
+      {
+        tag: '0099_unrelated_delete',
+        sql: 'DELETE FROM audit_log_entries;',
+        folderMillis: 100,
+      },
+    ]
+    const result = scanPendingForDestructive(pending)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.tag).toBe('0099_unrelated_delete')
+  })
 })
 
 describe('decideMigrationAction', () => {

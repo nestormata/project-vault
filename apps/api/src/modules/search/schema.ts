@@ -57,11 +57,18 @@ function parseSearchPage(
   if (trimmed === undefined || trimmed.length === 0) {
     return 1
   }
-  if (!/^\d+$/.test(trimmed) || Number.parseInt(trimmed, 10) < 1) {
+  // Regression (edge-case review): an arbitrarily long digit string (e.g. 400 nines) passes
+  // /^\d+$/ but Number.parseInt overflows it to Infinity, which is >= 1 and so previously slipped
+  // past validation — flowing into `(page - 1) * limit` as Infinity and failing downstream at the
+  // database layer (postgres.js can't serialize an Infinity offset) instead of returning a clean
+  // 422. Number.isSafeInteger rejects both Infinity and any value drizzle-kit's PageLimitQueryShape
+  // (z.int()) would also reject.
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(parsed) || parsed < 1) {
     ctx.addIssue({ code: 'custom', message: 'page must be a positive integer', path: ['page'] })
     return z.NEVER
   }
-  return Number.parseInt(trimmed, 10)
+  return parsed
 }
 
 export const SearchQuerySchema = z

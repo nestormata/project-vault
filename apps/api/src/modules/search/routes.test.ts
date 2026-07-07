@@ -235,6 +235,15 @@ describe.sequential('search routes', () => {
     expect(res.statusCode).toBe(422)
   })
 
+  it('rejects an overlong page param that would overflow to Infinity (regression, edge-case review)', async () => {
+    // Number.parseInt('9'.repeat(400), 10) === Infinity, which is >= 1 and previously slipped
+    // past validation — would have flowed into (page - 1) * limit as Infinity and failed at the
+    // database layer instead of returning a clean 422.
+    const user = await registerUser(suite.app, 'page-overflow')
+    const res = await search(suite.app, user.cookies, `q=test&page=${'9'.repeat(400)}`)
+    expect(res.statusCode).toBe(422)
+  })
+
   it('should rank exact name match above prefix match above substring match', async () => {
     const user = await registerUser(suite.app, 'ranking')
     const projectId = await createCredentialTestProject(suite.app, user.cookies, 'rank')

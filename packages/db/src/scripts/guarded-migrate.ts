@@ -18,7 +18,10 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import postgres from 'postgres'
 import { OperationalEvent } from '@project-vault/shared'
-import { findDestructiveStatements } from '../lib/migration-safety.js'
+import {
+  findDestructiveStatements,
+  KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS,
+} from '../lib/migration-safety.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -63,6 +66,7 @@ export function resolvePendingMigrations(
 export function scanPendingForDestructive(pending: LocalMigration[]): DestructiveScanResult[] {
   const results: DestructiveScanResult[] = []
   for (const migration of pending) {
+    if (migration.tag in KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS) continue
     const findings = findDestructiveStatements(migration.sql)
     if (findings.length > 0) results.push({ tag: migration.tag, findings })
   }
