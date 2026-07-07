@@ -32,6 +32,20 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
         notFound: true as const,
       }
     }
+    // AC-3: getRotation is vault-guarded — a sealed vault 503s it. A sibling branch, not a
+    // replacement of the existing 404 branch above (kept in that order: 404 first as the existing
+    // behavior, 503 second as the net-new addition).
+    if (error instanceof ApiClientError && error.status === 503) {
+      return {
+        projectId: params.projectId,
+        credentialId: params.credentialId,
+        rotationId: params.rotationId,
+        orgRole,
+        rotation: null,
+        notFound: false as const,
+        vaultSealed: true as const,
+      }
+    }
     throw error
   }
 }

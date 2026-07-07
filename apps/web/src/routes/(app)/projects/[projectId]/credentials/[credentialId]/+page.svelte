@@ -3,7 +3,10 @@
   import { resolve } from '$app/paths'
   import { revealCredentialValue } from '$lib/api/credentials.js'
   import { ApiClientError } from '$lib/api/client.js'
-  import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
+  import {
+    canCreateCredential,
+    onboardingCopy,
+  } from '$lib/components/onboarding/onboarding-logic.js'
   import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
   import {
     formatDateTime,
@@ -62,7 +65,12 @@
 </svelte:head>
 
 <section class="space-y-6">
-  {#if data.notFound || !data.credential}
+  {#if data.vaultSealed}
+    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
+      <h1 class="text-xl font-semibold text-red-900">Vault sealed</h1>
+      <p class="mt-2 text-red-800">{onboardingCopy.vaultSealedMessage}</p>
+    </div>
+  {:else if data.notFound || !data.credential}
     <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
       <h1 class="text-xl font-semibold text-red-900">Credential not found</h1>
       <p class="mt-2 text-red-800">This credential does not exist or you do not have access.</p>

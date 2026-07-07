@@ -120,4 +120,73 @@ describe('StaleRecoveryBanner', () => {
 
     await waitFor(() => expect(onConcurrentModification).toHaveBeenCalledTimes(1))
   })
+
+  it('AC-9: 403 mfa_required on resume shows an action-specific message with a working link', async () => {
+    resumeRotationMock.mockRejectedValue(
+      new ApiClientError(
+        403,
+        { code: 'mfa_required', message: 'MFA enrollment is required for Owner and Admin roles.' },
+        'MFA enrollment is required for Owner and Admin roles.'
+      )
+    )
+    renderBanner()
+
+    await fireEvent.click(screen.getByRole('button', { name: /^resume$/i }))
+
+    expect(await screen.findByText(/Enable MFA to resume this rotation/i)).toBeTruthy()
+    const link = screen.getByRole('link', { name: /enable mfa/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
+  })
+
+  it('AC-10: 403 mfa_required on abandon shows an action-specific message and keeps the confirmation panel open', async () => {
+    abandonRotationMock.mockRejectedValue(
+      new ApiClientError(
+        403,
+        { code: 'mfa_required', message: 'MFA enrollment is required for Owner and Admin roles.' },
+        'MFA enrollment is required for Owner and Admin roles.'
+      )
+    )
+    renderBanner()
+
+    await fireEvent.click(screen.getByRole('button', { name: /^abandon$/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /abandon anyway/i }))
+
+    expect(await screen.findByText(/Enable MFA to abandon this rotation/i)).toBeTruthy()
+    const link = screen.getByRole('link', { name: /enable mfa/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
+    // Unlike rotation_not_stale, mfa_required must NOT close the confirmation panel — the
+    // decision (abandon) is still exactly what the admin wants, only MFA is blocking it.
+    expect(screen.getByRole('button', { name: /abandon anyway/i })).toBeTruthy()
+  })
+
+  it('AC-15: 429 on resume shows the generic countdown message via the shared helper', async () => {
+    resumeRotationMock.mockRejectedValue(
+      new ApiClientError(
+        429,
+        { code: 'rate_limit_exceeded', message: 'Too many authenticated requests', retryAfter: 20 },
+        'Too many authenticated requests'
+      )
+    )
+    renderBanner()
+
+    await fireEvent.click(screen.getByRole('button', { name: /^resume$/i }))
+
+    expect(await screen.findByText(/20 seconds/i)).toBeTruthy()
+  })
+
+  it('AC-15: 429 on abandon shows the generic countdown message via the shared helper', async () => {
+    abandonRotationMock.mockRejectedValue(
+      new ApiClientError(
+        429,
+        { code: 'rate_limit_exceeded', message: 'Too many authenticated requests', retryAfter: 33 },
+        'Too many authenticated requests'
+      )
+    )
+    renderBanner()
+
+    await fireEvent.click(screen.getByRole('button', { name: /^abandon$/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /abandon anyway/i }))
+
+    expect(await screen.findByText(/33 seconds/i)).toBeTruthy()
+  })
 })

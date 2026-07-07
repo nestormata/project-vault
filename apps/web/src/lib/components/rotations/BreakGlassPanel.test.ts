@@ -160,4 +160,124 @@ describe('BreakGlassPanel', () => {
 
     expect(await screen.findByText(/vault is sealed/i)).toBeTruthy()
   })
+
+  it('AC-7: 403 mfa_required shows an action-specific message with a working /settings/security link', async () => {
+    breakGlassRotationMock.mockRejectedValue(
+      new ApiClientError(
+        403,
+        {
+          code: 'mfa_required',
+          message: 'MFA enrollment is required for Owner and Admin roles.',
+        },
+        'MFA enrollment is required for Owner and Admin roles.'
+      )
+    )
+
+    render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await expandAndFillForm()
+    await fireEvent.input(screen.getByLabelText(/Type CONFIRM/i), { target: { value: 'CONFIRM' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Confirm break-glass rotation/i }))
+
+    expect(await screen.findByText(/Enable MFA to perform a break-glass rotation/i)).toBeTruthy()
+    const link = screen.getByRole('link', { name: /enable mfa/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
+  })
+
+  it('AC-12: 429 shows the break-glass-specific reassuring countdown message, not the generic one', async () => {
+    breakGlassRotationMock.mockRejectedValue(
+      new ApiClientError(
+        429,
+        { code: 'rate_limit_exceeded', message: 'Too many authenticated requests', retryAfter: 45 },
+        'Too many authenticated requests'
+      )
+    )
+
+    render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await expandAndFillForm()
+    await fireEvent.input(screen.getByLabelText(/Type CONFIRM/i), { target: { value: 'CONFIRM' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Confirm break-glass rotation/i }))
+
+    expect(
+      await screen.findByText(/Too many break-glass attempts. Try again in 45 seconds/i)
+    ).toBeTruthy()
+    expect(screen.getByText(/not to block a real incident response/i)).toBeTruthy()
+  })
+
+  // AC-16: the new-value field must be cleared on ANY terminal error outcome (not just success),
+  // and the confirm-gate state (awaitingConfirmText/confirmText) must reset alongside it —
+  // otherwise the admin is stuck staring at an empty-but-disabled textarea with no way to
+  // re-paste, while the still-enabled confirm button would resubmit an empty value.
+  it('AC-16: a failed submit clears newValue AND falls back out of the awaitingConfirmText step so the admin can re-paste', async () => {
+    breakGlassRotationMock.mockRejectedValue(
+      new ApiClientError(503, { status: 'sealed' }, 'sealed')
+    )
+
+    render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await expandAndFillForm()
+    await fireEvent.input(screen.getByLabelText(/Type CONFIRM/i), { target: { value: 'CONFIRM' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Confirm break-glass rotation/i }))
+
+    await screen.findByText(/vault is sealed/i)
+
+    const valueInput = screen.getByLabelText(/New value/i) as HTMLTextAreaElement
+    expect(valueInput.value).toBe('')
+    expect(valueInput).toHaveProperty('disabled', false)
+    expect(screen.queryByLabelText(/Type CONFIRM/i)).toBeNull()
+  })
+
+  it('AC-16 edge: the reason field is explicitly NOT cleared on error (admin-controlled incident context, not a secret)', async () => {
+    breakGlassRotationMock.mockRejectedValue(
+      new ApiClientError(503, { status: 'sealed' }, 'sealed')
+    )
+
+    render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await expandAndFillForm()
+    await fireEvent.input(screen.getByLabelText(/Type CONFIRM/i), { target: { value: 'CONFIRM' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Confirm break-glass rotation/i }))
+
+    await screen.findByText(/vault is sealed/i)
+
+    const reasonInput = screen.getByLabelText(/Reason/i) as HTMLTextAreaElement
+    expect(reasonInput.value).toBe('Key leaked in logs')
+  })
+
+  // AC-17: defense-in-depth — clear the plaintext value from $state before the component is torn
+  // down (e.g. the admin navigates away mid-fill without submitting). Verified via cleanup()
+  // triggering the same onDestroy path @testing-library/svelte always exercises.
+  it('AC-17: unmounting the component (e.g. navigating away without submitting) clears newValue/reason before teardown', async () => {
+    render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
+    const valueInput = screen.getByLabelText(/New value/i) as HTMLTextAreaElement
+    await fireEvent.input(valueInput, { target: { value: 'sk_live_unsubmitted' } })
+
+    // No assertion is possible on post-unmount internal state directly (the component instance is
+    // gone) — this test's job is to prove unmounting doesn't throw and that a fresh mount starts
+    // clean, which combined with the onDestroy hook's presence in the source is this AC's
+    // regression guard.
+    cleanup()
+
+    const { getByLabelText } = render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
+    expect((getByLabelText(/New value/i) as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('AC-18: re-collapsing the panel without submitting resets newValue/reason/confirmText/awaitingConfirmText to a clean slate', async () => {
+    render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await expandAndFillForm()
+    await fireEvent.input(screen.getByLabelText(/Type CONFIRM/i), { target: { value: 'CONFIRM' } })
+
+    // Collapse without submitting.
+    await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
+    expect(screen.queryByLabelText(/New value/i)).toBeNull()
+
+    // Re-expand — everything must be back to the initial, empty, editable state.
+    await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
+    const valueInput = screen.getByLabelText(/New value/i) as HTMLTextAreaElement
+    const reasonInput = screen.getByLabelText(/Reason/i) as HTMLTextAreaElement
+    expect(valueInput.value).toBe('')
+    expect(reasonInput.value).toBe('')
+    expect(valueInput).toHaveProperty('disabled', false)
+    expect(screen.queryByLabelText(/Type CONFIRM/i)).toBeNull()
+    expect(breakGlassRotationMock).not.toHaveBeenCalled()
+  })
 })

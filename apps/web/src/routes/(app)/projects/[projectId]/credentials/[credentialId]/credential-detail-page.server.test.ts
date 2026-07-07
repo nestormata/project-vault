@@ -188,4 +188,51 @@ describe('credential detail +page.server.ts rotation section', () => {
     expect(result.activeRotationId).toBeNull()
     expect(result.rotations).toEqual([])
   })
+
+  // AC-1: the credential page's load calls getCredential/listCredentialVersions/listRotations
+  // (twice) via Promise.all — every rotation/dependency read is vault-guarded, so a sealed vault
+  // 503s any of them. A 503 from any single call is sufficient signal that none of the others
+  // could have succeeded either (D1) — the loader does not need to distinguish which call failed.
+  it('AC-1: returns vaultSealed: true when getCredential 503s (sealed vault), instead of throwing', async () => {
+    getCredentialMock.mockRejectedValueOnce(
+      new ApiClientError(
+        503,
+        { status: 'sealed', message: 'Vault not initialized' },
+        'Vault not initialized'
+      )
+    )
+
+    const result = await load(makeEvent())
+
+    expect(result.vaultSealed).toBe(true)
+    expect(result.credential).toBeNull()
+    expect(result.notFound).toBe(false)
+  })
+
+  it('AC-1: returns vaultSealed: true when the paginated rotations history call 503s', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [],
+      page: 1,
+      limit: 1,
+      total: 0,
+      hasMore: false,
+    })
+    listRotationsMock.mockRejectedValueOnce(
+      new ApiClientError(
+        503,
+        { status: 'sealed', message: 'Vault not initialized' },
+        'Vault not initialized'
+      )
+    )
+
+    const result = await load(makeEvent())
+
+    expect(result.vaultSealed).toBe(true)
+  })
+
+  it('AC-1 edge: a non-503 ApiClientError (other than 404) still propagates unchanged', async () => {
+    getCredentialMock.mockRejectedValueOnce(new ApiClientError(500, null, 'boom'))
+
+    await expect(load(makeEvent())).rejects.toThrow('boom')
+  })
 })

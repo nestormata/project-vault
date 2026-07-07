@@ -44,4 +44,29 @@ describe('/rotations/[rotationId] +page.server.ts', () => {
     expect(result.notFound).toBe(true)
     expect(result.rotation).toBeNull()
   })
+
+  // AC-3: getRotation is vault-guarded — a sealed vault 503s it. The existing 404 branch's
+  // `error instanceof ApiClientError` pattern is preserved, only extended with a sibling 503
+  // branch (checked before the fallthrough throw).
+  it('AC-3: returns vaultSealed: true (and notFound: false) on a 503, distinct from the 404 case', async () => {
+    getRotationMock.mockRejectedValue(
+      new ApiClientError(
+        503,
+        { status: 'sealed', message: 'Vault not initialized' },
+        'Vault not initialized'
+      )
+    )
+
+    const result = await load(makeEvent())
+
+    expect(result.vaultSealed).toBe(true)
+    expect(result.notFound).toBe(false)
+    expect(result.rotation).toBeNull()
+  })
+
+  it('AC-3 edge: a non-404/503 ApiClientError still propagates unchanged', async () => {
+    getRotationMock.mockRejectedValue(new ApiClientError(500, null, 'boom'))
+
+    await expect(load(makeEvent())).rejects.toThrow('boom')
+  })
 })

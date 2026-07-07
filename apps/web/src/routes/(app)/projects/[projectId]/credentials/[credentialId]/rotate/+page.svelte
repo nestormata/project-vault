@@ -7,6 +7,7 @@
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import BreakGlassPanel from '$lib/components/rotations/BreakGlassPanel.svelte'
+  import { mapRotationMutationError } from '$lib/components/rotations/rotation-copy.js'
 
   let { data } = $props()
 
@@ -47,12 +48,17 @@
           errorMessage = 'A rotation is already in progress for this credential.'
         } else if (error.status === 422) {
           errorMessage = error.message
-        } else if (error.status === 403) {
+        } else if (error.status === 403 && error.code !== 'mfa_required') {
+          // AC-6 edge: the existing generic role-downgrade-mid-session message is preserved for
+          // any 403 that isn't specifically mfa_required — the shared helper below handles that
+          // case with an action-specific "Enable MFA to ..." message instead.
           errorMessage = 'You do not have permission to start a rotation.'
-        } else if (error.status === 503) {
-          errorMessage = onboardingCopy.vaultSealedMessage
         } else {
-          errorMessage = error.message
+          errorMessage = mapRotationMutationError(
+            error,
+            { actionLabel: 'start a rotation' },
+            'Could not start rotation.'
+          )
         }
       } else {
         errorMessage = error instanceof Error ? error.message : 'Could not start rotation.'
@@ -73,7 +79,18 @@
     <h1 class="mt-2 text-3xl font-bold text-slate-950">Start rotation</h1>
   </div>
 
-  {#if !data.canManage || !data.dependencies}
+  {#if data.vaultSealed}
+    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
+      <h2 class="text-lg font-semibold text-red-900">Vault sealed</h2>
+      <p class="mt-2 text-red-800">{onboardingCopy.vaultSealedMessage}</p>
+      <a
+        class="mt-4 inline-block font-medium text-slate-950 underline"
+        href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}`)}
+      >
+        Back to credential
+      </a>
+    </div>
+  {:else if !data.canManage || !data.dependencies}
     <AccessNotice
       title="Rotation not available"
       message="Starting a rotation requires Admin access or higher."
@@ -142,6 +159,9 @@
             </a>
           {:else}
             {errorMessage}
+            {#if errorMessage.includes('MFA')}
+              <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
+            {/if}
           {/if}
         </p>
       {/if}

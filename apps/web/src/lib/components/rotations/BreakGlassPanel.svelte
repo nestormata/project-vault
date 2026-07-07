@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import { listCredentialDependencies } from '$lib/api/credentials.js'
   import { breakGlassRotation } from '$lib/api/rotations.js'
-  import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
-  import { formatDateTime } from '$lib/components/rotations/rotation-copy.js'
+  import {
+    formatDateTime,
+    mapRotationMutationError,
+  } from '$lib/components/rotations/rotation-copy.js'
   import type { CredentialDependency, RotationDetail } from '@project-vault/shared'
 
   let { projectId, credentialId }: { projectId: string; credentialId: string } = $props()
@@ -37,6 +40,29 @@
     confirmText = ''
   }
 
+  // AC-18: collapsing the panel without submitting is a full reset of the entire unsubmitted
+  // form (newValue/reason/awaitingConfirmText/confirmText) — reuses cancelConfirmation()'s reset
+  // scope rather than a second, slightly different routine (DRY).
+  function toggleExpanded() {
+    const wasExpanded = expanded
+    expanded = !expanded
+    if (wasExpanded) {
+      newValue = ''
+      reason = ''
+      reasonError = null
+      cancelConfirmation()
+    }
+  }
+
+  // AC-17: defense-in-depth — clear the plaintext value from $state before the component is torn
+  // down (e.g. the admin navigates away mid-fill without submitting). Mirrors the existing
+  // `onDestroy(() => { revealedValue = null; revealVersion = null })` precedent on the credential
+  // detail page's own reveal-value flow.
+  onDestroy(() => {
+    newValue = ''
+    reason = ''
+  })
+
   async function submitBreakGlass() {
     if (submitting || confirmText !== 'CONFIRM') return
     submitting = true
@@ -47,7 +73,6 @@
         reason: reason.trim(),
       })
       result = rotation
-      newValue = ''
       // "Ground-Truth API Surface" nuance: the break-glass response never carries the sweep
       // checklist — it's delivered only via the async notification payload. This is the UI's own
       // best-effort reconstruction, fetched independently after a successful response.
@@ -58,23 +83,36 @@
         sweepDependencies = []
       }
     } catch (error) {
-      if (error instanceof ApiClientError) {
-        if (error.status === 503) {
-          errorMessage = onboardingCopy.vaultSealedMessage
-        } else if (error.status === 409 && error.code === 'rotation_lock_contention') {
-          errorMessage =
-            'Another rotation action is in progress for this credential right now. Please wait a moment and try again.'
-        } else if (error.status === 404) {
-          errorMessage = 'This credential does not exist or you do not have access.'
-        } else {
-          errorMessage = error.message
-        }
-      } else {
+      if (
+        error instanceof ApiClientError &&
+        error.status === 409 &&
+        error.code === 'rotation_lock_contention'
+      ) {
         errorMessage =
-          error instanceof Error ? error.message : 'Could not complete break-glass rotation.'
+          'Another rotation action is in progress for this credential right now. Please wait a moment and try again.'
+      } else if (error instanceof ApiClientError && error.status === 404) {
+        errorMessage = 'This credential does not exist or you do not have access.'
+      } else {
+        errorMessage = mapRotationMutationError(
+          error,
+          { actionLabel: 'perform a break-glass rotation', rateLimitFraming: 'break-glass' },
+          'Could not complete break-glass rotation.'
+        )
       }
     } finally {
+      // AC-16: clear the new-value field and reset the confirm-gate state on ANY terminal
+      // outcome — success or failure — not just success. Resetting awaitingConfirmText/
+      // confirmText alongside newValue is required: the value textarea is
+      // `disabled={awaitingConfirmText}`, so clearing only newValue while leaving
+      // awaitingConfirmText true would strand the admin staring at an empty-but-disabled
+      // textarea with no way to re-paste, while the confirm button (gated only on
+      // confirmText === 'CONFIRM') would still be enabled and would resubmit an empty value.
+      // `reason` is deliberately NOT cleared — it is admin-controlled incident context, not a
+      // secret (AC-16's edge case).
       submitting = false
+      newValue = ''
+      awaitingConfirmText = false
+      confirmText = ''
     }
   }
 </script>
@@ -83,7 +121,7 @@
   <button
     type="button"
     class="text-left text-lg font-semibold text-red-900"
-    onclick={() => (expanded = !expanded)}
+    onclick={toggleExpanded}
   >
     Emergency: break-glass rotation
   </button>
@@ -208,6 +246,9 @@
             role="alert"
           >
             {errorMessage}
+            {#if errorMessage.includes('MFA')}
+              <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
+            {/if}
           </p>
         {/if}
       </form>

@@ -13,6 +13,7 @@
   } from '$lib/components/rotations/rotation-permissions.js'
   import {
     formatDateTime,
+    mapRotationMutationError,
     rotationCopy,
     rotationStatusBadgeClass,
   } from '$lib/components/rotations/rotation-copy.js'
@@ -29,6 +30,7 @@
   let rotation = $derived<RotationDetail | null>(data.rotation)
 
   let concurrentBanner = $state(false)
+  let pollSealedBanner = $state(false)
   let completing = $state(false)
   let completeError = $state<string | null>(null)
   let pendingItemNames = $state<string[]>([])
@@ -47,8 +49,18 @@
   async function refetch() {
     try {
       rotation = await getRotation(fetch, data.projectId, data.credentialId, data.rotationId)
-    } catch {
-      // Best-effort — keep showing the last known state if the refetch itself fails.
+      // AC-5: clear the sealed banner the next time a poll/refresh succeeds (vault unsealed
+      // again) — the poll itself is never paused or stopped by a sealed vault (D6), it just
+      // self-heals once someone unseals it.
+      pollSealedBanner = false
+    } catch (error) {
+      // AC-5: the vault can seal between page load and a poll/refresh tick — surface it via a
+      // passive banner (D6) without blanking the last known rotation state (the poll failing is
+      // not the same as the rotation not existing). Any other error keeps today's exact
+      // behavior: best-effort, silently keep showing the last known state.
+      if (error instanceof ApiClientError && error.status === 503) {
+        pollSealedBanner = true
+      }
     }
   }
 
@@ -109,10 +121,14 @@
           // and this click. Same remediation as the concurrent-modification banner: refetch so
           // the page reflects the rotation's real, current state.
           await handleConcurrentModification()
-        } else if (error.status === 503) {
-          completeError = onboardingCopy.vaultSealedMessage
         } else {
-          completeError = error.message
+          // AC-8/AC-14: 503/mfa_required/429/generic — one shared helper instead of
+          // re-deriving these three branches independently (D3/AC-20).
+          completeError = mapRotationMutationError(
+            error,
+            { actionLabel: 'complete this rotation' },
+            'Could not complete rotation.'
+          )
         }
       } else {
         completeError = error instanceof Error ? error.message : 'Could not complete rotation.'
@@ -168,7 +184,18 @@
 </svelte:head>
 
 <section class="mx-auto max-w-3xl space-y-6">
-  {#if data.notFound || !rotation}
+  {#if data.vaultSealed}
+    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
+      <h1 class="text-xl font-semibold text-red-900">Vault sealed</h1>
+      <p class="mt-2 text-red-800">{onboardingCopy.vaultSealedMessage}</p>
+      <a
+        class="mt-4 inline-block font-medium text-slate-950 underline"
+        href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}`)}
+      >
+        Back to credential
+      </a>
+    </div>
+  {:else if data.notFound || !rotation}
     <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
       <h1 class="text-xl font-semibold text-red-900">Rotation not found</h1>
       <p class="mt-2 text-red-800">This rotation does not exist or you do not have access.</p>
@@ -205,6 +232,9 @@
         <p class="mt-2 text-sm text-amber-800" role="status">
           Someone else just updated this rotation. Refreshing…
         </p>
+      {/if}
+      {#if pollSealedBanner}
+        <p class="mt-2 text-sm text-red-800" role="alert">{onboardingCopy.vaultSealedMessage}</p>
       {/if}
     </div>
 
@@ -275,7 +305,12 @@
             class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
             role="alert"
           >
-            <p>{completeError}</p>
+            <p>
+              {completeError}
+              {#if completeError.includes('MFA')}
+                <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
+              {/if}
+            </p>
             {#if pendingItemNames.length > 0}
               <ul class="mt-1 list-disc pl-5">
                 {#each pendingItemNames as name (name)}

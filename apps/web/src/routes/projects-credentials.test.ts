@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
+import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import type { CredentialSummary } from '@project-vault/shared'
 
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
@@ -403,6 +404,21 @@ describe('project credential routes', () => {
     expect(showMore.getAttribute('href')).toBe(
       `/projects/${projectId}/credentials/cccccccc-cccc-4ccc-8ccc-cccccccccccc?page=2`
     )
+  })
+
+  it('AC-1: renders the sealed-vault message (not "Credential not found") when data.vaultSealed is true', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          vaultSealed: true as const,
+          credential: null,
+          notFound: false as const,
+        }),
+      },
+    })
+
+    expect(screen.getByRole('alert').textContent).toContain(onboardingCopy.vaultSealedMessage)
+    expect(screen.queryByText('Credential not found')).toBeNull()
   })
 
   it('import page shows forbidden message for members', () => {

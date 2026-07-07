@@ -12,6 +12,7 @@ vi.mock('$lib/api/rotations.js', () => ({
   listRotations: listRotationsMock,
 }))
 
+import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -100,5 +101,61 @@ describe('/rotate +page.server.ts', () => {
 
     expect(result.canManage).toBe(true)
     expect(listCredentialDependenciesMock).toHaveBeenCalled()
+  })
+
+  // AC-2: unlike the credential detail page, this loader has no existing try/catch at all today —
+  // listRotations/listCredentialDependencies are called unguarded on the admin/owner path.
+  it('AC-2: returns vaultSealed: true when listRotations 503s (sealed vault) for an admin/owner', async () => {
+    listRotationsMock.mockRejectedValueOnce(
+      new ApiClientError(
+        503,
+        { status: 'sealed', message: 'Vault not initialized' },
+        'Vault not initialized'
+      )
+    )
+
+    const result = await load(makeEvent('admin'))
+
+    expect(result.vaultSealed).toBe(true)
+    expect(result.canManage).toBe(true)
+    expect(result.dependencies).toBeNull()
+    expect(listCredentialDependenciesMock).not.toHaveBeenCalled()
+  })
+
+  it('AC-2: returns vaultSealed: true when listCredentialDependencies 503s (sealed vault)', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'completed' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listCredentialDependenciesMock.mockRejectedValueOnce(
+      new ApiClientError(
+        503,
+        { status: 'sealed', message: 'Vault not initialized' },
+        'Vault not initialized'
+      )
+    )
+
+    const result = await load(makeEvent('owner'))
+
+    expect(result.vaultSealed).toBe(true)
+    expect(result.dependencies).toBeNull()
+  })
+
+  it('AC-2 edge: member/viewer never triggers any fetch even when the vault is sealed — they still see the role gate, not the sealed message', async () => {
+    const result = await load(makeEvent('viewer'))
+
+    expect(result.canManage).toBe(false)
+    expect(result.vaultSealed).toBeFalsy()
+    expect(listRotationsMock).not.toHaveBeenCalled()
+    expect(listCredentialDependenciesMock).not.toHaveBeenCalled()
+  })
+
+  it('AC-2 edge: a non-503 ApiClientError still propagates unchanged', async () => {
+    listRotationsMock.mockRejectedValueOnce(new ApiClientError(500, null, 'boom'))
+
+    await expect(load(makeEvent('admin'))).rejects.toThrow('boom')
   })
 })
