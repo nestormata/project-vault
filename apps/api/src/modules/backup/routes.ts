@@ -150,6 +150,9 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         403: ApiErrorSchema,
         404: BackupNotFoundErrorSchema,
         422: BackupChecksumMismatchErrorSchema,
+        // Code review fix: pg_restore/psql subprocess failure after checksum verification passed
+        // — an unexpected but possible outcome that previously had no declared response shape.
+        500: ApiErrorSchema,
       },
     },
     security: {
@@ -202,6 +205,22 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
           return reply.status(401).send({
             code: 'backup_decrypt_failed',
             message: 'Backup could not be decrypted with the current master key.',
+          })
+        case 'restore_failed':
+          // Code review fix: the pg_restore/psql subprocess (or a racing concurrent
+          // restore/zeroKeys) failed after checksum verification passed — previously this threw
+          // uncaught with no operational-log trace (AC-18 gap). Sanitized message only; the raw
+          // stderr tail stays server-side in the log, never in the HTTP response.
+          operationalLog(
+            req.log,
+            'error',
+            OperationalEvent.BACKUP_RESTORE_FAILED,
+            'backup restore failed',
+            { filename: params.filename, errorMessage: outcome.message }
+          )
+          return reply.status(500).send({
+            code: 'backup_restore_failed',
+            message: 'Restore failed unexpectedly. See server logs for details.',
           })
         case 'restored':
           operationalLog(

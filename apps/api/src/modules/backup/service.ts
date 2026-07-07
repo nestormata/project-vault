@@ -8,7 +8,12 @@ import { getBackupKey } from '../vault/key-service.js'
 import { zeroKeys } from '../vault/key-service.js'
 import { env } from '../../config/env.js'
 import { resolveBackupDestination, requireBackupDatabaseUrl } from './config.js'
-import { buildBackupFilenames, metaFilenameFor, resolveInstanceId } from './filename.js'
+import {
+  buildBackupFilenames,
+  metaFilenameFor,
+  parseBackupFilename,
+  resolveInstanceId,
+} from './filename.js'
 import { runPgDump, runPgRestore } from './pg-process.js'
 import { backupStorageFor, type BackupStorage } from './storage.js'
 import {
@@ -43,6 +48,34 @@ function defaultStorage(): BackupStorage {
   const destination = resolveBackupDestination()
   if (!destination) throw new Error('defaultStorage: no backup destination configured')
   return backupStorageFor(destination)
+}
+
+/**
+ * Code review fix: `acquireBackupSlot`'s advisory lock only ever guards the brief
+ * check-then-insert critical section — the long-lived `status: 'running'` row is the real
+ * concurrency marker future triggers check against (see doc comment below). If the process
+ * crashes or is force-restarted while a backup is mid-flight (after the row is inserted but
+ * before `executeBackupSnapshot`'s own try/catch reaches a `succeeded`/`failed` update), that row
+ * is orphaned forever — nothing else in this codebase ever un-sticks it, which would otherwise
+ * permanently 409 every future manual trigger and silently no-op every future scheduled fire
+ * (backup-snapshot.ts's `if (!acquired.ok) return`). Call once at process startup (main.ts, on
+ * the same `onVaultUnsealed` hook that wires the rest of backup scheduling): any row still
+ * `running` at that point can only be orphaned, because pg-boss itself restarts fresh on every
+ * process boot, so no in-flight execution context for it can possibly still exist.
+ */
+export async function reconcileStaleRunningBackups(): Promise<number> {
+  const reconciled = await getDb()
+    .update(backupRuns)
+    .set({
+      status: 'failed',
+      completedAt: new Date(),
+      errorMessage:
+        'Orphaned: this backup_runs row was still "running" when a new process started — the ' +
+        'previous process most likely crashed or was force-restarted mid-backup.',
+    })
+    .where(eq(backupRuns.status, 'running'))
+    .returning({ id: backupRuns.id })
+  return reconciled.length
 }
 
 /**
@@ -228,6 +261,45 @@ export type RestoreOutcome =
   | { code: 'checksum_mismatch' }
   | { code: 'decrypt_failed' }
   | { code: 'restored' }
+  | { code: 'restore_failed'; message: string }
+
+/**
+ * Split out of `restoreFromBackup` purely to keep that function's cyclomatic complexity within
+ * this repo's eslint threshold (same discipline as `backup-health-check.ts`'s
+ * `raiseBackupMissedAlert`). Decrypts, runs the restore, and seals the vault on success.
+ *
+ * Code review fix: the pg_restore/psql subprocess call previously had no failure handling at all
+ * — a thrown `PgProcessError` (or a `VaultSealedError` from a racing concurrent restore/zeroKeys)
+ * propagated uncaught past `restoreFromBackup` into the route handler, which also had no
+ * try/catch, producing a generic unhandled 500 with zero operational-log trace (violates AC-18's
+ * blanket "any backup/restore action... failure... emits a structured operational log entry").
+ * Reported as a distinct outcome instead so the caller can log + respond deliberately.
+ */
+async function decryptAndRestore(
+  encrypted: Buffer,
+  restore: NonNullable<BackupServiceDeps['restore']>
+): Promise<RestoreOutcome> {
+  let plainSql: Buffer
+  try {
+    const gzipped = await runBackupCrypto('decrypt', encrypted, getBackupKey())
+    plainSql = gunzipSync(gzipped)
+  } catch (error) {
+    if (error instanceof BackupDecryptError) return { code: 'decrypt_failed' }
+    throw error
+  }
+
+  try {
+    await restore(requireBackupDatabaseUrl(), plainSql)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { code: 'restore_failed', message }
+  }
+
+  // AC-9: seal the vault after a destructive restore — same seal semantics as Story 1.5.
+  zeroKeys()
+
+  return { code: 'restored' }
+}
 
 /**
  * Story 9.1 AC-9: decrypts, verifies the sidecar checksum BEFORE any restore is attempted, runs
@@ -238,6 +310,16 @@ export async function restoreFromBackup(
   filename: string,
   deps: BackupServiceDeps = {}
 ): Promise<RestoreOutcome> {
+  // Code review fix (path traversal / CWE-22): `filename` originates directly from the
+  // `:filename` route param (`BackupFilenameParamsSchema` only enforces non-empty, not shape),
+  // and `storage.ts`'s filesystem backend joins it onto `BACKUP_STORAGE_PATH` with no
+  // sanitization. Reject anything that isn't a real, well-formed backup filename BEFORE it ever
+  // reaches storage.read/delete — treated the same as AC-9's "unknown filename" 404 case, since a
+  // path-traversal payload can never be a legitimate backup filename anyway.
+  if (!parseBackupFilename(filename)) {
+    return { code: 'not_found' }
+  }
+
   const storage = deps.storage ?? defaultStorage()
   const restore = deps.restore ?? runPgRestore
   const metaFilename = metaFilenameFor(filename)
@@ -255,21 +337,7 @@ export async function restoreFromBackup(
     return { code: 'checksum_mismatch' }
   }
 
-  let plainSql: Buffer
-  try {
-    const gzipped = await runBackupCrypto('decrypt', encrypted, getBackupKey())
-    plainSql = gunzipSync(gzipped)
-  } catch (error) {
-    if (error instanceof BackupDecryptError) return { code: 'decrypt_failed' }
-    throw error
-  }
-
-  await restore(requireBackupDatabaseUrl(), plainSql)
-
-  // AC-9: seal the vault after a destructive restore — same seal semantics as Story 1.5.
-  zeroKeys()
-
-  return { code: 'restored' }
+  return decryptAndRestore(encrypted, restore)
 }
 
 export type ValidateOutcome = {
@@ -299,14 +367,21 @@ export async function validateBackupFile(
   filename: string,
   deps: BackupServiceDeps = {}
 ): Promise<ValidateOutcome> {
-  const storage = deps.storage ?? defaultStorage()
-  const metaFilename = metaFilenameFor(filename)
-
   const invalidResult: ValidateOutcome = {
     valid: false,
     assetsPresent: { credentials: false, projects: false, users: false, auditEvents: false },
     checksumMatches: false,
   }
+
+  // Code review fix (path traversal / CWE-22): see the matching guard in `restoreFromBackup`
+  // above — reject anything that isn't a well-formed backup filename before it ever reaches
+  // storage.read, which joins this value directly onto BACKUP_STORAGE_PATH with no sanitization.
+  if (!parseBackupFilename(filename)) {
+    return invalidResult
+  }
+
+  const storage = deps.storage ?? defaultStorage()
+  const metaFilename = metaFilenameFor(filename)
 
   let encrypted: Buffer
   try {

@@ -52,7 +52,26 @@ export async function runPgDump(connectionString: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'pg_dump',
-      ['-h', conn.host, '-p', conn.port, '-U', conn.user, '-d', conn.database, '--format=plain'],
+      [
+        '-h',
+        conn.host,
+        '-p',
+        conn.port,
+        '-U',
+        conn.user,
+        '-d',
+        conn.database,
+        '--format=plain',
+        // Code review fix (AC-9 "all current data is replaced"): without --clean/--if-exists, a
+        // plain-format dump contains only CREATE statements, never DROP — replaying it via
+        // runPgRestore/psql against BACKUP_DATABASE_URL (which points at the SAME live database
+        // DATABASE_URL serves, per D4) would fail immediately on the first `CREATE TABLE` with
+        // "relation already exists" (psql runs with --set=ON_ERROR_STOP=1). --clean emits a DROP
+        // (guarded by --if-exists so a partially-empty target doesn't itself error) before each
+        // CREATE, which is what actually makes "replace all current data" true.
+        '--clean',
+        '--if-exists',
+      ],
       { env: { ...process.env, PGPASSWORD: conn.password } }
     )
     const stdoutChunks: Buffer[] = []
@@ -95,6 +114,11 @@ export async function runPgRestore(connectionString: string, sql: Buffer): Promi
         '-d',
         conn.database,
         '--set=ON_ERROR_STOP=1',
+        // Code review fix: wrap the whole restore in one transaction so a failure partway
+        // through (e.g. a single bad statement) rolls back everything instead of leaving the
+        // database in a half-restored, half-original state — a destructive operation that fails
+        // must fail atomically, not partially.
+        '--single-transaction',
       ],
       { env: { ...process.env, PGPASSWORD: conn.password } }
     )

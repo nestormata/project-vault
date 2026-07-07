@@ -55,6 +55,7 @@ import { runS3ForwardDaily } from './modules/audit/s3-forward.js'
 import { backupSnapshotHandler } from './workers/backup-snapshot.js'
 import { runBackupHealthCheck } from './workers/backup-health-check.js'
 import { isBackupEnabled } from './modules/backup/config.js'
+import { reconcileStaleRunningBackups } from './modules/backup/service.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
@@ -124,6 +125,23 @@ async function main(): Promise<void> {
   async function startBossAndRegisterWorkers(): Promise<void> {
     await boss.start()
     if (bossRegistered) return
+    // Code review fix: reap any `backup_runs` row orphaned by a previous process crashing
+    // mid-backup — see reconcileStaleRunningBackups' doc comment. This function only runs on the
+    // vault's first unseal event of this process's lifetime (either immediately below if already
+    // unsealed at boot, or once via `setOnVaultUnsealed`) and always before `fastify.listen()`,
+    // so no request could have raced a real, still-in-flight backup against this reconciliation.
+    if (isBackupEnabled()) {
+      const reconciledCount = await reconcileStaleRunningBackups()
+      if (reconciledCount > 0) {
+        operationalLog(
+          fastify.log,
+          'warn',
+          OperationalEvent.BACKUP_FAILED,
+          'reconciled stale running backup_runs row(s) orphaned by a previous process crash',
+          { reconciledCount }
+        )
+      }
+    }
     await boss.registerSchedules({
       'prune-revoked-tokens': { cron: '0 * * * *' },
       'mfa/prune-totp-used-codes': { cron: '0 * * * *' },

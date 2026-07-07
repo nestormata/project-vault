@@ -233,7 +233,10 @@ describe.sequential('Story 9.1: backup service', () => {
     const { runBackupCrypto } = await import('@project-vault/crypto')
     const { createHash, randomBytes } = await import('node:crypto')
     const storage = testStorage()
-    const filename = `backup_wrongkey-${randomUUID()}.vault`
+    // Must match the real backup filename pattern (`FILENAME_PATTERN` in filename.ts) — the
+    // code-review path-traversal fix in restoreFromBackup/validateBackupFile now rejects any
+    // filename that doesn't look like a genuine backup file before ever reaching storage/decrypt.
+    const filename = `backup_20260101T000000000Z_${randomUUID()}.vault`
     const metaFilename = filename.replace(/\.vault$/, '.meta.json')
 
     const wrongKey = randomBytes(32)
