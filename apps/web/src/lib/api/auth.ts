@@ -40,6 +40,7 @@ export type VerifyMfaLoginRequest = {
 export type AuthUser = {
   userId: string
   orgId: string
+  orgName: string
   sessionId: string
   orgRole: 'owner' | 'admin' | 'member' | 'viewer'
   mfaEnrolled: boolean

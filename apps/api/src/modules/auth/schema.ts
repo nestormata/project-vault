@@ -81,6 +81,7 @@ export const authMeResponseSchema = z.object({
   data: z.object({
     userId: z.uuid(),
     orgId: z.uuid(),
+    orgName: z.string(),
     sessionId: z.uuid(),
     orgRole: z.enum(['owner', 'admin', 'member', 'viewer']),
     mfaEnrolled: z.boolean(),
