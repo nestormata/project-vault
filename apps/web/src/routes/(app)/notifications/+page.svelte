@@ -54,6 +54,86 @@
     {/if}
   </div>
 
+  {#if data.dormancyAlerts.length > 0}
+    <div class="mb-6 space-y-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        Machine key dormancy alerts
+      </h2>
+      {#each data.dormancyAlerts as alert (alert.id)}
+        <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
+          <p class="text-sm font-semibold text-gray-900">
+            {alert.machineUserName} — key "{alert.keyName}"
+          </p>
+          <p class="mt-1 text-sm text-gray-600">
+            Last used: {alert.lastUsedAt
+              ? new Date(alert.lastUsedAt).toLocaleDateString()
+              : 'never'}
+          </p>
+
+          <div class="mt-3 flex flex-wrap items-center gap-4">
+            <form
+              method="POST"
+              action="?/dismissDormancyAlert"
+              use:enhance
+              class="flex items-center gap-2"
+            >
+              <input type="hidden" name="alertId" value={alert.id} />
+              <input
+                type="text"
+                name="reason"
+                required
+                placeholder="Reason for dismissing"
+                class="rounded border border-gray-300 px-2 py-1 text-xs"
+              />
+              <button type="submit" class="text-xs font-medium text-gray-600 hover:text-gray-800">
+                Dismiss
+              </button>
+            </form>
+
+            <form
+              method="POST"
+              action="?/extendDormancy"
+              use:enhance
+              class="flex items-center gap-2"
+            >
+              <input type="hidden" name="machineUserId" value={alert.machineUserId} />
+              <input type="hidden" name="keyId" value={alert.keyId} />
+              <input
+                type="number"
+                name="days"
+                value="30"
+                min="1"
+                max="365"
+                class="w-16 rounded border border-gray-300 px-2 py-1 text-xs"
+              />
+              <button
+                type="submit"
+                class="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+              >
+                Extend (days)
+              </button>
+            </form>
+
+            <form method="POST" action="?/revokeDormantKey" use:enhance>
+              <input type="hidden" name="machineUserId" value={alert.machineUserId} />
+              <input type="hidden" name="keyId" value={alert.keyId} />
+              <button type="submit" class="text-xs font-medium text-red-600 hover:text-red-800">
+                Revoke key
+              </button>
+            </form>
+
+            <a
+              href={resolve(`/projects/${alert.projectId}/machine-users/${alert.machineUserId}`)}
+              class="text-xs text-indigo-600 hover:underline"
+            >
+              View machine user →
+            </a>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   <div class="mb-6 flex gap-1 border-b border-gray-200">
     {#each [{ value: 'all', label: 'All' }, { value: 'unread', label: 'Unread' }, { value: 'read', label: 'Read' }] as tab (tab.value)}
       <a

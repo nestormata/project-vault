@@ -92,6 +92,11 @@ export const RevokeApiKeyResponseSchema = z
   .object({ data: z.object({ id: z.uuid(), revokedAt: z.iso.datetime() }) })
   .meta({ id: 'RevokeApiKeyResponse' })
 
+// Story 8-6 AC-5 — machine-user deactivation.
+export const DeactivateMachineUserResponseSchema = z
+  .object({ data: z.object({ id: z.uuid(), deactivatedAt: z.iso.datetime() }) })
+  .meta({ id: 'DeactivateMachineUserResponse' })
+
 // Story 7.2 AC-17 — overlapMinutes 1-1440 (24h cap), default 240 (4h). min(1) rejects 0/negative.
 export const RotateApiKeyBodySchema = z
   .object({ overlapMinutes: z.number().int().min(1).max(1440).default(240) })

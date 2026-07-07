@@ -22,6 +22,10 @@ const { registerOwner } = createMembershipTestHelpers({
 })
 
 const FORCED_AUDIT_FAILURE = 'forced machine audit failure'
+// sonarjs/no-duplicate-string: this credential name/value pair is used across the happy-path test
+// and the Story 8-6 AC-7 successful-lookups-don't-count-against-the-failed-limiter test below.
+const DATABASE_URL_CREDENTIAL_NAME = 'DATABASE_URL'
+const DATABASE_URL_CREDENTIAL_VALUE = 'postgres://v1'
 
 function machineUsersUrl(projectId: string): string {
   return `/api/v1/projects/${projectId}/machine-users`
@@ -103,21 +107,27 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
     it('returns the current version value with name/versionNumber/cacheable', async () => {
       const owner = await registerOwner(app, 'happy')
       const projectId = await createProjectViaApi(app, owner.cookies, 'machine-cred-happy')
-      await createCredentialViaApi(app, owner.cookies, projectId, 'DATABASE_URL', 'postgres://v1')
+      await createCredentialViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        DATABASE_URL_CREDENTIAL_NAME,
+        DATABASE_URL_CREDENTIAL_VALUE
+      )
       const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
       const jwt = await exchangeForMachineJwt(app, key)
 
       const res = await app.inject({
         method: 'GET',
-        url: machineCredentialValueUrl(projectId, 'DATABASE_URL'),
+        url: machineCredentialValueUrl(projectId, DATABASE_URL_CREDENTIAL_NAME),
         headers: { authorization: `Bearer ${jwt}` },
       })
 
       expect(res.statusCode).toBe(200)
       expect(res.json()).toMatchObject({
         data: {
-          name: 'DATABASE_URL',
-          value: 'postgres://v1',
+          name: DATABASE_URL_CREDENTIAL_NAME,
+          value: DATABASE_URL_CREDENTIAL_VALUE,
           versionNumber: 1,
           cacheable: true,
         },
@@ -375,6 +385,61 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
 
         expect(responses.slice(0, 20).every((res) => res.statusCode === 404)).toBe(true)
         expect(responses[20]?.statusCode).toBe(429)
+      } finally {
+        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      }
+    }, 30_000)
+
+    // Story 8-6 AC-7: successful lookups must draw from the overall 300/min budget only, never
+    // the separate 20/min failed-lookup bucket — otherwise legitimate repeated reads for the same
+    // key could get starved by (or accidentally trip) the failed-lookup limiter.
+    it('successful lookups do not count against the failed-lookup limiter', async () => {
+      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      try {
+        const owner = await registerOwner(app, 'success-not-counted')
+        const projectId = await createProjectViaApi(
+          app,
+          owner.cookies,
+          'machine-cred-successnotcounted'
+        )
+        await createCredentialViaApi(
+          app,
+          owner.cookies,
+          projectId,
+          DATABASE_URL_CREDENTIAL_NAME,
+          DATABASE_URL_CREDENTIAL_VALUE
+        )
+        const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+        const jwt = await exchangeForMachineJwt(app, key)
+
+        // More successful lookups than the 20/min failed-lookup budget — if successes shared that
+        // bucket, this loop alone would already trip a 429.
+        const successResponses = []
+        for (let i = 0; i < 25; i += 1) {
+          successResponses.push(
+            await app.inject({
+              method: 'GET',
+              url: machineCredentialValueUrl(projectId, DATABASE_URL_CREDENTIAL_NAME),
+              headers: { authorization: `Bearer ${jwt}` },
+            })
+          )
+        }
+        expect(successResponses.every((res) => res.statusCode === 200)).toBe(true)
+
+        // The failed-lookup budget must still be fully available afterwards: 20 failures still
+        // 404, only the 21st trips 429.
+        const failedResponses = []
+        for (let i = 0; i < 21; i += 1) {
+          failedResponses.push(
+            await app.inject({
+              method: 'GET',
+              url: machineCredentialValueUrl(projectId, `STILL_NEVER_EXISTS_${i}`),
+              headers: { authorization: `Bearer ${jwt}` },
+            })
+          )
+        }
+        expect(failedResponses.slice(0, 20).every((res) => res.statusCode === 404)).toBe(true)
+        expect(failedResponses[20]?.statusCode).toBe(429)
       } finally {
         delete process.env['RATE_LIMIT_TEST_ENFORCE']
       }
