@@ -127,6 +127,19 @@ export const OperationalEvent = {
   AUDIT_S3_FORWARD_DISABLED: 'audit.s3_forward.disabled',
   AUDIT_RETENTION_PRUNE_SUMMARY: 'audit.retention_prune.summary',
   AUDIT_RETENTION_PRUNE_ROW_FAILED: 'audit.retention_prune.row_failed',
+
+  // Encrypted Backup & Restore (Story 9.1 D6) — interim operational-logging audit trail for
+  // backup/restore/validate actions, pending Story 9.4's platform_audit_events retrofit.
+  BACKUP_TRIGGERED: 'backup.triggered',
+  BACKUP_COMPLETED: 'backup.completed',
+  BACKUP_FAILED: 'backup.failed',
+  BACKUP_MISSED: 'backup.missed',
+  BACKUP_RESTORE_INITIATED: 'backup.restore.initiated',
+  BACKUP_RESTORE_COMPLETED: 'backup.restore.completed',
+  BACKUP_RESTORE_FAILED: 'backup.restore.failed',
+  BACKUP_VALIDATE_INITIATED: 'backup.validate.initiated',
+  BACKUP_VALIDATE_COMPLETED: 'backup.validate.completed',
+  BACKUP_RETENTION_PRUNED: 'backup.retention_pruned',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

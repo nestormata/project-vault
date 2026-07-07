@@ -8,6 +8,9 @@ declare module 'fastify' {
     jti: string
     sessionVersion: number
     orgRole: 'owner' | 'admin' | 'member' | 'viewer'
+    // Story 9.1 D1: instance-wide (not org-scoped) authorization flag, populated from
+    // users.is_platform_operator at JWT-verification time — same place orgRole is populated.
+    isPlatformOperator: boolean
   }
 
   interface FastifyRequest {

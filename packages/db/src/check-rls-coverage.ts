@@ -19,6 +19,11 @@ export const EXCLUDED_TABLES = new Set([
   // initiator_org_id FK for audit context), and a recovery token authorizes a credential reset
   // for a user, not an org-scoped resource. Same reasoning as mfa_recovery_codes/revoked_tokens.
   'account_recovery_tokens',
+  // Story 9.1 D3: platform-level (whole-instance, not per-org) backup/restore and admin-alert
+  // tables — neither has an org_id column (backup/restore spans every org, D2), so they follow
+  // the vault_state/api_instances precedent rather than orgScoped().
+  'backup_runs',
+  'admin_alerts',
 ])
 
 export class RlsCoverageGapError extends Error {

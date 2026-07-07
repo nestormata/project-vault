@@ -17,6 +17,10 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   'otpauthUrl',
   'qrCodeSvg',
   'recoveryCodes',
+  // Story 9.1 D4: BACKUP_DATABASE_URL (and any field carrying it) embeds superuser/BYPASSRLS
+  // credentials for pg_dump/pg_restore — never logged, alongside the existing password/
+  // passphrase redaction above.
+  'backupDatabaseUrl',
 ] as const
 
 const requestHeaderRedactPaths = HEADER_SENSITIVE_LOG_FIELDS.map((field) => `req.headers.${field}`)

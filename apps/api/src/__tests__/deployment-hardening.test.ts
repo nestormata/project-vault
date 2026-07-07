@@ -16,6 +16,17 @@ describe('deployment hardening configuration', () => {
     expect(webDockerfile).toMatch(/\nUSER node\n/)
   })
 
+  // Story 9.1 D4/AC-17: pg_dump/pg_restore/psql must be present in the runner stage — a
+  // regression guard against a future refactor silently dropping this apk package (which would
+  // make backup/restore fail at runtime with an opaque "command not found" instead of a clear,
+  // build-time-visible failure).
+  it('installs postgresql16-client in the api runner stage (Story 9.1 D4/AC-17)', () => {
+    const dockerfile = readRepoFile('apps/api/Dockerfile')
+    const runnerStage = dockerfile.slice(dockerfile.indexOf('AS runner'))
+
+    expect(runnerStage).toContain('apk add --no-cache postgresql16-client')
+  })
+
   it('does not expose Postgres on every host interface', () => {
     const compose = readRepoFile('docker-compose.yml')
 

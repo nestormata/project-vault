@@ -482,6 +482,34 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Test notification sends to configured channels; does not mutate vault state or expose secrets. Operational verification only.',
     reviewer: SECURITY_OWNER,
   },
+  // Story 9.1 D1/D6: backup/restore is instance-wide (requireOrgScope: false, D2) — there is no
+  // secureCtx.tx to write an org-scoped audit_log_entries row through, so these are logged via
+  // structured operational logging instead (D6, AC-18), not audit_log_entries. This is an
+  // interim, non-tamper-evident mechanism pending Story 9.4's platform_audit_events retrofit.
+  'POST /api/v1/admin/backup/trigger': {
+    action: 'mutation',
+    auditOmissionReason:
+      'Instance-wide (not org-scoped) action — no secureCtx.tx to audit through. Logged via operational logging (backup.triggered, D6/AC-18) pending Story 9.4.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/admin/backups': {
+    action: 'read',
+    auditOmissionReason:
+      'Backup history list reveals filenames/sizes/status only, never any secret value.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/admin/backups/:filename/restore': {
+    action: 'security-action',
+    auditOmissionReason:
+      'Instance-wide destructive action — no secureCtx.tx to audit through. Logged via operational logging (backup.restore.initiated/completed/failed, D6/AC-18) pending Story 9.4.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/admin/backups/:filename/validate': {
+    action: 'mutation',
+    auditOmissionReason:
+      'Non-destructive validation that also updates backup_runs.verified as a side effect — instance-wide, no secureCtx.tx to audit through. Logged via operational logging (backup.validate.initiated/completed, D6/AC-18) pending Story 9.4.',
+    reviewer: SECURITY_OWNER,
+  },
   'GET /api/v1/users/me/notification-preferences': {
     action: 'read',
     auditOmissionReason: 'User reads own notification preferences; no secrets exposed.',

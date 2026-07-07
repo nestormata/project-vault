@@ -47,3 +47,10 @@ describe('Story 7.2 machine-key dormancy alert type (D9/AC-21, Task 14)', () => 
     expect(NOTIFICATION_ALERT_TYPES).toContain('machine_key.dormant')
   })
 })
+
+describe('Story 9.1 backup health alert types (D7/AC-12)', () => {
+  it('registers backup.missed and confirms backup.failure was already reserved', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('backup.missed')
+    expect(NOTIFICATION_ALERT_TYPES).toContain('backup.failure')
+  })
+})

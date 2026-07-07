@@ -39,3 +39,14 @@ export { combineEnvelopeHalves, parseEnvelopeEnvHalf } from './envelope.js'
 // It is permitted ONLY in apps/api/src/modules/vault/key-service.ts (unseal bootstrap,
 // where the module-level key is not yet set and withSecret() cannot be used).
 export { decrypt as bootstrapDecrypt } from './aes.js'
+
+// Story 9.1 D5/AC-5: backup encryption/decryption — a distinct binary format and key lifecycle
+// from the vault's secret-value encryption above (see workers/backup-crypto.ts). Exported
+// directly (not gated behind withSecret()) because restore/validate need the raw plaintext dump
+// bytes, not a short-lived scoped secret value.
+export {
+  encryptBackupBuffer,
+  decryptBackupBuffer,
+  BackupDecryptError,
+} from './workers/backup-crypto.js'
+export { runBackupCrypto } from './workers/run-backup-worker.js'

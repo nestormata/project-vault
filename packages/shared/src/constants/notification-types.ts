@@ -10,6 +10,9 @@ export const NOTIFICATION_ALERT_TYPES = [
   'rotation.max_retries_exceeded',
   'rotation.break_glass',
   'backup.failure',
+  // Story 9.1 D7: 'backup.failure' was pre-reserved; 'backup.missed' is the one purely-additive
+  // new entry this story needs (AC-12).
+  'backup.missed',
   'machine_key.expiry',
   'security.anomalous_access',
   'machine_cache.activated',
