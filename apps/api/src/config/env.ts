@@ -649,6 +649,13 @@ const envSchema = z
       (v) => (v === '' ? undefined : v),
       z.string().min(1).optional()
     ),
+
+    // Story 9.2 D5/AC-15/AC-21: daily audit-log-storage-pressure monitoring threshold —
+    // pg_total_relation_size('audit_log_entries') is compared against this (the real table
+    // name; epics.md's literal 'audit_events' has never existed in this codebase, see D5).
+    AUDIT_LOG_STORAGE_LIMIT_GB: z.coerce.number().positive().default(50),
+    // Story 9.2 D8/AC-20/AC-21: weekly master-key custody-age trigger threshold.
+    KEY_ROTATION_MAX_AGE_DAYS: z.coerce.number().int().positive().default(365),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {

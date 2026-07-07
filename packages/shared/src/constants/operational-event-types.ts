@@ -140,6 +140,20 @@ export const OperationalEvent = {
   BACKUP_VALIDATE_INITIATED: 'backup.validate.initiated',
   BACKUP_VALIDATE_COMPLETED: 'backup.validate.completed',
   BACKUP_RETENTION_PRUNED: 'backup.retention_pruned',
+
+  // System Settings, Multi-Org & Resource Monitoring (Story 9.2 D6/AC-25) — interim
+  // operational-logging audit trail for platform-operator actions, pending Story 9.4's
+  // platform_audit_events retrofit (same D6 pattern Story 9.1 established for backup/restore).
+  PLATFORM_SETTINGS_UPDATED: 'platform_admin.settings_updated',
+  PLATFORM_ORG_CREATED: 'platform_admin.org_created',
+  // AC-17/D10: the audit-storage maintenance-mode circuit breaker.
+  AUDIT_WRITE_SUSPENDED: 'audit.write_suspended',
+  AUDIT_STORAGE_MAINTENANCE_MODE_ENTERED: 'audit_storage.maintenance_mode_entered',
+  AUDIT_STORAGE_MAINTENANCE_MODE_EXITED: 'audit_storage.maintenance_mode_exited',
+  AUDIT_STORAGE_CHECK_FAILED: 'audit_storage.check_failed',
+  // AC-19/AC-20: master-key custody risk alerting.
+  KEY_CUSTODY_RISK_DETECTED: 'key_custody.risk_detected',
+  KEY_CUSTODY_CHECK_FAILED: 'key_custody.check_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

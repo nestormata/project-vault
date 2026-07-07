@@ -23,6 +23,17 @@ export const NOTIFICATION_ALERT_TYPES = [
   'payment.expiry',
   'certificate.expiry',
   'domain.expiry',
+  // Story 9.2 AC-13: per-org usersPerOrg/secretsPerProject instance-limit threshold alerts
+  // (advisory-only for maxUsersPerOrg, D3). 'resource.orgs_near_limit' (AC-14) deliberately has
+  // NO entry here — it is instance-wide with no single org to route to (admin_alerts only, D7).
+  'resource.users_near_limit',
+  'resource.secrets_near_limit',
+  // Story 9.2 AC-16: audit-log-storage-pressure tiered alerts — instance-wide but fans out to
+  // every org (D7/D10), unlike resource.orgs_near_limit.
+  'audit_storage.warning',
+  'audit_storage.critical',
+  // Story 9.2 AC-19/AC-20: master-key custody risk — delivered to every org owner (D7).
+  'key_custody_risk',
 ] as const
 
 export type NotificationAlertType = (typeof NOTIFICATION_ALERT_TYPES)[number]

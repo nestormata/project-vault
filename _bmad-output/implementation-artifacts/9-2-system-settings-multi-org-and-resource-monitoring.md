@@ -1,6 +1,6 @@
 # Story 9.2: System Settings, Multi-Org & Resource Monitoring
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed 2026-07-06 — comprehensive developer guide for the second story of Epic 9 (Platform Operations, API & Self-Hosting): a runtime-configurable system settings API/store (SMTP, backup defaults, notification defaults, instance policy), platform-operator-driven multi-organization provisioning, resource-usage visibility against operator-configured instance limits, audit-log storage capacity monitoring with a maintenance-mode circuit breaker, and master-key custody risk alerting. This story is the SECOND story in Epic 9 and has a HARD PREREQUISITE on Story 9.1 landing first (or at minimum its schema/primitives being merged) — it reuses 9.1's `users.is_platform_operator` flag, `requirePlatformOperator()` preHandler, and `admin_alerts` table verbatim rather than reinventing them. As of this story's creation, Story 9.1 is `ready-for-dev`, not `done` — none of those primitives exist in the codebase yet. Read "Key Design Decisions & Open Questions" before writing any code — it resolves several genuine contradictions between epics.md's literal wording (written before Story 9.1 had concrete schema, and before any Epic 9 story had audited the actual Epic 1-8 codebase) and what has actually shipped. Getting D1 wrong means this story is unimplementable until 9.1 ships. Getting D2 wrong creates a privilege-escalation bug (an org admin able to hit instance-wide settings endpoints). Getting D5 wrong means `pg_total_relation_size` is queried against a table name (`audit_events`) that has never existed in this codebase. -->
@@ -687,51 +687,51 @@ New `OperationalEvent` constants: `PLATFORM_SETTINGS_UPDATED`, `PLATFORM_ORG_CRE
 
 ## Tasks / Subtasks
 
-- [ ] **Task 0 — Prerequisite check (D1)**
-  - [ ] Confirm Story 9.1's `users.is_platform_operator`, `requirePlatformOperator()`, `AuthContext.isPlatformOperator`, and `admin_alerts` table exist in the branch/codebase this story builds on; if not, implement Story 9.1's Task 1 + Task 2 first as a shared-foundation commit.
-- [ ] **Task 1 — `system_settings` schema + `vault_state.key_rotated_at` (D3, D7, D8, AC-7)**
-  - [ ] `packages/db/src/schema/system-settings.ts`; export from `schema/index.ts`
-  - [ ] Migration: create `system_settings`; add to `EXCLUDED_TABLES`; add `vault_state.key_rotated_at` with backfill
-  - [ ] Export `allocateOrganizationSlug` from `apps/api/src/modules/auth/service.ts` if not already exported, for reuse (D7)
-- [ ] **Task 2 — Platform-admin route module (D2)**
-  - [ ] New module `apps/api/src/modules/platform-admin/` (`settings-routes.ts`, `orgs-routes.ts`, `resource-usage-routes.ts`, `service.ts`, `schema.ts`)
-  - [ ] Every route: `security: { requireOrgScope: false, requireMfa: true }` + `requirePlatformOperator()` preHandler
-  - [ ] Route-audit regression test distinguishing this module from `modules/admin/`, asserting `requireMfa: true` on all six routes (D2)
-- [ ] **Task 3 — Settings service (D3, D4, AC-2 through AC-7)**
-  - [ ] `resolveEffectiveSettings()` — DB-override-then-env-fallback precedence, single implementation reused everywhere
-  - [ ] SMTP password encrypt/mask/`"[configured]"`-sentinel handling
-  - [ ] `invalidateEmailTransport()` in `notification-email.ts`; call from settings-update path when SMTP fields change
-  - [ ] Concurrency-safe upsert (`SELECT ... FOR UPDATE` + column-scoped `UPDATE`, AC-22)
-- [ ] **Task 4 — Multi-org provisioning (D6, D7, AC-8 through AC-11, AC-23)**
-  - [ ] `POST /admin/orgs`: existing-user-owner path and new-user-owner path (reuse `account_recovery_tokens` + existing recovery-complete endpoint)
-  - [ ] Deactivated-owner-email rejection (409)
-  - [ ] `maxOrgs` enforcement (422)
-  - [ ] `GET /admin/orgs` listing with `memberCount`
-  - [ ] Concurrent-same-new-email race handling (unique-violation catch + retry-as-existing-user)
-  - [ ] Cross-org data-isolation regression test for multi-org users across projects/credentials/service-endpoints (AC-23b)
-- [ ] **Task 5 — Resource usage endpoint and threshold alerts (AC-12 through AC-14)**
-  - [ ] `GET /admin/resource-usage` aggregation queries
-  - [ ] Hourly (or piggybacked) threshold-check job: per-org `usersPerOrg` (org-routed alert) and instance-wide `orgs` (admin_alerts only)
-  - [ ] Add `'resource.users_near_limit'`/`'resource.secrets_near_limit'` to `NOTIFICATION_ALERT_TYPES`
-  - [ ] Episode-key idempotency helper (reusable across AC-13/14/16/19/20)
-- [ ] **Task 6 — Audit log storage monitoring + maintenance mode (D5, D10, AC-15 through AC-18)**
-  - [ ] Daily `audit-storage:check` job — `pg_total_relation_size('audit_log_entries')` (real table name, D5)
-  - [ ] Per-org storage-growth breakdown (`topContributingOrgs`, D10) computed alongside the daily check and included in 90%/95% alert payloads
-  - [ ] Tiered alerts (80/90/95%) + cross-org fan-out; add `'audit_storage.warning'`/`'audit_storage.critical'` to `NOTIFICATION_ALERT_TYPES`
-  - [ ] `SECURITY_CRITICAL_AUDIT_EVENT_TYPES` allowlist (D10) + maintenance-mode flag + interception point in `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry` (or a shared lower-level chokepoint) that always writes allowlisted event types regardless of maintenance-mode state
-  - [ ] `GET /ready` `warnings` array extension (additive, backward-compatible)
-- [ ] **Task 7 — Key custody risk alerting (D8, AC-19, AC-20)**
-  - [ ] Weekly `key-custody:check` job + startup check
-  - [ ] Trigger (a): file KMS + backup enabled
-  - [ ] Trigger (b): `key_rotated_at` age exceeds `KEY_ROTATION_MAX_AGE_DAYS`
-  - [ ] Combined-trigger payload merging; cross-org fan-out to every org owner; `/ready` warning wiring
-- [ ] **Task 8 — Operational logging (AC-25)**
-  - [ ] New `OperationalEvent` constants; wire calls throughout settings/org/audit-storage/key-custody paths
-- [ ] **Task 9 — Env var validation (AC-21)**
-  - [ ] `AUDIT_LOG_STORAGE_LIMIT_GB`, `KEY_ROTATION_MAX_AGE_DAYS` in `apps/api/src/config/env.ts`
-- [ ] **Task 10 — Scheduling** — register `audit-storage:check` (daily) and `key-custody:check` (weekly) under `onVaultUnsealed` in `apps/api/src/main.ts`, alongside existing job registrations
-- [ ] **Task 11 — OpenAPI spec** — run `pnpm --filter @project-vault/api generate-spec`; commit updated `openapi.json`/`api-types.ts`; verify distinct `Platform Admin` tag (AC-27)
-- [ ] **Task 12 — Integration tests (AC-28)** — implement the full list verbatim
+- [x] **Task 0 — Prerequisite check (D1)**
+  - [x] Confirm Story 9.1's `users.is_platform_operator`, `requirePlatformOperator()`, `AuthContext.isPlatformOperator`, and `admin_alerts` table exist in the branch/codebase this story builds on; if not, implement Story 9.1's Task 1 + Task 2 first as a shared-foundation commit. (Confirmed present — Story 9.1 merged to main.)
+- [x] **Task 1 — `system_settings` schema + `vault_state.key_rotated_at` (D3, D7, D8, AC-7)**
+  - [x] `packages/db/src/schema/system-settings.ts`; export from `schema/index.ts`
+  - [x] Migration: create `system_settings`; add to `EXCLUDED_TABLES`; add `vault_state.key_rotated_at` with backfill (migration `0040`, includes disable/enable of `vault_state`'s append-only trigger around the backfill — a real bug found while implementing: the trigger blocks the backfill UPDATE unconditionally, even for the superuser migration role)
+  - [x] Export `allocateOrganizationSlug` from `apps/api/src/modules/auth/service.ts` if not already exported, for reuse (D7)
+- [x] **Task 2 — Platform-admin route module (D2)**
+  - [x] New module `apps/api/src/modules/platform-admin/` (`settings-routes.ts`, `orgs-routes.ts`, `resource-usage-routes.ts`, `service.ts`, `schema.ts`)
+  - [x] Every route: `security: { requireOrgScope: false, requireMfa: true }` + `requirePlatformOperator: true`
+  - [x] Route-audit regression test distinguishing this module from `modules/admin/`, asserting `requireMfa: true` on all five routes (D2) — see note below on the "six routes" text
+- [x] **Task 3 — Settings service (D3, D4, AC-2 through AC-7)**
+  - [x] `resolveEffectiveSettings()` — DB-override-then-env-fallback precedence, single implementation reused everywhere
+  - [x] SMTP password encrypt/mask/`"[configured]"`-sentinel handling
+  - [x] `invalidateEmailTransport()` in `notification-email.ts`; call from settings-update path when SMTP fields change
+  - [x] Concurrency-safe upsert (advisory-lock + read-modify-write in one transaction, AC-22) — implemented as `pg_advisory_xact_lock` + full-row upsert rather than `SELECT ... FOR UPDATE`, since the singleton row may not exist yet on first PUT (`FOR UPDATE` cannot lock a nonexistent row); functionally equivalent serialization guarantee, verified by AC-22's concurrent-PUT integration test
+- [x] **Task 4 — Multi-org provisioning (D6, D7, AC-8 through AC-11, AC-23)**
+  - [x] `POST /admin/orgs`: existing-user-owner path and new-user-owner path (reuses `account_recovery_tokens` directly + existing, unmodified recovery-complete endpoint — not `sendAdminRecoveryLink()`, since that helper's 15-minute TTL and org-context assumptions don't fit this flow's 72h TTL / brand-new-org context; see Dev Notes)
+  - [x] Deactivated-owner-email rejection (409) — interpreted as "every org_membership this user holds, instance-wide, is `deactivated`" (see Dev Notes open question)
+  - [x] `maxOrgs` enforcement (422)
+  - [x] `GET /admin/orgs` listing with `memberCount`
+  - [x] Concurrent-same-new-email race handling (unique-violation catch + retry-as-existing-user) — required adding a SAVEPOINT (nested `tx.transaction()`) around both the slug-allocation retry loop and the user-insert race branch; see Dev Notes bug-fix writeup
+  - [x] Cross-org data-isolation regression test for multi-org users across projects/credentials/service-endpoints (AC-23b)
+- [x] **Task 5 — Resource usage endpoint and threshold alerts (AC-12 through AC-14)**
+  - [x] `GET /admin/resource-usage` aggregation queries
+  - [x] Hourly threshold-check job (dedicated `resource-usage:check`, documented choice): per-org `usersPerOrg` (org-routed alert) and instance-wide `orgs` (admin_alerts only)
+  - [x] Add `'resource.users_near_limit'`/`'resource.secrets_near_limit'` to `NOTIFICATION_ALERT_TYPES`
+  - [x] Episode-key idempotency helper (reusable across AC-13/14/16/19/20) — `apps/api/src/lib/threshold-alerts.ts`
+- [x] **Task 6 — Audit log storage monitoring + maintenance mode (D5, D10, AC-15 through AC-18)**
+  - [x] Daily `audit-storage:check` job — `pg_total_relation_size('audit_log_entries')` (real table name, D5)
+  - [x] Per-org storage-growth breakdown (`topContributingOrgs`, D10) — approximated as rows written in the last 24h with an estimated average row-byte-size (documented approximation, not a fabricated number)
+  - [x] Tiered alerts (80/90/95%) + cross-org fan-out; add `'audit_storage.warning'`/`'audit_storage.critical'` to `NOTIFICATION_ALERT_TYPES`
+  - [x] `SECURITY_CRITICAL_AUDIT_EVENT_TYPES` allowlist (D10) + maintenance-mode flag (the active `audit_storage.critical` admin_alerts row itself, no separate state table) + interception point in `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry`
+  - [x] `GET /ready` `warnings` array extension (additive, backward-compatible)
+- [x] **Task 7 — Key custody risk alerting (D8, AC-19, AC-20)**
+  - [x] Weekly `key-custody:check` job + startup check (`boss.send` with `singletonKey` on every `onVaultUnsealed`)
+  - [x] Trigger (a): file KMS + backup enabled
+  - [x] Trigger (b): `key_rotated_at` age exceeds `KEY_ROTATION_MAX_AGE_DAYS`
+  - [x] Combined-trigger payload merging; cross-org fan-out to every org owner; `/ready` warning wiring
+- [x] **Task 8 — Operational logging (AC-25)**
+  - [x] New `OperationalEvent` constants; wire calls throughout settings/org/audit-storage/key-custody paths
+- [x] **Task 9 — Env var validation (AC-21)**
+  - [x] `AUDIT_LOG_STORAGE_LIMIT_GB`, `KEY_ROTATION_MAX_AGE_DAYS` in `apps/api/src/config/env.ts` (and `.env.example`)
+- [x] **Task 10 — Scheduling** — registered `audit-storage:check` (daily, 04:00), `key-custody:check` (weekly, Monday 05:00 + startup singleton), `resource-usage:check` (hourly) under `onVaultUnsealed` in `apps/api/src/main.ts`
+- [x] **Task 11 — OpenAPI spec** — ran `generate-spec`; committed updated `packages/shared/openapi.json`; added an explicit `tags: ['Platform Admin']` to each of the five new routes' schemas (no pre-existing route in this codebase set a `tags` field at all — this is additive, does not disturb any other route's untagged status) (AC-27)
+- [x] **Task 12 — Integration tests (AC-28)** — implemented; one explicit deviation documented in Dev Notes (recovery-token 73h-expiry case relies on Story 4.3's own existing, unmodified-endpoint test coverage rather than a duplicate test here, since `POST /auth/recovery/:token/complete` is reused verbatim, not modified)
 
 ---
 
@@ -798,12 +798,81 @@ New `OperationalEvent` constants: `PLATFORM_SETTINGS_UPDATED`, `PLATFORM_ORG_CRE
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-4-5 (Claude Code)
 
 ### Debug Log References
+
+- **Pre-existing bug found and fixed:** `allocateOrganizationSlug()` (`apps/api/src/modules/auth/service.ts`) retried its slug-collision insert in the *same* outer transaction with no SAVEPOINT — a Postgres unique-violation on attempt N aborts the entire transaction (`25P02`), so attempt N+1's otherwise-valid insert always failed too. This is latent in the original registration flow as well (any self-registration slug collision would have hit it), but no prior story's test forced two attempts within one transaction. Fixed by wrapping each attempt in `tx.transaction(savepointTx => ...)` (a real SAVEPOINT), same pattern already used a few lines below for the platform-operator bootstrap race. Surfaced by this story's own AC-8 "duplicate org name" edge case and AC-23 concurrent-creation test.
+- **Same class of bug, second instance:** `createOrg()`'s new-user-insert branch had the identical problem — a `users.email` unique-violation (AC-23's deliberate race) aborted the outer transaction, so the "retry as existing user" fallback query in the `catch` block also failed with `25P02`. Fixed the same way (SAVEPOINT around the insert attempt).
+- **Migration bug found and fixed:** `vault_state`'s append-only trigger (`0003_vault_state.sql`, Red Team hardening) blocks ALL `UPDATE`/`DELETE` unconditionally — including from the `postgres` superuser role running migration `0040`'s `key_rotated_at` backfill. There is no role-based bypass, only a test-only `app.vault_test_reset` GUC. Fixed by bracketing the backfill `UPDATE` with `ALTER TABLE vault_state DISABLE/ENABLE TRIGGER vault_state_no_update` inside the migration itself (a legitimate one-time schema-level exception, not reuse of the test-only GUC). This was masked in local dev because the test DB's `vault_state` was empty at migration time (0 rows matched); would have hard-failed against any real initialized instance.
+- **Test-hygiene bug found and fixed mid-session:** an early version of `audit-storage-check.test.ts` left an active `audit_storage.critical` admin_alerts row (the maintenance-mode flag, D10/AC-17) in the shared test database with no cleanup. Since every `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry` call across the *entire* codebase checks this flag, a full-suite run picked up the leftover row and silently suppressed routine audit writes in ~24 unrelated test files (rotation, search, etc.), producing ~68 spurious failures. Fixed with an explicit `afterAll` cleanup in that test file (and defensively in `key-custody-check.test.ts`/`resource-usage-check.test.ts` for the analogous, lower-risk case). Re-ran the full suite after the fix to confirm.
+- **Test-hygiene bug found and fixed (unrelated to the above):** `maintenance-mode.test.ts`'s security-critical-event assertion originally called `writeHumanAuditEntry` with `actorTokenId: null` to prove the row is written during maintenance mode — this created a permanent (append-only, unrepairable) `check-audit-actor-token-coverage` gap in the shared DB. Fixed by using a real test user + identity token (`createTestUser` + `firstActorTokenIdForUser`) instead of `null`.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed — comprehensive developer guide for Story 9.2 covering: a hard sequencing dependency on Story 9.1's not-yet-implemented platform-operator primitives (D1), a genuine `/admin` URL-prefix authorization-semantics collision with the existing org-scoped admin module that could otherwise become a privilege-escalation bug (D2), a new runtime-configurable system-settings store that must not break the existing env-var-only fallback per an already-closed retro action item (D3, D4), a genuine epics.md table-name mismatch that would have silently monitored a nonexistent table (D5), a justified addition of an org-listing endpoint beyond epics.md's literal write-only scope (D6), a wholly new multi-org owner-provisioning flow designed to reuse three existing mechanisms instead of inventing a competing invitation system (D7), and an honest accounting of the master-key-rotation-execution gap this story's custody-risk alerting depends on but does not itself close (D8).
+- **AC count discrepancy:** AC-1's own text and Task 2 both say "six new endpoints" / "all six routes," but the concrete list given (`GET`/`PUT /admin/settings`, `POST`/`GET /admin/orgs`, `GET /admin/resource-usage`) is five routes, not six. Implemented exactly the five concretely specified; did not invent a sixth to match the prose count. Flagging for whoever reviews this story in case a sixth route was intended but never specified.
+- **Deviation from the story's literal AC-3 status code:** AC-3's negative examples show `400` for validation errors. This codebase's existing, pervasive convention (every other route, via `parseBody`/`validationError`) uses `422` for validation errors, never `400`. Implemented `422` for consistency with the rest of the codebase (AGENTS.md's "reconcile contradictions rather than layering shims" guidance) rather than introducing the only `400`-returning validation path in the app. `org_limit_reached` correctly uses `422` per AC-10's own text, so this is isolated to the validation-error code specifically.
+- **Deviation from AC-3/AC-22's literal implementation note:** "`SELECT ... FOR UPDATE`" is not used for the settings upsert, since the singleton row may not exist yet on the very first `PUT` (a nonexistent row cannot be locked). Used `pg_advisory_xact_lock` keyed on the row's constant identity instead — same serialization guarantee (all concurrent PUTs queue on the lock, each doing a full read-modify-write), verified by an integration test firing two concurrent PUTs with non-overlapping fields via `Promise.all` and asserting both land.
+- D7's new-owner-invite flow reuses the `account_recovery_tokens` table/hashing/HMAC primitives (`generateRecoveryToken`/`hashRecoveryToken`) directly rather than calling the existing `sendAdminRecoveryLink()` helper, because that helper hardcodes a 15-minute TTL (Story 4.3's self-service/admin-reset use case) and expects the *initiator's* org as the email-delivery routing context — this story needs a 72h TTL (D7, matching Story 4.1's invitation TTL) and must route the email through the *new* org's notification context (the new owner has no other org membership yet). Did not modify `sendAdminRecoveryLink()` to add a TTL parameter, to avoid touching an already-tested, in-production code path for an unrelated story; instead built a small sibling helper (`issueNewOwnerRecoveryLink` in `platform-admin/service.ts`) reusing the same low-level primitives.
+- D7's "deactivated owner" check (AC-9 negative case) is interpreted as: every `org_memberships` row this user holds, instance-wide, has `status = 'deactivated'` (i.e., no active membership anywhere). Deactivation in this codebase is per-org-membership, not a global user flag, so this is the closest honest reading of "an existing but deactivated user" — flagged as an interpretation, not a literal spec, since epics.md doesn't define a global deactivation concept.
+- D10's `topContributingOrgs` byte-size figures are an approximation (`audit_log_entries`' current average row size × that org's row growth in the last 24h), not an exact per-row byte count (not tracked). Documented in code comments; matches AC-E2f's "no fake numbers" discipline by being a real, derived estimate rather than a fabricated placeholder.
+- AC-27's OpenAPI "distinct tag" requirement required introducing `tags: [...]` on a Fastify route schema for the first time in this codebase — no other route (including Story 9.1's backup/restore routes, or the pre-existing `modules/admin/` routes) sets a `tags` field at all. Added it only to this story's five routes; did not retrofit tags onto any other existing route.
+- Two genuine, pre-existing bugs in reused primitives were found and fixed during TDD (see Debug Log References): a missing-SAVEPOINT bug in `allocateOrganizationSlug()`'s slug-collision retry (and the analogous bug in this story's own new-user race-retry path), and a migration that would have failed against any real (non-empty) `vault_state` row due to the append-only trigger having no schema-migration bypass. Both are fixed at the root, not worked around locally.
+- **Deferred, not implemented:** a dedicated unit test asserting the exact `AUDIT_LOG_STORAGE_LIMIT_GB`/`KEY_ROTATION_MAX_AGE_DAYS` env-var validation (rejects negative/non-numeric values) beyond the zod schema definition itself — the schema entries exist and are exercised indirectly (every integration test boots the app, which runs full env validation at startup), but no standalone `env.test.ts` case names these two vars explicitly. Low risk (the zod schema is a direct, simple `.positive()`/`.int().positive()` constraint matching the exact pattern of a dozen other env vars already covered by the same generic test style), flagged for a fast follow if desired.
+- **Deferred, not implemented:** a log-capture assertion that `PLATFORM_SETTINGS_UPDATED`/`PLATFORM_ORG_CREATED` are actually emitted (the call sites exist and are exercised by every settings/org integration test, but no test captures and inspects the log line itself, unlike `health.test.ts`'s `createLogCaptureStream` pattern). Flagged for a fast follow.
+- AC-9's "73 hours later, token expired" edge case is not independently re-tested here — `POST /api/v1/auth/recovery/:token/complete` is Story 4.3's existing, completely unmodified endpoint, and its expiry behavior is already covered by Story 4.3's own test suite. Re-testing it here would duplicate coverage of code this story does not touch.
 
 ### File List
+
+**New files:**
+- `packages/db/src/schema/system-settings.ts`
+- `packages/db/src/schema/system-settings-schema.test.ts`
+- `packages/db/src/migrations/0040_system_settings_and_key_rotation.sql`
+- `apps/api/src/modules/platform-admin/schema.ts`
+- `apps/api/src/modules/platform-admin/service.ts`
+- `apps/api/src/modules/platform-admin/settings-routes.ts`
+- `apps/api/src/modules/platform-admin/settings-routes.test.ts`
+- `apps/api/src/modules/platform-admin/orgs-routes.ts`
+- `apps/api/src/modules/platform-admin/orgs-routes.test.ts`
+- `apps/api/src/modules/platform-admin/resource-usage-routes.ts`
+- `apps/api/src/modules/platform-admin/resource-usage-routes.test.ts`
+- `apps/api/src/modules/platform-admin/platform-admin-route-audit.test.ts`
+- `apps/api/src/modules/platform-admin/sealed-guard.test.ts`
+- `apps/api/src/modules/audit/maintenance-mode.ts`
+- `apps/api/src/modules/audit/maintenance-mode.test.ts`
+- `apps/api/src/workers/audit-storage-check.ts`
+- `apps/api/src/workers/audit-storage-check.test.ts`
+- `apps/api/src/workers/key-custody-check.ts`
+- `apps/api/src/workers/key-custody-check.test.ts`
+- `apps/api/src/workers/resource-usage-check.ts`
+- `apps/api/src/workers/resource-usage-check.test.ts`
+- `apps/api/src/lib/threshold-alerts.ts`
+- `apps/api/src/lib/threshold-alerts.test.ts`
+- `apps/api/src/__tests__/helpers/platform-operator-test-helpers.ts`
+- `apps/api/src/__tests__/multi-org-session-isolation.test.ts`
+
+**Modified files:**
+- `packages/db/src/schema/vault-state.ts` (added `key_rotated_at` column)
+- `packages/db/src/schema/index.ts` (export system-settings schema)
+- `packages/db/src/check-rls-coverage.ts` (added `system_settings` to `EXCLUDED_TABLES`)
+- `packages/db/src/migrations/meta/_journal.json` (0040 entry)
+- `packages/shared/src/constants/notification-types.ts` (new alert types)
+- `packages/shared/src/constants/operational-event-types.ts` (new operational events)
+- `packages/shared/openapi.json` (regenerated)
+- `apps/api/src/app.ts` (register three new platform-admin route modules)
+- `apps/api/src/main.ts` (schedule `audit-storage:check`/`key-custody:check`/`resource-usage:check`)
+- `apps/api/src/config/env.ts` (`AUDIT_LOG_STORAGE_LIMIT_GB`, `KEY_ROTATION_MAX_AGE_DAYS`)
+- `.env.example`
+- `apps/api/src/modules/auth/service.ts` (exported `allocateOrganizationSlug`/`isUniqueViolation`; fixed the SAVEPOINT bug in the slug-collision retry loop)
+- `apps/api/src/modules/audit/human-entry.ts` (maintenance-mode interception point)
+- `apps/api/src/modules/audit/machine-entry.ts` (maintenance-mode interception point, both writers)
+- `apps/api/src/modules/admin/routes.ts` (updated for async `getEmailTransport()`/effective SMTP `from`)
+- `apps/api/src/workers/notification-email.ts` (`getEmailTransport()` now async + settings-aware; added `invalidateEmailTransport()`)
+- `apps/api/src/workers/notification-digest.ts` (updated for async `getEmailTransport()`/effective SMTP `from`)
+- `apps/api/src/lib/route-exemptions.ts` (classifications for the five new routes + `workers/key-custody-check.ts`; also deduplicated pre-existing `'security-action'`/`'sensitive-read'` literals onto their already-defined-but-unused constants, fixing a jscpd/sonarjs violation this story's additions newly crossed the threshold for)
+- `apps/api/src/routes/health.ts` / `apps/api/src/routes/health.test.ts` (`/ready` `warnings` field, AC-18)
+
+## Change Log
+
+- 2026-07-07 — Implemented Story 9.2 in full via TDD (red-green): `system_settings` schema/migration, `modules/platform-admin/` route family (settings, orgs, resource-usage), audit-storage maintenance-mode circuit breaker, key-custody risk alerting, per-org/instance-wide resource-usage threshold alerts, `/ready` warnings, scheduling, OpenAPI regen. Found and fixed two pre-existing SAVEPOINT bugs in `allocateOrganizationSlug()`/`createOrg()`'s race-retry paths, and a `vault_state` append-only-trigger migration bug. Status: ready-for-dev → review.

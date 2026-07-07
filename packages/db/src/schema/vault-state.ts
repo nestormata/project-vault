@@ -39,6 +39,12 @@ export const vaultState = pgTable(
     keyDerivationParams: text('key_derivation_params'),
 
     initializedAt: timestamp('initialized_at', { withTimezone: true }).notNull().defaultNow(),
+
+    // Story 9.2 D8: nullable at the schema level (existing pre-migration rows are backfilled to
+    // initialized_at, so in practice this is never NULL after migration), tracks the last time
+    // the master key was recorded as rotated. No rotation-execution endpoint exists yet (D8) —
+    // this column is set once by the backfill migration and never advanced by this story.
+    keyRotatedAt: timestamp('key_rotated_at', { withTimezone: true }),
   },
   (table) => [
     check('vault_state_single_row', sql`${table.id} = 1`),
