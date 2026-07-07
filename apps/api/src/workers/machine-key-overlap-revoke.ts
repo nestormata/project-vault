@@ -12,8 +12,8 @@ import {
 import { operationalLog, serializeLogError } from '../lib/logger.js'
 import type { WorkerLogger } from './expiry-alert-shared.js'
 
-const REVOKE_JOB_NAME = 'machine-key:overlap-revoke'
-const ALERT_JOB_NAME = 'machine-key:overlap-alert'
+const REVOKE_JOB_NAME = 'machine-key/overlap-revoke'
+const ALERT_JOB_NAME = 'machine-key/overlap-alert'
 const ONE_HOUR_MS = 3_600_000
 
 function logRowFailure(

@@ -10,7 +10,7 @@ export async function runDeliverCatchup(
   await runNotificationCatchup(
     boss,
     {
-      jobName: 'notification:deliver',
+      jobName: 'notification/deliver',
       deliverAtAware: true,
       logMessage: 'Notification deliver catchup found stale pending entries',
     },
@@ -22,7 +22,7 @@ export async function notificationDeliverCatchupJobHandler(
   boss: BossService,
   logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 ): Promise<void> {
-  await withJobLogging(logger, 'notification:deliver-catchup', 'scheduled', () =>
+  await withJobLogging(logger, 'notification/deliver-catchup', 'scheduled', () =>
     runDeliverCatchup(boss, logger)
   )
 }

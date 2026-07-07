@@ -9,7 +9,7 @@ import {
   type WorkerLogger,
 } from './expiry-alert-shared.js'
 
-const JOB_NAME = 'domain:expiry-alert'
+const JOB_NAME = 'domain/expiry-alert'
 
 type DomainRecordRow = typeof domainRecords.$inferSelect
 

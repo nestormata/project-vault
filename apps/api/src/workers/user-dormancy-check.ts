@@ -16,7 +16,7 @@ import type { WorkerLogger } from './expiry-alert-shared.js'
 // machine-key-dormancy-check.ts (D1 below) and is therefore listed in .jscpd.json's ignore
 // array, the same way apps/api/src/modules/audit/machine-entry.ts is exempted for the same
 // "intentional structural template, not accidental copy-paste" reason.
-const JOB_NAME = 'user:dormancy-check'
+const JOB_NAME = 'user/dormancy-check'
 
 type DormantUserRow = {
   userId: string

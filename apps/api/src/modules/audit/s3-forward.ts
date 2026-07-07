@@ -202,7 +202,7 @@ async function processOrgS3Day(
   return recordS3DayFailure(tx, config, day, logger)
 }
 
-/** D3 — the `audit:s3-forward-daily` cron handler. `putObject` defaults to the real S3 client;
+/** D3 — the `audit/s3-forward-daily` cron handler. `putObject` defaults to the real S3 client;
  * tests substitute a double. */
 export async function runS3ForwardDaily(
   logger?: WorkerLogger,

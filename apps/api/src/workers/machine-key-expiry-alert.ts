@@ -9,7 +9,7 @@ import {
   type WorkerLogger,
 } from './expiry-alert-shared.js'
 
-const JOB_NAME = 'machine-key:expiry-alert'
+const JOB_NAME = 'machine-key/expiry-alert'
 
 type MachineKeyExpiryRow = {
   id: string

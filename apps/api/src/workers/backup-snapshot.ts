@@ -20,7 +20,7 @@ type BackupSnapshotJobData = {
 }
 
 /**
- * Story 9.1 AC-5/AC-7: entry point for the `backup:snapshot` pg-boss job — fired either by the
+ * Story 9.1 AC-5/AC-7: entry point for the `backup/snapshot` pg-boss job — fired either by the
  * cron schedule (job.data is empty; this worker acquires its own slot with `triggeredBy:
  * 'schedule'`) or by `POST /admin/backup/trigger` (job.data already carries the runId/filename
  * the route's own `acquireBackupSlot` call reserved, `triggeredBy: 'manual'`).

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { BossService } from './boss.js'
 
 const TEST_QUEUE_NAME = 'prune-revoked-tokens'
-const NOTIFICATION_EMAIL_JOB = 'notification:email'
+const NOTIFICATION_EMAIL_JOB = 'notification/email'
 
 function createBossWithMocks(extra: Record<string, unknown> = {}) {
   return new BossService(() => ({
@@ -92,7 +92,7 @@ describe('BossService', () => {
   })
 
   it('passes singletonKey through to the underlying send call (Story 5.3 Task 4)', async () => {
-    const ROTATION_RECOVER_JOB = 'rotation:recover'
+    const ROTATION_RECOVER_JOB = 'rotation/recover'
     const send = vi.fn().mockResolvedValue('job-1')
     const boss = createBossWithMocks({ send })
 

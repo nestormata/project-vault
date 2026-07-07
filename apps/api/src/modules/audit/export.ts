@@ -113,7 +113,7 @@ async function fetchExportRows(
 }
 
 /**
- * AC-9/10/11 — the `audit:export` worker: mandatory integrity verification first (chunked
+ * AC-9/10/11 — the `audit/export` worker: mandatory integrity verification first (chunked
  * across <= AUDIT_VERIFY_MAX_RANGE_DAYS sub-ranges, Story 8.1's verifyAuditRange()), and only on
  * a fully-passing aggregate does it proceed to CSV generation. Never generates or stores a CSV
  * when verification fails — the single most important failure mode in this story (AC-11).

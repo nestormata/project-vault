@@ -22,7 +22,7 @@ import {
   type BackupAssetsPresent,
 } from './dump-inspect.js'
 
-const BACKUP_ADVISORY_LOCK_KEY = 'backup:snapshot'
+const BACKUP_ADVISORY_LOCK_KEY = 'backup/snapshot'
 
 export type BackupTrigger = 'schedule' | 'manual'
 
@@ -167,7 +167,7 @@ function buildMetaJson(input: {
 /**
  * Story 9.1 AC-5/AC-6: executes the actual dump → gzip → worker-thread encrypt → destination
  * write pipeline for a slot already reserved by `acquireBackupSlot`. Updates the `backup_runs`
- * row to `succeeded` or `failed` — callers (the `backup:snapshot` worker) are responsible for
+ * row to `succeeded` or `failed` — callers (the `backup/snapshot` worker) are responsible for
  * enqueueing the `backup.failure` alert on a thrown error (D7/AC-13), since alert delivery needs
  * the full notification/boss wiring this module intentionally doesn't depend on.
  */

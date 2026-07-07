@@ -46,7 +46,7 @@ export async function evaluateKeyCustodyTriggers(): Promise<KeyCustodyTrigger[]>
 }
 
 /**
- * Story 9.2 AC-19/AC-20: weekly `key-custody:check` job (also runs at vault-unseal/startup, per
+ * Story 9.2 AC-19/AC-20: weekly `key-custody/check` job (also runs at vault-unseal/startup, per
  * AC-19). Idempotent — one active `key_custody_risk` admin_alerts row per instance
  * (createAdminAlertIfNotActive), not one per check tick or per restart. Both triggers, if
  * simultaneously true, are merged into a single row's payload (`triggers: [...]`) rather than two
@@ -105,7 +105,7 @@ export async function runKeyCustodyCheck(boss: BossService, logger?: WorkerLogge
         logger,
         'error',
         OperationalEvent.KEY_CUSTODY_CHECK_FAILED,
-        'key-custody:check job failed',
+        'key-custody/check job failed',
         { err: error instanceof Error ? { message: error.message, stack: error.stack } : error }
       )
     }

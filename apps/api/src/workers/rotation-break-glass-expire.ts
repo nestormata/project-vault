@@ -10,7 +10,7 @@ import { rotationBreakGlassOverlapExpirationsTotal } from '../modules/rotation/m
 import type { WorkerLogger } from './expiry-alert-shared.js'
 
 const EVENT_TYPE = 'rotation.break_glass_overlap_expired'
-const JOB_NAME = 'rotation:break-glass-expire'
+const JOB_NAME = 'rotation/break-glass-expire'
 
 type ExpiredVersionRow = { id: string; credentialId: string }
 
@@ -86,7 +86,7 @@ async function expireOverlapForOrg(orgId: string, logger?: WorkerLogger): Promis
   }
 }
 
-/** `rotation:break-glass-expire` (AC-8) — pg-boss job, cron `* * * * *` (every minute, matching
+/** `rotation/break-glass-expire` (AC-8) — pg-boss job, cron `* * * * *` (every minute, matching
  *  security/check-failed-auth-threshold's cadence). No vault-seal gating: this is backend-worker
  *  bookkeeping (rotationLockedAt/breakGlassOverlapExpiresAt), no plaintext is touched. */
 export async function runBreakGlassOverlapExpiryJob(logger?: WorkerLogger): Promise<void> {

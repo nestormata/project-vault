@@ -44,7 +44,7 @@ export async function sendSlackNotification(
 }
 
 export const notificationSlackHandler = createNotificationJobHandler(
-  'notification:slack',
+  'notification/slack',
   sendSlackNotification
 )
 
@@ -56,7 +56,7 @@ export async function notificationSlackCatchupHandler(
     boss,
     {
       channel: 'slack',
-      jobName: 'notification:slack',
+      jobName: 'notification/slack',
       logMessage: 'Notification catchup found stale pending slack entries',
     },
     logger

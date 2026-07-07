@@ -22,7 +22,7 @@ export async function runInboxPurge(
 export async function notificationInboxPurgeHandler(
   logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 ): Promise<void> {
-  await withJobLogging(logger, 'notification:inbox-purge', 'daily', () => runInboxPurge(logger))
+  await withJobLogging(logger, 'notification/inbox-purge', 'daily', () => runInboxPurge(logger))
 }
 
 export async function notificationInboxCatchupHandler(
@@ -34,7 +34,7 @@ export async function notificationInboxCatchupHandler(
     boss,
     {
       channel: 'inbox',
-      jobName: 'notification:deliver',
+      jobName: 'notification/deliver',
       logMessage: 'Notification catchup found stale pending inbox entries',
     },
     logger

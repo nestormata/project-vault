@@ -184,7 +184,7 @@ type BossFastify = FastifyApp & { boss?: BossService }
 
 /** Post-commit, best-effort notification dispatch — identical pattern to
  *  apps/api/src/modules/auth/routes.ts's sendPendingMfaNotifications. A missed boss.send() is
- *  safe: the notification_queue row is already durable and the notification:*-catchup cron
+ *  safe: the notification_queue row is already durable and the notification/*-catchup cron
  *  will pick it up. */
 async function sendPendingRotationNotifications(
   fastify: FastifyApp,

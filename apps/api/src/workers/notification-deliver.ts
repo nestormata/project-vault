@@ -38,7 +38,7 @@ export async function deliverNotification(
       break
     case 'inbox':
       if (!emitter) {
-        throw new Error('notification:deliver inbox channel requires EventEmitter')
+        throw new Error('notification/deliver inbox channel requires EventEmitter')
       }
       await deliverInboxNotification(notificationQueueId, orgId, emitter)
       break
@@ -54,13 +54,13 @@ export async function deliverNotification(
 }
 
 export function createDeliverNotificationHandler(emitter: EventEmitter) {
-  return createNotificationJobHandler('notification:deliver', (notificationQueueId, orgId) =>
+  return createNotificationJobHandler('notification/deliver', (notificationQueueId, orgId) =>
     deliverNotification(notificationQueueId, orgId, emitter)
   )
 }
 
 export const notificationDeliverHandler = createNotificationJobHandler(
-  'notification:deliver',
+  'notification/deliver',
   (notificationQueueId, orgId) => deliverNotification(notificationQueueId, orgId)
 )
 
