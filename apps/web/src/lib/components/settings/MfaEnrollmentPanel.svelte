@@ -13,6 +13,7 @@
     isValidTotpInput,
     qrCodeDataUri,
   } from './security-model.js'
+  import TotpCodeInput from './TotpCodeInput.svelte'
 
   let { initialUser }: { initialUser: AuthUser } = $props()
 
@@ -149,23 +150,10 @@
           void submitRegeneration()
         }}
       >
-        <div class="space-y-2">
-          <label class="block font-medium text-slate-900" for="mfa-security-totp"
-            >Authenticator code</label
-          >
-          <input
-            id="mfa-security-totp"
-            class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
-            inputmode="numeric"
-            pattern="[0-9]{6}"
-            autocomplete="one-time-code"
-            bind:value={totp}
-            required
-          />
-          <p class="text-sm text-slate-600">
-            Confirm with your current code — this invalidates any unused recovery codes.
-          </p>
-        </div>
+        <TotpCodeInput
+          bind:value={totp}
+          helperText="Confirm with your current code — this invalidates any unused recovery codes."
+        />
         <div class="flex gap-3">
           <button
             type="submit"
@@ -213,21 +201,10 @@
         void submitVerification()
       }}
     >
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="mfa-security-totp"
-          >Authenticator code</label
-        >
-        <input
-          id="mfa-security-totp"
-          class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
-          inputmode="numeric"
-          pattern="[0-9]{6}"
-          autocomplete="one-time-code"
-          bind:value={totp}
-          required
-        />
-        <p class="text-sm text-slate-600">Enter the six-digit code to confirm enrollment.</p>
-      </div>
+      <TotpCodeInput
+        bind:value={totp}
+        helperText="Enter the six-digit code to confirm enrollment."
+      />
       {#if errorMessage}
         <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
           {errorMessage}

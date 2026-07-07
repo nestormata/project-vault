@@ -1,3 +1,5 @@
+import { formatDateTime } from '$lib/datetime.js'
+
 export function isValidTotpInput(value: string): boolean {
   return /^\d{6}$/.test(value)
 }
@@ -9,16 +11,7 @@ export function qrCodeDataUri(svg: string): string {
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
 }
 
-export function formatEnrolledAt(value: string | null): string {
-  if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+export const formatEnrolledAt = formatDateTime
 
 export function describeRemainingRecoveryCodes(count: number | null): string {
   if (count === null) return ''

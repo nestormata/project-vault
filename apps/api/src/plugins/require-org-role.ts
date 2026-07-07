@@ -1,6 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AppError } from '../lib/errors.js'
-import { requireAuthContext } from '../lib/route-helpers.js'
 
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 export type AuthContext = NonNullable<FastifyRequest['authContext']>
