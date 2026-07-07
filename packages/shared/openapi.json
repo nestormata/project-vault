@@ -23695,12 +23695,14 @@
                         "maxOrgs": {
                           "type": "integer",
                           "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
+                          "maximum": 9007199254740991,
+                          "description": "Hard-enforced — POST /admin/orgs rejects the (n+1)th org."
                         },
                         "maxUsersPerOrg": {
                           "type": "integer",
                           "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
+                          "maximum": 9007199254740991,
+                          "description": "Advisory only in v1 — alerts at 80/90/95%, does not block new members."
                         },
                         "sessionIdleTimeoutMinutes": {
                           "type": "integer",
@@ -23955,12 +23957,14 @@
                         "maxOrgs": {
                           "type": "integer",
                           "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
+                          "maximum": 9007199254740991,
+                          "description": "Hard-enforced — POST /admin/orgs rejects the (n+1)th org."
                         },
                         "maxUsersPerOrg": {
                           "type": "integer",
                           "minimum": -9007199254740991,
-                          "maximum": 9007199254740991
+                          "maximum": 9007199254740991,
+                          "description": "Advisory only in v1 — alerts at 80/90/95%, does not block new members."
                         },
                         "sessionIdleTimeoutMinutes": {
                           "type": "integer",

@@ -5,6 +5,7 @@
   "ignore": [
     "packages/db/src/schema/**",
     "packages/db/src/migrations/**",
+    "packages/shared/openapi.json",
     "**/*test-helpers*",
     "**/*.test.ts",
     "packages/agent/src/cache-crypto.ts",
