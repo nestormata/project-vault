@@ -36,6 +36,7 @@ import { machineCredentialRoutes } from './modules/machine-users/machine-credent
 import { cacheActivatedRoutes } from './modules/machine-users/cache-activated-routes.js'
 import { securityAlertActionsRoutes } from './modules/org/security-alert-actions-routes.js'
 import { organizationSettingsRoutes } from './modules/org/organization-settings-routes.js'
+import { erasureRoutes } from './modules/compliance/erasure-routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
 import { machineJwtPlugin } from './plugins/machine-jwt.js'
@@ -202,10 +203,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(vaultRoutes)
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
   await fastify.register(machineTokenExchangeRoutes, { prefix: '/api/v1/auth' })
-  await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
-  await fastify.register(auditRoutes, { prefix: '/api/v1/org' })
   /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
      literal prefix strings; a shared constant would make them invisible to that parser. */
+  await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
+  await fastify.register(auditRoutes, { prefix: '/api/v1/org' })
+  await fastify.register(erasureRoutes, { prefix: '/api/v1/org' })
   await fastify.register(projectRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(projectInvitationRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(invitationTokenRoutes, { prefix: '/api/v1/invitations' })

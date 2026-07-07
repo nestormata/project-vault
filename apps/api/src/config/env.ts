@@ -8,6 +8,7 @@ const DEV_RECOVERY_TOKEN_HMAC_SECRET = 'f'.repeat(64)
 const DEV_API_KEY_HMAC_SECRET = 'g'.repeat(64)
 const DEV_MACHINE_JWT_SECRET = 'h'.repeat(64)
 const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
+const DEV_ERASURE_EMAIL_HASH_SECRET = 'j'.repeat(64)
 const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
@@ -30,6 +31,7 @@ type ProductionEnv = {
   API_KEY_HMAC_SECRET?: string
   MACHINE_JWT_SECRET?: string
   STATUS_PAGE_TOKEN_HMAC_SECRET?: string
+  ERASURE_EMAIL_HASH_SECRET?: string
   LOG_LEVEL: string
 }
 
@@ -259,6 +261,48 @@ function validateStatusPageTokenProductionSecret(env: ProductionEnv, ctx: z.Refi
   }
 }
 
+// Story 8.4 D6: same array-based comparison this file already uses for
+// STATUS_PAGE_TOKEN_HMAC_SECRET (Story 6.3) — a 9th OR-chain would push cyclomatic complexity
+// past the repo's eslint threshold. Never reuse the audit-log HMAC key (Story 8.1) either — that
+// key's rotation lifecycle is scoped to audit integrity, not this unrelated re-invite-block
+// purpose (D6) — but that key isn't part of this env-secret comparison set, so nothing to add here.
+function erasureEmailHashSharesAnotherAuthSecret(env: ProductionEnv): boolean {
+  const otherSecrets = [
+    env.SESSION_SECRET,
+    env.REFRESH_TOKEN_HMAC_SECRET,
+    env.TOTP_REPLAY_HMAC_SECRET,
+    env.MFA_PENDING_SESSION_HMAC_SECRET,
+    env.INVITATION_TOKEN_HMAC_SECRET,
+    env.RECOVERY_TOKEN_HMAC_SECRET,
+    env.API_KEY_HMAC_SECRET,
+    env.MACHINE_JWT_SECRET,
+    env.STATUS_PAGE_TOKEN_HMAC_SECRET,
+  ]
+  return otherSecrets.includes(env.ERASURE_EMAIL_HASH_SECRET)
+}
+
+function validateErasureEmailHashProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (!env.ERASURE_EMAIL_HASH_SECRET) {
+    addEnvIssue(
+      ctx,
+      'ERASURE_EMAIL_HASH_SECRET',
+      'ERASURE_EMAIL_HASH_SECRET is required in production'
+    )
+  } else if (erasureEmailHashSharesAnotherAuthSecret(env)) {
+    addEnvIssue(
+      ctx,
+      'ERASURE_EMAIL_HASH_SECRET',
+      'ERASURE_EMAIL_HASH_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.ERASURE_EMAIL_HASH_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'ERASURE_EMAIL_HASH_SECRET',
+      'ERASURE_EMAIL_HASH_SECRET must not be a placeholder secret in production'
+    )
+  }
+}
+
 function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateProductionBasics(env, ctx)
   validateTotpReplayProductionSecret(env, ctx)
@@ -268,6 +312,7 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateApiKeyProductionSecret(env, ctx)
   validateMachineJwtProductionSecret(env, ctx)
   validateStatusPageTokenProductionSecret(env, ctx)
+  validateErasureEmailHashProductionSecret(env, ctx)
 }
 
 function validateDummyPasswordHash(
@@ -405,6 +450,14 @@ const envSchema = z
     // reusing opaque-token.ts's shared generate/hash/compare primitives (mirrors
     // RECOVERY_TOKEN_HMAC_SECRET's exact shape).
     STATUS_PAGE_TOKEN_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
+    // Story 8.4 D6: dedicated keyed-HMAC secret for data_erasure_requests.original_email_hash —
+    // a bare unsalted hash of a low-entropy email address is brute-forceable, so this must be a
+    // server-side secret never shared with any other auth-token HMAC (see the production
+    // cross-secret checks below).
+    ERASURE_EMAIL_HASH_SECRET: z.preprocess(
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
@@ -560,6 +613,7 @@ export type Env = Omit<
   | 'API_KEY_HMAC_SECRET'
   | 'MACHINE_JWT_SECRET'
   | 'STATUS_PAGE_TOKEN_HMAC_SECRET'
+  | 'ERASURE_EMAIL_HASH_SECRET'
 > & {
   TOTP_REPLAY_HMAC_SECRET: string
   MFA_PENDING_SESSION_HMAC_SECRET: string
@@ -568,6 +622,7 @@ export type Env = Omit<
   API_KEY_HMAC_SECRET: string
   MACHINE_JWT_SECRET: string
   STATUS_PAGE_TOKEN_HMAC_SECRET: string
+  ERASURE_EMAIL_HASH_SECRET: string
 }
 
 function loadEnv(): Env {
@@ -620,6 +675,12 @@ function loadEnv(): Env {
       '[env] STATUS_PAGE_TOKEN_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
     )
     data.STATUS_PAGE_TOKEN_HMAC_SECRET = DEV_STATUS_PAGE_TOKEN_HMAC_SECRET
+  }
+  if (!data.ERASURE_EMAIL_HASH_SECRET) {
+    process.stderr.write(
+      '[env] ERASURE_EMAIL_HASH_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
+    )
+    data.ERASURE_EMAIL_HASH_SECRET = DEV_ERASURE_EMAIL_HASH_SECRET
   }
   return data as Env
 }

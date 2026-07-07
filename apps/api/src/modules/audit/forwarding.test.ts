@@ -259,7 +259,12 @@ describe.sequential('runWebhookForwardCatchup (AC-18)', () => {
         await runWebhookForwardCatchup(undefined, scopedFailDeliver)
         expect(attempts).toBe(AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES)
       })
-    }
+    },
+    // This test issues AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES + 1 catchup ticks, and each tick's
+    // fetchAllOrgIds() scans every org created anywhere in this whole (fileParallelism: false)
+    // suite run — runtime grows with total suite size, not just this file. The global 45s
+    // testTimeout is no longer enough now that the suite has grown; give this one more headroom.
+    120_000
   )
 
   it('skips orgs with no config or a disabled config', async () => {

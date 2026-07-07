@@ -17,6 +17,7 @@ import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed
 import { env } from '../../config/env.js'
 import { requireMfaEnrollmentStrict } from '../auth/mfa-enforcement.js'
 import { normalizeEmail } from '../auth/normalize.js'
+import { findErasedRequestForEmailInOrg } from '../compliance/erasure-lookup.js'
 import { PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
 import { generateInvitationToken, hashInvitationToken } from './tokens.js'
 import {
@@ -188,6 +189,17 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
         return reply
           .status(409)
           .send({ code: 'already_member', message: 'User is already a project member' })
+      }
+
+      // Story 8.4 D6/AC-17: a user with a pending or completed erasure request cannot be
+      // re-invited — checked via a keyed-HMAC email hash captured at erasure-request-creation
+      // time, since by the time erasure executes, users.email is already overwritten and a plain
+      // lookup against the original address would never match.
+      if (await findErasedRequestForEmailInOrg(secureCtx.tx, secureCtx.auth.orgId, email)) {
+        return reply.status(410).send({
+          code: 'user_erased',
+          message: 'This user has been erased and cannot be re-invited',
+        })
       }
 
       const { invitation, opaqueToken } = await upsertPendingInvitation(secureCtx.tx, {

@@ -20,6 +20,9 @@ export type SessionRevokeScope =
   | 'deactivation'
   | 'security'
   | 'account_recovery'
+  // Story 8.4 D4: distinguishes erasure-triggered session revocation from an ordinary
+  // admin-forced revoke or self-service deactivation in audit rows.
+  | 'erasure'
 
 type RevokeSessionOptions = {
   actorUserId?: string
@@ -283,7 +286,7 @@ export async function revokeAllUserSessionsInOrg({
   userId: string
   orgId: string
   actorUserId: string
-  reason: 'admin_action' | 'deactivation' | 'security' | 'account_recovery'
+  reason: 'admin_action' | 'deactivation' | 'security' | 'account_recovery' | 'erasure'
   tx?: Tx
 }): Promise<{ revokedCount: number }> {
   return runInTx(tx, async (innerTx) => {

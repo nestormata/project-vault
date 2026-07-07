@@ -77,6 +77,8 @@ export const AuditEvent = {
   STATUS_PAGE_TOKEN_REGENERATED: 'status_page.token_regenerated',
   STATUS_PAGE_UPDATED: 'status_page.updated',
   STATUS_PAGE_DISABLED: 'status_page.disabled',
+  USER_ERASURE_REQUESTED: 'user.erasure_requested',
+  USER_ERASURE_EXECUTED: 'user.erasure_executed',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]

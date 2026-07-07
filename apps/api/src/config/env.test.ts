@@ -35,6 +35,9 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     // Story 6.3 ADR-6.3-06: same reasoning — baked into the base fixture so unrelated production
     // tests aren't also tripped by this newest dedicated secret being unset.
     STATUS_PAGE_TOKEN_HMAC_SECRET: 'i'.repeat(64),
+    // Story 8.4 D6: same reasoning — baked into the base fixture so unrelated production tests
+    // aren't also tripped by this newest dedicated secret being unset.
+    ERASURE_EMAIL_HASH_SECRET: 'j'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -544,6 +547,43 @@ describe('env', () => {
       process.env = productionEnv({
         ...priorSecretsSatisfiedWithMachineJwt,
         STATUS_PAGE_TOKEN_HMAC_SECRET,
+      })
+      await expectInvalidEnv(exitSpy)
+    }
+  })
+
+  // Story 8.4 D6: ERASURE_EMAIL_HASH_SECRET is the 8th dedicated-secret requirement.
+  const priorSecretsSatisfiedWithStatusPageToken = {
+    ...priorSecretsSatisfiedWithMachineJwt,
+    STATUS_PAGE_TOKEN_HMAC_SECRET: 'i'.repeat(64),
+  }
+
+  it('requires a dedicated erasure email hash secret in production (Story 8.4, D6)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      { ...priorSecretsSatisfiedWithStatusPageToken, ERASURE_EMAIL_HASH_SECRET: undefined },
+      'ERASURE_EMAIL_HASH_SECRET',
+      'j'.repeat(64)
+    )
+  })
+
+  it('rejects placeholder or reused erasure email hash secrets in production', async () => {
+    for (const ERASURE_EMAIL_HASH_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+      'e'.repeat(64),
+      'f'.repeat(64),
+      'g'.repeat(64),
+      'h'.repeat(64),
+      'i'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithStatusPageToken,
+        ERASURE_EMAIL_HASH_SECRET,
       })
       await expectInvalidEnv(exitSpy)
     }
