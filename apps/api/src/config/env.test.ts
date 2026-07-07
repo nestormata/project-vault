@@ -730,4 +730,135 @@ describe('env', () => {
     })
     await expectInvalidEnv(exitSpy)
   })
+
+  // Story 9.1 D4/AC-14/AC-15: BACKUP_* configuration and validation.
+  const TEST_BACKUP_STORAGE_PATH = '/var/backups/vault'
+  const TEST_BACKUP_DATABASE_URL = 'postgresql://postgres:password@db:5432/project_vault'
+  const TEST_BACKUP_S3_BUCKET = 'vault-backups-prod'
+  describe('backup configuration (Story 9.1)', () => {
+    it('defaults BACKUP_SCHEDULE/RETENTION_COUNT/MAX_AGE_HOURS when unset', async () => {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_SCHEDULE).toBe('0 3 * * *')
+      expect(env.BACKUP_RETENTION_COUNT).toBe(7)
+      expect(env.BACKUP_MAX_AGE_HOURS).toBe(25)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC-15: backup is disabled entirely (no startup failure) when no BACKUP_* destination/credential is set', async () => {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_STORAGE_PATH).toBeUndefined()
+      expect(env.BACKUP_S3_BUCKET).toBeUndefined()
+      expect(env.BACKUP_DATABASE_URL).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts a fully configured filesystem backup destination', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: TEST_BACKUP_STORAGE_PATH,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_STORAGE_PATH).toBe(TEST_BACKUP_STORAGE_PATH)
+      expect(env.BACKUP_DATABASE_URL).toBe(TEST_BACKUP_DATABASE_URL)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts a fully configured S3 backup destination', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_S3_BUCKET: TEST_BACKUP_S3_BUCKET,
+        BACKUP_S3_ENDPOINT: 'https://s3.us-east-1.amazonaws.com',
+        BACKUP_S3_REGION: 'us-east-1',
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_S3_BUCKET).toBe(TEST_BACKUP_S3_BUCKET)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC-14: BACKUP_DATABASE_URL may use the postgres superuser (no anti-superuser refine)', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: TEST_BACKUP_STORAGE_PATH,
+        BACKUP_DATABASE_URL: 'postgresql://postgres:password@localhost:5432/project_vault',
+      }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_DATABASE_URL).toContain('postgres:')
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC-14: fails fast when a backup destination is configured but BACKUP_DATABASE_URL is missing', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: TEST_BACKUP_STORAGE_PATH,
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('AC-14: fails fast when BACKUP_DATABASE_URL is set but neither BACKUP_STORAGE_PATH nor BACKUP_S3_BUCKET is configured', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('AC-14: fails fast when both BACKUP_STORAGE_PATH and BACKUP_S3_BUCKET are configured', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: TEST_BACKUP_STORAGE_PATH,
+        BACKUP_S3_BUCKET: TEST_BACKUP_S3_BUCKET,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('AC-14: rejects an invalid BACKUP_SCHEDULE cron expression', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: TEST_BACKUP_STORAGE_PATH,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+        BACKUP_SCHEDULE: 'not-a-cron',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('AC-11: rejects BACKUP_RETENTION_COUNT=0 (minimum retention is always 1)', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: TEST_BACKUP_STORAGE_PATH,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+        BACKUP_RETENTION_COUNT: '0',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('rejects a non-positive BACKUP_MAX_AGE_HOURS', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: TEST_BACKUP_STORAGE_PATH,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+        BACKUP_MAX_AGE_HOURS: '0',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+  })
 })

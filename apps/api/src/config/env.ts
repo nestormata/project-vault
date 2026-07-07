@@ -15,6 +15,17 @@ const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   ['7zS8GhNt', 'QTJsiMmJ', 'LErN9kM1', '9VoNBM3P', 'HV3OhidvHtY'].join(''),
 ].join('$')
 const PLACEHOLDER_SECRET_PATTERN = /change-me|dev-only|placeholder/i
+// Story 9.1 AC-14: syntactic-only 5-field cron validation (no minimum-interval constraint, unlike
+// packages/shared/src/validation/rotation-cron.ts's validateRotationCron — backup scheduling has
+// no analogous "too frequent" concern, just "is this parseable at all").
+// A single comma-separated term (no repeating group — comma-splitting happens in JS below,
+// avoiding a nested-quantifier regex that static analysis flags as a potential ReDoS risk).
+const CRON_TERM_PATTERN = /^(\*|\d{1,2})(-\d{1,2})?(\/\d{1,2})?$/
+function isValidCronExpression(expr: string): boolean {
+  const fields = expr.trim().split(/\s+/)
+  if (fields.length !== 5) return false
+  return fields.every((field) => field.split(',').every((term) => CRON_TERM_PATTERN.test(term)))
+}
 const isProduction = process.env.NODE_ENV === 'production'
 const ARGON2_PHC_REGEX =
   /^\$argon2id\$v=\d+\$m=(\d+),t=(\d+),p=(\d+)\$[A-Za-z0-9+/._-]{16,}\$[A-Za-z0-9+/._-]{32,}$/
@@ -303,6 +314,54 @@ function validateErasureEmailHashProductionSecret(env: ProductionEnv, ctx: z.Ref
   }
 }
 
+// Story 9.1 AC-14/AC-15: backup is opt-in. "Enabled" means at least one of
+// STORAGE_PATH/S3_BUCKET/DATABASE_URL is configured — any one of them alone is enough to trigger
+// the fail-fast checks below, since all three are required together for a working setup.
+function validateBackupEnv(
+  env: {
+    BACKUP_SCHEDULE: string
+    BACKUP_STORAGE_PATH?: string
+    BACKUP_S3_BUCKET?: string
+    BACKUP_DATABASE_URL?: string
+  },
+  ctx: z.RefinementCtx
+): void {
+  const enabled = Boolean(
+    env.BACKUP_STORAGE_PATH || env.BACKUP_S3_BUCKET || env.BACKUP_DATABASE_URL
+  )
+  if (!enabled) return
+
+  if (env.BACKUP_STORAGE_PATH && env.BACKUP_S3_BUCKET) {
+    addEnvIssue(
+      ctx,
+      'BACKUP_STORAGE_PATH',
+      'FATAL: BACKUP_STORAGE_PATH and BACKUP_S3_BUCKET are mutually exclusive — configure exactly one backup destination.'
+    )
+  }
+  if (!env.BACKUP_STORAGE_PATH && !env.BACKUP_S3_BUCKET) {
+    addEnvIssue(
+      ctx,
+      'BACKUP_STORAGE_PATH',
+      'FATAL: Backup is enabled but neither BACKUP_STORAGE_PATH nor BACKUP_S3_BUCKET is configured.'
+    )
+  }
+  if (!env.BACKUP_DATABASE_URL) {
+    addEnvIssue(
+      ctx,
+      'BACKUP_DATABASE_URL',
+      'FATAL: Backup is enabled but BACKUP_DATABASE_URL is not configured — pg_dump/restore ' +
+        'cannot use the RLS-restricted application DATABASE_URL (see Story 9.1 D4).'
+    )
+  }
+  if (!isValidCronExpression(env.BACKUP_SCHEDULE)) {
+    addEnvIssue(
+      ctx,
+      'BACKUP_SCHEDULE',
+      'BACKUP_SCHEDULE must be a syntactically valid 5-field cron expression'
+    )
+  }
+}
+
 function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateProductionBasics(env, ctx)
   validateTotpReplayProductionSecret(env, ctx)
@@ -566,6 +625,30 @@ const envSchema = z
     // adversarial-review finding 17 so the window is genuinely widenable, not just narrowable.
     ANOMALOUS_ACCESS_THRESHOLD_COUNT: z.coerce.number().int().min(2).max(100).default(5),
     ANOMALOUS_ACCESS_WINDOW_SECONDS: z.coerce.number().int().min(60).max(86_400).default(3600),
+
+    // Story 9.1 D2/D4/AC-14/AC-15: encrypted whole-instance backup & restore configuration.
+    // Backup is opt-in — see the superRefine block below for the "at least one of
+    // STORAGE_PATH/S3_BUCKET/DATABASE_URL configured" enablement + mutual-exclusivity rules.
+    BACKUP_SCHEDULE: z.string().min(1).default('0 3 * * *'),
+    BACKUP_RETENTION_COUNT: z.coerce.number().int().min(1).default(7),
+    BACKUP_MAX_AGE_HOURS: z.coerce.number().int().positive().default(25),
+    BACKUP_STORAGE_PATH: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(1).optional()
+    ),
+    BACKUP_S3_BUCKET: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+    BACKUP_S3_ENDPOINT: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(1).optional()
+    ),
+    BACKUP_S3_REGION: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+    // D4: intentionally NOT the same schema as DATABASE_URL — this one is *expected* to be a
+    // superuser or BYPASSRLS role (pg_dump/pg_restore need RLS bypass), so the anti-superuser
+    // `.refine()` on DATABASE_URL above must NOT apply here.
+    BACKUP_DATABASE_URL: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(1).optional()
+    ),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {
@@ -601,6 +684,7 @@ const envSchema = z
     if (env.SMTP_HOST && !env.SMTP_FROM) {
       addEnvIssue(ctx, 'SMTP_FROM', 'SMTP_FROM is required when SMTP_HOST is set')
     }
+    validateBackupEnv(env, ctx)
   })
 
 type RawEnv = z.infer<typeof envSchema>

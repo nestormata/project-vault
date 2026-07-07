@@ -53,3 +53,10 @@ describe('Story 8.3 user dormancy alert type (D5/D12/AC-16)', () => {
     expect(NOTIFICATION_ALERT_TYPES).toContain('user.dormant')
   })
 })
+
+describe('Story 9.1 backup health alert types (D7/AC-12)', () => {
+  it('registers backup.missed and confirms backup.failure was already reserved', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('backup.missed')
+    expect(NOTIFICATION_ALERT_TYPES).toContain('backup.failure')
+  })
+})

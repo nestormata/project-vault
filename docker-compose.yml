@@ -44,8 +44,6 @@ services:
     #     openssl rand -out dev-secrets/envelope-half.bin 16
     #     curl -X POST http://localhost:3000/api/v1/vault/init -H 'Content-Type: application/json' \
     #       -d '{"kmsType":"envelope","envelopeKeyPath":"/run/secrets/envelope-half.bin","acknowledgeSplitKeyModel":true}'
-    volumes:
-      - ./dev-secrets:/run/secrets:ro
     environment:
       NODE_ENV: production
       # vault_app, not postgres — the postgres superuser bypasses RLS entirely (AC-1b).
@@ -59,6 +57,23 @@ services:
       VAULT_BOOTSTRAP_TOKEN: ${VAULT_BOOTSTRAP_TOKEN:-}
       # Envelope mode only: set in .env (not committed). Generate: openssl rand -hex 16
       VAULT_ENVELOPE_KEY_HALF: ${VAULT_ENVELOPE_KEY_HALF:-}
+      # Encrypted Backup & Restore (Story 9.1) — opt-in; unset (the default here) disables backup
+      # scheduling entirely (AC-15). To enable, set BACKUP_STORAGE_PATH or BACKUP_S3_BUCKET (not
+      # both) plus BACKUP_DATABASE_URL in .env. D4: BACKUP_DATABASE_URL deliberately reuses the
+      # `postgres` superuser credential above (same "superuser for whole-database operations"
+      # precedent the `migrate` service already establishes) — pg_dump/pg_restore need to bypass
+      # RLS, which the app's own vault_app-scoped DATABASE_URL cannot do.
+      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-0 3 * * *}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-7}
+      BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-25}
+      BACKUP_STORAGE_PATH: ${BACKUP_STORAGE_PATH:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:-}
+    volumes:
+      - ./dev-secrets:/run/secrets:ro
+      - backup_data:/var/backups/vault
     ports:
       - "${API_HOST_PORT:-3000}:3000"
     depends_on:
@@ -88,3 +103,7 @@ services:
 
 volumes:
   db_data:
+  # Story 9.1 AC-5: default BACKUP_STORAGE_PATH destination — persists encrypted backups across
+  # container restarts/recreations. Unused when BACKUP_STORAGE_PATH is unset (backup disabled) or
+  # when BACKUP_S3_BUCKET is configured instead.
+  backup_data:

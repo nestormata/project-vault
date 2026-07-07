@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import { getDb, withOrg } from '@project-vault/db'
-import { orgMemberships, revokedTokens, sessions } from '@project-vault/db/schema'
+import { orgMemberships, revokedTokens, sessions, users } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { AppError } from '../lib/errors.js'
 import {
@@ -142,6 +142,19 @@ async function loadOrgRole(session: AuthSessionRow) {
   return membership.role
 }
 
+// Story 9.1 D1: users has no org_id column and no RLS policy (identity-scoped, same trust model
+// as other identity-scoped tables in check-rls-coverage.ts's EXCLUDED_TABLES) — a plain
+// (non-org-scoped) getDb() read is correct here, same pattern as findLoginUser()'s organizations
+// lookup in modules/auth/service.ts.
+async function loadIsPlatformOperator(userId: string): Promise<boolean> {
+  const rows = await getDb()
+    .select({ isPlatformOperator: users.isPlatformOperator })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+  return rows[0]?.isPlatformOperator ?? false
+}
+
 /**
  * Story 8.3 D3/AC-9 (resolves finding-11): the two activity touches below run in their OWN,
  * separate try/catch blocks — not one shared block — so an exception in either one can never
@@ -193,6 +206,7 @@ export async function authenticateRequest(
     const session = await loadSessionForClaims(claims)
     await enforceIdleTimeout(session)
     const orgRole = await loadOrgRole(session)
+    const isPlatformOperator = await loadIsPlatformOperator(session.userId)
     await touchActivityWithoutBlocking(request, session)
 
     request.authContext = {
@@ -202,6 +216,7 @@ export async function authenticateRequest(
       jti: session.jti,
       sessionVersion: session.sessionVersion,
       orgRole,
+      isPlatformOperator,
     }
   } catch (error) {
     if (error instanceof AppError) return sendAuthError(reply, error)

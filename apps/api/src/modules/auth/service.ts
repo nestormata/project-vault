@@ -355,6 +355,63 @@ async function buildRegisterResult(
   }
 }
 
+/** Story 9.1 D1/AC-1: `SELECT COUNT(*) FROM users` = 0 at the moment a new user is about to be
+ * inserted — mirrors vault_state's single-row bootstrap detection. Read inside the caller's own
+ * transaction so it observes a consistent snapshot with the insert that follows. */
+async function resolveIsFirstUser(tx: Tx): Promise<boolean> {
+  const rows = await tx.select({ id: users.id }).from(users).limit(1)
+  return rows.length === 0
+}
+
+async function insertUserRow(
+  tx: Tx,
+  fields: { email: string; passwordHash: string; isPlatformOperator: boolean }
+): Promise<{ id: string; email: string }> {
+  const inserted = await tx
+    .insert(users)
+    .values({
+      email: fields.email,
+      passwordHash: fields.passwordHash,
+      isPlatformOperator: fields.isPlatformOperator,
+    })
+    .returning({ id: users.id, email: users.email })
+  const user = inserted[0]
+  if (!user) throw new Error('insertUserWithPlatformOperatorBootstrap: insert returned no row')
+  return user
+}
+
+/**
+ * Story 9.1 D1/AC-1: TOCTOU-safe single-winner bootstrap. `isFirstUser` is normally computed via
+ * `resolveIsFirstUser()` immediately before this call; it is accepted as a parameter (rather than
+ * computed inline) so the retry-on-unique-violation mechanics can be exercised directly in tests
+ * without depending on the whole `users` table genuinely being empty.
+ *
+ * Uses a nested (SAVEPOINT-backed) transaction — same pattern as
+ * modules/compliance/erasure-service.ts's createErasureRequest and modules/rotation/service.ts's
+ * initiateRotation. A unique-violation on `idx_users_one_platform_operator` (the second of two
+ * concurrent "I'm first" attempts to commit) aborts only this savepoint, not the outer
+ * transaction — the loser is then re-inserted as an ordinary (non-operator) user, so the request
+ * still succeeds with 201 rather than failing outright.
+ */
+export async function insertUserWithPlatformOperatorBootstrap(
+  tx: Tx,
+  fields: { email: string; passwordHash: string },
+  isFirstUser: boolean
+): Promise<{ id: string; email: string }> {
+  if (!isFirstUser) return insertUserRow(tx, { ...fields, isPlatformOperator: false })
+
+  try {
+    return await tx.transaction((savepointTx) =>
+      insertUserRow(savepointTx as Tx, { ...fields, isPlatformOperator: true })
+    )
+  } catch (error) {
+    if (isUniqueViolation(error, 'idx_users_one_platform_operator')) {
+      return insertUserRow(tx, { ...fields, isPlatformOperator: false })
+    }
+    throw error
+  }
+}
+
 /**
  * This is the single riskiest diff in Story 4.1 (D4) — it changes a Story 1.6 auth-critical
  * function to also support joining an existing org via invitation token instead of always
@@ -380,12 +437,14 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
     return await getDb().transaction(async (tx) => {
       const org = await resolveRegistrationOrg(tx as Tx, invitation, input.orgName)
 
-      const insertedUsers = await tx
-        .insert(users)
-        .values({ email, passwordHash })
-        .returning({ id: users.id, email: users.email })
-      const user = insertedUsers[0]
-      if (!user) throw new Error('registerUser: user insert returned no row')
+      // Story 9.1 D1/AC-1: detect + bootstrap the first-ever user as the platform operator
+      // BEFORE the insert, inside this same transaction.
+      const isFirstUser = await resolveIsFirstUser(tx as Tx)
+      const user = await insertUserWithPlatformOperatorBootstrap(
+        tx as Tx,
+        { email, passwordHash },
+        isFirstUser
+      )
 
       await tx.execute(sql`SELECT set_config('app.current_org_id', ${org.id}, true)`)
       await tx.execute(sql`SELECT set_config('app.auth_bootstrap_org_id', ${org.id}, true)`)

@@ -43,6 +43,11 @@ RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
 
 RUN apk add --no-cache curl
+# Story 9.1 D4/AC-17: pg_dump/pg_restore/psql for encrypted backup & restore — postgresql16-client
+# matches the pinned postgres:16-alpine server version in docker-compose.yml (pg_dump's major
+# version must match or exceed the server's). Available in Alpine's package repo for both AMD64
+# and ARM64 (NFR-MAINT5 multi-arch builds).
+RUN apk add --no-cache postgresql16-client
 # npm/npx are never invoked at runtime (CMD runs node directly) — dropping them
 # removes their bundled deps (e.g. undici) as a source of image CVEs.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx

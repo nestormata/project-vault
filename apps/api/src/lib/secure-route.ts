@@ -64,6 +64,13 @@ export type SecureRouteRegistrationOptions = {
     requireMfa?: boolean
     writeAuditEvent?: boolean | AuditConfig
     rateLimit?: false | { max: number; timeWindowMs?: number; key?: string }
+    // Story 9.1 D1: an explicit, named opt-out from org-role authorization in favor of the
+    // instance-wide `users.is_platform_operator` flag — used by backup/restore routes, which pair
+    // this with `requireOrgScope: false` (architecture.md's "concerns opted out explicitly with
+    // named flags" principle). Mutually exclusive in practice with minimumRole/allowedRoles: when
+    // set, org-role checks are skipped entirely (org role has no meaning for a whole-instance
+    // operation) and only the platform-operator check applies.
+    requirePlatformOperator?: boolean
   }
   db?: TransactionalDb
   auditWriter?: (input: {
@@ -124,6 +131,16 @@ function sendInsufficientRole(reply: FastifyReply): unknown {
   return reply.status(403).send({
     code: 'insufficient_role',
     message: 'Insufficient permissions',
+  })
+}
+
+// Story 9.1 D1/AC-1: distinct 403 code from insufficient_role — this is an instance-wide
+// authorization axis, not an org-role check, and the two must never be conflated in a client
+// error-handling branch.
+function sendPlatformOperatorRequired(reply: FastifyReply): unknown {
+  return reply.status(403).send({
+    code: 'platform_operator_required',
+    message: 'This endpoint requires platform operator privileges.',
   })
 }
 
@@ -335,7 +352,12 @@ async function enforceProtectedGuards({
   request: FastifyRequest
   reply: FastifyReply
 }): Promise<boolean> {
-  if (!hasSufficientRole(auth, options)) {
+  if (options.security?.requirePlatformOperator) {
+    if (!auth.isPlatformOperator) {
+      sendPlatformOperatorRequired(reply)
+      return false
+    }
+  } else if (!hasSufficientRole(auth, options)) {
     sendInsufficientRole(reply)
     return false
   }
