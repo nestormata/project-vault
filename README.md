@@ -210,7 +210,7 @@ make dev            # pnpm turbo dev (export DATABASE_URL first)
 
 ### Auth Configuration
 
-Story 1.6 adds password registration and cookie-based sessions. Local development can use the defaults in `.env.example`; production must replace both auth secrets with distinct 32+ byte random values:
+Story 1.6 adds password registration and cookie-based sessions. Local development can use the defaults in `.env.example`; production must replace every HMAC/session secret with a distinct 32+ byte random value (10 total — see "Production hardening" in [docs/operator-quickstart.md](docs/operator-quickstart.md) for the full list):
 
 ```bash
 SESSION_SECRET=$(openssl rand -hex 32)
