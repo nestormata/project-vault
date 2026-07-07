@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { routeExists } from '$lib/test/route-exists.js'
 
 const breakGlassRotationMock = vi.hoisted(() => vi.fn())
 const listCredentialDependenciesMock = vi.hoisted(() => vi.fn())
@@ -201,6 +202,9 @@ describe('BreakGlassPanel', () => {
     expect(await screen.findByText(/Enable MFA to perform a break-glass rotation/i)).toBeTruthy()
     const link = screen.getByRole('link', { name: /enable mfa/i })
     expect(link.getAttribute('href')).toBe('/settings/security')
+    // Regression guard: this link 404'd for a long time — a matching href string alone doesn't
+    // prove the destination is real.
+    expect(routeExists(link.getAttribute('href') ?? '')).toBe(true)
   })
 
   it('AC-12: 429 shows the break-glass-specific reassuring countdown message, not the generic one', async () => {

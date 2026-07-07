@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { routeExists } from '$lib/test/route-exists.js'
 
 const resumeRotationMock = vi.hoisted(() => vi.fn())
 const abandonRotationMock = vi.hoisted(() => vi.fn())
@@ -136,6 +137,7 @@ describe('StaleRecoveryBanner', () => {
     expect(await screen.findByText(/Enable MFA to resume this rotation/i)).toBeTruthy()
     const link = screen.getByRole('link', { name: /enable mfa/i })
     expect(link.getAttribute('href')).toBe('/settings/security')
+    expect(routeExists(link.getAttribute('href') ?? '')).toBe(true)
   })
 
   it('AC-10: 403 mfa_required on abandon shows an action-specific message and keeps the confirmation panel open', async () => {
@@ -154,6 +156,7 @@ describe('StaleRecoveryBanner', () => {
     expect(await screen.findByText(/Enable MFA to abandon this rotation/i)).toBeTruthy()
     const link = screen.getByRole('link', { name: /enable mfa/i })
     expect(link.getAttribute('href')).toBe('/settings/security')
+    expect(routeExists(link.getAttribute('href') ?? '')).toBe(true)
     // Unlike rotation_not_stale, mfa_required must NOT close the confirmation panel — the
     // decision (abandon) is still exactly what the admin wants, only MFA is blocking it.
     expect(screen.getByRole('button', { name: /abandon anyway/i })).toBeTruthy()
