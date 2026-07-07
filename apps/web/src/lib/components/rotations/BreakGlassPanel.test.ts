@@ -4,6 +4,14 @@ import { ApiClientError } from '$lib/api/client.js'
 
 const breakGlassRotationMock = vi.hoisted(() => vi.fn())
 const listCredentialDependenciesMock = vi.hoisted(() => vi.fn())
+// AC-17 regression guard: a fresh component instance always starts with empty `$state`, so
+// re-mounting after `cleanup()` proves nothing about whether the `onDestroy` hook itself actually
+// ran or does anything (per this AC's own test guidance: "if the test harness cannot directly
+// observe post-unmount internal state, structure the test to spy on the clearing function/hook
+// being called instead"). Capturing every callback registered via `onDestroy` lets the AC-17 test
+// invoke that exact callback while the component is still mounted and assert the reactive DOM
+// update it causes — a real regression guard that fails if the hook is ever removed.
+const capturedOnDestroyCallbacks = vi.hoisted((): Array<() => void> => [])
 
 vi.mock('$lib/api/rotations.js', () => ({
   breakGlassRotation: breakGlassRotationMock,
@@ -12,6 +20,17 @@ vi.mock('$lib/api/rotations.js', () => ({
 vi.mock('$lib/api/credentials.js', () => ({
   listCredentialDependencies: listCredentialDependenciesMock,
 }))
+
+vi.mock('svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('svelte')>()
+  return {
+    ...actual,
+    onDestroy: (fn: () => void) => {
+      capturedOnDestroyCallbacks.push(fn)
+      return actual.onDestroy(fn)
+    },
+  }
+})
 
 import BreakGlassPanel from './BreakGlassPanel.svelte'
 
@@ -34,6 +53,7 @@ describe('BreakGlassPanel', () => {
   beforeEach(() => {
     breakGlassRotationMock.mockReset()
     listCredentialDependenciesMock.mockReset()
+    capturedOnDestroyCallbacks.length = 0
   })
   afterEach(() => cleanup())
 
@@ -242,23 +262,32 @@ describe('BreakGlassPanel', () => {
   })
 
   // AC-17: defense-in-depth — clear the plaintext value from $state before the component is torn
-  // down (e.g. the admin navigates away mid-fill without submitting). Verified via cleanup()
-  // triggering the same onDestroy path @testing-library/svelte always exercises.
-  it('AC-17: unmounting the component (e.g. navigating away without submitting) clears newValue/reason before teardown', async () => {
+  // down (e.g. the admin navigates away mid-fill without submitting). A fresh component instance
+  // always starts with empty `$state` regardless of whether `onDestroy` ever ran (or exists at
+  // all), so re-mounting after `cleanup()` alone cannot prove this hook does anything — this test
+  // instead invokes the exact callback registered via `onDestroy` while the component is still
+  // mounted and asserts the reactive DOM update it causes, per this AC's own test guidance ("spy
+  // on the clearing function/hook being called").
+  it('AC-17: the registered onDestroy callback clears newValue/reason (defense-in-depth teardown)', async () => {
     render(BreakGlassPanel, { props: { projectId, credentialId } })
     await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
     const valueInput = screen.getByLabelText(/New value/i) as HTMLTextAreaElement
+    const reasonInput = screen.getByLabelText(/Reason/i) as HTMLTextAreaElement
     await fireEvent.input(valueInput, { target: { value: 'sk_live_unsubmitted' } })
+    await fireEvent.input(reasonInput, { target: { value: 'investigating a leak' } })
 
-    // No assertion is possible on post-unmount internal state directly (the component instance is
-    // gone) — this test's job is to prove unmounting doesn't throw and that a fresh mount starts
-    // clean, which combined with the onDestroy hook's presence in the source is this AC's
-    // regression guard.
-    cleanup()
+    expect(capturedOnDestroyCallbacks).toHaveLength(1)
 
-    const { getByLabelText } = render(BreakGlassPanel, { props: { projectId, credentialId } })
-    await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
-    expect((getByLabelText(/New value/i) as HTMLTextAreaElement).value).toBe('')
+    // Invoke the real registered teardown callback directly, without unmounting, so the
+    // still-mounted component's reactive DOM proves the callback itself clears the secret —
+    // rather than merely proving a fresh instance starts empty.
+    capturedOnDestroyCallbacks[0]()
+    await waitFor(() => expect(valueInput.value).toBe(''))
+    expect(reasonInput.value).toBe('')
+
+    // Also verify the real unmount path (the only place this callback fires in production)
+    // exercises the same registration without throwing.
+    expect(() => cleanup()).not.toThrow()
   })
 
   it('AC-18: re-collapsing the panel without submitting resets newValue/reason/confirmText/awaitingConfirmText to a clean slate', async () => {
@@ -279,5 +308,28 @@ describe('BreakGlassPanel', () => {
     expect(valueInput).toHaveProperty('disabled', false)
     expect(screen.queryByLabelText(/Type CONFIRM/i)).toBeNull()
     expect(breakGlassRotationMock).not.toHaveBeenCalled()
+  })
+
+  // Code-review finding (AC-18 gap): the reset on collapse cleared newValue/reason/confirmText/
+  // awaitingConfirmText but not errorMessage — a stale error from a previous failed attempt (which
+  // may include an "Enable MFA" link) would otherwise resurface next to a freshly blank form on
+  // re-expand, contradicting AC-18's "full reset of the entire unsubmitted form" requirement.
+  it('AC-18: re-collapsing the panel after a failed submit also clears the stale error message on re-expand', async () => {
+    breakGlassRotationMock.mockRejectedValue(
+      new ApiClientError(503, { status: 'sealed' }, 'sealed')
+    )
+
+    render(BreakGlassPanel, { props: { projectId, credentialId } })
+    await expandAndFillForm()
+    await fireEvent.input(screen.getByLabelText(/Type CONFIRM/i), { target: { value: 'CONFIRM' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Confirm break-glass rotation/i }))
+
+    await screen.findByText(/vault is sealed/i)
+
+    // Collapse without a further submit, then re-expand.
+    await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Emergency: break-glass rotation/i }))
+
+    expect(screen.queryByText(/vault is sealed/i)).toBeNull()
   })
 })

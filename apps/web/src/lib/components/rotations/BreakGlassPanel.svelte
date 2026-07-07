@@ -41,8 +41,12 @@
   }
 
   // AC-18: collapsing the panel without submitting is a full reset of the entire unsubmitted
-  // form (newValue/reason/awaitingConfirmText/confirmText) — reuses cancelConfirmation()'s reset
-  // scope rather than a second, slightly different routine (DRY).
+  // form (newValue/reason/awaitingConfirmText/confirmText/errorMessage) — reuses
+  // cancelConfirmation()'s reset scope rather than a second, slightly different routine (DRY).
+  // errorMessage must be cleared too: leaving a stale error (which may include an "Enable MFA"
+  // link, per AC-21) from a previous failed attempt would resurface next to a freshly blank form
+  // on re-expand, which is actively misleading — especially mid-incident, the one time this panel
+  // is actually used.
   function toggleExpanded() {
     const wasExpanded = expanded
     expanded = !expanded
@@ -50,6 +54,7 @@
       newValue = ''
       reason = ''
       reasonError = null
+      errorMessage = null
       cancelConfirmation()
     }
   }
