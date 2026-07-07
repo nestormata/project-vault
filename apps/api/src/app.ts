@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import swagger from '@fastify/swagger'
 import helmet from '@fastify/helmet'
@@ -10,8 +12,11 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from '@fastify/type-provider-zod'
+import swaggerUi from '@fastify/swagger-ui'
 import { healthRoutes } from './routes/health.js'
 import { metricsRoutes } from './routes/metrics.js'
+import { openapiRoutes } from './routes/openapi.js'
+import { docsEnabled } from './lib/docs-gating.js'
 import { vaultRoutes } from './modules/vault/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { orgRoutes } from './modules/org/routes.js'
@@ -52,6 +57,7 @@ import { createLoggerConfig, serializeLogError } from './lib/logger.js'
 import { env } from './config/env.js'
 import { AppError } from './lib/errors.js'
 import type { FastifyApp } from './lib/fastify-app.js'
+import { readPackageVersion } from './lib/package-version.js'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyRequest } from 'fastify'
 
@@ -59,6 +65,11 @@ import type { FastifyRequest } from 'fastify'
 // this regex — nil UUID and non-v4 formats are intentionally rejected so a caller
 // cannot inject arbitrary trace-correlation strings via X-Request-ID.
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+// AC-19: read once at module load — same convention as routes/health.ts's existing pkg.version
+// read — rather than on every request or every createApp() call.
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const API_VERSION = readPackageVersion(resolve(__dirname, '../package.json'))
 
 type DbPool = {
   query: (sql: string) => Promise<unknown>
@@ -150,7 +161,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       openapi: '3.0.0',
       info: {
         title: 'Project Vault API',
-        version: '0.0.1',
+        // AC-19: sourced from apps/api/package.json at generation time, not a hardcoded
+        // placeholder — both the live GET /api/v1/openapi.json route (D5) and the build-time
+        // generate-spec.ts script share this same createApp() pipeline, so fixing the version
+        // source here fixes both with no duplicate version-reading logic.
+        version: API_VERSION,
       },
     },
     transform: jsonSchemaTransform,
@@ -159,6 +174,16 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     // document (see apps/api/src/scripts/generate-spec.ts, which serializes app.swagger()).
     transformObject: jsonSchemaTransformObject,
   })
+
+  // D5/AC-6/AC-7: Swagger UI + the live spec route are only registered at all when docs are
+  // enabled — conditionally skipping registration (rather than registering then 403-ing) so a
+  // gated-off instance returns a plain 404 with no information leak, and route-audit.test.ts /
+  // the OpenAPI spec itself never lists these routes when they don't exist. AC-16: both must
+  // remain reachable while the vault is sealed — see plugins/vault-guard.ts's allowlist.
+  if (docsEnabled({ enableApiDocs: env.ENABLE_API_DOCS, nodeEnv: env.NODE_ENV })) {
+    await fastify.register(swaggerUi, { routePrefix: '/api/v1/docs' })
+    await fastify.register(openapiRoutes, { prefix: '/api/v1' })
+  }
 
   await fastify.register(helmet, {
     contentSecurityPolicy: {

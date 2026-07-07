@@ -8,6 +8,8 @@ import {
   type ProjectSummary,
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
+import { PageLimitQueryShape } from '../../lib/pagination.js'
+import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 export { TagArrayBodySchema } from '../credentials/schema.js'
 
 const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$/
@@ -43,7 +45,9 @@ export const ProjectListResponseSchema = z
   .object({
     data: z.object({
       items: z.array(ProjectSummarySchema),
-      total: z.number().int().nonnegative(),
+      // Story 9.3 D8.2/AC-11: this endpoint was previously fully unpaginated (returned every
+      // row for the org, unbounded) — now matches every other paginated collection endpoint.
+      ...paginatedListMetaFields,
     }),
   })
   .meta({ id: 'ProjectListResponse' })
@@ -82,6 +86,8 @@ export const ArchiveResponseSchema = z
 export { ActiveRotationsErrorSchema }
 
 // 4.4 AC-3: `?includeArchived=true` on GET /api/v1/projects.
+// Story 9.3 D8.2/AC-11/AC-12: page/limit added via the shared PageLimitQueryShape (same
+// default page=1/limit=20, max limit=100 convention as credentials/rotation/machine-users).
 export const ListProjectsQuerySchema = z
   .object({
     // Do NOT use z.coerce.boolean() — it treats the string "false" as truthy.
@@ -89,6 +95,7 @@ export const ListProjectsQuerySchema = z
       .enum(['true', 'false'])
       .optional()
       .transform((v) => v === 'true'),
+    ...PageLimitQueryShape,
   })
   .meta({ id: 'ListProjectsQuery' })
 

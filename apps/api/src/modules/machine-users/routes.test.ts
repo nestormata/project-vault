@@ -322,7 +322,12 @@ describe.sequential('machine-user routes (7.1)', () => {
         headers: { cookie: cookieHeader(owner.cookies) },
       })
       expect(empty.statusCode).toBe(200)
-      expect(empty.json()).toMatchObject({ data: { items: [], total: 0 } })
+      // Story 9.3 D8.1/AC-11: page/limit/hasNext are already computed by this handler via
+      // buildPaginationMeta() — this asserts they actually reach the wire response, not just
+      // that the (possibly incomplete) response schema agrees with itself.
+      expect(empty.json()).toMatchObject({
+        data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+      })
 
       await createMachineUserOrThrow(app, owner.cookies, projectId)
 
@@ -332,8 +337,19 @@ describe.sequential('machine-user routes (7.1)', () => {
         headers: { cookie: cookieHeader(owner.cookies) },
       })
       expect(populated.statusCode).toBe(200)
-      const body = populated.json<{ data: { items: { name: string }[]; total: number } }>()
+      const body = populated.json<{
+        data: {
+          items: { name: string }[]
+          total: number
+          page: number
+          limit: number
+          hasNext: boolean
+        }
+      }>()
       expect(body.data.total).toBe(1)
+      expect(body.data.page).toBe(1)
+      expect(body.data.limit).toBe(20)
+      expect(body.data.hasNext).toBe(false)
       expect(body.data.items[0]).not.toHaveProperty('scopeBoundary')
 
       const otherOwner = await registerOwner(app, 'list-other-owner')

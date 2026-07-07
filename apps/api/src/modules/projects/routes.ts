@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod/v4'
 import { ActiveMachineUserKeysErrorSchema, AuditEvent } from '@project-vault/shared'
@@ -13,6 +13,7 @@ import {
 } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { projectMemberships, projects, users } from '@project-vault/db/schema'
+import { buildPaginationMeta, parsePagination, paginationOffset } from '../../lib/pagination.js'
 import {
   ActiveRotationsErrorSchema,
   ArchiveResponseSchema,
@@ -335,7 +336,22 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsedQuery.success) {
         return reply.status(422).send(validationError(parsedQuery.error, 'query'))
       }
-      const { includeArchived } = parsedQuery.data
+      const { includeArchived, page, limit } = parsedQuery.data
+
+      // Story 9.3 D8.2/AC-12: deliberately no deep-OFFSET cap (unlike credentials's
+      // MAX_CREDENTIAL_LIST_OFFSET) — AC-12's own worked example requires `page=999&limit=20`
+      // on a 3-project org to return a well-formed empty 200, not a 422 PAGE_OUT_OF_RANGE_ERROR.
+      // A per-org project count large enough for deep-OFFSET cost to matter is a materially
+      // different scale than credentials-per-project, so the two endpoints reasonably differ here.
+      const pagination = parsePagination(page, limit)
+      const offset = paginationOffset(pagination)
+
+      const listWhere = includeArchived ? undefined : isNull(projects.archivedAt)
+
+      const [{ total } = { total: 0 }] = await secureCtx.tx
+        .select({ total: sql<number>`count(*)` })
+        .from(projects)
+        .where(listWhere)
 
       const rows = await secureCtx.tx
         .select({
@@ -355,8 +371,10 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
             eq(projectMemberships.userId, secureCtx.auth.userId)
           )
         )
-        .where(includeArchived ? undefined : isNull(projects.archivedAt))
+        .where(listWhere)
         .orderBy(desc(projects.createdAt))
+        .limit(pagination.limit)
+        .offset(offset)
 
       const statsByProject = await getBatchedProjectCredentialStats(
         secureCtx.tx,
@@ -383,7 +401,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         }
       })
 
-      return { data: { items, total: items.length } }
+      return { data: { items, ...buildPaginationMeta(pagination, Number(total)) } }
     },
   })
 

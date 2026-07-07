@@ -178,6 +178,63 @@ describe.sequential('search routes', () => {
     expect(res.statusCode).toBe(422)
   })
 
+  // Story 9.3 D8.3/AC-11: page/limit/hasNext siblings of results/total, matching every other
+  // collection endpoint — previously entirely absent from SearchResponseSchema.
+  it('includes page/limit/hasNext pagination fields in the response (AC-11)', async () => {
+    const user = await registerUser(suite.app, 'pagination-fields')
+    const projectId = await createCredentialTestProject(suite.app, user.cookies, 'pg-fields')
+    await createCredentialViaApi(suite.app, user.cookies, projectId, {
+      name: 'pagination-fields-key',
+      value: 'secret',
+    })
+
+    const res = await search(suite.app, user.cookies, 'q=pagination-fields-key')
+    expect(res.statusCode).toBe(200)
+    const body = res.json<{
+      data: { results: unknown[]; total: number; page: number; limit: number; hasNext: boolean }
+    }>()
+    expect(body.data).toMatchObject({ page: 1, limit: 20, hasNext: false })
+  })
+
+  it('paginates across the result set using the page param (AC-11/D8.3)', async () => {
+    const user = await registerUser(suite.app, 'pagination-page')
+    const projectId = await createCredentialTestProject(suite.app, user.cookies, 'pg-page')
+    for (let i = 0; i < 5; i++) {
+      await createCredentialViaApi(suite.app, user.cookies, projectId, {
+        name: `pg-page-key-${i}`,
+        value: 'secret',
+      })
+    }
+
+    const firstPage = await search(suite.app, user.cookies, 'q=pg-page-key&limit=2&page=1')
+    const firstBody = firstPage.json<{
+      data: { results: unknown[]; total: number; page: number; limit: number; hasNext: boolean }
+    }>()
+    expect(firstBody.data.results).toHaveLength(2)
+    expect(firstBody.data).toMatchObject({ total: 5, page: 1, limit: 2, hasNext: true })
+
+    const lastPage = await search(suite.app, user.cookies, 'q=pg-page-key&limit=2&page=3')
+    const lastBody = lastPage.json<{
+      data: { results: unknown[]; total: number; page: number; limit: number; hasNext: boolean }
+    }>()
+    expect(lastBody.data.results).toHaveLength(1)
+    expect(lastBody.data).toMatchObject({ total: 5, page: 3, limit: 2, hasNext: false })
+
+    // Beyond available data: a well-formed empty page, not an error.
+    const beyond = await search(suite.app, user.cookies, 'q=pg-page-key&limit=2&page=99')
+    const beyondBody = beyond.json<{
+      data: { results: unknown[]; total: number; hasNext: boolean }
+    }>()
+    expect(beyondBody.data.results).toEqual([])
+    expect(beyondBody.data).toMatchObject({ total: 5, hasNext: false })
+  }, 30_000)
+
+  it('rejects a non-positive page param', async () => {
+    const user = await registerUser(suite.app, 'page-invalid')
+    const res = await search(suite.app, user.cookies, 'q=test&page=0')
+    expect(res.statusCode).toBe(422)
+  })
+
   it('should rank exact name match above prefix match above substring match', async () => {
     const user = await registerUser(suite.app, 'ranking')
     const projectId = await createCredentialTestProject(suite.app, user.cookies, 'rank')
@@ -239,6 +296,9 @@ describe.sequential('search routes', () => {
       total: 0,
       query: secret,
       types: ['credentials', 'projects'],
+      page: 1,
+      limit: 20,
+      hasNext: false,
     })
   }, 20_000)
 

@@ -24,11 +24,29 @@ const VAULT_GUARD_ALLOWLIST = new Set([
   'POST /api/v1/auth/refresh',
 ])
 
+// Story 9.3 AC-16: an operator diagnosing a sealed vault needs to be able to consult the API
+// docs without first unsealing — same rationale as /health/ready above. A prefix match (not a
+// single exact allowlist entry) because @fastify/swagger-ui registers several sub-paths under
+// its routePrefix (the index page, static assets, the initializer script, ...), all of which
+// must stay reachable while sealed for the UI to actually render.
+const SEALED_VAULT_EXEMPT_DOCS_PREFIX = '/api/v1/docs'
+const SEALED_VAULT_EXEMPT_SPEC_PATH = '/api/v1/openapi.json'
+
+function isSealedVaultExemptDocsRoute(method: string, path: string): boolean {
+  if (method !== 'GET') return false
+  return (
+    path === SEALED_VAULT_EXEMPT_SPEC_PATH ||
+    path === SEALED_VAULT_EXEMPT_DOCS_PREFIX ||
+    path.startsWith(`${SEALED_VAULT_EXEMPT_DOCS_PREFIX}/`)
+  )
+}
+
 async function vaultGuard(fastify: FastifyInstance): Promise<void> {
   fastify.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     const path = normalizePath(req.url)
     const routeKey = `${req.method} ${path}`
     if (VAULT_GUARD_ALLOWLIST.has(routeKey)) return
+    if (isSealedVaultExemptDocsRoute(req.method, path)) return
 
     const vaultStatus = getVaultStatus()
     if (vaultStatus !== 'unsealed') {

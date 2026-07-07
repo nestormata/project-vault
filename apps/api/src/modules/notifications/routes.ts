@@ -1,11 +1,12 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { withOrgAndUser } from '@project-vault/db'
 import { notificationInbox } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { validationError } from '../../lib/route-helpers.js'
+import { buildPaginationMeta } from '../../lib/pagination.js'
 import {
   PutPreferencesBodySchema,
   PatchPreferencesBodySchema,
@@ -176,32 +177,41 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'query'))
       const { page, limit, status } = parsed.data
 
-      const entries = await withOrgAndUser(secureCtx.auth.orgId, secureCtx.auth.userId, (tx) =>
-        tx
-          .select({
-            id: notificationInbox.id,
-            alertType: notificationInbox.alertType,
-            severity: notificationInbox.severity,
-            payload: notificationInbox.payload,
-            readAt: notificationInbox.readAt,
-            createdAt: notificationInbox.createdAt,
-          })
-          .from(notificationInbox)
-          .where(
-            and(
-              eq(notificationInbox.orgId, secureCtx.auth.orgId),
-              eq(notificationInbox.userId, secureCtx.auth.userId),
-              isNull(notificationInbox.dismissedAt),
-              status === 'unread' ? isNull(notificationInbox.readAt) : undefined,
-              status === 'read' ? isNotNull(notificationInbox.readAt) : undefined
-            )
-          )
-          .orderBy(desc(notificationInbox.createdAt))
-          .limit(limit)
-          .offset((page - 1) * limit)
+      const inboxWhere = and(
+        eq(notificationInbox.orgId, secureCtx.auth.orgId),
+        eq(notificationInbox.userId, secureCtx.auth.userId),
+        isNull(notificationInbox.dismissedAt),
+        status === 'unread' ? isNull(notificationInbox.readAt) : undefined,
+        status === 'read' ? isNotNull(notificationInbox.readAt) : undefined
       )
 
-      const data = entries.map((entry) => {
+      const { entries, total } = await withOrgAndUser(
+        secureCtx.auth.orgId,
+        secureCtx.auth.userId,
+        async (tx) => {
+          const [{ total: totalCount } = { total: 0 }] = await tx
+            .select({ total: sql<number>`count(*)` })
+            .from(notificationInbox)
+            .where(inboxWhere)
+          const rows = await tx
+            .select({
+              id: notificationInbox.id,
+              alertType: notificationInbox.alertType,
+              severity: notificationInbox.severity,
+              payload: notificationInbox.payload,
+              readAt: notificationInbox.readAt,
+              createdAt: notificationInbox.createdAt,
+            })
+            .from(notificationInbox)
+            .where(inboxWhere)
+            .orderBy(desc(notificationInbox.createdAt))
+            .limit(limit)
+            .offset((page - 1) * limit)
+          return { entries: rows, total: Number(totalCount) }
+        }
+      )
+
+      const items = entries.map((entry) => {
         const payload = entry.payload as {
           title?: string
           body?: string
@@ -223,7 +233,9 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
         }
       })
 
-      return { data, page, limit }
+      return {
+        data: { items, ...buildPaginationMeta({ page, limit }, total) },
+      }
     },
   })
 

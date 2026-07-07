@@ -21,6 +21,10 @@
     "./check-audit-actor-token-coverage": {
       "types": "./dist/check-audit-actor-token-coverage.d.ts",
       "default": "./dist/check-audit-actor-token-coverage.js"
+    },
+    "./migration-safety": {
+      "types": "./dist/lib/migration-safety.d.ts",
+      "default": "./dist/lib/migration-safety.js"
     }
   },
   "scripts": {
@@ -29,11 +33,12 @@
     "test": "vitest run --coverage",
     "build": "tsc",
     "generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx src/scripts/guarded-migrate.ts",
     "db:seed:test": "tsx src/seed-test.ts"
   },
   "dependencies": {
     "@project-vault/crypto": "workspace:*",
+    "@project-vault/shared": "workspace:*",
     "drizzle-orm": "^0.45.0",
     "postgres": "^3.4.5"
   },

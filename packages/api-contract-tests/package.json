@@ -1,0 +1,29 @@
+{
+  "name": "@project-vault/api-contract-tests",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@project-vault/api": "workspace:*",
+    "@project-vault/db": "workspace:*",
+    "@project-vault/shared": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/tsconfig": "workspace:*",
+    "@types/node": "^26.0.1",
+    "ajv": "^8.18.0",
+    "eslint": "^10.6.0",
+    "otpauth": "^9.5.1",
+    "tsx": "4.21.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

@@ -13,10 +13,15 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
   const status = (url.searchParams.get('status') ?? 'all') as 'all' | 'unread' | 'read'
 
   try {
+    // Story 9.3 D8.4: inbox.data is now { items, total, page, limit, hasNext } (previously a
+    // bare array) — read .items, not the whole data object, and surface total/hasNext for
+    // future pagination UI.
     const inbox = await getNotificationInbox(fetch, { page, limit: 20, status })
     return {
-      notifications: inbox.data,
-      page: inbox.page,
+      notifications: inbox.data.items,
+      total: inbox.data.total,
+      hasNext: inbox.data.hasNext,
+      page: inbox.data.page,
       status,
     }
   } catch (err) {

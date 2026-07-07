@@ -559,6 +559,14 @@ const envSchema = z
     TRUST_PROXY: booleanEnvDefault(false),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(1).default(1),
 
+    // Story 9.3 D5: fail-closed by design — Swagger UI (GET /api/v1/docs) and the live spec
+    // route (GET /api/v1/openapi.json) are only registered when this is explicitly true, or
+    // NODE_ENV is 'development'/'test' (checked at the app.ts registration call site, not here —
+    // this flag alone does not imply "development also enables it"). Defaulting to false means a
+    // self-hosted deployment never exposes a browsable map of every authenticated route/schema
+    // unless an operator opts in.
+    ENABLE_API_DOCS: booleanEnvDefault(false),
+
     // Credential version retention is irreversible (AC-8 R11/AC-11B O1). Production's first
     // run MUST default to dry-run (log-only); tests/dev default to destructive for coverage.
     CREDENTIAL_RETENTION_DRY_RUN: booleanEnvDefault(isProduction),

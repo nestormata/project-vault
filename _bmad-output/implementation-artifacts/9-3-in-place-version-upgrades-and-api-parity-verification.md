@@ -1,6 +1,6 @@
 # Story 9.3: In-Place Version Upgrades & API Parity Verification
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed 2026-07-06 — comprehensive developer guide for the THIRD story of Epic 9 (Platform Operations, API & Self-Hosting). This story does NOT have a hard sequencing prerequisite on Stories 9.1/9.2 (unlike 9.2 on 9.1) — it touches a disjoint set of files (migration tooling, OpenAPI generation, a new contract-test package, pagination schemas) and can be implemented independently of whether 9.1/9.2 have merged. This story's defining characteristic is that it is a VERIFICATION-and-HARDENING story, not a first-time-feature story: every one of its nine Key Design Decisions below is grounded in a concrete, already-verified gap in the current codebase (not a hypothetical) — read D1-D9 before writing any code, they tell you exactly which files are stubs, which fields are silently dropped from real HTTP responses today, and which existing mechanisms to reuse rather than reinvent. Getting D4/D7 wrong (the OpenAPI generation rewrite and the schema-vs-actual-response drift rule) means the contract test suite this story delivers would pass while the exact class of bug it exists to catch (D7's machine-users example) ships silently. -->
@@ -413,46 +413,48 @@ $ echo $?
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Migration safety helper + guarded wrapper (D2)**
-  - [ ] `packages/db/src/lib/migration-safety.ts` — `findDestructiveStatements(sql: string): string[]`, with a comment/string-literal-stripping preprocessing step and the full expanded pattern set (`DROP COLUMN`, `DROP TABLE`, `RENAME COLUMN`, `RENAME TO`, `TRUNCATE`, `DELETE FROM`, `DROP CONSTRAINT`, `DROP DEFAULT`, `ALTER COLUMN ... TYPE`, `ADD COLUMN ... NOT NULL` without `DEFAULT`)
-  - [ ] `packages/db/src/scripts/guarded-migrate.ts` — reads drizzle-kit's journal for pending migrations, scans via the helper, refuses (exit 1, no DB touched) unless `--allow-destructive`, otherwise shells out to `drizzle-kit migrate`
-  - [ ] `packages/db/package.json`'s `db:migrate` script → `tsx src/scripts/guarded-migrate.ts` (no `docker-compose.yml` changes needed, D1/D2)
-  - [ ] Structured operational log events on refuse/allow/apply (AC-17)
-- [ ] **Task 2 — CI migration-compatibility gate (D3)**
-  - [ ] Export `findDestructiveStatements` from `packages/db`'s public entry point (reuse, do not duplicate — jscpd gate)
-  - [ ] Root `scripts/migration-compatibility-check.ts` — full-history scan, no DB connection
-  - [ ] Root `package.json` script `check-migration-compatibility`; new CI step in `.github/workflows/ci.yml`
-  - [ ] Verify it passes against all 35 existing migrations with zero changes, including against the expanded pattern set (AC-4, AC-18)
-- [ ] **Task 3 — Real OpenAPI generation (D4)**
-  - [ ] Rewrite `apps/api/src/scripts/generate-spec.ts`: safe env placeholders → `createApp({ logger: false })` → `app.ready()` → `app.swagger()` → write `packages/shared/openapi.json` → `app.close()`
-  - [ ] `apps/api/package.json`'s `version` sourced into `app.ts`'s swagger registration `info.version` (AC-19)
-  - [ ] Regression test asserting path count floor (AC-5)
-  - [ ] Manually verify every module in `apps/api/src/app.ts`'s registration list appears in the generated spec
-- [ ] **Task 4 — Swagger UI + live spec route (D5)**
-  - [ ] Add `@fastify/swagger-ui` dependency; register in `app.ts` with `routePrefix: '/api/v1/docs'`
-  - [ ] New `GET /api/v1/openapi.json` route (`apps/api/src/routes/openapi.ts` or similar)
-  - [ ] Gate both behind `ENABLE_API_DOCS === true || NODE_ENV === 'development' || NODE_ENV === 'test'` (fail-closed allowlist, not a `!== 'production'` negation); document `ENABLE_API_DOCS` in `.env.example`
-  - [ ] Extend `route-audit.test.ts`'s exemption set to cover both new routes, with the sealed-vault-reachability rationale (AC-16)
-- [ ] **Task 5 — Contract test suite package (D6)**
-  - [ ] New `packages/api-contract-tests` workspace package (`package.json`, `tsconfig.json`)
-  - [ ] Auth-bootstrap helper: register + login flows for two separate orgs (org A, org B), each with org-member and org-admin sessions, plus a feature-detected platform-operator session (skip with a logged note if the mechanism doesn't exist yet — see D6's sequencing note) via real `app.inject()` calls
-  - [ ] OpenAPI-driven test generation: enumerate `paths` from `packages/shared/openapi.json`, one case per operation
-  - [ ] Per-operation: status-code + `ajv` schema validation against the documented response (AC-9)
-  - [ ] Negative-path cases: exercise documented `401`/`403` responses, not just `2xx` (AC-15)
-  - [ ] Cross-tenant isolation cases: org B's session against org A's resource IDs on representative org-scoped GET routes (AC-22)
-  - [ ] Independent FR97 pagination-field check (D7) — array-in-`data` heuristic + exemption allowlist
-  - [ ] `turbo.json` task entry; new CI step `API contract parity tests` after the "Generate spec and check freshness" step
-- [ ] **Task 6 — Pagination hardening fixes (D8)**
-  - [ ] `machine-users/schema.ts`: add `page`/`limit`/`hasNext` to `MachineUserListResponseSchema` (bug fix — fields already computed by the handler, just not declared)
-  - [ ] `projects/schema.ts` + `projects/routes.ts`: add `PageLimitQueryShape` to `ListProjectsQuerySchema`; use `parsePagination`/`paginationOffset`/`buildPaginationMeta`; add `page`/`limit`/`hasNext` to `ProjectListResponseSchema`
-  - [ ] `search/schema.ts` + `search/routes.ts`: add `page`/`limit`/`hasNext` to `SearchResponseSchema`; verify/add query-param + offset handling in the search service
-  - [ ] `notifications/schema.ts` + `notifications/routes.ts`: restructure `GetInboxResponseSchema` to `{ data: { items, total, page, limit, hasNext } }`
-  - [ ] `apps/web/src/lib/api/inbox.ts`: update `InboxListResponse` type to the new nested shape (confirmed real consumer of the old bare-array shape — see D8.4)
-  - [ ] `apps/web/src/routes/(app)/notifications/+page.server.ts`: update `load()` to read `inbox.data.items` instead of `inbox.data`
-- [ ] **Task 7 — Documentation cross-references**
-  - [ ] Ensure AC-3/AC-20's refusal message references `docs/runbook.md § Upgrades` (forward-reference, Story 9.5)
-  - [ ] `.env.example`: document `ENABLE_API_DOCS`
-- [ ] **Task 8 — Full integration test pass (see explicit list below)**
+- [x] **Task 1 — Migration safety helper + guarded wrapper (D2)**
+  - [x] `packages/db/src/lib/migration-safety.ts` — `findDestructiveStatements(sql: string): string[]`, with a comment/string-literal-stripping preprocessing step and the full expanded pattern set (`DROP COLUMN`, `DROP TABLE`, `RENAME COLUMN`, `RENAME TO`, `TRUNCATE`, `DELETE FROM`, `DROP CONSTRAINT`, `DROP DEFAULT`, `ALTER COLUMN ... TYPE`, `ADD COLUMN ... NOT NULL` without `DEFAULT`)
+  - [x] `packages/db/src/scripts/guarded-migrate.ts` — reads drizzle-kit's journal for pending migrations, scans via the helper, refuses (exit 1, no DB touched) unless `--allow-destructive`, otherwise shells out to `drizzle-kit migrate`
+  - [x] `packages/db/package.json`'s `db:migrate` script → `tsx src/scripts/guarded-migrate.ts` (no `docker-compose.yml` changes needed, D1/D2)
+  - [x] Structured operational log events on refuse/allow/apply (AC-17)
+- [x] **Task 2 — CI migration-compatibility gate (D3)**
+  - [x] Export `findDestructiveStatements` from `packages/db`'s public entry point (reuse, do not duplicate — jscpd gate)
+  - [x] Root `scripts/migration-compatibility-check.ts` — full-history scan, no DB connection
+  - [x] Root `package.json` script `check-migration-compatibility`; new CI step in `.github/workflows/ci.yml`
+  - [x] Verify it passes against all 35 existing migrations with zero changes, including against the expanded pattern set (AC-4, AC-18) — verified against the current 41 migrations on `main` (35 at story-authoring time, more landed since; zero findings either way)
+- [x] **Task 3 — Real OpenAPI generation (D4)**
+  - [x] Rewrite `apps/api/src/scripts/generate-spec.ts`: safe env placeholders → `createApp({ logger: false })` → `app.ready()` → `app.swagger()` → write `packages/shared/openapi.json` → `app.close()` — already implemented on `main` prior to this story's dev-story pass (commit `1b2fc41`); verified still correct and covered by new regression tests
+  - [x] `apps/api/package.json`'s `version` sourced into `app.ts`'s swagger registration `info.version` (AC-19)
+  - [x] Regression test asserting path count floor (AC-5)
+  - [x] Manually verify every module in `apps/api/src/app.ts`'s registration list appears in the generated spec
+- [x] **Task 4 — Swagger UI + live spec route (D5)**
+  - [x] Add `@fastify/swagger-ui` dependency; register in `app.ts` with `routePrefix: '/api/v1/docs'`
+  - [x] New `GET /api/v1/openapi.json` route (`apps/api/src/routes/openapi.ts` or similar)
+  - [x] Gate both behind `ENABLE_API_DOCS === true || NODE_ENV === 'development' || NODE_ENV === 'test'` (fail-closed allowlist, not a `!== 'production'` negation); document `ENABLE_API_DOCS` in `.env.example`
+  - [x] Extend `route-audit.test.ts`'s exemption set to cover both new routes, with the sealed-vault-reachability rationale (AC-16)
+- [x] **Task 5 — Contract test suite package (D6)**
+  - [x] New `packages/api-contract-tests` workspace package (`package.json`, `tsconfig.json`)
+  - [x] Auth-bootstrap helper: register + login flows for two separate orgs (org A, org B), plus a feature-detected platform-operator session (skip with a logged note if unavailable — see D6's sequencing note) via real `app.inject()` calls. Org-role granularity note: a true "insufficient-privilege-within-org" (viewer/member) session was not built — the codebase has no simple public-API path to a second same-org session below owner without a multi-step MFA-gated invitation flow — so AC-15's 403 coverage is scoped to platform-operator-gated routes (org A's owner is reliably non-platform-operator), documented explicitly in `contract.test.ts`'s module doc.
+  - [x] OpenAPI-driven test generation: enumerate `paths` from `packages/shared/openapi.json`, one case per operation
+  - [x] Per-operation: status-code + `ajv` schema validation against the documented response (AC-9)
+  - [x] Negative-path cases: exercise documented `401`/`403` responses, not just `2xx` (AC-15)
+  - [x] Cross-tenant isolation cases: org B's session against org A's resource IDs on representative org-scoped GET routes (AC-22) — project and credential routes covered; machine-user route skipped (fixture requires strict MFA enrollment), matching AC-22's own "if a machine user fixture exists" conditional language
+  - [x] Independent FR97 pagination-field check (D7) — array-in-`data` heuristic + exemption allowlist
+  - [x] `turbo.json` task entry; new CI step `API contract parity tests` after the "Generate spec and check freshness" step
+  - Two additional, explicitly-documented runtime exclusions were required beyond what D6/D7 anticipated, both handled structurally (never a hardcoded path list) and called out in `contract.test.ts`'s module doc: (a) routes registered via `auth/routes.ts`'s pre-existing `registerMethodNotAllowed()` shell-stub helper carry no declared Fastify response schema at all, so `@fastify/swagger` documents them with a generic `200` fallback though their real behavior is `405`; (b) a small set of pre-existing, hand-written `auth`/`vault`/`notifications` routes similarly declare no `schema.response` map at all (a real, pre-existing OpenAPI-completeness gap this story's D4 rewrite did not introduce or fix — D4 fixed *how* the spec is generated, not which routes declare a schema). Both are detected structurally and smoke-tested for a 5xx rather than strictly asserted against, to keep this new CI gate meaningful and green against the current codebase rather than instantly red on unrelated pre-existing gaps.
+- [x] **Task 6 — Pagination hardening fixes (D8)**
+  - [x] `machine-users/schema.ts`: add `page`/`limit`/`hasNext` to `MachineUserListResponseSchema` (bug fix — fields already computed by the handler, just not declared)
+  - [x] `projects/schema.ts` + `projects/routes.ts`: add `PageLimitQueryShape` to `ListProjectsQuerySchema`; use `parsePagination`/`paginationOffset`/`buildPaginationMeta`; add `page`/`limit`/`hasNext` to `ProjectListResponseSchema`. Deliberately **no** deep-OFFSET cap (unlike credentials's `MAX_CREDENTIAL_LIST_OFFSET`) — AC-12's own worked example requires `page=999&limit=20` on a 3-project org to return a well-formed empty `200`, not a `422`; confirmed via a dedicated test.
+  - [x] `search/schema.ts` + `search/routes.ts`: add `page`/`limit`/`hasNext` to `SearchResponseSchema`; added a `page` query param and genuine offset-based pagination across the merged credential+project result set in `service.ts`. `limit` deliberately keeps its existing, already-tested 1-50 bound rather than being migrated onto `PageLimitQueryShape`'s 1-100 — D8.3 only requires this "if not already accepted server-side", and search already had its own accepted, tested `limit` convention.
+  - [x] `notifications/schema.ts` + `notifications/routes.ts`: restructure `GetInboxResponseSchema` to `{ data: { items, total, page, limit, hasNext } }`
+  - [x] `apps/web/src/lib/api/inbox.ts`: update `InboxListResponse` type to the new nested shape (confirmed real consumer of the old bare-array shape — see D8.4)
+  - [x] `apps/web/src/routes/(app)/notifications/+page.server.ts`: update `load()` to read `inbox.data.items` instead of `inbox.data`
+  - De-duplication follow-up: the four D8 response-schema edits plus credentials' pre-existing `ListCredentialsResponseSchema` initially tripped `pnpm jscpd` (near-identical hand-written `total`/`page`/`limit`/`hasNext` blocks). Resolved by switching all five to the already-existing shared `paginatedListMetaFields` constant (`apps/api/src/lib/api-contracts.ts`) — the exact centralization mechanism this story's own Dev Notes pointed to.
+- [x] **Task 7 — Documentation cross-references**
+  - [x] Ensure AC-3/AC-20's refusal message references `docs/runbook.md § Upgrades` (forward-reference, Story 9.5)
+  - [x] `.env.example`: document `ENABLE_API_DOCS`
+- [x] **Task 8 — Full integration test pass (see explicit list below)**
 
 ### AC-21 — Integration test coverage (explicit list — do not consider this story done without all of these)
 
@@ -521,12 +523,57 @@ $ echo $?
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude (claude-sonnet-4.5), via Claude Code dev-story workflow
 
 ### Debug Log References
+
+- `packages/db` full suite: 158/158 passing (`pnpm --filter @project-vault/db test`)
+- `apps/web` full suite: 488/488 passing across 164 test suites
+- `packages/api-contract-tests` full suite: 334/334 passing
+- `apps/api` targeted suites (route-audit, projects, search, notifications, machine-users, credentials, generate-spec, docs-gating, openapi, vault-guard, env, projects/schema): all green; one full-suite run recorded 1582/1583 passing with the single failure being the pre-existing, previously-documented `orgs-routes maxOrgs` TOCTOU flake (unrelated to this story — see project memory `known-flake-orgs-routes-maxorgs`)
+- `pnpm jscpd`: 0 clones (initial run flagged 4 clones from the D8 pagination-field additions; resolved via `paginatedListMetaFields`)
+- `pnpm turbo typecheck` / `pnpm turbo lint`: clean across all 10 packages
+- `pnpm check-migration-compatibility`, `pnpm tsx scripts/check-env-example.ts`: passing
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed — comprehensive developer guide for Story 9.3 covering: reconciling epics.md's literal "API container runs migrations" wording with the already-shipped one-shot Compose `migrate` service (D1); adding a destructive-migration runtime guard where none exists today, since `db:migrate` is currently raw unguarded `drizzle-kit migrate` (D2); a full-history CI compatibility gate verified to pass retroactively against all 35 existing migrations with zero changes required (D3); replacing a hand-maintained 8-route OpenAPI stub with real Fastify/`@fastify/swagger` introspection that requires no live database connection, verified via the lazy-connection behavior of the existing `postgres`/`packages/db` client (D4); adding Swagger UI and a live spec route, deliberately gated outside production beyond epics.md's literal always-on text for the same security-conscious reasons Story 9.2's D2 established (D5); a new contract-test package interpreting "against a running instance" as `app.inject()` against a migrated test database, consistent with every existing integration test's own convention (D6); an independent FR97 pagination-field verification rule that does not rely on each route's own (possibly incomplete) declared schema — motivated by a concretely verified live bug where a machine-users list handler computes complete pagination metadata that its response schema silently strips from the wire (D7); four concretely verified, not hypothetical, FR97 gaps and their fixes, each cross-referenced to an already-compliant sibling implementation to copy rather than reinvent (D8); and an explicit, architecture-grounded scope boundary against building any zero-downtime/rolling-upgrade mechanism, since the codebase's own single-instance startup guard would reject it (D9).
 
+- **Implementation completed via TDD red-green (dev-story pass).** Key findings and deviations from the story's assumptions, discovered by reading the current codebase during implementation:
+  - D4 (real OpenAPI generation via `@fastify/swagger`) and AC-5/AC-14 were **already implemented on `main`** prior to this pass (commit `1b2fc41`, predating this worktree) — `generate-spec.ts` was not a stub when work began. This pass added the missing AC-19 piece (`info.version` sourced from `package.json`, not hardcoded `'0.0.1'`) and the AC-5 regression test guarding against ever reverting to a stub.
+  - Platform-operator infrastructure (`users.is_platform_operator`, `requirePlatformOperator()`, `modules/platform-admin/*`) **already exists** in the codebase (from Stories 9.1/9.2 work landed since this story was authored), contrary to the story's "both still ready-for-dev" framing at authoring time. The contract suite's platform-operator bootstrap (register + MFA-enroll + promote via direct DB write) therefore runs for real rather than skipping.
+  - AC-12's projects deep-OFFSET-cap guidance conflicts with AC-12's own worked example (`page=999&limit=20` on a 3-project org must return `200`, not `422`); resolved in favor of the concrete example — see Task 6's inline note.
+  - `pnpm jscpd` flagged near-duplicate pagination-field blocks across the D8 fixes and credentials' existing schema; resolved by adopting the pre-existing `paginatedListMetaFields` shared constant everywhere (Task 6 note).
+  - The contract-test suite surfaced two real, pre-existing OpenAPI-completeness gaps unrelated to this story's own scope (the `registerMethodNotAllowed` 405-shell-stub routes, and a set of hand-written `auth`/`vault`/`notifications` routes with no declared Fastify response schema at all) — both handled via structural, runtime-detected, explicitly-documented exclusions in `contract.test.ts` rather than either masking them silently or failing this story's new CI gate on unrelated debt. Flagged for a future story to close by adding real `schema.response` declarations to those routes.
+  - AC-15's full org-role-based 403 coverage was not achievable via a simple public-API flow (no endpoint grants a same-org lower-privilege session without a multi-step MFA-gated project-invitation flow); scoped to platform-operator-gated routes instead, documented in `contract.test.ts`.
+
 ### File List
+
+**New files:**
+- `packages/db/src/lib/migration-safety.ts`, `packages/db/src/lib/migration-safety.test.ts`
+- `packages/db/src/scripts/guarded-migrate.ts`, `packages/db/src/scripts/guarded-migrate.test.ts`
+- `scripts/migration-compatibility-check.ts`, `scripts/migration-compatibility-check.test.ts`
+- `apps/api/src/lib/package-version.ts`, `apps/api/src/lib/package-version.test.ts`
+- `apps/api/src/lib/docs-gating.ts`, `apps/api/src/lib/docs-gating.test.ts`
+- `apps/api/src/routes/openapi.ts`, `apps/api/src/routes/openapi.test.ts`
+- `apps/api/src/scripts/generate-spec.test.ts`
+- `apps/web/src/lib/api/inbox.test.ts`
+- `apps/web/src/routes/(app)/notifications/notifications-page.server.test.ts`
+- `packages/api-contract-tests/` (new workspace package): `package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.js`, `src/contract.test.ts`, `src/fixtures/{app-instance,auth,http,resources}.ts`, `src/openapi/{load-spec,request-builder,ajv-validator,pagination-check}.ts` + their `.test.ts` files
+
+**Modified files:**
+- `packages/shared/src/constants/operational-event-types.ts` + `.test.ts` (AC-17 event constants)
+- `packages/db/package.json` (`db:migrate` script, new `./migration-safety` export, `@project-vault/shared` dependency)
+- `apps/api/package.json` (`@fastify/swagger-ui` dependency, `exports` map for `./app`)
+- `apps/api/src/app.ts` (AC-19 version sourcing, D5 Swagger UI + openapi.json conditional registration)
+- `apps/api/src/config/env.ts` + `.test.ts` (`ENABLE_API_DOCS`)
+- `apps/api/src/plugins/vault-guard.ts` + `.test.ts` (AC-16 sealed-vault-reachable exemption for docs routes)
+- `apps/api/src/lib/route-exemptions.ts`, `apps/api/src/__tests__/route-audit.test.ts` (public-route exemption + `EXEMPT_PATHS` for `/api/v1/openapi.json`/`/docs`)
+- `apps/api/src/modules/{machine-users,projects,search,notifications}/schema.ts` + `routes.ts` (D8 pagination fixes) and their `.test.ts` files; `apps/api/src/modules/credentials/schema.ts` (de-duplication onto `paginatedListMetaFields`); `apps/api/src/modules/search/service.ts` (offset-based pagination); `apps/api/src/modules/projects/schema.test.ts`
+- `apps/web/src/lib/api/inbox.ts`, `apps/web/src/routes/(app)/notifications/+page.server.ts` (D8.4 consumer fix)
+- `package.json`, `Makefile`, `.github/workflows/ci.yml`, `turbo.json`, `.env.example` (new scripts/CI steps/task entries/env docs)
+- `packages/shared/openapi.json` (regenerated)
+
+### Change Log
+
+- 2026-07-07: Implemented Story 9.3 end-to-end via TDD red-green (Tasks 1-8): destructive-migration runtime guard + CI compatibility gate (D1-D3); OpenAPI `info.version` sourcing + regression test on top of the already-shipped D4 real-spec-generation (AC-19, AC-5); Swagger UI + live `/api/v1/openapi.json` route, fail-closed-gated and sealed-vault-reachable (D5, AC-6/AC-7/AC-16); new `packages/api-contract-tests` contract-parity suite enumerating the live OpenAPI spec with `ajv` schema validation, an independent FR97 pagination-field check, 401/403 negative-path coverage, and cross-tenant isolation checks (D6/D7, AC-8/AC-9/AC-13/AC-15/AC-22); all four confirmed FR97 pagination gaps fixed (machine-users, projects, search, notifications) plus the one real `apps/web` consumer of the breaking notifications shape change (D8); `docs/runbook.md § Upgrades` cross-reference and `ENABLE_API_DOCS` documentation (Task 7). Full test suites green: `packages/db` 158/158, `apps/api` (targeted + one full run) all green modulo one known pre-existing flake (`orgs-routes maxOrgs`, unrelated), `apps/web` 488/488, `packages/api-contract-tests` 334/334. `pnpm jscpd`/`pnpm turbo typecheck`/`pnpm turbo lint` all clean.

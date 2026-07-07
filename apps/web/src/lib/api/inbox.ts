@@ -20,10 +20,18 @@ export type InboxEntry = {
   createdAt: string
 }
 
+// Story 9.3 D8.4: restructured from a bare `{ data: [...], page, limit }` shape (missing
+// total/hasNext entirely) to `{ data: { items, total, page, limit, hasNext } }`, matching every
+// other collection endpoint's API contract. Confirmed breaking response-shape change — this type
+// and notifications/+page.server.ts's load() are updated in the same PR as the API fix.
 export type InboxListResponse = {
-  data: InboxEntry[]
-  page: number
-  limit: number
+  data: {
+    items: InboxEntry[]
+    total: number
+    page: number
+    limit: number
+    hasNext: boolean
+  }
 }
 
 export function getUsersMe(fetchFn: typeof fetch) {

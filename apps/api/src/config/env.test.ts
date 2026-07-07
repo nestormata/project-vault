@@ -861,4 +861,35 @@ describe('env', () => {
       expect(exitSpy).toHaveBeenCalledWith(1)
     })
   })
+
+  describe('ENABLE_API_DOCS (Story 9.3 D5)', () => {
+    it('defaults to false when unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.ENABLE_API_DOCS).toBe(false)
+    })
+
+    it('is true when explicitly set to "true"', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        ENABLE_API_DOCS: 'true',
+      }
+      const { env } = await import('./env.js')
+      expect(env.ENABLE_API_DOCS).toBe(true)
+    })
+
+    it('is false when explicitly set to "false"', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        ENABLE_API_DOCS: 'false',
+      }
+      const { env } = await import('./env.js')
+      expect(env.ENABLE_API_DOCS).toBe(false)
+    })
+  })
 })

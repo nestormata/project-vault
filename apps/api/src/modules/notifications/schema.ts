@@ -4,6 +4,7 @@ import {
   NOTIFICATION_FREQUENCIES,
   NOTIFICATION_SEVERITIES,
 } from '@project-vault/shared'
+import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
 export const PreferenceItemSchema = z.object({
   alertType: z
@@ -86,8 +87,14 @@ export const InboxEntryIdParamSchema = z.object({
   id: z.string().uuid('id must be a valid UUID'),
 })
 
+// Story 9.3 D8.4/AC-11: restructured from a bare `{ data: [...], page, limit }` shape (missing
+// `total`/`hasNext` entirely, and `data` a bare array rather than an object wrapping `items`) to
+// `{ data: { items, total, page, limit, hasNext } }`, matching every other collection endpoint in
+// this codebase. Confirmed breaking response-shape change — apps/web/src/lib/api/inbox.ts and its
+// notifications +page.server.ts are updated in the same PR (see D8.4).
 export const GetInboxResponseSchema = z.object({
-  data: z.array(InboxEntrySchema),
-  page: z.number(),
-  limit: z.number(),
+  data: z.object({
+    items: z.array(InboxEntrySchema),
+    ...paginatedListMetaFields,
+  }),
 })

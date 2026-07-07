@@ -98,4 +98,10 @@ describe('OperationalEvent', () => {
       'monitoring.health_check_row_failed'
     )
   })
+
+  it('exposes the Story 9.3 guarded-migrate event types (AC-17)', () => {
+    expect(OperationalEvent.MIGRATION_DESTRUCTIVE_REFUSED).toBe('migration.destructive_refused')
+    expect(OperationalEvent.MIGRATION_DESTRUCTIVE_ALLOWED).toBe('migration.destructive_allowed')
+    expect(OperationalEvent.MIGRATION_APPLIED).toBe('migration.applied')
+  })
 })

@@ -22,6 +22,11 @@ export const EXEMPT_PATHS = new Set([
   '/api/v1/auth/refresh',
   '/api/v1/auth/mfa/recover',
   '/api/v1/auth/mfa/verify-login',
+  // Story 9.3 AC-16: must remain reachable while the vault is sealed, same rationale as
+  // /health above — see plugins/vault-guard.ts's SEALED_VAULT_EXEMPT_* constants for the actual
+  // enforcement (this set documents the same classification for route-audit's own scan).
+  '/api/v1/openapi.json',
+  '/api/v1/docs',
 ])
 
 const SRC_ROOT = resolve(process.cwd(), 'src')

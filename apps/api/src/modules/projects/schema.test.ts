@@ -64,9 +64,9 @@ describe('project API schemas', () => {
   })
 
   it('parses project list and dashboard response envelopes', () => {
-    expect(ProjectListResponseSchema.parse({ data: { items: [], total: 0 } })).toEqual({
-      data: { items: [], total: 0 },
-    })
+    // Story 9.3 D8.2/AC-11: page/limit/hasNext are now required fields on this schema.
+    const listEnvelope = { data: { items: [], total: 0, page: 1, limit: 20, hasNext: false } }
+    expect(ProjectListResponseSchema.parse(listEnvelope)).toEqual(listEnvelope)
     expect(
       ProjectDashboardResponseSchema.parse({
         data: EMPTY_PROJECT_DASHBOARD,
