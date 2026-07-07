@@ -24,6 +24,9 @@ export const EXCLUDED_TABLES = new Set([
   // the vault_state/api_instances precedent rather than orgScoped().
   'backup_runs',
   'admin_alerts',
+  // Story 9.2 D3: platform-level singleton system_settings row — no org_id column (instance-wide
+  // configuration, not per-org), same precedent as vault_state/admin_alerts.
+  'system_settings',
 ])
 
 export class RlsCoverageGapError extends Error {

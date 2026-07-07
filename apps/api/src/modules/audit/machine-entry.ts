@@ -4,6 +4,7 @@ import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { computeAuditHmac } from './write-entry.js'
+import { logAuditWriteSuspended, shouldSuppressAuditWrite } from './maintenance-mode.js'
 
 type RequestMeta = {
   ipAddress?: string | null
@@ -31,6 +32,11 @@ export type MachineAuditFields = {
  * discoverable via `payload->>'machineUserId'` for Epic 8's future audit search.
  */
 export async function writeMachineAuditEntry(tx: Tx, fields: MachineAuditFields): Promise<void> {
+  // Story 9.2 AC-17/D10: audit-storage maintenance-mode circuit breaker (see human-entry.ts).
+  if (await shouldSuppressAuditWrite(tx, fields.eventType)) {
+    logAuditWriteSuspended(fields.eventType, fields.orgId)
+    return
+  }
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
   const keyVersion = await currentAuditKeyVersion(tx)
   const payload = {
@@ -81,6 +87,11 @@ export type SystemAuditFields = {
  * `audit_log_entries` CHECK constraint already permits; `actorTokenId` is always null.
  */
 export async function writeSystemAuditEntry(tx: Tx, fields: SystemAuditFields): Promise<void> {
+  // Story 9.2 AC-17/D10: audit-storage maintenance-mode circuit breaker (see human-entry.ts).
+  if (await shouldSuppressAuditWrite(tx, fields.eventType)) {
+    logAuditWriteSuspended(fields.eventType, fields.orgId)
+    return
+  }
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
   const keyVersion = await currentAuditKeyVersion(tx)
   const hmac = computeAuditHmac(

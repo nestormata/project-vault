@@ -23,6 +23,28 @@ function serializeError(err: unknown): { message: string; name?: string; stack?:
   return { message: String(err) }
 }
 
+/**
+ * Story 9.2 AC-18: additive, optional `warnings` array — never changes `status` away from
+ * `"ready"` for these two conditions (they are warnings, not outages, contrasting with the
+ * existing `"sealed"`/`"uninitialized"`/`"db"` reasons above, which already return 503). A
+ * best-effort lookup failure here must not fail /ready itself — /ready's core contract (DB
+ * reachable, vault unsealed) already succeeded by the time this is called.
+ */
+async function resolveReadyWarnings(dbPool: DbPool): Promise<string[]> {
+  try {
+    const rows = (await dbPool.query(
+      `SELECT alert_type FROM admin_alerts WHERE status = 'active' AND alert_type IN ('audit_storage.critical', 'key_custody_risk')`
+    )) as { alert_type: string }[]
+    const activeTypes = new Set(rows.map((row) => row.alert_type))
+    const warnings: string[] = []
+    if (activeTypes.has('audit_storage.critical')) warnings.push('audit_storage_critical')
+    if (activeTypes.has('key_custody_risk')) warnings.push('key_custody_risk')
+    return warnings
+  } catch {
+    return []
+  }
+}
+
 export async function healthRoutes(
   fastify: FastifyApp,
   options: { dbPool?: DbPool }
@@ -56,7 +78,8 @@ export async function healthRoutes(
 
     try {
       await options.dbPool.query('SELECT 1')
-      return reply.send({ status: 'ready' })
+      const warnings = await resolveReadyWarnings(options.dbPool)
+      return reply.send(warnings.length > 0 ? { status: 'ready', warnings } : { status: 'ready' })
     } catch (err) {
       req.log.error(
         { eventType: OperationalEvent.DB_ERROR, err: serializeError(err) },

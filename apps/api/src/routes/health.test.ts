@@ -75,6 +75,41 @@ describe('GET /ready', () => {
     await expectUnavailableReady('sealed', 'Manual unseal required via POST /api/v1/vault/unseal')
   })
 
+  it('AC-18: returns no warnings key at all on a healthy instance (additive, backward-compatible)', async () => {
+    const mockDbPool = {
+      query: vi.fn().mockResolvedValue([]),
+    }
+    const app = await createApp({ logger: false, dbPool: mockDbPool })
+    const response = await app.inject({ method: 'GET', url: '/ready' })
+
+    expect(response.statusCode).toBe(200)
+    const body = response.json<Record<string, unknown>>()
+    expect(body).toEqual({ status: 'ready' })
+    expect(body).not.toHaveProperty('warnings')
+    await app.close()
+  })
+
+  it('AC-18: includes warnings for active audit_storage.critical and key_custody_risk alerts, status stays "ready"', async () => {
+    const mockDbPool = {
+      query: vi.fn().mockImplementation(async (statement: string) => {
+        if (statement.includes('admin_alerts')) {
+          return [{ alert_type: 'audit_storage.critical' }, { alert_type: 'key_custody_risk' }]
+        }
+        return []
+      }),
+    }
+    const app = await createApp({ logger: false, dbPool: mockDbPool })
+    const response = await app.inject({ method: 'GET', url: '/ready' })
+
+    expect(response.statusCode).toBe(200)
+    const body = response.json<{ status: string; warnings: string[] }>()
+    expect(body.status).toBe('ready')
+    expect(body.warnings).toEqual(
+      expect.arrayContaining(['audit_storage_critical', 'key_custody_risk'])
+    )
+    await app.close()
+  })
+
   it('returns 200 when DB pool resolves', async () => {
     const mockDbPool = {
       query: vi.fn().mockResolvedValue([]),

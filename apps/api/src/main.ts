@@ -57,6 +57,9 @@ import { backupSnapshotHandler } from './workers/backup-snapshot.js'
 import { runBackupHealthCheck } from './workers/backup-health-check.js'
 import { isBackupEnabled } from './modules/backup/config.js'
 import { reconcileStaleRunningBackups } from './modules/backup/service.js'
+import { runAuditStorageCheck } from './workers/audit-storage-check.js'
+import { runKeyCustodyCheck } from './workers/key-custody-check.js'
+import { runResourceUsageCheck } from './workers/resource-usage-check.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
@@ -189,6 +192,12 @@ async function main(): Promise<void> {
             'backup:health-check': { cron: '0 * * * *' },
           }
         : {}),
+      // Story 9.2 AC-15/AC-21: daily audit-log-storage-pressure check.
+      'audit-storage:check': { cron: '0 4 * * *' },
+      // Story 9.2 AC-19/AC-20/AC-21: weekly master-key custody-risk check.
+      'key-custody:check': { cron: '0 5 * * 1' },
+      // Story 9.2 AC-13/AC-14: hourly instance/per-org resource-usage threshold check.
+      'resource-usage:check': { cron: '0 * * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
@@ -301,11 +310,26 @@ async function main(): Promise<void> {
         withJobLogging(fastify.log, 'backup:health-check', job.id ?? 'unknown', () =>
           runBackupHealthCheck(boss, fastify.log)
         ),
+      'audit-storage:check': (job) =>
+        withJobLogging(fastify.log, 'audit-storage:check', job.id ?? 'unknown', () =>
+          runAuditStorageCheck(boss, fastify.log)
+        ),
+      'key-custody:check': (job) =>
+        withJobLogging(fastify.log, 'key-custody:check', job.id ?? 'unknown', () =>
+          runKeyCustodyCheck(boss, fastify.log)
+        ),
+      'resource-usage:check': (job) =>
+        withJobLogging(fastify.log, 'resource-usage:check', job.id ?? 'unknown', () =>
+          runResourceUsageCheck(boss, fastify.log)
+        ),
     })
     await boss.send('notification:backfill-pending-delivery', {})
     // Story 5.3 AC-9: startup-once enqueue, deduplicated via singletonKey so a hot-reload/
     // restart never queues a duplicate immediate run alongside the 15-minute cron.
     await boss.send(ROTATION_RECOVER_JOB, {}, { singletonKey: ROTATION_RECOVER_JOB })
+    // Story 9.2 AC-19: key-custody risk is also checked at every vault-unseal event (startup),
+    // not just on the weekly cron — singletonKey dedups a hot-reload/restart the same way.
+    await boss.send('key-custody:check', {}, { singletonKey: 'key-custody:check:startup' })
     bossRegistered = true
   }
   setOnVaultUnsealed(startBossAndRegisterWorkers)
