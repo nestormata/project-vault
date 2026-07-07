@@ -94,7 +94,7 @@ describe('notification dispatcher', () => {
     }
   })
 
-  it('sends notification:deliver jobs for immediate entries', async () => {
+  it('sends notification/deliver jobs for immediate entries', async () => {
     const { boss, send } = createMockBoss()
     await boss.start()
 
@@ -103,7 +103,7 @@ describe('notification dispatcher', () => {
     ])
 
     expect(send).toHaveBeenCalledTimes(1)
-    expect(send.mock.calls[0]?.[0]).toBe('notification:deliver')
+    expect(send.mock.calls[0]?.[0]).toBe('notification/deliver')
   })
 
   it('does not send jobs for digest-scheduled entries', async () => {

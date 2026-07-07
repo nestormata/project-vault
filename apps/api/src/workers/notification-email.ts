@@ -108,7 +108,7 @@ export async function sendEmailNotification(
 }
 
 export const notificationEmailHandler = createNotificationJobHandler(
-  'notification:email',
+  'notification/email',
   sendEmailNotification
 )
 
@@ -120,7 +120,7 @@ export async function notificationEmailCatchupHandler(
     boss,
     {
       channel: 'email',
-      jobName: 'notification:email',
+      jobName: 'notification/email',
       logMessage: 'Notification catchup found stale pending email entries',
     },
     logger

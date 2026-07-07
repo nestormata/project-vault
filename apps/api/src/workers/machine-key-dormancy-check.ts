@@ -11,7 +11,7 @@ import {
 import { operationalLog, serializeLogError } from '../lib/logger.js'
 import type { WorkerLogger } from './expiry-alert-shared.js'
 
-const JOB_NAME = 'machine-key:dormancy-check'
+const JOB_NAME = 'machine-key/dormancy-check'
 
 type DormantKeyRow = {
   id: string

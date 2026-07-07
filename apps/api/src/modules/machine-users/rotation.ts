@@ -129,7 +129,7 @@ export async function emergencyRevokeApiKey(
  * audit row (actorType: machine_user) — both inside the same org-scoped transaction as the
  * lastUsedAt caller passes in. Does not call `sendNotificationJobs()` itself (no reliable
  * `BossService` handle exists in the machine-token-exchange request context) — the queued
- * notification row is durably picked up by the existing `notification:*-catchup` jobs.
+ * notification row is durably picked up by the existing `notification/*-catchup` jobs.
  */
 export async function checkRotationAnomaly(
   orgId: string,

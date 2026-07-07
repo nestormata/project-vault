@@ -9,7 +9,7 @@ import {
   type WorkerLogger,
 } from './expiry-alert-shared.js'
 
-const JOB_NAME = 'payment:expiry-alert'
+const JOB_NAME = 'payment/expiry-alert'
 
 type PaymentRecordRow = typeof paymentRecords.$inferSelect
 

@@ -6,8 +6,8 @@ type BossSendOptions = {
   retryBackoff?: boolean
   retryDelay?: number
   // Story 5.3 AC-9: pg-boss's native singletonKey dedup — used by the stale-rotation recovery
-  // job's startup-once enqueue (`boss.send('rotation:recover', {}, { singletonKey:
-  // 'rotation:recover' })`) so a hot-reload/restart never queues a duplicate immediate run
+  // job's startup-once enqueue (`boss.send('rotation/recover', {}, { singletonKey:
+  // 'rotation/recover' })`) so a hot-reload/restart never queues a duplicate immediate run
   // alongside the 15-minute cron. pg-boss's send() already supports this; this thin wrapper
   // type just didn't expose it yet.
   singletonKey?: string

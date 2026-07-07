@@ -70,8 +70,8 @@ import postgres from 'postgres'
 
 const NOTIFICATION_CATCHUP_CRON = '*/10 * * * *'
 // Story 5.3 AC-8/AC-9 job names, referenced at multiple registration sites below.
-const ROTATION_BREAK_GLASS_EXPIRE_JOB = 'rotation:break-glass-expire'
-const ROTATION_RECOVER_JOB = 'rotation:recover'
+const ROTATION_BREAK_GLASS_EXPIRE_JOB = 'rotation/break-glass-expire'
+const ROTATION_RECOVER_JOB = 'rotation/recover'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
@@ -159,45 +159,45 @@ async function main(): Promise<void> {
       [ROTATION_BREAK_GLASS_EXPIRE_JOB]: { cron: '* * * * *' },
       [ROTATION_RECOVER_JOB]: { cron: '*/15 * * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
-      'payment:expiry-alert': { cron: '0 8 * * *' },
-      'cert:expiry-alert': { cron: '0 8 * * *' },
-      'domain:expiry-alert': { cron: '0 8 * * *' },
-      'machine-key:expiry-alert': { cron: '0 8 * * *' },
+      'payment/expiry-alert': { cron: '0 8 * * *' },
+      'cert/expiry-alert': { cron: '0 8 * * *' },
+      'domain/expiry-alert': { cron: '0 8 * * *' },
+      'machine-key/expiry-alert': { cron: '0 8 * * *' },
       // AC-18: split cadence — 5-minute revoke check bounds cron-granularity overshoot to at
       // most 5 minutes even for the shortest permitted overlapMinutes (1); the pre-revocation
       // alert only needs to fire "around" 1 hour ahead, so hourly is sufficient there.
-      'machine-key:overlap-revoke': { cron: '*/5 * * * *' },
-      'machine-key:overlap-alert': { cron: '0 * * * *' },
+      'machine-key/overlap-revoke': { cron: '*/5 * * * *' },
+      'machine-key/overlap-alert': { cron: '0 * * * *' },
       // AC-21: daily dormancy detection job.
-      'machine-key:dormancy-check': { cron: '0 9 * * *' },
+      'machine-key/dormancy-check': { cron: '0 9 * * *' },
       // Story 8.3 AC-10: daily user-dormancy detection job, same cadence as machine-key's.
-      'user:dormancy-check': { cron: '0 9 * * *' },
-      'notification:email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
-      'notification:slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
-      'notification:inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
-      'notification:deliver-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
-      'notification:inbox-purge': { cron: '0 3 * * *' },
-      'notification:send-digest': { cron: `0 ${env.NOTIFICATION_DIGEST_HOUR} * * *` },
+      'user/dormancy-check': { cron: '0 9 * * *' },
+      'notification/email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification/slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification/inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification/deliver-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification/inbox-purge': { cron: '0 3 * * *' },
+      'notification/send-digest': { cron: `0 ${env.NOTIFICATION_DIGEST_HOUR} * * *` },
       // Story 8.2 D3/D2 — every-minute watermark-cursor catchup (webhook), daily S3 batch, and
-      // daily retention prune. `audit:export` is NOT a schedule — it's triggered per-request via
+      // daily retention prune. `audit/export` is NOT a schedule — it's triggered per-request via
       // boss.send() from POST /audit/export (registered as a worker only, below).
-      'audit:webhook-forward-catchup': { cron: '* * * * *' },
-      'audit:s3-forward-daily': { cron: '0 1 * * *' },
-      'audit:retention-prune': { cron: '0 2 * * *' },
+      'audit/webhook-forward-catchup': { cron: '* * * * *' },
+      'audit/s3-forward-daily': { cron: '0 1 * * *' },
+      'audit/retention-prune': { cron: '0 2 * * *' },
       // Story 9.1 AC-15: backup is opt-in — no schedule registered at all when disabled (env.ts's
       // own validateBackupEnv already guarantees these env vars are consistent when enabled).
       ...(isBackupEnabled()
         ? {
-            'backup:snapshot': { cron: env.BACKUP_SCHEDULE },
-            'backup:health-check': { cron: '0 * * * *' },
+            'backup/snapshot': { cron: env.BACKUP_SCHEDULE },
+            'backup/health-check': { cron: '0 * * * *' },
           }
         : {}),
       // Story 9.2 AC-15/AC-21: daily audit-log-storage-pressure check.
-      'audit-storage:check': { cron: '0 4 * * *' },
+      'audit-storage/check': { cron: '0 4 * * *' },
       // Story 9.2 AC-19/AC-20/AC-21: weekly master-key custody-risk check.
-      'key-custody:check': { cron: '0 5 * * 1' },
+      'key-custody/check': { cron: '0 5 * * 1' },
       // Story 9.2 AC-13/AC-14: hourly instance/per-org resource-usage threshold check.
-      'resource-usage:check': { cron: '0 * * * *' },
+      'resource-usage/check': { cron: '0 * * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
@@ -230,106 +230,106 @@ async function main(): Promise<void> {
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>
           importCleanupExpired(fastify.log)
         ),
-      'payment:expiry-alert': (job) =>
-        withJobLogging(fastify.log, 'payment:expiry-alert', job.id ?? 'unknown', () =>
+      'payment/expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'payment/expiry-alert', job.id ?? 'unknown', () =>
           runPaymentExpiryAlertJob(boss, fastify.log)
         ),
-      'cert:expiry-alert': (job) =>
-        withJobLogging(fastify.log, 'cert:expiry-alert', job.id ?? 'unknown', () =>
+      'cert/expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'cert/expiry-alert', job.id ?? 'unknown', () =>
           runCertExpiryAlertJob(boss, fastify.log)
         ),
-      'domain:expiry-alert': (job) =>
-        withJobLogging(fastify.log, 'domain:expiry-alert', job.id ?? 'unknown', () =>
+      'domain/expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'domain/expiry-alert', job.id ?? 'unknown', () =>
           runDomainExpiryAlertJob(boss, fastify.log)
         ),
-      'machine-key:expiry-alert': (job) =>
-        withJobLogging(fastify.log, 'machine-key:expiry-alert', job.id ?? 'unknown', () =>
+      'machine-key/expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'machine-key/expiry-alert', job.id ?? 'unknown', () =>
           runMachineKeyExpiryAlertJob(boss, fastify.log)
         ),
-      'machine-key:overlap-revoke': (job) =>
-        withJobLogging(fastify.log, 'machine-key:overlap-revoke', job.id ?? 'unknown', () =>
+      'machine-key/overlap-revoke': (job) =>
+        withJobLogging(fastify.log, 'machine-key/overlap-revoke', job.id ?? 'unknown', () =>
           runMachineKeyOverlapRevokeJob(fastify.log)
         ),
-      'machine-key:overlap-alert': (job) =>
-        withJobLogging(fastify.log, 'machine-key:overlap-alert', job.id ?? 'unknown', () =>
+      'machine-key/overlap-alert': (job) =>
+        withJobLogging(fastify.log, 'machine-key/overlap-alert', job.id ?? 'unknown', () =>
           runMachineKeyOverlapAlertJob(boss, fastify.log)
         ),
-      'machine-key:dormancy-check': (job) =>
-        withJobLogging(fastify.log, 'machine-key:dormancy-check', job.id ?? 'unknown', () =>
+      'machine-key/dormancy-check': (job) =>
+        withJobLogging(fastify.log, 'machine-key/dormancy-check', job.id ?? 'unknown', () =>
           runMachineKeyDormancyCheckJob(boss, fastify.log)
         ),
-      'user:dormancy-check': (job) =>
-        withJobLogging(fastify.log, 'user:dormancy-check', job.id ?? 'unknown', () =>
+      'user/dormancy-check': (job) =>
+        withJobLogging(fastify.log, 'user/dormancy-check', job.id ?? 'unknown', () =>
           runUserDormancyCheckJob(boss, fastify.log)
         ),
-      'notification:email': {
+      'notification/email': {
         handler: (job) => notificationEmailHandler(job, fastify.log),
         options: { localConcurrency: 5, localGroupConcurrency: 3 },
       },
-      'notification:slack': {
+      'notification/slack': {
         handler: (job) => notificationSlackHandler(job, fastify.log),
         options: { localConcurrency: 5, localGroupConcurrency: 3 },
       },
-      'notification:backfill-pending-delivery': () =>
+      'notification/backfill-pending-delivery': () =>
         notificationBackfillHandler(boss, fastify.log),
-      'notification:email-catchup': () => notificationEmailCatchupHandler(boss, fastify.log),
-      'notification:slack-catchup': () => notificationSlackCatchupHandler(boss, fastify.log),
-      'notification:inbox-catchup': () => notificationInboxCatchupHandler(boss, fastify.log),
-      'notification:deliver': {
+      'notification/email-catchup': () => notificationEmailCatchupHandler(boss, fastify.log),
+      'notification/slack-catchup': () => notificationSlackCatchupHandler(boss, fastify.log),
+      'notification/inbox-catchup': () => notificationInboxCatchupHandler(boss, fastify.log),
+      'notification/deliver': {
         handler: (job) => wrapDeliverHandler(fastify.log, emitter)(job),
         options: { localConcurrency: 5, localGroupConcurrency: 3 },
       },
-      'notification:deliver-catchup': () => notificationDeliverCatchupJobHandler(boss, fastify.log),
-      'notification:inbox-purge': () => notificationInboxPurgeHandler(fastify.log),
-      'notification:send-digest': () => notificationDigestHandler(fastify.log),
+      'notification/deliver-catchup': () => notificationDeliverCatchupJobHandler(boss, fastify.log),
+      'notification/inbox-purge': () => notificationInboxPurgeHandler(fastify.log),
+      'notification/send-digest': () => notificationDigestHandler(fastify.log),
       // Story 8.2 — audit search/export/forwarding/retention background jobs.
-      'audit:export': (job) =>
-        withJobLogging(fastify.log, 'audit:export', job.id ?? 'unknown', () =>
+      'audit/export': (job) =>
+        withJobLogging(fastify.log, 'audit/export', job.id ?? 'unknown', () =>
           runAuditExport(job.data as { exportId: string; orgId: string })
         ),
-      'audit:webhook-forward-catchup': (job) =>
-        withJobLogging(fastify.log, 'audit:webhook-forward-catchup', job.id ?? 'unknown', () =>
+      'audit/webhook-forward-catchup': (job) =>
+        withJobLogging(fastify.log, 'audit/webhook-forward-catchup', job.id ?? 'unknown', () =>
           runWebhookForwardCatchup(fastify.log)
         ),
-      'audit:s3-forward-daily': (job) =>
-        withJobLogging(fastify.log, 'audit:s3-forward-daily', job.id ?? 'unknown', () =>
+      'audit/s3-forward-daily': (job) =>
+        withJobLogging(fastify.log, 'audit/s3-forward-daily', job.id ?? 'unknown', () =>
           runS3ForwardDaily(fastify.log)
         ),
-      'audit:retention-prune': (job) =>
-        withJobLogging(fastify.log, 'audit:retention-prune', job.id ?? 'unknown', () =>
+      'audit/retention-prune': (job) =>
+        withJobLogging(fastify.log, 'audit/retention-prune', job.id ?? 'unknown', () =>
           pruneExpiredAuditLogEntries(fastify.log)
         ),
-      // Story 9.1: 'backup:snapshot' is enqueued both by the cron schedule above (job.data
+      // Story 9.1: 'backup/snapshot' is enqueued both by the cron schedule above (job.data
       // empty) and per-request from POST /admin/backup/trigger (job.data carries the runId the
       // route already reserved) — backupSnapshotHandler distinguishes the two (see its own
       // doc comment). Registered unconditionally alongside every other worker: pg-boss requires
       // a worker for a queue it might receive a job on, but if backup is disabled (AC-15) no
       // schedule ever fires and the trigger route itself 503s before ever calling boss.send().
-      'backup:snapshot': backupSnapshotHandler(boss, fastify.log),
-      'backup:health-check': (job) =>
-        withJobLogging(fastify.log, 'backup:health-check', job.id ?? 'unknown', () =>
+      'backup/snapshot': backupSnapshotHandler(boss, fastify.log),
+      'backup/health-check': (job) =>
+        withJobLogging(fastify.log, 'backup/health-check', job.id ?? 'unknown', () =>
           runBackupHealthCheck(boss, fastify.log)
         ),
-      'audit-storage:check': (job) =>
-        withJobLogging(fastify.log, 'audit-storage:check', job.id ?? 'unknown', () =>
+      'audit-storage/check': (job) =>
+        withJobLogging(fastify.log, 'audit-storage/check', job.id ?? 'unknown', () =>
           runAuditStorageCheck(boss, fastify.log)
         ),
-      'key-custody:check': (job) =>
-        withJobLogging(fastify.log, 'key-custody:check', job.id ?? 'unknown', () =>
+      'key-custody/check': (job) =>
+        withJobLogging(fastify.log, 'key-custody/check', job.id ?? 'unknown', () =>
           runKeyCustodyCheck(boss, fastify.log)
         ),
-      'resource-usage:check': (job) =>
-        withJobLogging(fastify.log, 'resource-usage:check', job.id ?? 'unknown', () =>
+      'resource-usage/check': (job) =>
+        withJobLogging(fastify.log, 'resource-usage/check', job.id ?? 'unknown', () =>
           runResourceUsageCheck(boss, fastify.log)
         ),
     })
-    await boss.send('notification:backfill-pending-delivery', {})
+    await boss.send('notification/backfill-pending-delivery', {})
     // Story 5.3 AC-9: startup-once enqueue, deduplicated via singletonKey so a hot-reload/
     // restart never queues a duplicate immediate run alongside the 15-minute cron.
     await boss.send(ROTATION_RECOVER_JOB, {}, { singletonKey: ROTATION_RECOVER_JOB })
     // Story 9.2 AC-19: key-custody risk is also checked at every vault-unseal event (startup),
     // not just on the weekly cron — singletonKey dedups a hot-reload/restart the same way.
-    await boss.send('key-custody:check', {}, { singletonKey: 'key-custody:check:startup' })
+    await boss.send('key-custody/check', {}, { singletonKey: 'key-custody/check/startup' })
     bossRegistered = true
   }
   setOnVaultUnsealed(startBossAndRegisterWorkers)

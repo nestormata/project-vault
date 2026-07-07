@@ -52,7 +52,7 @@ async function raiseBackupMissedAlert(
 }
 
 /**
- * Story 9.1 AC-12: hourly `backup:health-check` — if the last *succeeded* backup completed more
+ * Story 9.1 AC-12: hourly `backup/health-check` — if the last *succeeded* backup completed more
  * than `BACKUP_MAX_AGE_HOURS` ago (or none has ever succeeded), creates a `backup.missed`
  * admin_alerts row (idempotent — `createAdminAlertIfNotActive` skips if one is already active)
  * and delivers it across every org (D7). A no-op entirely if backup isn't configured at all

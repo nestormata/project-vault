@@ -195,7 +195,7 @@ export async function sendNotificationJobs(
   for (const job of jobs) {
     if (job.deliverAt !== null && job.deliverAt.getTime() > now) continue
     await boss.send(
-      'notification:deliver',
+      'notification/deliver',
       { notificationQueueId: job.id, orgId: job.orgId },
       NOTIFICATION_JOB_OPTIONS
     )

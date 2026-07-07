@@ -144,7 +144,7 @@ async function handleElevatedUtilization(
 }
 
 /**
- * Story 9.2 D5/AC-15 through AC-17: daily `audit-storage:check` job.
+ * Story 9.2 D5/AC-15 through AC-17: daily `audit-storage/check` job.
  *
  * D5: queries `pg_total_relation_size('audit_log_entries')` — the REAL table (epics.md's literal
  * 'audit_events' has never existed in this codebase). Do not "correct" this to 'audit_events'.
@@ -182,7 +182,7 @@ export async function runAuditStorageCheck(
         logger,
         'error',
         OperationalEvent.AUDIT_STORAGE_CHECK_FAILED,
-        'audit-storage:check job failed',
+        'audit-storage/check job failed',
         { err: error instanceof Error ? { message: error.message, stack: error.stack } : error }
       )
     }

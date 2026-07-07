@@ -18,7 +18,7 @@ import { rotationStaleDetectionsTotal } from '../modules/rotation/metrics.js'
 import type { WorkerLogger } from './expiry-alert-shared.js'
 
 const EVENT_TYPE = 'rotation.stale_detected'
-const JOB_NAME = 'rotation:recover'
+const JOB_NAME = 'rotation/recover'
 // AC-9: non-confirmed statuses reset to 'unconfirmed' — 'unconfirmed' is included for symmetry
 // with the literal AC-9 WHERE clause (a no-op for already-unconfirmed rows); 'confirmed' items
 // are deliberately excluded and left untouched.
@@ -165,7 +165,7 @@ async function recoverStaleRotationsForOrg(
   }
 }
 
-/** `rotation:recover` (AC-9/AC-10) — pg-boss job, registered both as a 15-minute recurring cron
+/** `rotation/recover` (AC-9/AC-10) — pg-boss job, registered both as a 15-minute recurring cron
  *  AND enqueued once at every API startup (deduplicated via singletonKey). Time-threshold scan
  *  (CR2/ADR-5.3-02) — never lock-presence detection, since 5.1's advisory lock is
  *  transaction-scoped and releases the instant initiation commits; there is no lock left to

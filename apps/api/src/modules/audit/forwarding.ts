@@ -261,7 +261,7 @@ async function processOrgWebhookTick(
   }
 }
 
-/** D3 — the `audit:webhook-forward-catchup` cron handler: iterates every org, processing only
+/** D3 — the `audit/webhook-forward-catchup` cron handler: iterates every org, processing only
  * those with an enabled webhook config. `deliver` defaults to the real SSRF-guarded
  * safeFetchExternal; tests substitute a double. */
 export async function runWebhookForwardCatchup(

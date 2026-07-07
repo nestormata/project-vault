@@ -40,7 +40,7 @@ export function isSecurityCriticalAuditEventType(eventType: string): boolean {
   return SECURITY_CRITICAL_AUDIT_EVENT_TYPES.has(eventType)
 }
 
-/** AC-17/D5: the daily audit-storage:check job's `admin_alerts` row for `audit_storage.critical`
+/** AC-17/D5: the daily audit-storage/check job's `admin_alerts` row for `audit_storage.critical`
  * IS the maintenance-mode flag — an active row means maintenance mode is on; the same job
  * acknowledges it once utilization drops back below 95% (AC-17's "resuming normal operation"
  * case), which is also what turns maintenance mode back off. No separate state table needed. */

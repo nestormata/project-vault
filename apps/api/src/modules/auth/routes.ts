@@ -90,7 +90,7 @@ type BossFastify = FastifyApp & { boss?: BossService }
  * operation. For recover-with-code the operation has already committed, so an
  * uncaught throw would return a 500 to a user whose recovery code was already
  * consumed and session already created. Either way, a missed boss.send() is safe —
- * the notification_queue row is still durable and notification:deliver-catchup
+ * the notification_queue row is still durable and notification/deliver-catchup
  * (10-min cron, main.ts) will pick it up.
  */
 async function sendPendingMfaNotifications(

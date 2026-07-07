@@ -83,7 +83,7 @@ async function checkUsersNearLimitForOrg(
 }
 
 /**
- * Story 9.2 AC-13/AC-14: hourly `resource-usage:check` job — evaluates instance-wide `orgs` count
+ * Story 9.2 AC-13/AC-14: hourly `resource-usage/check` job — evaluates instance-wide `orgs` count
  * and every org's `usersPerOrg` against instancePolicy limits, at 80/90/95% tiers (idempotent per
  * threshold+scope via upsertThresholdAlert).
  */

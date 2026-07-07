@@ -156,5 +156,5 @@ export async function runDigestSend(
 export async function notificationDigestHandler(
   logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 ): Promise<void> {
-  await withJobLogging(logger, 'notification:send-digest', 'daily', () => runDigestSend(logger))
+  await withJobLogging(logger, 'notification/send-digest', 'daily', () => runDigestSend(logger))
 }

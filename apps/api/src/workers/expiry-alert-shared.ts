@@ -105,7 +105,7 @@ export type ExpiryAlertRow = {
 }
 
 export type ExpiryAlertJobConfig<Row extends ExpiryAlertRow> = {
-  /** e.g. 'cert:expiry-alert' — also passed through to runOrgScopedJob. */
+  /** e.g. 'cert/expiry-alert' — also passed through to runOrgScopedJob. */
   jobName: string
   templateId: string
   /** Short label used in operational log context (e.g. 'certificate', 'domain_record'). */

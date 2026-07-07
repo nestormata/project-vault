@@ -102,9 +102,9 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
       const boss = (fastify as BossFastify).boss
       if (boss) {
         await boss.send(
-          'backup:snapshot',
+          'backup/snapshot',
           { runId: slot.runId, filename: slot.filename, metaFilename: slot.metaFilename },
-          { singletonKey: `backup:snapshot:${slot.runId}` }
+          { singletonKey: `backup/snapshot/${slot.runId}` }
         )
       }
 
@@ -296,7 +296,7 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
   })
 }
 
-/** D6/AC-13: called by the backup:snapshot worker on failure — kept here (not in service.ts,
+/** D6/AC-13: called by the backup/snapshot worker on failure — kept here (not in service.ts,
  * which intentionally has no notification/boss dependency) since it composes the alert +
  * delivery + operational-log concerns the route layer already imports. */
 export async function reportBackupFailureAlert(

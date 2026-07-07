@@ -50,7 +50,7 @@ import { UnsafeForwardingUrlError } from '../../lib/safe-fetch.js'
  * mechanism (no new one invented for this story), with a cap sized for the audit-events volume. */
 export const AUDIT_EVENTS_MAX_OFFSET = 10_000
 
-/** AC-9 — bounds the audit:export worker's retry window against the best-effort, post-insert
+/** AC-9 — bounds the audit/export worker's retry window against the best-effort, post-insert
  * `boss.send()` racing the enqueuing transaction's own commit (see export.ts's row-not-found
  * retry comment) — mirrors this codebase's other post-commit-notification patterns. */
 const AUDIT_EXPORT_JOB_RETRY_LIMIT = 5
@@ -322,12 +322,12 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
       const boss = (fastify as BossFastify).boss
       if (boss) {
         await boss.send(
-          'audit:export',
+          'audit/export',
           { exportId: inserted.id, orgId: secureCtx.auth.orgId },
           {
             retryLimit: AUDIT_EXPORT_JOB_RETRY_LIMIT,
             retryDelay: AUDIT_EXPORT_JOB_RETRY_DELAY_SECONDS,
-            singletonKey: `audit:export:${inserted.id}`,
+            singletonKey: `audit/export/${inserted.id}`,
           }
         )
       }
@@ -492,7 +492,7 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
   // story's Dev Notes are the documented record of this trade-off): webhook delivery runs on an
   // every-minute watermark-cursor catchup cron, so the delivery SLA is "within ~60-120 seconds
   // of insertion, best-effort" — not a literal sub-60-second guarantee. S3 forwarding is a daily
-  // batch (`audit:s3-forward-daily`), not a webhook and not delivered per-row at all.
+  // batch (`audit/s3-forward-daily`), not a webhook and not delivered per-row at all.
   // AC-19 — "write-once" enforcement for S3 forwarding is explicitly the operator's own
   // responsibility via S3 Object Lock configured on their bucket; the vault does not and cannot
   // configure bucket-level Object Lock itself.
