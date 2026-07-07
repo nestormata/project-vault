@@ -693,7 +693,15 @@ claude-sonnet-5 (Claude Code)
   - Docker multi-arch build was not actually re-run in this session (no buildx environment available) — see Task 10's unchecked sub-item.
   - The pre-existing `secure-route.integration.test.ts` flake (see Debug Log) was not fixed — it predates this story and is out of scope.
 
-### File List
+### Code Review Follow-ups (deferred, not blocking)
+
+Code review (2026-07-06) fixed one critical finding (`pg_dump` missing `--clean --if-exists`, which would have made restore fail against the very database it targets) and three high findings (path traversal via unvalidated `:filename`, unhandled/unlogged restore failures, and permanently-stuck `running` rows after a crash) — see commit `46975cb`. Three additional high-severity findings were identified but deliberately left unfixed, since each requires a design decision beyond this story's ACs. Tracked for a future hardening story (same pattern as Story 8-5 bundling 5.4's unresolved findings):
+
+- **No concurrency guard on restore itself.** Two concurrent restores, or a restore racing an in-progress backup dump, can both proceed against `BACKUP_DATABASE_URL` with no advisory lock (unlike `acquireBackupSlot`'s AC-7 guard for backups). Needs a decision on lock scope and whether it should also block `validate`/new triggers.
+- **`backup.missed` admin_alerts never auto-resolve.** Nothing transitions the alert away from `status: 'active'` after the first miss — the hourly health check silently no-ops on every subsequent run once one alert exists. Needs a decision on auto-resolve-on-next-success vs. a manual-acknowledge endpoint (the `acknowledgedAt` column and Story 9.2's alerts-reuse note (D3) suggest this may be intentionally deferred).
+- **AC-6's explicit S3-upload-failure negative case isn't implemented.** No local staging of the encrypted dump before S3 upload, no retry, and no orphan-cleanup job — a failed upload silently loses the backup with nothing to recover from.
+
+
 
 **New — backup module (apps/api)**
 - `apps/api/src/modules/backup/config.ts` — resolves backup destination/enablement from env (D-Task4)
