@@ -40,7 +40,7 @@ export function validationError(
   }
 }
 
-type SafeParseSchema<T> = {
+export type SafeParseSchema<T> = {
   safeParse: (
     value: unknown
   ) =>

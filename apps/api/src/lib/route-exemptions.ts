@@ -510,7 +510,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     reviewer: SECURITY_OWNER,
   },
   'POST /api/v1/admin/backups/:filename/restore': {
-    action: 'security-action',
+    action: SECURITY_ACTION,
     auditOmissionReason:
       'Instance-wide destructive action — no secureCtx.tx to audit through. Logged via operational logging (backup.restore.initiated/completed/failed, D6/AC-18) pending Story 9.4.',
     reviewer: SECURITY_OWNER,
@@ -519,6 +519,39 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'mutation',
     auditOmissionReason:
       'Non-destructive validation that also updates backup_runs.verified as a side effect — instance-wide, no secureCtx.tx to audit through. Logged via operational logging (backup.validate.initiated/completed, D6/AC-18) pending Story 9.4.',
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 9.2 D2/D6: platform-operator-scoped (instance-wide, requireOrgScope: false) routes in
+  // modules/platform-admin/ — same "no secureCtx.tx to audit through" shape as Story 9.1's
+  // backup/restore routes above. Logged via operational logging (AC-25) pending Story 9.4.
+  'GET /api/v1/admin/settings': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      'Instance-wide settings read (SMTP password never included, masked as configured: bool) — no secureCtx.tx to audit through.',
+    reviewer: SECURITY_OWNER,
+  },
+  'PUT /api/v1/admin/settings': {
+    action: 'mutation',
+    auditOmissionReason:
+      'Instance-wide settings update — no secureCtx.tx to audit through. Logged via operational logging (platform_admin.settings_updated, D6/AC-25) pending Story 9.4.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/admin/orgs': {
+    action: SECURITY_ACTION,
+    auditOmissionReason:
+      'Instance-wide org provisioning (creates users/org_memberships) — no secureCtx.tx to audit through. Logged via operational logging (platform_admin.org_created, D6/AC-25) pending Story 9.4.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/admin/orgs': {
+    action: 'read',
+    auditOmissionReason:
+      'Org listing reveals name/slug/createdAt/memberCount only — no secrets exposed.',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/admin/resource-usage': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      'Cross-org aggregate counts only (no secret values, no per-user PII) — instance-wide, no secureCtx.tx to audit through.',
     reviewer: SECURITY_OWNER,
   },
   'GET /api/v1/users/me/notification-preferences': {
@@ -1072,6 +1105,13 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'Uses getDb() only for the transaction-scoped pg_try_advisory_xact_lock overlap guard (ADR-6.2-09) — no table data is read through it; the due-query and every alert/audit write use runOrgScopedJob for RLS-scoped access.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/key-custody-check.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Story 9.2 AC-19/AC-20: reads the single platform-level vault_state row (no org_id column, RLS-exempt, D8) via getDb() — there is no per-org scope to apply here.',
     reviewer: SECURITY_OWNER,
   },
 ]

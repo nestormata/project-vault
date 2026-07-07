@@ -31,6 +31,9 @@ import { searchRoutes } from './modules/search/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { backupRoutes } from './modules/backup/routes.js'
+import { settingsRoutes } from './modules/platform-admin/settings-routes.js'
+import { orgsRoutes } from './modules/platform-admin/orgs-routes.js'
+import { resourceUsageRoutes } from './modules/platform-admin/resource-usage-routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
 import { machineTokenExchangeRoutes } from './modules/machine-users/token-exchange-routes.js'
@@ -228,8 +231,19 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })
   await fastify.register(usersRoutes, { prefix: '/api/v1/users' })
   await fastify.register(searchRoutes, { prefix: '/api/v1' })
-  await fastify.register(adminRoutes, { prefix: '/api/v1/admin' })
-  await fastify.register(backupRoutes, { prefix: '/api/v1/admin' })
+  // '/api/v1/admin' hosts two distinct route families sharing one URL prefix (Story 9.2 D2):
+  // adminRoutes/backupRoutes are pre-existing; settingsRoutes/orgsRoutes/resourceUsageRoutes are
+  // this story's new platform-operator-scoped (instance-wide) routes — deliberately three
+  // separate files/registrations (not one modules/platform-admin/routes.ts) so
+  // route-audit.test.ts's generic AST scan (which resolves each registrar to the exact file
+  // app.ts imports it from) sees each file's secureRoute() calls directly, same as every other
+  // module here.
+  const ADMIN_PREFIX = '/api/v1/admin'
+  await fastify.register(adminRoutes, { prefix: ADMIN_PREFIX })
+  await fastify.register(backupRoutes, { prefix: ADMIN_PREFIX })
+  await fastify.register(settingsRoutes, { prefix: ADMIN_PREFIX })
+  await fastify.register(orgsRoutes, { prefix: ADMIN_PREFIX })
+  await fastify.register(resourceUsageRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(notificationRoutes, { prefix: '/api/v1' })
   await fastify.register(machineUserRoutes, { prefix: '/api/v1' })
   await fastify.register(machineCredentialRoutes, { prefix: '/api/v1/machine' })

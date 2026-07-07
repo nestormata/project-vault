@@ -3,6 +3,7 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { secureRoute } from '../../lib/secure-route.js'
 import { env } from '../../config/env.js'
 import { getEmailTransport } from '../../workers/notification-email.js'
+import { resolveSmtpTransportConfig } from '../platform-admin/service.js'
 import { renderEmailTemplate, renderSlackTemplate } from '../../notifications/templates/index.js'
 import { NotificationTestResponseSchema } from './schema.js'
 
@@ -41,13 +42,14 @@ export async function adminRoutes(fastify: FastifyApp): Promise<void> {
 }
 
 async function testEmailDelivery(): Promise<'delivered' | 'failed' | 'not_configured'> {
-  const transport = getEmailTransport()
+  const transport = await getEmailTransport()
   if (!transport) return 'not_configured'
   try {
+    const smtpConfig = await resolveSmtpTransportConfig()
     const { subject, text, html } = renderEmailTemplate(TEST_TEMPLATE_ID, TEST_PAYLOAD)
     const sendPromise = transport.sendMail({
-      from: env.SMTP_FROM,
-      to: env.SMTP_FROM,
+      from: smtpConfig?.from ?? undefined,
+      to: smtpConfig?.from ?? undefined,
       subject: `[TEST] ${subject}`,
       text: `[THIS IS A TEST MESSAGE]\n\n${text}`,
       html: `<p><em>[THIS IS A TEST MESSAGE]</em></p>${html}`,

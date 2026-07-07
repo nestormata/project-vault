@@ -3,7 +3,7 @@ import { withOrg } from '@project-vault/db'
 import { notificationQueue, users } from '@project-vault/db/schema'
 import { renderEmailTemplate } from '../notifications/templates/index.js'
 import { getEmailTransport } from './notification-email.js'
-import { env } from '../config/env.js'
+import { resolveSmtpTransportConfig } from '../modules/platform-admin/service.js'
 import { withJobLogging } from '../lib/job-logging.js'
 import type { FastifyBaseLogger } from 'fastify'
 
@@ -58,7 +58,7 @@ export async function runDigestSend(
   logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 ): Promise<void> {
   const now = new Date()
-  const transport = getEmailTransport()
+  const transport = await getEmailTransport()
   if (!transport) {
     logger.warn(
       { eventType: 'notification.digest.skipped', reason: 'smtp_not_configured' },
@@ -125,10 +125,11 @@ export async function runDigestSend(
         }
 
         const { subject, text, html } = renderDigestEmail(entries)
+        const smtpConfig = await resolveSmtpTransportConfig()
 
         try {
           await transport.sendMail({
-            from: env.SMTP_FROM,
+            from: smtpConfig?.from ?? undefined,
             to: user.email,
             subject,
             text,

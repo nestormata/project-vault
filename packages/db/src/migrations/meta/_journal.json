@@ -281,6 +281,13 @@
       "when": 1783564800000,
       "tag": "0039_platform_operator_and_backup_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1783651200000,
+      "tag": "0040_system_settings_and_key_rotation",
+      "breakpoints": true
     }
   ]
 }

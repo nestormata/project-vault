@@ -125,7 +125,7 @@ export function slugify(orgName: string): string {
   return slug || 'org'
 }
 
-function isUniqueViolation(error: unknown, constraint?: string): boolean {
+export function isUniqueViolation(error: unknown, constraint?: string): boolean {
   const cause = (error as { cause?: { code?: string; constraint_name?: string } }).cause
   if (cause?.code !== '23505') return false
   return constraint ? cause.constraint_name === constraint : true
@@ -212,17 +212,33 @@ async function insertPlatformSecurityEvent(
   })
 }
 
-async function allocateOrganizationSlug(
+/**
+ * Story 9.2 D7: exported (was module-private) for reuse by `modules/platform-admin/service.ts`'s
+ * `POST /admin/orgs` — the platform-operator org-provisioning flow reuses this verbatim rather
+ * than re-implementing slug-collision retry logic.
+ */
+export async function allocateOrganizationSlug(
   tx: Tx,
   baseSlug: string
 ): Promise<{ id: string; slug: string }> {
   for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt += 1) {
     const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`
     try {
-      const inserted = await tx
-        .insert(organizations)
-        .values({ name: '', slug })
-        .returning({ id: organizations.id, slug: organizations.slug })
+      // Story 9.2 AC-8 (duplicate-org-name-different-slug, "reuse allocateOrganizationSlug's
+      // existing collision-retry loop verbatim"): each attempt runs in its own SAVEPOINT
+      // (tx.transaction() nested inside an existing transaction becomes a real SAVEPOINT, same
+      // pattern already used a few lines below for the platform-operator bootstrap race). Without
+      // this, a unique-violation on attempt N aborts the *entire* outer transaction (Postgres
+      // 25P02 "current transaction is aborted"), so attempt N+1's otherwise-valid insert would
+      // always fail too — a latent bug this story's AC-8 edge case is the first thing to actually
+      // exercise (self-registration slug collisions are rare enough in practice that no prior
+      // story's test forced two attempts within the same transaction).
+      const inserted = await tx.transaction((savepointTx) =>
+        (savepointTx as Tx)
+          .insert(organizations)
+          .values({ name: '', slug })
+          .returning({ id: organizations.id, slug: organizations.slug })
+      )
       const org = inserted[0]
       if (org) return org
     } catch (error) {
