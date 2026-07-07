@@ -167,7 +167,7 @@ export async function touchActivityWithoutBlocking(
   session: Pick<AuthSessionRow, 'id' | 'orgId' | 'userId'>
 ): Promise<void> {
   try {
-    await touchSessionActivity(session.id)
+    await touchSessionActivity(session.id, session.orgId)
   } catch (error) {
     request.log.warn({
       eventType: 'session.activity_touch_failed',

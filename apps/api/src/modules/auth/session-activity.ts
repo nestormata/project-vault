@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { getDb, withOrg } from '@project-vault/db'
+import { withOrg } from '@project-vault/db'
 import { orgMemberships, sessions } from '@project-vault/db/schema'
 import { env } from '../../config/env.js'
 
@@ -9,14 +9,20 @@ export function evictSessionActivityDebounce(sessionId: string): void {
   lastActivityWrite.delete(sessionId)
 }
 
-export async function touchSessionActivity(sessionId: string): Promise<void> {
+export async function touchSessionActivity(sessionId: string, orgId: string): Promise<void> {
   const now = Date.now()
   const last = lastActivityWrite.get(sessionId) ?? 0
   if (now - last < env.SESSION_ACTIVITY_DEBOUNCE_SECONDS * 1000) return
-  await getDb()
-    .update(sessions)
-    .set({ lastActiveAt: new Date(now), updatedAt: new Date(now) })
-    .where(eq(sessions.id, sessionId))
+  // sessions is RLS-protected (sessions_isolation in 0001_rls_and_triggers.sql): a bare,
+  // non-transactional getDb() call has no app.current_org_id set, so the policy silently
+  // matches zero rows and this UPDATE becomes a no-op — confirmed via direct probe. Must
+  // run inside withOrg() for the write to actually land.
+  await withOrg(orgId, (tx) =>
+    tx
+      .update(sessions)
+      .set({ lastActiveAt: new Date(now), updatedAt: new Date(now) })
+      .where(eq(sessions.id, sessionId))
+  )
   lastActivityWrite.set(sessionId, now)
 }
 
@@ -43,12 +49,11 @@ export async function touchOrgMembershipActivity(orgId: string, userId: string):
   const now = Date.now()
   const last = lastOrgMembershipActivityWrite.get(key) ?? 0
   if (now - last < env.SESSION_ACTIVITY_DEBOUNCE_SECONDS * 1000) return
-  // Deliberate deviation from touchSessionActivity's bare getDb() call (confirmed by direct probe:
-  // a bare, non-transactional getDb() query has no app.current_org_id set, so org_memberships'
-  // RLS policy — org_id = current_setting('app.current_org_id') — silently matches zero rows and
-  // the UPDATE becomes a no-op). org_memberships is RLS-protected the same way sessions is, so
-  // this write must run inside withOrg() to actually land; mirroring touchSessionActivity's exact
-  // structure here would make this story's own AC-9 permanently fail silently.
+  // org_memberships is RLS-protected the same way sessions is (confirmed by direct probe: a
+  // bare, non-transactional getDb() query has no app.current_org_id set, so the RLS policy —
+  // org_id = current_setting('app.current_org_id') — silently matches zero rows and the UPDATE
+  // becomes a no-op). This write must run inside withOrg() to actually land, same as
+  // touchSessionActivity's write does.
   await withOrg(orgId, (tx) =>
     tx
       .update(orgMemberships)
