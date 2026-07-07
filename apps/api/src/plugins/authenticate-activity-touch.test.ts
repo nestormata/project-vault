@@ -49,7 +49,7 @@ describe('authenticate plugin — independent activity-touch failure isolation (
 
     await expect(touchActivityWithoutBlocking(request, session)).resolves.toBeUndefined()
 
-    expect(touchSessionActivity).toHaveBeenCalledWith('session-1')
+    expect(touchSessionActivity).toHaveBeenCalledWith('session-1', 'org-1')
     expect(touchOrgMembershipActivity).toHaveBeenCalledWith('org-1', 'user-1')
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'org_membership.activity_touch_failed' })
@@ -72,7 +72,7 @@ describe('authenticate plugin — independent activity-touch failure isolation (
 
     await expect(touchActivityWithoutBlocking(request, session)).resolves.toBeUndefined()
 
-    expect(touchSessionActivity).toHaveBeenCalledWith('session-1')
+    expect(touchSessionActivity).toHaveBeenCalledWith('session-1', 'org-1')
     expect(touchOrgMembershipActivity).toHaveBeenCalledWith('org-1', 'user-1')
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'session.activity_touch_failed' })
