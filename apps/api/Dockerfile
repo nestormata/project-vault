@@ -35,9 +35,15 @@ RUN pnpm --filter @project-vault/shared build \
  && pnpm --filter @project-vault/agent build \
  && pnpm --filter @project-vault/api build
 
-# Bundle the api and its production deps into a self-contained directory.
+# Bundle the api and its production deps into a self-contained directory. This runs in its
+# own stage (not in `builder`) because `pnpm deploy` prunes the workspace node_modules to
+# production-only in place — the `migrate` service targets `builder` directly to run
+# drizzle-kit, and a pruned workspace there made pnpm's automatic deps-status check try to
+# self-heal via `pnpm install --production`, which fails on the root `prepare: husky` script
+# (a devDependency absent from a production install).
 # pnpm deploy copies from the already-built virtual store (argon2 native binary included)
 # so no compiler toolchain is needed in the runner stage.
+FROM builder AS deploy
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 
 FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
@@ -54,7 +60,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app
 
-COPY --from=builder --chown=node:node /app/deploy .
+COPY --from=deploy --chown=node:node /app/deploy .
 
 EXPOSE 3000
 

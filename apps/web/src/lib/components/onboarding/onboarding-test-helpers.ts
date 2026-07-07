@@ -5,6 +5,7 @@ import type { AuthUser } from '$lib/api/auth.js'
 export const onboardingTestUser: AuthUser = {
   userId: 'user-1',
   orgId: 'org-1',
+  orgName: 'Demo Org',
   sessionId: 'session-1',
   orgRole: 'owner',
   mfaEnrolled: false,

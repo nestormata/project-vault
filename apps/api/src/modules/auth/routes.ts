@@ -2,8 +2,9 @@ import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import rateLimit from '@fastify/rate-limit'
 import { z } from 'zod/v4'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
+import { organizations } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
@@ -407,10 +408,16 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       const authContext = secureCtx.auth
       const mfaStatus = await getMfaStatus(authContext.userId, secureCtx.tx)
       const enforcementStatus = await loadMfaEnforcementStatus(authContext, secureCtx.tx)
+      const [org] = await secureCtx.tx
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, authContext.orgId))
+        .limit(1)
       return {
         data: {
           userId: authContext.userId,
           orgId: authContext.orgId,
+          orgName: org?.name ?? '',
           sessionId: authContext.sessionId,
           orgRole: authContext.orgRole,
           ...mfaStatus,

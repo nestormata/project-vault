@@ -14,6 +14,7 @@ import { nextCronOccurrence } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
 import {
+  awaitCredentialScopedLockRelease,
   tryAcquireCredentialScopedLock,
   tryAcquireRotationScopedLock,
 } from '../../lib/rotation-locks.js'
@@ -93,6 +94,7 @@ export async function initiateRotation(
 ): Promise<InitiateRotationResult> {
   const locked = await tryAcquireCredentialScopedLock(tx, input.orgId, input.credentialId)
   if (!locked) {
+    await awaitCredentialScopedLockRelease(tx, input.orgId, input.credentialId)
     throw new RotationConflictError(await findInProgressRotationId(tx, input.credentialId))
   }
 

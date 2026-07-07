@@ -150,12 +150,45 @@ Export `VAULT_BOOTSTRAP_TOKEN` / `VAULT_ALLOW_REMOTE_INIT` in the **same shell**
 
 The `migrate` service rebuilds the API builder image to run `pnpm db:migrate` (known tradeoff — see `deferred-work.md` D4). Subsequent starts are faster if images are cached.
 
+### Browser console shows `Not allowed by CORS` on login/register
+
+`WEB_HOST_PORT` got auto-bumped away from 5173 by `make fix-ports`/`docker-ports.sh` (see AGENTS.md
+"Docker port isolation"), but `docker-compose.yml`'s `CORS_ALLOWED_ORIGINS` tracks `WEB_HOST_PORT`
+automatically — so this should only happen if you hardcoded `CORS_ALLOWED_ORIGINS` yourself, or
+you're hitting the web app on a different host/port than `.env` declares. Confirm the browser's
+actual origin matches `http://localhost:${WEB_HOST_PORT}`.
+
+### `docker compose up` api container boots but registration/`/me` queries 500
+
+Check `docker compose exec db psql -U postgres -d project_vault -c 'select count(*) from
+drizzle.__drizzle_migrations;'` against the number of files in `packages/db/src/migrations/`
+(excluding `meta/`). A mismatch means the `db_data` volume holds schema state from a different
+migration history than the current checkout (e.g. reused from an older worktree or branch).
+`make docker-down-v` then `make docker-up` wipes and re-migrates cleanly — this destroys local
+dev data in that volume.
+
+### Docker api container boots with `X is required in production` for HMAC secrets
+
+`docker-compose.yml`'s `api` service runs `NODE_ENV=production`, which enables the app's strict
+secret validation (see "Production hardening" below) even for local testing. All ~10 required
+secrets have dev-only fallback defaults baked into `docker-compose.yml` (`${VAR:-<64-char dev
+value>}`), so a fresh checkout should boot with no `.env` secrets set at all. If you see this
+error, either you've set one of these vars to an empty string in `.env` (which overrides the
+compose default with nothing) or a new required secret was added to `apps/api/src/config/env.ts`
+without a matching default wired into `docker-compose.yml`.
+
 ---
 
 ## Production hardening (before non-dev deploy)
 
 1. Change `vault_app` password: `ALTER ROLE vault_app PASSWORD '…'` after migrate.
-2. Set distinct 32+ byte secrets for `SESSION_SECRET`, `REFRESH_TOKEN_HMAC_SECRET`, `MFA_PENDING_SESSION_HMAC_SECRET`, `TOTP_REPLAY_HMAC_SECRET`.
+2. Set distinct 32+ byte secrets for every HMAC/session secret the app validates in production —
+   `SESSION_SECRET`, `REFRESH_TOKEN_HMAC_SECRET`, `TOTP_REPLAY_HMAC_SECRET`,
+   `MFA_PENDING_SESSION_HMAC_SECRET`, `INVITATION_TOKEN_HMAC_SECRET`, `RECOVERY_TOKEN_HMAC_SECRET`,
+   `API_KEY_HMAC_SECRET`, `MACHINE_JWT_SECRET`, `STATUS_PAGE_TOKEN_HMAC_SECRET`,
+   `ERASURE_EMAIL_HASH_SECRET`. `docker-compose.yml` ships dev-only repeated-character defaults
+   for local testing only — never reuse them, and never reuse a value across two of these vars
+   (the app rejects both placeholder-looking and duplicate secrets at startup).
 3. Set `VAULT_BOOTSTRAP_TOKEN`; never set `VAULT_ALLOW_REMOTE_INIT=true`.
 4. Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` (Postgres not exposed on public interface).
 5. Full runbook: Epic 9 Story 9.5 (planned).

@@ -76,7 +76,7 @@
           </a>
         {/if}
         <span>Role: {user.orgRole}</span>
-        <span class="max-w-full break-all">Org: {user.orgId}</span>
+        <span class="max-w-full break-all">Org: {user.orgName}</span>
         <button
           class="rounded-xl border border-slate-300 px-3 py-2 font-medium text-slate-800"
           type="button"
