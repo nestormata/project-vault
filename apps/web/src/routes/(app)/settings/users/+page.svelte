@@ -11,11 +11,47 @@
     type OrgUserProject,
     type SettableProjectRole,
   } from '$lib/api/org-users.js'
+  import {
+    updateMachineKeyDormancyThreshold,
+    type DormancyThresholdDays,
+  } from '$lib/api/organization-settings.js'
 
   let { data } = $props()
 
   let errorMessage = $state<string | null>(null)
   let busyKey = $state<string | null>(null)
+
+  // AC-4 — machine-key dormancy alert threshold. Deliberately a "set new value" control, not a
+  // pre-populated one: the API only ships a PATCH for this setting (no GET), and this story is
+  // scoped to add no new backend endpoint for AC-1–AC-4, so the current org value cannot be read
+  // and displayed here without one. Defaulting the select to a real option would misleadingly
+  // imply that's the current value, so it starts unselected instead.
+  let dormancyThresholdChoice = $state<DormancyThresholdDays | ''>('')
+  let dormancySaving = $state(false)
+  let dormancySavedTo = $state<number | null>(null)
+  let dormancyError = $state<string | null>(null)
+
+  async function onSaveDormancyThreshold() {
+    if (dormancySaving || dormancyThresholdChoice === '') return
+    dormancySaving = true
+    dormancyError = null
+    dormancySavedTo = null
+    try {
+      const result = await updateMachineKeyDormancyThreshold(
+        fetch,
+        data.orgId,
+        dormancyThresholdChoice
+      )
+      dormancySavedTo = result.machineKeyDormancyThresholdDays
+    } catch (error) {
+      dormancyError =
+        error instanceof ApiClientError
+          ? (error.message ?? 'Failed to update dormancy threshold.')
+          : 'Failed to update dormancy threshold.'
+    } finally {
+      dormancySaving = false
+    }
+  }
   // Maps a userId to a human-readable "sole owner of these projects" blocking message.
   let blockedRemoval = $state<Record<string, string>>({})
 
@@ -140,6 +176,48 @@
       <p class="text-slate-600">Only organization owners and admins can manage users.</p>
     </div>
   {:else}
+    <div class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold text-slate-950">Machine key dormancy alerts</h2>
+      <p class="mt-2 text-sm text-slate-600">
+        How long a machine-user API key can go unused before a dormancy alert fires (Security Alerts
+        / Notifications inbox).
+      </p>
+      <p class="mt-2 text-sm font-medium text-amber-800">
+        Changing this is not retroactive: alerts already fired under the old threshold are not
+        reconciled or auto-dismissed when you change this setting.
+      </p>
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <label class="sr-only" for="dormancy-threshold-select">Dormancy threshold (days)</label>
+        <select
+          id="dormancy-threshold-select"
+          class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          bind:value={dormancyThresholdChoice}
+        >
+          <option value="">Choose a new threshold…</option>
+          <option value={30}>30 days</option>
+          <option value={60}>60 days</option>
+          <option value={90}>90 days</option>
+          <option value={180}>180 days</option>
+        </select>
+        <button
+          class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          type="button"
+          disabled={dormancySaving || dormancyThresholdChoice === ''}
+          onclick={() => void onSaveDormancyThreshold()}
+        >
+          {dormancySaving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      {#if dormancySavedTo !== null}
+        <p class="mt-2 text-sm text-emerald-700">
+          Threshold updated to {dormancySavedTo} days.
+        </p>
+      {/if}
+      {#if dormancyError}
+        <p class="mt-2 text-sm text-red-700" role="alert">{dormancyError}</p>
+      {/if}
+    </div>
+
     {#if errorMessage}
       <p
         class="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"

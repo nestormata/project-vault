@@ -28,6 +28,19 @@ const KEY_BYTES = 32 // 256-bit AES key
 // just asserting it in a comment.
 export const CACHE_KDF_INFO = 'project-vault-agent-cache-v1'
 
+// Story 8-6 AC-10 — this module is the SECOND of three independently-versioned copies of this
+// AES-256-GCM/HKDF envelope: `packages/crypto/src/aes.ts` (server) is the first, and this file is
+// bundled verbatim into `packages/vault-action/dist/index.js` (the third) when that package is
+// built. A security-relevant change here requires, before it can be considered done:
+//   1. Re-run the cross-compat test (`apps/api/src/__tests__/agent-crypto-cross-compat.test.ts`)
+//      to confirm this stays byte-for-byte interoperable with `packages/crypto/src/aes.ts`.
+//   2. Rebuild `packages/vault-action/dist/` (`pnpm --filter @project-vault/vault-action build`,
+//      verified fresh by `scripts/check-vault-action-dist-fresh.ts`) so the bundled copy actually
+//      picks up this change — editing this file alone does NOT update the already-built dist/.
+//   3. Cut a `vault-action` re-tag/release so CI consumers of the mutable `v1` tag pick up the fix.
+// See `packages/agent/SECURITY.md` for the full checklist and `packages/crypto/src/aes.ts` for the
+// cross-reference back the other way.
+
 /** Derives a 256-bit AES cache key from the plaintext API key. Salt is intentionally empty. */
 export function deriveCacheKey(apiKey: string): Buffer {
   return Buffer.from(

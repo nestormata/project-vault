@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths'
   import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
   import { canImportCredentials } from '$lib/credentials/permissions.js'
+  import DataTable from '$lib/components/tables/DataTable.svelte'
   import type { CredentialStatus } from '@project-vault/shared'
 
   let { data } = $props()
@@ -60,6 +61,12 @@
           href={resolve(`/projects/${data.projectId}/members`)}
         >
           Members
+        </a>
+        <a
+          class="font-medium text-slate-700 underline"
+          href={resolve(`/projects/${data.projectId}/machine-users`)}
+        >
+          Machine users
         </a>
         <a
           class="font-medium text-slate-700 underline"
@@ -179,47 +186,34 @@
         </p>
       </div>
     {:else}
-      <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table class="min-w-full text-left text-sm">
-          <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
-            <tr>
-              <th class="px-4 py-3 font-semibold">Name</th>
-              <th class="px-4 py-3 font-semibold">Status</th>
-              <th class="px-4 py-3 font-semibold">Tags</th>
-              <th class="px-4 py-3 font-semibold">Expires</th>
-              <th class="px-4 py-3 font-semibold">Deps</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each data.credentials.items as credential (credential.id)}
-              <tr class="border-b border-slate-100 last:border-b-0">
-                <td class="px-4 py-3">
-                  <a
-                    class="font-semibold text-slate-950 underline"
-                    href={resolve(`/projects/${data.projectId}/credentials/${credential.id}`)}
-                  >
-                    {credential.name}
-                  </a>
-                </td>
-                <td class="px-4 py-3">
-                  <span
-                    class={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(credential.status)}`}
-                  >
-                    {credential.status}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-slate-600">
-                  {credential.tags.length > 0 ? credential.tags.join(', ') : '—'}
-                </td>
-                <td class="px-4 py-3 text-slate-600">{formatDate(credential.expiresAt)}</td>
-                <td class="px-4 py-3 text-slate-600">
-                  {credential.hasDependencies ? 'Yes' : '—'}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <DataTable columns={['Name', 'Status', 'Tags', 'Expires', 'Deps']}>
+        {#each data.credentials.items as credential (credential.id)}
+          <tr class="border-b border-slate-100 last:border-b-0">
+            <td class="px-4 py-3">
+              <a
+                class="font-semibold text-slate-950 underline"
+                href={resolve(`/projects/${data.projectId}/credentials/${credential.id}`)}
+              >
+                {credential.name}
+              </a>
+            </td>
+            <td class="px-4 py-3">
+              <span
+                class={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(credential.status)}`}
+              >
+                {credential.status}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-slate-600">
+              {credential.tags.length > 0 ? credential.tags.join(', ') : '—'}
+            </td>
+            <td class="px-4 py-3 text-slate-600">{formatDate(credential.expiresAt)}</td>
+            <td class="px-4 py-3 text-slate-600">
+              {credential.hasDependencies ? 'Yes' : '—'}
+            </td>
+          </tr>
+        {/each}
+      </DataTable>
 
       <p class="text-sm text-slate-600">
         Showing {data.credentials.items.length} of {data.credentials.total} credentials

@@ -72,6 +72,8 @@ export const AuditEvent = {
   MACHINE_USER_API_KEY_EMERGENCY_REVOKED: 'machine_user.api_key_emergency_revoked',
   MACHINE_USER_ROTATION_ANOMALY_DETECTED: 'machine_user.rotation_anomaly_detected',
   MACHINE_USER_DORMANCY_EXTENDED: 'machine_user.dormancy_extended',
+  // Story 8-6 AC-5 — closes 7.1's forward-compatible-but-unused `deactivatedAt` column.
+  MACHINE_USER_DEACTIVATED: 'machine_user.deactivated',
   MACHINE_CACHE_ACTIVATED: 'machine_cache.activated',
   STATUS_PAGE_ENABLED: 'status_page.enabled',
   STATUS_PAGE_TOKEN_REGENERATED: 'status_page.token_regenerated',

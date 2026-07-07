@@ -3,7 +3,8 @@ import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
 export const load: PageServerLoad = async ({ fetch, locals }) => {
-  const orgRole = requireUser(locals).orgRole
+  const user = requireUser(locals)
+  const orgRole = user.orgRole
   const canManage = orgRole === 'owner' || orgRole === 'admin'
 
   let users: OrgUser[] = []
@@ -15,5 +16,5 @@ export const load: PageServerLoad = async ({ fetch, locals }) => {
     }
   }
 
-  return { canManage, orgRole, users }
+  return { canManage, orgRole, orgId: user.orgId, users }
 }
