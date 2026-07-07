@@ -8,7 +8,7 @@ RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml .npmrc ./
+COPY package.json pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/tsconfig/package.json ./packages/tsconfig/

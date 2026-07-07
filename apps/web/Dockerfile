@@ -4,7 +4,7 @@ RUN npm install -g pnpm@11.9.0
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml .npmrc ./
+COPY package.json pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/tsconfig/package.json ./packages/tsconfig/

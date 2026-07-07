@@ -1,6 +1,7 @@
 .git
 .env*
 !/.env.example
+.npmrc
 .pnpmrc
 node_modules
 dist
