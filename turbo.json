@@ -37,7 +37,12 @@
       "cache": false
     },
     "@project-vault/api-contract-tests#test": {
-      "dependsOn": ["^build", "@project-vault/api#build", "@project-vault/db#test"],
+      "dependsOn": [
+        "^build",
+        "@project-vault/api#build",
+        "@project-vault/api#test",
+        "@project-vault/db#test"
+      ],
       "cache": false
     },
     "@project-vault/vault-action#typecheck": {
