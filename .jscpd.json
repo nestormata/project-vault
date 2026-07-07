@@ -9,6 +9,7 @@
     "**/*.test.ts",
     "packages/agent/src/cache-crypto.ts",
     "apps/api/src/modules/audit/machine-entry.ts",
+    "apps/api/src/workers/user-dormancy-check.ts",
     "**/node_modules/**",
     "**/dist/**",
     "**/build/**",

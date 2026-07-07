@@ -11,6 +11,10 @@ export const MFA_ENROLLMENT_EXEMPT_ROUTES = [
   'GET /api/v1/org/audit/events',
   'GET /api/v1/org/audit/exports/:jobId',
   'GET /api/v1/org/audit/exports/:jobId/download',
+  // Story 8.3 — same rationale as GET /audit/verify/events above: a compliance-visibility read
+  // (POST only because asOf/page/limit/format need a body, per AC-27's own note) stays reachable
+  // during an owner's MFA grace period rather than locking them out of access-governance state.
+  'POST /api/v1/org/audit/access-report',
   // Read-only org user list (Story 4.2, AC-2): admin-gated but non-mutating, so it uses the
   // "MFA-exempt: GET status/read paths" precedent (mirrors GET /org/security-alerts above).
   'GET /api/v1/org/users',
