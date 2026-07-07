@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
+import { routeExists } from '$lib/test/route-exists.js'
 
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 const initiateRotationMock = vi.hoisted(() => vi.fn())
@@ -229,6 +230,7 @@ describe('/rotate +page.svelte', () => {
     expect(await screen.findByText(/Enable MFA to start a rotation/i)).toBeTruthy()
     const link = screen.getByRole('link', { name: /enable mfa/i })
     expect(link.getAttribute('href')).toBe('/settings/security')
+    expect(routeExists(link.getAttribute('href') ?? '')).toBe(true)
   })
 
   it('AC-6 edge: a plain 403 with a different code (e.g. insufficient_role) still shows the existing generic message, not the MFA one', async () => {

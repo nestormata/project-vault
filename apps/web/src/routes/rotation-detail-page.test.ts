@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
+import { routeExists } from '$lib/test/route-exists.js'
 import type { RotationChecklistItem, RotationDetail } from '@project-vault/shared'
 
 const getRotationMock = vi.hoisted(() => vi.fn())
@@ -398,6 +399,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
     expect(await screen.findByText(/Enable MFA to complete this rotation/i)).toBeTruthy()
     const link = screen.getByRole('link', { name: /enable mfa/i })
     expect(link.getAttribute('href')).toBe('/settings/security')
+    expect(routeExists(link.getAttribute('href') ?? '')).toBe(true)
     expect(button).toHaveProperty('disabled', false)
   })
 
