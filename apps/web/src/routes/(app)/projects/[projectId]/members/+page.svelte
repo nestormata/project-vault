@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { resolve } from '$app/paths'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
+  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import RoleSelectOptions from '$lib/components/RoleSelectOptions.svelte'
   import {
     createInvitation,
@@ -273,17 +273,10 @@
             </select>
           </div>
         </div>
-        {#if errorMessage}
-          <p
-            class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-            role="alert"
-          >
-            {errorMessage}
-            {#if errorMessage.includes('MFA')}
-              <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
-            {/if}
-          </p>
-        {/if}
+        <MfaAwareErrorAlert
+          message={errorMessage}
+          class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+        />
         <button
           class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
           type="submit"

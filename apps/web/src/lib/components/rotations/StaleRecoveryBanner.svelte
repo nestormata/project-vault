@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import { abandonRotation, resumeRotation } from '$lib/api/rotations.js'
+  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import { mapRotationMutationError } from '$lib/components/rotations/rotation-copy.js'
 
   let {
@@ -146,12 +146,5 @@
     </div>
   {/if}
 
-  {#if errorMessage}
-    <p class="mt-3 text-sm text-red-800" role="alert">
-      {errorMessage}
-      {#if errorMessage.includes('MFA')}
-        <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
-      {/if}
-    </p>
-  {/if}
+  <MfaAwareErrorAlert message={errorMessage} class="mt-3 text-sm text-red-800" />
 </div>

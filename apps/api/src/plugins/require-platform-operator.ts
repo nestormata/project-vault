@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { requireAuthContext } from '../lib/route-helpers.js'
 
 /**
  * Story 9.1 D1: backup/restore (and any future instance-wide admin operation) is gated by the
@@ -8,11 +9,9 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
  */
 export function requirePlatformOperator() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const authContext = request.authContext
+    const authContext = requireAuthContext(request, reply)
     if (!authContext) {
-      return reply
-        .status(401)
-        .send({ code: 'access_token_missing', message: 'Access token is missing' })
+      return
     }
     if (!authContext.isPlatformOperator) {
       return reply.status(403).send({

@@ -7,6 +7,7 @@
     canCreateCredential,
     onboardingCopy,
   } from '$lib/components/onboarding/onboarding-logic.js'
+  import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
   import {
     formatDateTime,
@@ -66,21 +67,14 @@
 
 <section class="space-y-6">
   {#if data.vaultSealed}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <h1 class="text-xl font-semibold text-red-900">Vault sealed</h1>
-      <p class="mt-2 text-red-800">{onboardingCopy.vaultSealedMessage}</p>
-    </div>
+    <PageAlertBanner title="Vault sealed" message={onboardingCopy.vaultSealedMessage} />
   {:else if data.notFound || !data.credential}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <h1 class="text-xl font-semibold text-red-900">Credential not found</h1>
-      <p class="mt-2 text-red-800">This credential does not exist or you do not have access.</p>
-      <a
-        class="mt-4 inline-block font-medium text-slate-950 underline"
-        href={resolve(`/projects/${data.projectId}/credentials`)}
-      >
-        Back to credentials
-      </a>
-    </div>
+    <PageAlertBanner
+      title="Credential not found"
+      message="This credential does not exist or you do not have access."
+      backHref={`/projects/${data.projectId}/credentials`}
+      backLabel="Back to credentials"
+    />
   {:else}
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Credential</p>

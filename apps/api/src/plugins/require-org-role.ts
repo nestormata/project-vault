@@ -1,15 +1,14 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AppError } from '../lib/errors.js'
+import { requireAuthContext } from '../lib/route-helpers.js'
 
 export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 
 export function requireOrgRole(...roles: OrgRole[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const authContext = request.authContext
+    const authContext = requireAuthContext(request, reply)
     if (!authContext) {
-      return reply
-        .status(401)
-        .send({ code: 'access_token_missing', message: 'Access token is missing' })
+      return
     }
     if (!roles.includes(authContext.orgRole)) {
       const error = new AppError('insufficient_role', 'Insufficient permissions', 403)

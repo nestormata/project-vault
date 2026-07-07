@@ -4,6 +4,7 @@
   import DashboardPlaceholderGrid from '$lib/components/dashboard/DashboardPlaceholderGrid.svelte'
   import { suggestedActionLabels } from '$lib/components/dashboard/dashboard-copy.js'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
+  import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
 
   let { data } = $props()
 
@@ -21,10 +22,7 @@
 </svelte:head>
 
 {#if data.vaultSealed}
-  <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-    <h1 class="text-xl font-semibold text-red-900">Vault sealed</h1>
-    <p class="mt-2 text-red-800">{onboardingCopy.vaultSealedMessage}</p>
-  </div>
+  <PageAlertBanner title="Vault sealed" message={onboardingCopy.vaultSealedMessage} />
 {:else}
   {#if data.orgDashboard}
     <section class="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">

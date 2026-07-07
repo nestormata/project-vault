@@ -5,6 +5,7 @@
   import { completeRotation, getRotation } from '$lib/api/rotations.js'
   import type { ChecklistIncompleteErrorBody } from '$lib/api/rotations.js'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
+  import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import ChecklistItemRow from '$lib/components/rotations/ChecklistItemRow.svelte'
   import StaleRecoveryBanner from '$lib/components/rotations/StaleRecoveryBanner.svelte'
   import {
@@ -185,27 +186,19 @@
 
 <section class="mx-auto max-w-3xl space-y-6">
   {#if data.vaultSealed}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <h1 class="text-xl font-semibold text-red-900">Vault sealed</h1>
-      <p class="mt-2 text-red-800">{onboardingCopy.vaultSealedMessage}</p>
-      <a
-        class="mt-4 inline-block font-medium text-slate-950 underline"
-        href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}`)}
-      >
-        Back to credential
-      </a>
-    </div>
+    <PageAlertBanner
+      title="Vault sealed"
+      message={onboardingCopy.vaultSealedMessage}
+      backHref={`/projects/${data.projectId}/credentials/${data.credentialId}`}
+      backLabel="Back to credential"
+    />
   {:else if data.notFound || !rotation}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <h1 class="text-xl font-semibold text-red-900">Rotation not found</h1>
-      <p class="mt-2 text-red-800">This rotation does not exist or you do not have access.</p>
-      <a
-        class="mt-4 inline-block font-medium text-slate-950 underline"
-        href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}`)}
-      >
-        Back to credential
-      </a>
-    </div>
+    <PageAlertBanner
+      title="Rotation not found"
+      message="This rotation does not exist or you do not have access."
+      backHref={`/projects/${data.projectId}/credentials/${data.credentialId}`}
+      backLabel="Back to credential"
+    />
   {:else}
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div class="flex flex-wrap items-center gap-2">

@@ -4,6 +4,7 @@
   import { ApiClientError } from '$lib/api/client.js'
   import { listCredentialDependencies } from '$lib/api/credentials.js'
   import { breakGlassRotation } from '$lib/api/rotations.js'
+  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import {
     formatDateTime,
     mapRotationMutationError,
@@ -245,17 +246,10 @@
           </div>
         {/if}
 
-        {#if errorMessage}
-          <p
-            class="rounded-xl border border-red-400 bg-red-100 p-3 text-sm text-red-900"
-            role="alert"
-          >
-            {errorMessage}
-            {#if errorMessage.includes('MFA')}
-              <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
-            {/if}
-          </p>
-        {/if}
+        <MfaAwareErrorAlert
+          message={errorMessage}
+          class="rounded-xl border border-red-400 bg-red-100 p-3 text-sm text-red-900"
+        />
       </form>
     {/if}
   {/if}

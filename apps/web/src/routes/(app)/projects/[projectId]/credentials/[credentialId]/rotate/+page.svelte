@@ -80,16 +80,12 @@
   </div>
 
   {#if data.vaultSealed}
-    <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-      <h2 class="text-lg font-semibold text-red-900">Vault sealed</h2>
-      <p class="mt-2 text-red-800">{onboardingCopy.vaultSealedMessage}</p>
-      <a
-        class="mt-4 inline-block font-medium text-slate-950 underline"
-        href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}`)}
-      >
-        Back to credential
-      </a>
-    </div>
+    <AccessNotice
+      title="Vault sealed"
+      message={onboardingCopy.vaultSealedMessage}
+      backHref={`/projects/${data.projectId}/credentials/${data.credentialId}`}
+      backLabel="Back to credential"
+    />
   {:else if !data.canManage || !data.dependencies}
     <AccessNotice
       title="Rotation not available"
