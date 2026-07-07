@@ -20,6 +20,7 @@ const { initVault } = await import('../modules/vault/key-service.js')
 const { createLoginSessionInTx } = await import('../modules/auth/service.js')
 const { firstActorTokenIdForUser } = await import('../modules/audit/actor-token.js')
 const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
+const { evictSessionActivityDebounce } = await import('../modules/auth/session-activity.js')
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
@@ -312,6 +313,36 @@ describe.sequential('Session management integration', () => {
         .limit(1)
     )
     expect(session?.revokedAt).toBeInstanceOf(Date)
+  }, 20_000)
+
+  it('an authenticated request refreshes the session lastActiveAt in the database', async () => {
+    const user = await registerAndLogin('activity-touch')
+    const currentSession = (await listSessions(user.cookies)).find((session) => session.isCurrent)
+    expect(currentSession).toBeDefined()
+    const sessionId = currentSession?.sessionId as string
+
+    const stale = new Date(Date.now() - 120_000)
+    await withOrg(user.orgId, (tx) =>
+      tx.update(sessions).set({ lastActiveAt: stale }).where(eq(sessions.id, sessionId))
+    )
+    // listSessions() above already authenticated once and debounced this session's touch —
+    // evict it so the next authenticated request below isn't skipped by the debounce window.
+    evictSessionActivityDebounce(sessionId)
+
+    const app = await createApp({ logger: false })
+    await expectAuthMe(app, user.cookies, 200)
+    await app.close()
+
+    const [session] = await withOrg(user.orgId, (tx) =>
+      tx
+        .select({ lastActiveAt: sessions.lastActiveAt })
+        .from(sessions)
+        .where(eq(sessions.id, sessionId))
+        .limit(1)
+    )
+    expect(session?.lastActiveAt).toBeInstanceOf(Date)
+    expect(session?.lastActiveAt.getTime()).not.toBe(stale.getTime())
+    expect(Date.now() - (session?.lastActiveAt as Date).getTime()).toBeLessThan(20_000)
   }, 20_000)
 
   it('org owner can revoke all sessions for a user in the org', async () => {

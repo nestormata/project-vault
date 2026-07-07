@@ -141,10 +141,11 @@ async function loadOrgRole(session: AuthSessionRow) {
 
 async function touchActivityWithoutBlocking(
   request: FastifyRequest,
-  sessionId: string
+  sessionId: string,
+  orgId: string
 ): Promise<void> {
   try {
-    await touchSessionActivity(sessionId)
+    await touchSessionActivity(sessionId, orgId)
   } catch (error) {
     request.log.warn({ eventType: 'session.activity_touch_failed', sessionId, err: error })
   }
@@ -169,7 +170,7 @@ export async function authenticateRequest(
     const session = await loadSessionForClaims(claims)
     await enforceIdleTimeout(session)
     const orgRole = await loadOrgRole(session)
-    await touchActivityWithoutBlocking(request, session.id)
+    await touchActivityWithoutBlocking(request, session.id, session.orgId)
 
     request.authContext = {
       userId: session.userId,
