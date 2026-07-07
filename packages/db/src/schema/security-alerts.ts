@@ -34,5 +34,9 @@ export const securityAlerts = pgTable(
     dormantKeyUniqueIdx: uniqueIndex('idx_security_alerts_dormant_key')
       .on(sql`(${t.payload}->>'keyId')`)
       .where(sql`${t.alertType} = 'machine_key.dormant' AND ${t.status} != 'dismissed'`),
+    // Story 8.3 D5/AC-11 — dedupe: at most one non-dismissed user.dormant alert per user.
+    dormantUserUniqueIdx: uniqueIndex('idx_security_alerts_dormant_user')
+      .on(sql`(${t.payload}->>'userId')`)
+      .where(sql`${t.alertType} = 'user.dormant' AND ${t.status} != 'dismissed'`),
   })
 )

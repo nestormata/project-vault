@@ -14,6 +14,9 @@ export const NOTIFICATION_ALERT_TYPES = [
   'security.anomalous_access',
   'machine_cache.activated',
   'machine_key.dormant',
+  // Story 8.3 D5/D12/AC-16 — user dormancy alerts default to owner+admin union unless an org
+  // configures an explicit override here (single role, honored exactly as any other alert type).
+  'user.dormant',
   'payment.expiry',
   'certificate.expiry',
   'domain.expiry',

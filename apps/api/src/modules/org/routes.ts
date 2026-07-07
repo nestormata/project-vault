@@ -15,6 +15,7 @@ import { sendAdminRecoveryLink } from '../auth/recovery.js'
 import { checkActiveRotationsForUser, revokePendingInvitationsSentBy } from './deactivation.js'
 import { dismissSecurityAlert, listSecurityAlerts } from './security-alerts.js'
 import { listOrgUsers, removeUserFromOrgMemberships } from './user-management.js'
+import { pseudonymizeUser } from './pseudonymize.js'
 import { getProjectMembershipRole } from '../projects/member-management.js'
 import {
   AdminRecoveryLinkResponseSchema,
@@ -25,6 +26,8 @@ import {
   OrgUsersListResponseSchema,
   ProjectRoleChangeBodySchema,
   ProjectRoleChangeResponseSchema,
+  PseudonymizeBodySchema,
+  PseudonymizeResponseSchema,
   SecurityAlertDismissBodySchema,
   SecurityAlertParamsSchema,
   SecurityAlertsQuerySchema,
@@ -651,6 +654,100 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
 
       return {
         data: { userId: params.userId, projectId: params.projectId, role: parsed.data.role },
+      }
+    },
+  })
+
+  // Story 8.3 AC-17 through AC-22 — owner-only, irreversible pseudonymization of a departed/
+  // erasure-subject user's audit-trail identity (FR44). `writeAuditEvent: false` + a manual
+  // writeHumanAuditEntryOrFailClosed call below: the payload includes tokensPseudonymized/
+  // otherAffectedOrgCount/otherAffectedOrgIds, none of which the default SecureRoute audit
+  // writer's `{ params, query }`-only payload callback could compute.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/users/:userId/pseudonymize',
+    schema: {
+      body: PseudonymizeBodySchema,
+      response: {
+        200: PseudonymizeResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      allowedRoles: ['owner'],
+      requireMfa: true,
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 20,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/org/users/:userId/pseudonymize',
+      },
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(OrgUserParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody(PseudonymizeBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      // AC-20 edge case: 404 (not 403) for a target who isn't a member of the caller's org —
+      // matches the existing non-leaking-404-for-cross-org-target convention (organization-
+      // settings-routes.ts, org/routes.ts's own deactivate handler) — checked before any mutation.
+      const [target] = await secureCtx.tx
+        .select({ userId: orgMemberships.userId })
+        .from(orgMemberships)
+        .where(
+          and(
+            eq(orgMemberships.userId, params.userId),
+            eq(orgMemberships.orgId, secureCtx.auth.orgId)
+          )
+        )
+        .limit(1)
+      if (!target) return reply.status(404).send(USER_NOT_FOUND)
+
+      // AC-17a — must reject before any mutation; the caller must re-type the exact target
+      // userId to confirm this irreversible, cross-org-impacting action (D9).
+      if (parsed.data.confirmUserId !== params.userId) {
+        return reply.status(422).send({
+          code: 'confirmation_required',
+          message: 'confirmUserId must match the target user to confirm this irreversible action',
+        })
+      }
+
+      const result = await pseudonymizeUser(secureCtx.tx, {
+        targetUserId: params.userId,
+        callerOrgId: secureCtx.auth.orgId,
+      })
+
+      // D9/finding-5/6/15 — the audit payload records the cross-org blast radius (org IDs and a
+      // count only — no PII) so a future investigation in this org can answer "how many other
+      // orgs were affected by this specific call" without re-deriving it from scratch.
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'user_identity_token',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: AuditEvent.USER_PSEUDONYMIZED,
+        resourceId: params.userId,
+        payload: {
+          targetUserId: params.userId,
+          tokensPseudonymized: result.tokensPseudonymized,
+          otherAffectedOrgCount: result.otherAffectedOrgCount,
+          otherAffectedOrgIds: result.otherAffectedOrgIds,
+        },
+        request: req,
+      })
+
+      return {
+        data: {
+          userId: params.userId,
+          pseudonymized: true as const,
+          pseudonymizedAt: result.pseudonymizedAt.toISOString(),
+          alias: result.alias,
+          otherAffectedOrgCount: result.otherAffectedOrgCount,
+        },
       }
     },
   })

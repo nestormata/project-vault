@@ -79,6 +79,9 @@ export const AuditEvent = {
   STATUS_PAGE_DISABLED: 'status_page.disabled',
   USER_ERASURE_REQUESTED: 'user.erasure_requested',
   USER_ERASURE_EXECUTED: 'user.erasure_executed',
+  // Story 8.3 AC-7/AC-21
+  ACCESS_REPORT_GENERATED: 'audit.access_report_generated',
+  USER_PSEUDONYMIZED: 'user.pseudonymized',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
@@ -92,7 +95,80 @@ export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
 // (packages/db's tests that reference these strings pass them as arbitrary literals against a
 // plain `text` column, not against this registry — see audit-events.test.ts and
 // packages/db/src/__tests__/*.test.ts).
-export type AuditEventType = AuthAuditEventType
+export type AuditEventType =
+  | AuthAuditEventType
+  | 'user.login'
+  | 'user.logout'
+  | 'project.created'
+  | 'project.updated'
+  | 'project.tags_updated'
+  | 'credential.created'
+  | 'credential.version_created'
+  | 'credential.value_revealed'
+  | 'credential.version_purged'
+  | 'credential.tags_updated'
+  | 'credential.dependency_added'
+  | 'credential.dependency_archived'
+  | 'credential.lifecycle_updated'
+  | 'credential.bulk_import_initiated'
+  | 'credential.bulk_import_confirmed'
+  | 'onboarding.completed'
+  | 'credential.search'
+  | 'project.invitation_created'
+  | 'project.invitation_accepted'
+  | 'project.invitation_revoked'
+  | 'org.user_removed'
+  | 'project.member_role_changed'
+  | 'project.member_removed'
+  | 'project.ownership_transferred'
+  | 'project.archived'
+  | 'project.unarchived'
+  | 'org.user_deactivated'
+  | 'auth.recovery_requested'
+  | 'auth.recovery_link_sent'
+  | 'auth.recovery_completed'
+  | 'auth.recovery_blocked_no_admin'
+  | 'rotation.initiated'
+  | 'rotation.checklist_item_confirmed'
+  | 'rotation.checklist_item_failed'
+  | 'rotation.checklist_item_retried'
+  | 'rotation.checklist_item_max_retries_exceeded'
+  | 'rotation.completed'
+  | 'rotation.break_glass_initiated'
+  | 'rotation.superseded_by_break_glass'
+  | 'rotation.break_glass_overlap_expired'
+  | 'rotation.stale_detected'
+  | 'rotation.resumed'
+  | 'rotation.abandoned'
+  | 'payment_record.created'
+  | 'payment_record.updated'
+  | 'payment_record.deleted'
+  | 'certificate.created'
+  | 'certificate.updated'
+  | 'certificate.deleted'
+  | 'domain_record.created'
+  | 'domain_record.updated'
+  | 'domain_record.deleted'
+  | 'service_endpoint.created'
+  | 'service_endpoint.updated'
+  | 'service_endpoint.deleted'
+  | 'monitoring_alert.snoozed'
+  | 'monitoring_alert.dismissed'
+  | 'security_alert.dismissed'
+  | 'machine_user.created'
+  | 'machine_user.api_key_issued'
+  | 'machine_user.api_key_revoked'
+  | 'machine_user.api_key_rotated'
+  | 'machine_user.api_key_emergency_revoked'
+  | 'machine_user.rotation_anomaly_detected'
+  | 'machine_user.dormancy_extended'
+  | 'machine_cache.activated'
+  | 'status_page.enabled'
+  | 'status_page.token_regenerated'
+  | 'status_page.updated'
+  | 'status_page.disabled'
+  | 'audit.access_report_generated'
+  | 'user.pseudonymized'
 
 export type AuditEvent = {
   type: AuditEventType

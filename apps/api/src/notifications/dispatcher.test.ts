@@ -59,6 +59,41 @@ describe('notification dispatcher', () => {
     }
   })
 
+  // Story 8.3 D12/AC-16 — user-dormancy-check.ts resolves its own owner+admin-union recipient
+  // list via resolveUserDormancyRecipients() (routing.ts) rather than createOrgAdminNotification
+  // Entries' own default single-role resolveRoutingRecipients() call. This override param lets
+  // that pre-computed recipient list flow through the same preference/severity/dedup machinery
+  // every other alert type already uses, without duplicating enqueueUserChannel/slack logic.
+  it('uses recipientUserIds override instead of resolveRoutingRecipients when provided', async () => {
+    const ownerId = await createTestUser('dispatcher-override-owner')
+    const adminId = await createTestUser('dispatcher-override-admin')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await seedOwner(orgId, ownerId)
+        await withOrg(orgId, (tx) =>
+          tx.insert(orgMemberships).values({ orgId, userId: adminId, role: 'admin' })
+        )
+
+        const jobs = await withOrg(orgId, (tx) =>
+          createOrgAdminNotificationEntries({
+            orgId,
+            template: { templateId: 'user.dormant', payload: {}, severity: 'warning' },
+            tx,
+            recipientUserIds: [ownerId, adminId],
+          })
+        )
+
+        expect(jobs.length).toBeGreaterThanOrEqual(4)
+        const rows = await withOrg(orgId, (tx) => tx.select().from(notificationQueue))
+        expect(rows.some((row) => row.recipientUserId === ownerId)).toBe(true)
+        expect(rows.some((row) => row.recipientUserId === adminId)).toBe(true)
+      })
+    } finally {
+      await deleteTestUser(ownerId)
+      await deleteTestUser(adminId)
+    }
+  })
+
   it('sends notification:deliver jobs for immediate entries', async () => {
     const { boss, send } = createMockBoss()
     await boss.start()

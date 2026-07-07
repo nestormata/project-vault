@@ -6,6 +6,7 @@ import {
   anomalousAccessPayloadSchema,
   failedAuthThresholdPayloadSchema,
   machineKeyDormantPayloadSchema,
+  userDormantPayloadSchema,
   type SecurityAlertsQuery,
 } from './schema.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
@@ -30,6 +31,9 @@ const PAYLOAD_SCHEMA_BY_ALERT_TYPE: Record<string, ZodType> = {
   'security.failed_auth_threshold': failedAuthThresholdPayloadSchema,
   'security.anomalous_access': anomalousAccessPayloadSchema,
   'machine_key.dormant': machineKeyDormantPayloadSchema,
+  // Story 8.3 D6 — without this registration, `GET /org/security-alerts` would silently drop
+  // every `user.dormant` row (this file's own ADR-6.2-07 comment about exactly this failure mode).
+  'user.dormant': userDormantPayloadSchema,
 }
 const PASSTHROUGH_PAYLOAD_SCHEMA = z.record(z.string(), z.unknown())
 
