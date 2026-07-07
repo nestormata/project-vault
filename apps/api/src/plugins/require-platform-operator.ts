@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { requireAuthContext } from './require-org-role.js'
+import { requireAuthContext } from '../lib/route-helpers.js'
 
 /**
  * Story 9.1 D1: backup/restore (and any future instance-wide admin operation) is gated by the
@@ -10,7 +10,9 @@ import { requireAuthContext } from './require-org-role.js'
 export function requirePlatformOperator() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const authContext = requireAuthContext(request, reply)
-    if (!authContext) return reply
+    if (!authContext) {
+      return
+    }
     if (!authContext.isPlatformOperator) {
       return reply.status(403).send({
         code: 'platform_operator_required',

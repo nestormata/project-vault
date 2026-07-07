@@ -281,6 +281,51 @@ describe('ChecklistItemRow', () => {
     await waitFor(() => expect(onConcurrentModification).toHaveBeenCalledTimes(1))
   })
 
+  // AC-13: confirm/fail/retry all share the 60/min checklistMutationRateLimit() bucket — one
+  // parameterized test covers all three call sites instead of three near-duplicate tests,
+  // keeping the test file itself DRY per this story's own D3 principle.
+  it.each([
+    [
+      'confirm',
+      confirmChecklistItemMock,
+      () => fireEvent.click(screen.getByRole('button', { name: /^confirm$/i })),
+    ],
+    [
+      'fail',
+      failChecklistItemMock,
+      async () => {
+        await fireEvent.click(screen.getByRole('button', { name: /report a problem/i }))
+        await fireEvent.input(screen.getByLabelText(/reason/i), { target: { value: 'x' } })
+        await fireEvent.click(screen.getByRole('button', { name: /submit/i }))
+      },
+    ],
+    [
+      'retry',
+      retryChecklistItemMock,
+      () => fireEvent.click(screen.getByRole('button', { name: /^retry$/i })),
+    ],
+  ] as const)(
+    'AC-13: %s surfaces the retryAfter countdown message via the shared helper on a 429',
+    async (action, mock, trigger) => {
+      mock.mockRejectedValue(
+        new ApiClientError(
+          429,
+          {
+            code: 'rate_limit_exceeded',
+            message: 'Too many authenticated requests',
+            retryAfter: 30,
+          },
+          'Too many authenticated requests'
+        )
+      )
+      renderRow(action === 'retry' ? { status: 'failed', lastFailureReason: 'x' } : {})
+
+      await trigger()
+
+      expect(await screen.findByText(/30 seconds/i)).toBeTruthy()
+    }
+  )
+
   it('422 rotation_not_active on report-a-problem triggers onConcurrentModification', async () => {
     failChecklistItemMock.mockRejectedValue(
       new ApiClientError(

@@ -7,11 +7,11 @@
     type AlreadyConfirmedErrorBody,
     type MaxRetriesExceededErrorBody,
   } from '$lib/api/rotations.js'
-  import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import {
     checklistItemStatusBadgeClass,
     checklistItemStatusLabel,
     formatDateTime,
+    mapRotationMutationError,
   } from './rotation-copy.js'
   import type { RotationChecklistItem } from '@project-vault/shared'
 
@@ -55,12 +55,12 @@
     return id.length > 8 ? `${id.slice(0, 8)}…` : id
   }
 
+  // AC-13/Group B non-goal: confirm/fail/retry's server-side security blocks never set
+  // requireMfa (only minimumRole: 'member') — no actionLabel is passed, so the shared helper's
+  // mfa_required branch can never match here, keeping that non-goal intact while still gaining
+  // the 503/429/generic branches every other mutation call site gets (D3/AC-20).
   function handleSealedOrGeneric(error: unknown, fallback: string): string {
-    if (error instanceof ApiClientError) {
-      if (error.status === 503) return onboardingCopy.vaultSealedMessage
-      return error.message
-    }
-    return error instanceof Error ? error.message : fallback
+    return mapRotationMutationError(error, {}, fallback)
   }
 
   // Ground-Truth API Surface documents this code for confirm/fail/retry — it fires when the

@@ -19,6 +19,51 @@ import type { PageServerLoad } from './$types.js'
 // break-glass rotation could never have another rotation initiated through this UI again.
 const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery'])
 
+// Shared "nothing loaded" shape for both the 404 (notFound) and 503 (vaultSealed) branches below
+// — only the trailing discriminant fields differ between the two callers.
+function emptyCredentialPageResult(projectId: string, credentialId: string, orgRole: string) {
+  return {
+    projectId,
+    credentialId,
+    orgRole,
+    credential: null,
+    versions: [],
+    rotations: [],
+    rotationsPage: 1,
+    rotationsHasMore: false,
+    activeRotationId: null,
+  }
+}
+
+// Extracted from `load`'s catch block purely to keep that function's cyclomatic complexity under
+// this project's lint threshold — behavior is unchanged: 404 -> notFound, 503 -> vaultSealed
+// (AC-1), anything else rethrows.
+function handleCredentialLoadError(
+  error: unknown,
+  projectId: string,
+  credentialId: string,
+  orgRole: string
+) {
+  if (!(error instanceof ApiClientError)) throw error
+  if (error.status === 404) {
+    return {
+      ...emptyCredentialPageResult(projectId, credentialId, orgRole),
+      notFound: true as const,
+    }
+  }
+  // AC-1: every call in `load`'s Promise.all is vault-guarded (getCredential,
+  // listCredentialVersions, listRotations x2) — a sealed vault 503s all four, so a 503 from any
+  // single one means none of them could have succeeded (D1).
+  if (error.status === 503) {
+    return {
+      ...emptyCredentialPageResult(projectId, credentialId, orgRole),
+      notFound: false as const,
+      vaultSealed: true as const,
+    }
+  }
+  throw error
+}
+
 export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
   const orgRole = requireUser(locals).orgRole
   const requestedPage = Number(url.searchParams.get('page') ?? '1')
@@ -47,20 +92,6 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
       activeRotationId,
     }
   } catch (error) {
-    if (error instanceof ApiClientError && error.status === 404) {
-      return {
-        projectId: params.projectId,
-        credentialId: params.credentialId,
-        orgRole,
-        credential: null,
-        versions: [],
-        rotations: [],
-        rotationsPage: 1,
-        rotationsHasMore: false,
-        activeRotationId: null,
-        notFound: true as const,
-      }
-    }
-    throw error
+    return handleCredentialLoadError(error, params.projectId, params.credentialId, orgRole)
   }
 }

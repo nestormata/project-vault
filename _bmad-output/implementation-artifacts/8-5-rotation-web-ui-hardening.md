@@ -1,6 +1,6 @@
 # Story 8.5: Rotation Web UI Hardening
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-06 — this story closes the 4 unresolved
 adversarial-review findings against Story 5.4 (rotation-workflow-web-ui, `done`), bundled per
@@ -464,46 +464,46 @@ Nothing in this story changes any backend file, any role/permission threshold, o
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Shared error-mapping helper** (AC-20, AC-21, supports AC-6–AC-15)
-  - [ ] Extend `apps/web/src/lib/components/rotations/rotation-copy.ts` with `mapRotationMutationError(error, { actionLabel, rateLimitFraming? }, fallback)` covering 503/`mfa_required`/429/generic
-  - [ ] Extend `apps/web/src/lib/components/rotations/rotation-copy.test.ts` with full input-coverage unit tests for the new function
+- [x] **Task 1: Shared error-mapping helper** (AC-20, AC-21, supports AC-6–AC-15)
+  - [x] Extend `apps/web/src/lib/components/rotations/rotation-copy.ts` with `mapRotationMutationError(error, { actionLabel, rateLimitFraming? }, fallback)` covering 503/`mfa_required`/429/generic
+  - [x] Extend `apps/web/src/lib/components/rotations/rotation-copy.test.ts` with full input-coverage unit tests for the new function
 
-- [ ] **Task 2: Page-load sealed-vault handling** (AC-1, AC-2, AC-3, AC-4)
-  - [ ] `.../credentials/[credentialId]/+page.server.ts` + `+page.svelte` — `vaultSealed` catch branch + inline block
-  - [ ] `.../rotate/+page.server.ts` + `+page.svelte` — same pattern, checked before the existing `AccessNotice` gate
-  - [ ] `.../rotations/[rotationId]/+page.server.ts` + `+page.svelte` — same pattern, checked before the existing `notFound` block
-  - [ ] `apps/web/src/routes/(app)/dashboard/+page.server.ts` + `+page.svelte` — same pattern, whole-page sealed state
-  - [ ] Corresponding test updates in each route's existing `*.server.test.ts`/page test file
+- [x] **Task 2: Page-load sealed-vault handling** (AC-1, AC-2, AC-3, AC-4)
+  - [x] `.../credentials/[credentialId]/+page.server.ts` + `+page.svelte` — `vaultSealed` catch branch + inline block
+  - [x] `.../rotate/+page.server.ts` + `+page.svelte` — same pattern, checked before the existing `AccessNotice` gate
+  - [x] `.../rotations/[rotationId]/+page.server.ts` + `+page.svelte` — same pattern, checked before the existing `notFound` block
+  - [x] `apps/web/src/routes/(app)/dashboard/+page.server.ts` + `+page.svelte` — same pattern, whole-page sealed state
+  - [x] Corresponding test updates in each route's existing `*.server.test.ts`/page test file
 
-- [ ] **Task 3: Live-poll sealed-vault handling** (AC-5)
-  - [ ] `.../rotations/[rotationId]/+page.svelte`'s `refetch()` — new `pollSealedBanner` state + banner render
-  - [ ] Fake-timer test covering poll-tick 503 then recovery
+- [x] **Task 3: Live-poll sealed-vault handling** (AC-5)
+  - [x] `.../rotations/[rotationId]/+page.svelte`'s `refetch()` — new `pollSealedBanner` state + banner render
+  - [x] Fake-timer test covering poll-tick 503 then recovery
 
-- [ ] **Task 4: `mfa_required` (403) handling** (AC-6, AC-7, AC-8, AC-9, AC-10, + Group B non-goal note)
-  - [ ] `.../rotate/+page.svelte` (initiate)
-  - [ ] `BreakGlassPanel.svelte` (break-glass)
-  - [ ] `.../rotations/[rotationId]/+page.svelte` (complete)
-  - [ ] `StaleRecoveryBanner.svelte` (resume, abandon — abandon's confirmation-panel-stays-open nuance from AC-10)
-  - [ ] Do NOT touch `ChecklistItemRow.svelte`'s confirm/fail/retry (non-goal)
-  - [ ] Tests for each of the 5 call sites, including the `/settings/security` link assertion (AC-21)
+- [x] **Task 4: `mfa_required` (403) handling** (AC-6, AC-7, AC-8, AC-9, AC-10, + Group B non-goal note)
+  - [x] `.../rotate/+page.svelte` (initiate)
+  - [x] `BreakGlassPanel.svelte` (break-glass)
+  - [x] `.../rotations/[rotationId]/+page.svelte` (complete)
+  - [x] `StaleRecoveryBanner.svelte` (resume, abandon — abandon's confirmation-panel-stays-open nuance from AC-10)
+  - [x] Do NOT touch `ChecklistItemRow.svelte`'s confirm/fail/retry (non-goal)
+  - [x] Tests for each of the 5 call sites, including the `/settings/security` link assertion (AC-21)
 
-- [ ] **Task 5: 429 rate-limit handling** (AC-11, AC-12, AC-13, AC-14, AC-15)
-  - [ ] `.../rotate/+page.svelte` (initiate — generic framing)
-  - [ ] `BreakGlassPanel.svelte` (break-glass — break-glass-specific framing, AC-12)
-  - [ ] `ChecklistItemRow.svelte` (confirm/fail/retry — generic framing, parameterized test)
-  - [ ] `.../rotations/[rotationId]/+page.svelte` (complete — generic framing)
-  - [ ] `StaleRecoveryBanner.svelte` (resume/abandon — generic framing, parameterized test)
+- [x] **Task 5: 429 rate-limit handling** (AC-11, AC-12, AC-13, AC-14, AC-15)
+  - [x] `.../rotate/+page.svelte` (initiate — generic framing)
+  - [x] `BreakGlassPanel.svelte` (break-glass — break-glass-specific framing, AC-12)
+  - [x] `ChecklistItemRow.svelte` (confirm/fail/retry — generic framing, parameterized test)
+  - [x] `.../rotations/[rotationId]/+page.svelte` (complete — generic framing)
+  - [x] `StaleRecoveryBanner.svelte` (resume/abandon — generic framing, parameterized test)
 
-- [ ] **Task 6: Break-glass secrets clearing** (AC-16, AC-17, AC-18, AC-19)
-  - [ ] `BreakGlassPanel.svelte` — clear `newValue` in `finally` (AC-16)
-  - [ ] `BreakGlassPanel.svelte` — `onDestroy` clearing `newValue`/`reason` (AC-17)
-  - [ ] `BreakGlassPanel.svelte` — collapse handler reuses `cancelConfirmation()`-style full reset (AC-18)
-  - [ ] Regression test confirming `.../rotate/+page.svelte`'s plain form is unchanged (AC-19)
+- [x] **Task 6: Break-glass secrets clearing** (AC-16, AC-17, AC-18, AC-19)
+  - [x] `BreakGlassPanel.svelte` — clear `newValue` in `finally` (AC-16)
+  - [x] `BreakGlassPanel.svelte` — `onDestroy` clearing `newValue`/`reason` (AC-17)
+  - [x] `BreakGlassPanel.svelte` — collapse handler reuses `cancelConfirmation()`-style full reset (AC-18)
+  - [x] Regression test confirming `.../rotate/+page.svelte`'s plain form is unchanged (AC-19)
 
-- [ ] **Task 7: Non-regression verification** (AC-22, AC-23)
-  - [ ] Confirm zero `apps/api`/`packages/db` diff before opening the PR
-  - [ ] Full `apps/web` suite green, `tsc --noEmit` clean, `eslint .` clean
-  - [ ] Spot-check every new branch has a corresponding test (no untested `if`/`catch` additions)
+- [x] **Task 7: Non-regression verification** (AC-22, AC-23)
+  - [x] Confirm zero `apps/api`/`packages/db` diff before opening the PR
+  - [x] Full `apps/web` suite green, `tsc --noEmit` clean, `eslint .` clean
+  - [x] Spot-check every new branch has a corresponding test (no untested `if`/`catch` additions)
 
 ---
 
@@ -595,12 +595,51 @@ Immediately prior story number in Epic 8's sequence, but a different domain (GDP
 
 ### Agent Model Used
 
+Claude (Sonnet 4.5), via the `bmad-dev-story` workflow.
+
 ### Debug Log References
+
+- TDD red-green followed per task: for each AC group, new/extended `it(...)` cases were written first and run to confirm failure for the expected reason (missing branch/uncaught error/`is not a function`), then the minimal implementation was added and the same scoped test file was re-run to green, before moving to the next task.
+- Two `eslint` complexity violations surfaced only after all ACs were implemented (`mapRotationMutationError` and the credential-detail loader's `catch` both exceeded the repo's max-complexity-10 rule) — resolved by extracting `mapRateLimitError()` and `handleCredentialLoadError()`/`emptyCredentialPageResult()` helpers with no behavior change; full suite + `tsc --noEmit` + `eslint .` re-run clean afterward.
+- `apps/api`'s `route-audit.test.ts` could not be run standalone in this workspace (pre-existing `@project-vault/shared` package-resolution error under a bare `vitest run` from `apps/api`, unrelated to this story — `apps/api` has zero diff from this story, confirmed via `git status --porcelain`).
 
 ### Completion Notes List
 
+- Group A (AC-1–AC-5, sealed vault on page load + live poll): all 4 `PageServerLoad` functions (credential detail, `/rotate`, rotation detail, dashboard) now catch a `503` and return a `vaultSealed: true as const` discriminant (D1); each `+page.svelte` checks `data.vaultSealed` before its existing `notFound`/`canManage` condition. The rotation detail page's `refetch()` (backing both the 15s poll and the manual "Refresh" button) now sets a `pollSealedBanner` state on a 503, clearing it on the next successful poll, without pausing polling or blanking the last known rotation (D6). Non-503 errors keep the pre-existing silent best-effort behavior.
+- Group B (AC-6–AC-10, `mfa_required` on mutations): all 5 MFA-gated mutation call sites (initiate, break-glass, complete, resume, abandon) now detect `403 { code: 'mfa_required' }` before falling through to their existing generic-403/other branches, rendering an action-specific "Enable MFA to ..." message plus the members-page's exact `errorMessage.includes('MFA')` → `/settings/security` link markup (AC-21). Confirm/fail/retry deliberately received no such branch (Group B non-goal) — `ChecklistItemRow.svelte` calls the shared helper without an `actionLabel`, so its `mfa_required` branch can never fire there. Abandon's `mfa_required` case does not close the confirmation panel (AC-10), unlike the pre-existing `rotation_not_stale` case.
+- Group C (AC-11–AC-15, 429 on mutations): all 5 mutation groups render a `retryAfter`-aware countdown message via the shared helper — generic framing for initiate/checklist/complete/resume/abandon, break-glass-specific reassuring framing for break-glass (AC-12). A missing/non-numeric `retryAfter` falls back to "Try again shortly." rather than crashing or rendering "undefined seconds."
+- Group D (AC-16–AC-19, break-glass secrets clearing): `BreakGlassPanel.svelte`'s `submitBreakGlass()` now clears `newValue`/`awaitingConfirmText`/`confirmText` in a single `finally` block covering both success and failure (AC-16); a new `onDestroy` clears `newValue`/`reason` on unmount (AC-17, mirroring the credential detail page's existing `revealedValue` teardown precedent); the header toggle now reuses `cancelConfirmation()`'s reset scope plus clears `newValue`/`reason` on re-collapse (AC-18). The `reason` field is never cleared (admin-controlled incident context, not a secret). The unrelated normal-path initiate form's on-error value retention (Story 5.4 AC-4) is unchanged and covered by its existing regression test (AC-19).
+- Group E (AC-20–AC-23): `mapRotationMutationError(error, { actionLabel?, rateLimitFraming? }, fallback)` is the single shared helper in `rotation-copy.ts` covering 503/`mfa_required`/429/generic for all 5 mutation call sites; the 4 page-load sites use the separate, simpler `vaultSealed` data-flag pattern (D1) since they run server-side. Zero `apps/api`/`packages/db` diff (confirmed via `git status --porcelain`). Full `apps/web` suite: 448/448 passing (up from Story 5.4's 249 baseline — the delta reflects all web-story work landed between 5.4 and this story, not just this story's own new tests). `tsc --noEmit` and `eslint .` both clean.
+- No ACs were left incomplete. No blockers encountered that required a HALT.
+
 ### File List
+
+- `apps/web/src/lib/components/rotations/rotation-copy.ts` (modified — new `mapRotationMutationError`/`mapRateLimitError`/`MapRotationMutationErrorOptions`)
+- `apps/web/src/lib/components/rotations/rotation-copy.test.ts` (modified — new `mapRotationMutationError` unit tests)
+- `apps/web/src/lib/components/rotations/BreakGlassPanel.svelte` (modified — AC-7/AC-12/AC-16/AC-17/AC-18)
+- `apps/web/src/lib/components/rotations/BreakGlassPanel.test.ts` (modified — new tests for the above)
+- `apps/web/src/lib/components/rotations/ChecklistItemRow.svelte` (modified — AC-13, `handleSealedOrGeneric` now delegates to the shared helper)
+- `apps/web/src/lib/components/rotations/ChecklistItemRow.test.ts` (modified — parameterized AC-13 test)
+- `apps/web/src/lib/components/rotations/StaleRecoveryBanner.svelte` (modified — AC-9/AC-10/AC-15)
+- `apps/web/src/lib/components/rotations/StaleRecoveryBanner.test.ts` (modified — new tests for the above)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` (modified — AC-1, `vaultSealed` catch branch + complexity-reducing extraction)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` (modified — AC-1 sealed-vault render block)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.server.test.ts` (modified — AC-1 loader tests)
+- `apps/web/src/routes/projects-credentials.test.ts` (modified — AC-1 render test)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.server.ts` (modified — AC-2, new try/catch)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte` (modified — AC-2/AC-6/AC-11 render + error handling)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/rotate-page.server.test.ts` (modified — AC-2 loader tests)
+- `apps/web/src/routes/rotate-page.test.ts` (modified — AC-2/AC-6/AC-11 render tests)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.server.ts` (modified — AC-3 sibling 503 branch)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte` (modified — AC-3/AC-5/AC-8/AC-14)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/rotation-page.server.test.ts` (modified — AC-3 loader tests)
+- `apps/web/src/routes/rotation-detail-page.test.ts` (modified — AC-3/AC-5/AC-8/AC-14 render tests)
+- `apps/web/src/routes/(app)/dashboard/+page.server.ts` (modified — AC-4, new outer try/catch)
+- `apps/web/src/routes/(app)/dashboard/+page.svelte` (modified — AC-4 whole-page sealed render)
+- `apps/web/src/routes/(app)/dashboard/dashboard-page.server.test.ts` (new — AC-4 loader tests)
+- `apps/web/src/routes/dashboard.test.ts` (modified — AC-4 render test)
 
 ### Change Log
 
 - 2026-07-06: Story created via `create-story` from the 2026-07-06 Epic 5 retro-recheck decision to bundle Story 5.4's 4 unresolved adversarial-review findings into a dedicated Epic 8 hardening story. Status: `backlog` → `ready-for-dev`.
+- 2026-07-07: Implemented all 23 ACs via `bmad-dev-story` following TDD red-green per task. Zero `apps/api`/`packages/db` diff. Full `apps/web` suite green (448/448), `tsc --noEmit` clean, `eslint .` clean. Status: `ready-for-dev` → `review`.

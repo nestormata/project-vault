@@ -1,7 +1,8 @@
 <script lang="ts">
   import { ApiClientError } from '$lib/api/client.js'
   import { abandonRotation, resumeRotation } from '$lib/api/rotations.js'
-  import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
+  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import { mapRotationMutationError } from '$lib/components/rotations/rotation-copy.js'
 
   let {
     projectId,
@@ -23,15 +24,18 @@
   let confirmingAbandon = $state(false)
   let errorMessage = $state<string | null>(null)
 
-  function mapError(error: unknown, fallback: string): string {
-    if (error instanceof ApiClientError) {
-      if (error.status === 503) return onboardingCopy.vaultSealedMessage
-      if (error.status === 422 && error.code === 'rotation_not_stale') {
-        return 'This rotation is no longer awaiting a decision — someone may have already resumed or abandoned it.'
-      }
-      return error.message
+  // AC-9/AC-10/AC-15: 503/mfa_required/429 branches are covered by the shared
+  // mapRotationMutationError helper (D3/AC-20); this local helper only adds the
+  // resume/abandon-specific 422 rotation_not_stale case on top of it.
+  function mapError(error: unknown, fallback: string, actionLabel: string): string {
+    if (
+      error instanceof ApiClientError &&
+      error.status === 422 &&
+      error.code === 'rotation_not_stale'
+    ) {
+      return 'This rotation is no longer awaiting a decision — someone may have already resumed or abandoned it.'
     }
-    return error instanceof Error ? error.message : fallback
+    return mapRotationMutationError(error, { actionLabel }, fallback)
   }
 
   async function resume() {
@@ -49,7 +53,7 @@
       ) {
         onConcurrentModification()
       } else {
-        errorMessage = mapError(error, 'Could not resume rotation.')
+        errorMessage = mapError(error, 'Could not resume rotation.', 'resume this rotation')
       }
     } finally {
       submitting = false
@@ -76,10 +80,14 @@
         error.status === 422 &&
         error.code === 'rotation_not_stale'
       ) {
-        errorMessage = mapError(error, 'Could not abandon rotation.')
+        errorMessage = mapError(error, 'Could not abandon rotation.', 'abandon this rotation')
         confirmingAbandon = false
       } else {
-        errorMessage = mapError(error, 'Could not abandon rotation.')
+        // AC-10: unlike rotation_not_stale, mfa_required (and 503/429/generic) must NOT close
+        // the confirmation panel — the decision to abandon is still exactly what the admin
+        // wants, only the error is blocking it. The admin stays on the "Abandon anyway / Cancel"
+        // step so they can retry immediately after resolving it.
+        errorMessage = mapError(error, 'Could not abandon rotation.', 'abandon this rotation')
       }
     } finally {
       submitting = false
@@ -138,7 +146,5 @@
     </div>
   {/if}
 
-  {#if errorMessage}
-    <p class="mt-3 text-sm text-red-800" role="alert">{errorMessage}</p>
-  {/if}
+  <MfaAwareErrorAlert message={errorMessage} class="mt-3 text-sm text-red-800" />
 </div>

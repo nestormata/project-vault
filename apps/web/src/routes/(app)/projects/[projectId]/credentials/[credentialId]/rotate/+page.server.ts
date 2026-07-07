@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit'
 import { listCredentialDependencies } from '$lib/api/credentials.js'
 import { listRotations } from '$lib/api/rotations.js'
+import { ApiClientError } from '$lib/api/client.js'
 import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
@@ -28,26 +29,44 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
     }
   }
 
-  const history = await listRotations(fetch, params.projectId, params.credentialId, { limit: 1 })
-  const latest = history.items[0]
-  if (latest && ACTIVE_ROTATION_STATUSES.has(latest.status)) {
-    throw redirect(
-      303,
-      `/projects/${params.projectId}/credentials/${params.credentialId}/rotations/${latest.id}`
+  // AC-2: unlike the credential detail page, this loader has no existing try/catch today — a
+  // sealed vault 503s either of these two calls (both are vault-guarded reads/writes). A 503 from
+  // either is sufficient to render the sealed-vault message; the loader does not need to
+  // distinguish which one failed (D1).
+  try {
+    const history = await listRotations(fetch, params.projectId, params.credentialId, { limit: 1 })
+    const latest = history.items[0]
+    if (latest && ACTIVE_ROTATION_STATUSES.has(latest.status)) {
+      throw redirect(
+        303,
+        `/projects/${params.projectId}/credentials/${params.credentialId}/rotations/${latest.id}`
+      )
+    }
+
+    const dependencies = await listCredentialDependencies(
+      fetch,
+      params.projectId,
+      params.credentialId
     )
-  }
 
-  const dependencies = await listCredentialDependencies(
-    fetch,
-    params.projectId,
-    params.credentialId
-  )
-
-  return {
-    projectId: params.projectId,
-    credentialId: params.credentialId,
-    orgRole,
-    canManage: true as const,
-    dependencies,
+    return {
+      projectId: params.projectId,
+      credentialId: params.credentialId,
+      orgRole,
+      canManage: true as const,
+      dependencies,
+    }
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 503) {
+      return {
+        projectId: params.projectId,
+        credentialId: params.credentialId,
+        orgRole,
+        canManage: true as const,
+        dependencies: null,
+        vaultSealed: true as const,
+      }
+    }
+    throw error
   }
 }

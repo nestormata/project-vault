@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import type { RotationChecklistItem, RotationDetail } from '@project-vault/shared'
 
 const getRotationMock = vi.hoisted(() => vi.fn())
@@ -125,6 +126,19 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
     expect(screen.getByRole('alert')).toBeTruthy()
     expect(screen.getByText(/Rotation not found/i)).toBeTruthy()
+  })
+
+  it('AC-3: renders the sealed-vault message (not "Rotation not found") when data.vaultSealed is true', () => {
+    render(RotationDetailPage, {
+      props: {
+        data: baseData({ vaultSealed: true as const, notFound: false as const, rotation: null }),
+      },
+    })
+
+    expect(screen.getByRole('alert').textContent).toContain(onboardingCopy.vaultSealedMessage)
+    expect(screen.queryByText(/Rotation not found/i)).toBeNull()
+    const link = screen.getByRole('link', { name: /back to credential/i })
+    expect(link.getAttribute('href')).toBe(`/projects/${projectId}/credentials/${credentialId}`)
   })
 
   it('AC-14: viewer sees no action buttons and a read-access banner', () => {
@@ -362,6 +376,52 @@ describe('/rotations/[rotationId] +page.svelte', () => {
     await waitFor(() => expect(getRotationMock).toHaveBeenCalledTimes(1))
   })
 
+  it('AC-8: 403 mfa_required on complete shows an action-specific message with a working link, and re-enables the button', async () => {
+    completeRotationMock.mockRejectedValue(
+      new ApiClientError(
+        403,
+        { code: 'mfa_required', message: 'MFA enrollment is required for Owner and Admin roles.' },
+        'MFA enrollment is required for Owner and Admin roles.'
+      )
+    )
+    render(RotationDetailPage, {
+      props: {
+        data: baseData({
+          rotation: makeRotation({ checklistItems: [makeItem({ id: 'i1', status: 'confirmed' })] }),
+        }),
+      },
+    })
+
+    const button = screen.getByRole('button', { name: /complete rotation/i })
+    await fireEvent.click(button)
+
+    expect(await screen.findByText(/Enable MFA to complete this rotation/i)).toBeTruthy()
+    const link = screen.getByRole('link', { name: /enable mfa/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
+    expect(button).toHaveProperty('disabled', false)
+  })
+
+  it('AC-14: 429 on complete shows the generic countdown message via the shared helper', async () => {
+    completeRotationMock.mockRejectedValue(
+      new ApiClientError(
+        429,
+        { code: 'rate_limit_exceeded', message: 'Too many authenticated requests', retryAfter: 8 },
+        'Too many authenticated requests'
+      )
+    )
+    render(RotationDetailPage, {
+      props: {
+        data: baseData({
+          rotation: makeRotation({ checklistItems: [makeItem({ id: 'i1', status: 'confirmed' })] }),
+        }),
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /complete rotation/i }))
+
+    expect(await screen.findByText(/8 seconds/i)).toBeTruthy()
+  })
+
   it('AC-16: renders StaleRecoveryBanner and hides per-item action buttons while stale_recovery', () => {
     render(RotationDetailPage, {
       props: {
@@ -428,5 +488,73 @@ describe('/rotations/[rotationId] +page.svelte', () => {
     expect(getRotationMock).not.toHaveBeenCalled()
 
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+  })
+
+  // AC-5: the vault can seal between page load and a poll/refresh tick. The 15s poll and the
+  // manual "Refresh" button both call refetch(), whose catch block today is an empty
+  // best-effort comment — a sealed-vault 503 mid-poll is silently swallowed with zero indication.
+  it('AC-5: a 503 mid-poll shows the sealed-vault banner without blanking the last known rotation state, then clears once a later poll succeeds', async () => {
+    vi.useFakeTimers()
+    getRotationMock.mockRejectedValueOnce(
+      new ApiClientError(
+        503,
+        { status: 'sealed', message: 'Vault not initialized' },
+        'Vault not initialized'
+      )
+    )
+
+    render(RotationDetailPage, {
+      props: {
+        data: baseData({
+          rotation: makeRotation({
+            status: 'in_progress',
+            checklistItems: [makeItem({ id: 'i1', status: 'unconfirmed' })],
+          }),
+        }),
+      },
+    })
+
+    await vi.advanceTimersByTimeAsync(15000)
+
+    expect(await screen.findByText(onboardingCopy.vaultSealedMessage)).toBeTruthy()
+    // Last known state must still be showing — the poll failing is not the same as not existing.
+    expect(screen.getByText('billing-worker (production)')).toBeTruthy()
+
+    getRotationMock.mockResolvedValueOnce(
+      makeRotation({
+        status: 'in_progress',
+        checklistItems: [makeItem({ id: 'i1', status: 'unconfirmed' })],
+      })
+    )
+    await vi.advanceTimersByTimeAsync(15000)
+
+    await waitFor(() => expect(screen.queryByText(onboardingCopy.vaultSealedMessage)).toBeNull())
+  })
+
+  it('AC-5 edge: manual Refresh click while sealed surfaces the same banner as the poll', async () => {
+    vi.useRealTimers()
+    getRotationMock.mockRejectedValueOnce(
+      new ApiClientError(
+        503,
+        { status: 'sealed', message: 'Vault not initialized' },
+        'Vault not initialized'
+      )
+    )
+
+    render(RotationDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+
+    expect(await screen.findByText(onboardingCopy.vaultSealedMessage)).toBeTruthy()
+  })
+
+  it("AC-5 edge: a non-503 refetch error keeps today's exact behavior — silently keep the last known state, no banner", async () => {
+    vi.useRealTimers()
+    getRotationMock.mockRejectedValueOnce(new Error('network down'))
+
+    render(RotationDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }))
+
+    await waitFor(() => expect(getRotationMock).toHaveBeenCalled())
+    expect(screen.queryByText(onboardingCopy.vaultSealedMessage)).toBeNull()
   })
 })

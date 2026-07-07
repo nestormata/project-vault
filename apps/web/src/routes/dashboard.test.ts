@@ -5,6 +5,7 @@ import {
   forbiddenDashboardClaims,
   suggestedActionLabels,
 } from '$lib/components/dashboard/dashboard-copy.js'
+import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import DashboardPage from './(app)/dashboard/+page.svelte'
 
@@ -128,6 +129,30 @@ describe('/dashboard +page.svelte — upcoming rotations widget (AC-23, G3)', ()
     for (const claim of forbiddenDashboardClaims) {
       expect(screen.queryByText(claim)).toBeNull()
     }
+  })
+})
+
+describe('/dashboard +page.svelte — sealed vault on page load (AC-4)', () => {
+  afterEach(() => cleanup())
+
+  it('AC-4: renders the sealed-vault message in place of the entire dashboard body when data.vaultSealed is true', () => {
+    render(DashboardPage, {
+      props: {
+        data: {
+          projects: { items: [] },
+          orgDashboard: null,
+          selectedProject: null,
+          dashboard: null,
+          vaultSealed: true as const,
+        },
+      },
+    })
+
+    expect(screen.getByRole('alert').textContent).toContain(onboardingCopy.vaultSealedMessage)
+    // A sealed vault means none of the dashboard's other data is trustworthy either — nothing
+    // else should render, not even the empty-state grid.
+    expect(screen.queryByText('Upcoming rotations')).toBeNull()
+    expect(screen.queryByText('Credential overview')).toBeNull()
   })
 })
 
