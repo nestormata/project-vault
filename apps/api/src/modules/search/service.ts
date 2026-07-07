@@ -9,6 +9,10 @@ type ExecuteSearchInput = {
   q: string
   types: SearchType[]
   limit: number
+  // Story 9.3 D8.3/AC-11: page-based offset into the concatenated (credentials-then-projects)
+  // result order — see executeSearch()'s doc comment for how offset is split across the two
+  // independently-queried sources.
+  offset: number
 }
 
 function escapeLikeTerm(term: string): string {
@@ -53,11 +57,52 @@ const relevanceOrderSql = (nameColumn: AnyColumn, q: string) =>
     END DESC
   `
 
+function credentialMatchWhere(orgId: string, like: string) {
+  return and(
+    eq(credentials.orgId, orgId),
+    eq(projects.orgId, orgId),
+    isNull(projects.archivedAt),
+    or(
+      ilike(credentials.name, like),
+      ilike(credentials.description, like),
+      sql`CAST(${credentials.tags} AS text) ILIKE ${like}`
+    )
+  )
+}
+
+function projectMatchWhere(orgId: string, like: string) {
+  return and(
+    eq(projects.orgId, orgId),
+    isNull(projects.archivedAt),
+    or(ilike(projects.name, like), sql`CAST(${projects.tags} AS text) ILIKE ${like}`)
+  )
+}
+
+async function countCredentials(tx: Tx, orgId: string, q: string): Promise<number> {
+  const like = `%${escapeLikeTerm(q)}%`
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(credentials)
+    .innerJoin(projects, eq(credentials.projectId, projects.id))
+    .where(credentialMatchWhere(orgId, like))
+  return Number(row?.count ?? 0)
+}
+
+async function countProjects(tx: Tx, orgId: string, q: string): Promise<number> {
+  const like = `%${escapeLikeTerm(q)}%`
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(projects)
+    .where(projectMatchWhere(orgId, like))
+  return Number(row?.count ?? 0)
+}
+
 async function searchCredentials(
   tx: Tx,
   orgId: string,
   q: string,
-  limit: number
+  limit: number,
+  offset: number
 ): Promise<SearchResultItem[]> {
   const like = `%${escapeLikeTerm(q)}%`
   const rows = await tx
@@ -73,20 +118,10 @@ async function searchCredentials(
     })
     .from(credentials)
     .innerJoin(projects, eq(credentials.projectId, projects.id))
-    .where(
-      and(
-        eq(credentials.orgId, orgId),
-        eq(projects.orgId, orgId),
-        isNull(projects.archivedAt),
-        or(
-          ilike(credentials.name, like),
-          ilike(credentials.description, like),
-          sql`CAST(${credentials.tags} AS text) ILIKE ${like}`
-        )
-      )
-    )
+    .where(credentialMatchWhere(orgId, like))
     .orderBy(relevanceOrderSql(credentials.name, q), sql`${credentials.updatedAt} DESC`)
     .limit(limit)
+    .offset(offset)
 
   return rows.map((row) => ({
     type: 'credential' as const,
@@ -106,7 +141,8 @@ async function searchProjects(
   tx: Tx,
   orgId: string,
   q: string,
-  limit: number
+  limit: number,
+  offset: number
 ): Promise<SearchResultItem[]> {
   const like = `%${escapeLikeTerm(q)}%`
   const rows = await tx
@@ -125,15 +161,10 @@ async function searchProjects(
       )`,
     })
     .from(projects)
-    .where(
-      and(
-        eq(projects.orgId, orgId),
-        isNull(projects.archivedAt),
-        or(ilike(projects.name, like), sql`CAST(${projects.tags} AS text) ILIKE ${like}`)
-      )
-    )
+    .where(projectMatchWhere(orgId, like))
     .orderBy(relevanceOrderSql(projects.name, q), sql`${projects.updatedAt} DESC`)
     .limit(limit)
+    .offset(offset)
 
   return rows.map((row) => ({
     type: 'project' as const,
@@ -148,20 +179,36 @@ async function searchProjects(
   }))
 }
 
+/**
+ * Story 9.3 D8.3/AC-11: `results` is a fixed concatenation of credential matches followed by
+ * project matches (unchanged ordering from before this story) — `offset` therefore first consumes
+ * credential matches, then continues into project matches once the credential source is
+ * exhausted, so paging through `page=1,2,3...` walks the exact same logical ordering a caller
+ * would see requesting the whole unpaginated list at once. `total` is now a genuine
+ * database-wide count of matching rows (not capped at `limit`, unlike the previous
+ * `trimmed.length` placeholder), which is what makes a real `hasNext` computation possible.
+ */
 export async function executeSearch(input: ExecuteSearchInput): Promise<{
   results: SearchResultItem[]
   total: number
 }> {
-  const { tx, orgId, q, types, limit } = input
+  const { tx, orgId, q, types, limit, offset } = input
+
+  const credTotal = types.includes('credentials') ? await countCredentials(tx, orgId, q) : 0
+  const projTotal = types.includes('projects') ? await countProjects(tx, orgId, q) : 0
+  const total = credTotal + projTotal
+
   const results: SearchResultItem[] = []
 
-  if (types.includes('credentials')) {
-    results.push(...(await searchCredentials(tx, orgId, q, limit)))
-  }
-  if (types.includes('projects')) {
-    results.push(...(await searchProjects(tx, orgId, q, limit)))
+  if (types.includes('credentials') && offset < credTotal) {
+    results.push(...(await searchCredentials(tx, orgId, q, limit, offset)))
   }
 
-  const trimmed = results.slice(0, limit)
-  return { results: trimmed, total: trimmed.length }
+  const remaining = limit - results.length
+  if (types.includes('projects') && remaining > 0) {
+    const projectOffset = Math.max(0, offset - credTotal)
+    results.push(...(await searchProjects(tx, orgId, q, remaining, projectOffset)))
+  }
+
+  return { results, total }
 }

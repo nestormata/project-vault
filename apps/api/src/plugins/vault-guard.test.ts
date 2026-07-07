@@ -111,4 +111,28 @@ describe('vaultGuardPlugin', () => {
     await hook({ method: 'POST', url: '/health' }, reply)
     expect(reply.calls.status).toBe(503)
   })
+
+  // Story 9.3 AC-16: an operator diagnosing a sealed vault needs to consult the API docs
+  // without first unsealing — same rationale as /health/ready/metrics.
+  it('allows GET /api/v1/openapi.json through while sealed', async () => {
+    const hook = await captureHook()
+    const reply = makeReply()
+    const result = await hook({ method: 'GET', url: '/api/v1/openapi.json' }, reply)
+    expect(result).toBeUndefined()
+    expect(reply.calls.status).toBeUndefined()
+  })
+
+  it('allows GET /api/v1/docs through while sealed', async () => {
+    const hook = await captureHook()
+    const reply = makeReply()
+    await hook({ method: 'GET', url: '/api/v1/docs' }, reply)
+    expect(reply.calls.status).toBeUndefined()
+  })
+
+  it('allows Swagger UI static sub-paths under /api/v1/docs/ through while sealed', async () => {
+    const hook = await captureHook()
+    const reply = makeReply()
+    await hook({ method: 'GET', url: '/api/v1/docs/static/swagger-ui.css' }, reply)
+    expect(reply.calls.status).toBeUndefined()
+  })
 })

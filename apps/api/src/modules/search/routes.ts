@@ -43,13 +43,15 @@ export async function searchRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       const secureCtx = ctx as SecureRouteContext
-      const { q, types, limit } = parsed.data
+      const { q, types, limit, page } = parsed.data
+      const offset = (page - 1) * limit
       const { results, total } = await executeSearch({
         tx: secureCtx.tx,
         orgId: secureCtx.auth.orgId,
         q,
         types,
         limit,
+        offset,
       })
 
       if (results.some((result) => result.type === 'credential')) {
@@ -73,6 +75,9 @@ export async function searchRoutes(fastify: FastifyApp): Promise<void> {
           total,
           query: q,
           types,
+          page,
+          limit,
+          hasNext: page * limit < total,
         },
       }
     },

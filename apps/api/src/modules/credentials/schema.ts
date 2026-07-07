@@ -12,6 +12,7 @@ import {
   validateRotationCron,
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
+import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
 function rotationScheduleRefine(
   val: { rotationSchedule?: string | null | undefined },
@@ -123,10 +124,7 @@ export const ListCredentialsResponseSchema = z
   .object({
     data: z.object({
       items: z.array(CredentialSummarySchema),
-      total: z.number().int().nonnegative(),
-      page: z.number().int().positive(),
-      limit: z.number().int().positive(),
-      hasNext: z.boolean(),
+      ...paginatedListMetaFields,
     }),
   })
   .meta({ id: 'ListCredentialsResponse' })

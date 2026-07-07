@@ -93,6 +93,9 @@ jobs:
       - name: Check search index safety (RS-E2a)
         run: pnpm check-search-index
 
+      - name: Check migration compatibility (AC-E9b)
+        run: pnpm check-migration-compatibility
+
       - name: Test (with coverage)
         run: pnpm turbo test
         env:
@@ -152,6 +155,11 @@ jobs:
           pnpm generate-spec
           git diff --exit-code packages/shared/openapi.json || \
             (echo "ERROR: openapi.json is stale - run pnpm generate-spec and commit" && exit 1)
+
+      - name: API contract parity tests (Story 9.3 D6/AC-8/AC-9/AC-10)
+        run: pnpm --filter @project-vault/api-contract-tests test
+        env:
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
 
       - name: Check vault-action dist/ freshness (D6/AC-11)
         run: pnpm check-vault-action-dist

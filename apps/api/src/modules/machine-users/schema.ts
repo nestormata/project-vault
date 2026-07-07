@@ -13,6 +13,7 @@ import {
 import { z } from 'zod/v4'
 import { ProjectScopeParamsSchema } from '../credentials/schema.js'
 import { PageLimitQueryShape } from '../../lib/pagination.js'
+import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
 export { ProjectScopeParamsSchema, MAX_MACHINE_USER_LIST_OFFSET }
 
@@ -70,7 +71,10 @@ export const MachineUserListResponseSchema = z
   .object({
     data: z.object({
       items: z.array(MachineUserSummarySchema),
-      total: z.number().int().nonnegative(),
+      // Story 9.3 D8.1/AC-11: the handler already computes these via buildPaginationMeta() —
+      // they were previously silently stripped from the wire response because this schema
+      // didn't declare them (@fastify/type-provider-zod's serializer drops undeclared keys).
+      ...paginatedListMetaFields,
     }),
   })
   .meta({ id: 'MachineUserListResponse' })

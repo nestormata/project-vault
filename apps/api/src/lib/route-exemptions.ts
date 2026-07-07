@@ -36,6 +36,7 @@ const WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED = 'writeHumanAuditEntryOrFailClosed'
 const PLATFORM_JOB = 'platform-job'
 const PUBLIC_ROUTE_SUPPORT = 'public-route-support'
 const TOKEN_IS_CREDENTIAL = 'token-is-the-credential'
+const NO_DATA_ACCESS = 'no-data-access'
 const MONITORING_LIST_READ_OMISSION_REASON =
   'List read returns operational metadata only; no secret values.'
 
@@ -45,7 +46,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     reason:
       'Public liveness endpoint exposes no tenant data and is required for service monitoring.',
     securityOwner: SECURITY_OWNER,
-    compensatingControls: ['no-data-access', 'vault-guard-aware-response'],
+    compensatingControls: [NO_DATA_ACCESS, 'vault-guard-aware-response'],
     expiresAfterStory: null,
   },
   {
@@ -53,7 +54,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     reason:
       'Public readiness endpoint exposes no tenant data and is required for orchestration checks.',
     securityOwner: SECURITY_OWNER,
-    compensatingControls: ['no-data-access', 'vault-guard-aware-response'],
+    compensatingControls: [NO_DATA_ACCESS, 'vault-guard-aware-response'],
     expiresAfterStory: null,
   },
   {
@@ -178,6 +179,14 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
       'live-revocation-recheck',
       TOKEN_IS_CREDENTIAL,
     ],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'GET /api/v1/openapi.json',
+    reason:
+      'Story 9.3 D5/AC-6 — public live OpenAPI spec endpoint; only registered at all when docsEnabled() is true (ENABLE_API_DOCS=true, or NODE_ENV is development/test), defaulting closed in production. Exposes route/schema metadata only, no tenant data, and must remain reachable while the vault is sealed for operator diagnostics (AC-16).',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: ['docs-gated-non-production-default', NO_DATA_ACCESS],
     expiresAfterStory: null,
   },
 ]

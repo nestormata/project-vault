@@ -154,6 +154,13 @@ export const OperationalEvent = {
   // AC-19/AC-20: master-key custody risk alerting.
   KEY_CUSTODY_RISK_DETECTED: 'key_custody.risk_detected',
   KEY_CUSTODY_CHECK_FAILED: 'key_custody.check_failed',
+
+  // Story 9.3 D2/AC-17: guarded-migrate.ts's destructive-migration refusal/allow/apply events.
+  // Emitted as pre-vault-unseal operational logs (no org/audit context available — this is a
+  // one-shot infra container, not an authenticated request), never as audit_log_entries rows.
+  MIGRATION_DESTRUCTIVE_REFUSED: 'migration.destructive_refused',
+  MIGRATION_DESTRUCTIVE_ALLOWED: 'migration.destructive_allowed',
+  MIGRATION_APPLIED: 'migration.applied',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

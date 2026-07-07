@@ -3557,14 +3557,12 @@
               },
               "page": {
                 "type": "integer",
-                "minimum": 0,
-                "exclusiveMinimum": true,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "limit": {
                 "type": "integer",
-                "minimum": 0,
-                "exclusiveMinimum": true,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "hasNext": {
@@ -3955,11 +3953,27 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "hasNext": {
+                "type": "boolean"
               }
             },
             "required": [
               "items",
-              "total"
+              "total",
+              "page",
+              "limit",
+              "hasNext"
             ]
           }
         },
@@ -4085,6 +4099,18 @@
               "true",
               "false"
             ]
+          },
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
           }
         }
       },
@@ -6243,6 +6269,9 @@
           },
           "limit": {
             "type": "string"
+          },
+          "page": {
+            "type": "string"
           }
         },
         "required": [
@@ -6389,11 +6418,6 @@
                   ]
                 }
               },
-              "total": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
               "query": {
                 "type": "string"
               },
@@ -6406,13 +6430,34 @@
                     "projects"
                   ]
                 }
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "hasNext": {
+                "type": "boolean"
               }
             },
             "required": [
               "results",
-              "total",
               "query",
-              "types"
+              "types",
+              "total",
+              "page",
+              "limit",
+              "hasNext"
             ]
           }
         },
@@ -6554,11 +6599,27 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "hasNext": {
+                "type": "boolean"
               }
             },
             "required": [
               "items",
-              "total"
+              "total",
+              "page",
+              "limit",
+              "hasNext"
             ]
           }
         },
@@ -11264,14 +11325,12 @@
               },
               "page": {
                 "type": "integer",
-                "minimum": 0,
-                "exclusiveMinimum": true,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "limit": {
                 "type": "integer",
-                "minimum": 0,
-                "exclusiveMinimum": true,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "hasNext": {
@@ -11664,11 +11723,27 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "hasNext": {
+                "type": "boolean"
               }
             },
             "required": [
               "items",
-              "total"
+              "total",
+              "page",
+              "limit",
+              "hasNext"
             ],
             "additionalProperties": false
           }
@@ -11797,10 +11872,24 @@
       "ListProjectsQuery": {
         "type": "object",
         "properties": {
-          "includeArchived": {}
+          "includeArchived": {},
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
         },
         "required": [
-          "includeArchived"
+          "includeArchived",
+          "page",
+          "limit"
         ],
         "additionalProperties": false
       },
@@ -14167,11 +14256,6 @@
                   ]
                 }
               },
-              "total": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
               "query": {
                 "type": "string"
               },
@@ -14184,13 +14268,34 @@
                     "projects"
                   ]
                 }
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "hasNext": {
+                "type": "boolean"
               }
             },
             "required": [
               "results",
-              "total",
               "query",
-              "types"
+              "types",
+              "total",
+              "page",
+              "limit",
+              "hasNext"
             ],
             "additionalProperties": false
           }
@@ -14342,11 +14447,27 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "hasNext": {
+                "type": "boolean"
               }
             },
             "required": [
               "items",
-              "total"
+              "total",
+              "page",
+              "limit",
+              "hasNext"
             ],
             "additionalProperties": false
           }
@@ -15435,6 +15556,15 @@
     }
   },
   "paths": {
+    "/api/v1/openapi.json": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "responses": {

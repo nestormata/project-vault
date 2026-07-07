@@ -40,7 +40,13 @@ describe.sequential('notification inbox routes', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ data: [], page: 1, limit: 20 })
+    // Story 9.3 D8.4/AC-11: restructured from a bare `{ data: [], page, limit }` shape (missing
+    // total/hasNext entirely) to `{ data: { items, total, page, limit, hasNext } }`, matching
+    // every other collection endpoint in the codebase — a confirmed breaking response-shape
+    // change, with apps/web/src/lib/api/inbox.ts updated in the same PR (D8.4).
+    expect(res.json()).toEqual({
+      data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+    })
   }, 20_000)
 
   it('GET /api/v1/users/me includes notifications.unreadCount', async () => {
@@ -106,12 +112,14 @@ describe.sequential('notification inbox routes', () => {
       headers: authHeaders(memberCookies),
     })
 
-    const ownerBody = ownerRes.json() as { data: Array<{ id: string }> }
-    const memberBody = memberRes.json() as { data: Array<{ id: string }> }
-    expect(ownerBody.data).toHaveLength(1)
-    expect(memberBody.data).toHaveLength(1)
-    expect(ownerBody.data[0]?.id).toBe(ownerEntryId)
-    expect(memberBody.data[0]?.id).toBe(memberEntryId)
+    const ownerBody = ownerRes.json() as { data: { items: Array<{ id: string }>; total: number } }
+    const memberBody = memberRes.json() as { data: { items: Array<{ id: string }>; total: number } }
+    expect(ownerBody.data.items).toHaveLength(1)
+    expect(memberBody.data.items).toHaveLength(1)
+    expect(ownerBody.data.total).toBe(1)
+    expect(memberBody.data.total).toBe(1)
+    expect(ownerBody.data.items[0]?.id).toBe(ownerEntryId)
+    expect(memberBody.data.items[0]?.id).toBe(memberEntryId)
 
     await deleteTestUser(memberUserId)
   }, 20_000)

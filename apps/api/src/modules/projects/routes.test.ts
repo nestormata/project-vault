@@ -210,7 +210,11 @@ describe.sequential('project routes', () => {
       headers: { cookie: cookieHeader(userA.cookies) },
     })
     expect(empty.statusCode).toBe(200)
-    expect(empty.json()).toEqual({ data: { items: [], total: 0 } })
+    // Story 9.3 D8.2/AC-11: page/limit/hasNext now on the wire, matching every other
+    // paginated collection endpoint (credentials, rotation, monitoring, ...).
+    expect(empty.json()).toEqual({
+      data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+    })
 
     await createProject(app, userA.cookies, ALPHA_PROJECT_SLUG)
     await createProject(app, userB.cookies, 'other-org-project')
@@ -224,6 +228,9 @@ describe.sequential('project routes', () => {
     expect(populated.json()).toMatchObject({
       data: {
         total: 1,
+        page: 1,
+        limit: 20,
+        hasNext: false,
         items: [
           {
             slug: ALPHA_PROJECT_SLUG,
@@ -252,6 +259,69 @@ describe.sequential('project routes', () => {
         total: 1,
         items: [expect.objectContaining({ slug: ALPHA_PROJECT_SLUG, role: 'viewer' })],
       },
+    })
+  }, 20_000)
+
+  it('GET /api/v1/projects paginates with page/limit query params, defaults, and bounds (AC-11, AC-12)', async () => {
+    const user = await registerUser(app, 'list-pagination')
+    for (const slug of ['pg-one', 'pg-two', 'pg-three']) {
+      await createProject(app, user.cookies, slug)
+    }
+
+    const firstPage = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}?page=1&limit=2`,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+    expect(firstPage.statusCode).toBe(200)
+    const firstBody = firstPage.json<{
+      data: { items: unknown[]; total: number; page: number; limit: number; hasNext: boolean }
+    }>()
+    expect(firstBody.data.items).toHaveLength(2)
+    expect(firstBody.data).toMatchObject({ total: 3, page: 1, limit: 2, hasNext: true })
+
+    const secondPage = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}?page=2&limit=2`,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+    const secondBody = secondPage.json<{
+      data: { items: unknown[]; total: number; page: number; limit: number; hasNext: boolean }
+    }>()
+    expect(secondBody.data.items).toHaveLength(1)
+    expect(secondBody.data).toMatchObject({ total: 3, page: 2, limit: 2, hasNext: false })
+
+    // AC-12: omitted page/limit still defaults to page=1/limit=20 — backward compatible for any
+    // existing caller that never sent pagination params.
+    const noParams = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+    expect(noParams.json<{ data: { page: number; limit: number } }>().data).toMatchObject({
+      page: 1,
+      limit: 20,
+    })
+
+    // AC-12: limit above 100 is rejected (Zod's .max(100)), matching credentials' identical
+    // behavior, not silently clamped.
+    const overLimit = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}?limit=150`,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+    expect(overLimit.statusCode).toBe(422)
+    expect(overLimit.json()).toMatchObject({ code: 'validation_error' })
+
+    // AC-12 edge case: a page beyond available data is a valid, well-formed empty response.
+    const beyondData = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}?page=999&limit=20`,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+    expect(beyondData.statusCode).toBe(200)
+    expect(beyondData.json()).toMatchObject({
+      data: { items: [], total: 3, page: 999, limit: 20, hasNext: false },
     })
   }, 20_000)
 

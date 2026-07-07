@@ -37,12 +37,19 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
   const status = (url.searchParams.get('status') ?? 'all') as 'all' | 'unread' | 'read'
   const orgRole = requireUser(locals).orgRole
 
-  let notifications: Awaited<ReturnType<typeof getNotificationInbox>>['data'] = []
+  let notifications: Awaited<ReturnType<typeof getNotificationInbox>>['data']['items'] = []
+  let total = 0
+  let hasNext = false
   let inboxPage = page
   try {
+    // Story 9.3 D8.4: inbox.data is now { items, total, page, limit, hasNext } (previously a
+    // bare array) — read .items, not the whole data object, and surface total/hasNext for
+    // future pagination UI.
     const inbox = await getNotificationInbox(fetch, { page, limit: 20, status })
-    notifications = inbox.data
-    inboxPage = inbox.page
+    notifications = inbox.data.items
+    total = inbox.data.total
+    hasNext = inbox.data.hasNext
+    inboxPage = inbox.data.page
   } catch (err) {
     if (!(err instanceof ApiClientError && err.status === 403)) {
       throw error(500, 'Failed to load notifications')
@@ -51,7 +58,7 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
 
   const dormancyAlerts = await loadDormancyAlerts(fetch, orgRole)
 
-  return { notifications, page: inboxPage, status, orgRole, dormancyAlerts }
+  return { notifications, total, hasNext, page: inboxPage, status, orgRole, dormancyAlerts }
 }
 
 export const actions: Actions = {

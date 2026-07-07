@@ -5,6 +5,16 @@
   "type": "module",
   "main": "./dist/main.js",
   "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "default": "./dist/app.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
@@ -22,6 +32,7 @@
     "@fastify/multipart": "^10.0.0",
     "@fastify/rate-limit": "11.0.0",
     "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.6",
     "@fastify/type-provider-zod": "^1.0.0",
     "@project-vault/crypto": "workspace:*",
     "@project-vault/db": "workspace:*",
