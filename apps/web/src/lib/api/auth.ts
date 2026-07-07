@@ -54,6 +54,27 @@ export type AuthUser = {
   }
 }
 
+export type MfaEnrollResponse = {
+  enrollmentId: string
+  otpauthUrl: string
+  secret: string
+  qrCodeSvg: string
+}
+
+export type MfaTotpRequest = {
+  totp: string
+}
+
+export type MfaVerifyEnrollmentResponse = {
+  mfaEnrolledAt: string
+  recoveryCodes: string[]
+}
+
+export type MfaRegenerateRecoveryCodesResponse = {
+  recoveryCodes: string[]
+  generatedAt: string
+}
+
 function jsonPost(body?: unknown): RequestInit {
   return {
     method: 'POST',
@@ -75,6 +96,26 @@ export function login(fetchFn: typeof fetch, request: LoginRequest) {
 
 export function verifyMfaLogin(fetchFn: typeof fetch, request: VerifyMfaLoginRequest) {
   return apiFetch<AuthSessionResponse>(fetchFn, '/api/v1/auth/mfa/verify-login', jsonPost(request))
+}
+
+export function enrollMfa(fetchFn: typeof fetch) {
+  return apiFetch<MfaEnrollResponse>(fetchFn, '/api/v1/auth/mfa/enroll', jsonPost())
+}
+
+export function verifyMfaEnrollment(fetchFn: typeof fetch, request: MfaTotpRequest) {
+  return apiFetch<MfaVerifyEnrollmentResponse>(
+    fetchFn,
+    '/api/v1/auth/mfa/verify-enrollment',
+    jsonPost(request)
+  )
+}
+
+export function regenerateMfaRecoveryCodes(fetchFn: typeof fetch, request: MfaTotpRequest) {
+  return apiFetch<MfaRegenerateRecoveryCodesResponse>(
+    fetchFn,
+    '/api/v1/auth/mfa/regenerate-recovery-codes',
+    jsonPost(request)
+  )
 }
 
 export function getCurrentUser(fetchFn: typeof fetch) {

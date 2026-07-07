@@ -42,11 +42,14 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
+  // Fastify's default JSON body parser rejects `Content-Type: application/json` paired with an
+  // empty body ("Body cannot be empty when content-type is set to 'application/json'"), so only
+  // set it when there's actually a body to send.
   const response = await fetchFn(path, {
     ...init,
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...init.headers,
     },
   })

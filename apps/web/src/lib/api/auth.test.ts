@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from './client.js'
-import { getCurrentUser, login, logout, register, verifyMfaLogin } from './auth.js'
+import {
+  enrollMfa,
+  getCurrentUser,
+  login,
+  logout,
+  regenerateMfaRecoveryCodes,
+  register,
+  verifyMfaEnrollment,
+  verifyMfaLogin,
+} from './auth.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
 describe('auth API helpers', () => {
@@ -123,7 +132,7 @@ describe('auth API helpers', () => {
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/auth/logout', {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {},
     })
   })
 
@@ -169,5 +178,96 @@ describe('auth API helpers', () => {
     )
 
     await expect(getCurrentUser(fetchFn)).resolves.toMatchObject({ orgRole: 'owner' })
+  })
+
+  it('enrollMfa posts with no body and returns the pending enrollment secret/QR', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          enrollmentId: '00000000-0000-4000-8000-000000000004',
+          otpauthUrl: 'otpauth://totp/Project%20Vault:alex@example.com?secret=ABC&issuer=Vault',
+          secret: 'JBSWY3DPEHPK3PXP',
+          qrCodeSvg: '<svg>fake</svg>',
+        },
+      })
+    )
+
+    const result = await enrollMfa(fetchFn)
+
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/auth/mfa/enroll', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {},
+    })
+    expect(result).toEqual({
+      enrollmentId: '00000000-0000-4000-8000-000000000004',
+      otpauthUrl: 'otpauth://totp/Project%20Vault:alex@example.com?secret=ABC&issuer=Vault',
+      secret: 'JBSWY3DPEHPK3PXP',
+      qrCodeSvg: '<svg>fake</svg>',
+    })
+  })
+
+  it('verifyMfaEnrollment posts the TOTP and returns the enrolled-at timestamp plus recovery codes', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          mfaEnrolledAt: '2026-07-07T12:00:00.000Z',
+          recoveryCodes: ['aaaa-bbbb-cccc', 'dddd-eeee-ffff'],
+        },
+      })
+    )
+
+    const result = await verifyMfaEnrollment(fetchFn, { totp: '123456' })
+
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/auth/mfa/verify-enrollment', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ totp: '123456' }),
+    })
+    expect(result).toEqual({
+      mfaEnrolledAt: '2026-07-07T12:00:00.000Z',
+      recoveryCodes: ['aaaa-bbbb-cccc', 'dddd-eeee-ffff'],
+    })
+  })
+
+  it('verifyMfaEnrollment normalizes an invalid_totp rejection into an ApiClientError', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { code: 'invalid_totp', message: 'The authenticator code is incorrect.' },
+          { status: 422 }
+        )
+      )
+
+    await expect(verifyMfaEnrollment(fetchFn, { totp: '000000' })).rejects.toMatchObject({
+      status: 422,
+      code: 'invalid_totp',
+    } satisfies Partial<ApiClientError>)
+  })
+
+  it('regenerateMfaRecoveryCodes posts the TOTP and returns a fresh recovery code batch', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          recoveryCodes: ['1111-2222-3333'],
+          generatedAt: '2026-07-07T12:05:00.000Z',
+        },
+      })
+    )
+
+    const result = await regenerateMfaRecoveryCodes(fetchFn, { totp: '654321' })
+
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/auth/mfa/regenerate-recovery-codes', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ totp: '654321' }),
+    })
+    expect(result).toEqual({
+      recoveryCodes: ['1111-2222-3333'],
+      generatedAt: '2026-07-07T12:05:00.000Z',
+    })
   })
 })
