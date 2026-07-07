@@ -1,6 +1,19 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import type { EncryptedValue } from './types.js'
 
+// Story 8-6 AC-10 — this AES-256-GCM/HKDF envelope is deliberately duplicated (not imported) in
+// two other independently-versioned artifacts: `packages/agent/src/cache-crypto.ts` and, bundled
+// from that same source, `packages/vault-action/dist/index.js` (see 7.2 D11 for why each copy
+// exists). A security-relevant change to this file requires, before it can be considered done:
+//   1. Re-run the cross-compat test (`apps/api/src/__tests__/agent-crypto-cross-compat.test.ts`)
+//      to confirm the two source implementations are still byte-for-byte interoperable.
+//   2. Port the same fix into `packages/agent/src/cache-crypto.ts` and rebuild
+//      `packages/vault-action/dist/` (`pnpm --filter @project-vault/vault-action build`, verified
+//      fresh by `scripts/check-vault-action-dist-fresh.ts`).
+//   3. Cut a `vault-action` re-tag/release so CI consumers of the mutable `v1` tag actually pick up
+//      the fix (see 7.3 D7 on why that tag's release process matters).
+// This is a documented process control, not automation — no build-graph dependency-change-detector
+// enforces it; see `packages/agent/SECURITY.md` for the full checklist.
 const IV_BYTES = 12 // 96-bit IV — GCM recommended size
 const VERSION = 1 // ciphertext format version — increment on algorithm change
 

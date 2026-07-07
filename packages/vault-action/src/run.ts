@@ -1,6 +1,14 @@
 import * as core from '@actions/core'
 import { createVaultAgent } from '@project-vault/agent'
 import { parseSecrets, type ParsedSecretEntry } from './parse-secrets.js'
+// Story 8-6 AC-10 — `createVaultAgent` pulls in `@project-vault/agent/cache-crypto`, which this
+// package's build bundles verbatim into `dist/index.js` — the THIRD of three independently-
+// versioned copies of the AES-256-GCM/HKDF cache-encryption envelope (the other two:
+// `packages/crypto/src/aes.ts`, `packages/agent/src/cache-crypto.ts`). A security-relevant change
+// to either of those source copies is NOT reflected here until `dist/` is rebuilt
+// (`pnpm --filter @project-vault/vault-action build`, verified fresh by
+// `scripts/check-vault-action-dist-fresh.ts`) and a `vault-action` re-tag/release is cut so CI
+// consumers of the mutable `v1` tag pick it up. Full checklist: `packages/agent/SECURITY.md`.
 import { isVaultUnreachable, perEntryMessage, reasonTokenFor } from './classify.js'
 import { withTimeout } from './with-timeout.js'
 

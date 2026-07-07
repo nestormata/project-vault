@@ -923,6 +923,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'machine_user.api_key_issued',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  'POST /api/v1/machine-users/:machineUserId/deactivate': {
+    action: SECURITY_ACTION,
+    auditEvent: 'machine_user.deactivated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   'GET /api/v1/machine-users/:machineUserId/api-keys': {
     action: 'read',
     auditOmissionReason: 'API key list returns metadata only (AC-12) — never keyHash or plaintext.',

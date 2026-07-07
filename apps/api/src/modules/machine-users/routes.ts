@@ -21,6 +21,7 @@ import {
   ActiveMachineUserKeysResponseSchema,
   ApiKeyParamsSchema,
   CreateMachineUserBodySchema,
+  DeactivateMachineUserResponseSchema,
   EmergencyRevokeResponseSchema,
   ExtendDormancyBodySchema,
   ExtendDormancyResponseSchema,
@@ -321,6 +322,72 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       if (!row) return reply.status(404).send(MACHINE_USER_NOT_FOUND)
 
       return { data: toMachineUserDetail(row) }
+    },
+  })
+
+  // Story 8-6 AC-5: deactivate a machine user — idempotent, closes 7.1's forward-compatible-but-
+  // unused `deactivatedAt` column. Existing keys stay individually revocable; new key issuance is
+  // rejected below with 409 machine_user_deactivated.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/machine-users/:machineUserId/deactivate',
+    schema: {
+      response: {
+        200: DeactivateMachineUserResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: MACHINE_USER_MUTATION_RATE_LIMIT,
+        timeWindowMs: MACHINE_USERS_RATE_LIMIT_WINDOW_MS,
+        key: 'POST /api/v1/machine-users/:machineUserId/deactivate',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(MachineUserParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      // Claim-via-UPDATE mirrors the revoke-api-key idempotency pattern above: at most one
+      // concurrent caller ever transitions the row, and audit only fires on that transition.
+      const deactivatedAt = new Date()
+      const [claimed] = await secureCtx.tx
+        .update(machineUsers)
+        .set({ deactivatedAt })
+        .where(and(eq(machineUsers.id, params.machineUserId), isNull(machineUsers.deactivatedAt)))
+        .returning({ id: machineUsers.id, deactivatedAt: machineUsers.deactivatedAt })
+
+      let result: { id: string; deactivatedAt: Date | null }
+      if (claimed) {
+        result = claimed
+        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+          resourceType: 'machine_user',
+          orgId: secureCtx.auth.orgId,
+          actorUserId: secureCtx.auth.userId,
+          eventType: AuditEvent.MACHINE_USER_DEACTIVATED,
+          resourceId: claimed.id,
+          payload: {},
+          request: req,
+        })
+      } else {
+        const existing = await findMachineUserById(secureCtx.tx, params.machineUserId)
+        if (!existing) return reply.status(404).send(MACHINE_USER_NOT_FOUND)
+        result = existing
+      }
+
+      return {
+        data: {
+          id: result.id,
+          deactivatedAt: (result.deactivatedAt ?? deactivatedAt).toISOString(),
+        },
+      }
     },
   })
 

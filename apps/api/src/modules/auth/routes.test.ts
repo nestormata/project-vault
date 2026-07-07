@@ -1,6 +1,13 @@
+import { randomUUID } from 'node:crypto'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import {
+  bootstrapRouteIntegrationTest,
+  cookieHeader,
+  registerAndLoginViaApi,
+} from '../../__tests__/helpers/auth-test-helpers.js'
+import { createUnsealedRouteSuite } from '../../__tests__/helpers/unsealed-route-suite-test-helpers.js'
 
 // Only fall back to the default local port when DATABASE_URL isn't already set (e.g. by
 // `make test`, which points at whatever host port this worktree's Postgres actually uses —
@@ -13,6 +20,8 @@ let createApp: typeof import('../../app.js').createApp
 type OpenApiDocument = {
   paths?: Record<string, unknown>
 }
+
+const { initVault } = await bootstrapRouteIntegrationTest()
 
 describe('auth routes', () => {
   beforeAll(async () => {
@@ -130,5 +139,28 @@ describe('auth routes', () => {
     expect(source).toContain(
       'regenerateRecoveryCodes(secureCtx.auth, parsed.data, metaFromRequest(req), secureCtx.tx)'
     )
+  })
+})
+
+describe.sequential('GET /api/v1/auth/me', () => {
+  const suite = createUnsealedRouteSuite(initVault, 'auth-me-routes-passphrase')
+  suite.registerLifecycle()
+
+  it('returns the org name alongside orgId, not just the raw UUID', async () => {
+    const orgName = `Me Route Org ${randomUUID()}`
+    const { cookies } = await registerAndLoginViaApi(suite.app, {
+      email: `me-route-${randomUUID()}@example.com`,
+      password: 'correct-horse-battery-staple',
+      orgName,
+    })
+
+    const me = await suite.app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { cookie: cookieHeader(cookies) },
+    })
+
+    expect(me.statusCode).toBe(200)
+    expect(me.json()).toMatchObject({ data: { orgName } })
   })
 })

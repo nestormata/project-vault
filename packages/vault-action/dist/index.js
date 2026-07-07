@@ -40668,6 +40668,18 @@ const KEY_BYTES = 32; // 256-bit AES key
 // implementation and decrypts with the other, in both directions, to prove this claim rather than
 // just asserting it in a comment.
 const CACHE_KDF_INFO = 'project-vault-agent-cache-v1';
+// Story 8-6 AC-10 — this module is the SECOND of three independently-versioned copies of this
+// AES-256-GCM/HKDF envelope: `packages/crypto/src/aes.ts` (server) is the first, and this file is
+// bundled verbatim into `packages/vault-action/dist/index.js` (the third) when that package is
+// built. A security-relevant change here requires, before it can be considered done:
+//   1. Re-run the cross-compat test (`apps/api/src/__tests__/agent-crypto-cross-compat.test.ts`)
+//      to confirm this stays byte-for-byte interoperable with `packages/crypto/src/aes.ts`.
+//   2. Rebuild `packages/vault-action/dist/` (`pnpm --filter @project-vault/vault-action build`,
+//      verified fresh by `scripts/check-vault-action-dist-fresh.ts`) so the bundled copy actually
+//      picks up this change — editing this file alone does NOT update the already-built dist/.
+//   3. Cut a `vault-action` re-tag/release so CI consumers of the mutable `v1` tag pick up the fix.
+// See `packages/agent/SECURITY.md` for the full checklist and `packages/crypto/src/aes.ts` for the
+// cross-reference back the other way.
 /** Derives a 256-bit AES cache key from the plaintext API key. Salt is intentionally empty. */
 function deriveCacheKey(apiKey) {
     return Buffer.from((0,external_node_crypto_.hkdfSync)('sha256', Buffer.from(apiKey, 'utf8'), Buffer.alloc(0), Buffer.from(CACHE_KDF_INFO, 'utf8'), KEY_BYTES));
@@ -41251,6 +41263,14 @@ function perEntryMessage(credentialName, projectId, vaultUrl, error) {
 
 
 
+// Story 8-6 AC-10 — `createVaultAgent` pulls in `@project-vault/agent/cache-crypto`, which this
+// package's build bundles verbatim into `dist/index.js` — the THIRD of three independently-
+// versioned copies of the AES-256-GCM/HKDF cache-encryption envelope (the other two:
+// `packages/crypto/src/aes.ts`, `packages/agent/src/cache-crypto.ts`). A security-relevant change
+// to either of those source copies is NOT reflected here until `dist/` is rebuilt
+// (`pnpm --filter @project-vault/vault-action build`, verified fresh by
+// `scripts/check-vault-action-dist-fresh.ts`) and a `vault-action` re-tag/release is cut so CI
+// consumers of the mutable `v1` tag pick it up. Full checklist: `packages/agent/SECURITY.md`.
 
 
 /** AC-6 — masks the full value plus each non-empty line, so a multi-line secret (e.g. a PEM key)
