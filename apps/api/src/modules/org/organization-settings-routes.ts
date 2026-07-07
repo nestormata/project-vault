@@ -1,9 +1,15 @@
 import { eq } from 'drizzle-orm'
+import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { ZodType } from 'zod/v4'
 import { organizations } from '@project-vault/db/schema'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
-import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import {
+  secureRoute,
+  type PublicRouteContext,
+  type SecureRouteContext,
+} from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import {
   MachineKeySettingsBodySchema,
@@ -14,6 +20,49 @@ import {
 } from './organization-settings-schema.js'
 
 const ORG_NOT_FOUND = { code: 'org_not_found', message: 'Organization not found' } as const
+
+/**
+ * Shared by both dormancy-threshold settings handlers below (machine-key and, per Story 8.3 D5,
+ * user) — parses `:orgId`/body, checks the cross-org guard, and updates the given column on
+ * `organizations`, all within the caller's transaction. Deliberately stops short of writing the
+ * audit row: route-audit.test.ts's assertAuditedActionOptOutsAreJustified check statically
+ * requires the literal `writeHumanAuditEntryOrFailClosed(...secureCtx.tx...)` call to appear
+ * inside each route's own `secureRoute(...)` registration, so that call (and the response it
+ * feeds) stays inline per-route below rather than moving into this helper.
+ */
+async function updateOrgDormancyColumn<
+  K extends 'machineKeyDormancyThresholdDays' | 'userDormancyThresholdDays',
+>(
+  ctx: SecureRouteContext | PublicRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  bodySchema: ZodType,
+  columnKey: K
+): Promise<{ secureCtx: SecureRouteContext; updated: { id: string } & Record<K, number> } | null> {
+  const params = parseParams(OrgSettingsParamsSchema, req, reply)
+  if (!params) return null
+  const parsed = parseBody(bodySchema, req, reply)
+  if (!parsed.success) return null
+  const secureCtx = ctx as SecureRouteContext
+
+  if (params.orgId !== secureCtx.auth.orgId) {
+    reply.status(404).send(ORG_NOT_FOUND)
+    return null
+  }
+
+  const value = (parsed.data as Record<K, number>)[columnKey]
+  const [updated] = await secureCtx.tx
+    .update(organizations)
+    .set({ [columnKey]: value } as Partial<typeof organizations.$inferInsert>)
+    .where(eq(organizations.id, params.orgId))
+    .returning()
+  if (!updated) {
+    reply.status(404).send(ORG_NOT_FOUND)
+    return null
+  }
+
+  return { secureCtx, updated: updated as { id: string } & Record<K, number> }
+}
 
 /**
  * Story 7.2 D8 — the only way to change `machine_key_dormancy_threshold_days` in this story; no
@@ -46,23 +95,15 @@ export async function organizationSettingsRoutes(fastify: FastifyApp): Promise<v
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(OrgSettingsParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody(MachineKeySettingsBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (params.orgId !== secureCtx.auth.orgId) return reply.status(404).send(ORG_NOT_FOUND)
-
-      const [updated] = await secureCtx.tx
-        .update(organizations)
-        .set({ machineKeyDormancyThresholdDays: parsed.data.machineKeyDormancyThresholdDays })
-        .where(eq(organizations.id, params.orgId))
-        .returning({
-          id: organizations.id,
-          machineKeyDormancyThresholdDays: organizations.machineKeyDormancyThresholdDays,
-        })
-      if (!updated) return reply.status(404).send(ORG_NOT_FOUND)
+      const result = await updateOrgDormancyColumn(
+        ctx,
+        req,
+        reply,
+        MachineKeySettingsBodySchema,
+        'machineKeyDormancyThresholdDays'
+      )
+      if (!result) return reply
+      const { secureCtx, updated } = result
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
         resourceType: 'organization',
@@ -113,23 +154,15 @@ export async function organizationSettingsRoutes(fastify: FastifyApp): Promise<v
       writeAuditEvent: false,
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(OrgSettingsParamsSchema, req, reply)
-      if (!params) return reply
-      const parsed = parseBody(UserDormancySettingsBodySchema, req, reply)
-      if (!parsed.success) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (params.orgId !== secureCtx.auth.orgId) return reply.status(404).send(ORG_NOT_FOUND)
-
-      const [updated] = await secureCtx.tx
-        .update(organizations)
-        .set({ userDormancyThresholdDays: parsed.data.userDormancyThresholdDays })
-        .where(eq(organizations.id, params.orgId))
-        .returning({
-          id: organizations.id,
-          userDormancyThresholdDays: organizations.userDormancyThresholdDays,
-        })
-      if (!updated) return reply.status(404).send(ORG_NOT_FOUND)
+      const result = await updateOrgDormancyColumn(
+        ctx,
+        req,
+        reply,
+        UserDormancySettingsBodySchema,
+        'userDormancyThresholdDays'
+      )
+      if (!result) return reply
+      const { secureCtx, updated } = result
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
         resourceType: 'organization',
