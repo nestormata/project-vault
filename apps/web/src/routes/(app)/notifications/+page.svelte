@@ -114,7 +114,23 @@
               </button>
             </form>
 
-            <form method="POST" action="?/revokeDormantKey" use:enhance>
+            <form
+              method="POST"
+              action="?/revokeDormantKey"
+              use:enhance={({ cancel }) => {
+                // AC-2's confirmation-before-destructive-action requirement applies to this DELETE
+                // .../api-keys/:keyId call wherever it's triggered from — this inbox surface reuses
+                // the same irreversible revoke endpoint the machine-user detail view gates behind
+                // ConfirmDeleteButton, so it needs the same protection against an accidental click.
+                if (
+                  !confirm(
+                    `Revoke the key "${alert.keyName}" for ${alert.machineUserName}? This cannot be undone.`
+                  )
+                ) {
+                  cancel()
+                }
+              }}
+            >
               <input type="hidden" name="machineUserId" value={alert.machineUserId} />
               <input type="hidden" name="keyId" value={alert.keyId} />
               <button type="submit" class="text-xs font-medium text-red-600 hover:text-red-800">
