@@ -22,6 +22,26 @@ export function configureContractTestEnv(): void {
 }
 
 /**
+ * Bypasses `vault_state`'s append-only trigger (`packages/db/src/migrations/0003_vault_state.sql`)
+ * the same way `apps/api`'s own `resetVaultForTest()` helper does, via the test-only
+ * `app.vault_test_reset` GUC (`SET LOCAL`, scoped to this one transaction).
+ *
+ * Found via CI verification: `ci.yml`'s single `quality-gates` job runs `apps/api`'s own test
+ * suite (`pnpm turbo test`) against the same live `VAULT_APP_DATABASE_URL` *before* the "API
+ * contract parity tests" step, unconditionally — and `apps/api`'s suite's own vault-init pattern
+ * (`initVaultForTest()`) intentionally leaves `vault_state` initialized with whichever test
+ * file's passphrase happened to run first (non-deterministic, and never this fixture's fixed
+ * `CONTRACT_TEST_PASSPHRASE`). Without resetting first, `bootContractTestApp` would deterministically
+ * fail to unseal on every CI run, not just an occasionally-dirty local one.
+ */
+async function resetVaultState(sql: postgres.Sql): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.vault_test_reset', 'true', true)`
+    await tx`DELETE FROM vault_state`
+  })
+}
+
+/**
  * Boots one real `createApp()` instance and initializes its vault (passphrase KMS, which
  * unseals as part of init — no separate unseal call needed) so every route that touches
  * encrypted credential values works normally. Vault state is process-local (this suite runs in
@@ -34,6 +54,9 @@ export async function bootContractTestApp(): Promise<TestApp> {
   // documented 200 happy path instead of a false "database unreachable" state.
   const sql = postgres(process.env['DATABASE_URL'] as string)
   const dbPool = { query: async (statement: string) => sql.unsafe(statement) }
+
+  await resetVaultState(sql)
+
   const app = await createApp({ logger: false, dbPool })
   await app.ready()
 
@@ -45,9 +68,9 @@ export async function bootContractTestApp(): Promise<TestApp> {
 
   if (initRes.statusCode === 200) return app
 
-  // 409 ALREADY_INITIALIZED: the DB already has a vault_state row (e.g. a prior run against the
-  // same database), but this process's in-memory key material is still sealed — unseal with the
-  // same fixed passphrase rather than treating this as a failure.
+  // 409 ALREADY_INITIALIZED: only expected if this suite itself re-runs bootContractTestApp
+  // within the same process/DB (it doesn't today, but stay defensive) — unseal with the same
+  // fixed passphrase rather than treating this as a failure.
   if (initRes.statusCode === 409) {
     const unsealRes = await app.inject({
       method: 'POST',
