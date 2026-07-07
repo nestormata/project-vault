@@ -136,10 +136,13 @@ async function createDormancyAlertIfNew(
     lastActiveAt: row.lastActiveAt?.toISOString() ?? null,
   }
 
+  // Fix (code review): ON CONFLICT target must match the (org_id, payload->>'userId') index
+  // exactly (see security-alerts.ts) — a user shared across orgs (D9) must be independently
+  // dedupable per org, not globally by userId alone.
   const inserted = (await tx.execute(sql`
     INSERT INTO security_alerts (org_id, alert_type, severity, payload, status)
     VALUES (${orgId}, 'user.dormant', 'warning', ${JSON.stringify(payload)}::jsonb, 'PENDING_DELIVERY')
-    ON CONFLICT ((payload->>'userId')) WHERE alert_type = 'user.dormant' AND status != 'dismissed'
+    ON CONFLICT (org_id, (payload->>'userId')) WHERE alert_type = 'user.dormant' AND status != 'dismissed'
     DO NOTHING
     RETURNING id
   `)) as unknown as { length: number }

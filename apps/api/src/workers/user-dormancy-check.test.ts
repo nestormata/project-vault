@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { organizations, orgMemberships, securityAlerts } from '@project-vault/db/schema'
-import { createTestUser, deleteTestUser, withTestOrg } from '@project-vault/db/test-helpers'
+import {
+  createTestUser,
+  deleteTestUser,
+  withTestOrg,
+  withTwoTestOrgs,
+} from '@project-vault/db/test-helpers'
 import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.js'
 import { queueEntriesForTemplate } from './expiry-alert-test-helpers.js'
 import { runUserDormancyCheckJob } from './user-dormancy-check.js'
@@ -142,6 +147,47 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
     } finally {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
+    }
+  }, 20_000)
+
+  it('fires an independent alert per org for a user shared across two orgs (fix: dedup index was global, not per-org)', async () => {
+    // Regression test for a code-review finding: idx_security_alerts_dormant_user was originally
+    // keyed only on (payload->>'userId'), with no org_id. Since user_identity_tokens is
+    // platform-level and a single user can belong to multiple orgs (D9), the first org's INSERT
+    // would silently suppress the second org's otherwise-independent dormant-user alert via
+    // ON CONFLICT DO NOTHING — leaving the second org's admins never notified. The index and the
+    // ON CONFLICT target now both include org_id, so each org gets its own alert.
+    const { boss } = createMockBoss()
+    await boss.start()
+    const ownerAId = await createTestUser('user-dormancy-crossorg-owner-a')
+    const ownerBId = await createTestUser('user-dormancy-crossorg-owner-b')
+    const sharedMemberId = await createTestUser('user-dormancy-crossorg-shared')
+    try {
+      await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+        await insertMember(orgAId, ownerAId, { role: 'owner', lastActiveAt: TEN_DAYS_AGO })
+        await insertMember(orgAId, sharedMemberId, { lastActiveAt: NINETY_ONE_DAYS_AGO })
+        await insertMember(orgBId, ownerBId, { role: 'owner', lastActiveAt: TEN_DAYS_AGO })
+        await insertMember(orgBId, sharedMemberId, { lastActiveAt: NINETY_ONE_DAYS_AGO })
+
+        await runUserDormancyCheckJob(boss)
+
+        const alertsA = await withOrg(orgAId, (tx) =>
+          tx.select().from(securityAlerts).where(eq(securityAlerts.alertType, DORMANT_TEMPLATE_ID))
+        )
+        const alertsB = await withOrg(orgBId, (tx) =>
+          tx.select().from(securityAlerts).where(eq(securityAlerts.alertType, DORMANT_TEMPLATE_ID))
+        )
+        expect(
+          alertsA.some((a) => (a.payload as Record<string, unknown>)['userId'] === sharedMemberId)
+        ).toBe(true)
+        expect(
+          alertsB.some((a) => (a.payload as Record<string, unknown>)['userId'] === sharedMemberId)
+        ).toBe(true)
+      })
+    } finally {
+      await deleteTestUser(ownerAId)
+      await deleteTestUser(ownerBId)
+      await deleteTestUser(sharedMemberId)
     }
   }, 20_000)
 

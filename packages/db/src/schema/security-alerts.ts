@@ -34,9 +34,14 @@ export const securityAlerts = pgTable(
     dormantKeyUniqueIdx: uniqueIndex('idx_security_alerts_dormant_key')
       .on(sql`(${t.payload}->>'keyId')`)
       .where(sql`${t.alertType} = 'machine_key.dormant' AND ${t.status} != 'dismissed'`),
-    // Story 8.3 D5/AC-11 — dedupe: at most one non-dismissed user.dormant alert per user.
+    // Story 8.3 D5/AC-11 — dedupe: at most one non-dismissed user.dormant alert per (org, user).
+    // Fix (code review): must be scoped per-org, not globally on userId alone — D9 establishes
+    // that a single user can belong to multiple orgs sharing one identity, so a global-only key
+    // would let one org's alert silently suppress (via ON CONFLICT DO NOTHING) another org's
+    // otherwise-independent dormant-user alert for the same shared user, permanently starving
+    // that second org of the notification until the first org's alert happens to be dismissed.
     dormantUserUniqueIdx: uniqueIndex('idx_security_alerts_dormant_user')
-      .on(sql`(${t.payload}->>'userId')`)
+      .on(t.orgId, sql`(${t.payload}->>'userId')`)
       .where(sql`${t.alertType} = 'user.dormant' AND ${t.status} != 'dismissed'`),
   })
 )
