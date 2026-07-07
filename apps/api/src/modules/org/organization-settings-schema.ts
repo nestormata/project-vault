@@ -23,3 +23,25 @@ export const MachineKeySettingsResponseSchema = z
     }),
   })
   .meta({ id: 'MachineKeySettingsResponse' })
+
+// Story 8.3 D5/AC-12 — mirrors MachineKeySettingsBodySchema exactly (same allowed enum).
+export const UserDormancySettingsBodySchema = z
+  .object({
+    userDormancyThresholdDays: z.union([
+      z.literal(30),
+      z.literal(60),
+      z.literal(90),
+      z.literal(180),
+    ]),
+  })
+  .strict()
+  .meta({ id: 'UserDormancySettingsBody' })
+
+export const UserDormancySettingsResponseSchema = z
+  .object({
+    data: z.object({
+      orgId: z.uuid(),
+      userDormancyThresholdDays: z.number().int(),
+    }),
+  })
+  .meta({ id: 'UserDormancySettingsResponse' })

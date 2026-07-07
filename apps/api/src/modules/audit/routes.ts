@@ -33,6 +33,17 @@ import { searchAuditEvents } from './search.js'
 import { AUDIT_EXPORT_MAX_RANGE_DAYS } from './export.js'
 import { configureForwarding } from './forwarding.js'
 import { configureRetention } from './retention.js'
+import {
+  AccessReportRequestSchema,
+  AccessReportResponseSchema,
+  type AccessReportRequest,
+} from './access-report-schema.js'
+import {
+  buildAccessReport,
+  buildAccessReportCsv,
+  paginateAccessReportUsers,
+  InvalidAsOfError,
+} from './access-report.js'
 import { UnsafeForwardingUrlError } from '../../lib/safe-fetch.js'
 
 /** AC-5 — reuses the existing resolvePaginationOffset()/PAGE_OUT_OF_RANGE_ERROR pagination-depth
@@ -394,6 +405,85 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
       reply.header('Content-Type', 'text/csv')
       reply.header('Content-Disposition', `attachment; filename="audit-export-${row.id}.csv"`)
       return reply.send(csv)
+    },
+  })
+
+  // Story 8.3 AC-1 through AC-8 — point-in-time access report. `writeAuditEvent: false` +
+  // a manual writeHumanAuditEntryOrFailClosed call below (not the default SecureRoute audit
+  // writer): the default writer's payload callback only receives `{ params, query }`, but this
+  // route's `asOf`/`format` are POST-body fields and `userCount` is only known after the report
+  // is built — the same reason GET /audit/verify and GET /audit/events (immediately above) both
+  // use this exact manual-write pattern rather than `writeAuditEvent: true`.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/audit/access-report',
+    schema: {
+      body: AccessReportRequestSchema,
+      response: {
+        200: AccessReportResponseSchema,
+        ...defaultErrorResponses,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      allowedRoles: ['owner'],
+      // Matches GET /audit/verify's and GET /audit/events' D5 rationale immediately above: a
+      // compliance-visibility read endpoint stays off requireMfa so an owner mid-MFA-grace-period
+      // isn't locked out of seeing access-governance state. Registered in
+      // MFA_ENROLLMENT_EXEMPT_ROUTES (packages/shared/src/constants/mfa-exempt-routes.ts).
+      writeAuditEvent: false,
+      rateLimit: { max: 30, timeWindowMs: 60_000, key: 'POST /api/v1/org/audit/access-report' },
+    },
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const parsed = parseBody<AccessReportRequest>(AccessReportRequestSchema, req, reply)
+      if (!parsed.success) return reply
+
+      let result: Awaited<ReturnType<typeof buildAccessReport>>
+      try {
+        result = await buildAccessReport(secureCtx.tx, {
+          orgId: secureCtx.auth.orgId,
+          asOf: parsed.data.asOf,
+        })
+      } catch (error) {
+        if (error instanceof InvalidAsOfError) {
+          return reply.status(422).send({ code: error.code, message: error.message })
+        }
+        throw error
+      }
+
+      const { format, page, limit } = parsed.data
+
+      // AC-7 — this endpoint's own call is audited exactly once per request, regardless of
+      // which format branch below actually returns (same-transaction invariant, NFR-REL5).
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'audit.access_report_generated',
+        resourceType: 'audit_log_entries',
+        payload: { asOf: result.asOf, userCount: result.users.length, format },
+        request: req,
+      })
+
+      if (format === 'csv') {
+        const csv = buildAccessReportCsv(result.users)
+        reply.header('Content-Type', 'text/csv')
+        return reply.send(csv)
+      }
+
+      const { pageUsers, total, hasNext } = paginateAccessReportUsers(result.users, page, limit)
+
+      return {
+        data: {
+          users: pageUsers,
+          generatedAt: new Date().toISOString(),
+          asOf: result.asOf,
+          page,
+          limit,
+          total,
+          hasNext,
+        },
+      }
     },
   })
 

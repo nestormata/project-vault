@@ -27,6 +27,7 @@ const SECURITY_OWNER = 'api-security-reviewer'
 const IP_RATE_LIMIT = 'ip-rate-limit'
 const FAILED_AUTH_RECORDING = 'failed-auth-recording'
 const SECURITY_ACTION = 'security-action'
+const SENSITIVE_READ = 'sensitive-read'
 const SESSION_REVOKED = 'SESSION_REVOKED'
 const IDENTITY_CLEANUP_JOB = 'identity-cleanup-job'
 const WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED = 'writeCredentialAuditOrFailClosed'
@@ -278,6 +279,16 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'audit.retention_configured',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 8.3 AC-27 — POST only because asOf/page/limit/format need a body (same reason 8.2's
+  // search endpoint would have been a POST too); classified sensitive-read, not mutation or plain
+  // read, matching the two existing sensitive-read precedents below (credential.value_revealed
+  // GETs): a read of compliance-sensitive data that is itself the auditable/forensic event, with
+  // a mandatory same-transaction audit write, not a state-mutating action on the resource itself.
+  'POST /api/v1/org/audit/access-report': {
+    action: SENSITIVE_READ,
+    auditEvent: 'audit.access_report_generated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   // Story 6.2 AC 18 (ADR-6.2-04's correction). The route delegates to dismissSecurityAlert(),
   // which calls writeHumanAuditEntryOrFailClosed() internally — the literal function name
   // called in the route itself is dismissSecurityAlert (see security-alerts.ts).
@@ -349,7 +360,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
   },
   'GET /api/v1/projects/:projectId/credentials/:credentialId/value': {
-    action: 'sensitive-read',
+    action: SENSITIVE_READ,
     auditEvent: 'credential.value_revealed',
     sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
@@ -612,6 +623,15 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'PUT /api/v1/org/users/:userId/projects/:projectId/role': {
     action: 'mutation',
     auditEvent: 'project.member_role_changed',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  // Story 8.3 AC-17 through AC-22 — owner-only, irreversible pseudonymization (FR44); classified
+  // as a mutation despite being a same-class-of-severity action as SECURITY_ACTION entries,
+  // matching this codebase's existing convention that only session-revocation/dismiss-style
+  // actions use SECURITY_ACTION — this is a data-mutation on user_identity_tokens.
+  'POST /api/v1/org/users/:userId/pseudonymize': {
+    action: 'mutation',
+    auditEvent: 'user.pseudonymized',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
   'DELETE /api/v1/projects/:projectId/members/:userId': {
@@ -879,7 +899,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     reviewer: SECURITY_OWNER,
   },
   'GET /api/v1/machine/projects/:projectId/credentials/:name/value': {
-    action: 'sensitive-read',
+    action: SENSITIVE_READ,
     auditOmissionReason:
       "Machine-authenticated public route (D4) — org context is not resolvable until verifyMachineRequest() resolves the JWT, so the handler opens its own withOrg() transaction rather than SecureRoute's declarative one. A credential.value_revealed audit row (actorType: machine_user) is still written fail-closed via writeMachineAuditEntryOrFailClosed() inside that same transaction (AC-9), just not through the secureCtx.tx path this registry's opt-out check expects.",
     reviewer: SECURITY_OWNER,
@@ -913,6 +933,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'PATCH /api/v1/organizations/:orgId/machine-key-settings': {
     action: 'mutation',
     auditEvent: 'organization.machine_key_settings_updated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  'PATCH /api/v1/organizations/:orgId/user-dormancy-settings': {
+    action: 'mutation',
+    auditEvent: 'organization.user_dormancy_settings_updated',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
   'POST /api/v1/machine/cache-activated': {

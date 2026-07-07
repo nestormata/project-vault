@@ -5,7 +5,10 @@ import { getDb, withOrg } from '@project-vault/db'
 import { orgMemberships, revokedTokens, sessions, users } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { AppError } from '../lib/errors.js'
-import { touchSessionActivity } from '../modules/auth/session-activity.js'
+import {
+  touchOrgMembershipActivity,
+  touchSessionActivity,
+} from '../modules/auth/session-activity.js'
 import { cleanupExpiredSession } from '../modules/auth/session-revoke.js'
 import { parseAccessTokenClaims } from '../modules/auth/tokens.js'
 
@@ -152,14 +155,35 @@ async function loadIsPlatformOperator(userId: string): Promise<boolean> {
   return rows[0]?.isPlatformOperator ?? false
 }
 
-async function touchActivityWithoutBlocking(
+/**
+ * Story 8.3 D3/AC-9 (resolves finding-11): the two activity touches below run in their OWN,
+ * separate try/catch blocks — not one shared block — so an exception in either one can never
+ * suppress the other (e.g. a transient failure writing org_memberships.lastActiveAt must not
+ * prevent sessions.lastActiveAt from being refreshed, and vice versa). Each failure mode logs its
+ * own distinct warn-level event so the two remain distinguishable in logs.
+ */
+export async function touchActivityWithoutBlocking(
   request: FastifyRequest,
-  sessionId: string
+  session: Pick<AuthSessionRow, 'id' | 'orgId' | 'userId'>
 ): Promise<void> {
   try {
-    await touchSessionActivity(sessionId)
+    await touchSessionActivity(session.id)
   } catch (error) {
-    request.log.warn({ eventType: 'session.activity_touch_failed', sessionId, err: error })
+    request.log.warn({
+      eventType: 'session.activity_touch_failed',
+      sessionId: session.id,
+      err: error,
+    })
+  }
+  try {
+    await touchOrgMembershipActivity(session.orgId, session.userId)
+  } catch (error) {
+    request.log.warn({
+      eventType: 'org_membership.activity_touch_failed',
+      orgId: session.orgId,
+      userId: session.userId,
+      err: error,
+    })
   }
 }
 
@@ -183,7 +207,7 @@ export async function authenticateRequest(
     await enforceIdleTimeout(session)
     const orgRole = await loadOrgRole(session)
     const isPlatformOperator = await loadIsPlatformOperator(session.userId)
-    await touchActivityWithoutBlocking(request, session.id)
+    await touchActivityWithoutBlocking(request, session)
 
     request.authContext = {
       userId: session.userId,

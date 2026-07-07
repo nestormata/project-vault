@@ -114,6 +114,38 @@ export async function resolveRoutingRecipients(
   return members
 }
 
+/**
+ * Story 8.3 D12/AC-16 (resolves finding-16): FR71 ("Organization Admins") vs. epics.md's narrower
+ * "org owners" AC text — reconciled by defaulting `user.dormant`'s unconfigured recipient set to
+ * the UNION of owner+admin (satisfying FR71's broader wording literally), while an org that has
+ * configured an explicit `org_notification_routing` override for `user.dormant` gets that single
+ * role honored exactly as any other alert type (no union). This is a small, alert-type-scoped
+ * extension — resolveRoutingRecipients()'s single-target-role behavior is unchanged for every
+ * other alert type, including its own fallback-to-owner-when-empty behavior, which this function
+ * intentionally does not replicate (a union query already can't return "zero members" the way a
+ * single non-owner role can, since 'owner' is always part of the union).
+ */
+export async function resolveUserDormancyRecipients(orgId: string, tx: Tx): Promise<string[]> {
+  const ALERT_TYPE = 'user.dormant'
+  const override = await tx
+    .select({ routeTo: orgNotificationRouting.routeTo })
+    .from(orgNotificationRouting)
+    .where(
+      and(eq(orgNotificationRouting.orgId, orgId), eq(orgNotificationRouting.alertType, ALERT_TYPE))
+    )
+    .limit(1)
+
+  if (override[0]) {
+    return getMembersWithRole(orgId, override[0].routeTo as RoutingRole, tx)
+  }
+
+  const [owners, admins] = await Promise.all([
+    getMembersWithRole(orgId, 'owner', tx),
+    getMembersWithRole(orgId, 'admin', tx),
+  ])
+  return [...new Set([...owners, ...admins])]
+}
+
 async function getMembersWithRole(orgId: string, role: RoutingRole, tx: Tx): Promise<string[]> {
   const conditions = [eq(orgMemberships.orgId, orgId), eq(orgMemberships.status, 'active')]
   if (role !== 'member') {

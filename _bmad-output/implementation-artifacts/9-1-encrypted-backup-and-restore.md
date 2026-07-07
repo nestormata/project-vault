@@ -732,13 +732,13 @@ Code review (2026-07-06) fixed one critical finding (`pg_dump` missing `--clean 
 
 **New — db (packages/db)**
 - `packages/db/src/schema/backup-runs.ts`, `admin-alerts.ts` (+ `backup-schema.test.ts`)
-- `packages/db/src/migrations/0038_platform_operator_and_backup_tables.sql`
+- `packages/db/src/migrations/0039_platform_operator_and_backup_tables.sql`
 
 **Modified**
 - `packages/db/src/schema/users.ts` — `isPlatformOperator` column
 - `packages/db/src/schema/index.ts` — export new schema modules
 - `packages/db/src/check-rls-coverage.ts` — `EXCLUDED_TABLES` additions
-- `packages/db/src/migrations/meta/_journal.json` — migration 0038 entry
+- `packages/db/src/migrations/meta/_journal.json` — migration 0039 entry
 - `packages/crypto/src/index.ts` — export new backup crypto/worker functions
 - `packages/shared/src/constants/notification-types.ts` (+ `.test.ts`) — `'backup.missed'`
 - `packages/shared/src/constants/operational-event-types.ts` — `BACKUP_*` events

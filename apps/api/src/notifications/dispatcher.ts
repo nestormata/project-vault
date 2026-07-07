@@ -34,6 +34,11 @@ type CreateEntriesOptions = {
   orgId: string
   template: NotificationTemplate
   tx: Tx
+  // Story 8.3 D12/AC-16 — lets a caller (user-dormancy-check.ts) supply a pre-resolved recipient
+  // list (the owner+admin union, or an org's explicit override) instead of the default single-
+  // role resolveRoutingRecipients() lookup below. Every other caller omits this and gets the
+  // unchanged default behavior.
+  recipientUserIds?: string[]
 }
 
 function nextDigestDeliveryTime(digestHourUtc: number): Date {
@@ -139,7 +144,8 @@ export async function createOrgAdminNotificationEntries(
 ): Promise<NotificationQueueJob[]> {
   const { orgId, template, tx } = options
   const alertSeverity = template.severity ?? 'warning'
-  const recipientUserIds = await resolveRoutingRecipients(orgId, template.templateId, tx)
+  const recipientUserIds =
+    options.recipientUserIds ?? (await resolveRoutingRecipients(orgId, template.templateId, tx))
   const queueJobs: NotificationQueueJob[] = []
   const seenUserChannels = new Set<string>()
   let slackEnabled = false

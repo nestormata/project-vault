@@ -9,6 +9,7 @@ describe('MFA_ENROLLMENT_EXEMPT_ROUTES', () => {
       'GET /api/v1/org/audit/events',
       'GET /api/v1/org/audit/exports/:jobId',
       'GET /api/v1/org/audit/exports/:jobId/download',
+      'POST /api/v1/org/audit/access-report',
       'GET /api/v1/org/users',
       'GET /api/v1/projects/:projectId/credentials/:credentialId/access',
       'POST /api/v1/projects/:projectId/credentials/import',

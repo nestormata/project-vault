@@ -6,6 +6,7 @@ import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import {
   jsonSchemaTransform,
+  jsonSchemaTransformObject,
   serializerCompiler,
   validatorCompiler,
 } from '@fastify/type-provider-zod'
@@ -150,6 +151,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       },
     },
     transform: jsonSchemaTransform,
+    // Without this, jsonSchemaTransform emits $ref pointers into components.schemas but
+    // nothing ever populates that section, leaving every $ref dangling in the generated
+    // document (see apps/api/src/scripts/generate-spec.ts, which serializes app.swagger()).
+    transformObject: jsonSchemaTransformObject,
   })
 
   await fastify.register(helmet, {
