@@ -61,6 +61,22 @@ describe('findDestructiveStatements', () => {
     expect(widening.some((f) => /ALTER COLUMN.*TYPE/i.test(f))).toBe(true)
   })
 
+  it('flags ALTER COLUMN ... TYPE on a quoted identifier containing non-word characters (regression, code review)', () => {
+    // A bare `"?[\w]+"?` identifier pattern cannot match a quoted Postgres identifier containing
+    // a hyphen, space, or other non-word character — it silently fails to match anywhere in the
+    // statement, letting the TYPE change through undetected. Postgres freely allows such
+    // identifiers when quoted, so this is a real bypass, not a hypothetical.
+    const hyphenated = findDestructiveStatements(
+      'ALTER TABLE metrics ALTER COLUMN "risk-score" TYPE integer;'
+    )
+    expect(hyphenated.some((f) => /ALTER COLUMN.*TYPE/i.test(f))).toBe(true)
+
+    const spaced = findDestructiveStatements(
+      'ALTER TABLE metrics ALTER COLUMN "column with spaces" TYPE text;'
+    )
+    expect(spaced.some((f) => /ALTER COLUMN.*TYPE/i.test(f))).toBe(true)
+  })
+
   it('does not flag ALTER COLUMN ... SET NOT NULL (distinct from a TYPE change)', () => {
     const findings = findDestructiveStatements(
       'ALTER TABLE refresh_tokens ALTER COLUMN org_id SET NOT NULL;'

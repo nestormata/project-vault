@@ -143,10 +143,15 @@ const SIMPLE_PATTERNS: { label: string; regex: RegExp }[] = [
   // safe widening ones — narrowing vs. widening can't be told apart without introspecting the
   // live schema, which this static scan never does. Excludes "ALTER COLUMN ... SET NOT NULL"
   // (no TYPE keyword present, so it never matches this pattern) by design (AC-18).
-  // eslint-disable-next-line security/detect-unsafe-regex -- false positive: every \s+/\w+ run here is a single, non-nested, non-overlapping quantifier (no catastrophic-backtracking shape), and input is this repo's own committed migration files, never attacker-controlled.
+  // The identifier alternation (`"[^"]*"|[\w]+`) matches either a quoted Postgres identifier
+  // (which may contain hyphens, spaces, or other non-word characters, e.g. `"risk-score"`) or a
+  // bare unquoted one — a bare `"?[\w]+"?` cannot match a quoted identifier containing a
+  // non-word character at all, silently letting that specific TYPE change bypass detection
+  // entirely (found during code review; regression-tested below).
+
   {
     label: 'ALTER COLUMN ... TYPE',
-    regex: /\bALTER\s+COLUMN\s+"?[\w]+"?\s+(?:SET\s+DATA\s+)?TYPE\b/gi,
+    regex: /\bALTER\s+COLUMN\s+(?:"[^"]*"|[\w]+)\s+(?:SET\s+DATA\s+)?TYPE\b/gi,
   },
 ]
 
