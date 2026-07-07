@@ -43,6 +43,17 @@ export const SMTP_PASSWORD_CONFIGURED_SENTINEL = '[configured]'
  * as Story 9.1's createAdminAlertIfNotActive per-alertType lock. */
 const SETTINGS_LOCK_KEY = 'system_settings'
 
+/**
+ * Code review (post-9.2 implementation): AC-10's `maxOrgs` cap is documented (D3) as safe because
+ * org creation is "a single, easy chokepoint" — but the original count-then-insert sequence in
+ * createOrg() below had no locking, so two concurrent POST /admin/orgs calls near the limit could
+ * both read the same (under-limit) count and both insert, exceeding maxOrgs — the same class of
+ * concurrency bug this story's own AC-23/D7 point 3 fixed twice elsewhere (allocateOrganizationSlug's
+ * and createOrg's own SAVEPOINT bugs). Serializes the count-check via the same
+ * pg_advisory_xact_lock discipline already used for the system_settings singleton (AC-22).
+ */
+const ORG_COUNT_LOCK_KEY = 'org_count_check'
+
 async function loadSystemSettingsRow(
   tx: Tx | ReturnType<typeof getDb>
 ): Promise<SystemSettings | undefined> {
@@ -429,6 +440,10 @@ export async function createOrg(
   const email = normalizeEmail(input.ownerEmail)
 
   return getDb().transaction(async (tx) => {
+    // Code review fix: serializes the count-check-then-insert sequence so two concurrent
+    // createOrg() calls near the limit cannot both observe an under-limit count and both insert
+    // (AC-10's cap must be hard-enforced, not merely "usually" enforced).
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${ORG_COUNT_LOCK_KEY}))`)
     const effective = computeEffectiveSettings(await loadSystemSettingsRow(tx))
     const orgCount = await currentOrgCount(tx)
     if (orgCount >= effective.instancePolicy.maxOrgs) {

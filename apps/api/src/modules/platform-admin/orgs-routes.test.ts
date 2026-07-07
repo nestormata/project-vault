@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, beforeEach } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import {
   accountRecoveryTokens,
@@ -229,6 +229,45 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       ownerEmail: `nowfits-${randomUUID()}@example.com`,
     })
     expect(retried.statusCode).toBe(201)
+    await getDb().delete(systemSettings)
+  })
+
+  it('AC-10 code-review regression: concurrent creations at the limit never both succeed (no TOCTOU race on maxOrgs)', async () => {
+    const operator = await registerPlatformOperator(suite.app, {
+      emailPrefix: 'orgs-limit-race-op',
+      orgNamePrefix: 'Orgs Limit Race Op',
+      password: PASSWORD,
+    })
+    const [orgCountRow] = await getDb().execute<{ c: string }>(
+      sql`SELECT count(*)::text AS c FROM organizations`
+    )
+    const currentOrgCount = Number(orgCountRow?.c ?? 0)
+    // Set the limit to exactly the current count + 1 — only ONE more org may ever be created,
+    // regardless of how many concurrent requests race for that one remaining slot.
+    await getDb()
+      .insert(systemSettings)
+      .values({ id: 1, maxOrgs: currentOrgCount + 1 })
+      .onConflictDoUpdate({ target: systemSettings.id, set: { maxOrgs: currentOrgCount + 1 } })
+
+    const [resA, resB] = await Promise.all([
+      createOrgReq(suite.app, operator.cookies, {
+        name: 'Race Org A',
+        ownerEmail: `racelimit-a-${randomUUID()}@example.com`,
+      }),
+      createOrgReq(suite.app, operator.cookies, {
+        name: 'Race Org B',
+        ownerEmail: `racelimit-b-${randomUUID()}@example.com`,
+      }),
+    ])
+    const statuses = [resA.statusCode, resB.statusCode].sort()
+    // Exactly one must succeed (201) and the other must be rejected (422) — never both 201,
+    // which would mean the instance now exceeds its configured maxOrgs.
+    expect(statuses).toEqual([201, 422])
+
+    const [finalCountRow] = await getDb().execute<{ c: string }>(
+      sql`SELECT count(*)::text AS c FROM organizations`
+    )
+    expect(Number(finalCountRow?.c ?? 0)).toBe(currentOrgCount + 1)
     await getDb().delete(systemSettings)
   })
 

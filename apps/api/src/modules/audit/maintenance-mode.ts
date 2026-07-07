@@ -24,6 +24,16 @@ export const SECURITY_CRITICAL_AUDIT_EVENT_TYPES: ReadonlySet<string> = new Set(
   AuditEvent.ACCOUNT_RECOVERY_BLOCKED,
   AuditEvent.MACHINE_USER_API_KEY_ROTATED,
   AuditEvent.MACHINE_USER_API_KEY_EMERGENCY_REVOKED,
+  // Code review (post-9.2 implementation): D10's own criterion — "any other event type already
+  // written via a direct writeHumanAuditEntry/writeMachineAuditEntry/writeSystemAuditEntry call
+  // rather than through the *OrFailClosed wrappers, are always written" — was not fully applied.
+  // apps/api/src/modules/machine-users/rotation.ts writes this event via a direct
+  // writeMachineAuditEntry() call when a rotated-out API key is reused (a potential credential-
+  // compromise signal), the same class of event as MACHINE_USER_API_KEY_ROTATED/
+  // _EMERGENCY_REVOKED above. Without this entry it would have been silently suppressed by the
+  // maintenance-mode circuit breaker at exactly the moment (storage pressure) an anomaly like
+  // this is most likely to also be occurring.
+  AuditEvent.MACHINE_USER_ROTATION_ANOMALY_DETECTED,
 ])
 
 export function isSecurityCriticalAuditEventType(eventType: string): boolean {

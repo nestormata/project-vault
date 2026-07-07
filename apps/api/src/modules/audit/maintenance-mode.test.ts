@@ -49,6 +49,15 @@ describe.sequential('Story 9.2 D10/AC-17: audit-storage maintenance-mode circuit
     expect(isSecurityCriticalAuditEventType(ROUTINE_EVENT_TYPE)).toBe(false)
   })
 
+  it('AC-17/D10 code-review regression: machine-key rotation-anomaly detection (written via a direct writeMachineAuditEntry call in rotation.ts) is security-critical', () => {
+    // This event is the same class as MACHINE_USER_API_KEY_ROTATED/_EMERGENCY_REVOKED (a
+    // potential credential-compromise signal) and, per D10, must never be suppressed by the
+    // maintenance-mode circuit breaker — it was missing from the allowlist before this fix.
+    expect(
+      isSecurityCriticalAuditEventType(AuditEvent.MACHINE_USER_ROTATION_ANOMALY_DETECTED)
+    ).toBe(true)
+  })
+
   it('AC-17: suppresses a routine write only while maintenance mode is active', async () => {
     await withTestOrg(async ({ orgId, tx }) => {
       expect(await shouldSuppressAuditWrite(tx, ROUTINE_EVENT_TYPE)).toBe(false)
