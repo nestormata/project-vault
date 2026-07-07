@@ -17,6 +17,10 @@
     "./schema": {
       "types": "./dist/schema/index.d.ts",
       "default": "./dist/schema/index.js"
+    },
+    "./check-audit-actor-token-coverage": {
+      "types": "./dist/check-audit-actor-token-coverage.d.ts",
+      "default": "./dist/check-audit-actor-token-coverage.js"
     }
   },
   "scripts": {

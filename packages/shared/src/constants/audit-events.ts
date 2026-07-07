@@ -79,6 +79,9 @@ export const AuditEvent = {
   STATUS_PAGE_DISABLED: 'status_page.disabled',
   USER_ERASURE_REQUESTED: 'user.erasure_requested',
   USER_ERASURE_EXECUTED: 'user.erasure_executed',
+  // Story 8.3 AC-7/AC-21
+  ACCESS_REPORT_GENERATED: 'audit.access_report_generated',
+  USER_PSEUDONYMIZED: 'user.pseudonymized',
 } as const
 
 export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]

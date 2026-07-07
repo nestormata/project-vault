@@ -32,6 +32,7 @@ import {
   runMachineKeyOverlapRevokeJob,
 } from './workers/machine-key-overlap-revoke.js'
 import { runMachineKeyDormancyCheckJob } from './workers/machine-key-dormancy-check.js'
+import { runUserDormancyCheckJob } from './workers/user-dormancy-check.js'
 import {
   notificationEmailCatchupHandler,
   notificationEmailHandler,
@@ -145,6 +146,8 @@ async function main(): Promise<void> {
       'machine-key:overlap-alert': { cron: '0 * * * *' },
       // AC-21: daily dormancy detection job.
       'machine-key:dormancy-check': { cron: '0 9 * * *' },
+      // Story 8.3 AC-10: daily user-dormancy detection job, same cadence as machine-key's.
+      'user:dormancy-check': { cron: '0 9 * * *' },
       'notification:email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification:inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
@@ -216,6 +219,10 @@ async function main(): Promise<void> {
       'machine-key:dormancy-check': (job) =>
         withJobLogging(fastify.log, 'machine-key:dormancy-check', job.id ?? 'unknown', () =>
           runMachineKeyDormancyCheckJob(boss, fastify.log)
+        ),
+      'user:dormancy-check': (job) =>
+        withJobLogging(fastify.log, 'user:dormancy-check', job.id ?? 'unknown', () =>
+          runUserDormancyCheckJob(boss, fastify.log)
         ),
       'notification:email': {
         handler: (job) => notificationEmailHandler(job, fastify.log),

@@ -47,3 +47,9 @@ describe('Story 7.2 machine-key dormancy alert type (D9/AC-21, Task 14)', () => 
     expect(NOTIFICATION_ALERT_TYPES).toContain('machine_key.dormant')
   })
 })
+
+describe('Story 8.3 user dormancy alert type (D5/D12/AC-16)', () => {
+  it('registers the user.dormant alert type ID so an org can override its default routing', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('user.dormant')
+  })
+})

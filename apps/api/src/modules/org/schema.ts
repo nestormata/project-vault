@@ -159,10 +159,22 @@ export const machineKeyDormantPayloadSchema = z
   })
   .strict()
 
+// Story 8.3 D5/D6/AC-10 — user-dormancy alerts reuse security_alerts (same table, new
+// alertType), mirroring machineKeyDormantPayloadSchema's shape/precedent above.
+export const userDormantPayloadSchema = z
+  .object({
+    userId: z.uuid(),
+    displayName: z.string(),
+    orgRole: z.enum(['owner', 'admin', 'member', 'viewer']),
+    lastActiveAt: z.iso.datetime().nullable(),
+  })
+  .strict()
+
 export const securityAlertPayloadSchema = z.union([
   failedAuthThresholdPayloadSchema,
   anomalousAccessPayloadSchema,
   machineKeyDormantPayloadSchema,
+  userDormantPayloadSchema,
 ])
 
 export const SecurityAlertsQuerySchema = z.object({
@@ -171,6 +183,28 @@ export const SecurityAlertsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 })
+
+// Story 8.3 AC-17/AC-17a — `confirmUserId` must exactly match the target `userId` (re-typing the
+// identifier to confirm an irreversible, cross-org-impacting action), rejected with 422
+// `confirmation_required` otherwise, before any mutation.
+export const PseudonymizeBodySchema = z
+  .object({ confirmUserId: z.uuid().optional() })
+  .strict()
+  .meta({ id: 'PseudonymizeBody' })
+
+export const PseudonymizeResponseSchema = z
+  .object({
+    data: z.object({
+      userId: z.uuid(),
+      pseudonymized: z.literal(true),
+      pseudonymizedAt: z.iso.datetime(),
+      alias: z.string(),
+      // D9/AC-17a — surfaces the cross-org blast radius to the calling owner at the moment of
+      // this irreversible action, rather than leaving it to be discovered later (AC-22).
+      otherAffectedOrgCount: z.number().int().nonnegative(),
+    }),
+  })
+  .meta({ id: 'PseudonymizeResponse' })
 
 export const securityAlertsResponseSchema = z.object({
   data: z.object({

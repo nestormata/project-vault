@@ -267,6 +267,13 @@
       "when": 1783478400000,
       "tag": "0037_data_subject_erasure",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1783478400000,
+      "tag": "0038_user_dormancy_and_access_reports",
+      "breakpoints": true
     }
   ]
 }

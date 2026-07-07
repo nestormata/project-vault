@@ -1,6 +1,11 @@
 # Project Vault
 
-> **⚠️ Status: Pre-launch — in active development. Not yet available for use.**
+> **⚠️ Status: Pre-launch, actively developed.** The core platform — secrets, rotation, teams,
+> monitoring, notifications, machine users, and audit logging — is functional in self-hosted
+> dev/eval environments (Epics 1–6 shipped, Epics 7–8 mostly shipped). Production-hardening
+> features for self-hosted operators (encrypted backup/restore, in-place upgrades, platform admin
+> settings, operator runbook — Epic 9) are still being built. Not yet tagged for a v1 GA release.
+> See [Implementation Status](#implementation-status) for the epic-by-epic breakdown.
 
 *Run complex projects. Miss nothing.*
 
@@ -25,18 +30,47 @@ Key differentiators:
 
 ---
 
-## Planned Features (v1)
+## Features
 
-- 🔐 **Secrets management** — versioned, encrypted storage with RBAC, expiry tracking, and bulk import from `.env` / JSON
-- 🔄 **Manual rotation with propagation** — per-system confirmation checklist; old credential retired only after every system confirms
-- 📡 **Operational monitoring** — HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, payment subscription tracking
-- 🤖 **Machine user support** — scoped API keys, offline/cache fallback, deploy-time versioning, CI/CD native integrations
-- 📋 **Immutable audit logs** — append-only, row-level cryptographic chaining, GDPR-compliant pseudonymization, compliance export
-- 🏢 **Multi-user RBAC** — project-scoped roles (Owner, Admin, Member, Viewer), organization-level administration
-- 🔑 **Vault unsealing** — master password or envelope encryption with split-key default; KMS integration as advanced option
-- 💾 **Built-in backup** — scheduled encrypted snapshots, configurable retention, restore verification
-- 🌐 **REST API + OpenAPI spec** — all capabilities available via versioned API; no privileged UI-only operations
-- 🐳 **Self-hosted Docker** — single `docker compose up` deployment; open-source core published
+| Feature | Status | Notes |
+|---|---|---|
+| 🔐 **Secrets management** — versioned, encrypted storage with RBAC, expiry tracking, bulk import from `.env` / JSON | ✅ Done | Epic 2 |
+| 🔄 **Manual rotation with propagation** — per-system confirmation checklist, stale-recovery, break-glass emergency mode, full web UI | ✅ Done | Epic 5 |
+| 📡 **Operational monitoring** — HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, cross-project health dashboard, public status pages | ✅ Done | Epic 6 |
+| 🏢 **Multi-user RBAC** — project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival | ✅ Done | Epic 4 |
+| 🔔 **Notifications** — email + Slack delivery, per-alert-type routing, in-app inbox | 🟡 Near done | Epic 3 — closure story in review |
+| 🤖 **Machine user support** — scoped API keys, offline/cache fallback, GitHub Actions integration | 🟡 API done, no web UI yet | Epic 7 — machine-user management web UI tracked as Story 8.6 |
+| 📋 **Immutable audit logs** — append-only, HMAC row-level integrity, search/export/external forwarding | 🟡 Partial | Epic 8 — access reports, dormant-user detection, and GDPR erasure still `ready-for-dev` (8.3/8.4) |
+| 🔑 **Vault unsealing** — master password or envelope encryption with split-key default | 🟡 Partial | External KMS mode is schema-reserved but unimplemented (v1 gap, see Story 9.5 disclosure) |
+| 🌐 **REST API** — nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init | ✅ Done | OpenAPI spec generation is currently a stale hand-maintained stub — real spec generation lands in Story 9.3 |
+| 🐳 **Self-hosted Docker** — `docker compose up` deployment (dev + prod compose files) | ✅ Done | Epic 1 |
+| 💾 **Built-in backup** — scheduled encrypted snapshots, retention, restore verification | 🔴 Not started | Epic 9, Story 9.1 |
+| ⚙️ **System settings & platform administration** — SMTP/backup/policy config UI, multi-org resource monitoring | 🔴 Not started | Epic 9, Story 9.2 |
+| ⬆️ **In-place version upgrades** | 🔴 Not started | Epic 9, Story 9.3 |
+
+---
+
+## Implementation Status
+
+Epic-by-epic status, current as of 2026-07-06 (source of truth:
+[`sprint-status.yaml`](_bmad-output/implementation-artifacts/sprint-status.yaml)):
+
+| Epic | Status | What ships |
+|---|---|---|
+| 1. Vault Foundation | ✅ Done | Docker deploy, health/readiness endpoints, password + TOTP MFA auth, JWT sessions with idle timeout and revocation, structured operational logging |
+| 2. Secret & Credential Management | ✅ Done | Project-scoped credential CRUD + immutable version history, search/filter/tags, dependent-system records, expiry/rotation schedules, bulk import, onboarding wizard, cross-project search |
+| 3. Notification Infrastructure | 🟡 In progress | Email + Slack delivery, per-alert-type routing, in-app inbox (`/notifications`) all shipped; closure story (3.4) is in review |
+| 4. Team & Organization Management | ✅ Done | Invitations & role assignment, org user management, account deactivation/recovery, project archival |
+| 5. Credential Rotation | ✅ Done | Rotation initiation + checklist, stale-recovery, break-glass emergency rotation, full rotation web UI, hardening/tech-debt closure |
+| 6. Operational Monitoring & Status | ✅ Done | Service/certificate/domain records, HTTP endpoint monitoring & alerts, cross-project health dashboard, public status pages, full monitored-asset web UI |
+| 7. Machine User Access & CI/CD | 🟡 In progress | Machine user identities, API keys, offline fallback cache, and GitHub Actions integration are done and API-accessible; held open pending the machine-user management web UI (Story 8.6) |
+| 8. Compliance, Audit & Governance | 🟡 In progress | Tamper-evident HMAC audit log and search/export/external forwarding done; access reports, dormant-user detection, GDPR erasure, and rotation-UI hardening are drafted (`ready-for-dev`) but not yet implemented |
+| 9. Platform Operations, API & Self-Hosting | 🔴 Not started | Encrypted backup/restore, system settings UI, in-place upgrades, platform-operator audit log, and the operator runbook are all drafted (`ready-for-dev`); none implemented yet |
+
+Known v1 design gaps, disclosed up front rather than discovered later:
+- External KMS (`kms` mode) for vault unsealing is schema-reserved but has no implementation (Story 1.5 / Story 9.5).
+- `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet (Story 9.2 / 9.5).
+- The OpenAPI spec (`generate-spec.ts`) is a hand-maintained stub covering ~8 routes against the ~100+ actually registered; a generated spec ships in Story 9.3.
 
 ---
 
@@ -64,11 +98,13 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 ## Roadmap
 
-| Version | Target |
-|---|---|
-| **v1 (MVP)** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, audit logs, machine users, backup |
-| **v1.1** | Webhooks, project wiki, break-glass revocation endpoint |
-| **v2** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting |
+| Version | Target | Status |
+|---|---|---|
+| **v1 (GA)** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Epics 1–6 done; Epics 7–8 finishing web UI/compliance gaps; Epic 9 (backup, upgrades, platform admin, runbook) not started |
+| **v1.1** | Webhooks, project wiki | Not started |
+| **v2** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Not started |
+
+See [Implementation Status](#implementation-status) above for the current epic-by-epic breakdown.
 
 ---
 
@@ -138,7 +174,10 @@ Open http://localhost:5173:
 1. **Initialize vault** (if uninitialized) — Passphrase mode, paste `VAULT_BOOTSTRAP_TOKEN`, choose a passphrase for unseal.
 2. **Unseal vault** (if sealed) — same passphrase.
 3. **Register** the first user, then **sign in** (registration does not auto-login).
-4. Use the shell: projects, credentials, import, onboarding, global search. Placeholder routes: `/alerts`, `/health`, `/settings` (future epics).
+4. Use the shell: projects, credentials, import, onboarding, global search, rotations, monitored
+   services/certificates/domains, cross-project health (`/health`), notifications inbox, team/user
+   settings (`/settings`). System-level admin settings (SMTP, backup schedule, instance policy) are
+   not yet built — API-only or absent pending Epic 9.
 
 API-only eval: same vault steps, then use `curl` against http://localhost:3000 — see [Auth Configuration](#auth-configuration) below.
 
@@ -276,14 +315,14 @@ Production hardening checklist: [docs/operator-quickstart.md — Production hard
 
 ## Contributing
 
-Contributions are welcome once the initial codebase is bootstrapped. Until then, the best way to contribute is:
+The codebase is live and under active development (see [Implementation Status](#implementation-status)), but the project isn't yet accepting external code contributions. Until then, the best way to contribute is:
 
 - ⭐ **Star this repository** to signal interest and help with OSS discovery
 - 🐛 **Open issues** for feature requests, use cases, or questions — early input shapes the roadmap
 - 💬 **Start a discussion** if you have ideas about the plugin interface, RBAC model, or integration patterns
-- 📖 **Review the planning artifacts** in `_bmad-output/planning-artifacts/` — the PRD, UX spec, and architecture docs are open
+- 📖 **Review the planning artifacts** in `_bmad-output/planning-artifacts/` — the PRD, UX spec, and architecture docs are open, as are the in-progress story files and retrospectives in `_bmad-output/implementation-artifacts/`
 
-When the codebase is live, a `CONTRIBUTING.md` will cover:
+Once external contributions open, a `CONTRIBUTING.md` will cover:
 - Development environment setup
 - Code style and conventions
 - Security-sensitive code path requirements

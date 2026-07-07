@@ -13,11 +13,18 @@ export const organizations = pgTable(
     machineKeyDormancyThresholdDays: integer('machine_key_dormancy_threshold_days')
       .notNull()
       .default(90),
+    // Story 8.3 D5/AC-12 — configurable user dormancy threshold, mirrors
+    // machineKeyDormancyThresholdDays exactly (same allowed values, same default).
+    userDormancyThresholdDays: integer('user_dormancy_threshold_days').notNull().default(90),
   },
   (t) => ({
     dormancyThresholdCheck: check(
       'organizations_dormancy_threshold_check',
       sql`${t.machineKeyDormancyThresholdDays} IN (30, 60, 90, 180)`
+    ),
+    userDormancyThresholdCheck: check(
+      'organizations_user_dormancy_threshold_check',
+      sql`${t.userDormancyThresholdDays} IN (30, 60, 90, 180)`
     ),
   })
 )
