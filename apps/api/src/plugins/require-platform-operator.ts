@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { requireAuthContext } from '../lib/route-helpers.js'
+import { requireAuthContext } from './require-org-role.js'
 
 /**
  * Story 9.1 D1: backup/restore (and any future instance-wide admin operation) is gated by the

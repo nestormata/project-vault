@@ -17,11 +17,6 @@ export function isRateLimitEnforced(): boolean {
   return process.env['NODE_ENV'] !== 'test' || process.env['RATE_LIMIT_TEST_ENFORCE'] === 'true'
 }
 
-export const ACCESS_TOKEN_MISSING_RESPONSE = {
-  code: 'access_token_missing',
-  message: 'Access token is missing',
-}
-
 export function validationError(
   error: { issues: { path: PropertyKey[]; message: string }[] },
   fallbackPath: string
@@ -81,15 +76,6 @@ export function parseParams<T>(
 
 export function authPreHandler(fastify: FastifyApp) {
   return (fastify as unknown as { authenticate: unknown }).authenticate
-}
-
-export function requireAuthContext(req: FastifyRequest, reply: FastifyReply) {
-  const authContext = req.authContext
-  if (!authContext) {
-    reply.status(401).send(ACCESS_TOKEN_MISSING_RESPONSE)
-    return null
-  }
-  return authContext
 }
 
 export function enforceUserRateLimit({
