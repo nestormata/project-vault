@@ -432,34 +432,39 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       const restoreStart = Date.now()
+      let outcome: RestoreOutcome
       try {
-        const outcome = await restoreFromBackup(params.filename)
-
-        // AC-20: audit-relevant log for every accepted restore attempt, regardless of which of
-        // the five outcomes it resolves to — closes the gap where a restore attempt against a
-        // secrets-vault's full-database-restore path left no trace of who attempted it.
-        operationalLog(
-          req.log,
-          'info',
-          OperationalEvent.BACKUP_RESTORE_ATTEMPTED,
-          BACKUP_RESTORE_ATTEMPTED_MESSAGE,
-          { actorId: secureCtx.auth.userId, filename: params.filename, outcome: outcome.code }
-        )
-
-        return await handleRestoreOutcome({
-          outcome,
-          filename: params.filename,
-          operatorId: secureCtx.auth.userId,
-          restoreStart,
-          req,
-          reply,
-        })
+        outcome = await restoreFromBackup(params.filename)
       } finally {
-        // AC-6/AC-7: released on every exit path (not_found, checksum_mismatch, decrypt_failed,
-        // restore_failed, restored) — a session-level lock left held past this point would
-        // permanently block every future restore AND every future backup trigger.
+        // AC-6/AC-7: released before the response is ever sent (not just before this function
+        // returns) — handleRestoreOutcome() below calls reply.send() directly, and Fastify does
+        // not wait for this handler's own promise to settle before writing that response to the
+        // client. Releasing the lock here, ahead of handleRestoreOutcome(), closes a race where a
+        // caller could receive its response and immediately retry before the lock was actually
+        // free server-side — a session-level lock left held past this point would permanently
+        // block every future restore AND every future backup trigger regardless.
         await lock.release()
       }
+
+      // AC-20: audit-relevant log for every accepted restore attempt, regardless of which of
+      // the five outcomes it resolves to — closes the gap where a restore attempt against a
+      // secrets-vault's full-database-restore path left no trace of who attempted it.
+      operationalLog(
+        req.log,
+        'info',
+        OperationalEvent.BACKUP_RESTORE_ATTEMPTED,
+        BACKUP_RESTORE_ATTEMPTED_MESSAGE,
+        { actorId: secureCtx.auth.userId, filename: params.filename, outcome: outcome.code }
+      )
+
+      return await handleRestoreOutcome({
+        outcome,
+        filename: params.filename,
+        operatorId: secureCtx.auth.userId,
+        restoreStart,
+        req,
+        reply,
+      })
     },
   })
 
