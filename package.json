@@ -22,6 +22,7 @@
     "check-alert-pending-epic3": "tsx scripts/check-alert-pending-epic3.ts",
     "check-vault-action-dist": "tsx scripts/check-vault-action-dist-fresh.ts",
     "check-migration-compatibility": "tsx scripts/migration-compatibility-check.ts",
+    "check-story-status-sync": "tsx scripts/check-story-status-sync.ts",
     "docker:smoke": "bash scripts/docker-smoke.sh",
     "prepare": "husky"
   },

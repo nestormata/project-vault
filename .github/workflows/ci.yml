@@ -96,6 +96,9 @@ jobs:
       - name: Check migration compatibility (AC-E9b)
         run: pnpm check-migration-compatibility
 
+      - name: Check story status sync (retro P6-1/P7-1/P8-1)
+        run: pnpm check-story-status-sync
+
       - name: Test (with coverage)
         run: pnpm turbo test
         env:

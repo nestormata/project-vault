@@ -1,6 +1,6 @@
 # Story 9.1: Encrypted Backup & Restore
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed 2026-07-05 — comprehensive developer guide for the first story of Epic 9 (Platform Operations, API & Self-Hosting): scheduled + on-demand encrypted whole-instance backups (pg_dump → gzip → AES-256-GCM via a backup key HKDF-derived from the vault master key), an isolated read-only restore-validation procedure, a destructive full restore, retention pruning, and health-monitoring alerts. This story is the FIRST in Epic 9 — there is no prior Epic 9 story to depend on, but it introduces several brand-new platform-level primitives (a `users.is_platform_operator` authorization flag, an `admin_alerts` table, a `backup_runs` table, a dedicated RLS-bypassing database role for the dump/restore subprocess) that Stories 9.2–9.4 are expected to reuse. Read "Key Design Decisions & Open Questions" before writing any code — it resolves several genuine contradictions and gaps between epics.md's literal wording (written before any Epic 9 story had concrete schema) and the actual, already-shipped Epic 1/8 codebase. Getting D1 wrong means backup/restore endpoints have no working authorization model. Getting D2 wrong means the backup file naming contradicts the "all current data is replaced" restore semantics. Getting D4 wrong means pg_dump silently produces an EMPTY backup (RLS strips every row) or restore fails outright. -->

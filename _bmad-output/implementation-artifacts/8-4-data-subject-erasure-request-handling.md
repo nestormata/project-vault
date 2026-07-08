@@ -1,6 +1,6 @@
 # Story 8.4: Data Subject Erasure Request Handling
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed 2026-07-05 — comprehensive developer guide for GDPR/CCPA right-to-erasure request handling: a governed two-step (request → PII inventory review → execute) workflow that permanently scrubs a user's directly-identifying PII from the `users` and `user_identity_tokens` tables while explicitly preserving `audit_log_entries` HMAC integrity (Story 8.1), rotation history, and project-membership referential integrity. Read "Key Design Decisions & Open Questions" before coding — several genuine gaps and contradictions in epics.md's literal wording are resolved there with explicit rationale (cross-org identity guard, the missing FR number, the pseudonymization mechanism this story must build inline because Story 8.3 is still `backlog`, the "how do you block re-invites once the email is scrubbed" mechanism, and account-recovery-token cleanup epics.md omits). -->
