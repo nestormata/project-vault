@@ -19,7 +19,12 @@ import {
   GetRoutingResponseSchema,
   GetInboxResponseSchema,
 } from './schema.js'
-import { getPreferences, putPreferences, patchPreferences } from './preferences.js'
+import {
+  getPreferences,
+  putPreferences,
+  patchPreferences,
+  type PreferenceOutput,
+} from './preferences.js'
 import { getOrgRouting, putOrgRouting, SecurityAlertRoutingError } from './routing.js'
 
 const USER_NOTIFICATION_PREFERENCES_URL = '/users/me/notification-preferences'
@@ -70,6 +75,44 @@ async function mutateInboxEntryById(
   return reply.status(204).send()
 }
 
+const PREFERENCES_RESPONSE_SCHEMA = {
+  200: GetPreferencesResponseSchema,
+  401: ApiErrorSchema,
+  403: ApiErrorSchema,
+  422: ApiErrorSchema,
+}
+
+function preferencesRoute(
+  fastify: FastifyApp,
+  method: 'PUT' | 'PATCH',
+  bodySchema: typeof PutPreferencesBodySchema | typeof PatchPreferencesBodySchema,
+  apply: (
+    orgId: string,
+    userId: string,
+    items: z.infer<typeof PutPreferencesBodySchema>,
+    tx: SecureRouteContext['tx']
+  ) => Promise<PreferenceOutput[]>
+) {
+  secureRoute(fastify, {
+    method,
+    url: USER_NOTIFICATION_PREFERENCES_URL,
+    schema: { response: PREFERENCES_RESPONSE_SCHEMA },
+    security: USER_PREFS_SECURITY,
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const parsed = bodySchema.safeParse(req.body)
+      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
+      const prefs = await apply(
+        secureCtx.auth.orgId,
+        secureCtx.auth.userId,
+        parsed.data,
+        secureCtx.tx
+      )
+      return { data: prefs }
+    },
+  })
+}
+
 function inboxEntryRoute(
   fastify: FastifyApp,
   method: 'POST' | 'DELETE',
@@ -111,57 +154,8 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  secureRoute(fastify, {
-    method: 'PUT',
-    url: USER_NOTIFICATION_PREFERENCES_URL,
-    schema: {
-      response: {
-        200: GetPreferencesResponseSchema,
-        401: ApiErrorSchema,
-        403: ApiErrorSchema,
-        422: ApiErrorSchema,
-      },
-    },
-    security: USER_PREFS_SECURITY,
-    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const parsed = PutPreferencesBodySchema.safeParse(req.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
-      const prefs = await putPreferences(
-        secureCtx.auth.orgId,
-        secureCtx.auth.userId,
-        parsed.data,
-        secureCtx.tx
-      )
-      return { data: prefs }
-    },
-  })
-
-  secureRoute(fastify, {
-    method: 'PATCH',
-    url: USER_NOTIFICATION_PREFERENCES_URL,
-    schema: {
-      response: {
-        200: GetPreferencesResponseSchema,
-        401: ApiErrorSchema,
-        403: ApiErrorSchema,
-        422: ApiErrorSchema,
-      },
-    },
-    security: USER_PREFS_SECURITY,
-    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const parsed = PatchPreferencesBodySchema.safeParse(req.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
-      const prefs = await patchPreferences(
-        secureCtx.auth.orgId,
-        secureCtx.auth.userId,
-        parsed.data,
-        secureCtx.tx
-      )
-      return { data: prefs }
-    },
-  })
+  preferencesRoute(fastify, 'PUT', PutPreferencesBodySchema, putPreferences)
+  preferencesRoute(fastify, 'PATCH', PatchPreferencesBodySchema, patchPreferences)
 
   secureRoute(fastify, {
     method: 'GET',
