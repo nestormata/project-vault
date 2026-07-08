@@ -2,6 +2,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const getNotificationInboxMock = vi.hoisted(() => vi.fn())
 const listOrgSecurityAlertsMock = vi.hoisted(() => vi.fn())
+const dismissSecurityAlertMock = vi.hoisted(() => vi.fn())
+const deactivateOrgUserMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/inbox.js', () => ({
   getNotificationInbox: getNotificationInboxMock,
@@ -12,6 +14,11 @@ vi.mock('$lib/api/inbox.js', () => ({
 
 vi.mock('$lib/api/security-alerts.js', () => ({
   listOrgSecurityAlerts: listOrgSecurityAlertsMock,
+  dismissSecurityAlert: dismissSecurityAlertMock,
+}))
+
+vi.mock('$lib/api/org-users.js', () => ({
+  deactivateOrgUser: deactivateOrgUserMock,
 }))
 
 vi.mock('$lib/server/require-user.js', () => ({
@@ -20,7 +27,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
-import { load } from './+page.server.js'
+import { load, actions } from './+page.server.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -174,5 +181,115 @@ describe('notifications +page.server.ts (AC-4: dormancy alerts in existing inbox
 
     expect(result.notifications).toEqual([{ id: 'n-1', alertType: 'credential.expiry' }])
     expect(result.dormancyAlerts).toEqual([])
+  })
+})
+
+const userDormantAlert = {
+  id: 'alert-2',
+  alertType: 'user.dormant',
+  severity: 'warning' as const,
+  status: 'delivered' as const,
+  payload: {
+    userId: 'user-1',
+    displayName: 'jsmith@example.com',
+    orgRole: 'member',
+    lastActiveAt: '2026-04-04T00:00:00.000Z',
+  },
+  createdAt: '2026-07-01T00:00:00.000Z',
+}
+
+// Story 8.7 AC group H — dormant-user alerts (`user.dormant` security_alerts rows) surfaced
+// alongside the existing machine-key dormancy section, same owner/admin gate.
+describe('notifications +page.server.ts (Story 8.7 AC group H: user dormancy alerts)', () => {
+  beforeEach(() => {
+    getNotificationInboxMock.mockReset()
+    listOrgSecurityAlertsMock.mockReset()
+    dismissSecurityAlertMock.mockReset()
+    deactivateOrgUserMock.mockReset()
+    requireUserMock.mockReset()
+    getNotificationInboxMock.mockResolvedValue({
+      data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+    })
+  })
+
+  it('AC-H1: includes user.dormant alerts for an org admin, derived from the same alerts fetch as machine-key alerts', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
+    listOrgSecurityAlertsMock.mockResolvedValueOnce({
+      items: [userDormantAlert, dormantAlert],
+      total: 2,
+      page: 1,
+      limit: 20,
+      hasNext: false,
+    })
+
+    const result = await load(makeEvent())
+
+    expect(listOrgSecurityAlertsMock).toHaveBeenCalledTimes(1)
+    expect(result.userDormancyAlerts).toHaveLength(1)
+    expect(result.userDormancyAlerts[0]).toMatchObject({
+      id: 'alert-2',
+      displayName: 'jsmith@example.com',
+    })
+    expect(result.dormancyAlerts).toHaveLength(1)
+  })
+
+  it('AC-H3: a member/viewer sees neither dormancy section', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'member' } as ReturnType<typeof requireUser>)
+
+    const result = await load(makeEvent())
+
+    expect(listOrgSecurityAlertsMock).not.toHaveBeenCalled()
+    expect(result.userDormancyAlerts).toEqual([])
+    expect(result.dormancyAlerts).toEqual([])
+  })
+
+  it('AC-H2: an empty user.dormant list on a healthy org', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
+    listOrgSecurityAlertsMock.mockResolvedValueOnce(EMPTY_DORMANCY_ALERTS_PAGE)
+
+    const result = await load(makeEvent())
+
+    expect(result.userDormancyAlerts).toEqual([])
+  })
+
+  describe('deactivateDormantUser action (AC-H1)', () => {
+    it('calls deactivateOrgUser and returns success', async () => {
+      deactivateOrgUserMock.mockResolvedValue({
+        userId: 'user-1',
+        revokedSessionCount: 2,
+        revokedInvitationCount: 0,
+      })
+      const formData = new FormData()
+      formData.set('userId', 'user-1')
+      const request = { formData: async () => formData } as unknown as Request
+
+      const result = await actions.deactivateDormantUser({
+        request,
+        fetch: vi.fn(),
+      } as unknown as Parameters<typeof actions.deactivateDormantUser>[0])
+
+      expect(deactivateOrgUserMock).toHaveBeenCalledWith(expect.anything(), 'user-1')
+      expect(result).toEqual({ success: true })
+    })
+
+    it('AC-H1 edge: an already_deactivated error is handled gracefully, not surfaced as a raw error', async () => {
+      deactivateOrgUserMock.mockRejectedValue(
+        new ApiClientError(
+          409,
+          { code: 'already_deactivated', message: 'already deactivated' },
+          'already deactivated'
+        )
+      )
+      const formData = new FormData()
+      formData.set('userId', 'user-1')
+      const request = { formData: async () => formData } as unknown as Request
+
+      const result = await actions.deactivateDormantUser({
+        request,
+        fetch: vi.fn(),
+      } as unknown as Parameters<typeof actions.deactivateDormantUser>[0])
+
+      expect(result).toEqual({ success: true, alreadyDeactivated: true })
+    })
   })
 })

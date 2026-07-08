@@ -49,5 +49,19 @@
         <span class="text-gray-400">→</span>
       </a>
     </li>
+    <li>
+      <a
+        href={resolve('/settings/audit')}
+        class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+      >
+        <div>
+          <p class="font-medium text-gray-900">Audit & Compliance</p>
+          <p class="text-sm text-gray-500">
+            Audit log search, export, access reports, and erasure requests
+          </p>
+        </div>
+        <span class="text-gray-400">→</span>
+      </a>
+    </li>
   </ul>
 </div>
