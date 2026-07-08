@@ -24,10 +24,12 @@ import {
   OrgUserProjectRoleParamsSchema,
   OrgUserRemovedResponseSchema,
   OrgUsersListResponseSchema,
+  OrgUserSessionsRevokedResponseSchema,
   ProjectRoleChangeBodySchema,
   ProjectRoleChangeResponseSchema,
   PseudonymizeBodySchema,
   PseudonymizeResponseSchema,
+  securityAlertsResponseSchema,
   SecurityAlertDismissBodySchema,
   SecurityAlertParamsSchema,
   SecurityAlertsQuerySchema,
@@ -83,6 +85,14 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/security-alerts',
+    schema: {
+      response: {
+        200: securityAlertsResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: {
       allowedRoles: ['owner', 'admin'],
       writeAuditEvent: false,
@@ -143,6 +153,15 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'DELETE',
     url: '/users/:userId/sessions',
+    schema: {
+      response: {
+        200: OrgUserSessionsRevokedResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: {
       allowedRoles: ['admin', 'owner'],
       requireMfa: true,

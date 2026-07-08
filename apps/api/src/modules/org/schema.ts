@@ -170,11 +170,17 @@ export const userDormantPayloadSchema = z
   })
   .strict()
 
+// The trailing passthrough member mirrors security-alerts.ts's own payloadSchemaFor() fallback
+// (ADR-6.2-07): security_alerts carries payload shapes this union doesn't enumerate — e.g.
+// rotation/routes.ts's 'rotation.break_glass' row — and without it, GET /org/security-alerts'
+// response schema would 500 (ResponseSerializationError) for any org with such a row, instead of
+// returning it like the handler always has.
 export const securityAlertPayloadSchema = z.union([
   failedAuthThresholdPayloadSchema,
   anomalousAccessPayloadSchema,
   machineKeyDormantPayloadSchema,
   userDormantPayloadSchema,
+  z.record(z.string(), z.unknown()),
 ])
 
 export const SecurityAlertsQuerySchema = z.object({
@@ -206,21 +212,34 @@ export const PseudonymizeResponseSchema = z
   })
   .meta({ id: 'PseudonymizeResponse' })
 
-export const securityAlertsResponseSchema = z.object({
-  data: z.object({
-    items: z.array(
-      z.object({
-        id: z.uuid(),
-        alertType: z.string(),
-        severity: z.enum(['info', 'warning', 'critical']),
-        status: z.enum(['PENDING_DELIVERY', 'delivered', 'dismissed']),
-        payload: securityAlertPayloadSchema,
-        deliveryStatus: z.enum(['pending_notification_channel', 'delivered', 'dismissed']),
-        createdAt: z.iso.datetime(),
-      })
-    ),
-    ...paginatedListMetaFields,
-  }),
-})
+export const securityAlertsResponseSchema = z
+  .object({
+    data: z.object({
+      items: z.array(
+        z.object({
+          id: z.uuid(),
+          alertType: z.string(),
+          severity: z.enum(['info', 'warning', 'critical']),
+          status: z.enum(['PENDING_DELIVERY', 'delivered', 'dismissed']),
+          payload: securityAlertPayloadSchema,
+          deliveryStatus: z.enum(['pending_notification_channel', 'delivered', 'dismissed']),
+          createdAt: z.iso.datetime(),
+        })
+      ),
+      ...paginatedListMetaFields,
+    }),
+  })
+  .meta({ id: 'SecurityAlertsResponse' })
 
 export type SecurityAlertsQuery = z.infer<typeof SecurityAlertsQuerySchema>
+
+// DELETE /org/users/:userId/sessions — revokeAllUserSessionsInOrg's `{ revokedCount }` result
+// plus the target userId, mirroring OrgUserDeactivatedResponseSchema's shape above.
+export const OrgUserSessionsRevokedResponseSchema = z
+  .object({
+    data: z.object({
+      userId: z.uuid(),
+      revokedCount: z.number().int().nonnegative(),
+    }),
+  })
+  .meta({ id: 'OrgUserSessionsRevokedResponse' })
