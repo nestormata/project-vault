@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
+import { tryAcquireRotationScopedLock } from '../../lib/rotation-locks.js'
 import {
   auditLogEntries,
   credentialVersions,
@@ -1274,7 +1275,35 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     expect(criticalAlerts.length).toBeGreaterThan(0)
   }, 20_000)
 
-  it('AC-19: two racing confirm calls on the SAME item → exactly one 200, one 409 concurrent_modification', async () => {
+  // Both tests below hold the exact rotation-scoped advisory lock (rotation-locks.ts's
+  // tryAcquireRotationScopedLock key) from a separate connection before firing the real request,
+  // rather than racing two Promise.all()-fired HTTP requests and hoping their independent
+  // transactions happen to collide. That form is not deterministic: when one request's
+  // transaction fully commits before the other's even starts, there is no actual lock contention
+  // and the "loser" can legitimately fail a later business-rule check instead (e.g. confirm's own
+  // `already_confirmed` check, reached only after the lock — itself uncontested by then — is
+  // acquired), producing a different, equally-valid 409 whose error code the old assertion
+  // rejected. Reproduced 100% locally for the SAME-item case; observed as two different failure
+  // shapes in CI for the sibling complete-vs-confirm test above.
+  async function holdRotationLockAndFire<T>(
+    orgId: string,
+    rotationId: string,
+    fire: () => Promise<T>
+  ): Promise<T> {
+    let result!: T
+    await withOrg(orgId, async (tx) => {
+      const locked = await tryAcquireRotationScopedLock(tx, orgId, rotationId)
+      if (!locked) {
+        throw new Error(
+          'holdRotationLockAndFire: rotation lock was already held — test fixture is not fresh'
+        )
+      }
+      result = await fire()
+    })
+    return result
+  }
+
+  it('AC-19: confirm is rejected while another confirm holds the rotation lock (SAME item)', async () => {
     const fixture = await createRotationWithDependenciesFixture(
       app,
       owner.cookies,
@@ -1284,17 +1313,18 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     const item = must(fixture.items[0])
     const ids = { ...fixture, itemId: item.id }
 
-    const [first, second] = await Promise.all([
-      confirmChecklistItemViaApi(app, owner.cookies, ids),
-      confirmChecklistItemViaApi(app, owner.cookies, ids),
-    ])
-    const statuses = [first.statusCode, second.statusCode].sort()
-    expect(statuses).toEqual([200, 409])
-    const loser = first.statusCode === 409 ? first : second
-    expect(loser.json()).toMatchObject({ code: 'concurrent_modification' })
+    const rejected = await holdRotationLockAndFire(owner.orgId, fixture.rotationId, () =>
+      confirmChecklistItemViaApi(app, owner.cookies, ids)
+    )
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.json()).toMatchObject({ code: 'concurrent_modification' })
+
+    // Lock released — the same confirm now proceeds uncontested.
+    const confirmed = await confirmChecklistItemViaApi(app, owner.cookies, ids)
+    expect(confirmed.statusCode).toBe(200)
   })
 
-  it('AC-19/AC-8: two racing confirm calls on DIFFERENT items of the SAME rotation → exactly one 200, one 409 (rotation-scoped lock, not item-scoped)', async () => {
+  it('AC-19/AC-8: confirm on a DIFFERENT item of the SAME rotation is also rejected (rotation-scoped lock, not item-scoped)', async () => {
     const fixture = await createRotationWithDependenciesFixture(
       app,
       owner.cookies,
@@ -1304,15 +1334,22 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     const itemA = must(fixture.items[0])
     const itemB = must(fixture.items[1])
 
-    const [first, second] = await Promise.all([
-      confirmChecklistItemViaApi(app, owner.cookies, { ...fixture, itemId: itemA.id }),
-      confirmChecklistItemViaApi(app, owner.cookies, { ...fixture, itemId: itemB.id }),
-    ])
-    const statuses = [first.statusCode, second.statusCode].sort()
-    expect(statuses).toEqual([200, 409])
+    const rejected = await holdRotationLockAndFire(owner.orgId, fixture.rotationId, () =>
+      confirmChecklistItemViaApi(app, owner.cookies, { ...fixture, itemId: itemB.id })
+    )
+    expect(rejected.statusCode).toBe(409)
+    expect(rejected.json()).toMatchObject({ code: 'concurrent_modification' })
+
+    // Lock released — confirming the OTHER item now proceeds uncontested, proving the lock is
+    // scoped to the whole rotation rather than the individual item.
+    const confirmed = await confirmChecklistItemViaApi(app, owner.cookies, {
+      ...fixture,
+      itemId: itemA.id,
+    })
+    expect(confirmed.statusCode).toBe(200)
   })
 
-  it('AC-19: complete racing confirm on the last pending item → exactly one 409, no corrupted partial state', async () => {
+  it('AC-19: complete is rejected while confirm holds the rotation lock, no corrupted partial state', async () => {
     const fixture = await createRotationWithDependenciesFixture(
       app,
       owner.cookies,
@@ -1321,22 +1358,33 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     )
     const item = must(fixture.items[0])
 
-    const [confirmRes, completeRes] = await Promise.all([
-      confirmChecklistItemViaApi(app, owner.cookies, { ...fixture, itemId: item.id }),
-      completeRotationViaApi(app, owner.cookies, fixture),
-    ])
-    const statuses = [confirmRes.statusCode, completeRes.statusCode]
-    expect(statuses).toContain(409)
-    // No impossible state: if the rotation ended up completed, the item must be confirmed.
+    // See holdRotationLockAndFire's comment above: CI observed this as both [200, 200] and
+    // [200, 422] across two different runs when racing via Promise.all(), neither a
+    // data-integrity bug — full serialization (no actual lock contention) is a legitimate
+    // outcome the old assertion didn't account for.
+    const completeRes = await holdRotationLockAndFire(owner.orgId, fixture.rotationId, () =>
+      completeRotationViaApi(app, owner.cookies, fixture)
+    )
+
+    expect(completeRes.statusCode).toBe(409)
+    expect(completeRes.json()).toMatchObject({ code: 'concurrent_modification' })
+
+    // Lock is released once the withOrg transaction above commits — confirm now proceeds
+    // uncontested, and the rejected complete must have left no partial/corrupted state behind.
+    const confirmRes = await confirmChecklistItemViaApi(app, owner.cookies, {
+      ...fixture,
+      itemId: item.id,
+    })
+    expect(confirmRes.statusCode).toBe(200)
+
     const finalRotation = await withOrg(owner.orgId, (tx) =>
       tx.select().from(rotations).where(eq(rotations.id, fixture.rotationId))
     )
     const finalItem = await withOrg(owner.orgId, (tx) =>
       tx.select().from(rotationChecklistItems).where(eq(rotationChecklistItems.id, item.id))
     )
-    if (finalRotation[0]?.status === 'completed') {
-      expect(finalItem[0]?.status).toBe('confirmed')
-    }
+    expect(finalRotation[0]?.status).toBe('in_progress')
+    expect(finalItem[0]?.status).toBe('confirmed')
   })
 
   it('POST complete: happy path retires the superseded version and marks the rotation completed', async () => {

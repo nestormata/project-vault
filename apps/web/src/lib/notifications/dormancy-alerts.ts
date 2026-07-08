@@ -63,3 +63,51 @@ export function toDormancyAlertViews(items: SecurityAlertItem[]): DormancyAlertV
       ]
     })
 }
+
+export type UserDormancyAlertView = {
+  id: string
+  userId: string
+  displayName: string
+  orgRole: string
+  lastActiveAt: string | null
+  createdAt: string
+}
+
+const USER_DORMANT_ALERT_TYPE = 'user.dormant'
+
+/**
+ * Story 8.7 AC group H — sibling of toDormancyAlertViews() for the `user.dormant` alert type
+ * (Story 8.3's dormant-user detection worker), reading `userDormantPayloadSchema`'s fields
+ * (`userId`, `displayName`, `orgRole`, `lastActiveAt`). Same filter/map shape: already-dismissed
+ * alerts are excluded, and a malformed payload is dropped rather than crashing the page.
+ */
+export function toUserDormancyAlertViews(items: SecurityAlertItem[]): UserDormancyAlertView[] {
+  return items
+    .filter((item) => item.alertType === USER_DORMANT_ALERT_TYPE && item.status !== 'dismissed')
+    .flatMap((item) => {
+      const payload = item.payload
+      const userId = payload['userId']
+      const displayName = payload['displayName']
+      const orgRole = payload['orgRole']
+      const lastActiveAt = payload['lastActiveAt']
+
+      if (
+        typeof userId !== 'string' ||
+        typeof displayName !== 'string' ||
+        typeof orgRole !== 'string'
+      ) {
+        return []
+      }
+
+      return [
+        {
+          id: item.id,
+          userId,
+          displayName,
+          orgRole,
+          lastActiveAt: typeof lastActiveAt === 'string' ? lastActiveAt : null,
+          createdAt: item.createdAt,
+        },
+      ]
+    })
+}

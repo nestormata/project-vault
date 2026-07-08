@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
+  import DismissDormancyAlertForm from '$lib/components/notifications/DismissDormancyAlertForm.svelte'
   import { markAllReadLocally, decrementUnread } from '$lib/state/notifications.svelte.js'
   import type { PageData } from './$types'
 
@@ -27,6 +28,12 @@
     'machine_key.expiry': 'Machine Key Expiry',
     'security.anomalous_access': 'Anomalous Access',
   }
+
+  // Story 8.7 AC-H3 — reuses the same DORMANCY_MANAGE_ROLES gate as the existing machine-key
+  // section (server-side load already returns [] for a non-admin/owner, but the empty-state note
+  // (AC-H2) must not render at all for a role that isn't supposed to see this section in the
+  // first place — an empty array alone can't distinguish "no alerts" from "wrong role").
+  const canManageDormancy = $derived(data.orgRole === 'owner' || data.orgRole === 'admin')
 </script>
 
 <svelte:head>
@@ -71,24 +78,7 @@
           </p>
 
           <div class="mt-3 flex flex-wrap items-center gap-4">
-            <form
-              method="POST"
-              action="?/dismissDormancyAlert"
-              use:enhance
-              class="flex items-center gap-2"
-            >
-              <input type="hidden" name="alertId" value={alert.id} />
-              <input
-                type="text"
-                name="reason"
-                required
-                placeholder="Reason for dismissing"
-                class="rounded border border-gray-300 px-2 py-1 text-xs"
-              />
-              <button type="submit" class="text-xs font-medium text-gray-600 hover:text-gray-800">
-                Dismiss
-              </button>
-            </form>
+            <DismissDormancyAlertForm alertId={alert.id} />
 
             <form
               method="POST"
@@ -147,6 +137,56 @@
           </div>
         </div>
       {/each}
+    </div>
+  {/if}
+
+  {#if canManageDormancy}
+    <div class="mb-6 space-y-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        Dormant user alerts
+      </h2>
+      {#if data.userDormancyAlerts.length === 0}
+        <p class="text-sm text-gray-500">No dormant user alerts.</p>
+      {:else}
+        {#each data.userDormancyAlerts as alert (alert.id)}
+          <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
+            <p class="text-sm font-semibold text-gray-900">
+              {alert.displayName} — {alert.orgRole}
+            </p>
+            <p class="mt-1 text-sm text-gray-600">
+              Last active: {alert.lastActiveAt
+                ? new Date(alert.lastActiveAt).toLocaleDateString()
+                : 'Never active'}
+            </p>
+
+            <div class="mt-3 flex flex-wrap items-center gap-4">
+              <DismissDormancyAlertForm alertId={alert.id} />
+
+              <form
+                method="POST"
+                action="?/deactivateDormantUser"
+                use:enhance={({ cancel }) => {
+                  if (!confirm(`Deactivate ${alert.displayName}? This cannot be undone.`)) {
+                    cancel()
+                  }
+                }}
+              >
+                <input type="hidden" name="userId" value={alert.userId} />
+                <button
+                  type="submit"
+                  class="text-xs font-medium text-amber-700 hover:text-amber-900"
+                >
+                  Deactivate account
+                </button>
+              </form>
+
+              <a href={resolve('/settings/users')} class="text-xs text-indigo-600 hover:underline">
+                Pseudonymize identity →
+              </a>
+            </div>
+          </div>
+        {/each}
+      {/if}
     </div>
   {/if}
 

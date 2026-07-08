@@ -1,7 +1,12 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation'
+  import { goto, invalidateAll } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
+  import { createErasureRequest, pseudonymizeUser } from '$lib/api/compliance.js'
+  import DormancyThresholdOptions from '$lib/components/DormancyThresholdOptions.svelte'
   import RoleSelectOptions from '$lib/components/RoleSelectOptions.svelte'
+  import TypedConfirmInput from '$lib/components/forms/TypedConfirmInput.svelte'
+  import ProjectsListCell from '$lib/components/tables/ProjectsListCell.svelte'
   import {
     changeProjectRole,
     deactivateOrgUser,
@@ -13,6 +18,7 @@
   } from '$lib/api/org-users.js'
   import {
     updateMachineKeyDormancyThreshold,
+    updateUserDormancyThreshold,
     type DormancyThresholdDays,
   } from '$lib/api/organization-settings.js'
 
@@ -52,6 +58,121 @@
       dormancySaving = false
     }
   }
+  // Story 8.7 AC-I1/I2/I3 — sibling "set a new value" control for the `user.dormant` alert
+  // threshold, same D2 no-readback shape as the machine-key control above.
+  let userDormancyThresholdChoice = $state<DormancyThresholdDays | ''>('')
+  let userDormancySaving = $state(false)
+  let userDormancySavedTo = $state<number | null>(null)
+  let userDormancyError = $state<string | null>(null)
+
+  async function onSaveUserDormancyThreshold() {
+    if (userDormancySaving || userDormancyThresholdChoice === '') return
+    userDormancySaving = true
+    userDormancyError = null
+    userDormancySavedTo = null
+    try {
+      const result = await updateUserDormancyThreshold(
+        fetch,
+        data.orgId,
+        userDormancyThresholdChoice
+      )
+      userDormancySavedTo = result.userDormancyThresholdDays
+    } catch (error) {
+      userDormancyError =
+        error instanceof ApiClientError
+          ? (error.message ?? 'Failed to update dormancy threshold.')
+          : 'Failed to update dormancy threshold.'
+    } finally {
+      userDormancySaving = false
+    }
+  }
+
+  // Story 8.7 AC group J — pseudonymize identity (owner-only, D4's typed-email confirmation).
+  let pseudonymizeOpenFor = $state<string | null>(null)
+  let pseudonymizeMatches = $state(false)
+  let pseudonymizeSaving = $state(false)
+  let pseudonymizeError = $state<string | null>(null)
+  let pseudonymizeResults = $state<
+    Record<string, { alias: string; otherAffectedOrgCount: number }>
+  >({})
+
+  function openPseudonymize(user: OrgUser) {
+    pseudonymizeOpenFor = user.userId
+    pseudonymizeMatches = false
+    pseudonymizeError = null
+  }
+
+  async function onConfirmPseudonymize(user: OrgUser) {
+    if (!pseudonymizeMatches || pseudonymizeSaving) return
+    pseudonymizeSaving = true
+    pseudonymizeError = null
+    try {
+      const result = await pseudonymizeUser(fetch, user.userId)
+      // AC-J3 — Story 8.3 D8 makes a repeat call a true no-op returning the *existing* alias; this
+      // client cannot distinguish that case from a fresh call using only the response fields
+      // (both look identical), so the banner below always describes the alias/blast-radius the
+      // server just returned rather than guessing whether this was the first call.
+      pseudonymizeResults = {
+        ...pseudonymizeResults,
+        [user.userId]: { alias: result.alias, otherAffectedOrgCount: result.otherAffectedOrgCount },
+      }
+      pseudonymizeOpenFor = null
+    } catch (error) {
+      pseudonymizeError =
+        error instanceof ApiClientError
+          ? (error.message ?? 'Failed to pseudonymize identity.')
+          : 'Failed to pseudonymize identity.'
+    } finally {
+      pseudonymizeSaving = false
+    }
+  }
+
+  // Story 8.7 AC group K — erasure request creation (admin+); on success/already-pending/
+  // already-erased, navigates into the review/report flow at
+  // /settings/users/[userId]/erasure/[requestId] (AC groups K/L/M own that page).
+  let erasureOpenFor = $state<string | null>(null)
+  let erasureReason = $state('')
+  let erasureRequestedBy = $state('')
+  let erasureSaving = $state(false)
+  let erasureError = $state<string | null>(null)
+
+  function openErasureRequest(user: OrgUser) {
+    erasureOpenFor = user.userId
+    erasureReason = ''
+    erasureRequestedBy = ''
+    erasureError = null
+  }
+
+  async function onSubmitErasureRequest(user: OrgUser) {
+    if (erasureSaving) return
+    erasureSaving = true
+    erasureError = null
+    try {
+      const result = await createErasureRequest(fetch, user.userId, {
+        reason: erasureReason,
+        requestedBy: erasureRequestedBy,
+      })
+      await goto(resolve(`/settings/users/${user.userId}/erasure/${result.requestId}`))
+    } catch (error) {
+      // AC-K3/K4 — an already-pending or already-erased response is a legitimate "resume review"
+      // / "view the completed report" outcome, not a failure: navigate into the existing
+      // request's page using the requestId the error body carries, same as a fresh 201 would.
+      if (error instanceof ApiClientError && (error.status === 409 || error.status === 410)) {
+        const body = error.body as { requestId?: string } | null
+        if (body?.requestId) {
+          await goto(resolve(`/settings/users/${user.userId}/erasure/${body.requestId}`))
+          return
+        }
+      }
+      erasureError =
+        error instanceof ApiClientError
+          ? (error.message ?? 'Failed to create erasure request.')
+          : 'Failed to create erasure request.'
+    } finally {
+      erasureSaving = false
+    }
+  }
+
   // Maps a userId to a human-readable "sole owner of these projects" blocking message.
   let blockedRemoval = $state<Record<string, string>>({})
 
@@ -193,11 +314,7 @@
           class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
           bind:value={dormancyThresholdChoice}
         >
-          <option value="">Choose a new threshold…</option>
-          <option value={30}>30 days</option>
-          <option value={60}>60 days</option>
-          <option value={90}>90 days</option>
-          <option value={180}>180 days</option>
+          <DormancyThresholdOptions />
         </select>
         <button
           class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
@@ -215,6 +332,45 @@
       {/if}
       {#if dormancyError}
         <p class="mt-2 text-sm text-red-700" role="alert">{dormancyError}</p>
+      {/if}
+    </div>
+
+    <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold text-slate-950">User dormancy alerts</h2>
+      <p class="mt-2 text-sm text-slate-600">
+        How long a user account can go without activity before a dormancy alert fires (Security
+        Alerts / Notifications inbox).
+      </p>
+      <p class="mt-2 text-sm font-medium text-amber-800">
+        Changing this threshold does not affect alerts already in your Dormant user alerts inbox.
+      </p>
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <label class="sr-only" for="user-dormancy-threshold-select">
+          User dormancy threshold (days)
+        </label>
+        <select
+          id="user-dormancy-threshold-select"
+          class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          bind:value={userDormancyThresholdChoice}
+        >
+          <DormancyThresholdOptions />
+        </select>
+        <button
+          class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          type="button"
+          disabled={userDormancySaving || userDormancyThresholdChoice === ''}
+          onclick={() => void onSaveUserDormancyThreshold()}
+        >
+          {userDormancySaving ? 'Saving…' : 'Save user dormancy threshold'}
+        </button>
+      </div>
+      {#if userDormancySavedTo !== null}
+        <p class="mt-2 text-sm text-emerald-700">
+          Threshold updated to {userDormancySavedTo} days.
+        </p>
+      {/if}
+      {#if userDormancyError}
+        <p class="mt-2 text-sm text-red-700" role="alert">{userDormancyError}</p>
       {/if}
     </div>
 
@@ -251,38 +407,34 @@
               </td>
               <td class="px-4 py-3 text-slate-600">{user.orgRole}</td>
               <td class="px-4 py-3">
-                {#if user.projects.length === 0}
-                  <span class="text-slate-400">No project memberships</span>
-                {:else}
-                  <ul class="space-y-1">
-                    {#each user.projects as project (project.projectId)}
-                      <li class="flex items-center gap-2">
-                        <span class="text-slate-700">{project.projectName}:</span>
-                        {#if project.role === 'owner'}
-                          <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
-                            >owner</span
-                          >
-                        {:else}
-                          <select
-                            class="rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                            aria-label={`Role for ${user.email} in ${project.projectName}`}
-                            value={project.role}
-                            disabled={busyKey === `${user.userId}:${project.projectId}`}
-                            onchange={(event) =>
-                              onChangeRole(
-                                user,
-                                project,
-                                (event.currentTarget as HTMLSelectElement)
-                                  .value as SettableProjectRole
-                              )}
-                          >
-                            <RoleSelectOptions />
-                          </select>
-                        {/if}
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
+                <ProjectsListCell projects={user.projects}>
+                  {#each user.projects as project (project.projectId)}
+                    <li class="flex items-center gap-2">
+                      <span class="text-slate-700">{project.projectName}:</span>
+                      {#if project.role === 'owner'}
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
+                          >owner</span
+                        >
+                      {:else}
+                        <select
+                          class="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                          aria-label={`Role for ${user.email} in ${project.projectName}`}
+                          value={project.role}
+                          disabled={busyKey === `${user.userId}:${project.projectId}`}
+                          onchange={(event) =>
+                            onChangeRole(
+                              user,
+                              project,
+                              (event.currentTarget as HTMLSelectElement)
+                                .value as SettableProjectRole
+                            )}
+                        >
+                          <RoleSelectOptions />
+                        </select>
+                      {/if}
+                    </li>
+                  {/each}
+                </ProjectsListCell>
               </td>
               <td class="px-4 py-3 text-right">
                 <div class="flex flex-col items-end gap-1">
@@ -319,6 +471,129 @@
                     <p class="text-xs text-amber-800" role="alert">
                       {blockedRemoval[user.userId]}
                     </p>
+                  {/if}
+
+                  <!-- Story 8.7 AC-A4/K: admin+ can request erasure -->
+                  {#if data.orgRole === 'owner' || data.orgRole === 'admin'}
+                    <button
+                      class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      onclick={() => openErasureRequest(user)}
+                    >
+                      Request erasure
+                    </button>
+                  {/if}
+
+                  <!-- Story 8.7 AC-A4/J: owner-only pseudonymize -->
+                  {#if data.orgRole === 'owner'}
+                    <button
+                      class="text-sm font-medium text-slate-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      onclick={() => openPseudonymize(user)}
+                    >
+                      Pseudonymize identity
+                    </button>
+                  {/if}
+
+                  {#if pseudonymizeResults[user.userId]}
+                    <p class="max-w-xs text-left text-xs text-emerald-700">
+                      Identity pseudonymized as {pseudonymizeResults[user.userId]?.alias}.
+                      {pseudonymizeResults[user.userId]?.otherAffectedOrgCount === 0
+                        ? 'No other organizations affected.'
+                        : `This also affects how this user's audit history displays in ${pseudonymizeResults[user.userId]?.otherAffectedOrgCount} other organization(s) they belong to.`}
+                    </p>
+                  {/if}
+
+                  {#if pseudonymizeOpenFor === user.userId}
+                    <div
+                      class="mt-2 w-64 rounded-lg border border-red-200 bg-red-50 p-3 text-left text-xs"
+                    >
+                      <p class="font-semibold text-red-800">
+                        This action is permanent and irreversible.
+                      </p>
+                      <p class="mt-1 text-slate-700">
+                        This may also affect how this user's audit history displays in other
+                        organizations they belong to — you'll see the exact count after confirming.
+                      </p>
+                      <div class="mt-2">
+                        <TypedConfirmInput
+                          expectedValue={user.email}
+                          label={`Type the exact email to confirm (${user.email})`}
+                          inputId={`pseudonymize-confirm-${user.userId}`}
+                          onMatchChange={(matches) => (pseudonymizeMatches = matches)}
+                        />
+                      </div>
+                      <div class="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          class="rounded-lg border border-red-400 px-2 py-1 text-xs font-semibold text-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={!pseudonymizeMatches || pseudonymizeSaving}
+                          onclick={() => onConfirmPseudonymize(user)}
+                        >
+                          {pseudonymizeSaving ? 'Pseudonymizing…' : 'Confirm pseudonymize'}
+                        </button>
+                        <button
+                          type="button"
+                          class="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                          onclick={() => (pseudonymizeOpenFor = null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {#if pseudonymizeError}
+                        <p class="mt-1 text-red-700" role="alert">{pseudonymizeError}</p>
+                      {/if}
+                    </div>
+                  {/if}
+
+                  {#if erasureOpenFor === user.userId}
+                    <div
+                      class="mt-2 w-64 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs"
+                    >
+                      <label class="flex flex-col gap-1" for={`erasure-reason-${user.userId}`}>
+                        Reason
+                        <textarea
+                          id={`erasure-reason-${user.userId}`}
+                          class="rounded border border-slate-300 px-2 py-1"
+                          maxlength="2000"
+                          bind:value={erasureReason}></textarea>
+                      </label>
+                      <label
+                        class="mt-2 flex flex-col gap-1"
+                        for={`erasure-requestedBy-${user.userId}`}
+                      >
+                        Requested by
+                        <input
+                          id={`erasure-requestedBy-${user.userId}`}
+                          type="text"
+                          class="rounded border border-slate-300 px-2 py-1"
+                          maxlength="500"
+                          bind:value={erasureRequestedBy}
+                        />
+                      </label>
+                      <div class="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          class="rounded-lg border border-slate-400 px-2 py-1 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={erasureSaving ||
+                            !erasureReason.trim() ||
+                            !erasureRequestedBy.trim()}
+                          onclick={() => onSubmitErasureRequest(user)}
+                        >
+                          {erasureSaving ? 'Submitting…' : 'Submit request'}
+                        </button>
+                        <button
+                          type="button"
+                          class="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                          onclick={() => (erasureOpenFor = null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {#if erasureError}
+                        <p class="mt-1 text-red-700" role="alert">{erasureError}</p>
+                      {/if}
+                    </div>
                   {/if}
                 </div>
               </td>

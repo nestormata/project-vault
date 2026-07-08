@@ -23,3 +23,24 @@ export function updateMachineKeyDormancyThreshold(
     { method: 'PATCH', body: JSON.stringify({ machineKeyDormancyThresholdDays }) }
   )
 }
+
+export type UserDormancySettingsResponse = {
+  orgId: string
+  userDormancyThresholdDays: number
+}
+
+// Story 8.7 AC-I1 — sibling setting for `user.dormant` alerts (Story 8.3), same D2 "no GET
+// readback, set-a-new-value-only" shape as the machine-key threshold above. Note the distinct
+// route prefix: `/api/v1/organizations` (plural), not `/api/v1/org` (see the story's endpoint
+// inventory table).
+export function updateUserDormancyThreshold(
+  fetchFn: typeof fetch,
+  orgId: string,
+  userDormancyThresholdDays: DormancyThresholdDays
+) {
+  return apiFetch<UserDormancySettingsResponse>(
+    fetchFn,
+    `/api/v1/organizations/${orgId}/user-dormancy-settings`,
+    { method: 'PATCH', body: JSON.stringify({ userDormancyThresholdDays }) }
+  )
+}
