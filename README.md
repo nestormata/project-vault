@@ -313,6 +313,12 @@ Production hardening checklist: [docs/operator-quickstart.md — Production hard
 
 ---
 
+## Operations
+
+Running a self-hosted instance day-to-day, after the first deploy: **[docs/runbook.md](docs/runbook.md)** — vault lifecycle (unseal/reseal), in-place upgrades, encrypted backup & restore, master key management, incident response, Prometheus monitoring, and the quarterly operations checklist.
+
+---
+
 ## Contributing
 
 The codebase is live and under active development (see [Implementation Status](#implementation-status)), but the project isn't yet accepting external code contributions. Until then, the best way to contribute is:
