@@ -1,4 +1,5 @@
 import { gunzipSync } from 'node:zlib'
+import { z } from 'zod/v4'
 import type { FastifyRequest } from 'fastify'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import { eq } from 'drizzle-orm'
@@ -373,6 +374,19 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/audit/exports/:jobId/download',
+    schema: {
+      // Success is a raw `text/csv` body (never JSON) — `z.string()` documents the closest
+      // structural shape @fastify/swagger's zod transform can express for this route; Fastify
+      // only invokes schema-based serialization for plain-object payloads (Buffers/strings bypass
+      // it, per `Reply.send`), so declaring this doesn't risk the real gzip-decompressed Buffer
+      // response ever being coerced against it.
+      response: {
+        200: z.string(),
+        ...defaultErrorResponses,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: {
       allowedRoles: ['owner'],
       writeAuditEvent: false,

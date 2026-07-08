@@ -45,6 +45,34 @@ async function seedFailedAuthThresholdAlert(orgId: string): Promise<string> {
   return row.id
 }
 
+// Story 9.3 D6 follow-up — security_alerts carries payload shapes the response schema's known
+// payload union doesn't enumerate (e.g. rotation/routes.ts's break-glass row, inserted with
+// alertType: 'rotation.break_glass' and a payload shape none of the 4 known schemas cover).
+// Regression guard for the response schema's passthrough fallback: without it, this row's
+// presence in the list would 500 (ResponseSerializationError) instead of returning normally.
+async function seedBreakGlassAlert(orgId: string): Promise<string> {
+  const [row] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(securityAlerts)
+      .values({
+        orgId,
+        alertType: 'rotation.break_glass',
+        severity: 'critical',
+        status: 'delivered',
+        payload: {
+          rotationId: randomUUID(),
+          credentialId: randomUUID(),
+          projectId: randomUUID(),
+          reason: 'test break-glass reason',
+          dependentSystems: ['billing-service'],
+        },
+      })
+      .returning({ id: securityAlerts.id })
+  )
+  if (!row) throw new Error('expected break-glass alert to be inserted')
+  return row.id
+}
+
 async function seedAnomalousAccessAlert(orgId: string): Promise<string> {
   const [row] = await withOrg(orgId, (tx) =>
     tx
@@ -118,6 +146,21 @@ describe.sequential('security-alerts routes (Story 6.2 ADR-6.2-07, AC 12/18)', (
     expect(anomalousItem).toBeDefined()
     expect(failedAuthItem?.payload).toMatchObject({ thresholdType: 'ip' })
     expect(anomalousItem?.payload).toMatchObject({ revealedCount: 6 })
+  })
+
+  it('lists a rotation.break_glass alert without 500ing on its unrecognized payload shape (response-schema passthrough regression guard)', async () => {
+    const owner = await registerOwner(app, 'break-glass')
+    const breakGlassId = await seedBreakGlassAlert(owner.orgId)
+
+    const res = await listSecurityAlerts(app, owner.cookies)
+    expect(res.statusCode).toBe(200)
+    const body = res.json<{
+      data: { items: { id: string; alertType: string; payload: Record<string, unknown> }[] }
+    }>()
+
+    const breakGlassItem = body.data.items.find((item) => item.id === breakGlassId)
+    expect(breakGlassItem).toBeDefined()
+    expect(breakGlassItem?.payload).toMatchObject({ reason: 'test break-glass reason' })
   })
 
   it('dismisses a security alert (happy path) and is idempotent on re-dismiss (AC 18)', async () => {
