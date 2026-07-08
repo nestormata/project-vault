@@ -183,20 +183,30 @@ async function defaultCheckBackupRunning(): Promise<boolean> {
 // success — a `false` result means the lock wasn't actually held at unlock time, which would
 // indicate a lock-lifecycle bug worth surfacing (logged, not thrown — this runs in cleanup paths
 // including `finally` blocks, where throwing would mask the original error).
+//
+// Code review fix (this story, high): the unlock query itself is now wrapped in try/finally so
+// `reserved.release()` ALWAYS runs, even if `pg_advisory_unlock` throws (transient DB error,
+// connection reset). Without this, a failure in the unlock query alone — independent of whether
+// the lock was ever actually released server-side — would skip `.release()` entirely and leak the
+// reserved connection from the shared pool on every one of this function's callers (the success
+// release path, the `backup_in_progress` rejection path, and the guarded-catch rethrow path).
 async function unlockAndRelease(
   reserved: ReservedConnection,
   logger?: RestoreLockLogger
 ): Promise<void> {
-  const [unlockRow] = await reserved<{ unlocked: boolean }[]>`
-    SELECT pg_advisory_unlock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS unlocked
-  `
-  if (!unlockRow?.unlocked) {
-    logger?.warn(
-      { event: 'backup.restore_lock_unlock_unexpected' },
-      'pg_advisory_unlock reported the restore lock was not held'
-    )
+  try {
+    const [unlockRow] = await reserved<{ unlocked: boolean }[]>`
+      SELECT pg_advisory_unlock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS unlocked
+    `
+    if (!unlockRow?.unlocked) {
+      logger?.warn(
+        { event: 'backup.restore_lock_unlock_unexpected' },
+        'pg_advisory_unlock reported the restore lock was not held'
+      )
+    }
+  } finally {
+    await reserved.release()
   }
-  await reserved.release()
 }
 
 /**
@@ -224,9 +234,22 @@ export async function acquireRestoreLock(
 ): Promise<RestoreLockResult> {
   const checkBackupRunning = deps.checkBackupRunning ?? defaultCheckBackupRunning
   const reserved = await reserveConnection()
-  const [lockRow] = await reserved<{ locked: boolean }[]>`
-    SELECT pg_try_advisory_lock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS locked
-  `
+
+  // Code review fix (this story, critical): this lock-acquisition query itself must be guarded
+  // exactly like the post-lock `checkBackupRunning()` check below — if it throws (transient DB
+  // error, pool exhaustion, query timeout), an unguarded throw here would leak the reserved
+  // connection forever (the lock was never acquired, so there is nothing to unlock — only
+  // `.release()` is needed here, unlike the guarded catch below which must also unlock).
+  let lockRow: { locked: boolean } | undefined
+  try {
+    ;[lockRow] = await reserved<{ locked: boolean }[]>`
+      SELECT pg_try_advisory_lock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS locked
+    `
+  } catch (error) {
+    await reserved.release()
+    throw error
+  }
+
   if (!lockRow?.locked) {
     await reserved.release()
     return { ok: false, reason: 'restore_in_progress' }

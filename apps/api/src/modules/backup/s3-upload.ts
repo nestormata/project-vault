@@ -147,7 +147,28 @@ export async function stageAndUploadToS3(params: {
   }
 
   // AC-12: success (first attempt or after retry) — delete the staged file, no orphan left.
-  await rm(finalStagedPath, { force: true })
+  await deleteStagedFileBestEffort(finalStagedPath)
+}
+
+/**
+ * Code review fix (this story, high): the S3 upload has ALREADY succeeded by the time this is
+ * called (the backup is durably stored), so a failure to delete the local staging leftover (e.g.
+ * EACCES, a concurrent orphan-cleanup tick racing this exact delete) must never be reported as an
+ * upload failure. An unguarded throw here would incorrectly flip `backup_runs.status` to `'failed'`
+ * and fire the `backup.failure` alert for a backup that is genuinely safe in S3 — the orphaned
+ * `.staged` file left behind by a failed delete is still swept by the 24h orphan-cleanup scan
+ * (D3.6) either way, so nothing is silently lost by not retrying the delete here. Split into its
+ * own function (rather than an inline try/catch) purely to keep `stageAndUploadToS3`'s cyclomatic
+ * complexity within this repo's eslint threshold.
+ */
+async function deleteStagedFileBestEffort(finalStagedPath: string): Promise<void> {
+  try {
+    await rm(finalStagedPath, { force: true })
+  } catch {
+    // Swallowed deliberately — see doc comment above. Nothing actionable to surface: the
+    // orphan-cleanup scan (D3.6/AC-16) will pick this file up within 24h regardless of why this
+    // delete failed.
+  }
 }
 
 /**
