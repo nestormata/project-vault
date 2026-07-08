@@ -82,35 +82,25 @@ const PREFERENCES_RESPONSE_SCHEMA = {
   422: ApiErrorSchema,
 }
 
-function preferencesRoute(
-  fastify: FastifyApp,
-  method: 'PUT' | 'PATCH',
+// route-audit.test.ts statically resolves each route's `method`/`url` from the literal
+// secureRoute() call site, so PUT and PATCH must stay as separate calls with literal methods
+// (not a shared helper parameterized on method) even though their bodies are near-identical.
+async function applyPreferencesUpdate(
   bodySchema: typeof PutPreferencesBodySchema | typeof PatchPreferencesBodySchema,
   apply: (
     orgId: string,
     userId: string,
     items: z.infer<typeof PutPreferencesBodySchema>,
     tx: SecureRouteContext['tx']
-  ) => Promise<PreferenceOutput[]>
+  ) => Promise<PreferenceOutput[]>,
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply
 ) {
-  secureRoute(fastify, {
-    method,
-    url: USER_NOTIFICATION_PREFERENCES_URL,
-    schema: { response: PREFERENCES_RESPONSE_SCHEMA },
-    security: USER_PREFS_SECURITY,
-    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const secureCtx = ctx as SecureRouteContext
-      const parsed = bodySchema.safeParse(req.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
-      const prefs = await apply(
-        secureCtx.auth.orgId,
-        secureCtx.auth.userId,
-        parsed.data,
-        secureCtx.tx
-      )
-      return { data: prefs }
-    },
-  })
+  const parsed = bodySchema.safeParse(req.body)
+  if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
+  const prefs = await apply(secureCtx.auth.orgId, secureCtx.auth.userId, parsed.data, secureCtx.tx)
+  return { data: prefs }
 }
 
 function inboxEntryRoute(
@@ -154,8 +144,35 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  preferencesRoute(fastify, 'PUT', PutPreferencesBodySchema, putPreferences)
-  preferencesRoute(fastify, 'PATCH', PatchPreferencesBodySchema, patchPreferences)
+  secureRoute(fastify, {
+    method: 'PUT',
+    url: USER_NOTIFICATION_PREFERENCES_URL,
+    schema: { response: PREFERENCES_RESPONSE_SCHEMA },
+    security: USER_PREFS_SECURITY,
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) =>
+      applyPreferencesUpdate(
+        PutPreferencesBodySchema,
+        putPreferences,
+        ctx as SecureRouteContext,
+        req,
+        reply
+      ),
+  })
+
+  secureRoute(fastify, {
+    method: 'PATCH',
+    url: USER_NOTIFICATION_PREFERENCES_URL,
+    schema: { response: PREFERENCES_RESPONSE_SCHEMA },
+    security: USER_PREFS_SECURITY,
+    handler: async (ctx, req: FastifyRequest, reply: FastifyReply) =>
+      applyPreferencesUpdate(
+        PatchPreferencesBodySchema,
+        patchPreferences,
+        ctx as SecureRouteContext,
+        req,
+        reply
+      ),
+  })
 
   secureRoute(fastify, {
     method: 'GET',
