@@ -1,6 +1,6 @@
 # Story 8.6: Epic 7 Completion — Machine User Web UI & Hardening
 
-Status: review
+Status: done
 
 <!-- Story derived from epic-7-retro-2026-07-06.md's Significant Discovery Alert + Action Items. Bundles the machine-user
      management web UI gap (flagged as "a genuine planning gap" in both 7.1 and 7.2, never scheduled until this retro)
