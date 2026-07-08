@@ -18,7 +18,7 @@ so that **the backup/restore subsystem is actually safe to depend on during a re
 | Field | Value |
 |-------|-------|
 | **Surface scope** | `api` |
-| **Evaluator-visible** | no — this story hardens existing internal behavior (a lock inside an existing route handler, a worker's alert-resolution branch, a storage-write code path) behind the same four Story 9.1 endpoints. No new HTTP endpoint, no new request/response shape visible to a client beyond one new `409` case on an already-`409`-capable route family. |
+| **Evaluator-visible** | no — this story hardens existing internal behavior (a lock inside an existing route handler, a worker's alert-resolution branch, a storage-write code path) behind the same four Story 9.1 endpoints. No new HTTP endpoint. Client-visible surface change is two new `409` response shapes on the restore endpoint (`restore_in_progress`, `backup_in_progress` — AC-2/AC-3), on an already-`409`-capable route family (adversarial review, medium: an earlier draft of this contract undercounted this as "one new `409` case"). |
 | **Linked UI story** (if API-only) | `TBD` — same accepted gap as Story 9.1 (see 9-1's Product Surface Contract): no story in `epics.md` scopes a backup/restore admin web screen. This story does not change that; it does not add new UI-relevant surface (no new fields for a future "Backups" page to render — `admin_alerts.status` transitioning to `'acknowledged'` on auto-resolve is an existing status value a future UI would already need to render). |
 | **Honest placeholder AC** (if UI deferred) | N/A — no UI is deferred with a placeholder; same as 9-1. |
 | **Persona journey** | N/A — API-only, no new persona journey; the platform operator's existing curl/scripts-based interaction from Story 9.1 (AC-1 through AC-19) is unchanged in shape, only hardened in behavior. |
@@ -68,27 +68,50 @@ N/A — internal hardening story, no new user-facing surface. Rationale: see Pro
        await reserved.release()
        return { ok: false, reason: 'restore_in_progress' }
      }
-     // AC-3: close the reverse race — a backup dump already mid-flight (its own brief xact-lock
-     // window has already closed by now) must still block restore.
-     const [running] = await getDb().select({ id: backupRuns.id }).from(backupRuns).where(eq(backupRuns.status, 'running')).limit(1)
-     if (running) {
-       await reserved`SELECT pg_advisory_unlock(hashtext(${BACKUP_ADVISORY_LOCK_KEY}))`
-       await reserved.release()
-       return { ok: false, reason: 'backup_in_progress' }
+     // Adversarial review (critical): this post-lock check MUST be guarded. If it throws
+     // (transient DB error, pool exhaustion, query timeout), an unguarded throw here would leak
+     // both the reserved connection and the session-level advisory lock forever — and because
+     // restore/backup share this lock key (D1.1), that leak deadlocks every future restore AND
+     // every future backup trigger until the process restarts. Any failure unlocks + releases
+     // before rethrowing, exactly like the two explicit `{ ok: false }` paths below.
+     try {
+       // AC-3: close the reverse race — a backup dump already mid-flight (its own brief xact-lock
+       // window has already closed by now) must still block restore.
+       const [running] = await getDb().select({ id: backupRuns.id }).from(backupRuns).where(eq(backupRuns.status, 'running')).limit(1)
+       if (running) {
+         await unlockAndRelease(reserved)
+         return { ok: false, reason: 'backup_in_progress' }
+       }
+     } catch (err) {
+       await unlockAndRelease(reserved)
+       throw err
      }
      return {
        ok: true,
-       release: async () => {
-         await reserved`SELECT pg_advisory_unlock(hashtext(${BACKUP_ADVISORY_LOCK_KEY}))`
-         await reserved.release()
-       },
+       release: () => unlockAndRelease(reserved),
      }
+   }
+
+   // Adversarial review (low): checks pg_advisory_unlock's own return value rather than assuming
+   // success — a `false` result means the lock wasn't actually held at unlock time, which would
+   // indicate a lock-lifecycle bug worth surfacing (logged, not thrown — this runs in cleanup
+   // paths including `finally` blocks, where throwing would mask the original error).
+   async function unlockAndRelease(reserved: ReservedConnection): Promise<void> {
+     const [{ unlocked }] = await reserved`SELECT pg_advisory_unlock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS unlocked`
+     if (!unlocked) {
+       logger.warn({ event: 'backup.restore_lock_unlock_unexpected' }, 'pg_advisory_unlock reported the restore lock was not held')
+     }
+     await reserved.release()
    }
    ```
 5. `routes.ts`'s restore handler wraps its existing call to `restoreFromBackup()` with `acquireRestoreLock()` first; on `{ ok: false }`, return `409` before any decrypt/checksum work happens (cheapest possible rejection). On `{ ok: true }`, call `restoreFromBackup()` inside a `try { ... } finally { await lock.release() }` so the lock is released on **every** exit path (`not_found`, `checksum_mismatch`, `decrypt_failed`, `restore_failed`, `restored`).
 6. **No reconciliation code needed for this lock** (unlike `reconcileStaleRunningBackups()` for the `backup_runs` row): a session-level advisory lock is automatically released by PostgreSQL itself the instant the holding connection closes — including a hard process crash/kill, which drops the TCP connection and the server-side backend cleans up that session's locks. This is different from `backup_runs.status='running'`, which is a *persisted row*, not a *live connection state* — that's precisely why it needed its own reconciliation function and this lock does not. Document this contrast in a code comment so a future reader doesn't "fix" a non-problem by copying `reconcileStaleRunningBackups()`'s pattern here.
 7. **Rejected alternative (documented, not implemented):** extending `backup_runs` with a `'restore'` `triggered_by` value to reuse the exact same row-based marker backup uses. Rejected because `backup_runs.filename` has a `NOT NULL UNIQUE` constraint already held by the backup being restored *from* (which already has its own `succeeded` row under that filename) — a restore "run" row could not reuse that filename without a unique-constraint collision, and inventing a second filename convention for restore rows is more complexity than the session-lock approach for no additional benefit (restore has no multi-step "dump then upload" pipeline that benefits from a durable progress row the way backup does).
 8. **Validate is explicitly NOT gated by this lock.** Per Story 9.1's AC-10 (already shipped, unchanged by this story), `validateBackupFile()` never opens a connection to, or executes anything against, `BACKUP_DATABASE_URL` or any live table — it is pure in-memory decrypt + structural text inspection. There is nothing for the lock to protect on that path. This is a deliberate scope decision closing 9-1's own open question ("needs a decision on lock scope and whether it should also block validate") — the answer is no.
+9. **Filename format validation moves before lock acquisition (adversarial review, medium).** The route handler's existing CWE-22 path-traversal guard (`parseBackupFilename` — a pure regex/string check, zero I/O, zero DB) currently runs *inside* `restoreFromBackup()`, which is called *after* `acquireRestoreLock()` succeeds. This means a malformed or malicious `:filename` pays the full cost of `reserveConnection()` + an advisory-lock round trip + a `backup_runs` query before being rejected — inconsistent with AC-2's own "cheapest possible rejection" principle, and a rapid loop of bad-filename requests against the platform-operator-only endpoint would needlessly cycle the shared restore/backup lock. **Fix:** call `parseBackupFilename()` in the route handler *before* `acquireRestoreLock()` — reject a malformed filename with the existing `400`/path-traversal error with zero lock/DB involvement. The lock is only acquired once the filename shape is already known-good. (This does not change `restoreFromBackup()`'s own internal validation — it only moves the route-level pre-check earlier.)
+10. **Known limitation, documented not fixed (adversarial review, medium — race-window mislabeling):** because `pg_try_advisory_lock` is non-blocking, if a restore's lock attempt lands during the brief moment `acquireBackupSlot()` holds its transaction-scoped xact-lock (the check-then-insert critical section for a *new* backup trigger, not an in-flight dump), `acquireRestoreLock()` reports `reason: 'restore_in_progress'` even though no restore is actually running — a backup-trigger's transient (sub-millisecond to low-millisecond) lock hold gets mislabeled as a competing restore. This is judged an acceptable trade-off: the window is extremely narrow, the operator-facing remedy is identical either way ("wait a moment and retry"), and distinguishing the two cases would require a third round-trip on every rejection to disambiguate a cause that doesn't change the caller's next action. The `409` response's `message` field (AC-2) must stay generic enough not to overclaim a specific cause ("Another restore is already in progress" is acceptable phrasing since it's true in the overwhelming majority of cases; do not word it as a guarantee).
+11. **RLS/tenant-isolation of the new `backup_runs` query must be verified, not assumed (adversarial review, high).** `acquireRestoreLock()`'s post-lock check queries `backup_runs` via plain `getDb()` with no explicit org/tenant context, relying on Story 9.1's existing `EXCLUDED_TABLES` entry in `packages/db/scripts/check-rls-coverage.ts` (which already exempts `backup_runs` as a platform-operator-only, non-tenant-scoped table) still applying to this new call site. Since `backup_runs` is the same table `acquireBackupSlot()` already queries the same way (unchanged, already-shipped code), this call site does not introduce a *new* RLS exemption — but the assumption must be explicitly confirmed, not silently inherited: **Task 1.2 must include a test that runs `acquireRestoreLock()`'s post-lock check inside an org-scoped `withOrg()` context (or whatever mechanism this codebase's RLS policies key off) and asserts a `running` row is still visible** — proving AC-3's safety guarantee cannot silently no-op due to row-level filtering. If that test fails, this is a genuine gap requiring a real RLS policy fix, not just documentation.
+12. **`packages/db/src/index.ts` regression scope (adversarial review, medium).** Task 1.1's refactor (hoisting the private `postgres()` client to module scope, adding `reserveConnection()`) touches shared low-level infrastructure consumed by every `getDb()` caller in the codebase, not just the backup module. Before merging, run the **full existing test suite for every package/app that imports `packages/db`** (not just `apps/api/src/modules/backup/**`) to confirm the module-scope hoist is behaviorally identical to the current per-call closure — this is a blast-radius regression check, not new functional test coverage, and should be called out explicitly in code review as satisfied. (See Testing Standards Summary below — this requirement is restated there.)
 
 ### D2 — `backup.missed` auto-resolve reuses Story 9.2's already-shipped `clearThresholdAlertEpisode` helper; no migration
 
@@ -100,6 +123,8 @@ N/A — internal hardening story, no new user-facing surface. Rationale: see Pro
 - **`clearThresholdAlertEpisode`'s `scopeKey: null` filter already works for `backup.missed` with zero modification.** Its SQL is `(payload->>'scopeKey') IS NULL` when `scopeKey` is passed as `null`. `backup.missed` alerts (created by `createAdminAlertIfNotActive` in `apps/api/src/modules/backup/alerts.ts`) never write a `scopeKey` field into their `payload` at all — a missing JSONB key accessed via `->>'scopeKey'` evaluates to SQL `NULL`, so the filter matches. `backup.missed` is inherently instance-wide (not per-org), exactly the case Story 9.2 built the `scopeKey: null` branch for.
 
 **Resolution:** in `runBackupHealthCheck()`, before (or instead of) the current early return when `hoursSinceLastSuccess <= env.BACKUP_MAX_AGE_HOURS`, call `await clearThresholdAlertEpisode('backup.missed', null)`. This one-line addition (plus an operational-log call) is the entire fix. `backup.failure` alerts (AC-13 of Story 9.1) are explicitly **not** in scope for this change — each failure is deliberately its own undeduped row by design (9-1's own AC-13 text: "unlike the missed alert, each failure is a distinct event worth its own record"); do not add resolve logic there, that would be a regression against an intentional, already-correct design.
+
+**Failure isolation (adversarial review, high):** this story adds a *second*, unrelated concern into the same `runBackupHealthCheck()` function — D3.6's hourly orphan-file-cleanup filesystem scan. The alert-resolve logic (this section) and the orphan-cleanup scan (D3.6) **must be wrapped in independent `try/catch` blocks** inside `runBackupHealthCheck()`, each logging its own failure operationally, so a filesystem error in one (permission error, missing mount, `ENOSPC`) can never prevent the other from running. The `backup.missed` auto-resolve/raise logic is the operator's single most important reliability signal from this job — it must never be silently skipped because an unrelated filesystem scan threw first.
 
 ### D3 — S3 upload hardening: local staging + bounded retry + 24h orphan cleanup; filesystem destination is untouched
 
@@ -114,6 +139,13 @@ N/A — internal hardening story, no new user-facing surface. Rationale: see Pro
 5. **On final failure (retries exhausted, or a non-retryable error hit immediately):** do **not** delete the staged file — leave it in place for operator recovery, exactly as Story 9.1's own (never-implemented) AC-6 negative-case text already specified: *"The local encrypted temp file is retained... so a subsequent manual retry or operator intervention doesn't require re-running the entire dump+encrypt pipeline."* `backup_runs.status` is set to `'failed'` and the existing `backup.failure` alert path (AC-13, unchanged code) fires exactly as it does today for a `pg_dump` failure — this story does not add a new alert type, it reuses the existing one.
 6. **Orphan cleanup, hourly, inside `runBackupHealthCheck()`** (not the post-success retention step in `backup-retention.ts`, which only runs after a *successful* backup and would never fire during a run of consecutive failures — exactly the scenario that produces orphans in the first place): scan `BACKUP_S3_STAGING_PATH` for `*.staged` files older than 24h (`mtime` comparison) and delete them. Only files matching the `.staged` suffix are ever touched by this scan — it must never delete a real `.vault`/`.meta.json` blob (those live at the S3 destination, not in the staging directory, by construction) or any unrelated file that happens to be in that directory. No-op entirely if `BACKUP_S3_STAGING_PATH` was never configured/used (filesystem-destination deployments, or S3 deployments where no failure has ever occurred).
 7. **Explicitly out of scope (documented, not a gap):** a dedicated HTTP endpoint to manually re-trigger uploading a specific staged file without re-running `pg_dump`. Story 9.1's AC-6 text only promises the file is *retained* for "manual retry or operator intervention" (i.e., an operator can `aws s3 cp` it themselves as a last resort, or simply let the next scheduled/manual backup supersede it) — it never specifies an API for automated re-upload. Adding one would be new scope beyond the 3 findings this story bundles; noted here as a possible future enhancement, not implemented.
+8. **Staging directory is created on first use (adversarial review, high).** Neither an operator-set `BACKUP_S3_STAGING_PATH` nor the `os.tmpdir()`-based default is guaranteed to exist as a directory. The staging write step (item 2 above) must `mkdir(stagingPath, { recursive: true })` before the atomic temp-file+`rename()` write, on every write attempt (idempotent — a no-op if the directory already exists). If directory creation itself fails (e.g., a misconfigured mount, permission error), that failure is treated exactly like any other staging-write failure: the backup fails, `backup_runs.status = 'failed'` with a sanitized `errorMessage`, and the existing `backup.failure` alert fires (D3.5) — this is a new failure mode introduced by staging-before-upload, and it must be covered by AC-19's test list, not left silently unhandled.
+9. **Cumulative staging-directory disk usage is monitored, not just individual-file age (adversarial review, high).** D3.6's 24h orphan sweep only bounds *how long* a single failed backup's staged file survives — it does nothing to bound total disk usage during a prolonged S3 outage (every failed attempt within that 24h window leaves a new full-size encrypted dump on disk). To close this without turning a remote-service outage into a local-disk-exhaustion incident: the same hourly health-check pass that runs orphan cleanup (D3.6) also sums the total bytes currently in `BACKUP_S3_STAGING_PATH` across all `.staged` files and, if that total exceeds a new optional env var `BACKUP_S3_STAGING_MAX_BYTES` (default: unset/disabled — this is a monitoring addition, not a hard cap that could itself block backups), raises a new `admin_alerts` row via `createAdminAlertIfNotActive('backup.staging_disk_pressure', ...)` (reusing the existing alerts helper, same pattern as `backup.missed`) with the current total size and file count in `payload`. This alert is **not** auto-cleared by D2's `clearThresholdAlertEpisode` wiring (different `alertType`) — it clears the same way `backup.missed` does, by the health check finding the total back under threshold on a later run, which requires adding `'backup.staging_disk_pressure'` as a second argument to a `clearThresholdAlertEpisode` call alongside the existing `'backup.missed'` one. This is a monitoring/alerting addition only — it does not change retry, staging, or cleanup behavior, and does not block a backup attempt from proceeding even while the threshold is exceeded (refusing to attempt backups because *previous* backups failed to upload would make outages strictly worse).
+10. **Orphan-cleanup deletion is defensive against concurrent unlinks (adversarial review, medium).** Overlapping hourly health-check ticks (already an acknowledged possibility per AC-9's idempotency note for the alert-resolve side) could both list the same aged `.staged` file and both attempt to delete it. The cleanup scan's `unlink` call must catch and ignore `ENOENT` specifically (the file was already removed by the other tick) and log/rethrow any other error — this is the same "two ticks, no double-work, no crash" guarantee AC-9 already requires for alert-resolution, applied to the filesystem side of the same function.
+11. **Operator convention for protecting an in-progress manual recovery from the 24h sweep (adversarial review, medium, documented — no code change).** D3.6's cleanup scan matches strictly on the literal `.staged` suffix (AC-16's edge case). An operator who needs more than 24h to manually recover a staged file (e.g., investigating before running `aws s3 cp`) can rename it to break that exact suffix match (e.g., append `.hold`, producing `....vault.staged.hold`) — the scan will never touch a file that isn't spelled exactly `*.staged`, by construction, so this requires no new code, only documenting the convention in the staging-path's `.env.example` comment and (if Story 9.5's runbook is still open) as an operational note there.
+12. **Unclassified S3 upload errors default to retryable, not fail-fast (adversarial review, medium).** The retryable/non-retryable classification (item 3 above) enumerates specific known codes on both sides, but an error that matches neither list (DNS failure, a generic SDK `NetworkingError`, an unrecognized shape) must default to **retryable**. Rationale: retries are already bounded to 3 total attempts (item 3), so defaulting unknown errors to retryable costs at most ~2 seconds of extra latency in the worst case, versus defaulting to fail-fast which would silently convert a possibly-transient unknown error into an immediate, unrecoverable-this-run failure. Known non-retryable codes (`InvalidAccessKeyId`, `SignatureDoesNotMatch`, `AccessDenied`, other recognized 4xx) remain fail-fast as already specified.
+13. **`SignatureDoesNotMatch` classification is a deliberate, documented trade-off, not a gap (adversarial review, low).** This code can occur both from genuinely wrong credentials (permanent) and from transient clock skew between the host and AWS (self-corrects after NTP resync). It remains classified as non-retryable per item 3 — a self-hosted deployment with clock skew severe enough to trip SigV4 has a more fundamental host-configuration problem than this retry loop should try to paper over, and the existing `backup.failure` alert (D3.5) surfaces the failure for operator investigation either way.
+14. **No jitter on retry backoff is a deliberate, documented trade-off, not a gap (adversarial review, low).** The fixed 500ms/1500ms backoff (item 3) has no randomized jitter. This is acceptable for this codebase's target deployment shape (single-instance, self-hosted) where there is no thundering-herd risk from multiple instances retrying in lockstep. If this retry pattern is ever copied to a multi-instance context, jitter should be added at that time — it is out of scope here.
 
 ---
 
@@ -145,9 +177,18 @@ A subsequent `SELECT pg_try_advisory_lock(hashtext('backup/snapshot'))` from a f
 ```
 POST /api/v1/admin/backups/backup_A.vault/restore   { "confirmRestore": true, "reason": "..." }  // in flight
 POST /api/v1/admin/backups/backup_B.vault/restore   { "confirmRestore": true, "reason": "..." }  // fired 50ms later
-→ 409 { "code": "restore_already_in_progress", "message": "Another restore is already in progress. Wait for it to complete before retrying." }
+→ 409 { "code": "restore_in_progress", "message": "Another restore is already in progress. Wait for it to complete before retrying." }
 ```
+(`"code"` uses the exact `RestoreLockResult.reason` string literal from D1.4 — `restore_in_progress`, not a paraphrase — so the wire contract and the implementation type can never drift, per the adversarial review's naming-inconsistency finding.)
+
 Integration test: fire both via `Promise.all` against a `deps.restore` stub that resolves only after an explicit signal (so the race window is deterministic, not timing-dependent) — assert exactly one `200`/appropriate-outcome and one `409`.
+
+**Example (negative — malformed filename, rejected before the lock is ever touched, adversarial review D1.9):**
+```
+POST /api/v1/admin/backups/../../etc/passwd/restore   { "confirmRestore": true, "reason": "..." }
+→ 400 { "code": "invalid_filename", "message": "..." }
+```
+`parseBackupFilename()` runs in the route handler *before* `acquireRestoreLock()` is called (D1.9) — no `reserveConnection()`, no advisory-lock round trip, no `backup_runs` query for a malformed filename. Integration test: assert the S3/DB/lock mocks were never invoked for this request.
 
 ---
 
@@ -164,7 +205,7 @@ POST /api/v1/admin/backups/backup_20260701T030000Z_....vault/restore
 { "confirmRestore": true, "reason": "test" }
 → 409 { "code": "backup_in_progress", "message": "A backup is currently running. Wait for it to complete before restoring." }
 ```
-Integration test: manually insert a `backup_runs` row with `status: 'running'` (simulating a dump mid-flight — no need to spawn a real `pg_dump` subprocess for this test), then call `restoreFromBackup`'s route handler and assert `409`, and assert `pg_restore`/`deps.restore` was never invoked.
+Integration test: manually insert a `backup_runs` row with `status: 'running'` (simulating a dump mid-flight — no need to spawn a real `pg_dump` subprocess for this test), then call `restoreFromBackup`'s route handler and assert `409`, and assert `pg_restore`/`deps.restore` was never invoked. **Per D1.11 (adversarial review, high):** this test must additionally run inside whatever org/tenant-scoped context (`withOrg()` or equivalent) the codebase's RLS policies key off of, and assert the `running` row is still visible to the query — proving this safety guarantee isn't silently defeated by row-level filtering.
 
 ---
 
@@ -216,7 +257,9 @@ POST /api/v1/admin/backup/trigger   → 202 { "jobId": "..." }   // NOT 409 — 
 ```
 Integration test: parametrize over all five outcomes (stub `deps.restore`/`deps.storage` to force each one), assert a lock-probe query succeeds immediately after each.
 
-**Example (edge — released even when `parseBackupFilename` rejects the filename before any I/O):** a path-traversal-shaped `:filename` (Story 9.1's existing CWE-22 guard, unchanged) is rejected by `restoreFromBackup` before `storage.read` — this happens *after* `acquireRestoreLock()` succeeds (the lock is acquired first, per AC-1's ordering: lock before any decrypt/checksum work — filename validation happens inside `restoreFromBackup`, which runs after the lock is held). The `finally` block must still release the lock in this case too.
+**Example (edge — malformed filename never reaches the lock at all, D1.9):** a path-traversal-shaped `:filename` (Story 9.1's existing CWE-22 guard, unchanged) is now rejected by `parseBackupFilename()` in the route handler *before* `acquireRestoreLock()` is ever called (D1.9, moved here by the adversarial review to make rejection the cheapest possible path — see AC-2's malformed-filename example). This means this specific case no longer has a lock to release; the `finally`-block release guarantee below applies to every outcome reachable only *after* the lock is already held.
+
+**Example (edge — an unexpected exception during the post-lock `backup_runs` check still releases the lock, D1.4):** if the `backup_runs` query inside `acquireRestoreLock()` itself throws (transient DB error, pool exhaustion — see D1.4's critical-finding fix), the lock and reserved connection are still released via `unlockAndRelease()` before the exception propagates — this is a distinct code path from the `finally` block (it runs *during* lock acquisition, not after), but the release guarantee is the same. Integration test: force the `backup_runs` select to reject and assert a lock-probe query succeeds immediately after the resulting error response.
 
 ---
 
@@ -360,6 +403,8 @@ Attempt 1: PutObjectCommand → AccessDenied
 ```
 Integration test: mock `PutObjectCommand` to reject with an `AccessDenied`-shaped error and assert the S3 client mock was called exactly once (proving no retry was attempted).
 
+**Example (edge — unrecognized error code defaults to retryable, D3.12, adversarial review medium):** an error matching neither the known-retryable nor known-non-retryable lists (e.g., a generic SDK `NetworkingError`, a DNS resolution failure) is treated as retryable and enters the same bounded 3-attempt loop as AC-13's transient case — it is never treated as fail-fast by default, since retries are already bounded and a wrong "fail fast" guess costs a lost backup while a wrong "retry" guess costs at most ~2 extra seconds.
+
 ---
 
 ### AC-15 — Persistent upload failure (retries exhausted) leaves a recoverable staged file and reuses the existing failure-alert path unchanged
@@ -375,6 +420,15 @@ Attempt 1/2/3: PutObjectCommand → ETIMEDOUT (all three)
 → admin_alerts row created: { alertType: 'backup.failure', severity: 'critical', payload: { filename: '...', errorMessage: '...' } }
 → /var/backups/vault-staging/backup_....vault.staged   STILL EXISTS — recoverable
 ```
+
+**Example (negative — staging directory itself cannot be created, D3.8, adversarial review high):**
+```
+BACKUP_S3_STAGING_PATH=/mnt/unmounted-volume/staging   (mount missing at backup time)
+→ mkdir(stagingPath, { recursive: true }) throws EACCES/ENOENT
+→ backup_runs.status = 'failed', errorMessage: 'S3 upload failed: could not create staging directory' (path never logged verbatim if it could contain sensitive mount info — sanitized like all other errorMessage fields)
+→ admin_alerts row created: { alertType: 'backup.failure', ... }   // same path as any other staging/upload failure — no new alert type
+```
+Integration test: point `BACKUP_S3_STAGING_PATH` at a path under a directory with no write permission, assert the backup fails cleanly via the existing `backup.failure` path rather than throwing an unhandled exception.
 
 ---
 
@@ -394,6 +448,29 @@ Attempt 1/2/3: PutObjectCommand → ETIMEDOUT (all three)
 **Example (edge — cleanup only ever touches `.staged` files):** a hypothetical unrelated file dropped into `BACKUP_S3_STAGING_PATH` by an operator (e.g., `notes.txt`) is never touched by the cleanup scan regardless of age — the scan globs strictly on the `.staged` suffix. Integration test: place a non-`.staged` file older than 24h in the staging directory, run the cleanup, assert it still exists.
 
 **Example (edge — no staging path configured, or filesystem destination):** if `BACKUP_S3_BUCKET` was never configured (filesystem destination, or backup disabled entirely), the orphan-cleanup step is a no-op — it must not attempt to read/create `BACKUP_S3_STAGING_PATH`'s default value or throw if the directory doesn't exist.
+
+**Example (edge — overlapping health-check ticks deleting the same file, D3.10, adversarial review medium):** two hourly ticks both list the same aged `.staged` file and both attempt to delete it — the second `unlink` call catches and ignores `ENOENT` (the file the first tick already removed) rather than crashing the health-check run; any other unlink error is still logged/rethrown. Integration test: simulate a concurrent double-delete and assert no unhandled rejection.
+
+**Example (edge — operator protects an in-progress manual recovery from the sweep, D3.11, documented convention, no code change):** renaming a staged file to break the exact `.staged` suffix match (e.g. `....vault.staged` → `....vault.staged.hold`) exempts it from the cleanup scan indefinitely, since the scan globs strictly on that literal suffix (same mechanism as the `notes.txt` edge case above). Documented in `.env.example`'s `BACKUP_S3_STAGING_PATH` comment — no test required beyond the existing suffix-matching test above, since this is the same behavior from a different angle.
+
+---
+
+### AC-16b — Cumulative staging-directory disk usage raises an alert before it becomes an incident (D3.9, adversarial review high)
+
+**Given** `BACKUP_S3_STAGING_MAX_BYTES` is configured and a prolonged S3 outage has caused several consecutive backup failures, each leaving a retained `.staged` file (AC-15) within the same 24h orphan-cleanup window,
+**When** the hourly health-check's staging-usage pass sums the total bytes across all `.staged` files in `BACKUP_S3_STAGING_PATH`,
+**Then**, if that total exceeds `BACKUP_S3_STAGING_MAX_BYTES`, a `backup.staging_disk_pressure` `admin_alerts` row is raised via `createAdminAlertIfNotActive` (deduplicated the same way `backup.missed` is) with the current total bytes and file count in `payload`; once a later run finds the total back under threshold, the alert is cleared via `clearThresholdAlertEpisode('backup.staging_disk_pressure', null)` (same mechanism as D2, different `alertType`).
+
+**Example (positive — threshold crossed):**
+```
+BACKUP_S3_STAGING_MAX_BYTES=5368709120   (5 GiB)
+// staging dir currently holds 6.2 GiB across 4 .staged files after a 3-day S3 outage
+→ admin_alerts row created: { alertType: 'backup.staging_disk_pressure', severity: 'warning', payload: { totalBytes: 6656000000, fileCount: 4 } }
+```
+
+**Example (edge — unset, monitoring disabled by default):** if `BACKUP_S3_STAGING_MAX_BYTES` is not set, this check is skipped entirely — this is a monitoring addition, not a hard cap, and must never block or fail a backup attempt on its own even while staging usage is over any threshold (refusing to attempt further backups because *earlier* backups failed to upload would make an outage strictly worse for RPO).
+
+Integration test: seed several aged `.staged` files summing past the threshold, run the health check, assert the alert is raised; then remove the files and re-run, assert the alert clears.
 
 ---
 
@@ -429,35 +506,58 @@ BACKUP_S3_BUCKET=vault-backups-prod
 ```
 Startup succeeds (no fatal validation error — the default is applied at the storage layer); an `info`-level log line on first use notes the ephemeral-`/tmp` default and recommends setting the var explicitly for production self-hosted deployments (does not block startup, purely advisory).
 
+**And** `BACKUP_S3_STAGING_MAX_BYTES` (AC-16b, D3.9) is accepted with the same optional-string-to-number shape (`z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().positive().optional())`) — unset by default (disk-pressure monitoring off), documented in `.env.example` alongside `BACKUP_S3_STAGING_PATH`.
+
 ---
 
 ### AC-19 — Integration test coverage (explicit list — do not consider this story done without all of these)
 
 **Given** the full feature set above,
 **When** the test suite runs (extending `apps/api/src/modules/backup/*.test.ts` and `apps/api/src/workers/backup-health-check.test.ts`/`backup-snapshot.test.ts`, or a new `apps/api/src/modules/backup/restore-lock.test.ts`),
-**Then** it covers, at minimum: (1) restore happy path acquires and releases the lock (AC-1); (2) concurrent restore-vs-restore returns 409 without touching storage/DB (AC-2); (3) restore blocked by an in-flight backup dump (AC-3); (4) backup trigger blocked by an in-flight restore, both manual and scheduled-cron paths (AC-4); (5) validate is never gated by the restore lock, concurrently with an active restore (AC-5); (6) lock released on all five restore outcomes (AC-6); (7) lock self-releases on connection loss without reconciliation code (AC-7); (8) `backup.missed` auto-resolves when healthy again (AC-8); (9) auto-resolve doesn't suppress a later re-miss (AC-9); (10) auto-resolve idempotent under duplicate/overlapping health-check runs (AC-9); (11) auto-resolve scoped only to `backup.missed`, other alert types untouched (AC-10); (12) auto-resolve logs operationally, sends no notification (AC-11); (13) S3 happy path stages then uploads then deletes, no orphan (AC-12); (14) staged ciphertext matches uploaded ciphertext, never plaintext (AC-12); (15) transient failure retried and recovers (AC-13); (16) non-retryable failure fails fast, single attempt (AC-14); (17) persistent failure retains staged file + fires existing `backup.failure` alert unchanged (AC-15); (18) orphan cleanup deletes files >24h, keeps younger ones, ignores non-`.staged` files (AC-16); (19) filesystem-destination backups unaffected — existing Story 9.1 tests still pass unmodified (AC-17); (20) `BACKUP_S3_STAGING_PATH` env validation matrix (AC-18).
+**Then** it covers, at minimum: (1) restore happy path acquires and releases the lock (AC-1); (2) concurrent restore-vs-restore returns 409 without touching storage/DB (AC-2); (3) restore blocked by an in-flight backup dump (AC-3), including the RLS-context assertion (D1.11); (4) backup trigger blocked by an in-flight restore, both manual and scheduled-cron paths (AC-4); (5) validate is never gated by the restore lock, concurrently with an active restore (AC-5); (6) lock released on all five restore outcomes (AC-6); (6b) lock released when the post-lock `backup_runs` check itself throws (AC-6, D1.4 critical fix); (7) lock self-releases on connection loss without reconciliation code (AC-7); (8) `backup.missed` auto-resolves when healthy again (AC-8); (9) auto-resolve doesn't suppress a later re-miss (AC-9); (10) auto-resolve idempotent under duplicate/overlapping health-check runs (AC-9); (11) auto-resolve scoped only to `backup.missed`, other alert types untouched (AC-10); (12) auto-resolve logs operationally, sends no notification (AC-11); (12b) alert-resolve and orphan-cleanup failures are isolated from each other (D2 failure-isolation fix); (13) S3 happy path stages then uploads then deletes, no orphan (AC-12); (14) staged ciphertext matches uploaded ciphertext, never plaintext (AC-12); (15) transient failure retried and recovers (AC-13); (16) non-retryable failure fails fast, single attempt (AC-14); (16b) unrecognized error code defaults to retryable (AC-14); (17) persistent failure retains staged file + fires existing `backup.failure` alert unchanged (AC-15); (17b) staging-directory creation failure fails cleanly via the existing `backup.failure` path (AC-15, D3.8); (18) orphan cleanup deletes files >24h, keeps younger ones, ignores non-`.staged` files (AC-16); (18b) overlapping-tick concurrent unlink doesn't crash (AC-16, D3.10); (18c) cumulative staging-directory disk-pressure alert raises and clears (AC-16b); (19) filesystem-destination backups unaffected — existing Story 9.1 tests still pass unmodified (AC-17); (20) `BACKUP_S3_STAGING_PATH`/`BACKUP_S3_STAGING_MAX_BYTES` env validation matrix (AC-18); (21) malformed filename rejected before the lock is touched (AC-2, D1.9); (22) every restore outcome emits an audit-relevant log entry (AC-20); (23) `packages/db` blast-radius regression pass — full existing test suite for every `getDb()` consumer outside the backup module still passes unmodified after the Task 1.1 refactor (D1.12).
+
+---
+
+### AC-20 — Every restore attempt (accepted or rejected) is audit-logged with the actor's identity (adversarial review, medium)
+
+**Given** a platform operator calls `POST /api/v1/admin/backups/:filename/restore`,
+**When** the request resolves to any outcome — lock acquired and restore proceeds (any of AC-1/AC-6's five sub-outcomes), or rejected at the lock (AC-2/AC-3), or rejected at filename validation (AC-2's malformed-filename example) —
+**Then** an audit-relevant operational log entry is emitted recording the actor identity, the filename requested, and the outcome, consistent with Story 9.1's existing operational-logging-only interim posture for security-sensitive backup/restore actions (full `platform_audit_events` integration is Story 9.4's scope, not this story's — see Story 9.1's D6). This closes the gap where a blocked restore attempt (successful or not) against a secrets-vault's full-database-restore path left no trace of who attempted it.
+
+**Example (positive — logged on rejection):**
+```json
+{ "event": "backup.restore_attempted", "level": "info", "actorId": "...", "filename": "backup_B.vault", "outcome": "rejected", "reason": "restore_in_progress", "timestamp": "..." }
+```
+
+**Example (positive — logged on success):**
+```json
+{ "event": "backup.restore_attempted", "level": "info", "actorId": "...", "filename": "backup_A.vault", "outcome": "restored", "timestamp": "..." }
+```
+
+Integration test: parametrize over an accepted restore, a lock-rejected restore, and a malformed-filename-rejected restore, and assert exactly one `backup.restore_attempted`-shaped log entry per request with the correct `outcome`/`reason`.
 
 ---
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Restore concurrency guard (D1, AC-1 through AC-7)**
-  - [ ] 1.1 Refactor `packages/db/src/index.ts`: hoist the private `postgres()` client to module scope; add exported `reserveConnection()` wrapping `pgClient.reserve()`.
-  - [ ] 1.2 Add `acquireRestoreLock()`/`RestoreLockResult` to `apps/api/src/modules/backup/service.ts` per D1.4's exact shape (session-level `pg_try_advisory_lock` + `backup_runs.status='running'` check + release helper).
-  - [ ] 1.3 Wire `acquireRestoreLock()` into the restore route handler in `apps/api/src/modules/backup/routes.ts`, wrapping the existing `restoreFromBackup()` call in `try/finally`; add the new `409` response schema case(s) (`restore_already_in_progress` / `backup_in_progress`) to the route's `schema.response` union.
-  - [ ] 1.4 Add code comments at `acquireRestoreLock()`'s definition explaining why no reconciliation function is needed (D1.6/AC-7) — prevents a future reviewer from "fixing" a non-gap.
-  - [ ] 1.5 Tests per AC-1 through AC-7.
+- [ ] **Task 1 — Restore concurrency guard (D1, AC-1 through AC-7, AC-20)**
+  - [ ] 1.1 Refactor `packages/db/src/index.ts`: hoist the private `postgres()` client to module scope; add exported `reserveConnection()` wrapping `pgClient.reserve()`. Per D1.12 (adversarial review, medium): after this refactor, run the full test suite for every existing `getDb()` consumer outside the backup module, not just backup-scoped tests, to confirm behavioral parity.
+  - [ ] 1.2 Add `acquireRestoreLock()`/`RestoreLockResult`/`unlockAndRelease()` to `apps/api/src/modules/backup/service.ts` per D1.4's exact shape (session-level `pg_try_advisory_lock` + try/catch-guarded `backup_runs.status='running'` check + shared unlock-with-result-check helper — the try/catch and the unlock-result check are both required, not optional hardening, per D1.4's critical/low fixes). Include the RLS-context test required by D1.11.
+  - [ ] 1.3 In `apps/api/src/modules/backup/routes.ts`: call `parseBackupFilename()` **before** `acquireRestoreLock()` (D1.9 — moves existing CWE-22 guard earlier so a malformed filename never touches the lock). Then wire `acquireRestoreLock()` into the handler, wrapping the existing `restoreFromBackup()` call in `try/finally`; add the new `409` response schema case(s) (`restore_in_progress` / `backup_in_progress` — exact literals, matching D1.4's type, per the naming-consistency fix) to the route's `schema.response` union.
+  - [ ] 1.4 Add code comments at `acquireRestoreLock()`'s definition explaining why no reconciliation function is needed (D1.6/AC-7) — prevents a future reviewer from "fixing" a non-gap. Also comment the documented race-window mislabeling trade-off (D1.10).
+  - [ ] 1.5 Add the `backup.restore_attempted` audit-relevant operational log call (AC-20) covering every outcome: accepted, lock-rejected, and pre-lock filename-rejected.
+  - [ ] 1.6 Tests per AC-1 through AC-7, AC-20, and D1.11's RLS-context assertion.
 - [ ] **Task 2 — `backup.missed` auto-resolve (D2, AC-8 through AC-11)**
   - [ ] 2.1 Add `OperationalEvent.BACKUP_MISSED_RESOLVED = 'backup.missed_resolved'` to `packages/shared/src/constants/operational-event-types.ts`, alongside the existing `BACKUP_*` block.
-  - [ ] 2.2 In `apps/api/src/workers/backup-health-check.ts`'s healthy branch, call `clearThresholdAlertEpisode('backup.missed', null)` (import from `apps/api/src/lib/threshold-alerts.ts`, unmodified) and log the resolution operationally when a row was actually updated.
-  - [ ] 2.3 Tests per AC-8 through AC-11.
-- [ ] **Task 3 — S3 staging, retry, orphan cleanup (D3, AC-12 through AC-18)**
-  - [ ] 3.1 Add `BACKUP_S3_STAGING_PATH` to `apps/api/src/config/env.ts` (same shape as `BACKUP_STORAGE_PATH`); document in `.env.example` with the ephemeral-default caveat; optionally add a `docker-compose.yml` volume-mount example (commented, like other optional backup vars).
-  - [ ] 3.2 In `apps/api/src/modules/backup/storage.ts`, extract the atomic temp-file+`rename()` write helper from `filesystemStorage()` into a small shared function; reuse it for S3-destination local staging.
-  - [ ] 3.3 Modify `s3Storage()`'s `write()` (or the calling code in `executeBackupSnapshot()`, whichever keeps `storage.ts`'s `BackupStorage` interface clean) to: stage locally → retry-wrapped `PutObjectCommand` (bounded, backoff, retryable-vs-not classification) → delete staged file on success / retain on final failure.
-  - [ ] 3.4 Add the orphan-cleanup scan (24h `.staged`-file sweep) to `apps/api/src/workers/backup-health-check.ts`'s hourly run, no-op when `BACKUP_S3_STAGING_PATH`/S3 destination isn't in use.
-  - [ ] 3.5 Tests per AC-12 through AC-18.
-- [ ] **Task 4 — Full integration coverage sweep (AC-19)** — confirm every item in AC-19's explicit list has a corresponding test; re-run the full existing Story 9.1 `apps/api` backup/restore test suite unmodified to confirm zero regressions (AC-17).
+  - [ ] 2.2 In `apps/api/src/workers/backup-health-check.ts`'s healthy branch, call `clearThresholdAlertEpisode('backup.missed', null)` (import from `apps/api/src/lib/threshold-alerts.ts`, unmodified) and log the resolution operationally when a row was actually updated. Wrap this logic in its own `try/catch`, independent of Task 3.4's orphan-cleanup/disk-pressure scan (D2 failure-isolation fix, adversarial review high) — a failure in one must never prevent the other from running.
+  - [ ] 2.3 Tests per AC-8 through AC-11, including the failure-isolation case.
+- [ ] **Task 3 — S3 staging, retry, orphan cleanup (D3, AC-12 through AC-18, AC-16b)**
+  - [ ] 3.1 Add `BACKUP_S3_STAGING_PATH` and `BACKUP_S3_STAGING_MAX_BYTES` to `apps/api/src/config/env.ts` (same shape as `BACKUP_STORAGE_PATH`); document both in `.env.example` with the ephemeral-default caveat and the `.staged`/`.staged.hold` operator-protection convention (D3.11); optionally add a `docker-compose.yml` volume-mount example (commented, like other optional backup vars).
+  - [ ] 3.2 In `apps/api/src/modules/backup/storage.ts`, extract the atomic temp-file+`rename()` write helper from `filesystemStorage()` into a small shared function; reuse it for S3-destination local staging. Ensure the staging directory is created (`mkdir(..., { recursive: true })`) before every write, and that creation failure routes through the existing `backup.failure` alert path (D3.8).
+  - [ ] 3.3 Modify `s3Storage()`'s `write()` (or the calling code in `executeBackupSnapshot()`, whichever keeps `storage.ts`'s `BackupStorage` interface clean) to: stage locally → retry-wrapped `PutObjectCommand` (bounded, backoff, retryable-vs-not classification, **defaulting unrecognized error codes to retryable** per D3.12) → delete staged file on success / retain on final failure.
+  - [ ] 3.4 Add the orphan-cleanup scan (24h `.staged`-file sweep, `unlink` guarded against concurrent-tick `ENOENT` per D3.10) **and** the cumulative staging-disk-usage check (`BACKUP_S3_STAGING_MAX_BYTES`, D3.9/AC-16b) to `apps/api/src/workers/backup-health-check.ts`'s hourly run, each in its own `try/catch` independent of Task 2.2's alert-resolve logic and of each other; no-op when `BACKUP_S3_STAGING_PATH`/S3 destination isn't in use.
+  - [ ] 3.5 Tests per AC-12 through AC-18 and AC-16b.
+- [ ] **Task 4 — Full integration coverage sweep (AC-19)** — confirm every item in AC-19's explicit (now 23-item) list has a corresponding test; re-run the full existing Story 9.1 `apps/api` backup/restore test suite unmodified to confirm zero regressions (AC-17); re-run the full `packages/db`-consumer regression pass (D1.12).
 
 ## Dev Notes
 
@@ -481,6 +581,9 @@ Startup succeeds (no fatal validation error — the default is applied at the st
 - Follow this codebase's established TDD discipline (Story 9.1's Completion Notes: "tests written/confirmed failing for the right reason before implementation, for every new file/function"). Every new exported function (`acquireRestoreLock`, `reserveConnection`, the retry-wrapped S3 upload, the orphan-cleanup scan) needs a dedicated unit test plus the integration coverage in AC-19.
 - Concurrency tests (AC-2, AC-3, AC-4) must use deterministic synchronization (an explicit signal/promise the test controls), not `setTimeout`-based timing races — matches this codebase's existing pattern for testing `acquireBackupSlot`'s own concurrency (Story 9.1's `service.test.ts`).
 - Reuse `apps/api/src/modules/backup/service.test.ts`'s existing `deps: BackupServiceDeps` injection pattern (`dump`/`restore`/`storage` overrides) for the new lock and retry logic — do not spin up a real `pg_dump`/`pg_restore` subprocess or a real S3 endpoint in unit tests; MinIO/testcontainer-based S3 integration tests, if any exist already for Story 9.1's AC-6 happy path, should be extended for the retry/staging cases rather than duplicated.
+- **Blast-radius regression requirement (D1.12, adversarial review medium):** Task 1.1's `packages/db/src/index.ts` refactor is infrastructure shared by every `getDb()` caller in the codebase, not just the backup module. Before this story is considered done, run the full test suite for every package/app that imports `packages/db` (not only `apps/api/src/modules/backup/**`) and confirm zero regressions — call this out explicitly as satisfied in code review, since it's easy for a reviewer scoped to "this is a backup story" to miss that this one task touches shared infrastructure.
+- **Time-threshold cross-reference note (adversarial review, low, documentation only):** this story introduces or touches three independently-configurable time windows that happen to cluster around similar magnitudes but are **not** linked to each other and must not be assumed to be: `BACKUP_MAX_AGE_HOURS` (operator-tunable, AC-8's example uses `25`), the PRD's 24h RPO target (a design target, not a runtime value), and the orphan-cleanup window (AC-16, hardcoded 24h, not currently exposed as an env var). Document this explicitly in `.env.example`'s comments for `BACKUP_MAX_AGE_HOURS` so an operator tuning one doesn't assume it affects the others.
+- **Delivery/sequencing note (adversarial review, low):** this story bundles three independently-valuable, differently-risky fixes (D1 restore-lock, D2 one-line alert auto-resolve, D3 S3 staging/retry/cleanup — by far the largest and most complex of the three). If implementation reveals that D3's complexity is putting the simpler D1/D2 fixes at risk of being held up, Tasks 1/2 and Task 3 are independently shippable in separate PRs — there is no code dependency between them (confirmed: D1 touches `service.ts`/`routes.ts`/`packages/db`, D2 touches only `backup-health-check.ts`'s alert branch, D3 touches `storage.ts`/`env.ts`/`backup-health-check.ts`'s cleanup branch — no shared new symbols between D1/D2 and D3). Prefer shipping as one story per the original bundling rationale (matches Story 8-5's precedent) unless a real blocker emerges.
 
 ### References
 
@@ -518,6 +621,7 @@ claude-sonnet-5 (Claude Code) — story creation
 ### Completion Notes List
 
 - Ultimate context engine analysis completed — story bundles Story 9.1's 3 deferred high-severity code-review findings (restore concurrency, `backup.missed` auto-resolve, AC-6 S3-failure staging/retry/cleanup) into one self-contained hardening story, following the same bundling pattern Story 8-5 used for Story 5.4's deferred findings. All 3 designs verified against the actual shipped code in `apps/api/src/modules/backup/`, `apps/api/src/workers/backup-*.ts`, `apps/api/src/lib/threshold-alerts.ts`, and `packages/db/src/index.ts` in this worktree — not re-derived from epics.md or story prose alone. Key finding during research: Story 9.2 already shipped the exact primitive (`clearThresholdAlertEpisode`) needed for the auto-resolve fix, meaning that finding requires zero new migration — a fact not mentioned anywhere in Story 9.1's own follow-up note, discovered by reading Story 9.2's `threshold-alerts.ts` directly.
+- **Adversarial review findings incorporated (2026-07-07):** `bmad-review-adversarial-general` produced 19 findings (1 critical, 5 high, 8 medium, 5 low) against the initial draft of this story — see `9-6-backup-restore-hardening-adversarial-review.md` for the original review. All 19 were folded directly into this story's design (D1.4/D1.9–D1.12, D2's failure-isolation paragraph, D3.8–D3.14) and ACs (new AC-2/AC-6 edge cases, AC-14/AC-15/AC-16 new edge cases, new AC-16b, new AC-20, expanded AC-19 checklist to 23 items) rather than deferred to a follow-up story, since deferring code-review findings from a story whose entire purpose is resolving deferred findings would repeat the same pattern indefinitely. The critical finding (unguarded post-lock-check exception leaking the restore/backup lock forever) and all 5 high findings received concrete design/code changes, not just documentation. Three low findings (`SignatureDoesNotMatch` classification, retry-backoff jitter, threshold cross-referencing) were resolved as explicit documented trade-offs rather than code changes, with rationale recorded inline at D3.13/D3.14 and in Dev Notes — these are considered accepted, not open.
 
 ### File List
 
