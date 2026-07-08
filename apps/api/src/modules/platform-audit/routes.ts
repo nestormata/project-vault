@@ -11,7 +11,10 @@ import {
   type PublicRouteContext,
   type SecureRouteContext,
 } from '../../lib/secure-route.js'
-import { writePlatformAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
+import {
+  writePlatformAuditEntryOrFailClosed,
+  SameTransactionPlatformAuditWriteError,
+} from '../../lib/audit-or-fail-closed.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import {
   activateMaintenanceMode,
@@ -40,6 +43,15 @@ const OPENAPI_TAGS = ['Platform Audit']
 /** AC-13: matches 8.1's `/org/audit/verify` rate limit exactly on both GET endpoints. */
 const READ_RATE_LIMIT = { max: 20, timeWindowMs: 60_000 }
 
+/** Code review fix: `handleGetVerify`'s self-audit write (AC-11) can itself throw
+ * `SameTransactionPlatformAuditWriteError` for a non-maintenance-mode reason — previously
+ * unhandled here (unlike every other write path in this diff), surfacing as an opaque 500
+ * instead of the same 503 pattern the rest of this module already follows. */
+const PLATFORM_AUDIT_WRITE_FAILED_ERROR = {
+  code: 'platform_audit_write_failed',
+  message: 'Platform audit logging is unavailable',
+} as const
+
 function buildEventsWhere(query: PlatformAuditEventsQuery) {
   const conditions = []
   if (query.operatorId) conditions.push(eq(platformAuditEvents.operatorId, query.operatorId))
@@ -58,7 +70,11 @@ async function listPlatformAuditEvents(query: PlatformAuditEventsQuery) {
   const offset = (query.page - 1) * query.limit
 
   return withPlatformOperatorContext(async (tx) => {
-    const [rows, countRows] = await Promise.all([
+    // Code review fix: previously fetched every matching row's `id` into Node just to compute
+    // `.length` — on a platform-wide, unbounded-growth table (retention up to 3650 days, AC-17)
+    // a broad/empty filter turned every single page request into a full-table scan and transfer.
+    // A real `count(*)` matches the existing precedent (`modules/audit/search.ts`).
+    const [rows, [countRow]] = await Promise.all([
       tx
         .select()
         .from(platformAuditEvents)
@@ -66,8 +82,12 @@ async function listPlatformAuditEvents(query: PlatformAuditEventsQuery) {
         .orderBy(desc(platformAuditEvents.createdAt))
         .limit(query.limit)
         .offset(offset),
-      tx.select({ id: platformAuditEvents.id }).from(platformAuditEvents).where(where),
+      tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(platformAuditEvents)
+        .where(where),
     ])
+    const total = countRow?.count ?? 0
 
     return {
       items: rows.map((row) => ({
@@ -82,8 +102,8 @@ async function listPlatformAuditEvents(query: PlatformAuditEventsQuery) {
       })),
       page: query.page,
       limit: query.limit,
-      total: countRows.length,
-      hasNext: query.page * query.limit < countRows.length,
+      total,
+      hasNext: query.page * query.limit < total,
     }
   })
 }
@@ -133,6 +153,9 @@ async function handleGetVerify(
     })
     return { data: result }
   } catch (error) {
+    if (error instanceof SameTransactionPlatformAuditWriteError) {
+      return reply.status(503).send(PLATFORM_AUDIT_WRITE_FAILED_ERROR)
+    }
     const mapped = verifyRouteErrorResponse(error, {
       code: 'platform_audit_key_unavailable',
       message: 'Platform audit key is unavailable while the vault is sealed',

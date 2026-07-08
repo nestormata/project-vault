@@ -147,7 +147,7 @@ describe.sequential('Story 9.4 D8: platform-audit maintenance mode', () => {
       await getDb().transaction((tx) => activateMaintenanceMode(tx, { reason: 'r', userId }))
 
       const result = await getDb().transaction((tx) => drainPendingEntries(tx, userId))
-      expect(result).toEqual({ drained: 0, skipped: false })
+      expect(result).toEqual({ drained: 0, remaining: 0, skipped: false, wasActive: true })
 
       const [state] = await getDb()
         .select()

@@ -1,4 +1,4 @@
-import { OperationalEvent } from '@project-vault/shared'
+import { OperationalEvent, type OperationalEventType } from '@project-vault/shared'
 import { sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import { env } from '../config/env.js'
@@ -194,6 +194,72 @@ async function checkPlatformAuditStorage(limitGbOverride?: number): Promise<void
  * untouched (better to keep suspending non-critical audit writes than to guess), but the failure
  * is logged at `error` level so it surfaces in operational monitoring.
  */
+/** Shared by both checks below: logs the failure (if a logger was supplied) under its own
+ * operational event and returns the error to its caller rather than throwing, so the caller can
+ * decide when (and whether) to rethrow. */
+function logAuditStorageCheckFailure(
+  logger: WorkerLogger | undefined,
+  event: OperationalEventType,
+  message: string,
+  error: unknown
+): unknown {
+  if (logger) {
+    operationalLog(logger, 'error', event, message, {
+      err: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+    })
+  }
+  return error
+}
+
+/** Extracted purely to keep `runAuditStorageCheck` under the eslint cognitive-complexity
+ * threshold (Story 9.4 code review fix) — returns the caught error (if any) instead of
+ * throwing, so both this and the platform-audit check below always run regardless of the
+ * other's outcome. */
+async function runOrgScopedAuditStorageCheck(
+  boss: BossService,
+  logger: WorkerLogger | undefined,
+  limitGbOverride?: number
+): Promise<unknown> {
+  try {
+    const wasActive = await wasMaintenanceModeActive()
+    const utilization = await computeUtilization(limitGbOverride)
+
+    if (utilization.utilizationPct < 80) {
+      await handleHealthyUtilization(utilization, wasActive, logger)
+    } else {
+      await handleElevatedUtilization(boss, utilization, wasActive, logger)
+    }
+    return undefined
+  } catch (error) {
+    return logAuditStorageCheckFailure(
+      logger,
+      OperationalEvent.AUDIT_STORAGE_CHECK_FAILED,
+      'audit-storage/check job failed',
+      error
+    )
+  }
+}
+
+/** Story 9.4 AC-18/D10: evaluated independently of the audit_log_entries check — extracted
+ * (code review fix) so a platform-audit-storage failure never masks (or is masked by) the
+ * org-scoped result; both checks always run regardless of the other's outcome. */
+async function runPlatformAuditStorageCheck(
+  logger: WorkerLogger | undefined,
+  platformLimitGbOverride?: number
+): Promise<unknown> {
+  try {
+    await checkPlatformAuditStorage(platformLimitGbOverride)
+    return undefined
+  } catch (error) {
+    return logAuditStorageCheckFailure(
+      logger,
+      OperationalEvent.PLATFORM_AUDIT_STORAGE_CHECK_FAILED,
+      'audit-storage/check job failed for platform_audit_events',
+      error
+    )
+  }
+}
+
 export async function runAuditStorageCheck(
   boss: BossService,
   logger?: WorkerLogger,
@@ -204,43 +270,16 @@ export async function runAuditStorageCheck(
    * threshold without also perturbing the other's, matching D10's "never conflated" design. */
   platformLimitGbOverride?: number
 ): Promise<void> {
-  try {
-    const wasActive = await wasMaintenanceModeActive()
-    const utilization = await computeUtilization(limitGbOverride)
+  // Code review fix: this used to be a single function with the org-scoped check's catch block
+  // immediately `throw error`-ing — which exited before the platform-audit block below it ever
+  // ran, silently skipping AC-18's check on any day the org-scoped check happened to fail (a
+  // transient DB blip, etc.), despite the code's own comments claiming the two are independent.
+  // Both checks now always run (each extracted to its own function, returning rather than
+  // throwing its error) before either error is rethrown, so a failure in one never masks the
+  // other.
+  const orgScopedError = await runOrgScopedAuditStorageCheck(boss, logger, limitGbOverride)
+  const platformError = await runPlatformAuditStorageCheck(logger, platformLimitGbOverride)
 
-    if (utilization.utilizationPct < 80) {
-      await handleHealthyUtilization(utilization, wasActive, logger)
-    } else {
-      await handleElevatedUtilization(boss, utilization, wasActive, logger)
-    }
-  } catch (error) {
-    if (logger) {
-      operationalLog(
-        logger,
-        'error',
-        OperationalEvent.AUDIT_STORAGE_CHECK_FAILED,
-        'audit-storage/check job failed',
-        { err: error instanceof Error ? { message: error.message, stack: error.stack } : error }
-      )
-    }
-    throw error
-  }
-
-  // Story 9.4 AC-18/D10: evaluated independently of the audit_log_entries check above — its own
-  // try/catch so a platform-audit-storage failure never masks (or is masked by) the org-scoped
-  // result, while still surfacing at `error` level under its own operational event.
-  try {
-    await checkPlatformAuditStorage(platformLimitGbOverride)
-  } catch (error) {
-    if (logger) {
-      operationalLog(
-        logger,
-        'error',
-        OperationalEvent.PLATFORM_AUDIT_STORAGE_CHECK_FAILED,
-        'audit-storage/check job failed for platform_audit_events',
-        { err: error instanceof Error ? { message: error.message, stack: error.stack } : error }
-      )
-    }
-    throw error
-  }
+  if (orgScopedError) throw orgScopedError
+  if (platformError) throw platformError
 }

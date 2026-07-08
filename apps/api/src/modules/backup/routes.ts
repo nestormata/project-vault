@@ -21,6 +21,7 @@ import { isBackupEnabled } from './config.js'
 import {
   acquireBackupSlot,
   listBackups,
+  releaseBackupSlotOnAuditFailure,
   restoreFromBackup,
   updateBackupVerifiedStatus,
   validateBackupFile,
@@ -162,13 +163,19 @@ async function handleRestoreOutcome(input: {
         'backup restore completed',
         { filename, durationMs: Date.now() - restoreStart }
       )
-      const completedOk = await writeBackupPlatformAudit(reply, {
+      // Code review fix: pg_restore has already irreversibly completed and the vault has
+      // already been resealed (`sealedAfterRestore`) by this point — same reasoning as the
+      // `restore_failed` case above (the reply must stay authoritative regardless of whether
+      // this best-effort audit write itself also succeeds). Previously used the fail-closed
+      // wrapper, which could tell an operator their successful restore "failed" with a 503 even
+      // though it had already completed, with no way for the client to learn it actually
+      // succeeded.
+      await writeBackupPlatformAuditBestEffort({
         operatorId,
         actionType: PlatformAuditAction.BACKUP_RESTORE_COMPLETED,
         payload: { filename },
         request: req,
       })
-      if (!completedOk) return reply
       return {
         data: { restored: true as const, filename, sealedAfterRestore: true as const },
       }
@@ -238,7 +245,15 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         payload: { jobId: slot.runId },
         request: req,
       })
-      if (!auditOk) return reply
+      if (!auditOk) {
+        // Code review fix: `acquireBackupSlot()` already committed its own transaction and
+        // inserted the `status: 'running'` concurrency-marker row above — without releasing it
+        // here, this audit-write failure would otherwise strand that row at `running` forever
+        // (nothing else un-sticks it except a full process restart), permanently 409-ing every
+        // future trigger. See `releaseBackupSlotOnAuditFailure`'s own doc comment.
+        await releaseBackupSlotOnAuditFailure(slot.runId)
+        return reply
+      }
 
       const boss = (fastify as BossFastify).boss
       if (boss) {
@@ -409,13 +424,16 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         { filename: params.filename, valid: outcome.valid }
       )
 
-      const auditOk = await writeBackupPlatformAudit(reply, {
+      // Code review fix: validation (and its `backup_runs.verified` side effect) has already run
+      // by this point — a non-destructive, re-computable action, but still already-taken-effect.
+      // Same best-effort reasoning as the restore outcomes above: don't tell the operator a
+      // completed validation "failed" just because the audit write itself hiccuped.
+      await writeBackupPlatformAuditBestEffort({
         operatorId: secureCtx.auth.userId,
         actionType: PlatformAuditAction.BACKUP_VALIDATED,
         payload: { filename: params.filename, valid: outcome.valid },
         request: req,
       })
-      if (!auditOk) return reply
 
       return {
         data: {

@@ -9,6 +9,7 @@ import {
 } from '../modules/audit/machine-entry.js'
 import {
   writePlatformAuditEntry,
+  redactPlatformAuditPayload,
   type PlatformAuditFields,
 } from '../modules/platform-audit/write-entry.js'
 import {
@@ -149,10 +150,34 @@ export async function writePlatformAuditEntryOrFailClosed(
   }
 
   try {
-    await writePlatformAuditEntry(tx, resolvedFields)
+    // Code review fix: the write attempt runs in its own SAVEPOINT (`tx.transaction()` nested
+    // inside an existing transaction becomes a real SAVEPOINT — same pattern as
+    // `auth/service.ts`'s `allocateOrganizationSlug`). AC-6 explicitly lists a genuine DB
+    // constraint violation (not just a sealed-vault `VaultSealedError`) as a failure this
+    // mechanism must handle — without the savepoint, a real Postgres-level error here would
+    // abort the entire outer `tx`, so the very next statement (`isMaintenanceModeActive(tx)`
+    // below) would itself throw "current transaction is aborted", silently defeating the
+    // maintenance-mode fallback exactly when it's needed most.
+    await tx.transaction((savepointTx) =>
+      writePlatformAuditEntry(savepointTx as Tx, resolvedFields)
+    )
   } catch (error) {
     if (await isMaintenanceModeActive(tx)) {
-      await queuePendingEntry(tx, resolvedFields)
+      // Code review fix: `writePlatformAuditEntry` only redacts the payload internally, right
+      // before its own (now-aborted) INSERT — the caller here still only has the original,
+      // unredacted `resolvedFields.payload`. Without re-redacting before queuing, any write
+      // failure while maintenance mode is active (the common case, not just a forbidden-key
+      // bug) would persist an unredacted payload into `platform_audit_pending_entries`, which
+      // — unlike `platform_audit_events` — has no RLS policy. Redacting here keeps the same
+      // guarantee the happy path already has; in non-production this still throws loud on a
+      // genuine forbidden-key caller bug rather than silently queuing the secret.
+      await queuePendingEntry(tx, {
+        ...resolvedFields,
+        payload: redactPlatformAuditPayload(resolvedFields.payload, {
+          onForbiddenKeyStripped: (message) =>
+            process.stderr.write(`[platform-audit] WARN: ${message}\n`),
+        }),
+      })
       return
     }
     throw new SameTransactionPlatformAuditWriteError(
