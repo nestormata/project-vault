@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { gzipSync, gunzipSync } from 'node:zlib'
 import { and, desc, eq, sql } from 'drizzle-orm'
-import { getDb } from '@project-vault/db'
+import type { FastifyBaseLogger } from 'fastify'
+import { getDb, reserveConnection, type ReservedConnection } from '@project-vault/db'
 import { backupRuns, vaultState } from '@project-vault/db/schema'
 import { runBackupCrypto, BackupDecryptError } from '@project-vault/crypto'
 import { getBackupKey } from '../vault/key-service.js'
@@ -154,6 +155,131 @@ export async function acquireBackupSlot(trigger: {
 
     return { ok: true, runId: inserted.id, filename, metaFilename }
   })
+}
+
+export type RestoreLockResult =
+  | { ok: true; release: () => Promise<void> }
+  | { ok: false; reason: 'restore_in_progress' | 'backup_in_progress' }
+
+type RestoreLockLogger = Pick<FastifyBaseLogger, 'warn'>
+
+export type AcquireRestoreLockDeps = {
+  /** Test-only override for the post-lock "is a backup dump already running" check (D1.4/AC-3) —
+   * production always uses `defaultCheckBackupRunning`, which reads `backup_runs`. Lets tests
+   * exercise D1.4's critical guarded-throw fix (AC-6b) without needing a genuine DB failure. */
+  checkBackupRunning?: () => Promise<boolean>
+}
+
+async function defaultCheckBackupRunning(): Promise<boolean> {
+  const [running] = await getDb()
+    .select({ id: backupRuns.id })
+    .from(backupRuns)
+    .where(eq(backupRuns.status, 'running'))
+    .limit(1)
+  return Boolean(running)
+}
+
+// Adversarial review (low): checks pg_advisory_unlock's own return value rather than assuming
+// success — a `false` result means the lock wasn't actually held at unlock time, which would
+// indicate a lock-lifecycle bug worth surfacing (logged, not thrown — this runs in cleanup paths
+// including `finally` blocks, where throwing would mask the original error).
+//
+// Code review fix (this story, high): the unlock query itself is now wrapped in try/finally so
+// `reserved.release()` ALWAYS runs, even if `pg_advisory_unlock` throws (transient DB error,
+// connection reset). Without this, a failure in the unlock query alone — independent of whether
+// the lock was ever actually released server-side — would skip `.release()` entirely and leak the
+// reserved connection from the shared pool on every one of this function's callers (the success
+// release path, the `backup_in_progress` rejection path, and the guarded-catch rethrow path).
+async function unlockAndRelease(
+  reserved: ReservedConnection,
+  logger?: RestoreLockLogger
+): Promise<void> {
+  try {
+    const [unlockRow] = await reserved<{ unlocked: boolean }[]>`
+      SELECT pg_advisory_unlock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS unlocked
+    `
+    if (!unlockRow?.unlocked) {
+      logger?.warn(
+        { event: 'backup.restore_lock_unlock_unexpected' },
+        'pg_advisory_unlock reported the restore lock was not held'
+      )
+    }
+  } finally {
+    await reserved.release()
+  }
+}
+
+/**
+ * Story 9.6 D1: restore's concurrency guard — a session-scoped `pg_advisory_lock` held on the
+ * SAME advisory-lock key `acquireBackupSlot()` already uses (`hashtext('backup/snapshot')`).
+ * PostgreSQL advisory locks share one keyspace across session- and transaction-level flavors, so
+ * this session-level lock automatically blocks `acquireBackupSlot()`'s own
+ * `pg_try_advisory_xact_lock` call on that same key (AC-4) — zero changes needed there.
+ *
+ * Uses `reserveConnection()` (not a pooled `getDb()` query) because a session-level advisory lock
+ * must persist across multiple statements on one dedicated connection — acquiring it on a
+ * pooled connection and returning that connection to the pool without unlocking would leak the
+ * lock onto whatever unrelated query the pool later hands that connection to.
+ *
+ * No reconciliation function is added for this lock (unlike `reconcileStaleRunningBackups()` for
+ * the `backup_runs` row, D1.6/AC-7): PostgreSQL itself releases a session-level advisory lock the
+ * instant the holding connection closes — including a hard process crash, which drops the TCP
+ * connection and the server-side backend cleans up that session's locks. A `backup_runs` row is a
+ * *persisted* row, not *live connection state* — that distinction is exactly why the row needed
+ * its own reconciliation function and this lock does not. Do not "fix" this by adding one.
+ */
+export async function acquireRestoreLock(
+  logger?: RestoreLockLogger,
+  deps: AcquireRestoreLockDeps = {}
+): Promise<RestoreLockResult> {
+  const checkBackupRunning = deps.checkBackupRunning ?? defaultCheckBackupRunning
+  const reserved = await reserveConnection()
+
+  // Code review fix (this story, critical): this lock-acquisition query itself must be guarded
+  // exactly like the post-lock `checkBackupRunning()` check below — if it throws (transient DB
+  // error, pool exhaustion, query timeout), an unguarded throw here would leak the reserved
+  // connection forever (the lock was never acquired, so there is nothing to unlock — only
+  // `.release()` is needed here, unlike the guarded catch below which must also unlock).
+  let lockRow: { locked: boolean } | undefined
+  try {
+    ;[lockRow] = await reserved<{ locked: boolean }[]>`
+      SELECT pg_try_advisory_lock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS locked
+    `
+  } catch (error) {
+    await reserved.release()
+    throw error
+  }
+
+  if (!lockRow?.locked) {
+    await reserved.release()
+    return { ok: false, reason: 'restore_in_progress' }
+  }
+
+  // AC-3: close the reverse race — a backup dump already mid-flight (its own brief xact-lock
+  // window has already closed by now, since acquireBackupSlot only holds it for the brief
+  // check-then-insert critical section) must still block restore.
+  //
+  // Adversarial review (critical): this check MUST be guarded. If it throws (transient DB error,
+  // pool exhaustion, query timeout), an unguarded throw here would leak both the reserved
+  // connection and the session-level advisory lock forever — and because restore/backup share
+  // this lock key, that leak would deadlock every future restore AND every future backup trigger
+  // until the process restarts. Any failure unlocks + releases before rethrowing, exactly like the
+  // explicit `{ ok: false }` path below.
+  try {
+    const running = await checkBackupRunning()
+    if (running) {
+      await unlockAndRelease(reserved, logger)
+      return { ok: false, reason: 'backup_in_progress' }
+    }
+  } catch (error) {
+    await unlockAndRelease(reserved, logger)
+    throw error
+  }
+
+  return {
+    ok: true,
+    release: () => unlockAndRelease(reserved, logger),
+  }
 }
 
 async function currentVaultKeyVersion(): Promise<number | null> {
