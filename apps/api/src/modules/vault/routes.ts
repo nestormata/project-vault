@@ -6,14 +6,28 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { isRateLimitEnforced } from '../../lib/route-helpers.js'
 import { initVault, unsealVault } from './key-service.js'
-import { VaultInitRequestSchema, VaultUnsealRequestSchema } from './schema.js'
+import {
+  VaultInitRequestSchema,
+  VaultUnsealRequestSchema,
+  VaultInitResponseSchema,
+  VaultUnsealResponseSchema,
+  VaultErrorResponseSchema,
+} from './schema.js'
 import { redactBodyForLog } from '../../plugins/redact-secrets.js'
 
 export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
   fastify.route({
     method: 'POST',
     url: '/api/v1/vault/init',
-    schema: { tags: ['vault'] },
+    schema: {
+      tags: ['vault'],
+      response: {
+        200: VaultInitResponseSchema,
+        400: VaultErrorResponseSchema,
+        403: VaultErrorResponseSchema,
+        409: VaultErrorResponseSchema,
+      },
+    },
     // Exempt from rate limiting: init is protected by the bootstrap-token gate
     // instead (AC-23). The rate-limit plugin's config.rateLimit: false opts a route
     // out when the plugin is registered globally in the encapsulation context.
@@ -71,7 +85,15 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
   fastify.route({
     method: 'POST',
     url: '/api/v1/vault/unseal',
-    schema: { tags: ['vault'] },
+    schema: {
+      tags: ['vault'],
+      response: {
+        200: VaultUnsealResponseSchema,
+        400: VaultErrorResponseSchema,
+        401: VaultErrorResponseSchema,
+        503: VaultErrorResponseSchema,
+      },
+    },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const parsed = VaultUnsealRequestSchema.safeParse(req.body)
       if (!parsed.success) {

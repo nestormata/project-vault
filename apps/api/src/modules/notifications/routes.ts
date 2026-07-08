@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { z } from 'zod/v4'
 import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { withOrgAndUser } from '@project-vault/db'
 import { notificationInbox } from '@project-vault/db/schema'
@@ -7,17 +8,23 @@ import type { OrgRole } from '../../plugins/require-org-role.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { validationError } from '../../lib/route-helpers.js'
 import { buildPaginationMeta } from '../../lib/pagination.js'
+import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import {
   PutPreferencesBodySchema,
   PatchPreferencesBodySchema,
   PutRoutingBodySchema,
   GetInboxQuerySchema,
   InboxEntryIdParamSchema,
+  GetPreferencesResponseSchema,
+  GetRoutingResponseSchema,
+  GetInboxResponseSchema,
 } from './schema.js'
 import { getPreferences, putPreferences, patchPreferences } from './preferences.js'
 import { getOrgRouting, putOrgRouting, SecurityAlertRoutingError } from './routing.js'
 
 const USER_NOTIFICATION_PREFERENCES_URL = '/users/me/notification-preferences'
+
+const InboxEntryNotFoundSchema = z.object({ error: z.literal('not_found') })
 
 const USER_PREFS_SECURITY = {
   allowedRoles: ['owner', 'admin', 'member', 'viewer'] satisfies OrgRole[],
@@ -72,6 +79,14 @@ function inboxEntryRoute(
   secureRoute(fastify, {
     method,
     url,
+    schema: {
+      response: {
+        400: ApiErrorSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: InboxEntryNotFoundSchema,
+      },
+    },
     security: INBOX_ROUTE_SECURITY,
     handler: async (ctx, req, reply) => handler(ctx as SecureRouteContext, req, reply),
   })
@@ -81,6 +96,13 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: USER_NOTIFICATION_PREFERENCES_URL,
+    schema: {
+      response: {
+        200: GetPreferencesResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+      },
+    },
     security: USER_PREFS_SECURITY,
     handler: async (ctx) => {
       const secureCtx = ctx as SecureRouteContext
@@ -92,6 +114,14 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'PUT',
     url: USER_NOTIFICATION_PREFERENCES_URL,
+    schema: {
+      response: {
+        200: GetPreferencesResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: USER_PREFS_SECURITY,
     handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
       const secureCtx = ctx as SecureRouteContext
@@ -110,6 +140,14 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'PATCH',
     url: USER_NOTIFICATION_PREFERENCES_URL,
+    schema: {
+      response: {
+        200: GetPreferencesResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: USER_PREFS_SECURITY,
     handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
       const secureCtx = ctx as SecureRouteContext
@@ -128,6 +166,13 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/org/notification-routing',
+    schema: {
+      response: {
+        200: GetRoutingResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+      },
+    },
     security: {
       allowedRoles: ['owner', 'admin'],
       requireMfa: true,
@@ -143,6 +188,14 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'PUT',
     url: '/org/notification-routing',
+    schema: {
+      response: {
+        200: GetRoutingResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: {
       allowedRoles: ['owner', 'admin'],
       requireMfa: true,
@@ -167,6 +220,14 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/notifications/inbox',
+    schema: {
+      response: {
+        200: GetInboxResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: {
       allowedRoles: ['owner', 'admin', 'member', 'viewer'] satisfies OrgRole[],
       writeAuditEvent: false,
@@ -267,6 +328,13 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/notifications/inbox/read-all',
+    schema: {
+      response: {
+        204: z.null(),
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+      },
+    },
     security: INBOX_ROUTE_SECURITY,
     handler: async (ctx, _req: FastifyRequest, reply: FastifyReply) => {
       const secureCtx = ctx as SecureRouteContext
