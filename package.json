@@ -23,6 +23,7 @@
     "check-vault-action-dist": "tsx scripts/check-vault-action-dist-fresh.ts",
     "check-migration-compatibility": "tsx scripts/migration-compatibility-check.ts",
     "check-story-status-sync": "tsx scripts/check-story-status-sync.ts",
+    "check-psc-tbd-tracking": "tsx scripts/check-psc-tbd-tracking.ts",
     "docker:smoke": "bash scripts/docker-smoke.sh",
     "prepare": "husky"
   },
