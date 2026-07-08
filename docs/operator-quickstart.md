@@ -191,7 +191,7 @@ without a matching default wired into `docker-compose.yml`.
    (the app rejects both placeholder-looking and duplicate secrets at startup).
 3. Set `VAULT_BOOTSTRAP_TOKEN`; never set `VAULT_ALLOW_REMOTE_INIT=true`.
 4. Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` (Postgres not exposed on public interface).
-5. Full runbook: Epic 9 Story 9.5 (planned).
+5. Full runbook: [docs/runbook.md](runbook.md).
 
 ---
 
