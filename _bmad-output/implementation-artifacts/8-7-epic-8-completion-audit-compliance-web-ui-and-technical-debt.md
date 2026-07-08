@@ -1,6 +1,6 @@
 # Story 8.7: Epic 8 Completion — Audit & Compliance Web UI and Technical Debt
 
-Status: review
+Status: done
 
 <!-- Story derived from epic-8-retro-2026-07-07.md's Finding 2 + Action Item A8-1. Closes the
      audit/compliance web UI gap flagged identically, in near-verbatim language, by Stories 8.1,
