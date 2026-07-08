@@ -1,3 +1,4 @@
+import { z } from 'zod/v4'
 import { and, desc, eq, gt, isNull } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
@@ -283,6 +284,16 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
   secureRoute(fastify, {
     method: 'DELETE',
     url: '/:projectId/invitations/:id',
+    schema: {
+      response: {
+        204: z.null(),
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     security: { minimumRole: 'admin', writeAuditEvent: false },
     handler: async (ctx, req, reply) => {
       const params = parseParams(RevokeInvitationParamsSchema, req, reply)
