@@ -3,9 +3,28 @@ import type { FastifyReply } from 'fastify/types/reply.js'
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { z } from 'zod/v4'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { getVaultStatus } from '../modules/vault/key-service.js'
+
+const ReadyResponseSchema = z.object({
+  status: z.literal('ready'),
+  warnings: z.array(z.string()).optional(),
+})
+
+const ReadyUnavailableResponseSchema = z.union([
+  z.object({
+    status: z.literal('unavailable'),
+    reason: z.enum(['uninitialized', 'sealed']),
+    message: z.string(),
+  }),
+  z.object({
+    status: z.literal('unavailable'),
+    reason: z.literal('db'),
+    retryAfter: z.number().int().positive(),
+  }),
+])
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8')) as {
@@ -53,39 +72,49 @@ export async function healthRoutes(
     return reply.send({ status: 'ok', version: pkg.version })
   })
 
-  fastify.get('/ready', async (req: FastifyRequest, reply: FastifyReply) => {
-    const vaultStatus = getVaultStatus()
+  fastify.route({
+    method: 'GET',
+    url: '/ready',
+    schema: {
+      response: {
+        200: ReadyResponseSchema,
+        503: ReadyUnavailableResponseSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const vaultStatus = getVaultStatus()
 
-    if (vaultStatus === 'uninitialized') {
-      return reply.status(503).send({
-        status: 'unavailable',
-        reason: 'uninitialized',
-        message: 'Vault not initialized. POST /api/v1/vault/init to initialize.',
-      })
-    }
+      if (vaultStatus === 'uninitialized') {
+        return reply.status(503).send({
+          status: 'unavailable',
+          reason: 'uninitialized',
+          message: 'Vault not initialized. POST /api/v1/vault/init to initialize.',
+        })
+      }
 
-    if (vaultStatus === 'sealed') {
-      return reply.status(503).send({
-        status: 'unavailable',
-        reason: 'sealed',
-        message: 'Manual unseal required via POST /api/v1/vault/unseal',
-      })
-    }
+      if (vaultStatus === 'sealed') {
+        return reply.status(503).send({
+          status: 'unavailable',
+          reason: 'sealed',
+          message: 'Manual unseal required via POST /api/v1/vault/unseal',
+        })
+      }
 
-    if (!options.dbPool) {
-      return reply.status(503).send({ status: 'unavailable', reason: 'db', retryAfter: 5 })
-    }
+      if (!options.dbPool) {
+        return reply.status(503).send({ status: 'unavailable', reason: 'db', retryAfter: 5 })
+      }
 
-    try {
-      await options.dbPool.query('SELECT 1')
-      const warnings = await resolveReadyWarnings(options.dbPool)
-      return reply.send(warnings.length > 0 ? { status: 'ready', warnings } : { status: 'ready' })
-    } catch (err) {
-      req.log.error(
-        { eventType: OperationalEvent.DB_ERROR, err: serializeError(err) },
-        'Database query failed'
-      )
-      return reply.status(503).send({ status: 'unavailable', reason: 'db', retryAfter: 5 })
-    }
+      try {
+        await options.dbPool.query('SELECT 1')
+        const warnings = await resolveReadyWarnings(options.dbPool)
+        return reply.send(warnings.length > 0 ? { status: 'ready', warnings } : { status: 'ready' })
+      } catch (err) {
+        req.log.error(
+          { eventType: OperationalEvent.DB_ERROR, err: serializeError(err) },
+          'Database query failed'
+        )
+        return reply.status(503).send({ status: 'unavailable', reason: 'db', retryAfter: 5 })
+      }
+    },
   })
 }

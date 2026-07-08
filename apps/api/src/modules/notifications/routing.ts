@@ -18,7 +18,7 @@ export type RoutingOutput = {
 
 export class SecurityAlertRoutingError extends Error {
   readonly statusCode = 422
-  readonly code = 'SECURITY_ALERT_ROUTING_RESTRICTED'
+  readonly code = 'security_alert_routing_restricted'
 
   constructor(alertType: string) {
     super(

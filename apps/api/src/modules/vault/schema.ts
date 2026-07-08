@@ -55,3 +55,9 @@ export const VaultUnsealResponseSchema = z.object({
   keyVersion: z.number().int().positive(),
   kmsType: z.enum(['passphrase', 'envelope', 'file']),
 })
+
+/** Vault init/unseal error shape (`{error, message}`, not the rest of the API's `{code, message}` ApiErrorSchema). */
+export const VaultErrorResponseSchema = z.object({
+  error: z.string(),
+  message: z.string(),
+})

@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import type { FastifyPluginAsync } from 'fastify'
+import { serializerCompiler, validatorCompiler } from '@fastify/type-provider-zod'
 import { describe, expect, it, vi } from 'vitest'
 import { OperationalEvent } from '@project-vault/shared'
 import { createLoggerConfig } from '../lib/logger.js'
@@ -29,6 +30,12 @@ async function createVaultLogTestApp() {
     },
     disableRequestLogging: true,
   })
+  // vaultRoutes now declares real Zod schema.response maps (see apps/api/src/modules/vault/routes.ts) —
+  // without these compilers Fastify falls back to its default ajv-based schema handling, which
+  // chokes on a raw Zod schema object ("data/required must be array"). app.ts registers these globally;
+  // this standalone test harness needs its own copy since it builds a bare Fastify() instance.
+  app.setValidatorCompiler(validatorCompiler)
+  app.setSerializerCompiler(serializerCompiler)
   await app.register(structuredLoggingPlugin)
   await app.register(vaultRoutes as unknown as FastifyPluginAsync)
   return { app, lines }

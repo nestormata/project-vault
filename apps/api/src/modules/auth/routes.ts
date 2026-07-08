@@ -30,6 +30,12 @@ import {
   mfaRecoverResponseSchema,
   mfaVerifyEnrollmentBodySchema,
   mfaVerifyEnrollmentResponseSchema,
+  registerRouteResponseSchema,
+  loginResponseSchema,
+  refreshResponseSchema,
+  sessionsListResponseSchema,
+  revokeOtherSessionsResponseSchema,
+  methodNotAllowedResponseSchema,
 } from './schema.js'
 import { normalizeEmail } from './normalize.js'
 import { clearAuthCookies, setAuthCookies, type CookieReply } from './tokens.js'
@@ -352,6 +358,7 @@ function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
     fastify.route({
       method,
       url: path,
+      schema: { response: { 405: methodNotAllowedResponseSchema } },
       handler: async (_req: FastifyRequest, reply: FastifyReply) =>
         reply.header('Allow', 'POST').status(405).send({
           code: 'method_not_allowed',
@@ -511,6 +518,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/sessions',
+    schema: {
+      response: {
+        200: sessionsListResponseSchema,
+        401: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
     security: { rateLimit: { max: 30 }, writeAuditEvent: false },
     handler: async (ctx, _req, _reply) => {
       const secureCtx = ctx as SecureRouteContext
@@ -527,6 +541,14 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'DELETE',
     url: '/sessions',
+    schema: {
+      response: {
+        200: revokeOtherSessionsResponseSchema,
+        401: ApiErrorSchema,
+        429: ApiErrorSchema,
+        503: ApiErrorSchema,
+      },
+    },
     security: {
       rateLimit: { max: 10 },
       writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
@@ -554,6 +576,14 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'DELETE',
     url: '/sessions/:sessionId',
+    schema: {
+      response: {
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
     security: {
       rateLimit: { max: 10 },
       writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
@@ -581,6 +611,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/logout',
+    schema: {
+      response: {
+        204: z.null(),
+        401: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
     security: {
       rateLimit: { max: 30 },
       writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
@@ -600,11 +637,23 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  fastify.route({
+  withRouteTypeProvider(fastify).route({
     method: 'POST',
     url: '/register',
     bodyLimit: 4096,
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    attachValidation: true,
+    schema: {
+      body: RegisterRequestSchema,
+      response: {
+        201: registerRouteResponseSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       if (!env.AUTH_REGISTRATION_ENABLED) {
         return reply.status(403).send({
@@ -626,10 +675,19 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  fastify.route({
+  withRouteTypeProvider(fastify).route({
     method: 'POST',
     url: '/login',
     bodyLimit: 4096,
+    attachValidation: true,
+    schema: {
+      body: LoginRequestSchema,
+      response: {
+        200: loginResponseSchema,
+        401: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const normalized = normalizeEmailBodyForRoute(req.body, reply)
       if (!normalized.success) return normalized.reply
@@ -879,6 +937,12 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     url: '/refresh',
     bodyLimit: 4096,
     config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+    schema: {
+      response: {
+        200: refreshResponseSchema,
+        401: ApiErrorSchema,
+      },
+    },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       const refreshOpaque = (req as unknown as { cookies?: Record<string, string | undefined> })
         .cookies?.['refresh-token']
