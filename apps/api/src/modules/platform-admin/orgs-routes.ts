@@ -32,7 +32,11 @@ async function handleCreateOrg(
   const { secureCtx, data } = begun
 
   try {
-    const result = await createOrg(data, secureCtx.auth.orgId)
+    const result = await createOrg(data, {
+      operatorInitiatorOrgId: secureCtx.auth.orgId,
+      operatorUserId: secureCtx.auth.userId,
+      request: req,
+    })
     operationalLog(
       req.log,
       'info',

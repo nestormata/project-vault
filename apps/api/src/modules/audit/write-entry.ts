@@ -3,7 +3,9 @@ import { createHmac } from 'node:crypto'
 type JsonLike =
   string | number | boolean | null | JsonLike[] | { [key: string]: JsonLike | undefined }
 
-function sortKeys(value: unknown): JsonLike {
+/** Canonical key-sorting for HMAC input — exported so Story 9.4's platform-audit equivalent
+ * (`modules/platform-audit/write-entry.ts`) can reuse it verbatim rather than duplicating it. */
+export function sortKeys(value: unknown): JsonLike {
   if (value === null || typeof value !== 'object') {
     return value as JsonLike
   }

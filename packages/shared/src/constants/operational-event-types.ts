@@ -161,6 +161,10 @@ export const OperationalEvent = {
   MIGRATION_DESTRUCTIVE_REFUSED: 'migration.destructive_refused',
   MIGRATION_DESTRUCTIVE_ALLOWED: 'migration.destructive_allowed',
   MIGRATION_APPLIED: 'migration.applied',
+
+  // Story 9.4 AC-17/AC-18: platform operator audit log retention pruning and storage monitoring.
+  PLATFORM_AUDIT_RETENTION_PRUNE_SUMMARY: 'platform_audit.retention_prune.summary',
+  PLATFORM_AUDIT_STORAGE_CHECK_FAILED: 'platform_audit_storage.check_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

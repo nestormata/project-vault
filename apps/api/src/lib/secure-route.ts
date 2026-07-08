@@ -95,7 +95,9 @@ export class SameTransactionAuditWriteError extends Error {
   }
 }
 
-const FORBIDDEN_AUDIT_KEYS = new Set([
+// Exported so Story 9.4's platform-audit write path (modules/platform-audit/write-entry.ts) can
+// reuse the exact same forbidden-key set/matching logic rather than duplicating it.
+export const FORBIDDEN_AUDIT_KEYS = new Set([
   'password',
   'passphrase',
   'masterKeyPath',
@@ -152,7 +154,9 @@ function normalizeRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
-function isForbiddenAuditKey(key: string): boolean {
+// Exported (Story 9.4) so the platform-audit write path can reuse the exact same forbidden-key
+// matching/sanitization logic rather than duplicating it.
+export function isForbiddenAuditKey(key: string): boolean {
   const normalized = key.toLowerCase()
   return [...FORBIDDEN_AUDIT_KEYS].some((forbidden) => normalized.includes(forbidden.toLowerCase()))
 }
@@ -165,7 +169,7 @@ function sanitizeAuditValue(value: unknown, seen: WeakSet<object>): unknown {
   return sanitizeAuditPayload(value as Record<string, unknown>, seen)
 }
 
-function sanitizeAuditPayload(
+export function sanitizeAuditPayload(
   value: Record<string, unknown>,
   seen = new WeakSet<object>()
 ): Record<string, unknown> {

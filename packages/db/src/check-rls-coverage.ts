@@ -27,6 +27,15 @@ export const EXCLUDED_TABLES = new Set([
   // Story 9.2 D3: platform-level singleton system_settings row — no org_id column (instance-wide
   // configuration, not per-org), same precedent as vault_state/admin_alerts.
   'system_settings',
+  // Story 9.4 D4: platform_audit_events has no org_id column (it is platform-scoped, not
+  // tenant-scoped) so it is invisible to this scan's org_id-column heuristic regardless — RLS is
+  // still enabled on it (app.platform_operator_verified session-var policy), documented here for
+  // consistency with every other platform-level table in this set. The two support tables
+  // (maintenance-state, pending-entries) are also platform-level singletons/staging tables with
+  // no org_id column.
+  'platform_audit_events',
+  'platform_audit_maintenance_state',
+  'platform_audit_pending_entries',
 ])
 
 export class RlsCoverageGapError extends Error {

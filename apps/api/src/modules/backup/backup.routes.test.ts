@@ -229,9 +229,90 @@ describe.sequential('Story 9.1: backup HTTP routes', () => {
     )
     await sealedApp.close()
 
-    // Re-unseal + reopen the shared `app` for any subsequent test in this file (none currently
-    // follow, but this keeps the suite robust to reordering).
+    // Re-unseal + reopen the shared `app` for any subsequent test in this file.
     await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
     app = await createApp({ logger: false, vaultGuardEnabled: true })
+  })
+
+  // Story 9.4 AC-7: platform_audit_events retrofit.
+  describe('Story 9.4 AC-7: platform_audit_events retrofit', () => {
+    it('backup.triggered row is written on a successful POST /backup/trigger', async () => {
+      const { withPlatformOperatorContext } = await import('@project-vault/db')
+      const { platformAuditEvents } = await import('@project-vault/db/schema')
+
+      const res = await app.inject({
+        method: 'POST',
+        url: TRIGGER_URL,
+        headers: { cookie: cookieHeader(operatorCookies) },
+      })
+      expect(res.statusCode).toBe(202)
+      const body = res.json<{ data: { jobId: string } }>()
+
+      const rows = await withPlatformOperatorContext((tx) =>
+        tx
+          .select()
+          .from(platformAuditEvents)
+          .where(eq(platformAuditEvents.actionType, 'backup.triggered'))
+      )
+      const row = rows.find((r) => (r.payload as { jobId?: string })?.jobId === body.data.jobId)
+      expect(row).toBeDefined()
+
+      await getDb()
+        .update(backupRuns)
+        .set({ status: 'failed' })
+        .where(eq(backupRuns.id, body.data.jobId))
+    })
+
+    it('backup.restore_initiated is written even when the target filename does not exist', async () => {
+      const { withPlatformOperatorContext } = await import('@project-vault/db')
+      const { platformAuditEvents } = await import('@project-vault/db/schema')
+      const uniqueReason = `retrofit-reason-${randomUUID()}`
+      const filename = `nonexistent-${randomUUID()}.vault`
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/admin/backups/${filename}/restore`,
+        headers: { cookie: cookieHeader(operatorCookies) },
+        payload: { confirmRestore: true, reason: uniqueReason },
+      })
+      expect(res.statusCode).toBe(404)
+
+      const rows = await withPlatformOperatorContext((tx) =>
+        tx
+          .select()
+          .from(platformAuditEvents)
+          .where(eq(platformAuditEvents.actionType, 'backup.restore_initiated'))
+      )
+      expect(
+        rows.some(
+          (r) =>
+            (r.payload as { reason?: string; filename?: string })?.reason === uniqueReason &&
+            (r.payload as { filename?: string })?.filename === filename
+        )
+      ).toBe(true)
+    })
+
+    it('backup.validated row is written on a successful POST /backups/:filename/validate', async () => {
+      const { withPlatformOperatorContext } = await import('@project-vault/db')
+      const { platformAuditEvents } = await import('@project-vault/db/schema')
+      const filename = await seedSucceededBackup()
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/admin/backups/${filename}/validate`,
+        headers: { cookie: cookieHeader(operatorCookies) },
+      })
+      expect(res.statusCode).toBe(200)
+
+      const rows = await withPlatformOperatorContext((tx) =>
+        tx
+          .select()
+          .from(platformAuditEvents)
+          .where(eq(platformAuditEvents.actionType, 'backup.validated'))
+      )
+      expect(rows.some((r) => (r.payload as { filename?: string })?.filename === filename)).toBe(
+        true
+      )
+    })
   })
 })

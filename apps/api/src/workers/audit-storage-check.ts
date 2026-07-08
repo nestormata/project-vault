@@ -1,4 +1,4 @@
-import { OperationalEvent } from '@project-vault/shared'
+import { OperationalEvent, type OperationalEventType } from '@project-vault/shared'
 import { sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import { env } from '../config/env.js'
@@ -143,6 +143,40 @@ async function handleElevatedUtilization(
   }
 }
 
+const PLATFORM_WARNING_ALERT_TYPE = 'platform_audit_storage.warning'
+const PLATFORM_CRITICAL_ALERT_TYPE = 'platform_audit_storage.critical'
+
+/** Story 9.4 AC-18/D10: `platform_audit_events`'s own, INDEPENDENT storage-pressure check —
+ * evaluated and alerted separately from `audit_log_entries` above (never conflated into one
+ * alert row, AC-18 edge case); no per-org top-contributors breakdown (this table has no org_id)
+ * and no fan-out delivery (a platform-operator concern, not an org-facing notification). */
+async function checkPlatformAuditStorage(limitGbOverride?: number): Promise<void> {
+  const [sizeRow] = await getAdminDb().execute<{ size: string }>(
+    sql`SELECT pg_total_relation_size('platform_audit_events')::text AS size`
+  )
+  const sizeBytes = Number(sizeRow?.size ?? 0)
+  const limitBytes = (limitGbOverride ?? env.PLATFORM_AUDIT_STORAGE_LIMIT_GB) * 1024 ** 3
+  const utilizationPct = limitBytes > 0 ? (sizeBytes / limitBytes) * 100 : 0
+
+  if (utilizationPct < 80) {
+    await clearThresholdAlertEpisode(PLATFORM_WARNING_ALERT_TYPE, null)
+    await clearThresholdAlertEpisode(PLATFORM_CRITICAL_ALERT_TYPE, null)
+    return
+  }
+
+  const critical = utilizationPct >= 95
+  const alertType = critical ? PLATFORM_CRITICAL_ALERT_TYPE : PLATFORM_WARNING_ALERT_TYPE
+  if (!critical) await clearThresholdAlertEpisode(PLATFORM_CRITICAL_ALERT_TYPE, null)
+
+  await upsertThresholdAlert({
+    alertType,
+    thresholdPct: critical ? 95 : 80,
+    severity: critical ? 'critical' : 'warning',
+    payload: { sizeBytes, limitBytes, utilizationPct },
+    scopeKey: null,
+  })
+}
+
 /**
  * Story 9.2 D5/AC-15 through AC-17: daily `audit-storage/check` job.
  *
@@ -160,32 +194,92 @@ async function handleElevatedUtilization(
  * untouched (better to keep suspending non-critical audit writes than to guess), but the failure
  * is logged at `error` level so it surfaces in operational monitoring.
  */
-export async function runAuditStorageCheck(
+/** Shared by both checks below: logs the failure (if a logger was supplied) under its own
+ * operational event and returns the error to its caller rather than throwing, so the caller can
+ * decide when (and whether) to rethrow. */
+function logAuditStorageCheckFailure(
+  logger: WorkerLogger | undefined,
+  event: OperationalEventType,
+  message: string,
+  error: unknown
+): unknown {
+  if (logger) {
+    operationalLog(logger, 'error', event, message, {
+      err: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+    })
+  }
+  return error
+}
+
+/** Extracted purely to keep `runAuditStorageCheck` under the eslint cognitive-complexity
+ * threshold (Story 9.4 code review fix) — returns the caught error (if any) instead of
+ * throwing, so both this and the platform-audit check below always run regardless of the
+ * other's outcome. */
+async function runOrgScopedAuditStorageCheck(
   boss: BossService,
-  logger?: WorkerLogger,
-  /** Test-only override — see computeUtilization()'s doc comment. */
+  logger: WorkerLogger | undefined,
   limitGbOverride?: number
-): Promise<void> {
+): Promise<unknown> {
   try {
     const wasActive = await wasMaintenanceModeActive()
     const utilization = await computeUtilization(limitGbOverride)
 
     if (utilization.utilizationPct < 80) {
       await handleHealthyUtilization(utilization, wasActive, logger)
-      return
+    } else {
+      await handleElevatedUtilization(boss, utilization, wasActive, logger)
     }
-
-    await handleElevatedUtilization(boss, utilization, wasActive, logger)
+    return undefined
   } catch (error) {
-    if (logger) {
-      operationalLog(
-        logger,
-        'error',
-        OperationalEvent.AUDIT_STORAGE_CHECK_FAILED,
-        'audit-storage/check job failed',
-        { err: error instanceof Error ? { message: error.message, stack: error.stack } : error }
-      )
-    }
-    throw error
+    return logAuditStorageCheckFailure(
+      logger,
+      OperationalEvent.AUDIT_STORAGE_CHECK_FAILED,
+      'audit-storage/check job failed',
+      error
+    )
   }
+}
+
+/** Story 9.4 AC-18/D10: evaluated independently of the audit_log_entries check — extracted
+ * (code review fix) so a platform-audit-storage failure never masks (or is masked by) the
+ * org-scoped result; both checks always run regardless of the other's outcome. */
+async function runPlatformAuditStorageCheck(
+  logger: WorkerLogger | undefined,
+  platformLimitGbOverride?: number
+): Promise<unknown> {
+  try {
+    await checkPlatformAuditStorage(platformLimitGbOverride)
+    return undefined
+  } catch (error) {
+    return logAuditStorageCheckFailure(
+      logger,
+      OperationalEvent.PLATFORM_AUDIT_STORAGE_CHECK_FAILED,
+      'audit-storage/check job failed for platform_audit_events',
+      error
+    )
+  }
+}
+
+export async function runAuditStorageCheck(
+  boss: BossService,
+  logger?: WorkerLogger,
+  /** Test-only override — see computeUtilization()'s doc comment. */
+  limitGbOverride?: number,
+  /** Test-only override for the independent platform_audit_events check (Story 9.4 AC-18) — kept
+   * as its own parameter (not reusing limitGbOverride) so a test can exercise one table's
+   * threshold without also perturbing the other's, matching D10's "never conflated" design. */
+  platformLimitGbOverride?: number
+): Promise<void> {
+  // Code review fix: this used to be a single function with the org-scoped check's catch block
+  // immediately `throw error`-ing — which exited before the platform-audit block below it ever
+  // ran, silently skipping AC-18's check on any day the org-scoped check happened to fail (a
+  // transient DB blip, etc.), despite the code's own comments claiming the two are independent.
+  // Both checks now always run (each extracted to its own function, returning rather than
+  // throwing its error) before either error is rethrown, so a failure in one never masks the
+  // other.
+  const orgScopedError = await runOrgScopedAuditStorageCheck(boss, logger, limitGbOverride)
+  const platformError = await runPlatformAuditStorageCheck(logger, platformLimitGbOverride)
+
+  if (orgScopedError) throw orgScopedError
+  if (platformError) throw platformError
 }

@@ -28,6 +28,11 @@ export const vaultState = pgTable(
     // Audit log encryption key lifecycle — independent rotation from primary key
     auditKeyVersion: integer('audit_key_version').notNull().default(1),
 
+    // Story 9.4 D3: platform audit log's OWN key rotation lifecycle — independent from
+    // audit_key_version (the org-scoped audit key). Must never be assumed to move together with
+    // audit_key_version or key_version (AC-5 edge case).
+    platformAuditKeyVersion: integer('platform_audit_key_version').notNull().default(1),
+
     // Key custody model — see Product Decisions section
     // 'passphrase' = Argon2id KDF (recommended for small teams)
     // 'envelope'   = split key: env half + file half (recommended for production)

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import type { FastifyRequest } from 'fastify'
 import { count, desc, eq, sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
 import {
@@ -13,11 +14,13 @@ import {
   type SystemSettings,
 } from '@project-vault/db/schema'
 import { encrypt, withSecret, type EncryptedValue } from '@project-vault/crypto'
+import { PlatformAuditAction } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { getAdminDb } from '../../lib/db.js'
 import { getPrimaryKey } from '../vault/key-service.js'
 import { resolveBackupDestination } from '../backup/config.js'
 import { AppError } from '../../lib/errors.js'
+import { writePlatformAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { allocateOrganizationSlug, isUniqueViolation, slugify } from '../auth/service.js'
 import { normalizeEmail } from '../auth/normalize.js'
 import { hashUserPassword } from '../auth/password.js'
@@ -309,12 +312,21 @@ function mergedSettingsValues(
  * read-modify-written inside a single transaction, serialized by an advisory lock keyed on the
  * (constant) row identity so two concurrent PUTs with non-overlapping field sets never clobber
  * each other (AC-22's "lost update" regression guard).
+ *
+ * Story 9.4 AC-8: also writes a `platform_audit_events` row (`settings.updated`) in this SAME
+ * transaction — but only when at least one field was actually provided (AC-8 edge case: an empty
+ * `PUT {}` no-op must not write a row with an empty `fieldsChanged: []`). `fieldsChanged` reuses
+ * the exact same `Object.keys(update)` computation the route's operational log already uses
+ * (top-level section names only, e.g. `'smtp'` not `'smtp.host'` — matches the shipped 9.2
+ * precedent, not the illustrative dotted-path examples in this story's own AC text).
  */
 export async function upsertSystemSettings(
   update: SystemSettingsUpdate,
-  updatedByUserId: string
+  updatedByUserId: string,
+  request?: FastifyRequest
 ): Promise<UpsertSettingsResult> {
   const smtpChanged = smtpFieldsChanged(update)
+  const fieldsChanged = Object.keys(update)
 
   const effective = await getDb().transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${SETTINGS_LOCK_KEY}))`)
@@ -326,6 +338,15 @@ export async function upsertSystemSettings(
       .insert(systemSettings)
       .values(values)
       .onConflictDoUpdate({ target: systemSettings.id, set: values })
+
+    if (fieldsChanged.length > 0) {
+      await writePlatformAuditEntryOrFailClosed(tx, {
+        operatorId: updatedByUserId,
+        actionType: PlatformAuditAction.SETTINGS_UPDATED,
+        payload: { fieldsChanged },
+        ...(request ? { request } : {}),
+      })
+    }
 
     return computeEffectiveSettings(await loadSystemSettingsRow(tx))
   })
@@ -427,17 +448,47 @@ async function isUserDeactivatedEverywhere(userId: string): Promise<boolean> {
   return rows.every((r) => r.status === 'deactivated')
 }
 
+export type CreateOrgOptions = {
+  /** The operator's own org id — only used for the invited-owner recovery link's audit context. */
+  operatorInitiatorOrgId: string | null
+  /** Story 9.4 AC-8: the platform operator performing this action — recorded as
+   * `platform_audit_events.operator_id`. */
+  operatorUserId: string
+  request?: FastifyRequest
+}
+
 /**
  * D7/AC-8/AC-9/AC-10/AC-23: creates a new organization, provisioning its owner via one of two
  * paths (existing user vs. brand-new invited user). Retries once as "existing user found" if a
  * concurrent request wins the users.email unique-violation race (AC-23) — the org this call is
  * provisioning still succeeds, with the now-existing user as its owner.
+ *
+ * Story 9.4 AC-8: writes a `platform_audit_events` row (`org.created`) in this SAME transaction —
+ * a single-transaction operation, unlike backup/restore (AC-7), so the retrofit is a direct
+ * addition right before each of this function's three return points, not a separate follow-up
+ * write.
  */
 export async function createOrg(
   input: CreateOrgRequest,
-  operatorInitiatorOrgId: string | null
+  options: CreateOrgOptions
 ): Promise<CreateOrgResponse> {
   const email = normalizeEmail(input.ownerEmail)
+  const { operatorInitiatorOrgId, operatorUserId, request } = options
+
+  async function finalizeOrgCreation(
+    tx: Tx,
+    result: CreateOrgResponse
+  ): Promise<CreateOrgResponse> {
+    await writePlatformAuditEntryOrFailClosed(tx, {
+      operatorId: operatorUserId,
+      actionType: PlatformAuditAction.ORG_CREATED,
+      targetOrgId: result.id,
+      targetUserId: result.ownerUserId,
+      payload: { name: result.name, ownerAccountAction: result.ownerAccountAction },
+      ...(request ? { request } : {}),
+    })
+    return result
+  }
 
   return getDb().transaction(async (tx) => {
     // Code review fix: serializes the count-check-then-insert sequence so two concurrent
@@ -467,13 +518,13 @@ export async function createOrg(
         throw new OwnerAccountDeactivatedError()
       }
       await insertOwnerMembership(tx, allocated.id, existingUser.id)
-      return {
+      return finalizeOrgCreation(tx, {
         id: allocated.id,
         name: input.name,
         slug: allocated.slug,
         ownerAccountAction: 'existing_user_added' as const,
         ownerUserId: existingUser.id,
-      }
+      })
     }
 
     try {
@@ -502,13 +553,13 @@ export async function createOrg(
         initiatorOrgId: operatorInitiatorOrgId,
       })
 
-      return {
+      return finalizeOrgCreation(tx, {
         id: allocated.id,
         name: input.name,
         slug: allocated.slug,
         ownerAccountAction: 'invited_new_user' as const,
         ownerUserId: newUser.id,
-      }
+      })
     } catch (error) {
       // AC-23: lost the users.email unique-violation race to a concurrent request — the other
       // transaction's user now exists; re-query and proceed as "existing user found" rather than
@@ -521,13 +572,13 @@ export async function createOrg(
         .limit(1)
       if (!racedUser) throw error
       await insertOwnerMembership(tx, allocated.id, racedUser.id)
-      return {
+      return finalizeOrgCreation(tx, {
         id: allocated.id,
         name: input.name,
         slug: allocated.slug,
         ownerAccountAction: 'existing_user_added' as const,
         ownerUserId: racedUser.id,
-      }
+      })
     }
   })
 }

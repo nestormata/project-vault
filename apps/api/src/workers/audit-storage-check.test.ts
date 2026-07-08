@@ -8,6 +8,9 @@ process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 // Tiny limit (bytes, expressed in GB) so the real (already non-empty) audit_log_entries table
 // comfortably exceeds 95% utilization without needing to seed millions of rows.
 process.env['AUDIT_LOG_STORAGE_LIMIT_GB'] = '0.000001'
+// Story 9.4 AC-18: same "tiny limit forces >=95% against the already-non-empty table" trick,
+// independent threshold for the new platform_audit_events table.
+process.env['PLATFORM_AUDIT_STORAGE_LIMIT_GB'] = '0.000001'
 
 const { initVault } = await import('../modules/vault/key-service.js')
 const { resetVaultForTest } = await import('../__tests__/helpers/vault-test-cleanup.js')
@@ -117,3 +120,63 @@ describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worke
     })
   })
 })
+
+const PLATFORM_CRITICAL_ALERT_TYPE = 'platform_audit_storage.critical'
+const PLATFORM_WARNING_ALERT_TYPE = 'platform_audit_storage.warning'
+
+async function clearPlatformAuditStorageAlerts(): Promise<void> {
+  await getDb().delete(adminAlerts).where(eq(adminAlerts.alertType, PLATFORM_CRITICAL_ALERT_TYPE))
+  await getDb().delete(adminAlerts).where(eq(adminAlerts.alertType, PLATFORM_WARNING_ALERT_TYPE))
+}
+
+describe.sequential(
+  'Story 9.4 AC-18/D10: audit-storage-check extension for platform_audit_events',
+  () => {
+    // Bug found via full-suite regression run: these tests call runAuditStorageCheck() without a
+    // limitGbOverride, so the ORG-SCOPED check also runs against this file's persistently-tiny
+    // AUDIT_LOG_STORAGE_LIMIT_GB, creating a fresh audit_storage.critical row as a side effect —
+    // clearing only the platform-scoped alert types here left that row active for the rest of the
+    // suite (the exact "leaves maintenance mode on for every later file" risk the comment above
+    // this file's original afterAll already warns about).
+    afterAll(async () => {
+      await clearAuditStorageAlerts()
+      await clearPlatformAuditStorageAlerts()
+    })
+
+    it('D10 regression guard: the job queries platform_audit_events too, independently of audit_log_entries', () => {
+      const source = readFileSync(new URL('./audit-storage-check.ts', import.meta.url), 'utf8')
+      expect(source).toContain("pg_total_relation_size('platform_audit_events')")
+    })
+
+    it('AC-18: raises a distinct platform_audit_storage.critical alert at >=95% utilization', async () => {
+      await clearAuditStorageAlerts()
+      await clearPlatformAuditStorageAlerts()
+      const boss = fakeBoss()
+      await runAuditStorageCheck(boss, undefined)
+
+      const [critical] = await getDb()
+        .select()
+        .from(adminAlerts)
+        .where(eq(adminAlerts.alertType, PLATFORM_CRITICAL_ALERT_TYPE))
+      expect(critical?.status).toBe('active')
+      expect(critical?.severity).toBe('critical')
+    })
+
+    it('AC-18 edge: both logs are evaluated and alerted independently — never conflated into one alert row', async () => {
+      await clearAuditStorageAlerts()
+      await clearPlatformAuditStorageAlerts()
+      await runAuditStorageCheck(fakeBoss(), undefined)
+
+      const [orgAlert] = await getDb()
+        .select()
+        .from(adminAlerts)
+        .where(eq(adminAlerts.alertType, CRITICAL_ALERT_TYPE))
+      const [platformAlert] = await getDb()
+        .select()
+        .from(adminAlerts)
+        .where(eq(adminAlerts.alertType, PLATFORM_CRITICAL_ALERT_TYPE))
+      expect(orgAlert?.status).toBe('active')
+      expect(platformAlert?.status).toBe('active')
+    })
+  }
+)

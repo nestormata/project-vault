@@ -288,6 +288,20 @@
       "when": 1783651200000,
       "tag": "0040_system_settings_and_key_rotation",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783737600000,
+      "tag": "0041_platform_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1783824000000,
+      "tag": "0042_platform_audit_retention_purge",
+      "breakpoints": true
     }
   ]
 }

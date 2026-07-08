@@ -34,6 +34,10 @@ let _auditKey: Buffer | null = null // separate from _activeKey in packages/cryp
 // Story 9.1 D5: derived at the same unseal/init moment as _auditKey — the raw IKM is zeroed
 // immediately after, so a backup key cannot be derived later from anything but this copy.
 let _backupKey: Buffer | null = null
+// Story 9.4 D3: separate signing key for platform_audit_events — derived alongside
+// _auditKey/_backupKey at the same unseal/init moment, own independent rotation lifecycle
+// (vault_state.platform_audit_key_version).
+let _platformAuditKey: Buffer | null = null
 let _onUnsealed: (() => Promise<void>) | null = null
 
 const SENTINEL_PLAINTEXT = 'project-vault-sentinel-v1'
@@ -290,6 +294,59 @@ async function deriveIkmForUnseal(
   return readKeyFile(body.masterKeyPath)
 }
 
+/** Shared by `initVault`/`unsealVault`: derives all four keys from the same IKM and zeroes the
+ * IKM immediately after — identical in both callers, only the IKM's own derivation differs
+ * (passphrase/envelope/file mode vs. re-deriving from stored KDF params). */
+function deriveAllKeysFromIkm(ikm: Buffer): {
+  primaryKey: Buffer
+  auditKey: Buffer
+  backupKey: Buffer
+  platformAuditKey: Buffer
+} {
+  const primaryKey = deriveKey(ikm, HKDF_INFO.PRIMARY)
+  const auditKey = deriveKey(ikm, HKDF_INFO.AUDIT_LOG)
+  const backupKey = deriveKey(ikm, HKDF_INFO.BACKUP)
+  const platformAuditKey = deriveKey(ikm, HKDF_INFO.PLATFORM_AUDIT)
+  ikm.fill(0)
+  return { primaryKey, auditKey, backupKey, platformAuditKey }
+}
+
+/** Shared by every init/unseal failure path that needs to discard freshly-derived secondary keys
+ * before throwing — `primaryKey` is handled separately at each call site since not every failure
+ * path has claimed it yet (Story 9.1/9.4: audit/backup/platform-audit keys, always derived and
+ * discarded together). */
+function zeroSecondaryKeys(auditKey: Buffer, backupKey: Buffer, platformAuditKey: Buffer): void {
+  auditKey.fill(0)
+  backupKey.fill(0)
+  platformAuditKey.fill(0)
+}
+
+/** Shared by `initVault`/`unsealVault`'s final step: commits the freshly-derived keys as the new
+ * module-level state, zeroing whatever was cached before (a no-op on first init, real cleanup on
+ * every subsequent unseal), then flips `_status` to `'unsealed'` and fires the post-unseal hook. */
+async function commitUnsealedKeys(keys: {
+  primaryKey: Buffer
+  auditKey: Buffer
+  backupKey: Buffer
+  platformAuditKey: Buffer
+}): Promise<void> {
+  setVaultKey(keys.primaryKey)
+  setPrimaryKeyCopy(keys.primaryKey)
+  keys.primaryKey.fill(0)
+
+  if (_auditKey) _auditKey.fill(0)
+  _auditKey = keys.auditKey
+
+  if (_backupKey) _backupKey.fill(0)
+  _backupKey = keys.backupKey
+
+  if (_platformAuditKey) _platformAuditKey.fill(0)
+  _platformAuditKey = keys.platformAuditKey
+
+  _status = 'unsealed'
+  await notifyUnsealed()
+}
+
 export async function initVault(
   body: VaultInitRequest,
   headers: Record<string, string | string[] | undefined>
@@ -298,11 +355,7 @@ export async function initVault(
 
   const db = getDb()
   const { ikm, kdfParams } = await deriveIkmForInit(body)
-
-  const primaryKey = deriveKey(ikm, HKDF_INFO.PRIMARY)
-  const auditKey = deriveKey(ikm, HKDF_INFO.AUDIT_LOG)
-  const backupKey = deriveKey(ikm, HKDF_INFO.BACKUP)
-  ikm.fill(0)
+  const { primaryKey, auditKey, backupKey, platformAuditKey } = deriveAllKeysFromIkm(ikm)
 
   const sentinel = Buffer.from(SENTINEL_PLAINTEXT, 'utf8')
   const encryptedSentinel: EncryptedValue = await encrypt(sentinel, primaryKey)
@@ -324,8 +377,7 @@ export async function initVault(
 
   if (inserted.length === 0) {
     primaryKey.fill(0)
-    auditKey.fill(0)
-    backupKey.fill(0)
+    zeroSecondaryKeys(auditKey, backupKey, platformAuditKey)
     throw new AppError(
       'ALREADY_INITIALIZED',
       'Vault is already initialized. Use POST /api/v1/vault/unseal to unseal.',
@@ -333,18 +385,7 @@ export async function initVault(
     )
   }
 
-  setVaultKey(primaryKey)
-  setPrimaryKeyCopy(primaryKey)
-  primaryKey.fill(0)
-
-  if (_auditKey) _auditKey.fill(0)
-  _auditKey = auditKey
-
-  if (_backupKey) _backupKey.fill(0)
-  _backupKey = backupKey
-
-  _status = 'unsealed'
-  await notifyUnsealed()
+  await commitUnsealedKeys({ primaryKey, auditKey, backupKey, platformAuditKey })
   return { initialized: true, keyVersion: 1, kmsType: body.kmsType }
 }
 
@@ -368,19 +409,14 @@ export async function unsealVault(
   const { sentinel: storedSentinel, kdfParams } = parseVaultStateRow(state)
 
   const ikm = await deriveIkmForUnseal(state.kmsType, body, kdfParams)
-
-  const primaryKey = deriveKey(ikm, HKDF_INFO.PRIMARY)
-  const auditKey = deriveKey(ikm, HKDF_INFO.AUDIT_LOG)
-  const backupKey = deriveKey(ikm, HKDF_INFO.BACKUP)
-  ikm.fill(0)
+  const { primaryKey, auditKey, backupKey, platformAuditKey } = deriveAllKeysFromIkm(ikm)
 
   let sentinelDecrypted: Buffer
   try {
     sentinelDecrypted = await bootstrapDecrypt(storedSentinel, primaryKey)
   } catch {
     primaryKey.fill(0)
-    auditKey.fill(0)
-    backupKey.fill(0)
+    zeroSecondaryKeys(auditKey, backupKey, platformAuditKey)
     throw new AppError(
       'UNSEAL_FAILED',
       'Vault unseal failed: credentials do not match stored vault configuration.',
@@ -391,26 +427,14 @@ export async function unsealVault(
   const expectedSentinel = Buffer.from(SENTINEL_PLAINTEXT, 'utf8')
   if (!sentinelDecrypted.equals(expectedSentinel)) {
     primaryKey.fill(0)
-    auditKey.fill(0)
-    backupKey.fill(0)
+    zeroSecondaryKeys(auditKey, backupKey, platformAuditKey)
     sentinelDecrypted.fill(0)
     throw new AppError('UNSEAL_FAILED', 'Vault unseal failed: sentinel mismatch.', 401)
   }
   sentinelDecrypted.fill(0)
   expectedSentinel.fill(0)
 
-  setVaultKey(primaryKey)
-  setPrimaryKeyCopy(primaryKey)
-  primaryKey.fill(0)
-
-  if (_auditKey) _auditKey.fill(0)
-  _auditKey = auditKey
-
-  if (_backupKey) _backupKey.fill(0)
-  _backupKey = backupKey
-
-  _status = 'unsealed'
-  await notifyUnsealed()
+  await commitUnsealedKeys({ primaryKey, auditKey, backupKey, platformAuditKey })
   return { unsealed: true, keyVersion: state.keyVersion, kmsType: state.kmsType as KmsType }
 }
 
@@ -455,6 +479,24 @@ export function __getRawBackupKeyForTest(): Buffer | null {
   return _backupKey
 }
 
+/** Story 9.4 D3/AC-4: returns a copy of the platform audit log signing key (derived via
+ * `deriveKey(ikm, HKDF_INFO.PLATFORM_AUDIT)` at the same unseal/init moment as the other keys).
+ * Mirrors `getAuditKey()`'s exact contract — throws a `VaultSealedError` if the vault is sealed. */
+export function getPlatformAuditKey(): Buffer {
+  if (!_platformAuditKey || _status !== 'unsealed') {
+    throw new VaultSealedError(
+      'getPlatformAuditKey: vault is sealed — platform audit key unavailable'
+    )
+  }
+  return Buffer.from(_platformAuditKey)
+}
+
+/** Test-only: exposes the raw platform-audit-key buffer reference (not a copy) so a test can
+ * verify `zeroKeys()` actually mutates the in-memory buffer in place. Never use outside tests. */
+export function __getRawPlatformAuditKeyForTest(): Buffer | null {
+  return _platformAuditKey
+}
+
 /** Called by shutdown.ts to zero in-memory keys before process exit. */
 export function zeroKeys(): void {
   clearVaultKey()
@@ -469,6 +511,10 @@ export function zeroKeys(): void {
   if (_backupKey) {
     _backupKey.fill(0)
     _backupKey = null
+  }
+  if (_platformAuditKey) {
+    _platformAuditKey.fill(0)
+    _platformAuditKey = null
   }
   _status = 'sealed'
 }

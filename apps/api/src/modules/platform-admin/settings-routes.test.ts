@@ -238,4 +238,63 @@ describe.sequential('Story 9.2 platform-admin settings routes', () => {
     expect(body.instancePolicy.maxOrgs).toBe(20)
     expect(body.smtp.host).toBe('smtp.concurrent.com')
   })
+
+  // Story 9.4 AC-8: retrofit — PUT /admin/settings also writes a platform_audit_events row.
+  describe('Story 9.4 AC-8: platform_audit_events retrofit', () => {
+    it('writes a settings.updated row in the same transaction, without leaking the raw password', async () => {
+      const { withPlatformOperatorContext } = await import('@project-vault/db')
+      const { platformAuditEvents } = await import('@project-vault/db/schema')
+      const { eq: eqOp } = await import('drizzle-orm')
+
+      const operator = await registerPlatformOperator(suite.app, {
+        emailPrefix: 'settings-platform-audit',
+        orgNamePrefix: 'Settings Platform Audit',
+        password: PASSWORD,
+      })
+      const res = await putSettings(suite.app, operator.cookies, {
+        smtp: { host: NEW_SMTP_HOST, password: 'top-secret-smtp-pass' },
+      })
+      expect(res.statusCode).toBe(200)
+
+      const rows = await withPlatformOperatorContext((tx) =>
+        tx
+          .select()
+          .from(platformAuditEvents)
+          .where(eqOp(platformAuditEvents.actionType, 'settings.updated'))
+      )
+      const row = rows.find((r) => r.operatorId === operator.userId)
+      expect(row).toBeDefined()
+      expect(JSON.stringify(row?.payload)).not.toContain('top-secret-smtp-pass')
+      expect((row?.payload as { fieldsChanged?: string[] })?.fieldsChanged).toContain('smtp')
+    })
+
+    it('does not write a platform_audit_events row for a no-op empty-body PUT (AC-8 edge case)', async () => {
+      const { withPlatformOperatorContext } = await import('@project-vault/db')
+      const { platformAuditEvents } = await import('@project-vault/db/schema')
+      const { eq: eqOp } = await import('drizzle-orm')
+
+      const operator = await registerPlatformOperator(suite.app, {
+        emailPrefix: 'settings-platform-audit-noop',
+        orgNamePrefix: 'Settings Platform Audit Noop',
+        password: PASSWORD,
+      })
+      const before = await withPlatformOperatorContext((tx) =>
+        tx
+          .select()
+          .from(platformAuditEvents)
+          .where(eqOp(platformAuditEvents.operatorId, operator.userId))
+      )
+
+      const res = await putSettings(suite.app, operator.cookies, {})
+      expect(res.statusCode).toBe(200)
+
+      const after = await withPlatformOperatorContext((tx) =>
+        tx
+          .select()
+          .from(platformAuditEvents)
+          .where(eqOp(platformAuditEvents.operatorId, operator.userId))
+      )
+      expect(after.length).toBe(before.length)
+    })
+  })
 })

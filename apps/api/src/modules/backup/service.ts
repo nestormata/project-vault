@@ -79,6 +79,31 @@ export async function reconcileStaleRunningBackups(): Promise<number> {
 }
 
 /**
+ * Code review fix (Story 9.4): `acquireBackupSlot` commits its own transaction and inserts the
+ * `status: 'running'` concurrency-marker row BEFORE the caller's separate platform-audit-write
+ * transaction runs (Story 9.4 AC-7's retrofit has no shared `secureCtx.tx` to write through,
+ * D7). If that follow-up audit write fails (e.g. the vault reseals mid-request, AC-6's own
+ * documented scenario) and the trigger route returns `503` without enqueueing the backup job,
+ * the row was otherwise left stuck at `running` forever — nothing un-sticks it except a full
+ * process restart (`reconcileStaleRunningBackups`, above), permanently 409-ing every future
+ * manual trigger and silently no-op'ing every scheduled fire. Called by the trigger route
+ * immediately after `writeBackupPlatformAudit` reports failure, before returning the 503, so the
+ * slot is never actually leaked by an audit-write failure.
+ */
+export async function releaseBackupSlotOnAuditFailure(runId: string): Promise<void> {
+  await getDb()
+    .update(backupRuns)
+    .set({
+      status: 'failed',
+      completedAt: new Date(),
+      errorMessage:
+        'Backup was not started: the platform-audit write for backup.triggered failed ' +
+        '(see platform_audit_events / server logs) and the action was aborted before enqueueing.',
+    })
+    .where(eq(backupRuns.id, runId))
+}
+
+/**
  * Story 9.1 AC-7: atomically checks "is a backup already running" and, if not, inserts the
  * `backup_runs` row (status: 'running') that IS the concurrency marker for every future check —
  * an `pg_try_advisory_xact_lock` guards only this brief check-then-insert critical section
