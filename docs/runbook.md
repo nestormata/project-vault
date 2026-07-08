@@ -63,11 +63,30 @@ codebase as that behavior evolves — see each section's `<!-- Source: ... -->` 
      -d '{"kmsType":"envelope","envelopeKeyPath":"/run/secrets/envelope-half.bin","acknowledgeSplitKeyModel":true}'
 
    # file mode (downgraded option — explicit acknowledgment required, not recommended for production)
+   openssl rand -out dev-secrets/master.key 32
    curl -X POST http://localhost:3000/api/v1/vault/init \
      -H 'Content-Type: application/json' \
      -H "X-Vault-Bootstrap-Token: $VAULT_BOOTSTRAP_TOKEN" \
      -d '{"kmsType":"file","masterKeyPath":"/run/secrets/master.key","acknowledgeCoLocationRisk":true}'
    ```
+
+   **The `dev-secrets/...` host path above only works as shown for the eval/dev compose path** —
+   `docker-compose.yml`'s `api` service bind-mounts `./dev-secrets:/run/secrets:ro`, so a file
+   written to `dev-secrets/` on the host appears at `/run/secrets/` inside the container. The
+   **production** override (`docker-compose.prod.yml`) replaces that bind mount with a named Docker
+   volume (`vault_keys:/run/secrets:ro`) that is not backed by any host directory — writing to
+   `dev-secrets/` on a production host does **not** put the file where the container can read it.
+   To get key material into `vault_keys` for a real production deployment, write it via a
+   throwaway container mounting the same volume, e.g.:
+
+   ```bash
+   docker run --rm -v vault_keys:/run/secrets -v "$PWD":/host:ro busybox \
+     sh -c 'cp /host/envelope-half.bin /run/secrets/envelope-half.bin'
+   ```
+
+   (substitute `master.key` for `file` mode). Then reference the same `/run/secrets/...` path in
+   the `init`/`unseal` request bodies either way — only how that path gets populated differs
+   between dev and production.
 
    Success: `200 {"initialized":true,"keyVersion":1,"kmsType":"<passphrase|envelope|file>"}`.
    Re-running `init` against an already-initialized vault returns `409 {"error":"already_initialized", ...}`
@@ -308,9 +327,12 @@ triggering another.
 
 <!-- Source: Story 9.5 AC-9; verified against apps/api/src/modules/backup/{routes,schema}.ts -->
 
-1. Stop the API container first to avoid confusing in-flight requests with the restore
-   (`docker compose stop api`) — the restore endpoint itself handles sealing, this is just to
-   avoid request/restore races.
+1. **Do not stop the API container** — the restore call in step 2 below is itself an HTTP request
+   to the running `api` service; stopping it first makes that call impossible. If you want to
+   reduce the chance of other requests racing the restore (e.g. a user writing data mid-restore),
+   do so by other means that leave the API reachable — pause background workers, or take the
+   instance out of any external load balancer/reverse-proxy rotation — not by stopping the
+   container this procedure needs to call.
 2. Call the restore endpoint with an explicit confirmation body:
 
    ```bash
@@ -385,14 +407,20 @@ scheduled backup job runs per `BACKUP_SCHEDULE` (default `0 3 * * *`, i.e. daily
    `BACKUP_STORAGE_PATH`), remediate the storage destination first.
 3. Trigger a manual backup immediately (§ Triggering a manual backup) rather than waiting for the
    next scheduled run.
-4. Confirm `GET /api/v1/admin/backups` shows the new, successful entry, and that `GET /ready` no
-   longer reports a backup-related warning.
+4. Confirm `GET /api/v1/admin/backups` shows the new, successful entry. **Note:** `GET /ready`'s
+   `warnings` array only ever surfaces `audit_storage_critical`/`key_custody_risk` (§ Monitoring) —
+   there is no backup-related `/ready` warning to watch for clearing; the backups listing above is
+   the only confirmation this step has.
 
 Do not silence/acknowledge the alert without confirming a fresh, valid backup exists. Backups can
-be entirely disabled for operators using external backup tooling (unset both `BACKUP_STORAGE_PATH`
-and `BACKUP_S3_BUCKET`) — in that configuration `backup.missed` should never fire; if it does fire
-on an instance believed to have backups disabled, that is itself a configuration-drift incident
-(verify the disable setting actually took effect), not a normal missed-backup scenario.
+be entirely disabled for operators using external backup tooling — unset `BACKUP_STORAGE_PATH`,
+`BACKUP_S3_BUCKET`, **and** `BACKUP_DATABASE_URL` together; leaving `BACKUP_DATABASE_URL` set while
+unsetting only the two storage vars is an inconsistent configuration the app refuses to boot with
+(`FATAL: Backup is enabled but neither BACKUP_STORAGE_PATH nor BACKUP_S3_BUCKET is configured`) —
+a loud startup failure, not a silent misconfiguration, but still worth knowing in advance rather
+than hitting at restart time. With all three unset, `backup.missed` should never fire; if it does
+fire on an instance believed to have backups disabled, that is itself a configuration-drift
+incident (verify the disable setting actually took effect), not a normal missed-backup scenario.
 
 ---
 
@@ -572,25 +600,29 @@ leaving a genuinely compromised dependent credential unaddressed.
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/machine-users/mu_abc123/api-keys/pk_9f3aB7xQ.../emergency-revoke \
   -H 'Authorization: Bearer <org admin token, MFA verified>'
-# → 200 {"revokedAt":"2026-07-06T14:22:01.000Z"}
+# → 200 {"data":{"revokedKeyId":"<uuid>","newKey":"<plaintext, shown only this once>","newKeyId":"<uuid>"}}
 ```
 
-No request body. Sets `revokedAt` **immediately, with no overlap window** — deliberately distinct
-from the routine `.../rotate` endpoint's overlap-based zero-downtime rotation, since a suspected
-compromise means the old key must stop working *now*. Requires MFA on the calling admin session
-(`403 {"code":"mfa_required"}` if not MFA-verified — a stolen session alone must not be sufficient
-to interfere with key-compromise response) and is itself rate-limited; do not interpret a
-rate-limit response as the revoke having silently failed.
+No request body. This is an **atomic revoke-old + issue-new operation in a single call** —
+deliberately distinct from both the routine `.../rotate` endpoint's overlap-based zero-downtime
+rotation (the old key here stops working *immediately*, with no overlap window, since a suspected
+compromise means it must stop working *now*) and from a plain revoke — there is no separate
+"issue a replacement key" step because the replacement is already in this response. **Capture
+`newKey` immediately: like every other key-issuance response in this API, the plaintext is
+returned exactly once and is not recoverable from any later `GET` call.** Requires MFA on the
+calling admin session (`403 {"code":"mfa_required"}` if not MFA-verified — a stolen session alone
+must not be sufficient to interfere with key-compromise response) and is itself rate-limited; do
+not interpret a rate-limit response as the revoke having silently failed.
 
 Post-revoke:
 
-1. Confirm via the key list that `revokedAt` is now populated.
-2. Issue a **replacement key** for the machine user's legitimate workflows — a fresh key, not a
-   rotation of the revoked one. Calling `.../rotate` on an already-revoked key returns
-   `409 {"code":"api_key_already_revoked", "message":"This key has already been revoked"}`; use the
-   create-new-key flow instead.
-3. Update the CI/CD or automation system's stored credential with the new key.
-4. Review the audit trail for any usage of the compromised key between suspected exposure and
+1. Confirm via the key list (`GET .../api-keys`) that the old key's `isRevoked` is now `true` — the
+   list view exposes a boolean flag here, not a `revokedAt` timestamp.
+2. Update the CI/CD or automation system's stored credential with the `newKey` captured above —
+   there is no separate create-new-key step to perform; re-running `.../rotate` or
+   `.../emergency-revoke` against the now-revoked old key instead returns
+   `409 {"code":"api_key_already_revoked", "message":"This key has already been revoked"}`.
+3. Review the audit trail for any usage of the compromised key between suspected exposure and
    revocation, to scope the incident.
 
 ---
@@ -656,7 +688,8 @@ in v1** — this is a deliberate v1 scope boundary (PJ9), not an oversight. Chec
 mean you have checked "the" audit trail.
 
 - **Per-org security audit log** (`audit_log_entries`, Story 8.1) — `GET /api/v1/org/audit/verify`
-  (requires Owner or explicit Audit role). Response:
+  (**Owner role only** — there is no separate "Audit" role in this application; an org Admin is
+  not sufficient and receives `403`). Response:
   `{"data":{"summary":"...", "rowsChecked":N, "passed":N, "failed":[{"id","eventType","timestamp"}],
   "failedCount":N, "failedTruncated":bool, "verifiedAt":"..."}}`.
 - **Platform operator audit log** (`platform_audit_events`, Story 9.4) —
