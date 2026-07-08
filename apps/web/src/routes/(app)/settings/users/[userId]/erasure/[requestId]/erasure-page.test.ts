@@ -163,6 +163,15 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
     expect(screen.getByText(/currently being processed/i)).toBeTruthy()
   })
 
+  it('(regression) state=not_allowed: shows an honest role notice, matching sibling audit pages', () => {
+    render(ErasurePage, {
+      props: {
+        data: baseData({ orgRole: 'member', state: 'not_allowed', piiInventory: undefined }),
+      },
+    })
+    expect(screen.getByText(/requires the admin role/i)).toBeTruthy()
+  })
+
   it('state=not_found: shows a "not found" notice with a link back to /settings/users', () => {
     render(ErasurePage, {
       props: { data: baseData({ state: 'not_found', piiInventory: undefined }) },

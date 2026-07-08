@@ -12,10 +12,20 @@ import type { PageServerLoad } from './$types.js'
 type CommonFields = { orgRole: string; userId: string; requestId: string; userEmail: string | null }
 
 type LoadResult =
+  | (CommonFields & { state: 'not_allowed' })
   | (CommonFields & { state: 'completed'; report: ErasureReport })
   | (CommonFields & { state: 'pending'; piiInventory: PiiInventory | null })
   | (CommonFields & { state: 'in_progress' })
   | (CommonFields & { state: 'not_found' })
+
+// K/L/M's own gates are admin+ (review) / owner-only (execute); a member/viewer has no legitimate
+// use for this page at all. Every sibling page this story adds (`/settings/audit`,
+// `/settings/audit/access-report`, `/settings/audit/forwarding`) checks role and returns an
+// honest "not allowed" state before ever calling its API — this page was the one exception,
+// which meant a member/viewer hitting this URL directly fell through to `getErasureReport`'s own
+// 403, an error this load() didn't handle, crashing into SvelteKit's generic error page instead
+// of the same honest notice every other page in this story shows.
+const ERASURE_VIEW_ROLES = new Set(['owner', 'admin'])
 
 // D4/D5 — the typed-confirmation gate needs the target user's exact email; there is no per-user
 // `GET` on this erasure route, so this reuses the existing org-members list endpoint (already
@@ -54,11 +64,15 @@ async function resolveNotYetCompleted(
     // crash.
     return { ...common, state: 'pending', piiInventory: null }
   } catch (innerErr) {
-    const innerBody =
-      innerErr instanceof ApiClientError && innerErr.status === 409
-        ? (innerErr.body as { piiInventory?: PiiInventory } | null)
-        : null
-    return { ...common, state: 'pending', piiInventory: innerBody?.piiInventory ?? null }
+    // Only the specific, expected `already_pending` outcome is safe to swallow into a "pending,
+    // here's the inventory" result — any other error (a 403 from a role the outer check let
+    // through unexpectedly, a 500, a genuine validation failure) must propagate as a real error
+    // instead of being silently repainted as a benign empty-inventory pending screen.
+    if (innerErr instanceof ApiClientError && innerErr.code === 'erasure_request_already_pending') {
+      const innerBody = innerErr.body as { piiInventory?: PiiInventory } | null
+      return { ...common, state: 'pending', piiInventory: innerBody?.piiInventory ?? null }
+    }
+    throw innerErr
   }
 }
 
@@ -68,6 +82,17 @@ async function resolveNotYetCompleted(
 export const load: PageServerLoad = async ({ fetch, params, locals }) => {
   const user = requireUser(locals)
   const { userId, requestId } = params
+
+  if (!ERASURE_VIEW_ROLES.has(user.orgRole)) {
+    return {
+      orgRole: user.orgRole,
+      userId,
+      requestId,
+      userEmail: null,
+      state: 'not_allowed',
+    } satisfies LoadResult
+  }
+
   const userEmail = await resolveUserEmail(fetch, userId)
   const common: CommonFields = { orgRole: user.orgRole, userId, requestId, userEmail }
 

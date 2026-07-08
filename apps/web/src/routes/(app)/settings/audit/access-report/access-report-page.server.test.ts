@@ -90,6 +90,34 @@ describe('/settings/audit/access-report +page.server.ts', () => {
     )
   })
 
+  it('AC-G2 (regression): a bare "YYYY-MM-DD" asOf from the real <input type="date"> form is converted to a full ISO datetime, not sent raw', async () => {
+    // The API's AccessReportRequestSchema requires z.iso.datetime() and explicitly rejects a bare
+    // date ("AC-5: rejects a bare date without time" in access-report-routes.test.ts) — the real
+    // <input type="date"> submits exactly this bare "YYYY-MM-DD" shape via a plain GET form, so
+    // the load function must convert it before calling runAccessReport, not pass it through as-is.
+    requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
+    runAccessReportMock.mockResolvedValue({ ...SAMPLE_REPORT, asOf: '2026-03-01T00:00:00.000Z' })
+
+    await load(makeEvent({ asOf: '2026-03-01' }))
+
+    expect(runAccessReportMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ asOf: '2026-03-01T00:00:00.000Z' })
+    )
+  })
+
+  it('AC-G4 (regression): an already-ISO asOf from a pagination link round-trip is not double-converted', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
+    runAccessReportMock.mockResolvedValue({ ...SAMPLE_REPORT, asOf: '2026-03-01T00:00:00.000Z' })
+
+    await load(makeEvent({ asOf: '2026-03-01T00:00:00.000Z', page: '2' }))
+
+    expect(runAccessReportMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ asOf: '2026-03-01T00:00:00.000Z', page: 2 })
+    )
+  })
+
   it('AC-G2 failure: a future asOf maps to a friendly error message', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
     runAccessReportMock.mockRejectedValue(

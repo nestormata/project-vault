@@ -55,6 +55,15 @@
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 429) {
         rateLimited = true
+        // A 429 still counts toward the cap — otherwise a sustained rate-limit (e.g. another tab
+        // polling the same job) would back off forever without ever reaching MAX_POLLS, since
+        // this branch previously returned before the counter below ran.
+        pollCount += 1
+        if (pollCount >= MAX_POLLS) {
+          capped = true
+          stopPolling()
+          return
+        }
         timer = setTimeout(() => void poll(), BACKOFF_INTERVAL_MS)
         return
       }
@@ -167,13 +176,14 @@
   {/if}
 
   {#if status === 'completed' && jobId}
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- D3: plain <a href> to a non-page API download endpoint, not a SvelteKit route resolve() can type-check -->
+    <!-- eslint-disable svelte/no-navigation-without-resolve -- D3: plain <a href> to a non-page API download endpoint, not a SvelteKit route resolve() can type-check. (`-next-line` doesn't reach the `href` line on a multi-line tag, so this needs the block form.) -->
     <a
       href={auditExportDownloadUrl(jobId)}
       class="mt-4 inline-block rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800"
     >
       Download CSV
     </a>
+    <!-- eslint-enable svelte/no-navigation-without-resolve -->
   {/if}
 
   {#if status === 'failed'}

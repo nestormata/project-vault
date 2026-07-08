@@ -140,22 +140,24 @@
 
           <div class="mt-4 flex justify-center gap-2">
             {#if (data.page ?? 1) > 1}
-              <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check -->
+              <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
               <a
                 href="?{data.asOf ? `asOf=${data.asOf}&` : ''}page={(data.page ?? 1) - 1}"
                 class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
               >
                 Previous
               </a>
+              <!-- eslint-enable svelte/no-navigation-without-resolve -->
             {/if}
             {#if data.report.hasNext}
-              <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check -->
+              <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
               <a
                 href="?{data.asOf ? `asOf=${data.asOf}&` : ''}page={(data.page ?? 1) + 1}"
                 class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
               >
                 Next
               </a>
+              <!-- eslint-enable svelte/no-navigation-without-resolve -->
             {/if}
           </div>
         {/if}

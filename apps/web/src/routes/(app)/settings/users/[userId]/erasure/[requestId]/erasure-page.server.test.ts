@@ -160,4 +160,29 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
 
     expect(result.state).toBe('not_found')
   })
+
+  it('(regression) a member/viewer role gets state=not_allowed without ever calling the API — every sibling page in this story checks role before its first API call, this page was missing that', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'member' } as ReturnType<typeof requireUser>)
+
+    const result = await load(makeEvent())
+
+    expect(result.state).toBe('not_allowed')
+    expect(getErasureReportMock).not.toHaveBeenCalled()
+    expect(listOrgUsersMock).not.toHaveBeenCalled()
+  })
+
+  it('(regression) an unexpected error during the D6 safe-repost (e.g. a 500, or a 403 the outer role check let through) propagates instead of being repainted as an empty "pending" state', async () => {
+    getErasureReportMock.mockRejectedValue(
+      new ApiClientError(
+        409,
+        { code: 'erasure_not_yet_completed', message: 'not ready', status: 'pending' },
+        'not ready'
+      )
+    )
+    // Anything other than the specific `erasure_request_already_pending` outcome must not be
+    // swallowed into a false "pending, no inventory" result.
+    createErasureRequestMock.mockRejectedValue(new ApiClientError(500, null, 'Internal error'))
+
+    await expect(load(makeEvent())).rejects.toThrow('Internal error')
+  })
 })

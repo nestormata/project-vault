@@ -3,8 +3,29 @@
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import AuditExportPanel from '$lib/components/audit/AuditExportPanel.svelte'
   import AuditVerifyPanel from '$lib/components/audit/AuditVerifyPanel.svelte'
+  import { validateDateRange } from '$lib/audit/date-range.js'
 
   let { data } = $props()
+
+  let dateRangeError = $state<string | null>(null)
+
+  // AC-B2 — blocks submission client-side ("End date must be after start date") before any
+  // network call when `to` is before `from`, mirroring the existing credentials/new-style
+  // pre-check pattern (Story 6.4's convention).
+  function handleSearchSubmit(event: SubmitEvent) {
+    const form = event.currentTarget as HTMLFormElement
+    const formData = new FormData(form)
+    const error = validateDateRange(
+      String(formData.get('from') ?? ''),
+      String(formData.get('to') ?? '')
+    )
+    if (error) {
+      event.preventDefault()
+      dateRangeError = error
+      return
+    }
+    dateRangeError = null
+  }
 
   const hasFilters = $derived(
     data.allowed && data.filters && Object.values(data.filters).some((value) => Boolean(value))
@@ -26,6 +47,17 @@
       parts.push(`${(filters.from ?? '…').slice(0, 10)} → ${(filters.to ?? '…').slice(0, 10)}`)
     }
     return parts.join(', ')
+  }
+
+  // AC-B1 — pagination controls reflecting total/page/hasNext, preserving whatever filters are
+  // already active so paging never silently drops the current search.
+  function pageHref(targetPage: number): string {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(data.filters ?? {})) {
+      if (value) params.set(key, value)
+    }
+    params.set('page', String(targetPage))
+    return `?${params.toString()}`
   }
 </script>
 
@@ -79,7 +111,7 @@
 
     <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold text-slate-950">Search</h2>
-      <form method="GET" class="mt-4 flex flex-wrap items-end gap-3">
+      <form method="GET" class="mt-4 flex flex-wrap items-end gap-3" onsubmit={handleSearchSubmit}>
         <label class="flex flex-col text-sm text-slate-700" for="filter-eventType">
           Event type
           <input
@@ -150,6 +182,10 @@
         </button>
       </form>
 
+      {#if dateRangeError}
+        <p class="mt-2 text-sm text-red-700" role="alert">{dateRangeError}</p>
+      {/if}
+
       {#if hasFilters}
         <p class="mt-4 text-sm text-slate-600">
           Filtered by: {filterSummary(data.filters ?? {})}
@@ -205,9 +241,33 @@
             {/each}
           </DataTable>
 
-          <p class="mt-3 text-sm text-slate-500">
-            {data.total} total event{data.total === 1 ? '' : 's'} — page {data.page}
-          </p>
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p class="text-sm text-slate-500">
+              {data.total} total event{data.total === 1 ? '' : 's'} — page {data.page}
+            </p>
+            <div class="flex gap-2">
+              {#if data.page > 1}
+                <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
+                <a
+                  href={pageHref(data.page - 1)}
+                  class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+                >
+                  Previous
+                </a>
+                <!-- eslint-enable svelte/no-navigation-without-resolve -->
+              {/if}
+              {#if data.hasNext}
+                <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
+                <a
+                  href={pageHref(data.page + 1)}
+                  class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
+                >
+                  Next
+                </a>
+                <!-- eslint-enable svelte/no-navigation-without-resolve -->
+              {/if}
+            </div>
+          </div>
         {/if}
       </div>
     </div>

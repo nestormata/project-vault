@@ -117,6 +117,22 @@ describe('/settings/audit +page.svelte', () => {
     expect(screen.getByText(/filtered by/i).textContent).toMatch(/credential\.access/)
   })
 
+  it('AC-B2: blocks submission client-side when "to" is before "from", before any network call', async () => {
+    const { container } = render(AuditPage, { props: { data: allowedData() } })
+
+    const fromInput = container.querySelector('#filter-from') as HTMLInputElement
+    const toInput = container.querySelector('#filter-to') as HTMLInputElement
+    await fireEvent.input(fromInput, { target: { value: '2026-06-30T00:00:00.000Z' } })
+    await fireEvent.input(toInput, { target: { value: '2026-06-01T00:00:00.000Z' } })
+    const form = screen
+      .getByRole('button', { name: /^search$/i })
+      .closest('form') as HTMLFormElement
+    const submitEvent = await fireEvent.submit(form)
+
+    expect(submitEvent).toBe(false) // preventDefault() was called
+    expect(screen.getByText(/end date must be after start date/i)).toBeTruthy()
+  })
+
   it('AC-B3: clicking an event row expands a detail panel with fields already in the response, no second API call', async () => {
     render(AuditPage, { props: { data: allowedData() } })
 
@@ -140,5 +156,36 @@ describe('/settings/audit +page.svelte', () => {
 
     expect(screen.getByText('Too many requests')).toBeTruthy()
     expect(screen.getByRole('heading', { name: /^export$/i })).toBeTruthy()
+  })
+
+  it('AC-B1: shows a Next control (no Previous) on page 1 of a multi-page result set', () => {
+    render(AuditPage, { props: { data: allowedData({ page: 1, hasNext: true }) } })
+
+    expect(screen.queryByRole('link', { name: /previous/i })).toBeNull()
+    const next = screen.getByRole('link', { name: /next/i })
+    expect(next.getAttribute('href')).toBe('?page=2')
+  })
+
+  it('AC-B1: shows both Previous and Next mid-list, and preserves active filters across pages', () => {
+    render(AuditPage, {
+      props: {
+        data: allowedData({
+          page: 2,
+          hasNext: true,
+          filters: { eventType: 'credential.access' },
+        }),
+      },
+    })
+
+    const prev = screen.getByRole('link', { name: /previous/i })
+    const next = screen.getByRole('link', { name: /next/i })
+    expect(prev.getAttribute('href')).toBe('?eventType=credential.access&page=1')
+    expect(next.getAttribute('href')).toBe('?eventType=credential.access&page=3')
+  })
+
+  it('AC-B1: shows no Next control on the last page', () => {
+    render(AuditPage, { props: { data: allowedData({ page: 17, hasNext: false }) } })
+
+    expect(screen.queryByRole('link', { name: /^next$/i })).toBeNull()
   })
 })
