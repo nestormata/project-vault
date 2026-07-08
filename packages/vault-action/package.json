@@ -13,18 +13,18 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@actions/core": "^1.11.1",
+    "@actions/core": "^3.0.1",
     "@project-vault/agent": "workspace:*"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
-    "@types/node": "^26.0.1",
-    "@vercel/ncc": "^0.38.4",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@types/node": "^26.1.1",
+    "@vercel/ncc": "^0.44.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.6.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
     "yaml": "^2.9.0"
   }
 }

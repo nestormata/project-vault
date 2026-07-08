@@ -18,12 +18,12 @@
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.1",
     "ajv": "^8.18.0",
     "eslint": "^10.6.0",
     "otpauth": "^9.5.1",
-    "tsx": "4.21.1",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "tsx": "4.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }
