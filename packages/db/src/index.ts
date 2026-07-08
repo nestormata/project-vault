@@ -4,16 +4,44 @@ import { sql } from 'drizzle-orm'
 
 export type Tx = Parameters<Parameters<ReturnType<typeof drizzle>['transaction']>[0]>[0]
 
+/** Story 9.6 D1.3: a single reserved connection returned by `reserveConnection()` below — used
+ * for session-scoped state (advisory locks) that must persist across multiple statements. */
+export type ReservedConnection = Awaited<ReturnType<ReturnType<typeof postgres>['reserve']>>
+
+// Story 9.6 D1.3: hoisted to module scope (was previously a `getDb()`-local closure variable) so
+// `reserveConnection()` below can share the exact same underlying `postgres()` client/pool
+// instead of creating a second, separate one.
+let _pgClient: ReturnType<typeof postgres> | null = null
 let _db: ReturnType<typeof drizzle> | null = null
+
+function getPgClient(): ReturnType<typeof postgres> {
+  if (!_pgClient) {
+    _pgClient = postgres(
+      process.env['DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
+    )
+  }
+  return _pgClient
+}
 
 export function getDb(): ReturnType<typeof drizzle> {
   if (!_db) {
-    const pgClient = postgres(
-      process.env['DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
-    )
-    _db = drizzle(pgClient)
+    _db = drizzle(getPgClient())
   }
   return _db
+}
+
+/**
+ * Story 9.6 D1.3: returns a single reserved connection (postgres-js `sql.reserve()`) checked out
+ * from the pool for exclusive use until explicitly released — required for session-scoped state
+ * (advisory locks) that must persist across multiple statements. Never share a reserved
+ * connection with pooled queries: acquiring a session-level lock on a connection borrowed from a
+ * normal pooled query and then returning that connection to the pool without unlocking would leak
+ * the lock onto whatever unrelated query the pool later hands that connection to.
+ *
+ * Caller MUST call `.release()` when done (in a `finally` block).
+ */
+export async function reserveConnection(): Promise<ReservedConnection> {
+  return getPgClient().reserve()
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

@@ -140,6 +140,14 @@ export const OperationalEvent = {
   BACKUP_VALIDATE_INITIATED: 'backup.validate.initiated',
   BACKUP_VALIDATE_COMPLETED: 'backup.validate.completed',
   BACKUP_RETENTION_PRUNED: 'backup.retention_pruned',
+  // Story 9.6 D2/AC-11: emitted when the hourly health-check job auto-resolves a `backup.missed`
+  // admin_alerts row (no notification is delivered for this — only the original "missed" alert is
+  // notification-worthy).
+  BACKUP_MISSED_RESOLVED: 'backup.missed_resolved',
+  // Story 9.6 AC-20: audit-relevant log covering every restore attempt outcome (accepted or
+  // rejected at the lock or at filename validation) — closes the gap where a blocked restore
+  // attempt against a secrets-vault's full-database-restore path left no trace of who attempted it.
+  BACKUP_RESTORE_ATTEMPTED: 'backup.restore_attempted',
 
   // System Settings, Multi-Org & Resource Monitoring (Story 9.2 D6/AC-25) — interim
   // operational-logging audit trail for platform-operator actions, pending Story 9.4's

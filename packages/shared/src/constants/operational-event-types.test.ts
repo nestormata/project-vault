@@ -104,4 +104,9 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.MIGRATION_DESTRUCTIVE_ALLOWED).toBe('migration.destructive_allowed')
     expect(OperationalEvent.MIGRATION_APPLIED).toBe('migration.applied')
   })
+
+  it('exposes the Story 9.6 backup/restore hardening event types (D2/AC-11, AC-20)', () => {
+    expect(OperationalEvent.BACKUP_MISSED_RESOLVED).toBe('backup.missed_resolved')
+    expect(OperationalEvent.BACKUP_RESTORE_ATTEMPTED).toBe('backup.restore_attempted')
+  })
 })
