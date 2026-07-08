@@ -99,6 +99,9 @@ jobs:
       - name: Check story status sync (retro P6-1/P7-1/P8-1)
         run: pnpm check-story-status-sync
 
+      - name: Check PSC TBD UI deferrals tracked in deferred-work.md (retro P7-1/P8-2/P9-1)
+        run: pnpm check-psc-tbd-tracking
+
       - name: Test (with coverage)
         run: pnpm turbo test
         env:
