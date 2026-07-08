@@ -16,6 +16,18 @@ Status: ready-for-dev
      table already records this exact scope as "Resolved 2026-07-07 (Epic 8 retro): scheduled as
      8-7-epic-8-completion-audit-compliance-web-ui-and-technical-debt." -->
 
+<!-- Adversarial review (2026-07-07, see sibling file
+     8-7-epic-8-completion-audit-compliance-web-ui-and-technical-debt-adversarial-review.md)
+     surfaced 16 findings (1 critical, 2 high, 8 medium/medium-low, 5 low) against this story
+     before any implementation began. All 16 were resolved directly in this story file pre-dev
+     (not deferred to a follow-up story) — see the adversarial-review file for the original finding
+     text and inline "(adversarial review, <severity>)" annotations throughout this file for where
+     each fix landed. Notable corrections: AC-M1's piiRetained shape now matches
+     ErasureReportResponseSchema exactly (was a critical fabrication risk); the endpoint inventory
+     table now lists real per-row full paths instead of a single incorrect blanket prefix claim;
+     AC-G3/D3 gained a third, real download mechanism (triggerTextDownload) instead of punting to
+     "confirm at implementation time." -->
+
 ## Story
 
 As Dana, Project Vault's Security & Compliance Lead (and any org owner/admin standing in for that
@@ -62,26 +74,37 @@ re-implement, re-validate, or "helpfully" extend any backend behavior described 
 `apps/api/src/modules/org/` as stable, already-reviewed dependencies. This section exists so the
 dev agent does not have to re-read all of 8.1–8.4 to find these facts.
 
-### Full endpoint inventory this story's UI consumes (all registered under `/api/v1/org`, confirmed via `apps/api/src/app.ts:243-245`)
+### Full endpoint inventory this story's UI consumes
 
-| Endpoint | Role gate | MFA | Source story | Consumed by AC group |
-|---|---|---|---|---|
-| `GET /audit/verify?from=&to=` | `owner` only | no (security-visibility GET, `mfa-policy-matrix.md:62`) | 8.1 | D |
-| `GET /audit/events?actorId=&eventType=&resourceId=&projectId=&from=&to=&page=&limit=` | `owner` only | no | 8.2 | B |
-| `POST /audit/export { from, to, format: "csv", includeIntegrityReport }` | `owner` only | requireMfa: true | 8.2 | C |
-| `GET /audit/exports/:jobId` | `owner` only | no | 8.2 | C |
-| `GET /audit/exports/:jobId/download` | `owner` only | no | 8.2 | C |
-| `PUT /audit/forwarding { type, config }` | `admin`+ (`minimumRole: 'admin'`) | requireMfa: true | 8.2 | E |
-| `PUT /audit/retention { retentionDays }` | `admin`+ | requireMfa: true | 8.2 | F |
-| `POST /audit/access-report { asOf?, page, limit, format }` | `owner` only | no | 8.3 | G |
-| `GET /security-alerts?status=` (existing, Epic 1, extended by 7.2/8.3) | `owner`+`admin` | no | 1 / 8.3 | H |
-| `POST /security-alerts/:alertId/dismiss { reason }` (existing, generic) | `owner`+`admin` | requireMfa: true | Epic 1 | H |
-| `POST /users/:userId/deactivate` (existing, unchanged) | `admin`+ | requireMfa: true | 4.3 | H |
-| `PATCH /organizations/:orgId/user-dormancy-settings { userDormancyThresholdDays }` | `admin`+ | requireMfa: true | 8.3 | I |
-| `POST /users/:userId/pseudonymize { confirmUserId }` | `owner` only | requireMfa: true | 8.3 | J |
-| `POST /users/:userId/erasure-request { reason, requestedBy }` | `admin`+ | requireMfa: true | 8.4 | K |
-| `POST /users/:userId/erasure-request/:requestId/execute { confirm: true }` | `owner` only | requireMfa: true | 8.4 | L |
-| `GET /users/:userId/erasure-request/:requestId/report` | `admin`+ | requireMfa: true | 8.4 | M |
+**Correction (adversarial review, high):** these endpoints are registered across **three
+different route-prefix families**, not uniformly under `/api/v1/org` — do not assume a single
+prefix and string-concatenate paths. The `Full path` column below is the literal path to call;
+verify against `apps/api/src/app.ts` (prefix registrations) if anything here ever looks stale.
+
+| Endpoint (relative) | Full path | Registered by (`app.ts` prefix) | Role gate | MFA | Source story | Consumed by AC group |
+|---|---|---|---|---|---|---|
+| `GET /audit/verify?from=&to=` | `/api/v1/org/audit/verify` | `auditRoutes`, prefix `/api/v1/org` (`app.ts:244`) | `owner` only | no (security-visibility GET, `mfa-policy-matrix.md:62`) | 8.1 | D |
+| `GET /audit/events?actorId=&eventType=&resourceId=&projectId=&from=&to=&page=&limit=` | `/api/v1/org/audit/events` | `auditRoutes`, `/api/v1/org` (`app.ts:244`) | `owner` only | no | 8.2 | B |
+| `POST /audit/export { from, to, format: "csv", includeIntegrityReport }` | `/api/v1/org/audit/export` | `auditRoutes`, `/api/v1/org` (`app.ts:244`) | `owner` only | requireMfa: true | 8.2 | C |
+| `GET /audit/exports/:jobId` | `/api/v1/org/audit/exports/:jobId` | `auditRoutes`, `/api/v1/org` (`app.ts:244`) | `owner` only | no | 8.2 | C |
+| `GET /audit/exports/:jobId/download` | `/api/v1/org/audit/exports/:jobId/download` | `auditRoutes`, `/api/v1/org` (`app.ts:244`) | `owner` only | no | 8.2 | C |
+| `PUT /audit/forwarding { type, config }` | `/api/v1/org/audit/forwarding` | `auditRoutes`, `/api/v1/org` (`app.ts:244`) | `admin`+ (`minimumRole: 'admin'`) | requireMfa: true | 8.2 | E |
+| `PUT /audit/retention { retentionDays }` | `/api/v1/org/audit/retention` | `auditRoutes`, `/api/v1/org` (`app.ts:244`) | `admin`+ | requireMfa: true | 8.2 | F |
+| `POST /audit/access-report { asOf?, page, limit, format }` | `/api/v1/org/audit/access-report` | `auditRoutes`, `/api/v1/org` (`app.ts:244`) | `owner` only | no | 8.3 | G |
+| `GET /security-alerts?status=` (existing, Epic 1, extended by 7.2/8.3) | `/api/v1/org/security-alerts` | `orgRoutes`, `/api/v1/org` (`app.ts:243`) | `owner`+`admin` | no | 1 / 8.3 | H |
+| `POST /security-alerts/:alertId/dismiss { reason }` (existing, generic) | `/api/v1/security-alerts/:alertId/dismiss` — **not** under `/api/v1/org`, despite the similar-looking GET above living there | `securityAlertActionsRoutes`, prefix `/api/v1/security-alerts` (`app.ts:281`) | `owner`+`admin` | requireMfa: true | Epic 1 | H |
+| `POST /users/:userId/deactivate` (existing, unchanged) | `/api/v1/org/users/:userId/deactivate` | `orgRoutes`, `/api/v1/org` (`app.ts:243`) | `admin`+ | requireMfa: true | 4.3 | H |
+| `PATCH /organizations/:orgId/user-dormancy-settings { userDormancyThresholdDays }` | `/api/v1/organizations/:orgId/user-dormancy-settings` — **note the plural `organizations`, a distinct prefix from every other row's `org`** | `organizationSettingsRoutes`, prefix `/api/v1/organizations` (`app.ts:282`) | `admin`+ | requireMfa: true | 8.3 | I |
+| `POST /users/:userId/pseudonymize { confirmUserId }` | `/api/v1/org/users/:userId/pseudonymize` | `orgRoutes`, `/api/v1/org` (`app.ts:243`) | `owner` only | requireMfa: true | 8.3 | J |
+| `POST /users/:userId/erasure-request { reason, requestedBy }` | `/api/v1/org/users/:userId/erasure-request` | `erasureRoutes`, `/api/v1/org` (`app.ts:245`) | `admin`+ | requireMfa: true | 8.4 | K |
+| `POST /users/:userId/erasure-request/:requestId/execute { confirm: true }` | `/api/v1/org/users/:userId/erasure-request/:requestId/execute` | `erasureRoutes`, `/api/v1/org` (`app.ts:245`) | `owner` only | requireMfa: true | 8.4 | L |
+| `GET /users/:userId/erasure-request/:requestId/report` | `/api/v1/org/users/:userId/erasure-request/:requestId/report` | `erasureRoutes`, `/api/v1/org` (`app.ts:245`) | `admin`+ | requireMfa: true | 8.4 | M |
+
+**Two rows above are the exceptions to watch for:** the dismiss-alert endpoint (`/api/v1/security-alerts/...`)
+and the user-dormancy-settings endpoint (`/api/v1/organizations/...`) — everything else in this
+table is under `/api/v1/org` (singular, no trailing segment before the resource). A client wrapper
+that blindly prefixes every path in this table with `/api/v1/org` will 404 on exactly those two
+calls (AC groups H and I).
 
 **No `GET` endpoints exist for reading back current forwarding config, current retention config, or
 the current dormancy threshold.** This mirrors the exact limitation Story 8.6 already accepted for
@@ -157,7 +180,13 @@ beyond its existing three-tile pattern. **Decision:**
   grouped together because both are "how the log behaves going forward" settings.
 - `/settings/+page.svelte` gains exactly **one** new tile, "Audit & Compliance," linking to
   `/settings/audit`; that page itself links to its two siblings — matching the pattern
-  `/settings/audit` → sub-pages, not three new top-level tiles.
+  `/settings/audit` → sub-pages, not three new top-level tiles. **Correction (adversarial review,
+  medium):** because `/settings/audit` is `owner`-only while `/settings/audit/forwarding` is
+  `admin`+, an `admin` who reaches `/settings/audit` is shown the role-gated notice instead of the
+  page body where those sibling links normally live — so `admin`'s only in-app path to a page they
+  can actually use would otherwise be missing. AC-B4 adds a forwarding link into that same
+  role-gated notice specifically for the `admin` case to close this gap without adding a fourth
+  top-level tile.
 - Dormant-user alerts (AC group H) extend the **existing** `/notifications` page (Story 8.6's
   precedent: "do NOT build a new dormancy-specific inbox page — extend the existing Security
   Alerts surface"). Do not build a fourth new top-level page for this.
@@ -180,12 +209,13 @@ display your saved forwarding/retention/threshold configuration — this form al
 value."). This is an intentional, documented scope boundary, not an oversight; if a future story
 adds the missing `GET` endpoints, this UI limitation is trivially removed then.
 
-### D3 — File downloads: two different mechanisms for two different response shapes
+### D3 — File downloads: three different mechanisms for three different response shapes
 
 - **Audit CSV export** (`GET /audit/exports/:jobId/download`) already returns a file with
-  `Content-Disposition: attachment; filename="audit-export-<jobId>.csv"` (Story 8.2 D8). **This is
-  the first file-download flow in this web app** (confirmed: zero references to `download` or
-  `Content-Disposition` anywhere in `apps/web/src` today). Use a plain `<a href="/api/v1/org/audit/exports/{jobId}/download">Download CSV</a>` — the existing
+  `Content-Disposition: attachment; filename="audit-export-<jobId>.csv"` (Story 8.2 D8, confirmed:
+  `apps/api/src/modules/audit/routes.ts:398`). **This is the first file-download flow in this web
+  app** (confirmed: zero references to `download` or `Content-Disposition` anywhere in
+  `apps/web/src` today). Use a plain `<a href="/api/v1/org/audit/exports/{jobId}/download">Download CSV</a>` — the existing
   `apps/web/src/routes/api/v1/[...path]/+server.ts` proxy (`proxyApiRequest`) already forwards the
   authenticated session cookie and streams the response through, so the browser's native
   download handling works with zero new JavaScript. Do not fetch this via `apiFetch`/JS and
@@ -199,6 +229,21 @@ adds the missing `GET` endpoints, this UI limitation is trivially removed then.
   browser-download-from-JS pattern, unit-testable by asserting the blob content and filename
   without needing a real browser download to occur in the test environment (mock
   `URL.createObjectURL`/anchor `.click()`).
+- **Access-report CSV** (`POST /audit/access-report { format: "csv" }`) fits **neither** of the two
+  mechanisms above (adversarial review, high — confirmed against
+  `apps/api/src/modules/audit/routes.ts:460-464`): it is a `POST`, not a `GET`, so a plain `<a
+  href>` cannot carry the filter body needed to reproduce the on-screen `asOf`/pagination state;
+  and its handler sets only `Content-Type: text/csv`, never `Content-Disposition` — there is no
+  server-provided filename to rely on. **Decision: a third utility**,
+  `apps/web/src/lib/download.ts` also exporting `triggerTextDownload(filename: string, mimeType:
+  string, text: string): void` — same Blob/object-URL/temporary-anchor mechanism as
+  `triggerJsonDownload`, but takes a pre-formatted string body and an explicit `mimeType` instead
+  of JSON-serializing an object. The access-report page calls `apiFetch` (or the raw `fetch`
+  wrapper, matching however this app's client reads a non-JSON response body) against `POST
+  /audit/access-report` with `format: "csv"`, reads the response body as text, and calls
+  `triggerTextDownload('access-report-<asOf-or-"current">.csv', 'text/csv', csvText)` — the
+  filename is constructed client-side (from the `asOf` value already in page state, or the literal
+  string `"current"` when no `asOf` was set) since the server supplies none.
 
 ### D4 — Pseudonymize confirmation: typed email, not a typed UUID
 
@@ -211,19 +256,29 @@ Riley/Dana persona journey's "types the user's email to confirm" language above)
 control enables; the `confirmUserId` value sent to the server is populated automatically from the
 already-known `userId` of the row being acted on, not manually typed. Document this reasoning
 inline as a comment — it is a deliberate UX decision, not an incomplete implementation of the
-server's literal field name.
+server's literal field name. **Match is case-insensitive and trimmed** (adversarial review, low:
+a naive exact-string match would permanently stick a legitimate operator with a disabled submit
+button if they type the email in different letter case than what's stored, with no specified
+fallback) — see `TypedConfirmInput.svelte`'s contract above for the exact comparison logic.
 
 ### D5 — Erasure execute: an additional, UI-only typed-confirmation step beyond the server's bare `{ confirm: true }`
 
 `POST .../erasure-request/:requestId/execute`'s body is just `{ confirm: boolean }` — the server
 does not require re-typing an identifier. Given this action is irreversible and touches a user's
 global identity (D2 of Story 8.4: cross-org-guarded, but still permanent for the requesting org),
-this story adds the same typed-email confirmation pattern as D4 (type the target user's exact
-email before the "Execute erasure" control — itself a `ConfirmDeleteButton`-style two-step control
-— becomes enabled) as UI-only defense-in-depth, matching the level of care this codebase already
-applies to its other highest-stakes actions (D4's pseudonymize, Story 8.1's owner-only verify
-endpoint). This typed-email check happens entirely client-side; the actual submitted body remains
-exactly `{ confirm: true }` per the server's real contract.
+this story adds the same typed-email confirmation pattern as D4 (`TypedConfirmInput.svelte`, same
+case-insensitive/trimmed match — type the target user's exact email before the "Execute erasure"
+control — itself a `ConfirmDeleteButton`-style two-step control — becomes enabled), matching the
+level of care this codebase already applies to its other highest-stakes actions (D4's pseudonymize,
+Story 8.1's owner-only verify endpoint). This typed-email check happens entirely client-side; the
+actual submitted body remains exactly `{ confirm: true }` per the server's real contract.
+**Framing correction (adversarial review, low):** this is **misclick/intent-confirmation
+protection, not a security control** — calling it "defense-in-depth" overstates its value, since by
+construction it is a pure client-side string comparison gating a submit button: any direct API
+caller (or a user with browser dev tools open) bypasses it trivially, and the request body it
+produces is unchanged from what an unconfirmed call would send. Document it in code/UI copy as what
+it actually is — a safeguard against a human clicking the wrong row or moving too fast on an
+irreversible action — not as a claim of additional server-enforced security.
 
 ### D6 — Reading current erasure-request state without a dedicated `GET`-by-userId endpoint
 
@@ -234,16 +289,41 @@ or fetching its completed report. `GET .../report` on a not-yet-completed reques
 as a genuine status probe. **Decision:** the
 `/settings/users/[userId]/erasure/[requestId]` page's load function calls `GET .../report` first:
 - `200` → completed; render the compliance report + download control (AC group M).
-- `409 erasure_not_yet_completed` → render the pending/in-progress review screen. To redisplay the
-  PII inventory (not returned by the report-status probe), the load function then calls
-  `POST .../erasure-request` again with the same target `userId` — this is safe and **not** a
-  duplicate-creating call: `createErasureRequest`'s `already_pending` branch (Story 8.4's partial
+- `409 erasure_not_yet_completed { status: "pending" }` → render the pending review screen. To
+  redisplay the PII inventory (not returned by the report-status probe), the load function then
+  calls `POST .../erasure-request` again with the same target `userId` — this is safe and **not**
+  a duplicate-creating call: `createErasureRequest`'s `already_pending` branch (Story 8.4's partial
   unique index, D9) returns the **existing** request's `requestId`+`piiInventory` in its `409`
   body without creating a second row. This "safe re-POST as a read path" is a genuine, intentional
   reuse of an idempotent-by-construction endpoint, not a workaround — document it plainly in code
   comments so a future reader doesn't "fix" it into a real duplicate-request bug.
+- `409 erasure_not_yet_completed { status: "in_progress" }` → **do not** re-POST for this branch
+  (adversarial review, medium — corrects an earlier draft of this decision that treated `pending`
+  and `in_progress` identically). A re-POST while a request is `in_progress` hits
+  `createErasureRequest`'s `execution_in_progress` outcome, which returns `409 {
+  code: 'erasure_execution_in_progress', requestId }` — confirmed via
+  `ErasureExecutionInProgressErrorSchema` (`apps/api/src/modules/compliance/schema.ts`) — with
+  **no** `piiInventory` field, unlike the `already_pending` branch above. Instead, render a
+  narrower "This erasure is currently being processed" screen (same copy/pattern as AC-L4's
+  concurrent-execute race) with no inventory table and a refresh/reload control — do not attempt to
+  render an inventory table with missing data, and do not call `POST .../erasure-request` a second
+  time for this status.
 - `404` → no request exists yet for this `requestId` (e.g., a stale/tampered URL); render a
   "request not found" notice with a link back to `/settings/users`.
+
+**Known Scope Boundary — `userId`/`requestId` URL pair is unvalidated (documented, not silently
+fixable — adversarial review, low/medium):** `GET .../report`'s handler looks up the request purely
+by `requestId` (scoped to the caller's `orgId`) — confirmed against
+`apps/api/src/modules/compliance/erasure-routes.ts`, the `userId` route segment is parsed but never
+used in the lookup. None of this story's consumed responses (`ErasureReportResponseSchema`,
+`CreateErasureRequestResponseSchema`, `ErasureAlreadyPendingErrorSchema`) include a target-user
+identifier field the UI could cross-check the route's `userId` against — so there is no
+backend-provided signal available to detect a stale/hand-edited URL whose `userId` doesn't actually
+match the `requestId`'s real target user. Closing this properly would require a new response field
+or endpoint, which is out of scope for this `web`-only story (Product Surface Contract). Accept this
+as a known limitation: the page trusts `requestId` as authoritative and does not attempt to validate
+`userId` against it. If this becomes a real-world problem (e.g. a support workflow that hands out
+raw URLs), a future story should add the missing field rather than have this story's UI guess.
 
 ---
 
@@ -355,14 +435,29 @@ in the response (`resourceId`, `resourceType`, `projectId`, `ipAddress`, `create
 field needed; this is a pure client-side reveal.
 - *Example:* click a `credential.access` row → panel shows `resourceId: <credentialId>,
   actorDisplayName: "Dana Smith", ipAddress: "203.0.113.4"`.
+- *Accepted tradeoff (documented, not a gap to silently fix — adversarial review, medium):* because
+  this reveal is purely client-side, there is no audit-log entry distinguishing "owner scanned a
+  table of summary rows" from "owner inspected this specific person's IP address in detail" — only
+  the single `audit.search_run` event for the original list query exists. Adding a second
+  server-side audit write per detail-panel expand would require a new backend endpoint, which is
+  out of scope for this `web`-only story (Product Surface Contract). This is an accepted,
+  documented limitation, not an oversight; a future story could add a lightweight "detail viewed"
+  audit event if this granularity becomes a real compliance requirement.
 
 **AC-B4.** **Given** a non-`owner` role (`admin`, `member`, `viewer`) visits `/settings/audit`
 directly (e.g. a bookmarked or shared URL), **when** the page loads, **then** it shows an honest
 "This page requires the owner role" notice with a link back to `/settings` — never a raw `403`
 error dump, and never a silent redirect that hides *why* the page didn't load (matching AC-A1's
-edge case and this codebase's general non-owner-role-gated-page convention).
-- *Example:* an `admin` navigates to `/settings/audit` directly → sees the role notice, not the
-  search table, not a stack trace.
+edge case and this codebase's general non-owner-role-gated-page convention). **For the `admin` role
+specifically**, the notice additionally includes a link to "Forwarding & Retention"
+(`/settings/audit/forwarding`) — a page `admin`+ *can* use (AC-N1) — since D1 places that page's
+only in-app discovery link inside `/settings/audit`'s own body, which this same role-gated notice
+is otherwise hiding from them (adversarial review, medium: without this, an `admin` has no
+in-app path to a page they're the intended audience for, short of guessing the URL).
+- *Example (admin):* an `admin` navigates to `/settings/audit` directly → sees the role notice
+  *plus* a "You can still access Forwarding & Retention →" link to `/settings/audit/forwarding`.
+- *Example (member/viewer):* sees the plain role notice with no forwarding link, since neither role
+  can use that page either (AC-N1's gate is `admin`+, not open to `member`/`viewer`).
 
 ---
 
@@ -371,11 +466,24 @@ edge case and this codebase's general non-owner-role-gated-page convention).
 **AC-C1.** **Given** `/settings/audit`'s Export panel, **when** an `owner` picks a `from`/`to`
 range and clicks "Export CSV," **then** `POST /audit/export { from, to, format: "csv",
 includeIntegrityReport: true }` is called; the response's `{ jobId }` is stored in page state and
-the panel immediately begins polling `GET /audit/exports/:jobId` (e.g. every 2 seconds) showing a
-"Verifying integrity, then generating export…" status message.
+the panel immediately begins polling `GET /audit/exports/:jobId` every 2 seconds showing a
+"Verifying integrity, then generating export…" status message, **capped at 60 poll attempts (2
+minutes)** (adversarial review, medium: an unbounded poll has no stated failure mode for a job
+stuck in `pending`/`processing`, and this cap also keeps polling within `GET
+/audit/exports/:jobId`'s 60/min rate limit for a single panel). If the cap is reached without
+`completed`/`failed`, the panel stops polling and shows "This export is taking longer than
+expected" with a manual "Check again" control (a single on-demand poll, not an automatic restart of
+the 60-attempt loop) rather than polling forever.
 - *Example (happy path):* trigger export → `jobId` returned → panel polls → after a few seconds,
   status transitions `pending → processing → completed` → a "Download CSV" link
   (`/api/v1/org/audit/exports/{jobId}/download`, per D3) appears.
+- *Example (edge, stuck job):* 60 polls pass with the job still `processing` → polling stops → "This
+  export is taking longer than expected — check again" shown with a manual retry control.
+- *Example (failure, rate limit hit mid-poll):* a `429` from `GET /audit/exports/:jobId` (e.g. a
+  second browser tab polling the same job) is caught and shown as "Checking export status is
+  temporarily rate-limited — retrying shortly," and polling backs off (e.g. skips the next
+  scheduled attempt) rather than treating the `429` as a terminal failure or continuing to hammer
+  the endpoint at the same 2-second cadence (adversarial review, low).
 
 **AC-C2.** **Given** an export whose integrity verification **failed** (Story 8.1's tamper
 detection), **when** the poll reaches `status: "failed"`, **then** the panel shows the failure
@@ -440,9 +548,15 @@ selects "Webhook" and fills in `url` (must start with `https://`) and `secretHea
 **then** `PUT /audit/forwarding { type: "webhook", config: { url, secretHeader } }` is called; on
 success, a confirmation banner shows "Webhook forwarding configured" with the response's
 `configuredAt` timestamp — **not** the `secretHeader` value, which the response schema never
-returns and the form must not attempt to redisplay.
+returns and the form must not attempt to redisplay. The `secretHeader` input uses `type="password"`
+with `autocomplete="off"` (adversarial review, medium: this form introduces live webhook secrets
+and AWS credentials with no redisplay-prevention spec for the *input* side — masking prevents
+shoulder-surfing/screen-recording exposure and blocks browser password-manager autofill/capture of
+a value that isn't actually a login credential).
 - *Example (happy path):* `url: "https://siem.example.com/ingest", secretHeader: "wh_secret_..."` →
   `200` → "Webhook forwarding configured at 2026-07-07 14:02 UTC."
+- *Example (masking):* the `secretHeader` field renders as a masked (dot/asterisk) input, matching
+  standard password-field behavior, not plain text.
 
 **AC-E2.** **Given** the same form, **when** a non-`https://` URL is entered (e.g.
 `http://siem.example.com/ingest`), **then** client-side validation blocks submission with "URL
@@ -464,7 +578,8 @@ Minio), **then** `PUT /audit/forwarding { type: "s3", config: {...} }` is called
 banner shows the same success pattern as AC-E1, and **neither `accessKeyId` nor
 `secretAccessKey` is ever redisplayed anywhere in the UI after submission** (the response schema
 returns only `type`, `enabled`, `configuredAt` — the form fields for these two are cleared, not
-retained in page state, after a successful submit).
+retained in page state, after a successful submit). Both `accessKeyId` and `secretAccessKey` use
+`type="password"` with `autocomplete="off"` for the same reason as AC-E1's `secretHeader`.
 - *Example (happy path, AWS S3):* `bucket: "org-audit-logs", region: "us-east-1"` (no `endpoint`) →
   `200`.
 - *Example (happy path, Minio via `endpoint`):* same fields plus `endpoint:
@@ -483,6 +598,16 @@ stale or fabricated placeholder value).
   caching the last-submitted values client-side (which would misleadingly imply the server also
   remembers them across page loads/devices, when only the server's actual saved config — invisible
   to this UI — is authoritative).
+
+**Known Scope Boundary (documented, not a gap to silently fix — adversarial review, medium):**
+there is no way, in this UI or the underlying API, to turn forwarding *off* once configured.
+`AuditForwardingConfigRequestSchema`'s `type` field only accepts `'webhook' | 's3'` — there is no
+`'none'`/`'disabled'` type and no endpoint to unset forwarding. The Forwarding form in this story
+only supports configuring or reconfiguring a forwarder, never disabling one; the help copy from
+AC-E4 must not imply a disable capability exists. This is distinct from D2's read-back limitation
+(which is about *seeing* the current config, not *changing* it) and is a real capability gap in the
+underlying API, not something this `web`-only story can add a workaround for. A future story would
+need a new backend endpoint (or a `type: 'none'` schema addition) to close this.
 
 ---
 
@@ -549,12 +674,23 @@ already applied on screen (same `asOf`/pagination state, re-requested with `form
 the JSON and CSV variants are two separate calls per the API's own `format` discriminator, not a
 client-side re-serialization of the already-fetched JSON — this matters because the CSV response
 uses a different column set per Story 8.3's Architecture Conflict Resolution table, not the JSON
-shape's nested `projects` array) — the resulting CSV downloads via the same plain-`<a>`/native
-mechanism as AC-C4 if the endpoint sets `Content-Disposition`, or via `triggerJsonDownload`-style
-client construction otherwise (confirm the actual response shape/headers at implementation time
-and follow whichever of D3's two mechanisms actually matches; do not guess).
+shape's nested `projects` array); the response body (plain CSV text, `Content-Type: text/csv`, no
+`Content-Disposition` header — confirmed via source, see D3) is downloaded using D3's third
+mechanism, `triggerTextDownload()`, with a client-constructed filename
+(`access-report-<asOf-date-or-"current">.csv`) — **do not** use a plain `<a href>` for this
+endpoint (it's a `POST`, so an anchor tag cannot carry the request body) and do not assume a
+`Content-Disposition` header will appear.
 - *Example (happy path):* click "Download CSV" while viewing the historical `asOf: 2026-03-01`
-  report → the downloaded file reflects that same historical point in time, not "now."
+  report → the downloaded file `access-report-2026-03-01.csv` reflects that same historical point
+  in time, not "now."
+- *Example (accepted tradeoff, documented — adversarial review, low/medium):* on the historical
+  `asOf` path, this AC's CSV request re-runs Story 8.3's full audit-log replay computation from
+  scratch (the same one already run once for the on-screen JSON view) rather than reusing a cached
+  result — every CSV download is a second, full replay, not a lightweight re-format of
+  already-fetched data. This is an accepted performance tradeoff for this story (no caching layer
+  is in scope for a `web`-only story with zero new backend endpoints); if replay cost becomes a
+  real problem in practice, a future story should add either a server-side cache or a combined
+  `format: "both"` response, not something this story's UI can work around client-side.
 
 **AC-G4.** **Given** a report with more users than fit on one page, **when** the `owner` navigates
 to page 2, **then** pagination is stable and non-overlapping across pages — per Story 8.3 D2's
@@ -772,16 +908,27 @@ boundary in case of a client-state bug.
 
 **AC-M1.** **Given** a completed erasure request, **when** an `admin`+ views
 `/settings/users/[userId]/erasure/[requestId]` (via D6's `GET .../report` returning `200`),
-**then** the page renders the full compliance artifact: `executedAt`, a **"What was removed"**
-list (`piiRemoved`: table, fields, method — e.g. "sessions — ipAddress, userAgent — nulled"), a
-**"What was retained, and why"** list (`piiRetained`: table, fields, `retentionJustification` — e.g.
-"audit_log_entries — actorTokenId reference — audit log integrity (HMAC-protected, append-only)"),
-and the `auditEventId` linking to the underlying `user.erasure_executed` audit row (a plain text
-value or, if feasible without new backend work, a link into the Audit Log search page (AC group B)
-pre-filtered by `resourceId`).
-- *Example (happy path):* full report renders with both lists populated exactly as returned —
-  never summarized, truncated, or reworded; this is a compliance artifact, and its exact wording
-  from the API is the source of truth.
+**then** the page renders the full compliance artifact using the **exact** shape
+`ErasureReportResponseSchema` returns (`apps/api/src/modules/compliance/schema.ts:62-84` — confirm
+against source, not this description, if the two ever appear to disagree): `executedAt`, a **"What
+was removed"** list (`piiRemoved`: each entry is `{ table, fields: string[], method }` — e.g.
+"sessions — ipAddress, userAgent — nulled"), a **"What was retained"** list (`piiRetained`: each
+entry is `{ table, reason }` — **note:** unlike `piiRemoved`, each `piiRetained` entry has no
+`fields` array of its own and its per-row justification field is named `reason`, not
+`retentionJustification` — e.g. "audit_log_entries — audit log integrity (HMAC-protected,
+append-only)"), a separate **top-level `retentionJustification` string** (one value for the whole
+report, not per-table — render this once, above or below the `piiRetained` list, clearly
+distinguished from each entry's own `reason`), and the `auditEventId` linking to the underlying
+`user.erasure_executed` audit row (a plain text value or, if feasible without new backend work, a
+link into the Audit Log search page (AC group B) pre-filtered by `resourceId`).
+- *Example (happy path):* full report renders with `piiRemoved` rows showing `table`/`fields`/
+  `method`, `piiRetained` rows showing `table`/`reason` (no `fields` column for these rows), and
+  the single top-level `retentionJustification` string rendered separately — never summarized,
+  truncated, or reworded; this is a compliance artifact, and its exact wording from the API is the
+  source of truth.
+- *Example (failure mode to avoid — flagged by adversarial review, critical):* do **not** implement
+  `piiRetained` rows as `{ table, fields, retentionJustification }` — that shape does not exist in
+  the API response and will either throw on render or silently drop the real `reason` field.
 
 **AC-M2.** **Given** the rendered report, **when** the `admin`+ clicks "Download compliance
 report," **then** `triggerJsonDownload('erasure-report-<requestId>.json', reportData)` (D3) fires,
@@ -867,7 +1014,7 @@ file.
 - [ ] **Task 2: API client wrappers** (all AC groups)
   - [ ] `apps/web/src/lib/api/audit.ts` (search, export trigger/status, verify, access-report)
   - [ ] `apps/web/src/lib/api/compliance.ts` (erasure create/execute/report, pseudonymize)
-  - [ ] `apps/web/src/lib/download.ts` (`triggerJsonDownload`, D3)
+  - [ ] `apps/web/src/lib/download.ts` (`triggerJsonDownload`, `triggerTextDownload`, D3)
 - [ ] **Task 3: Audit Log page — search, export, verify** (AC groups B, C, D)
 - [ ] **Task 4: Forwarding & Retention page** (AC groups E, F)
 - [ ] **Task 5: Access Report page** (AC group G)
@@ -883,7 +1030,12 @@ file.
       clones — reuse `DataTable.svelte`/`ConfirmDeleteButton.svelte` deliberately to avoid new
       clones), full `apps/web` test suite, `make ci` (zero `apps/api`/`packages/db` diff expected —
       confirm no accidental backend changes crept in per this story's `web`-only Product Surface
-      Contract scope)
+      Contract scope), **and AC-O2's regression grep**: `grep -rniE "current configuration|your
+      saved (config|settings)" apps/web/src/routes/**/audit*/**/*.svelte
+      apps/web/src/routes/**/settings/users/**/*.svelte` must return zero matches near the
+      forwarding/retention/dormancy-threshold form copy (adversarial review, low: this was
+      previously a manual-only check with no automated enforcement, making it the easiest AC in
+      the story to silently skip — run it as an explicit step of this task, not just informally)
 
 ---
 
@@ -909,14 +1061,38 @@ file.
   access-report table.
 - **Confirmation-before-destructive-action:** `ConfirmDeleteButton.svelte` for dismiss, deactivate,
   pseudonymize, and erasure-execute — do not invent a second confirmation pattern.
-- **Typed-identifier confirmation (D4/D5):** a small, reusable Svelte component or inline pattern
-  — e.g. `TypedConfirmInput.svelte` accepting an `expectedValue` prop and exposing whether the
-  current input matches — used identically for pseudonymize (AC-J) and erasure-execute (AC-L); do
-  not duplicate this logic twice by hand.
-- **File download (D3):** plain `<a href>` for the CSV export (server sets
-  `Content-Disposition`); `triggerJsonDownload()` for the JSON compliance report.
+- **Typed-identifier confirmation (D4/D5):** a small, reusable component, `TypedConfirmInput.svelte`,
+  used identically for pseudonymize (AC-J) and erasure-execute (AC-L) — do not duplicate this logic
+  twice by hand. Minimum contract (adversarial review, medium: this component gates the story's two
+  highest-stakes irreversible actions and had no acceptance-level spec of its own):
+  - **Props:** `expectedValue: string` (the target email to match against).
+  - **Behavior:** binds an internal text input; on every keystroke, compares the current input
+    value against `expectedValue` using a **case-insensitive, trimmed** match (`input.trim().toLowerCase()
+    === expectedValue.trim().toLowerCase()`) — see D4/D5's case-sensitivity note below for why.
+  - **Exposes:** a boolean (prop binding, event, or exported function — implementer's choice of
+    Svelte idiom) indicating whether the current input matches, which the parent (`AC-J1`'s
+    pseudonymize dialog, `AC-L1`'s execute dialog) uses to enable/disable its submit control. The
+    component itself renders no submit button — it only gates one.
+  - **No other state:** it does not call any API, does not know about `confirmUserId` or
+    `{ confirm: true }` — those request-shape decisions stay in the parent component per D4/D5.
+- **File download (D3):** plain `<a href>` for the audit CSV export (server sets
+  `Content-Disposition`); `triggerJsonDownload()` for the JSON compliance report;
+  `triggerTextDownload()` for the access-report CSV (`POST`-only endpoint, no
+  `Content-Disposition` — client-constructed filename).
 - **No-readback forms (D2):** always-empty initial state + explicit "we don't display your current
   setting" help copy — apply identically to forwarding, retention, and the user-dormancy threshold.
+- **429 (rate-limit) handling (adversarial review, low):** this story's UI calls several endpoints
+  with meaningful per-minute caps — `GET /audit/verify` (20/min, AC group D), `GET
+  /audit/exports/:jobId` (60/min, AC-C1's poller — handled explicitly there), and `POST
+  /audit/access-report` (30/min, AC group G, double-counted for CSV downloads per AC-G3's
+  duplicate-request note). Every one of these must catch a `429` the same way every other
+  `ApiClientError` status is already handled elsewhere in this story (D-group's error-mapping
+  convention) — a friendly "You're doing that too quickly — please wait a moment and try again"
+  message, never an unhandled exception or a silent retry loop. AC-C1 specifies the exact bounded
+  behavior for the export poller; the verify (D) and access-report (G) forms are simpler
+  one-shot submissions and just need the same catch-and-friendly-message treatment as their other
+  documented error cases (AC-D3, AC-G2's `422` handling), not a bespoke retry mechanism of their
+  own.
 
 ### Anti-Patterns (Do Not)
 
