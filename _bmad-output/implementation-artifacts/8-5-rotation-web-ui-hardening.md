@@ -1,6 +1,6 @@
 # Story 8.5: Rotation Web UI Hardening
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-06 — this story closes the 4 unresolved
 adversarial-review findings against Story 5.4 (rotation-workflow-web-ui, `done`), bundled per

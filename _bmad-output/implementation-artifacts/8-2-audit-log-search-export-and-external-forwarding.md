@@ -1,6 +1,6 @@
 # Story 8.2: Audit Log Search, Export & External Forwarding
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-04 — comprehensive developer guide for audit log search/filter, mandatory-integrity-verified CSV export, webhook/S3 external forwarding, and retention pruning. This story builds ON TOP of Story 8.1's `audit_log_entries` table, HMAC write path, and `verifyAuditRange()` — it does not touch the write path itself. Read "Key Design Decisions & Open Questions" before writing any code: two of the decisions below (D2 retention-vs-append-only-trigger conflict, D3 forwarding delivery mechanism) resolve genuine conflicts between epics.md's literal wording and infrastructure Story 8.1 already ships. Skipping them will produce code that cannot pass CI or, worse, code that silently violates the append-only guarantee Story 8.1 just built. -->
 
