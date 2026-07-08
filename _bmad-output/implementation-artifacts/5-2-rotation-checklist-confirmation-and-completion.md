@@ -1,6 +1,6 @@
 # Story 5.2: Rotation Checklist Confirmation & Completion
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for the SECOND story in Epic 5. This story extends the `apps/api/src/modules/rotation/` module Story 5.1 creates: it adds checklist confirm/fail/retry mutations, the completion endpoint (which retires the superseded credential version), the FR65 upcoming-rotations read endpoint, and wires two previously-hardcoded dashboard placeholders to real data. Story 5.1 is `ready-for-dev` but NOT yet implemented in this branch (no `apps/api/src/modules/rotation/`, no `rotations` schema files, no migration exist yet) — this story's tasks assume 5.1 has landed by the time 5.2 is implemented, and every reference to 5.1's schema/routes below is a description of what 5.1's own story file specifies it will build, not code that exists in this branch today. Read "Prerequisites" and "Cross-Story Schema Extension" before touching anything. -->
 

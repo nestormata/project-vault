@@ -1,4 +1,10 @@
 import { z } from 'zod/v4'
+import {
+  RegisterResponseSchema,
+  AuthSessionResponseSchema,
+  SessionListResponseSchema,
+  RevokeSessionsResponseSchema,
+} from '@project-vault/shared'
 
 function isTotpInput(value: string): boolean {
   const digits = [...value].filter((char) => char >= '0' && char <= '9')
@@ -95,6 +101,26 @@ export const authMeResponseSchema = z.object({
       bannerMessage: z.string().nullable(),
     }),
   }),
+})
+
+export const registerRouteResponseSchema = z.object({ data: RegisterResponseSchema })
+
+export const loginResponseSchema = z.union([
+  z.object({ data: AuthSessionResponseSchema }),
+  mfaLoginRequiredResponseSchema,
+])
+
+export const refreshResponseSchema = z.object({
+  data: z.object({ expiresAt: z.iso.datetime() }),
+})
+
+export const sessionsListResponseSchema = z.object({ data: SessionListResponseSchema })
+
+export const revokeOtherSessionsResponseSchema = z.object({ data: RevokeSessionsResponseSchema })
+
+export const methodNotAllowedResponseSchema = z.object({
+  code: z.literal('method_not_allowed'),
+  message: z.string(),
 })
 
 export type MfaVerifyEnrollmentBody = z.infer<typeof mfaVerifyEnrollmentBodySchema>

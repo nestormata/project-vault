@@ -22,17 +22,18 @@
  *    documented 422 is itself a legitimate, valid outcome under this rule, not a fixture-
  *    generation failure.
  *
- * 3. One narrow, deliberate exclusion: routes registered via `apps/api/src/modules/auth/
- *    routes.ts`'s `registerMethodNotAllowed()` helper (already classified `'shell-only'` in
- *    `route-audit.test.ts`'s own `HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS`) have no declared
- *    Fastify response schema at all, so `@fastify/swagger` documents them with its generic
- *    fallback (`200`) even though their real behavior is `405 Method Not Allowed`. This is
- *    exactly the scenario AC-8's own edge case describes: "if a future developer registers a raw
- *    Fastify route bypassing schema declaration entirely, ... this is caught by
- *    route-audit.test.ts's ... check rather than something this story's suite needs to
- *    separately guard against." Detected at runtime (a 405 response with
- *    `code: 'method_not_allowed'`), not via a hardcoded path list, so it stays correct as new
- *    routes are added.
+ * 3. A small, shrinking set of routes across the API declare no Fastify `schema.response` at all
+ *    (e.g. a raw `fastify.route()`/`fastify.get()` call with no `response` key), so
+ *    `@fastify/swagger` documents them with its generic content-less `200` fallback regardless of
+ *    what they can actually return. Enforcing exact status-set membership against a declaration
+ *    this degenerate produces noise, not signal — there is no real documented contract being
+ *    violated, because none was ever declared. `hasNoDeclaredResponseSchema` below detects this
+ *    structurally (exactly one documented status, with no response schema attached to it) rather
+ *    than via a hardcoded path list, so it stays correct as routes are fixed or added. Each route
+ *    this currently matches is a genuine, pre-existing OpenAPI-completeness gap (not something
+ *    this suite is scoped to fix) — closing one just means adding a real `schema.response` map to
+ *    that route, at which point this exclusion stops matching it on its own. Still smoke-tested
+ *    for an unexpected 5xx, so a real crash is still caught.
  *
  * 4. AC-15's negative-path coverage is intentionally scoped, not exhaustive: every operation
  *    documenting `401` is re-invoked unauthenticated (broad, reliable). Every operation
@@ -75,7 +76,6 @@ let orgACredentialId: string
 let platformOperator: RegisteredUser | null
 
 const PLATFORM_ADMIN_PREFIX = '/api/v1/admin'
-const METHOD_NOT_ALLOWED_CODE = 'method_not_allowed'
 
 function documentedStatuses(operation: Operation['operation']): string[] {
   return Object.keys(operation.responses)
@@ -90,34 +90,7 @@ function responseSchemaFor(
     Record<string, unknown> | undefined
 }
 
-function isMethodNotAllowedShellStub(statusCode: number, body: unknown): boolean {
-  return (
-    statusCode === 405 &&
-    typeof body === 'object' &&
-    body !== null &&
-    (body as { code?: string }).code === METHOD_NOT_ALLOWED_CODE
-  )
-}
-
-/**
- * A second, narrower runtime-detected exclusion alongside the `registerMethodNotAllowed` one
- * (module doc note 3): a small set of pre-existing routes in `apps/api/src/modules/auth/
- * routes.ts` (register, login, logout, refresh, every `/mfa/*` endpoint, sessions) and a few
- * others (`GET /ready`, `POST /api/v1/vault/init`/`unseal`, `GET /api/v1/users/me`, the
- * notification-preferences/routing/inbox group) are registered via raw `fastify.route()`/
- * `fastify.get()` with **no Fastify `schema.response` declared at all** — `@fastify/swagger`'s
- * only option in that case is its generic content-less `200` fallback, regardless of what the
- * route can actually return (e.g. `POST /api/v1/auth/register` really returns `201`/`409`/`422`,
- * never a bare `200`). Enforcing exact status-set membership against a declaration this
- * degenerate produces noise, not signal — there is no real documented contract being violated,
- * because none was ever declared. Detected structurally (exactly one documented status, with no
- * response schema attached to it) rather than via a hardcoded path list. This is a genuine,
- * pre-existing OpenAPI-completeness gap in these specific routes (not something this story's D4
- * rewrite introduced or was scoped to fix — D4 fixed *how* the spec is generated from whatever
- * schemas routes declare, not which routes declare one at all) — flagged here explicitly rather
- * than silently masked, so a future story can close it by adding real `schema.response` maps to
- * these routes. Still smoke-tested for an unexpected 5xx, so a real crash is still caught.
- */
+/** See module doc note 3. */
 function hasNoDeclaredResponseSchema(operation: Operation['operation']): boolean {
   const statuses = documentedStatuses(operation)
   return statuses.length === 1 && !responseSchemaFor(operation, statuses[0] as string)
@@ -219,14 +192,9 @@ for (const op of operations) {
       const cookies = op.method === 'get' ? orgA.cookies : await login(app, orgA)
       const { statusCode, body } = await invoke(op, { cookies })
 
-      if (isMethodNotAllowedShellStub(statusCode, body)) {
-        // See module doc note 3 — a deliberately out-of-scope, runtime-detected exclusion.
-        return
-      }
-
       if (hasNoDeclaredResponseSchema(op.operation)) {
-        // See hasNoDeclaredResponseSchema's doc comment — no real documented contract exists to
-        // check against; still smoke-test that it isn't crashing.
+        // See module doc note 3 — no real documented contract exists to check against; still
+        // smoke-test that it isn't crashing.
         expect(statusCode, `${operationKey(op)}: returned an unexpected server error`).toBeLessThan(
           500
         )
@@ -253,7 +221,6 @@ for (const op of operations) {
     if (documentedStatuses(op.operation).includes('401')) {
       it('returns the documented 401 when unauthenticated (AC-15)', async () => {
         const { statusCode, body } = await invoke(op, {})
-        if (isMethodNotAllowedShellStub(statusCode, body)) return
         // Some routes are intentionally public (no session ever required) and would never
         // return 401 unauthenticated even though 401 is a documented possible status for other
         // callers/conditions — only assert when the route actually did respond 401.
@@ -268,7 +235,6 @@ for (const op of operations) {
     ) {
       it('returns the documented 403 for a non-platform-operator session (AC-15)', async () => {
         const { statusCode, body } = await invoke(op, { cookies: orgA.cookies })
-        if (isMethodNotAllowedShellStub(statusCode, body)) return
         if (statusCode !== 403) return
         assertDocumentedAndSchemaValid(op, statusCode, body)
       })

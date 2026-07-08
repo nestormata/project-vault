@@ -1,6 +1,6 @@
 # Story 9.3: In-Place Version Upgrades & API Parity Verification
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed 2026-07-06 — comprehensive developer guide for the THIRD story of Epic 9 (Platform Operations, API & Self-Hosting). This story does NOT have a hard sequencing prerequisite on Stories 9.1/9.2 (unlike 9.2 on 9.1) — it touches a disjoint set of files (migration tooling, OpenAPI generation, a new contract-test package, pagination schemas) and can be implemented independently of whether 9.1/9.2 have merged. This story's defining characteristic is that it is a VERIFICATION-and-HARDENING story, not a first-time-feature story: every one of its nine Key Design Decisions below is grounded in a concrete, already-verified gap in the current codebase (not a hypothetical) — read D1-D9 before writing any code, they tell you exactly which files are stubs, which fields are silently dropped from real HTTP responses today, and which existing mechanisms to reuse rather than reinvent. Getting D4/D7 wrong (the OpenAPI generation rewrite and the schema-vs-actual-response drift rule) means the contract test suite this story delivers would pass while the exact class of bug it exists to catch (D7's machine-users example) ships silently. -->
