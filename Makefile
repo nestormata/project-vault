@@ -111,6 +111,7 @@ ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap fi
 	$(MAKE) check-audit-actor-token-coverage
 	pnpm check-search-index
 	pnpm check-migration-compatibility
+	pnpm check-story-status-sync
 	pnpm check-alert-pending-epic3
 	$(MAKE) test
 	pnpm jscpd

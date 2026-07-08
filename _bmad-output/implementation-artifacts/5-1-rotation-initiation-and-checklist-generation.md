@@ -1,6 +1,6 @@
 # Story 5.1: Rotation Initiation & Checklist Generation
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-01 — comprehensive developer guide for the FIRST story in Epic 5 (Credential Rotation). This story creates the `rotations` + `rotation_checklist_items` tables (the foundational schema every later Epic 5 story builds on), the rotation-initiation endpoint (advisory-lock-guarded, atomic new-version + rotation + checklist write), the rotation-detail and rotation-history read endpoints, and activates the `rotation_locked_at` retention-exemption seam Story 2.2 built specifically for this story to fill in. Stories 4.3 and 4.4 (already `ready-for-dev`, not yet implemented) contain STUBBED forward-references to the exact `rotations` table shape this story must produce — read "Cross-Epic Coordination" below before touching the schema. -->
 

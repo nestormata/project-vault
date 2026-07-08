@@ -1,6 +1,6 @@
 # Story 5.5: Epic 5 Completion — Rotation Hardening & Technical Debt
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-05 — Epic 5 closure story derived from epic-5-retro-2026-07-05.md's
      risk/gap/contradiction/technical-debt audit. Closes the TOCTOU gap carried forward from Epic 4's own retro, plus
