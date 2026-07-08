@@ -108,5 +108,6 @@ describe('OperationalEvent', () => {
   it('exposes the Story 9.6 backup/restore hardening event types (D2/AC-11, AC-20)', () => {
     expect(OperationalEvent.BACKUP_MISSED_RESOLVED).toBe('backup.missed_resolved')
     expect(OperationalEvent.BACKUP_RESTORE_ATTEMPTED).toBe('backup.restore_attempted')
+    expect(OperationalEvent.BACKUP_MISSED_RESOLVE_FAILED).toBe('backup.missed_resolve_failed')
   })
 })

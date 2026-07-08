@@ -144,6 +144,11 @@ export const OperationalEvent = {
   // admin_alerts row (no notification is delivered for this — only the original "missed" alert is
   // notification-worthy).
   BACKUP_MISSED_RESOLVED: 'backup.missed_resolved',
+  // Story 9.6 D2 failure isolation (adversarial review, high): the alert-resolve step is wrapped
+  // in its own try/catch, independent of the orphan-cleanup/disk-pressure scan — this event fires
+  // when the resolve step itself throws, so a filesystem error in the unrelated cleanup scan can
+  // never mask this job's most important reliability signal (and vice versa).
+  BACKUP_MISSED_RESOLVE_FAILED: 'backup.missed_resolve_failed',
   // Story 9.6 AC-20: audit-relevant log covering every restore attempt outcome (accepted or
   // rejected at the lock or at filename validation) — closes the gap where a blocked restore
   // attempt against a secrets-vault's full-database-restore path left no trace of who attempted it.
