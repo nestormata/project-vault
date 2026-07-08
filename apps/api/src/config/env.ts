@@ -657,6 +657,23 @@ const envSchema = z
       (v) => (v === '' ? undefined : v),
       z.string().min(1).optional()
     ),
+    // Story 9.6 D3.1/AC-18: local staging path for the S3 destination's staged-before-upload
+    // encrypted file. Same optional-string shape as BACKUP_STORAGE_PATH — only meaningful when
+    // BACKUP_S3_BUCKET is configured, ignored otherwise. Unset default (os.tmpdir()-based) is
+    // applied at the storage layer (apps/api/src/modules/backup/s3-upload.ts), not here — see
+    // .env.example for the ephemeral-/tmp persistence caveat and the `.staged`/`.staged.hold`
+    // operator-protection convention (D3.11).
+    BACKUP_S3_STAGING_PATH: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(1).optional()
+    ),
+    // Story 9.6 D3.9/AC-16b: optional cumulative staging-directory disk-usage monitoring
+    // threshold — unset by default (disabled; this is a monitoring addition, never a hard cap
+    // that could itself block a backup attempt).
+    BACKUP_S3_STAGING_MAX_BYTES: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.coerce.number().int().positive().optional()
+    ),
 
     // Story 9.2 D5/AC-15/AC-21: daily audit-log-storage-pressure monitoring threshold —
     // pg_total_relation_size('audit_log_entries') is compared against this (the real table
