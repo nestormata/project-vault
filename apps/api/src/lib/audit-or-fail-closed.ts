@@ -7,6 +7,15 @@ import {
   writeSystemAuditEntry,
   type SystemAuditFields,
 } from '../modules/audit/machine-entry.js'
+import {
+  writePlatformAuditEntry,
+  type PlatformAuditFields,
+} from '../modules/platform-audit/write-entry.js'
+import {
+  isMaintenanceModeActive,
+  drainPendingEntries,
+  queuePendingEntry,
+} from '../modules/platform-audit/maintenance-mode.js'
 import { SameTransactionAuditWriteError } from './secure-route.js'
 
 /** Shared by every `write*AuditEntryOrFailClosed` wrapper below: any audit-write error is
@@ -108,4 +117,54 @@ export async function writeSystemAuditEntryOrFailClosed(
   input: SystemAuditFields
 ): Promise<void> {
   await rethrowAsSameTransactionAuditWriteError(() => writeSystemAuditEntry(tx, input))
+}
+
+/** Story 9.4 D6: sibling to `SameTransactionAuditWriteError`, same rethrow-and-roll-back
+ * contract, for the platform audit log. */
+export class SameTransactionPlatformAuditWriteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SameTransactionPlatformAuditWriteError'
+  }
+}
+
+export type PlatformAuditInput = PlatformAuditFields & { request?: FastifyRequest }
+
+/**
+ * Story 9.4 AC-6/D8: writes a same-transaction platform-audit row and fails closed — UNLESS
+ * maintenance mode is active (D8/AC-15), in which case a write failure is caught and queued to
+ * `platform_audit_pending_entries` instead of aborting the parent transaction. Also opportunistically
+ * drains any queued entries after every ordinary successful write (AC-16) — best-effort: a drain
+ * failure must never take down the (already-succeeded) triggering action's transaction, so it is
+ * swallowed rather than rethrown.
+ */
+export async function writePlatformAuditEntryOrFailClosed(
+  tx: Tx,
+  input: PlatformAuditInput
+): Promise<void> {
+  const { request, ...fields } = input
+  const resolvedFields: PlatformAuditFields = {
+    ...fields,
+    ipAddress: fields.ipAddress ?? request?.ip ?? null,
+  }
+
+  try {
+    await writePlatformAuditEntry(tx, resolvedFields)
+  } catch (error) {
+    if (await isMaintenanceModeActive(tx)) {
+      await queuePendingEntry(tx, resolvedFields)
+      return
+    }
+    throw new SameTransactionPlatformAuditWriteError(
+      error instanceof Error ? error.message : String(error)
+    )
+  }
+
+  // AC-16: opportunistic drain — never let a drain failure roll back the write that just
+  // succeeded above.
+  try {
+    await drainPendingEntries(tx, resolvedFields.operatorId, { skipLocked: true })
+  } catch {
+    // Best-effort: the next successful write will retry the drain.
+  }
 }

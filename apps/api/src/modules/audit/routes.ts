@@ -10,7 +10,6 @@ import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import type { BossService } from '../../lib/boss.js'
-import { VaultSealedError } from '../vault/key-service.js'
 import {
   AuditVerifyQuerySchema,
   AuditVerifyResponseSchema,
@@ -28,7 +27,7 @@ import {
   type AuditForwardingConfigRequest,
   type AuditRetentionConfigRequest,
 } from './schema.js'
-import { InvalidRangeError, RangeTooLargeError, verifyAuditRange } from './verify.js'
+import { verifyAuditRange, verifyRouteErrorResponse } from './verify.js'
 import { searchAuditEvents } from './search.js'
 import { AUDIT_EXPORT_MAX_RANGE_DAYS } from './export.js'
 import { configureForwarding } from './forwarding.js'
@@ -135,18 +134,11 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
           to: parsed.data.to,
         })
       } catch (error) {
-        if (error instanceof InvalidRangeError) {
-          return reply.status(422).send({ code: 'invalid_range', message: error.message })
-        }
-        if (error instanceof RangeTooLargeError) {
-          return reply.status(422).send({ code: 'range_too_large', message: error.message })
-        }
-        if (error instanceof VaultSealedError) {
-          return reply.status(503).send({
-            code: 'audit_key_unavailable',
-            message: 'Audit key is unavailable while the vault is sealed',
-          })
-        }
+        const mapped = verifyRouteErrorResponse(error, {
+          code: 'audit_key_unavailable',
+          message: 'Audit key is unavailable while the vault is sealed',
+        })
+        if (mapped) return reply.status(mapped.status).send(mapped.body)
         throw error
       }
 

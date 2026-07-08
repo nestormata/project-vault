@@ -31,7 +31,7 @@ async function handleUpdateSettings(
   if (!begun) return reply
   const { secureCtx, data } = begun
 
-  const { effective, smtpChanged } = await upsertSystemSettings(data, secureCtx.auth.userId)
+  const { effective, smtpChanged } = await upsertSystemSettings(data, secureCtx.auth.userId, req)
 
   // D4/AC-6: invalidate the cached SMTP transport only when an SMTP field actually changed
   // — avoids unnecessarily dropping a healthy connection pool for unrelated updates.

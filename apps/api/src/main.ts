@@ -50,6 +50,7 @@ import {
 } from './workers/notification-inbox-purge.js'
 import { notificationDigestHandler } from './workers/notification-digest.js'
 import { pruneExpiredAuditLogEntries } from './workers/audit-retention-prune.js'
+import { prunePlatformAuditEvents } from './workers/platform-audit-retention-prune.js'
 import { runAuditExport } from './modules/audit/export.js'
 import { runWebhookForwardCatchup } from './modules/audit/forwarding.js'
 import { runS3ForwardDaily } from './modules/audit/s3-forward.js'
@@ -198,6 +199,9 @@ async function main(): Promise<void> {
       'key-custody/check': { cron: '0 5 * * 1' },
       // Story 9.2 AC-13/AC-14: hourly instance/per-org resource-usage threshold check.
       'resource-usage/check': { cron: '0 * * * *' },
+      // Story 9.4 AC-17: daily platform-audit-log retention prune (independent of the org-scoped
+      // audit/retention-prune schedule above — the two logs have unrelated retention policies).
+      'platform-audit/retention': { cron: '0 2 * * *' },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
@@ -321,6 +325,10 @@ async function main(): Promise<void> {
       'resource-usage/check': (job) =>
         withJobLogging(fastify.log, 'resource-usage/check', job.id ?? 'unknown', () =>
           runResourceUsageCheck(boss, fastify.log)
+        ),
+      'platform-audit/retention': (job) =>
+        withJobLogging(fastify.log, 'platform-audit/retention', job.id ?? 'unknown', () =>
+          prunePlatformAuditEvents(fastify.log)
         ),
     })
     await boss.send('notification/backfill-pending-delivery', {})

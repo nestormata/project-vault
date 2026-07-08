@@ -307,4 +307,34 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       .where(eq(users.email, raceEmail))
     expect(usersWithEmail).toHaveLength(1)
   })
+
+  // Story 9.4 AC-8: retrofit — POST /admin/orgs also writes a platform_audit_events row.
+  it('Story 9.4 AC-8: writes an org.created row with targetOrgId/targetUserId in the same transaction', async () => {
+    const { withPlatformOperatorContext } = await import('@project-vault/db')
+    const { platformAuditEvents } = await import('@project-vault/db/schema')
+
+    const operator = await registerPlatformOperator(suite.app, {
+      emailPrefix: 'orgs-platform-audit',
+      orgNamePrefix: 'Orgs Platform Audit',
+      password: PASSWORD,
+    })
+    const ownerEmail = `orgs-platform-audit-owner-${randomUUID()}@example.com`
+    const res = await createOrgReq(suite.app, operator.cookies, {
+      name: 'Platform Audit Org',
+      ownerEmail,
+    })
+    expect(res.statusCode).toBe(201)
+    const body = res.json<{ id: string; ownerUserId: string }>()
+
+    const rows = await withPlatformOperatorContext((tx) =>
+      tx.select().from(platformAuditEvents).where(eq(platformAuditEvents.targetOrgId, body.id))
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.actionType).toBe('org.created')
+    expect(rows[0]?.operatorId).toBe(operator.userId)
+    expect(rows[0]?.targetUserId).toBe(body.ownerUserId)
+    expect((rows[0]?.payload as { ownerAccountAction?: string })?.ownerAccountAction).toBe(
+      'invited_new_user'
+    )
+  })
 })

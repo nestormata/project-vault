@@ -39,6 +39,7 @@ import { backupRoutes } from './modules/backup/routes.js'
 import { settingsRoutes } from './modules/platform-admin/settings-routes.js'
 import { orgsRoutes } from './modules/platform-admin/orgs-routes.js'
 import { resourceUsageRoutes } from './modules/platform-admin/resource-usage-routes.js'
+import { platformAuditRoutes } from './modules/platform-audit/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
 import { machineTokenExchangeRoutes } from './modules/machine-users/token-exchange-routes.js'
@@ -269,6 +270,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(settingsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(orgsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(resourceUsageRoutes, { prefix: ADMIN_PREFIX })
+  // Story 9.4 AC-10: a distinct sibling module to platform-admin (audit-log read/verify vs.
+  // instance administration) under its own '/api/v1/platform' prefix, not nested under
+  // ADMIN_PREFIX.
+  await fastify.register(platformAuditRoutes, { prefix: '/api/v1/platform' })
   await fastify.register(notificationRoutes, { prefix: '/api/v1' })
   await fastify.register(machineUserRoutes, { prefix: '/api/v1' })
   await fastify.register(machineCredentialRoutes, { prefix: '/api/v1/machine' })

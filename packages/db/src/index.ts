@@ -61,6 +61,20 @@ export async function withOrgReadScope<T>(orgId: string, fn: (tx: Tx) => Promise
   return withOrg(orgId, fn)
 }
 
+/**
+ * Story 9.4 D4: transaction-scoped equivalent of `withOrg()` for `platform_audit_events`'
+ * RLS policy — sets `app.platform_operator_verified` via `set_config(..., true)` (SET LOCAL
+ * semantics, same discipline as `app.current_org_id`) so the variable never leaks across a pooled
+ * connection into an unrelated subsequent request (AC-3 edge case). Callers must have already
+ * confirmed `requirePlatformOperator()` passed before calling this.
+ */
+export async function withPlatformOperatorContext<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return getDb().transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.platform_operator_verified', 'true', true)`)
+    return fn(tx as unknown as Tx)
+  })
+}
+
 export async function withAdminAccess<T>(
   authCtx: { role?: string },
   fn: (tx: Tx) => Promise<T>

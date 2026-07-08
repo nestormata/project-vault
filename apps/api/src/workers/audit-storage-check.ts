@@ -143,6 +143,40 @@ async function handleElevatedUtilization(
   }
 }
 
+const PLATFORM_WARNING_ALERT_TYPE = 'platform_audit_storage.warning'
+const PLATFORM_CRITICAL_ALERT_TYPE = 'platform_audit_storage.critical'
+
+/** Story 9.4 AC-18/D10: `platform_audit_events`'s own, INDEPENDENT storage-pressure check —
+ * evaluated and alerted separately from `audit_log_entries` above (never conflated into one
+ * alert row, AC-18 edge case); no per-org top-contributors breakdown (this table has no org_id)
+ * and no fan-out delivery (a platform-operator concern, not an org-facing notification). */
+async function checkPlatformAuditStorage(limitGbOverride?: number): Promise<void> {
+  const [sizeRow] = await getAdminDb().execute<{ size: string }>(
+    sql`SELECT pg_total_relation_size('platform_audit_events')::text AS size`
+  )
+  const sizeBytes = Number(sizeRow?.size ?? 0)
+  const limitBytes = (limitGbOverride ?? env.PLATFORM_AUDIT_STORAGE_LIMIT_GB) * 1024 ** 3
+  const utilizationPct = limitBytes > 0 ? (sizeBytes / limitBytes) * 100 : 0
+
+  if (utilizationPct < 80) {
+    await clearThresholdAlertEpisode(PLATFORM_WARNING_ALERT_TYPE, null)
+    await clearThresholdAlertEpisode(PLATFORM_CRITICAL_ALERT_TYPE, null)
+    return
+  }
+
+  const critical = utilizationPct >= 95
+  const alertType = critical ? PLATFORM_CRITICAL_ALERT_TYPE : PLATFORM_WARNING_ALERT_TYPE
+  if (!critical) await clearThresholdAlertEpisode(PLATFORM_CRITICAL_ALERT_TYPE, null)
+
+  await upsertThresholdAlert({
+    alertType,
+    thresholdPct: critical ? 95 : 80,
+    severity: critical ? 'critical' : 'warning',
+    payload: { sizeBytes, limitBytes, utilizationPct },
+    scopeKey: null,
+  })
+}
+
 /**
  * Story 9.2 D5/AC-15 through AC-17: daily `audit-storage/check` job.
  *
@@ -164,7 +198,11 @@ export async function runAuditStorageCheck(
   boss: BossService,
   logger?: WorkerLogger,
   /** Test-only override — see computeUtilization()'s doc comment. */
-  limitGbOverride?: number
+  limitGbOverride?: number,
+  /** Test-only override for the independent platform_audit_events check (Story 9.4 AC-18) — kept
+   * as its own parameter (not reusing limitGbOverride) so a test can exercise one table's
+   * threshold without also perturbing the other's, matching D10's "never conflated" design. */
+  platformLimitGbOverride?: number
 ): Promise<void> {
   try {
     const wasActive = await wasMaintenanceModeActive()
@@ -172,10 +210,9 @@ export async function runAuditStorageCheck(
 
     if (utilization.utilizationPct < 80) {
       await handleHealthyUtilization(utilization, wasActive, logger)
-      return
+    } else {
+      await handleElevatedUtilization(boss, utilization, wasActive, logger)
     }
-
-    await handleElevatedUtilization(boss, utilization, wasActive, logger)
   } catch (error) {
     if (logger) {
       operationalLog(
@@ -183,6 +220,24 @@ export async function runAuditStorageCheck(
         'error',
         OperationalEvent.AUDIT_STORAGE_CHECK_FAILED,
         'audit-storage/check job failed',
+        { err: error instanceof Error ? { message: error.message, stack: error.stack } : error }
+      )
+    }
+    throw error
+  }
+
+  // Story 9.4 AC-18/D10: evaluated independently of the audit_log_entries check above — its own
+  // try/catch so a platform-audit-storage failure never masks (or is masked by) the org-scoped
+  // result, while still surfacing at `error` level under its own operational event.
+  try {
+    await checkPlatformAuditStorage(platformLimitGbOverride)
+  } catch (error) {
+    if (logger) {
+      operationalLog(
+        logger,
+        'error',
+        OperationalEvent.PLATFORM_AUDIT_STORAGE_CHECK_FAILED,
+        'audit-storage/check job failed for platform_audit_events',
         { err: error instanceof Error ? { message: error.message, stack: error.stack } : error }
       )
     }

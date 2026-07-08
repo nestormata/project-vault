@@ -664,6 +664,13 @@ const envSchema = z
     AUDIT_LOG_STORAGE_LIMIT_GB: z.coerce.number().positive().default(50),
     // Story 9.2 D8/AC-20/AC-21: weekly master-key custody-age trigger threshold.
     KEY_ROTATION_MAX_AGE_DAYS: z.coerce.number().int().positive().default(365),
+    // Story 9.4 AC-17: same validation pattern as INBOX_RETENTION_DAYS — independent of Story
+    // 8.2's equivalent org-scoped audit retention (D10/open question 4: the two logs have
+    // unrelated growth rates and retention policies).
+    PLATFORM_AUDIT_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
+    // Story 9.4 AC-18/D10: independent of AUDIT_LOG_STORAGE_LIMIT_GB — the two logs' growth rates
+    // are unrelated, so a single shared threshold would be wrong.
+    PLATFORM_AUDIT_STORAGE_LIMIT_GB: z.coerce.number().positive().default(5),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {

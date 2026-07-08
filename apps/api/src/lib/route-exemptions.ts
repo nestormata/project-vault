@@ -504,12 +504,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   },
   // Story 9.1 D1/D6: backup/restore is instance-wide (requireOrgScope: false, D2) — there is no
   // secureCtx.tx to write an org-scoped audit_log_entries row through, so these are logged via
-  // structured operational logging instead (D6, AC-18), not audit_log_entries. This is an
-  // interim, non-tamper-evident mechanism pending Story 9.4's platform_audit_events retrofit.
+  // structured operational logging (D6, AC-18) AND, as of Story 9.4's retrofit (AC-7), a
+  // platform_audit_events row via writePlatformAuditEntryOrFailClosed() against a route-owned
+  // getDb().transaction() — never audit_log_entries itself, since there is still no org context.
   'POST /api/v1/admin/backup/trigger': {
     action: 'mutation',
     auditOmissionReason:
-      'Instance-wide (not org-scoped) action — no secureCtx.tx to audit through. Logged via operational logging (backup.triggered, D6/AC-18) pending Story 9.4.',
+      'Instance-wide (not org-scoped) action — no secureCtx.tx to audit through audit_log_entries. Logged via operational logging (backup.triggered, D6/AC-18) and, since Story 9.4, a platform_audit_events row (backup.triggered, AC-7).',
     reviewer: SECURITY_OWNER,
   },
   'GET /api/v1/admin/backups': {
@@ -521,18 +522,19 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/admin/backups/:filename/restore': {
     action: SECURITY_ACTION,
     auditOmissionReason:
-      'Instance-wide destructive action — no secureCtx.tx to audit through. Logged via operational logging (backup.restore.initiated/completed/failed, D6/AC-18) pending Story 9.4.',
+      'Instance-wide destructive action — no secureCtx.tx to audit through audit_log_entries. Logged via operational logging (backup.restore.initiated/completed/failed, D6/AC-18) and, since Story 9.4, platform_audit_events rows (backup.restore_initiated/_completed/_failed, AC-7).',
     reviewer: SECURITY_OWNER,
   },
   'POST /api/v1/admin/backups/:filename/validate': {
     action: 'mutation',
     auditOmissionReason:
-      'Non-destructive validation that also updates backup_runs.verified as a side effect — instance-wide, no secureCtx.tx to audit through. Logged via operational logging (backup.validate.initiated/completed, D6/AC-18) pending Story 9.4.',
+      'Non-destructive validation that also updates backup_runs.verified as a side effect — instance-wide, no secureCtx.tx to audit through audit_log_entries. Logged via operational logging (backup.validate.initiated/completed, D6/AC-18) and, since Story 9.4, a platform_audit_events row (backup.validated, AC-7).',
     reviewer: SECURITY_OWNER,
   },
   // Story 9.2 D2/D6: platform-operator-scoped (instance-wide, requireOrgScope: false) routes in
-  // modules/platform-admin/ — same "no secureCtx.tx to audit through" shape as Story 9.1's
-  // backup/restore routes above. Logged via operational logging (AC-25) pending Story 9.4.
+  // modules/platform-admin/ — same "no secureCtx.tx to audit through audit_log_entries" shape as
+  // Story 9.1's backup/restore routes above. Logged via operational logging (AC-25) AND, as of
+  // Story 9.4's retrofit (AC-8), a platform_audit_events row.
   'GET /api/v1/admin/settings': {
     action: SENSITIVE_READ,
     auditOmissionReason:
@@ -542,13 +544,35 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'PUT /api/v1/admin/settings': {
     action: 'mutation',
     auditOmissionReason:
-      'Instance-wide settings update — no secureCtx.tx to audit through. Logged via operational logging (platform_admin.settings_updated, D6/AC-25) pending Story 9.4.',
+      'Instance-wide settings update — no secureCtx.tx to audit through audit_log_entries. Logged via operational logging (platform_admin.settings_updated, D6/AC-25) and, since Story 9.4, a platform_audit_events row when at least one field changed (settings.updated, AC-8).',
     reviewer: SECURITY_OWNER,
   },
   'POST /api/v1/admin/orgs': {
     action: SECURITY_ACTION,
     auditOmissionReason:
-      'Instance-wide org provisioning (creates users/org_memberships) — no secureCtx.tx to audit through. Logged via operational logging (platform_admin.org_created, D6/AC-25) pending Story 9.4.',
+      'Instance-wide org provisioning (creates users/org_memberships) — no secureCtx.tx to audit through audit_log_entries. Logged via operational logging (platform_admin.org_created, D6/AC-25) and, since Story 9.4, a platform_audit_events row (org.created, AC-8).',
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 9.4 AC-9 through AC-16: modules/platform-audit/ — a new sibling module to
+  // modules/platform-admin/, also platform-operator-scoped (requireOrgScope: false, D2) with no
+  // secureCtx.tx. Every route already writes its own platform_audit_events row directly (not
+  // through SecureRoute's generic writeAuditEvent mechanism, hence no `auditEvent` set here).
+  'GET /api/v1/platform/audit/events': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      'Read-only search over platform_audit_events (operator ids/action types/payloads, already redacted at write time) — routine reads are not self-audited (D7), matching the GET /org/audit/events read-classification precedent. No secureCtx.tx exists here regardless (requireOrgScope: false).',
+    reviewer: SECURITY_OWNER,
+  },
+  'GET /api/v1/platform/audit/verify': {
+    action: 'read',
+    auditOmissionReason:
+      'Integrity verification read returns pass/fail counts and event metadata only; never a secret or credential value. Self-audits via its own platform_audit_events row (platform_audit.integrity_verify_run, AC-11) written directly against a route-owned getDb().transaction(), not through the generic writeAuditEvent mechanism (no secureCtx.tx exists here).',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/platform/maintenance-mode': {
+    action: SECURITY_ACTION,
+    auditOmissionReason:
+      'Activates/deactivates the platform-audit-log write-failure bypass (D8) — no secureCtx.tx (requireOrgScope: false). Each transition writes its own platform_audit_events row (maintenance_mode.activated/.deactivated) directly against a route-owned getDb().transaction(), not through the generic writeAuditEvent mechanism.',
     reviewer: SECURITY_OWNER,
   },
   'GET /api/v1/admin/orgs': {
@@ -1126,6 +1150,20 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'Story 9.2 AC-19/AC-20: reads the single platform-level vault_state row (no org_id column, RLS-exempt, D8) via getDb() — there is no per-org scope to apply here.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'modules/backup/routes.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Story 9.4 AC-7: backup/restore/validate routes are platform-operator-scoped (requireOrgScope: false, D2) and have no secureCtx.tx — the platform_audit_events retrofit writes (writeBackupPlatformAudit/writeBackupPlatformAuditBestEffort) open their own getDb().transaction() to call writePlatformAuditEntryOrFailClosed(), same shape as every other platform-level (non-org-scoped) table access in this list.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'modules/platform-audit/routes.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Story 9.4 AC-9 through AC-16: this module is itself platform-operator-scoped (requireOrgScope: false, D2) with no secureCtx.tx — GET /audit/events, GET /audit/verify, and POST /maintenance-mode all open their own getDb().transaction()/withPlatformOperatorContext() to read/write platform_audit_events, gated on the app.platform_operator_verified RLS policy (D4), not org RLS.',
     reviewer: SECURITY_OWNER,
   },
 ]

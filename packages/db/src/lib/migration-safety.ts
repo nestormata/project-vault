@@ -292,4 +292,11 @@ export function findDestructiveStatements(sql: string): string[] {
 export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   '0036_audit_search_export_forwarding':
     "purge_expired_audit_log_entries()'s DELETE FROM audit_log_entries is the sanctioned, RLS-context-checked exception to the append-only trigger (Story 8.1/8.2) — reviewed and merged before Story 9.3 tightened dollar-quoted-block scanning.",
+  // Story 9.4 AC-17/D5: purge_expired_platform_audit_entries()'s DELETE FROM platform_audit_events
+  // is the exact same sanctioned pattern as 0036 above (SECURITY DEFINER function, session-flag-
+  // gated append-only-trigger escape hatch), for the new platform-level audit table this story
+  // introduces — a genuinely destructive-looking DELETE that is intentionally scoped and reviewed,
+  // not an accidental schema change.
+  '0042_platform_audit_retention_purge':
+    "purge_expired_platform_audit_entries()'s DELETE FROM platform_audit_events is the sanctioned, session-flag-gated exception to this story's own append-only trigger — same pattern as 0036's audit_log_entries purge function.",
 }
