@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
+import { tryAcquireRotationScopedLock } from '../../lib/rotation-locks.js'
 import {
   auditLogEntries,
   credentialVersions,
@@ -1291,9 +1292,12 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
   ): Promise<T> {
     let result!: T
     await withOrg(orgId, async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('rotation:' || ${orgId} || ':' || ${rotationId}, 0))`
-      )
+      const locked = await tryAcquireRotationScopedLock(tx, orgId, rotationId)
+      if (!locked) {
+        throw new Error(
+          'holdRotationLockAndFire: rotation lock was already held — test fixture is not fresh'
+        )
+      }
       result = await fire()
     })
     return result
