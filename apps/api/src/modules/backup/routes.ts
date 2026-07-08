@@ -18,8 +18,10 @@ import {
 } from '../../lib/audit-or-fail-closed.js'
 import { operationalLog, serializeLogError } from '../../lib/logger.js'
 import { isBackupEnabled } from './config.js'
+import { parseBackupFilename } from './filename.js'
 import {
   acquireBackupSlot,
+  acquireRestoreLock,
   listBackups,
   releaseBackupSlotOnAuditFailure,
   restoreFromBackup,
@@ -34,10 +36,13 @@ import {
   BackupConfirmationRequiredErrorSchema,
   BackupDecryptFailedErrorSchema,
   BackupFilenameParamsSchema,
+  BackupInvalidFilenameErrorSchema,
   BackupListResponseSchema,
   BackupNotConfiguredErrorSchema,
   BackupNotFoundErrorSchema,
+  BackupRestoreBackupInProgressErrorSchema,
   BackupRestoreBodySchema,
+  BackupRestoreInProgressErrorSchema,
   BackupRestoreResponseSchema,
   BackupTriggerResponseSchema,
   BackupValidateResponseSchema,
@@ -45,6 +50,11 @@ import {
 } from './schema.js'
 
 type BossFastify = FastifyApp & { boss?: BossService }
+
+// Story 9.6 AC-20: shared message for every `backup.restore_attempted` audit-relevant log call
+// (filename-rejected, lock-rejected, and accepted) — one literal, not three independently typed
+// copies.
+const BACKUP_RESTORE_ATTEMPTED_MESSAGE = 'backup restore attempted'
 
 const BACKUP_NOT_CONFIGURED_ERROR = {
   code: 'backup_not_configured',
@@ -297,7 +307,9 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         200: BackupRestoreResponseSchema,
-        400: BackupConfirmationRequiredErrorSchema,
+        // Story 9.6 D1.9: BackupInvalidFilenameErrorSchema covers the new route-level pre-check
+        // (a malformed/path-traversal filename, rejected before the lock is ever touched).
+        400: z.union([BackupConfirmationRequiredErrorSchema, BackupInvalidFilenameErrorSchema]),
         // AC-9: 401 covers both the auth-layer failure (access_token_missing) and
         // backup_decrypt_failed — the latter is not itself an authn failure, but the story's
         // literal AC text specifies 401 for it too, matching Story 1.5's "no oracle" unseal-error
@@ -305,6 +317,12 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         401: z.union([ApiErrorSchema, BackupDecryptFailedErrorSchema]),
         403: ApiErrorSchema,
         404: BackupNotFoundErrorSchema,
+        // Story 9.6 D1/AC-2/AC-3: the restore lock was already held (by another restore) or a
+        // backup dump is currently mid-flight — rejected before any decrypt/checksum work begins.
+        409: z.union([
+          BackupRestoreInProgressErrorSchema,
+          BackupRestoreBackupInProgressErrorSchema,
+        ]),
         422: BackupChecksumMismatchErrorSchema,
         // Code review fix: pg_restore/psql subprocess failure after checksum verification passed
         // — an unexpected but possible outcome that previously had no declared response shape.
@@ -332,6 +350,30 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       const params = parseParams(BackupFilenameParamsSchema, req, reply)
       if (!params) return reply
+
+      // Story 9.6 D1.9 (adversarial review, medium): reject a malformed/path-traversal filename
+      // BEFORE any lock or DB work — the cheapest possible rejection, ahead of even body parsing.
+      // Moved here from inside restoreFromBackup()/acquireRestoreLock() specifically so a rapid
+      // loop of bad-filename requests can never needlessly cycle the shared restore/backup lock.
+      if (!parseBackupFilename(params.filename)) {
+        operationalLog(
+          req.log,
+          'info',
+          OperationalEvent.BACKUP_RESTORE_ATTEMPTED,
+          BACKUP_RESTORE_ATTEMPTED_MESSAGE,
+          {
+            actorId: secureCtx.auth.userId,
+            filename: params.filename,
+            outcome: 'rejected',
+            reason: 'invalid_filename',
+          }
+        )
+        return reply.status(400).send({
+          code: 'invalid_filename',
+          message: 'Not a well-formed backup filename.',
+        })
+      }
+
       const parsed = parseBody(BackupRestoreBodySchema, req, reply)
       if (!parsed.success) return reply
 
@@ -362,10 +404,60 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
       })
       if (!initiatedOk) return reply
 
-      const restoreStart = Date.now()
-      const outcome = await restoreFromBackup(params.filename)
+      // Story 9.6 D1/AC-1/AC-2/AC-3: session-scoped advisory lock, held for the whole restore —
+      // rejects immediately (409) if another restore already holds it, or if a backup dump is
+      // currently mid-flight, before any decrypt/checksum work begins.
+      const lock = await acquireRestoreLock(req.log)
+      if (!lock.ok) {
+        operationalLog(
+          req.log,
+          'info',
+          OperationalEvent.BACKUP_RESTORE_ATTEMPTED,
+          BACKUP_RESTORE_ATTEMPTED_MESSAGE,
+          {
+            actorId: secureCtx.auth.userId,
+            filename: params.filename,
+            outcome: 'rejected',
+            reason: lock.reason,
+          }
+        )
+        // D1.10: this message is deliberately generic — a backup-trigger's transient xact-lock
+        // hold can rarely be mislabeled as restore_in_progress (documented, acceptable trade-off,
+        // same operator remedy either way), so the wording must not overclaim a specific cause.
+        const message =
+          lock.reason === 'restore_in_progress'
+            ? 'Another restore is already in progress. Wait for it to complete before retrying.'
+            : 'A backup is currently running. Wait for it to complete before restoring.'
+        return reply.status(409).send({ code: lock.reason, message })
+      }
 
-      return handleRestoreOutcome({
+      const restoreStart = Date.now()
+      let outcome: RestoreOutcome
+      try {
+        outcome = await restoreFromBackup(params.filename)
+      } finally {
+        // AC-6/AC-7: released before the response is ever sent (not just before this function
+        // returns) — handleRestoreOutcome() below calls reply.send() directly, and Fastify does
+        // not wait for this handler's own promise to settle before writing that response to the
+        // client. Releasing the lock here, ahead of handleRestoreOutcome(), closes a race where a
+        // caller could receive its response and immediately retry before the lock was actually
+        // free server-side — a session-level lock left held past this point would permanently
+        // block every future restore AND every future backup trigger regardless.
+        await lock.release()
+      }
+
+      // AC-20: audit-relevant log for every accepted restore attempt, regardless of which of
+      // the five outcomes it resolves to — closes the gap where a restore attempt against a
+      // secrets-vault's full-database-restore path left no trace of who attempted it.
+      operationalLog(
+        req.log,
+        'info',
+        OperationalEvent.BACKUP_RESTORE_ATTEMPTED,
+        BACKUP_RESTORE_ATTEMPTED_MESSAGE,
+        { actorId: secureCtx.auth.userId, filename: params.filename, outcome: outcome.code }
+      )
+
+      return await handleRestoreOutcome({
         outcome,
         filename: params.filename,
         operatorId: secureCtx.auth.userId,

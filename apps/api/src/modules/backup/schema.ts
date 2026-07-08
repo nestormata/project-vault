@@ -85,6 +85,27 @@ export const BackupNotFoundErrorSchema = z.object({
   message: z.string(),
 })
 
+// Story 9.6 D1.9: the route-level pre-check (parseBackupFilename() before acquireRestoreLock())
+// rejects a malformed/path-traversal filename with zero lock/DB involvement — the cheapest
+// possible rejection.
+export const BackupInvalidFilenameErrorSchema = z.object({
+  code: z.literal('invalid_filename'),
+  message: z.string(),
+})
+
+// Story 9.6 D1.4/AC-2/AC-3: the two `acquireRestoreLock()` rejection reasons — literal strings
+// matching `RestoreLockResult['reason']` exactly (service.ts), so the wire contract and the
+// implementation type can never drift.
+export const BackupRestoreInProgressErrorSchema = z.object({
+  code: z.literal('restore_in_progress'),
+  message: z.string(),
+})
+
+export const BackupRestoreBackupInProgressErrorSchema = z.object({
+  code: z.literal('backup_in_progress'),
+  message: z.string(),
+})
+
 export const BackupDecryptFailedErrorSchema = z.object({
   code: z.literal('backup_decrypt_failed'),
   message: z.string(),

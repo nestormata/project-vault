@@ -17,10 +17,39 @@ const { initVault } = await import('../vault/key-service.js')
 const { resetVaultForTest } = await import('../../__tests__/helpers/vault-test-cleanup.js')
 const { registerAndLoginViaApi, cookieHeader, assertRoutesFailClosedWhileSealed } =
   await import('../../__tests__/helpers/auth-test-helpers.js')
-const { getDb } = await import('@project-vault/db')
+const { createLogCaptureStream, flushCapturedLogger, parseCapturedLogLines } =
+  await import('../../__tests__/helpers/capture-logs.js')
+const { createLoggerConfig } = await import('../../lib/logger.js')
+const { OperationalEvent } = await import('@project-vault/shared')
+const { getDb, reserveConnection } = await import('@project-vault/db')
 const { backupRuns, users } = await import('@project-vault/db/schema')
-const { acquireBackupSlot, executeBackupSnapshot } = await import('./service.js')
+const { acquireBackupSlot, acquireRestoreLock, executeBackupSnapshot } =
+  await import('./service.js')
 const { backupStorageFor } = await import('./storage.js')
+
+const BACKUP_ADVISORY_LOCK_KEY = 'backup/snapshot'
+const EXPECTED_OK_MESSAGE = 'expected ok'
+
+// Story 9.6 AC-6: probes ONLY the raw session-level advisory lock (not acquireRestoreLock(), which
+// also checks backup_runs for a 'running' row) — narrowly scoped to what AC-6 actually asserts
+// (the lock itself was released), so it can't be confused by an unrelated 'running' row some other
+// test in this shared database happens to be mid-cleanup on. Lock + unlock run on the same reserved
+// connection (session-scoped state).
+async function probeLockFree(): Promise<boolean> {
+  const reserved = await reserveConnection()
+  try {
+    const [lockRow] = await reserved<{ locked: boolean }[]>`
+      SELECT pg_try_advisory_lock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS locked
+    `
+    const locked = Boolean(lockRow?.locked)
+    if (locked) {
+      await reserved`SELECT pg_advisory_unlock(hashtext(${BACKUP_ADVISORY_LOCK_KEY}))`
+    }
+    return locked
+  } finally {
+    await reserved.release()
+  }
+}
 
 const TEST_PASSPHRASE = 'backup-routes-test-passphrase'
 const TRIGGER_URL = '/api/v1/admin/backup/trigger'
@@ -37,6 +66,16 @@ type TestApp = Awaited<ReturnType<typeof createApp>>
 
 let app: TestApp
 let operatorCookies: Record<string, string>
+
+// Story 9.6 D1.9: parseBackupFilename()'s shape check now runs in the route handler BEFORE the
+// restore lock is ever touched — a filename that doesn't match the real backup_<timestamp>_<id>
+// pattern is now rejected 400 invalid_filename, never reaching storage/lock/DB. A genuinely
+// well-formed-but-nonexistent filename (this helper) is what actually exercises "the file just
+// isn't there" (404 backup_not_found / lock-related 409s), as intended by the original AC-9/AC-2
+// fixtures below.
+function wellFormedNonexistentFilename(): string {
+  return `backup_20260101T000000000Z_${randomUUID()}.vault`
+}
 
 async function seedSucceededBackup(): Promise<string> {
   const slot = await acquireBackupSlot({ triggeredBy: 'manual' })
@@ -151,7 +190,7 @@ describe.sequential('Story 9.1: backup HTTP routes', () => {
   it('AC-9 negative: unknown filename returns 404 backup_not_found', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: `/api/v1/admin/backups/nonexistent-${randomUUID()}.vault/restore`,
+      url: `/api/v1/admin/backups/${wellFormedNonexistentFilename()}/restore`,
       headers: { cookie: cookieHeader(operatorCookies) },
       payload: { confirmRestore: true, reason: 'test' },
     })
@@ -267,7 +306,7 @@ describe.sequential('Story 9.1: backup HTTP routes', () => {
       const { withPlatformOperatorContext } = await import('@project-vault/db')
       const { platformAuditEvents } = await import('@project-vault/db/schema')
       const uniqueReason = `retrofit-reason-${randomUUID()}`
-      const filename = `nonexistent-${randomUUID()}.vault`
+      const filename = wellFormedNonexistentFilename()
 
       const res = await app.inject({
         method: 'POST',
@@ -313,6 +352,249 @@ describe.sequential('Story 9.1: backup HTTP routes', () => {
       expect(rows.some((r) => (r.payload as { filename?: string })?.filename === filename)).toBe(
         true
       )
+    })
+  })
+
+  // Story 9.6 D1: restore concurrency guard, wired end-to-end through the real HTTP route.
+  describe('Story 9.6 D1: restore concurrency guard', () => {
+    it('AC-2 (D1.9): a malformed/path-traversal filename is rejected 400 invalid_filename BEFORE the lock is ever touched — even while a restore already holds it', async () => {
+      const lock = await acquireRestoreLock()
+      expect(lock.ok).toBe(true)
+      if (!lock.ok) throw new Error(EXPECTED_OK_MESSAGE)
+      try {
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/v1/admin/backups/${encodeURIComponent('../../etc/passwd')}/restore`,
+          headers: { cookie: cookieHeader(operatorCookies) },
+          payload: { confirmRestore: true, reason: 'test' },
+        })
+        // If the lock had been touched first, this would have come back 409 (restore_in_progress)
+        // instead — 400 invalid_filename proves the filename check ran first, with zero lock/DB
+        // involvement, exactly as D1.9 requires.
+        expect(res.statusCode).toBe(400)
+        expect(res.json()).toMatchObject({ code: 'invalid_filename' })
+      } finally {
+        await lock.release()
+      }
+    })
+
+    it('AC-2: a second concurrent restore request is rejected 409 restore_in_progress without ever touching storage', async () => {
+      const lock = await acquireRestoreLock()
+      expect(lock.ok).toBe(true)
+      if (!lock.ok) throw new Error(EXPECTED_OK_MESSAGE)
+      try {
+        // A nonexistent-but-well-formed filename: if the lock had NOT stopped this request before
+        // storage.read, the outcome would be 404 backup_not_found instead of 409 — proving the
+        // rejection happened at the lock, before any storage I/O.
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/v1/admin/backups/${wellFormedNonexistentFilename()}/restore`,
+          headers: { cookie: cookieHeader(operatorCookies) },
+          payload: { confirmRestore: true, reason: 'test' },
+        })
+        expect(res.statusCode).toBe(409)
+        expect(res.json()).toMatchObject({ code: 'restore_in_progress' })
+      } finally {
+        await lock.release()
+      }
+    })
+
+    it('AC-3: restore is rejected 409 backup_in_progress while a backup dump is already running', async () => {
+      const filename = await seedSucceededBackup()
+      // triggeredBy: 'manual' (not 'schedule') — see restore-lock.test.ts's insertRunningBackupRow
+      // comment: backup-snapshot.test.ts's scheduled-fire test filters backup_runs by
+      // triggeredBy='schedule' with no orderBy/limit, so a stray 'schedule'-triggered row left in
+      // this shared test database (even cleaned up to 'failed') could pollute that query.
+      const [runningRow] = await getDb()
+        .insert(backupRuns)
+        .values({
+          filename: `backup_inflight-${randomUUID()}.vault`,
+          status: 'running',
+          triggeredBy: 'manual',
+        })
+        .returning({ id: backupRuns.id })
+      if (!runningRow) throw new Error('expected inserted row')
+      try {
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/v1/admin/backups/${filename}/restore`,
+          headers: { cookie: cookieHeader(operatorCookies) },
+          payload: { confirmRestore: true, reason: 'test' },
+        })
+        expect(res.statusCode).toBe(409)
+        expect(res.json()).toMatchObject({ code: 'backup_in_progress' })
+      } finally {
+        await getDb()
+          .update(backupRuns)
+          .set({ status: 'failed' })
+          .where(eq(backupRuns.id, runningRow.id))
+      }
+    })
+
+    it('AC-4: POST /backup/trigger returns 409 backup_already_running while a restore holds the lock (zero changes to acquireBackupSlot)', async () => {
+      const lock = await acquireRestoreLock()
+      expect(lock.ok).toBe(true)
+      if (!lock.ok) throw new Error(EXPECTED_OK_MESSAGE)
+      try {
+        const res = await app.inject({
+          method: 'POST',
+          url: TRIGGER_URL,
+          headers: { cookie: cookieHeader(operatorCookies) },
+        })
+        expect(res.statusCode).toBe(409)
+        expect(res.json()).toMatchObject({ code: 'backup_already_running' })
+      } finally {
+        await lock.release()
+      }
+    })
+
+    it('AC-5: validate succeeds (200) even while a restore holds the lock — validate is never gated by it', async () => {
+      const filename = await seedSucceededBackup()
+      const lock = await acquireRestoreLock()
+      expect(lock.ok).toBe(true)
+      if (!lock.ok) throw new Error(EXPECTED_OK_MESSAGE)
+      try {
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/v1/admin/backups/${filename}/validate`,
+          headers: { cookie: cookieHeader(operatorCookies) },
+        })
+        expect(res.statusCode).toBe(200)
+      } finally {
+        await lock.release()
+      }
+    })
+
+    it('AC-6: the lock is released after each of the three HTTP-reachable non-destructive restore outcomes (not_found, checksum_mismatch, decrypt_failed)', async () => {
+      const cookie = cookieHeader(operatorCookies)
+
+      // not_found
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/admin/backups/${wellFormedNonexistentFilename()}/restore`,
+        headers: { cookie },
+        payload: { confirmRestore: true, reason: 'test' },
+      })
+      expect(await probeLockFree()).toBe(true)
+
+      // checksum_mismatch
+      const tamperedFilename = await seedSucceededBackup()
+      const storage = backupStorageFor({ type: 'filesystem', path: storageDir })
+      const tampered = await storage.read(tamperedFilename)
+      tampered[tampered.length - 1] = (tampered[tampered.length - 1] ?? 0) ^ 0xff
+      await storage.write(tamperedFilename, tampered)
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/admin/backups/${tamperedFilename}/restore`,
+        headers: { cookie },
+        payload: { confirmRestore: true, reason: 'test' },
+      })
+      expect(await probeLockFree()).toBe(true)
+
+      // decrypt_failed
+      const { runBackupCrypto } = await import('@project-vault/crypto')
+      const { createHash, randomBytes } = await import('node:crypto')
+      const wrongKeyFilename = `backup_20260101T000000000Z_${randomUUID()}.vault`
+      const wrongKeyMetaFilename = wrongKeyFilename.replace(/\.vault$/, '.meta.json')
+      const wrongKey = randomBytes(32)
+      const encryptedUnderWrongKey = await runBackupCrypto(
+        'encrypt',
+        Buffer.from('irrelevant'),
+        wrongKey
+      )
+      const wrongKeyChecksum = createHash('sha256').update(encryptedUnderWrongKey).digest('hex')
+      await storage.write(wrongKeyFilename, encryptedUnderWrongKey)
+      await storage.write(
+        wrongKeyMetaFilename,
+        Buffer.from(JSON.stringify({ checksumSha256: wrongKeyChecksum }))
+      )
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/admin/backups/${wrongKeyFilename}/restore`,
+        headers: { cookie },
+        payload: { confirmRestore: true, reason: 'test' },
+      })
+      expect(await probeLockFree()).toBe(true)
+    })
+  })
+
+  // Story 9.6 AC-20: every restore attempt (accepted or rejected) is audit-logged with the
+  // actor's identity — a dedicated app instance with a log-capture stream, since the shared `app`
+  // above runs with `logger: false`.
+  describe('Story 9.6 AC-20: restore attempts are audit-logged', () => {
+    it('logs backup.restore_attempted for a filename-rejected, lock-rejected, and accepted request', async () => {
+      const { stream, lines } = createLogCaptureStream()
+      const logApp = await createApp({
+        logger: {
+          ...createLoggerConfig({
+            NODE_ENV: 'development',
+            LOG_LEVEL: 'info',
+            SERVICE_NAME: 'api',
+          }),
+          stream,
+        },
+        vaultGuardEnabled: true,
+      })
+      const cookie = cookieHeader(operatorCookies)
+
+      try {
+        // 1. filename-rejected
+        await logApp.inject({
+          method: 'POST',
+          url: `/api/v1/admin/backups/${encodeURIComponent('../../etc/passwd')}/restore`,
+          headers: { cookie },
+          payload: { confirmRestore: true, reason: 'test' },
+        })
+
+        // 2. lock-rejected
+        const lock = await acquireRestoreLock()
+        expect(lock.ok).toBe(true)
+        if (!lock.ok) throw new Error(EXPECTED_OK_MESSAGE)
+        const lockRejectedFilename = wellFormedNonexistentFilename()
+        await logApp.inject({
+          method: 'POST',
+          url: `/api/v1/admin/backups/${lockRejectedFilename}/restore`,
+          headers: { cookie },
+          payload: { confirmRestore: true, reason: 'test' },
+        })
+        await lock.release()
+
+        // 3. accepted (resolves to not_found, a safe, non-destructive outcome)
+        const acceptedFilename = wellFormedNonexistentFilename()
+        await logApp.inject({
+          method: 'POST',
+          url: `/api/v1/admin/backups/${acceptedFilename}/restore`,
+          headers: { cookie },
+          payload: { confirmRestore: true, reason: 'test' },
+        })
+
+        await flushCapturedLogger(logApp.log)
+        const attemptLogs = parseCapturedLogLines(lines).filter(
+          (line) => line['eventType'] === OperationalEvent.BACKUP_RESTORE_ATTEMPTED
+        )
+
+        expect(
+          attemptLogs.some((l) => l['outcome'] === 'rejected' && l['reason'] === 'invalid_filename')
+        ).toBe(true)
+        expect(
+          attemptLogs.some(
+            (l) =>
+              l['outcome'] === 'rejected' &&
+              l['reason'] === 'restore_in_progress' &&
+              l['filename'] === lockRejectedFilename
+          )
+        ).toBe(true)
+        expect(
+          attemptLogs.some(
+            (l) => l['outcome'] === 'not_found' && l['filename'] === acceptedFilename
+          )
+        ).toBe(true)
+        for (const l of attemptLogs) {
+          expect(l['actorId']).toBeTruthy()
+        }
+      } finally {
+        await logApp.close()
+      }
     })
   })
 })

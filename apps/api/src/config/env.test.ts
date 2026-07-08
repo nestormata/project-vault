@@ -860,6 +860,67 @@ describe('env', () => {
       await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
       expect(exitSpy).toHaveBeenCalledWith(1)
     })
+
+    // Story 9.6 D3.1/AC-18: BACKUP_S3_STAGING_PATH / BACKUP_S3_STAGING_MAX_BYTES env validation.
+    it('AC-18: accepts BACKUP_S3_STAGING_PATH alongside an S3 backup destination', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_S3_BUCKET: TEST_BACKUP_S3_BUCKET,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+        BACKUP_S3_STAGING_PATH: '/var/backups/vault-staging',
+      }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_S3_STAGING_PATH).toBe('/var/backups/vault-staging')
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC-18: BACKUP_S3_STAGING_PATH is undefined by default (default is applied at the storage layer, not env validation)', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_S3_BUCKET: TEST_BACKUP_S3_BUCKET,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_S3_STAGING_PATH).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC-18/AC-16b: accepts a positive integer BACKUP_S3_STAGING_MAX_BYTES, undefined (disabled) by default', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_S3_BUCKET: TEST_BACKUP_S3_BUCKET,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+      }
+      const unset = await import('./env.js')
+      expect(unset.env.BACKUP_S3_STAGING_MAX_BYTES).toBeUndefined()
+
+      resetEnvImport(exitSpy)
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_S3_BUCKET: TEST_BACKUP_S3_BUCKET,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+        BACKUP_S3_STAGING_MAX_BYTES: '5368709120',
+      }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_S3_STAGING_MAX_BYTES).toBe(5368709120)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC-18: rejects a non-positive BACKUP_S3_STAGING_MAX_BYTES', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_S3_BUCKET: TEST_BACKUP_S3_BUCKET,
+        BACKUP_DATABASE_URL: TEST_BACKUP_DATABASE_URL,
+        BACKUP_S3_STAGING_MAX_BYTES: '0',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
   })
 
   describe('ENABLE_API_DOCS (Story 9.3 D5)', () => {

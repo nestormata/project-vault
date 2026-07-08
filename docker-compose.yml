@@ -92,9 +92,20 @@ services:
       BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
       BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
       BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:-}
+      # Story 9.6 D3.1/AC-18: S3-destination-only local staging path + optional cumulative
+      # disk-usage monitoring threshold. Both unset by default — see .env.example for the
+      # ephemeral-/tmp persistence caveat (staged files from a failed upload do not survive a
+      # container restart unless BACKUP_S3_STAGING_PATH is pointed at a mounted volume, mirroring
+      # BACKUP_STORAGE_PATH's own backup_data volume below).
+      BACKUP_S3_STAGING_PATH: ${BACKUP_S3_STAGING_PATH:-}
+      BACKUP_S3_STAGING_MAX_BYTES: ${BACKUP_S3_STAGING_MAX_BYTES:-}
     volumes:
       - ./dev-secrets:/run/secrets:ro
       - backup_data:/var/backups/vault
+      # Story 9.6 D3.1: uncomment (and set BACKUP_S3_STAGING_PATH=/var/backups/vault-staging in
+      # .env) if using the S3 destination and you want a failed upload's staged file to survive a
+      # container restart, so the 24h orphan-cleanup window is meaningful across restarts:
+      # - backup_staging_data:/var/backups/vault-staging
     ports:
       - "${API_HOST_PORT:-3000}:3000"
     depends_on:
@@ -128,3 +139,6 @@ volumes:
   # container restarts/recreations. Unused when BACKUP_STORAGE_PATH is unset (backup disabled) or
   # when BACKUP_S3_BUCKET is configured instead.
   backup_data:
+  # Story 9.6 D3.1: optional — only needed if you uncommented the api service's staging volume
+  # mount above (S3 destination, wanting staged-file persistence across container restarts).
+  backup_staging_data:

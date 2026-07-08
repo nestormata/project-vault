@@ -1153,6 +1153,13 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     reviewer: SECURITY_OWNER,
   },
   {
+    path: 'workers/backup-health-check.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Story 9.6 D2/AC-8 through AC-11: resolveBackupMissedAlertIfActive() checks for an active instance-wide backup.missed admin_alerts row via getDb() before calling clearThresholdAlertEpisode() — backup health is not org-scoped, so there is no org RLS context to route this through, same shape as the other PLATFORM_JOB worker entries above.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
     path: 'modules/backup/routes.ts',
     classification: PLATFORM_JOB,
     reason:

@@ -122,4 +122,23 @@ describe.sequential('Story 9.1: backup-snapshot worker', () => {
       .set({ status: 'failed' })
       .where(eq(backupRuns.id, running.runId))
   })
+
+  it('Story 9.6 AC-4: the scheduled backup:snapshot cron tick skips silently (no throw, no alert) while a restore holds the session-scoped lock', async () => {
+    const { acquireRestoreLock } = await import('../modules/backup/service.js')
+    const lock = await acquireRestoreLock()
+    expect(lock.ok).toBe(true)
+    if (!lock.ok) throw new Error('expected ok')
+    const logger = silentLogger()
+
+    try {
+      // acquireBackupSlot()'s own pg_try_advisory_xact_lock fails while the restore's
+      // session-level lock is held on the same key (D1.1) — no code change to acquireBackupSlot
+      // or runBackupSnapshotJob was needed for this to already behave exactly like AC-7's
+      // existing backup-vs-backup case.
+      await expect(runBackupSnapshotJob(fakeBoss(), logger, undefined, {})).resolves.toBeUndefined()
+      expect(logger.error).not.toHaveBeenCalled()
+    } finally {
+      await lock.release()
+    }
+  })
 })

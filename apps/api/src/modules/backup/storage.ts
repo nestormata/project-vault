@@ -1,13 +1,9 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  DeleteObjectCommand,
-} from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import type { BackupDestination } from './config.js'
+import { atomicFileWrite } from './atomic-write.js'
+import { stageAndUploadToS3 } from './s3-upload.js'
 
 export class BackupNotFoundOnDestinationError extends Error {}
 
@@ -17,23 +13,17 @@ export type BackupStorage = {
   delete(filename: string): Promise<void>
 }
 
-/** AC-5: atomic temp-file + rename write pattern — a partially written file is never visible
- * under its final name (a crash mid-write leaves only an orphaned `.tmp-*` file, never a
- * corrupted `.vault`/`.meta.json`). */
+/** AC-5: atomic temp-file + rename write pattern (Story 9.6 D3.2: now the shared
+ * `atomicFileWrite` helper in `atomic-write.ts`, also reused by the S3 destination's local
+ * staging write) — a partially written file is never visible under its final name (a crash
+ * mid-write leaves only an orphaned `.tmp-*` file, never a corrupted `.vault`/`.meta.json`). */
 function filesystemStorage(path: string): BackupStorage {
   // path comes from BACKUP_STORAGE_PATH (operator-configured env var, not user input); filename
   // is either this module's own generated backup_<timestamp>_<instanceId>.vault or an admin-only
   // :filename route param already gated by requirePlatformOperator().
   return {
     async write(filename, data) {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- see filesystemStorage() comment above.
-      await mkdir(path, { recursive: true })
-      const finalPath = join(path, filename)
-      const tmpPath = join(path, `.tmp-${randomUUID()}-${filename}`)
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- see filesystemStorage() comment above.
-      await writeFile(tmpPath, data)
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- see filesystemStorage() comment above.
-      await rename(tmpPath, finalPath)
+      await atomicFileWrite(path, filename, data)
     },
     async read(filename) {
       try {
@@ -52,6 +42,10 @@ function filesystemStorage(path: string): BackupStorage {
   }
 }
 
+/** Story 9.6 D3: S3 destination hardening — `write()` now stages the encrypted bytes locally
+ * first (atomic temp-file+rename, same pattern as `filesystemStorage()`), then uploads with
+ * bounded retry (`stageAndUploadToS3` in `s3-upload.ts`), deleting the staged file on success and
+ * retaining it on final failure (AC-12 through AC-15). `read()`/`delete()` are unchanged. */
 function s3Storage(destination: Extract<BackupDestination, { type: 's3' }>): BackupStorage {
   const client = new S3Client({
     region: destination.region ?? 'us-east-1',
@@ -59,9 +53,7 @@ function s3Storage(destination: Extract<BackupDestination, { type: 's3' }>): Bac
   })
   return {
     async write(filename, data) {
-      await client.send(
-        new PutObjectCommand({ Bucket: destination.bucket, Key: filename, Body: data })
-      )
+      await stageAndUploadToS3({ client, bucket: destination.bucket, filename, data })
     },
     async read(filename) {
       try {
