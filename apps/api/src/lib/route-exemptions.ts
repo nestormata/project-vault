@@ -575,6 +575,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Activates/deactivates the platform-audit-log write-failure bypass (D8) — no secureCtx.tx (requireOrgScope: false). Each transition writes its own platform_audit_events row (maintenance_mode.activated/.deactivated) directly against a route-owned getDb().transaction(), not through the generic writeAuditEvent mechanism.',
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/platform/maintenance-mode': {
+    action: 'read',
+    auditOmissionReason:
+      'Read-only maintenance-mode status poll (active flag, reason, pendingEntriesCount) — no mutation, no secrets exposed, no secureCtx.tx (requireOrgScope: false). Status is visible to the platform operator as a prerequisite for safe activate/deactivate decisions; not self-audited (no transition occurs).',
+    reviewer: SECURITY_OWNER,
+  },
   'GET /api/v1/admin/orgs': {
     action: 'read',
     auditOmissionReason:

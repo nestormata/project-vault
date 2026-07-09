@@ -343,7 +343,7 @@ export async function platformAuditRoutes(fastify: FastifyApp): Promise<void> {
     security: {
       requireOrgScope: false,
       requirePlatformOperator: true,
-      requireMfa: false,
+      requireMfa: true,
       writeAuditEvent: false,
       rateLimit: { ...READ_RATE_LIMIT, key: 'GET /api/v1/platform/maintenance-mode' },
     },
