@@ -1,3 +1,4 @@
+import { AuditEvent } from '@project-vault/shared'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
@@ -67,7 +68,10 @@ export async function securityAlertActionsRoutes(fastify: FastifyApp): Promise<v
         resourceType: 'security_alert',
         orgId: secureCtx.auth.orgId,
         actorUserId: secureCtx.auth.userId,
-        eventType: 'security_alert.dismissed',
+        // 8-8 adversarial review AC-13: was the literal string 'security_alert.dismissed',
+        // drifting from every other event type in this scope, which uses the AuditEvent.*
+        // constant. No functional change (same value), closes the drift risk.
+        eventType: AuditEvent.SECURITY_ALERT_DISMISSED,
         resourceId: result.id,
         payload: { reason: parsed.data.reason },
         request: req,

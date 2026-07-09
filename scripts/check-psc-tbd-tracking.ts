@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { loadSprintStatuses } from './check-story-status-sync.js'
 import { toRepoPath, walkFiles } from './lib/scan-utils.js'
 
 export type PscTbdViolation = {
@@ -19,29 +20,11 @@ export type PscTbdViolation = {
   storyStatus: string
 }
 
-const SPRINT_STATUS_PATH = '_bmad-output/implementation-artifacts/sprint-status.yaml'
 const STORIES_DIR = '_bmad-output/implementation-artifacts'
 const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
 
 /** Statuses indicating the story is actively tracked — TBD PSC on any of these must be in deferred-work.md. */
 const ACTIVE_STATUSES = new Set(['ready-for-dev', 'in-progress', 'review', 'done'])
-
-/** Reused from check-story-status-sync.ts — parses the `development_status:` block only. */
-export function parseDevelopmentStatus(yamlContent: string): Map<string, string> {
-  const statuses = new Map<string, string>()
-  let inBlock = false
-  for (const line of yamlContent.split('\n')) {
-    if (/^development_status:\s*$/.test(line)) {
-      inBlock = true
-      continue
-    }
-    if (!inBlock) continue
-    if (line.length > 0 && !/^\s/.test(line)) break
-    const match = line.match(/^\s{2}([a-zA-Z0-9_-]+):\s*(\S+)/)
-    if (match) statuses.set(match[1] as string, match[2] as string)
-  }
-  return statuses
-}
 
 /** True if the story file contains a PSC "Linked UI story" row whose value is `TBD`. */
 export function hasPscTbd(content: string): boolean {
@@ -77,14 +60,8 @@ export function scanPscTbdTracking(rootDir = process.cwd()): PscTbdViolation[] {
   const root = resolve(rootDir)
   const storiesDir = resolve(root, STORIES_DIR)
 
-  let sprintStatuses: Map<string, string>
-  try {
-    sprintStatuses = parseDevelopmentStatus(
-      readFileSync(resolve(root, SPRINT_STATUS_PATH), 'utf-8')
-    )
-  } catch {
-    return []
-  }
+  const sprintStatuses = loadSprintStatuses(root)
+  if (!sprintStatuses) return []
 
   let deferredWorkContent = ''
   try {

@@ -242,6 +242,90 @@ describe('POST .../api-keys/:keyId/rotate', () => {
       const failed = resA.statusCode === 409 ? resA : resB
       expect(failed.json()).toMatchObject({ code: 'api_key_already_rotated' })
     })
+
+    // 8-8 adversarial review AC-11: the same-action races above (rotate-vs-rotate,
+    // emergency-revoke-vs-emergency-revoke) never exercise the cross-action combination — two
+    // *different* mutation types racing on the same row via the shared `lockApiKeyForUpdate()`
+    // lock. Confirms exactly one of the two succeeds and the loser gets a coherent 409, whichever
+    // order the row lock is granted in.
+    it('rotate racing an emergency-revoke on the same key: exactly one succeeds, the other 409s', async () => {
+      const owner = await registerOwner(app, 'cross-action-concurrent')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'rotation-cross-concurrent')
+      const { machineUserId, keyId } = await setupMachineUserAndKey(app, owner.cookies, projectId)
+
+      const [rotateRes, emergencyRes] = await Promise.all([
+        app.inject({
+          method: 'POST',
+          url: rotateUrl(machineUserId, keyId),
+          headers: { cookie: cookieHeader(owner.cookies) },
+          payload: {},
+        }),
+        app.inject({
+          method: 'POST',
+          url: emergencyRevokeUrl(machineUserId, keyId),
+          headers: { cookie: cookieHeader(owner.cookies) },
+        }),
+      ])
+
+      const successCodes = [rotateRes.statusCode, emergencyRes.statusCode].filter(
+        (code) => code === 201 || code === 200
+      )
+      const failureCodes = [rotateRes.statusCode, emergencyRes.statusCode].filter(
+        (code) => code === 409
+      )
+      expect(successCodes).toHaveLength(1)
+      expect(failureCodes).toHaveLength(1)
+
+      const failed = rotateRes.statusCode === 409 ? rotateRes : emergencyRes
+      // Whichever request loses the row-lock race gets a 409 — the exact code depends on which
+      // one committed first: if emergency-revoke wins, rotate sees revokedAt already set
+      // (api_key_already_revoked); if rotate wins, emergency-revoke now sees overlapExpiresAt
+      // already set (api_key_already_rotated, per this story's AC-11 fix above).
+      expect(failed.json()).toMatchObject({
+        code: expect.stringMatching(/^api_key_already_(revoked|rotated)$/),
+      })
+
+      const [row] = await withOrg(owner.orgId, (tx) =>
+        tx.select().from(apiKeys).where(eq(apiKeys.id, keyId))
+      )
+      // Whichever action won, the old key ends up in exactly one terminal state — either
+      // rotated (overlapExpiresAt set, revokedAt still null) or emergency-revoked (revokedAt
+      // set) — never both/neither.
+      expect(Boolean(row?.overlapExpiresAt) !== Boolean(row?.revokedAt)).toBe(true)
+    })
+
+    // 8-8 adversarial review AC-11 finding (was a real, reproducible gap — not just a
+    // hypothetical race): `rotate` explicitly rejects an already-rotated key (409
+    // api_key_already_rotated), but `emergency-revoke` had no symmetric check, so calling it on
+    // a key that was already rotated (but is still inside its overlap window — revokedAt still
+    // null) silently succeeded and issued a *second* successor key with no indication that a
+    // rotation-issued successor already existed. Fixed below by mirroring rotate's own guard.
+    it('returns 409 api_key_already_rotated when emergency-revoking an already-rotated key', async () => {
+      const owner = await registerOwner(app, 'emergency-after-rotate')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'rotation-emergency-after')
+      const { machineUserId, keyId } = await setupMachineUserAndKey(app, owner.cookies, projectId)
+
+      const rotateRes = await app.inject({
+        method: 'POST',
+        url: rotateUrl(machineUserId, keyId),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: {},
+      })
+      expect(rotateRes.statusCode).toBe(201)
+
+      const emergencyRes = await app.inject({
+        method: 'POST',
+        url: emergencyRevokeUrl(machineUserId, keyId),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(emergencyRes.statusCode).toBe(409)
+      expect(emergencyRes.json()).toMatchObject({ code: 'api_key_already_rotated' })
+
+      const [row] = await withOrg(owner.orgId, (tx) =>
+        tx.select().from(apiKeys).where(eq(apiKeys.id, keyId))
+      )
+      expect(row?.revokedAt).toBeNull()
+    })
   })
 })
 

@@ -145,6 +145,29 @@ describe.sequential('POST /machine-users/:machineUserId/deactivate (8-6 AC-5)', 
     expect(auditRows.filter((row) => row.resourceId === machineUser.id)).toHaveLength(1)
   })
 
+  // 8-8 adversarial review AC-10: the idempotency test above only calls deactivate
+  // sequentially. This proves the conditional-UPDATE claim (routes.ts, `WHERE deactivated_at IS
+  // NULL`) is also race-safe under two genuinely concurrent requests — mirroring the equivalent
+  // Promise.all-based coverage AC-17 already established for revoke (routes.test.ts).
+  it('concurrent deactivate calls both return 200, set deactivatedAt exactly once, and audit exactly once', async () => {
+    const owner = await registerOwner(app, 'deactivate-concurrent')
+    const projectId = await createProjectViaApi(app, owner.cookies, 'deactivate-concurrent')
+    const machineUser = await createMachineUserOrThrow(app, owner.cookies, projectId)
+
+    const [first, second] = await Promise.all([
+      deactivateMachineUser(app, owner.cookies, machineUser.id),
+      deactivateMachineUser(app, owner.cookies, machineUser.id),
+    ])
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect(first.json<MachineUserDetailBody>().data.deactivatedAt).toBe(
+      second.json<MachineUserDetailBody>().data.deactivatedAt
+    )
+
+    const auditRows = await auditRowsFor(owner.orgId, MACHINE_USER_DEACTIVATED_EVENT)
+    expect(auditRows.filter((row) => row.resourceId === machineUser.id)).toHaveLength(1)
+  })
+
   it('rejects new key issuance against a deactivated machine user with 409 machine_user_deactivated', async () => {
     const owner = await registerOwner(app, 'deactivate-key-issuance')
     const projectId = await createProjectViaApi(app, owner.cookies, 'deactivate-key-issuance')
