@@ -44,7 +44,7 @@ const INBOX_ROUTE_SECURITY = {
 function parseInboxEntryId(req: FastifyRequest, reply: FastifyReply): string | null {
   const paramParsed = InboxEntryIdParamSchema.safeParse(req.params)
   if (!paramParsed.success) {
-    void reply.status(400).send(validationError(paramParsed.error, 'params'))
+    reply.status(400).send(validationError(paramParsed.error, 'params'))
     return null
   }
   return paramParsed.data.id

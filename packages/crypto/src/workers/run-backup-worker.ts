@@ -16,7 +16,7 @@ function runViaWorkerThread(action: WorkerAction, data: Buffer, key: Buffer): Pr
   return new Promise((resolve, reject) => {
     const worker = new Worker(WORKER_URL, { workerData: { action, data, key } })
     worker.once('message', (message: WorkerResult) => {
-      void worker.terminate()
+      worker.terminate()
       if (message.ok) {
         resolve(Buffer.from(message.result))
         return
@@ -31,7 +31,7 @@ function runViaWorkerThread(action: WorkerAction, data: Buffer, key: Buffer): Pr
       )
     })
     worker.once('error', (err) => {
-      void worker.terminate()
+      worker.terminate()
       reject(err)
     })
   })

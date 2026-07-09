@@ -18,8 +18,8 @@ docker compose up --build -d
 for i in $(seq 1 15); do
   code=0
   curl -sf "${API_URL}/health" >/dev/null || code=$?
-  [ "$code" -eq 0 ] && break
-  if [ "$code" -ne 52 ] && [ "$code" -ne 56 ]; then exit "$code"; fi
+  [[ "$code" -eq 0 ]] && break
+  if [[ "$code" -ne 52 ]] && [[ "$code" -ne 56 ]]; then exit "$code"; fi
   sleep 3
 done
 curl -f "${API_URL}/health"

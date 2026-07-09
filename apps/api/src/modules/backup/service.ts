@@ -338,7 +338,9 @@ export async function executeBackupSnapshot(
     const encrypted = await runBackupCrypto('encrypt', gzipped, getBackupKey())
     const checksumSha256 = sha256Hex(encrypted)
     const keyVersion = await currentVaultKeyVersion()
-    const tables = [...extractTableNames(plainSql.toString('utf8'))].sort()
+    const tables = [...extractTableNames(plainSql.toString('utf8'))].sort((a, b) =>
+      a.localeCompare(b)
+    )
 
     // AC-5: write the encrypted file first, then the sidecar — if the process crashes between
     // the two, a `.vault` with no sidecar is a detectable, safe partial state (validate/restore
