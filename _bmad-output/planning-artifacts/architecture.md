@@ -41,8 +41,8 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Non-Functional Requirements:**
 Performance targets that drive key design choices:
-- Secret fetch: p95 ≤100ms — optimized read path with connection pooling
-- Secret search/filter: p95 ≤300ms paginated — indexed queries
+- Credential fetch: p95 ≤100ms — optimized read path with connection pooling
+- Credential search/filter: p95 ≤300ms paginated — indexed queries
 - Dashboard first meaningful content: ≤2s — progressive loading strategy
 - Audit log queries: p95 ≤500ms — this target applies at maximum sustained write rate over 30 days at full utilization, not only at 1M entries; indexing strategy must be designed for streaming write load
 - Rotation initiation: p95 ≤500ms
@@ -371,7 +371,7 @@ second story before any feature implementation begins.
 **Error handling standard:**
 ```typescript
 {
-  error: string,       // machine-readable code (e.g. "SECRET_NOT_FOUND")
+  error: string,       // machine-readable code (e.g. "CREDENTIAL_NOT_FOUND")
   message: string,     // human-readable description
   statusCode: number,
   requestId: string    // Fastify request ID for log correlation
@@ -403,7 +403,7 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 
 **Background worker constraints:**
 - I/O-bound pg-boss handlers (health checks, notifications, expiry queries) run directly in main thread
-- **CPU-bound handlers (backup encryption, audit log hash chain verification, bulk re-encryption) must offload to `worker_threads`** to prevent event loop blocking and latency spikes on the p95 ≤100ms secret fetch path
+- **CPU-bound handlers (backup encryption, audit log hash chain verification, bulk re-encryption) must offload to `worker_threads`** to prevent event loop blocking and latency spikes on the p95 ≤100ms credential fetch path
 - **`withSecret()` × `worker_threads` boundary rule (critical):** `withSecret()` callbacks run in the calling thread — the callback cannot be serialized across a `postMessage()` boundary. CPU-bound workers receive only ciphertext and perform their own local `withSecret()` invocation inside the worker; the plaintext `Buffer` never crosses the `postMessage()` boundary. Workers communicate back the *result* (e.g., encrypted backup blob, hash chain result), never the plaintext. This is the only safe pattern; the alternative (`SharedArrayBuffer` for plaintext) adds side-channel attack surface and is **explicitly forbidden**. ESLint `no-bare-decrypt` rule (same scope as `no-bare-drizzle`): direct `decrypt()` calls in any `workers/` file are a CI error — workers must use `withSecret()`.
 - **pg-boss concurrency caps (required — prevent main-thread saturation during event storms):** each worker type registers with explicit `teamSize` and `teamConcurrency` limits:
   - `health:check` — `teamSize: 10, teamConcurrency: 5` (prevents health-check storm from starving request handling)
@@ -457,7 +457,7 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 - Operational logs only — separate from security audit log
 
 **Metrics:** `prom-client` — Prometheus-compatible `/metrics` endpoint
-- Default Node.js metrics + custom: secret fetch latency, rotation count, SSE connection count, pg-boss queue depth
+- Default Node.js metrics + custom: credential fetch latency, rotation count, SSE connection count, pg-boss queue depth
 - Localhost-only by default; configurable for external scraping
 
 **CI/CD:** GitHub Actions
@@ -502,11 +502,11 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 ### Naming Patterns
 
 **Database Naming (PostgreSQL / Drizzle):**
-- Table names: `snake_case` plural — `secrets`, `projects`, `audit_log_entries`
+- Table names: `snake_case` plural — `credentials`, `projects`, `audit_log_entries`
 - Column names: `snake_case` — `created_at`, `org_id`, `rotation_status`
 - Drizzle schema property names: `camelCase` mapped to `snake_case` via `.name()`
 - Foreign keys: `{singular_table}_id` — `project_id`, `user_id`, `credential_id`
-- Index names: `idx_{table}_{columns}` — `idx_secrets_org_id_project_id`
+- Index names: `idx_{table}_{columns}` — e.g. `idx_credentials_org`, `idx_credentials_project_created` (columns are abbreviated to their semantic purpose, not always a literal column list)
 - **Mutable tables** include: `id uuid PRIMARY KEY DEFAULT gen_random_uuid()`, `org_id uuid NOT NULL`, `created_at timestamptz NOT NULL DEFAULT now()`, `updated_at timestamptz NOT NULL DEFAULT now()`
 - **Append-only / immutable tables** (`audit_log_entries`, `audit_log_operational`) include `id` and `created_at` only — no `updated_at`; immutability noted in schema file comment: `// IMMUTABLE: append-only, no updates permitted`
 
@@ -514,9 +514,9 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 
 | Entity | Table Name |
 |---|---|
-| Credentials/secrets | `secrets` |
-| Credential versions | `secret_versions` |
-| Credential dependencies | `secret_dependencies` |
+| Credentials | `credentials` |
+| Credential versions | `credential_versions` |
+| Credential dependencies | `credential_dependencies` |
 | Rotation records | `rotations` |
 | Rotation checklist items | `rotation_checklist_items` |
 | Projects | `projects` |
@@ -541,55 +541,56 @@ Additional schema notes:
 All audit event types are constants from this registry. Hardcoded string literals as `event_type` values are forbidden.
 ```typescript
 export const AuditEvent = {
-  SECRET_ACCESSED: 'SECRET_ACCESSED',
-  SECRET_VALUE_REVEALED: 'SECRET_VALUE_REVEALED',
-  SECRET_CREATED: 'SECRET_CREATED',
-  SECRET_UPDATED: 'SECRET_UPDATED',
-  SECRET_ARCHIVED: 'SECRET_ARCHIVED',
-  ROTATION_INITIATED: 'ROTATION_INITIATED',
-  ROTATION_STEP_CONFIRMED: 'ROTATION_STEP_CONFIRMED',
-  ROTATION_STEP_FAILED: 'ROTATION_STEP_FAILED',
-  ROTATION_COMPLETED: 'ROTATION_COMPLETED',
-  ROTATION_ABANDONED: 'ROTATION_ABANDONED',
-  PERMISSION_CHANGED: 'PERMISSION_CHANGED',
-  USER_INVITED: 'USER_INVITED',
-  USER_REMOVED: 'USER_REMOVED',
-  USER_DEACTIVATED: 'USER_DEACTIVATED',
-  MACHINE_USER_CREATED: 'MACHINE_USER_CREATED',
-  API_KEY_ISSUED: 'API_KEY_ISSUED',
-  API_KEY_REVOKED: 'API_KEY_REVOKED',
-  MACHINE_USER_FALLBACK_ACTIVATED: 'MACHINE_USER_FALLBACK_ACTIVATED',
-  AUDIT_LOG_EXPORTED: 'AUDIT_LOG_EXPORTED',
-  AUDIT_LOG_EXPORTED_AUTO: 'AUDIT_LOG_EXPORTED_AUTO',  // scheduled auto-export (tamper-evidence anchor)
-  AUDIT_LOG_VERIFIED: 'AUDIT_LOG_VERIFIED',
+  CREDENTIAL_CREATED: 'credential.created',
+  CREDENTIAL_VERSION_CREATED: 'credential.version_created',
+  CREDENTIAL_VALUE_REVEALED: 'credential.value_revealed',
+  CREDENTIAL_TAGS_UPDATED: 'credential.tags_updated',
+  CREDENTIAL_VERSION_PURGED: 'credential.version_purged',
+  ROTATION_INITIATED: 'rotation.initiated',
+  ROTATION_CHECKLIST_ITEM_CONFIRMED: 'rotation.checklist_item_confirmed',
+  ROTATION_CHECKLIST_ITEM_FAILED: 'rotation.checklist_item_failed',
+  ROTATION_COMPLETED: 'rotation.completed',
+  ROTATION_ABANDONED: 'rotation.abandoned',
+  PROJECT_MEMBER_ROLE_CHANGED: 'project.member_role_changed',
+  PROJECT_INVITATION_CREATED: 'project.invitation_created',
+  ORG_USER_REMOVED: 'org.user_removed',
+  ORG_USER_DEACTIVATED: 'org.user_deactivated',
+  MACHINE_USER_CREATED: 'machine_user.created',
+  MACHINE_USER_API_KEY_ISSUED: 'machine_user.api_key_issued',
+  MACHINE_USER_API_KEY_REVOKED: 'machine_user.api_key_revoked',
+  MACHINE_CACHE_ACTIVATED: 'machine_cache.activated',
   SESSION_CREATED: 'SESSION_CREATED',
   SESSION_REVOKED: 'SESSION_REVOKED',
   MFA_ENROLLED: 'MFA_ENROLLED',
   MFA_RECOVERY_USED: 'MFA_RECOVERY_USED',
   LOGIN_FAILED: 'LOGIN_FAILED',
 } as const
-export type AuditEventType = typeof AuditEvent[keyof typeof AuditEvent]
+export type AuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
+// NOTE: earlier auth/session/MFA entries keep the legacy uppercase-string value style
+// (value === key); domain events (credential, project, rotation, machine_user, org, ...)
+// use lowercase dot-notation values. Both styles are real and currently coexist in the
+// registry — this is not a drift artifact, do not "fix" one style to match the other.
 ```
 
 **API Endpoint Naming:**
-- **Canonical API noun for stored credentials: `secrets`** — matches DB table; never `credentials` in URL paths
-- **URL structure: nested for human-facing, flat for machine user fetch**
-  - Human-facing CRUD: `/api/v1/projects/{projectId}/secrets/{secretId}`
-  - Machine user fetch (flat): `GET /api/v1/secrets/{name}` — project scope from API key, not URL
-- Actions: POST to sub-resource — `/secrets/{secretId}/rotate`, `/secrets/{secretId}/reveal`
-- Route parameters in Fastify: camelCase — `:projectId`, `:secretId` (never `:project_id`)
+- **Canonical API noun for stored credentials: `credentials`** — matches DB table; used consistently in URL paths
+- **URL structure: nested under project for both human-facing and machine user fetch**
+  - Human-facing CRUD: `/api/v1/projects/{projectId}/credentials/{credentialId}`
+  - Machine user fetch: `GET /api/v1/machine/projects/{projectId}/credentials/{name}/value` — project scope is validated against the machine JWT's own scoped `projectId`, not read from an unscoped flat path
+- Actions: POST to sub-resource — `/credentials/{credentialId}/rotations` (initiate rotation); value retrieval is `GET /credentials/{credentialId}/value` (a read, not a POST action)
+- Route parameters in Fastify: camelCase — `:projectId`, `:credentialId` (never `:project_id`)
 - Query parameters: camelCase — `?pageSize=20&sortBy=createdAt`
 
 **Value Revelation Endpoint:**
 ```
-POST /api/v1/projects/{projectId}/secrets/{secretId}/reveal
-→ 200: { revealedValue: string }
+GET /api/v1/projects/{projectId}/credentials/{credentialId}/value
+→ 200: { data: { value: string, versionNumber: number, retrievedAt: string } }
 ```
 - Requires `Member` role minimum
-- Always emits `AuditEvent.SECRET_VALUE_REVEALED` (distinct from `SECRET_ACCESSED` on metadata reads)
-- `GET .../secrets/{secretId}` never returns plaintext value — metadata only
+- Always emits `AuditEvent.CREDENTIAL_VALUE_REVEALED`; the metadata-only `GET .../credentials/{credentialId}` route does not emit any audit event (`writeAuditEvent: false`) — only the `/value` route is audited
+- `GET .../credentials/{credentialId}` never returns plaintext value — metadata only
 - Frontend value displayed in-memory only, cleared on navigation
-- **`withSecret()` → HTTP response pattern (the ONE documented exception to the zeroing rule):** the reveal service calls `withSecret(encryptedValue, async (plaintext: Buffer) => { return plaintext.toString('utf8') })`. The returned string is assigned directly to `{ revealedValue }` in the response object and sent immediately by Fastify. Converting to string here is **explicitly permitted and documented** — the plaintext string lives only for the duration of HTTP response serialization, then becomes GC-eligible. This is the only call site where `Buffer → string` conversion is sanctioned; it must carry a `// revelation path: Buffer→string permitted here` comment. `SecretValue` wrapper is not used on the revelation path because the value flows directly to the response and must be a string. All other call sites that receive a `Buffer` from `withSecret()` must not convert to string.
+- **`withSecret()` → HTTP response pattern (the ONE documented exception to the zeroing rule):** the reveal service calls `withSecret(encryptedValue, async (plaintext: Buffer) => { return plaintext.toString('utf8') })`. The returned string is assigned to the `value` field inside `{ data: { value, versionNumber, retrievedAt } }` and sent immediately by Fastify. Converting to string here is **explicitly permitted and documented** — the plaintext string lives only for the duration of HTTP response serialization, then becomes GC-eligible. This is the only call site where `Buffer → string` conversion is sanctioned; it must carry a `// revelation path: Buffer→string permitted here` comment. `SecretValue` wrapper is not used on the revelation path because the value flows directly to the response and must be a string. All other call sites that receive a `Buffer` from `withSecret()` must not convert to string.
 
 **SSE Event Naming:**
 - Format: `{domain}.{event-type}` — two parts, dot-separated, lowercase
@@ -644,7 +645,7 @@ routes/
     +layout.svelte                 # Establishes SSE connection (onMount)
     +layout.server.ts              # Auth gate for all (app) routes
     projects/[projectId]/
-      secrets/[secretId]/
+      credentials/[credentialId]/
 lib/
   components/ui/                   # shadcn-svelte base components
   components/{feature}/            # Feature-specific composed components
@@ -766,11 +767,11 @@ Route handler calls `withOrg()` and passes `tx` down. Service and repository fun
 accept `tx: Tx` as first parameter — never call `withOrg()` themselves.
 ```typescript
 // ✅ Route handler owns transaction boundary
-fastify.get('/projects/:projectId/secrets/:id', async (req, reply) =>
-  withOrg(req.authContext.orgId, (tx) => secretsService.getById(tx, req.params.id, req.params.projectId))
+fastify.get('/projects/:projectId/credentials/:id', async (req, reply) =>
+  withOrg(req.authContext.orgId, (tx) => credentialsService.getById(tx, req.params.id, req.params.projectId))
 )
 // ✅ Service accepts tx
-async function getById(tx: Tx, secretId: string, projectId: string): Promise<SecretRecord>
+async function getById(tx: Tx, credentialId: string, projectId: string): Promise<CredentialRecord>
 // ❌ Service calling withOrg() — nested transaction, wrong ownership
 ```
 
@@ -886,8 +887,8 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 | FR Category | Backend Module | Frontend Route | Workers |
 |---|---|---|---|
 | Project & Org Management | `modules/projects/`, `modules/organizations/` | `(app)/projects/`, `(app)/admin/` | — |
-| Secret & Credential Management | `modules/secrets/` | `(app)/projects/[id]/secrets/` | — |
-| Rotation & Propagation | `modules/rotation/` | `(app)/projects/[id]/secrets/[id]/rotation/` | `workers/rotation-reminder.ts` |
+| Secret & Credential Management | `modules/credentials/` | `(app)/projects/[id]/credentials/` | — |
+| Rotation & Propagation | `modules/rotation/` | `(app)/projects/[id]/credentials/[id]/rotation/` | `workers/rotation-reminder.ts` |
 | Operational Monitoring & Alerts | `modules/monitoring/` | `(app)/projects/[id]/services/`, `(app)/projects/[id]/assets/` | `workers/health-check.ts`, `workers/credential-expiry-alert.ts`, `workers/cert-expiry-alert.ts`, `workers/domain-expiry-alert.ts`, `workers/payment-expiry-alert.ts` |
 | Machine User Access | `modules/machine-users/` | `(app)/projects/[id]/machine-users/` | `workers/api-key-expiry.ts` |
 | Audit & Compliance | `modules/audit/`, `modules/compliance/` | `(app)/audit/`, `(app)/admin/compliance/` | `workers/audit-verify.ts` |
@@ -904,9 +905,9 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 
 | Entity | Table Name | Notes |
 |---|---|---|
-| Credentials/secrets | `secrets` | Core secret storage |
-| Credential versions | `secret_versions` | Immutable — no `updated_at` |
-| Credential dependencies | `secret_dependencies` | Systems depending on a secret |
+| Credentials | `credentials` | Core credential storage |
+| Credential versions | `credential_versions` | Immutable — no `updated_at` |
+| Credential dependencies | `credential_dependencies` | Systems depending on a credential |
 | Rotation records | `rotations` | One per initiated rotation |
 | Rotation checklist items | `rotation_checklist_items` | Per-system confirmation records |
 | Projects | `projects` | Primary org unit |
@@ -928,7 +929,7 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 | Org health snapshots | `org_health_snapshots` | Pre-computed; refreshed every 30 min via pg-boss |
 
 All mutable tables include `id`, `org_id`, `created_at`, `updated_at`.
-Immutable tables (`audit_log_entries`, `audit_log_operational`, `secret_versions`) include `id` and `created_at` only — no `updated_at`. Schema file comment: `// IMMUTABLE: append-only`.
+Immutable tables (`audit_log_entries`, `audit_log_operational`, `credential_versions`) include `id` and `created_at` only — no `updated_at`. Schema file comment: `// IMMUTABLE: append-only`.
 
 **RLS exception tables — `sessions` and `refresh_tokens`:**
 These tables are identity-scoped (not org-scoped). A user may belong to multiple orgs; a session/refresh token is valid across all of them. Adding `org_id` would either require per-org tokens (breaking the single-session model) or be semantically incorrect. These tables **do not carry `org_id`** and are **not subject to org RLS policies**. Access is exclusively via direct key lookup (`WHERE jti = $jti` or `WHERE token_hash = $hash`) in `modules/auth/service.ts` using `withAdminAccess()`. No other module may query these tables directly.
@@ -983,8 +984,8 @@ project-vault/
 │   │       │   │   ├── service.ts
 │   │       │   │   ├── repository.ts
 │   │       │   │   └── schema.ts
-│   │       │   ├── secrets/
-│   │       │   │   ├── routes.ts     # CRUD + POST .../reveal + import (.env, JSON)
+│   │       │   ├── credentials/
+│   │       │   │   ├── routes.ts     # CRUD + GET .../value + import (.env, JSON)
 │   │       │   │   ├── service.ts
 │   │       │   │   ├── service.test.ts  # co-located unit test (pattern example)
 │   │       │   │   ├── repository.ts
@@ -1077,7 +1078,7 @@ project-vault/
 │   │       │                                     # getUserAccessSummary() — shared by org-health + compliance
 │   │       └── __tests__/                        # Integration tests (withTestOrg) — NOT unit tests
 │   │           ├── auth.test.ts
-│   │           ├── secrets.test.ts
+│   │           ├── credentials.test.ts
 │   │           ├── rotation.test.ts
 │   │           ├── audit.test.ts
 │   │           └── route-audit.test.ts           # Enumerates all /api/v1/ routes; asserts SecureRoute marker on each; CI guard against unsecured route registration
@@ -1097,10 +1098,10 @@ project-vault/
 │       │   ├── global-teardown.ts
 │       │   ├── fixtures/
 │       │   │   ├── auth.ts                   # Authenticated session state
-│       │   │   └── test-data.ts              # Pre-created project + secrets
+│       │   │   └── test-data.ts              # Pre-created project + credentials
 │       │   ├── pages/
 │       │   │   ├── DashboardPage.ts
-│       │   │   └── SecretDetailPage.ts
+│       │   │   └── CredentialDetailPage.ts
 │       │   ├── auth.spec.ts
 │       │   ├── dashboard.spec.ts
 │       │   └── rotation.spec.ts
@@ -1125,9 +1126,9 @@ project-vault/
 │           │       │   └── [projectId]/
 │           │       │       ├── +layout.server.ts
 │           │       │       ├── +page.svelte     # IS the project dashboard (FR93) — not a sub-route
-│           │       │       ├── secrets/
+│           │       │       ├── credentials/
 │           │       │       │   ├── +page.svelte
-│           │       │       │   └── [secretId]/
+│           │       │       │   └── [credentialId]/
 │           │       │       │       ├── +page.svelte    # Detail + reveal button
 │           │       │       │       └── rotation/
 │           │       │       ├── services/               # HTTP service health monitoring ONLY
@@ -1149,7 +1150,7 @@ project-vault/
 │               ├── components/
 │               │   ├── ui/                       # shadcn-svelte base components
 │               │   ├── dashboard/                # MonitoringCard, AlertBanner, StatusIndicator
-│               │   ├── secrets/                  # SecretCard, RevealButton, ImportWizard
+│               │   ├── credentials/               # CredentialCard, RevealButton, ImportWizard
 │               │   ├── rotation/                 # RotationChecklist, ChecklistItem, RotationProgress
 │               │   ├── machine-users/            # ScopeVisualizer
 │               │   ├── audit/                    # AuditLogTable (cursor-paginated), IntegrityVerifyButton
@@ -1175,7 +1176,9 @@ project-vault/
 │   │   │   ├── organizations.ts
 │   │   │   ├── users.ts              # includes mfa_enrollments relation
 │   │   │   ├── projects.ts
-│   │   │   ├── secrets.ts            # secrets + secret_versions + secret_dependencies
+│   │   │   ├── credentials.ts        # credentials
+│   │   │   ├── credential-versions.ts      # credential_versions (separate file — not merged into credentials.ts)
+│   │   │   ├── credential-dependencies.ts  # credential_dependencies
 │   │   │   ├── rotations.ts          # rotations + rotation_checklist_items
 │   │   │   ├── monitoring.ts         # service_endpoints, cert_records, domain_records, payment_records
 │   │   │   │                         # all monitoring tables include alert_threshold_days INT DEFAULT 30
@@ -1208,7 +1211,7 @@ project-vault/
 │   │   ├── index.ts
 │   │   ├── schemas/
 │   │   │   ├── projects.ts
-│   │   │   ├── secrets.ts
+│   │   │   ├── credentials.ts
 │   │   │   ├── rotation.ts
 │   │   │   ├── machine-users.ts
 │   │   │   ├── audit.ts
@@ -1296,9 +1299,9 @@ Software-only audit log integrity (row checksums + cryptographic chaining) detec
 
 **Data Flow:**
 1. Human user → SvelteKit `+page.server.ts` → `openapi-fetch` → Fastify → `withOrg()` → PostgreSQL (RLS) → `packages/crypto` decrypt → response
-2. Machine user → `GET /api/v1/secrets/{name}` → API key auth (HMAC-SHA256 verify) → `withOrg(scope from key)` → secret fetch → `AuditEvent.SECRET_ACCESSED` → response
+2. Machine user → `GET /api/v1/machine/projects/{projectId}/credentials/{name}/value` → API key auth (HMAC-SHA256 verify) → `withOrg(scope from key)` → credential fetch → `AuditEvent.CREDENTIAL_VALUE_REVEALED` → response
 3. Monitoring worker → pg-boss `health:check` → HTTP probe → result stored → `emitSseEvent('service.health.changed', ...)` → SSE stream → dashboard update
-4. Rotation → human initiates → advisory lock on credential → checklist from `secret_dependencies` → per-system confirmation → all confirmed → old version retired → `AuditEvent.ROTATION_COMPLETED` → SSE + audit
+4. Rotation → human initiates → advisory lock on credential → checklist from `credential_dependencies` → per-system confirmation → all confirmed → old version retired → `AuditEvent.ROTATION_COMPLETED` → SSE + audit
 5. Org health → pg-boss `org:health-snapshot` every 30min → `lib/org-queries.ts` joins → `org_health_snapshots` row written → `GET /organizations/{orgId}/health` returns snapshot (fast single-row read)
 
 ## Architecture Validation Results
@@ -1339,7 +1342,7 @@ The monorepo package boundaries (`packages/crypto`, `packages/db`, `packages/sha
 
 | NFR | Target | Architectural Support |
 |---|---|---|
-| Secret fetch p95 | ≤100ms | Connection pooling, ciphertext offline cache, CPU-bound ops in `worker_threads` |
+| Credential fetch p95 | ≤100ms | Connection pooling, ciphertext offline cache, CPU-bound ops in `worker_threads` |
 | Search p95 | ≤300ms | `tsvector` index, paginated queries |
 | Dashboard FMC | ≤2s | SvelteKit SSR, progressive loading, SSE for live data |
 | Audit log p95 | ≤500ms at max write rate | Composite index `(org_id, created_at DESC)`, monthly partitioning escalation path |
