@@ -9,6 +9,15 @@ the quickstart.
 Every procedure below cites the story/AC it transcribes so it can be re-verified against the
 codebase as that behavior evolves — see each section's `<!-- Source: ... -->` comments.
 
+**Web UI available (Story 9.7):** most `curl`-based procedures below (backup trigger/list/restore/
+validate, system settings, multi-org provisioning, resource-usage monitoring, version/upgrade info,
+and platform audit log search/verify/maintenance-mode) also have an equivalent screen in the
+**Platform Admin** web UI (`/platform`, visible only to the platform operator — the first user
+registered on the instance). The commands below remain the authoritative, scriptable reference
+(and the only option if the web app isn't reachable); the web UI is a convenience layer on top of
+the same endpoints, with the same limitations (no live backup-job progress polling, no in-app
+upgrade-trigger button — see Story 9.7 D3/D4).
+
 ---
 
 ## Vault Lifecycle

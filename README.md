@@ -2,10 +2,12 @@
 
 > **⚠️ Status: Pre-launch, actively developed.** The core platform — secrets, rotation, teams,
 > monitoring, notifications, machine users, and audit logging — is functional in self-hosted
-> dev/eval environments (Epics 1–6 shipped, Epics 7–8 mostly shipped). Production-hardening
-> features for self-hosted operators (encrypted backup/restore, in-place upgrades, platform admin
-> settings, operator runbook — Epic 9) are still being built. Not yet tagged for a v1 GA release.
-> See [Implementation Status](#implementation-status) for the epic-by-epic breakdown.
+> dev/eval environments (Epics 1, 2, 4, 5, 6, 7, and 8 shipped). Production-hardening features for
+> self-hosted operators (encrypted backup/restore, in-place upgrades, platform admin settings,
+> platform operator audit log, and the operator runbook — Epic 9) now include a full admin web UI
+> (Story 9.7); two Epic 9 hardening/audit stories (9.4, 9.6) are still in review. Not yet tagged
+> for a v1 GA release. See [Implementation Status](#implementation-status) for the epic-by-epic
+> breakdown.
 
 *Run complex projects. Miss nothing.*
 
@@ -39,20 +41,21 @@ Key differentiators:
 | 📡 **Operational monitoring** — HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, cross-project health dashboard, public status pages | ✅ Done | Epic 6 |
 | 🏢 **Multi-user RBAC** — project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival | ✅ Done | Epic 4 |
 | 🔔 **Notifications** — email + Slack delivery, per-alert-type routing, in-app inbox | 🟡 Near done | Epic 3 — closure story in review |
-| 🤖 **Machine user support** — scoped API keys, offline/cache fallback, GitHub Actions integration | 🟡 API done, no web UI yet | Epic 7 — machine-user management web UI tracked as Story 8.6 |
-| 📋 **Immutable audit logs** — append-only, HMAC row-level integrity, search/export/external forwarding | 🟡 Partial | Epic 8 — access reports, dormant-user detection, and GDPR erasure still `ready-for-dev` (8.3/8.4) |
+| 🤖 **Machine user support** — scoped API keys, offline/cache fallback, GitHub Actions integration, full web UI | ✅ Done | Epic 7 — machine-user management web UI shipped in Story 8.6 |
+| 📋 **Immutable audit logs** — append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI | ✅ Done | Epic 8 — audit/compliance web UI shipped in Story 8.7 |
 | 🔑 **Vault unsealing** — master password or envelope encryption with split-key default | 🟡 Partial | External KMS mode is schema-reserved but unimplemented (v1 gap, see Story 9.5 disclosure) |
-| 🌐 **REST API** — nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init | ✅ Done | OpenAPI spec generation is currently a stale hand-maintained stub — real spec generation lands in Story 9.3 |
+| 🌐 **REST API** — nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init | ✅ Done | Generated OpenAPI spec + live Swagger UI (`ENABLE_API_DOCS=true`) and an independent contract-test suite shipped in Story 9.3 |
 | 🐳 **Self-hosted Docker** — `docker compose up` deployment (dev + prod compose files) | ✅ Done | Epic 1 |
-| 💾 **Built-in backup** — scheduled encrypted snapshots, retention, restore verification | 🔴 Not started | Epic 9, Story 9.1 |
-| ⚙️ **System settings & platform administration** — SMTP/backup/policy config UI, multi-org resource monitoring | 🔴 Not started | Epic 9, Story 9.2 |
-| ⬆️ **In-place version upgrades** | 🔴 Not started | Epic 9, Story 9.3 |
+| 💾 **Built-in backup** — scheduled encrypted snapshots, retention, restore verification, admin web UI | 🟡 Near done | Epic 9 — core backup/restore shipped in Story 9.1, admin UI in Story 9.7; hardening (concurrency guard, missed-backup alerts, S3-failure handling) still in review, Story 9.6 |
+| ⚙️ **System settings & platform administration** — SMTP/backup/policy config UI, multi-org resource monitoring | ✅ Done | Epic 9 — API in Story 9.2, admin web UI (`/platform`) in Story 9.7 |
+| ⬆️ **In-place version upgrades** | ✅ Done | Epic 9 — migration-safety guard + API in Story 9.3, informational upgrade/API-docs page in Story 9.7 |
+| 🛡️ **Platform operator audit log** — instance-wide privileged-action log, distinct from per-org audit log, with integrity verification and maintenance-mode failsafe | 🟡 Near done | Epic 9 — API/schema shipped in Story 9.4 (in review), search/verify/maintenance-mode admin UI in Story 9.7 |
 
 ---
 
 ## Implementation Status
 
-Epic-by-epic status, current as of 2026-07-06 (source of truth:
+Epic-by-epic status, current as of 2026-07-09 (source of truth:
 [`sprint-status.yaml`](_bmad-output/implementation-artifacts/sprint-status.yaml)):
 
 | Epic | Status | What ships |
@@ -63,14 +66,14 @@ Epic-by-epic status, current as of 2026-07-06 (source of truth:
 | 4. Team & Organization Management | ✅ Done | Invitations & role assignment, org user management, account deactivation/recovery, project archival |
 | 5. Credential Rotation | ✅ Done | Rotation initiation + checklist, stale-recovery, break-glass emergency rotation, full rotation web UI, hardening/tech-debt closure |
 | 6. Operational Monitoring & Status | ✅ Done | Service/certificate/domain records, HTTP endpoint monitoring & alerts, cross-project health dashboard, public status pages, full monitored-asset web UI |
-| 7. Machine User Access & CI/CD | 🟡 In progress | Machine user identities, API keys, offline fallback cache, and GitHub Actions integration are done and API-accessible; held open pending the machine-user management web UI (Story 8.6) |
-| 8. Compliance, Audit & Governance | 🟡 In progress | Tamper-evident HMAC audit log and search/export/external forwarding done; access reports, dormant-user detection, GDPR erasure, and rotation-UI hardening are drafted (`ready-for-dev`) but not yet implemented |
-| 9. Platform Operations, API & Self-Hosting | 🔴 Not started | Encrypted backup/restore, system settings UI, in-place upgrades, platform-operator audit log, and the operator runbook are all drafted (`ready-for-dev`); none implemented yet |
+| 7. Machine User Access & CI/CD | ✅ Done | Machine user identities, API keys, offline fallback cache, GitHub Actions integration, and the machine-user management web UI (Story 8.6) all shipped; retroactive hardening review (Story 8.8) done |
+| 8. Compliance, Audit & Governance | ✅ Done | Tamper-evident HMAC audit log, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, and the full audit/compliance web UI (Story 8.7) all shipped |
+| 9. Platform Operations, API & Self-Hosting | 🟡 In progress | Encrypted backup/restore (9.1), system settings/multi-org/resource monitoring (9.2), in-place upgrades + real OpenAPI generation (9.3), and the operational runbook (9.5) are done; the platform-operations admin web UI closing out the epic (Story 9.7 — `/platform` backups, settings, orgs, resource usage, upgrade/API-docs, and platform audit log pages) is also done. Platform operator audit log (9.4) and backup/restore hardening (9.6) are still in review |
 
 Known v1 design gaps, disclosed up front rather than discovered later:
 - External KMS (`kms` mode) for vault unsealing is schema-reserved but has no implementation (Story 1.5 / Story 9.5).
 - `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet (Story 9.2 / 9.5).
-- The OpenAPI spec (`generate-spec.ts`) is a hand-maintained stub covering ~8 routes against the ~100+ actually registered; a generated spec ships in Story 9.3.
+- No live backup-job progress polling and no in-app "click to upgrade" trigger in the Platform Admin UI — both are deliberate, documented v1 scope boundaries (Story 9.7 D3/D4); self-hosted in-place upgrades remain an out-of-band `docker compose up -d` operation.
 
 ---
 
@@ -100,7 +103,7 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 | Version | Target | Status |
 |---|---|---|
-| **v1 (GA)** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Epics 1–6 done; Epics 7–8 finishing web UI/compliance gaps; Epic 9 (backup, upgrades, platform admin, runbook) not started |
+| **v1 (GA)** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Epics 1, 2, 4, 5, 6, 7, 8 done; Epic 9 (backup, upgrades, platform admin UI, platform audit log, runbook) nearly done — 5 of 7 stories done including the admin web UI, 2 hardening/audit stories in review |
 | **v1.1** | Webhooks, project wiki | Not started |
 | **v2** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Not started |
 
@@ -175,9 +178,12 @@ Open http://localhost:5173:
 2. **Unseal vault** (if sealed) — same passphrase.
 3. **Register** the first user, then **sign in** (registration does not auto-login).
 4. Use the shell: projects, credentials, import, onboarding, global search, rotations, monitored
-   services/certificates/domains, cross-project health (`/health`), notifications inbox, team/user
-   settings (`/settings`). System-level admin settings (SMTP, backup schedule, instance policy) are
-   not yet built — API-only or absent pending Epic 9.
+   services/certificates/domains, machine users, cross-project health (`/health`), notifications
+   inbox, team/user settings (`/settings`, including audit/compliance tooling). The very first user
+   registered on the instance is auto-flagged as the **platform operator** and additionally sees a
+   **Platform Admin** nav item (`/platform`) for instance-wide backup/restore, system settings,
+   multi-org provisioning, resource-usage monitoring, version/upgrade info, and the platform
+   operator audit log — invisible to every other user.
 
 API-only eval: same vault steps, then use `curl` against http://localhost:3000 — see [Auth Configuration](#auth-configuration) below.
 
