@@ -709,16 +709,16 @@ Follow this project's TDD convention: write/update the failing test first, confi
 expected reason, then implement, per AC.
 
 - [ ] **Task 1 — Group W: schema + migration (AC-W1)**
-  - [ ] 1.1 **Cross-story coordination (do not skip):** as of 2026-07-09, sibling story
-    `4-5-fine-grained-permissions-and-project-rbac` *also* targets migration index 43
-    (`0043_project_membership_visibility_backfill.sql`) for the same `packages/db/src/migrations/`
-    directory. Both stories were drafted in parallel worktrees and neither reserves the number —
-    whichever of 3-5/4-5 is implemented (and merged to `main`) **first** keeps `0043`; the one
-    implemented **second** MUST re-check `packages/db/src/migrations/meta/_journal.json`'s actual
-    highest `idx` at that time and renumber its migration file, `--> statement-breakpoint` tag, and
-    every in-file reference accordingly (likely `0044`). Re-confirm 43 (or whatever the real next
-    free index is) against `meta/_journal.json` before writing the file — do not trust this story's
-    hardcoded "43" if 4-5 already claimed it.
+  - [ ] 1.1 **Cross-story coordination (do not skip):** as of 2026-07-09, TWO sibling stories from
+    the same reconciliation batch *also* target migration index 43:
+    `4-5-fine-grained-permissions-and-project-rbac` (`0043_project_membership_visibility_backfill.sql`)
+    and `1-13-infra-and-process-hardening` (`0043_normalize_tag_case.sql`), for the same
+    `packages/db/src/migrations/` directory. All three stories were drafted in parallel worktrees and
+    none reserves the number — whichever of 3-5/4-5/1-13 is implemented (and merged to `main`)
+    **first** keeps `0043`; the second keeps whatever the real next free number is at that time
+    (likely `0044`); the third similarly takes the next free number after that (likely `0045`).
+    Re-confirm the actual next free index against `meta/_journal.json` before writing the file — do
+    not trust this story's hardcoded "43" if either sibling already claimed it.
   - [ ] 1.2 Add `alertLeadDays`/`notifiedLeadDays` to `packages/db/src/schema/credentials.ts`,
     mirroring `payment-records.ts`'s exact column definitions (defaults `[30, 7, 1]`/`[]`).
   - [ ] 1.3 Generate/hand-write `packages/db/src/migrations/0043_credential_expiry_alerts.sql`
@@ -828,7 +828,8 @@ expected reason, then implement, per AC.
 
 New files:
 - `packages/db/src/migrations/0043_credential_expiry_alerts.sql` (renumber if sibling story
-  `4-5-fine-grained-permissions-and-project-rbac` claims 0043 first — see Task 1.1)
+  `4-5-fine-grained-permissions-and-project-rbac` or `1-13-infra-and-process-hardening` claims
+  0043 first — see Task 1.1)
 - `apps/api/src/workers/credential-expiry-alert.ts` + `.test.ts`
 - `apps/api/src/workers/notification-dlq-cleanup.ts` + `.test.ts`
 
