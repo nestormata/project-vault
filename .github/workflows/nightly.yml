@@ -177,12 +177,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: [mutation, flaky-test-repeat, trivy-image]
     if: failure()
+    # secrets.* isn't allowed directly in step `if:` expressions, so surface it via
+    # job-level env first (env.* is allowed there).
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       # Skip (not fail) when the webhook isn't configured — e.g. forks or repos that
       # haven't set up Slack yet — so an unrelated missing secret doesn't itself show
       # up as a failing job on every nightly failure.
       - name: Post to Slack
-        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
         uses: slackapi/slack-github-action@v3
         with:
           payload: |
@@ -199,5 +203,4 @@ jobs:
               ]
             }
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
