@@ -41,6 +41,14 @@ export function parseDevelopmentStatus(yamlContent: string): Map<string, string>
   return statuses
 }
 
+export function loadSprintStatuses(rootDir: string): Map<string, string> | null {
+  try {
+    return parseDevelopmentStatus(readFileSync(resolve(rootDir, SPRINT_STATUS_PATH), 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
 function extractStoryFileStatus(content: string): string | undefined {
   return content.match(/^Status:\s*(\S+)\s*$/m)?.[1]
 }
@@ -49,14 +57,8 @@ export function scanStoryStatusSync(rootDir = process.cwd()): StatusMismatch[] {
   const root = resolve(rootDir)
   const storiesDir = resolve(root, STORIES_DIR)
 
-  let sprintStatuses: Map<string, string>
-  try {
-    sprintStatuses = parseDevelopmentStatus(
-      readFileSync(resolve(root, SPRINT_STATUS_PATH), 'utf-8')
-    )
-  } catch {
-    return []
-  }
+  const sprintStatuses = loadSprintStatuses(root)
+  if (!sprintStatuses) return []
 
   const mismatches: StatusMismatch[] = []
   for (const file of walkFiles(storiesDir, (path) => path.endsWith('.md'))) {
