@@ -48,7 +48,7 @@ jobs:
             echo "Skipping: '$TAG' is not a MAJOR.MINOR.PATCH release tag — this is the major-tag move this workflow just performed, not a new release."
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: steps.tagcheck.outputs.is_full_release == 'true'
         with:
           fetch-depth: 0
