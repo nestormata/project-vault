@@ -78,7 +78,11 @@ jobs:
   flaky-test-repeat:
     name: Flaky Test Repeat Run
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The full `pnpm turbo test` suite takes ~20-25 minutes on its own (see the Quality
+    # Gates job's "Test (with coverage)" step in ci.yml); 5 back-to-back runs need well
+    # over 30 minutes end to end. 180 gives headroom without hitting the platform's
+    # 360-minute job ceiling.
+    timeout-minutes: 180
     # Rare, timing-dependent flakes (e.g. one bad run in ~6-8) are invisible to a single CI
     # run and to a single local `make ci` — a green run says nothing about a bug that only
     # shows up occasionally. Running the suite several times back-to-back turns "maybe
@@ -174,7 +178,11 @@ jobs:
     needs: [mutation, flaky-test-repeat, trivy-image]
     if: failure()
     steps:
+      # Skip (not fail) when the webhook isn't configured — e.g. forks or repos that
+      # haven't set up Slack yet — so an unrelated missing secret doesn't itself show
+      # up as a failing job on every nightly failure.
       - name: Post to Slack
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
         uses: slackapi/slack-github-action@v3
         with:
           payload: |

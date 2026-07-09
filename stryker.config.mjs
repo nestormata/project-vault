@@ -6,6 +6,10 @@ export default {
   plugins: ['@stryker-mutator/vitest-runner'],
   coverageAnalysis: 'perTest',
   ignoreStatic: true,
+  // The scoped vitest run (apps/api + packages/db) takes ~20-25 minutes in CI,
+  // well past the 5-minute default — without this the dry run times out before
+  // mutation testing ever starts.
+  dryRunTimeoutMinutes: 40,
   // Initial threshold: 60% — ratchets to 80% after Epic 2 is complete
   // Initial scaffold correctly reports "no mutants found" (all Story 1.1 code is
   // infrastructure/stubs — business logic files that Stryker mutates are added in Story 1.2+)
