@@ -58,6 +58,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace packages
+        run: pnpm turbo build
+
       - name: Run database migrations
         run: pnpm db:migrate
         env:
@@ -114,6 +117,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm turbo build
 
       - name: Run database migrations
         run: pnpm db:migrate
