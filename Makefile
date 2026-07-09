@@ -22,7 +22,7 @@ DB_HOST_PORT  := $(if $(DB_HOST_PORT),$(DB_HOST_PORT),5432)
 DB_URL_SUPERUSER ?= postgresql://postgres:password@localhost:$(DB_HOST_PORT)/project_vault
 DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@localhost:$(DB_HOST_PORT)/project_vault
 
-.PHONY: help install dev build lint typecheck generate-spec jscpd audit \
+.PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues \
         db-up db-down db-migrate check-rls test test-repeat stryker ci \
         bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-prod docker-prod-down \
@@ -56,6 +56,9 @@ jscpd: ## Check for duplicate code
 
 audit: ## Audit dependencies for high/critical CVEs
 	pnpm audit --audit-level=high
+
+sonar-issues: ## List open SonarCloud issues (needs SONAR_TOKEN/SONAR_ORGANIZATION/SONAR_PROJECT_KEY in .env; see docs/sonarqube.md)
+	./scripts/sonar-issues.sh
 
 # --- Operator bootstrap (Epic 1 retro D2) ------------------------------------
 
