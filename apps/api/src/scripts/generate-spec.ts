@@ -9,8 +9,9 @@ const outPath = resolve(__dirname, '../../../../packages/shared/openapi.json')
 // explicitly), but route registration never opens a connection — @project-vault/db's
 // getDb() only connects lazily on first query, and this script only registers routes and
 // reads their attached schemas. Any well-formed, non-superuser URL satisfies validation
-// without a reachable database.
-process.env.DATABASE_URL ??= 'postgresql://vault_app:generate-spec@localhost:5432/project_vault'
+// without a reachable database — no password is required, so none is included (avoids
+// looking like a credential to secret-scanning tools).
+process.env.DATABASE_URL ??= 'postgresql://vault_app@localhost:5432/project_vault'
 
 const { createApp } = await import('../app.js')
 

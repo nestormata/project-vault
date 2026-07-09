@@ -69,10 +69,24 @@ describe('import:cleanup-expired worker', () => {
     try {
       await withTestOrg(async ({ orgId }) => {
         const project = await insertTestProject(orgId, { userId, slug: 'cleanup-idem' })
-        await insertCleanupFixtureRow(orgId, project.id, userId, new Date(Date.now() - 60_000))
+        const expiredId = await insertCleanupFixtureRow(
+          orgId,
+          project.id,
+          userId,
+          new Date(Date.now() - 60_000)
+        )
 
         await importCleanupExpired()
-        await importCleanupExpired()
+        // Second run must not throw on an already-deleted row and must leave it deleted.
+        await expect(importCleanupExpired()).resolves.toBeUndefined()
+
+        const remaining = await withOrg(orgId, (tx) =>
+          tx
+            .select({ id: pendingImports.id })
+            .from(pendingImports)
+            .where(inArray(pendingImports.id, [expiredId]))
+        )
+        expect(remaining).toEqual([])
       })
     } finally {
       await deleteTestUser(userId)
