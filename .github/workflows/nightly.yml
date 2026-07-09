@@ -125,18 +125,27 @@ jobs:
       - name: Build workspace packages
         run: pnpm turbo build
 
-      - name: Run database migrations
-        run: pnpm db:migrate
-        env:
-          DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
-
       - name: Test (5x back-to-back)
         run: |
           for i in $(seq 1 5); do
             echo "=== flaky-test-repeat: run $i/5 ==="
+            # Reset to a freshly-migrated, empty database before each iteration. Without this,
+            # self-registration flows across the whole suite accumulate organizations/users
+            # unboundedly over the 5 runs — which both breaks tests that assume a small/bounded
+            # count (e.g. Story 9.2 AC-8/AC-10's org limit and slug-collision-retry checks) and
+            # makes each successive run dramatically slower (observed: run1 api:test ~20min,
+            # run2 ~40min, run3 ~60min against the same ever-growing database). Dropping and
+            # recreating `public` (app tables) and `drizzle` (migration bookkeeping) reproduces
+            # the same fresh-DB starting state every normal single CI run gets for free from its
+            # own dedicated postgres service container.
+            psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -c 'DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
+            DATABASE_URL="$SUPERUSER_DATABASE_URL" pnpm db:migrate
             pnpm turbo test --force
           done
         env:
+          # SUPERUSER_DATABASE_URL is already set at the job level and inherited here —
+          # only the override for the test run itself (vault_app, not postgres) is needed.
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
