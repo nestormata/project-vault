@@ -201,6 +201,10 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       orgNamePrefix: 'Orgs Limit Op',
       password: PASSWORD,
     })
+    const [orgCountRow] = await getDb().execute<{ c: string }>(
+      sql`SELECT count(*)::text AS c FROM organizations`
+    )
+    const currentOrgCount = Number(orgCountRow?.c ?? 0)
     await getDb().delete(systemSettings)
     await suite.app.inject({
       method: 'PUT',
@@ -218,11 +222,15 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     expect(res.statusCode).toBe(422)
     expect(res.json()).toMatchObject({ code: 'org_limit_reached' })
 
+    // Raise the limit above the current org count so the next creation succeeds. Use a
+    // dynamic value (current count + 10) rather than a hardcoded constant — the shared test
+    // DB accumulates orgs across all test runs, so a fixed cap will eventually fall below
+    // the existing org count and cause a false failure here.
     await suite.app.inject({
       method: 'PUT',
       url: '/api/v1/admin/settings',
       headers: { cookie: cookieHeader(operator.cookies) },
-      payload: { instancePolicy: { maxOrgs: 1000 } },
+      payload: { instancePolicy: { maxOrgs: currentOrgCount + 10 } },
     })
     const retried = await createOrgReq(suite.app, operator.cookies, {
       name: 'Now Fits',
