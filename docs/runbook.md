@@ -516,6 +516,64 @@ documentation update at that time.
 
 ---
 
+## Credential Version Retention
+
+<!-- Doc reconciliation, 2026-07-09: closes deferred-work.md D2 ("Epic 2 closure retrospective")
+     and its "Operations & production" duplicate entry — verified against
+     apps/api/src/workers/prune-credential-versions.ts and apps/api/src/config/env.ts. -->
+
+### `CREDENTIAL_RETENTION_DRY_RUN` — enabling destructive version purge
+
+Each credential's `retentionCount` (set at creation, per-credential) bounds how many historical
+versions are kept; older, non-current, non-rotation-locked versions are candidates for the retention
+worker to purge. Purging is **irreversible** — a purged version's `encryptedValue` is zero-overwritten
+then set to `null` and cannot be recovered from the live database (only from a pre-purge backup
+snapshot, see § Backup & Recovery).
+
+`CREDENTIAL_RETENTION_DRY_RUN` (env var, boolean) controls whether the worker actually purges or only
+logs what it *would* purge:
+
+- **Production defaults to `true` (dry-run)** — `apps/api/src/config/env.ts` sets the default from
+  `isProduction`, so a fresh production deployment never purges anything until an operator explicitly
+  overrides it. Every run instead emits a `CREDENTIAL_RETENTION_DRY_RUN` operational log line per
+  purge-eligible version (`credentialId`, `versionNumber`) plus a per-org summary
+  (`credentialsScanned`, `versionsWouldPurge`).
+- **Development/test default to `false`** (destructive) — for local test coverage; not relevant to
+  production rollout.
+
+**Recommended rollout procedure for a new production deployment:**
+
+1. Leave `CREDENTIAL_RETENTION_DRY_RUN` unset (or explicitly `true`) for at least one full retention
+   worker run cycle after go-live. Confirm the worker is actually running (check for
+   `CREDENTIAL_RETENTION_DRY_RUN`-tagged log lines in your log aggregator — zero log lines with
+   credentials present in the org usually means the worker isn't scheduled, not that nothing is
+   purge-eligible).
+2. Review the dry-run summary log lines' `versionsWouldPurge` counts against your own expectations for
+   how many old versions each project's credentials should realistically have accumulated. Investigate
+   before proceeding if the count looks implausibly high (may indicate a `retentionCount` misconfiguration
+   rather than a worker bug).
+3. Take a fresh backup snapshot (§ Triggering a manual backup) immediately before flipping the flag —
+   this is your only recovery path if a purge turns out to be wrong.
+4. Set `CREDENTIAL_RETENTION_DRY_RUN=false` and restart the API process so the worker picks up the new
+   value.
+5. After the next run, confirm the `CREDENTIAL_RETENTION_SUMMARY` log lines' `versionsPurged` counts
+   are consistent with the dry-run's `versionsWouldPurge` counts from step 2 (they should match closely;
+   a large discrepancy suggests new versions were created between the dry-run and the real run, which is
+   expected under normal usage, not a defect).
+
+**Rotation-in-progress exemption:** a version that is the current active credential value for an
+in-progress rotation is exempt from purge until the rotation completes or is abandoned
+(`rotationLockedAt` guard in `purgeCandidatesForCredential`/`purgeVersion`) — this is enforced
+automatically and requires no operator action, but is worth knowing about if a `versionsWouldPurge`
+count looks lower than expected for a project with active rotations.
+
+**Every purge is audited:** each purged version writes a `credential.version_purged` entry to the
+tamper-evident audit log (`payload: { credentialId, versionNumber }`) in the same transaction as the
+purge — query the audit log (§ Verifying audit log integrity) if you need to reconstruct exactly which
+versions were purged and when.
+
+---
+
 ## Incident Response
 
 ### "Vault unreachable" triage flowchart
