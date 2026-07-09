@@ -1,0 +1,45 @@
+# Adversarial Review: Story 9-8 (Platform Admin MFA Gaps and Audit-Bypass Hardening)
+
+**Date:** 2026-07-09
+**Reviewed file:** `_bmad-output/implementation-artifacts/9-8-platform-admin-mfa-gaps-and-audit-bypass-hardening.md`
+**Reviewer:** bmad-review-adversarial-general
+
+---
+
+## Findings
+
+1. **[high]** AC-T4's real-DB foreign-key-violation test asserts end-to-end behavior (`writePlatformAuditEntryOrFailClosed` rejects with `SameTransactionPlatformAuditWriteError`, zero pending rows) but never asserts the *shape* of the actual error object the classifier receives before that. AC-T1's positive/negative examples for SQLSTATE codes are all synthetic, built with `Object.assign(new Error(...), { cause: ... })`; AC-T4 is the story's only *real*, unmocked-driver error, and it's exercised purely through the end-to-end outcome. If the real Drizzle/pg error for a `23503` violation surfaces its code somewhere the classifier doesn't check (e.g. nested two levels under `.cause.cause.code`, or under a different property Drizzle uses for constraint errors), AC-T4 would still pass — for the *right* reason by accident (any unrecognized error already defaults to "not storage-unavailable" and propagates) — while masking that the classifier's coverage of real driver errors elsewhere in the codebase is unverified. The story should require a debug-print or explicit shape assertion of the actual caught error at least once before trusting AC-T1's synthetic-only coverage of the real-world case.
+
+2. **[high]** AC-T5 claims that after this story, a forbidden-audit-key payload during maintenance mode results in "nothing persisted anywhere," but its only concrete "Example" blocks assert the rejection *type* (`instanceof SameTransactionPlatformAuditWriteError`), not row counts in `platform_audit_events` or `platform_audit_pending_entries`. This is the single most security-sensitive AC in the story (it's specifically about preventing a secret-bearing payload from being silently written to an audit table), yet it has no explicit "and zero rows exist in either table" assertion — unlike AC-T4, which does state "gains zero new rows" explicitly. AC-T5 should have the same explicit row-count assertion, not just an error-type check.
+
+3. **[medium]** The Node.js errno allow-list in AC-T1 (`ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`, `EHOSTUNREACH`, `EPIPE`) omits several common transient-network codes (`ECONNABORTED`, `ENETUNREACH`, `ENETDOWN`, `EAI_AGAIN`, `EHOSTDOWN`). Since anything not on this list is treated as "not storage-unavailable" and now propagates as a hard failure instead of gracefully queuing, an incomplete list means some genuine storage/network outages during a maintenance window will lose the AC-16 graceful-queue behavior that TD9-2 was never meant to remove — TD9-2 was scoped to stop misclassifying *application bugs* as outages, not to narrow real-outage coverage. The story doesn't explain how this specific six-code list was derived or whether it's considered exhaustive.
+
+4. **[medium]** Story 9.4's own file (`9-4-platform-operator-audit-log.md`, AC-6, line 228) will still literally read "...any error during this write (HMAC computation failure, DB constraint violation, sealed-vault `VaultSealedError`) is rewrapped... unless maintenance mode is active... in which case the failure is caught and queued instead" after this story ships — with no forward-reference added pointing at 9-8's narrowing. This is exactly the stale-cross-reference drift class this project's own retros have repeatedly flagged (most recently: `epic-9`'s own stale in-progress comment, found and corrected earlier in this same session). The Tasks list has no subtask to add a "superseded by 9-8, see AC-T4/T5" note to 9.4's file.
+
+5. **[medium]** The story's own header sets `Status: ready-for-dev` directly in the file, with no task or checklist item instructing whoever picks this up to verify that value against `sprint-status.yaml` before starting. This project has hit exactly this defect class — story-file `Status:` header vs. `sprint-status.yaml` drift — at least five documented times per `sprint-status.yaml`'s own changelog ("P3 drift, 4th recurrence," "5th recurrence during 8-7's own post-implementation review"). This very story's own worktree had the two out of sync until this review pass caught and fixed it manually; nothing in the story itself guards against a sixth recurrence.
+
+6. **[medium]** AC-M2 notes that `orgs/+page.svelte` derives `pageError` into local `$state` rather than reading `data.errorMessage` directly in the template (unlike the other three pages), but never explains *why* — whether that indirection is load-bearing (e.g. needed because something else on the page later mutates `pageError`) or just incidental legacy style. A developer implementing AC-M2 has no way to know whether it's safe to simplify this divergence while already touching the file, or whether doing so would be an unrelated, risky scope expansion.
+
+7. **[medium]** Task 7.1's described verification method for the new MFA-unenrolled backend tests (temporarily comment out `requireMfa: true` locally, confirm the new test fails, then revert the temporary edit) is a manual, one-off proof that isn't preserved anywhere as a permanent artifact. Once Task 7 is "done," there's no lasting regression guard proving the new tests would actually catch a future accidental removal of `requireMfa: true` on these specific routes — the AST-based route-audit guard tests already do this generically for the *presence* of the flag, but this AC's own manual verification step leaves no trace confirming it was ever performed, unlike AC-M7's guard-test exception (Task 8.3), which explicitly requires proving the guard fails first.
+
+8. **[medium]** The Independent re-verification note documents that this story's own creation process found a real regression in a *different*, already-shipped, already-`done` story (9-7: the `GET /maintenance-mode` MFA-flag flip in commit `f542c9f`), but the story proposes no update to 9-7's own `sprint-status.yaml` entry, which currently describes only "CI green" and "PR #134" with no mention that its own CI-fix pass silently overrode a documented design decision (D2.4). 9-7 remains recorded as fully `done` with an implicit, now-known-inaccurate claim of AC-G4/D2.4 compliance, and nothing in this story flags that record for correction.
+
+9. **[low]** `MfaAwareErrorAlert`'s substring-match heuristic (`message.includes('MFA')`) is reused as-is across all four newly-fixed pages per AC-M5. The story's own edge case acknowledges a message could coincidentally contain "MFA" for an unrelated reason and calls this "explicitly out of scope to change" — but doesn't record it as tracked debt anywhere (not in this story's Dev Notes, not as a new `deferred-work.md` row), even though this story is otherwise scrupulous about tracking every other known limitation it touches.
+
+10. **[low]** AC-M8 frames `/platform/audit`'s two fixes (AC-M4's events-list alert, AC-M7's maintenance-mode-status widget) as needing to land "together" for the page to be genuinely fixed, but Tasks 6 and 8 are independent, non-adjacent tasks (separated by Task 7) with no shared checklist item or explicit sequencing note. A developer could complete Task 6, consider AC-M4 satisfied, and move on without realizing the same page is still broken via the second, unrelated code path until reaching Task 8 much later.
+
+11. **[low]** The Product Surface Contract table's "Surface scope" cell packs a full paragraph of per-AC-group detail (which ACs are `api` vs. `web`) into a single cell, rather than a single `api`/`web`/`both`/`none` value as the project's own Product Surface Contract rule (G1) describes. Every other story's PSC table in this repo uses the single-value convention; this one is harder to audit mechanically (e.g. by any future `check-psc-*`-style tooling) as a result.
+
+12. **[low]** Task 9.4 says to update `deferred-work.md`'s two entries "to reflect closure," but nothing in the story's tasks addresses `epic-9`'s own explanatory comment in `sprint-status.yaml`, which as of this story's creation still doesn't mention 9-8 at all. Given `epic-9`'s comment already went stale once this session (about 9-7 landing) and had to be caught and corrected manually, leaving no task to update it again risks the exact same drift a second time, immediately after it was just fixed.
+
+13. **[low]** The story states "no migrations, no schema changes, no new packages" in Project Structure Notes, but never explicitly confirms whether `apps/api/src/lib/audit-or-fail-closed.storage-classifier.test.ts` (the new Task 1 test file) needs any test-DB setup/teardown at all, given the file is described as pure unit tests with "no DB, no vault" — worth an explicit one-line confirmation in Dev Notes so the implementer doesn't reflexively copy the heavier DB/vault bootstrap boilerplate from the sibling `audit-or-fail-closed.platform-audit.test.ts` file into a test suite that doesn't need it.
+
+---
+
+## Summary
+
+- **Total findings: 13**
+- Critical: 0
+- High: 2
+- Medium: 6
+- Low: 5
