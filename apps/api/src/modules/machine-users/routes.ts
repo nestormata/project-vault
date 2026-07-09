@@ -677,6 +677,11 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
 
       const oldKey = await lockAndRejectIfRevoked(secureCtx, params, reply)
       if (!oldKey) return reply
+      // 8-8 adversarial review AC-11 fix: mirrors rotate's own already-rotated guard above.
+      // Without this, emergency-revoking a key that was already rotated (but is still inside
+      // its overlap window — revokedAt still null) silently succeeded and issued a *second*
+      // successor key with no indication that a rotation-issued successor already existed.
+      if (oldKey.overlapExpiresAt !== null) return reply.status(409).send(API_KEY_ALREADY_ROTATED)
 
       const result = await emergencyRevokeApiKey(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,

@@ -1,6 +1,6 @@
 # Story 8.8: Story 8.6 Retroactive Adversarial Review
 
-Status: ready-for-dev
+Status: review
 
 <!-- Story derived from epic-9-retro-2026-07-08.md Finding 3 / Action Item A9-5, which itself
      confirms that epic-8-retro-2026-07-07.md's Action Item A8-2 (assigned to Dana, QA) was never
@@ -369,21 +369,21 @@ Corresponding web UI entry points (also in scope — TA-1 is a UI+API concern, n
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Read all required context** (Prerequisites) — 8-6's story file, both retro docs, one sibling adversarial-review file for format precedent.
-- [ ] **Task 2: Review revoke (both UI entry points) against TA-1** (AC-4)
-- [ ] **Task 3: Review rotate and emergency-revoke against TA-1** (AC-5)
-- [ ] **Task 4: Review machine-user deactivation against TA-1** (AC-6)
-- [ ] **Task 5: Review dormancy-alert dismiss and extend-dormancy against TA-1** (AC-7)
-- [ ] **Task 6: Review authz/RLS/tenant isolation across all 6 actions** (AC-8)
-- [ ] **Task 7: Review concurrency — double-revoke** (AC-9)
-- [ ] **Task 8: Review concurrency — double-deactivate** (AC-10)
-- [ ] **Task 9: Review concurrency — rotate/emergency-revoke cross-action race** (AC-11)
-- [ ] **Task 10: Review concurrency — dormancy-alert actions** (AC-12)
-- [ ] **Task 11: Review audit/logging coverage across all 6 actions** (AC-13)
-- [ ] **Task 12: Write the findings artifact** (`8-6-epic-7-completion-machine-user-web-ui-and-hardening-adversarial-review.md`) with severity tags, citations, and the AC-14 verdict section (AC-1, AC-2, AC-3, AC-14)
-- [ ] **Task 13: Triage findings — fix Critical/High via TDD, or file new backlog entries** (AC-15)
-- [ ] **Task 14: Update `sprint-status.yaml`** — mark `8-8-story-8-6-retroactive-adversarial-review` `done` with a comment citing the artifact and verdict; add any new backlog stories from Task 13 (AC-16)
-- [ ] **Task 15: Full regression** — if Task 13 touched any code, run the affected module's full test suite plus `make ci` before considering this story complete.
+- [x] **Task 1: Read all required context** (Prerequisites) — 8-6's story file, both retro docs, one sibling adversarial-review file for format precedent.
+- [x] **Task 2: Review revoke (both UI entry points) against TA-1** (AC-4)
+- [x] **Task 3: Review rotate and emergency-revoke against TA-1** (AC-5)
+- [x] **Task 4: Review machine-user deactivation against TA-1** (AC-6)
+- [x] **Task 5: Review dormancy-alert dismiss and extend-dormancy against TA-1** (AC-7)
+- [x] **Task 6: Review authz/RLS/tenant isolation across all 6 actions** (AC-8)
+- [x] **Task 7: Review concurrency — double-revoke** (AC-9)
+- [x] **Task 8: Review concurrency — double-deactivate** (AC-10)
+- [x] **Task 9: Review concurrency — rotate/emergency-revoke cross-action race** (AC-11)
+- [x] **Task 10: Review concurrency — dormancy-alert actions** (AC-12)
+- [x] **Task 11: Review audit/logging coverage across all 6 actions** (AC-13)
+- [x] **Task 12: Write the findings artifact** (`8-6-epic-7-completion-machine-user-web-ui-and-hardening-adversarial-review.md`) with severity tags, citations, and the AC-14 verdict section (AC-1, AC-2, AC-3, AC-14)
+- [x] **Task 13: Triage findings — fix Critical/High via TDD, or file new backlog entries** (AC-15)
+- [x] **Task 14: Update `sprint-status.yaml`** — mark `8-8-story-8-6-retroactive-adversarial-review` `done` with a comment citing the artifact and verdict; add any new backlog stories from Task 13 (AC-16)
+- [x] **Task 15: Full regression** — if Task 13 touched any code, run the affected module's full test suite plus `make ci` before considering this story complete.
 
 ---
 
@@ -434,8 +434,80 @@ Corresponding web UI entry points (also in scope — TA-1 is a UI+API concern, n
 
 ### Agent Model Used
 
+Claude (Sonnet), via the `bmad-dev-story` skill, running as a Cursor CLI subagent in an isolated
+git worktree.
+
 ### Debug Log References
+
+- Local Postgres brought up via `make check-ports` / `make fix-ports` / `make db-up` /
+  `make db-migrate` (worktree `.env`: `DB_HOST_PORT=5433`, auto-bumped from the default 5432 due
+  to a collision with another running stack).
+- `pnpm turbo build` run once up front so `@project-vault/shared`/`@project-vault/db` had fresh
+  `dist/` output before migrations and tests (workspace was checked out with stale build output).
+- Focused test runs: `apps/api` `vitest run` scoped to
+  `src/modules/machine-users/`, `src/modules/org/` (180 tests, 17 files) — run twice, both green;
+  the two new concurrency tests specifically re-run 5x each to rule out flakiness (all green).
+- `pnpm --filter @project-vault/api exec tsc --noEmit` — clean.
 
 ### Completion Notes List
 
+- Performed a retroactive adversarial review of Story 8-6's 6 shipped destructive-action code
+  paths (revoke, rotate, emergency-revoke, deactivate, dismiss, extend-dormancy) plus their web UI
+  entry points, per this story's 16 ACs. Full findings, citations, and severity tags are in
+  `_bmad-output/implementation-artifacts/8-6-epic-7-completion-machine-user-web-ui-and-hardening-adversarial-review.md`
+  — this note summarizes rather than duplicates that artifact.
+- **TA-1 confirmation-step audit (AC-4–AC-7):** both revoke UI entry points independently
+  verified as client-confirmation-only (an accepted, established app-wide pattern, not a new
+  8-6 gap); rotate/emergency-revoke confirmation labels verified distinct but flagged as not
+  communicating differing blast radius (Low/Medium, left unfixed — UI-copy-only, out of this
+  story's code-path scope); deactivation UI verified to reload via `invalidateAll()` and to never
+  imply reversibility; dismiss and extend-dormancy each explicitly assessed against TA-1's bar
+  (dismiss: irreversible but accepted as intentionally lighter-weight given low blast radius;
+  extend-dormancy: does not meet the destructive/irreversible bar at all).
+- **AuthZ/RLS (AC-8):** confirmed all 6 routes run inside an RLS-scoped transaction via
+  `secure-route.ts`'s `setRlsOrgContext()` before the handler executes; confirmed
+  `minimumRole: 'admin'` vs `allowedRoles: ['owner','admin']` is not a behavioral gap (role-rank
+  hierarchy already includes `owner` in `admin`'s bar); corrected Story 8-8's own AC-8 assumption
+  about a missing `WITH CHECK` — the migration's command-less `ALL` policies default `WITH CHECK`
+  to `USING` per documented Postgres behavior, not an oversight.
+- **Concurrency (AC-9–AC-12):** double-revoke was already covered by a real concurrent test (no
+  finding). Double-deactivate was sequential-only (Medium) — fixed by adding a concurrent test
+  (already-correct code, pure coverage gap). Cross-action rotate-vs-emergency-revoke race
+  uncovered a **real, previously undiscovered functional defect** (not just a test gap):
+  emergency-revoke had no guard against an already-rotated key, unlike rotate's symmetric
+  already-revoked guard — reproduced with a failing test first (TDD red), then fixed by mirroring
+  rotate's own check in `routes.ts`, then re-verified green (TDD green) alongside the full
+  `machine-users`/`org` suites. Dormancy-alert dismiss/extend races were verified safe by code
+  tracing (claim-based UPDATE for dismiss; a revoked-but-still-snoozed key is provably harmless
+  since the dormancy worker already filters `isNull(revokedAt)` before ever reading the snooze).
+- **Audit coverage (AC-13):** all 6 actions confirmed to write a fail-closed, secret-free audit
+  entry; fixed a Low-severity literal-string-vs-constant drift (`security_alert.dismissed` →
+  `AuditEvent.SECURITY_ALERT_DISMISSED`); documented (not fixed) a Medium coverage gap — 4 of 6
+  actions lack a dedicated audit-write-failure regression test, though all 6 share the same
+  already-proven fail-closed code path.
+- **Verdict (AC-14):** this review fully discharges A8-2/Finding 3 in full for all 6 in-scope
+  actions. No Critical/High findings were found, so no new backlog story was required; 2 Medium +
+  1 Low findings were recorded as explicitly accepted/non-blocking with reasoning, per AC-15.
+- `sprint-status.yaml` updated: `8-8-story-8-6-retroactive-adversarial-review` → `review` (this
+  story's own `Status:` field also set to `review`, matching P3's status-sync rule — final `done`
+  transition is a separate QA/code-review gate, consistent with every other story in this repo).
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/8-6-epic-7-completion-machine-user-web-ui-and-hardening-adversarial-review.md`
+  (new) — the mandatory findings artifact: header, per-area findings with severity tags and
+  file:line citations, and the AC-14 verdict section.
+- `apps/api/src/modules/machine-users/routes.ts` (modified) — AC-11 fix: emergency-revoke now
+  rejects an already-rotated key (`409 api_key_already_rotated`), mirroring rotate's existing
+  already-revoked guard.
+- `apps/api/src/modules/machine-users/rotation-routes.test.ts` (modified) — added a cross-action
+  concurrent rotate-vs-emergency-revoke race test (AC-11) and a TDD regression test for the
+  already-rotated emergency-revoke fix above.
+- `apps/api/src/modules/machine-users/deactivation-routes.test.ts` (modified) — added a genuine
+  concurrent (`Promise.all`) double-deactivate test (AC-10), closing the sequential-only coverage
+  gap the story's own Retro Traceability Matrix predicted.
+- `apps/api/src/modules/org/security-alert-actions-routes.ts` (modified) — AC-13 fix: dismiss's
+  audit `eventType` now uses the `AuditEvent.SECURITY_ALERT_DISMISSED` constant instead of a
+  literal string (no behavior change).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified) — `8-8-story-8-6-retroactive-adversarial-review`
+  → `review`; `last_updated` comment log appended.
