@@ -246,4 +246,12 @@ Full detail: `_bmad-output/implementation-artifacts/epic-6-retro-2026-07-06.md`.
 
 **Decision:** Story 9.7 takes the deferred-work.md path rather than fixing this in-place, because narrowing the bypass is a backend audit-logging behavior change unrelated to 9.7's UI scope (see D8). The fix is: narrow the `catch` clause to only trigger maintenance-mode queue logic when the error is a storage-unavailability error (e.g. a connection-refused or disk-full Postgres error class), not any arbitrary write exception.
 
-**Target:** backend follow-up story, not yet scheduled. Source: `9-7-epic-9-completion-platform-operations-web-ui` (AC-T2), `epic-9-retro-2026-07-08.md` Finding 6/TD9-2/A9-6.
+**Target:** ~~backend follow-up story, not yet scheduled~~ — scheduled 2026-07-09 as `9-8-platform-admin-mfa-gaps-and-audit-bypass-hardening` (backlog, `sprint-status.yaml`). Source: `9-7-epic-9-completion-platform-operations-web-ui` (AC-T2), `epic-9-retro-2026-07-08.md` Finding 6/TD9-2/A9-6.
+
+### New finding, tracked 2026-07-09 (not in the original Epic 9 retro — found via direct code inspection)
+
+**MFA-unenrolled platform operator hits a dead-end on `/platform/settings` and `/platform/settings/orgs`**
+
+Story 9.7's own pre-implementation adversarial review (`9-7-epic-9-completion-platform-operations-web-ui-adversarial-review.md`, Findings 2/3, critical/high) flagged that `GET /settings` and `GET /orgs` require MFA (`requireMfa: true`) even though AC-G4 assumed only the mutating (`PUT`/`POST`) routes did. Direct inspection of the shipped code on 2026-07-09 confirms this was never reconciled: `settings-routes.ts`/`orgs-routes.ts` still set `requireMfa: true` on the `GET` handlers, and `apps/web/src/routes/(app)/platform/settings/+page.server.ts` / `.../platform/settings/orgs/+page.server.ts` catch any load failure into a generic `errorMessage` string rendered as a plain error banner — unlike the mutation paths (`handleSave`), which use `MfaAwareErrorAlert` with an "Enable MFA" link. An MFA-unenrolled platform operator (a realistic scenario, since the first registered user on the instance is auto-flagged platform operator) gets a dead-end generic error on page load instead of a working page with an enrollment prompt. `/platform/settings/resource-usage` and `/platform/audit` likely have the same defect (their backing `GET` routes are also `requireMfa: true` per the story's own endpoint inventory) — needs verification during story creation.
+
+**Target:** Scheduled 2026-07-09 as `9-8-platform-admin-mfa-gaps-and-audit-bypass-hardening` (backlog, `sprint-status.yaml`), bundled with TD9-2 above (same hardening-bucket pattern as 8-5/8-6/8-7/9-6).
