@@ -62,14 +62,18 @@
       <!-- Orgs -->
       <section class="rounded-xl border border-gray-200 bg-white p-6">
         <h2 class="text-base font-semibold text-gray-900">Organizations</h2>
-        {@const orgPct = pct(u.orgs.current, u.orgs.limit)}
         <p class="mt-2 text-sm">
-          <span class={thresholdClass(orgPct)}>
+          <span class={thresholdClass(pct(u.orgs.current, u.orgs.limit))}>
             {u.orgs.current} / {u.orgs.limit ?? 'No limit configured'}
-            {#if orgPct !== null}({orgPct}%){/if}
+            {#if pct(u.orgs.current, u.orgs.limit) !== null}({pct(
+                u.orgs.current,
+                u.orgs.limit
+              )}%){/if}
           </span>
-          {#if thresholdLabel(orgPct)}
-            <span class="ml-2 text-xs font-semibold">{thresholdLabel(orgPct)}</span>
+          {#if thresholdLabel(pct(u.orgs.current, u.orgs.limit))}
+            <span class="ml-2 text-xs font-semibold"
+              >{thresholdLabel(pct(u.orgs.current, u.orgs.limit))}</span
+            >
           {/if}
         </p>
       </section>
@@ -97,12 +101,13 @@
       <!-- Audit log entries -->
       <section class="rounded-xl border border-gray-200 bg-white p-6">
         <h2 class="text-base font-semibold text-gray-900">Audit Log Entries</h2>
-        {@const auditPct = pct(u.auditLogEntries.current, u.auditLogEntries.limit)}
         <p class="mt-2 text-sm">
-          <span class={thresholdClass(auditPct)}>
+          <span class={thresholdClass(pct(u.auditLogEntries.current, u.auditLogEntries.limit))}>
             {u.auditLogEntries.current.toLocaleString()} / {u.auditLogEntries.limit?.toLocaleString() ??
               'No limit configured'}
-            {#if auditPct !== null}({auditPct}%){/if}
+            {#if pct(u.auditLogEntries.current, u.auditLogEntries.limit) !== null}
+              ({pct(u.auditLogEntries.current, u.auditLogEntries.limit)}%)
+            {/if}
           </span>
         </p>
       </section>
@@ -110,13 +115,14 @@
       <!-- Storage bytes -->
       <section class="rounded-xl border border-gray-200 bg-white p-6">
         <h2 class="text-base font-semibold text-gray-900">Storage</h2>
-        {@const storagePct = pct(u.storageBytes.current, u.storageBytes.limit)}
         <p class="mt-2 text-sm">
-          <span class={thresholdClass(storagePct)}>
+          <span class={thresholdClass(pct(u.storageBytes.current, u.storageBytes.limit))}>
             {formatBytes(u.storageBytes.current)} / {u.storageBytes.limit !== null
               ? formatBytes(u.storageBytes.limit)
               : 'No limit configured'}
-            {#if storagePct !== null}({storagePct}%){/if}
+            {#if pct(u.storageBytes.current, u.storageBytes.limit) !== null}
+              ({pct(u.storageBytes.current, u.storageBytes.limit)}%)
+            {/if}
           </span>
         </p>
       </section>

@@ -61,6 +61,7 @@
   }
 
   const pageHref = $derived(buildPageHref(data.allowed ? data.filters : undefined))
+  const activeFilters = $derived(data.allowed ? (data.filters ?? {}) : {})
 
   async function handleVerify(e: SubmitEvent) {
     e.preventDefault()
@@ -232,7 +233,6 @@
           value={data.filters?.targetUserId ?? ''}
         />
       </label>
-      {@const activeFilters = data.filters ?? {}}
       <AuditDateRangeInputs
         fromValue={activeFilters.from ?? ''}
         toValue={activeFilters.to ?? ''}
