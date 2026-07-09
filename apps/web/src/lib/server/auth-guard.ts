@@ -129,9 +129,15 @@ export async function resolveAuthContext({
 }
 
 export function isProtectedAppPath(pathname: string) {
-  return ['/dashboard', '/projects', '/credentials', '/alerts', '/health', '/settings'].some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  )
+  return [
+    '/dashboard',
+    '/projects',
+    '/credentials',
+    '/alerts',
+    '/health',
+    '/settings',
+    '/platform',
+  ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
 export function isAuthPath(pathname: string) {

@@ -351,4 +351,36 @@ describe.sequential('Story 9.4 AC-9 through AC-16: platform-audit routes', () =>
     await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
     suite.app = await createApp({ logger: false, vaultGuardEnabled: true })
   })
+
+  it('D2.4/AC-A4: GET /platform/maintenance-mode returns 403 for non-platform-operator', async () => {
+    const nonOperator = await enrollUserWithMfa(suite.app, {
+      emailPrefix: `platform-audit-mm-nonop-${randomUUID()}`,
+      orgNamePrefix: 'Platform Audit MM NonOp',
+      password: PASSWORD,
+    })
+    const res = await suite.app.inject({
+      method: 'GET',
+      url: MAINTENANCE_URL,
+      headers: { cookie: cookieHeader(nonOperator.cookies) },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'platform_operator_required' })
+  })
+
+  it('D2.4: GET /platform/maintenance-mode returns current status for a platform operator', async () => {
+    const operator = await registerPlatformOperator(suite.app, {
+      emailPrefix: `platform-audit-mm-status-${randomUUID()}`,
+      orgNamePrefix: 'Platform Audit MM Status',
+      password: PASSWORD,
+    })
+    const res = await suite.app.inject({
+      method: 'GET',
+      url: MAINTENANCE_URL,
+      headers: { cookie: cookieHeader(operator.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { data: { active: boolean; pendingEntriesCount: number } }
+    expect(body.data.active).toBe(false)
+    expect(typeof body.data.pendingEntriesCount).toBe('number')
+  })
 })

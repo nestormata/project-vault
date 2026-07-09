@@ -1,6 +1,8 @@
 // Story 6.3 Task 8: 'health' removed — /health now renders the real cross-project health
 // dashboard instead of a placeholder, so its old "arrives in Epic 6" copy no longer applies.
-export type PlaceholderSectionKey = 'projects' | 'credentials' | 'settings'
+// Story 9.7 AC-T1: 'settings' removed — has zero live callers in apps/web/src/routes; keeping
+// unreachable dead code is worse than removing it (retro Finding 7 / Action Item A9-4).
+export type PlaceholderSectionKey = 'projects' | 'credentials'
 
 export type PlaceholderSectionCopy = {
   title: string
@@ -16,10 +18,6 @@ const placeholderSections: Record<PlaceholderSectionKey, PlaceholderSectionCopy>
     title: 'Credentials',
     copy: 'Choose a project to manage credentials.',
   },
-  settings: {
-    title: 'Settings',
-    copy: 'Settings are limited while the MVP shell is being assembled.',
-  },
 }
 
 export function getPlaceholderSections() {
@@ -32,7 +30,5 @@ export function getPlaceholderSection(key: PlaceholderSectionKey) {
       return placeholderSections.projects
     case 'credentials':
       return placeholderSections.credentials
-    case 'settings':
-      return placeholderSections.settings
   }
 }

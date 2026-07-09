@@ -1,6 +1,6 @@
 # Story 9.7: Epic 9 Completion — Platform Operations Web UI
 
-Status: ready-for-dev
+Status: review
 
 <!-- Story derived from epic-9-retro-2026-07-08.md's Finding 1 [REPEAT 4x] + Action Item A9-1.
      Closes the platform-operations web UI gap flagged in near-identical language by Stories 9.1,

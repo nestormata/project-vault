@@ -41,6 +41,8 @@ export const BackupListItemSchema = z.object({
   sizeBytes: z.number().nullable(),
   keyVersion: z.number().nullable(),
   verified: z.enum(['unverified', 'valid', 'invalid']),
+  status: z.enum(['running', 'succeeded', 'failed']),
+  errorMessage: z.string().nullable(),
 })
 
 export const BackupListResponseSchema = z.object({
@@ -116,6 +118,7 @@ export const BackupAssetsPresentSchema = z.object({
   projects: z.boolean(),
   users: z.boolean(),
   auditEvents: z.boolean(),
+  dataErasureRequests: z.boolean(),
 })
 
 export const BackupValidateResponseSchema = z.object({

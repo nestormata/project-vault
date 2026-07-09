@@ -8,6 +8,7 @@ import {
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createUnsealedRouteSuite } from '../../__tests__/helpers/unsealed-route-suite-test-helpers.js'
+import { registerPlatformOperator } from '../../__tests__/helpers/platform-operator-test-helpers.js'
 
 // Only fall back to the default local port when DATABASE_URL isn't already set (e.g. by
 // `make test`, which points at whatever host port this worktree's Postgres actually uses —
@@ -143,6 +144,7 @@ describe('auth routes', () => {
 })
 
 describe.sequential('GET /api/v1/auth/me', () => {
+  const ME_URL = '/api/v1/auth/me'
   const suite = createUnsealedRouteSuite(initVault, 'auth-me-routes-passphrase')
   suite.registerLifecycle()
 
@@ -156,11 +158,45 @@ describe.sequential('GET /api/v1/auth/me', () => {
 
     const me = await suite.app.inject({
       method: 'GET',
-      url: '/api/v1/auth/me',
+      url: ME_URL,
       headers: { cookie: cookieHeader(cookies) },
     })
 
     expect(me.statusCode).toBe(200)
     expect(me.json()).toMatchObject({ data: { orgName } })
+  })
+
+  it('AC-A1: returns isPlatformOperator:true for a platform operator and isPlatformOperator:false for a regular user', async () => {
+    const PASSWORD = 'correct-horse-battery-staple'
+    const operator = await registerPlatformOperator(suite.app, {
+      emailPrefix: `me-operator-${randomUUID()}`,
+      orgNamePrefix: `Me Operator Org`,
+      password: PASSWORD,
+    })
+
+    const meOperator = await suite.app.inject({
+      method: 'GET',
+      url: ME_URL,
+      headers: { cookie: cookieHeader(operator.cookies) },
+    })
+    expect(meOperator.statusCode).toBe(200)
+    expect(
+      (meOperator.json() as { data: { isPlatformOperator: boolean } }).data.isPlatformOperator
+    ).toBe(true)
+
+    const { cookies: regularCookies } = await registerAndLoginViaApi(suite.app, {
+      email: `me-regular-${randomUUID()}@example.com`,
+      password: PASSWORD,
+      orgName: `Me Regular Org ${randomUUID()}`,
+    })
+    const meRegular = await suite.app.inject({
+      method: 'GET',
+      url: ME_URL,
+      headers: { cookie: cookieHeader(regularCookies) },
+    })
+    expect(meRegular.statusCode).toBe(200)
+    expect(
+      (meRegular.json() as { data: { isPlatformOperator: boolean } }).data.isPlatformOperator
+    ).toBe(false)
   })
 })

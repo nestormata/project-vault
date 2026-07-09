@@ -11,6 +11,7 @@ export const onboardingTestUser: AuthUser = {
   mfaEnrolled: false,
   mfaEnrolledAt: null,
   remainingRecoveryCodesCount: null,
+  isPlatformOperator: false,
   mfaStatus: {
     enrollmentRequired: false,
     gracePeriodActive: false,

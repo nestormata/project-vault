@@ -427,6 +427,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           orgName: org?.name ?? '',
           sessionId: authContext.sessionId,
           orgRole: authContext.orgRole,
+          isPlatformOperator: authContext.isPlatformOperator,
           ...mfaStatus,
           mfaStatus: enforcementStatus.mfaStatus,
         },

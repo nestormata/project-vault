@@ -90,6 +90,7 @@ export const authMeResponseSchema = z.object({
     orgName: z.string(),
     sessionId: z.uuid(),
     orgRole: z.enum(['owner', 'admin', 'member', 'viewer']),
+    isPlatformOperator: z.boolean(),
     mfaEnrolled: z.boolean(),
     mfaEnrolledAt: z.iso.datetime().nullable(),
     remainingRecoveryCodesCount: z.number().int().min(0).nullable(),

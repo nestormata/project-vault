@@ -28,6 +28,39 @@ export async function isMaintenanceModeActive(tx: Tx): Promise<boolean> {
   return row?.active ?? false
 }
 
+export type MaintenanceModeStatus = {
+  active: boolean
+  reason: string | null
+  activatedAt: Date | null
+  deactivatedAt: Date | null
+  pendingEntriesCount: number
+}
+
+type StateRow = typeof platformAuditMaintenanceState.$inferSelect
+
+function rowToStatus(
+  row: StateRow | undefined,
+  pendingEntriesCount: number
+): MaintenanceModeStatus {
+  return {
+    active: row?.active ?? false,
+    reason: row?.reason ?? null,
+    activatedAt: row?.activatedAt ?? null,
+    deactivatedAt: row?.deactivatedAt ?? null,
+    pendingEntriesCount,
+  }
+}
+
+/** D2.4: reads the current maintenance-mode state plus the pending-entries queue count.
+ * Read-only — no MFA requirement (matches `GET /audit/events`'s precedent). */
+export async function getMaintenanceModeStatus(tx: Tx): Promise<MaintenanceModeStatus> {
+  const [row] = await tx.select().from(platformAuditMaintenanceState).limit(1)
+  const [countRow] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(platformAuditPendingEntries)
+  return rowToStatus(row, countRow?.count ?? 0)
+}
+
 export type ActivateMaintenanceModeInput = { reason: string; userId: string }
 export type ActivateMaintenanceModeResult = { active: true; activatedAt: Date; reason: string }
 

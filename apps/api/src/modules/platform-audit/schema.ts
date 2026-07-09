@@ -119,3 +119,15 @@ export const MaintenanceModeDeactivateResponseSchema = z
     deactivatedAt: z.string(),
   })
   .meta({ id: 'MaintenanceModeDeactivateResponse' })
+
+export const MaintenanceModeStatusResponseSchema = z
+  .object({
+    data: z.object({
+      active: z.boolean(),
+      reason: z.string().nullable(),
+      activatedAt: z.string().nullable(),
+      deactivatedAt: z.string().nullable(),
+      pendingEntriesCount: z.number().int().min(0),
+    }),
+  })
+  .meta({ id: 'MaintenanceModeStatusResponse' })
