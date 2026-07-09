@@ -104,6 +104,11 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       orgNamePrefix: 'Orgs Dup Name Op',
       password: PASSWORD,
     })
+    // Randomize the base name per test run (rather than a fixed literal) — the collision-retry
+    // loop only tries MAX_SLUG_ATTEMPTS (5) candidate slugs per call, and the nightly "flaky test
+    // repeat" job runs this whole suite 5x back-to-back against the same database without
+    // re-migrating, so a fixed name would exhaust all 5 slots across repeated runs and start
+    // failing here instead of exercising the within-test duplicate-name behavior this AC covers.
     const dupName = `Dup Name Co ${randomUUID()}`
     const first = await createOrgReq(suite.app, operator.cookies, {
       name: dupName,
@@ -202,6 +207,10 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       orgNamePrefix: 'Orgs Limit Op',
       password: PASSWORD,
     })
+    // Derive the limit from the current count rather than hardcoding an absolute value —
+    // the nightly "flaky test repeat" job runs this whole suite 5x back-to-back against the
+    // same database without re-migrating, so any fixed cap (e.g. 1000) will eventually be
+    // exceeded by earlier iterations' accumulated orgs and break the "raised limit" case below.
     const [orgCountRow] = await getDb().execute<{ c: string }>(
       sql`SELECT count(*)::text AS c FROM organizations`
     )
@@ -211,11 +220,10 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       method: 'PUT',
       url: '/api/v1/admin/settings',
       headers: { cookie: cookieHeader(operator.cookies) },
-      payload: { instancePolicy: { maxOrgs: 1 } },
+      payload: { instancePolicy: { maxOrgs: currentOrgCount } },
     })
-    // The instance already has >= 1 org from the operator's own registration (and possibly
-    // others from earlier tests in this shared DB) — a single new org creation attempt at
-    // maxOrgs=1 must be rejected.
+    // The instance is already at exactly maxOrgs (currentOrgCount, including the operator's own
+    // registration above) — one more creation attempt must be rejected.
     const res = await createOrgReq(suite.app, operator.cookies, {
       name: `One Too Many ${randomUUID()}`,
       ownerEmail: `toomany-${randomUUID()}@example.com`,
@@ -231,7 +239,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       method: 'PUT',
       url: '/api/v1/admin/settings',
       headers: { cookie: cookieHeader(operator.cookies) },
-      payload: { instancePolicy: { maxOrgs: currentOrgCount + 10 } },
+      payload: { instancePolicy: { maxOrgs: currentOrgCount + 1000 } },
     })
     const retried = await createOrgReq(suite.app, operator.cookies, {
       name: `Now Fits ${randomUUID()}`,

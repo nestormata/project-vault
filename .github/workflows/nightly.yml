@@ -58,6 +58,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace packages
+        run: pnpm turbo build
+
       - name: Run database migrations
         run: pnpm db:migrate
         env:
@@ -75,7 +78,11 @@ jobs:
   flaky-test-repeat:
     name: Flaky Test Repeat Run
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The full `pnpm turbo test` suite takes ~20-25 minutes on its own (see the Quality
+    # Gates job's "Test (with coverage)" step in ci.yml); 5 back-to-back runs need well
+    # over 30 minutes end to end. 180 gives headroom without hitting the platform's
+    # 360-minute job ceiling.
+    timeout-minutes: 180
     # Rare, timing-dependent flakes (e.g. one bad run in ~6-8) are invisible to a single CI
     # run and to a single local `make ci` — a green run says nothing about a bug that only
     # shows up occasionally. Running the suite several times back-to-back turns "maybe
@@ -115,18 +122,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run database migrations
-        run: pnpm db:migrate
-        env:
-          DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+      - name: Build workspace packages
+        run: pnpm turbo build
 
       - name: Test (5x back-to-back)
         run: |
           for i in $(seq 1 5); do
             echo "=== flaky-test-repeat: run $i/5 ==="
+            # Reset to a freshly-migrated, empty database before each iteration. Without this,
+            # self-registration flows across the whole suite accumulate organizations/users
+            # unboundedly over the 5 runs — which both breaks tests that assume a small/bounded
+            # count (e.g. Story 9.2 AC-8/AC-10's org limit and slug-collision-retry checks) and
+            # makes each successive run dramatically slower (observed: run1 api:test ~20min,
+            # run2 ~40min, run3 ~60min against the same ever-growing database). Dropping and
+            # recreating `public` (app tables) and `drizzle` (migration bookkeeping) reproduces
+            # the same fresh-DB starting state every normal single CI run gets for free from its
+            # own dedicated postgres service container.
+            psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 \
+              -c 'DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
+            DATABASE_URL="$SUPERUSER_DATABASE_URL" pnpm db:migrate
             pnpm turbo test --force
           done
         env:
+          # SUPERUSER_DATABASE_URL is already set at the job level and inherited here —
+          # only the override for the test run itself (vault_app, not postgres) is needed.
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
@@ -167,8 +186,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: [mutation, flaky-test-repeat, trivy-image]
     if: failure()
+    # secrets.* isn't allowed directly in step `if:` expressions, so surface it via
+    # job-level env first (env.* is allowed there).
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
+      # Skip (not fail) when the webhook isn't configured — e.g. forks or repos that
+      # haven't set up Slack yet — so an unrelated missing secret doesn't itself show
+      # up as a failing job on every nightly failure.
       - name: Post to Slack
+        if: ${{ env.SLACK_WEBHOOK_URL != '' }}
         uses: slackapi/slack-github-action@v3
         with:
           payload: |
@@ -185,5 +212,4 @@ jobs:
               ]
             }
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
