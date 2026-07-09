@@ -231,7 +231,7 @@ Epic 5 (5.5).
 
 | ID | Item | Owner | Target |
 |----|------|-------|--------|
-| P6-1 | No automated check catches story-file `Status:` header vs `sprint-status.yaml` drift — this is the 2nd time (Epic 4, now Epic 6/7/8) it's been caught only by a manual retro sweep | Dev | CI check / `make` target |
+| P6-1 | ✅ **Resolved** — `scripts/check-story-status-sync.ts` (commit `dc42f4a`, already wired into `make ci`) now automatically catches this drift; discovered already-shipped during `1-13-infra-and-process-hardening`'s 2026-07-09 story creation (this row itself was stale — never updated after the check landed). Story `1-13` Group P adds hardening on top of the existing check (named regression fixtures for the CP4-4/A6-3/5th-recurrence historical incidents, plus a dogfooding AC), not the check itself. | — | Done |
 | TD6-1 | `payment_records` physical table name vs. "services" domain language used everywhere else (UI, ACs, dashboard) | Dev | Rename follow-up, not yet scheduled |
 | TD6-2 | `AuditEvent` object + type-union dual-listing pattern reproduced a 3rd time (6.1, 6.2, 6.3) without consolidation | Dev | Derive union from object (`keyof typeof`) |
 | TD6-3 | Public status page (6.3): no enumeration/abuse visibility beyond access logs, shared (non-token-keyed) per-IP rate limit, no CORS/embeddability guidance | Dev | v1-accepted trade-off; revisit if status pages become externally load-bearing |
