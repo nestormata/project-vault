@@ -3,6 +3,20 @@
 Tracked gaps: work intentionally deferred, not yet implemented, or needing follow-up.  
 **Product Surface Contract:** API-only items here must have a linked story before parent stories/epics close — see `_bmad-output/implementation-artifacts/product-surface-contract.md`.
 
+**Full reconciliation pass, 2026-07-09:** every "Open"/unresolved item in this document was checked
+against the actual current code and `sprint-status.yaml` (many referenced epics that have since
+shipped `done`). Stale entries whose underlying gap was already closed by later work are marked
+resolved in place. Every item still genuinely open with no previously-stated reason to skip it was
+scheduled into one of five new backlog stories (`3-5-credential-expiry-notification-delivery`,
+`2-9-credential-project-web-ui-completeness`, `10-1-playwright-e2e-test-automation`,
+`4-5-fine-grained-permissions-and-project-rbac`, `1-13-infra-and-process-hardening` — all
+`ready-for-dev` in `sprint-status.yaml`, each created + adversarially reviewed in its own worktree
+following the same pattern as `9-8`). Doc-only drift (architecture.md naming, a couple of stale
+epics.md notes, the retention-purge runbook gap) was fixed directly in this same pass rather than
+opening a story. Items with an already-stated acceptance rationale (e.g. explicit "Deferred:
+\<reason\>" code-review notes, Epic 6 retro's TD6-1/TD6-2/TD6-3, `withOrgReadScope` design debt) were
+left as-is — see each item for its specific rationale.
+
 ---
 
 ## Deferred from: Epic 1 retrospective (2026-06-30)
@@ -23,8 +37,8 @@ Retro commitments **D1–D2, P1–P5** implemented 2026-06-30:
 
 | ID | Item | Owner | Target |
 |----|------|-------|--------|
-| D4 | `migrate` service rebuilds full API builder on every cold `docker compose up` | Dev | Slim migrate image or cache strategy |
-| D5 | Full production operator runbook | Tech Writer / Ops | Epic 9 Story 9.5 |
+| D4 | `migrate` service rebuilds full API builder on every cold `docker compose up` | Dev | **Scheduled 2026-07-09** as `1-13-infra-and-process-hardening` (backlog, `sprint-status.yaml`) |
+| D5 | Full production operator runbook | Tech Writer / Ops | ✅ Done — `docs/runbook.md` (Story 9.5, done 2026-07-07) |
 
 **D4:** One-shot `migrate` uses `apps/api/Dockerfile` `builder` target — slow first boot. Dev path: `make bootstrap` avoids full stack rebuild when only DB is needed.
 
@@ -40,31 +54,33 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 |----|------|-------|--------|
 | P4 | Epic 1 retrospective or documented waiver | Nestor | ✅ Done — `epic-1-retro-2026-06-30.md` |
 | E3-1 | SMTP config split: Story 3.1 env vars vs AC-E3a Epic 9 system settings | Architect / PO | ✅ Closed (Story 3.4) — env-var SMTP config is the MVP path (Story 3.1 AC); Epic 9 (`FR86`) adds an admin system-settings UI on top without breaking the env-var fallback |
-| E3-2 | FR73 `PENDING_DELIVERY` → `notification_queue` integration test | Dev | Story 3.1 AC |
-| D1 | Reconcile `architecture.md`: `secrets` tables/endpoints → `credentials` naming | Tech Writer | Planning doc |
-| D2 | Operator runbook: `CREDENTIAL_RETENTION_DRY_RUN` → destructive purge rollout | Dev / Ops | `specs/` |
+| E3-2 | FR73 `PENDING_DELIVERY` → `notification_queue` integration test | Dev | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` (backlog, `sprint-status.yaml`) — bundled with the still-unwired credential-expiry notification delivery this AC was meant to cover end-to-end |
+| D1 | Reconcile `architecture.md`: `secrets` tables/endpoints → `credentials` naming | Tech Writer | ✅ Done 2026-07-09 — direct doc reconciliation (this pass); see `architecture.md`'s Naming Patterns / Canonical Schema Entity Names / API Endpoint Naming / Value Revelation Endpoint sections |
+| D2 | Operator runbook: `CREDENTIAL_RETENTION_DRY_RUN` → destructive purge rollout | Dev / Ops | ✅ Done 2026-07-09 — `docs/runbook.md` § "Credential Version Retention" (this pass) |
 
 ### Partial epic acceptance criteria (honest zeros until later epics)
 
 | AC / area | Status | Blocked by | Notes |
 |-----------|--------|------------|-------|
-| AC-E2d — projects with overdue rotations | Schema slot exists; `count: 0`, `items: []` | Epic 5 | `GET /api/v1/dashboard` credential/expiry slice shipped in 2.8 |
+| AC-E2d — projects with overdue rotations | ✅ Resolved — real `count`/`items` via `computeUpcomingRotations` | — | Landed with Epic 5's rotation work; this row was stale (never updated after Epic 5 shipped) |
 | AC-E2d — unresolved alert count on org dashboard | ✅ Live (Story 3.4) — real `security_alerts` count | — | Was hardcoded `0`; resolved by AC-10 |
-| Project dashboard — `upcomingRotations`, `recentAccessEvents`, `monitoredServiceHealth` | Empty arrays / placeholder grid on web | Epic 5, 8, 6 | `DashboardPlaceholderGrid` on `/dashboard` |
-| Project dashboard — `suggestedActions` partial completion | Empty when `isEmpty: false` | Epic 6 | Smarter suggestions need monitoring data (Story 2.1 deferral) |
-| Credential expiry **notifications** | Columns exist (2.2/2.4); no delivery | Epic 3+ | Backend ready; alerting jobs not wired |
+| Project dashboard — `upcomingRotations`, `monitoredServiceHealth` | ✅ Resolved — real data via `computeUpcomingRotations` / `getBatchedProjectServiceHealthStats` (`apps/api/src/modules/projects/dashboard-stats.ts`) | — | This row was stale; both fields have been wired to real data since Epic 5/6 shipped |
+| Project dashboard — `recentAccessEvents` | Still hardcoded `[]` (`buildProjectDashboard`) despite Epic 8's access-report data now existing | Epic 8 (done) | **Scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` (backlog, `sprint-status.yaml`) |
+| Project dashboard — `DashboardPlaceholderGrid` renders unconditionally, even on a fully-populated project dashboard, with stale "Story 2.1" copy | **New finding, 2026-07-09** — the grid (`apps/web/src/lib/components/dashboard/DashboardPlaceholderGrid.svelte`) is rendered on every project dashboard load regardless of `data.dashboard.isEmpty`, so a project with real credentials/services still shows "No credentials yet"/"Story 2.1 starts with saved projects" placeholder copy alongside the real stats above it | — | **Scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` (backlog, `sprint-status.yaml`) |
+| Project dashboard — `suggestedActions` partial completion | Empty when `isEmpty: false` | Epic 6 (done) | Smarter suggestions for populated projects (e.g. "add a service" when credentials exist but services don't) are now unblocked by Epic 6 monitoring data — **scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` |
+| Credential expiry **notifications** | Columns exist (2.2/2.4); no delivery | Epic 3+ | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` (backlog, `sprint-status.yaml`) — Epic 3 has been `in-progress` since 2026-06-30 and this gap was never actually picked up despite the "Epic 3+" target passing |
 
 ### Web UI gaps — API exists, web incomplete (Epic 2 surface)
 
 | Capability | API story | Web status | Suggested follow-up |
 |------------|-----------|------------|---------------------|
-| Tag filter on credential list | 2.3 | List has `q` + `status` only; no `tags` query param in UI | Polish story or Epic 2.x follow-up |
-| Project tag management (FR95) | 2.3 | API only | Web UI story |
-| Credential lifecycle PATCH (`expiresAt`, `rotationSchedule`) | 2.4 | Create-only on web; no edit form | Web edit story |
-| Dependent systems (list/create/archive) | 2.4 | Not on credential detail page (2.8 noted optional read-only) | Epic 5 prep UI or 2.x follow-up |
-| Add credential version (new value) | 2.2 | Reveal + history read-only; no "new version" action | Web story |
-| Onboarding Step — "Invite your team" | 2.6 | Links to settings placeholder | Epic 4 invitations |
-| Playwright E2E suite | — | Not implemented (2.8 out of scope) | Test automation epic / CI hardening |
+| Tag filter on credential list | 2.3 | List has `q` + `status` only; no `tags` query param in UI | **Scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` (backlog, `sprint-status.yaml`) |
+| Project tag management (FR95) | 2.3 | API only | **Scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` |
+| Credential lifecycle PATCH (`expiresAt`, `rotationSchedule`) | 2.4 | Create-only on web; no edit form | **Scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` |
+| Dependent systems (list/create/archive) | 2.4 | Not on credential detail page (2.8 noted optional read-only) | **Scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` |
+| Add credential version (new value) | 2.2 | Reveal + history read-only; no "new version" action | **Scheduled 2026-07-09** as `2-9-credential-project-web-ui-completeness` |
+| Onboarding Step — "Invite your team" | 2.6 | ✅ Mostly resolved — `/settings` is a real page now (Story 9.7), no longer a dead-end placeholder; the link just isn't deep-linked to the specific invite flow (`/settings/users`) | Minor deep-link polish rolled into `2-9-credential-project-web-ui-completeness` |
+| Playwright E2E suite | — | Not implemented (2.8 out of scope) | **Scheduled 2026-07-09** as `10-1-playwright-e2e-test-automation` (backlog, `sprint-status.yaml`, new `epic-10`) |
 | Rotation workflow (initiate, checklist confirm/fail/retry/complete, break-glass) | 5.1/5.2/5.3 | API-only — no dedicated web story exists (unlike Epic 2's API+web pairing); 5.1's Product Surface Contract flagged this decision as due before `epic-5-retrospective` | **Resolved 2026-07-05 (Epic 5 retro):** scheduled as `5-4-rotation-workflow-web-ui` (backlog, `sprint-status.yaml`) rather than deferred indefinitely — `epic-5` held `in-progress` until it lands |
 | Epic 5 retro risk/gap/contradiction/technical-debt audit (12 findings: self-attestation, reveal-regression safety net, break-glass idempotency, NULL `initiatedBy`, malformed cron handling, unbounded dashboard scan, missing `org_id` index, background-job audit-failure handling, missing CAS on `abandon`, ambiguous audit payload, missing rollback tests, missing version IDs on `rotation.completed`) | 5.2/5.3 adversarial reviews (medium/low findings left "not blocking") | Documented in `epic-5-retro-2026-07-05.md`'s Significant Discovery Alert | **Tracked as Story 5.5** (`5-5-epic-5-completion-rotation-hardening-and-technical-debt.md`, `ready-for-dev`) — AC-2 through AC-13 |
 | Monitored-asset management (services/certificates/domains CRUD) | 6.1 | API-only — no dedicated web story exists; 6.1's Product Surface Contract flagged this as due before `epic-6-retrospective`; `dashboard-copy.ts`'s `add_service` label still says "available in Epic 6" though the epic shipped without it | **Resolved 2026-07-06 (Epic 6 retro):** scheduled as `6-4-epic-6-completion-monitored-asset-management-ui-and-technical-debt` (backlog, `sprint-status.yaml`) — `epic-6` held `in-progress` until it lands |
@@ -77,10 +93,10 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 | Route | Current state | Epic |
 |-------|---------------|------|
 | `/alerts` | ✅ Resolved (Story 3.4) — server redirects (308) to `/notifications`, the canonical inbox route from Story 3.3; placeholder page deleted | — |
-| `/health` | `PlaceholderSection` — "Epic 6" | 6.x monitoring |
-| `/settings` | `PlaceholderSection` — "MVP shell" | 3.2 partial (`/settings/notifications` in 3.2 story); full settings Epic 9 |
+| `/health` | ✅ Resolved (Story 6.3) — real cross-project health dashboard; removed from `placeholder-copy.ts` (this row was stale — the removal already happened, the doc was never updated) | — |
+| `/settings` | ✅ Resolved (Story 9.7) — real settings hub linking to notifications/users/security/audit; removed from `placeholder-copy.ts` (this row was stale) | — |
 
-**Stale copy:** `apps/web/src/lib/components/shell/placeholder-copy.ts` — `projects` blurb still references "Story 2.1"; `credentials` key unused by routes (gateway page is real). Hygiene cleanup deferred.
+**Stale copy:** `apps/web/src/lib/components/shell/placeholder-copy.ts` — `projects` blurb still references "Story 2.1"; `credentials` key unused by routes (gateway page is real). **Scheduled 2026-07-09** as `1-13-infra-and-process-hardening` (backlog, `sprint-status.yaml`).
 
 ### Operations & production
 
@@ -100,10 +116,10 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 
 | Item | Deferred to | Source |
 |------|-------------|--------|
-| Fine-grained `read:secret_value` vs `read:secret_metadata` (NFR-SEC9) | Epic 4+ | Story 2.2 ADR — role-based + audit is v1 |
-| Per-project membership RBAC (all org members see all projects) | Story 4.1 | Story 2.1 ADR-2.1-01 |
-| Tag case normalization (`Prod` ≠ `prod`) | v2 polish | Story 2.3 ADR-2.3-01 |
-| `withOrgReadScope()` vs `withOrg()` distinction | Later story | Story 1.4 deferred-work |
+| Fine-grained `read:secret_value` vs `read:secret_metadata` (NFR-SEC9) | Epic 4+ | Story 2.2 ADR — role-based + audit is v1. **Epics 4-9 are all now `done` and this was never picked up — scheduled 2026-07-09** as `4-5-fine-grained-permissions-and-project-rbac` (backlog, `sprint-status.yaml`) |
+| Per-project membership RBAC (all org members see all projects) | Story 4.1 | Story 2.1 ADR-2.1-01. **Story 4.1 shipped without this (it only added org-level invitations/roles) — scheduled 2026-07-09** as `4-5-fine-grained-permissions-and-project-rbac` |
+| Tag case normalization (`Prod` ≠ `prod`) | v2 polish | Story 2.3 ADR-2.3-01. **Scheduled 2026-07-09** as `1-13-infra-and-process-hardening` (backlog, `sprint-status.yaml`) |
+| `withOrgReadScope()` vs `withOrg()` distinction | Later story | Story 1.4 deferred-work. **Reviewed 2026-07-09:** the function itself no longer exists under that name (`withOrgScope` is now a plain alias for `withOrg`, `apps/api/src/lib/api-contracts.ts`); no story has ever specified what a differentiated read-scope should actually *do* differently from a write scope. Left as accepted, unscheduled design debt — implementing a distinction with no concrete behavioral requirement would be speculative. Revisit only if a future story defines a concrete read-vs-write authorization difference. |
 
 ### Process guardrails baked (2026-06-30) — remaining adoption
 
@@ -127,9 +143,9 @@ UI. Two items remain intentionally open past Epic 3 closure, tracked below.
 
 | Item | Deferred to |
 |------|-------------|
-| Credential expiry notification pg-boss jobs (columns exist from Story 2.4) | Future story / Epic 3.x |
-| `notification_queue` failed status / DLQ cleanup | Future story |
-| Dispatcher batch preference lookup (N+1 query per recipient) | Performance follow-up — `TODO` left in `dispatcher.ts` |
+| Credential expiry notification pg-boss jobs (columns exist from Story 2.4) | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` (backlog, `sprint-status.yaml`) |
+| `notification_queue` failed status / DLQ cleanup | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` |
+| Dispatcher batch preference lookup (N+1 query per recipient) | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` — `TODO` in `dispatcher.ts` |
 
 ---
 
