@@ -302,6 +302,13 @@
       "when": 1783824000000,
       "tag": "0042_platform_audit_retention_purge",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783910400000,
+      "tag": "0043_normalize_tag_case",
+      "breakpoints": true
     }
   ]
 }

@@ -564,6 +564,17 @@ describe.sequential('project routes', () => {
     ).toBe(true)
   }, 20_000)
 
+  it('PUT project tags normalizes mixed-case input to lowercase (AC-T1/AC-T6)', async () => {
+    const user = await createDirectAuthenticatedUser(app, 'project-tags-case')
+    const project = await createProjectDirect(user.orgId, user.userId, 'project-tags-case')
+
+    const replace = await updateProjectTags(app, user.cookies, project.id, ['Team-Payments'])
+    expect(replace.statusCode).toBe(200)
+    expect(replace.json()).toEqual({
+      data: { id: project.id, tags: ['team-payments'] },
+    })
+  }, 20_000)
+
   it('PUT project tags validates body, hides cross-org projects, denies viewer, and rolls back audit failures', async () => {
     const user = await createDirectAuthenticatedUser(app, 'project-tags-validation')
     const other = await createDirectAuthenticatedUser(app, 'project-tags-other')
