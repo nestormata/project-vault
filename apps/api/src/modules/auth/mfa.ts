@@ -57,9 +57,22 @@ type RecoveryResult = {
   notificationJobs: NotificationQueueJob[]
 }
 
-const DUMMY_RECOVERY_CODE_HASH =
-  // eslint-disable-next-line no-secrets/no-secrets -- Test-only timing pad hash for a known dummy code.
-  '$2b$10$N69wUwERzaedA4v2CD2yNuNTfjbwDj8g2x8Mk41u.lP6o11m8o6xW'
+// Bcrypt hash used only to pad recovery-code lookups (see findMatchingRecoveryCode /
+// recoverWithCode below) to roughly the same latency as a real comparison when no user or no
+// unused codes exist — this defends against timing attacks that could otherwise reveal whether
+// an email/recovery code is valid. The input is a fixed, non-secret string that is never compared
+// against real user data, so it is not a credential; it is generated once at runtime (memoized)
+// rather than committed as a literal hash so secret-scanning tools don't mistake it for a leaked
+// bcrypt hash.
+let dummyRecoveryCodeHash: Promise<string> | undefined
+
+function getDummyRecoveryCodeHash(): Promise<string> {
+  dummyRecoveryCodeHash ??= bcrypt.hash(
+    'no-such-recovery-code-timing-pad',
+    env.MFA_RECOVERY_CODE_BCRYPT_COST
+  )
+  return dummyRecoveryCodeHash
+}
 
 function appError(code: string, message: string, statusCode: number): AppError {
   return new AppError(code, message, statusCode)
@@ -480,7 +493,7 @@ async function findMatchingRecoveryCode(tx: Tx, userId: string, recoveryCode: st
       matchedId = row.id
     }
   }
-  if (rows.length === 0) await bcrypt.compare(recoveryCode, DUMMY_RECOVERY_CODE_HASH)
+  if (rows.length === 0) await bcrypt.compare(recoveryCode, await getDummyRecoveryCodeHash())
   return matchedId
 }
 
@@ -496,7 +509,7 @@ export async function recoverWithCode(
 
   const user = await findRecoveryUser(email)
   const validPassword = await passwordMatches(input.password, user?.passwordHash ?? null)
-  if (!user) await bcrypt.compare(normalizedRecoveryCode, DUMMY_RECOVERY_CODE_HASH)
+  if (!user) await bcrypt.compare(normalizedRecoveryCode, await getDummyRecoveryCodeHash())
 
   const recordRecoveryFailure = async (
     db: Tx,
