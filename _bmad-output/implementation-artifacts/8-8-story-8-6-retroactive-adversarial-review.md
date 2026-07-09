@@ -1,6 +1,6 @@
 # Story 8.8: Story 8.6 Retroactive Adversarial Review
 
-Status: review
+Status: done
 
 <!-- Story derived from epic-9-retro-2026-07-08.md Finding 3 / Action Item A9-5, which itself
      confirms that epic-8-retro-2026-07-07.md's Action Item A8-2 (assigned to Dana, QA) was never
