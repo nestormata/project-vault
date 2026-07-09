@@ -19,13 +19,13 @@ import {
 } from '../credentials/credential-route-test-helpers.js'
 import {
   bootProjectRouteTestApp,
-  PROJECT_ROUTE_TEST_PASSPHRASE,
+  PROJECT_ROUTE_TEST_VAULT_SECRET,
 } from './project-route-test-bootstrap.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
-const TEST_PASSPHRASE = PROJECT_ROUTE_TEST_PASSPHRASE
+const TEST_PASSPHRASE = PROJECT_ROUTE_TEST_VAULT_SECRET
 const PROJECTS_URL = '/api/v1/projects'
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
 

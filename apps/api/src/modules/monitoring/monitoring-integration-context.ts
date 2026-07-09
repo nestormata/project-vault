@@ -10,7 +10,7 @@ export const { createApp, initVault, humanAudit } = monitoringIntegration
 
 export type MonitoringTestApp = Awaited<ReturnType<typeof createApp>>
 
-export const MONITORING_INTEGRATION_PASSWORD = 'correct-horse-battery-staple'
+export const MONITORING_INTEGRATION_LOGIN_SECRET = 'correct-horse-battery-staple'
 export const FORCED_AUDIT_FAILURE = 'forced audit failure'
 
 export { createDirectAuthenticatedUser, loginExistingUserInOrg, resetVaultForTest }

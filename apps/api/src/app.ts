@@ -84,12 +84,14 @@ export type AppOptions = {
 }
 
 export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
-  const logger =
-    options.logger === false
-      ? false
-      : options.logger !== undefined
-        ? options.logger
-        : createLoggerConfig(env)
+  let logger: boolean | object
+  if (options.logger === false) {
+    logger = false
+  } else if (options.logger !== undefined) {
+    logger = options.logger
+  } else {
+    logger = createLoggerConfig(env)
+  }
 
   // ignoreTrailingSlash: Fastify's router treats "/health" and "/health/" as distinct
   // routes by default, which would 404 before the vault guard's own normalizePath() ever
@@ -203,11 +205,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   })
 
-  const allowedOrigins = env.CORS_ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+  const allowedOrigins = new Set(env.CORS_ALLOWED_ORIGINS.split(',').map((o) => o.trim()))
 
   await fastify.register(cors, {
     origin: (origin: string | undefined, cb: (err: Error | null, allow: boolean) => void) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.has(origin)) {
         cb(null, true)
         return
       }

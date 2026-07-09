@@ -3,7 +3,7 @@ import { getTrustedApiBase } from '$lib/security/hardening.js'
 const DEFAULT_API_BASE_URL = 'http://localhost:3000'
 
 type ServerApiFetchOptions = {
-  apiBaseUrl?: string | undefined
+  apiBaseUrl?: string
   fetchFn?: typeof fetch
 }
 

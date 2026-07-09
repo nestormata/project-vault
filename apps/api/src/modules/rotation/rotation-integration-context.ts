@@ -16,7 +16,7 @@ export type RotationRegisteredUser = {
   cookies: Record<string, string>
 }
 
-export const ROTATION_INTEGRATION_PASSWORD = 'correct-horse-battery-staple'
+export const ROTATION_INTEGRATION_LOGIN_SECRET = 'correct-horse-battery-staple'
 export const FORCED_AUDIT_FAILURE = 'forced audit failure'
 
 export { createDirectAuthenticatedUser, loginExistingUserInOrg, resetVaultForTest }

@@ -19,8 +19,10 @@ const platformAdminNavItem: PrimaryNavItem = {
   href: '/platform',
 }
 
+const DEFAULT_NAV_OPTS = { isPlatformOperator: false }
+
 export function getPrimaryNavItems(
-  opts: { isPlatformOperator: boolean } = { isPlatformOperator: false }
+  opts: { isPlatformOperator: boolean } = DEFAULT_NAV_OPTS
 ): PrimaryNavItem[] {
   if (opts.isPlatformOperator) {
     return [...basePrimaryNavItems, platformAdminNavItem]

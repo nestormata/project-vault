@@ -14,7 +14,7 @@ export type RegisteredUser = {
   cookies: CookieJar
 }
 
-const PASSWORD = 'contract-test-correct-horse-battery-staple'
+const LOGIN_SECRET = 'contract-test-correct-horse-battery-staple'
 
 /**
  * Re-authenticates an already-registered user and returns a *fresh* cookie jar, without creating
@@ -54,7 +54,7 @@ export async function registerAndLogin(
   const register = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/register',
-    payload: { email, password: PASSWORD, orgName },
+    payload: { email, password: LOGIN_SECRET, orgName },
   })
   if (register.statusCode !== 201) {
     throw new Error(`Contract test fixture registration failed: ${describeResponse(register)}`)
@@ -64,7 +64,7 @@ export async function registerAndLogin(
   const login = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/login',
-    payload: { email, password: PASSWORD },
+    payload: { email, password: LOGIN_SECRET },
   })
   if (login.statusCode !== 200) {
     throw new Error(`Contract test fixture login failed: ${describeResponse(login)}`)
@@ -74,7 +74,7 @@ export async function registerAndLogin(
     userId: registerBody.data.userId,
     orgId: registerBody.data.orgId,
     email,
-    password: PASSWORD,
+    password: LOGIN_SECRET,
     cookies: parseSetCookies(login.headers['set-cookie']),
   }
 }

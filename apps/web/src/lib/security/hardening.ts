@@ -20,10 +20,7 @@ export function getLoginReasonMessage(reason: string | null | undefined) {
   }
 }
 
-export function getTrustedApiBase(
-  env: { API_BASE_URL?: string | undefined },
-  _ignoredRequestInput?: string
-) {
+export function getTrustedApiBase(env: { API_BASE_URL?: string }, _ignoredRequestInput?: string) {
   return env.API_BASE_URL?.trim() ?? ''
 }
 

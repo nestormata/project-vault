@@ -77,7 +77,8 @@ export type HealthHistoryResponse = {
 }
 
 function serviceEndpointUrl(projectId: string, serviceEndpointId?: string): string {
-  return `/api/v1/projects/${projectId}/service-endpoints${serviceEndpointId ? `/${serviceEndpointId}` : ''}`
+  const idSuffix = serviceEndpointId ? `/${serviceEndpointId}` : ''
+  return `/api/v1/projects/${projectId}/service-endpoints${idSuffix}`
 }
 
 export async function listServiceEndpoints(
@@ -160,8 +161,9 @@ export function getHealthHistory(
   if (query.page !== undefined) params.set('page', String(query.page))
   if (query.limit !== undefined) params.set('limit', String(query.limit))
   const serialized = params.toString()
+  const querySuffix = serialized ? `?${serialized}` : ''
   return apiFetch<HealthHistoryResponse>(
     fetchFn,
-    `${serviceEndpointUrl(projectId, serviceEndpointId)}/health-history${serialized ? `?${serialized}` : ''}`
+    `${serviceEndpointUrl(projectId, serviceEndpointId)}/health-history${querySuffix}`
   )
 }

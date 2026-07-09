@@ -58,6 +58,15 @@ export function computeMfaStatus({
     ? Math.ceil((gracePeriodExpiresAt.getTime() - now.getTime()) / 86_400_000)
     : null
 
+  let bannerMessage: string | null
+  if (gracePeriodActive) {
+    bannerMessage = `MFA enrollment is required for Owner and Admin roles within ${gracePeriodDaysRemaining} days. Enroll at /settings/security.`
+  } else if (enrollmentRequired) {
+    bannerMessage = MFA_REQUIRED_MESSAGE
+  } else {
+    bannerMessage = null
+  }
+
   return {
     mfaEnrolled,
     mfaStatus: {
@@ -65,11 +74,7 @@ export function computeMfaStatus({
       gracePeriodActive,
       gracePeriodExpiresAt: gracePeriodActive ? gracePeriodExpiresAt.toISOString() : null,
       gracePeriodDaysRemaining,
-      bannerMessage: gracePeriodActive
-        ? `MFA enrollment is required for Owner and Admin roles within ${gracePeriodDaysRemaining} days. Enroll at /settings/security.`
-        : enrollmentRequired
-          ? MFA_REQUIRED_MESSAGE
-          : null,
+      bannerMessage,
     },
   }
 }

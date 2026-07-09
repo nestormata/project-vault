@@ -16,7 +16,7 @@ export type CredentialRegisteredUser = {
   cookies: Record<string, string>
 }
 
-export const CREDENTIAL_INTEGRATION_PASSWORD = 'correct-horse-battery-staple'
+export const CREDENTIAL_INTEGRATION_LOGIN_SECRET = 'correct-horse-battery-staple'
 export const FORCED_AUDIT_FAILURE = 'forced audit failure'
 export const MONTHLY_ROTATION_CRON = '0 3 1 * *'
 

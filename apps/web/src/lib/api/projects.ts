@@ -29,15 +29,23 @@ function jsonMutation(method: 'POST' | 'PATCH', body: unknown): RequestInit {
   return { method, body: JSON.stringify(body) }
 }
 
+// Trims leading/trailing `-` without a regex — Sonar (typescript:S8786) flags the
+// `/^-+|-+$/g` / `/-+$/g` alternatives as superlinear-backtracking risk.
+function trimHyphens(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && value[start] === '-') start++
+  while (end > start && value[end - 1] === '-') end--
+  return value.slice(start, end)
+}
+
 export function suggestProjectSlug(name: string): string {
-  const slug = name
+  const normalized = name
     .trim()
     .toLowerCase()
     .normalize('NFKC')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 50)
-    .replace(/-+$/g, '')
+  const slug = trimHyphens(trimHyphens(normalized).slice(0, 50))
   return slug.length >= 3 ? slug : 'project'
 }
 

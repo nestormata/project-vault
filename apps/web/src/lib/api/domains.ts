@@ -29,7 +29,8 @@ export type UpdateDomainRequest = {
 }
 
 function domainUrl(projectId: string, domainId?: string): string {
-  return `/api/v1/projects/${projectId}/domains${domainId ? `/${domainId}` : ''}`
+  const idSuffix = domainId ? `/${domainId}` : ''
+  return `/api/v1/projects/${projectId}/domains${idSuffix}`
 }
 
 export async function listDomains(

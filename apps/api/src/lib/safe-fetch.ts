@@ -49,7 +49,7 @@ function parseHexGroups(part: string): number[] | null {
   const parsed: number[] = []
   for (const g of part.split(':')) {
     if (!/^[0-9a-f]{1,4}$/i.test(g)) return null
-    parsed.push(parseInt(g, 16))
+    parsed.push(Number.parseInt(g, 16))
   }
   return parsed
 }

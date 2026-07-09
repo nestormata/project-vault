@@ -4,7 +4,7 @@ import { describeResponse } from './http.js'
 
 export type TestApp = Awaited<ReturnType<typeof createApp>>
 
-const CONTRACT_TEST_PASSPHRASE = 'contract-test-vault-passphrase-32chars'
+const CONTRACT_TEST_VAULT_SECRET = 'contract-test-vault-passphrase-32chars'
 
 /**
  * D4 point 1 / D6: sets the same safe env placeholders `generate-spec.ts` uses (no live
@@ -31,7 +31,7 @@ export function configureContractTestEnv(): void {
  * contract parity tests" step, unconditionally — and `apps/api`'s suite's own vault-init pattern
  * (`initVaultForTest()`) intentionally leaves `vault_state` initialized with whichever test
  * file's passphrase happened to run first (non-deterministic, and never this fixture's fixed
- * `CONTRACT_TEST_PASSPHRASE`). Without resetting first, `bootContractTestApp` would deterministically
+ * `CONTRACT_TEST_VAULT_SECRET`). Without resetting first, `bootContractTestApp` would deterministically
  * fail to unseal on every CI run, not just an occasionally-dirty local one.
  */
 async function resetVaultState(sql: postgres.Sql): Promise<void> {
@@ -63,7 +63,7 @@ export async function bootContractTestApp(): Promise<TestApp> {
   const initRes = await app.inject({
     method: 'POST',
     url: '/api/v1/vault/init',
-    payload: { kmsType: 'passphrase', passphrase: CONTRACT_TEST_PASSPHRASE },
+    payload: { kmsType: 'passphrase', passphrase: CONTRACT_TEST_VAULT_SECRET },
   })
 
   if (initRes.statusCode === 200) return app
@@ -75,7 +75,7 @@ export async function bootContractTestApp(): Promise<TestApp> {
     const unsealRes = await app.inject({
       method: 'POST',
       url: '/api/v1/vault/unseal',
-      payload: { passphrase: CONTRACT_TEST_PASSPHRASE },
+      payload: { passphrase: CONTRACT_TEST_VAULT_SECRET },
     })
     if (unsealRes.statusCode === 200) return app
     throw new Error(

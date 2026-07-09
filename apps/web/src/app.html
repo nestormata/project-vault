@@ -5,6 +5,12 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     %sveltekit.head%
+    <!--
+      Fallback only: the HTML spec uses the FIRST <title> in tree order as document.title, so any
+      route that sets its own via <svelte:head><title> (injected above, inside %sveltekit.head%)
+      still wins. This just prevents a blank tab title on the rare route that doesn't set one.
+    -->
+    <title>Project Vault</title>
   </head>
   <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>

@@ -234,9 +234,10 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         triggeredByUserId: secureCtx.auth.userId,
       })
       if (!slot.ok) {
+        const runningSinceSuffix = slot.runningSince ? ` (started at ${slot.runningSince})` : ''
         return reply.status(409).send({
           code: 'backup_already_running',
-          message: `A backup is already in progress${slot.runningSince ? ` (started at ${slot.runningSince})` : ''}.`,
+          message: `A backup is already in progress${runningSinceSuffix}.`,
           jobId: slot.jobId,
         })
       }

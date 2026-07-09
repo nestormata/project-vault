@@ -25,7 +25,7 @@ import {
 import {
   createApp,
   createDirectAuthenticatedUser,
-  CREDENTIAL_INTEGRATION_PASSWORD as PASSWORD,
+  CREDENTIAL_INTEGRATION_LOGIN_SECRET as PASSWORD,
   FORCED_AUDIT_FAILURE,
   humanAudit,
   initVault,

@@ -113,15 +113,23 @@ export type LoginSessionUser = {
   identityTokenId: string | null
 }
 
+// Trims leading/trailing `-` without a regex — Sonar (typescript:S8786) flags the
+// `/^-+|-+$/g` / `/-+$/g` alternatives as superlinear-backtracking risk.
+function trimHyphens(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && value[start] === '-') start++
+  while (end > start && value[end - 1] === '-') end--
+  return value.slice(start, end)
+}
+
 export function slugify(orgName: string): string {
-  const slug = orgName
+  const normalized = orgName
     .trim()
     .toLowerCase()
     .normalize('NFKC')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
-    .replace(/-+$/g, '')
+  const slug = trimHyphens(trimHyphens(normalized).slice(0, 64))
   return slug || 'org'
 }
 

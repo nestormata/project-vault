@@ -13,6 +13,7 @@ import {
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
+import { stripTrailingSlashes } from '../../lib/url.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword } from './password.js'
@@ -107,7 +108,7 @@ async function createRecoveryToken(
 }
 
 function recoveryLinkUrl(opaqueToken: string): string {
-  return `${env.WEB_BASE_URL.replace(/\/+$/, '')}/recovery/${opaqueToken}`
+  return `${stripTrailingSlashes(env.WEB_BASE_URL)}/recovery/${opaqueToken}`
 }
 
 /**

@@ -62,12 +62,17 @@ function malformed(line: string): ParseSecretsFailure {
  * malformed-line failure).
  */
 function splitLine(line: string): ParsedSecretEntry | null {
-  // Greedy match: the LAST ' as ' (whitespace-delimited, case-sensitive 'as') in the line is the
-  // delimiter, so a PROJECT/NAME segment that incidentally contains " as " is not mis-split.
-  const asMatch = /^(.+)\s+as\s+(\S+)$/.exec(line)
-  if (!asMatch) return null
-  const mappingPart = asMatch[1]?.trim()
-  const envVarName = asMatch[2]
+  // The LAST whitespace-delimited 'as' token in the line is the delimiter, so a PROJECT/NAME
+  // segment that incidentally contains " as " is not mis-split — envVarName can't contain
+  // whitespace, so it's always exactly the final token, and the delimiter is always exactly the
+  // token immediately before it. Tokenizing on whitespace (rather than
+  // /^(.+)\s+as\s+(\S+)$/) avoids Sonar's superlinear-backtracking flag (typescript:S8786) on
+  // that pattern's unbounded `(.+)` ahead of a literal.
+  const tokens = line.split(/\s+/).filter((token) => token.length > 0)
+  if (tokens.length < 3) return null
+  const envVarName = tokens[tokens.length - 1]
+  if (tokens[tokens.length - 2] !== 'as') return null
+  const mappingPart = tokens.slice(0, -2).join(' ')
   if (!mappingPart || !envVarName) return null
 
   const slashIndex = mappingPart.indexOf('/')

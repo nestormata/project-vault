@@ -90,10 +90,39 @@ describe('findDestructiveStatements', () => {
     expect(findings).toHaveLength(2)
   })
 
-  it('does not flag ALTER COLUMN ... SET NOT NULL (distinct from a TYPE change)', () => {
-    const findings = findDestructiveStatements(
-      'ALTER TABLE refresh_tokens ALTER COLUMN org_id SET NOT NULL;'
-    )
+  it.each([
+    {
+      name: 'does not flag ALTER COLUMN ... SET NOT NULL (distinct from a TYPE change)',
+      sql: 'ALTER TABLE refresh_tokens ALTER COLUMN org_id SET NOT NULL;',
+    },
+    {
+      name: 'does not flag bare ADD COLUMN with no NOT NULL',
+      sql: 'ALTER TABLE credentials ADD COLUMN "notes" text;',
+    },
+    {
+      name: 'does not flag an identifier substring that merely contains a destructive keyword',
+      sql: 'ALTER TABLE users ADD COLUMN "renamed_email" text;',
+    },
+    {
+      name: 'does not flag a destructive keyword appearing only inside a line comment',
+      sql: '-- TODO: consider a future DROP COLUMN cleanup of this deprecated field\nSELECT 1;',
+    },
+    {
+      name: 'does not flag a destructive keyword appearing only inside a block comment',
+      sql: '/* DROP TABLE reminder: revisit this later */\nSELECT 1;',
+    },
+    {
+      name: 'does not flag a destructive keyword appearing only inside a string literal',
+      sql: "UPDATE settings SET value = 'legacy DROP COLUMN behavior disabled' WHERE key = 'flag';",
+    },
+    {
+      name: 'still strips nested comments and string literals inside a dollar-quoted block',
+      sql:
+        'DO $$ BEGIN -- TODO: consider a future DROP TABLE cleanup\n' +
+        "PERFORM set_config('app.note', 'a DROP TABLE mention inside a string', true); END $$;",
+    },
+  ])('$name', ({ sql }) => {
+    const findings = findDestructiveStatements(sql)
     expect(findings).toEqual([])
   })
 
@@ -116,37 +145,6 @@ describe('findDestructiveStatements', () => {
     expect(notNullThenDefault).toEqual([])
   })
 
-  it('does not flag bare ADD COLUMN with no NOT NULL', () => {
-    const findings = findDestructiveStatements('ALTER TABLE credentials ADD COLUMN "notes" text;')
-    expect(findings).toEqual([])
-  })
-
-  it('does not flag an identifier substring that merely contains a destructive keyword', () => {
-    const findings = findDestructiveStatements('ALTER TABLE users ADD COLUMN "renamed_email" text;')
-    expect(findings).toEqual([])
-  })
-
-  it('does not flag a destructive keyword appearing only inside a line comment', () => {
-    const findings = findDestructiveStatements(
-      '-- TODO: consider a future DROP COLUMN cleanup of this deprecated field\nSELECT 1;'
-    )
-    expect(findings).toEqual([])
-  })
-
-  it('does not flag a destructive keyword appearing only inside a block comment', () => {
-    const findings = findDestructiveStatements(
-      '/* DROP TABLE reminder: revisit this later */\nSELECT 1;'
-    )
-    expect(findings).toEqual([])
-  })
-
-  it('does not flag a destructive keyword appearing only inside a string literal', () => {
-    const findings = findDestructiveStatements(
-      "UPDATE settings SET value = 'legacy DROP COLUMN behavior disabled' WHERE key = 'flag';"
-    )
-    expect(findings).toEqual([])
-  })
-
   it('flags a destructive keyword inside a dollar-quoted block (regression, edge-case review)', () => {
     // A dollar-quoted region is executable PLpgSQL when it's a DO/CREATE FUNCTION body, not
     // inert string data — a naive implementation that masks all dollar-quoted content wholesale
@@ -161,14 +159,6 @@ describe('findDestructiveStatements', () => {
       'CREATE FUNCTION purge() RETURNS void AS $$ BEGIN TRUNCATE sessions; END $$ LANGUAGE plpgsql;'
     )
     expect(createFunction.some((f) => /TRUNCATE/i.test(f))).toBe(true)
-  })
-
-  it('still strips nested comments and string literals inside a dollar-quoted block', () => {
-    const findings = findDestructiveStatements(
-      'DO $$ BEGIN -- TODO: consider a future DROP TABLE cleanup\n' +
-        "PERFORM set_config('app.note', 'a DROP TABLE mention inside a string', true); END $$;"
-    )
-    expect(findings).toEqual([])
   })
 
   it('resumes correctly after a dollar-quoted block, finding a destructive statement that follows it', () => {

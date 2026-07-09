@@ -365,11 +365,13 @@ async function main(): Promise<void> {
   })
 }
 
-main().catch((err) => {
+try {
+  await main()
+} catch (err) {
   if (startupLogger) {
-    void logStartupFailure(startupLogger, err).finally(() => process.exit(1))
+    await logStartupFailure(startupLogger, err).finally(() => process.exit(1))
   } else {
     process.stderr.write(`Fatal error: ${serializeLogError(err).message}\n`)
     process.exit(1)
   }
-})
+}

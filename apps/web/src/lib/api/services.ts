@@ -35,7 +35,8 @@ export type UpdateServiceRequest = {
 }
 
 function serviceUrl(projectId: string, serviceId?: string): string {
-  return `/api/v1/projects/${projectId}/services${serviceId ? `/${serviceId}` : ''}`
+  const idSuffix = serviceId ? `/${serviceId}` : ''
+  return `/api/v1/projects/${projectId}/services${idSuffix}`
 }
 
 export async function listServices(

@@ -6,7 +6,14 @@
 export type CookieJar = Record<string, string>
 
 export function parseSetCookies(setCookie: string | string[] | undefined): CookieJar {
-  const headers = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : []
+  let headers: string[]
+  if (Array.isArray(setCookie)) {
+    headers = setCookie
+  } else if (setCookie) {
+    headers = [setCookie]
+  } else {
+    headers = []
+  }
   return Object.fromEntries(
     headers
       .map((header) => header.split(';')[0] ?? '')

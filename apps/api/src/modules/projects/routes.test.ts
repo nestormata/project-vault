@@ -24,7 +24,7 @@ import {
 } from '../credentials/credential-route-test-helpers.js'
 import {
   bootProjectRouteTestApp,
-  PROJECT_ROUTE_TEST_PASSPHRASE,
+  PROJECT_ROUTE_TEST_VAULT_SECRET,
 } from './project-route-test-bootstrap.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
@@ -32,7 +32,7 @@ const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
-const TEST_PASSPHRASE = PROJECT_ROUTE_TEST_PASSPHRASE
+const TEST_PASSPHRASE = PROJECT_ROUTE_TEST_VAULT_SECRET
 const PASSWORD = 'correct-horse-battery-staple'
 const PROJECTS_URL = '/api/v1/projects'
 const ALPHA_PROJECT_SLUG = 'alpha-project'

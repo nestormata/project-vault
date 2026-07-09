@@ -16,6 +16,7 @@ import { parseBody, parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, roleRank, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { env } from '../../config/env.js'
+import { stripTrailingSlashes } from '../../lib/url.js'
 import { requireMfaEnrollmentStrict } from '../auth/mfa-enforcement.js'
 import { normalizeEmail } from '../auth/normalize.js'
 import { findErasedRequestForEmailInOrg } from '../compliance/erasure-lookup.js'
@@ -122,7 +123,7 @@ async function enqueueInvitationEmail(
       projectName: input.project.name,
       inviterEmail: inviter?.email ?? null,
       role: input.role,
-      acceptUrl: `${env.WEB_BASE_URL.replace(/\/+$/, '')}/invitations/accept?token=${input.opaqueToken}`,
+      acceptUrl: `${stripTrailingSlashes(env.WEB_BASE_URL)}/invitations/accept?token=${input.opaqueToken}`,
     },
     status: 'pending',
   })
