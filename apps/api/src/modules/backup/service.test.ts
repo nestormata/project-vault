@@ -34,6 +34,7 @@ CREATE TABLE "users" (id uuid);
 CREATE TABLE "projects" (id uuid);
 CREATE TABLE "credentials" (id uuid);
 CREATE TABLE "audit_log_entries" (id uuid);
+CREATE TABLE "data_erasure_requests" (id uuid);
 `)
 
 async function fakeDump(): Promise<Buffer> {
@@ -108,6 +109,7 @@ describe.sequential('Story 9.1: backup service', () => {
       projects: true,
       users: true,
       auditEvents: true,
+      dataErasureRequests: true,
     })
   })
 
@@ -163,6 +165,18 @@ describe.sequential('Story 9.1: backup service', () => {
     // most-recent-first ordering
     const timestamps = items.map((i) => new Date(i.timestamp).getTime())
     expect([...timestamps].sort((a, b) => b - a)).toEqual(timestamps)
+  })
+
+  it('D2.2: listBackups items include status and errorMessage fields', async () => {
+    const items = await listBackups()
+    expect(items.length).toBeGreaterThanOrEqual(1)
+    for (const item of items) {
+      expect(['running', 'succeeded', 'failed']).toContain(item.status)
+      expect(item.errorMessage === null || typeof item.errorMessage === 'string').toBe(true)
+    }
+    const failedItem = items.find((i) => i.sizeBytes === null)
+    expect(failedItem).toBeDefined()
+    expect(failedItem?.status).toBe('failed')
   })
 
   it('AC-9: restore verifies checksum, decrypts, restores, then seals the vault', async () => {
@@ -259,6 +273,7 @@ describe.sequential('Story 9.1: backup service', () => {
       projects: false,
       users: false,
       auditEvents: false,
+      dataErasureRequests: false,
     })
   })
 

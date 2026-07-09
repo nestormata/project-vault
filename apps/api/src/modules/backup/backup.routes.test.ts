@@ -60,6 +60,7 @@ CREATE TABLE "users" (id uuid);
 CREATE TABLE "projects" (id uuid);
 CREATE TABLE "credentials" (id uuid);
 CREATE TABLE "audit_log_entries" (id uuid);
+CREATE TABLE "data_erasure_requests" (id uuid);
 `)
 
 type TestApp = Awaited<ReturnType<typeof createApp>>

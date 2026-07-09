@@ -37,6 +37,8 @@ export type BackupListItem = {
   sizeBytes: number | null
   keyVersion: number | null
   verified: 'unverified' | 'valid' | 'invalid'
+  status: 'running' | 'succeeded' | 'failed'
+  errorMessage: string | null
 }
 
 export type BackupServiceDeps = {
@@ -382,6 +384,8 @@ export async function listBackups(): Promise<BackupListItem[]> {
       sizeBytes: backupRuns.sizeBytes,
       keyVersion: backupRuns.keyVersion,
       verified: backupRuns.verified,
+      status: backupRuns.status,
+      errorMessage: backupRuns.errorMessage,
     })
     .from(backupRuns)
     .orderBy(desc(backupRuns.startedAt))
@@ -392,6 +396,8 @@ export async function listBackups(): Promise<BackupListItem[]> {
     sizeBytes: row.sizeBytes,
     keyVersion: row.keyVersion,
     verified: row.verified as 'unverified' | 'valid' | 'invalid',
+    status: row.status as 'running' | 'succeeded' | 'failed',
+    errorMessage: row.errorMessage,
   }))
 }
 
@@ -520,7 +526,13 @@ export async function validateBackupFile(
 ): Promise<ValidateOutcome> {
   const invalidResult: ValidateOutcome = {
     valid: false,
-    assetsPresent: { credentials: false, projects: false, users: false, auditEvents: false },
+    assetsPresent: {
+      credentials: false,
+      projects: false,
+      users: false,
+      auditEvents: false,
+      dataErasureRequests: false,
+    },
     checksumMatches: false,
   }
 

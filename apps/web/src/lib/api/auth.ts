@@ -43,6 +43,7 @@ export type AuthUser = {
   orgName: string
   sessionId: string
   orgRole: 'owner' | 'admin' | 'member' | 'viewer'
+  isPlatformOperator: boolean
   mfaEnrolled: boolean
   mfaEnrolledAt: string | null
   remainingRecoveryCodesCount: number | null

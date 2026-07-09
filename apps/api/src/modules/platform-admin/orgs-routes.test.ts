@@ -73,7 +73,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     })
 
     const create = await createOrgReq(suite.app, operator.cookies, {
-      name: 'Acme Subsidiary',
+      name: `Acme Subsidiary ${randomUUID()}`,
       // fetch alice's email via DB since registerAndLoginViaApi doesn't return it
       ownerEmail: (
         await getDb().select({ email: users.email }).from(users).where(eq(users.id, alice.userId))
@@ -131,7 +131,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     })
     const ownerEmail = `bob-${randomUUID()}@example.com`
     const res = await createOrgReq(suite.app, operator.cookies, {
-      name: 'New Customer Co',
+      name: `New Customer Co ${randomUUID()}`,
       ownerEmail,
     })
     expect(res.statusCode).toBe(201)
@@ -181,7 +181,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
         .where(eq(users.id, deactivated.userId))
     )[0]?.email
     const res = await createOrgReq(suite.app, operator.cookies, {
-      name: 'Should Not Provision',
+      name: `Should Not Provision ${randomUUID()}`,
       ownerEmail: email,
     })
     expect(res.statusCode).toBe(409)
@@ -225,12 +225,16 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     // The instance is already at exactly maxOrgs (currentOrgCount, including the operator's own
     // registration above) — one more creation attempt must be rejected.
     const res = await createOrgReq(suite.app, operator.cookies, {
-      name: 'One Too Many',
+      name: `One Too Many ${randomUUID()}`,
       ownerEmail: `toomany-${randomUUID()}@example.com`,
     })
     expect(res.statusCode).toBe(422)
     expect(res.json()).toMatchObject({ code: 'org_limit_reached' })
 
+    // Raise the limit above the current org count so the next creation succeeds. Use a
+    // dynamic value (current count + 10) rather than a hardcoded constant — the shared test
+    // DB accumulates orgs across all test runs, so a fixed cap will eventually fall below
+    // the existing org count and cause a false failure here.
     await suite.app.inject({
       method: 'PUT',
       url: '/api/v1/admin/settings',
@@ -238,7 +242,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       payload: { instancePolicy: { maxOrgs: currentOrgCount + 1000 } },
     })
     const retried = await createOrgReq(suite.app, operator.cookies, {
-      name: 'Now Fits',
+      name: `Now Fits ${randomUUID()}`,
       ownerEmail: `nowfits-${randomUUID()}@example.com`,
     })
     expect(retried.statusCode).toBe(201)
@@ -264,11 +268,11 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
 
     const [resA, resB] = await Promise.all([
       createOrgReq(suite.app, operator.cookies, {
-        name: 'Race Org A',
+        name: `Race Org A ${randomUUID()}`,
         ownerEmail: `racelimit-a-${randomUUID()}@example.com`,
       }),
       createOrgReq(suite.app, operator.cookies, {
-        name: 'Race Org B',
+        name: `Race Org B ${randomUUID()}`,
         ownerEmail: `racelimit-b-${randomUUID()}@example.com`,
       }),
     ])
@@ -291,7 +295,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
       password: PASSWORD,
     })
     await createOrgReq(suite.app, operator.cookies, {
-      name: 'List Me',
+      name: `List Me ${randomUUID()}`,
       ownerEmail: `listme-${randomUUID()}@example.com`,
     })
     const res = await listOrgsReq(suite.app, operator.cookies)
@@ -309,8 +313,14 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     })
     const raceEmail = `race-${randomUUID()}@example.com`
     const [resA, resB] = await Promise.all([
-      createOrgReq(suite.app, operator.cookies, { name: 'Org A', ownerEmail: raceEmail }),
-      createOrgReq(suite.app, operator.cookies, { name: 'Org B', ownerEmail: raceEmail }),
+      createOrgReq(suite.app, operator.cookies, {
+        name: `Org A ${randomUUID()}`,
+        ownerEmail: raceEmail,
+      }),
+      createOrgReq(suite.app, operator.cookies, {
+        name: `Org B ${randomUUID()}`,
+        ownerEmail: raceEmail,
+      }),
     ])
     expect(resA.statusCode).toBe(201)
     expect(resB.statusCode).toBe(201)
@@ -333,7 +343,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     })
     const ownerEmail = `orgs-platform-audit-owner-${randomUUID()}@example.com`
     const res = await createOrgReq(suite.app, operator.cookies, {
-      name: 'Platform Audit Org',
+      name: `Platform Audit Org ${randomUUID()}`,
       ownerEmail,
     })
     expect(res.statusCode).toBe(201)

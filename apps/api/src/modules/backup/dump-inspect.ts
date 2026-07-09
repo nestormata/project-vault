@@ -3,6 +3,7 @@ export type BackupAssetsPresent = {
   projects: boolean
   users: boolean
   auditEvents: boolean
+  dataErasureRequests: boolean
 }
 
 // Story 9.1 D8/AC-10: this table list reflects the schema as of this story's implementation. If
@@ -32,6 +33,7 @@ export function assetsPresentFromTables(tables: Set<string>): BackupAssetsPresen
     projects: tables.has('projects'),
     users: tables.has('users'),
     auditEvents: tables.has('audit_log_entries'),
+    dataErasureRequests: tables.has('data_erasure_requests'),
   }
 }
 

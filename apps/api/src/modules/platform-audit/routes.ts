@@ -19,6 +19,7 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import {
   activateMaintenanceMode,
   deactivateMaintenanceMode,
+  getMaintenanceModeStatus,
   MaintenanceModeAlreadyActiveError,
   MaintenanceModeStillUnavailableError,
 } from './maintenance-mode.js'
@@ -27,6 +28,7 @@ import {
   MaintenanceModeActivateResponseSchema,
   MaintenanceModeBodySchema,
   MaintenanceModeDeactivateResponseSchema,
+  MaintenanceModeStatusResponseSchema,
   PlatformAuditEventsQuerySchema,
   PlatformAuditEventsResponseSchema,
   PlatformAuditVerifyQuerySchema,
@@ -162,6 +164,23 @@ async function handleGetVerify(
     })
     if (mapped) return reply.status(mapped.status).send(mapped.body)
     throw error
+  }
+}
+
+async function handleGetMaintenanceModeStatus(
+  _ctx: SecureRouteContext | PublicRouteContext,
+  _req: FastifyRequest,
+  _reply: FastifyReply
+) {
+  const status = await getDb().transaction((tx) => getMaintenanceModeStatus(tx))
+  return {
+    data: {
+      active: status.active,
+      reason: status.reason,
+      activatedAt: status.activatedAt?.toISOString() ?? null,
+      deactivatedAt: status.deactivatedAt?.toISOString() ?? null,
+      pendingEntriesCount: status.pendingEntriesCount,
+    },
   }
 }
 
@@ -309,5 +328,25 @@ export async function platformAuditRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 10, timeWindowMs: 60_000, key: 'POST /api/v1/platform/maintenance-mode' },
     },
     handler: handlePostMaintenanceMode,
+  })
+
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/maintenance-mode',
+    schema: {
+      tags: OPENAPI_TAGS,
+      response: {
+        200: MaintenanceModeStatusResponseSchema,
+        ...defaultErrorResponses,
+      },
+    },
+    security: {
+      requireOrgScope: false,
+      requirePlatformOperator: true,
+      requireMfa: true,
+      writeAuditEvent: false,
+      rateLimit: { ...READ_RATE_LIMIT, key: 'GET /api/v1/platform/maintenance-mode' },
+    },
+    handler: handleGetMaintenanceModeStatus,
   })
 }

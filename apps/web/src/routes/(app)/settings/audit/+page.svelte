@@ -3,7 +3,11 @@
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import AuditExportPanel from '$lib/components/audit/AuditExportPanel.svelte'
   import AuditVerifyPanel from '$lib/components/audit/AuditVerifyPanel.svelte'
-  import { validateDateRange } from '$lib/audit/date-range.js'
+  import AuditDateRangeInputs from '$lib/components/audit/AuditDateRangeInputs.svelte'
+  import AuditPaginationControls from '$lib/components/audit/AuditPaginationControls.svelte'
+  import { buildSearchSubmitHandler } from '$lib/audit/search-form.js'
+  import { buildPageHref } from '$lib/audit/page-href.js'
+  import { buildDateRangePart } from '$lib/audit/date-range.js'
 
   let { data } = $props()
 
@@ -12,20 +16,9 @@
   // AC-B2 — blocks submission client-side ("End date must be after start date") before any
   // network call when `to` is before `from`, mirroring the existing credentials/new-style
   // pre-check pattern (Story 6.4's convention).
-  function handleSearchSubmit(event: SubmitEvent) {
-    const form = event.currentTarget as HTMLFormElement
-    const formData = new FormData(form)
-    const error = validateDateRange(
-      String(formData.get('from') ?? ''),
-      String(formData.get('to') ?? '')
-    )
-    if (error) {
-      event.preventDefault()
-      dateRangeError = error
-      return
-    }
-    dateRangeError = null
-  }
+  const handleSearchSubmit = buildSearchSubmitHandler((err) => {
+    dateRangeError = err
+  })
 
   const hasFilters = $derived(
     data.allowed && data.filters && Object.values(data.filters).some((value) => Boolean(value))
@@ -43,22 +36,14 @@
     if (filters.actorId) parts.push(`actor = ${filters.actorId}`)
     if (filters.resourceId) parts.push(`resource = ${filters.resourceId}`)
     if (filters.projectId) parts.push(`project = ${filters.projectId}`)
-    if (filters.from || filters.to) {
-      parts.push(`${(filters.from ?? '…').slice(0, 10)} → ${(filters.to ?? '…').slice(0, 10)}`)
-    }
+    const rangePart = buildDateRangePart(filters)
+    if (rangePart) parts.push(rangePart)
     return parts.join(', ')
   }
 
   // AC-B1 — pagination controls reflecting total/page/hasNext, preserving whatever filters are
   // already active so paging never silently drops the current search.
-  function pageHref(targetPage: number): string {
-    const params = new URLSearchParams()
-    for (const [key, value] of Object.entries(data.filters ?? {})) {
-      if (value) params.set(key, value)
-    }
-    params.set('page', String(targetPage))
-    return `?${params.toString()}`
-  }
+  const pageHref = $derived(buildPageHref(data.filters))
 </script>
 
 <svelte:head>
@@ -152,48 +137,15 @@
             value={data.filters?.projectId ?? ''}
           />
         </label>
-        <label class="flex flex-col text-sm text-slate-700" for="filter-from">
-          From
-          <input
-            id="filter-from"
-            name="from"
-            type="text"
-            placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
-            class="rounded-lg border border-slate-300 px-2 py-1"
-            value={data.filters?.from ?? ''}
-          />
-        </label>
-        <label class="flex flex-col text-sm text-slate-700" for="filter-to">
-          To
-          <input
-            id="filter-to"
-            name="to"
-            type="text"
-            placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
-            class="rounded-lg border border-slate-300 px-2 py-1"
-            value={data.filters?.to ?? ''}
-          />
-        </label>
-        <button
-          type="submit"
-          class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
-        >
-          Search
-        </button>
+        <AuditDateRangeInputs
+          clearHref={resolve('/settings/audit')}
+          fromValue={data.filters?.from ?? ''}
+          toValue={data.filters?.to ?? ''}
+          {dateRangeError}
+          hasFilters={Boolean(hasFilters)}
+          filterSummaryText={filterSummary(data.filters ?? {})}
+        />
       </form>
-
-      {#if dateRangeError}
-        <p class="mt-2 text-sm text-red-700" role="alert">{dateRangeError}</p>
-      {/if}
-
-      {#if hasFilters}
-        <p class="mt-4 text-sm text-slate-600">
-          Filtered by: {filterSummary(data.filters ?? {})}
-          <a href={resolve('/settings/audit')} class="ml-2 text-indigo-600 underline">
-            Clear filters
-          </a>
-        </p>
-      {/if}
 
       <div class="mt-4">
         {#if data.events.length === 0}
@@ -241,33 +193,12 @@
             {/each}
           </DataTable>
 
-          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p class="text-sm text-slate-500">
-              {data.total} total event{data.total === 1 ? '' : 's'} — page {data.page}
-            </p>
-            <div class="flex gap-2">
-              {#if data.page > 1}
-                <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
-                <a
-                  href={pageHref(data.page - 1)}
-                  class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
-                >
-                  Previous
-                </a>
-                <!-- eslint-enable svelte/no-navigation-without-resolve -->
-              {/if}
-              {#if data.hasNext}
-                <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
-                <a
-                  href={pageHref(data.page + 1)}
-                  class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
-                >
-                  Next
-                </a>
-                <!-- eslint-enable svelte/no-navigation-without-resolve -->
-              {/if}
-            </div>
-          </div>
+          <AuditPaginationControls
+            page={data.page}
+            total={data.total}
+            hasNext={data.hasNext}
+            {pageHref}
+          />
         {/if}
       </div>
     </div>

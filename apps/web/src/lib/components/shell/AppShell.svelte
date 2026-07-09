@@ -44,7 +44,7 @@
         <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div>
       {#if !hidePrimaryNav}
-        <PrimaryNav {onsearch} />
+        <PrimaryNav {onsearch} isPlatformOperator={user.isPlatformOperator} />
       {/if}
       <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
         {#if !hidePrimaryNav}

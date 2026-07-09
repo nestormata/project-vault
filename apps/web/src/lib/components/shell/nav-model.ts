@@ -4,7 +4,7 @@ export type PrimaryNavItem = {
   href: string
 }
 
-const primaryNavItems: PrimaryNavItem[] = [
+const basePrimaryNavItems: PrimaryNavItem[] = [
   { label: 'Dashboard', mobileLabel: 'Dashboard', href: '/dashboard' },
   { label: 'Projects', mobileLabel: 'Projects', href: '/projects' },
   { label: 'Credentials', mobileLabel: 'Creds', href: '/credentials' },
@@ -13,8 +13,19 @@ const primaryNavItems: PrimaryNavItem[] = [
   { label: 'Settings', mobileLabel: 'Settings', href: '/settings' },
 ]
 
-export function getPrimaryNavItems() {
-  return primaryNavItems
+const platformAdminNavItem: PrimaryNavItem = {
+  label: 'Platform Admin',
+  mobileLabel: 'Platform',
+  href: '/platform',
+}
+
+export function getPrimaryNavItems(
+  opts: { isPlatformOperator: boolean } = { isPlatformOperator: false }
+): PrimaryNavItem[] {
+  if (opts.isPlatformOperator) {
+    return [...basePrimaryNavItems, platformAdminNavItem]
+  }
+  return basePrimaryNavItems
 }
 
 export function isActiveNavItem(itemHref: string, pathname: string) {

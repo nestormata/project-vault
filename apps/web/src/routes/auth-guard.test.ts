@@ -7,6 +7,7 @@ const authUser = {
   orgId: '00000000-0000-4000-8000-000000000002',
   sessionId: '00000000-0000-4000-8000-000000000003',
   orgRole: 'owner' as const,
+  isPlatformOperator: false,
   mfaEnrolled: false,
   mfaEnrolledAt: null,
   remainingRecoveryCodesCount: null,
@@ -120,5 +121,40 @@ describe('server auth guard', () => {
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/auth/me', {
       credentials: 'include',
     })
+  })
+})
+
+import { isProtectedAppPath } from '$lib/server/auth-guard.js'
+
+describe('isProtectedAppPath', () => {
+  it('AC-O1: /platform and its sub-paths are protected (sealed-vault redirect)', () => {
+    expect(isProtectedAppPath('/platform')).toBe(true)
+    expect(isProtectedAppPath('/platform/backups')).toBe(true)
+    expect(isProtectedAppPath('/platform/settings')).toBe(true)
+    expect(isProtectedAppPath('/platform/audit')).toBe(true)
+    expect(isProtectedAppPath('/platform/upgrade')).toBe(true)
+  })
+
+  it('existing protected paths still work', () => {
+    expect(isProtectedAppPath('/dashboard')).toBe(true)
+    expect(isProtectedAppPath('/settings')).toBe(true)
+    expect(isProtectedAppPath('/settings/audit')).toBe(true)
+  })
+})
+
+import { getPrimaryNavItems } from '$lib/components/shell/nav-model.js'
+
+describe('getPrimaryNavItems', () => {
+  it('AC-A2: non-platform-operator gets no Platform Admin item', () => {
+    const items = getPrimaryNavItems({ isPlatformOperator: false })
+    expect(items.find((i) => i.href === '/platform')).toBeUndefined()
+  })
+
+  it('AC-A2: platform operator gets a Platform Admin nav item linking to /platform', () => {
+    const items = getPrimaryNavItems({ isPlatformOperator: true })
+    const platformItem = items.find((i) => i.href === '/platform')
+    expect(platformItem).toBeDefined()
+    expect(platformItem?.label).toBe('Platform Admin')
+    expect(platformItem?.mobileLabel).toBe('Platform')
   })
 })

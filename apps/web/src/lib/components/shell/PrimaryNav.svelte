@@ -3,9 +3,12 @@
   import { page } from '$app/state'
   import { getPrimaryNavItems, isActiveNavItem } from './nav-model.js'
 
-  let { onsearch }: { onsearch?: () => void } = $props()
+  let {
+    onsearch,
+    isPlatformOperator = false,
+  }: { onsearch?: () => void; isPlatformOperator?: boolean } = $props()
 
-  const navItems = getPrimaryNavItems()
+  const navItems = getPrimaryNavItems({ isPlatformOperator })
 </script>
 
 <nav
