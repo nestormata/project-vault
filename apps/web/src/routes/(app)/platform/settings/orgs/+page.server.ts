@@ -3,26 +3,20 @@ import { platformOperatorGate } from '$lib/server/require-platform-operator.js'
 import { listOrgs, type OrgListItem } from '$lib/api/platform.js'
 import { ApiClientError } from '$lib/api/client.js'
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
-  const gate = platformOperatorGate(locals)
-  if (!gate.allowed) return { allowed: false as const }
-
+async function fetchOrgsData(fetch: typeof globalThis.fetch) {
   try {
     const result = await listOrgs(fetch)
-    return {
-      allowed: true as const,
-      orgs: result.items,
-      errorMessage: null as string | null,
-    }
+    return { orgs: result.items, errorMessage: null as string | null }
   } catch (err) {
-    const errorMessage =
+    const msg =
       err instanceof ApiClientError
         ? (err.message ?? 'Failed to load organizations')
         : 'Failed to load organizations'
-    return {
-      allowed: true as const,
-      orgs: [] as OrgListItem[],
-      errorMessage,
-    }
+    return { orgs: [] as OrgListItem[], errorMessage: msg }
   }
+}
+
+export const load: PageServerLoad = async ({ fetch, locals }) => {
+  if (!platformOperatorGate(locals).allowed) return { allowed: false as const }
+  return { allowed: true as const, ...(await fetchOrgsData(fetch)) }
 }

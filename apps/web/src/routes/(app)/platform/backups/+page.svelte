@@ -1,9 +1,10 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
-  import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
+  import PlatformBreadcrumb from '$lib/components/platform/PlatformBreadcrumb.svelte'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
   import TypedConfirmInput from '$lib/components/forms/TypedConfirmInput.svelte'
+  import { formatBytes } from '$lib/utils/format-bytes.js'
   import { ApiClientError } from '$lib/api/client.js'
   import {
     triggerBackup,
@@ -30,14 +31,6 @@
   let restoreError = $state<string | null>(null)
   let restoreSuccess = $state<string | null>(null)
   let restorePending = $state(false)
-
-  function formatBytes(bytes: number | null): string {
-    if (bytes === null) return 'In progress…'
-    if (bytes === 0) return '0 B'
-    const units = ['B', 'KB', 'MB', 'GB', 'TB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
-  }
 
   function statusLabel(status: 'running' | 'succeeded' | 'failed'): string {
     return { running: 'Running', succeeded: 'Succeeded', failed: 'Failed' }[status]
@@ -190,218 +183,211 @@
   <title>Backups | Platform Admin | Project Vault</title>
 </svelte:head>
 
-{#if !data.allowed}
-  <PlatformOperatorRequiredNotice />
-{:else}
-  <div class="mx-auto max-w-5xl px-4 py-8">
-    <nav class="mb-4 text-sm text-gray-500">
-      <a href={resolve('/platform')} class="hover:underline">Platform Admin</a>
-      <span class="mx-2">›</span>
-      <span>Backups</span>
-    </nav>
-
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">Backups</h1>
-        <p class="mt-1 text-gray-500">Trigger, validate, and restore encrypted backups.</p>
-      </div>
-      <ConfirmDeleteButton
-        label="Trigger backup now"
-        confirmLabel="Confirm trigger?"
-        pendingLabel="Triggering…"
-        onConfirm={handleTrigger}
-      />
+<PlatformBreadcrumb
+  allowed={data.allowed}
+  trail={[{ label: 'Platform Admin', href: '/platform' }, { label: 'Backups' }]}
+>
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Backups</h1>
+      <p class="mt-1 text-gray-500">Trigger, validate, and restore encrypted backups.</p>
     </div>
+    <ConfirmDeleteButton
+      label="Trigger backup now"
+      confirmLabel="Confirm trigger?"
+      pendingLabel="Triggering…"
+      onConfirm={handleTrigger}
+    />
+  </div>
 
-    {#if triggerMessage}
-      <p
-        class="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
-        role="status"
-      >
-        {triggerMessage}
+  {#if triggerMessage}
+    <p
+      class="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+      role="status"
+    >
+      {triggerMessage}
+    </p>
+  {/if}
+  {#if triggerError}
+    <p
+      class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+      role="alert"
+    >
+      {triggerError}
+    </p>
+  {/if}
+
+  {#if restoreSuccess}
+    <div
+      class="mt-4 rounded-lg border border-green-300 bg-green-50 px-4 py-4 text-sm text-green-900"
+      role="status"
+    >
+      <p class="font-semibold">Restore complete.</p>
+      <p class="mt-1">
+        The vault has been automatically sealed and requires manual unseal to resume operation.
+        <a href={resolve('/vault')} class="ml-1 underline hover:text-green-700">Unseal vault →</a>
       </p>
-    {/if}
-    {#if triggerError}
-      <p
-        class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-        role="alert"
-      >
-        {triggerError}
+    </div>
+  {/if}
+
+  {#if pageError}
+    <p
+      class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+      role="alert"
+    >
+      {pageError}
+    </p>
+  {/if}
+
+  <div class="mt-6">
+    {#if backups.length === 0 && !pageError}
+      <p class="rounded-lg border border-gray-200 bg-white px-6 py-8 text-center text-gray-500">
+        No backups yet.
       </p>
-    {/if}
-
-    {#if restoreSuccess}
-      <div
-        class="mt-4 rounded-lg border border-green-300 bg-green-50 px-4 py-4 text-sm text-green-900"
-        role="status"
+    {:else}
+      <DataTable
+        columns={['Filename', 'Started', 'Status', 'Size', 'Verified', 'Key Version', 'Actions']}
       >
-        <p class="font-semibold">Restore complete.</p>
-        <p class="mt-1">
-          The vault has been automatically sealed and requires manual unseal to resume operation.
-          <a href={resolve('/vault')} class="ml-1 underline hover:text-green-700">Unseal vault →</a>
-        </p>
-      </div>
-    {/if}
-
-    {#if pageError}
-      <p
-        class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-        role="alert"
-      >
-        {pageError}
-      </p>
-    {/if}
-
-    <div class="mt-6">
-      {#if backups.length === 0 && !pageError}
-        <p class="rounded-lg border border-gray-200 bg-white px-6 py-8 text-center text-gray-500">
-          No backups yet.
-        </p>
-      {:else}
-        <DataTable
-          columns={['Filename', 'Started', 'Status', 'Size', 'Verified', 'Key Version', 'Actions']}
-        >
-          {#each backups as backup (backup.filename)}
-            <tr class="border-b border-slate-100 last:border-b-0">
-              <td class="px-4 py-3 font-mono text-xs text-slate-800">{backup.filename}</td>
-              <td class="px-4 py-3 text-sm text-slate-600"
-                >{new Date(backup.timestamp).toLocaleString()}</td
-              >
-              <td class="px-4 py-3 text-sm">
-                {#if backup.status === 'failed'}
-                  <span class="font-semibold text-red-700" title={backup.errorMessage ?? ''}>
-                    Failed{backup.errorMessage ? ` — ${backup.errorMessage}` : ''}
-                  </span>
-                {:else if backup.status === 'running'}
-                  <span class="text-amber-700">Running…</span>
-                {:else}
-                  <span class="text-green-700">{statusLabel(backup.status)}</span>
+        {#each backups as backup (backup.filename)}
+          <tr class="border-b border-slate-100 last:border-b-0">
+            <td class="px-4 py-3 font-mono text-xs text-slate-800">{backup.filename}</td>
+            <td class="px-4 py-3 text-sm text-slate-600"
+              >{new Date(backup.timestamp).toLocaleString()}</td
+            >
+            <td class="px-4 py-3 text-sm">
+              {#if backup.status === 'failed'}
+                <span class="font-semibold text-red-700" title={backup.errorMessage ?? ''}>
+                  Failed{backup.errorMessage ? ` — ${backup.errorMessage}` : ''}
+                </span>
+              {:else if backup.status === 'running'}
+                <span class="text-amber-700">Running…</span>
+              {:else}
+                <span class="text-green-700">{statusLabel(backup.status)}</span>
+              {/if}
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-600">{formatBytes(backup.sizeBytes)}</td>
+            <td class="px-4 py-3 text-sm">
+              {#if backup.verified === 'valid'}
+                <span class="text-green-700">Valid ✓</span>
+              {:else if backup.verified === 'invalid'}
+                <span class="text-red-700">Invalid ✗</span>
+              {:else}
+                <span class="text-slate-500">Unverified</span>
+              {/if}
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-600">{backup.keyVersion ?? '—'}</td>
+            <td class="px-4 py-3 text-sm">
+              <div class="flex gap-2">
+                {#if backup.status !== 'running'}
+                  <button
+                    type="button"
+                    class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                    onclick={() => void handleValidate(backup.filename)}
+                  >
+                    Validate
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50"
+                    onclick={() => openRestore(backup.filename)}
+                  >
+                    Restore
+                  </button>
                 {/if}
+              </div>
+            </td>
+          </tr>
+
+          {#if validateResults[backup.filename] !== undefined}
+            {@const vr = getValidateResult(backup.filename)}
+            {#if vr}
+              <tr class="bg-slate-50 border-b border-slate-100">
+                <td colspan="7" class="px-4 py-3 text-sm">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="font-semibold">
+                      {vr.valid ? '✓ Valid' : '✗ Invalid'}
+                    </span>
+                    {#if vr.checksum === 'mismatch'}
+                      <span
+                        class="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800"
+                      >
+                        ⚠ Checksum mismatch — this backup file may be corrupted or tampered with.
+                      </span>
+                    {/if}
+                  </div>
+                  <ul class="space-y-1 text-xs text-slate-600">
+                    <li>Checksum: {vr.checksum === 'match' ? '✓ Match' : '✗ Mismatch'}</li>
+                    <li>Credentials: {vr.assetsPresent.credentials ? '✓' : '✗ Missing'}</li>
+                    <li>Projects: {vr.assetsPresent.projects ? '✓' : '✗ Missing'}</li>
+                    <li>Users: {vr.assetsPresent.users ? '✓' : '✗ Missing'}</li>
+                    <li>Audit events: {vr.assetsPresent.auditEvents ? '✓' : '✗ Missing'}</li>
+                    <li>
+                      Data erasure requests: {vr.assetsPresent.dataErasureRequests
+                        ? '✓'
+                        : '✗ Missing'}
+                    </li>
+                  </ul>
+                </td>
+              </tr>
+            {/if}
+          {/if}
+          {#if validateErrors[backup.filename]}
+            <tr class="bg-red-50 border-b border-slate-100">
+              <td colspan="7" class="px-4 py-2 text-sm text-red-700">
+                {validateErrors[backup.filename]}
               </td>
-              <td class="px-4 py-3 text-sm text-slate-600">{formatBytes(backup.sizeBytes)}</td>
-              <td class="px-4 py-3 text-sm">
-                {#if backup.verified === 'valid'}
-                  <span class="text-green-700">Valid ✓</span>
-                {:else if backup.verified === 'invalid'}
-                  <span class="text-red-700">Invalid ✗</span>
-                {:else}
-                  <span class="text-slate-500">Unverified</span>
-                {/if}
-              </td>
-              <td class="px-4 py-3 text-sm text-slate-600">{backup.keyVersion ?? '—'}</td>
-              <td class="px-4 py-3 text-sm">
-                <div class="flex gap-2">
-                  {#if backup.status !== 'running'}
-                    <button
-                      type="button"
-                      class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                      onclick={() => void handleValidate(backup.filename)}
-                    >
-                      Validate
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50"
-                      onclick={() => openRestore(backup.filename)}
-                    >
-                      Restore
-                    </button>
+            </tr>
+          {/if}
+
+          {#if restoreExpandedFilename === backup.filename}
+            <tr class="bg-amber-50 border-b border-slate-100">
+              <td colspan="7" class="px-4 py-4">
+                <div class="space-y-3">
+                  <p class="text-sm font-semibold text-amber-900">
+                    ⚠ Restore is destructive and irreversible. Type the exact filename to confirm.
+                  </p>
+                  <TypedConfirmInput
+                    expectedValue={backup.filename}
+                    onMatchChange={(matches) => {
+                      restoreTypedMatches = matches
+                    }}
+                    label="Type the exact filename to confirm"
+                    inputId="restore-typed-confirm"
+                  />
+                  <label class="block text-sm text-slate-700">
+                    Reason for restore (required)
+                    <textarea
+                      class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                      rows="2"
+                      bind:value={restoreReason}
+                      placeholder="Enter reason for restore"></textarea>
+                  </label>
+                  {#if restoreError}
+                    <p class="text-sm text-red-700" role="alert">{restoreError}</p>
                   {/if}
+                  <div class="flex gap-2">
+                    <button
+                      type="button"
+                      class="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={!restoreEnabled || restorePending}
+                      onclick={() => void handleRestore()}
+                    >
+                      {restorePending ? 'Restoring…' : 'Restore'}
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                      onclick={closeRestore}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               </td>
             </tr>
-
-            {#if validateResults[backup.filename] !== undefined}
-              {@const vr = getValidateResult(backup.filename)}
-              {#if vr}
-                <tr class="bg-slate-50 border-b border-slate-100">
-                  <td colspan="7" class="px-4 py-3 text-sm">
-                    <div class="flex items-center gap-2 mb-2">
-                      <span class="font-semibold">
-                        {vr.valid ? '✓ Valid' : '✗ Invalid'}
-                      </span>
-                      {#if vr.checksum === 'mismatch'}
-                        <span
-                          class="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800"
-                        >
-                          ⚠ Checksum mismatch — this backup file may be corrupted or tampered with.
-                        </span>
-                      {/if}
-                    </div>
-                    <ul class="space-y-1 text-xs text-slate-600">
-                      <li>Checksum: {vr.checksum === 'match' ? '✓ Match' : '✗ Mismatch'}</li>
-                      <li>Credentials: {vr.assetsPresent.credentials ? '✓' : '✗ Missing'}</li>
-                      <li>Projects: {vr.assetsPresent.projects ? '✓' : '✗ Missing'}</li>
-                      <li>Users: {vr.assetsPresent.users ? '✓' : '✗ Missing'}</li>
-                      <li>Audit events: {vr.assetsPresent.auditEvents ? '✓' : '✗ Missing'}</li>
-                      <li>
-                        Data erasure requests: {vr.assetsPresent.dataErasureRequests
-                          ? '✓'
-                          : '✗ Missing'}
-                      </li>
-                    </ul>
-                  </td>
-                </tr>
-              {/if}
-            {/if}
-            {#if validateErrors[backup.filename]}
-              <tr class="bg-red-50 border-b border-slate-100">
-                <td colspan="7" class="px-4 py-2 text-sm text-red-700">
-                  {validateErrors[backup.filename]}
-                </td>
-              </tr>
-            {/if}
-
-            {#if restoreExpandedFilename === backup.filename}
-              <tr class="bg-amber-50 border-b border-slate-100">
-                <td colspan="7" class="px-4 py-4">
-                  <div class="space-y-3">
-                    <p class="text-sm font-semibold text-amber-900">
-                      ⚠ Restore is destructive and irreversible. Type the exact filename to confirm.
-                    </p>
-                    <TypedConfirmInput
-                      expectedValue={backup.filename}
-                      onMatchChange={(matches) => {
-                        restoreTypedMatches = matches
-                      }}
-                      label="Type the exact filename to confirm"
-                      inputId="restore-typed-confirm"
-                    />
-                    <label class="block text-sm text-slate-700">
-                      Reason for restore (required)
-                      <textarea
-                        class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                        rows="2"
-                        bind:value={restoreReason}
-                        placeholder="Enter reason for restore"></textarea>
-                    </label>
-                    {#if restoreError}
-                      <p class="text-sm text-red-700" role="alert">{restoreError}</p>
-                    {/if}
-                    <div class="flex gap-2">
-                      <button
-                        type="button"
-                        class="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={!restoreEnabled || restorePending}
-                        onclick={() => void handleRestore()}
-                      >
-                        {restorePending ? 'Restoring…' : 'Restore'}
-                      </button>
-                      <button
-                        type="button"
-                        class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-                        onclick={closeRestore}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            {/if}
-          {/each}
-        </DataTable>
-      {/if}
-    </div>
+          {/if}
+        {/each}
+      </DataTable>
+    {/if}
   </div>
-{/if}
+</PlatformBreadcrumb>

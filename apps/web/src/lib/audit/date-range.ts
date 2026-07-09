@@ -18,3 +18,8 @@ export function validateDateRange(from: string, to: string): string | null {
     ? 'End date must be after start date'
     : null
 }
+
+export function buildDateRangePart(filters: { from?: string; to?: string }): string | null {
+  if (!filters.from && !filters.to) return null
+  return `${(filters.from ?? '\u2026').slice(0, 10)} \u2192 ${(filters.to ?? '\u2026').slice(0, 10)}`
+}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
-  import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
+  import PlatformSettingsBreadcrumb from '$lib/components/platform/PlatformSettingsBreadcrumb.svelte'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import { ApiClientError } from '$lib/api/client.js'
@@ -78,115 +78,103 @@
   <title>Organizations | Platform Admin | Project Vault</title>
 </svelte:head>
 
-{#if !data.allowed}
-  <PlatformOperatorRequiredNotice />
-{:else}
-  <div class="mx-auto max-w-4xl px-4 py-8">
-    <nav class="mb-4 text-sm text-gray-500">
-      <a href={resolve('/platform')} class="hover:underline">Platform Admin</a>
-      <span class="mx-2">›</span>
-      <a href={resolve('/platform/settings')} class="hover:underline">System Settings</a>
-      <span class="mx-2">›</span>
-      <span>Organizations</span>
-    </nav>
+<PlatformSettingsBreadcrumb allowed={data.allowed} leafLabel="Organizations">
+  <h1 class="text-2xl font-bold text-gray-900">Organizations</h1>
+  <p class="mt-1 text-gray-500">Manage all organizations on this instance.</p>
 
-    <h1 class="text-2xl font-bold text-gray-900">Organizations</h1>
-    <p class="mt-1 text-gray-500">Manage all organizations on this instance.</p>
+  {#if pageError}
+    <p
+      class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+      role="alert"
+    >
+      {pageError}
+    </p>
+  {/if}
 
-    {#if pageError}
+  <div class="mt-6">
+    {#if orgs.length === 0 && !pageError}
+      <p class="rounded-lg border border-gray-200 bg-white px-6 py-8 text-center text-gray-500">
+        No organizations found.
+      </p>
+    {:else}
+      <DataTable columns={['Name', 'Slug', 'Created', 'Members']}>
+        {#each orgs as org (org.id)}
+          <tr class="border-b border-slate-100 last:border-b-0">
+            <td class="px-4 py-3 font-medium text-slate-900">{org.name}</td>
+            <td class="px-4 py-3 font-mono text-xs text-slate-600">{org.slug}</td>
+            <td class="px-4 py-3 text-sm text-slate-600"
+              >{new Date(org.createdAt).toLocaleDateString()}</td
+            >
+            <td class="px-4 py-3 text-sm text-slate-600">{org.memberCount}</td>
+          </tr>
+        {/each}
+      </DataTable>
+    {/if}
+  </div>
+
+  <!-- Create org form -->
+  <div class="mt-8 rounded-xl border border-gray-200 bg-white p-6">
+    <h2 class="text-lg font-semibold text-gray-900">Create organization</h2>
+
+    {#if createSuccess}
+      <p
+        class="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+        role="status"
+      >
+        {createSuccess}
+      </p>
+    {/if}
+    {#if createError}
       <p
         class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
         role="alert"
       >
-        {pageError}
+        {createError}
+        {#if createError.includes('maximum')}
+          <a href={resolve('/platform/settings')} class="ml-1 underline">→ Settings</a>
+        {/if}
       </p>
     {/if}
+    {#if createMfaError}
+      <MfaAwareErrorAlert
+        message={createMfaError}
+        class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+      />
+    {/if}
 
-    <div class="mt-6">
-      {#if orgs.length === 0 && !pageError}
-        <p class="rounded-lg border border-gray-200 bg-white px-6 py-8 text-center text-gray-500">
-          No organizations found.
-        </p>
-      {:else}
-        <DataTable columns={['Name', 'Slug', 'Created', 'Members']}>
-          {#each orgs as org (org.id)}
-            <tr class="border-b border-slate-100 last:border-b-0">
-              <td class="px-4 py-3 font-medium text-slate-900">{org.name}</td>
-              <td class="px-4 py-3 font-mono text-xs text-slate-600">{org.slug}</td>
-              <td class="px-4 py-3 text-sm text-slate-600"
-                >{new Date(org.createdAt).toLocaleDateString()}</td
-              >
-              <td class="px-4 py-3 text-sm text-slate-600">{org.memberCount}</td>
-            </tr>
-          {/each}
-        </DataTable>
-      {/if}
-    </div>
-
-    <!-- Create org form -->
-    <div class="mt-8 rounded-xl border border-gray-200 bg-white p-6">
-      <h2 class="text-lg font-semibold text-gray-900">Create organization</h2>
-
-      {#if createSuccess}
-        <p
-          class="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
-          role="status"
-        >
-          {createSuccess}
-        </p>
-      {/if}
-      {#if createError}
-        <p
-          class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-          role="alert"
-        >
-          {createError}
-          {#if createError.includes('maximum')}
-            <a href={resolve('/platform/settings')} class="ml-1 underline">→ Settings</a>
-          {/if}
-        </p>
-      {/if}
-      {#if createMfaError}
-        <MfaAwareErrorAlert
-          message={createMfaError}
-          class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+    <form class="mt-4 flex flex-col gap-4" onsubmit={(e) => void handleCreateOrg(e)}>
+      <label class="flex flex-col text-sm text-gray-700">
+        Organization name
+        <input
+          type="text"
+          required
+          bind:value={newOrgName}
+          class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+          placeholder="Acme Corp"
         />
-      {/if}
-
-      <form class="mt-4 flex flex-col gap-4" onsubmit={(e) => void handleCreateOrg(e)}>
-        <label class="flex flex-col text-sm text-gray-700">
-          Organization name
-          <input
-            type="text"
-            required
-            bind:value={newOrgName}
-            class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
-            placeholder="Acme Corp"
-          />
-          {#if createNameError}
-            <span class="mt-1 text-xs text-red-600">{createNameError}</span>
-          {/if}
-        </label>
-        <label class="flex flex-col text-sm text-gray-700">
-          Owner email
-          <input
-            type="email"
-            required
-            bind:value={newOrgOwnerEmail}
-            class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
-            placeholder="owner@example.com"
-          />
-        </label>
-        <div>
-          <button
-            type="submit"
-            disabled={creating}
-            class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {creating ? 'Creating…' : 'Create organization'}
-          </button>
-        </div>
-      </form>
-    </div>
+        {#if createNameError}
+          <span class="mt-1 text-xs text-red-600">{createNameError}</span>
+        {/if}
+      </label>
+      <label class="flex flex-col text-sm text-gray-700">
+        Owner email
+        <input
+          type="email"
+          required
+          bind:value={newOrgOwnerEmail}
+          class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+          placeholder="owner@example.com"
+        />
+      </label>
+      <div>
+        <button
+          type="submit"
+          disabled={creating}
+          class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {creating ? 'Creating…' : 'Create organization'}
+        </button>
+      </div>
+    </form>
   </div>
-{/if}
+</PlatformSettingsBreadcrumb>

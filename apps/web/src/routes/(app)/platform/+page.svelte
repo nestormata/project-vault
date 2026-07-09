@@ -1,25 +1,28 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
+  import PlatformWarningsBanner from '$lib/components/platform/PlatformWarningsBanner.svelte'
   import type { PageData } from './$types.js'
 
   let { data }: { data: PageData } = $props()
 
-  const WARNING_MESSAGES: Record<string, { message: string; linkHref: string; linkText: string }> =
-    {
-      audit_storage_critical: {
-        message:
-          'Audit log storage is at critical capacity — export and prune, or increase `AUDIT_LOG_STORAGE_LIMIT_GB`.',
-        linkHref: '/platform/settings/resource-usage',
-        linkText: 'Resource Usage',
-      },
-      key_custody_risk: {
-        message:
-          "Master key custody risk: a single lost key file means unrecoverable data, or the key hasn't been rotated recently.",
-        linkHref: '/platform/settings',
-        linkText: 'System Settings',
-      },
-    }
+  const WARNING_MESSAGES: Record<
+    string,
+    { message: string; linkHref?: string; linkText?: string }
+  > = {
+    audit_storage_critical: {
+      message:
+        'Audit log storage is at critical capacity — export and prune, or increase `AUDIT_LOG_STORAGE_LIMIT_GB`.',
+      linkHref: '/platform/settings/resource-usage',
+      linkText: 'Resource Usage',
+    },
+    key_custody_risk: {
+      message:
+        'Master key custody risk: a single lost key file means unrecoverable data, or the key hasn\u2019t been rotated recently.',
+      linkHref: '/platform/settings',
+      linkText: 'System Settings',
+    },
+  }
 </script>
 
 <svelte:head>
@@ -33,23 +36,7 @@
     <h1 class="text-2xl font-bold text-gray-900">Platform Admin</h1>
     <p class="mt-2 text-gray-500">Instance-wide administration and operations.</p>
 
-    {#each data.warnings as warning (warning)}
-      {@const info = WARNING_MESSAGES[warning]}
-      {#if info}
-        <div
-          class="mt-4 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-          role="alert"
-        >
-          <span aria-hidden="true" class="mt-0.5 shrink-0">⚠</span>
-          <span>
-            {info.message}
-            <a href={resolve(info.linkHref)} class="ml-1 underline hover:text-amber-700"
-              >{info.linkText} →</a
-            >
-          </span>
-        </div>
-      {/if}
-    {/each}
+    <PlatformWarningsBanner warnings={data.warnings} messages={WARNING_MESSAGES} />
 
     <ul class="mt-8 divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
       <li>
