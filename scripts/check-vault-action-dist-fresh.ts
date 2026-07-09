@@ -41,7 +41,7 @@ export function listFilesRecursively(root: string): string[] {
   if (!existsSync(root)) return []
   const out: string[] = []
   walk(root, root, out)
-  return out.sort()
+  return out.sort((a, b) => a.localeCompare(b))
 }
 
 /**
@@ -71,7 +71,7 @@ export function compareDistDirectories(committedDir: string, freshDir: string): 
     }
   }
 
-  return diffs.sort()
+  return diffs.sort((a, b) => a.localeCompare(b))
 }
 
 /**
