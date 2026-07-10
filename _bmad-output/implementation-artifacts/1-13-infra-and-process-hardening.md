@@ -1,6 +1,6 @@
 # Story 1.13: Infra and Process Hardening
 
-Status: review
+Status: done
 
 <!-- Completion-round-2 grab-bag for Epic 1 (same pattern as 5-5/6-4/8-6/8-7/9-7/9-8), bundling four
      small, unrelated, low-risk items from `deferred-work.md` that had no reason to skip but also no
