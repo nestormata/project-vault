@@ -210,10 +210,10 @@ async function sendPendingRotationNotifications(
 // payload — the audit/security_alerts payloads keep the raw, unmodified string for fidelity.
 function sanitizeReasonForOutboundNotification(reason: string): string {
   return reason
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
 }
 
 // Story 5.3 AC-11/AC-12/AC-17: resume/abandon share this identical set of lock/scope/state

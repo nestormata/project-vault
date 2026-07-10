@@ -7,7 +7,7 @@ describe('combineEnvelopeHalves', () => {
     const envHalf = randomBytes(16)
     const fileHalf = randomBytes(16)
     const ikm = combineEnvelopeHalves(envHalf, fileHalf)
-    expect(ikm.length).toBe(32)
+    expect(ikm).toHaveLength(32)
     expect(ikm.subarray(0, 16).equals(envHalf)).toBe(true)
     expect(ikm.subarray(16, 32).equals(fileHalf)).toBe(true)
   })

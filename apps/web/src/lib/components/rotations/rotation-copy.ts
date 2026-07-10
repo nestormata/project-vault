@@ -1,9 +1,8 @@
 import { ApiClientError } from '$lib/api/client.js'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
-import { formatDateTime } from '$lib/datetime.js'
 import type { RotationChecklistItemStatus, RotationStatus } from '@project-vault/shared'
 
-export { formatDateTime }
+export { formatDateTime } from '$lib/datetime.js'
 
 // AC-1/AC-18: a single source of truth for the "no rotations exist yet" empty state, shared by
 // the credential detail page's Rotation section (both the CTA area and the history section).

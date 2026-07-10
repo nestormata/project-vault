@@ -294,7 +294,7 @@ describe.sequential('Story 9.2 platform-admin settings routes', () => {
           .from(platformAuditEvents)
           .where(eqOp(platformAuditEvents.operatorId, operator.userId))
       )
-      expect(after.length).toBe(before.length)
+      expect(after).toHaveLength(before.length)
     })
   })
 })

@@ -279,7 +279,7 @@ export async function runWebhookForwardCatchup(
             and(eq(auditForwardingConfig.orgId, orgId), eq(auditForwardingConfig.type, 'webhook'))
           )
           .limit(1)
-        if (!config || !config.enabled) return
+        if (!config?.enabled) return
         await processOrgWebhookTick(tx, config, logger, deliver)
       })
     } catch (error) {

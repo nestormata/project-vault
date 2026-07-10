@@ -1,16 +1,16 @@
 import {
-  ActiveRotationsErrorSchema,
   ProjectArchiveStateSchema,
   ProjectDashboardSchema,
   ProjectDetailSchema,
   ProjectSummarySchema,
-  type ProjectDetail,
-  type ProjectSummary,
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
 import { PageLimitQueryShape } from '../../lib/pagination.js'
 import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 export { TagArrayBodySchema } from '../credentials/schema.js'
+// 4.4 AC-4/ADR-4.4-04: active-rotation 409 body — shared with Story 4.3's deactivation guard
+// (`@project-vault/shared`) so both stub call sites return the exact same shape.
+export { ActiveRotationsErrorSchema } from '@project-vault/shared'
 
 const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$/
 
@@ -81,10 +81,6 @@ export const ArchiveResponseSchema = z
   .object({ data: ProjectArchiveStateSchema })
   .meta({ id: 'ArchiveResponse' })
 
-// 4.4 AC-4/ADR-4.4-04: active-rotation 409 body — shared with Story 4.3's deactivation guard
-// (`@project-vault/shared`) so both stub call sites return the exact same shape.
-export { ActiveRotationsErrorSchema }
-
 // 4.4 AC-3: `?includeArchived=true` on GET /api/v1/projects.
 // Story 9.3 D8.2/AC-11/AC-12: page/limit added via the shared PageLimitQueryShape (same
 // default page=1/limit=20, max limit=100 convention as credentials/rotation/machine-users).
@@ -134,4 +130,4 @@ export type PatchProjectBody = z.infer<typeof PatchProjectBodySchema>
 export type ProjectParams = z.infer<typeof ProjectParamsSchema>
 export type ProjectMemberParams = z.infer<typeof ProjectMemberParamsSchema>
 export type TransferOwnershipBody = z.infer<typeof TransferOwnershipBodySchema>
-export type { ProjectDetail, ProjectSummary }
+export type { ProjectDetail, ProjectSummary } from '@project-vault/shared'

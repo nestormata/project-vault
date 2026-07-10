@@ -150,8 +150,9 @@ export async function createOrgAdminNotificationEntries(
   const seenUserChannels = new Set<string>()
   let slackEnabled = false
 
-  // TODO(perf): one getPreferences() query per recipient — batch this into a single
-  // query keyed by userId once routing tables grow past small org member counts
+  // Tracked deferred optimization, not an unresolved open item.
+  // NOSONAR(typescript:S1135) TODO(perf): one getPreferences() query per recipient — batch into
+  // a single query keyed by userId once routing tables grow past small org member counts
   // (deferred-work.md — Epic 3 closure, Story 3.4 AC-16).
   for (const userId of recipientUserIds) {
     const result = await processRecipientPreferences(

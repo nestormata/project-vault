@@ -62,7 +62,7 @@ describe.sequential('Story 9.4 AC-19: concurrent platform-audit writes', () => {
       const rows = await withPlatformOperatorContext((tx) =>
         tx.select().from(platformAuditEvents).where(eq(platformAuditEvents.operatorId, userId))
       )
-      expect(rows.length).toBe(CONCURRENCY)
+      expect(rows).toHaveLength(CONCURRENCY)
       const uniqueIds = new Set(rows.map((r) => r.id))
       expect(uniqueIds.size).toBe(CONCURRENCY)
     } finally {

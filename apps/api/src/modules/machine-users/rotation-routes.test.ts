@@ -291,7 +291,7 @@ describe('POST .../api-keys/:keyId/rotate', () => {
       // Whichever action won, the old key ends up in exactly one terminal state — either
       // rotated (overlapExpiresAt set, revokedAt still null) or emergency-revoked (revokedAt
       // set) — never both/neither.
-      expect(Boolean(row?.overlapExpiresAt) !== Boolean(row?.revokedAt)).toBe(true)
+      expect(Boolean(row?.overlapExpiresAt)).not.toBe(Boolean(row?.revokedAt))
     })
 
     // 8-8 adversarial review AC-11 finding (was a real, reproducible gap — not just a

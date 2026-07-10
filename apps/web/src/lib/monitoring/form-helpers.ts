@@ -16,7 +16,7 @@ export function parseAlertLeadDaysInput(raw: string): number[] | undefined {
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
-    .map((part) => Number(part))
+    .map(Number)
     .filter((n) => Number.isFinite(n))
   return parsed.length > 0 ? parsed : undefined
 }

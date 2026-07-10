@@ -6,11 +6,9 @@ import { PINO_REDACT_PATHS } from './redact-paths.js'
 
 export type LoggerConfig = ReturnType<typeof buildPinoOptions>
 export type SerializedLogError = { message: string; name?: string; stack?: string }
+type LoggerEnv = Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 
-function buildPinoOptions(
-  env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>,
-  level: string
-) {
+function buildPinoOptions(env: LoggerEnv, level: string) {
   return {
     level,
     timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
@@ -40,15 +38,10 @@ function buildPinoOptions(
  * pino.transport({ target: 'pino/file', options: { destination: 1 } })) without
  * refactoring this function's signature.
  */
+export function createLoggerConfig(env: LoggerEnv): LoggerConfig
+export function createLoggerConfig(env: LoggerEnv, destination: pino.DestinationStream): pino.Logger
 export function createLoggerConfig(
-  env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
-): LoggerConfig
-export function createLoggerConfig(
-  env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>,
-  destination: pino.DestinationStream
-): pino.Logger
-export function createLoggerConfig(
-  env: Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>,
+  env: LoggerEnv,
   destination?: pino.DestinationStream
 ): pino.Logger | LoggerConfig {
   // NODE_ENV=test forces silent on the default stdout pipeline so test output stays

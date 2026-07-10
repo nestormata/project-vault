@@ -40,7 +40,7 @@ export const vaultSealed = new Gauge({
 
 function isLoopbackRemoteAddress(remoteAddress: string): boolean {
   return (
-    remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1'
+    remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1' // NOSONAR(typescript:S1313) — loopback allowlist, not incidental
   )
 }
 

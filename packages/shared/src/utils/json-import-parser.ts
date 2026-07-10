@@ -51,7 +51,11 @@ function parseJsonEntry(
     }
   }
 
-  const value = String(val)
+  // val is now known to be a JSON primitive (string | number | boolean) — object/array and
+  // null were excluded above, so this stringification can never hit the default
+  // "[object Object]" toString.
+  const primitive: string | number | boolean = val as string | number | boolean
+  const value = String(primitive)
   return {
     entry: { name: key, value },
     warning: value === '' ? { line: 0, reason: 'empty_value', raw: key } : undefined,

@@ -24,7 +24,7 @@ export type ParseSecretsFailure = {
 
 export type ParseSecretsResult = ParseSecretsSuccess | ParseSecretsFailure
 
-const SAFE_ENV_VAR_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/
+const SAFE_ENV_VAR_REGEX = /^[A-Za-z_]\w*$/
 
 /** AC-3 — exact, case-insensitive reserved names. Prefixes (GITHUB_/ACTIONS_) checked separately. */
 const RESERVED_ENV_VAR_NAMES = new Set(
@@ -70,8 +70,8 @@ function splitLine(line: string): ParsedSecretEntry | null {
   // that pattern's unbounded `(.+)` ahead of a literal.
   const tokens = line.split(/\s+/).filter((token) => token.length > 0)
   if (tokens.length < 3) return null
-  const envVarName = tokens[tokens.length - 1]
-  if (tokens[tokens.length - 2] !== 'as') return null
+  const envVarName = tokens.at(-1)
+  if (tokens.at(-2) !== 'as') return null
   const mappingPart = tokens.slice(0, -2).join(' ')
   if (!mappingPart || !envVarName) return null
 

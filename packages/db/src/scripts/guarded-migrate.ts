@@ -97,9 +97,11 @@ export function buildRefusalMessage(offending: DestructiveScanResult[]): string 
       lines.push(`  ${finding}`)
     }
   }
-  lines.push('In-place auto-migration refuses destructive schema changes (AC-E9b).')
-  lines.push(`Follow the documented offline migration procedure (see ${RUNBOOK_CROSS_REFERENCE}),`)
-  lines.push('or re-run with --allow-destructive if you have already completed that procedure.')
+  lines.push(
+    'In-place auto-migration refuses destructive schema changes (AC-E9b).',
+    `Follow the documented offline migration procedure (see ${RUNBOOK_CROSS_REFERENCE}),`,
+    'or re-run with --allow-destructive if you have already completed that procedure.'
+  )
   return `${lines.join('\n')}\n`
 }
 
@@ -188,7 +190,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    execFileSync('drizzle-kit', ['migrate'], { stdio: 'inherit', cwd: resolve(__dirname, '../..') })
+    execFileSync('drizzle-kit', ['migrate'], { stdio: 'inherit', cwd: resolve(__dirname, '../..') }) // NOSONAR(typescript:S4036) trusted dev-dependency binary on fixed PATH
   } catch {
     // drizzle-kit already prints its own error to stderr (inherited stdio); a non-zero exit
     // here is enough to satisfy AC-2 (migrate service exits non-zero, api never starts).

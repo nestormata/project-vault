@@ -51,7 +51,7 @@ export async function runPgDump(connectionString: string): Promise<Buffer> {
   const conn = parseConnectionString(connectionString)
   return new Promise((resolve, reject) => {
     const child = spawn(
-      'pg_dump',
+      'pg_dump', // NOSONAR(typescript:S4036) — trusted binary on this container's fixed image PATH
       [
         '-h',
         conn.host,
@@ -103,7 +103,7 @@ export async function runPgRestore(connectionString: string, sql: Buffer): Promi
   const conn = parseConnectionString(connectionString)
   return new Promise((resolve, reject) => {
     const child = spawn(
-      'psql',
+      'psql', // NOSONAR(typescript:S4036) — trusted binary on this container's fixed image PATH
       [
         '-h',
         conn.host,

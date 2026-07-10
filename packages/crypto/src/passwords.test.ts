@@ -31,7 +31,7 @@ describe('deriveIkmFromPassphrase', () => {
   it('produces a 32-byte IKM buffer', async () => {
     const params = createKeyDerivationParams()
     const ikm = await deriveIkmFromPassphrase(USER_PASSWORD, params)
-    expect(ikm.length).toBe(32)
+    expect(ikm).toHaveLength(32)
   })
 
   it('is deterministic for the same passphrase + params', async () => {

@@ -40729,7 +40729,7 @@ function createVaultAgent(config) {
  * every validation here must run and pass before `src/index.ts` ever constructs an agent or
  * attempts a retrieval, so a workflow-authoring mistake never causes a partial retrieval.
  */
-const SAFE_ENV_VAR_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const SAFE_ENV_VAR_REGEX = /^[A-Za-z_]\w*$/;
 /** AC-3 — exact, case-insensitive reserved names. Prefixes (GITHUB_/ACTIONS_) checked separately. */
 const RESERVED_ENV_VAR_NAMES = new Set([
     'PATH',
@@ -40770,8 +40770,8 @@ function splitLine(line) {
     const tokens = line.split(/\s+/).filter((token) => token.length > 0);
     if (tokens.length < 3)
         return null;
-    const envVarName = tokens[tokens.length - 1];
-    if (tokens[tokens.length - 2] !== 'as')
+    const envVarName = tokens.at(-1);
+    if (tokens.at(-2) !== 'as')
         return null;
     const mappingPart = tokens.slice(0, -2).join(' ');
     if (!mappingPart || !envVarName)

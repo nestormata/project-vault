@@ -10,7 +10,7 @@ export function optionalTrimmedNotes(maxLength: number) {
     .trim()
     .nullable()
     .optional()
-    .transform((v) => (v ? v : null))
+    .transform((v) => v || null)
 }
 
 export const RotationStatusSchema = z.enum([

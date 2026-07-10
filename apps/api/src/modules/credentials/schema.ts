@@ -6,8 +6,6 @@ import {
   CredentialValueSchema,
   CredentialVersionSummarySchema,
   ImportActionSchema,
-  ImportConfirmResponseSchema,
-  ImportPreviewResponseSchema,
   SystemTypeSchema,
   validateRotationCron,
 } from '@project-vault/shared'
@@ -220,6 +218,6 @@ export const ImportConfirmBodySchema = z
   .strict()
   .meta({ id: 'ImportConfirmBody' })
 
-export { ImportPreviewResponseSchema, ImportConfirmResponseSchema }
+export { ImportPreviewResponseSchema, ImportConfirmResponseSchema } from '@project-vault/shared'
 
 export type ImportConfirmBody = z.infer<typeof ImportConfirmBodySchema>

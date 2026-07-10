@@ -1,5 +1,3 @@
-import { formatDateTime } from '$lib/datetime.js'
-
 export function isValidTotpInput(value: string): boolean {
   return /^\d{6}$/.test(value)
 }
@@ -8,10 +6,15 @@ export function isValidTotpInput(value: string): boolean {
 // test bans raw HTML rendering directives outright (no HTML injection surface, ever). Encoding
 // it as a data URI and rendering it through a plain <img> gets the same visual result instead.
 export function qrCodeDataUri(svg: string): string {
-  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+  // `unescape` is deprecated; this is the standard non-deprecated replacement for turning a
+  // UTF-8 string into the Latin1-range byte string btoa() requires.
+  const utf8Bytes = encodeURIComponent(svg).replace(/%([0-9A-F]{2})/g, (_, hex: string) =>
+    String.fromCodePoint(Number.parseInt(hex, 16))
+  )
+  return `data:image/svg+xml;base64,${btoa(utf8Bytes)}`
 }
 
-export const formatEnrolledAt = formatDateTime
+export { formatDateTime as formatEnrolledAt } from '$lib/datetime.js'
 
 export function describeRemainingRecoveryCodes(count: number | null): string {
   if (count === null) return ''

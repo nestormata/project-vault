@@ -69,7 +69,7 @@ async function loadSystemSettingsRow(
  * default. Single implementation, reused by resolveEffectiveSettings() (API response) and
  * resolveSmtpTransportConfig() (getEmailTransport()). */
 function pick<T>(dbValue: T | null | undefined, envValue: T): T {
-  return dbValue !== null && dbValue !== undefined ? dbValue : envValue
+  return dbValue ?? envValue
 }
 
 /** AC-3: three-way merge for a partial-update field — the just-provided update value wins, then

@@ -102,25 +102,6 @@ jobs:
       - name: Check PSC TBD UI deferrals tracked in deferred-work.md (retro P7-1/P8-2/P9-1)
         run: pnpm check-psc-tbd-tracking
 
-      - name: Test (with coverage)
-        run: pnpm turbo test
-        env:
-          # Must use vault_app, not postgres — the postgres superuser bypasses RLS
-          # entirely, which would make the RLS isolation tests pass even if policies
-          # were broken or missing.
-          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
-          # check-rls-coverage.test.ts needs superuser access to create/drop its
-          # throwaway test database and manage RLS policies directly.
-          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
-
-      - name: Upload RLS isolation coverage (SOC2 Type II evidence)
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: db-coverage-${{ github.run_id }}
-          path: packages/db/coverage/
-          retention-days: 90
-
       - name: Check for duplicate code
         run: pnpm jscpd
 
@@ -169,6 +150,28 @@ jobs:
 
       - name: Check vault-action dist/ freshness (D6/AC-11)
         run: pnpm check-vault-action-dist
+
+      # Runs last on purpose: it's the slowest step by far, and every faster check above
+      # should get a chance to fail first. Nothing later in this job depends on it — the
+      # only consumer is the artifact upload immediately below, which stays paired with it.
+      - name: Test (with coverage)
+        run: pnpm turbo test
+        env:
+          # Must use vault_app, not postgres — the postgres superuser bypasses RLS
+          # entirely, which would make the RLS isolation tests pass even if policies
+          # were broken or missing.
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+          # check-rls-coverage.test.ts needs superuser access to create/drop its
+          # throwaway test database and manage RLS policies directly.
+          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+
+      - name: Upload RLS isolation coverage (SOC2 Type II evidence)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: db-coverage-${{ github.run_id }}
+          path: packages/db/coverage/
+          retention-days: 90
 
   docker-build:
     name: Docker Build (${{ matrix.arch }})

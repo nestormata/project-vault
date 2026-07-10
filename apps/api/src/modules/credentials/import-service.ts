@@ -7,11 +7,11 @@ import {
   type PendingImportItemRecord,
 } from '@project-vault/db/schema'
 import { encrypt } from '@project-vault/crypto'
-import type { ImportAction } from '@project-vault/shared'
 import {
   parseEnvFile,
   parseJsonImportFile,
   type EnvParseResult,
+  type ImportAction,
   type JsonParseResult,
 } from '@project-vault/shared'
 import { getPrimaryKey } from '../vault/key-service.js'

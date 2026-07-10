@@ -240,7 +240,7 @@ function sendRecoveryStatusError(
 async function enforceIpRateLimitAndNormalizeEmailBody(
   req: FastifyRequest,
   reply: FastifyReply
-): Promise<unknown | null> {
+): Promise<unknown> {
   if (!(await enforceRecoverRateLimit(`ip:${req.ip}`, 10, reply))) return null
   const normalized = normalizeEmailBodyForRoute(req.body, reply)
   return normalized.success ? normalized.body : null

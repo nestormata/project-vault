@@ -9,7 +9,7 @@ export function trapFocus(container: HTMLElement): () => void {
     const elements = focusables()
     if (elements.length === 0) return
     const first = elements[0]
-    const last = elements[elements.length - 1]
+    const last = elements.at(-1)
     if (!first || !last) return
 
     if (event.shiftKey && document.activeElement === first) {

@@ -4,9 +4,9 @@ import { getAdminDb } from '../lib/db.js'
 import { withJobLogging } from '../lib/job-logging.js'
 import type { FastifyBaseLogger } from 'fastify'
 
-export async function runInboxPurge(
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
-): Promise<void> {
+type PurgeLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
+
+export async function runInboxPurge(logger: PurgeLogger): Promise<void> {
   const now = new Date()
   const result = await getAdminDb()
     .delete(notificationInbox)
@@ -19,15 +19,13 @@ export async function runInboxPurge(
   )
 }
 
-export async function notificationInboxPurgeHandler(
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
-): Promise<void> {
+export async function notificationInboxPurgeHandler(logger: PurgeLogger): Promise<void> {
   await withJobLogging(logger, 'notification/inbox-purge', 'daily', () => runInboxPurge(logger))
 }
 
 export async function notificationInboxCatchupHandler(
   boss: import('../lib/boss.js').BossService,
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
+  logger: PurgeLogger
 ): Promise<void> {
   const { runNotificationCatchup } = await import('./notification-worker-common.js')
   await runNotificationCatchup(

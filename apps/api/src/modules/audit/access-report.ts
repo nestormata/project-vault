@@ -319,7 +319,7 @@ function applyOrgUserRemoved(row: ReplayRow, state: ReplayState): void {
   const userId = row.resourceId
   if (!userId) return
   state.orgState.delete(userId)
-  for (const key of [...state.projectState.keys()]) {
+  for (const key of state.projectState.keys()) {
     if (key.startsWith(`${userId}:`)) state.projectState.delete(key)
   }
 }

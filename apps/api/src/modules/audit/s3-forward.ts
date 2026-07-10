@@ -217,7 +217,7 @@ export async function runS3ForwardDaily(
           .from(auditForwardingConfig)
           .where(and(eq(auditForwardingConfig.orgId, orgId), eq(auditForwardingConfig.type, 's3')))
           .limit(1)
-        if (!config || !config.enabled) return
+        if (!config?.enabled) return
         await processOrgS3Day(tx, config, logger, putObject)
       })
     } catch (error) {

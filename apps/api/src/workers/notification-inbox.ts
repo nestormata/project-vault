@@ -26,7 +26,7 @@ export async function deliverInboxNotification(
   if (!activeEmitter) return
 
   const entry = await claimPendingNotificationEntry(notificationQueueId, orgId)
-  if (!entry || entry.channel !== 'inbox') return
+  if (entry?.channel !== 'inbox') return
   if (!entry.recipientUserId) return
   const recipientUserId = entry.recipientUserId
 

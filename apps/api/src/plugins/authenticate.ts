@@ -16,7 +16,7 @@ const ORG_ROLES = new Set(['owner', 'admin', 'member', 'viewer'])
 
 type JwtVerifier = {
   jwt: {
-    verify: (token: string) => Promise<unknown> | unknown
+    verify: (token: string) => unknown
   }
 }
 type ParsedAccessClaims = NonNullable<ReturnType<typeof parseAccessTokenClaims>>

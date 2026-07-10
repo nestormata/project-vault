@@ -14,7 +14,7 @@ export type EnvParseResult = {
   warnings: ParseWarning[]
 }
 
-const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+const KEY_PATTERN = /^[A-Za-z_]\w*$/
 
 function decodeEnvValue(rawValue: string): string {
   if (

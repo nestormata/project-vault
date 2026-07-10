@@ -1,10 +1,10 @@
 import type { ZodTypeProvider } from '@fastify/type-provider-zod'
 import { z } from 'zod/v4'
-import { withOrg } from '@project-vault/db'
-import { ApiErrorSchema, ApiResponseSchema } from '@project-vault/shared'
+import { ApiErrorSchema } from '@project-vault/shared'
 import type { FastifyApp } from './fastify-app.js'
 
-export { ApiErrorSchema, ApiResponseSchema }
+export { ApiErrorSchema }
+export { ApiResponseSchema } from '@project-vault/shared'
 
 export const defaultErrorResponses = {
   400: ApiErrorSchema,
@@ -32,4 +32,4 @@ export function withRouteTypeProvider(app: FastifyApp) {
   return app.withTypeProvider<ZodTypeProvider>()
 }
 
-export const withOrgScope = withOrg
+export { withOrg as withOrgScope } from '@project-vault/db'

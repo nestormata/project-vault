@@ -149,7 +149,7 @@ describe.sequential('search routes', () => {
 
     const res = await search(suite.app, user.cookies, 'q=api-key')
     const body = res.json<{ data: { results: unknown[] } }>()
-    expect(body.data.results.length).toBe(20)
+    expect(body.data.results).toHaveLength(20)
   }, 60_000)
 
   it('should respect limit param up to max of 50', async () => {
@@ -163,7 +163,7 @@ describe.sequential('search routes', () => {
     }
 
     const res = await search(suite.app, user.cookies, 'q=limit-key&limit=10')
-    expect(res.json<{ data: { results: unknown[] } }>().data.results.length).toBe(10)
+    expect(res.json<{ data: { results: unknown[] } }>().data.results).toHaveLength(10)
   }, 40_000)
 
   it.each([
@@ -432,7 +432,7 @@ describe.sequential('search routes', () => {
         .from(auditLogEntries)
         .where(eq(auditLogEntries.eventType, CREDENTIAL_SEARCH_EVENT))
     )
-    expect(after.length).toBe(before.length)
+    expect(after).toHaveLength(before.length)
   }, 20_000)
 
   it('should return credentials matching a tag substring', async () => {

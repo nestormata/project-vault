@@ -32,10 +32,10 @@ RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
 # node:24-alpine, pinned by digest — see builder stage comment above.
 FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
 
-RUN apk add --no-cache curl
 # npm/npx are never invoked at runtime (CMD runs node directly) — dropping them
 # removes their bundled deps (e.g. undici) as a source of image CVEs.
-RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+RUN apk add --no-cache curl \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app
 

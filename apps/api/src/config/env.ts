@@ -434,7 +434,7 @@ const envSchema = z
           !value
             .split(',')
             .map((item) => item.trim())
-            .some((origin) => origin === '*'),
+            .includes('*'),
         'CORS_ALLOWED_ORIGINS cannot contain "*"'
       )
       .default('http://localhost:5173'),

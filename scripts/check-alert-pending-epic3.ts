@@ -14,8 +14,8 @@ const STUB_MARKER_SOURCE_TEXT = ['alert', 'pending_epic3'].join('.')
 // ['alert', 'pending_epic3'].join('.') where the dot is inserted at runtime by
 // Array#join and never appears between the two words in the source text at all
 // (Red Team: reject split-string obfuscation, not just `+`-concatenation).
-const STUB_MARKER_NORMALIZED = STUB_MARKER_SOURCE_TEXT.replace(/\./g, '')
-const NORMALIZE_PATTERN = /[^a-zA-Z0-9_]/g
+const STUB_MARKER_NORMALIZED = STUB_MARKER_SOURCE_TEXT.replaceAll('.', '')
+const NORMALIZE_PATTERN = /\W/g
 const SCANNABLE_EXTENSIONS = ['.ts', '.tsx', '.js']
 
 function fileContainsMarker(content: string): boolean {

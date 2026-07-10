@@ -230,7 +230,7 @@ describe.sequential('Story 9.1: backup HTTP routes', () => {
     })
 
     const after = await getDb().select({ id: credentials.id }).from(credentials)
-    expect(after.length).toBe(before.length)
+    expect(after).toHaveLength(before.length)
   })
 
   it('AC-10 negative: validate returns 200 with valid:false for a corrupted/unknown file (not an error status)', async () => {

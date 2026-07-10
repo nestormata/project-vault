@@ -113,7 +113,7 @@ describe('platform_audit_events RLS (AC-3, AC-21)', () => {
       const rows = await getDb().transaction(async (tx) => {
         return tx.select().from(platformAuditEvents)
       })
-      expect(rows.length).toBe(0)
+      expect(rows).toHaveLength(0)
     } finally {
       await tryDeleteTestUser(userId)
     }
@@ -126,7 +126,7 @@ describe('platform_audit_events RLS (AC-3, AC-21)', () => {
       const rows = await withPlatformOperatorContext((tx) =>
         tx.select().from(platformAuditEvents).where(eq(platformAuditEvents.id, id))
       )
-      expect(rows.length).toBe(1)
+      expect(rows).toHaveLength(1)
     } finally {
       await tryDeleteTestUser(userId)
     }
@@ -146,7 +146,7 @@ describe('platform_audit_events RLS (AC-3, AC-21)', () => {
       const rowsAfter = await getDb().transaction(async (tx) => {
         return tx.select().from(platformAuditEvents).where(eq(platformAuditEvents.id, id))
       })
-      expect(rowsAfter.length).toBe(0)
+      expect(rowsAfter).toHaveLength(0)
     } finally {
       await tryDeleteTestUser(userId)
     }
@@ -164,7 +164,7 @@ describe('platform_audit_events RLS (AC-3, AC-21)', () => {
         )
         return tx.select().from(platformAuditEvents)
       })
-      expect(rows.length).toBe(0)
+      expect(rows).toHaveLength(0)
     } finally {
       await tryDeleteTestUser(userId)
     }

@@ -105,7 +105,7 @@ describe.sequential('Story 9.6 D3.4: backup-health-check S3 staging maintenance'
       .where(
         and(eq(adminAlerts.alertType, DISK_PRESSURE_ALERT_TYPE), eq(adminAlerts.status, 'active'))
       )
-    expect(activeAlerts.length).toBe(1)
+    expect(activeAlerts).toHaveLength(1)
     const payload = activeAlerts[0]?.payload as { totalBytes: number; fileCount: number }
     expect(payload.totalBytes).toBeGreaterThan(100)
     expect(payload.fileCount).toBeGreaterThanOrEqual(1)
@@ -120,7 +120,7 @@ describe.sequential('Story 9.6 D3.4: backup-health-check S3 staging maintenance'
       .where(
         and(eq(adminAlerts.alertType, DISK_PRESSURE_ALERT_TYPE), eq(adminAlerts.status, 'active'))
       )
-    expect(stillActive.length).toBe(0)
+    expect(stillActive).toHaveLength(0)
   })
 
   it('D3.10/failure isolation: a cleanup-scan failure does not prevent the disk-pressure check from running, and vice versa', async () => {
@@ -146,7 +146,7 @@ describe.sequential('Story 9.6 D3.4: backup-health-check S3 staging maintenance'
       .where(
         and(eq(adminAlerts.alertType, DISK_PRESSURE_ALERT_TYPE), eq(adminAlerts.status, 'active'))
       )
-    expect(activeAlerts.length).toBe(1)
+    expect(activeAlerts).toHaveLength(1)
 
     rmSync(join(stagingDir, 'pressure.vault.staged'), { force: true })
     await clearDiskPressureAlerts()

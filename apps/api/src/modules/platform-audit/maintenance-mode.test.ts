@@ -133,7 +133,7 @@ describe.sequential('Story 9.4 D8: platform-audit maintenance mode', () => {
       .select()
       .from(platformAuditPendingEntries)
       .orderBy(asc(platformAuditPendingEntries.sequenceNum))
-    expect(rows.length).toBe(2)
+    expect(rows).toHaveLength(2)
     expect(rows[1]?.sequenceNum).toBeGreaterThan(rows[0]?.sequenceNum ?? -1)
   })
 
@@ -207,7 +207,7 @@ describe.sequential('Story 9.4 D8: platform-audit maintenance mode', () => {
       ).toBeUndefined()
 
       const remainingPending = await getDb().select().from(platformAuditPendingEntries)
-      expect(remainingPending.length).toBe(0)
+      expect(remainingPending).toHaveLength(0)
 
       const [state] = await getDb()
         .select()

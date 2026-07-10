@@ -37,8 +37,8 @@ describe('AES-256-GCM encrypt/decrypt (via withSecret)', () => {
     expect(typeof encrypted.iv).toBe('string')
     expect(typeof encrypted.ciphertext).toBe('string')
     expect(typeof encrypted.tag).toBe('string')
-    expect(encrypted.iv.length).toBe(24)
-    expect(encrypted.tag.length).toBe(32)
+    expect(encrypted.iv).toHaveLength(24)
+    expect(encrypted.tag).toHaveLength(32)
   })
 
   it('produces a different IV on every call (probabilistic)', async () => {
@@ -96,7 +96,7 @@ describe('HKDF-SHA256 key derivation', () => {
   it('produces 32-byte keys', () => {
     const ikm = randomBytes(32)
     const key = deriveKey(ikm, HKDF_INFO.PRIMARY)
-    expect(key.length).toBe(32)
+    expect(key).toHaveLength(32)
   })
 
   it('is deterministic: same IKM + info = same key', () => {
