@@ -6,14 +6,10 @@
 export type CookieJar = Record<string, string>
 
 export function parseSetCookies(setCookie: string | string[] | undefined): CookieJar {
-  let headers: string[]
-  if (Array.isArray(setCookie)) {
-    headers = setCookie
-  } else if (setCookie) {
-    headers = [setCookie]
-  } else {
-    headers = []
-  }
+  // `[].concat(x)` flattens a single string or an array into a string[] in one step, so this
+  // needs only one (non-nested) ternary instead of the previous `a ? b : c ? d : e` (Sonar
+  // typescript:S3358 flags nested ternaries as hard to read).
+  const headers: string[] = setCookie ? ([] as string[]).concat(setCookie) : []
   return Object.fromEntries(
     headers
       .map((header) => header.split(';')[0] ?? '')
