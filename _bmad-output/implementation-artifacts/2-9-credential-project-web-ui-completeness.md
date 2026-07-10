@@ -965,6 +965,7 @@ Cursor Grok 4.5 (bmad-dev-story resume)
 
 ### Review Findings
 
+- [x] [Review][Patch] **Critical:** GET `.../dependencies` returned unwrapped `{items,hasDependencies}` instead of `{data:{...}}` after 4-5 `withCredentialParams` extract — Fastify response schema 500'd; Group D detail load broken. Fixed wrapper to match sibling credential GET handlers.
 - [x] [Review][Patch] Lifecycle save could silently flip `cacheable: false` → `true` — `CredentialDetail` lacked `cacheable`; form hardcoded `$state(true)` while always PATCHing all three fields (AC-L1). Fixed: additive `cacheable` on detail schema/serializer + prefill from detail.
 - [x] [Review][Patch] Project tag 422 showed generic `Request validation failed` (AC-P4) — real Zod errors live in `details.tags[]`; UI used `error.message` only. Fixed: map details to user-facing copy.
 - [ ] [Review][Patch] Empty dependent-system name returns silently with no inline error [`apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` `onAddDependency`] — HTML `required` helps in browsers; programmatic submit still no-ops. Medium; left unfixed (not critical/high).
