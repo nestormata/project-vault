@@ -117,7 +117,15 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
 
   it('AC-P4: a 422 validation error renders inline, retains the typed text, and leaves chips unchanged', async () => {
     updateProjectTagsMock.mockRejectedValue(
-      new ApiClientError(422, { code: 'validation_error' }, 'A project may have at most 20 tags.')
+      new ApiClientError(
+        422,
+        {
+          code: 'validation_error',
+          message: 'Request validation failed',
+          details: { tags: ['Too big: expected array to have <=20 items'] },
+        },
+        'Request validation failed'
+      )
     )
     render(ProjectsListPage, {
       props: { data: baseData([makeProject({ tags: ['payments'] })]) },

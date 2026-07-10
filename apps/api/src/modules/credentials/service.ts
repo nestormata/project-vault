@@ -57,6 +57,7 @@ export function serializeCredentialDetail(
     tags: credential.tags,
     expiresAt: credential.expiresAt?.toISOString() ?? null,
     rotationSchedule: credential.rotationSchedule,
+    cacheable: credential.cacheable,
     retentionCount: credential.retentionCount,
     currentVersionNumber,
     createdBy: credential.createdBy,

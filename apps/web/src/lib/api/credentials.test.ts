@@ -44,6 +44,7 @@ const sampleDetail: CredentialDetail = {
   tags: ['api'],
   expiresAt: '2026-07-15T00:00:00.000Z',
   rotationSchedule: null,
+  cacheable: true,
   retentionCount: 5,
   currentVersionNumber: 1,
   createdBy: null,

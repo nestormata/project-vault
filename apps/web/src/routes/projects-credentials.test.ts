@@ -285,6 +285,7 @@ describe('project credential routes', () => {
             tags: [],
             expiresAt: '2026-07-15T00:00:00.000Z',
             rotationSchedule: null,
+            cacheable: true,
             retentionCount: 5,
             currentVersionNumber: 1,
             createdBy: null,
@@ -428,6 +429,7 @@ describe('project credential routes', () => {
         tags: [],
         expiresAt: '2026-07-15T00:00:00.000Z',
         rotationSchedule: null,
+        cacheable: true,
         retentionCount: 5,
         currentVersionNumber: 1,
         createdBy: null,
@@ -526,6 +528,52 @@ describe('project credential routes', () => {
     )
 
     expect(await screen.findByText(formatDateTime('2026-12-01T00:00:00.000Z'))).toBeTruthy()
+  })
+
+  it('AC-L1: cacheable checkbox is pre-filled from credential detail (not hardcoded true)', async () => {
+    updateCredentialLifecycleMock.mockResolvedValue({
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      expiresAt: '2026-07-15T00:00:00.000Z',
+      rotationSchedule: null,
+      cacheable: false,
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          credential: {
+            id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            projectId,
+            orgId: '11111111-1111-4111-8111-111111111111',
+            name: 'Stripe Secret Key',
+            description: null,
+            tags: [],
+            expiresAt: '2026-07-15T00:00:00.000Z',
+            rotationSchedule: null,
+            cacheable: false,
+            retentionCount: 5,
+            currentVersionNumber: 1,
+            createdBy: null,
+            createdAt: '2026-06-01T00:00:00.000Z',
+            updatedAt: '2026-06-01T00:00:00.000Z',
+          },
+        }),
+      },
+    })
+
+    const cacheable = screen.getByLabelText('Cacheable by offline agents') as HTMLInputElement
+    expect(cacheable.checked).toBe(false)
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save lifecycle' }))
+
+    await waitFor(() =>
+      expect(updateCredentialLifecycleMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        { expiresAt: '2026-07-15T00:00:00.000Z', rotationSchedule: null, cacheable: false }
+      )
+    )
   })
 
   it('AC-L1 edge: clearing the expiry date sends expiresAt: null and the grid reverts to "—"', async () => {

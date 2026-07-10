@@ -25,6 +25,31 @@
     return canCreateCredential(project.role as never) && !project.isArchived
   }
 
+  // AC-P4: Zod 422s use a generic top-level `message: 'Request validation failed'` — the
+  // actionable constraint text lives in `details.tags[]`. Prefer that, and map the common
+  // max(20)/max(50) cases to the story's user-facing copy.
+  function projectTagsErrorMessage(error: unknown): string {
+    if (!(error instanceof ApiClientError)) return 'Failed to save tags.'
+    const details =
+      error.details && typeof error.details === 'object'
+        ? (error.details as Record<string, string[]>)
+        : null
+    const detail = details?.tags?.[0] ?? error.message
+    if (!detail || detail === 'Request validation failed') {
+      return 'Failed to save tags.'
+    }
+    if (/array|20/i.test(detail) && /too (big|large)|at most|maximum|max/i.test(detail)) {
+      return 'A project may have at most 20 tags.'
+    }
+    if (
+      /string|50|character/i.test(detail) &&
+      /too (big|large)|at most|maximum|max/i.test(detail)
+    ) {
+      return 'Each tag may be at most 50 characters.'
+    }
+    return detail
+  }
+
   async function onSaveTags(project: { id: string }): Promise<void> {
     if (savingTagsProjectId) return
     savingTagsProjectId = project.id
@@ -35,10 +60,7 @@
     } catch (error) {
       tagErrors = {
         ...tagErrors,
-        [project.id]:
-          error instanceof ApiClientError
-            ? (error.message ?? 'Failed to save tags.')
-            : 'Failed to save tags.',
+        [project.id]: projectTagsErrorMessage(error),
       }
       savingTagsProjectId = null
       return

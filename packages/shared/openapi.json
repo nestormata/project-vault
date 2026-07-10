@@ -1089,6 +1089,9 @@
             "nullable": true,
             "type": "string"
           },
+          "cacheable": {
+            "type": "boolean"
+          },
           "retentionCount": {
             "type": "integer",
             "minimum": 1,
@@ -1126,6 +1129,7 @@
           "tags",
           "expiresAt",
           "rotationSchedule",
+          "cacheable",
           "retentionCount",
           "currentVersionNumber",
           "createdBy",
@@ -9432,6 +9436,9 @@
             "nullable": true,
             "type": "string"
           },
+          "cacheable": {
+            "type": "boolean"
+          },
           "retentionCount": {
             "type": "integer",
             "minimum": 1,
@@ -9469,6 +9476,7 @@
           "tags",
           "expiresAt",
           "rotationSchedule",
+          "cacheable",
           "retentionCount",
           "currentVersionNumber",
           "createdBy",
