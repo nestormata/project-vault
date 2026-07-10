@@ -159,9 +159,22 @@ docker-logs: ## Follow logs for the full stack
 # (that would silently weaken every developer's default local bootstrap-token protection). Instead
 # this applies docker-compose.e2e.yml's override on top, scoped to this target only, matching
 # nightly.yml's `e2e` job's own compose invocation (see docker-compose.e2e.yml's own comment).
+#
+# fix-ports only writes bumped ports into .env for docker-compose's own auto-load — it does not
+# export them into this shell. playwright.config.ts/global-setup.ts/fixtures/db.ts all read
+# DB_HOST_PORT/API_HOST_PORT/WEB_HOST_PORT straight from process.env (no dotenv loading), so this
+# recipe must re-read .env and export them itself before invoking pnpm, mirroring
+# scripts/docker-smoke.sh's own precedent for the same problem — otherwise a worktree whose ports
+# were actually bumped would run Playwright against the wrong (default) ports while docker-compose
+# itself listens on the bumped ones, producing a misleading "did you run `make docker-up`?" failure.
 e2e: fix-ports ## Playwright E2E suite against a real docker-compose stack (installs Chromium on first run)
 	docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d
-	pnpm --filter @project-vault/web exec playwright install --with-deps chromium
+	@DB_HOST_PORT="$$(grep -m1 '^DB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
+	API_HOST_PORT="$$(grep -m1 '^API_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
+	WEB_HOST_PORT="$$(grep -m1 '^WEB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
+	E2E_CONFIRM_DB_RESET=true; \
+	export DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT E2E_CONFIRM_DB_RESET; \
+	pnpm --filter @project-vault/web exec playwright install --with-deps chromium && \
 	pnpm --filter @project-vault/web test:e2e
 
 docker-smoke: fix-ports ## Build, start, and curl /health + /ready end-to-end

@@ -37,11 +37,33 @@ async function waitForReady(
   throw new Error(`${NOT_RUNNING_HINT}\n(${label} never became ready: ${String(lastError)})`)
 }
 
+// Code review (10-1): superuserDatabaseUrl() defaults to postgresql://postgres:password@
+// localhost:5432/project_vault — the exact same host/port/database name as a plain `make
+// docker-up` dev stack (docker-compose.yml's own defaults). Without this guard, anyone who runs
+// Playwright directly (`pnpm --filter @project-vault/web test:e2e`) against their ordinary local
+// dev stack, instead of via `make e2e`, would have this function silently DROP their real dev
+// database with no confirmation. `make e2e`/nightly.yml's `e2e` job both set
+// E2E_CONFIRM_DB_RESET=true explicitly (see Makefile, .github/workflows/nightly.yml) as the
+// opt-in signal that the target is understood to be disposable.
+function assertResetIsSafe(): void {
+  if (process.env['E2E_CONFIRM_DB_RESET'] === 'true') return
+  throw new Error(
+    'Refusing to reset the database: E2E_CONFIRM_DB_RESET is not set to "true".\n' +
+      'This function drops and recreates the "public"/"drizzle" schemas, destroying all data at ' +
+      `${superuserDatabaseUrl().replace(/:[^:@]*@/, ':***@')}.\n` +
+      'Run via `make e2e` (which sets this safety flag for you), or, if you intend to run ' +
+      'Playwright directly against a database you know is disposable, set both ' +
+      'E2E_CONFIRM_DB_RESET=true and (if it is not your default dev stack) ' +
+      'E2E_SUPERUSER_DATABASE_URL explicitly.'
+  )
+}
+
 async function resetDatabase(): Promise<void> {
   // AC-I3: mirrors nightly.yml's flaky-test-repeat job's own schema-reset precedent — connect as
   // the superuser and drop+recreate public/drizzle so the run starts from zero orgs/users/vault
   // state, then re-run migrations, instead of whatever accumulated from prior local dev or a
   // prior E2E run.
+  assertResetIsSafe()
   const sql = postgres(superuserDatabaseUrl(), { max: 1 })
   try {
     await sql.unsafe(

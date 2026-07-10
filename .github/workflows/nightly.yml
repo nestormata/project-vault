@@ -212,12 +212,17 @@ jobs:
       - name: Start the full stack (db, migrate, api, web)
         run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d
 
-      # Mirrors scripts/docker-smoke.sh's own wait-for-ready pattern before proceeding.
+      # Mirrors scripts/docker-smoke.sh's own wait-for-ready pattern before proceeding. Polls
+      # /health, not /ready: /ready reports 503 "uninitialized" until the vault is initialized,
+      # and vault init only happens inside Playwright's own global-setup.ts (the next step) — so
+      # polling /ready here, before global-setup.ts ever runs, would always time out and fail this
+      # job. /health only asserts basic API/DB liveness, which is what this step needs to confirm
+      # before handing off to global-setup.ts's own readiness+init sequence.
       - name: Wait for API readiness
         run: |
           for i in $(seq 1 20); do
             code=0
-            curl -sf http://localhost:3000/ready >/dev/null || code=$?
+            curl -sf http://localhost:3000/health >/dev/null || code=$?
             [[ "$code" -eq 0 ]] && exit 0
             sleep 3
           done
@@ -228,7 +233,11 @@ jobs:
         run: pnpm --filter @project-vault/web exec playwright install --with-deps chromium
 
       - name: Run Playwright E2E suite
-        run: pnpm --filter @project-vault/web test:e2e
+        # E2E_CONFIRM_DB_RESET is global-setup.ts's explicit opt-in that this run's target
+        # database is understood to be disposable (see apps/web/e2e/global-setup.ts's
+        # assertResetIsSafe() — a bare, ungated DB reset would be too dangerous to run
+        # unconditionally against whatever superuserDatabaseUrl() resolves to).
+        run: E2E_CONFIRM_DB_RESET=true pnpm --filter @project-vault/web test:e2e
 
       - name: Upload Playwright report + traces (on failure)
         if: failure()
