@@ -168,7 +168,7 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
       url: credentialDependenciesUrl(projectId, credential.id),
       headers: { cookie: cookieHeader(owner.cookies) },
     })
-    expect(active.statusCode).toBe(200)
+    expect(active.statusCode, JSON.stringify(active.json())).toBe(200)
     expect(active.json()).toMatchObject({
       data: { hasDependencies: true, items: [expect.objectContaining({ id: dependencyId })] },
     })

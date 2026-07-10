@@ -1,6 +1,6 @@
 # Story 10.2: apps/web Branch Coverage Hardening
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created. -->
@@ -17,21 +17,24 @@ so that **conditional UI and SvelteKit server behavior is protected by the same 
 
 | Field | Value |
 |-------|-------|
-| **Surface scope** | `none` — internal test/CI hardening only. No route, API, schema, migration, or user-visible behavior is added or changed. |
-| **Evaluator-visible** | No — the running product is intentionally identical before and after this story. |
-| **Linked UI story** | N/A — this is not an API-only product story. |
+| **Surface scope** | `api` — originally internal test/CI hardening; code-review scope expansion fixed the existing credential-dependency GET endpoint's invalid response envelope. |
+| **Evaluator-visible** | Yes, as a regression fix — the existing credential dependency UI now receives the documented 200 envelope instead of a response-schema 500. |
+| **Linked UI story** | `2-9-credential-project-web-ui-completeness` — already shipped and consumes this endpoint on credential detail/rotation surfaces. |
 | **Honest placeholder AC** | N/A — no product UI is deferred. |
-| **Persona journey** | N/A — pure test-quality work; existing persona surfaces are exercised but not changed. |
+| **Persona journey** | Existing owner/member opens credential detail and sees active dependencies; no new UI is introduced. |
 
 ### Persona journey stub
 
-N/A — this story strengthens automated checks around already-shipped journeys and introduces no new persona-facing surface.
+An existing owner/member opens a credential detail or rotation page. The web server loads active
+credential dependencies through the repaired API endpoint and renders the already-shipped dependency
+state instead of receiving a response-schema 500. No new navigation or controls are introduced.
 
 ### G2/G3/G4 note
 
-Epic 10 remains `in-progress`; this story does not close the epic. No navigation, dashboard count,
-or user journey changes are authorized. Existing routes and role-sensitive behavior may be tested,
-but a discovered product defect must be reported for scope reconciliation rather than silently fixed.
+Epic 10 remains `in-progress`; this story does not close the epic. No navigation or dashboard count
+changes were introduced. The user explicitly authorized the narrow credential-dependency API
+response-envelope repair after code review proved it blocked AC-D3; the existing Story 2.9 web
+journey consumes that endpoint, so no new UI follow-up is required.
 
 ---
 
@@ -380,20 +383,22 @@ sources and the subsequent CI SonarCloud step can consume it.
 **Edge/failure example:** a stale artifact from an earlier run, an empty LCOV, or an exact
 project-wide Sonar percentage asserted without scan evidence is not acceptable.
 
-**AC-D5 — Test-only scope and non-applicable concerns are explicitly preserved.**
+**AC-D5 — Test-only scope is preserved except for an explicitly authorized CI-blocking defect.**
 
-**Given** surface scope is `none`,
+**Given** surface scope was reconciled to `api` after the authorized review fix,
 **When** the final diff is reviewed,
-**Then** changes are limited to `apps/web` Vitest test files (plus story/status documentation);
-there are no application, API, DB, migration, audit-event, operational-log, dependency, navigation,
-or production configuration changes.
+**Then** changes are limited to `apps/web` Vitest test files (plus story/status documentation),
+except for the code-review-authorized minimal API response-envelope correction required to make the
+repository graph truthful; there are no DB, migration, audit-event, operational-log, dependency,
+navigation, or production configuration changes.
 
-**Positive example:** only existing/new `*.test.ts` files and this planning metadata change.
+**Positive example:** existing/new `*.test.ts` files, planning metadata, and the one corrected API
+response envelope required for the declared schema and shipped Story 2.9 consumer.
 
 **Edge/failure example:** modifying a Svelte component to remove a hard-to-test branch, changing an
-API error contract, adding an audit event, or introducing a migration is scope expansion and must
-pause for a new decision. Backward compatibility, RLS, audit failure handling, and deployment
-hardening are intentionally N/A because no runtime behavior changes.
+unrelated API contract, adding an audit event, or introducing a migration is scope expansion and
+must pause for a new decision. The authorized fix restores the already-declared 200 response shape;
+RLS, audit failure handling, and deployment hardening remain unaffected.
 
 ---
 
@@ -419,16 +424,16 @@ hardening are intentionally N/A because no runtime behavior changes.
   - [x] Re-run coverage; use the current report, not the planning-time table.
   - [x] Add the smallest behavior-focused tests to existing route/component/API test files until all
         four metrics pass 80%; preserve every anti-shortcut constraint.
-- [ ] **Task 7 — Determinism, CI, and artifact verification (AC-D2–D5)**
+- [x] **Task 7 — Determinism, CI, and artifact verification (AC-D2–D5)**
   - [x] Run affected focused files.
   - [x] Run `pnpm --filter @project-vault/web test` twice consecutively.
-  - [ ] Run `pnpm turbo test` and proportionate broader checks.
+  - [x] Run `pnpm turbo test` and proportionate broader checks.
   - [x] Inspect the fresh LCOV for real web source records and review the final diff for test-only scope.
 
 ### Review Findings
 
 - [x] [Review][Patch][High] Restore the complete coverage denominator after the full status-page API mock removed `src/lib/api/status-page.ts` from LCOV — fixed with behavior tests for all real status-page API wrappers. [`apps/web/src/lib/api/status-page.test.ts`:1]
-- [ ] [Review][Patch][High] Obtain a green repository test graph for AC-D3; the clean isolated serial run passed 1,790/1,791 API tests but a pre-existing credential-dependencies request returned 500, so `pnpm turbo test` still has no green evidence. [`apps/api/src/modules/credentials/credential-dependencies.test.ts`:171]
+- [x] [Review][Patch][High] Obtain a green repository test graph for AC-D3 — fixed the credential-dependency GET response envelope and verified 13/13 uncached tasks on a clean isolated database. [`apps/api/src/modules/credentials/credential-dependencies.test.ts`:171]
 - [ ] [Review][Patch][Medium] Record the complete ranked RED-baseline file inventory and uncovered ranges instead of six examples followed by “remaining below-80 sources.” [`10-2-apps-web-branch-coverage-hardening.md`:510]
 - [ ] [Review][Patch][Medium] Replace the partial RED→GREEN summary with auditable commands/results for each claimed coverage increment where evidence exists. [`10-2-apps-web-branch-coverage-hardening.md`:514]
 - [ ] [Review][Patch][Medium] Strengthen notification server tests to assert pagination/status and mutation IDs are forwarded, plus the safe 500 body. [`apps/web/src/routes/(app)/notifications/notifications-page.server.test.ts`:135]
@@ -539,12 +544,15 @@ GPT-5.6 Sol
   statements 92.94% (5981/6435), branches 80.10% (2042/2549), functions 94.82%
   (1521/1604), lines 94.34% (4157/4406), exit 0 both times. The review fix restored the six
   statements/functions/lines omitted when the status-page API module was fully mocked.
-- Broader checks: web typecheck and lint passed (warnings only). The original `pnpm turbo test`
-  attempts reached 10/11 tasks before unrelated `@project-vault/db` RLS isolation failures
-  against a polluted shared database. Review reruns used a fresh port-isolated PostgreSQL instance:
-  the parallel graph was killed by local memory pressure (exit 137), while the serial graph passed
-  1,790/1,791 API tests before the pre-existing credential-dependencies test returned 500.
-  AC-D3 remains open; web stayed green and this test-only story did not alter DB/runtime code.
+- Broader checks: web/API typecheck and lint passed (warnings only). The original `pnpm turbo test`
+  attempts exposed polluted shared-DB RLS state, then a clean isolated run revealed a real API
+  response-envelope defect: the credential-dependency GET handler returned
+  `{ items, hasDependencies }` against a `{ data: ... }` schema, producing
+  `500 {"error":"validation_error","message":"Response doesn't match the schema"}`. After the
+  minimal route fix, the clean serial `pnpm turbo test --force --concurrency=1` run passed all
+  13/13 uncached tasks in 16m39s, including 1,791/1,791 API tests and 365/365 API-contract tests.
+- Product Surface Contract reconciliation: review scope changed from `none` to `api` for the
+  explicitly authorized response-envelope repair; shipped UI story 2.9 already consumes the route.
 
 ### Completion Notes List
 
@@ -565,6 +573,8 @@ GPT-5.6 Sol
 
 - `_bmad-output/implementation-artifacts/10-2-apps-web-branch-coverage-hardening.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `apps/api/src/modules/credentials/credential-dependencies.test.ts`
+- `apps/api/src/modules/credentials/routes.ts`
 - `apps/web/src/lib/api/inbox.test.ts`
 - `apps/web/src/lib/api/status-page.test.ts`
 - `apps/web/src/lib/audit/audit-helpers.test.ts`
@@ -586,3 +596,5 @@ GPT-5.6 Sol
   behavior-focused Vitest tests only; moved story to review.
 - 2026-07-10: Code review restored the status-page API coverage denominator, recorded remaining
   findings, and moved the story back to in-progress because AC-D3 still lacks a green repository run.
+- 2026-07-10: Fixed the credential-dependency GET response envelope discovered by the isolated
+  repository run; 13/13 uncached tasks passed and the story returned to review.
