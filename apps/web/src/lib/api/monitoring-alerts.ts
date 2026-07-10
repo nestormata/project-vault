@@ -42,10 +42,8 @@ export function listAlerts(fetchFn: typeof fetch, projectId: string, query: List
   if (query.page !== undefined) params.set('page', String(query.page))
   if (query.limit !== undefined) params.set('limit', String(query.limit))
   const serialized = params.toString()
-  return apiFetch<ListAlertsResponse>(
-    fetchFn,
-    `${alertsUrl(projectId)}${serialized ? `?${serialized}` : ''}`
-  )
+  const querySuffix = serialized ? `?${serialized}` : ''
+  return apiFetch<ListAlertsResponse>(fetchFn, `${alertsUrl(projectId)}${querySuffix}`)
 }
 
 export function snoozeAlert(

@@ -44,7 +44,6 @@ export type RecentAccessEvent = z.infer<typeof RecentAccessEventSchema>
 export type ProjectDashboard = z.infer<typeof ProjectDashboardSchema>
 
 export const ProjectDashboardPreviewSchema = ProjectDashboardSchema
-export type ProjectDashboardPreview = ProjectDashboard
 
 export const EMPTY_PROJECT_DASHBOARD: ProjectDashboard = {
   credentialStats: { active: 0, expiringSoon: 0, expired: 0 },

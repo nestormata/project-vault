@@ -1,4 +1,6 @@
-FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS builder
+# node:24-alpine, pinned by digest for reproducibility (Sonar S8431: tag + digest together
+# is redundant since the digest alone already fixes the exact image).
+FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS builder
 
 RUN npm install -g pnpm@11.9.0
 
@@ -27,7 +29,8 @@ RUN pnpm --filter @project-vault/shared build \
 WORKDIR /app
 RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
 
-FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
+# node:24-alpine, pinned by digest — see builder stage comment above.
+FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
 
 RUN apk add --no-cache curl
 # npm/npx are never invoked at runtime (CMD runs node directly) — dropping them

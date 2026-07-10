@@ -22,35 +22,14 @@ function makeEvent() {
 describe('/settings/audit/forwarding +page.server.ts', () => {
   beforeEach(() => requireUserMock.mockReset())
 
-  it('allows owner', async () => {
-    requireUserMock.mockReturnValue({ orgRole: 'owner', orgId: 'org-1' } as ReturnType<
-      typeof requireUser
-    >)
+  it.each([
+    { orgRole: 'owner', allowed: true },
+    { orgRole: 'admin', allowed: true },
+    { orgRole: 'member', allowed: false },
+    { orgRole: 'viewer', allowed: false },
+  ])('$allowed for orgRole=$orgRole', async ({ orgRole, allowed }) => {
+    requireUserMock.mockReturnValue({ orgRole, orgId: 'org-1' } as ReturnType<typeof requireUser>)
     const result = await load(makeEvent())
-    expect(result.allowed).toBe(true)
-  })
-
-  it('allows admin', async () => {
-    requireUserMock.mockReturnValue({ orgRole: 'admin', orgId: 'org-1' } as ReturnType<
-      typeof requireUser
-    >)
-    const result = await load(makeEvent())
-    expect(result.allowed).toBe(true)
-  })
-
-  it('denies member', async () => {
-    requireUserMock.mockReturnValue({ orgRole: 'member', orgId: 'org-1' } as ReturnType<
-      typeof requireUser
-    >)
-    const result = await load(makeEvent())
-    expect(result.allowed).toBe(false)
-  })
-
-  it('denies viewer', async () => {
-    requireUserMock.mockReturnValue({ orgRole: 'viewer', orgId: 'org-1' } as ReturnType<
-      typeof requireUser
-    >)
-    const result = await load(makeEvent())
-    expect(result.allowed).toBe(false)
+    expect(result.allowed).toBe(allowed)
   })
 })

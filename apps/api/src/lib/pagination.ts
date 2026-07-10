@@ -20,14 +20,12 @@ export type PaginationMeta = {
   hasNext: boolean
 }
 
+const DEFAULT_PAGINATION_LIMITS = { page: 1, limit: 20, maxLimit: 100 }
+
 export function parsePagination(
   rawPage: unknown,
   rawLimit: unknown,
-  defaults: { page: number; limit: number; maxLimit: number } = {
-    page: 1,
-    limit: 20,
-    maxLimit: 100,
-  }
+  defaults: { page: number; limit: number; maxLimit: number } = DEFAULT_PAGINATION_LIMITS
 ): PaginationParams {
   const page = Number(rawPage) >= 1 ? Math.floor(Number(rawPage)) : defaults.page
   const limit =

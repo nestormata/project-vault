@@ -14,10 +14,7 @@ import {
 import { z } from 'zod/v4'
 import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
-function rotationScheduleRefine(
-  val: { rotationSchedule?: string | null | undefined },
-  ctx: z.RefinementCtx
-) {
+function rotationScheduleRefine(val: { rotationSchedule?: string | null }, ctx: z.RefinementCtx) {
   if (typeof val.rotationSchedule === 'string') {
     const res = validateRotationCron(val.rotationSchedule)
     if (!res.ok) {

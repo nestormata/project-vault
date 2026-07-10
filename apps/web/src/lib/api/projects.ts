@@ -1,8 +1,9 @@
-import type {
-  ProjectArchiveState,
-  ProjectDashboard,
-  ProjectDetail,
-  ProjectSummary,
+import {
+  trimHyphens,
+  type ProjectArchiveState,
+  type ProjectDashboard,
+  type ProjectDetail,
+  type ProjectSummary,
 } from '@project-vault/shared'
 import { apiFetch } from './client.js'
 
@@ -30,14 +31,12 @@ function jsonMutation(method: 'POST' | 'PATCH', body: unknown): RequestInit {
 }
 
 export function suggestProjectSlug(name: string): string {
-  const slug = name
+  const normalized = name
     .trim()
     .toLowerCase()
     .normalize('NFKC')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 50)
-    .replace(/-+$/g, '')
+  const slug = trimHyphens(trimHyphens(normalized).slice(0, 50))
   return slug.length >= 3 ? slug : 'project'
 }
 

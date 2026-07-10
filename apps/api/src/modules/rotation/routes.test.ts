@@ -33,7 +33,7 @@ import {
   initVault,
   loginExistingUserInOrg,
   resetVaultForTest,
-  ROTATION_INTEGRATION_PASSWORD as PASSWORD,
+  ROTATION_INTEGRATION_LOGIN_SECRET as PASSWORD,
   type RotationRegisteredUser as RegisteredUser,
   type RotationTestApp as TestApp,
 } from './rotation-integration-context.js'

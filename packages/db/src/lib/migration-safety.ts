@@ -211,7 +211,7 @@ const SIMPLE_PATTERNS: { label: string; regex: RegExp }[] = [
 
   {
     label: 'ALTER COLUMN ... TYPE',
-    regex: /\bALTER\s+COLUMN\s+(?:"[^"]*"|[\w]+)\s+(?:SET\s+DATA\s+)?TYPE\b/gi,
+    regex: /\bALTER\s+COLUMN\s+(?:"[^"]*"|\w+)\s+(?:SET\s+DATA\s+)?TYPE\b/gi,
   },
 ]
 

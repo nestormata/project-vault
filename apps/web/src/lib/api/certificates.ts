@@ -29,7 +29,8 @@ export type UpdateCertificateRequest = {
 }
 
 function certificateUrl(projectId: string, certificateId?: string): string {
-  return `/api/v1/projects/${projectId}/certificates${certificateId ? `/${certificateId}` : ''}`
+  const idSuffix = certificateId ? `/${certificateId}` : ''
+  return `/api/v1/projects/${projectId}/certificates${idSuffix}`
 }
 
 export async function listCertificates(

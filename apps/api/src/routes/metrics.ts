@@ -2,7 +2,9 @@ import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import { collectDefaultMetrics, register, Counter, Histogram, Gauge } from 'prom-client'
 import type { FastifyApp } from '../lib/fastify-app.js'
-import { dbPoolConnectionsActive } from '../lib/db-pool-metrics.js'
+// Side-effect-only import: this registers the Story 1.10 DB pool gauge with prom-client's
+// default registry even when no instrumented pool has issued a query yet.
+import '../lib/db-pool-metrics.js'
 import { getVaultStatus } from '../modules/vault/key-service.js'
 
 collectDefaultMetrics()
@@ -35,10 +37,6 @@ export const vaultSealed = new Gauge({
     this.set(getVaultStatus() !== 'unsealed' ? 1 : 0)
   },
 })
-
-// Keep an explicit module reference so this route module registers the Story 1.10
-// DB gauge even when no instrumented pool has issued a query yet.
-void dbPoolConnectionsActive
 
 function isLoopbackRemoteAddress(remoteAddress: string): boolean {
   return (

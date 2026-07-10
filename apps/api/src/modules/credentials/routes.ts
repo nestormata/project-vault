@@ -154,7 +154,6 @@ async function readImportUpload(
         upload = { filename: part.filename, content: buffer.toString('utf8') }
         continue
       }
-      void part.value
       reply.status(422).send({ code: 'unknown_field', message: 'Unknown form field' })
       return null
     }

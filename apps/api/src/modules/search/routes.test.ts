@@ -166,15 +166,27 @@ describe.sequential('search routes', () => {
     expect(res.json<{ data: { results: unknown[] } }>().data.results.length).toBe(10)
   }, 40_000)
 
-  it('should return 400 when limit exceeds 50', async () => {
-    const user = await registerUser(suite.app, 'limit-51')
-    const res = await search(suite.app, user.cookies, 'q=test&limit=51')
-    expect(res.statusCode).toBe(422)
-  })
-
-  it('should return 400 when q is empty string', async () => {
-    const user = await registerUser(suite.app, 'empty-q')
-    const res = await search(suite.app, user.cookies, 'q=')
+  it.each([
+    { name: 'a limit param above the max of 50', label: 'limit-51', query: 'q=test&limit=51' },
+    { name: 'an empty q param', label: 'empty-q', query: 'q=' },
+    { name: 'a non-positive page param', label: 'page-invalid', query: 'q=test&page=0' },
+    {
+      name: 'an overlong page param that would overflow to Infinity (regression, edge-case review)',
+      label: 'page-overflow',
+      // Number.parseInt('9'.repeat(400), 10) === Infinity, which is >= 1 and previously slipped
+      // past validation — would have flowed into (page - 1) * limit as Infinity and failed at the
+      // database layer instead of returning a clean 422.
+      query: `q=test&page=${'9'.repeat(400)}`,
+    },
+    { name: 'a q param over 200 chars', label: 'too-long', query: `q=${'a'.repeat(201)}` },
+    {
+      name: 'a non-integer limit string (e.g. "10abc")',
+      label: 'bad-limit',
+      query: 'q=test&limit=10abc',
+    },
+  ])('should return 422 for $name', async ({ label, query }) => {
+    const user = await registerUser(suite.app, label)
+    const res = await search(suite.app, user.cookies, query)
     expect(res.statusCode).toBe(422)
   })
 
@@ -228,21 +240,6 @@ describe.sequential('search routes', () => {
     expect(beyondBody.data.results).toEqual([])
     expect(beyondBody.data).toMatchObject({ total: 5, hasNext: false })
   }, 30_000)
-
-  it('rejects a non-positive page param', async () => {
-    const user = await registerUser(suite.app, 'page-invalid')
-    const res = await search(suite.app, user.cookies, 'q=test&page=0')
-    expect(res.statusCode).toBe(422)
-  })
-
-  it('rejects an overlong page param that would overflow to Infinity (regression, edge-case review)', async () => {
-    // Number.parseInt('9'.repeat(400), 10) === Infinity, which is >= 1 and previously slipped
-    // past validation — would have flowed into (page - 1) * limit as Infinity and failed at the
-    // database layer instead of returning a clean 422.
-    const user = await registerUser(suite.app, 'page-overflow')
-    const res = await search(suite.app, user.cookies, `q=test&page=${'9'.repeat(400)}`)
-    expect(res.statusCode).toBe(422)
-  })
 
   it('should rank exact name match above prefix match above substring match', async () => {
     const user = await registerUser(suite.app, 'ranking')
@@ -515,18 +512,6 @@ describe.sequential('search routes', () => {
     const q = 'a'.repeat(200)
     const res = await search(suite.app, user.cookies, `q=${q}`)
     expect(res.statusCode).toBe(200)
-  })
-
-  it('should return 400 when query exceeds 200 chars', async () => {
-    const user = await registerUser(suite.app, 'too-long')
-    const res = await search(suite.app, user.cookies, `q=${'a'.repeat(201)}`)
-    expect(res.statusCode).toBe(422)
-  })
-
-  it('should return 400 when limit is a non-integer string (e.g. "10abc")', async () => {
-    const user = await registerUser(suite.app, 'bad-limit')
-    const res = await search(suite.app, user.cookies, 'q=test&limit=10abc')
-    expect(res.statusCode).toBe(422)
   })
 
   it('should not return archived projects in search results', async () => {

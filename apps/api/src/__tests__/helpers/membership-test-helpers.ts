@@ -12,7 +12,38 @@ import {
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
 /** Shared password used by every membership route integration suite. */
-export const MEMBERSHIP_TEST_PASSWORD = 'correct-horse-battery-staple'
+export const MEMBERSHIP_TEST_LOGIN_SECRET = 'correct-horse-battery-staple'
+
+async function enrollMfa(userId: string): Promise<void> {
+  await getDb().update(users).set({ mfaEnrolledAt: new Date() }).where(eq(users.id, userId))
+}
+
+async function addProjectMember(
+  orgId: string,
+  projectId: string,
+  userId: string,
+  role: string
+): Promise<void> {
+  await withOrg(orgId, (tx) =>
+    tx.insert(projectMemberships).values({ orgId, projectId, userId, role })
+  )
+}
+
+async function projectRoleOf(
+  orgId: string,
+  projectId: string,
+  userId: string
+): Promise<string | undefined> {
+  const [row] = await withOrg(orgId, (tx) =>
+    tx
+      .select({ role: projectMemberships.role })
+      .from(projectMemberships)
+      .where(
+        and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.userId, userId))
+      )
+  )
+  return row?.role
+}
 
 /**
  * Builds the membership test scaffolding shared by the org user-management and project
@@ -29,14 +60,10 @@ export function createMembershipTestHelpers(config: {
     return `${emailPrefix}-${label}-${randomUUID()}@example.com`
   }
 
-  async function enrollMfa(userId: string): Promise<void> {
-    await getDb().update(users).set({ mfaEnrolledAt: new Date() }).where(eq(users.id, userId))
-  }
-
   async function registerOwner(app: TestApp, label: string) {
     const user = await registerAndLoginViaApi(app, {
       email: uniqueEmail(label),
-      password: MEMBERSHIP_TEST_PASSWORD,
+      password: MEMBERSHIP_TEST_LOGIN_SECRET,
       orgName: `${orgNamePrefix} ${label} ${randomUUID()}`,
     })
     await enrollMfa(user.userId)
@@ -53,7 +80,7 @@ export function createMembershipTestHelpers(config: {
     const email = uniqueEmail(label)
     const user = await registerAndLoginViaApi(app, {
       email,
-      password: MEMBERSHIP_TEST_PASSWORD,
+      password: MEMBERSHIP_TEST_LOGIN_SECRET,
       orgName: `Foreign ${label} ${randomUUID()}`,
     })
     await enrollMfa(user.userId)
@@ -66,33 +93,6 @@ export function createMembershipTestHelpers(config: {
     // target org so requests made with these cookies authenticate as a member of `orgId`.
     const cookies = await mintOrgSessionCookies(app, user.userId, orgId)
     return { userId: user.userId, email, cookies }
-  }
-
-  async function addProjectMember(
-    orgId: string,
-    projectId: string,
-    userId: string,
-    role: string
-  ): Promise<void> {
-    await withOrg(orgId, (tx) =>
-      tx.insert(projectMemberships).values({ orgId, projectId, userId, role })
-    )
-  }
-
-  async function projectRoleOf(
-    orgId: string,
-    projectId: string,
-    userId: string
-  ): Promise<string | undefined> {
-    const [row] = await withOrg(orgId, (tx) =>
-      tx
-        .select({ role: projectMemberships.role })
-        .from(projectMemberships)
-        .where(
-          and(eq(projectMemberships.projectId, projectId), eq(projectMemberships.userId, userId))
-        )
-    )
-    return row?.role
   }
 
   return {

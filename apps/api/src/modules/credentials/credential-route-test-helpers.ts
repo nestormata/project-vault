@@ -14,6 +14,8 @@ type InitVault = Parameters<typeof initVaultForTest>[0]
 
 export const SENTINEL_VALUE = 'sentinel-credential-value-never-leaks'
 
+const DEFAULT_CREDENTIAL_BODY = { name: 'Test Key', value: SENTINEL_VALUE }
+
 export async function createCredentialTestProject(
   app: CredentialRouteTestApp,
   cookies: Record<string, string>,
@@ -33,10 +35,7 @@ export async function createCredentialViaApi(
   app: CredentialRouteTestApp,
   cookies: Record<string, string>,
   projectId: string,
-  body: { name: string; value: string; [key: string]: unknown } = {
-    name: 'Test Key',
-    value: SENTINEL_VALUE,
-  }
+  body: { name: string; value: string; [key: string]: unknown } = DEFAULT_CREDENTIAL_BODY
 ) {
   const response = await app.inject({
     method: 'POST',

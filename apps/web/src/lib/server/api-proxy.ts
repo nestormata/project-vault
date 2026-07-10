@@ -16,7 +16,7 @@ const HOP_BY_HOP_HEADERS = new Set([
 type ProxyOptions = {
   fetchFn: typeof fetch
   request: Request
-  apiBaseUrl?: string | undefined
+  apiBaseUrl?: string
 }
 
 type ApiProxyOptions = ProxyOptions & {

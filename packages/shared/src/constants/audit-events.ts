@@ -86,21 +86,19 @@ export const AuditEvent = {
   USER_PSEUDONYMIZED: 'user.pseudonymized',
 } as const
 
-export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
-
-// Story 6.4 (P6-3, AC-J1/J2): AuditEventType used to hand-restate every string literal from the
-// AuditEvent object a second time, a fragile pattern that let entries silently drift out of sync
-// (miss updating one side and you get a type-checking gap with no runtime symptom). It is now
-// derived directly from the object above — the single place the set of valid audit-event strings
-// is enumerated. This also drops 'user.login'/'user.logout', two literals that were never
+// Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union
+// ('user.login' | 'user.logout' | ...), a fragile pattern that let entries silently drift out of
+// sync (miss updating one side and you get a type-checking gap with no runtime symptom). It is
+// now derived directly from the object above — the single place the set of valid audit-event
+// strings is enumerated. This also drops 'user.login'/'user.logout', two literals that were never
 // produced by AuditEvent and were never imported/type-checked against anywhere outside this file
 // (packages/db's tests that reference these strings pass them as arbitrary literals against a
 // plain `text` column, not against this registry — see audit-events.test.ts and
 // packages/db/src/__tests__/*.test.ts).
-export type AuditEventType = AuthAuditEventType
+export type AuthAuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
 
 export type AuditEvent = {
-  type: AuditEventType
+  type: AuthAuditEventType
   actorId: string
   orgId: string
   resourceId?: string

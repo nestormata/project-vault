@@ -129,9 +129,10 @@ function assertExpectedSize(
   const expectedMin = typeof expectedBytes === 'number' ? expectedBytes : expectedBytes.min
   const expectedMax = typeof expectedBytes === 'number' ? expectedBytes : expectedBytes.max
   if (size < expectedMin || size > expectedMax) {
+    const rangeSuffix = expectedMax !== expectedMin ? `–${expectedMax}` : ''
     throw new AppError(
       'INVALID_KEY_FILE',
-      `Key file must be ${expectedMin}${expectedMax !== expectedMin ? `–${expectedMax}` : ''} bytes, got ${size}`,
+      `Key file must be ${expectedMin}${rangeSuffix} bytes, got ${size}`,
       400
     )
   }

@@ -14,7 +14,7 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { bootProjectRouteTestApp } from '../projects/project-route-test-bootstrap.js'
 import {
-  MEMBERSHIP_TEST_PASSWORD as PASSWORD,
+  MEMBERSHIP_TEST_LOGIN_SECRET as PASSWORD,
   createMembershipTestHelpers,
 } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'

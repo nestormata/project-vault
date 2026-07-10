@@ -200,8 +200,10 @@ async function main(): Promise<void> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error: unknown) => {
+  try {
+    await main()
+  } catch (error: unknown) {
     process.stderr.write(`FATAL: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1
-  })
+  }
 }

@@ -16,39 +16,34 @@ describe('TypedConfirmInput (D4/D5)', () => {
     expect(onMatchChange).not.toHaveBeenCalledWith(true)
   })
 
-  it('reports matches=true on an exact match', async () => {
+  it.each([
+    {
+      name: 'an exact match',
+      expectedValue: 'jsmith@example.com',
+      typed: 'jsmith@example.com',
+      expected: true,
+    },
+    {
+      name: 'a case-insensitive, whitespace-trimmed match (AC-D4 low-severity fix)',
+      expectedValue: 'JSmith@Example.com',
+      typed: '  jsmith@example.com  ',
+      expected: true,
+    },
+    {
+      name: 'a typo/mismatch',
+      expectedValue: 'jsmith@example.com',
+      typed: 'jsmit@example.com',
+      expected: false,
+    },
+  ])('reports matches=$expected for $name', async ({ expectedValue, typed, expected }) => {
     const onMatchChange = vi.fn()
     render(TypedConfirmInput, {
-      props: { expectedValue: 'jsmith@example.com', onMatchChange },
+      props: { expectedValue, onMatchChange },
     })
 
     const input = screen.getByRole('textbox')
-    await fireEvent.input(input, { target: { value: 'jsmith@example.com' } })
+    await fireEvent.input(input, { target: { value: typed } })
 
-    expect(onMatchChange).toHaveBeenLastCalledWith(true)
-  })
-
-  it('is case-insensitive and trims whitespace (AC-D4 low-severity fix)', async () => {
-    const onMatchChange = vi.fn()
-    render(TypedConfirmInput, {
-      props: { expectedValue: 'JSmith@Example.com', onMatchChange },
-    })
-
-    const input = screen.getByRole('textbox')
-    await fireEvent.input(input, { target: { value: '  jsmith@example.com  ' } })
-
-    expect(onMatchChange).toHaveBeenLastCalledWith(true)
-  })
-
-  it('reports matches=false for a typo/mismatch', async () => {
-    const onMatchChange = vi.fn()
-    render(TypedConfirmInput, {
-      props: { expectedValue: 'jsmith@example.com', onMatchChange },
-    })
-
-    const input = screen.getByRole('textbox')
-    await fireEvent.input(input, { target: { value: 'jsmit@example.com' } })
-
-    expect(onMatchChange).toHaveBeenLastCalledWith(false)
+    expect(onMatchChange).toHaveBeenLastCalledWith(expected)
   })
 })

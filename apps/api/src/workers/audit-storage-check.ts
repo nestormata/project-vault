@@ -5,7 +5,11 @@ import { env } from '../config/env.js'
 import { operationalLog } from '../lib/logger.js'
 import { getAdminDb } from '../lib/db.js'
 import type { BossService } from '../lib/boss.js'
-import { clearThresholdAlertEpisode, upsertThresholdAlert } from '../lib/threshold-alerts.js'
+import {
+  clearThresholdAlertEpisode,
+  upsertThresholdAlert,
+  type ThresholdPct,
+} from '../lib/threshold-alerts.js'
 import { deliverAdminAlertAcrossOrgs } from '../modules/backup/alerts.js'
 
 type WorkerLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
@@ -121,7 +125,14 @@ async function handleElevatedUtilization(
   const { currentBytes, utilizationPct } = utilization
   const critical = utilizationPct >= 95
   const alertType = critical ? CRITICAL_ALERT_TYPE : WARNING_ALERT_TYPE
-  const thresholdPct = critical ? 95 : utilizationPct >= 90 ? 90 : 80
+  let thresholdPct: ThresholdPct
+  if (critical) {
+    thresholdPct = 95
+  } else if (utilizationPct >= 90) {
+    thresholdPct = 90
+  } else {
+    thresholdPct = 80
+  }
   const topContributingOrgs =
     thresholdPct >= 90 ? await computeTopContributingOrgs(currentBytes) : undefined
 

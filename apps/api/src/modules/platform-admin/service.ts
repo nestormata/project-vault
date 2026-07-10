@@ -17,6 +17,7 @@ import { encrypt, withSecret, type EncryptedValue } from '@project-vault/crypto'
 import { PlatformAuditAction } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { getAdminDb } from '../../lib/db.js'
+import { stripTrailingSlashes } from '../../lib/url.js'
 import { getPrimaryKey } from '../vault/key-service.js'
 import { resolveBackupDestination } from '../backup/config.js'
 import { AppError } from '../../lib/errors.js'
@@ -413,7 +414,7 @@ async function issueNewOwnerRecoveryLink(
   })
 
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${input.newOrgId}, true)`)
-  const recoveryUrl = `${env.WEB_BASE_URL.replace(/\/+$/, '')}/recovery/${opaqueToken}`
+  const recoveryUrl = `${stripTrailingSlashes(env.WEB_BASE_URL)}/recovery/${opaqueToken}`
   await tx.insert(notificationQueue).values({
     orgId: input.newOrgId,
     recipientUserId: null,

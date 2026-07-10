@@ -291,9 +291,10 @@ function buildAuditFilterParams(filters: PlatformAuditFilters): URLSearchParams 
 // Platform audit (wrapped in `data`)
 export function listPlatformAuditEvents(fetchFn: typeof fetch, filters: PlatformAuditFilters = {}) {
   const qs = buildAuditFilterParams(filters).toString()
+  const querySuffix = qs ? `?${qs}` : ''
   return apiFetch<PlatformAuditEventsResponse>(
     fetchFn,
-    `/api/v1/platform/audit/events${qs ? `?${qs}` : ''}`
+    `/api/v1/platform/audit/events${querySuffix}`
   )
 }
 

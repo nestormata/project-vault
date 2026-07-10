@@ -1,15 +1,12 @@
 import { browser } from '$app/environment'
-import {
-  EMPTY_PROJECT_DASHBOARD_PREVIEW,
-  type ProjectDashboardPreview,
-} from '@project-vault/shared'
+import { EMPTY_PROJECT_DASHBOARD_PREVIEW, type ProjectDashboard } from '@project-vault/shared'
 
 export type PreviewProject = {
   id: 'preview'
   name: string
   description: string
   persisted: false
-  dashboard: ProjectDashboardPreview
+  dashboard: ProjectDashboard
 }
 
 let previewProject = $state<PreviewProject | null>(null)

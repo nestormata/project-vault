@@ -15,7 +15,7 @@ import {
   users,
   type ProjectInvitation,
 } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, trimHyphens } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
@@ -114,14 +114,12 @@ export type LoginSessionUser = {
 }
 
 export function slugify(orgName: string): string {
-  const slug = orgName
+  const normalized = orgName
     .trim()
     .toLowerCase()
     .normalize('NFKC')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
-    .replace(/-+$/g, '')
+  const slug = trimHyphens(trimHyphens(normalized).slice(0, 64))
   return slug || 'org'
 }
 
