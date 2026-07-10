@@ -1185,7 +1185,9 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         })
         // Must wrap as `{ data: result }` to match DependencyListResponseSchema — the 4-5
         // jscpd extract to withCredentialParams dropped this wrapper and Fastify then 500'd
-        // on response-schema validation (Story 2.9 Group D depends on this GET).
+        // on response-schema validation (Story 2.9 Group D depends on this GET; independently
+        // rediscovered and fixed identically by Story 10-1's real-browser E2E run, which hit
+        // the same FST_ERR_RESPONSE_SERIALIZATION 500 via AC-J1-1's credential detail page load).
         return result ? { data: result } : null
       })
     },

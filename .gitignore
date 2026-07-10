@@ -24,6 +24,10 @@ reports/
 # Environment files
 .env*
 !.env.example
+!apps/web/e2e/.env.test.example
+
+# Playwright (Story 10-1)
+apps/web/e2e/test-results/
 
 # Editor directories
 .vscode/

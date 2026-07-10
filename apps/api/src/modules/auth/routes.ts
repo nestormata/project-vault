@@ -375,7 +375,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   // register-rate-limit.test.ts leaves RATE_LIMIT_TEST_BYPASS false to cover enforcement.
   if (isRateLimitEnforced()) {
     await fastify.register(rateLimit, {
-      max: 60,
+      max: env.AUTH_RATE_LIMIT_MAX,
       timeWindow: '1 minute',
       keyGenerator: (req: FastifyRequest) => req.ip,
       // Must carry `statusCode` — @fastify/rate-limit throws this value as the request error
@@ -642,7 +642,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     method: 'POST',
     url: '/register',
     bodyLimit: 4096,
-    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: env.AUTH_REGISTER_RATE_LIMIT_MAX, timeWindow: '1 minute' } },
     attachValidation: true,
     schema: {
       body: RegisterRequestSchema,
