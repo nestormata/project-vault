@@ -1,6 +1,6 @@
 # Story 10.1: Playwright E2E Test Automation
 
-Status: review
+Status: done
 
 <!-- Epic 10 ("Quality & Test Automation") is brand new — created 2026-07-09 purely from a
      deferred-work.md reconciliation pass, not from any section in epics.md. There is no
