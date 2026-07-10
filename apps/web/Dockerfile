@@ -2,7 +2,7 @@
 # is redundant since the digest alone already fixes the exact image).
 FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS builder
 
-RUN npm install -g pnpm@11.9.0
+RUN npm install -g pnpm@11.9.0 --ignore-scripts
 
 WORKDIR /app
 
@@ -13,7 +13,8 @@ COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm rebuild esbuild
 
 COPY apps/web ./apps/web
 COPY packages/tsconfig ./packages/tsconfig
