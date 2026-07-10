@@ -1,6 +1,6 @@
 # Story 3.4: Epic 3 Completion — Notification Surface Truth, MFA Alerts & Doc Reconciliation
 
-Status: review
+Status: in-progress
 
 <!-- Ultimate context engine analysis completed 2026-06-30 — Epic 3 closure story derived from epic-3-retro-2026-06-30.md.
      Closes G2 product-surface gate gaps: /alerts route truth, dashboard alert counts, MFA alert stubs,
@@ -593,6 +593,30 @@ _bmad-output/
 
 ---
 
+### Review Findings
+
+*From bmad-code-review adversarial multi-agent review (Blind Hunter, Edge Case Hunter, Acceptance Auditor) run against `git diff 7b6a898^..557966a` on 2026-07-09, in an isolated worktree.*
+
+**Status held at `in-progress` rather than `done`:** 8 of 10 patch findings were fixed on branch `fix/3-4-review-findings`, merged to `main` via PR #154 on 2026-07-10. Re-promote to `done` once post-merge CI on `main` is confirmed green (AC-15 precondition) — CI was still running as of this note. One patch finding (`RATE_LIMIT_TEST_ENFORCE` shared env var race) remains an open, non-blocking action item.
+
+- [x] [Review][Defer] `NODE_ENV=test` rate-limit bypass has broad blast radius — `isRateLimitEnforced()` (`apps/api/src/lib/route-helpers.ts`) disables `@fastify/rate-limit` registration entirely on `authRoutes`/`vaultRoutes` whenever `NODE_ENV !== 'test'` is false, i.e. real rate limiting compiles out under `NODE_ENV=test`. A misconfigured staging/smoke-test environment reachable by real traffic that sets `NODE_ENV=test` would silently lose brute-force protection on login/register/unseal. — deferred, not covered by Story 3.5; routed to new backlog story `3-6-rate-limit-env-gating-and-mfa-preference-opt-out-hardening`.
+- [x] [Review][Defer] MFA alert "None" opt-out is silently ineffective for the newly user-exposed types — Dev Agent Record documents that `patchPreferences()`'s `channel: 'none'` handling (pre-existing Story 3.2 bug) deletes stored override rows rather than persisting suppression, so a user selecting "None" for `security.mfa_recovery_used`/`..._regenerated` in the new personal-preferences UI silently reverts to default `email`+`inbox` delivery on the next event. This diff is what makes that broken control reachable by users for security-sensitive MFA alerts for the first time. — deferred, not covered by Story 3.5 (its AC-W6 example only assumes the existing mechanism works, doesn't fix it); routed to new backlog story `3-6-rate-limit-env-gating-and-mfa-preference-opt-out-hardening`.
+- [x] [Review][Patch] Uncaught `dispatchDirectUserNotification` failures inside MFA transactions can roll back successful operations [apps/api/src/modules/auth/mfa.ts:416-425, 557-566] — fixed: added `safeDispatchDirectUserNotification()` wrapper (try/catch, logs to stderr, returns `[]` on failure), used at both callsites.
+- [x] [Review][Patch] CI guard's whole-file marker normalization can false-positive on unrelated adjacent text [scripts/check-alert-pending-epic3.ts] — fixed: normalization now bounded to a single line instead of the whole file; regression test added.
+- [x] [Review][Patch] CI guard `SCANNABLE_EXTENSIONS` omits `.mts`/`.cts`/`.jsx` [scripts/check-alert-pending-epic3.ts:14] — fixed: extensions added.
+- [x] [Review][Patch] MFA template renders unvalidated payload cast — `remainingRecoveryCodes` could render as "undefined" [apps/api/src/notifications/templates/security-mfa-recovery.ts] — fixed: added `remainingRecoveryCodesOrFallback()`, falls back to `"unavailable"`; tests added.
+- [x] [Review][Patch] AC-7e test 3 (assert no `alert.pending_epic3` in stderr) is missing from the integration test [apps/api/src/modules/auth/mfa-notification.integration.test.ts] — fixed: added stderr-capture test covering both recover and regenerate paths.
+- [x] [Review][Patch] `sendTest` server action collapses all failures into a generic 422 without logging the real error [apps/web/src/routes/(app)/settings/notifications/+page.server.ts] — fixed: logs the real cause via `console.error` before returning the generic 422.
+- [x] [Review][Patch] `alerts-redirect.test.ts` doesn't cover query-string forwarding on the `/alerts` redirect [apps/web/src/routes/(app)/alerts/alerts-redirect.test.ts] — fixed: test added.
+- [x] [Review][Patch] `check-alert-pending-epic3`'s `lineForFirstMatch` falls back to misleading "line 1" when the marker spans multiple lines [scripts/check-alert-pending-epic3.ts] — fixed as a side effect of the per-line rewrite above (fallback path is now unreachable since detection and reporting share the same per-line check).
+- [ ] [Review][Patch] `RATE_LIMIT_TEST_ENFORCE` shared `process.env` mutation across test files risks cross-test races [apps/api/src/lib/secure-route.test.ts, apps/api/src/__tests__/vault-lifecycle.test.ts, apps/api/src/modules/auth/register-rate-limit.test.ts] — **skipped**: `isRateLimitEnforced()`/`RATE_LIMIT_TEST_ENFORCE` is used across 13 files throughout `apps/api`'s test suite (not just the 3 named here), predates this story, and a proper fix is a DI refactor touching all call sites — too broad for a non-controversial batch patch. Left as an action item; candidate for its own hardening story if the race is ever observed in practice.
+- [x] [Review][Patch] Dev Agent Record "Files Changed" section omits the rate-limiting/test-flakiness files actually touched by this diff [this story file, Dev Agent Record] — fixed: new "Rate-limit test-flakiness hardening" subsection added to Files Changed.
+- [x] [Review][Defer] `dispatchDirectUserNotification` uses a Slack denylist instead of an allowlist — future channel types would default to self-alert delivery unless explicitly blocked [apps/api/src/notifications/dispatcher.ts] — deferred, pre-existing design pattern, no current bug
+- [x] [Review][Defer] AC-7a's "after transaction commits" requirement is unmet for `regenerateRecoveryCodes` — disclosed and accepted trade-off per Dev Agent Record [apps/api/src/modules/auth/mfa.ts] — deferred, already accepted trade-off
+- [x] [Review][Defer] AC-5's admin-vs-member panel visibility is tested only via the pure `isAdminRole()` function, not `load()`/rendered template — consistent with this codebase's existing convention [apps/web/src/routes/(app)/settings/notifications/notification-settings-model.test.ts] — deferred, matches accepted testing convention
+
+---
+
 ## Previous Story Intelligence (From Stories 3.1–3.3)
 
 - **Outbox pattern:** enqueue in transaction, `sendNotificationJobs` after commit (`check-failed-auth-threshold.ts` is canonical).
@@ -650,6 +674,15 @@ _bmad-output/
 
 **Root / scripts:**
 - `scripts/check-alert-pending-epic3.ts` (new), `.test.ts` (new); `Makefile` (`ci` target); `package.json` (`check-alert-pending-epic3` script).
+
+**Rate-limit test-flakiness hardening (added 2026-07-09 per code review — not tied to any Story 3.4 AC, bundled into the same PR as a pre-existing flake fix, see deferred-work.md for the follow-up on the underlying `NODE_ENV=test` bypass design):**
+- `apps/api/src/lib/route-helpers.ts` — `isRateLimitEnforced()`; bypasses `enforceUserRateLimit` by default under `NODE_ENV=test`, opt back in via `RATE_LIMIT_TEST_ENFORCE=true`.
+- `apps/api/src/app.ts`, `apps/api/src/modules/vault/routes.ts` — wire `isRateLimitEnforced()`/skip `@fastify/rate-limit` registration under `NODE_ENV=test`.
+- `apps/api/src/modules/auth/register-rate-limit.test.ts` (new) — exercises real rate-limit enforcement via `RATE_LIMIT_TEST_ENFORCE=true`.
+- `apps/api/src/lib/secure-route.test.ts`, `apps/api/src/__tests__/vault-lifecycle.test.ts` — updated for the new bypass-by-default behavior.
+- `apps/api/src/__tests__/mfa-enrollment.test.ts`, `apps/api/src/__tests__/helpers/mfa-enrollment-test-helpers.ts` (new) — extracted shared MFA test fixtures (also used by `mfa-notification.integration.test.ts`).
+- `scripts/check-search-index.ts`/`.test.ts` — refactored to share `scripts/lib/scan-utils.ts`/`scripts/lib/fixture-test-helpers.ts` (new) with `check-alert-pending-epic3.ts`.
+- `.github/workflows/nightly.yml`, `Makefile` (`test-repeat` target) — new nightly flaky-test-repeat job.
 
 **Docs:**
 - `_bmad-output/implementation-artifacts/3-1-email-and-slack-notification-delivery.md` — `Status: done`.
