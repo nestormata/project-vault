@@ -168,12 +168,21 @@ describe.sequential('dashboard stats', () => {
         credentialStats: { active: 1, expiringSoon: 1, expired: 1 },
         upcomingRotations: [],
         monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
-        recentAccessEvents: [],
         unresolvedAlertCount: 0,
         isEmpty: false,
-        suggestedActions: [],
+        // AC-S1: 3 credentials, 0 services (seedPaymentsFixture never adds service_endpoints) →
+        // a targeted single suggestion for the missing category, not an empty list.
+        suggestedActions: ['add_service'],
       },
     })
+    // AC-A1: seedPaymentsFixture's 3 createCredentialViaApi calls each generate a real
+    // credential.created audit event — recentAccessEvents now reflects that real history instead
+    // of the previously-hardcoded [].
+    const body = response.json<{ data: { recentAccessEvents: { eventType: string }[] } }>()
+    expect(body.data.recentAccessEvents).toHaveLength(3)
+    expect(
+      body.data.recentAccessEvents.every((event) => event.eventType === 'credential.created')
+    ).toBe(true)
   }, 30_000)
 
   it('GET /api/v1/dashboard total + expiring list (≤20 items)', async () => {
@@ -442,6 +451,81 @@ describe.sequential('dashboard stats', () => {
     }>()
     const projectCredentialIds = projectBody.data.upcomingRotations.map((item) => item.credentialId)
     expect(projectCredentialIds).toEqual(expect.arrayContaining([overdue.id, pending.id]))
+  }, 30_000)
+
+  it('AC-S1: credentials but no services → suggestedActions is exactly ["add_service"]', async () => {
+    const owner = await registerOwner(app, 'partial-services')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'partial-services')
+    await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Only Credential',
+      value: 'sk_only',
+    })
+
+    await withOrg(owner.orgId, async (tx) => {
+      const dashboard = await getProjectDashboardData(tx, projectId)
+      expect(dashboard.isEmpty).toBe(false)
+      expect(dashboard.suggestedActions).toEqual(['add_service'])
+    })
+  }, 30_000)
+
+  it('AC-S1 example 2: services but no credentials → suggestedActions is ["add_credential", "import_credentials"]', async () => {
+    const owner = await registerOwner(app, 'partial-credentials')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'partial-credentials')
+
+    await withOrg(owner.orgId, (tx) =>
+      tx.insert(serviceEndpoints).values({
+        orgId: owner.orgId,
+        projectId,
+        name: 'only-endpoint',
+        url: 'https://only.example.com/health',
+        status: 'healthy',
+      })
+    )
+
+    await withOrg(owner.orgId, async (tx) => {
+      const dashboard = await getProjectDashboardData(tx, projectId)
+      expect(dashboard.isEmpty).toBe(false)
+      expect(dashboard.suggestedActions).toEqual(['add_credential', 'import_credentials'])
+    })
+  }, 30_000)
+
+  it('AC-S2: both credentials and services present → suggestedActions is []', async () => {
+    const owner = await registerOwner(app, 'fully-covered')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'fully-covered')
+    await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Covered Credential',
+      value: 'sk_covered',
+    })
+    await withOrg(owner.orgId, (tx) =>
+      tx.insert(serviceEndpoints).values({
+        orgId: owner.orgId,
+        projectId,
+        name: 'covered-endpoint',
+        url: 'https://covered.example.com/health',
+        status: 'healthy',
+      })
+    )
+
+    await withOrg(owner.orgId, async (tx) => {
+      const dashboard = await getProjectDashboardData(tx, projectId)
+      expect(dashboard.isEmpty).toBe(false)
+      expect(dashboard.suggestedActions).toEqual([])
+    })
+  }, 30_000)
+
+  it('AC-S3 regression: a fully-empty project keeps the existing 3-action suggestion list unchanged', async () => {
+    const owner = await registerOwner(app, 'still-empty')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'still-empty')
+
+    await withOrg(owner.orgId, async (tx) => {
+      const dashboard = await getProjectDashboardData(tx, projectId)
+      expect(dashboard.isEmpty).toBe(true)
+      expect(dashboard.suggestedActions).toEqual([
+        'add_credential',
+        'add_service',
+        'import_credentials',
+      ])
+    })
   }, 30_000)
 
   it('Story 5.2 AC-14: computeUpcomingRotations excludes a credential with an active in_progress rotation', async () => {

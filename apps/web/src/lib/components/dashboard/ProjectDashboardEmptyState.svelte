@@ -13,7 +13,7 @@
     <h1 class="mt-2 text-3xl font-bold text-slate-950">{project.name}</h1>
     <p class="mt-2 text-slate-600">{project.description}</p>
   </div>
-  <DashboardPlaceholderGrid />
+  <DashboardPlaceholderGrid hasCredentials={false} hasServices={false} />
   <section class="rounded-2xl border border-slate-200 bg-white p-4">
     <h2 class="font-semibold">Suggested next actions</h2>
     <ul class="mt-3 space-y-2 text-sm text-slate-600">

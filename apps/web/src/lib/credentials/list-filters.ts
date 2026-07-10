@@ -3,6 +3,7 @@ import type { CredentialStatus } from '@project-vault/shared'
 export type CredentialListFilters = {
   q?: string
   status?: CredentialStatus
+  tags?: string
   page: number
 }
 
@@ -13,14 +14,16 @@ export function parseCredentialListFilters(url: URL): CredentialListFilters {
       ? statusParam
       : undefined
   const q = url.searchParams.get('q')?.trim() || undefined
+  const tags = url.searchParams.get('tags')?.trim() || undefined
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1)
-  return { q, status, page }
+  return { q, status, tags, page }
 }
 
 export function credentialListFilterView(filters: CredentialListFilters) {
   return {
     q: filters.q ?? '',
     status: filters.status ?? '',
+    tags: filters.tags ?? '',
     page: filters.page,
   }
 }

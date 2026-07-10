@@ -3,12 +3,52 @@
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import { ApiClientError } from '$lib/api/client.js'
-  import { archiveProject, unarchiveProject } from '$lib/api/projects.js'
+  import { archiveProject, unarchiveProject, updateProjectTags } from '$lib/api/projects.js'
+  import {
+    canCreateCredential,
+    parseTagsInput,
+  } from '$lib/components/onboarding/onboarding-logic.js'
 
   let { data } = $props()
 
   let errorMessage = $state<string | null>(null)
   let busyProjectId = $state<string | null>(null)
+  let tagInputs = $state<Record<string, string>>({})
+  let tagErrors = $state<Record<string, string | null>>({})
+  let savingTagsProjectId = $state<string | null>(null)
+
+  function tagInputValue(project: { id: string; tags: string[] }): string {
+    return tagInputs[project.id] ?? project.tags.join(', ')
+  }
+
+  function canEditTags(project: { role: string; isArchived: boolean }): boolean {
+    return canCreateCredential(project.role as never) && !project.isArchived
+  }
+
+  async function onSaveTags(project: { id: string }): Promise<void> {
+    if (savingTagsProjectId) return
+    savingTagsProjectId = project.id
+    tagErrors = { ...tagErrors, [project.id]: null }
+    const nextTags = parseTagsInput(tagInputValue(project))
+    try {
+      await updateProjectTags(fetch, project.id, nextTags)
+    } catch (error) {
+      tagErrors = {
+        ...tagErrors,
+        [project.id]:
+          error instanceof ApiClientError
+            ? (error.message ?? 'Failed to save tags.')
+            : 'Failed to save tags.',
+      }
+      savingTagsProjectId = null
+      return
+    }
+    try {
+      await invalidateAll()
+    } finally {
+      savingTagsProjectId = null
+    }
+  }
 
   function toggleShowArchived(): void {
     const params = new URLSearchParams(page.url.searchParams)
@@ -160,6 +200,50 @@
               <dd class="font-semibold">{project.alertCount}</dd>
             </div>
           </dl>
+          <div class="mt-4">
+            <p class="text-sm text-slate-500">Tags</p>
+            {#if project.tags.length > 0}
+              <ul class="mt-1 flex flex-wrap gap-2">
+                {#each project.tags as tag (tag)}
+                  <li
+                    class="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700"
+                  >
+                    {tag}
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="mt-1 text-sm text-slate-500">No tags yet</p>
+            {/if}
+            {#if canEditTags(project)}
+              <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
+                <div class="flex-1 space-y-1">
+                  <label class="sr-only" for={`project-tags-${project.id}`}> Tags </label>
+                  <input
+                    id={`project-tags-${project.id}`}
+                    class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    type="text"
+                    placeholder="production, api"
+                    value={tagInputValue(project)}
+                    oninput={(event) => {
+                      tagInputs = { ...tagInputs, [project.id]: event.currentTarget.value }
+                    }}
+                  />
+                  {#if tagErrors[project.id]}
+                    <p class="text-sm text-red-700" role="alert">{tagErrors[project.id]}</p>
+                  {/if}
+                </div>
+                <button
+                  type="button"
+                  class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={savingTagsProjectId === project.id}
+                  onclick={() => onSaveTags(project)}
+                >
+                  {savingTagsProjectId === project.id ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            {/if}
+          </div>
           <div class="mt-4 flex flex-wrap items-center gap-3">
             {#if !project.isArchived}
               <a

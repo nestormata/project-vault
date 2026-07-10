@@ -262,6 +262,34 @@ describe.sequential('project routes', () => {
     })
   }, 20_000)
 
+  // AC-P1: GET /projects gains a strictly additive `tags` field on ProjectSummary — a tagged
+  // project returns its real tags, an untagged project returns [] (not null).
+  it('AC-P1: GET /api/v1/projects includes each project`s current tags, [] when untagged', async () => {
+    const user = await registerUser(app, 'list-tags')
+    const tagged = await createProject(app, user.cookies, 'tagged-project')
+    await createProject(app, user.cookies, 'untagged-project')
+
+    const putResponse = await updateProjectTags(app, user.cookies, tagged.id, [
+      TEAM_PAYMENTS_TAG,
+      TIER_0_TAG,
+    ])
+    expect(putResponse.statusCode).toBe(200)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+    expect(response.statusCode).toBe(200)
+    const items = response.json<{
+      data: { items: { slug: string; tags: string[] }[] }
+    }>().data.items
+    const taggedItem = items.find((item) => item.slug === 'tagged-project')
+    const untaggedItem = items.find((item) => item.slug === 'untagged-project')
+    expect(taggedItem?.tags).toEqual([TEAM_PAYMENTS_TAG, TIER_0_TAG])
+    expect(untaggedItem?.tags).toEqual([])
+  }, 20_000)
+
   it('GET /api/v1/projects paginates with page/limit query params, defaults, and bounds (AC-11, AC-12)', async () => {
     const user = await registerUser(app, 'list-pagination')
     for (const slug of ['pg-one', 'pg-two', 'pg-three']) {

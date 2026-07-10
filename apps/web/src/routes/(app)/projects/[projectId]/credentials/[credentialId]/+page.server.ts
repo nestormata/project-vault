@@ -1,4 +1,8 @@
-import { getCredential, listCredentialVersions } from '$lib/api/credentials.js'
+import {
+  getCredential,
+  listCredentialDependencies,
+  listCredentialVersions,
+} from '$lib/api/credentials.js'
 import { listRotations } from '$lib/api/rotations.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -28,6 +32,7 @@ function emptyCredentialPageResult(projectId: string, credentialId: string, orgR
     orgRole,
     credential: null,
     versions: [],
+    dependencies: { items: [], hasDependencies: false },
     rotations: [],
     rotationsPage: 1,
     rotationsHasMore: false,
@@ -51,9 +56,9 @@ function handleCredentialLoadError(
       notFound: true as const,
     }
   }
-  // AC-1: every call in `load`'s Promise.all is vault-guarded (getCredential,
-  // listCredentialVersions, listRotations x2) — a sealed vault 503s all four, so a 503 from any
-  // single one means none of them could have succeeded (D1).
+  // AC-1/AC-D1: every call in `load`'s Promise.all is vault-guarded (getCredential,
+  // listCredentialVersions, listCredentialDependencies, listRotations x2) — a sealed vault 503s
+  // all five, so a 503 from any single one means none of them could have succeeded (D1).
   if (error.status === 503) {
     return {
       ...emptyCredentialPageResult(projectId, credentialId, orgRole),
@@ -70,9 +75,10 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1
 
   try {
-    const [credential, versions, mostRecentRotation, rotations] = await Promise.all([
+    const [credential, versions, dependencies, mostRecentRotation, rotations] = await Promise.all([
       getCredential(fetch, params.projectId, params.credentialId),
       listCredentialVersions(fetch, params.projectId, params.credentialId),
+      listCredentialDependencies(fetch, params.projectId, params.credentialId),
       listRotations(fetch, params.projectId, params.credentialId, { limit: 1 }),
       listRotations(fetch, params.projectId, params.credentialId, { page, limit: 10 }),
     ])
@@ -86,6 +92,7 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
       orgRole,
       credential,
       versions: versions.items,
+      dependencies,
       rotations: rotations.items,
       rotationsPage: rotations.page,
       rotationsHasMore: rotations.hasMore,

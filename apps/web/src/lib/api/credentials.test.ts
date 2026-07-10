@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { CredentialDetail, CredentialSummary, CredentialValue } from '@project-vault/shared'
 import { ApiClientError } from './client.js'
 import {
+  addCredentialDependency,
+  addCredentialVersion,
+  archiveCredentialDependency,
   confirmCredentialImport,
   createCredential,
   getCredential,
@@ -10,6 +13,7 @@ import {
   listCredentials,
   previewCredentialImport,
   revealCredentialValue,
+  updateCredentialLifecycle,
 } from './credentials.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
@@ -239,6 +243,182 @@ describe('credential API helpers', () => {
     )
     expect(result.hasDependencies).toBe(true)
     expect(result.items[0]?.systemName).toBe('billing-worker (production)')
+  })
+
+  // AC-L1: updateCredentialLifecycle always sends all three keys (full-overwrite from the UI's
+  // perspective), and PATCHes the credential resource itself, not a sub-route.
+  it('updateCredentialLifecycle PATCHes expiresAt/rotationSchedule/cacheable and returns the update', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: credentialId,
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          rotationSchedule: '0 0 1 * *',
+          cacheable: true,
+          updatedAt: '2026-07-01T00:00:00.000Z',
+        },
+      })
+    )
+
+    const result = await updateCredentialLifecycle(fetchFn, projectId, credentialId, {
+      expiresAt: '2026-12-01T00:00:00.000Z',
+      rotationSchedule: '0 0 1 * *',
+      cacheable: true,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}`,
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          rotationSchedule: '0 0 1 * *',
+          cacheable: true,
+        }),
+      })
+    )
+    expect(result.expiresAt).toBe('2026-12-01T00:00:00.000Z')
+  })
+
+  // AC-L2: a rejected rotation schedule surfaces as a catchable ApiClientError carrying the
+  // server's exact `invalid_cron` code/message pair.
+  it('updateCredentialLifecycle surfaces a 422 invalid_cron error as a catchable ApiClientError', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { code: 'invalid_cron', message: 'Rotation schedule may run at most once per hour' },
+          { status: 422 }
+        )
+      )
+
+    await expect(
+      updateCredentialLifecycle(fetchFn, projectId, credentialId, {
+        expiresAt: null,
+        rotationSchedule: '* * * * *',
+        cacheable: true,
+      })
+    ).rejects.toMatchObject({
+      status: 422,
+      code: 'invalid_cron',
+      message: 'Rotation schedule may run at most once per hour',
+    } satisfies Partial<ApiClientError>)
+  })
+
+  // AC-D1: the pre-selected 'other' default is always sent explicitly, not omitted, so the UI's
+  // displayed default always matches what's actually submitted.
+  it('addCredentialDependency POSTs to .../dependencies and returns the created dependency', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          data: {
+            id: 'd1',
+            credentialId,
+            systemName: 'billing-worker',
+            systemType: 'other',
+            notes: null,
+            createdBy: null,
+            archivedAt: null,
+            createdAt: '2026-06-01T00:00:00.000Z',
+            updatedAt: '2026-06-01T00:00:00.000Z',
+          },
+        },
+        { status: 201 }
+      )
+    )
+
+    const result = await addCredentialDependency(fetchFn, projectId, credentialId, {
+      systemName: 'billing-worker',
+      systemType: 'other',
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ systemName: 'billing-worker', systemType: 'other' }),
+      })
+    )
+    expect(result.systemType).toBe('other')
+  })
+
+  // AC-D3: the 200-cap must be catchable so the UI can render the exact server message inline.
+  it('addCredentialDependency surfaces a 422 too_many_dependencies error as a catchable ApiClientError', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          code: 'too_many_dependencies',
+          message: 'A credential may have at most 200 active dependencies',
+        },
+        { status: 422 }
+      )
+    )
+
+    await expect(
+      addCredentialDependency(fetchFn, projectId, credentialId, {
+        systemName: 'one-too-many',
+        systemType: 'other',
+      })
+    ).rejects.toMatchObject({
+      status: 422,
+      code: 'too_many_dependencies',
+    } satisfies Partial<ApiClientError>)
+  })
+
+  // AC-D2: archiving calls the DELETE sub-route with the dependency id.
+  it('archiveCredentialDependency DELETEs .../dependencies/:dependencyId', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { id: 'd1', credentialId, archivedAt: '2026-07-01T00:00:00.000Z' },
+      })
+    )
+
+    const result = await archiveCredentialDependency(fetchFn, projectId, credentialId, 'd1')
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies/d1`,
+      expect.objectContaining({ method: 'DELETE' })
+    )
+    expect(result.archivedAt).toBe('2026-07-01T00:00:00.000Z')
+  })
+
+  // AC-V1: addCredentialVersion POSTs the new value and returns the confirmed version number
+  // (never echoing the submitted value back).
+  it('addCredentialVersion POSTs to .../versions and returns the new version number', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          data: { credentialId, versionNumber: 2, createdAt: '2026-07-01T00:00:00.000Z' },
+        },
+        { status: 201 }
+      )
+    )
+
+    const result = await addCredentialVersion(fetchFn, projectId, credentialId, {
+      value: 'sk_live_new',
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ value: 'sk_live_new' }) })
+    )
+    expect(result.versionNumber).toBe(2)
+  })
+
+  // AC-V2: a concurrent-insert race must be catchable so the UI can render an actionable message.
+  it('addCredentialVersion surfaces a 409 version_conflict error as a catchable ApiClientError', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ code: 'version_conflict', message: 'Version conflict' }, { status: 409 })
+      )
+
+    await expect(
+      addCredentialVersion(fetchFn, projectId, credentialId, { value: 'sk_live_new' })
+    ).rejects.toMatchObject({
+      status: 409,
+      code: 'version_conflict',
+    } satisfies Partial<ApiClientError>)
   })
 
   it('surfaces API errors from reveal', async () => {

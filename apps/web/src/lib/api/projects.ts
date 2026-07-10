@@ -82,3 +82,18 @@ export function updateProject(
     jsonMutation('PATCH', body)
   )
 }
+
+export type UpdateProjectTagsResponse = { id: string; tags: string[] }
+
+// AC-P2: the only backend primitive is a full replace — this always sends the complete next
+// tag set, mirroring the credential-tags PUT convention.
+export function updateProjectTags(
+  fetchFn: typeof fetch,
+  projectId: string,
+  tags: string[]
+): Promise<UpdateProjectTagsResponse> {
+  return apiFetch<UpdateProjectTagsResponse>(fetchFn, `/api/v1/projects/${projectId}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tags }),
+  })
+}

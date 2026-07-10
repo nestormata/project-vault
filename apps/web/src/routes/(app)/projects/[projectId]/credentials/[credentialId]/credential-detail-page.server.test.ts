@@ -2,11 +2,13 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const getCredentialMock = vi.hoisted(() => vi.fn())
 const listCredentialVersionsMock = vi.hoisted(() => vi.fn())
+const listCredentialDependenciesMock = vi.hoisted(() => vi.fn())
 const listRotationsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/credentials.js', () => ({
   getCredential: getCredentialMock,
   listCredentialVersions: listCredentialVersionsMock,
+  listCredentialDependencies: listCredentialDependenciesMock,
 }))
 
 vi.mock('$lib/api/rotations.js', () => ({
@@ -39,9 +41,58 @@ describe('credential detail +page.server.ts rotation section', () => {
   beforeEach(() => {
     getCredentialMock.mockReset()
     listCredentialVersionsMock.mockReset()
+    listCredentialDependenciesMock.mockReset()
     listRotationsMock.mockReset()
     getCredentialMock.mockResolvedValue({ id: credentialId, name: 'Stripe Secret Key' })
     listCredentialVersionsMock.mockResolvedValue({ items: [] })
+    listCredentialDependenciesMock.mockResolvedValue({ items: [], hasDependencies: false })
+  })
+
+  // AC-D1: +page.server.ts's load calls listCredentialDependencies alongside the existing
+  // getCredential/listCredentialVersions/listRotations calls, and returns the result verbatim.
+  it('AC-D1: returns dependencies from listCredentialDependencies', async () => {
+    listCredentialDependenciesMock.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'd1',
+          credentialId,
+          systemName: 'billing-worker',
+          systemType: 'service',
+          notes: null,
+          createdBy: null,
+          archivedAt: null,
+          createdAt: '2026-06-01T00:00:00.000Z',
+          updatedAt: '2026-06-01T00:00:00.000Z',
+        },
+      ],
+      hasDependencies: true,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [],
+      page: 1,
+      limit: 1,
+      total: 0,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [],
+      page: 1,
+      limit: 10,
+      total: 0,
+      hasMore: false,
+    })
+
+    const result = await load(makeEvent())
+
+    expect(listCredentialDependenciesMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId
+    )
+    expect(result.dependencies).toEqual({
+      items: [expect.objectContaining({ id: 'd1', systemName: 'billing-worker' })],
+      hasDependencies: true,
+    })
   })
 
   it('reports no active rotation when the most recent rotation is completed', async () => {
