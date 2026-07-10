@@ -37,6 +37,17 @@ describe('check-alert-pending-epic3', () => {
     expect(violations).toHaveLength(1)
   })
 
+  it('does not false-positive when the marker only reconstructs by merging text across line boundaries', () => {
+    // Under a whole-file normalization strip, `x = 'alert'` (line 1) and
+    // `pending_epic3 unrelated` (line 2) would concatenate into
+    // "...alertpending_epic3..." and falsely trip the guard even though the two
+    // words never appear together in any single line of source.
+    const root = makeFixtureRoot()
+    writeFixture(root, MFA_FIXTURE_PATH, ["x = 'alert'", 'pending_epic3 unrelated'].join('\n'))
+
+    expect(scanAlertPendingEpic3(root)).toHaveLength(0)
+  })
+
   it('does not false-positive on unrelated "alert" and "pending" text far apart', () => {
     const root = makeFixtureRoot()
     writeFixture(

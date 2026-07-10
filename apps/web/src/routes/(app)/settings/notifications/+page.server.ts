@@ -89,6 +89,21 @@ export const actions: Actions = {
           error: 'Test notification rate limit reached — try again in a few minutes',
         })
       }
+      // Surfaced to the admin as a generic message (avoid leaking backend internals),
+      // but log the real cause server-side — this action exists specifically to
+      // diagnose SMTP/Slack delivery problems, so silently discarding the actual
+      // error here would defeat its purpose when something is genuinely broken.
+      process.stderr.write(
+        `${JSON.stringify({
+          eventType: 'web.send_test_notification_failed',
+          error:
+            error instanceof ApiClientError
+              ? `ApiClientError status=${error.status}`
+              : error instanceof Error
+                ? error.message
+                : String(error),
+        })}\n`
+      )
       return fail(422, { error: 'Failed to send test notification' })
     }
   },

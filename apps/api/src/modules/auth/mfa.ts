@@ -437,7 +437,7 @@ export async function regenerateRecoveryCodes(
         meta,
       })
 
-      const notificationJobs = await dispatchDirectUserNotification({
+      const notificationJobs = await safeDispatchDirectUserNotification({
         orgId: authContext.orgId,
         userId: authContext.userId,
         template: {
@@ -452,6 +452,30 @@ export async function regenerateRecoveryCodes(
     },
     tx
   )
+}
+
+/**
+ * Never let a notification_queue insert failure roll back an otherwise-successful
+ * MFA operation — both callsites run inside an ambient transaction (see Dev Agent
+ * Record), so an uncaught throw here would undo a completed recovery-code
+ * regeneration or a completed recovery-code login. A missed enqueue is safe: the
+ * event is already durable in the audit log and this is best-effort delivery.
+ */
+async function safeDispatchDirectUserNotification(
+  opts: Parameters<typeof dispatchDirectUserNotification>[0]
+): Promise<NotificationQueueJob[]> {
+  try {
+    return await dispatchDirectUserNotification(opts)
+  } catch (error) {
+    process.stderr.write(
+      `${JSON.stringify({
+        eventType: 'auth.mfa_notification_enqueue_failed',
+        templateId: opts.template.templateId,
+        error: error instanceof Error ? error.message : String(error),
+      })}\n`
+    )
+    return []
+  }
 }
 
 async function findRecoveryUser(email: string) {
@@ -578,7 +602,7 @@ export async function recoverWithCode(
       meta,
     })
 
-    const notificationJobs = await dispatchDirectUserNotification({
+    const notificationJobs = await safeDispatchDirectUserNotification({
       orgId,
       userId: user.id,
       template: {
