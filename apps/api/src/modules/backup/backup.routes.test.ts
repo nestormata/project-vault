@@ -51,7 +51,7 @@ async function probeLockFree(): Promise<boolean> {
     }
     return locked
   } finally {
-    await reserved.release()
+    reserved.release()
   }
 }
 
