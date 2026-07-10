@@ -153,7 +153,7 @@ not a new risk introduced by this story).
 (`packages/db/src/schema/notification-preferences.ts`) restricting `channel` to
 `'email','slack','inbox'`, **when** this story's migration runs, **then** the constraint is widened
 to `channel IN ('email','slack','inbox','none')` via a new numbered migration file
-(`packages/db/src/migrations/00XX_notification_preference_none_channel.sql`, next sequential number
+(`packages/db/src/migrations/0047_notification_preference_none_channel.sql`, next sequential number
 after `0046_project_membership_visibility_backfill_bridge.sql` — check
 `packages/db/src/migrations/meta` for the actual next available number at implementation time, as
 other stories may land migrations concurrently) using `ALTER TABLE ... DROP CONSTRAINT ... ADD
@@ -399,7 +399,7 @@ Dev Agent Record and move on — do not add audit logging as new scope under thi
   `apps/api/src/config/env.ts` — no new files needed for Item A.
 - Preference logic lives in `apps/api/src/modules/notifications/{preferences,schema,routes}.ts` and
   `apps/api/src/notifications/dispatcher.ts` — no new files needed for Item B beyond the migration.
-- New migration file: `packages/db/src/migrations/00XX_notification_preference_none_channel.sql`
+- New migration file: `packages/db/src/migrations/0047_notification_preference_none_channel.sql`
   (number TBD at implementation time — check `meta/_journal.json`).
 - No new frontend (`apps/web`) work is required by this story's ACs, but Task 6 requires confirming
   no `apps/web` consumer breaks when `GET /preferences` starts returning `channel: "none"` rows.
