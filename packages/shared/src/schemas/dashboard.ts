@@ -14,7 +14,18 @@ export const RecentAccessEventSchema = z
     credentialId: z.uuid(),
     credentialName: z.string(),
     actorDisplayName: z.string(),
-    eventType: z.enum(['credential.value_revealed', 'credential.created', 'credential.updated']),
+    // AC-A4: the 8 real credential.* audit event types matching AC-A1's `resource_type =
+    // 'credential'` query filter (see `packages/shared/src/constants/audit-events.ts`).
+    eventType: z.enum([
+      'credential.created',
+      'credential.version_created',
+      'credential.value_revealed',
+      'credential.version_purged',
+      'credential.tags_updated',
+      'credential.dependency_added',
+      'credential.dependency_archived',
+      'credential.lifecycle_updated',
+    ]),
     occurredAt: z.iso.datetime(),
   })
   .meta({ id: 'RecentAccessEvent' })

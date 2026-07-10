@@ -3,6 +3,7 @@ import type { Tx } from '@project-vault/db'
 import { credentials, projects, securityAlerts, serviceEndpoints } from '@project-vault/db/schema'
 import type { OrgDashboard, ProjectDashboard } from '@project-vault/shared'
 import { computeUpcomingRotations, serializeUpcomingRotation } from '../rotation/service.js'
+import { getRecentAccessEventsForProject } from './recent-access-events.js'
 
 export { computeUpcomingRotations }
 
@@ -134,7 +135,8 @@ function buildProjectDashboard(
   stats: ProjectCredentialStats,
   unresolvedAlertCount: number,
   monitoredServiceHealth: ProjectServiceHealthStats,
-  upcomingRotations: ProjectDashboard['upcomingRotations']
+  upcomingRotations: ProjectDashboard['upcomingRotations'],
+  recentAccessEvents: ProjectDashboard['recentAccessEvents']
 ): ProjectDashboard {
   const credentialTotal = stats.active + stats.expiringSoon + stats.expired
   const serviceTotal =
@@ -152,13 +154,27 @@ function buildProjectDashboard(
     },
     upcomingRotations,
     monitoredServiceHealth,
-    recentAccessEvents: [],
+    recentAccessEvents,
     // ADR-3.4-01: security_alerts has no project_id — project dashboard mirrors the
     // org-wide unresolved count until Epic 6 project-scoped monitoring alerts exist.
     unresolvedAlertCount,
     isEmpty,
-    suggestedActions: isEmpty ? ['add_credential', 'add_service', 'import_credentials'] : [],
+    suggestedActions: suggestedActionsFor(credentialTotal, serviceTotal, isEmpty),
   }
+}
+
+// AC-S1/S2/S3: a fully-empty project keeps the original 3-action list; a partially-covered
+// project (exactly one category populated) gets a single targeted suggestion for the missing
+// category; a fully-covered project gets none.
+function suggestedActionsFor(
+  credentialTotal: number,
+  serviceTotal: number,
+  isEmpty: boolean
+): ProjectDashboard['suggestedActions'] {
+  if (isEmpty) return ['add_credential', 'add_service', 'import_credentials']
+  if (credentialTotal > 0 && serviceTotal === 0) return ['add_service']
+  if (credentialTotal === 0 && serviceTotal > 0) return ['add_credential', 'import_credentials']
+  return []
 }
 
 // Story 5.2 AC-15: fixed 30-day default horizon — the dashboard is a fixed summary view, not a
@@ -170,27 +186,38 @@ const PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS = 30
 // payload-size/pagination gap versus the adjacent org-dashboard slice.
 const PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT = 20
 
+// AC-A1: the "Recent activity" section's fixed cap (mirrors the 10 hardcoded in the story's
+// getRecentAccessEventsForProject(tx, projectId, limit=10) example call signature).
+const PROJECT_DASHBOARD_RECENT_ACCESS_EVENTS_LIMIT = 10
+
 export async function getProjectDashboardData(
   tx: Tx,
   projectId: string
 ): Promise<ProjectDashboard> {
-  const [statsByProject, unresolvedAlertCount, serviceHealthByProject, upcomingRotationResults] =
-    await Promise.all([
-      getBatchedProjectCredentialStats(tx, [projectId]),
-      getUnresolvedSecurityAlertCount(tx),
-      getBatchedProjectServiceHealthStats(tx, [projectId]),
-      computeUpcomingRotations(tx, {
-        projectId,
-        horizonDays: PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS,
-      }),
-    ])
+  const [
+    statsByProject,
+    unresolvedAlertCount,
+    serviceHealthByProject,
+    upcomingRotationResults,
+    recentAccessEvents,
+  ] = await Promise.all([
+    getBatchedProjectCredentialStats(tx, [projectId]),
+    getUnresolvedSecurityAlertCount(tx),
+    getBatchedProjectServiceHealthStats(tx, [projectId]),
+    computeUpcomingRotations(tx, {
+      projectId,
+      horizonDays: PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS,
+    }),
+    getRecentAccessEventsForProject(tx, projectId, PROJECT_DASHBOARD_RECENT_ACCESS_EVENTS_LIMIT),
+  ])
   return buildProjectDashboard(
     lookupProjectStats(statsByProject, projectId),
     unresolvedAlertCount,
     lookupServiceHealthStats(serviceHealthByProject, projectId),
     upcomingRotationResults
       .slice(0, PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT)
-      .map(serializeUpcomingRotation)
+      .map(serializeUpcomingRotation),
+    recentAccessEvents
   )
 }
 

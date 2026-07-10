@@ -19,3 +19,17 @@ export const suggestedActionLabels = {
   add_service: 'Add first service',
   import_credentials: 'Import .env or JSON',
 } as const
+
+// AC-A1: humanized labels for the "Recent activity" section — keys are the 8 real credential.*
+// audit event types (packages/shared/src/constants/audit-events.ts / dashboard.ts's
+// RecentAccessEventSchema).
+export const recentAccessEventLabels = {
+  'credential.created': 'Created',
+  'credential.version_created': 'Added new version',
+  'credential.value_revealed': 'Revealed value',
+  'credential.version_purged': 'Purged old version',
+  'credential.tags_updated': 'Updated tags',
+  'credential.dependency_added': 'Added dependent system',
+  'credential.dependency_archived': 'Archived dependent system',
+  'credential.lifecycle_updated': 'Updated lifecycle settings',
+} as const

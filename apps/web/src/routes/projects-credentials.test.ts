@@ -1,16 +1,24 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
+import { formatDateTime } from '$lib/datetime.js'
+import { ApiClientError } from '$lib/api/client.js'
 import type { CredentialSummary } from '@project-vault/shared'
 
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const createCredentialMock = vi.hoisted(() => vi.fn())
 const revealCredentialValueMock = vi.hoisted(() => vi.fn())
 const previewCredentialImportMock = vi.hoisted(() => vi.fn())
 const confirmCredentialImportMock = vi.hoisted(() => vi.fn())
+const updateCredentialLifecycleMock = vi.hoisted(() => vi.fn())
+const addCredentialDependencyMock = vi.hoisted(() => vi.fn())
+const archiveCredentialDependencyMock = vi.hoisted(() => vi.fn())
+const addCredentialVersionMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$app/navigation', () => ({
   goto: gotoMock,
+  invalidateAll: invalidateAllMock,
 }))
 
 vi.mock('$lib/api/credentials.js', async (importOriginal) => {
@@ -21,6 +29,10 @@ vi.mock('$lib/api/credentials.js', async (importOriginal) => {
     revealCredentialValue: revealCredentialValueMock,
     previewCredentialImport: previewCredentialImportMock,
     confirmCredentialImport: confirmCredentialImportMock,
+    updateCredentialLifecycle: updateCredentialLifecycleMock,
+    addCredentialDependency: addCredentialDependencyMock,
+    archiveCredentialDependency: archiveCredentialDependencyMock,
+    addCredentialVersion: addCredentialVersionMock,
   }
 })
 
@@ -56,6 +68,11 @@ describe('project credential routes', () => {
     revealCredentialValueMock.mockReset()
     previewCredentialImportMock.mockReset()
     confirmCredentialImportMock.mockReset()
+    updateCredentialLifecycleMock.mockReset()
+    addCredentialDependencyMock.mockReset()
+    archiveCredentialDependencyMock.mockReset()
+    addCredentialVersionMock.mockReset()
+    invalidateAllMock.mockClear()
     vi.spyOn(Storage.prototype, 'setItem')
     vi.spyOn(Storage.prototype, 'getItem')
   })
@@ -88,7 +105,7 @@ describe('project credential routes', () => {
             limit: 20,
             hasNext: false,
           },
-          filters: { q: '', status: '', page: 1 },
+          filters: { q: '', status: '', tags: '', page: 1 },
         },
       },
     })
@@ -97,6 +114,73 @@ describe('project credential routes', () => {
     expect(screen.getByText('Legacy API Token')).toBeTruthy()
     expect(screen.getByText('Internal Service Key')).toBeTruthy()
     expect(screen.getByText(/Showing 3 of 3 credentials/i)).toBeTruthy()
+  })
+
+  it('AC-F1: renders a Tags filter input pre-filled from data.filters.tags, with AND-semantics helper text', () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member' as const,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          filters: { q: '', status: '', tags: 'db, prod', page: 1 },
+        },
+      },
+    })
+
+    const tagsInput = screen.getByLabelText('Tags') as HTMLInputElement
+    expect(tagsInput.value).toBe('db, prod')
+    expect(screen.getByText(/Matches credentials with ALL of these tags/i)).toBeTruthy()
+  })
+
+  it('AC-F2: a tags-only filter with zero results shows "Try adjusting your filters." and a Clear link', () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member' as const,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          filters: { q: '', status: '', tags: 'nonexistent', page: 1 },
+        },
+      },
+    })
+
+    expect(screen.getByText('No credentials found')).toBeTruthy()
+    expect(screen.getByText('Try adjusting your filters.')).toBeTruthy()
+    const clearLink = screen.getByRole('link', { name: 'Clear' })
+    expect(clearLink.getAttribute('href')).toBe(`/projects/${projectId}/credentials`)
+  })
+
+  it('regression: q/status-only empty-state and Clear-link behavior is unchanged', () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member' as const,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          filters: { q: 'nope', status: '', tags: '', page: 1 },
+        },
+      },
+    })
+
+    expect(screen.getByText('Try adjusting your filters.')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Clear' })).toBeTruthy()
+  })
+
+  it('regression: no filters at all and zero credentials shows the "Add your first credential" copy, not the filtered empty state', () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member' as const,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          filters: { q: '', status: '', tags: '', page: 1 },
+        },
+      },
+    })
+
+    expect(screen.getByText('Add your first credential to get started.')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Clear' })).toBeNull()
   })
 
   it('hides create and import actions for viewers', () => {
@@ -208,6 +292,7 @@ describe('project credential routes', () => {
             updatedAt: '2026-06-01T00:00:00.000Z',
           },
           versions: [],
+          dependencies: { items: [], hasDependencies: false },
           rotations: [],
           rotationsPage: 1,
           rotationsHasMore: false,
@@ -304,10 +389,26 @@ describe('project credential routes', () => {
         updatedAt: '2026-06-01T00:00:00.000Z',
       },
       versions: [],
+      dependencies: { items: [], hasDependencies: false },
       rotations: [],
       rotationsPage: 1,
       rotationsHasMore: false,
       activeRotationId: null,
+      ...overrides,
+    }
+  }
+
+  function makeDependency(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'd1',
+      credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      systemName: 'billing-worker',
+      systemType: 'service',
+      notes: null,
+      createdBy: null,
+      archivedAt: null,
+      createdAt: '2026-06-01T00:00:00.000Z',
+      updatedAt: '2026-06-01T00:00:00.000Z',
       ...overrides,
     }
   }
@@ -351,6 +452,380 @@ describe('project credential routes', () => {
       `/projects/${projectId}/credentials/cccccccc-cccc-4ccc-8ccc-cccccccccccc/rotations/dddddddd-dddd-4ddd-8ddd-dddddddddddd`
     )
     expect(screen.queryByRole('link', { name: 'Start rotation' })).toBeNull()
+  })
+
+  it('AC-L1: a member can edit expiresAt/rotationSchedule/cacheable and the read-only grid updates without reload', async () => {
+    updateCredentialLifecycleMock.mockResolvedValue({
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      expiresAt: '2026-12-01T00:00:00.000Z',
+      rotationSchedule: '0 0 1 * *',
+      cacheable: true,
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    const expiresInput = screen.getByLabelText('Expiry date') as HTMLInputElement
+    await fireEvent.input(expiresInput, { target: { value: '2026-12-01' } })
+    const rotationInput = screen.getByLabelText('Rotation schedule (cron)') as HTMLInputElement
+    await fireEvent.input(rotationInput, { target: { value: '0 0 1 * *' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Save lifecycle' }))
+
+    await waitFor(() =>
+      expect(updateCredentialLifecycleMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        { expiresAt: '2026-12-01T00:00:00.000Z', rotationSchedule: '0 0 1 * *', cacheable: true }
+      )
+    )
+
+    expect(await screen.findByText(formatDateTime('2026-12-01T00:00:00.000Z'))).toBeTruthy()
+  })
+
+  it('AC-L1 edge: clearing the expiry date sends expiresAt: null and the grid reverts to "—"', async () => {
+    updateCredentialLifecycleMock.mockResolvedValue({
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      expiresAt: null,
+      rotationSchedule: null,
+      cacheable: true,
+      updatedAt: '2026-07-02T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    const expiresInput = screen.getByLabelText('Expiry date') as HTMLInputElement
+    await fireEvent.input(expiresInput, { target: { value: '' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Save lifecycle' }))
+
+    await waitFor(() =>
+      expect(updateCredentialLifecycleMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        { expiresAt: null, rotationSchedule: null, cacheable: true }
+      )
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Expires').nextElementSibling?.textContent).toBe('—')
+    })
+  })
+
+  it('AC-L2: an invalid_cron 422 shows the exact server message inline under the input, without resetting it', async () => {
+    updateCredentialLifecycleMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        { code: 'invalid_cron', message: 'Rotation schedule may run at most once per hour' },
+        'Rotation schedule may run at most once per hour'
+      )
+    )
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    const rotationInput = screen.getByLabelText('Rotation schedule (cron)') as HTMLInputElement
+    await fireEvent.input(rotationInput, { target: { value: '* * * * *' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Save lifecycle' }))
+
+    expect(await screen.findByText('Rotation schedule may run at most once per hour')).toBeTruthy()
+    expect(rotationInput.value).toBe('* * * * *')
+  })
+
+  it('AC-L2 edge: an unparseable cron shows "Invalid cron expression" verbatim', async () => {
+    updateCredentialLifecycleMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        { code: 'invalid_cron', message: 'Invalid cron expression' },
+        'Invalid cron expression'
+      )
+    )
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    const rotationInput = screen.getByLabelText('Rotation schedule (cron)') as HTMLInputElement
+    await fireEvent.input(rotationInput, { target: { value: 'not a cron' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Save lifecycle' }))
+
+    expect(await screen.findByText('Invalid cron expression')).toBeTruthy()
+  })
+
+  it('AC-L3: viewers see no Lifecycle edit section at all', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseCredentialDetailData({ orgRole: 'viewer' as const }) },
+    })
+
+    expect(screen.queryByText('Lifecycle')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save lifecycle' })).toBeNull()
+    expect(screen.queryByLabelText('Rotation schedule (cron)')).toBeNull()
+  })
+
+  it('AC-L4: an archived-project 410 on lifecycle save shows an inline banner and leaves the grid unchanged', async () => {
+    updateCredentialLifecycleMock.mockRejectedValue(
+      new ApiClientError(
+        410,
+        {
+          code: 'project_archived',
+          message: 'This project is archived and cannot be modified. Unarchive it first.',
+        },
+        'This project is archived and cannot be modified. Unarchive it first.'
+      )
+    )
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save lifecycle' }))
+
+    expect(
+      await screen.findByText('This project is archived — unarchive it to make changes.')
+    ).toBeTruthy()
+    expect(screen.getByText(formatDateTime('2026-07-15T00:00:00.000Z'))).toBeTruthy()
+  })
+
+  it('AC-D1: a member can add a dependent system with the pre-selected default systemType sent explicitly', async () => {
+    addCredentialDependencyMock.mockResolvedValue(makeDependency({ systemType: 'other' }))
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    await fireEvent.input(screen.getByLabelText('System name'), {
+      target: { value: 'billing-worker' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Add dependent system' }))
+
+    await waitFor(() =>
+      expect(addCredentialDependencyMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        { systemName: 'billing-worker', systemType: 'other' }
+      )
+    )
+    expect(await screen.findByText('billing-worker (other)')).toBeTruthy()
+  })
+
+  it('AC-D1 edge: selecting an explicit non-default systemType sends it and displays it on the new row', async () => {
+    addCredentialDependencyMock.mockResolvedValue(
+      makeDependency({ systemName: 'primary-db', systemType: 'database' })
+    )
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    await fireEvent.input(screen.getByLabelText('System name'), {
+      target: { value: 'primary-db' },
+    })
+    await fireEvent.change(screen.getByLabelText('System type'), {
+      target: { value: 'database' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Add dependent system' }))
+
+    await waitFor(() =>
+      expect(addCredentialDependencyMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        { systemName: 'primary-db', systemType: 'database' }
+      )
+    )
+    expect(await screen.findByText('primary-db (database)')).toBeTruthy()
+  })
+
+  it('AC-D2: archiving the only dependency removes it and shows the empty state', async () => {
+    archiveCredentialDependencyMock.mockResolvedValue({
+      id: 'd1',
+      credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      archivedAt: '2026-07-01T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          dependencies: { items: [makeDependency()], hasDependencies: true },
+        }),
+      },
+    })
+
+    expect(screen.getByText('billing-worker (service)')).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
+
+    await waitFor(() =>
+      expect(archiveCredentialDependencyMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        'd1'
+      )
+    )
+    expect(await screen.findByText('No dependent systems recorded.')).toBeTruthy()
+  })
+
+  it('AC-D2 edge: archiving one of several dependencies leaves the others visible', async () => {
+    archiveCredentialDependencyMock.mockResolvedValue({
+      id: 'd1',
+      credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      archivedAt: '2026-07-01T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          dependencies: {
+            items: [
+              makeDependency(),
+              makeDependency({ id: 'd2', systemName: 'primary-db', systemType: 'database' }),
+            ],
+            hasDependencies: true,
+          },
+        }),
+      },
+    })
+
+    const [firstArchiveButton] = screen.getAllByRole('button', { name: 'Archive' })
+    await fireEvent.click(firstArchiveButton)
+
+    await waitFor(() => expect(archiveCredentialDependencyMock).toHaveBeenCalled())
+    expect(screen.queryByText('billing-worker (service)')).toBeNull()
+    expect(screen.getByText('primary-db (database)')).toBeTruthy()
+  })
+
+  it('AC-D3: the 200-cap 422 renders the exact server message inline and retains the entered values', async () => {
+    addCredentialDependencyMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'too_many_dependencies',
+          message: 'A credential may have at most 200 active dependencies',
+        },
+        'A credential may have at most 200 active dependencies'
+      )
+    )
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    const nameInput = screen.getByLabelText('System name') as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: 'one-too-many' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Add dependent system' }))
+
+    expect(
+      await screen.findByText('A credential may have at most 200 active dependencies')
+    ).toBeTruthy()
+    expect(nameInput.value).toBe('one-too-many')
+  })
+
+  it('AC-D4: viewers see the dependent-systems list but not the add form or Archive buttons', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          orgRole: 'viewer' as const,
+          dependencies: { items: [makeDependency()], hasDependencies: true },
+        }),
+      },
+    })
+
+    expect(screen.getByText('billing-worker (service)')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Add dependent system' })).toBeNull()
+    expect(screen.queryByLabelText('System name')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull()
+  })
+
+  it('AC-D5: an archived-project 410 on add-dependency shows an inline banner and leaves the list unchanged', async () => {
+    addCredentialDependencyMock.mockRejectedValue(
+      new ApiClientError(
+        410,
+        {
+          code: 'project_archived',
+          message: 'This project is archived and cannot be modified. Unarchive it first.',
+        },
+        'This project is archived and cannot be modified. Unarchive it first.'
+      )
+    )
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({
+          dependencies: { items: [makeDependency()], hasDependencies: true },
+        }),
+      },
+    })
+
+    await fireEvent.input(screen.getByLabelText('System name'), { target: { value: 'x' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Add dependent system' }))
+
+    expect(
+      await screen.findByText('This project is archived — unarchive it to make changes.')
+    ).toBeTruthy()
+    expect(screen.getByText('billing-worker (service)')).toBeTruthy()
+  })
+
+  it('AC-V1: a member can add a new version; the client function is called and the history re-fetches (not client-synthesized)', async () => {
+    addCredentialVersionMock.mockResolvedValue({
+      credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      versionNumber: 2,
+      createdAt: '2026-07-01T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    await fireEvent.input(screen.getByLabelText('New value'), {
+      target: { value: 'sk_live_new_secret' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Add version' }))
+
+    await waitFor(() =>
+      expect(addCredentialVersionMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        { value: 'sk_live_new_secret' }
+      )
+    )
+    await waitFor(() => expect(invalidateAllMock).toHaveBeenCalled())
+    // The submitted value is never echoed back anywhere in the DOM after a successful submit.
+    expect(screen.queryByText('sk_live_new_secret')).toBeNull()
+  })
+
+  it('AC-V2: an empty value is blocked client-side before any network call', async () => {
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Add version' }))
+
+    expect(await screen.findByText('Value is required')).toBeTruthy()
+    expect(addCredentialVersionMock).not.toHaveBeenCalled()
+  })
+
+  it('AC-V2 edge: a 409 version_conflict shows an actionable retry message', async () => {
+    addCredentialVersionMock.mockRejectedValue(
+      new ApiClientError(
+        409,
+        { code: 'version_conflict', message: 'Version conflict' },
+        'Version conflict'
+      )
+    )
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'sk_live_x' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Add version' }))
+
+    expect(
+      await screen.findByText('Someone just added a version — refresh and try again.')
+    ).toBeTruthy()
+  })
+
+  it('AC-V3: viewers do not see the add-version control at all', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseCredentialDetailData({ orgRole: 'viewer' as const }) },
+    })
+
+    expect(screen.queryByLabelText('New value')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add version' })).toBeNull()
+  })
+
+  it('AC-V4: an archived-project 410 on add-version shows an inline banner and leaves history unchanged', async () => {
+    addCredentialVersionMock.mockRejectedValue(
+      new ApiClientError(
+        410,
+        {
+          code: 'project_archived',
+          message: 'This project is archived and cannot be modified. Unarchive it first.',
+        },
+        'This project is archived and cannot be modified. Unarchive it first.'
+      )
+    )
+    render(CredentialDetailPage, { props: { data: baseCredentialDetailData() } })
+
+    await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'sk_live_x' } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Add version' }))
+
+    expect(
+      await screen.findByText('This project is archived — unarchive it to make changes.')
+    ).toBeTruthy()
+    expect(invalidateAllMock).not.toHaveBeenCalled()
   })
 
   it('AC-18: rotation history section lists prior rotations most-recent-first with a link to each', () => {

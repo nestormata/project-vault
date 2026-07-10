@@ -30,13 +30,20 @@
     })
   }
 
-  function filterHref(overrides: { q?: string; status?: string; page?: number }): string {
+  function filterHref(overrides: {
+    q?: string
+    status?: string
+    tags?: string
+    page?: number
+  }): string {
     const params = new URLSearchParams()
     const q = overrides.q ?? data.filters.q
     const status = overrides.status ?? data.filters.status
+    const tags = overrides.tags ?? data.filters.tags
     const page = overrides.page ?? data.filters.page
     if (q) params.set('q', q)
     if (status) params.set('status', status)
+    if (tags) params.set('tags', tags)
     if (page > 1) params.set('page', String(page))
     const query = params.toString()
     return resolve(`/projects/${data.projectId}/credentials${query ? `?${query}` : ''}`)
@@ -159,10 +166,22 @@
           <option value="expired">Expired</option>
         </select>
       </div>
+      <div class="space-y-1">
+        <label class="block text-sm font-medium text-slate-800" for="credential-tags">Tags</label>
+        <input
+          id="credential-tags"
+          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          type="text"
+          name="tags"
+          value={data.filters.tags}
+          placeholder="db, prod"
+        />
+        <p class="text-xs text-slate-500">Matches credentials with ALL of these tags.</p>
+      </div>
       <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit">
         Apply filters
       </button>
-      {#if data.filters.q || data.filters.status}
+      {#if data.filters.q || data.filters.status || data.filters.tags}
         <a
           class="py-2 text-sm font-medium text-slate-700 underline"
           href={resolve(`/projects/${data.projectId}/credentials`)}
@@ -176,7 +195,7 @@
       <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
         <h2 class="text-xl font-semibold text-slate-950">No credentials found</h2>
         <p class="mt-2 text-slate-600">
-          {#if data.filters.q || data.filters.status}
+          {#if data.filters.q || data.filters.status || data.filters.tags}
             Try adjusting your filters.
           {:else if canCreate}
             Add your first credential to get started.

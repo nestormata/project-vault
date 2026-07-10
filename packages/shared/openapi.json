@@ -356,9 +356,14 @@
           "eventType": {
             "type": "string",
             "enum": [
-              "credential.value_revealed",
               "credential.created",
-              "credential.updated"
+              "credential.version_created",
+              "credential.value_revealed",
+              "credential.version_purged",
+              "credential.tags_updated",
+              "credential.dependency_added",
+              "credential.dependency_archived",
+              "credential.lifecycle_updated"
             ]
           },
           "occurredAt": {
@@ -907,6 +912,12 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -931,6 +942,7 @@
           "credentialCount",
           "expiringCount",
           "alertCount",
+          "tags",
           "createdAt",
           "archivedAt",
           "isArchived"
@@ -8660,9 +8672,14 @@
           "eventType": {
             "type": "string",
             "enum": [
-              "credential.value_revealed",
               "credential.created",
-              "credential.updated"
+              "credential.version_created",
+              "credential.value_revealed",
+              "credential.version_purged",
+              "credential.tags_updated",
+              "credential.dependency_added",
+              "credential.dependency_archived",
+              "credential.lifecycle_updated"
             ]
           },
           "occurredAt": {
@@ -9235,6 +9252,12 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -9259,6 +9282,7 @@
           "credentialCount",
           "expiringCount",
           "alertCount",
+          "tags",
           "createdAt",
           "archivedAt",
           "isArchived"

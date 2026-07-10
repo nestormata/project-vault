@@ -360,6 +360,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           slug: projects.slug,
           description: projects.description,
           role: projectMemberships.role,
+          tags: projects.tags,
           createdAt: projects.createdAt,
           archivedAt: projects.archivedAt,
         })
@@ -391,6 +392,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           role: (row.role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer',
           credentialCount: stats.credentialCount,
           expiringCount: stats.expiringCount,
+          tags: row.tags,
           // ADR-3.4-02: security_alerts is org-scoped, not project-scoped — stays 0 here
           // to avoid duplicating the org-wide unresolved count on every project row.
           // The org dashboard (unresolvedAlertCount) is the truthful aggregate until Epic 6.

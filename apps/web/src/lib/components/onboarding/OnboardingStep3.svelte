@@ -62,9 +62,16 @@
       {/if}
     </li>
     <li>
-      <a class="font-medium text-slate-950 underline" href={resolve('/settings')}>
-        Invite your team
-      </a>
+      {#if projectId}
+        <a
+          class="font-medium text-slate-950 underline"
+          href={resolve(`/projects/${projectId}/members`)}
+        >
+          Invite your team
+        </a>
+      {:else}
+        <span class="text-slate-600">Invite your team from the project's Members page</span>
+      {/if}
     </li>
     <li>
       <a class="font-medium text-slate-950 underline" href={resolve('/dashboard')}>

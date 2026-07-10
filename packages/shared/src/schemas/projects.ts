@@ -12,6 +12,10 @@ export const ProjectSummarySchema = z
     credentialCount: z.number().int().nonnegative(),
     expiringCount: z.number().int().nonnegative(),
     alertCount: z.number().int().nonnegative(),
+    // AC-P1: strictly additive — mirrors projects.tags's existing non-null jsonb-array default
+    // (the PUT .../tags route already reads/writes this exact column; the list handler just
+    // hadn't selected it yet).
+    tags: z.array(z.string()),
     createdAt: z.iso.datetime(),
     // 4.4 AC-3: archivedAt is null for active projects; isArchived is derived in the handler
     // (archivedAt !== null), not stored. Both required — a contract change to ProjectSummary.

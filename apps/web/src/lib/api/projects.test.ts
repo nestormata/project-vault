@@ -9,6 +9,7 @@ import {
   suggestProjectSlug,
   unarchiveProject,
   updateProject,
+  updateProjectTags,
 } from './projects.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
@@ -195,6 +196,51 @@ describe('project API helpers', () => {
         body: JSON.stringify({ name: 'New Name', description: null }),
       })
     )
+  })
+
+  // AC-P2: updateProjectTags calls the full-replace PUT .../tags endpoint.
+  it('updateProjectTags PUTs the full tag array and returns the updated tags', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { id: '00000000-0000-4000-8000-000000000010', tags: ['payments', 'billing'] },
+      })
+    )
+
+    const result = await updateProjectTags(fetchFn, '00000000-0000-4000-8000-000000000010', [
+      'payments',
+      'billing',
+    ])
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/projects/00000000-0000-4000-8000-000000000010/tags',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ tags: ['payments', 'billing'] }),
+      })
+    )
+    expect(result).toEqual({
+      id: '00000000-0000-4000-8000-000000000010',
+      tags: ['payments', 'billing'],
+    })
+  })
+
+  // AC-P4: the server-enforced max(20)-tags 422 must be catchable by the caller.
+  it('updateProjectTags surfaces a 422 validation error as a catchable ApiClientError', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { code: 'validation_error', message: 'A project may have at most 20 tags.' },
+          { status: 422 }
+        )
+      )
+
+    await expect(
+      updateProjectTags(fetchFn, '00000000-0000-4000-8000-000000000010', Array(21).fill('x'))
+    ).rejects.toMatchObject({
+      status: 422,
+      code: 'validation_error',
+    } satisfies Partial<ApiClientError>)
   })
 
   it('surfaces slug_taken as a catchable ApiClientError', async () => {

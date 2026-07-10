@@ -2,7 +2,11 @@
   import { resolve } from '$app/paths'
   import CrossProjectEmptyState from '$lib/components/dashboard/CrossProjectEmptyState.svelte'
   import DashboardPlaceholderGrid from '$lib/components/dashboard/DashboardPlaceholderGrid.svelte'
-  import { suggestedActionLabels } from '$lib/components/dashboard/dashboard-copy.js'
+  import {
+    recentAccessEventLabels,
+    suggestedActionLabels,
+  } from '$lib/components/dashboard/dashboard-copy.js'
+  import { formatDateTime } from '$lib/datetime.js'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
 
@@ -150,9 +154,49 @@
         {/if}
       </section>
 
-      <DashboardPlaceholderGrid />
+      <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-950">Recent activity</h2>
+        {#if data.dashboard.recentAccessEvents.length === 0}
+          <p class="mt-3 text-sm text-slate-600">No recent activity yet.</p>
+        {:else}
+          <ul class="mt-4 space-y-2">
+            {#each data.dashboard.recentAccessEvents as event, index (`${event.credentialId}-${event.eventType}-${event.occurredAt}-${index}`)}
+              <li
+                class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
+              >
+                <div>
+                  <a
+                    class="font-semibold text-slate-950 underline"
+                    href={resolve(
+                      `/projects/${data.selectedProject.id}/credentials/${event.credentialId}`
+                    )}
+                  >
+                    {event.credentialName}
+                  </a>
+                  <span class="ml-2 text-slate-600">{recentAccessEventLabels[event.eventType]}</span
+                  >
+                  <span class="ml-2 text-slate-500">by</span>
+                  <span class="text-slate-500">{event.actorDisplayName}</span>
+                </div>
+                <span class="text-slate-600">{formatDateTime(event.occurredAt)}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
 
-      {#if data.dashboard.isEmpty}
+      <DashboardPlaceholderGrid
+        hasCredentials={data.dashboard.credentialStats.active +
+          data.dashboard.credentialStats.expiringSoon +
+          data.dashboard.credentialStats.expired >
+          0}
+        hasServices={data.dashboard.monitoredServiceHealth.healthy +
+          data.dashboard.monitoredServiceHealth.degraded +
+          data.dashboard.monitoredServiceHealth.down >
+          0}
+      />
+
+      {#if data.dashboard.suggestedActions.length > 0}
         <section class="rounded-2xl border border-slate-200 bg-white p-4">
           <h2 class="font-semibold">Suggested next actions</h2>
           <ul class="mt-3 space-y-2 text-sm text-slate-600">
@@ -162,6 +206,18 @@
                   <a
                     class="font-medium text-slate-950 underline"
                     href={resolve(`/projects/${data.selectedProject.id}/credentials/new`)}
+                  >
+                    {suggestedActionLabels[action]}
+                  </a>
+                {:else if action === 'add_service' && data.selectedProject}
+                  <!-- Deviation from story text's literal "/services/new": monitoredServiceHealth
+                       (hasServices/serviceTotal, gating this suggestion) is sourced from
+                       service_endpoints (dashboard-stats.ts), not the unrelated billing
+                       `services`/PaymentRecord feature — /services/new would never resolve this
+                       suggestion since adding a payment record doesn't move serviceTotal off 0. -->
+                  <a
+                    class="font-medium text-slate-950 underline"
+                    href={resolve(`/projects/${data.selectedProject.id}/service-endpoints/new`)}
                   >
                     {suggestedActionLabels[action]}
                   </a>
@@ -184,7 +240,7 @@
   {:else}
     <div class="space-y-6">
       <CrossProjectEmptyState />
-      <DashboardPlaceholderGrid />
+      <DashboardPlaceholderGrid hasCredentials={false} hasServices={false} />
     </div>
   {/if}
 {/if}

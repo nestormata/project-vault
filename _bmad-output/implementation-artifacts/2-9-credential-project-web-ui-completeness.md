@@ -1,6 +1,6 @@
 # Story 2.9: Credential & Project Web UI Completeness
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Completion-round-2 story closing a set of "API exists, web incomplete" gaps left in
      deferred-work.md since Epic 2's own closure retro (2026-06-30, before the Product Surface

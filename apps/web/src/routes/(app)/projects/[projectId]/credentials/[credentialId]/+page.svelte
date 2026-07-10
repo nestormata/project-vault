@@ -1,12 +1,24 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
+  import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
-  import { revealCredentialValue } from '$lib/api/credentials.js'
+  import type { SystemType } from '@project-vault/shared'
+  import {
+    addCredentialDependency,
+    addCredentialVersion,
+    archiveCredentialDependency,
+    revealCredentialValue,
+    updateCredentialLifecycle,
+  } from '$lib/api/credentials.js'
   import { ApiClientError } from '$lib/api/client.js'
   import {
     canCreateCredential,
     onboardingCopy,
   } from '$lib/components/onboarding/onboarding-logic.js'
+  import {
+    lifecycleDateInputToIso,
+    toLifecycleDateInputValue,
+  } from '$lib/credentials/lifecycle-form.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
   import {
@@ -17,13 +29,122 @@
 
   let { data } = $props()
 
+  // AC-L4/AC-D5/AC-V4: the UI has no way to know ahead of time that the parent project is
+  // archived, so every mutation on this page reacts to the real 410 the same way, with the same
+  // copy, rather than each section growing its own bespoke banner text.
+  const ARCHIVED_PROJECT_BANNER = 'This project is archived — unarchive it to make changes.'
+
   let revealedValue = $state<string | null>(null)
   let revealVersion = $state<number | null>(null)
   let revealing = $state(false)
   let revealError = $state<string | null>(null)
 
+  // AC-L1: local override applied after a successful lifecycle save so the read-only summary
+  // grid above updates without a full page reload; null means "show data.credential's value".
+  let lifecycleOverride = $state<{
+    expiresAt: string | null
+    rotationSchedule: string | null
+  } | null>(null)
+  let lifecycleExpiresAt = $state(toLifecycleDateInputValue(data.credential?.expiresAt ?? null))
+  let lifecycleRotationSchedule = $state(data.credential?.rotationSchedule ?? '')
+  let lifecycleCacheable = $state(true)
+  let lifecycleSubmitting = $state(false)
+  let lifecycleFieldError = $state<string | null>(null)
+  let lifecycleBanner = $state<string | null>(null)
+
   const canReveal = $derived(canCreateCredential(data.orgRole))
   const canManageRotation = $derived(canManageRotations(data.orgRole))
+  const displayExpiresAt = $derived(
+    lifecycleOverride ? lifecycleOverride.expiresAt : (data.credential?.expiresAt ?? null)
+  )
+
+  async function onSaveLifecycle(): Promise<void> {
+    if (lifecycleSubmitting || !data.credential) return
+    lifecycleSubmitting = true
+    lifecycleFieldError = null
+    lifecycleBanner = null
+    try {
+      const result = await updateCredentialLifecycle(fetch, data.projectId, data.credentialId, {
+        expiresAt: lifecycleDateInputToIso(lifecycleExpiresAt),
+        rotationSchedule:
+          lifecycleRotationSchedule.trim() === '' ? null : lifecycleRotationSchedule,
+        cacheable: lifecycleCacheable,
+      })
+      lifecycleOverride = { expiresAt: result.expiresAt, rotationSchedule: result.rotationSchedule }
+    } catch (error) {
+      if (error instanceof ApiClientError && error.code === 'invalid_cron') {
+        lifecycleFieldError = error.message
+      } else if (error instanceof ApiClientError && error.status === 410) {
+        lifecycleBanner = ARCHIVED_PROJECT_BANNER
+      } else {
+        lifecycleFieldError =
+          error instanceof Error ? error.message : 'Could not update lifecycle fields.'
+      }
+    } finally {
+      lifecycleSubmitting = false
+    }
+  }
+
+  // AC-D1: local list so a successful add/archive updates the UI immediately without a reload;
+  // seeded once from the loader's data, same "state_referenced_locally" convention used elsewhere
+  // on this page (see lifecycleExpiresAt above) and on the projects list page's tag inputs.
+  let dependencyItems = $state(data.dependencies.items)
+  let depSystemName = $state('')
+  let depSystemType = $state<SystemType>('other')
+  let depNotes = $state('')
+  let depSubmitting = $state(false)
+  let depError = $state<string | null>(null)
+  let depBanner = $state<string | null>(null)
+  let archivingDependencyId = $state<string | null>(null)
+
+  async function onAddDependency(): Promise<void> {
+    if (depSubmitting || !data.credential) return
+    const systemName = depSystemName.trim()
+    if (!systemName) return
+    depSubmitting = true
+    depError = null
+    depBanner = null
+    try {
+      const notes = depNotes.trim()
+      const created = await addCredentialDependency(fetch, data.projectId, data.credentialId, {
+        systemName,
+        systemType: depSystemType,
+        ...(notes ? { notes } : {}),
+      })
+      dependencyItems = [...dependencyItems, created]
+      depSystemName = ''
+      depSystemType = 'other'
+      depNotes = ''
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 410) {
+        depBanner = ARCHIVED_PROJECT_BANNER
+      } else if (error instanceof ApiClientError && error.code === 'too_many_dependencies') {
+        depError = error.message
+      } else {
+        depError = error instanceof Error ? error.message : 'Could not add dependent system.'
+      }
+    } finally {
+      depSubmitting = false
+    }
+  }
+
+  async function onArchiveDependency(dependencyId: string): Promise<void> {
+    if (archivingDependencyId || !data.credential) return
+    archivingDependencyId = dependencyId
+    depBanner = null
+    try {
+      await archiveCredentialDependency(fetch, data.projectId, data.credentialId, dependencyId)
+      dependencyItems = dependencyItems.filter((item) => item.id !== dependencyId)
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 410) {
+        depBanner = ARCHIVED_PROJECT_BANNER
+      } else {
+        depError = error instanceof Error ? error.message : 'Could not archive dependent system.'
+      }
+    } finally {
+      archivingDependencyId = null
+    }
+  }
 
   onDestroy(() => {
     revealedValue = null
@@ -59,6 +180,41 @@
       // Clipboard may be unavailable in some contexts.
     }
   }
+
+  let newVersionValue = $state('')
+  let addingVersion = $state(false)
+  let addVersionError = $state<string | null>(null)
+  let addVersionBanner = $state<string | null>(null)
+
+  // AC-V1: version history is re-fetched via `invalidateAll` (reruns +page.server.ts's load,
+  // which calls the real `listCredentialVersions`), not client-synthesized — the POST response
+  // alone lacks fields (createdBy, purgedAt, abandonedAt) needed to render a correct history row.
+  async function onAddVersion(): Promise<void> {
+    if (addingVersion || !data.credential) return
+    const value = newVersionValue.trim()
+    if (!value) {
+      addVersionError = 'Value is required'
+      return
+    }
+    addingVersion = true
+    addVersionError = null
+    addVersionBanner = null
+    try {
+      await addCredentialVersion(fetch, data.projectId, data.credentialId, { value })
+      newVersionValue = ''
+      await invalidateAll()
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 410) {
+        addVersionBanner = ARCHIVED_PROJECT_BANNER
+      } else if (error instanceof ApiClientError && error.code === 'version_conflict') {
+        addVersionError = 'Someone just added a version — refresh and try again.'
+      } else {
+        addVersionError = error instanceof Error ? error.message : 'Could not add version.'
+      }
+    } finally {
+      addingVersion = false
+    }
+  }
 </script>
 
 <svelte:head>
@@ -91,7 +247,7 @@
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Expires</dt>
-          <dd class="font-medium text-slate-950">{formatDateTime(data.credential.expiresAt)}</dd>
+          <dd class="font-medium text-slate-950">{formatDateTime(displayExpiresAt)}</dd>
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Current version</dt>
@@ -102,6 +258,63 @@
           <dd class="font-medium text-slate-950">{formatDateTime(data.credential.updatedAt)}</dd>
         </div>
       </dl>
+
+      {#if canReveal}
+        <div class="mt-6 border-t border-slate-200 pt-6">
+          <h2 class="text-lg font-semibold text-slate-950">Lifecycle</h2>
+          <form
+            class="mt-4 space-y-4"
+            onsubmit={(event) => {
+              event.preventDefault()
+              void onSaveLifecycle()
+            }}
+          >
+            <div class="space-y-1">
+              <label class="block text-sm font-medium text-slate-800" for="lifecycle-expires-at">
+                Expiry date
+              </label>
+              <input
+                id="lifecycle-expires-at"
+                class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+                type="date"
+                bind:value={lifecycleExpiresAt}
+              />
+            </div>
+            <div class="space-y-1">
+              <label
+                class="block text-sm font-medium text-slate-800"
+                for="lifecycle-rotation-schedule"
+              >
+                Rotation schedule (cron)
+              </label>
+              <input
+                id="lifecycle-rotation-schedule"
+                class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+                type="text"
+                placeholder="0 0 1 * *"
+                bind:value={lifecycleRotationSchedule}
+              />
+              {#if lifecycleFieldError}
+                <p class="text-sm text-red-700" role="alert">{lifecycleFieldError}</p>
+              {/if}
+            </div>
+            <label class="flex items-center gap-2 text-sm text-slate-800">
+              <input type="checkbox" bind:checked={lifecycleCacheable} />
+              Cacheable by offline agents
+            </label>
+            {#if lifecycleBanner}
+              <p class="text-sm text-red-700" role="alert">{lifecycleBanner}</p>
+            {/if}
+            <button
+              class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              type="submit"
+              disabled={lifecycleSubmitting}
+            >
+              {lifecycleSubmitting ? 'Saving…' : 'Save lifecycle'}
+            </button>
+          </form>
+        </div>
+      {/if}
     </div>
 
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -145,6 +358,40 @@
         {#if revealError}
           <p class="mt-3 text-sm text-red-700" role="alert">{revealError}</p>
         {/if}
+
+        <div class="mt-6 border-t border-slate-200 pt-6">
+          <h3 class="font-semibold text-slate-950">Add new version</h3>
+          <form
+            class="mt-3 space-y-3"
+            onsubmit={(event) => {
+              event.preventDefault()
+              void onAddVersion()
+            }}
+          >
+            <div class="space-y-1">
+              <label class="block text-sm font-medium text-slate-800" for="new-version-value">
+                New value
+              </label>
+              <textarea
+                id="new-version-value"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"
+                bind:value={newVersionValue}></textarea>
+            </div>
+            {#if addVersionError}
+              <p class="text-sm text-red-700" role="alert">{addVersionError}</p>
+            {/if}
+            {#if addVersionBanner}
+              <p class="text-sm text-red-700" role="alert">{addVersionBanner}</p>
+            {/if}
+            <button
+              class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              type="submit"
+              disabled={addingVersion}
+            >
+              {addingVersion ? 'Adding…' : 'Add version'}
+            </button>
+          </form>
+        </div>
       {:else}
         <p class="mt-3 text-sm text-slate-600">
           Revealing values requires Member access or higher.
@@ -174,6 +421,97 @@
             </li>
           {/each}
         </ul>
+      {/if}
+    </section>
+
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold text-slate-950">Dependent systems</h2>
+      {#if dependencyItems.length === 0}
+        <p class="mt-3 text-sm text-slate-600">No dependent systems recorded.</p>
+      {:else}
+        <ul class="mt-4 space-y-2">
+          {#each dependencyItems as dependency (dependency.id)}
+            <li
+              class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm"
+            >
+              <span class="font-medium">{dependency.systemName} ({dependency.systemType})</span>
+              {#if canReveal}
+                <button
+                  class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                  type="button"
+                  disabled={archivingDependencyId === dependency.id}
+                  onclick={() => void onArchiveDependency(dependency.id)}
+                >
+                  {archivingDependencyId === dependency.id ? 'Archiving…' : 'Archive'}
+                </button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if canReveal}
+        <div class="mt-6 border-t border-slate-200 pt-6">
+          <h3 class="font-semibold text-slate-950">Add dependent system</h3>
+          <form
+            class="mt-3 space-y-3"
+            onsubmit={(event) => {
+              event.preventDefault()
+              void onAddDependency()
+            }}
+          >
+            <div class="space-y-1">
+              <label class="block text-sm font-medium text-slate-800" for="dependency-system-name">
+                System name
+              </label>
+              <input
+                id="dependency-system-name"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2"
+                type="text"
+                required
+                bind:value={depSystemName}
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="block text-sm font-medium text-slate-800" for="dependency-system-type">
+                System type
+              </label>
+              <select
+                id="dependency-system-type"
+                class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+                bind:value={depSystemType}
+              >
+                <option value="service">Service</option>
+                <option value="ci_pipeline">CI pipeline</option>
+                <option value="database">Database</option>
+                <option value="third_party">Third party</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="space-y-1">
+              <label class="block text-sm font-medium text-slate-800" for="dependency-notes">
+                Notes
+              </label>
+              <textarea
+                id="dependency-notes"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2"
+                bind:value={depNotes}></textarea>
+            </div>
+            {#if depError}
+              <p class="text-sm text-red-700" role="alert">{depError}</p>
+            {/if}
+            {#if depBanner}
+              <p class="text-sm text-red-700" role="alert">{depBanner}</p>
+            {/if}
+            <button
+              class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              type="submit"
+              disabled={depSubmitting}
+            >
+              {depSubmitting ? 'Adding…' : 'Add dependent system'}
+            </button>
+          </form>
+        </div>
       {/if}
     </section>
 

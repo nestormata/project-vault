@@ -6,6 +6,7 @@ import type {
   CredentialVersionSummary,
   ImportAction,
   ParsedImportItem,
+  SystemType,
 } from '@project-vault/shared'
 import { apiFetch, parseApiEnvelope } from './client.js'
 
@@ -121,6 +122,106 @@ export function listCredentialDependencies(
   return apiFetch<ListCredentialDependenciesResponse>(
     fetchFn,
     `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies`
+  )
+}
+
+export type UpdateCredentialLifecycleRequest = {
+  expiresAt: string | null
+  rotationSchedule: string | null
+  cacheable: boolean
+}
+
+export type UpdateCredentialLifecycleResponse = {
+  id: string
+  expiresAt: string | null
+  rotationSchedule: string | null
+  cacheable: boolean
+  updatedAt: string
+}
+
+// AC-L1: this form always shows and submits the full current state, so all three keys are always
+// present — deliberately avoiding the ambiguity of "blank means don't touch" vs. "blank means
+// clear" that the PATCH endpoint's partial-field semantics would otherwise require disambiguating.
+export function updateCredentialLifecycle(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  body: UpdateCredentialLifecycleRequest
+) {
+  return apiFetch<UpdateCredentialLifecycleResponse>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }
+  )
+}
+
+export type AddCredentialDependencyRequest = {
+  systemName: string
+  systemType?: SystemType
+  notes?: string | null
+}
+
+// AC-D1: the UI always sends `systemType` explicitly (the pre-selected default, not an omitted
+// field), so the displayed default always matches what's actually submitted.
+export function addCredentialDependency(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  body: AddCredentialDependencyRequest
+) {
+  return apiFetch<CredentialDependency>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }
+  )
+}
+
+export type ArchiveCredentialDependencyResponse = {
+  id: string
+  credentialId: string
+  archivedAt: string
+}
+
+export function archiveCredentialDependency(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  dependencyId: string
+) {
+  return apiFetch<ArchiveCredentialDependencyResponse>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies/${dependencyId}`,
+    { method: 'DELETE' }
+  )
+}
+
+export type AddCredentialVersionRequest = { value: string }
+
+export type AddCredentialVersionResponse = {
+  credentialId: string
+  versionNumber: number
+  createdAt: string
+}
+
+export function addCredentialVersion(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  body: AddCredentialVersionRequest
+) {
+  return apiFetch<AddCredentialVersionResponse>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/versions`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }
   )
 }
 
