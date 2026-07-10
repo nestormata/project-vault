@@ -63,6 +63,13 @@ describe('credentials schema — Story 7.2 cacheable flag', () => {
   })
 })
 
+describe('credentials schema — Story 3.5 expiry alerts', () => {
+  it('exposes alertLeadDays and notifiedLeadDays', () => {
+    expect(credentials.alertLeadDays).toBeDefined()
+    expect(credentials.notifiedLeadDays).toBeDefined()
+  })
+})
+
 describe('security_alerts schema — Story 7.2 dormancy dedupe index', () => {
   it('still exposes payload/status/alertType used by the dormancy dedupe query', () => {
     expect(securityAlerts.payload).toBeDefined()

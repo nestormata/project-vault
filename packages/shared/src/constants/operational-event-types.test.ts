@@ -90,6 +90,12 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 3.5 notification DLQ cleanup summary event type', () => {
+    expect(OperationalEvent.NOTIFICATION_DLQ_CLEANUP_SUMMARY).toBe(
+      'notification.dlq_cleanup.summary'
+    )
+  })
+
   it('exposes the Story 6.2 health-check scheduler/row event types', () => {
     expect(OperationalEvent.MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP).toBe(
       'monitoring.health_check_tick_skipped_overlap'

@@ -26,6 +26,7 @@ import { importCleanupExpired } from './workers/import-cleanup.js'
 import { runPaymentExpiryAlertJob } from './workers/payment-expiry-alert.js'
 import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
 import { runDomainExpiryAlertJob } from './workers/domain-expiry-alert.js'
+import { runCredentialExpiryAlertJob } from './workers/credential-expiry-alert.js'
 import { runMachineKeyExpiryAlertJob } from './workers/machine-key-expiry-alert.js'
 import {
   runMachineKeyOverlapAlertJob,
@@ -44,6 +45,7 @@ import {
 import { notificationBackfillHandler } from './workers/notification-backfill.js'
 import { notificationDeliverCatchupJobHandler } from './workers/notification-deliver-catchup.js'
 import { wrapDeliverHandler } from './workers/notification-deliver.js'
+import { runNotificationDlqCleanup } from './workers/notification-dlq-cleanup.js'
 import {
   notificationInboxCatchupHandler,
   notificationInboxPurgeHandler,
@@ -163,6 +165,7 @@ async function main(): Promise<void> {
       'payment/expiry-alert': { cron: '0 8 * * *' },
       'cert/expiry-alert': { cron: '0 8 * * *' },
       'domain/expiry-alert': { cron: '0 8 * * *' },
+      'credential/expiry-alert': { cron: '0 8 * * *' },
       'machine-key/expiry-alert': { cron: '0 8 * * *' },
       // AC-18: split cadence — 5-minute revoke check bounds cron-granularity overshoot to at
       // most 5 minutes even for the shortest permitted overlapMinutes (1); the pre-revocation
@@ -177,6 +180,7 @@ async function main(): Promise<void> {
       'notification/slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification/inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification/deliver-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      'notification/dlq-cleanup': { cron: '*/30 * * * *' },
       'notification/inbox-purge': { cron: '0 3 * * *' },
       'notification/send-digest': { cron: `0 ${env.NOTIFICATION_DIGEST_HOUR} * * *` },
       // Story 8.2 D3/D2 — every-minute watermark-cursor catchup (webhook), daily S3 batch, and
@@ -246,6 +250,10 @@ async function main(): Promise<void> {
         withJobLogging(fastify.log, 'domain/expiry-alert', job.id ?? 'unknown', () =>
           runDomainExpiryAlertJob(boss, fastify.log)
         ),
+      'credential/expiry-alert': (job) =>
+        withJobLogging(fastify.log, 'credential/expiry-alert', job.id ?? 'unknown', () =>
+          runCredentialExpiryAlertJob(boss, fastify.log)
+        ),
       'machine-key/expiry-alert': (job) =>
         withJobLogging(fastify.log, 'machine-key/expiry-alert', job.id ?? 'unknown', () =>
           runMachineKeyExpiryAlertJob(boss, fastify.log)
@@ -284,6 +292,7 @@ async function main(): Promise<void> {
         options: { localConcurrency: 5, localGroupConcurrency: 3 },
       },
       'notification/deliver-catchup': () => notificationDeliverCatchupJobHandler(boss, fastify.log),
+      'notification/dlq-cleanup': () => runNotificationDlqCleanup(fastify.log),
       'notification/inbox-purge': () => notificationInboxPurgeHandler(fastify.log),
       'notification/send-digest': () => notificationDigestHandler(fastify.log),
       // Story 8.2 — audit search/export/forwarding/retention background jobs.

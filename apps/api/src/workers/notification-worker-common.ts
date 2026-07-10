@@ -4,6 +4,8 @@ import { withJobLogging } from '../lib/job-logging.js'
 import type { BossService, BossJob } from '../lib/boss.js'
 import type { FastifyBaseLogger } from 'fastify'
 
+export const NOTIFICATION_MAX_ATTEMPTS = 5
+
 export function createNotificationJobHandler(
   jobName: string,
   sendFn: (notificationQueueId: string, orgId: string) => Promise<void>
@@ -47,6 +49,7 @@ export async function runNotificationCatchup(
               FROM notification_queue
               WHERE org_id = ${orgId}::uuid
                 AND status = 'pending'
+                AND attempt_count < ${NOTIFICATION_MAX_ATTEMPTS}
                 AND (deliver_at IS NULL OR deliver_at <= NOW())
                 AND created_at < NOW() - INTERVAL '5 minutes'
               LIMIT 100
@@ -57,6 +60,7 @@ export async function runNotificationCatchup(
               WHERE org_id = ${orgId}::uuid
                 AND channel = ${channel}
                 AND status = 'pending'
+                AND attempt_count < ${NOTIFICATION_MAX_ATTEMPTS}
                 AND created_at < NOW() - INTERVAL '5 minutes'
               LIMIT 100
             `
