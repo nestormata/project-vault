@@ -32,6 +32,13 @@ describe('Story 9.8 AC-T1: platform audit storage-unavailability classification'
     expect(isPlatformAuditStorageUnavailableError(error)).toBe(true)
   })
 
+  it.each(['08CUSTOM', '53-bug', '0800', '080000'])(
+    'rejects malformed values that only resemble a storage SQLSTATE: %s',
+    (code) => {
+      expect(isPlatformAuditStorageUnavailableError(errorWithCauseCode(code))).toBe(false)
+    }
+  )
+
   it.each([
     new Error('boom'),
     errorWithCauseCode('23503'),

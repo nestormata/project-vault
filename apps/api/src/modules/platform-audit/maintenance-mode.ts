@@ -20,11 +20,15 @@ export class MaintenanceModeStillUnavailableError extends Error {
   }
 }
 
-export async function isMaintenanceModeActive(tx: Tx): Promise<boolean> {
-  const [row] = await tx
+export async function isMaintenanceModeActive(
+  tx: Tx,
+  opts: { forUpdate?: boolean } = {}
+): Promise<boolean> {
+  const query = tx
     .select({ active: platformAuditMaintenanceState.active })
     .from(platformAuditMaintenanceState)
     .limit(1)
+  const [row] = opts.forUpdate ? await query.for('update') : await query
   return row?.active ?? false
 }
 

@@ -766,6 +766,15 @@ the expected reason, then implement, per AC.
 - [x] [Review][Patch][Medium] Correct the verification checklist that claimed the intentionally
   unrun `make ci` gate was green
   [_bmad-output/implementation-artifacts/9-8-platform-admin-mfa-gaps-and-audit-bypass-hardening.md:746]
+- [x] [Review][Patch][High] Serialize the maintenance-state check and pending-entry insert with
+  deactivation so a concurrent transition cannot strand an entry while maintenance mode is inactive
+  [apps/api/src/lib/audit-or-fail-closed.ts:205]
+- [x] [Review][Patch][High] Require a valid five-character PostgreSQL SQLSTATE before applying
+  storage-class prefix classification, preventing malformed application codes from entering the bypass
+  [apps/api/src/lib/audit-or-fail-closed.ts:24]
+- [x] [Review][Patch][Low] Correct stale wrapper comments that still described every write failure
+  as eligible for maintenance-mode queueing
+  [apps/api/src/lib/audit-or-fail-closed.ts:174]
 
 ---
 

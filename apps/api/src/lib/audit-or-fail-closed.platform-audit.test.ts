@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
+import postgres from 'postgres'
 import { getDb, withPlatformOperatorContext } from '@project-vault/db'
 import {
   platformAuditEvents,
@@ -137,6 +138,61 @@ describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailCl
       const pending = await getDb().select().from(platformAuditPendingEntries)
       expect(pending).toHaveLength(1)
     } finally {
+      await loadInitialVaultState()
+      await unsealVault({ passphrase: TEST_PASSPHRASE })
+      await tryDeleteTestUser(userId)
+    }
+  })
+
+  it('serializes maintenance-state deactivation with pending-entry queueing', async () => {
+    const userId = await createTestUser('or-fail-closed-deactivation-race')
+    const adminSql = postgres(
+      process.env['DATABASE_URL'] ??
+        'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
+    )
+    const reservation = adminSql.reserve()
+    const conn = await reservation
+    let transactionOpen = false
+    try {
+      await getDb().transaction((tx) => activateMaintenanceMode(tx, { reason: 'r', userId }))
+      zeroKeys()
+
+      await conn`BEGIN`
+      transactionOpen = true
+      await conn`SELECT * FROM platform_audit_maintenance_state WHERE id = 1 FOR UPDATE`
+      await conn`UPDATE platform_audit_maintenance_state SET active = false WHERE id = 1`
+
+      const write = getDb()
+        .transaction((tx) =>
+          writePlatformAuditEntryOrFailClosed(tx, {
+            operatorId: userId,
+            actionType: SETTINGS_UPDATED,
+            payload: {},
+          })
+        )
+        .then(
+          () => ({ status: 'resolved' as const }),
+          (error: unknown) => ({ status: 'rejected' as const, error })
+        )
+
+      const stateWhileDeactivationLocked = await Promise.race([
+        write.then(() => 'settled' as const),
+        new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 100)),
+      ])
+      await conn`COMMIT`
+      transactionOpen = false
+
+      const result = await write
+      expect(stateWhileDeactivationLocked).toBe('blocked')
+      expect(result.status).toBe('rejected')
+      if (result.status === 'rejected') {
+        expect(result.error).toBeInstanceOf(SameTransactionPlatformAuditWriteError)
+      }
+      expect(await getDb().select().from(platformAuditPendingEntries)).toHaveLength(0)
+    } finally {
+      if (transactionOpen) await conn`ROLLBACK`
+      conn.release()
+      await adminSql.end()
       await loadInitialVaultState()
       await unsealVault({ passphrase: TEST_PASSPHRASE })
       await tryDeleteTestUser(userId)
