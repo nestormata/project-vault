@@ -16,7 +16,9 @@ const ROUTE_GROUPS = ['(app)', '(auth)', '(vault)']
  * `/settings/security` that were never wired up to an actual route.
  */
 export function routeExists(urlPath: string): boolean {
-  const segments = (urlPath.split('?')[0] ?? '').split('/').filter((segment) => segment.length > 0)
+  const queryStart = urlPath.indexOf('?')
+  const pathOnly = queryStart === -1 ? urlPath : urlPath.slice(0, queryStart)
+  const segments = pathOnly.split('/').filter((segment) => segment.length > 0)
 
   const candidateRoots = [
     ROUTES_ROOT,
