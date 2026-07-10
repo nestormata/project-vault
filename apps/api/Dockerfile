@@ -48,10 +48,10 @@ RUN pnpm --filter @project-vault/agent build \
 
 # Bundle the api and its production deps into a self-contained directory. This runs in its
 # own stage (not in `builder`) because `pnpm deploy` prunes the workspace node_modules to
-# production-only in place — the `migrate` service targets `builder` directly to run
-# drizzle-kit, and a pruned workspace there made pnpm's automatic deps-status check try to
-# self-heal via `pnpm install --production`, which fails on the root `prepare: husky` script
-# (a devDependency absent from a production install).
+# production-only in place — the `migrate` service targets `db-builder` directly (Story 1.13
+# AC-D3) to run drizzle-kit, and a pruned workspace there made pnpm's automatic deps-status
+# check try to self-heal via `pnpm install --production`, which fails on the root
+# `prepare: husky` script (a devDependency absent from a production install).
 # pnpm deploy copies from the already-built virtual store (argon2 native binary included)
 # so no compiler toolchain is needed in the runner stage.
 FROM builder AS deploy
