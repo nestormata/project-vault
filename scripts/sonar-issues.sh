@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# List open SonarCloud issues for this project via the Web API. Read-only — this project uses
-# Automatic Analysis (see .sonarcloud.properties + docs/sonarqube.md), so there is no scan to
-# trigger locally; this just queries results SonarCloud already computed.
+# List SonarCloud issues for this project via the Web API. Read-only: CI performs analysis using
+# sonar-project.properties; this script only queries the most recently published results.
 # Reads SONAR_TOKEN / SONAR_ORGANIZATION / SONAR_PROJECT_KEY / SONAR_HOST_URL from .env
 # (git-ignored) so no credentials ever need to be typed into chat or a committed file.
 set -euo pipefail

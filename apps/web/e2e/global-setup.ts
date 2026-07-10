@@ -1,5 +1,9 @@
 import postgres from 'postgres'
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
+import {
+  buildMigrationInvocation,
+  generateE2EVaultPassphrase,
+} from '../src/lib/server/e2e-setup-security.js'
 import { superuserDatabaseUrl } from './fixtures/db.js'
 
 // AC-I3: global-setup.ts's job is readiness-polling + DB-reset + vault-init ONLY — it does NOT
@@ -73,7 +77,8 @@ async function resetDatabase(): Promise<void> {
     await sql.end({ timeout: 5 })
   }
 
-  execSync('pnpm db:migrate', {
+  const migration = buildMigrationInvocation()
+  execFileSync(migration.executable, migration.args, {
     cwd: new URL('../../..', import.meta.url).pathname,
     env: { ...process.env, DATABASE_URL: superuserDatabaseUrl() },
     stdio: 'inherit',
@@ -89,7 +94,7 @@ async function initVault(): Promise<void> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       kmsType: 'passphrase',
-      passphrase: 'e2e-test-passphrase-12ch',
+      passphrase: generateE2EVaultPassphrase(),
     }),
   })
   if (!response.ok && response.status !== 409) {
