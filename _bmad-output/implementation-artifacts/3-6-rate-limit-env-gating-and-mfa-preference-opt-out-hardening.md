@@ -430,6 +430,7 @@ GitHub Copilot CLI sub-agent
 - 2026-07-10: `pnpm --filter @project-vault/db exec vitest run --coverage=false src/__tests__/notification-preference-none-channel.test.ts`
 - 2026-07-10: `pnpm --filter @project-vault/api exec vitest run --coverage=false src/modules/notifications/preferences.test.ts src/modules/notifications/routes.test.ts src/notifications/dispatcher.test.ts`
 - 2026-07-10: `pnpm lint`, `pnpm turbo typecheck`, `pnpm build`, `pnpm jscpd`, and `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault ADMIN_DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm --filter @project-vault/db test`
+- 2026-07-10: `pnpm tsx scripts/check-env-example.ts` passed after documenting `RATE_LIMIT_TEST_BYPASS` in `.env.example`.
 
 ### Completion Notes List
 
@@ -438,9 +439,11 @@ GitHub Copilot CLI sub-agent
 - Implemented AC-4 through AC-7 by persisting `channel: 'none'` rows on PATCH/PUT, deleting conflicting rows transactionally, rejecting contradictory `none`+real-channel request bodies, skipping default backfill for opted-out alert types, widening response typing to include `none`, and teaching both org-routed and direct-user dispatchers to ignore `none` rows.
 - AC-8 is N/A: notification preference routes still declare `writeAuditEvent: false` and have no existing audit entry hook for PUT/PATCH preference mutations, so this story preserved the current no-audit scope rather than inventing new audit behavior.
 - Quality gates: focused rate-limit suites passed; focused notification suites passed; `pnpm lint`, `pnpm turbo typecheck`, `pnpm build`, and `pnpm jscpd` passed. Root `pnpm test` still exits because `apps/web` has a pre-existing branch-coverage threshold failure (67.9% < 80%) even though its tests pass; per user instruction, that pure coverage-threshold failure was not treated as blocking.
+- CI follow-up: added the omitted `RATE_LIMIT_TEST_BYPASS=false` example and test-only safety guidance to `.env.example`; the schema/template parity gate now passes.
 
 ### File List
 
+- .env.example
 - apps/api/src/__tests__/helpers/auth-test-helpers.ts
 - apps/api/src/__tests__/vault-lifecycle.test.ts
 - apps/api/src/config/env.test.ts
