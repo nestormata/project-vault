@@ -1,6 +1,6 @@
 # Story 2.9: Credential & Project Web UI Completeness
 
-Status: review
+Status: done
 
 <!-- Completion-round-2 story closing a set of "API exists, web incomplete" gaps left in
      deferred-work.md since Epic 2's own closure retro (2026-06-30, before the Product Surface
@@ -962,6 +962,7 @@ Cursor Grok 4.5 (bmad-dev-story resume)
 ### Change Log
 
 - 2026-07-10: Completed Story 2.9 (resume from `bdc05b8`) — all AC groups F/P/L/D/V/I/A/G/S implemented and verified; fixed GET dependencies `{ data }` wrapper regression from 4-5; status → review.
+- 2026-07-10: Code review + CI gate complete; status → done.
 
 ### Review Findings
 
