@@ -13,7 +13,11 @@ import {
 import { invalidateEmailTransport } from '../../workers/notification-email.js'
 import { resolveEffectiveSettings, upsertSystemSettings } from './service.js'
 import { SystemSettingsResponseSchema, SystemSettingsUpdateSchema } from './schema.js'
-import { PLATFORM_ADMIN_ERROR_RESPONSES, beginSecureMutation } from './route-common.js'
+import {
+  PLATFORM_ADMIN_ERROR_RESPONSES,
+  beginSecureMutation,
+  sendPlatformAuditWriteFailure,
+} from './route-common.js'
 
 /**
  * Extracted to a named function (rather than inlined in the secureRoute() call, jscpd dedup —
@@ -31,24 +35,29 @@ async function handleUpdateSettings(
   if (!begun) return reply
   const { secureCtx, data } = begun
 
-  const { effective, smtpChanged } = await upsertSystemSettings(data, secureCtx.auth.userId, req)
+  try {
+    const { effective, smtpChanged } = await upsertSystemSettings(data, secureCtx.auth.userId, req)
 
-  // D4/AC-6: invalidate the cached SMTP transport only when an SMTP field actually changed
-  // — avoids unnecessarily dropping a healthy connection pool for unrelated updates.
-  if (smtpChanged) invalidateEmailTransport()
+    // D4/AC-6: invalidate the cached SMTP transport only when an SMTP field actually changed
+    // — avoids unnecessarily dropping a healthy connection pool for unrelated updates.
+    if (smtpChanged) invalidateEmailTransport()
 
-  operationalLog(
-    req.log,
-    'info',
-    OperationalEvent.PLATFORM_SETTINGS_UPDATED,
-    'platform settings updated',
-    {
-      operatorUserId: secureCtx.auth.userId,
-      fieldsChanged: Object.keys(data),
-    }
-  )
+    operationalLog(
+      req.log,
+      'info',
+      OperationalEvent.PLATFORM_SETTINGS_UPDATED,
+      'platform settings updated',
+      {
+        operatorUserId: secureCtx.auth.userId,
+        fieldsChanged: Object.keys(data),
+      }
+    )
 
-  return effective
+    return effective
+  } catch (error) {
+    if (sendPlatformAuditWriteFailure(error, reply)) return reply
+    throw error
+  }
 }
 
 /**

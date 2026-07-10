@@ -54,7 +54,9 @@ type DomScreen = typeof screen
 type DomFireEvent = typeof fireEvent
 
 export async function goToCredentialStep(domScreen: DomScreen, domFireEvent: DomFireEvent) {
-  await domFireEvent.click(domScreen.getByRole('button', { name: GOT_IT_BUTTON }))
+  // fireEvent may be sync (@testing-library/dom) or async (@testing-library/svelte).
+  // Promise.resolve keeps the await always on a real Promise (typescript:S4123).
+  await Promise.resolve(domFireEvent.click(domScreen.getByRole('button', { name: GOT_IT_BUTTON })))
 }
 
 export async function fillCredentialForm(
@@ -62,10 +64,14 @@ export async function fillCredentialForm(
   domFireEvent: DomFireEvent,
   input: { name: string; value: string }
 ) {
-  await domFireEvent.input(domScreen.getByLabelText(NAME_LABEL), {
-    target: { value: input.name },
-  })
-  await domFireEvent.input(domScreen.getByLabelText(CREDENTIAL_VALUE_LABEL), {
-    target: { value: input.value },
-  })
+  await Promise.resolve(
+    domFireEvent.input(domScreen.getByLabelText(NAME_LABEL), {
+      target: { value: input.name },
+    })
+  )
+  await Promise.resolve(
+    domFireEvent.input(domScreen.getByLabelText(CREDENTIAL_VALUE_LABEL), {
+      target: { value: input.value },
+    })
+  )
 }

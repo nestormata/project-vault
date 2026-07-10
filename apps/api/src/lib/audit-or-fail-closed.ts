@@ -17,7 +17,42 @@ import {
   drainPendingEntries,
   queuePendingEntry,
 } from '../modules/platform-audit/maintenance-mode.js'
+import { VaultSealedError } from '../modules/vault/key-service.js'
 import { SameTransactionAuditWriteError } from './secure-route.js'
+
+// Story 9.8 AC-T1: only these database/socket failures may use the maintenance bypass.
+const PLATFORM_AUDIT_STORAGE_SQLSTATE_CLASSES = ['08', '53'] as const
+const PLATFORM_AUDIT_STORAGE_SQLSTATES = new Set(['57P01', '57P02', '57P03'])
+const POSTGRES_SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/
+const PLATFORM_AUDIT_STORAGE_SOCKET_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'EPIPE',
+])
+
+function errorCode(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const code = (value as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
+}
+
+export function isPlatformAuditStorageUnavailableError(error: unknown): boolean {
+  if (error instanceof VaultSealedError) return true
+
+  const cause =
+    error && typeof error === 'object' ? (error as { cause?: unknown }).cause : undefined
+  return [errorCode(cause), errorCode(error)].some(
+    (code) =>
+      code !== undefined &&
+      ((POSTGRES_SQLSTATE_PATTERN.test(code) &&
+        PLATFORM_AUDIT_STORAGE_SQLSTATE_CLASSES.some((prefix) => code.startsWith(prefix))) ||
+        PLATFORM_AUDIT_STORAGE_SQLSTATES.has(code) ||
+        PLATFORM_AUDIT_STORAGE_SOCKET_CODES.has(code))
+  )
+}
 
 /** Shared by every `write*AuditEntryOrFailClosed` wrapper below: any audit-write error is
  * rewrapped as `SameTransactionAuditWriteError` so SecureRoute (or a job's own transaction) rolls
@@ -129,15 +164,21 @@ export class SameTransactionPlatformAuditWriteError extends Error {
   }
 }
 
+function platformAuditWriteError(error: unknown): SameTransactionPlatformAuditWriteError {
+  return new SameTransactionPlatformAuditWriteError(
+    error instanceof Error ? error.message : String(error)
+  )
+}
+
 export type PlatformAuditInput = PlatformAuditFields & { request?: FastifyRequest }
 
 /**
  * Story 9.4 AC-6/D8: writes a same-transaction platform-audit row and fails closed — UNLESS
- * maintenance mode is active (D8/AC-15), in which case a write failure is caught and queued to
- * `platform_audit_pending_entries` instead of aborting the parent transaction. Also opportunistically
- * drains any queued entries after every ordinary successful write (AC-16) — best-effort: a drain
- * failure must never take down the (already-succeeded) triggering action's transaction, so it is
- * swallowed rather than rethrown.
+ * a classified storage-unavailability failure occurs while maintenance mode is active (D8/AC-15),
+ * in which case it is queued to `platform_audit_pending_entries` instead of aborting the parent
+ * transaction. Also opportunistically drains any queued entries after every ordinary successful
+ * write (AC-16) — best-effort: a drain failure must never take down the (already-succeeded)
+ * triggering action's transaction, so it is swallowed rather than rethrown.
  */
 export async function writePlatformAuditEntryOrFailClosed(
   tx: Tx,
@@ -152,37 +193,42 @@ export async function writePlatformAuditEntryOrFailClosed(
   try {
     // Code review fix: the write attempt runs in its own SAVEPOINT (`tx.transaction()` nested
     // inside an existing transaction becomes a real SAVEPOINT — same pattern as
-    // `auth/service.ts`'s `allocateOrganizationSlug`). AC-6 explicitly lists a genuine DB
-    // constraint violation (not just a sealed-vault `VaultSealedError`) as a failure this
-    // mechanism must handle — without the savepoint, a real Postgres-level error here would
-    // abort the entire outer `tx`, so the very next statement (`isMaintenanceModeActive(tx)`
-    // below) would itself throw "current transaction is aborted", silently defeating the
-    // maintenance-mode fallback exactly when it's needed most.
+    // `auth/service.ts`'s `allocateOrganizationSlug`). Without the savepoint, a Postgres-level
+    // error would abort the entire outer `tx`, preventing both the classified-storage fallback
+    // and consistent fail-closed wrapping for application/constraint failures.
     await tx.transaction((savepointTx) =>
       writePlatformAuditEntry(savepointTx as Tx, resolvedFields)
     )
-  } catch (error) {
-    if (await isMaintenanceModeActive(tx)) {
-      // Code review fix: `writePlatformAuditEntry` only redacts the payload internally, right
-      // before its own (now-aborted) INSERT — the caller here still only has the original,
-      // unredacted `resolvedFields.payload`. Without re-redacting before queuing, any write
-      // failure while maintenance mode is active (the common case, not just a forbidden-key
-      // bug) would persist an unredacted payload into `platform_audit_pending_entries`, which
-      // — unlike `platform_audit_events` — has no RLS policy. Redacting here keeps the same
-      // guarantee the happy path already has; in non-production this still throws loud on a
-      // genuine forbidden-key caller bug rather than silently queuing the secret.
-      await queuePendingEntry(tx, {
-        ...resolvedFields,
-        payload: redactPlatformAuditPayload(resolvedFields.payload, {
-          onForbiddenKeyStripped: (message) =>
-            process.stderr.write(`[platform-audit] WARN: ${message}\n`),
-        }),
-      })
-      return
+  } catch (writeError) {
+    try {
+      if (
+        isPlatformAuditStorageUnavailableError(writeError) &&
+        // Serialize the state check and queue insert with deactivation. Otherwise deactivation
+        // can commit after this check but before the pending insert, stranding an entry while
+        // maintenance mode is inactive and future opportunistic drains are disabled.
+        (await isMaintenanceModeActive(tx, { forUpdate: true }))
+      ) {
+        // Code review fix: `writePlatformAuditEntry` only redacts the payload internally, right
+        // before its own (now-aborted) INSERT — the caller here still only has the original,
+        // unredacted `resolvedFields.payload`. Without re-redacting before queuing, any write
+        // failure while maintenance mode is active (the common case, not just a forbidden-key
+        // bug) would persist an unredacted payload into `platform_audit_pending_entries`, which
+        // — unlike `platform_audit_events` — has no RLS policy. Redacting here keeps the same
+        // guarantee the happy path already has; in non-production this still throws loud on a
+        // genuine forbidden-key caller bug rather than silently queuing the secret.
+        await queuePendingEntry(tx, {
+          ...resolvedFields,
+          payload: redactPlatformAuditPayload(resolvedFields.payload, {
+            onForbiddenKeyStripped: (message) =>
+              process.stderr.write(`[platform-audit] WARN: ${message}\n`),
+          }),
+        })
+        return
+      }
+    } catch (fallbackError) {
+      throw platformAuditWriteError(fallbackError)
     }
-    throw new SameTransactionPlatformAuditWriteError(
-      error instanceof Error ? error.message : String(error)
-    )
+    throw platformAuditWriteError(writeError)
   }
 
   // AC-16: opportunistic drain — never let a drain failure roll back the write that just

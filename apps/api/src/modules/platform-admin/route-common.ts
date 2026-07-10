@@ -1,6 +1,7 @@
 import { z } from 'zod/v4'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
+import { SameTransactionPlatformAuditWriteError } from '../../lib/audit-or-fail-closed.js'
 import { parseBody, type SafeParseSchema } from '../../lib/route-helpers.js'
 import type { SecureRouteContext } from '../../lib/secure-route.js'
 
@@ -22,6 +23,15 @@ export const PLATFORM_ADMIN_ERROR_RESPONSES = {
   401: ApiErrorSchema,
   403: ApiErrorSchema,
   503: z.union([ApiErrorSchema, VaultSealedResponseSchema]),
+}
+
+export function sendPlatformAuditWriteFailure(error: unknown, reply: FastifyReply): boolean {
+  if (!(error instanceof SameTransactionPlatformAuditWriteError)) return false
+  void reply.status(503).send({
+    code: 'platform_audit_write_failed',
+    message: 'Platform audit logging is unavailable',
+  })
+  return true
 }
 
 /**

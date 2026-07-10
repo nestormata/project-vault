@@ -83,12 +83,10 @@
   <p class="mt-1 text-gray-500">Manage all organizations on this instance.</p>
 
   {#if pageError}
-    <p
+    <MfaAwareErrorAlert
+      message={pageError}
       class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-      role="alert"
-    >
-      {pageError}
-    </p>
+    />
   {/if}
 
   <div class="mt-6">

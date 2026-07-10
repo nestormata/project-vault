@@ -45,7 +45,7 @@ async function probeLockFree(): Promise<boolean> {
     }
     return locked
   } finally {
-    await reserved.release()
+    reserved.release()
   }
 }
 
@@ -282,7 +282,7 @@ describe.sequential('Story 9.6 D1: acquireRestoreLock', () => {
     expect(await probeLockFree()).toBe(true)
 
     try {
-      await reserved.release()
+      reserved.release()
     } catch {
       // Expected: the underlying connection is already gone (that's the point of this test).
     }
