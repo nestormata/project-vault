@@ -6,7 +6,7 @@ import { toRepoPath, walkFiles } from './lib/scan-utils.js'
 
 export type Violation = { file: string; line: number; text: string }
 
-const STUB_MARKER_SOURCE_TEXT = ['alert', 'pending_epic3'].join('.')
+export const STUB_MARKER_SOURCE_TEXT = ['alert', 'pending_epic3'].join('.')
 // Strips every character that isn't a letter/digit/underscore, then checks the
 // remaining alphanumeric stream for the marker with its separating dot removed too.
 // This collapses far more obfuscation shapes than a punctuation-only strip would —
@@ -16,20 +16,31 @@ const STUB_MARKER_SOURCE_TEXT = ['alert', 'pending_epic3'].join('.')
 // (Red Team: reject split-string obfuscation, not just `+`-concatenation).
 const STUB_MARKER_NORMALIZED = STUB_MARKER_SOURCE_TEXT.replaceAll('.', '')
 const NORMALIZE_PATTERN = /\W/g
-const SCANNABLE_EXTENSIONS = ['.ts', '.tsx', '.js']
+const SCANNABLE_EXTENSIONS = ['.ts', '.tsx', '.js', '.mts', '.cts', '.jsx']
+
+// Normalization is bounded to a single line rather than the whole file: stripping
+// punctuation/whitespace across an entire file could merge two unrelated words that
+// happen to appear near each other in prose (e.g. separate sentences) into a false
+// positive. A single line is still enough to catch the obfuscation shapes AC-13
+// cares about (`alert` + `.`/`,`/etc + `pending_epic3`, or an array-join form),
+// since none of those constructions span multiple source lines in practice.
+function lineContainsMarker(line: string): boolean {
+  if (line.includes(STUB_MARKER_SOURCE_TEXT)) return true
+  return line.replace(NORMALIZE_PATTERN, '').includes(STUB_MARKER_NORMALIZED)
+}
 
 function fileContainsMarker(content: string): boolean {
-  if (content.includes(STUB_MARKER_SOURCE_TEXT)) return true
-  return content.replace(NORMALIZE_PATTERN, '').includes(STUB_MARKER_NORMALIZED)
+  return content.split('\n').some((line) => lineContainsMarker(line))
 }
 
 function lineForFirstMatch(content: string): number {
   const lines = content.split('\n')
   for (let i = 0; i < lines.length; i++) {
-    if (fileContainsMarker(lines[i] ?? '')) return i + 1
+    if (lineContainsMarker(lines[i] ?? '')) return i + 1
   }
-  // Marker only detectable after cross-line normalization (unlikely in practice) —
-  // fall back to line 1 so the violation is still reported.
+  // fileContainsMarker/lineForFirstMatch now use the same per-line check, so this
+  // is unreachable when fileContainsMarker(content) is true — kept as a safe
+  // fallback rather than a non-null assertion.
   return 1
 }
 

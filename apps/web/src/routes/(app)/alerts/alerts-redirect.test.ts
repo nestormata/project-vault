@@ -22,6 +22,21 @@ describe('/alerts route truth (AC-1)', () => {
     expect(redirect.location.endsWith('/notifications')).toBe(true)
   })
 
+  it('forwards the query string to /notifications', async () => {
+    let caught: unknown
+    try {
+      await load({
+        url: new URL('https://vault.example.com/alerts?foo=bar&baz=qux'),
+      } as Parameters<typeof load>[0])
+    } catch (error) {
+      caught = error
+    }
+
+    expect(isRedirect(caught)).toBe(true)
+    const redirect = caught as { status: number; location: string }
+    expect(redirect.location).toBe('/notifications?foo=bar&baz=qux')
+  })
+
   it('does not render a placeholder page for /alerts', () => {
     const placeholderPath = resolve(routeRoot, '+page.svelte')
     expect(existsSync(placeholderPath)).toBe(false)

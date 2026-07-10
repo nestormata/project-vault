@@ -25,4 +25,24 @@ describe('MFA recovery notification templates (AC-7d)', () => {
     expect(rendered.inboxTitle).toContain('MFA recovery codes were regenerated')
     expect(rendered.inboxBody.length).toBeGreaterThan(0)
   })
+
+  it('falls back to "unavailable" instead of rendering "undefined" for a missing remainingRecoveryCodes', () => {
+    const rendered = renderEmailTemplate('security.mfa_recovery_used', {
+      userId: PAYLOAD.userId,
+    })
+
+    expect(rendered.text).toContain('unavailable')
+    expect(rendered.text).not.toContain('undefined')
+    expect(rendered.html).not.toContain('undefined')
+  })
+
+  it('falls back to "unavailable" for a non-numeric remainingRecoveryCodes', () => {
+    const rendered = renderEmailTemplate('security.mfa_recovery_codes_regenerated', {
+      userId: PAYLOAD.userId,
+      remainingRecoveryCodes: 'not-a-number',
+    })
+
+    expect(rendered.text).toContain('unavailable')
+    expect(rendered.text).not.toContain('undefined')
+  })
 })

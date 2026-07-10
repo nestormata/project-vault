@@ -3,6 +3,14 @@ export type MfaRecoveryPayload = {
   remainingRecoveryCodes: number
 }
 
+// notification_queue payloads are stored as untyped JSON — a malformed or missing
+// remainingRecoveryCodes must not silently render the literal string "undefined" in
+// a security-sensitive alert email.
+function remainingRecoveryCodesOrFallback(raw: Record<string, unknown>): number | string {
+  const value = raw.remainingRecoveryCodes
+  return typeof value === 'number' && Number.isFinite(value) ? value : 'unavailable'
+}
+
 function escapeHtml(str: string): string {
   return str
     .replaceAll('&', '&amp;')
@@ -16,15 +24,15 @@ export function renderSecurityMfaRecoveryUsed(raw: Record<string, unknown>): {
   text: string
   html: string
 } {
-  const p = raw as MfaRecoveryPayload
   const subject = `[Project Vault] MFA recovery code used on your account`
+  const remainingRecoveryCodes = remainingRecoveryCodesOrFallback(raw)
 
   const text = [
     'Security Alert — Project Vault',
     '',
     'A multi-factor authentication recovery code was used to sign in to your account.',
     '',
-    `  Remaining recovery codes: ${p.remainingRecoveryCodes}`,
+    `  Remaining recovery codes: ${remainingRecoveryCodes}`,
     '',
     'If this was not you, revoke your sessions and regenerate your recovery codes immediately.',
     '',
@@ -39,7 +47,7 @@ export function renderSecurityMfaRecoveryUsed(raw: Record<string, unknown>): {
   <p>A multi-factor authentication recovery code was used to sign in to your account.</p>
   <table style="border-collapse:collapse;width:100%;">
     <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold;">Remaining recovery codes</td>
-        <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(String(p.remainingRecoveryCodes))}</td></tr>
+        <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(String(remainingRecoveryCodes))}</td></tr>
   </table>
   <p>If this was not you, revoke your sessions and regenerate your recovery codes immediately.</p>
   <hr><p style="color:#6b7280;font-size:12px;">This is an automated message from Project Vault.</p>
@@ -54,15 +62,15 @@ export function renderSecurityMfaRecoveryCodesRegenerated(raw: Record<string, un
   text: string
   html: string
 } {
-  const p = raw as MfaRecoveryPayload
   const subject = `[Project Vault] MFA recovery codes were regenerated`
+  const remainingRecoveryCodes = remainingRecoveryCodesOrFallback(raw)
 
   const text = [
     'Security Notice — Project Vault',
     '',
     'Your multi-factor authentication recovery codes were regenerated.',
     '',
-    `  New unused recovery codes: ${p.remainingRecoveryCodes}`,
+    `  New unused recovery codes: ${remainingRecoveryCodes}`,
     '',
     'Previously issued recovery codes are no longer valid.',
     'If this was not you, revoke your sessions immediately.',
@@ -78,7 +86,7 @@ export function renderSecurityMfaRecoveryCodesRegenerated(raw: Record<string, un
   <p>Your multi-factor authentication recovery codes were regenerated.</p>
   <table style="border-collapse:collapse;width:100%;">
     <tr><td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold;">New unused recovery codes</td>
-        <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(String(p.remainingRecoveryCodes))}</td></tr>
+        <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(String(remainingRecoveryCodes))}</td></tr>
   </table>
   <p>Previously issued recovery codes are no longer valid. If this was not you, revoke your sessions immediately.</p>
   <hr><p style="color:#6b7280;font-size:12px;">This is an automated message from Project Vault.</p>

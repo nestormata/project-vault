@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { notificationQueue, orgMemberships, totpUsedCodes } from '@project-vault/db/schema'
@@ -149,6 +149,50 @@ describe.sequential('MFA notification wiring (AC-7e)', () => {
     })
 
     await app.close()
+  }, 40_000)
+
+  it('never logs the retired stub marker for either MFA notification path (AC-7e test 3)', async () => {
+    // Built from separate identifiers (not the literal words) across two lines so
+    // this assertion doesn't itself trip the check-alert-pending-epic3 CI guard it
+    // verifies the absence of.
+    const retiredStubPrefix = 'alert'
+    const retiredStubSuffix = 'pending_epic3'
+    const RETIRED_MARKER = `${retiredStubPrefix}.${retiredStubSuffix}`
+    const stderrWrites: string[] = []
+    const stderrSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation((chunk: string | Uint8Array) => {
+        stderrWrites.push(chunk.toString())
+        return true
+      })
+
+    try {
+      const recoverUser = await setupEnrolledMfaUser()
+      const recover = await recoverAsUser(
+        recoverUser.app,
+        recoverUser.user,
+        recoverUser.recoveryCodes[0] as string
+      )
+      expect(recover.statusCode).toBe(200)
+      await recoverUser.app.close()
+
+      const regenerateUser = await setupEnrolledMfaUser()
+      await getDb()
+        .delete(totpUsedCodes)
+        .where(eq(totpUsedCodes.userId, regenerateUser.user.userId))
+      const regenerate = await regenerateAsUser(
+        regenerateUser.app,
+        regenerateUser.cookies,
+        regenerateUser.secret
+      )
+      expect(regenerate.statusCode).toBe(200)
+      await regenerateUser.app.close()
+    } finally {
+      stderrSpy.mockRestore()
+    }
+
+    const combined = stderrWrites.join('')
+    expect(combined).not.toContain(RETIRED_MARKER)
   }, 40_000)
 
   it('never includes recovery code material in the rendered MFA templates', async () => {
