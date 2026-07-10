@@ -105,28 +105,22 @@ function projectMatchWhere(
   )
 }
 
-async function countCredentials(
+async function countItems(
   tx: Tx,
+  kind: 'credentials' | 'projects',
   orgId: string,
   like: string,
   scopeToMembership: boolean,
   userId: string
 ): Promise<number> {
-  const [row] = await tx
-    .select({ count: sql<number>`count(*)` })
-    .from(credentials)
-    .innerJoin(projects, eq(credentials.projectId, projects.id))
-    .where(credentialMatchWhere(orgId, like, scopeToMembership, userId))
-  return Number(row?.count ?? 0)
-}
-
-async function countProjects(
-  tx: Tx,
-  orgId: string,
-  like: string,
-  scopeToMembership: boolean,
-  userId: string
-): Promise<number> {
+  if (kind === 'credentials') {
+    const [row] = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(credentials)
+      .innerJoin(projects, eq(credentials.projectId, projects.id))
+      .where(credentialMatchWhere(orgId, like, scopeToMembership, userId))
+    return Number(row?.count ?? 0)
+  }
   const [row] = await tx
     .select({ count: sql<number>`count(*)` })
     .from(projects)
@@ -152,10 +146,10 @@ export async function executeSearch(input: ExecuteSearchInput): Promise<{
   const like = `%${escapeLikeTerm(q)}%`
 
   const credTotal = types.includes('credentials')
-    ? await countCredentials(tx, orgId, like, scopeToMembership, userId)
+    ? await countItems(tx, 'credentials', orgId, like, scopeToMembership, userId)
     : 0
   const projTotal = types.includes('projects')
-    ? await countProjects(tx, orgId, like, scopeToMembership, userId)
+    ? await countItems(tx, 'projects', orgId, like, scopeToMembership, userId)
     : 0
   const total = credTotal + projTotal
 
