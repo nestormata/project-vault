@@ -166,4 +166,111 @@ describe('GlobalSearch', () => {
     await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'stripe' } })
     await vi.waitFor(() => expect(screen.getByText(/expires in/i)).toBeTruthy())
   })
+
+  it('closes (rather than reopening) when Cmd/Ctrl+K is pressed while already open', async () => {
+    render(GlobalSearch, { props: { open: true } })
+    expect(await screen.findByRole('dialog', { name: 'Global search' })).toBeTruthy()
+    pressShortcut(true)
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Global search' })).toBeNull()
+    })
+  })
+
+  it('does not show an expiry badge for a credential with no expiresAt', async () => {
+    installSearchFetchMock(() => searchResponse([{ ...credentialResult, expiresAt: null }]))
+    render(GlobalSearch, { props: { open: true } })
+    await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'stripe' } })
+    await vi.waitFor(() => expect(screen.getByText('Payments')).toBeTruthy())
+    expect(screen.queryByText(/expires in/i)).toBeNull()
+  })
+
+  it('ArrowDown wraps selection to the first result past the last', async () => {
+    installSearchFetchMock(() => searchResponse([credentialResult, { ...projectResult }]))
+    render(GlobalSearch, { props: { open: true } })
+    const dialog = screen.getByRole('dialog', { name: 'Global search' })
+    await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'a' } })
+    await vi.waitFor(() => expect(screen.getAllByRole('option').length).toBe(2))
+
+    await fireEvent.keyDown(dialog, { key: 'ArrowDown' })
+    let options = screen.getAllByRole('option')
+    expect(options[1]?.getAttribute('aria-selected')).toBe('true')
+
+    await fireEvent.keyDown(dialog, { key: 'ArrowDown' })
+    options = screen.getAllByRole('option')
+    expect(options[0]?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('ArrowUp wraps selection to the last result before the first', async () => {
+    installSearchFetchMock(() => searchResponse([credentialResult, { ...projectResult }]))
+    render(GlobalSearch, { props: { open: true } })
+    const dialog = screen.getByRole('dialog', { name: 'Global search' })
+    await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'a' } })
+    await vi.waitFor(() => expect(screen.getAllByRole('option').length).toBe(2))
+
+    await fireEvent.keyDown(dialog, { key: 'ArrowUp' })
+    const options = screen.getAllByRole('option')
+    expect(options[1]?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('arrow navigation is a no-op with zero results (guarded branch)', async () => {
+    installSearchFetchMock(() => searchResponse([]))
+    render(GlobalSearch, { props: { open: true } })
+    const dialog = screen.getByRole('dialog', { name: 'Global search' })
+    await fireEvent.keyDown(dialog, { key: 'ArrowDown' })
+    await fireEvent.keyDown(dialog, { key: 'ArrowUp' })
+    // No throw, and still no results rendered.
+    expect(screen.queryAllByRole('option').length).toBe(0)
+  })
+
+  it('Enter selects and navigates to the currently-highlighted result', async () => {
+    installSearchFetchMock(() => searchResponse([credentialResult]))
+    render(GlobalSearch, { props: { open: true } })
+    const dialog = screen.getByRole('dialog', { name: 'Global search' })
+    await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'stripe' } })
+    await vi.waitFor(() => screen.getByText('Payments'))
+    await fireEvent.keyDown(dialog, { key: 'Enter' })
+    expect(gotoMock).toHaveBeenCalledWith('/projects/proj-1/credentials/cred-1')
+  })
+
+  it('Enter with no results selected is a no-op (guarded branch)', async () => {
+    installSearchFetchMock(() => searchResponse([]))
+    render(GlobalSearch, { props: { open: true } })
+    const dialog = screen.getByRole('dialog', { name: 'Global search' })
+    await fireEvent.keyDown(dialog, { key: 'Enter' })
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
+  it('an AbortError from a superseded request does not clear the newer in-flight results', async () => {
+    vi.useFakeTimers()
+    let callCount = 0
+    installSearchFetchMock((_url, init) => {
+      callCount += 1
+      const signal = init?.signal
+      if (callCount === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const err = new Error('aborted')
+            err.name = 'AbortError'
+            reject(err)
+          })
+        })
+      }
+      return Promise.resolve(searchResponse([credentialResult]))
+    })
+    render(GlobalSearch, { props: { open: true } })
+    const input = screen.getByLabelText('Search')
+    await fireEvent.input(input, { target: { value: 'first' } })
+    await vi.advanceTimersByTimeAsync(200)
+    await fireEvent.input(input, { target: { value: 'second' } })
+    await vi.advanceTimersByTimeAsync(200)
+    vi.useRealTimers()
+    await vi.waitFor(() => expect(screen.getByText('Payments')).toBeTruthy())
+  })
+
+  it('a non-abort search failure clears results rather than leaving stale data', async () => {
+    installSearchFetchMock(() => Promise.reject(new Error('network down')))
+    render(GlobalSearch, { props: { open: true } })
+    await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'stripe' } })
+    await vi.waitFor(() => expect(screen.getByText(/No results for "stripe"/i)).toBeTruthy())
+  })
 })

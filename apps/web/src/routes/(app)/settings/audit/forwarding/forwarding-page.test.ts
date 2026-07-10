@@ -200,4 +200,99 @@ describe('/settings/audit/forwarding +page.svelte', () => {
     expect(/current configuration/i.test(bodyText)).toBe(false)
     expect(/your saved (config|settings)/i.test(bodyText)).toBe(false)
   })
+
+  it('blocks a non-https S3 endpoint client-side, no network call', async () => {
+    render(ForwardingPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByRole('radio', { name: /s3-compatible/i }))
+    await fireEvent.input(screen.getByLabelText(/^bucket/i), { target: { value: 'b' } })
+    await fireEvent.input(screen.getByLabelText(/^region/i), { target: { value: 'r' } })
+    await fireEvent.input(screen.getByLabelText(/access key id/i), { target: { value: 'k' } })
+    await fireEvent.input(screen.getByLabelText(/secret access key/i), { target: { value: 's' } })
+    await fireEvent.input(screen.getByLabelText(/endpoint/i), {
+      target: { value: 'http://minio.local' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /save s3/i }))
+
+    expect(screen.getByText(/endpoint must use https/i)).toBeTruthy()
+    expect(updateAuditForwardingMock).not.toHaveBeenCalled()
+  })
+
+  it('includes optional prefix and endpoint in the S3 config only when provided', async () => {
+    updateAuditForwardingMock.mockResolvedValue({
+      type: 's3',
+      enabled: true,
+      configuredAt: '2026-07-07T14:02:00.000Z',
+    })
+    render(ForwardingPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByRole('radio', { name: /s3-compatible/i }))
+    await fireEvent.input(screen.getByLabelText(/^bucket/i), { target: { value: 'b' } })
+    await fireEvent.input(screen.getByLabelText(/^region/i), { target: { value: 'r' } })
+    await fireEvent.input(screen.getByLabelText(/access key id/i), { target: { value: 'k' } })
+    await fireEvent.input(screen.getByLabelText(/secret access key/i), { target: { value: 's' } })
+    await fireEvent.input(screen.getByLabelText(/prefix/i), { target: { value: 'org-1/' } })
+    await fireEvent.input(screen.getByLabelText(/endpoint/i), {
+      target: { value: 'https://minio.local' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /save s3/i }))
+
+    expect(updateAuditForwardingMock).toHaveBeenCalledWith(expect.anything(), {
+      type: 's3',
+      config: {
+        bucket: 'b',
+        region: 'r',
+        accessKeyId: 'k',
+        secretAccessKey: 's',
+        prefix: 'org-1/',
+        endpoint: 'https://minio.local',
+      },
+    })
+  })
+
+  it('S3 config failure shows the API error message', async () => {
+    updateAuditForwardingMock.mockRejectedValue(new ApiClientError(422, {}, 'invalid bucket'))
+    render(ForwardingPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByRole('radio', { name: /s3-compatible/i }))
+    await fireEvent.input(screen.getByLabelText(/^bucket/i), { target: { value: 'b' } })
+    await fireEvent.input(screen.getByLabelText(/^region/i), { target: { value: 'r' } })
+    await fireEvent.input(screen.getByLabelText(/access key id/i), { target: { value: 'k' } })
+    await fireEvent.input(screen.getByLabelText(/secret access key/i), { target: { value: 's' } })
+    await fireEvent.click(screen.getByRole('button', { name: /save s3/i }))
+
+    expect(await screen.findByText('invalid bucket')).toBeTruthy()
+  })
+
+  it('a non-ApiClientError S3 failure shows the generic S3 error message', async () => {
+    updateAuditForwardingMock.mockRejectedValue(new Error('network down'))
+    render(ForwardingPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByRole('radio', { name: /s3-compatible/i }))
+    await fireEvent.input(screen.getByLabelText(/^bucket/i), { target: { value: 'b' } })
+    await fireEvent.input(screen.getByLabelText(/^region/i), { target: { value: 'r' } })
+    await fireEvent.input(screen.getByLabelText(/access key id/i), { target: { value: 'k' } })
+    await fireEvent.input(screen.getByLabelText(/secret access key/i), { target: { value: 's' } })
+    await fireEvent.click(screen.getByRole('button', { name: /save s3/i }))
+
+    expect(await screen.findByText(/^failed to configure s3 forwarding$/i)).toBeTruthy()
+  })
+
+  it('a non-ApiClientError webhook failure shows the generic webhook error message', async () => {
+    updateAuditForwardingMock.mockRejectedValue(new Error('network down'))
+    render(ForwardingPage, { props: { data: baseData() } })
+    await fireEvent.input(screen.getByLabelText(/webhook url/i), {
+      target: { value: 'https://example.com/hook' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /save webhook/i }))
+
+    expect(await screen.findByText(/^failed to configure webhook forwarding$/i)).toBeTruthy()
+  })
+
+  it('a non-ApiClientError retention failure shows the generic retention error message', async () => {
+    updateAuditRetentionMock.mockRejectedValue(new Error('network down'))
+    render(ForwardingPage, { props: { data: baseData() } })
+    await fireEvent.input(screen.getByLabelText(/retention \(days\)/i), {
+      target: { value: '400' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /save retention/i }))
+
+    expect(await screen.findByText(/^failed to update retention$/i)).toBeTruthy()
+  })
 })

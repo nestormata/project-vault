@@ -208,4 +208,80 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
       COMPLETED_REPORT
     )
   })
+
+  it('a 409 already_completed shows a distinct "already completed" refresh notice', async () => {
+    executeErasureMock.mockRejectedValue(
+      new ApiClientError(409, { code: 'already_completed', message: 'done' }, 'done')
+    )
+
+    render(ErasurePage, { props: { data: baseData({ orgRole: 'owner' }) } })
+    await fireEvent.input(screen.getByLabelText(/type the exact email/i), {
+      target: { value: userEmail },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^execute erasure$/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    expect(await screen.findByText(/this erasure has already completed/i)).toBeTruthy()
+  })
+
+  it('a remediation error pluralizes "organizations" when otherOrgCount > 1', async () => {
+    executeErasureMock.mockRejectedValue(
+      new ApiClientError(
+        409,
+        {
+          code: 'user_has_other_org_memberships',
+          message: 'blocked',
+          otherOrgCount: 3,
+          remediation: 'Contact support.',
+        },
+        'blocked'
+      )
+    )
+
+    render(ErasurePage, { props: { data: baseData({ orgRole: 'owner' }) } })
+    await fireEvent.input(screen.getByLabelText(/type the exact email/i), {
+      target: { value: userEmail },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^execute erasure$/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    expect(
+      await screen.findByText(/belongs to 3 other organizations\. Contact support\./i)
+    ).toBeTruthy()
+  })
+
+  it('an ApiClientError without a remediation body falls back to the raw message', async () => {
+    executeErasureMock.mockRejectedValue(new ApiClientError(500, {}, 'server exploded'))
+
+    render(ErasurePage, { props: { data: baseData({ orgRole: 'owner' }) } })
+    await fireEvent.input(screen.getByLabelText(/type the exact email/i), {
+      target: { value: userEmail },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^execute erasure$/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    expect(await screen.findByText('server exploded')).toBeTruthy()
+  })
+
+  it('a non-ApiClientError (network failure) shows the generic execute-erasure message', async () => {
+    executeErasureMock.mockRejectedValue(new Error('network down'))
+
+    render(ErasurePage, { props: { data: baseData({ orgRole: 'owner' }) } })
+    await fireEvent.input(screen.getByLabelText(/type the exact email/i), {
+      target: { value: userEmail },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^execute erasure$/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /confirm/i }))
+
+    expect(await screen.findByText(/^failed to execute erasure$/i)).toBeTruthy()
+  })
+
+  it('when the user email could not be resolved, execution is blocked with an explanatory notice', () => {
+    render(ErasurePage, {
+      props: { data: baseData({ orgRole: 'owner', userEmail: null }) },
+    })
+
+    expect(screen.getByText(/email could not be resolved/i)).toBeTruthy()
+    expect(screen.queryByLabelText(/type the exact email/i)).toBeNull()
+  })
 })

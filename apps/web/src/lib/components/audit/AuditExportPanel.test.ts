@@ -155,4 +155,33 @@ describe('AuditExportPanel (AC group C)', () => {
 
     expect(await screen.findByRole('link', { name: /download csv/i })).toBeTruthy()
   })
+
+  it('blocks export client-side when from/to are blank, with no API call', async () => {
+    render(AuditExportPanel)
+
+    await fireEvent.click(screen.getByRole('button', { name: /export csv/i }))
+
+    expect(triggerAuditExportMock).not.toHaveBeenCalled()
+  })
+
+  it('a non-ApiClientError trigger failure shows a generic export-start error', async () => {
+    triggerAuditExportMock.mockRejectedValue(new Error('network down'))
+    render(AuditExportPanel)
+
+    await startExport()
+
+    expect(await screen.findByText(/^failed to start export$/i)).toBeTruthy()
+  })
+
+  it('a non-ApiClientError poll failure stops polling and shows a generic status-check error', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    triggerAuditExportMock.mockResolvedValue({ jobId: 'job-5', status: 'pending' })
+    getAuditExportStatusMock.mockRejectedValue(new Error('network down'))
+
+    render(AuditExportPanel)
+    await startExport()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(await screen.findByText(/^failed to check export status$/i)).toBeTruthy()
+  })
 })
