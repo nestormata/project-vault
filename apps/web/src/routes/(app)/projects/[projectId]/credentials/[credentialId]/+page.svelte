@@ -47,7 +47,9 @@
   } | null>(null)
   let lifecycleExpiresAt = $state(toLifecycleDateInputValue(data.credential?.expiresAt ?? null))
   let lifecycleRotationSchedule = $state(data.credential?.rotationSchedule ?? '')
-  let lifecycleCacheable = $state(true)
+  // AC-L1: pre-fill from the credential detail's real cacheable flag (defaults only when the
+  // detail is missing — never hardcode `true`, which would silently re-enable caching on save).
+  let lifecycleCacheable = $state(data.credential?.cacheable ?? true)
   let lifecycleSubmitting = $state(false)
   let lifecycleFieldError = $state<string | null>(null)
   let lifecycleBanner = $state<string | null>(null)

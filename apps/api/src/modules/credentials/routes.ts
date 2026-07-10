@@ -1183,7 +1183,10 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
           ...params,
           query: parsedQuery.data,
         })
-        return result ?? null
+        // Must wrap as `{ data: result }` to match DependencyListResponseSchema — the 4-5
+        // jscpd extract to withCredentialParams dropped this wrapper and Fastify then 500'd
+        // on response-schema validation (Story 2.9 Group D depends on this GET).
+        return result ? { data: result } : null
       })
     },
   })

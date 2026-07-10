@@ -913,6 +913,7 @@ Cursor Grok 4.5 (bmad-dev-story resume)
 - **A:** `getRecentAccessEventsForProject` wired; schema enum corrected to 8 real credential.* types; Recent activity UI + labels.
 - **G/S:** Placeholder grid gated on hasCredentials/hasServices; suggestedActions partial-coverage branches; section gate uses `suggestedActions.length`.
 - **deferred-work.md:** Web UI gaps + Partial epic AC rows already marked ✅ Resolved for this story.
+- **Regression fix (Group D):** restored `{ data: result }` wrapper on `GET .../dependencies` after story 4-5's jscpd extract to `withCredentialParams` dropped it (Fastify response-schema 500).
 
 ### File List
 
@@ -927,6 +928,8 @@ Cursor Grok 4.5 (bmad-dev-story resume)
 - `apps/api/src/modules/projects/routes.test.ts`
 - `apps/api/src/modules/projects/routes.ts`
 - `apps/api/src/modules/projects/schema.test.ts`
+- `apps/api/src/modules/credentials/routes.ts`
+- `apps/api/src/modules/credentials/service.ts`
 - `apps/web/src/lib/api/credentials.test.ts`
 - `apps/web/src/lib/api/credentials.ts`
 - `apps/web/src/lib/api/projects.test.ts`
@@ -958,4 +961,11 @@ Cursor Grok 4.5 (bmad-dev-story resume)
 
 ### Change Log
 
-- 2026-07-10: Completed Story 2.9 (resume from `bdc05b8`) — all AC groups F/P/L/D/V/I/A/G/S implemented and verified; status → review.
+- 2026-07-10: Completed Story 2.9 (resume from `bdc05b8`) — all AC groups F/P/L/D/V/I/A/G/S implemented and verified; fixed GET dependencies `{ data }` wrapper regression from 4-5; status → review.
+
+### Review Findings
+
+- [x] [Review][Patch] Lifecycle save could silently flip `cacheable: false` → `true` — `CredentialDetail` lacked `cacheable`; form hardcoded `$state(true)` while always PATCHing all three fields (AC-L1). Fixed: additive `cacheable` on detail schema/serializer + prefill from detail.
+- [x] [Review][Patch] Project tag 422 showed generic `Request validation failed` (AC-P4) — real Zod errors live in `details.tags[]`; UI used `error.message` only. Fixed: map details to user-facing copy.
+- [ ] [Review][Patch] Empty dependent-system name returns silently with no inline error [`apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` `onAddDependency`] — HTML `required` helps in browsers; programmatic submit still no-ops. Medium; left unfixed (not critical/high).
+- [x] [Review][Defer] `getRecentAccessEventsForProject` uses `resource_id IN (...)` — deferred, documented AC-A1 design decision (populate `project_id` on write in a future story).

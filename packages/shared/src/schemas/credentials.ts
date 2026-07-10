@@ -10,6 +10,10 @@ export const CredentialDetailSchema = z
     tags: z.array(z.string()),
     expiresAt: z.iso.datetime().nullable(),
     rotationSchedule: z.string().nullable(),
+    // Story 2.9 AC-L1: lifecycle edit form must pre-fill cacheable from the detail payload —
+    // without this field the UI defaulted to `true` and every save could silently flip
+    // `cacheable: false` credentials back to cacheable.
+    cacheable: z.boolean(),
     retentionCount: z.number().int().min(1),
     currentVersionNumber: z.number().int().positive(),
     createdBy: z.uuid().nullable(),
