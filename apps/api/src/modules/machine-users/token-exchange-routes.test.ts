@@ -209,7 +209,7 @@ describe('POST /api/v1/auth/machine-token', () => {
 
   describe('AC-4: rate limiting and brute-force resistance', () => {
     it('returns 429 on the 11th failed attempt against the same key hash within 60s', async () => {
-      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
       resetKeyHashRateLimitStateForTest()
       try {
         const owner = await registerOwner(app, 'keyhash-lockout')
@@ -234,13 +234,13 @@ describe('POST /api/v1/auth/machine-token', () => {
         expect(responses[10]?.statusCode).toBe(429)
         expect(responses[10]?.json()).toMatchObject({ code: 'rate_limit_exceeded' })
       } finally {
-        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
         resetKeyHashRateLimitStateForTest()
       }
     }, 30_000)
 
     it('does not reset the per-key-hash counter on a successful exchange with a different key', async () => {
-      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
       resetKeyHashRateLimitStateForTest()
       try {
         const owner = await registerOwner(app, 'keyhash-independent')
@@ -257,7 +257,7 @@ describe('POST /api/v1/auth/machine-token', () => {
         const goodRes = await exchangeToken(app, goodKey)
         expect(goodRes.statusCode).toBe(200)
       } finally {
-        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
         resetKeyHashRateLimitStateForTest()
       }
     }, 30_000)

@@ -104,6 +104,7 @@ async function processRecipientPreferences(
   let slackEnabled = false
 
   for (const pref of alertPrefs) {
+    if (pref.channel === 'none') continue
     if (!passesSeverityFilter(alertSeverity, pref)) continue
 
     const dedupKey = `${userId}:${pref.channel}`
@@ -235,6 +236,7 @@ export async function dispatchDirectUserNotification(opts: {
   const jobs: NotificationQueueJob[] = []
   const seenChannels = new Set<string>()
   for (const pref of alertPrefs) {
+    if (pref.channel === 'none') continue
     if (!passesSeverityFilter(alertSeverity, pref)) continue
     if (seenChannels.has(pref.channel)) continue
     seenChannels.add(pref.channel)

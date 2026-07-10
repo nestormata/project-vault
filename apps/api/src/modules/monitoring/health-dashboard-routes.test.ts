@@ -143,7 +143,7 @@ describe.sequential('GET /api/v1/health-dashboard (Story 6.3, Section A)', () =>
   })
 
   it('enforces the 120/min LIST_RATE_LIMIT and returns 429 on the 121st request (AC 6)', async () => {
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     try {
       const rateLimitOwner = await bootstrapCredentialRouteOwners(
         createApp,
@@ -159,7 +159,7 @@ describe.sequential('GET /api/v1/health-dashboard (Story 6.3, Section A)', () =>
       expect(last?.statusCode).toBe(429)
       await rateLimitOwner.app.close()
     } finally {
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   }, 30_000)
 })

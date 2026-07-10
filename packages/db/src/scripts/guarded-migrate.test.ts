@@ -14,6 +14,7 @@ import {
 
 const TAG_UNSAFE = '0001_unsafe'
 const TAG_DROP_LEGACY = '0036_drop_legacy_column'
+const TAG_NOTIFICATION_NONE = '0047_notification_preference_none_channel'
 const TAG_MIXED_BATCH_A = '0010_a'
 const TAG_MIXED_BATCH_B = '0011_b'
 const SQL_CREATE_TABLE_A = 'CREATE TABLE a (id int);'
@@ -131,6 +132,24 @@ describe('scanPendingForDestructive', () => {
     const result = scanPendingForDestructive(pending)
     expect(result).toHaveLength(1)
     expect(result[0]?.tag).toBe('0099_unrelated_delete')
+  })
+
+  it('skips the reviewed notification none-channel widening migration, so in-place upgrades are not blocked by a safe check-constraint widen', () => {
+    const pending = [
+      {
+        tag: TAG_NOTIFICATION_NONE,
+        sql:
+          'ALTER TABLE "notification_preferences"\n' +
+          '  DROP CONSTRAINT "notification_preferences_channel_check";\n' +
+          '\n' +
+          'ALTER TABLE "notification_preferences"\n' +
+          '  ADD CONSTRAINT "notification_preferences_channel_check"\n' +
+          `  CHECK ("notification_preferences"."channel" IN ('email', 'slack', 'inbox', 'none'));`,
+        folderMillis: 100,
+      },
+    ]
+
+    expect(scanPendingForDestructive(pending)).toEqual([])
   })
 })
 

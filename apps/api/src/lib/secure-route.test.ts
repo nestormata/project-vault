@@ -273,7 +273,7 @@ describe('secureRoute', () => {
   it('applies configured public SecureRoute rate limits', async () => {
     // enforceUserRateLimit (route-helpers.ts) bypasses enforcement under NODE_ENV=test by
     // default — opt back in here to cover real 429 behavior.
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     try {
       const handler = vi.fn(async () => ({ data: { ok: true } }))
       const registered = mountPublicRoute({
@@ -295,7 +295,7 @@ describe('secureRoute', () => {
       expect(secondReply.statusCode).toBe(429)
       expect(handler).toHaveBeenCalledTimes(1)
     } finally {
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   })
 

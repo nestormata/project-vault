@@ -28452,7 +28452,8 @@
                             "enum": [
                               "email",
                               "slack",
-                              "inbox"
+                              "inbox",
+                              "none"
                             ]
                           },
                           "frequency": {
@@ -28533,7 +28534,8 @@
                             "enum": [
                               "email",
                               "slack",
-                              "inbox"
+                              "inbox",
+                              "none"
                             ]
                           },
                           "frequency": {
@@ -28624,7 +28626,8 @@
                             "enum": [
                               "email",
                               "slack",
-                              "inbox"
+                              "inbox",
+                              "none"
                             ]
                           },
                           "frequency": {

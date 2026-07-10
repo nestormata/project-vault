@@ -43,24 +43,20 @@ describe('POST /register rate limiting', () => {
     await resetVaultForTest()
   })
 
-  it('does not rate-limit registration under NODE_ENV=test by default', async () => {
-    // Real integration suites (e.g. dashboard-stats.test.ts) register many users as pure
-    // fixture setup against one shared app instance. Rate limiting is bypassed here by
-    // default (route-helpers.ts, isRateLimitEnforced) precisely so that behavior stays
-    // deterministic regardless of how fast the suite happens to execute — see the CI flake
-    // this file exists to cover: the 11th registerOwner() call intermittently hit the real
-    // /register limiter (429) whenever a run was fast enough to pack 11 calls into 60s.
+  it('does not rate-limit registration only when RATE_LIMIT_TEST_BYPASS=true under NODE_ENV=test', async () => {
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'true'
     const app = await createApp({ logger: false })
     try {
       const responses = await registerN(app, 15)
       for (const res of responses) expect(res.statusCode).toBe(201)
     } finally {
       await app.close()
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   }, 30_000)
 
-  it('returns 429 rate_limit_exceeded (not a 500) once the per-route limit is exceeded when explicitly enforced', async () => {
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+  it('returns 429 rate_limit_exceeded (not a 500) once the per-route limit is exceeded by default under NODE_ENV=test', async () => {
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     const app = await createApp({ logger: false })
 
     try {
@@ -76,7 +72,7 @@ describe('POST /register rate limiting', () => {
       })
     } finally {
       await app.close()
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   }, 30_000)
 })

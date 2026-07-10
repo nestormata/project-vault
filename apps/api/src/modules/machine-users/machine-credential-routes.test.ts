@@ -365,7 +365,7 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
 
   describe('AC-27: rate limiting', () => {
     it('returns 429 on the 21st failed lookup for the same keyId within 60s', async () => {
-      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
       try {
         const owner = await registerOwner(app, 'failed-lookup-limit')
         const projectId = await createProjectViaApi(app, owner.cookies, 'machine-cred-failedlimit')
@@ -386,7 +386,7 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
         expect(responses.slice(0, 20).every((res) => res.statusCode === 404)).toBe(true)
         expect(responses[20]?.statusCode).toBe(429)
       } finally {
-        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
       }
     }, 30_000)
 
@@ -394,7 +394,7 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
     // the separate 20/min failed-lookup bucket — otherwise legitimate repeated reads for the same
     // key could get starved by (or accidentally trip) the failed-lookup limiter.
     it('successful lookups do not count against the failed-lookup limiter', async () => {
-      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
       try {
         const owner = await registerOwner(app, 'success-not-counted')
         const projectId = await createProjectViaApi(
@@ -441,7 +441,7 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
         expect(failedResponses.slice(0, 20).every((res) => res.statusCode === 404)).toBe(true)
         expect(failedResponses[20]?.statusCode).toBe(429)
       } finally {
-        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
       }
     }, 30_000)
   })

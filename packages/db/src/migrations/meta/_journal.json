@@ -330,6 +330,13 @@
       "when": 1784169600000,
       "tag": "0046_project_membership_visibility_backfill_bridge",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784256000000,
+      "tag": "0047_notification_preference_none_channel",
+      "breakpoints": true
     }
   ]
 }

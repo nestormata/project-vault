@@ -526,6 +526,10 @@ const envSchema = z
     FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
     FAILED_AUTH_RETENTION_HOURS: z.coerce.number().int().min(1).max(168).default(24),
     FAILED_AUTH_RECORD_ENABLED: booleanEnvDefault(true),
+    RATE_LIMIT_TEST_BYPASS: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     // Story 5.2 AC-7/AC-E5b: read fresh on every `retry` call (never cached/snapshotted per
     // rotation) — same env-var-as-admin-configurable-threshold convention as
     // FAILED_AUTH_THRESHOLD_COUNT/MFA_LOGIN_MAX_ATTEMPTS.

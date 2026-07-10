@@ -1,6 +1,6 @@
 # Story 3.6: Rate-Limit Env Gating & MFA Preference Opt-Out Hardening
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -153,7 +153,7 @@ not a new risk introduced by this story).
 (`packages/db/src/schema/notification-preferences.ts`) restricting `channel` to
 `'email','slack','inbox'`, **when** this story's migration runs, **then** the constraint is widened
 to `channel IN ('email','slack','inbox','none')` via a new numbered migration file
-(`packages/db/src/migrations/00XX_notification_preference_none_channel.sql`, next sequential number
+(`packages/db/src/migrations/0047_notification_preference_none_channel.sql`, next sequential number
 after `0046_project_membership_visibility_backfill_bridge.sql` — check
 `packages/db/src/migrations/meta` for the actual next available number at implementation time, as
 other stories may land migrations concurrently) using `ALTER TABLE ... DROP CONSTRAINT ... ADD
@@ -310,57 +310,57 @@ Dev Agent Record and move on — do not add audit logging as new scope under thi
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Rate-limit env gating (AC-1, AC-2)
-  - [ ] Add `RATE_LIMIT_TEST_BYPASS` to `apps/api/src/config/env.ts` Zod schema, default `'false'`
-  - [ ] Rewrite `isRateLimitEnforced()` in `apps/api/src/lib/route-helpers.ts` to require
+- [x] Task 1 — Rate-limit env gating (AC-1, AC-2)
+  - [x] Add `RATE_LIMIT_TEST_BYPASS` to `apps/api/src/config/env.ts` Zod schema, default `'false'`
+  - [x] Rewrite `isRateLimitEnforced()` in `apps/api/src/lib/route-helpers.ts` to require
         `NODE_ENV === 'test' && RATE_LIMIT_TEST_BYPASS === 'true'` to disable enforcement
-  - [ ] Write/update unit tests for `isRateLimitEnforced()` covering: default-enforced, bypass
+  - [x] Write/update unit tests for `isRateLimitEnforced()` covering: default-enforced, bypass
         active only under both conditions, flag-true-but-wrong-NODE_ENV still enforced
-  - [ ] Grep for every `RATE_LIMIT_TEST_ENFORCE` reference (11 files) and migrate each to the new
+  - [x] Grep for every `RATE_LIMIT_TEST_ENFORCE` reference (11 files) and migrate each to the new
         `RATE_LIMIT_TEST_BYPASS` semantics (inverted meaning — confirm each file's intent
         individually, don't blind-rename)
-  - [ ] Consider centralizing the bypass-flag-set into `configureAuthIntegrationEnv()` if most files
+  - [x] Consider centralizing the bypass-flag-set into `configureAuthIntegrationEnv()` if most files
         already call it
-  - [ ] Run the full rate-limit-related test files to confirm enforcement/bypass behavior unchanged
+  - [x] Run the full rate-limit-related test files to confirm enforcement/bypass behavior unchanged
         from a test-observer's perspective
-- [ ] Task 2 — Migration: widen `channel` check constraint (AC-3)
-  - [ ] Determine next sequential migration number from `packages/db/src/migrations/meta`
-  - [ ] Write `ALTER TABLE notification_preferences DROP CONSTRAINT
+- [x] Task 2 — Migration: widen `channel` check constraint (AC-3)
+  - [x] Determine next sequential migration number from `packages/db/src/migrations/meta`
+  - [x] Write `ALTER TABLE notification_preferences DROP CONSTRAINT
         notification_preferences_channel_check, ADD CONSTRAINT
         notification_preferences_channel_check CHECK (channel IN ('email','slack','inbox','none'))`
-  - [ ] Update `packages/db/src/schema/notification-preferences.ts`'s `check(...)` clause to match
-  - [ ] Add/update a schema test asserting `'none'` is now a valid stored value and an invalid value
+  - [x] Update `packages/db/src/schema/notification-preferences.ts`'s `check(...)` clause to match
+  - [x] Add/update a schema test asserting `'none'` is now a valid stored value and an invalid value
         is still rejected (follow existing schema test conventions, e.g.
         `packages/db/src/schema/*-schema.test.ts` pattern)
-  - [ ] Run migration locally against the dev DB stack and confirm it applies cleanly
-- [ ] Task 3 — Preference write-path hardening (AC-4, AC-5)
-  - [ ] Rewrite `patchPreferences()` to upsert `'none'` rows and delete conflicting other-channel
+  - [x] Run migration locally against the dev DB stack and confirm it applies cleanly
+- [x] Task 3 — Preference write-path hardening (AC-4, AC-5)
+  - [x] Rewrite `patchPreferences()` to upsert `'none'` rows and delete conflicting other-channel
         rows for the same alert type within the same transaction
-  - [ ] Rewrite `putPreferences()` to stop filtering out `'none'` items; insert them, respecting
+  - [x] Rewrite `putPreferences()` to stop filtering out `'none'` items; insert them, respecting
         mutual exclusivity
-  - [ ] Add `superRefine` validation to `PatchPreferencesBodySchema` and `PutPreferencesBodySchema`
+  - [x] Add `superRefine` validation to `PatchPreferencesBodySchema` and `PutPreferencesBodySchema`
         in `apps/api/src/modules/notifications/schema.ts` rejecting a body with both `'none'` and
         another channel for the same `alertType`
-  - [ ] Extend `apps/api/src/modules/notifications/preferences.test.ts` with cases for: fresh
+  - [x] Extend `apps/api/src/modules/notifications/preferences.test.ts` with cases for: fresh
         opt-out, opt-out overriding existing channels, re-opt-in after opt-out, PUT with `'none'`
         entries, contradictory-body rejection (422)
-- [ ] Task 4 — Read-path and dispatcher fixes (AC-6, AC-7)
-  - [ ] Update `fillDefaultPreferences()` to skip backfilling default channels for any alert type
+- [x] Task 4 — Read-path and dispatcher fixes (AC-6, AC-7)
+  - [x] Update `fillDefaultPreferences()` to skip backfilling default channels for any alert type
         with a stored `'none'` row
-  - [ ] Update `PreferenceOutputItemSchema` to allow `'none'` in `channel`
-  - [ ] Add `if (pref.channel === 'none') continue` guard in
+  - [x] Update `PreferenceOutputItemSchema` to allow `'none'` in `channel`
+  - [x] Add `if (pref.channel === 'none') continue` guard in
         `processRecipientPreferences()` in `apps/api/src/notifications/dispatcher.ts`
-  - [ ] Trace and fix the MFA-recovery self-alert delivery function's preference handling for the
+  - [x] Trace and fix the MFA-recovery self-alert delivery function's preference handling for the
         same `'none'` skip
-  - [ ] Extend dispatcher tests to cover: `'none'`-suppressed recipient gets zero queue rows,
+  - [x] Extend dispatcher tests to cover: `'none'`-suppressed recipient gets zero queue rows,
         mixed-recipient batch (one opted out, one default) still delivers correctly to the other,
         self-alert path respects `'none'`
-- [ ] Task 5 — Audit verification (AC-8)
-  - [ ] Confirm current audit-logging scope for preference mutations (may be N/A) and document
+- [x] Task 5 — Audit verification (AC-8)
+  - [x] Confirm current audit-logging scope for preference mutations (may be N/A) and document
         finding in Dev Agent Record
-- [ ] Task 6 — Full regression pass
-  - [ ] `pnpm lint && pnpm test && pnpm typecheck && pnpm build && pnpm jscpd` (repo quality gates)
-  - [ ] Confirm no other call site assumes `channel` is restricted to `NOTIFICATION_CHANNELS`
+- [x] Task 6 — Full regression pass
+  - [x] `pnpm lint && pnpm test && pnpm typecheck && pnpm build && pnpm jscpd` (repo quality gates)
+  - [x] Confirm no other call site assumes `channel` is restricted to `NOTIFICATION_CHANNELS`
         (3-value enum) without accounting for `'none'` now appearing in read results (search apps/web
         consumers of `GET /preferences` too — `apps/web/src/lib/api/*` preference/notification
         clients, and any UI rendering channel values)
@@ -399,7 +399,7 @@ Dev Agent Record and move on — do not add audit logging as new scope under thi
   `apps/api/src/config/env.ts` — no new files needed for Item A.
 - Preference logic lives in `apps/api/src/modules/notifications/{preferences,schema,routes}.ts` and
   `apps/api/src/notifications/dispatcher.ts` — no new files needed for Item B beyond the migration.
-- New migration file: `packages/db/src/migrations/00XX_notification_preference_none_channel.sql`
+- New migration file: `packages/db/src/migrations/0047_notification_preference_none_channel.sql`
   (number TBD at implementation time — check `meta/_journal.json`).
 - No new frontend (`apps/web`) work is required by this story's ACs, but Task 6 requires confirming
   no `apps/web` consumer breaks when `GET /preferences` starts returning `channel: "none"` rows.
@@ -420,10 +420,62 @@ Dev Agent Record and move on — do not add audit logging as new scope under thi
 
 ### Agent Model Used
 
-TBD (populated by dev-story)
+GitHub Copilot CLI sub-agent
 
 ### Debug Log References
 
+- 2026-07-10: `pnpm --filter @project-vault/api exec vitest run --coverage=false src/config/env.test.ts src/lib/route-helpers.test.ts`
+- 2026-07-10: `pnpm --filter @project-vault/api exec vitest run --coverage=false src/lib/route-helpers.test.ts src/lib/secure-route.test.ts src/__tests__/vault-lifecycle.test.ts src/modules/auth/register-rate-limit.test.ts src/modules/platform-audit/routes.test.ts src/modules/monitoring/public-status-page-routes.test.ts src/modules/monitoring/status-page-routes.test.ts src/modules/monitoring/health-dashboard-routes.test.ts src/modules/machine-users/machine-credential-routes.test.ts src/modules/machine-users/token-exchange-routes.test.ts src/modules/machine-users/routes.test.ts src/modules/audit/routes.test.ts`
+- 2026-07-10: `DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm --filter @project-vault/db db:migrate --allow-destructive`
+- 2026-07-10: `pnpm --filter @project-vault/db exec vitest run --coverage=false src/__tests__/notification-preference-none-channel.test.ts`
+- 2026-07-10: `pnpm --filter @project-vault/api exec vitest run --coverage=false src/modules/notifications/preferences.test.ts src/modules/notifications/routes.test.ts src/notifications/dispatcher.test.ts`
+- 2026-07-10: `pnpm lint`, `pnpm turbo typecheck`, `pnpm build`, `pnpm jscpd`, and `DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault ADMIN_DATABASE_URL=postgresql://postgres:password@localhost:5432/project_vault pnpm --filter @project-vault/db test`
+- 2026-07-10: `pnpm tsx scripts/check-env-example.ts` passed after documenting `RATE_LIMIT_TEST_BYPASS` in `.env.example`.
+- 2026-07-10: `pnpm --filter @project-vault/api-contract-tests test` passed (5 files, 366 tests) after explicitly enabling the rate-limit bypass in the contract-test fixture.
+
 ### Completion Notes List
 
+- Implemented AC-1/AC-2 by adding `RATE_LIMIT_TEST_BYPASS` (default `false`), double-gating `isRateLimitEnforced()` on `NODE_ENV === 'test' && RATE_LIMIT_TEST_BYPASS === 'true'`, centralizing bypass setup in `configureAuthIntegrationEnv()`, and migrating all 11 former `RATE_LIMIT_TEST_ENFORCE` suites to the inverted semantics.
+- Implemented AC-3 with migration `0047_notification_preference_none_channel.sql`, matching Drizzle schema updates, a DB constraint test, and a locally applied guarded migration (`--allow-destructive` required because Postgres constraint replacement uses `DROP CONSTRAINT`).
+- Implemented AC-4 through AC-7 by persisting `channel: 'none'` rows on PATCH/PUT, deleting conflicting rows transactionally, rejecting contradictory `none`+real-channel request bodies, skipping default backfill for opted-out alert types, widening response typing to include `none`, and teaching both org-routed and direct-user dispatchers to ignore `none` rows.
+- AC-8 is N/A: notification preference routes still declare `writeAuditEvent: false` and have no existing audit entry hook for PUT/PATCH preference mutations, so this story preserved the current no-audit scope rather than inventing new audit behavior.
+- Quality gates: focused rate-limit suites passed; focused notification suites passed; `pnpm lint`, `pnpm turbo typecheck`, `pnpm build`, and `pnpm jscpd` passed. Root `pnpm test` still exits because `apps/web` has a pre-existing branch-coverage threshold failure (67.9% < 80%) even though its tests pass; per user instruction, that pure coverage-threshold failure was not treated as blocking.
+- CI follow-up: added the omitted `RATE_LIMIT_TEST_BYPASS=false` example and test-only safety guidance to `.env.example`; the schema/template parity gate now passes.
+- CI follow-up: the high-volume API contract sweep now opts into `RATE_LIMIT_TEST_BYPASS=true`; a regression test verifies the explicit opt-in and all 366 contract tests pass without cascading `429` responses.
+
 ### File List
+
+- .env.example
+- apps/api/src/__tests__/helpers/auth-test-helpers.ts
+- apps/api/src/__tests__/vault-lifecycle.test.ts
+- apps/api/src/config/env.test.ts
+- apps/api/src/config/env.ts
+- apps/api/src/lib/route-helpers.test.ts
+- apps/api/src/lib/route-helpers.ts
+- apps/api/src/lib/secure-route.test.ts
+- apps/api/src/modules/audit/routes.test.ts
+- apps/api/src/modules/auth/register-rate-limit.test.ts
+- apps/api/src/modules/auth/routes.ts
+- apps/api/src/modules/machine-users/machine-credential-routes.test.ts
+- apps/api/src/modules/machine-users/routes.test.ts
+- apps/api/src/modules/machine-users/token-exchange-routes.test.ts
+- apps/api/src/modules/monitoring/health-dashboard-routes.test.ts
+- apps/api/src/modules/monitoring/public-status-page-routes.test.ts
+- apps/api/src/modules/monitoring/status-page-routes.test.ts
+- apps/api/src/modules/notifications/preferences.test.ts
+- apps/api/src/modules/notifications/preferences.ts
+- apps/api/src/modules/notifications/routes.test.ts
+- apps/api/src/modules/notifications/schema.ts
+- apps/api/src/modules/platform-audit/routes.test.ts
+- apps/api/src/notifications/dispatcher.test.ts
+- apps/api/src/notifications/dispatcher.ts
+- apps/web/src/lib/api/notifications.ts
+- packages/api-contract-tests/src/fixtures/app-instance.test.ts
+- packages/api-contract-tests/src/fixtures/app-instance.ts
+- packages/db/src/__tests__/notification-preference-none-channel.test.ts
+- packages/db/src/migrations/0047_notification_preference_none_channel.sql
+- packages/db/src/migrations/meta/_journal.json
+- packages/db/src/schema/notification-preferences.ts
+- packages/shared/openapi.json
+- _bmad-output/implementation-artifacts/3-6-rate-limit-env-gating-and-mfa-preference-opt-out-hardening.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
