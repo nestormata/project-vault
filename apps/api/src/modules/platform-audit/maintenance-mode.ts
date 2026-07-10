@@ -20,11 +20,15 @@ export class MaintenanceModeStillUnavailableError extends Error {
   }
 }
 
-export async function isMaintenanceModeActive(tx: Tx): Promise<boolean> {
-  const [row] = await tx
+export async function isMaintenanceModeActive(
+  tx: Tx,
+  opts: { forUpdate?: boolean } = {}
+): Promise<boolean> {
+  const query = tx
     .select({ active: platformAuditMaintenanceState.active })
     .from(platformAuditMaintenanceState)
     .limit(1)
+  const [row] = opts.forUpdate ? await query.for('update') : await query
   return row?.active ?? false
 }
 
@@ -52,7 +56,7 @@ function rowToStatus(
 }
 
 /** D2.4: reads the current maintenance-mode state plus the pending-entries queue count.
- * Read-only — no MFA requirement (matches `GET /audit/events`'s precedent). */
+ * Read-only status endpoint with no mutation, so D2.4 intentionally does not require MFA. */
 export async function getMaintenanceModeStatus(tx: Tx): Promise<MaintenanceModeStatus> {
   const [row] = await tx.select().from(platformAuditMaintenanceState).limit(1)
   const [countRow] = await tx

@@ -1,6 +1,7 @@
 <script lang="ts">
   import PlatformSettingsBreadcrumb from '$lib/components/platform/PlatformSettingsBreadcrumb.svelte'
   import PlatformWarningsBanner from '$lib/components/platform/PlatformWarningsBanner.svelte'
+  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import { formatBytes } from '$lib/utils/format-bytes.js'
   import type { PageData } from './$types.js'
 
@@ -50,12 +51,10 @@
   <PlatformWarningsBanner warnings={data.warnings} messages={WARNING_MESSAGES} />
 
   {#if data.errorMessage}
-    <p
+    <MfaAwareErrorAlert
+      message={data.errorMessage}
       class="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-      role="alert"
-    >
-      {data.errorMessage}
-    </p>
+    />
   {:else if data.usage}
     {@const u = data.usage}
     <div class="mt-6 space-y-6">

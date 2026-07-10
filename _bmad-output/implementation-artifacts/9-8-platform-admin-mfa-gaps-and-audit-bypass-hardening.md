@@ -1,6 +1,6 @@
 # Story 9.8: Platform Admin MFA Gaps and Audit-Bypass Hardening
 
-Status: ready-for-dev
+Status: review
 
 <!-- Hardening/bug-fix story closing two confirmed, currently-unscheduled gaps in already-shipped
      code from Stories 9.4 and 9.7 (both `done`). Not net-new feature work — every AC below is a
@@ -337,8 +337,8 @@ same outcome for a genuine bug regardless of maintenance-mode state.
 
 ---
 
-**AC-T5 — New: a forbidden-audit-key caller bug during active maintenance mode now propagates
-consistently, in both dev/test and production (previously inconsistent between the two).**
+**AC-T5 — New: a forbidden-audit-key assertion during active maintenance mode propagates in
+dev/test, while Story 9.4's established production strip-and-continue policy remains unchanged.**
 **Given** maintenance mode is active and a caller passes a `payload` containing a forbidden key
 (e.g. `{ password: 'x' }`, checked via `FORBIDDEN_AUDIT_KEYS`/`isForbiddenAuditKey` from
 `apps/api/src/lib/secure-route.ts`, reused by `redactPlatformAuditPayload` in
@@ -347,24 +347,23 @@ consistently, in both dev/test and production (previously inconsistent between t
 call throws its non-production assertion error (`'writePlatformAuditEntry: payload contains a
 forbidden audit key...'`, a plain `Error` with no `.code`),
 **Then** `isPlatformAuditStorageUnavailableError` classifies it `false` (AC-T1's "no `.code`" edge
-case) and it propagates as `SameTransactionPlatformAuditWriteError`, in **both** `NODE_ENV=test`
-and `NODE_ENV=production` — closing a pre-existing inconsistency: before this story, in
-`test`/`development` the raw assertion `Error` from the *first* `redactPlatformAuditPayload` call
-already threw uncaught past the (then-unconditional) queue attempt only because the *second*
-`redactPlatformAuditPayload` call inside the queue branch itself re-threw the same assertion; in
-`production`, that second call's `isProduction` branch instead silently stripped the key and
-queued successfully — i.e. a real caller bug was masked in production only. After this story,
-neither environment ever reaches the queue branch for this error type — both propagate uniformly.
+case) and it propagates as `SameTransactionPlatformAuditWriteError`; the active-maintenance queue
+branch is not entered.
 
-**Example (positive — production, previously silently masked):** `NODE_ENV=production`,
-maintenance mode active, payload `{ password: 'secret' }` → before this story: entry silently
-queued with `password` stripped, no signal a caller passed a credential into the audit log. After
-this story: rejects with `SameTransactionPlatformAuditWriteError`, nothing persisted anywhere.
+**Reconciled contract decision (Nestor, 2026-07-10):** preserve Story 9.4's established production
+behavior. In `NODE_ENV=production`, `redactPlatformAuditPayload` strips forbidden keys, emits its
+warning, and allows the clean audit row to be written; because no write error occurs, the storage
+classifier and maintenance-mode bypass are not involved. Story 9.8 must not change that policy.
+The existing production-branch regression test in `platform-audit/write-entry.test.ts` remains the
+load-bearing proof.
 
-**Example (edge — test/dev, behavior already effectively "propagates" but via an unwrapped raw
+**Example (positive — test/dev, behavior already effectively "propagates" but via an unwrapped raw
 `Error`, not the expected `SameTransactionPlatformAuditWriteError`):** verify the rejected error is
 now specifically `instanceof SameTransactionPlatformAuditWriteError`, not a bare `Error` —
 tightening the contract, not just preserving the accidental prior behavior.
+
+**Example (production regression):** production payload `{ safeField: 'ok', password: 'secret' }`
+is sanitized to `{ safeField: 'ok' }`, logs one warning, and continues without queuing.
 
 ---
 
@@ -663,17 +662,17 @@ directly:
 Follow this project's TDD convention: write/update the failing test first, confirm it fails for
 the expected reason, then implement, per AC.
 
-- [ ] **Task 1 — Group T: `isPlatformAuditStorageUnavailableError` classifier (AC-T1)**
-  - [ ] 1.1 RED: new test file `apps/api/src/lib/audit-or-fail-closed.storage-classifier.test.ts`
+- [x] **Task 1 — Group T: `isPlatformAuditStorageUnavailableError` classifier (AC-T1)**
+  - [x] 1.1 RED: new test file `apps/api/src/lib/audit-or-fail-closed.storage-classifier.test.ts`
     — unit tests for every example in AC-T1 (no DB, no vault). Run, confirm failure (function does
     not exist yet).
-  - [ ] 1.2 GREEN: implement `isPlatformAuditStorageUnavailableError` in `audit-or-fail-closed.ts`,
+  - [x] 1.2 GREEN: implement `isPlatformAuditStorageUnavailableError` in `audit-or-fail-closed.ts`,
     exported. SQLSTATE-class and Node-errno-code constants as module-level `const`s with a comment
     citing this AC.
-  - [ ] 1.3 Re-run 1.1's tests, confirm green.
+  - [x] 1.3 Re-run 1.1's tests, confirm green.
 
-- [ ] **Task 2 — Group T: wire the classifier into the catch clause (AC-T2 through AC-T7)**
-  - [ ] 2.1 RED: add AC-T3/AC-T4/AC-T5 new tests. AC-T3 in a new mocked unit test file (mirroring
+- [x] **Task 2 — Group T: wire the classifier into the catch clause (AC-T2 through AC-T7)**
+  - [x] 2.1 RED: add AC-T3/AC-T4/AC-T5 new tests. AC-T3 in a new mocked unit test file (mirroring
     `packages/db/src/test-helpers.cleanup-errors.test.ts`'s `vi.mock` style, mocking
     `../modules/platform-audit/write-entry.js`'s `writePlatformAuditEntry`). AC-T4/AC-T5 appended
     to the existing `audit-or-fail-closed.platform-audit.test.ts` (real DB/vault, matching that
@@ -681,76 +680,101 @@ the expected reason, then implement, per AC.
     rethrowing); AC-T3 should already pass trivially before the classifier is wired in only if the
     mock throws with maintenance mode active (verify it currently passes for the wrong reason — the
     unconditional catch — then re-verify after 2.2 it passes for the right reason).
-  - [ ] 2.2 GREEN: change the catch clause: `if (isPlatformAuditStorageUnavailableError(error) &&
+  - [x] 2.2 GREEN: change the catch clause: `if (isPlatformAuditStorageUnavailableError(error) &&
     (await isMaintenanceModeActive(tx))) { ...queue...; return }` — check the classifier first
     (cheap, synchronous) before the `isMaintenanceModeActive` DB round-trip, so genuine application
     bugs never pay that extra query.
-  - [ ] 2.3 Re-run ALL tests in `audit-or-fail-closed.platform-audit.test.ts` (AC-T2, AC-T4, AC-T5,
+  - [x] 2.3 Re-run ALL tests in `audit-or-fail-closed.platform-audit.test.ts` (AC-T2, AC-T4, AC-T5,
     AC-T6, AC-T7 — the existing 4 plus 2 new) and the new AC-T3 file. Confirm all green.
 
-- [ ] **Task 3 — Group M: `/platform/settings` fix (AC-M1)**
-  - [ ] 3.1 RED: add/extend a component test for `apps/web/src/routes/(app)/platform/settings/+page.svelte`
+- [x] **Task 3 — Group M: `/platform/settings` fix (AC-M1)**
+  - [x] 3.1 RED: add/extend a component test for `apps/web/src/routes/(app)/platform/settings/+page.svelte`
     (find or create `settings-page.test.ts` sibling, matching this project's existing
     `render(Page, { props: { data } })` + `@testing-library/svelte` convention — see
     `apps/web/src/routes/members-page.test.ts` for the exact pattern) asserting an "Enable MFA"
     link renders when `data.errorMessage` contains "MFA". Run, confirm failure.
-  - [ ] 3.2 GREEN: replace the plain `<p>` (lines 136-142) with `<MfaAwareErrorAlert>` per AC-M1.
-  - [ ] 3.3 Add the AC-M5 regression test (non-MFA message → no link) in the same file. Confirm
+  - [x] 3.2 GREEN: replace the plain `<p>` (lines 136-142) with `<MfaAwareErrorAlert>` per AC-M1.
+  - [x] 3.3 Add the AC-M5 regression test (non-MFA message → no link) in the same file. Confirm
     green.
 
-- [ ] **Task 4 — Group M: `/platform/settings/orgs` fix (AC-M2)**
-  - [ ] 4.1 RED: equivalent component test for the orgs page, using `pageError` not
+- [x] **Task 4 — Group M: `/platform/settings/orgs` fix (AC-M2)**
+  - [x] 4.1 RED: equivalent component test for the orgs page, using `pageError` not
     `data.errorMessage`. Confirm failure.
-  - [ ] 4.2 GREEN: replace the plain `<p>` (lines 85-91) with `<MfaAwareErrorAlert message={pageError}
+  - [x] 4.2 GREEN: replace the plain `<p>` (lines 85-91) with `<MfaAwareErrorAlert message={pageError}
     ...>`.
-  - [ ] 4.3 Confirm the AC-M2 empty-state edge case still passes; add the AC-M5 regression test.
+  - [x] 4.3 Confirm the AC-M2 empty-state edge case still passes; add the AC-M5 regression test.
 
-- [ ] **Task 5 — Group M: `/platform/settings/resource-usage` fix (AC-M3)**
-  - [ ] 5.1 RED: equivalent component test for the resource-usage page. Confirm failure.
-  - [ ] 5.2 GREEN: add the `MfaAwareErrorAlert` import; replace the plain `<p>` (lines 52-58).
-  - [ ] 5.3 Confirm the AC-M3 warnings-banner edge case still passes; add the AC-M5 regression test.
+- [x] **Task 5 — Group M: `/platform/settings/resource-usage` fix (AC-M3)**
+  - [x] 5.1 RED: equivalent component test for the resource-usage page. Confirm failure.
+  - [x] 5.2 GREEN: add the `MfaAwareErrorAlert` import; replace the plain `<p>` (lines 52-58).
+  - [x] 5.3 Confirm the AC-M3 warnings-banner edge case still passes; add the AC-M5 regression test.
 
-- [ ] **Task 6 — Group M: `/platform/audit` events-list fix (AC-M4)**
-  - [ ] 6.1 RED: equivalent component test for the audit page's `eventsErrorMessage` half. Confirm
+- [x] **Task 6 — Group M: `/platform/audit` events-list fix (AC-M4)**
+  - [x] 6.1 RED: equivalent component test for the audit page's `eventsErrorMessage` half. Confirm
     failure.
-  - [ ] 6.2 GREEN: replace the plain `<p>` (lines 246-252) with `<MfaAwareErrorAlert
+  - [x] 6.2 GREEN: replace the plain `<p>` (lines 246-252) with `<MfaAwareErrorAlert
     message={data.eventsErrorMessage} ...>`, reusing the existing import.
-  - [ ] 6.3 Confirm the AC-M4 empty-state edge case still passes; add the AC-M5 regression test.
+  - [x] 6.3 Confirm the AC-M4 empty-state edge case still passes; add the AC-M5 regression test.
 
-- [ ] **Task 7 — Group M: backend MFA test-coverage gap closure (AC-M6)**
-  - [ ] 7.1 RED: add the missing MFA-unenrolled test to `orgs-routes.test.ts`, mirroring
+- [x] **Task 7 — Group M: backend MFA test-coverage gap closure (AC-M6)**
+  - [x] 7.1 RED: add the missing MFA-unenrolled test to `orgs-routes.test.ts`, mirroring
     `settings-routes.test.ts`'s `AC-1` test pattern exactly (register → flip
     `isPlatformOperator` → expire `gracePeriodExpiresAt` → call route). Confirm it currently passes
     against the ALREADY-CORRECT backend (this is documenting existing-but-untested behavior, not a
     behavior change — the "RED" step here is confirming the test is well-formed by first running it
     against a deliberately-broken local edit, e.g. temporarily commenting out `requireMfa: true`, to
     prove the test actually catches a regression, then reverting that temporary edit).
-  - [ ] 7.2 Repeat 7.1 for `resource-usage-routes.test.ts`.
+  - [x] 7.2 Repeat 7.1 for `resource-usage-routes.test.ts`.
 
-- [ ] **Task 8 — Group M: `GET /maintenance-mode` MFA-flag regression fix (AC-M7, AC-M8, AC-M9)**
-  - [ ] 8.1 RED: add the new MFA-unenrolled-operator test to `platform-audit/routes.test.ts`
+- [x] **Task 8 — Group M: `GET /maintenance-mode` MFA-flag regression fix (AC-M7, AC-M8, AC-M9)**
+  - [x] 8.1 RED: add the new MFA-unenrolled-operator test to `platform-audit/routes.test.ts`
     (mirroring the `orgs`/`resource-usage` pattern from Task 7, adapted to this file's existing
     helpers) asserting `200`, not `403`. Run, confirm it fails against current code (`403
     mfa_required`).
-  - [ ] 8.2 GREEN: flip `requireMfa: true` → `false` on `GET /maintenance-mode` in `routes.ts`.
-  - [ ] 8.3 Update `platform-audit-route-audit.test.ts`'s guard test to add the narrow, explicit
+  - [x] 8.2 GREEN: flip `requireMfa: true` → `false` on `GET /maintenance-mode` in `routes.ts`.
+  - [x] 8.3 Update `platform-audit-route-audit.test.ts`'s guard test to add the narrow, explicit
     exception for exactly `{method: 'GET', url: '/maintenance-mode'}` (asserting `requireMfa: false`
     for that one route, `requireMfa: true` for every other route in the file) — run the guard test
     alone first to confirm it fails before this edit (proving AC-M7's flag flip alone would break
     CI without this), then confirm it passes after.
-  - [ ] 8.4 Fix the stale comment in `maintenance-mode.ts`'s `getMaintenanceModeStatus` (line 55).
-  - [ ] 8.5 Add/verify the AC-M9 non-platform-operator and unauthenticated regression tests across
+  - [x] 8.4 Fix the stale comment in `maintenance-mode.ts`'s `getMaintenanceModeStatus` (line 55).
+  - [x] 8.5 Add/verify the AC-M9 non-platform-operator and unauthenticated regression tests across
     all five touched routes — add only where genuinely missing (check each file first).
-  - [ ] 8.6 Add the AC-M8 component test on the audit page combining both fixes (events MFA alert +
+  - [x] 8.6 Add the AC-M8 component test on the audit page combining both fixes (events MFA alert +
     maintenance-status widget both correctly rendered together).
 
 - [ ] **Task 9 — Full verification**
-  - [ ] 9.1 Run the full API test suite (`apps/api`) — confirm no regressions beyond the
+  - [x] 9.1 Run the full API test suite (`apps/api`) — confirm no regressions beyond the
     intentionally-changed tests.
-  - [ ] 9.2 Run the full web test suite (`apps/web`) — confirm no regressions.
-  - [ ] 9.3 `make ci` (or equivalent local lint/typecheck/test gate) green.
-  - [ ] 9.4 Update `deferred-work.md`'s TD9-2 entry and the MFA-dead-end entry to reflect closure
+  - [x] 9.2 Run the full web test suite (`apps/web`) — confirm no regressions.
+  - [ ] 9.3 `make ci` (or equivalent local lint/typecheck/test gate) green — not run per review
+    instruction.
+  - [x] 9.4 Update `deferred-work.md`'s TD9-2 entry and the MFA-dead-end entry to reflect closure
     (do not delete the historical record — mark resolved, cross-reference this story).
+
+### Review Findings
+
+- [x] [Review][Patch][High] Wrap maintenance-state lookup and pending-queue failures in
+  `SameTransactionPlatformAuditWriteError`, preserving the fail-closed 503 contract
+  [apps/api/src/lib/audit-or-fail-closed.ts:204]
+- [x] [Review][Patch][High] Map platform-audit write failures from settings and organization
+  mutations to `503 platform_audit_write_failed`
+  [apps/api/src/modules/platform-admin/route-common.ts:28]
+- [x] [Review][Patch][High] Sanitize the platform-audit 503 response instead of exposing the
+  underlying database, vault, maintenance-state, or queue failure message
+  [apps/api/src/modules/platform-admin/route-common.ts:28]
+- [x] [Review][Patch][Medium] Correct the verification checklist that claimed the intentionally
+  unrun `make ci` gate was green
+  [_bmad-output/implementation-artifacts/9-8-platform-admin-mfa-gaps-and-audit-bypass-hardening.md:746]
+- [x] [Review][Patch][High] Serialize the maintenance-state check and pending-entry insert with
+  deactivation so a concurrent transition cannot strand an entry while maintenance mode is inactive
+  [apps/api/src/lib/audit-or-fail-closed.ts:205]
+- [x] [Review][Patch][High] Require a valid five-character PostgreSQL SQLSTATE before applying
+  storage-class prefix classification, preventing malformed application codes from entering the bypass
+  [apps/api/src/lib/audit-or-fail-closed.ts:24]
+- [x] [Review][Patch][Low] Correct stale wrapper comments that still described every write failure
+  as eligible for maintenance-mode queueing
+  [apps/api/src/lib/audit-or-fail-closed.ts:174]
 
 ---
 
@@ -831,10 +855,71 @@ the expected reason, then implement, per AC.
 
 ### Agent Model Used
 
-TBD
+GPT-5.6 Sol
 
 ### Debug Log References
 
+- TDD RED confirmed for the missing classifier export, application-error queueing, all four
+  page-load MFA links, and the maintenance-status MFA gate/route-audit guard.
+- AC-M6's existing backend contract was mutation-tested by temporarily disabling each GET route's
+  `requireMfa` flag; both new tests failed with 200 instead of 403, then passed after restoration.
+- Reconciled AC-T5 per Nestor's 2026-07-10 decision: production forbidden-key sanitization remains
+  Story 9.4's strip/warn/continue behavior; non-production assertions are wrapped fail-closed.
+- Code review RED/GREEN: maintenance-state and pending-queue failures initially escaped as raw
+  errors, and the platform-admin response mapper was missing; focused tests now pass 6/6.
+- Full API run: 201/202 files and 1837/1839 tests passed. The two failures were unrelated
+  `backup.routes.test.ts` rate-limit ordering failures (429 before expected 409); both failing tests
+  passed together in isolation (2/2). All eight story-relevant API files passed (75/75).
+- Full web behavior run: 112/112 files, 918/918 tests passed. API/web typecheck and lint passed
+  (warnings only). `make ci` was not run per user instruction.
+
+### Implementation Plan
+
+- Classify only vault-sealed, Postgres storage/resource, and socket connectivity failures before
+  consulting maintenance mode; fail closed for all other write errors.
+- Reuse `MfaAwareErrorAlert` on the four platform load-error surfaces and preserve existing
+  non-MFA, empty-state, warnings, and maintenance-status behavior.
+- Restore the read-only maintenance-status route's no-MFA contract with a narrow AST guard
+  exception while retaining platform-operator authorization.
+
 ### Completion Notes List
 
+- Implemented all AC-T1–T7 and AC-M1–M9 with red-green regression coverage.
+- Preserved Story 9.4's production forbidden-key stripping policy and documented the reconciled
+  contract directly in AC-T5.
+- Closed both Story 9.7 deferred-work entries without migrations, schema changes, or dependencies.
+- Verified the persona path: each MFA-blocked page exposes a working `/settings/security` link;
+  `/platform/audit` simultaneously displays the real maintenance status.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/9-8-platform-admin-mfa-gaps-and-audit-bypass-hardening.md`
+- `_bmad-output/implementation-artifacts/deferred-work.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `apps/api/src/lib/audit-or-fail-closed.ts`
+- `apps/api/src/lib/audit-or-fail-closed.platform-audit.test.ts`
+- `apps/api/src/lib/audit-or-fail-closed.storage-bypass.test.ts`
+- `apps/api/src/lib/audit-or-fail-closed.storage-classifier.test.ts`
+- `apps/api/src/modules/platform-admin/orgs-routes.test.ts`
+- `apps/api/src/modules/platform-admin/orgs-routes.ts`
+- `apps/api/src/modules/platform-admin/route-common.test.ts`
+- `apps/api/src/modules/platform-admin/route-common.ts`
+- `apps/api/src/modules/platform-admin/resource-usage-routes.test.ts`
+- `apps/api/src/modules/platform-admin/settings-routes.ts`
+- `apps/api/src/modules/platform-audit/maintenance-mode.ts`
+- `apps/api/src/modules/platform-audit/platform-audit-route-audit.test.ts`
+- `apps/api/src/modules/platform-audit/routes.test.ts`
+- `apps/api/src/modules/platform-audit/routes.ts`
+- `apps/web/src/routes/(app)/platform/audit/+page.svelte`
+- `apps/web/src/routes/(app)/platform/audit/audit-page.test.ts`
+- `apps/web/src/routes/(app)/platform/settings/+page.svelte`
+- `apps/web/src/routes/(app)/platform/settings/settings-page.test.ts`
+- `apps/web/src/routes/(app)/platform/settings/orgs/+page.svelte`
+- `apps/web/src/routes/(app)/platform/settings/orgs/orgs-page.test.ts`
+- `apps/web/src/routes/(app)/platform/settings/resource-usage/+page.svelte`
+- `apps/web/src/routes/(app)/platform/settings/resource-usage/resource-usage-page.test.ts`
+
+## Change Log
+
+- 2026-07-10: Implemented Story 9.8 audit-bypass narrowing and platform-admin MFA guidance via
+  strict TDD; reconciled AC-T5 to preserve production sanitization; moved story to review.

@@ -38,7 +38,7 @@ describe('reserveConnection', () => {
         SELECT pg_advisory_unlock(hashtext('db-test-reserve-lock')) AS unlocked
       `
       expect(unlockRow?.unlocked).toBe(true)
-      await reserved.release()
+      reserved.release()
     }
   })
 
@@ -52,7 +52,7 @@ describe('reserveConnection', () => {
       const [row] = await reserved<{ one: number }[]>`SELECT 1 AS one`
       expect(row?.one).toBe(1)
     } finally {
-      await reserved.release()
+      reserved.release()
     }
   })
 })

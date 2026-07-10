@@ -4,16 +4,51 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(__dirname, '../../../../')
+const API_DOCKERFILE_PATH = 'apps/api/Dockerfile'
+const WEB_DOCKERFILE_PATH = 'apps/web/Dockerfile'
 
 const readRepoFile = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
+const dockerRunCommands = (dockerfile: string) =>
+  dockerfile
+    .replace(/\\\n\s*/g, ' ')
+    .split('\n')
+    .filter((line) => line.startsWith('RUN '))
+    .map((line) => line.slice(4).trim())
+
 describe('deployment hardening configuration', () => {
   it('runs api and web containers as the node user', () => {
-    const apiDockerfile = readRepoFile('apps/api/Dockerfile')
-    const webDockerfile = readRepoFile('apps/web/Dockerfile')
+    const apiDockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const webDockerfile = readRepoFile(WEB_DOCKERFILE_PATH)
 
     expect(apiDockerfile).toMatch(/\nUSER node\n/)
     expect(webDockerfile).toMatch(/\nUSER node\n/)
+  })
+
+  it.each([
+    ['api', API_DOCKERFILE_PATH],
+    ['web', WEB_DOCKERFILE_PATH],
+  ])('disables dependency lifecycle scripts in the %s image install steps', (_, path) => {
+    const commands = dockerRunCommands(readRepoFile(path))
+
+    expect(commands).toEqual(
+      expect.arrayContaining([
+        'npm install -g pnpm@11.9.0 --ignore-scripts',
+        'pnpm install --frozen-lockfile --ignore-scripts',
+      ])
+    )
+  })
+
+  it.each([
+    ['api', API_DOCKERFILE_PATH, ['argon2', 'esbuild']],
+    ['web', WEB_DOCKERFILE_PATH, ['esbuild']],
+  ])('rebuilds only the required native dependencies in the %s image', (_, path, dependencies) => {
+    const rebuildCommands = dockerRunCommands(readRepoFile(path)).filter((command) =>
+      command.startsWith('pnpm rebuild ')
+    )
+
+    expect(rebuildCommands).toHaveLength(1)
+    expect(rebuildCommands[0]?.split(/\s+/).slice(2).sort()).toEqual([...dependencies].sort())
   })
 
   // Story 9.1 D4/AC-17: pg_dump/pg_restore/psql must be present in the runner stage — a
@@ -21,7 +56,7 @@ describe('deployment hardening configuration', () => {
   // make backup/restore fail at runtime with an opaque "command not found" instead of a clear,
   // build-time-visible failure).
   it('installs postgresql16-client in the api runner stage (Story 9.1 D4/AC-17)', () => {
-    const dockerfile = readRepoFile('apps/api/Dockerfile')
+    const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
     const runnerStage = dockerfile.slice(dockerfile.indexOf('AS runner'))
 
     expect(runnerStage).toMatch(/\bapk add --no-cache\b[^\n]*\bpostgresql16-client\b/)

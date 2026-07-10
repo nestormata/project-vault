@@ -206,7 +206,8 @@ async function unlockAndRelease(
       )
     }
   } finally {
-    await reserved.release()
+    // postgres-js `reserve().release()` is synchronous (returns void) — do not await it.
+    reserved.release()
   }
 }
 
@@ -247,12 +248,12 @@ export async function acquireRestoreLock(
       SELECT pg_try_advisory_lock(hashtext(${BACKUP_ADVISORY_LOCK_KEY})) AS locked
     `
   } catch (error) {
-    await reserved.release()
+    reserved.release()
     throw error
   }
 
   if (!lockRow?.locked) {
-    await reserved.release()
+    reserved.release()
     return { ok: false, reason: 'restore_in_progress' }
   }
 

@@ -130,8 +130,11 @@ describe('focus trap', () => {
     const container = document.createElement('div')
     document.body.append(container)
     const dispose = trapFocus(container)
-    container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
-    dispose()
+    const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    container.dispatchEvent(event)
+    // Empty focusable set: Tab must not be intercepted (defaultPrevented stays false).
+    expect(event.defaultPrevented).toBe(false)
+    expect(() => dispose()).not.toThrow()
     container.remove()
   })
 })
