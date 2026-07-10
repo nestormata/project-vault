@@ -152,8 +152,8 @@ jobs:
         run: pnpm check-vault-action-dist
 
       # Runs last on purpose: it's the slowest step by far, and every faster check above
-      # should get a chance to fail first. Nothing later in this job depends on it — the
-      # only consumer is the artifact upload immediately below, which stays paired with it.
+      # should get a chance to fail first. The SonarCloud scan and artifact upload below
+      # both consume its lcov/coverage output and stay paired with it.
       - name: Test (with coverage)
         run: pnpm turbo test
         env:
@@ -164,6 +164,12 @@ jobs:
           # check-rls-coverage.test.ts needs superuser access to create/drop its
           # throwaway test database and manage RLS policies directly.
           ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: Upload RLS isolation coverage (SOC2 Type II evidence)
         if: always()
