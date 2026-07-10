@@ -71,6 +71,7 @@ type TestApp = Awaited<ReturnType<typeof createApp>>
 
 let app: TestApp
 let operatorCookies: Record<string, string>
+const originalRateLimitTestBypass = process.env['RATE_LIMIT_TEST_BYPASS']
 
 // Story 9.6 D1.9: parseBackupFilename()'s shape check now runs in the route handler BEFORE the
 // restore lock is ever touched — a filename that doesn't match the real backup_<timestamp>_<id>
@@ -95,6 +96,12 @@ async function seedSucceededBackup(): Promise<string> {
 
 describe.sequential('Story 9.1: backup HTTP routes', () => {
   beforeAll(async () => {
+    // This file exercises more than five restore outcomes with one authenticated operator and
+    // creates a second app instance for log capture. The production limiter is process-global, so
+    // both app instances intentionally share that operator+route bucket; without the documented
+    // test-only bypass, unrelated restore-behavior assertions eventually receive 429 and their
+    // handlers (including operational logging) never run. Rate-limit behavior has dedicated tests.
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'true'
     await resetVaultForTest()
     await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
     app = await createApp({ logger: false, vaultGuardEnabled: true })
