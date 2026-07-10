@@ -1,6 +1,6 @@
 # Story 10.2: apps/web Branch Coverage Hardening
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created. -->
@@ -399,31 +399,31 @@ hardening are intentionally N/A because no runtime behavior changes.
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Establish truthful baseline and branch inventory (AC-A1, AC-A2)**
-  - [ ] Run `pnpm --filter @project-vault/web test`; record the expected threshold-only RED.
-  - [ ] Save the metric numerators/denominators and rank below-80% sources/uncovered ranges.
-  - [ ] Confirm the report denominator is not being narrowed by configuration or test discovery.
-- [ ] **Task 2 — Harden status-page tests via RED→GREEN (AC-B1–B7, AC-C1, AC-D1)**
-  - [ ] Extend `apps/web/src/routes/status-page-admin.test.ts`; do not change the component.
-  - [ ] Run the focused file after each behavior batch and record expected RED then GREEN.
-- [ ] **Task 3 — Harden member/invitation tests via RED→GREEN (AC-B1–B7, AC-C2, AC-D1)**
-  - [ ] Extend `apps/web/src/routes/members-page.test.ts`, including resettable API mocks.
-  - [ ] Cover role, mutation, expiry, typed/generic error, and busy/cancellation branches.
-- [ ] **Task 4 — Harden notification tests via RED→GREEN (AC-B1–B7, AC-C3, AC-D1)**
-  - [ ] Extend the colocated notifications page tests.
-  - [ ] Cover list variants, form enhancement callbacks, confirmation, and pagination.
-- [ ] **Task 5 — Harden organization-user tests via RED→GREEN (AC-B1–B7, AC-C4, AC-D1)**
-  - [ ] Extend the colocated users page tests.
-  - [ ] Cover settings, roles, recovery, removal/deactivation, pseudonymize, and erasure branches.
-- [ ] **Task 6 — Close any remaining measured deficit with the next ranked behaviors (AC-A3–A5)**
-  - [ ] Re-run coverage; use the current report, not the planning-time table.
-  - [ ] Add the smallest behavior-focused tests to existing route/component/API test files until all
+- [x] **Task 1 — Establish truthful baseline and branch inventory (AC-A1, AC-A2)**
+  - [x] Run `pnpm --filter @project-vault/web test`; record the expected threshold-only RED.
+  - [x] Save the metric numerators/denominators and rank below-80% sources/uncovered ranges.
+  - [x] Confirm the report denominator is not being narrowed by configuration or test discovery.
+- [x] **Task 2 — Harden status-page tests via RED→GREEN (AC-B1–B7, AC-C1, AC-D1)**
+  - [x] Extend `apps/web/src/routes/status-page-admin.test.ts`; do not change the component.
+  - [x] Run the focused file after each behavior batch and record expected RED then GREEN.
+- [x] **Task 3 — Harden member/invitation tests via RED→GREEN (AC-B1–B7, AC-C2, AC-D1)**
+  - [x] Extend `apps/web/src/routes/members-page.test.ts`, including resettable API mocks.
+  - [x] Cover role, mutation, expiry, typed/generic error, and busy/cancellation branches.
+- [x] **Task 4 — Harden notification tests via RED→GREEN (AC-B1–B7, AC-C3, AC-D1)**
+  - [x] Extend the colocated notifications page tests.
+  - [x] Cover list variants, form enhancement callbacks, confirmation, and pagination.
+- [x] **Task 5 — Harden organization-user tests via RED→GREEN (AC-B1–B7, AC-C4, AC-D1)**
+  - [x] Extend the colocated users page tests.
+  - [x] Cover settings, roles, recovery, removal/deactivation, pseudonymize, and erasure branches.
+- [x] **Task 6 — Close any remaining measured deficit with the next ranked behaviors (AC-A3–A5)**
+  - [x] Re-run coverage; use the current report, not the planning-time table.
+  - [x] Add the smallest behavior-focused tests to existing route/component/API test files until all
         four metrics pass 80%; preserve every anti-shortcut constraint.
-- [ ] **Task 7 — Determinism, CI, and artifact verification (AC-D2–D5)**
-  - [ ] Run affected focused files.
-  - [ ] Run `pnpm --filter @project-vault/web test` twice consecutively.
-  - [ ] Run `pnpm turbo test` and proportionate broader checks.
-  - [ ] Inspect the fresh LCOV for real web source records and review the final diff for test-only scope.
+- [x] **Task 7 — Determinism, CI, and artifact verification (AC-D2–D5)**
+  - [x] Run affected focused files.
+  - [x] Run `pnpm --filter @project-vault/web test` twice consecutively.
+  - [x] Run `pnpm turbo test` and proportionate broader checks.
+  - [x] Inspect the fresh LCOV for real web source records and review the final diff for test-only scope.
 
 ---
 
@@ -500,10 +500,63 @@ is expected to change.
 
 ### Agent Model Used
 
-TBD
+GPT-5.6 Sol
 
 ### Debug Log References
 
+- Baseline RED: `pnpm --filter @project-vault/web test` — 106 files / 766 tests passed;
+  statements 82.65% (5319/6435), branches 67.90% (1731/2549), functions 86.40%
+  (1386/1604), lines 84.22% (3711/4406); exit 1 only for the shared branch threshold.
+- Baseline ranking retained from the generated report: status page 17.30% branches
+  (uncovered 22–255), members 23.52% (66–311), notifications page 25.00% (12–321),
+  users page 39.61% (40–602), projects list 44.82% (40–271), credentials list 50.90%
+  (39–131), plus the report's remaining below-80 sources.
+- RED→GREEN examples: status-page focused run failed 11 assertions on the missing text-content
+  harness then passed 17/17; member duplicate-submit failed before a deferred API fixture then
+  passed 19/19; notifications failed on an ambiguous accessible link then passed 11/11; users
+  failed three role-query assertions then passed 38/38; projects, auth, credentials, and helper
+  batches followed the same focused correction cycle.
+- Final deterministic gate (two consecutive runs): 107 files / 904 tests; statements 92.93%
+  (5975/6429), branches 80.10% (2042/2549), functions 94.80% (1515/1598), lines
+  94.34% (4151/4400), exit 0 both times.
+- Broader checks: web typecheck and lint passed (warnings only). `pnpm turbo test` was attempted
+  three times and consistently reached 10/11 tasks before unrelated `@project-vault/db` RLS
+  isolation failures against a polluted/misconfigured shared database (for example 3299 session
+  rows where one was expected and cross-org writes resolving instead of rejecting); web remained
+  green and this test-only story did not alter DB/runtime code.
+
 ### Completion Notes List
 
+- Preserved the inherited V8 provider, complete denominator, four shared 80% thresholds, test
+  discovery, runtime sources, dependencies, and CI configuration unchanged.
+- Added observable positive/alternate/error/busy/confirmation/browser integration coverage for
+  public status pages, project members/invitations, notifications, and organization users.
+- Closed the remaining measured deficit with behavior tests for projects, credentials/import,
+  service endpoints, auth/session refresh, inbox API behavior, onboarding/focus handling, search,
+  and audit query helpers.
+- Fresh `coverage/lcov.info` is non-empty and contains source records for status-page, members,
+  notifications, and settings/users. Surface scope/persona/RLS/audit/deployment concerns remain
+  honestly N/A because no runtime behavior changed.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/10-2-apps-web-branch-coverage-hardening.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `apps/web/src/lib/api/inbox.test.ts`
+- `apps/web/src/lib/audit/audit-helpers.test.ts`
+- `apps/web/src/lib/components/onboarding/onboarding-logic.test.ts`
+- `apps/web/src/lib/components/shell/search-ui.test.ts`
+- `apps/web/src/routes/(app)/notifications/notifications-page.server.test.ts`
+- `apps/web/src/routes/(app)/notifications/notifications-page.test.ts`
+- `apps/web/src/routes/(app)/settings/users/users-page.test.ts`
+- `apps/web/src/routes/auth-guard.test.ts`
+- `apps/web/src/routes/members-page.test.ts`
+- `apps/web/src/routes/monitored-service-endpoints.test.ts`
+- `apps/web/src/routes/projects-credentials.test.ts`
+- `apps/web/src/routes/projects-list.test.ts`
+- `apps/web/src/routes/status-page-admin.test.ts`
+
+## Change Log
+
+- 2026-07-10: Raised truthful `apps/web` branch coverage from 67.90% to 80.10% using
+  behavior-focused Vitest tests only; moved story to review.
