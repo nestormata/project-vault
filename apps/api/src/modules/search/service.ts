@@ -108,11 +108,10 @@ function projectMatchWhere(
 async function countCredentials(
   tx: Tx,
   orgId: string,
-  q: string,
+  like: string,
   scopeToMembership: boolean,
   userId: string
 ): Promise<number> {
-  const like = `%${escapeLikeTerm(q)}%`
   const [row] = await tx
     .select({ count: sql<number>`count(*)` })
     .from(credentials)
@@ -124,102 +123,15 @@ async function countCredentials(
 async function countProjects(
   tx: Tx,
   orgId: string,
-  q: string,
+  like: string,
   scopeToMembership: boolean,
   userId: string
 ): Promise<number> {
-  const like = `%${escapeLikeTerm(q)}%`
   const [row] = await tx
     .select({ count: sql<number>`count(*)` })
     .from(projects)
     .where(projectMatchWhere(orgId, like, scopeToMembership, userId))
   return Number(row?.count ?? 0)
-}
-
-async function searchCredentials(
-  tx: Tx,
-  orgId: string,
-  q: string,
-  limit: number,
-  offset: number,
-  scopeToMembership: boolean,
-  userId: string
-): Promise<SearchResultItem[]> {
-  const like = `%${escapeLikeTerm(q)}%`
-  const rows = await tx
-    .select({
-      id: credentials.id,
-      name: credentials.name,
-      description: credentials.description,
-      tags: credentials.tags,
-      expiresAt: credentials.expiresAt,
-      projectId: projects.id,
-      projectName: projects.name,
-      updatedAt: credentials.updatedAt,
-    })
-    .from(credentials)
-    .innerJoin(projects, eq(credentials.projectId, projects.id))
-    .where(credentialMatchWhere(orgId, like, scopeToMembership, userId))
-    .orderBy(relevanceOrderSql(credentials.name, q), sql`${credentials.updatedAt} DESC`)
-    .limit(limit)
-    .offset(offset)
-
-  return rows.map((row) => ({
-    type: 'credential' as const,
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    tags: row.tags,
-    projectId: row.projectId,
-    projectName: row.projectName,
-    matchedField: credentialMatchedField(row, q),
-    snippet: generateSnippet(row.description ?? row.name, q),
-    expiresAt: row.expiresAt?.toISOString() ?? null,
-  }))
-}
-
-async function searchProjects(
-  tx: Tx,
-  orgId: string,
-  q: string,
-  limit: number,
-  offset: number,
-  scopeToMembership: boolean,
-  userId: string
-): Promise<SearchResultItem[]> {
-  const like = `%${escapeLikeTerm(q)}%`
-  const rows = await tx
-    .select({
-      id: projects.id,
-      name: projects.name,
-      description: projects.description,
-      tags: projects.tags,
-      slug: projects.slug,
-      updatedAt: projects.updatedAt,
-      credentialCount: sql<number>`(
-        SELECT count(*)::int
-        FROM ${credentials}
-        WHERE ${credentials.projectId} = ${projects.id}
-          AND ${credentials.orgId} = ${orgId}
-      )`,
-    })
-    .from(projects)
-    .where(projectMatchWhere(orgId, like, scopeToMembership, userId))
-    .orderBy(relevanceOrderSql(projects.name, q), sql`${projects.updatedAt} DESC`)
-    .limit(limit)
-    .offset(offset)
-
-  return rows.map((row) => ({
-    type: 'project' as const,
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    tags: row.tags,
-    slug: row.slug,
-    matchedField: projectMatchedField(row, q),
-    snippet: generateSnippet(row.description ?? row.name, q),
-    credentialCount: Number(row.credentialCount ?? 0),
-  }))
 }
 
 /**
@@ -237,28 +149,87 @@ export async function executeSearch(input: ExecuteSearchInput): Promise<{
 }> {
   const { tx, orgId, q, types, limit, offset, userId, orgRole } = input
   const scopeToMembership = roleRank(orgRole) < roleRank('admin')
+  const like = `%${escapeLikeTerm(q)}%`
 
   const credTotal = types.includes('credentials')
-    ? await countCredentials(tx, orgId, q, scopeToMembership, userId)
+    ? await countCredentials(tx, orgId, like, scopeToMembership, userId)
     : 0
   const projTotal = types.includes('projects')
-    ? await countProjects(tx, orgId, q, scopeToMembership, userId)
+    ? await countProjects(tx, orgId, like, scopeToMembership, userId)
     : 0
   const total = credTotal + projTotal
 
   const results: SearchResultItem[] = []
 
   if (types.includes('credentials') && offset < credTotal) {
+    const credRows = await tx
+      .select({
+        id: credentials.id,
+        name: credentials.name,
+        description: credentials.description,
+        tags: credentials.tags,
+        expiresAt: credentials.expiresAt,
+        projectId: projects.id,
+        projectName: projects.name,
+        updatedAt: credentials.updatedAt,
+      })
+      .from(credentials)
+      .innerJoin(projects, eq(credentials.projectId, projects.id))
+      .where(credentialMatchWhere(orgId, like, scopeToMembership, userId))
+      .orderBy(relevanceOrderSql(credentials.name, q), sql`${credentials.updatedAt} DESC`)
+      .limit(limit)
+      .offset(offset)
     results.push(
-      ...(await searchCredentials(tx, orgId, q, limit, offset, scopeToMembership, userId))
+      ...credRows.map((row) => ({
+        type: 'credential' as const,
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        tags: row.tags,
+        projectId: row.projectId,
+        projectName: row.projectName,
+        matchedField: credentialMatchedField(row, q),
+        snippet: generateSnippet(row.description ?? row.name, q),
+        expiresAt: row.expiresAt?.toISOString() ?? null,
+      }))
     )
   }
 
   const remaining = limit - results.length
   if (types.includes('projects') && remaining > 0) {
     const projectOffset = Math.max(0, offset - credTotal)
+    const projRows = await tx
+      .select({
+        id: projects.id,
+        name: projects.name,
+        description: projects.description,
+        tags: projects.tags,
+        slug: projects.slug,
+        updatedAt: projects.updatedAt,
+        credentialCount: sql<number>`(
+          SELECT count(*)::int
+          FROM ${credentials}
+          WHERE ${credentials.projectId} = ${projects.id}
+            AND ${credentials.orgId} = ${orgId}
+        )`,
+      })
+      .from(projects)
+      .where(projectMatchWhere(orgId, like, scopeToMembership, userId))
+      .orderBy(relevanceOrderSql(projects.name, q), sql`${projects.updatedAt} DESC`)
+      .limit(remaining)
+      .offset(projectOffset)
     results.push(
-      ...(await searchProjects(tx, orgId, q, remaining, projectOffset, scopeToMembership, userId))
+      ...projRows.map((row) => ({
+        type: 'project' as const,
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        tags: row.tags,
+        slug: row.slug,
+        matchedField: projectMatchedField(row, q),
+        snippet: generateSnippet(row.description ?? row.name, q),
+        credentialCount: Number(row.credentialCount ?? 0),
+      }))
     )
   }
 

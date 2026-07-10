@@ -1107,18 +1107,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddDependencyBody>(AddDependencyBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
-      if (
-        await rejectIfProjectNotVisible(
-          secureCtx,
-          req,
-          reply,
-          params.projectId,
-          CREDENTIAL_NOT_FOUND
-        )
-      )
+      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
         return reply
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const result = await addCredentialDependency(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
@@ -1184,31 +1174,17 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(CredentialParamsSchema, req, reply)
-      if (!params) return reply
       const parsedQuery = ListDependenciesQuerySchema.safeParse(req.query)
       if (!parsedQuery.success) {
         return reply.status(422).send(validationError(parsedQuery.error, 'query'))
       }
-      const secureCtx = ctx as SecureRouteContext
-      if (
-        await rejectIfProjectNotVisible(
-          secureCtx,
-          req,
-          reply,
-          params.projectId,
-          CREDENTIAL_NOT_FOUND
-        )
-      )
-        return reply
-
-      const result = await listCredentialDependencies(secureCtx.tx, {
-        ...params,
-        query: parsedQuery.data,
+      return withCredentialParams(ctx, req, reply, async (secureCtx, params) => {
+        const result = await listCredentialDependencies(secureCtx.tx, {
+          ...params,
+          query: parsedQuery.data,
+        })
+        return result ?? null
       })
-      if (!result) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
-
-      return { data: result }
     },
   })
 
@@ -1238,18 +1214,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(DependencyParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
-      if (
-        await rejectIfProjectNotVisible(
-          secureCtx,
-          req,
-          reply,
-          params.projectId,
-          CREDENTIAL_NOT_FOUND
-        )
-      )
+      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
         return reply
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
       const result = await archiveCredentialDependency(secureCtx.tx, {
         userId: secureCtx.auth.userId,
