@@ -559,4 +559,37 @@ describe('/rotations/[rotationId] +page.svelte', () => {
     await waitFor(() => expect(getRotationMock).toHaveBeenCalled())
     expect(screen.queryByText(onboardingCopy.vaultSealedMessage)).toBeNull()
   })
+
+  it('renders rotation notes and the completed timestamp when both are present', () => {
+    render(RotationDetailPage, {
+      props: {
+        data: baseData({
+          rotation: makeRotation({
+            notes: 'Rotated after suspected leak in CI logs',
+            completedAt: '2026-07-02T00:00:00.000Z',
+          }),
+        }),
+      },
+    })
+
+    expect(screen.getByText('Rotated after suspected leak in CI logs')).toBeTruthy()
+    expect(screen.getByText(/Completed/)).toBeTruthy()
+  })
+
+  it('a non-ApiClientError completion failure shows the raw Error message', async () => {
+    vi.useRealTimers()
+    completeRotationMock.mockRejectedValue(new Error('socket hang up'))
+
+    render(RotationDetailPage, {
+      props: {
+        data: baseData({
+          rotation: makeRotation({ checklistItems: [makeItem({ id: 'i1', status: 'confirmed' })] }),
+        }),
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /complete rotation/i }))
+
+    expect(await screen.findByText('socket hang up')).toBeTruthy()
+  })
 })

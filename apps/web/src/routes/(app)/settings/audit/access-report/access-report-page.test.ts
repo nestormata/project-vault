@@ -124,4 +124,45 @@ describe('/settings/audit/access-report +page.svelte', () => {
       'csv text'
     )
   })
+
+  it('shows an inline error and re-enables the button when the CSV download fails', async () => {
+    runAccessReportCsvMock.mockRejectedValue(new Error('network down'))
+
+    render(AccessReportPage, { props: { data: baseData() } })
+    const button = screen.getByRole('button', { name: /download csv/i }) as HTMLButtonElement
+    await fireEvent.click(button)
+
+    expect(await screen.findByText('Failed to download CSV')).toBeTruthy()
+    expect(button.disabled).toBe(false)
+  })
+
+  it('shows an honest empty state when the report has no users', () => {
+    render(AccessReportPage, {
+      props: { data: baseData({ report: { ...SAMPLE_REPORT, users: [] } }) },
+    })
+
+    expect(screen.getByText(/no users found for this report/i)).toBeTruthy()
+  })
+
+  it('shows a Previous link when on a page after the first, and a Next link when hasNext is true', () => {
+    render(AccessReportPage, {
+      props: {
+        data: baseData({
+          page: 2,
+          report: { ...SAMPLE_REPORT, page: 2, hasNext: true },
+        }),
+      },
+    })
+
+    expect(screen.getByRole('link', { name: /previous/i })).toBeTruthy()
+    const next = screen.getByRole('link', { name: /next/i })
+    expect(next.getAttribute('href')).toContain('page=3')
+  })
+
+  it('omits Previous and Next links on a single, first page of results', () => {
+    render(AccessReportPage, { props: { data: baseData() } })
+
+    expect(screen.queryByRole('link', { name: /previous/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /next/i })).toBeNull()
+  })
 })

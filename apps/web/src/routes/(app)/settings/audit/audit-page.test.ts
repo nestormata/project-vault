@@ -188,4 +188,36 @@ describe('/settings/audit +page.svelte', () => {
 
     expect(screen.queryByRole('link', { name: /^next$/i })).toBeNull()
   })
+
+  it('shows a combined filter summary for event type, actor, resource, and project filters', () => {
+    render(AuditPage, {
+      props: {
+        data: allowedData({
+          filters: {
+            eventType: 'credential.access',
+            actorId: 'user-1',
+            resourceId: 'cred-1',
+            projectId: 'proj-1',
+          },
+        }),
+      },
+    })
+
+    expect(screen.getByText(/event type = credential.access/)).toBeTruthy()
+    expect(screen.getByText(/actor = user-1/)).toBeTruthy()
+    expect(screen.getByText(/resource = cred-1/)).toBeTruthy()
+    expect(screen.getByText(/project = proj-1/)).toBeTruthy()
+  })
+
+  it('blocks the search submission client-side when "to" precedes "from"', async () => {
+    render(AuditPage, { props: { data: allowedData() } })
+
+    const fromInput = document.querySelector('#filter-from') as HTMLInputElement
+    const toInput = document.querySelector('#filter-to') as HTMLInputElement
+    await fireEvent.input(fromInput, { target: { value: '2026-06-30' } })
+    await fireEvent.input(toInput, { target: { value: '2026-06-01' } })
+    await fireEvent.click(screen.getByRole('button', { name: /apply filters|search/i }))
+
+    expect(screen.getByText(/end date must be after start date/i)).toBeTruthy()
+  })
 })

@@ -75,6 +75,42 @@ describe('server auth guard', () => {
     expect(forwardedCookies).toEqual(setCookieHeaders)
   })
 
+  it('falls back to the combined set-cookie header when Headers.getSetCookie is unavailable', async () => {
+    // Simulates a fetch implementation whose Headers object predates the getSetCookie() API,
+    // forcing the header-splitting fallback path in getSetCookieHeaders().
+    const setCookieCombined =
+      'access-token=new-access; HttpOnly; Path=/, refresh-token=new-refresh; HttpOnly; Path=/'
+    const refreshResponse = jsonResponse(
+      { data: { expiresAt: '2026-06-27T19:00:00.000Z' } },
+      { headers: { 'set-cookie': setCookieCombined } }
+    )
+    Object.defineProperty(refreshResponse, 'headers', {
+      value: {
+        get: (name: string) => (name === 'set-cookie' ? setCookieCombined : null),
+      },
+    })
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ code: 'unauthorized', message: 'Unauthorized' }, { status: 401 })
+      )
+      .mockResolvedValueOnce(refreshResponse)
+      .mockResolvedValueOnce(jsonResponse({ data: authUser }))
+    const forwardedCookies: string[] = []
+
+    const result = await resolveAuthContext({
+      fetchFn,
+      cookieHeader: 'access-token=old-access; refresh-token=old-refresh',
+      forwardSetCookie: (value) => forwardedCookies.push(value),
+    })
+
+    expect(result).toEqual({ status: 'authenticated', user: authUser })
+    expect(forwardedCookies).toEqual([
+      'access-token=new-access; HttpOnly; Path=/',
+      'refresh-token=new-refresh; HttpOnly; Path=/',
+    ])
+  })
+
   it('treats auth API outages as unauthenticated instead of throwing', async () => {
     const fetchFn = vi.fn().mockRejectedValue(new Error('API unavailable'))
 

@@ -148,4 +148,59 @@ describe('ActiveAlertsPanel (Story 6.4 AC-F1/F2/F3)', () => {
 
     expect(await screen.findByText('Alert is dismissed')).toBeTruthy()
   })
+
+  it('a viewer sees neither Snooze nor Dismiss controls', () => {
+    render(ActiveAlertsPanel, {
+      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'viewer', projectId },
+    })
+    expect(screen.queryByRole('button', { name: /Snooze/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
+  })
+
+  it('a snoozed alert with snoozedUntil shows the snoozed-until timestamp', () => {
+    render(ActiveAlertsPanel, {
+      props: {
+        alerts: [makeAlert({ status: 'snoozed', snoozedUntil: '2026-07-01T01:00:00.000Z' })],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        projectId,
+      },
+    })
+    expect(screen.getByText(/snoozed until/i)).toBeTruthy()
+  })
+
+  it('shows "Endpoint deleted" when serviceEndpointId does not match any known endpoint', () => {
+    render(ActiveAlertsPanel, {
+      props: {
+        alerts: [makeAlert({ serviceEndpointId: 'unknown-endpoint-id' })],
+        endpoints: endpointNames,
+        orgRole: 'member',
+        projectId,
+      },
+    })
+    expect(screen.getByText('Endpoint deleted')).toBeTruthy()
+  })
+
+  it('a non-ApiClientError dismiss failure shows the generic dismiss-error message', async () => {
+    dismissAlertMock.mockRejectedValueOnce(new Error('network down'))
+    render(ActiveAlertsPanel, {
+      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'admin', projectId },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm dismiss?' }))
+
+    expect(await screen.findByText('network down')).toBeTruthy()
+  })
+
+  it('a non-ApiClientError snooze failure (not 409) shows the raw Error message', async () => {
+    snoozeAlertMock.mockRejectedValueOnce(new Error('network down'))
+    render(ActiveAlertsPanel, {
+      props: { alerts: [makeAlert()], endpoints: endpointNames, orgRole: 'member', projectId },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /Snooze 1 hour/i }))
+
+    expect(await screen.findByText('network down')).toBeTruthy()
+  })
 })

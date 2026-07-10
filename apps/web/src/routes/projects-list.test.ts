@@ -155,6 +155,67 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
     expect(invalidateAllMock).not.toHaveBeenCalled()
   })
 
+  it('AC-P4: a 422 too-long-tag error maps to the 50-character message', async () => {
+    updateProjectTagsMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'validation_error',
+          message: 'Request validation failed',
+          details: { tags: ['Too big: expected string to have at most 50 characters'] },
+        },
+        'Request validation failed'
+      )
+    )
+    render(ProjectsListPage, {
+      props: { data: baseData([makeProject({ tags: ['payments'] })]) },
+    })
+
+    const input = screen.getByLabelText(/Tags/i) as HTMLInputElement
+    await fireEvent.input(input, { target: { value: 'a'.repeat(60) } })
+    await fireEvent.click(screen.getByRole('button', { name: /Save/i }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Each tag may be at most 50 characters.')).toBeTruthy()
+    )
+  })
+
+  it('AC-P4: an unrecognized validation detail falls back to the raw detail text', async () => {
+    updateProjectTagsMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'validation_error',
+          message: 'Request validation failed',
+          details: { tags: ['Tags must not contain emoji'] },
+        },
+        'Request validation failed'
+      )
+    )
+    render(ProjectsListPage, {
+      props: { data: baseData([makeProject({ tags: ['payments'] })]) },
+    })
+
+    const input = screen.getByLabelText(/Tags/i) as HTMLInputElement
+    await fireEvent.input(input, { target: { value: 'emoji-tag' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Save/i }))
+
+    await waitFor(() => expect(screen.getByText('Tags must not contain emoji')).toBeTruthy())
+  })
+
+  it('AC-P4: a non-ApiClientError failure shows the generic tags-save error', async () => {
+    updateProjectTagsMock.mockRejectedValue(new Error('network down'))
+    render(ProjectsListPage, {
+      props: { data: baseData([makeProject({ tags: ['payments'] })]) },
+    })
+
+    const input = screen.getByLabelText(/Tags/i) as HTMLInputElement
+    await fireEvent.input(input, { target: { value: 'ops' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Save/i }))
+
+    await waitFor(() => expect(screen.getByText('Failed to save tags.')).toBeTruthy())
+  })
+
   it('renders empty, populated, description, and role-sensitive project states', () => {
     render(ProjectsListPage, { props: { data: baseData([]) } })
     expect(screen.getByText(/no projects yet/i)).toBeTruthy()

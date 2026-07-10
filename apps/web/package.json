@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run --coverage",
+    "test:coverage-buffer": "rm -rf coverage && vitest run --coverage && tsx scripts/check-coverage-buffer.ts",
     "test:e2e": "playwright test",
     "typecheck": "svelte-kit sync && tsc --noEmit"
   },
