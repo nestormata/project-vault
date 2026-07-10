@@ -25,6 +25,22 @@ describe('server API proxy', () => {
     await expect(response.json()).resolves.toEqual({ data: { ok: true } })
   })
 
+  it('strips hop-by-hop headers before forwarding', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { ok: true } }))
+    await proxyApiRequest({
+      fetchFn,
+      request: new Request('http://web.local/api/v1/auth/login', {
+        headers: { 'x-forwarded-for': '1.2.3.4', te: 'trailers' },
+      }),
+      apiBaseUrl: 'http://api.local:3000',
+      path: 'auth/login',
+    })
+
+    const forwarded = fetchFn.mock.calls[0]?.[0] as Request
+    expect(forwarded.headers.get('x-forwarded-for')).toBe('1.2.3.4')
+    expect(forwarded.headers.get('te')).toBeNull()
+  })
+
   it('defaults to the local API origin without using request-controlled input', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ status: 'ready' }))
 

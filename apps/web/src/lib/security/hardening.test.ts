@@ -12,6 +12,7 @@ describe('frontend hardening helpers', () => {
   })
 
   it('resolves login status copy from a fixed enum', () => {
+    expect(getLoginReasonMessage('registered')).toBe('Account created. Sign in to continue.')
     expect(getLoginReasonMessage('session-expired')).toBe(
       'Your session ended. Sign in again to continue.'
     )

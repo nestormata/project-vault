@@ -18,6 +18,20 @@ describe('mapMonitoringSubmitError (AC-B3/C1/D1/E3 failure-mode mapping)', () =>
     expect(result.errorMessage).toBe('Validation failed')
   })
 
+  it('drops a field whose message value is not an array or has no string entry', () => {
+    const error = new ApiClientError(
+      422,
+      {
+        code: 'validation_error',
+        message: 'Validation failed',
+        details: { name: 'not-an-array', empty: [] },
+      },
+      'Validation failed'
+    )
+    const result = mapMonitoringSubmitError(error, 'You do not have permission.')
+    expect(result.fieldErrors).toEqual({})
+  })
+
   it('surfaces a message-only 422 (e.g. service_endpoint_limit_reached) verbatim with no field errors', () => {
     const error = new ApiClientError(
       422,
