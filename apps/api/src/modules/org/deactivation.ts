@@ -14,9 +14,9 @@ import { projectInvitations } from '@project-vault/db/schema'
  * guard uses — both stub call sites are now byte-compatible.
  */
 // This is a tracked forward-dependency stub (see the doc comment above and deferred-work.md
-// for the Epic 5 handoff), not a dangling TODO.
-// TODO: Epic 5 — query the `rotations` table for rows with status='in_progress' for this user. NOSONAR(typescript:S1135)
-// Until Epic 5 ships, never block.
+// for the Epic 5 handoff), not an unresolved open item.
+// NOSONAR(typescript:S1135) TODO: Epic 5 — query the `rotations` table for rows with
+// status='in_progress' for this user. Until Epic 5 ships, never block.
 export async function checkActiveRotationsForUser(
   _userId: string,
   _orgId: string,

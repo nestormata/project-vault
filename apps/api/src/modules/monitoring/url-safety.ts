@@ -23,14 +23,15 @@ export class UrlNotMonitorableError extends Error {
   }
 }
 
-// This IS the SSRF blocklist (Story 6.2 AC 1/2, ADR-6.2-08) — not incidental literals —
-// NOSONAR(typescript:S1313) on every range/subnet boundary below.
+// This IS the SSRF blocklist (Story 6.2 AC 1/2, ADR-6.2-08) — not incidental literals — on
+// every range/subnet boundary below. NOSONAR must be the first token of its own comment to
+// suppress, so it leads each trailing comment rather than following other text.
 const PRIVATE_IPV4_RANGES: Array<[string, string]> = [
-  ['10.0.0.0', '10.255.255.255'], // RFC1918 private NOSONAR(typescript:S1313)
-  ['172.16.0.0', '172.31.255.255'], // RFC1918 private NOSONAR(typescript:S1313)
-  ['192.168.0.0', '192.168.255.255'], // RFC1918 private NOSONAR(typescript:S1313)
+  ['10.0.0.0', '10.255.255.255'], // NOSONAR(typescript:S1313) RFC1918 private
+  ['172.16.0.0', '172.31.255.255'], // NOSONAR(typescript:S1313) RFC1918 private
+  ['192.168.0.0', '192.168.255.255'], // NOSONAR(typescript:S1313) RFC1918 private
   ['127.0.0.0', '127.255.255.255'], // loopback
-  ['169.254.0.0', '169.254.255.255'], // link-local, includes 169.254.169.254 cloud metadata NOSONAR(typescript:S1313)
+  ['169.254.0.0', '169.254.255.255'], // NOSONAR(typescript:S1313) link-local, includes 169.254.169.254 cloud metadata
 ]
 
 function buildReservedBlockList(): BlockList {
@@ -39,8 +40,8 @@ function buildReservedBlockList(): BlockList {
     blockList.addRange(start, end, 'ipv4')
   }
   blockList.addAddress('::1', 'ipv6') // loopback
-  blockList.addSubnet('fc00::', 7, 'ipv6') // unique-local NOSONAR(typescript:S1313)
-  blockList.addSubnet('fe80::', 10, 'ipv6') // link-local NOSONAR(typescript:S1313)
+  blockList.addSubnet('fc00::', 7, 'ipv6') // NOSONAR(typescript:S1313) unique-local
+  blockList.addSubnet('fe80::', 10, 'ipv6') // NOSONAR(typescript:S1313) link-local
   return blockList
 }
 

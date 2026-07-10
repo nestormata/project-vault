@@ -107,8 +107,8 @@ export async function withAdminAccess<T>(
   authCtx: { role?: string },
   fn: (tx: Tx) => Promise<T>
 ): Promise<T> {
-  // Tracked forward-dependency on Story 1.11, not a dangling TODO.
-  // TODO Story 1.11: full admin authorization validation lives here. NOSONAR(typescript:S1135)
+  // Tracked forward-dependency on Story 1.11, not an unresolved open item.
+  // NOSONAR(typescript:S1135) TODO Story 1.11: full admin authorization validation lives here.
   if (authCtx?.role !== 'admin') {
     throw new Error('withAdminAccess: caller is not an admin')
   }

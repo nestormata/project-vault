@@ -9,7 +9,7 @@ export function qrCodeDataUri(svg: string): string {
   // `unescape` is deprecated; this is the standard non-deprecated replacement for turning a
   // UTF-8 string into the Latin1-range byte string btoa() requires.
   const utf8Bytes = encodeURIComponent(svg).replace(/%([0-9A-F]{2})/g, (_, hex: string) =>
-    String.fromCharCode(parseInt(hex, 16))
+    String.fromCodePoint(Number.parseInt(hex, 16))
   )
   return `data:image/svg+xml;base64,${btoa(utf8Bytes)}`
 }
