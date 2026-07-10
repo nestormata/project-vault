@@ -9,6 +9,7 @@ import {
   cookieHeader,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import {
   createCredentialViaApi,
@@ -23,6 +24,13 @@ import {
   getProjectDashboardData,
 } from './dashboard-stats.js'
 import { bootProjectRouteTestApp } from './project-route-test-bootstrap.js'
+
+/** Hourly cron schedule used to force credentials into an already-overdue state once combined
+ *  with `backdateCredentialCreatedAt`. */
+const HOURLY_CRON = '0 * * * *'
+
+/** Far enough in the past that any hourly cron schedule is already overdue relative to "now". */
+const FAR_PAST_DATE = new Date('2020-01-01T00:00:00.000Z')
 
 /** Backdates a credential's createdAt so a fresh cron schedule computes as already-overdue
  *  relative to "now" (a brand-new credential's reference point is otherwise always "now",
@@ -415,8 +423,8 @@ describe.sequential('dashboard stats', () => {
       name: 'Overdue Rotation Credential',
       value: 'overdue-value',
     })
-    await setRotationScheduleViaApi(app, owner.cookies, projectId, overdue.id, '0 * * * *')
-    await backdateCredentialCreatedAt(owner.orgId, overdue.id, new Date('2020-01-01T00:00:00.000Z'))
+    await setRotationScheduleViaApi(app, owner.cookies, projectId, overdue.id, HOURLY_CRON)
+    await backdateCredentialCreatedAt(owner.orgId, overdue.id, FAR_PAST_DATE)
 
     // Pending: monthly schedule computed from "now" — due well within 30 days but not overdue.
     const pending = await createCredentialViaApi(app, owner.cookies, projectId, {
@@ -535,12 +543,8 @@ describe.sequential('dashboard stats', () => {
       name: 'Active Rotation Credential',
       value: 'active-value',
     })
-    await setRotationScheduleViaApi(app, owner.cookies, projectId, credential.id, '0 * * * *')
-    await backdateCredentialCreatedAt(
-      owner.orgId,
-      credential.id,
-      new Date('2020-01-01T00:00:00.000Z')
-    )
+    await setRotationScheduleViaApi(app, owner.cookies, projectId, credential.id, HOURLY_CRON)
+    await backdateCredentialCreatedAt(owner.orgId, credential.id, FAR_PAST_DATE)
 
     const initiateResponse = await app.inject({
       method: 'POST',
@@ -555,4 +559,178 @@ describe.sequential('dashboard stats', () => {
       expect(results.map((r) => r.credentialId)).not.toContain(credential.id)
     })
   }, 30_000)
+
+  describe('org dashboard project-membership scoping (AC-V6)', () => {
+    const { addUserToOrg, addProjectMember } = createMembershipTestHelpers({
+      emailPrefix: 'dash-vis',
+      orgNamePrefix: 'DashVis',
+    })
+
+    it('scopes totalCredentials and expiringWithin30Days to visible projects for an org member', async () => {
+      const owner = await registerOwner(app, 'dash-vis-owner')
+      const { paymentsId, stripeId } = await seedPaymentsFixture(app, owner.cookies)
+      // A second, hidden-to-the-member project with its own expiring credential.
+      const hiddenProjectId = await createCredentialTestProject(
+        app,
+        owner.cookies,
+        'dash-vis-hidden'
+      )
+      await createCredentialViaApi(app, owner.cookies, hiddenProjectId, {
+        name: 'Hidden Expiring Key',
+        value: 'hidden-value',
+        expiresAt: STRIPE_EXPIRES,
+      })
+
+      const member = await addUserToOrg(app, owner.orgId, 'dash-vis-member', { orgRole: 'member' })
+      await addProjectMember(owner.orgId, paymentsId, member.userId, 'viewer')
+
+      const res = await app.inject({
+        method: 'GET',
+        url: DASHBOARD_URL,
+        headers: { cookie: cookieHeader(member.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{
+        data: {
+          totalCredentials: number
+          expiringWithin30Days: { count: number; items: { id: string }[] }
+        }
+      }>()
+      // Only the 3 payments-project credentials are visible — the hidden project's credential
+      // (and its own expiring item) must not be counted.
+      expect(body.data.totalCredentials).toBe(3)
+      expect(body.data.expiringWithin30Days.count).toBe(1)
+      expect(body.data.expiringWithin30Days.items.map((i) => i.id)).toEqual([stripeId])
+    }, 30_000)
+
+    it('returns zero totals for an org member with no project memberships', async () => {
+      const owner = await registerOwner(app, 'dash-vis-empty-owner')
+      await seedPaymentsFixture(app, owner.cookies)
+      const member = await addUserToOrg(app, owner.orgId, 'dash-vis-empty-member', {
+        orgRole: 'member',
+      })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: DASHBOARD_URL,
+        headers: { cookie: cookieHeader(member.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({
+        data: {
+          totalCredentials: 0,
+          expiringWithin30Days: { count: 0, items: [] },
+          projectsWithOverdueRotations: { count: 0, items: [] },
+        },
+      })
+    }, 30_000)
+
+    it('scopes projectsWithOverdueRotations to visible projects for an org member', async () => {
+      const owner = await registerOwner(app, 'dash-vis-rotation-owner')
+      const visibleProjectId = await createCredentialTestProject(
+        app,
+        owner.cookies,
+        'dash-vis-rot-a'
+      )
+      const hiddenProjectId = await createCredentialTestProject(
+        app,
+        owner.cookies,
+        'dash-vis-rot-b'
+      )
+
+      const visibleCredential = await createCredentialViaApi(app, owner.cookies, visibleProjectId, {
+        name: 'Visible Overdue Credential',
+        value: 'v1',
+      })
+      await setRotationScheduleViaApi(
+        app,
+        owner.cookies,
+        visibleProjectId,
+        visibleCredential.id,
+        HOURLY_CRON
+      )
+      await backdateCredentialCreatedAt(owner.orgId, visibleCredential.id, FAR_PAST_DATE)
+
+      const hiddenCredential = await createCredentialViaApi(app, owner.cookies, hiddenProjectId, {
+        name: 'Hidden Overdue Credential',
+        value: 'v2',
+      })
+      await setRotationScheduleViaApi(
+        app,
+        owner.cookies,
+        hiddenProjectId,
+        hiddenCredential.id,
+        HOURLY_CRON
+      )
+      await backdateCredentialCreatedAt(owner.orgId, hiddenCredential.id, FAR_PAST_DATE)
+
+      const member = await addUserToOrg(app, owner.orgId, 'dash-vis-rotation-member', {
+        orgRole: 'member',
+      })
+      await addProjectMember(owner.orgId, visibleProjectId, member.userId, 'viewer')
+
+      const res = await app.inject({
+        method: 'GET',
+        url: DASHBOARD_URL,
+        headers: { cookie: cookieHeader(member.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{
+        data: { projectsWithOverdueRotations: { count: number; items: { credentialId: string }[] } }
+      }>()
+      const overdueIds = body.data.projectsWithOverdueRotations.items.map((i) => i.credentialId)
+      expect(overdueIds).toContain(visibleCredential.id)
+      expect(overdueIds).not.toContain(hiddenCredential.id)
+    }, 30_000)
+
+    it('does not scope any field for an org admin with zero project memberships (regression, AC-V8)', async () => {
+      const owner = await registerOwner(app, 'dash-vis-admin-owner')
+      const { stripeId } = await seedPaymentsFixture(app, owner.cookies)
+      const admin = await addUserToOrg(app, owner.orgId, 'dash-vis-admin-caller', {
+        orgRole: 'admin',
+      })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: DASHBOARD_URL,
+        headers: { cookie: cookieHeader(admin.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{
+        data: { totalCredentials: number; expiringWithin30Days: { items: { id: string }[] } }
+      }>()
+      expect(body.data.totalCredentials).toBe(3)
+      expect(body.data.expiringWithin30Days.items.map((i) => i.id)).toEqual([stripeId])
+    }, 30_000)
+
+    it('unresolvedAlertCount is org-wide and unscoped for both member and admin callers (AC-V6 exemption)', async () => {
+      const owner = await registerOwner(app, 'dash-vis-alert-owner')
+      await seedPaymentsFixture(app, owner.cookies)
+      await seedSecurityAlert(owner.orgId, 'PENDING_DELIVERY')
+
+      const member = await addUserToOrg(app, owner.orgId, 'dash-vis-alert-member', {
+        orgRole: 'member',
+      })
+      const admin = await addUserToOrg(app, owner.orgId, 'dash-vis-alert-admin', {
+        orgRole: 'admin',
+      })
+
+      const memberRes = await app.inject({
+        method: 'GET',
+        url: DASHBOARD_URL,
+        headers: { cookie: cookieHeader(member.cookies) },
+      })
+      const adminRes = await app.inject({
+        method: 'GET',
+        url: DASHBOARD_URL,
+        headers: { cookie: cookieHeader(admin.cookies) },
+      })
+      expect(
+        memberRes.json<{ data: { unresolvedAlertCount: number } }>().data.unresolvedAlertCount
+      ).toBe(1)
+      expect(
+        adminRes.json<{ data: { unresolvedAlertCount: number } }>().data.unresolvedAlertCount
+      ).toBe(1)
+    }, 30_000)
+  })
 })

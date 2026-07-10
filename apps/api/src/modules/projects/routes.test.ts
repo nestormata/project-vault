@@ -95,6 +95,12 @@ import {
   createDirectAuthenticatedUser,
   loginExistingUserInOrg,
 } from '../../__tests__/helpers/org-role-test-helpers.js'
+import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
+
+const { registerOwner, addUserToOrg, addProjectMember } = createMembershipTestHelpers({
+  emailPrefix: 'proj-visibility',
+  orgNamePrefix: 'ProjVisibility',
+})
 
 describe.sequential('project routes', () => {
   let app: TestApp
@@ -216,7 +222,7 @@ describe.sequential('project routes', () => {
       data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
     })
 
-    await createProject(app, userA.cookies, ALPHA_PROJECT_SLUG)
+    const alphaProject = await createProject(app, userA.cookies, ALPHA_PROJECT_SLUG)
     await createProject(app, userB.cookies, 'other-org-project')
 
     const populated = await app.inject({
@@ -248,13 +254,30 @@ describe.sequential('project routes', () => {
       orgId: userA.orgId,
       role: 'viewer',
     })
-    const sameOrg = await app.inject({
+
+    // Story 4.5 AC-V2/D1: an org viewer with no project_memberships row no longer sees the
+    // project via the old org-role fallback — this is the exact v1 behavior this story tightens
+    // (previously: total 1, role falling back to the org role 'viewer').
+    const sameOrgNoMembership = await app.inject({
       method: 'GET',
       url: PROJECTS_URL,
       headers: { cookie: cookieHeader(sameOrgViewerCookies) },
     })
-    expect(sameOrg.statusCode).toBe(200)
-    expect(sameOrg.json()).toMatchObject({
+    expect(sameOrgNoMembership.statusCode).toBe(200)
+    expect(sameOrgNoMembership.json()).toMatchObject({
+      data: { total: 0, items: [] },
+    })
+
+    // Once granted an explicit project_memberships row, the same viewer sees the project with
+    // that row's role.
+    await addProjectMember(userA.orgId, alphaProject.id, userB.userId, 'viewer')
+    const sameOrgWithMembership = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(sameOrgViewerCookies) },
+    })
+    expect(sameOrgWithMembership.statusCode).toBe(200)
+    expect(sameOrgWithMembership.json()).toMatchObject({
       data: {
         total: 1,
         items: [expect.objectContaining({ slug: ALPHA_PROJECT_SLUG, role: 'viewer' })],
@@ -637,6 +660,91 @@ describe.sequential('project routes', () => {
     })
     const denied = await updateProjectTags(app, viewerCookies, project.id, ['viewer-denied'])
     expect(denied.statusCode).toBe(403)
+  }, 20_000)
+
+  it('GET /api/v1/projects scopes list to project memberships for org members (AC-V2)', async () => {
+    const owner = await registerOwner(app, 'vis-list-owner')
+    const visible = await createProject(app, owner.cookies, `vis-a-${randomUUID().slice(0, 8)}`)
+    await createProject(app, owner.cookies, `vis-b-${randomUUID().slice(0, 8)}`)
+    await createProject(app, owner.cookies, `vis-c-${randomUUID().slice(0, 8)}`)
+
+    const member = await addUserToOrg(app, owner.orgId, 'vis-list-member', { orgRole: 'member' })
+    await addProjectMember(owner.orgId, visible.id, member.userId, 'viewer')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(member.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json<{ data: { items: { id: string }[]; total: number } }>()
+    expect(body.data.total).toBe(1)
+    expect(body.data.items.map((i) => i.id)).toEqual([visible.id])
+  }, 20_000)
+
+  it('GET /api/v1/projects returns empty list for member with zero memberships (AC-V2)', async () => {
+    const owner = await registerOwner(app, 'vis-empty-owner')
+    await createProject(app, owner.cookies, `vis-empty-${randomUUID().slice(0, 8)}`)
+    const member = await addUserToOrg(app, owner.orgId, 'vis-empty-member', { orgRole: 'member' })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(member.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      data: { items: [], total: 0 },
+    })
+  }, 20_000)
+
+  it('GET /api/v1/projects still lists all projects for org admin with zero memberships (AC-V8)', async () => {
+    const owner = await registerOwner(app, 'vis-admin-owner')
+    const p1 = await createProject(app, owner.cookies, `vis-adm-a-${randomUUID().slice(0, 8)}`)
+    const p2 = await createProject(app, owner.cookies, `vis-adm-b-${randomUUID().slice(0, 8)}`)
+    const admin = await addUserToOrg(app, owner.orgId, 'vis-admin', { orgRole: 'admin' })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(admin.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json<{ data: { items: { id: string }[]; total: number } }>()
+    expect(body.data.total).toBe(2)
+    expect(body.data.items.map((i) => i.id).sort()).toEqual([p1.id, p2.id].sort())
+  }, 20_000)
+
+  it('GET /projects/:id/dashboard returns 404 for member without membership (AC-V3)', async () => {
+    const owner = await registerOwner(app, 'vis-dash-owner')
+    const project = await createProject(app, owner.cookies, `vis-dash-${randomUUID().slice(0, 8)}`)
+    const member = await addUserToOrg(app, owner.orgId, 'vis-dash-member', { orgRole: 'member' })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${project.id}/dashboard`,
+      headers: { cookie: cookieHeader(member.cookies) },
+    })
+    expect(res.statusCode).toBe(404)
+    expect(res.json()).toMatchObject({ code: 'project_not_found' })
+  }, 20_000)
+
+  it('GET /projects/:id/dashboard succeeds for member with a membership row (AC-V3)', async () => {
+    const owner = await registerOwner(app, 'vis-dash-ok-owner')
+    const project = await createProject(
+      app,
+      owner.cookies,
+      `vis-dash-ok-${randomUUID().slice(0, 8)}`
+    )
+    const member = await addUserToOrg(app, owner.orgId, 'vis-dash-ok-member', { orgRole: 'member' })
+    await addProjectMember(owner.orgId, project.id, member.userId, 'viewer')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${project.id}/dashboard`,
+      headers: { cookie: cookieHeader(member.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
   }, 20_000)
 
   it('project routes fail closed while the vault is sealed', async () => {

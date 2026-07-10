@@ -12,6 +12,7 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createUnsealedRouteSuite } from '../../__tests__/helpers/unsealed-route-suite-test-helpers.js'
 import { createDirectAuthenticatedUser } from '../../__tests__/helpers/org-role-test-helpers.js'
+import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import {
   createCredentialTestProject,
   createCredentialViaApi,
@@ -555,5 +556,87 @@ describe.sequential('search routes', () => {
     const res = await search(suite.app, user.cookies, 'q=test&types=invalid')
     expect(res.statusCode).toBe(400)
     expect(res.json<{ code: string }>().code).toBe('invalid_search_type')
+  })
+
+  describe('project visibility scoping (AC-V5)', () => {
+    const { registerOwner, addUserToOrg, addProjectMember } = createMembershipTestHelpers({
+      emailPrefix: 'search-vis',
+      orgNamePrefix: 'SearchVis',
+    })
+
+    it('scopes project and credential results to visible projects for an org member', async () => {
+      const owner = await registerOwner(suite.app, 'search-vis-owner')
+      const visibleProjectId = await createCredentialTestProject(
+        suite.app,
+        owner.cookies,
+        'search-vis-visible'
+      )
+      await createCredentialViaApi(suite.app, owner.cookies, visibleProjectId, {
+        name: 'Visible Stripe Key',
+        value: 'x',
+      })
+      const hiddenProjectId = await createCredentialTestProject(
+        suite.app,
+        owner.cookies,
+        'search-vis-hidden'
+      )
+      await createCredentialViaApi(suite.app, owner.cookies, hiddenProjectId, {
+        name: 'Hidden Stripe Key',
+        value: 'x',
+      })
+
+      const member = await addUserToOrg(suite.app, owner.orgId, 'search-vis-member', {
+        orgRole: 'member',
+      })
+      await addProjectMember(owner.orgId, visibleProjectId, member.userId, 'viewer')
+
+      const res = await search(suite.app, member.cookies, 'q=Stripe')
+      const names = res
+        .json<{ data: { results: { name: string }[] } }>()
+        .data.results.map((r) => r.name)
+      expect(names).toContain('Visible Stripe Key')
+      expect(names).not.toContain('Hidden Stripe Key')
+    }, 20_000)
+
+    it('returns zero results for a member with no project memberships', async () => {
+      const owner = await registerOwner(suite.app, 'search-vis-empty-owner')
+      const projectId = await createCredentialTestProject(
+        suite.app,
+        owner.cookies,
+        'search-vis-empty'
+      )
+      await createCredentialViaApi(suite.app, owner.cookies, projectId, {
+        name: 'Empty Vis Stripe Key',
+        value: 'x',
+      })
+      const member = await addUserToOrg(suite.app, owner.orgId, 'search-vis-empty-member', {
+        orgRole: 'member',
+      })
+
+      const res = await search(suite.app, member.cookies, 'q=Empty Vis Stripe')
+      expect(res.json<{ data: { total: number } }>().data.total).toBe(0)
+    }, 20_000)
+
+    it('does not scope results for an org admin with zero project memberships (regression)', async () => {
+      const owner = await registerOwner(suite.app, 'search-vis-admin-owner')
+      const projectId = await createCredentialTestProject(
+        suite.app,
+        owner.cookies,
+        'search-vis-admin'
+      )
+      await createCredentialViaApi(suite.app, owner.cookies, projectId, {
+        name: 'Admin Vis Stripe Key',
+        value: 'x',
+      })
+      const admin = await addUserToOrg(suite.app, owner.orgId, 'search-vis-admin-caller', {
+        orgRole: 'admin',
+      })
+
+      const res = await search(suite.app, admin.cookies, 'q=Admin Vis Stripe')
+      const names = res
+        .json<{ data: { results: { name: string }[] } }>()
+        .data.results.map((r) => r.name)
+      expect(names).toContain('Admin Vis Stripe Key')
+    }, 20_000)
   })
 })

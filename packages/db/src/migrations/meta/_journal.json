@@ -309,6 +309,13 @@
       "when": 1783910400000,
       "tag": "0043_normalize_tag_case",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1783996800000,
+      "tag": "0044_project_membership_visibility_backfill",
+      "breakpoints": true
     }
   ]
 }

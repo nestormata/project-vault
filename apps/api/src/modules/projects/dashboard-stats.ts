@@ -1,7 +1,15 @@
 import { and, asc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { credentials, projects, securityAlerts, serviceEndpoints } from '@project-vault/db/schema'
+import {
+  credentials,
+  projectMemberships,
+  projects,
+  securityAlerts,
+  serviceEndpoints,
+} from '@project-vault/db/schema'
 import type { OrgDashboard, ProjectDashboard } from '@project-vault/shared'
+import type { OrgRole } from '../../plugins/require-org-role.js'
+import { roleRank } from '../../lib/secure-route.js'
 import { computeUpcomingRotations, serializeUpcomingRotation } from '../rotation/service.js'
 import { getRecentAccessEventsForProject } from './recent-access-events.js'
 
@@ -221,33 +229,107 @@ export async function getProjectDashboardData(
   )
 }
 
-export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
-  const [{ totalCredentials } = { totalCredentials: 0 }] = await tx
-    .select({ totalCredentials: sql<number>`count(*)::int` })
-    .from(credentials)
+type MembershipJoin = ReturnType<typeof and>
 
-  const [{ expiringCount } = { expiringCount: 0 }] = await tx
+async function getScopedCredentialCounts(
+  tx: Tx,
+  scopeToMembership: boolean,
+  membershipJoin: MembershipJoin
+): Promise<{ totalCredentials: number; expiringCount: number }> {
+  const totalQuery = tx.select({ totalCredentials: sql<number>`count(*)::int` }).from(credentials)
+  const [{ totalCredentials } = { totalCredentials: 0 }] = await (scopeToMembership
+    ? totalQuery.innerJoin(projectMemberships, membershipJoin)
+    : totalQuery)
+
+  const expiringCountQuery = tx
     .select({ expiringCount: sql<number>`count(*)::int` })
     .from(credentials)
-    .where(EXPIRING_FILTER)
+  const [{ expiringCount } = { expiringCount: 0 }] = await (scopeToMembership
+    ? expiringCountQuery.innerJoin(projectMemberships, membershipJoin).where(EXPIRING_FILTER)
+    : expiringCountQuery.where(EXPIRING_FILTER))
 
-  const expiringRows =
-    expiringCount === 0
-      ? []
-      : await tx
-          .select({
-            id: credentials.id,
-            name: credentials.name,
-            projectId: credentials.projectId,
-            projectName: projects.name,
-            expiresAt: credentials.expiresAt,
-          })
-          .from(credentials)
-          .innerJoin(projects, eq(projects.id, credentials.projectId))
-          .where(and(EXPIRING_FILTER, isNotNull(credentials.expiresAt)))
-          .orderBy(asc(credentials.expiresAt))
-          .limit(20)
+  return { totalCredentials: Number(totalCredentials), expiringCount: Number(expiringCount) }
+}
 
+async function getExpiringCredentialRows(
+  tx: Tx,
+  scopeToMembership: boolean,
+  membershipJoin: MembershipJoin,
+  expiringCount: number
+) {
+  if (expiringCount === 0) return []
+
+  const expiringSelect = tx
+    .select({
+      id: credentials.id,
+      name: credentials.name,
+      projectId: credentials.projectId,
+      projectName: projects.name,
+      expiresAt: credentials.expiresAt,
+    })
+    .from(credentials)
+    .innerJoin(projects, eq(projects.id, credentials.projectId))
+
+  return scopeToMembership
+    ? expiringSelect
+        .innerJoin(projectMemberships, membershipJoin)
+        .where(and(EXPIRING_FILTER, isNotNull(credentials.expiresAt)))
+        .orderBy(asc(credentials.expiresAt))
+        .limit(20)
+    : expiringSelect
+        .where(and(EXPIRING_FILTER, isNotNull(credentials.expiresAt)))
+        .orderBy(asc(credentials.expiresAt))
+        .limit(20)
+}
+
+/**
+ * Story 4.5 AC-V6: post-filter overdue rotations to visible credentials (computeUpcomingRotations
+ * has no multi-project filter; do not change its signature). Returns `null` when the caller is
+ * unscoped (org owner/admin), meaning "everything is visible".
+ */
+async function getVisibleCredentialIds(
+  tx: Tx,
+  scopeToMembership: boolean,
+  opts?: { userId: string }
+): Promise<Set<string> | null> {
+  if (!scopeToMembership || !opts) return null
+  const visibleRows = await tx
+    .select({ id: credentials.id })
+    .from(credentials)
+    .innerJoin(
+      projectMemberships,
+      and(
+        eq(projectMemberships.projectId, credentials.projectId),
+        eq(projectMemberships.userId, opts.userId)
+      )
+    )
+  return new Set(visibleRows.map((r) => r.id))
+}
+
+export async function getOrgDashboardData(
+  tx: Tx,
+  opts?: { userId: string; orgRole: OrgRole }
+): Promise<OrgDashboard> {
+  const scopeToMembership = opts !== undefined && roleRank(opts.orgRole) < roleRank('admin')
+  const membershipJoin = and(
+    eq(projectMemberships.projectId, credentials.projectId),
+    eq(projectMemberships.userId, opts?.userId ?? '')
+  )
+
+  const { totalCredentials, expiringCount } = await getScopedCredentialCounts(
+    tx,
+    scopeToMembership,
+    membershipJoin
+  )
+  const expiringRows = await getExpiringCredentialRows(
+    tx,
+    scopeToMembership,
+    membershipJoin,
+    expiringCount
+  )
+
+  // Story 4.5 AC-V6: unresolvedAlertCount is intentionally org-wide for every caller —
+  // security_alerts has no project_id column (ADR-3.4-01/02), so it cannot be membership-scoped.
   const unresolvedAlertCount = await getUnresolvedSecurityAlertCount(tx)
 
   // Story 5.2 AC-15: org-wide (no projectId), horizonDays: 0. Do NOT rely on the horizonDays:0
@@ -256,12 +338,16 @@ export async function getOrgDashboardData(tx: Tx): Promise<OrgDashboard> {
   // `nextDueAt < now` (strict), so a credential landing exactly at "now" would otherwise slip
   // into this bucket unlabeled as overdue. The explicit filter below is the actual gate.
   const upcomingRotationResults = await computeUpcomingRotations(tx, { horizonDays: 0 })
-  const overdueRotations = upcomingRotationResults.filter((r) => r.status === 'overdue')
+
+  const visibleCredentialIds = await getVisibleCredentialIds(tx, scopeToMembership, opts)
+  const overdueRotations = upcomingRotationResults
+    .filter((r) => (visibleCredentialIds ? visibleCredentialIds.has(r.credentialId) : true))
+    .filter((r) => r.status === 'overdue')
 
   return {
-    totalCredentials: Number(totalCredentials),
+    totalCredentials,
     expiringWithin30Days: {
-      count: Number(expiringCount),
+      count: expiringCount,
       items: expiringRows.map((row) => ({
         id: row.id,
         name: row.name,

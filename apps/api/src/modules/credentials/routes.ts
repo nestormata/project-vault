@@ -14,11 +14,17 @@ import {
   resolvePaginationOffset,
 } from '../../lib/pagination.js'
 import {
+  roleRank,
   secureRoute,
   type AuditConfig,
   type PublicRouteContext,
   type SecureRouteContext,
 } from '../../lib/secure-route.js'
+import {
+  callerCanSeeProject,
+  effectiveProjectRole,
+  logVisibilityDenied,
+} from '../projects/project-access.js'
 import {
   writeHumanAuditEntryOrFailClosed,
   type SameTransactionAuditInput,
@@ -207,11 +213,90 @@ const CREDENTIAL_NOT_FOUND = {
   code: 'credential_not_found',
   message: 'Credential not found',
 } as const
+const INSUFFICIENT_PROJECT_ROLE = {
+  code: 'insufficient_project_role',
+  message: 'Your role in this project does not permit revealing credential values',
+} as const
+const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
 const CREDENTIAL_SUBRESOURCE_READ_ERRORS = {
   401: ApiErrorSchema,
   404: ApiErrorSchema,
   422: ApiErrorSchema,
 } as const
+
+/**
+ * Story 4.5 AC-V4/AC-V10: shared visibility gate. Returns true when the reply was already sent
+ * (404 + structured visibility_denied log), so callers can `if (await reject...) return reply`.
+ */
+async function rejectIfProjectNotVisible(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string,
+  notFoundBody: typeof PROJECT_NOT_FOUND | typeof CREDENTIAL_NOT_FOUND = PROJECT_NOT_FOUND
+): Promise<boolean> {
+  if (await callerCanSeeProject(secureCtx, projectId)) return false
+  logVisibilityDenied(req, {
+    projectId,
+    callerId: secureCtx.auth.userId,
+    orgRole: secureCtx.auth.orgRole,
+  })
+  reply.status(404).send(notFoundBody)
+  return true
+}
+
+/** Story 4.5 AC-P2/AC-P3: value reveal + version create require effective role >= member. */
+async function rejectIfInsufficientProjectRoleForReveal(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string,
+  credentialId: string,
+  kind: 'reveal' | 'version_create'
+): Promise<boolean> {
+  const effective = await effectiveProjectRole(secureCtx, projectId)
+  if (roleRank(effective) >= roleRank('member')) return false
+  if (kind === 'reveal') {
+    req.log.warn(
+      {
+        eventType: OperationalEvent.CREDENTIAL_REVEAL_FAILURE,
+        orgId: secureCtx.auth.orgId,
+        credentialId,
+        reason: 'insufficient_project_role',
+      },
+      CREDENTIAL_REVEAL_FAILED_MESSAGE
+    )
+  } else {
+    req.log.warn(
+      {
+        eventType: 'credential.version_create_denied',
+        orgId: secureCtx.auth.orgId,
+        credentialId,
+        projectId,
+        callerId: secureCtx.auth.userId,
+        reason: 'insufficient_project_role',
+      },
+      'Credential version create denied by project role'
+    )
+  }
+  reply.status(403).send(INSUFFICIENT_PROJECT_ROLE)
+  return true
+}
+
+/**
+ * Story 4.5 AC-V4: combines the visibility gate with the existing archived-project guard for
+ * mutation routes, keeping each individual handler's own branching count low.
+ */
+async function rejectIfCredentialLifecycleUpdateBlocked(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string
+): Promise<boolean> {
+  if (await rejectIfProjectNotVisible(secureCtx, req, reply, projectId, CREDENTIAL_NOT_FOUND))
+    return true
+  return rejectIfProjectArchived(secureCtx.tx, projectId, reply)
+}
 const DEPENDENCY_NOT_FOUND = {
   code: 'dependency_not_found',
   message: 'Dependency not found',
@@ -220,7 +305,6 @@ const TOO_MANY_TAGS = {
   code: 'too_many_tags',
   message: 'A credential may have at most 20 tags',
 } as const
-const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
 
 // Extracted purely to keep the lifecycle-PATCH handler's cyclomatic complexity under the repo's
 // eslint threshold once the 4.4 archived-project guard was added; behavior unchanged.
@@ -299,6 +383,11 @@ async function handleCredentialTagUpdate(
   if (!parsed.success) return reply
   const secureCtx = ctx as SecureRouteContext
 
+  if (
+    await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, CREDENTIAL_NOT_FOUND)
+  )
+    return reply
+
   // 4.4 AC-5: credential tags are a mutation of an existing resource within the project.
   if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
@@ -331,11 +420,19 @@ async function withCredentialParams<T>(
   run: (
     secureCtx: SecureRouteContext,
     params: { projectId: string; credentialId: string }
-  ) => Promise<T | null>
+  ) => Promise<T | null>,
+  opts: { checkVisibility?: boolean } = { checkVisibility: true }
 ) {
   const params = parseParams(CredentialParamsSchema, req, reply)
   if (!params) return reply
-  const result = await run(ctx as SecureRouteContext, params)
+  const secureCtx = ctx as SecureRouteContext
+  if (
+    opts.checkVisibility !== false &&
+    (await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, CREDENTIAL_NOT_FOUND))
+  ) {
+    return reply
+  }
+  const result = await run(secureCtx, params)
   if (result === null) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
   return result
 }
@@ -369,6 +466,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(422).send(validationError(parsedQuery.error, 'query'))
       }
       const secureCtx = ctx as SecureRouteContext
+      if (await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId)) return reply
       const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
       if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
 
@@ -419,6 +517,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<CreateCredentialBody>(CreateCredentialBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+      if (await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId)) return reply
       if (
         !rejectInvalidRotationSchedule(parsed.data.rotationSchedule, reply, {
           req,
@@ -484,6 +583,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(ProjectScopeParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
+      if (await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId)) return reply
 
       // 4.4 AC-5: bulk import staging must not proceed against an archived project — otherwise a
       // caller could still walk through the import flow to /confirm afterward.
@@ -599,6 +699,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<ImportConfirmBody>(ImportConfirmBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+      if (await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId)) return reply
 
       // 4.4 AC-5: this is the step that actually inserts credential rows — an archived project
       // must not gain new credentials via the bulk-import confirm path either.
@@ -715,6 +816,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: AddVersionResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
         410: ApiErrorSchema,
@@ -736,6 +838,30 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddVersionBody>(AddVersionBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
+      if (
+        await rejectIfProjectNotVisible(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          CREDENTIAL_NOT_FOUND
+        )
+      )
+        return reply
+
+      // Story 4.5 AC-P3/D4: value reveal + version creation both require effective role >=
+      // member — runs after the visibility gate above, before any mutation.
+      if (
+        await rejectIfInsufficientProjectRoleForReveal(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          params.credentialId,
+          'version_create'
+        )
+      )
+        return reply
 
       // 4.4 AC-5: rotating a credential mutates an existing resource — "read-only" covers this,
       // not just creation of brand-new credentials.
@@ -785,6 +911,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: CredentialValueResponseSchema,
         401: ApiErrorSchema,
+        403: ApiErrorSchema,
         404: ApiErrorSchema,
         422: ApiErrorSchema,
       },
@@ -802,6 +929,30 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(CredentialParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
+      if (
+        await rejectIfProjectNotVisible(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          CREDENTIAL_NOT_FOUND
+        )
+      )
+        return reply
+
+      // Story 4.5 AC-P2/D4: runs after the visibility gate, strictly before the reveal-attempt
+      // log below, so a project-role-denied attempt is never misleadingly logged as a real one.
+      if (
+        await rejectIfInsufficientProjectRoleForReveal(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          params.credentialId,
+          'reveal'
+        )
+      )
+        return reply
 
       req.log.info(
         {
@@ -956,8 +1107,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddDependencyBody>(AddDependencyBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+        return reply
 
       const result = await addCredentialDependency(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
@@ -1023,21 +1174,17 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(CredentialParamsSchema, req, reply)
-      if (!params) return reply
       const parsedQuery = ListDependenciesQuerySchema.safeParse(req.query)
       if (!parsedQuery.success) {
         return reply.status(422).send(validationError(parsedQuery.error, 'query'))
       }
-      const secureCtx = ctx as SecureRouteContext
-
-      const result = await listCredentialDependencies(secureCtx.tx, {
-        ...params,
-        query: parsedQuery.data,
+      return withCredentialParams(ctx, req, reply, async (secureCtx, params) => {
+        const result = await listCredentialDependencies(secureCtx.tx, {
+          ...params,
+          query: parsedQuery.data,
+        })
+        return result ?? null
       })
-      if (!result) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
-
-      return { data: result }
     },
   })
 
@@ -1067,8 +1214,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(DependencyParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
-
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+        return reply
 
       const result = await archiveCredentialDependency(secureCtx.tx, {
         userId: secureCtx.auth.userId,
@@ -1141,10 +1288,10 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
       const secureCtx = ctx as SecureRouteContext
-
       // 4.4 AC-5: editing a credential's lifecycle fields mutates an existing resource — the same
       // rationale used to guard the versions/rotate route applies here.
-      if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+        return reply
 
       if (
         !rejectInvalidRotationSchedule(rawBody.rotationSchedule, reply, {

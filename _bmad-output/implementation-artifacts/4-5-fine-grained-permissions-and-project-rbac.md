@@ -1,6 +1,6 @@
 # Story 4.5: Fine-Grained Permissions and Project RBAC
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-09. This is an Epic 4 "completion round 2"
      closure story — same pattern as 5-5/6-4/8-6/8-7/9-7/9-8 — bundling two cross-epic security
@@ -839,51 +839,51 @@ it by accident.
 Follow this project's TDD convention (`AGENTS.md`): write/update the failing test first, confirm
 it fails for the expected reason, then implement, per AC.
 
-- [ ] **Task 1 — Group V: shared visibility helper (AC-V1)**
-  - [ ] 1.1 RED: new test file `apps/api/src/modules/projects/project-access.test.ts` — unit tests
+- [x] **Task 1 — Group V: shared visibility helper (AC-V1)**
+  - [x] 1.1 RED: new test file `apps/api/src/modules/projects/project-access.test.ts` — unit tests
     for `callerCanSeeProject` covering AC-V1's three examples (owner/admin bypass with zero
     queries — spy/mock `getProjectMembershipRole` and assert it's never called for owner/admin;
     member with a row; member without). Confirm failure (module doesn't exist).
-  - [ ] 1.2 GREEN: implement `apps/api/src/modules/projects/project-access.ts` — both
+  - [x] 1.2 GREEN: implement `apps/api/src/modules/projects/project-access.ts` — both
     `callerCanSeeProject` (AC-V1) and `effectiveProjectRole` (AC-P1) live in this one new file,
     both built on the existing `getProjectMembershipRole` import.
-  - [ ] 1.3 Re-run, confirm green.
+  - [x] 1.3 Re-run, confirm green.
 
-- [ ] **Task 2 — Group V: project list + dashboard (AC-V2, AC-V3, AC-V10)**
-  - [ ] 2.1 RED: extend `apps/api/src/modules/projects/routes.test.ts` — new integration tests: a
+- [x] **Task 2 — Group V: project list + dashboard (AC-V2, AC-V3, AC-V10)**
+  - [x] 2.1 RED: extend `apps/api/src/modules/projects/routes.test.ts` — new integration tests: a
     `member` with a subset of memberships sees only those on `GET /projects` (AC-V2 positive +
     total-count assertion); a `member` with zero memberships sees `{items: [], total: 0}`; an
     `admin` with zero memberships still sees everything (AC-V8). Add the AC-V3 dashboard 404 test.
     Confirm all new tests fail against current code.
-  - [ ] 2.2 GREEN: branch the list query's join type on `roleRank(orgRole) >= roleRank('admin')`
+  - [x] 2.2 GREEN: branch the list query's join type on `roleRank(orgRole) >= roleRank('admin')`
     (apply identically to both the `total` count query and the `items` query); add the
     `callerCanSeeProject` 404 gate to the dashboard handler, with the AC-V10 structured log before
     the 404 send.
-  - [ ] 2.3 Re-run 2.1's tests plus the full existing `projects/routes.test.ts` and
+  - [x] 2.3 Re-run 2.1's tests plus the full existing `projects/routes.test.ts` and
     `projects-archival.routes.test.ts` suites (regression). Confirm all green.
 
-- [ ] **Task 3 — Group V: credential routes (AC-V4, AC-V10)**
-  - [ ] 3.1 RED: extend `apps/api/src/modules/credentials/routes.test.ts` — for each of the 13
+- [x] **Task 3 — Group V: credential routes (AC-V4, AC-V10)**
+  - [x] 3.1 RED: extend `apps/api/src/modules/credentials/routes.test.ts` — for each of the 13
     routes listed in AC-V4 (excluding `GET .../access`, which is deliberately not gated — see
     AC-V4), one new test: a `member` with no project row gets `404`; a `member`
     with a row (any role) is unaffected. Use `createMembershipTestHelpers`'s `addUserToOrg`/
     `addProjectMember` (`apps/api/src/__tests__/helpers/membership-test-helpers.ts`) to set up the
     no-membership and with-membership callers without duplicating scaffolding. Confirm failures.
-  - [ ] 3.2 GREEN: add one `if (!(await callerCanSeeProject(...))) { <log>; return reply.status(404).send(<existing not-found body for this route>) }` call at the top of each of the 13 handlers,
+  - [x] 3.2 GREEN: add one `if (!(await callerCanSeeProject(...))) { <log>; return reply.status(404).send(<existing not-found body for this route>) }` call at the top of each of the 13 handlers,
     immediately after `parseParams` and before any other query. Reuse a small local wrapper if it
     meaningfully dedupes (this file already has `withCredentialParams` for some of these routes —
     consider whether extending that helper's signature to optionally run the visibility check is
     cleaner than separate call sites; use judgment, but do not change `withCredentialParams`'s
     existing behavior for callers that don't opt in).
-  - [ ] 3.3 Re-run 3.1's tests plus the full existing credentials test suite (regression,
+  - [x] 3.3 Re-run 3.1's tests plus the full existing credentials test suite (regression,
     including `credential-dependencies.test.ts`, `credential-import.test.ts`). Confirm green.
 
-- [ ] **Task 4 — Group V: search + org dashboard (AC-V5, AC-V6)**
-  - [ ] 4.1 RED: new/extended tests in `apps/api/src/modules/search/service.test.ts` (or the
+- [x] **Task 4 — Group V: search + org dashboard (AC-V5, AC-V6)**
+  - [x] 4.1 RED: new/extended tests in `apps/api/src/modules/search/service.test.ts` (or the
     route-level test file, whichever exists) and `apps/api/src/modules/dashboard/routes.test.ts` —
     member visible in a subset of projects gets scoped results/aggregates; admin unaffected;
     `unresolvedAlertCount` explicitly asserted unscoped in both roles' responses. Confirm failures.
-  - [ ] 4.2 GREEN: add the join/filter condition to `search/service.ts`'s project and credential
+  - [x] 4.2 GREEN: add the join/filter condition to `search/service.ts`'s project and credential
     queries, and to `dashboard-stats.ts`'s `getOrgDashboardData`'s `totalCredentials`/
     `expiringWithin30Days` queries (branch on `roleRank(orgRole) >= roleRank('admin')`, mirroring
     Task 2's pattern — consider extracting the join-condition builder from Task 2 into a small
@@ -892,67 +892,67 @@ it fails for the expected reason, then implement, per AC.
     **different** fix (per AC-V6): a post-filter on `computeUpcomingRotations`'s already-fetched
     result array against the caller's visible-credential-ID set, applied before the existing
     `status === 'overdue'` filter and `.slice(0, 20)` — not a SQL join at that call site.
-  - [ ] 4.3 Re-run 4.1's tests plus full search/dashboard suites. Confirm green.
+  - [x] 4.3 Re-run 4.1's tests plus full search/dashboard suites. Confirm green.
 
-- [ ] **Task 5 — Group V: backfill migration (AC-V7, AC-V9)**
-  - [ ] 5.1 Write `packages/db/src/migrations/0043_project_membership_visibility_backfill.sql`
+- [x] **Task 5 — Group V: backfill migration (AC-V7, AC-V9)**
+  - [x] 5.1 Write `packages/db/src/migrations/0043_project_membership_visibility_backfill.sql`
     (number per AC-V7's cross-story coordination check — may need to be `0044` or `0045` if
     sibling stories `3-5-credential-expiry-notification-delivery` and/or
     `1-13-infra-and-process-hardening` claimed 0043/0044 first; raw SQL,
     hand-authored — no schema change, so `drizzle-kit generate` will not produce this
     file automatically; add the `meta/_journal.json` entry by hand, following the existing
     `0042` entry's exact shape).
-  - [ ] 5.2 RED: new test `packages/db/src/migrations/project-membership-backfill.test.ts` (or
+  - [x] 5.2 RED: new test `packages/db/src/migrations/project-membership-backfill.test.ts` (or
     wherever this project's migration-behavior tests live — check for precedent, e.g. how the
     Story 2.1 orphaned-`project_id`-clearing migration was tested, if it was) — seed an org with
     projects + members in various pre-migration states (some with rows, some without, some
     archived projects), run the migration, assert the exact AC-V7 examples. Confirm it fails
     pre-migration.
-  - [ ] 5.3 Run `make db-migrate` locally; confirm the migration applies cleanly and is not
+  - [x] 5.3 Run `make db-migrate` locally; confirm the migration applies cleanly and is not
     rejected by `migration-safety.ts`'s destructive-statement guard (Story 9.3). If rejected,
     investigate why a plain `INSERT` is being flagged before adding any allowlist entry — do not
     weaken the guard to pass this migration if the real cause is a guard bug elsewhere.
-  - [ ] 5.4 Run `make check-rls` (AC-V9) — confirm no new gaps reported.
+  - [x] 5.4 Run `make check-rls` (AC-V9) — confirm no new gaps reported.
 
-- [ ] **Task 6 — Group V: full regression pass (AC-V8, AC-V9)**
-  - [ ] 6.1 Run the full `apps/api` suite once — confirm zero regressions beyond the
+- [x] **Task 6 — Group V: full regression pass (AC-V8, AC-V9)**
+  - [x] 6.1 Run the full `apps/api` suite once — confirm zero regressions beyond the
     intentionally-changed tests from Tasks 2-4.
-  - [ ] 6.2 Run `apps/api/src/__tests__/multi-org-session-isolation.test.ts` in isolation —
+  - [x] 6.2 Run `apps/api/src/__tests__/multi-org-session-isolation.test.ts` in isolation —
     confirm unaffected.
 
-- [ ] **Task 7 — Group P: effective role + reveal/version-create gate (AC-P1 through AC-P6)**
-  - [ ] 7.1 RED: extend `project-access.test.ts` with `effectiveProjectRole` unit tests (AC-P1's
+- [x] **Task 7 — Group P: effective role + reveal/version-create gate (AC-P1 through AC-P6)**
+  - [x] 7.1 RED: extend `project-access.test.ts` with `effectiveProjectRole` unit tests (AC-P1's
     three examples + AC-P5's invariant proof). Confirm failure.
-  - [ ] 7.2 GREEN: implement `effectiveProjectRole` (may already exist from Task 1.2 if written
+  - [x] 7.2 GREEN: implement `effectiveProjectRole` (may already exist from Task 1.2 if written
     together — if so, this task is just the additional AC-P1/AC-P5 test coverage).
-  - [ ] 7.3 RED: extend `credentials/routes.test.ts` with AC-P2 (reveal 403)/AC-P3 (version-create
+  - [x] 7.3 RED: extend `credentials/routes.test.ts` with AC-P2 (reveal 403)/AC-P3 (version-create
     403) tests: a `member` with an explicit project-role `'viewer'` grant (via
     `addProjectMember(..., 'viewer')`) is blocked on both routes; unaffected on every AC-P4 route.
     Add the equivalent org-admin regression test (AC-D4/Open Question 4's bypass). Confirm
     failures (current code returns 200/201).
-  - [ ] 7.4 GREEN: add the `effectiveProjectRole` check to both routes, in the order specified by
+  - [x] 7.4 GREEN: add the `effectiveProjectRole` check to both routes, in the order specified by
     AC-P2 (after AC-V4's visibility gate, before reveal-attempt logging); add `403: ApiErrorSchema`
     to both routes' response schemas; add the AC-P6 structured logging.
-  - [ ] 7.5 Re-run all of Task 7's tests plus the full credentials suite. Confirm green.
+  - [x] 7.5 Re-run all of Task 7's tests plus the full credentials suite. Confirm green.
 
-- [ ] **Task 8 — Web: reveal-403 message refinement (AC-P7)**
-  - [ ] 8.1 RED: add a component test asserting the new, more-specific message renders for
+- [x] **Task 8 — Web: reveal-403 message refinement (AC-P7)**
+  - [x] 8.1 RED: add a component test asserting the new, more-specific message renders for
     `code: 'insufficient_project_role'`, distinct from the pre-existing generic-403 message.
     Confirm failure.
-  - [ ] 8.2 GREEN: in the existing `error instanceof ApiClientError && error.status === 403`
+  - [x] 8.2 GREEN: in the existing `error instanceof ApiClientError && error.status === 403`
     branch (`+page.svelte`'s `revealValue()`), add a more-specific `error.code ===
     'insufficient_project_role'` check ahead of the existing generic-403 message assignment,
     setting a distinct message for this new case. Do not remove or replace the existing
     generic-403 fallback.
-  - [ ] 8.3 Confirm no regression to the page's handling of other error codes (the pre-existing
+  - [x] 8.3 Confirm no regression to the page's handling of other error codes (the pre-existing
     generic-403 message for any other reason, decrypt failures, generic 404/500, etc.) —
     add/verify a regression test per existing code path.
 
-- [ ] **Task 9 — Full verification**
-  - [ ] 9.1 Full `apps/api` suite green.
-  - [ ] 9.2 Full `apps/web` suite green.
-  - [ ] 9.3 `make ci` green (typecheck, lint, jscpd, migrations, RLS, audit-coverage, spec-drift).
-  - [ ] 9.4 Confirm `openapi.json` regenerated to include the two new `403` response schemas
+- [x] **Task 9 — Full verification**
+  - [x] 9.1 Full `apps/api` suite green.
+  - [x] 9.2 Full `apps/web` suite green.
+  - [x] 9.3 `make ci` green (typecheck, lint, jscpd, migrations, RLS, audit-coverage, spec-drift).
+  - [x] 9.4 Confirm `openapi.json` regenerated to include the two new `403` response schemas
     (AC-P2/AC-P3) — this repo's CI checks for spec/schema drift.
 
 ---
@@ -1031,10 +1031,41 @@ it fails for the expected reason, then implement, per AC.
 
 ### Agent Model Used
 
-TBD
+Cursor Grok 4.5 (pick-story / bmad-dev-story)
 
 ### Debug Log References
 
+Focused suites green: projects/project-access, projects/routes, projects/dashboard-stats, search/routes, credentials/routes, multi-org-session-isolation (127 tests); packages/db migration-0044 (4); apps/web projects-credentials (16). Migration renumbered 0043→0044 because 1-13 claimed 0043.
+
 ### Completion Notes List
 
+- Group V: `callerCanSeeProject` + list innerJoin, dashboard/credential visibility gates, search/org-dashboard membership scoping, backfill migration 0044, visibility_denied logging, org-admin/RLS regressions.
+- Group P: `effectiveProjectRole`, reveal + version-create `403 insufficient_project_role`, structured denial logs, web AC-P7 specific message, openapi 403 schemas.
+- `/credentials/:id/access` intentionally ungated (already owner/admin-only).
+
 ### File List
+
+- apps/api/src/modules/projects/project-access.ts (new)
+- apps/api/src/modules/projects/project-access.test.ts (new)
+- apps/api/src/modules/projects/routes.ts
+- apps/api/src/modules/projects/routes.test.ts
+- apps/api/src/modules/projects/dashboard-stats.ts
+- apps/api/src/modules/projects/dashboard-stats.test.ts
+- apps/api/src/modules/credentials/routes.ts
+- apps/api/src/modules/credentials/routes.test.ts
+- apps/api/src/modules/search/service.ts
+- apps/api/src/modules/search/routes.ts
+- apps/api/src/modules/search/routes.test.ts
+- apps/api/src/modules/dashboard/routes.ts
+- apps/api/src/__tests__/multi-org-session-isolation.test.ts
+- apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte
+- apps/web/src/routes/projects-credentials.test.ts
+- packages/db/src/migrations/0044_project_membership_visibility_backfill.sql (new)
+- packages/db/src/__tests__/migration-0044-project-membership-visibility-backfill.test.ts (new)
+- packages/db/src/migrations/meta/_journal.json
+- packages/shared/openapi.json
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+
+## Change Log
+
+- 2026-07-10: Implemented Groups V+P (visibility scoping + NFR-SEC9 reveal/version gates); status → review.
