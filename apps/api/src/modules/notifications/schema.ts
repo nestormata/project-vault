@@ -19,10 +19,30 @@ export const PreferenceItemSchema = z.object({
 
 export const PreferenceOutputItemSchema = z.object({
   alertType: z.string(),
-  channel: z.enum(NOTIFICATION_CHANNELS),
+  channel: z.enum([...NOTIFICATION_CHANNELS, 'none'] as [string, ...string[]]),
   frequency: z.enum(NOTIFICATION_FREQUENCIES),
   minSeverity: z.enum(NOTIFICATION_SEVERITIES),
 })
+
+function addNoneChannelConflictIssues(
+  items: z.infer<typeof PreferenceItemSchema>[],
+  ctx: z.RefinementCtx
+): void {
+  const channelsByAlertType = new Map<string, Set<string>>()
+  for (const [index, item] of items.entries()) {
+    const channels = channelsByAlertType.get(item.alertType) ?? new Set<string>()
+    channels.add(item.channel)
+    channelsByAlertType.set(item.alertType, channels)
+
+    if (channels.has('none') && channels.size > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `alertType ${item.alertType} cannot combine channel none with another channel`,
+        path: [index],
+      })
+    }
+  }
+}
 
 export const PutPreferencesBodySchema = z
   .array(PreferenceItemSchema)
@@ -40,12 +60,14 @@ export const PutPreferencesBodySchema = z
       }
       seen.add(key)
     }
+    addNoneChannelConflictIssues(items, ctx)
   })
 
 export const PatchPreferencesBodySchema = z
   .array(PreferenceItemSchema)
   .min(1, 'At least one preference entry required for PATCH')
   .max(200)
+  .superRefine((items, ctx) => addNoneChannelConflictIssues(items, ctx))
 
 export const GetPreferencesResponseSchema = z.object({
   data: z.array(PreferenceOutputItemSchema),

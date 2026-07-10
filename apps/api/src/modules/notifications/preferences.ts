@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { notificationPreferences } from '@project-vault/db/schema'
 import {
@@ -14,19 +14,24 @@ import type { z } from 'zod/v4'
 import type { PreferenceItemSchema } from './schema.js'
 
 type PreferenceInput = z.infer<typeof PreferenceItemSchema>
+type StoredNotificationChannel = NotificationChannel | 'none'
 
 export type PreferenceOutput = {
   alertType: string
-  channel: NotificationChannel
+  channel: StoredNotificationChannel
   frequency: NotificationFrequency
   minSeverity: NotificationSeverity
 }
 
 function fillDefaultPreferences(stored: PreferenceOutput[]): PreferenceOutput[] {
   const storedKeys = new Set(stored.map((r) => `${r.alertType}:${r.channel}`))
+  const optedOutAlertTypes = new Set(
+    stored.filter((row) => row.channel === 'none').map((row) => row.alertType)
+  )
   const result: PreferenceOutput[] = [...stored]
 
   for (const alertType of NOTIFICATION_ALERT_TYPES) {
+    if (optedOutAlertTypes.has(alertType)) continue
     for (const channel of DEFAULT_NOTIFICATION_CHANNELS) {
       if (!storedKeys.has(`${alertType}:${channel}`)) {
         result.push({
@@ -54,10 +59,42 @@ function toPreferenceOutput(
 ): PreferenceOutput[] {
   return rows.map((r) => ({
     alertType: r.alertType,
-    channel: r.channel as NotificationChannel,
+    channel: r.channel as StoredNotificationChannel,
     frequency: r.frequency as NotificationFrequency,
     minSeverity: r.minSeverity as NotificationSeverity,
   }))
+}
+
+async function upsertPreference(
+  orgId: string,
+  userId: string,
+  item: PreferenceInput,
+  tx: Tx
+): Promise<void> {
+  await tx
+    .insert(notificationPreferences)
+    .values({
+      orgId,
+      userId,
+      alertType: item.alertType,
+      channel: item.channel,
+      frequency: item.frequency,
+      minSeverity: item.minSeverity,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [
+        notificationPreferences.orgId,
+        notificationPreferences.userId,
+        notificationPreferences.alertType,
+        notificationPreferences.channel,
+      ],
+      set: {
+        frequency: item.frequency,
+        minSeverity: item.minSeverity,
+        updatedAt: new Date(),
+      },
+    })
 }
 
 export async function getPreferences(
@@ -118,14 +155,13 @@ export async function putPreferences(
       and(eq(notificationPreferences.orgId, orgId), eq(notificationPreferences.userId, userId))
     )
 
-  const toInsert = items.filter((item) => item.channel !== 'none')
-  if (toInsert.length > 0) {
+  if (items.length > 0) {
     await tx.insert(notificationPreferences).values(
-      toInsert.map((item) => ({
+      items.map((item) => ({
         orgId,
         userId,
         alertType: item.alertType,
-        channel: item.channel as NotificationChannel,
+        channel: item.channel,
         frequency: item.frequency,
         minSeverity: item.minSeverity,
       }))
@@ -149,35 +185,25 @@ export async function patchPreferences(
           and(
             eq(notificationPreferences.orgId, orgId),
             eq(notificationPreferences.userId, userId),
-            eq(notificationPreferences.alertType, item.alertType)
+            eq(notificationPreferences.alertType, item.alertType),
+            ne(notificationPreferences.channel, 'none')
           )
         )
-    } else {
-      await tx
-        .insert(notificationPreferences)
-        .values({
-          orgId,
-          userId,
-          alertType: item.alertType,
-          channel: item.channel as NotificationChannel,
-          frequency: item.frequency,
-          minSeverity: item.minSeverity,
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [
-            notificationPreferences.orgId,
-            notificationPreferences.userId,
-            notificationPreferences.alertType,
-            notificationPreferences.channel,
-          ],
-          set: {
-            frequency: item.frequency,
-            minSeverity: item.minSeverity,
-            updatedAt: new Date(),
-          },
-        })
+      await upsertPreference(orgId, userId, item, tx)
+      continue
     }
+
+    await tx
+      .delete(notificationPreferences)
+      .where(
+        and(
+          eq(notificationPreferences.orgId, orgId),
+          eq(notificationPreferences.userId, userId),
+          eq(notificationPreferences.alertType, item.alertType),
+          eq(notificationPreferences.channel, 'none')
+        )
+      )
+    await upsertPreference(orgId, userId, item, tx)
   }
 
   return getPreferences(orgId, userId, tx)

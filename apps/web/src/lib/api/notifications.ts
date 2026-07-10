@@ -8,7 +8,7 @@ import { apiFetch } from './client.js'
 
 export type PreferenceItem = {
   alertType: string
-  channel: NotificationChannel
+  channel: NotificationChannel | 'none'
   frequency: NotificationFrequency
   minSeverity: NotificationSeverity
 }

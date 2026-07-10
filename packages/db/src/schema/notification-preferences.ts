@@ -21,7 +21,7 @@ export const notificationPreferences = pgTable(
   (t) => ({
     channelCheck: check(
       'notification_preferences_channel_check',
-      sql`${t.channel} IN ('email','slack','inbox')`
+      sql`${t.channel} IN ('email','slack','inbox','none')`
     ),
     frequencyCheck: check(
       'notification_preferences_frequency_check',

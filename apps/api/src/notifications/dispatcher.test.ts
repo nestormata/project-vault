@@ -288,6 +288,96 @@ describe('notification dispatcher', () => {
       await deleteTestUser(memberId)
     }
   })
+
+  it('skips org-admin delivery entirely for a recipient opted out with channel none', async () => {
+    const ownerId = await createTestUser('dispatcher-none-owner')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await seedOwner(orgId, ownerId)
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            ownerId,
+            [
+              {
+                alertType: FAILED_AUTH_TEMPLATE,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        const jobs = await withOrg(orgId, (tx) =>
+          createOrgAdminNotificationEntries({
+            orgId,
+            template: { templateId: FAILED_AUTH_TEMPLATE, payload: {}, severity: 'warning' },
+            tx,
+          })
+        )
+
+        expect(jobs).toEqual([])
+        const rows = await withOrg(orgId, (tx) => tx.select().from(notificationQueue))
+        expect(rows).toEqual([])
+      })
+    } finally {
+      await deleteTestUser(ownerId)
+    }
+  })
+
+  it('delivers only to the recipients that are not opted out with channel none', async () => {
+    const optedOutId = await createTestUser('dispatcher-none-opted-out')
+    const defaultId = await createTestUser('dispatcher-none-default')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await seedOwner(orgId, optedOutId)
+        await withOrg(orgId, (tx) =>
+          tx
+            .insert(orgMemberships)
+            .values({ orgId, userId: defaultId, role: 'admin', status: 'active' })
+        )
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            optedOutId,
+            [
+              {
+                alertType: FAILED_AUTH_TEMPLATE,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        const jobs = await withOrg(orgId, (tx) =>
+          createOrgAdminNotificationEntries({
+            orgId,
+            template: { templateId: FAILED_AUTH_TEMPLATE, payload: {}, severity: 'warning' },
+            tx,
+            recipientUserIds: [optedOutId, defaultId],
+          })
+        )
+
+        expect(jobs.length).toBeGreaterThanOrEqual(2)
+        const rows = await withOrg(orgId, (tx) => tx.select().from(notificationQueue))
+        expect(rows.some((row) => row.recipientUserId === optedOutId)).toBe(false)
+        expect(
+          rows.some((row) => row.recipientUserId === defaultId && row.channel === 'email')
+        ).toBe(true)
+        expect(
+          rows.some((row) => row.recipientUserId === defaultId && row.channel === 'inbox')
+        ).toBe(true)
+      })
+    } finally {
+      await deleteTestUser(optedOutId)
+      await deleteTestUser(defaultId)
+    }
+  })
 })
 
 async function setDirectDispatchPreference(
@@ -376,6 +466,38 @@ describe('dispatchDirectUserNotification (AC-7a, ADR-3.4-07)', () => {
         const rows = await mfaRecoveryUsedQueueRows(orgId)
         expect(rows.some((r) => r.channel === 'email')).toBe(false)
         expect(rows.some((r) => r.channel === 'inbox')).toBe(true)
+      })
+    } finally {
+      await deleteTestUser(targetId)
+    }
+  })
+
+  it('respects a direct-user none opt-out by enqueueing no MFA recovery jobs', async () => {
+    const targetId = await createTestUser('direct-dispatch-none')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await seedOwner(orgId, targetId)
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            targetId,
+            [
+              {
+                alertType: MFA_RECOVERY_USED_TEMPLATE,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        const jobs = await dispatchMfaRecoveryUsed(orgId, targetId, 'critical')
+        expect(jobs).toEqual([])
+
+        const rows = await mfaRecoveryUsedQueueRows(orgId)
+        expect(rows).toEqual([])
       })
     } finally {
       await deleteTestUser(targetId)

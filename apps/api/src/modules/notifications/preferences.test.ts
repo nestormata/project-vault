@@ -12,6 +12,7 @@ const FAILED_AUTH_ALERT = 'security.failed_auth_threshold'
 const SERVICE_DOWN_ALERT = 'service.down'
 const EMAIL_CHANNEL = 'email'
 const CREDENTIAL_EXPIRY_ALERT = 'credential.expiry'
+const MFA_RECOVERY_ALERT = 'security.mfa_recovery_used'
 
 describe('notification preferences service', () => {
   it('returns stored value overriding default', async () => {
@@ -93,6 +94,203 @@ describe('notification preferences service', () => {
           (p) => p.alertType === SERVICE_DOWN_ALERT && p.channel === EMAIL_CHANNEL
         )
         expect(serviceDownEmail?.frequency).toBe('immediate')
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('patchPreferences persists a fresh none opt-out without default backfill for that alert type', async () => {
+    const userId = await createTestUser('prefs-none-fresh')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: MFA_RECOVERY_ALERT,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        const prefs = await withOrg(orgId, (tx) => getPreferences(orgId, userId, tx))
+        expect(prefs.filter((p) => p.alertType === MFA_RECOVERY_ALERT)).toEqual([
+          {
+            alertType: MFA_RECOVERY_ALERT,
+            channel: 'none',
+            frequency: 'immediate',
+            minSeverity: 'warning',
+          },
+        ])
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('patchPreferences replaces existing explicit channels with a none row', async () => {
+    const userId = await createTestUser('prefs-none-replaces')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: SERVICE_DOWN_ALERT,
+                channel: 'email',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+              {
+                alertType: SERVICE_DOWN_ALERT,
+                channel: 'slack',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: SERVICE_DOWN_ALERT,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        const prefs = await withOrg(orgId, (tx) => getPreferences(orgId, userId, tx))
+        expect(prefs.filter((p) => p.alertType === SERVICE_DOWN_ALERT)).toEqual([
+          {
+            alertType: SERVICE_DOWN_ALERT,
+            channel: 'none',
+            frequency: 'immediate',
+            minSeverity: 'warning',
+          },
+        ])
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('patchPreferences deletes a none row when the user opts back into a real channel', async () => {
+    const userId = await createTestUser('prefs-none-reopt-in')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: MFA_RECOVERY_ALERT,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: MFA_RECOVERY_ALERT,
+                channel: 'email',
+                frequency: 'digest_daily',
+                minSeverity: 'critical',
+              },
+            ],
+            tx
+          )
+        )
+
+        const prefs = await withOrg(orgId, (tx) => getPreferences(orgId, userId, tx))
+        expect(prefs.find((p) => p.alertType === MFA_RECOVERY_ALERT && p.channel === 'none')).toBe(
+          undefined
+        )
+        expect(
+          prefs.find((p) => p.alertType === MFA_RECOVERY_ALERT && p.channel === 'email')
+        ).toMatchObject({
+          frequency: 'digest_daily',
+          minSeverity: 'critical',
+        })
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('putPreferences preserves none rows while still default-filling unrelated alert types', async () => {
+    const userId = await createTestUser('prefs-put-none')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await withOrg(orgId, (tx) =>
+          putPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: MFA_RECOVERY_ALERT,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+              {
+                alertType: FAILED_AUTH_ALERT,
+                channel: 'email',
+                frequency: 'digest_daily',
+                minSeverity: 'critical',
+              },
+            ],
+            tx
+          )
+        )
+
+        const prefs = await withOrg(orgId, (tx) => getPreferences(orgId, userId, tx))
+        expect(prefs.filter((p) => p.alertType === MFA_RECOVERY_ALERT)).toEqual([
+          {
+            alertType: MFA_RECOVERY_ALERT,
+            channel: 'none',
+            frequency: 'immediate',
+            minSeverity: 'warning',
+          },
+        ])
+        expect(
+          prefs.find((p) => p.alertType === FAILED_AUTH_ALERT && p.channel === 'email')
+        ).toMatchObject({
+          frequency: 'digest_daily',
+          minSeverity: 'critical',
+        })
+        expect(
+          prefs.find((p) => p.alertType === FAILED_AUTH_ALERT && p.channel === 'inbox')
+        ).toMatchObject({
+          frequency: 'immediate',
+          minSeverity: 'warning',
+        })
       })
     } finally {
       await deleteTestUser(userId)
@@ -204,6 +402,53 @@ describe('notification preferences service', () => {
       })
     } finally {
       await deleteTestUser(overrideUserId)
+      await deleteTestUser(defaultUserId)
+    }
+  })
+
+  it('getPreferencesBatch keeps none-suppressed alert types isolated to the opted-out user', async () => {
+    const noneUserId = await createTestUser('prefs-batch-none')
+    const defaultUserId = await createTestUser('prefs-batch-default-none')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            noneUserId,
+            [
+              {
+                alertType: MFA_RECOVERY_ALERT,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx
+          )
+        )
+
+        const batch = await withOrg(orgId, (tx) =>
+          getPreferencesBatch(orgId, [noneUserId, defaultUserId], tx)
+        )
+
+        expect(batch.get(noneUserId)?.filter((p) => p.alertType === MFA_RECOVERY_ALERT)).toEqual([
+          {
+            alertType: MFA_RECOVERY_ALERT,
+            channel: 'none',
+            frequency: 'immediate',
+            minSeverity: 'warning',
+          },
+        ])
+        expect(
+          batch
+            .get(defaultUserId)
+            ?.filter((p) => p.alertType === MFA_RECOVERY_ALERT)
+            .map((p) => p.channel)
+            .sort()
+        ).toEqual(['email', 'inbox'])
+      })
+    } finally {
+      await deleteTestUser(noneUserId)
       await deleteTestUser(defaultUserId)
     }
   })
