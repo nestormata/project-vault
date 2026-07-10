@@ -13,6 +13,7 @@ export function configureAuthIntegrationEnv(): void {
   process.env['DATABASE_URL'] ??=
     'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
   process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
+  process.env['RATE_LIMIT_TEST_BYPASS'] = 'true'
 }
 
 /**

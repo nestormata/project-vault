@@ -451,7 +451,7 @@ describe.sequential('audit verify route', () => {
   }, 20_000)
 
   it('enforces 20/min and returns 429 on the 21st call within the window (AC-11)', async () => {
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     try {
       const owner = await registerOwner(app, 'verify-rate-limit')
       let last: Awaited<ReturnType<typeof callVerify>> | undefined
@@ -460,7 +460,7 @@ describe.sequential('audit verify route', () => {
       }
       expect(last?.statusCode).toBe(429)
     } finally {
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   }, 30_000)
 
@@ -882,7 +882,7 @@ describe.sequential('audit search route (GET /audit/events)', () => {
   })
 
   it('enforces 60/min and returns 429 on the 61st call within the window (AC-7)', async () => {
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     try {
       const owner = await registerOwner(app, 'search-rate-limit')
       let last: Awaited<ReturnType<typeof callSearch>> | undefined
@@ -891,7 +891,7 @@ describe.sequential('audit search route (GET /audit/events)', () => {
       }
       expect(last?.statusCode).toBe(429)
     } finally {
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   }, 30_000)
 

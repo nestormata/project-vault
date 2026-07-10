@@ -241,7 +241,7 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
     })
 
     it('mutation rate limit returns 429 on the 61st request within 60s (AC 10a)', async () => {
-      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
       try {
         const owner = await registerOwner(app, 'enable-rate-limit')
         const projectId = await createProjectViaApi(app, owner.cookies, 'sp-rate-limit')
@@ -253,7 +253,7 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
         }
         expect(last?.statusCode).toBe(429)
       } finally {
-        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
       }
     }, 30_000)
   })
@@ -527,7 +527,7 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
     })
 
     it('rate limit returns 429 on the 121st request within 60s (LIST_RATE_LIMIT)', async () => {
-      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
       try {
         const owner = await registerOwner(app, 'get-config-rate-limit')
         const projectId = await createProjectViaApi(app, owner.cookies, 'sp-get-config-rate-limit')
@@ -537,7 +537,7 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
         }
         expect(last?.statusCode).toBe(429)
       } finally {
-        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
       }
     }, 30_000)
   })

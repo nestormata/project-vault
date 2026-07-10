@@ -179,7 +179,7 @@ describe.sequential('Vault lifecycle (passphrase mode)', () => {
   it('rate-limits /vault/unseal but NOT /vault/init (AC-24: limiter scoped to unseal only)', async () => {
     // Rate limiting is bypassed under NODE_ENV=test by default (route-helpers.ts,
     // isRateLimitEnforced) — this test explicitly opts back in to cover real enforcement.
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     const app = await createApp({ logger: false, vaultGuardEnabled: true })
 
     try {
@@ -207,7 +207,7 @@ describe.sequential('Vault lifecycle (passphrase mode)', () => {
       expect(statuses.at(-1)).toBe(429)
     } finally {
       await app.close()
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   })
 })

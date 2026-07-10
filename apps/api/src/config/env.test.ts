@@ -113,8 +113,19 @@ describe('env', () => {
       DATABASE_URL: VAULT_APP_DATABASE_URL,
     }
     const { env } = await import('./env.js')
+    expect(env.RATE_LIMIT_TEST_BYPASS).toBe(false)
     expect(env.VAULT_KEY_DIR).toBe('/run/secrets')
     expect(env.VAULT_ALLOW_REMOTE_INIT).toBe(false)
+  })
+
+  it('accepts RATE_LIMIT_TEST_BYPASS=true under NODE_ENV=test', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      RATE_LIMIT_TEST_BYPASS: 'true',
+    }
+    const { env } = await import('./env.js')
+    expect(env.RATE_LIMIT_TEST_BYPASS).toBe(true)
   })
 
   it('defaults auth environment settings for local/test startup', async () => {

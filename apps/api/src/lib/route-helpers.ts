@@ -9,12 +9,12 @@ const userRateLimitWindows = new Map<string, { count: number; resetAt: number }>
  * instance handles. Integration tests that register/log in many users as fixture setup
  * (not testing rate limiting itself) can incidentally trip these limits depending on how
  * fast the suite happens to run — deterministic in intent, but flaky in practice, since a
- * faster CI run packs more calls into the same window than a slower local run does. Bypass
- * enforcement by default under NODE_ENV=test; tests that specifically exercise rate-limit
- * behavior opt back in with RATE_LIMIT_TEST_ENFORCE=true (see register-rate-limit.test.ts).
+ * faster CI run packs more calls into the same window than a slower local run does. Only
+ * bypass enforcement when a test run opts in explicitly with RATE_LIMIT_TEST_BYPASS=true;
+ * ambient NODE_ENV=test alone is never enough to disable production hardening.
  */
 export function isRateLimitEnforced(): boolean {
-  return process.env['NODE_ENV'] !== 'test' || process.env['RATE_LIMIT_TEST_ENFORCE'] === 'true'
+  return !(process.env['NODE_ENV'] === 'test' && process.env['RATE_LIMIT_TEST_BYPASS'] === 'true')
 }
 
 export function validationError(

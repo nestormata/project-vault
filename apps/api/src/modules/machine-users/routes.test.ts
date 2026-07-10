@@ -669,7 +669,7 @@ describe.sequential('machine-user routes (7.1)', () => {
 
   describe('AC-16: rate limiting on sensitive mutations', () => {
     it('returns 429 on the 11th create-machine-user request within 60s (shared per-admin-per-route)', async () => {
-      process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
       try {
         const owner = await registerOwner(app, 'rate-limit-create')
         const projectA = await createProjectViaApi(app, owner.cookies, 'rate-limit-create-a')
@@ -692,7 +692,7 @@ describe.sequential('machine-user routes (7.1)', () => {
         // per-route, not per-machine-user/per-project.
         expect(responses.slice(0, 10).every((res) => res.statusCode === 201)).toBe(true)
       } finally {
-        delete process.env['RATE_LIMIT_TEST_ENFORCE']
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
       }
     }, 30_000)
   })

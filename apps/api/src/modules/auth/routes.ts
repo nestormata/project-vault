@@ -372,7 +372,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
   // Skipped under NODE_ENV=test by default (see isRateLimitEnforced) — real request-rate
   // buckets are wall-clock-based, so integration tests that register/log in many users as
   // fixture setup can flakily trip these limits depending on how fast the run executes.
-  // register-rate-limit.test.ts opts back in via RATE_LIMIT_TEST_ENFORCE to cover enforcement.
+  // register-rate-limit.test.ts leaves RATE_LIMIT_TEST_BYPASS false to cover enforcement.
   if (isRateLimitEnforced()) {
     await fastify.register(rateLimit, {
       max: 60,

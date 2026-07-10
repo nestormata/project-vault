@@ -226,7 +226,7 @@ describe.sequential('public status page route (Story 6.3, Section E)', () => {
   })
 
   it('enforces the 60/min per-IP rate limit shared across tokens', async () => {
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     try {
       const owner = await registerOwner(app, 'rate-limit')
       const projectId = await createProjectViaApi(app, owner.cookies, 'psp-rate-limit')
@@ -239,7 +239,7 @@ describe.sequential('public status page route (Story 6.3, Section E)', () => {
       }
       expect(last?.statusCode).toBe(429)
     } finally {
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   }, 30_000)
 })

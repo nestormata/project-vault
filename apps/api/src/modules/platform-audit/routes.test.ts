@@ -296,7 +296,7 @@ describe.sequential('Story 9.4 AC-9 through AC-16: platform-audit routes', () =>
 
   // AC-13: matches 8.1's /org/audit/verify rate limit exactly — 20 allowed, 21st rejected.
   it('AC-13: GET /platform/audit/events allows 20 requests/minute, rejects the 21st with 429', async () => {
-    process.env['RATE_LIMIT_TEST_ENFORCE'] = 'true'
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
     try {
       const operator = await registerPlatformOperator(suite.app, {
         emailPrefix: 'platform-audit-ratelimit',
@@ -311,7 +311,7 @@ describe.sequential('Story 9.4 AC-9 through AC-16: platform-audit routes', () =>
       expect(res21.statusCode).toBe(429)
       expect(res21.json()).toMatchObject({ code: 'rate_limit_exceeded' })
     } finally {
-      delete process.env['RATE_LIMIT_TEST_ENFORCE']
+      delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   })
 
