@@ -162,6 +162,12 @@ export class SameTransactionPlatformAuditWriteError extends Error {
   }
 }
 
+function platformAuditWriteError(error: unknown): SameTransactionPlatformAuditWriteError {
+  return new SameTransactionPlatformAuditWriteError(
+    error instanceof Error ? error.message : String(error)
+  )
+}
+
 export type PlatformAuditInput = PlatformAuditFields & { request?: FastifyRequest }
 
 /**
@@ -194,28 +200,33 @@ export async function writePlatformAuditEntryOrFailClosed(
     await tx.transaction((savepointTx) =>
       writePlatformAuditEntry(savepointTx as Tx, resolvedFields)
     )
-  } catch (error) {
-    if (isPlatformAuditStorageUnavailableError(error) && (await isMaintenanceModeActive(tx))) {
-      // Code review fix: `writePlatformAuditEntry` only redacts the payload internally, right
-      // before its own (now-aborted) INSERT — the caller here still only has the original,
-      // unredacted `resolvedFields.payload`. Without re-redacting before queuing, any write
-      // failure while maintenance mode is active (the common case, not just a forbidden-key
-      // bug) would persist an unredacted payload into `platform_audit_pending_entries`, which
-      // — unlike `platform_audit_events` — has no RLS policy. Redacting here keeps the same
-      // guarantee the happy path already has; in non-production this still throws loud on a
-      // genuine forbidden-key caller bug rather than silently queuing the secret.
-      await queuePendingEntry(tx, {
-        ...resolvedFields,
-        payload: redactPlatformAuditPayload(resolvedFields.payload, {
-          onForbiddenKeyStripped: (message) =>
-            process.stderr.write(`[platform-audit] WARN: ${message}\n`),
-        }),
-      })
-      return
+  } catch (writeError) {
+    try {
+      if (
+        isPlatformAuditStorageUnavailableError(writeError) &&
+        (await isMaintenanceModeActive(tx))
+      ) {
+        // Code review fix: `writePlatformAuditEntry` only redacts the payload internally, right
+        // before its own (now-aborted) INSERT — the caller here still only has the original,
+        // unredacted `resolvedFields.payload`. Without re-redacting before queuing, any write
+        // failure while maintenance mode is active (the common case, not just a forbidden-key
+        // bug) would persist an unredacted payload into `platform_audit_pending_entries`, which
+        // — unlike `platform_audit_events` — has no RLS policy. Redacting here keeps the same
+        // guarantee the happy path already has; in non-production this still throws loud on a
+        // genuine forbidden-key caller bug rather than silently queuing the secret.
+        await queuePendingEntry(tx, {
+          ...resolvedFields,
+          payload: redactPlatformAuditPayload(resolvedFields.payload, {
+            onForbiddenKeyStripped: (message) =>
+              process.stderr.write(`[platform-audit] WARN: ${message}\n`),
+          }),
+        })
+        return
+      }
+    } catch (fallbackError) {
+      throw platformAuditWriteError(fallbackError)
     }
-    throw new SameTransactionPlatformAuditWriteError(
-      error instanceof Error ? error.message : String(error)
-    )
+    throw platformAuditWriteError(writeError)
   }
 
   // AC-16: opportunistic drain — never let a drain failure roll back the write that just

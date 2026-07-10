@@ -743,13 +743,29 @@ the expected reason, then implement, per AC.
   - [x] 8.6 Add the AC-M8 component test on the audit page combining both fixes (events MFA alert +
     maintenance-status widget both correctly rendered together).
 
-- [x] **Task 9 — Full verification**
+- [ ] **Task 9 — Full verification**
   - [x] 9.1 Run the full API test suite (`apps/api`) — confirm no regressions beyond the
     intentionally-changed tests.
   - [x] 9.2 Run the full web test suite (`apps/web`) — confirm no regressions.
-  - [x] 9.3 `make ci` (or equivalent local lint/typecheck/test gate) green.
+  - [ ] 9.3 `make ci` (or equivalent local lint/typecheck/test gate) green — not run per review
+    instruction.
   - [x] 9.4 Update `deferred-work.md`'s TD9-2 entry and the MFA-dead-end entry to reflect closure
     (do not delete the historical record — mark resolved, cross-reference this story).
+
+### Review Findings
+
+- [x] [Review][Patch][High] Wrap maintenance-state lookup and pending-queue failures in
+  `SameTransactionPlatformAuditWriteError`, preserving the fail-closed 503 contract
+  [apps/api/src/lib/audit-or-fail-closed.ts:204]
+- [x] [Review][Patch][High] Map platform-audit write failures from settings and organization
+  mutations to `503 platform_audit_write_failed`
+  [apps/api/src/modules/platform-admin/route-common.ts:28]
+- [x] [Review][Patch][High] Sanitize the platform-audit 503 response instead of exposing the
+  underlying database, vault, maintenance-state, or queue failure message
+  [apps/api/src/modules/platform-admin/route-common.ts:28]
+- [x] [Review][Patch][Medium] Correct the verification checklist that claimed the intentionally
+  unrun `make ci` gate was green
+  [_bmad-output/implementation-artifacts/9-8-platform-admin-mfa-gaps-and-audit-bypass-hardening.md:746]
 
 ---
 
@@ -840,6 +856,8 @@ GPT-5.6 Sol
   `requireMfa` flag; both new tests failed with 200 instead of 403, then passed after restoration.
 - Reconciled AC-T5 per Nestor's 2026-07-10 decision: production forbidden-key sanitization remains
   Story 9.4's strip/warn/continue behavior; non-production assertions are wrapped fail-closed.
+- Code review RED/GREEN: maintenance-state and pending-queue failures initially escaped as raw
+  errors, and the platform-admin response mapper was missing; focused tests now pass 6/6.
 - Full API run: 201/202 files and 1837/1839 tests passed. The two failures were unrelated
   `backup.routes.test.ts` rate-limit ordering failures (429 before expected 409); both failing tests
   passed together in isolation (2/2). All eight story-relevant API files passed (75/75).
@@ -874,7 +892,11 @@ GPT-5.6 Sol
 - `apps/api/src/lib/audit-or-fail-closed.storage-bypass.test.ts`
 - `apps/api/src/lib/audit-or-fail-closed.storage-classifier.test.ts`
 - `apps/api/src/modules/platform-admin/orgs-routes.test.ts`
+- `apps/api/src/modules/platform-admin/orgs-routes.ts`
+- `apps/api/src/modules/platform-admin/route-common.test.ts`
+- `apps/api/src/modules/platform-admin/route-common.ts`
 - `apps/api/src/modules/platform-admin/resource-usage-routes.test.ts`
+- `apps/api/src/modules/platform-admin/settings-routes.ts`
 - `apps/api/src/modules/platform-audit/maintenance-mode.ts`
 - `apps/api/src/modules/platform-audit/platform-audit-route-audit.test.ts`
 - `apps/api/src/modules/platform-audit/routes.test.ts`

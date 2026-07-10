@@ -26,7 +26,11 @@ vi.mock('../modules/platform-audit/maintenance-mode.js', async (importOriginal) 
   }
 })
 
-const { writePlatformAuditEntryOrFailClosed } = await import('./audit-or-fail-closed.js')
+const { SameTransactionPlatformAuditWriteError, writePlatformAuditEntryOrFailClosed } =
+  await import('./audit-or-fail-closed.js')
+
+const CONNECTION_FAILED = 'connection failed'
+const SETTINGS_UPDATED = 'settings.updated'
 
 const tx = {
   transaction: vi.fn(async (callback: (savepointTx: Tx) => Promise<void>) => callback(tx as Tx)),
@@ -41,16 +45,16 @@ describe('Story 9.8 AC-T3: storage errors use the active-maintenance bypass', ()
 
   it.each([
     Object.assign(new Error('query failed'), {
-      cause: Object.assign(new Error('connection failed'), { code: '08006' }),
+      cause: Object.assign(new Error(CONNECTION_FAILED), { code: '08006' }),
     }),
-    Object.assign(new Error('connection failed'), { code: 'ECONNREFUSED' }),
+    Object.assign(new Error(CONNECTION_FAILED), { code: 'ECONNREFUSED' }),
   ])('queues a classified storage failure', async (failure) => {
     mocks.writePlatformAuditEntry.mockRejectedValue(failure)
 
     await expect(
       writePlatformAuditEntryOrFailClosed(tx, {
         operatorId: randomUUID(),
-        actionType: 'settings.updated',
+        actionType: SETTINGS_UPDATED,
         payload: { fieldsChanged: ['smtp.host'] },
       })
     ).resolves.toBeUndefined()
@@ -60,5 +64,35 @@ describe('Story 9.8 AC-T3: storage errors use the active-maintenance bypass', ()
       tx,
       expect.objectContaining({ payload: { fieldsChanged: ['smtp.host'] } })
     )
+  })
+
+  it('fails closed with the platform-audit error when maintenance-state lookup fails', async () => {
+    mocks.writePlatformAuditEntry.mockRejectedValue(
+      Object.assign(new Error(CONNECTION_FAILED), { code: 'ECONNRESET' })
+    )
+    mocks.isMaintenanceModeActive.mockRejectedValue(new Error('maintenance lookup failed'))
+
+    await expect(
+      writePlatformAuditEntryOrFailClosed(tx, {
+        operatorId: randomUUID(),
+        actionType: SETTINGS_UPDATED,
+        payload: {},
+      })
+    ).rejects.toBeInstanceOf(SameTransactionPlatformAuditWriteError)
+  })
+
+  it('fails closed with the platform-audit error when pending-entry queueing fails', async () => {
+    mocks.writePlatformAuditEntry.mockRejectedValue(
+      Object.assign(new Error(CONNECTION_FAILED), { code: 'ECONNRESET' })
+    )
+    mocks.queuePendingEntry.mockRejectedValue(new Error('pending queue failed'))
+
+    await expect(
+      writePlatformAuditEntryOrFailClosed(tx, {
+        operatorId: randomUUID(),
+        actionType: SETTINGS_UPDATED,
+        payload: {},
+      })
+    ).rejects.toBeInstanceOf(SameTransactionPlatformAuditWriteError)
   })
 })
