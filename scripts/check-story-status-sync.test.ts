@@ -85,6 +85,65 @@ describe('scanStoryStatusSync', () => {
   })
 })
 
+describe('scanStoryStatusSync — named historical-incident regression fixtures (Story 1.13 AC-P2)', () => {
+  it('CP4-4 (Epic 4 retro, 2026-07-03): a story file stuck at review while sprint-status.yaml already says done', () => {
+    const root = makeFixtureRoot()
+    const key = '4-1-team-invitations-and-role-assignment'
+    writeFixture(root, SPRINT_STATUS_PATH, `development_status:\n  ${key}: done\n`)
+    writeFixture(root, `${ARTIFACTS_DIR}/${key}.md`, `# Story 4.1\n\nStatus: review\n`)
+
+    expect(scanStoryStatusSync(root)).toEqual([
+      {
+        storyKey: key,
+        storyFile: `${ARTIFACTS_DIR}/${key}.md`,
+        storyStatus: 'review',
+        sprintStatus: 'done',
+      },
+    ])
+  })
+
+  it('A6-3 (Epic 6 retro, 2026-07-06): multiple story files simultaneously stuck at review while sprint-status.yaml says done', () => {
+    const root = makeFixtureRoot()
+    const keys = [
+      '6-1-service-certificate-and-domain-record-management',
+      '6-2-http-endpoint-monitoring-and-availability-alerts',
+      '7-1-machine-user-identity-and-api-key-management',
+    ]
+    const sprintStatusLines = keys.map((key) => `  ${key}: done`).join('\n')
+    writeFixture(root, SPRINT_STATUS_PATH, `development_status:\n${sprintStatusLines}\n`)
+    for (const key of keys) {
+      writeFixture(root, `${ARTIFACTS_DIR}/${key}.md`, `# Story\n\nStatus: review\n`)
+    }
+
+    const mismatches = scanStoryStatusSync(root)
+    expect(mismatches).toHaveLength(3)
+    for (const key of keys) {
+      expect(mismatches).toContainEqual({
+        storyKey: key,
+        storyFile: `${ARTIFACTS_DIR}/${key}.md`,
+        storyStatus: 'review',
+        sprintStatus: 'done',
+      })
+    }
+  })
+
+  it('Epic 8 "5th recurrence" (8-7, caught during its own post-implementation code review): a single story file stuck at review while sprint-status.yaml says done', () => {
+    const root = makeFixtureRoot()
+    const key = '8-7-epic-8-completion-audit-compliance-web-ui-and-technical-debt'
+    writeFixture(root, SPRINT_STATUS_PATH, `development_status:\n  ${key}: done\n`)
+    writeFixture(root, `${ARTIFACTS_DIR}/${key}.md`, `# Story 8.7\n\nStatus: review\n`)
+
+    expect(scanStoryStatusSync(root)).toEqual([
+      {
+        storyKey: key,
+        storyFile: `${ARTIFACTS_DIR}/${key}.md`,
+        storyStatus: 'review',
+        sprintStatus: 'done',
+      },
+    ])
+  })
+})
+
 describe('scanStoryStatusSync against the real repository', () => {
   it('passes with zero mismatches against every story file currently committed', () => {
     expect(scanStoryStatusSync(process.cwd())).toEqual([])

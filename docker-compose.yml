@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-      target: builder
+      target: db-builder
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
     command: ["pnpm", "--filter", "@project-vault/db", "db:migrate"]

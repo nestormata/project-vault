@@ -42,6 +42,7 @@ const PAYMENTS_TAG = 'payments'
 const PROD_TAG = 'prod'
 const THIRD_PARTY_TAG = 'third-party'
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
+const CASE_TAGGED_KEY = 'Case Tagged Key'
 
 async function createTestProjectDirect(orgId: string, userId: string, slug: string) {
   const project = await insertTestProject(orgId, { userId, slug })
@@ -1003,6 +1004,35 @@ describe.sequential('credential routes', () => {
       )
     ).toBe(true)
     expect(JSON.stringify(auditRows)).not.toContain(SENTINEL_VALUE)
+  }, 20_000)
+
+  it('PUT credential tags normalizes mixed-case input to lowercase, and a mixed-case tag filter still matches it (AC-T1/AC-T2/AC-T6)', async () => {
+    const projectId = await createTestProjectDirect(
+      owner.orgId,
+      owner.userId,
+      'credential-tags-case'
+    )
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: CASE_TAGGED_KEY,
+      value: SENTINEL_VALUE,
+    })
+
+    const replace = await updateCredentialTags(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      'PUT',
+      ['Prod', 'PROD', 'Staging']
+    )
+    expect(replace.statusCode).toBe(200)
+    expect(replace.json()).toEqual({ data: { id: credential.id, tags: ['prod', 'staging'] } })
+
+    const byLowercase = await listCredentials(app, owner.cookies, projectId, '?tags=prod')
+    expectSingleCredentialNamed(byLowercase, CASE_TAGGED_KEY)
+
+    const byMixedCase = await listCredentials(app, owner.cookies, projectId, '?tags=Prod')
+    expectSingleCredentialNamed(byMixedCase, CASE_TAGGED_KEY)
   }, 20_000)
 
   it('PATCH credential tags appends as a set union and enforces post-merge bounds', async () => {

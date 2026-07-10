@@ -1,5 +1,10 @@
+export function normalizeTag(tag: string): string {
+  return tag.toLowerCase()
+}
+
 export function dedupeTags(tags: string[]): string[] {
-  return tags.filter((tag, index) => tags.indexOf(tag) === index)
+  const normalized = tags.map(normalizeTag)
+  return normalized.filter((tag, index) => normalized.indexOf(tag) === index)
 }
 
 export function tagDelta(oldTags: string[], newTags: string[]) {

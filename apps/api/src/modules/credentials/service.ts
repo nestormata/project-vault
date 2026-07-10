@@ -7,7 +7,7 @@ import {
   credentialDependencies,
 } from '@project-vault/db/schema'
 import { withSecret } from '@project-vault/crypto'
-import { dedupeTags, tagDelta } from '../../lib/tags.js'
+import { dedupeTags, normalizeTag, tagDelta } from '../../lib/tags.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
 import { currentKeyVersion, isUniqueViolation, lockCredentialInProject } from './db-helpers.js'
 import type {
@@ -83,6 +83,7 @@ function parseTagFilter(rawTags: string | undefined): string[] {
     .split(',')
     .map((tag) => tag.trim())
     .filter((tag) => tag.length > 0)
+    .map(normalizeTag)
 }
 
 function credentialListWhere(params: { projectId: string; query: ListCredentialsQuery }) {
