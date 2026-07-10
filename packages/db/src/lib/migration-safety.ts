@@ -288,6 +288,12 @@ export function findDestructiveStatements(sql: string): string[] {
  * `guarded-migrate.ts` treats a fresh database's entire local history as "pending", and (b) break
  * AC-18's full-history zero-findings guarantee for a migration that was reviewed and merged before
  * this story existed.
+ *
+ * `0047_notification_preference_none_channel`: Postgres cannot widen an existing CHECK
+ * constraint in place, so this reviewed migration temporarily drops and re-adds the exact same
+ * constraint name with one additive new allowed value (`'none'`) for durable notification opt-out
+ * persistence. The repo-inspection safety test for 0047 proves there are no column drops, type
+ * rewrites, table drops, or data-deleting statements hiding alongside that constraint rewrite.
  */
 export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   '0036_audit_search_export_forwarding':
@@ -299,4 +305,6 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // not an accidental schema change.
   '0042_platform_audit_retention_purge':
     "purge_expired_platform_audit_entries()'s DELETE FROM platform_audit_events is the sanctioned, session-flag-gated exception to this story's own append-only trigger — same pattern as 0036's audit_log_entries purge function.",
+  '0047_notification_preference_none_channel':
+    "notification_preferences_channel_check must be dropped and re-added to widen its allowed set with the new reviewed 'none' opt-out value; the paired migration safety test verifies no unrelated destructive schema/data change rides along.",
 }
