@@ -412,7 +412,7 @@ export async function revealCurrentValue(
     .orderBy(desc(credentialVersions.versionNumber))
     .limit(1)
 
-  if (!version || !version.encryptedValue) {
+  if (!version?.encryptedValue) {
     return { status: 'not_found', reason: 'all_versions_purged' }
   }
 

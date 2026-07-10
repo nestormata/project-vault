@@ -21,7 +21,6 @@ import {
 import { enqueueSecurityAlertNotification } from '../../notifications/dispatcher.js'
 import type { NotificationQueueJob } from '../../notifications/dispatcher.js'
 import {
-  credentialExistsInProject,
   currentKeyVersion,
   isLockNotAvailable,
   isUniqueViolation,
@@ -279,7 +278,7 @@ export function serializeRotationDetail(
   }
 }
 
-export const findCredentialInProject = credentialExistsInProject
+export { credentialExistsInProject as findCredentialInProject } from '../credentials/db-helpers.js'
 
 export async function getRotationDetail(
   tx: Tx,

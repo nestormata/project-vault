@@ -83,7 +83,7 @@ export type SecureRouteRegistrationOptions = {
     ctx: SecureRouteContext | PublicRouteContext,
     req: FastifyRequest,
     reply: FastifyReply
-  ) => Promise<unknown> | unknown
+  ) => unknown
 }
 
 class AuditWriteError extends Error {}
@@ -115,7 +115,7 @@ export const FORBIDDEN_AUDIT_KEYS = new Set([
 const MUTATING_METHODS = new Set<HttpMethod>(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function isReplySent(reply: FastifyReply): boolean {
-  return Boolean((reply as unknown as { sent?: boolean }).sent)
+  return reply.sent
 }
 
 function sendIfNeeded(reply: FastifyReply, result: unknown): unknown {
@@ -290,8 +290,7 @@ function resolveSecurity(options: SecureRouteRegistrationOptions): ResolvedSecur
   return {
     requireAuth,
     requireOrgScope: security.requireOrgScope !== false && requireAuth,
-    rateLimit:
-      security.rateLimit === undefined ? { max: 60, timeWindowMs: 60_000 } : security.rateLimit,
+    rateLimit: security.rateLimit ?? { max: 60, timeWindowMs: 60_000 },
   }
 }
 
@@ -507,7 +506,7 @@ export function buildSecurePreHandlers(
   const chain: preHandlerHookHandler[] = []
   if (options.requireAuth !== false) {
     if (typeof fastify.authenticate !== 'function') {
-      throw new Error(
+      throw new TypeError(
         'buildSecurePreHandlers: requireAuth is set but fastify.authenticate is not registered'
       )
     }
@@ -526,7 +525,7 @@ function assertSecureRouteConfig(
   if (resolvedSecurity.requireAuth && typeof fastify.authenticate !== 'function') {
     throw new Error('SecureRoute: requireAuth is true but fastify.authenticate is not registered')
   }
-  if (options.security?.allowedRoles && options.security.allowedRoles.length === 0) {
+  if (options.security?.allowedRoles?.length === 0) {
     throw new Error('SecureRoute: allowedRoles must not be empty')
   }
   if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {

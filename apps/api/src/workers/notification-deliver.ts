@@ -26,7 +26,7 @@ export async function deliverNotification(
       .limit(1)
   )
 
-  if (!entry || entry.status !== 'pending') return
+  if (entry?.status !== 'pending') return
   if (entry.deliverAt && entry.deliverAt.getTime() > Date.now()) return
 
   switch (entry.channel) {

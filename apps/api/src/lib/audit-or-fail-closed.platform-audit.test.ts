@@ -83,7 +83,7 @@ describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailCl
       const rows = await withPlatformOperatorContext((tx) =>
         tx.select().from(platformAuditEvents).where(eq(platformAuditEvents.operatorId, userId))
       )
-      expect(rows.length).toBe(1)
+      expect(rows).toHaveLength(1)
     } finally {
       await tryDeleteTestUser(userId)
     }
@@ -107,7 +107,7 @@ describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailCl
       ).rejects.toBeInstanceOf(SameTransactionPlatformAuditWriteError)
 
       const pending = await getDb().select().from(platformAuditPendingEntries)
-      expect(pending.length).toBe(0)
+      expect(pending).toHaveLength(0)
     } finally {
       await loadInitialVaultState()
       await unsealVault({ passphrase: TEST_PASSPHRASE })
@@ -134,7 +134,7 @@ describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailCl
       ).resolves.toBeUndefined()
 
       const pending = await getDb().select().from(platformAuditPendingEntries)
-      expect(pending.length).toBe(1)
+      expect(pending).toHaveLength(1)
     } finally {
       await loadInitialVaultState()
       await unsealVault({ passphrase: TEST_PASSPHRASE })
@@ -156,7 +156,7 @@ describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailCl
         })
       )
       const pendingBefore = await getDb().select().from(platformAuditPendingEntries)
-      expect(pendingBefore.length).toBe(1)
+      expect(pendingBefore).toHaveLength(1)
 
       await loadInitialVaultState()
       await unsealVault({ passphrase: TEST_PASSPHRASE })
@@ -170,7 +170,7 @@ describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailCl
       )
 
       const pendingAfter = await getDb().select().from(platformAuditPendingEntries)
-      expect(pendingAfter.length).toBe(0)
+      expect(pendingAfter).toHaveLength(0)
 
       const rows = await withPlatformOperatorContext((tx) =>
         tx.select().from(platformAuditEvents).where(eq(platformAuditEvents.operatorId, userId))

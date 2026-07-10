@@ -1,7 +1,6 @@
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { securityAlerts } from '@project-vault/db/schema'
-import { eq } from 'drizzle-orm'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 import {
   createOrgAdminNotificationEntries,

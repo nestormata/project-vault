@@ -5,8 +5,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import { getDb, reserveConnection, type ReservedConnection } from '@project-vault/db'
 import { backupRuns, vaultState } from '@project-vault/db/schema'
 import { runBackupCrypto, BackupDecryptError } from '@project-vault/crypto'
-import { getBackupKey } from '../vault/key-service.js'
-import { zeroKeys } from '../vault/key-service.js'
+import { getBackupKey, zeroKeys } from '../vault/key-service.js'
 import { env } from '../../config/env.js'
 import { resolveBackupDestination, requireBackupDatabaseUrl } from './config.js'
 import {
@@ -492,7 +491,7 @@ export async function restoreFromBackup(
 
   const meta = await readMetaSidecar(storage, metaFilename)
   const actualChecksum = sha256Hex(encrypted)
-  if (!meta || meta.checksumSha256 !== actualChecksum) {
+  if (meta?.checksumSha256 !== actualChecksum) {
     return { code: 'checksum_mismatch' }
   }
 
@@ -557,7 +556,7 @@ export async function validateBackupFile(
 
   const meta = await readMetaSidecar(storage, metaFilename)
   const actualChecksum = sha256Hex(encrypted)
-  const checksumMatches = Boolean(meta && meta.checksumSha256 === actualChecksum)
+  const checksumMatches = Boolean(meta?.checksumSha256 === actualChecksum)
   if (!checksumMatches) return { ...invalidResult, checksumMatches: false }
 
   try {

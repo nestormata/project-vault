@@ -80,8 +80,8 @@ export function buildExportCsv(
     )
   }
   if (summary) {
-    lines.push('--- Integrity Verification Summary ---')
     lines.push(
+      '--- Integrity Verification Summary ---',
       `rows_checked,${summary.rowsChecked},passed,${summary.passed},failed,${summary.failedCount},verified_at,${summary.verifiedAt}`
     )
   }

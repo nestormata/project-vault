@@ -305,7 +305,7 @@ describe.sequential('Story 9.1: backup service', () => {
       .select({ id: backupRuns.id })
       .from(backupRuns)
       .where(eq(backupRuns.status, 'succeeded'))
-    expect(succeededAfter.length).toBe(succeededBefore.length)
+    expect(succeededAfter).toHaveLength(succeededBefore.length)
 
     for (const filename of prunedFilenames) {
       await expect(storage.read(filename)).rejects.toThrow()

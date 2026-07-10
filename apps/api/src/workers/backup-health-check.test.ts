@@ -98,7 +98,7 @@ describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
       .select()
       .from(adminAlerts)
       .where(eq(adminAlerts.alertType, BACKUP_MISSED_ALERT_TYPE))
-    expect(alerts.length).toBe(0)
+    expect(alerts).toHaveLength(0)
   })
 
   it('creates a backup.missed alert when the last succeeded backup exceeds BACKUP_MAX_AGE_HOURS', async () => {
@@ -125,7 +125,7 @@ describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
       .where(
         and(eq(adminAlerts.alertType, BACKUP_MISSED_ALERT_TYPE), eq(adminAlerts.status, 'active'))
       )
-    expect(alerts.length).toBe(1)
+    expect(alerts).toHaveLength(1)
   })
 
   it('does not re-create the alert while the condition persists (idempotent)', async () => {
@@ -138,7 +138,7 @@ describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
       .where(
         and(eq(adminAlerts.alertType, BACKUP_MISSED_ALERT_TYPE), eq(adminAlerts.status, 'active'))
       )
-    expect(alerts.length).toBe(1)
+    expect(alerts).toHaveLength(1)
   })
 
   // Story 9.6 D2/AC-8 through AC-11: backup.missed auto-resolve.
@@ -151,7 +151,7 @@ describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
         .where(
           and(eq(adminAlerts.alertType, BACKUP_MISSED_ALERT_TYPE), eq(adminAlerts.status, 'active'))
         )
-      expect(before.length).toBe(1)
+      expect(before).toHaveLength(1)
       const alertId = before[0]?.id
       if (!alertId) throw new Error('expected an active alert')
 
@@ -168,7 +168,7 @@ describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
         .where(
           and(eq(adminAlerts.alertType, BACKUP_MISSED_ALERT_TYPE), eq(adminAlerts.status, 'active'))
         )
-      expect(stillActive.length).toBe(0)
+      expect(stillActive).toHaveLength(0)
     })
 
     it('AC-9: a fresh, distinct alert is created for a later re-miss — the resolved episode does not permanently suppress it', async () => {
@@ -182,7 +182,7 @@ describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
         .where(
           and(eq(adminAlerts.alertType, BACKUP_MISSED_ALERT_TYPE), eq(adminAlerts.status, 'active'))
         )
-      expect(activeAlerts.length).toBe(1)
+      expect(activeAlerts).toHaveLength(1)
 
       const acknowledgedAlerts = await getDb()
         .select()
@@ -209,7 +209,7 @@ describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
         .select()
         .from(adminAlerts)
         .where(eq(adminAlerts.alertType, BACKUP_MISSED_ALERT_TYPE))
-      expect(alerts.length).toBe(0)
+      expect(alerts).toHaveLength(0)
     })
 
     it('AC-10: resolving backup.missed leaves other admin_alerts types (key_custody_risk, backup.failure) completely untouched', async () => {

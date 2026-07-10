@@ -29,9 +29,9 @@ export const OperationalEvent = {
   JOB_FAILED: 'job.failed',
 
   // Auth (Stories 1.6-1.9 — register here, implement in those stories)
-  // NOSONAR(typescript:S2068) — this names an operational log event describing a corrupt
-  // password hash, not a credential value; there is no literal secret here.
-  AUTH_PASSWORD_HASH_CORRUPT: 'auth.password_hash_corrupt',
+  // This names an operational log event describing a corrupt password hash, not a credential
+  // value; there is no literal secret here. NOSONAR must sit on the flagged line itself.
+  AUTH_PASSWORD_HASH_CORRUPT: 'auth.password_hash_corrupt', // NOSONAR(typescript:S2068)
   SESSION_ACTIVITY_TOUCH_FAILED: 'session.activity_touch_failed',
 
   // Security / alerts (Epic 3 deferral marker)

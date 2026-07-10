@@ -324,7 +324,7 @@ describe('dispatchDirectUserNotification (AC-7a, ADR-3.4-07)', () => {
         await setDirectDispatchPreference(orgId, targetId, 'email', 'critical')
 
         const jobs = await dispatchMfaRecoveryUsed(orgId, targetId, 'warning')
-        expect(jobs.length).toBe(1)
+        expect(jobs).toHaveLength(1)
 
         const rows = await mfaRecoveryUsedQueueRows(orgId)
         expect(rows.some((r) => r.channel === 'email')).toBe(false)
@@ -345,8 +345,8 @@ describe('notification preferences defaults', () => {
         const prefs = await withOrg(orgId, (tx) => getPreferences(orgId, userId, tx))
         const emailPrefs = prefs.filter((p) => p.channel === 'email')
         const inboxPrefs = prefs.filter((p) => p.channel === 'inbox')
-        expect(emailPrefs.length).toBe(NOTIFICATION_ALERT_TYPES.length)
-        expect(inboxPrefs.length).toBe(NOTIFICATION_ALERT_TYPES.length)
+        expect(emailPrefs).toHaveLength(NOTIFICATION_ALERT_TYPES.length)
+        expect(inboxPrefs).toHaveLength(NOTIFICATION_ALERT_TYPES.length)
         expect(prefs.every((p) => p.frequency === DEFAULT_NOTIFICATION_FREQUENCY)).toBe(true)
         expect(prefs.every((p) => p.minSeverity === DEFAULT_NOTIFICATION_MIN_SEVERITY)).toBe(true)
       })

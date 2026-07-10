@@ -23,12 +23,13 @@ function cidrV4Matches(ip: string, base: string, bits: number): boolean {
 
 // D4's exact required ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8,
 // 169.254.0.0/16 — plus 0.0.0.0/8 (unspecified/"this network") as an obvious additional guard.
+// These are the SSRF blocklist itself (D4), not incidental literals — NOSONAR(typescript:S1313).
 const PRIVATE_V4_CIDRS: [string, number][] = [
-  ['10.0.0.0', 8],
-  ['172.16.0.0', 12],
-  ['192.168.0.0', 16],
+  ['10.0.0.0', 8], // NOSONAR(typescript:S1313)
+  ['172.16.0.0', 12], // NOSONAR(typescript:S1313)
+  ['192.168.0.0', 16], // NOSONAR(typescript:S1313)
   ['127.0.0.0', 8],
-  ['169.254.0.0', 16],
+  ['169.254.0.0', 16], // NOSONAR(typescript:S1313)
   ['0.0.0.0', 8],
 ]
 
@@ -79,7 +80,7 @@ function foldIPv4Tail(address: string): string | null {
  */
 function expandSingleIPv6Part(part: string): number[] | null {
   const groups = parseHexGroups(part)
-  return groups && groups.length === 8 ? groups : null
+  return groups?.length === 8 ? groups : null
 }
 
 /** The `::`-compressed case: `head` and `tail` are the groups either side of the compression

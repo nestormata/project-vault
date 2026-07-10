@@ -72,17 +72,16 @@ function setPrimaryKeyCopy(primaryKey: Buffer): void {
   _primaryKey = Buffer.from(primaryKey)
 }
 
-/** Call at API startup and after any vault_state truncate — syncs _status with DB. */
+/**
+ * Call at API startup and after any vault_state truncate — syncs _status with DB. Any error
+ * here propagates to the caller uncaught; main().catch() handles it with process.exit(1).
+ */
 export async function loadInitialVaultState(): Promise<VaultStatus> {
-  try {
-    const db = getDb()
-    const rows = await db.select().from(vaultState).limit(1)
-    _status = rows.length === 0 ? 'uninitialized' : 'sealed'
-    warnIfEnvelopeMisconfigured(rows[0])
-    return _status
-  } catch (err) {
-    throw err // main().catch → process.exit(1)
-  }
+  const db = getDb()
+  const rows = await db.select().from(vaultState).limit(1)
+  _status = rows.length === 0 ? 'uninitialized' : 'sealed'
+  warnIfEnvelopeMisconfigured(rows[0])
+  return _status
 }
 
 /**

@@ -127,7 +127,7 @@ describe('AuditExportPanel (AC group C)', () => {
     // No further automatic poll should have been scheduled beyond the cap.
     const callCountAtCap = getAuditExportStatusMock.mock.calls.length
     await vi.advanceTimersByTimeAsync(10_000)
-    expect(getAuditExportStatusMock.mock.calls.length).toBe(callCountAtCap)
+    expect(getAuditExportStatusMock.mock.calls).toHaveLength(callCountAtCap)
   }, 10000)
 
   it('AC-C1 failure: a 429 mid-poll shows a rate-limit message and backs off instead of failing terminally', async () => {

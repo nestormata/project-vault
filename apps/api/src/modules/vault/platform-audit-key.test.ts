@@ -53,7 +53,7 @@ describe.sequential('Story 9.4 D3/AC-4: getPlatformAuditKey()', () => {
 
     const key = getPlatformAuditKey()
     expect(key).toBeInstanceOf(Buffer)
-    expect(key.length).toBe(32)
+    expect(key).toHaveLength(32)
   })
 
   it('returns a fresh copy each call (mutating one does not affect the next)', async () => {

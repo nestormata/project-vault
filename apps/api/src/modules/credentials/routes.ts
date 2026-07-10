@@ -15,6 +15,7 @@ import {
 } from '../../lib/pagination.js'
 import {
   secureRoute,
+  type AuditConfig,
   type PublicRouteContext,
   type SecureRouteContext,
 } from '../../lib/secure-route.js'
@@ -79,7 +80,6 @@ import {
   detectImportFileType,
   stageCredentialImport,
 } from './import-service.js'
-import type { AuditConfig } from '../../lib/secure-route.js'
 import { rejectIfProjectArchived } from '../projects/archive-guards.js'
 import { credentialRevealAbandonedVersionExcludedTotal } from '../rotation/metrics.js'
 

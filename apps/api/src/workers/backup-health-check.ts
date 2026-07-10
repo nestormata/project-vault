@@ -227,7 +227,7 @@ async function runStagingMaintenance(
   deps: BackupHealthCheckDeps
 ): Promise<void> {
   const destination = resolveBackupDestination()
-  if (!destination || destination.type !== 's3') return
+  if (destination?.type !== 's3') return
 
   const stagingPath = resolveStagingPath()
   await runOrphanCleanup(stagingPath, logger, deps)

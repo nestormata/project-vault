@@ -85,12 +85,13 @@ export function compareDistDirectories(committedDir: string, freshDir: string): 
  * correct answer when run standalone (e.g. from the tag-triggered release workflow, or locally).
  */
 export function buildFreshDist(repoRoot: string, outDir: string): void {
-  execFileSync('pnpm', ['--filter', '@project-vault/agent', 'build'], {
-    cwd: repoRoot,
-    stdio: 'inherit',
-  })
   execFileSync(
-    'pnpm',
+    'pnpm', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
+    ['--filter', '@project-vault/agent', 'build'],
+    { cwd: repoRoot, stdio: 'inherit' }
+  )
+  execFileSync(
+    'pnpm', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
     [
       '--filter',
       '@project-vault/vault-action',

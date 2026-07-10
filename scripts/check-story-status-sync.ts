@@ -34,7 +34,7 @@ export function parseDevelopmentStatus(yamlContent: string): Map<string, string>
     if (!inBlock) continue
     if (line.length > 0 && !/^\s/.test(line)) break // dedented back to top level — block ended
 
-    const match = line.match(/^\s{2}([a-zA-Z0-9_-]+):\s*(\S+)/)
+    const match = /^\s{2}([a-zA-Z0-9_-]+):\s*(\S+)/.exec(line)
     if (match) statuses.set(match[1] as string, match[2] as string)
   }
 
@@ -50,7 +50,7 @@ export function loadSprintStatuses(rootDir: string): Map<string, string> | null 
 }
 
 function extractStoryFileStatus(content: string): string | undefined {
-  return content.match(/^Status:\s*(\S+)\s*$/m)?.[1]
+  return /^Status:\s*(\S+)\s*$/m.exec(content)?.[1]
 }
 
 export function scanStoryStatusSync(rootDir = process.cwd()): StatusMismatch[] {

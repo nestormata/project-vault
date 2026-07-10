@@ -14,9 +14,11 @@ let failed = false
 for (const image of images) {
   let output: string
   try {
-    output = execFileSync('docker', ['image', 'inspect', image, '--format={{.Size}}'], {
-      encoding: 'utf-8',
-    }).trim()
+    output = execFileSync(
+      'docker', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
+      ['image', 'inspect', image, '--format={{.Size}}'],
+      { encoding: 'utf-8' }
+    ).trim()
   } catch {
     process.stderr.write(`ERROR: docker image inspect failed for ${image}\n`)
     failed = true

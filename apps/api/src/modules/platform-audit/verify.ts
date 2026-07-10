@@ -8,18 +8,19 @@ import { computePlatformAuditHmac } from './write-entry.js'
 // sentence logic have no org-scoped coupling, so this story's platform-scoped verify imports them
 // directly rather than reimplementing byte-for-byte identical logic.
 import {
-  buildVerifySummary,
   finalizeVerifyResult,
   hmacMatches,
+  RangeTooLargeError,
+  validateVerifyRange,
+} from '../audit/verify.js'
+
+export {
   InvalidRangeError,
   RangeTooLargeError,
   rangeErrorResponse,
-  validateVerifyRange,
   verifyRouteErrorResponse,
 } from '../audit/verify.js'
-
-export { InvalidRangeError, RangeTooLargeError, rangeErrorResponse, verifyRouteErrorResponse }
-export { buildVerifySummary as buildPlatformAuditVerifySummary }
+export { buildVerifySummary as buildPlatformAuditVerifySummary } from '../audit/verify.js'
 
 /** D11: same numeric bounds Story 8.1 established for the org-scoped verify endpoint, own named
  * constants (this table's write volume is expected to be far lower, but there is no reason to

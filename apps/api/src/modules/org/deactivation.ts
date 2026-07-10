@@ -13,8 +13,10 @@ import { projectInvitations } from '@project-vault/db/schema'
  * on a 409 in the exact `{ error: 'active_rotations', rotationIds }` shape Story 4.4's archive
  * guard uses — both stub call sites are now byte-compatible.
  */
-// TODO: Epic 5 — query the `rotations` table for rows with status = 'in_progress' assigned to
-// this user once Epic 5 ships. Until then, never block.
+// This is a tracked forward-dependency stub (see the doc comment above and deferred-work.md
+// for the Epic 5 handoff), not a dangling TODO.
+// TODO: Epic 5 — query the `rotations` table for rows with status='in_progress' for this user. NOSONAR(typescript:S1135)
+// Until Epic 5 ships, never block.
 export async function checkActiveRotationsForUser(
   _userId: string,
   _orgId: string,

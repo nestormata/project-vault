@@ -10,7 +10,7 @@ describe('generateApiKey', () => {
 
     expect(key.startsWith('pk_')).toBe(true)
     // pk_ (3 chars) + unpadded base64url of 32 bytes (43 chars) = 46 chars total.
-    expect(key.length).toBe(46)
+    expect(key).toHaveLength(46)
     expect(key.slice(3)).toMatch(/^[A-Za-z0-9_-]+$/)
   })
 

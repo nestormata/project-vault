@@ -4,18 +4,13 @@ import {
   MachineUserDetailSchema,
   MachineUserRoleSchema,
   MachineUserSummarySchema,
-  MAX_MACHINE_USER_LIST_OFFSET,
-  type ApiKeyIssued,
-  type ApiKeyMetadata,
-  type MachineUserDetail,
-  type MachineUserSummary,
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
-import { ProjectScopeParamsSchema } from '../credentials/schema.js'
 import { PageLimitQueryShape } from '../../lib/pagination.js'
 import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
-export { ProjectScopeParamsSchema, MAX_MACHINE_USER_LIST_OFFSET }
+export { ProjectScopeParamsSchema } from '../credentials/schema.js'
+export { MAX_MACHINE_USER_LIST_OFFSET } from '@project-vault/shared'
 
 // AC-4: description cap matches CreateCredentialBodySchema's description field verbatim
 // (modules/credentials/schema.ts:39) — no named export exists there, so the literal is
@@ -154,4 +149,9 @@ export type MachineUserParams = z.infer<typeof MachineUserParamsSchema>
 export type ApiKeyParams = z.infer<typeof ApiKeyParamsSchema>
 export type PaginationQuery = z.infer<typeof PaginationQuerySchema>
 export type IssueApiKeyBody = z.infer<typeof IssueApiKeyBodySchema>
-export type { MachineUserDetail, MachineUserSummary, ApiKeyIssued, ApiKeyMetadata }
+export type {
+  MachineUserDetail,
+  MachineUserSummary,
+  ApiKeyIssued,
+  ApiKeyMetadata,
+} from '@project-vault/shared'

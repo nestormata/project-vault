@@ -11,7 +11,6 @@ import {
   sessions,
   userIdentityTokens,
   users,
-  type DataErasureRequest,
 } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
@@ -512,4 +511,4 @@ export async function buildErasureReport(
 
 // Re-exported so route-level tenant-isolation tests can assert on the concrete type without a
 // second import path.
-export type { DataErasureRequest }
+export type { DataErasureRequest } from '@project-vault/db/schema'

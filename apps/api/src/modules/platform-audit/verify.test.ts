@@ -149,7 +149,7 @@ describe.sequential('Story 9.4 AC-11/D11: verifyPlatformAuditRange', () => {
           .from(platformAuditEvents)
           .where(eq(platformAuditEvents.actionType, TEST_TAMPERED_ACTION_TYPE))
       )
-      expect(rows.length).toBe(0)
+      expect(rows).toHaveLength(0)
     } finally {
       await tryDeleteTestUser(userId)
     }

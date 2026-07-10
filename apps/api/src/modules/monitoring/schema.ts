@@ -1,8 +1,7 @@
 import { z } from 'zod/v4'
-import { ProjectScopeParamsSchema } from '../credentials/schema.js'
 import { paginatedListMetaFields } from '../../lib/api-contracts.js'
 
-export { ProjectScopeParamsSchema }
+export { ProjectScopeParamsSchema } from '../credentials/schema.js'
 
 // AC 7/17: shared page-based pagination query fields (mirrors SecurityAlertsQuerySchema's
 // convention) — used by both HealthHistoryQuerySchema and AlertListQuerySchema below.

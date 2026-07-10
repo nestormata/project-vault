@@ -38,7 +38,7 @@ export function hasPscTbd(content: string): boolean {
  * (e.g. "9.1") — both forms are checked.
  */
 export function isTrackedInDeferredWork(storyKey: string, deferredWorkContent: string): boolean {
-  const numericMatch = storyKey.match(/^(\d+)-(\d+)/)
+  const numericMatch = /^(\d+)-(\d+)/.exec(storyKey)
   if (!numericMatch) return true // can't determine; skip to avoid false positives
 
   const epicNum = numericMatch[1]
@@ -49,7 +49,7 @@ export function isTrackedInDeferredWork(storyKey: string, deferredWorkContent: s
   const dotForm = `${epicNum}.${storyNum}` // e.g. "9.1"
 
   // Extract only the "Web UI gaps" section so we don't match unrelated prose elsewhere
-  const webUiGapsMatch = deferredWorkContent.match(/###\s*Web UI gaps[\s\S]*?(?=\n###|\n##|$)/)
+  const webUiGapsMatch = /###\s*Web UI gaps[\s\S]*?(?=\n###|\n##|$)/.exec(deferredWorkContent)
   if (!webUiGapsMatch) return false
 
   const section = webUiGapsMatch[0]

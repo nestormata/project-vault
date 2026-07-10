@@ -17,7 +17,7 @@ function neutralizeFormulaPrefix(value: string): string {
 function quoteField(value: string): string {
   const neutralized = neutralizeFormulaPrefix(value)
   if (/[",\r\n]/.test(neutralized)) {
-    return `"${neutralized.replace(/"/g, '""')}"`
+    return `"${neutralized.replaceAll('"', '""')}"`
   }
   return neutralized
 }

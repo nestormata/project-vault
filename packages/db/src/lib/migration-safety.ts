@@ -13,7 +13,7 @@
 
 type Finding = { label: string; index: number }
 
-const DOLLAR_TAG_RE = /^\$[A-Za-z0-9_]*\$/
+const DOLLAR_TAG_RE = /^\$\w*\$/
 
 /** Replaces every non-newline character with a space, preserving the original length and any
  * newlines — so downstream line-number computation on the stripped text still lines up with the

@@ -10,11 +10,7 @@ import {
   monitoringAlerts,
 } from '@project-vault/db/schema'
 import { env } from '../../config/env.js'
-import {
-  assertUrlIsMonitorable,
-  redactUrlForDisplay,
-  UrlNotMonitorableError,
-} from './url-safety.js'
+import { assertUrlIsMonitorable, redactUrlForDisplay } from './url-safety.js'
 import {
   computeStatusTransition,
   episodeKeyFor,
@@ -37,7 +33,7 @@ export const PAYMENT_DEFAULT_ALERT_LEAD_DAYS = [14, 3]
 export const CERTIFICATE_DEFAULT_ALERT_LEAD_DAYS = [30, 7]
 export const DOMAIN_DEFAULT_ALERT_LEAD_DAYS = [30]
 
-export { UrlNotMonitorableError }
+export { UrlNotMonitorableError } from './url-safety.js'
 
 /**
  * AC 7: deleting a service/certificate/domain record must cancel any notifications still

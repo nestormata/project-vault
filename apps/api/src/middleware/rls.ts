@@ -16,7 +16,7 @@ function assertUuid(value: string, caller: string): void {
 }
 
 export async function setRlsOrgContext(
-  tx: { execute: (query: unknown) => Promise<unknown> | unknown },
+  tx: { execute: (query: unknown) => unknown },
   orgId: string
 ): Promise<void> {
   assertUuid(orgId, 'setRlsOrgContext')

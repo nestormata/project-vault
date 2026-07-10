@@ -6,9 +6,11 @@ export function buildSearchSubmitHandler(
   return (event: SubmitEvent) => {
     const form = event.currentTarget as HTMLFormElement
     const formData = new FormData(form)
+    const fromValue = formData.get('from')
+    const toValue = formData.get('to')
     const error = validateDateRange(
-      String(formData.get('from') ?? ''),
-      String(formData.get('to') ?? '')
+      typeof fromValue === 'string' ? fromValue : '',
+      typeof toValue === 'string' ? toValue : ''
     )
     if (error) {
       event.preventDefault()

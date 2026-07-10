@@ -15,7 +15,7 @@ export function createNotificationJobHandler(
     const notificationQueueId = job.data?.notificationQueueId
     const orgId = job.data?.orgId
     if (typeof notificationQueueId !== 'string' || typeof orgId !== 'string') {
-      throw new Error(`${jobName} job missing notificationQueueId or orgId`)
+      throw new TypeError(`${jobName} job missing notificationQueueId or orgId`)
     }
     await withJobLogging(logger, jobName, job.id ?? 'unknown', () =>
       sendFn(notificationQueueId, orgId)

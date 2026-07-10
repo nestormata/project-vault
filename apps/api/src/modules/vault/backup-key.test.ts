@@ -38,7 +38,7 @@ describe.sequential('Story 9.1 D5/AC-4: getBackupKey()', () => {
     await initVault({ kmsType: 'passphrase', passphrase: TEST_PASSPHRASE }, {})
     const backupKey = getBackupKey()
     expect(backupKey).toBeInstanceOf(Buffer)
-    expect(backupKey.length).toBe(32)
+    expect(backupKey).toHaveLength(32)
   })
 
   it('returns a fresh copy each call (mutating one does not affect the next)', async () => {

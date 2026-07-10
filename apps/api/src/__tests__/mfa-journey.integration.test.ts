@@ -147,7 +147,7 @@ describe.sequential('MFA journey (Epic 1 retro P3)', () => {
     const rows = await withOrg(graceOwner.orgId, (tx) =>
       tx.execute(sql`SELECT id FROM project_invitations WHERE project_id = ${projectId}`)
     )
-    expect(rows.length).toBe(0)
+    expect(rows).toHaveLength(0)
   })
 
   it('allows invitation creation after the full MFA login journey', async () => {

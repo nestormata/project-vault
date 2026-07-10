@@ -24,7 +24,7 @@ describe('deployment hardening configuration', () => {
     const dockerfile = readRepoFile('apps/api/Dockerfile')
     const runnerStage = dockerfile.slice(dockerfile.indexOf('AS runner'))
 
-    expect(runnerStage).toContain('apk add --no-cache postgresql16-client')
+    expect(runnerStage).toMatch(/\bapk add --no-cache\b[^\n]*\bpostgresql16-client\b/)
   })
 
   it('does not expose Postgres on every host interface', () => {
