@@ -71,7 +71,6 @@ type TestApp = Awaited<ReturnType<typeof createApp>>
 
 let app: TestApp
 let operatorCookies: Record<string, string>
-const originalRateLimitTestBypass = process.env['RATE_LIMIT_TEST_BYPASS']
 
 // Story 9.6 D1.9: parseBackupFilename()'s shape check now runs in the route handler BEFORE the
 // restore lock is ever touched — a filename that doesn't match the real backup_<timestamp>_<id>
