@@ -13,7 +13,11 @@ import {
 } from '../../lib/secure-route.js'
 import { createOrg, listOrgs } from './service.js'
 import { CreateOrgRequestSchema, CreateOrgResponseSchema, OrgListResponseSchema } from './schema.js'
-import { PLATFORM_ADMIN_ERROR_RESPONSES, beginSecureMutation } from './route-common.js'
+import {
+  PLATFORM_ADMIN_ERROR_RESPONSES,
+  beginSecureMutation,
+  sendPlatformAuditWriteFailure,
+} from './route-common.js'
 
 /**
  * Extracted to a named function (rather than inlined in the secureRoute() call, jscpd dedup —
@@ -53,6 +57,7 @@ async function handleCreateOrg(
     if (error instanceof AppError) {
       return reply.status(error.statusCode).send({ code: error.code, message: error.message })
     }
+    if (sendPlatformAuditWriteFailure(error, reply)) return reply
     throw error
   }
 }
