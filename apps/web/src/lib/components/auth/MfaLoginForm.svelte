@@ -54,11 +54,19 @@
 >
   <div class="space-y-2">
     <label class="block font-medium text-slate-900" for="mfa-totp">Authenticator code</label>
+    <!-- Story 10-1 discovered this as a real, no-mock browser bug: a literal pattern="[0-9]{6}"
+         is misparsed by Svelte's attribute compiler — "{6}" reads as a mustache expression
+         evaluating to the number 6, producing pattern="[0-9]6" in the rendered DOM (verified via
+         page.evaluate() against the real running app). That pattern requires a digit followed by
+         a literal "6", which no real 6-digit TOTP code satisfies — native HTML5 constraint
+         validation silently blocked every MFA login submission (click or Enter) for every real
+         user, with no console error, since the browser just refuses to fire the 'submit' event.
+         Wrapping in a JS expression avoids the mixed-content parse. -->
     <input
       class="w-full rounded-xl border border-slate-300 px-3 py-2"
       id="mfa-totp"
       inputmode="numeric"
-      pattern="[0-9]{6}"
+      pattern={'[0-9]{6}'}
       autocomplete="one-time-code"
       bind:value={totp}
       required

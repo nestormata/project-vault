@@ -601,6 +601,20 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
 
+    // Story 10-1: the global /register+/login IP rate limiter (auth/routes.ts) defaults to 60
+    // req/min, which a single serial E2E run's ~7-9 real registrations/logins from one
+    // container/CI-runner IP can trip (flagged as a known risk in that story's Dev Notes, since
+    // confirmed empirically). Overridable only via this env var — never hardcoded lower in
+    // production config — and set higher ONLY in docker-compose.e2e.yml's E2E-only override, the
+    // same scoping convention as VAULT_ALLOW_REMOTE_INIT above.
+    AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
+
+    // Story 10-1: /register additionally carries its OWN stricter per-route override (10/min,
+    // independent of AUTH_RATE_LIMIT_MAX above) via its route config's `rateLimit` — empirically
+    // confirmed to be the one this suite's own real registrations trip first (a single serial run
+    // needs more than 10 registrations across its 4 journeys). Same E2E-only override scoping.
+    AUTH_REGISTER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+
     SMTP_HOST: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
     SMTP_PORT: z.preprocess(
       (v) => (v === '' ? undefined : v),

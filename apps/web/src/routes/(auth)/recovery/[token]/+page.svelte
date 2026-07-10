@@ -218,11 +218,14 @@
             <label class="block font-medium text-slate-900" for="recovery-totp"
               >Authenticator code</label
             >
+            <!-- Story 10-1: pattern="[0-9]{6}" is misparsed by Svelte's attribute compiler
+                 ("{6}" reads as a mustache expression, producing pattern="[0-9]6" in the rendered
+                 DOM) — see MfaLoginForm.svelte's identical fix for the full explanation. -->
             <input
               class="w-full rounded-xl border border-slate-300 px-3 py-2"
               id="recovery-totp"
               inputmode="numeric"
-              pattern="[0-9]{6}"
+              pattern={'[0-9]{6}'}
               autocomplete="one-time-code"
               bind:value={totpCode}
             />

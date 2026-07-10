@@ -181,10 +181,76 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL,HIGH
 
+  e2e:
+    name: Playwright E2E Suite
+    runs-on: ubuntu-latest
+    # A full browser E2E suite shares the same cost/flakiness profile as this job's siblings
+    # (mutation/flaky-test-repeat/trivy-image): browser binary download, real navigation/network
+    # timing, a full docker-compose stack boot — classic sources of PR-blocking flakiness unrelated
+    # to a given PR's actual diff. Story 10-1 (AC-I5) deliberately runs this here, not as a
+    # blocking ci.yml step; ci.yml's Quality Gates job is unmodified by this story.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Story 10-1 Dev Notes: VAULT_ALLOW_REMOTE_INIT=true is applied ONLY via
+      # docker-compose.e2e.yml's override, scoped to this job — never the base docker-compose.yml
+      # (that would weaken every developer's default local bootstrap-token protection).
+      - name: Start the full stack (db, migrate, api, web)
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d
+
+      # Mirrors scripts/docker-smoke.sh's own wait-for-ready pattern before proceeding. Polls
+      # /health, not /ready: /ready reports 503 "uninitialized" until the vault is initialized,
+      # and vault init only happens inside Playwright's own global-setup.ts (the next step) — so
+      # polling /ready here, before global-setup.ts ever runs, would always time out and fail this
+      # job. /health only asserts basic API/DB liveness, which is what this step needs to confirm
+      # before handing off to global-setup.ts's own readiness+init sequence.
+      - name: Wait for API readiness
+        run: |
+          for i in $(seq 1 20); do
+            code=0
+            curl -sf http://localhost:3000/health >/dev/null || code=$?
+            [[ "$code" -eq 0 ]] && exit 0
+            sleep 3
+          done
+          echo "API never became ready" >&2
+          exit 1
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @project-vault/web exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E suite
+        # E2E_CONFIRM_DB_RESET is global-setup.ts's explicit opt-in that this run's target
+        # database is understood to be disposable (see apps/web/e2e/global-setup.ts's
+        # assertResetIsSafe() — a bare, ungated DB reset would be too dangerous to run
+        # unconditionally against whatever superuserDatabaseUrl() resolves to).
+        run: E2E_CONFIRM_DB_RESET=true pnpm --filter @project-vault/web test:e2e
+
+      - name: Upload Playwright report + traces (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: apps/web/e2e/test-results/
+          retention-days: 30
+
   notify-failure:
     name: Notify on Failure
     runs-on: ubuntu-latest
-    needs: [mutation, flaky-test-repeat, trivy-image]
+    needs: [mutation, flaky-test-repeat, trivy-image, e2e]
     if: failure()
     # secrets.* isn't allowed directly in step `if:` expressions, so surface it via
     # job-level env first (env.* is allowed there).

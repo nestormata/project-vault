@@ -1,0 +1,20 @@
+# Story 10-1: E2E-only override — adds VAULT_ALLOW_REMOTE_INIT=true to the `api` service so
+# global-setup.ts (apps/web/e2e/global-setup.ts) can call POST /api/v1/vault/init without a
+# bootstrap token, plus a raised AUTH_RATE_LIMIT_MAX (see apps/api/src/config/env.ts) so this
+# suite's real registrations/logins/MFA calls don't trip the default 60/min global auth rate
+# limiter (empirically confirmed necessary, not speculative — see this story's Dev Notes). The
+# same fastify plugin instance also covers GET /api/v1/auth/me, which every `(app)` route's
+# server-side load function calls once per navigation — across 13 specs' worth of page loads this
+# adds up well past even a few hundred/minute, hence the generous headroom below rather than a
+# number just above the story's original ~7-9-registrations estimate. Deliberately NOT merged into
+# the base docker-compose.yml's `api` service — that would silently weaken every developer's
+# default local stack's bootstrap-token/rate-limit protection (docs/runbook.md: "Never leave
+# VAULT_BOOTSTRAP_TOKEN blank in production... local-dev convenience only"). Apply explicitly:
+# `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d` (this is what
+# `make e2e` and nightly.yml's `e2e` job do).
+services:
+  api:
+    environment:
+      VAULT_ALLOW_REMOTE_INIT: 'true'
+      AUTH_RATE_LIMIT_MAX: '100000'
+      AUTH_REGISTER_RATE_LIMIT_MAX: '1000'
