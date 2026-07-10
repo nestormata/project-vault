@@ -21,6 +21,11 @@ describe('parseCredentialListFilters', () => {
     expect(parseCredentialListFilters(makeUrl('?tags=')).tags).toBeUndefined()
     expect(parseCredentialListFilters(makeUrl('?tags=%20%20')).tags).toBeUndefined()
   })
+
+  it('clamps a non-numeric or negative page param back to 1', () => {
+    expect(parseCredentialListFilters(makeUrl('?page=abc')).page).toBe(1)
+    expect(parseCredentialListFilters(makeUrl('?page=-5')).page).toBe(1)
+  })
 })
 
 describe('credentialListFilterView', () => {
