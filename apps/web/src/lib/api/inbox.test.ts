@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { getNotificationInbox } from './inbox.js'
+import {
+  dismissInboxEntry,
+  getNotificationInbox,
+  getUsersMe,
+  markAllInboxRead,
+  markInboxEntryRead,
+} from './inbox.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
 const SAMPLE_ENTRY = {
@@ -48,5 +54,64 @@ describe('getNotificationInbox', () => {
       '/api/v1/notifications/inbox?page=2&limit=5&status=unread',
       expect.objectContaining({ credentials: 'include' })
     )
+  })
+
+  it.each([
+    [jsonResponse({ message: 'nope' }, { status: 500 }), /failed to load/i],
+    [new Response('', { status: 200 }), /failed to load/i],
+  ])('rejects a non-success or empty response', async (response, expected) => {
+    await expect(getNotificationInbox(vi.fn().mockResolvedValue(response))).rejects.toThrow(
+      expected
+    )
+  })
+})
+
+describe('inbox mutations', () => {
+  it('loads the current user through the shared client', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        userId: 'user-1',
+        orgId: 'org-1',
+        orgRole: 'admin',
+        notifications: { unreadCount: 2 },
+      })
+    )
+    expect((await getUsersMe(fetchFn)).notifications.unreadCount).toBe(2)
+  })
+
+  it.each([
+    [markInboxEntryRead, ['notification-1']],
+    [markAllInboxRead, []],
+  ] as const)('accepts ordinary success and 204, but rejects failures', async (operation, args) => {
+    await expect(
+      operation(vi.fn().mockResolvedValue(new Response(null, { status: 200 })), ...args)
+    ).resolves.toBeUndefined()
+    await expect(
+      operation(vi.fn().mockResolvedValue(new Response(null, { status: 204 })), ...args)
+    ).resolves.toBeUndefined()
+    await expect(
+      operation(vi.fn().mockResolvedValue(new Response(null, { status: 500 })), ...args)
+    ).rejects.toThrow(/failed/i)
+  })
+
+  it('maps dismiss success, 204, and failure to a boolean', async () => {
+    await expect(
+      dismissInboxEntry(
+        vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+        'notification-1'
+      )
+    ).resolves.toBe(true)
+    await expect(
+      dismissInboxEntry(
+        vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+        'notification-1'
+      )
+    ).resolves.toBe(true)
+    await expect(
+      dismissInboxEntry(
+        vi.fn().mockResolvedValue(new Response(null, { status: 404 })),
+        'notification-1'
+      )
+    ).resolves.toBe(false)
   })
 })

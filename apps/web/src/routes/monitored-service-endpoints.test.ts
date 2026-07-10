@@ -138,6 +138,76 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     )
     expect(screen.getByText('No service endpoints registered yet.')).toBeTruthy()
   })
+
+  it('treats a raced 404 delete as removed while showing the API message', async () => {
+    deleteServiceEndpointMock.mockRejectedValue(
+      new ApiClientError(404, { message: 'Endpoint no longer exists' }, 'Endpoint no longer exists')
+    )
+    render(ServiceEndpointsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member',
+          endpoints: [makeEndpoint()],
+          alerts: [],
+          notFound: false,
+        },
+      },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await fireEvent.click(screen.getByRole('button', { name: /confirm delete/i }))
+    expect(await screen.findByText(/no service endpoints/i)).toBeTruthy()
+  })
+
+  it.each([
+    [new Error('delete exploded'), /delete exploded/i],
+    [{ reason: 'unknown' }, /could not delete endpoint/i],
+  ])('keeps the row and maps delete failures', async (failure, expected) => {
+    deleteServiceEndpointMock.mockRejectedValue(failure)
+    render(ServiceEndpointsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member',
+          endpoints: [makeEndpoint()],
+          alerts: [],
+          notFound: false,
+        },
+      },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await fireEvent.click(screen.getByRole('button', { name: /confirm delete/i }))
+    expect((await screen.findByRole('alert')).textContent).toMatch(expected)
+    expect(screen.getByText('API health')).toBeTruthy()
+  })
+
+  it('renders project-not-found and all endpoint status/date variants', () => {
+    render(ServiceEndpointsListPage, {
+      props: {
+        data: { projectId, orgRole: 'member', endpoints: [], alerts: [], notFound: true },
+      },
+    })
+    expect(screen.getByText(/project.*not found/i)).toBeTruthy()
+    cleanup()
+    render(ServiceEndpointsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'viewer',
+          endpoints: [
+            makeEndpoint({ id: 'e-1', status: 'degraded', lastCheckedAt: '2026-07-01T00:00:00Z' }),
+            makeEndpoint({ id: 'e-2', status: 'down' }),
+            makeEndpoint({ id: 'e-3', status: 'unknown' }),
+          ],
+          alerts: [],
+          notFound: false,
+        },
+      },
+    })
+    expect(screen.getByText('degraded')).toBeTruthy()
+    expect(screen.getByText('down')).toBeTruthy()
+    expect(screen.getByText('unknown')).toBeTruthy()
+  })
 })
 
 describe('/projects/:projectId/service-endpoints/new (AC-E3)', () => {

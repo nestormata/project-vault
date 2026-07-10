@@ -4,12 +4,22 @@ const getNotificationInboxMock = vi.hoisted(() => vi.fn())
 const listOrgSecurityAlertsMock = vi.hoisted(() => vi.fn())
 const dismissSecurityAlertMock = vi.hoisted(() => vi.fn())
 const deactivateOrgUserMock = vi.hoisted(() => vi.fn())
+const markInboxEntryReadMock = vi.hoisted(() => vi.fn())
+const markAllInboxReadMock = vi.hoisted(() => vi.fn())
+const dismissInboxEntryMock = vi.hoisted(() => vi.fn())
+const extendKeyDormancyMock = vi.hoisted(() => vi.fn())
+const revokeApiKeyMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/inbox.js', () => ({
   getNotificationInbox: getNotificationInboxMock,
-  markInboxEntryRead: vi.fn(),
-  markAllInboxRead: vi.fn(),
-  dismissInboxEntry: vi.fn(),
+  markInboxEntryRead: markInboxEntryReadMock,
+  markAllInboxRead: markAllInboxReadMock,
+  dismissInboxEntry: dismissInboxEntryMock,
+}))
+
+vi.mock('$lib/api/machine-users.js', () => ({
+  extendKeyDormancy: extendKeyDormancyMock,
+  revokeApiKey: revokeApiKeyMock,
 }))
 
 vi.mock('$lib/api/security-alerts.js', () => ({
@@ -50,6 +60,15 @@ function makeEvent(searchParams: Record<string, string> = {}) {
   const url = new URL('http://localhost/notifications')
   for (const [key, value] of Object.entries(searchParams)) url.searchParams.set(key, value)
   return { fetch: vi.fn(), url, locals: {} } as unknown as Parameters<typeof load>[0]
+}
+
+function actionEvent(fields: Record<string, string> = {}) {
+  const formData = new FormData()
+  for (const [key, value] of Object.entries(fields)) formData.set(key, value)
+  return {
+    request: { formData: async () => formData },
+    fetch: vi.fn(),
+  } as unknown as Parameters<(typeof actions)['markRead']>[0]
 }
 
 const dormantAlert = {
@@ -112,6 +131,17 @@ describe('/notifications +page.server.ts', () => {
     expect(result.notifications).toEqual([])
     expect(result.page).toBe(2)
   })
+
+  it('uses API pagination/status values and maps a non-403 inbox failure to a 500', async () => {
+    getNotificationInboxMock.mockResolvedValueOnce({
+      data: { items: [SAMPLE_ENTRY], total: 44, page: 3, limit: 20, hasNext: true },
+    })
+    const result = await load(makeEvent({ page: '9', status: 'read' }))
+    expect(result).toMatchObject({ total: 44, page: 3, hasNext: true, status: 'read' })
+
+    getNotificationInboxMock.mockRejectedValueOnce(new Error('offline'))
+    await expect(load(makeEvent())).rejects.toMatchObject({ status: 500 })
+  })
 })
 
 // Story 8.6 AC-4: dormancy alerts (`machine_key.dormant` security_alerts rows) surfaced alongside
@@ -164,6 +194,12 @@ describe('notifications +page.server.ts (AC-4: dormancy alerts in existing inbox
     expect(result.dormancyAlerts).toEqual([])
   })
 
+  it('propagates non-403 dormancy failures', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
+    listOrgSecurityAlertsMock.mockRejectedValueOnce(new Error('offline'))
+    await expect(load(makeEvent())).rejects.toThrow('offline')
+  })
+
   it('still returns the personal inbox notifications unchanged alongside dormancyAlerts', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
     getNotificationInboxMock.mockResolvedValueOnce({
@@ -181,6 +217,89 @@ describe('notifications +page.server.ts (AC-4: dormancy alerts in existing inbox
 
     expect(result.notifications).toEqual([{ id: 'n-1', alertType: 'credential.expiry' }])
     expect(result.dormancyAlerts).toEqual([])
+  })
+})
+
+describe('notifications form actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it.each([
+    ['markRead', markInboxEntryReadMock, { id: 'notification-1' }],
+    ['markAllRead', markAllInboxReadMock, {}],
+  ] as const)('%s returns success and maps API failure to 422', async (name, mock, fields) => {
+    mock.mockResolvedValueOnce({})
+    expect(await actions[name](actionEvent(fields))).toEqual({ success: true })
+    mock.mockRejectedValueOnce(new Error('offline'))
+    expect(await actions[name](actionEvent(fields))).toMatchObject({ status: 422 })
+  })
+
+  it('dismiss returns success or not-found from the API boolean', async () => {
+    dismissInboxEntryMock.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    expect(await actions.dismiss(actionEvent({ id: 'notification-1' }))).toEqual({ success: true })
+    expect(await actions.dismiss(actionEvent({ id: 'missing' }))).toMatchObject({ status: 404 })
+  })
+
+  it('dismissDormancyAlert validates, succeeds, and maps failure', async () => {
+    expect(
+      await actions.dismissDormancyAlert(actionEvent({ alertId: 'alert-1', reason: '   ' }))
+    ).toMatchObject({ status: 422 })
+    dismissSecurityAlertMock.mockResolvedValueOnce({})
+    expect(
+      await actions.dismissDormancyAlert(actionEvent({ alertId: 'alert-1', reason: ' resolved ' }))
+    ).toEqual({ success: true })
+    expect(dismissSecurityAlertMock).toHaveBeenCalledWith(expect.anything(), 'alert-1', 'resolved')
+    dismissSecurityAlertMock.mockRejectedValueOnce(new Error('offline'))
+    expect(
+      await actions.dismissDormancyAlert(actionEvent({ alertId: 'alert-1', reason: 'resolved' }))
+    ).toMatchObject({ status: 422 })
+  })
+
+  it.each(['0', '1.5', '366', 'invalid'])(
+    'extendDormancy rejects the invalid days boundary %s',
+    async (days) => {
+      expect(
+        await actions.extendDormancy(
+          actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days })
+        )
+      ).toMatchObject({ status: 422 })
+      expect(extendKeyDormancyMock).not.toHaveBeenCalled()
+    }
+  )
+
+  it('extendDormancy succeeds and maps API failure', async () => {
+    extendKeyDormancyMock.mockResolvedValueOnce({})
+    expect(
+      await actions.extendDormancy(
+        actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days: '365' })
+      )
+    ).toEqual({ success: true })
+    expect(extendKeyDormancyMock).toHaveBeenCalledWith(expect.anything(), 'machine-1', 'key-1', 365)
+    extendKeyDormancyMock.mockRejectedValueOnce(new Error('offline'))
+    expect(
+      await actions.extendDormancy(
+        actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days: '1' })
+      )
+    ).toMatchObject({ status: 422 })
+  })
+
+  it('revokeDormantKey succeeds and maps API failure', async () => {
+    revokeApiKeyMock.mockResolvedValueOnce({})
+    expect(
+      await actions.revokeDormantKey(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1' }))
+    ).toEqual({ success: true })
+    revokeApiKeyMock.mockRejectedValueOnce(new Error('offline'))
+    expect(
+      await actions.revokeDormantKey(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1' }))
+    ).toMatchObject({ status: 422 })
+  })
+
+  it('deactivateDormantUser maps unknown failures to 422', async () => {
+    deactivateOrgUserMock.mockRejectedValueOnce(new Error('offline'))
+    expect(await actions.deactivateDormantUser(actionEvent({ userId: 'user-1' }))).toMatchObject({
+      status: 422,
+    })
   })
 })
 

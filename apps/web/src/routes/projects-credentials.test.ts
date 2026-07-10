@@ -51,10 +51,10 @@ function makeCredential(overrides: Partial<CredentialSummary> = {}): CredentialS
     description: null,
     tags: overrides.tags ?? ['api'],
     status: overrides.status ?? 'expiring',
-    expiresAt: overrides.expiresAt ?? '2026-07-15T00:00:00.000Z',
+    expiresAt: overrides.expiresAt === undefined ? '2026-07-15T00:00:00.000Z' : overrides.expiresAt,
     rotationSchedule: null,
     currentVersionNumber: 1,
-    hasDependencies: false,
+    hasDependencies: overrides.hasDependencies ?? false,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T00:00:00.000Z',
   }
@@ -181,6 +181,63 @@ describe('project credential routes', () => {
 
     expect(screen.getByText('Add your first credential to get started.')).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Clear' })).toBeNull()
+  })
+
+  it('shows the read-only empty copy to viewers and the access-safe not-found banner', () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'viewer' as const,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          filters: { q: '', status: '', tags: '', page: 1 },
+        },
+      },
+    })
+    expect(screen.getByText(/no credentials have been added/i)).toBeTruthy()
+    cleanup()
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'admin' as const,
+          notFound: true,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          filters: { q: '', status: '', tags: '', page: 1 },
+        },
+      },
+    })
+    expect(screen.getByRole('alert').textContent).toMatch(/not found or you do not have access/i)
+    expect(screen.queryByRole('button', { name: /apply filters/i })).toBeNull()
+  })
+
+  it('renders dependency and no-tag/no-expiry table branches', () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'admin' as const,
+          credentials: {
+            items: [
+              makeCredential({
+                tags: [],
+                expiresAt: null,
+                hasDependencies: true,
+              }),
+            ],
+            total: 1,
+            page: 1,
+            limit: 20,
+            hasNext: false,
+          },
+          filters: { q: '', status: '', tags: '', page: 1 },
+        },
+      },
+    })
+    expect(screen.getByText('Yes')).toBeTruthy()
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByRole('link', { name: /add credential/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /^import$/i })).toBeTruthy()
   })
 
   it('hides create and import actions for viewers', () => {
@@ -413,6 +470,153 @@ describe('project credential routes', () => {
     await waitFor(() => expect(confirmCredentialImportMock).toHaveBeenCalled())
     expect(await screen.findByText(/Import complete/i)).toBeTruthy()
     expect(screen.getByText(/Imported: 2/i)).toBeTruthy()
+  })
+
+  it.each([
+    [
+      new ApiClientError(413, { code: 'import_too_large', message: 'too large' }, 'too large'),
+      /maximum size is 1 mb/i,
+    ],
+    [
+      new ApiClientError(422, { code: 'invalid_import', message: 'Invalid file' }, 'Invalid file'),
+      /invalid file/i,
+    ],
+    [new Error('preview offline'), /preview offline/i],
+    [{ reason: 'unknown' }, /import preview failed/i],
+  ])('maps import-preview failures and clears the file control', async (failure, expected) => {
+    previewCredentialImportMock.mockRejectedValue(failure)
+    render(ImportCredentialsPage, {
+      props: { data: { projectId, orgRole: 'admin' as const, canImport: true } },
+    })
+    const file = new File(['KEY=value'], 'secrets.env', { type: 'text/plain' })
+    const input = screen.getByLabelText(/select .env or json file/i) as HTMLInputElement
+    await fireEvent.change(input, { target: { files: [file] } })
+    expect((await screen.findByRole('alert')).textContent).toMatch(expected)
+    expect(input.value).toBe('')
+  })
+
+  it('returns from preview to upload without confirming', async () => {
+    previewCredentialImportMock.mockResolvedValue({
+      importId: 'import-1',
+      expiresAt: '2026-07-10T12:00:00Z',
+      itemCount: 1,
+      parsed: [
+        {
+          name: 'KEY',
+          value: '[REDACTED]',
+          conflictsWith: null,
+          conflictName: null,
+          suggestedAction: 'create_new',
+        },
+      ],
+      warnings: [],
+    })
+    render(ImportCredentialsPage, {
+      props: { data: { projectId, orgRole: 'admin' as const, canImport: true } },
+    })
+    const file = new File(['KEY=value'], 'secrets.env', { type: 'text/plain' })
+    await fireEvent.change(screen.getByLabelText(/select .env or json file/i), {
+      target: { files: [file] },
+    })
+    await fireEvent.click(await screen.findByRole('button', { name: /upload different file/i }))
+    expect(screen.getByLabelText(/select .env or json file/i)).toBeTruthy()
+    expect(confirmCredentialImportMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      new ApiClientError(410, { code: 'import_expired', message: 'expired' }, 'expired'),
+      /preview expired/i,
+      true,
+    ],
+    [
+      new ApiClientError(404, { code: 'import_not_found', message: 'missing' }, 'missing'),
+      /preview expired/i,
+      true,
+    ],
+    [
+      new ApiClientError(
+        422,
+        { code: 'invalid_import', message: 'Invalid import' },
+        'Invalid import'
+      ),
+      /invalid import/i,
+      false,
+    ],
+    [new Error('confirm offline'), /confirm offline/i, false],
+    [{ reason: 'unknown' }, /import confirm failed/i, false],
+  ])('maps import-confirm failures', async (failure, expected, returnsToUpload) => {
+    previewCredentialImportMock.mockResolvedValue({
+      importId: 'import-1',
+      expiresAt: '2026-07-10T12:00:00Z',
+      itemCount: 1,
+      parsed: [
+        {
+          name: 'KEY',
+          value: '[REDACTED]',
+          conflictsWith: null,
+          conflictName: null,
+          suggestedAction: 'create_new',
+        },
+      ],
+      warnings: [],
+    })
+    confirmCredentialImportMock.mockRejectedValue(failure)
+    render(ImportCredentialsPage, {
+      props: { data: { projectId, orgRole: 'admin' as const, canImport: true } },
+    })
+    const file = new File(['KEY=value'], 'secrets.env', { type: 'text/plain' })
+    await fireEvent.change(screen.getByLabelText(/select .env or json file/i), {
+      target: { files: [file] },
+    })
+    await fireEvent.click(await screen.findByRole('button', { name: /confirm import/i }))
+    expect((await screen.findByRole('alert')).textContent).toMatch(expected)
+    if (returnsToUpload) {
+      expect(screen.getByLabelText(/select .env or json file/i)).toBeTruthy()
+    } else {
+      expect(screen.getByRole('button', { name: /confirm import/i })).toBeTruthy()
+    }
+  })
+
+  it('validates create fields, maps errors, and preserves optional payload branches', async () => {
+    createCredentialMock.mockRejectedValueOnce(
+      new ApiClientError(
+        422,
+        { message: 'Invalid', details: { name: ['Name already exists'] } },
+        'Invalid'
+      )
+    )
+    render(CreateCredentialPage, {
+      props: { data: { projectId, orgRole: 'member' as const } },
+    })
+    const createButton = screen.getByRole('button', { name: /create credential/i })
+    await fireEvent.submit(createButton.closest('form') as HTMLFormElement)
+    expect(await screen.findByText(/name is required/i)).toBeTruthy()
+    expect(screen.getByText(/credential value cannot be empty/i)).toBeTruthy()
+    expect(createCredentialMock).not.toHaveBeenCalled()
+
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: '  API Key  ' } })
+    await fireEvent.input(screen.getByLabelText('Value'), { target: { value: 'secret' } })
+    await fireEvent.input(screen.getByLabelText('Description'), {
+      target: { value: '  Production key  ' },
+    })
+    await fireEvent.input(screen.getByLabelText('Tags'), { target: { value: 'prod, api' } })
+    await fireEvent.submit(createButton.closest('form') as HTMLFormElement)
+    expect(createCredentialMock).toHaveBeenCalledWith(expect.anything(), projectId, {
+      name: 'API Key',
+      value: 'secret',
+      description: 'Production key',
+      tags: ['prod', 'api'],
+    })
+    expect(await screen.findByText(/name already exists/i)).toBeTruthy()
+  })
+
+  it('renders create access notice for viewers', () => {
+    render(CreateCredentialPage, {
+      props: { data: { projectId, orgRole: 'viewer' as const } },
+    })
+    expect(screen.getByText(/create not available/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /create credential/i })).toBeNull()
   })
 
   function baseCredentialDetailData(overrides: Record<string, unknown> = {}) {

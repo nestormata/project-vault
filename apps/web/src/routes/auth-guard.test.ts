@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { resolveAuthContext } from '$lib/server/auth-guard.js'
+import { isAuthPath, isProtectedAppPath, resolveAuthContext } from '$lib/server/auth-guard.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
 const authUser = {
@@ -122,9 +122,81 @@ describe('server auth guard', () => {
       credentials: 'include',
     })
   })
-})
 
-import { isProtectedAppPath } from '$lib/server/auth-guard.js'
+  it('treats a successful but empty auth response and non-401 failures as unauthenticated', async () => {
+    await expect(
+      resolveAuthContext({
+        fetchFn: vi.fn().mockResolvedValue(jsonResponse({})),
+        cookieHeader: '',
+      })
+    ).resolves.toEqual({ status: 'unauthenticated' })
+    await expect(
+      resolveAuthContext({
+        fetchFn: vi.fn().mockResolvedValue(jsonResponse({}, { status: 503 })),
+        cookieHeader: 'refresh-token=refresh',
+      })
+    ).resolves.toEqual({ status: 'unauthenticated' })
+  })
+
+  it('maps refresh network failure to session-expired', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+      .mockRejectedValueOnce(new Error('offline'))
+    await expect(
+      resolveAuthContext({ fetchFn, cookieHeader: 'refresh-token=refresh' })
+    ).resolves.toEqual({ status: 'unauthenticated', reason: 'session-expired' })
+  })
+
+  it.each([
+    ['retry network failure', new Error('offline')],
+    ['retry non-success', jsonResponse({}, { status: 401 })],
+    ['retry empty body', jsonResponse({})],
+  ])('maps %s after a successful refresh to session-expired', async (_label, retryResult) => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ data: {} }))
+    if (retryResult instanceof Error) fetchFn.mockRejectedValueOnce(retryResult)
+    else fetchFn.mockResolvedValueOnce(retryResult)
+
+    await expect(
+      resolveAuthContext({
+        fetchFn,
+        cookieHeader: 'access-token=old; refresh-token=refresh',
+      })
+    ).resolves.toEqual({ status: 'unauthenticated', reason: 'session-expired' })
+  })
+
+  it('merges replaced and new cookies while ignoring malformed Set-Cookie fragments', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response('{}', {
+          status: 200,
+          headers: {
+            'set-cookie':
+              'access-token=new=with-equals; HttpOnly, session-extra=value; Path=/, malformed',
+          },
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ data: authUser }))
+
+    await expect(
+      resolveAuthContext({
+        fetchFn,
+        cookieHeader: 'access-token=old; refresh-token=refresh; malformed',
+      })
+    ).resolves.toEqual({ status: 'authenticated', user: authUser })
+    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/auth/me', {
+      credentials: 'include',
+      headers: {
+        Cookie: 'access-token=new=with-equals; refresh-token=refresh; session-extra=value',
+      },
+    })
+  })
+})
 
 describe('isProtectedAppPath', () => {
   it('AC-O1: /platform and its sub-paths are protected (sealed-vault redirect)', () => {
@@ -139,6 +211,22 @@ describe('isProtectedAppPath', () => {
     expect(isProtectedAppPath('/dashboard')).toBe(true)
     expect(isProtectedAppPath('/settings')).toBe(true)
     expect(isProtectedAppPath('/settings/audit')).toBe(true)
+  })
+
+  it('covers every protected prefix and rejects lookalike/public paths', () => {
+    for (const prefix of ['/projects', '/credentials', '/alerts', '/health']) {
+      expect(isProtectedAppPath(prefix)).toBe(true)
+      expect(isProtectedAppPath(`${prefix}/child`)).toBe(true)
+    }
+    expect(isProtectedAppPath('/project')).toBe(false)
+    expect(isProtectedAppPath('/login')).toBe(false)
+  })
+
+  it('recognizes only login and registration as auth paths', () => {
+    expect(isAuthPath('/login')).toBe(true)
+    expect(isAuthPath('/register')).toBe(true)
+    expect(isAuthPath('/login/help')).toBe(false)
+    expect(isAuthPath('/dashboard')).toBe(false)
   })
 })
 
