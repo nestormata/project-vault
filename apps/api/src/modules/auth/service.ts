@@ -15,7 +15,7 @@ import {
   users,
   type ProjectInvitation,
 } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, trimHyphens } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
@@ -111,16 +111,6 @@ export type SessionSummary = {
 export type LoginSessionUser = {
   id: string
   identityTokenId: string | null
-}
-
-// Trims leading/trailing `-` without a regex — Sonar (typescript:S8786) flags the
-// `/^-+|-+$/g` / `/-+$/g` alternatives as superlinear-backtracking risk.
-function trimHyphens(value: string): string {
-  let start = 0
-  let end = value.length
-  while (start < end && value[start] === '-') start++
-  while (end > start && value[end - 1] === '-') end--
-  return value.slice(start, end)
 }
 
 export function slugify(orgName: string): string {

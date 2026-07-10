@@ -1,8 +1,9 @@
-import type {
-  ProjectArchiveState,
-  ProjectDashboard,
-  ProjectDetail,
-  ProjectSummary,
+import {
+  trimHyphens,
+  type ProjectArchiveState,
+  type ProjectDashboard,
+  type ProjectDetail,
+  type ProjectSummary,
 } from '@project-vault/shared'
 import { apiFetch } from './client.js'
 
@@ -27,16 +28,6 @@ export type UpdateProjectResponse = {
 
 function jsonMutation(method: 'POST' | 'PATCH', body: unknown): RequestInit {
   return { method, body: JSON.stringify(body) }
-}
-
-// Trims leading/trailing `-` without a regex — Sonar (typescript:S8786) flags the
-// `/^-+|-+$/g` / `/-+$/g` alternatives as superlinear-backtracking risk.
-function trimHyphens(value: string): string {
-  let start = 0
-  let end = value.length
-  while (start < end && value[start] === '-') start++
-  while (end > start && value[end - 1] === '-') end--
-  return value.slice(start, end)
 }
 
 export function suggestProjectSlug(name: string): string {

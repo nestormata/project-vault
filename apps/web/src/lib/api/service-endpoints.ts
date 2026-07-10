@@ -160,8 +160,7 @@ export function getHealthHistory(
   const params = new URLSearchParams()
   if (query.page !== undefined) params.set('page', String(query.page))
   if (query.limit !== undefined) params.set('limit', String(query.limit))
-  const serialized = params.toString()
-  const querySuffix = serialized ? `?${serialized}` : ''
+  const querySuffix = params.size > 0 ? `?${params.toString()}` : ''
   return apiFetch<HealthHistoryResponse>(
     fetchFn,
     `${serviceEndpointUrl(projectId, serviceEndpointId)}/health-history${querySuffix}`
