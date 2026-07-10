@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { withOrg } from '@project-vault/db'
+import { getDb, type Tx, withOrg } from '@project-vault/db'
+import { sql } from 'drizzle-orm'
 import { withTestOrg, createTestUser, deleteTestUser } from '@project-vault/db/test-helpers'
 import {
   getPreferences,
@@ -291,6 +292,118 @@ describe('notification preferences service', () => {
           frequency: 'immediate',
           minSeverity: 'warning',
         })
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('serializes patchPreferences writes per org/user to avoid none-vs-channel races', async () => {
+    const userId = await createTestUser('prefs-patch-serialized')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        let releaseLock: (() => void) | undefined
+        const lockHeld = new Promise<void>((resolve) => {
+          void getDb().transaction(async (tx) => {
+            await tx.execute(
+              sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+                         set_config('app.current_user_id', ${userId}, true)`
+            )
+            await (tx as Tx).execute(
+              sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}), hashtext(${userId}))`
+            )
+            resolve()
+            await new Promise<void>((unlock) => {
+              releaseLock = unlock
+            })
+          })
+        })
+
+        await lockHeld
+
+        let finished = false
+        const patchPromise = getDb().transaction(async (tx) => {
+          await tx.execute(
+            sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+                       set_config('app.current_user_id', ${userId}, true)`
+          )
+          await patchPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: MFA_RECOVERY_ALERT,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx as Tx
+          )
+          finished = true
+        })
+
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        expect(finished).toBe(false)
+
+        releaseLock?.()
+        await patchPromise
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('serializes putPreferences writes per org/user to avoid replace races', async () => {
+    const userId = await createTestUser('prefs-put-serialized')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        let releaseLock: (() => void) | undefined
+        const lockHeld = new Promise<void>((resolve) => {
+          void getDb().transaction(async (tx) => {
+            await tx.execute(
+              sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+                         set_config('app.current_user_id', ${userId}, true)`
+            )
+            await (tx as Tx).execute(
+              sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}), hashtext(${userId}))`
+            )
+            resolve()
+            await new Promise<void>((unlock) => {
+              releaseLock = unlock
+            })
+          })
+        })
+
+        await lockHeld
+
+        let finished = false
+        const putPromise = getDb().transaction(async (tx) => {
+          await tx.execute(
+            sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+                       set_config('app.current_user_id', ${userId}, true)`
+          )
+          await putPreferences(
+            orgId,
+            userId,
+            [
+              {
+                alertType: MFA_RECOVERY_ALERT,
+                channel: 'none',
+                frequency: 'immediate',
+                minSeverity: 'warning',
+              },
+            ],
+            tx as Tx
+          )
+          finished = true
+        })
+
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        expect(finished).toBe(false)
+
+        releaseLock?.()
+        await putPromise
       })
     } finally {
       await deleteTestUser(userId)

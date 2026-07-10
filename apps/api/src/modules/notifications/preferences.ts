@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne } from 'drizzle-orm'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { notificationPreferences } from '@project-vault/db/schema'
 import {
@@ -63,6 +63,10 @@ function toPreferenceOutput(
     frequency: r.frequency as NotificationFrequency,
     minSeverity: r.minSeverity as NotificationSeverity,
   }))
+}
+
+async function lockPreferenceWriteScope(orgId: string, userId: string, tx: Tx): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}), hashtext(${userId}))`)
 }
 
 async function upsertPreference(
@@ -149,6 +153,7 @@ export async function putPreferences(
   items: PreferenceInput[],
   tx: Tx
 ): Promise<PreferenceOutput[]> {
+  await lockPreferenceWriteScope(orgId, userId, tx)
   await tx
     .delete(notificationPreferences)
     .where(
@@ -177,6 +182,7 @@ export async function patchPreferences(
   items: PreferenceInput[],
   tx: Tx
 ): Promise<PreferenceOutput[]> {
+  await lockPreferenceWriteScope(orgId, userId, tx)
   for (const item of items) {
     if (item.channel === 'none') {
       await tx
