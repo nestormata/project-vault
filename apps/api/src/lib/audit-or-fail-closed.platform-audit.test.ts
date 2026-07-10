@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -138,6 +139,50 @@ describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailCl
     } finally {
       await loadInitialVaultState()
       await unsealVault({ passphrase: TEST_PASSPHRASE })
+      await tryDeleteTestUser(userId)
+    }
+  })
+
+  it('rejects a constraint violation during active maintenance mode without queuing it', async () => {
+    const userId = await createTestUser('or-fail-closed-active-constraint')
+    try {
+      await getDb().transaction((tx) => activateMaintenanceMode(tx, { reason: 'r', userId }))
+
+      await expect(
+        getDb().transaction((tx) =>
+          writePlatformAuditEntryOrFailClosed(tx, {
+            operatorId: randomUUID(),
+            actionType: SETTINGS_UPDATED,
+            payload: {},
+          })
+        )
+      ).rejects.toBeInstanceOf(SameTransactionPlatformAuditWriteError)
+
+      const pending = await getDb().select().from(platformAuditPendingEntries)
+      expect(pending).toHaveLength(0)
+    } finally {
+      await tryDeleteTestUser(userId)
+    }
+  })
+
+  it('wraps a forbidden-key assertion during active maintenance mode without queuing it', async () => {
+    const userId = await createTestUser('or-fail-closed-active-forbidden-key')
+    try {
+      await getDb().transaction((tx) => activateMaintenanceMode(tx, { reason: 'r', userId }))
+
+      await expect(
+        getDb().transaction((tx) =>
+          writePlatformAuditEntryOrFailClosed(tx, {
+            operatorId: userId,
+            actionType: SETTINGS_UPDATED,
+            payload: { password: 'secret' },
+          })
+        )
+      ).rejects.toBeInstanceOf(SameTransactionPlatformAuditWriteError)
+
+      const pending = await getDb().select().from(platformAuditPendingEntries)
+      expect(pending).toHaveLength(0)
+    } finally {
       await tryDeleteTestUser(userId)
     }
   })

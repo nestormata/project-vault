@@ -17,7 +17,40 @@ import {
   drainPendingEntries,
   queuePendingEntry,
 } from '../modules/platform-audit/maintenance-mode.js'
+import { VaultSealedError } from '../modules/vault/key-service.js'
 import { SameTransactionAuditWriteError } from './secure-route.js'
+
+// Story 9.8 AC-T1: only these database/socket failures may use the maintenance bypass.
+const PLATFORM_AUDIT_STORAGE_SQLSTATE_CLASSES = ['08', '53'] as const
+const PLATFORM_AUDIT_STORAGE_SQLSTATES = new Set(['57P01', '57P02', '57P03'])
+const PLATFORM_AUDIT_STORAGE_SOCKET_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'EPIPE',
+])
+
+function errorCode(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const code = (value as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
+}
+
+export function isPlatformAuditStorageUnavailableError(error: unknown): boolean {
+  if (error instanceof VaultSealedError) return true
+
+  const cause =
+    error && typeof error === 'object' ? (error as { cause?: unknown }).cause : undefined
+  return [errorCode(cause), errorCode(error)].some(
+    (code) =>
+      code !== undefined &&
+      (PLATFORM_AUDIT_STORAGE_SQLSTATE_CLASSES.some((prefix) => code.startsWith(prefix)) ||
+        PLATFORM_AUDIT_STORAGE_SQLSTATES.has(code) ||
+        PLATFORM_AUDIT_STORAGE_SOCKET_CODES.has(code))
+  )
+}
 
 /** Shared by every `write*AuditEntryOrFailClosed` wrapper below: any audit-write error is
  * rewrapped as `SameTransactionAuditWriteError` so SecureRoute (or a job's own transaction) rolls
@@ -162,7 +195,7 @@ export async function writePlatformAuditEntryOrFailClosed(
       writePlatformAuditEntry(savepointTx as Tx, resolvedFields)
     )
   } catch (error) {
-    if (await isMaintenanceModeActive(tx)) {
+    if (isPlatformAuditStorageUnavailableError(error) && (await isMaintenanceModeActive(tx))) {
       // Code review fix: `writePlatformAuditEntry` only redacts the payload internally, right
       // before its own (now-aborted) INSERT — the caller here still only has the original,
       // unredacted `resolvedFields.payload`. Without re-redacting before queuing, any write

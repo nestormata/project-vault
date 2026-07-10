@@ -78,11 +78,12 @@ describe.sequential('Story 9.4 AC-9 through AC-16: platform-audit routes', () =>
     await resetMaintenanceState()
   })
 
-  it('AC-10: 401 with no auth header on all three routes', async () => {
+  it('AC-10/Story 9.8 AC-M9: 401 with no auth header on every platform-audit route', async () => {
     for (const res of [
       await getEvents(suite.app, {}),
       await getVerify(suite.app, {}, '?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z'),
       await postMaintenance(suite.app, {}, { reason: 'x' }),
+      await suite.app.inject({ method: 'GET', url: MAINTENANCE_URL }),
     ]) {
       expect(res.statusCode).toBe(401)
       expect(res.json()).toMatchObject({ code: 'access_token_missing' })
@@ -365,6 +366,40 @@ describe.sequential('Story 9.4 AC-9 through AC-16: platform-audit routes', () =>
     })
     expect(res.statusCode).toBe(403)
     expect(res.json()).toMatchObject({ code: 'platform_operator_required' })
+  })
+
+  it('Story 9.8 AC-M7: GET /platform/maintenance-mode allows an unenrolled platform operator', async () => {
+    const registered = await registerAndLoginViaApi(suite.app, {
+      email: `platform-audit-mm-no-mfa-${randomUUID()}@example.com`,
+      password: PASSWORD,
+      orgName: `Platform Audit MM No MFA ${randomUUID()}`,
+    })
+    await getDb().transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ isPlatformOperator: false })
+        .where(eq(users.isPlatformOperator, true))
+      await tx
+        .update(users)
+        .set({ isPlatformOperator: true })
+        .where(eq(users.id, registered.userId))
+    })
+    await withOrg(registered.orgId, (tx) =>
+      tx
+        .update(orgMemberships)
+        .set({ gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000) })
+        .where(eq(orgMemberships.userId, registered.userId))
+    )
+
+    const res = await suite.app.inject({
+      method: 'GET',
+      url: MAINTENANCE_URL,
+      headers: { cookie: cookieHeader(registered.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      data: { active: false, pendingEntriesCount: expect.any(Number) },
+    })
   })
 
   it('D2.4: GET /platform/maintenance-mode returns current status for a platform operator', async () => {

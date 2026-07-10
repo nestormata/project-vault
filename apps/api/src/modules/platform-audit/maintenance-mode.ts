@@ -52,7 +52,7 @@ function rowToStatus(
 }
 
 /** D2.4: reads the current maintenance-mode state plus the pending-entries queue count.
- * Read-only — no MFA requirement (matches `GET /audit/events`'s precedent). */
+ * Read-only status endpoint with no mutation, so D2.4 intentionally does not require MFA. */
 export async function getMaintenanceModeStatus(tx: Tx): Promise<MaintenanceModeStatus> {
   const [row] = await tx.select().from(platformAuditMaintenanceState).limit(1)
   const [countRow] = await tx

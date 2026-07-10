@@ -60,6 +60,47 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  it('Story 9.8 AC-M6: GET returns 403 mfa_required for an unenrolled platform operator', async () => {
+    const registered = await registerAndLoginViaApi(suite.app, {
+      email: `orgs-no-mfa-${randomUUID()}@example.com`,
+      password: PASSWORD,
+      orgName: `Orgs No MFA ${randomUUID()}`,
+    })
+    await getDb().transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ isPlatformOperator: false })
+        .where(eq(users.isPlatformOperator, true))
+      await tx
+        .update(users)
+        .set({ isPlatformOperator: true })
+        .where(eq(users.id, registered.userId))
+    })
+    await withOrg(registered.orgId, (tx) =>
+      tx
+        .update(orgMemberships)
+        .set({ gracePeriodExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000) })
+        .where(eq(orgMemberships.userId, registered.userId))
+    )
+
+    const res = await listOrgsReq(suite.app, registered.cookies)
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'mfa_required' })
+  })
+
+  it('Story 9.8 AC-M9: GET returns platform_operator_required for an enrolled non-operator', async () => {
+    const { enrollUserWithMfa } = await import('../../__tests__/helpers/mfa-enroll-test-helpers.js')
+    const nonOperator = await enrollUserWithMfa(suite.app, {
+      emailPrefix: 'orgs-non-operator',
+      orgNamePrefix: 'Orgs Non Operator',
+      password: PASSWORD,
+    })
+
+    const res = await listOrgsReq(suite.app, nonOperator.cookies)
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'platform_operator_required' })
+  })
+
   it('AC-8: creates an org for an existing user (multi-org membership)', async () => {
     const operator = await registerPlatformOperator(suite.app, {
       emailPrefix: 'orgs-existing-op',
