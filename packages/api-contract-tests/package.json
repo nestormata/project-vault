@@ -23,7 +23,7 @@
     "eslint": "^10.6.0",
     "otpauth": "^9.5.1",
     "tsx": "4.23.0",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   }
 }
