@@ -300,3 +300,12 @@ Story 9.7's own pre-implementation adversarial review (`9-7-epic-9-completion-pl
 ## Deferred from: code review of 2-9-credential-project-web-ui-completeness (2026-07-10)
 
 - **`getRecentAccessEventsForProject` filters via `resource_id IN (credential ids)`** rather than indexed `audit_log_entries.project_id` (always NULL for credential events today). Documented AC-A1 design decision — populate `project_id` on write in a future story, then switch the query.
+
+---
+
+## Deferred from: code review of 10-2-apps-web-branch-coverage-hardening (2026-07-10)
+
+- **Failed notification actions still decrement local unread state.** The custom `enhance` callbacks in `apps/web/src/routes/(app)/notifications/+page.svelte` call `decrementUnread` without checking the action result, so a 4xx/5xx response can make the local count disagree with the server. Runtime behavior change; outside Story 10.2's test-only scope.
+- **Notification query values are not validated.** `apps/web/src/routes/(app)/notifications/+page.server.ts` forwards non-numeric/unsafe pages and unknown statuses to the inbox API. Runtime contract change; outside Story 10.2's test-only scope.
+- **Status-page clipboard failures are unhandled.** A rejected `navigator.clipboard.writeText` promise has no user-visible fallback in the status-page management component. Runtime UX change; outside Story 10.2's test-only scope.
+- **Invitation revoke failures escape without UI handling.** `onRevoke` in the members page resets its busy state in `finally` but has no `catch`, leaving API rejection as an unhandled promise with no visible error. Runtime UX change; outside Story 10.2's test-only scope.

@@ -1,6 +1,6 @@
 # Story 10.2: apps/web Branch Coverage Hardening
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created. -->
@@ -419,11 +419,30 @@ hardening are intentionally N/A because no runtime behavior changes.
   - [x] Re-run coverage; use the current report, not the planning-time table.
   - [x] Add the smallest behavior-focused tests to existing route/component/API test files until all
         four metrics pass 80%; preserve every anti-shortcut constraint.
-- [x] **Task 7 — Determinism, CI, and artifact verification (AC-D2–D5)**
+- [ ] **Task 7 — Determinism, CI, and artifact verification (AC-D2–D5)**
   - [x] Run affected focused files.
   - [x] Run `pnpm --filter @project-vault/web test` twice consecutively.
-  - [x] Run `pnpm turbo test` and proportionate broader checks.
+  - [ ] Run `pnpm turbo test` and proportionate broader checks.
   - [x] Inspect the fresh LCOV for real web source records and review the final diff for test-only scope.
+
+### Review Findings
+
+- [x] [Review][Patch][High] Restore the complete coverage denominator after the full status-page API mock removed `src/lib/api/status-page.ts` from LCOV — fixed with behavior tests for all real status-page API wrappers. [`apps/web/src/lib/api/status-page.test.ts`:1]
+- [ ] [Review][Patch][High] Obtain a green repository test graph for AC-D3; the clean isolated serial run passed 1,790/1,791 API tests but a pre-existing credential-dependencies request returned 500, so `pnpm turbo test` still has no green evidence. [`apps/api/src/modules/credentials/credential-dependencies.test.ts`:171]
+- [ ] [Review][Patch][Medium] Record the complete ranked RED-baseline file inventory and uncovered ranges instead of six examples followed by “remaining below-80 sources.” [`10-2-apps-web-branch-coverage-hardening.md`:510]
+- [ ] [Review][Patch][Medium] Replace the partial RED→GREEN summary with auditable commands/results for each claimed coverage increment where evidence exists. [`10-2-apps-web-branch-coverage-hardening.md`:514]
+- [ ] [Review][Patch][Medium] Strengthen notification server tests to assert pagination/status and mutation IDs are forwarded, plus the safe 500 body. [`apps/web/src/routes/(app)/notifications/notifications-page.server.test.ts`:135]
+- [ ] [Review][Patch][Medium] Assert mark-read and dismiss enhancement callbacks independently instead of relying on one aggregate decrement count. [`apps/web/src/routes/(app)/notifications/notifications-page.test.ts`:131]
+- [ ] [Review][Patch][Medium] Cover duplicate Save services submission while the first status-page update is pending. [`apps/web/src/routes/status-page-admin.test.ts`:189]
+- [ ] [Review][Patch][Medium] Cover ownership-transfer re-entry while its mutation is pending. [`apps/web/src/routes/members-page.test.ts`:229]
+- [ ] [Review][Patch][Medium] Exercise exact-now and 24-hour invitation expiry boundaries and restore real timers in `afterEach`. [`apps/web/src/routes/members-page.test.ts`:264]
+- [ ] [Review][Patch][Medium] Cover the user-dormancy threshold duplicate-submit guard, matching the machine-key control. [`apps/web/src/routes/(app)/settings/users/users-page.test.ts`:152]
+- [ ] [Review][Patch][Medium] Prove pseudonymize and erasure cancellation before submission; current cancellation checks occur only after failed mutations. [`apps/web/src/routes/(app)/settings/users/users-page.test.ts`:254]
+- [ ] [Review][Patch][Medium] Cover a second, different user action while the shared `busyKey` is occupied. [`apps/web/src/routes/(app)/settings/users/users-page.test.ts`:404]
+- [x] [Review][Defer][Medium] Notification enhancement callbacks decrement local unread state even when the server action fails. [`apps/web/src/routes/(app)/notifications/+page.svelte`:275] — deferred, pre-existing runtime behavior outside this test-only story
+- [x] [Review][Defer][Medium] Invalid notification `page`/`status` query values are forwarded without validation. [`apps/web/src/routes/(app)/notifications/+page.server.ts`:53] — deferred, pre-existing runtime behavior outside this test-only story
+- [x] [Review][Defer][Medium] Clipboard write rejection has no handled fallback. [`apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte`] — deferred, pre-existing runtime behavior outside this test-only story
+- [x] [Review][Defer][Medium] Invitation revoke rejection escapes because `onRevoke` has `finally` but no `catch`. [`apps/web/src/routes/(app)/projects/[projectId]/members/+page.svelte`:111] — deferred, pre-existing runtime behavior outside this test-only story
 
 ---
 
@@ -516,19 +535,23 @@ GPT-5.6 Sol
   passed 19/19; notifications failed on an ambiguous accessible link then passed 11/11; users
   failed three role-query assertions then passed 38/38; projects, auth, credentials, and helper
   batches followed the same focused correction cycle.
-- Final deterministic gate (two consecutive runs): 107 files / 904 tests; statements 92.93%
-  (5975/6429), branches 80.10% (2042/2549), functions 94.80% (1515/1598), lines
-  94.34% (4151/4400), exit 0 both times.
-- Broader checks: web typecheck and lint passed (warnings only). `pnpm turbo test` was attempted
-  three times and consistently reached 10/11 tasks before unrelated `@project-vault/db` RLS
-  isolation failures against a polluted/misconfigured shared database (for example 3299 session
-  rows where one was expected and cross-org writes resolving instead of rejecting); web remained
-  green and this test-only story did not alter DB/runtime code.
+- Final deterministic gate after review fix (two consecutive runs): 108 files / 906 tests;
+  statements 92.94% (5981/6435), branches 80.10% (2042/2549), functions 94.82%
+  (1521/1604), lines 94.34% (4157/4406), exit 0 both times. The review fix restored the six
+  statements/functions/lines omitted when the status-page API module was fully mocked.
+- Broader checks: web typecheck and lint passed (warnings only). The original `pnpm turbo test`
+  attempts reached 10/11 tasks before unrelated `@project-vault/db` RLS isolation failures
+  against a polluted shared database. Review reruns used a fresh port-isolated PostgreSQL instance:
+  the parallel graph was killed by local memory pressure (exit 137), while the serial graph passed
+  1,790/1,791 API tests before the pre-existing credential-dependencies test returned 500.
+  AC-D3 remains open; web stayed green and this test-only story did not alter DB/runtime code.
 
 ### Completion Notes List
 
 - Preserved the inherited V8 provider, complete denominator, four shared 80% thresholds, test
   discovery, runtime sources, dependencies, and CI configuration unchanged.
+- Added real status-page API wrapper tests during code review so the complete mock used by the
+  component tests cannot remove `lib/api/status-page.ts` from LCOV.
 - Added observable positive/alternate/error/busy/confirmation/browser integration coverage for
   public status pages, project members/invitations, notifications, and organization users.
 - Closed the remaining measured deficit with behavior tests for projects, credentials/import,
@@ -543,6 +566,7 @@ GPT-5.6 Sol
 - `_bmad-output/implementation-artifacts/10-2-apps-web-branch-coverage-hardening.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `apps/web/src/lib/api/inbox.test.ts`
+- `apps/web/src/lib/api/status-page.test.ts`
 - `apps/web/src/lib/audit/audit-helpers.test.ts`
 - `apps/web/src/lib/components/onboarding/onboarding-logic.test.ts`
 - `apps/web/src/lib/components/shell/search-ui.test.ts`
@@ -560,3 +584,5 @@ GPT-5.6 Sol
 
 - 2026-07-10: Raised truthful `apps/web` branch coverage from 67.90% to 80.10% using
   behavior-focused Vitest tests only; moved story to review.
+- 2026-07-10: Code review restored the status-page API coverage denominator, recorded remaining
+  findings, and moved the story back to in-progress because AC-D3 still lacks a green repository run.
