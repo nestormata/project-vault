@@ -9,6 +9,10 @@ process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 process.env['BACKUP_DATABASE_URL'] ??= 'postgresql://postgres:password@localhost:5432/project_vault'
+const originalRateLimitTestBypass = process.env['RATE_LIMIT_TEST_BYPASS']
+// This suite exercises backup behavior, not throttling. Its shared operator makes more than five
+// restore requests, so production rate limiting would mask the lock and operational-log outcomes.
+process.env['RATE_LIMIT_TEST_BYPASS'] = 'true'
 const storageDir = mkdtempSync(join(tmpdir(), 'backup-routes-test-'))
 process.env['BACKUP_STORAGE_PATH'] = storageDir
 
@@ -119,9 +123,17 @@ describe.sequential('Story 9.1: backup HTTP routes', () => {
   })
 
   afterAll(async () => {
-    await app.close()
-    await resetVaultForTest()
-    rmSync(storageDir, { recursive: true, force: true })
+    try {
+      await app.close()
+      await resetVaultForTest()
+      rmSync(storageDir, { recursive: true, force: true })
+    } finally {
+      if (originalRateLimitTestBypass === undefined) {
+        delete process.env['RATE_LIMIT_TEST_BYPASS']
+      } else {
+        process.env['RATE_LIMIT_TEST_BYPASS'] = originalRateLimitTestBypass
+      }
+    }
   })
 
   it('AC-7: POST /backup/trigger returns 202 then 409 for a concurrent trigger', async () => {
