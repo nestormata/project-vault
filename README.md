@@ -1,5 +1,12 @@
 # Project Vault
 
+[![CI](https://github.com/nestormata/project-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/nestormata/project-vault/actions/workflows/ci.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=nestormata_project-vault&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=nestormata_project-vault)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=nestormata_project-vault&metric=coverage)](https://sonarcloud.io/summary/new_code?id=nestormata_project-vault)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
+[![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-orange)](package.json)
+
 > **⚠️ Status: Pre-launch, actively developed.** The core platform — secrets, rotation, teams,
 > monitoring, notifications, machine users, and audit logging — is functional in self-hosted
 > dev/eval environments (Epics 1, 2, 4, 5, 6, 7, and 8 shipped). Production-hardening features for
