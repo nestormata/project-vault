@@ -52,6 +52,8 @@ export async function searchRoutes(fastify: FastifyApp): Promise<void> {
         types,
         limit,
         offset,
+        userId: secureCtx.auth.userId,
+        orgRole: secureCtx.auth.orgRole,
       })
 
       if (results.some((result) => result.type === 'credential')) {

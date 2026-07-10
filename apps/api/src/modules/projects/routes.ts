@@ -7,6 +7,7 @@ import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
 import {
+  roleRank,
   secureRoute,
   type PublicRouteContext,
   type SecureRouteContext,
@@ -40,6 +41,7 @@ import {
   lookupProjectStats,
 } from './dashboard-stats.js'
 import { getProjectMembershipRole, removeProjectMembership } from './member-management.js'
+import { callerCanSeeProject, logVisibilityDenied } from './project-access.js'
 import {
   findBlockingRotationIds,
   PROJECT_ARCHIVED_ERROR,
@@ -347,13 +349,20 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const offset = paginationOffset(pagination)
 
       const listWhere = includeArchived ? undefined : isNull(projects.archivedAt)
+      // Story 4.5 AC-V2/D1: org owner/admin keep leftJoin (see all projects); member/viewer
+      // require an explicit project_memberships row via innerJoin.
+      const seesAllProjects = roleRank(secureCtx.auth.orgRole) >= roleRank('admin')
+      const membershipJoin = and(
+        eq(projectMemberships.projectId, projects.id),
+        eq(projectMemberships.userId, secureCtx.auth.userId)
+      )
 
-      const [{ total } = { total: 0 }] = await secureCtx.tx
-        .select({ total: sql<number>`count(*)` })
-        .from(projects)
-        .where(listWhere)
+      const totalQuery = secureCtx.tx.select({ total: sql<number>`count(*)` }).from(projects)
+      const [{ total } = { total: 0 }] = await (seesAllProjects
+        ? totalQuery.where(listWhere)
+        : totalQuery.innerJoin(projectMemberships, membershipJoin).where(listWhere))
 
-      const rows = await secureCtx.tx
+      const listQuery = secureCtx.tx
         .select({
           id: projects.id,
           name: projects.name,
@@ -365,13 +374,11 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           archivedAt: projects.archivedAt,
         })
         .from(projects)
-        .leftJoin(
-          projectMemberships,
-          and(
-            eq(projectMemberships.projectId, projects.id),
-            eq(projectMemberships.userId, secureCtx.auth.userId)
-          )
-        )
+      const rows = await (
+        seesAllProjects
+          ? listQuery.leftJoin(projectMemberships, membershipJoin)
+          : listQuery.innerJoin(projectMemberships, membershipJoin)
+      )
         .where(listWhere)
         .orderBy(desc(projects.createdAt))
         .limit(pagination.limit)
@@ -423,6 +430,15 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(ProjectParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
+      // Story 4.5 AC-V3/AC-V10: membership visibility gate before any dashboard work.
+      if (!(await callerCanSeeProject(secureCtx, params.projectId))) {
+        logVisibilityDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          orgRole: secureCtx.auth.orgRole,
+        })
+        return reply.status(404).send(PROJECT_NOT_FOUND)
+      }
       // 4.4 AC-5: reads (including the dashboard) remain fully available on archived projects —
       // only mutations are guarded. Do not filter on archivedAt here.
       const rows = await secureCtx.tx

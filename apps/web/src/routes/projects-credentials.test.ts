@@ -312,6 +312,52 @@ describe('project credential routes', () => {
     unmount()
   })
 
+  it('AC-P7: reveal 403 with code insufficient_project_role shows the project-role-specific message', async () => {
+    revealCredentialValueMock.mockRejectedValue(
+      new ApiClientError(
+        403,
+        {
+          code: 'insufficient_project_role',
+          message: 'Your role in this project does not permit revealing credential values',
+        },
+        'Your role in this project does not permit revealing credential values'
+      )
+    )
+
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({ orgRole: 'member' as const }),
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /Reveal value/i }))
+
+    expect(
+      await screen.findByText(
+        /Your role in this project does not permit revealing credential values/i
+      )
+    ).toBeTruthy()
+    expect(screen.queryByText('You do not have permission to reveal credential values.')).toBeNull()
+  })
+
+  it('AC-P7 regression: a plain 403 with no specific code still shows the generic denial message', async () => {
+    revealCredentialValueMock.mockRejectedValue(
+      new ApiClientError(403, { message: 'Forbidden' }, 'Forbidden')
+    )
+
+    render(CredentialDetailPage, {
+      props: {
+        data: baseCredentialDetailData({ orgRole: 'member' as const }),
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /Reveal value/i }))
+
+    expect(
+      await screen.findByText('You do not have permission to reveal credential values.')
+    ).toBeTruthy()
+  })
+
   it('import preview and confirm flow shows redacted values then summary', async () => {
     previewCredentialImportMock.mockResolvedValue({
       importId: '11111111-1111-4111-8111-111111111111',

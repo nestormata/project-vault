@@ -162,7 +162,10 @@
     } catch (error) {
       revealedValue = null
       revealVersion = null
-      if (error instanceof ApiClientError && error.status === 403) {
+      if (error instanceof ApiClientError && error.code === 'insufficient_project_role') {
+        revealError =
+          'Your role in this project does not permit revealing credential values — ask a project admin to change your role.'
+      } else if (error instanceof ApiClientError && error.status === 403) {
         revealError = 'You do not have permission to reveal credential values.'
       } else {
         revealError = error instanceof Error ? error.message : 'Could not reveal value.'

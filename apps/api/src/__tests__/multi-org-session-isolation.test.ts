@@ -146,11 +146,16 @@ describe.sequential('Story 9.2 AC-23b: multi-org user session scopes to only the
       password: PASSWORD,
       orgName: `MultiOrg E2E B ${randomUUID()}`,
     })
+    // Story 4.5 D1/AC-V2: this test's last assertion (below) switches userA into an org-B
+    // session and expects to see every org-B project. Role 'admin' (unconditional visibility
+    // bypass) keeps that assertion focused on session/JWT-org scoping — this test's actual
+    // subject — rather than incidentally also exercising the new per-project-membership
+    // visibility gate, which is covered by its own dedicated tests elsewhere.
     await withOrg(userB.orgId, (tx) =>
       tx.insert(orgMemberships).values({
         orgId: userB.orgId,
         userId: userA.userId,
-        role: 'member',
+        role: 'admin',
         status: 'active',
       })
     )

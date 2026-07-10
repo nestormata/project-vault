@@ -14,7 +14,12 @@ export async function dashboardRoutes(fastify: FastifyApp): Promise<void> {
     security: { minimumRole: 'viewer', writeAuditEvent: false },
     handler: async (ctx) => {
       const secureCtx = ctx as SecureRouteContext
-      return { data: await getOrgDashboardData(secureCtx.tx) }
+      return {
+        data: await getOrgDashboardData(secureCtx.tx, {
+          userId: secureCtx.auth.userId,
+          orgRole: secureCtx.auth.orgRole,
+        }),
+      }
     },
   })
 }

@@ -1,6 +1,8 @@
-import { and, eq, ilike, isNull, or, sql, type AnyColumn } from 'drizzle-orm'
+import { and, eq, exists, ilike, isNull, or, sql, type AnyColumn, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { credentials, projects } from '@project-vault/db/schema'
+import { credentials, projectMemberships, projects } from '@project-vault/db/schema'
+import type { OrgRole } from '../../plugins/require-org-role.js'
+import { roleRank } from '../../lib/secure-route.js'
 import type { SearchResultItem, SearchType } from './schema.js'
 
 type ExecuteSearchInput = {
@@ -13,6 +15,9 @@ type ExecuteSearchInput = {
   // result order — see executeSearch()'s doc comment for how offset is split across the two
   // independently-queried sources.
   offset: number
+  /** Story 4.5 AC-V5: when member/viewer, filter to projects the caller can see. */
+  userId: string
+  orgRole: OrgRole
 }
 
 function escapeLikeTerm(term: string): string {
@@ -57,7 +62,22 @@ const relevanceOrderSql = (nameColumn: AnyColumn, q: string) =>
     END DESC
   `
 
-function credentialMatchWhere(orgId: string, like: string) {
+function membershipExists(userId: string): SQL {
+  return exists(
+    sql`(
+      SELECT 1 FROM ${projectMemberships}
+      WHERE ${projectMemberships.projectId} = ${projects.id}
+        AND ${projectMemberships.userId} = ${userId}
+    )`
+  )
+}
+
+function credentialMatchWhere(
+  orgId: string,
+  like: string,
+  scopeToMembership: boolean,
+  userId: string
+) {
   return and(
     eq(credentials.orgId, orgId),
     eq(projects.orgId, orgId),
@@ -66,34 +86,53 @@ function credentialMatchWhere(orgId: string, like: string) {
       ilike(credentials.name, like),
       ilike(credentials.description, like),
       sql`CAST(${credentials.tags} AS text) ILIKE ${like}`
-    )
+    ),
+    scopeToMembership ? membershipExists(userId) : undefined
   )
 }
 
-function projectMatchWhere(orgId: string, like: string) {
+function projectMatchWhere(
+  orgId: string,
+  like: string,
+  scopeToMembership: boolean,
+  userId: string
+) {
   return and(
     eq(projects.orgId, orgId),
     isNull(projects.archivedAt),
-    or(ilike(projects.name, like), sql`CAST(${projects.tags} AS text) ILIKE ${like}`)
+    or(ilike(projects.name, like), sql`CAST(${projects.tags} AS text) ILIKE ${like}`),
+    scopeToMembership ? membershipExists(userId) : undefined
   )
 }
 
-async function countCredentials(tx: Tx, orgId: string, q: string): Promise<number> {
+async function countCredentials(
+  tx: Tx,
+  orgId: string,
+  q: string,
+  scopeToMembership: boolean,
+  userId: string
+): Promise<number> {
   const like = `%${escapeLikeTerm(q)}%`
   const [row] = await tx
     .select({ count: sql<number>`count(*)` })
     .from(credentials)
     .innerJoin(projects, eq(credentials.projectId, projects.id))
-    .where(credentialMatchWhere(orgId, like))
+    .where(credentialMatchWhere(orgId, like, scopeToMembership, userId))
   return Number(row?.count ?? 0)
 }
 
-async function countProjects(tx: Tx, orgId: string, q: string): Promise<number> {
+async function countProjects(
+  tx: Tx,
+  orgId: string,
+  q: string,
+  scopeToMembership: boolean,
+  userId: string
+): Promise<number> {
   const like = `%${escapeLikeTerm(q)}%`
   const [row] = await tx
     .select({ count: sql<number>`count(*)` })
     .from(projects)
-    .where(projectMatchWhere(orgId, like))
+    .where(projectMatchWhere(orgId, like, scopeToMembership, userId))
   return Number(row?.count ?? 0)
 }
 
@@ -102,7 +141,9 @@ async function searchCredentials(
   orgId: string,
   q: string,
   limit: number,
-  offset: number
+  offset: number,
+  scopeToMembership: boolean,
+  userId: string
 ): Promise<SearchResultItem[]> {
   const like = `%${escapeLikeTerm(q)}%`
   const rows = await tx
@@ -118,7 +159,7 @@ async function searchCredentials(
     })
     .from(credentials)
     .innerJoin(projects, eq(credentials.projectId, projects.id))
-    .where(credentialMatchWhere(orgId, like))
+    .where(credentialMatchWhere(orgId, like, scopeToMembership, userId))
     .orderBy(relevanceOrderSql(credentials.name, q), sql`${credentials.updatedAt} DESC`)
     .limit(limit)
     .offset(offset)
@@ -142,7 +183,9 @@ async function searchProjects(
   orgId: string,
   q: string,
   limit: number,
-  offset: number
+  offset: number,
+  scopeToMembership: boolean,
+  userId: string
 ): Promise<SearchResultItem[]> {
   const like = `%${escapeLikeTerm(q)}%`
   const rows = await tx
@@ -161,7 +204,7 @@ async function searchProjects(
       )`,
     })
     .from(projects)
-    .where(projectMatchWhere(orgId, like))
+    .where(projectMatchWhere(orgId, like, scopeToMembership, userId))
     .orderBy(relevanceOrderSql(projects.name, q), sql`${projects.updatedAt} DESC`)
     .limit(limit)
     .offset(offset)
@@ -192,22 +235,31 @@ export async function executeSearch(input: ExecuteSearchInput): Promise<{
   results: SearchResultItem[]
   total: number
 }> {
-  const { tx, orgId, q, types, limit, offset } = input
+  const { tx, orgId, q, types, limit, offset, userId, orgRole } = input
+  const scopeToMembership = roleRank(orgRole) < roleRank('admin')
 
-  const credTotal = types.includes('credentials') ? await countCredentials(tx, orgId, q) : 0
-  const projTotal = types.includes('projects') ? await countProjects(tx, orgId, q) : 0
+  const credTotal = types.includes('credentials')
+    ? await countCredentials(tx, orgId, q, scopeToMembership, userId)
+    : 0
+  const projTotal = types.includes('projects')
+    ? await countProjects(tx, orgId, q, scopeToMembership, userId)
+    : 0
   const total = credTotal + projTotal
 
   const results: SearchResultItem[] = []
 
   if (types.includes('credentials') && offset < credTotal) {
-    results.push(...(await searchCredentials(tx, orgId, q, limit, offset)))
+    results.push(
+      ...(await searchCredentials(tx, orgId, q, limit, offset, scopeToMembership, userId))
+    )
   }
 
   const remaining = limit - results.length
   if (types.includes('projects') && remaining > 0) {
     const projectOffset = Math.max(0, offset - credTotal)
-    results.push(...(await searchProjects(tx, orgId, q, remaining, projectOffset)))
+    results.push(
+      ...(await searchProjects(tx, orgId, q, remaining, projectOffset, scopeToMembership, userId))
+    )
   }
 
   return { results, total }
