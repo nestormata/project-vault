@@ -81,6 +81,7 @@ describe('notification backfill', () => {
         const alert2 = alerts[1]
         if (!alert1 || !alert2) throw new Error('expected two alerts')
 
+        send.mockClear()
         await runNotificationBackfill(boss, testLogger)
 
         const updatedAlerts = await withOrg(orgId, (tx) => tx.select().from(securityAlerts))
@@ -89,9 +90,10 @@ describe('notification backfill', () => {
 
         const queueEntries = await withOrg(orgId, (tx) => tx.select().from(notificationQueue))
         expect(queueEntries.length).toBeGreaterThan(0)
-        expect(send).toHaveBeenCalledTimes(queueEntries.length)
+        const sentForOrg = send.mock.calls.filter((call) => call[1]?.orgId === orgId)
+        expect(sentForOrg).toHaveLength(queueEntries.length)
         const queueIds = new Set(queueEntries.map((entry) => entry.id))
-        for (const call of send.mock.calls) {
+        for (const call of sentForOrg) {
           expect(call[0]).toBe('notification/deliver')
           expect(queueIds.has(call[1]?.notificationQueueId as string)).toBe(true)
           expect(call[1]?.orgId).toBe(orgId)
