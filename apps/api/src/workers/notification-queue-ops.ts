@@ -50,7 +50,9 @@ export async function markNotificationSuppressed(
     await tx
       .update(notificationQueue)
       .set({ status: 'suppressed' })
-      .where(eq(notificationQueue.id, notificationQueueId))
+      .where(
+        and(eq(notificationQueue.id, notificationQueueId), eq(notificationQueue.status, 'pending'))
+      )
   })
 }
 
