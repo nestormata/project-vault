@@ -17,6 +17,7 @@ import {
 } from './dispatcher.js'
 import { patchPreferences } from '../modules/notifications/preferences.js'
 import { putOrgRouting } from '../modules/notifications/routing.js'
+import * as preferencesModule from '../modules/notifications/preferences.js'
 
 const FAILED_AUTH_TEMPLATE = 'security.failed_auth_threshold'
 const SERVICE_DOWN_TEMPLATE = 'service.down'
@@ -239,6 +240,52 @@ describe('notification dispatcher', () => {
       })
     } finally {
       await deleteTestUser(ownerId)
+    }
+  })
+
+  it('uses one batched preference lookup for multiple org-admin recipients', async () => {
+    const ownerId = await createTestUser('dispatcher-batch-owner')
+    const adminId = await createTestUser('dispatcher-batch-admin')
+    const memberId = await createTestUser('dispatcher-batch-member')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await seedOwner(orgId, ownerId)
+        await withOrg(orgId, (tx) =>
+          tx.insert(orgMemberships).values([
+            { orgId, userId: adminId, role: 'admin', status: 'active' },
+            { orgId, userId: memberId, role: 'admin', status: 'active' },
+          ])
+        )
+
+        const batchSpy = vi.spyOn(preferencesModule, 'getPreferencesBatch')
+        const singleSpy = vi.spyOn(preferencesModule, 'getPreferences')
+
+        const jobs = await withOrg(orgId, (tx) =>
+          createOrgAdminNotificationEntries({
+            orgId,
+            template: {
+              templateId: FAILED_AUTH_TEMPLATE,
+              payload: { attemptCount: 1 },
+              severity: 'warning',
+            },
+            tx,
+            recipientUserIds: [ownerId, adminId, memberId],
+          })
+        )
+
+        expect(jobs.length).toBeGreaterThanOrEqual(6)
+        expect(batchSpy).toHaveBeenCalledTimes(1)
+        expect(batchSpy).toHaveBeenCalledWith(
+          orgId,
+          [ownerId, adminId, memberId],
+          expect.anything()
+        )
+        expect(singleSpy).not.toHaveBeenCalled()
+      })
+    } finally {
+      await deleteTestUser(ownerId)
+      await deleteTestUser(adminId)
+      await deleteTestUser(memberId)
     }
   })
 })

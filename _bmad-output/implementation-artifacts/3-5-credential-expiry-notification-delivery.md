@@ -1,6 +1,6 @@
 # Story 3.5: Credential Expiry Notification Delivery
 
-Status: ready-for-dev
+Status: review
 
 <!-- Retro-driven backlog addition — no "Story 3.5" stub exists in `_bmad-output/planning-artifacts/
      epics.md` (Epic 3 there only defines 3.1-3.3; 3.4 is retro-driven too). Bundles four
@@ -708,8 +708,8 @@ and the type-checked `OperationalEventType` union includes it automatically (it'
 Follow this project's TDD convention: write/update the failing test first, confirm it fails for the
 expected reason, then implement, per AC.
 
-- [ ] **Task 1 — Group W: schema + migration (AC-W1)**
-  - [ ] 1.1 **Cross-story coordination (do not skip):** as of 2026-07-09, TWO sibling stories from
+- [x] **Task 1 — Group W: schema + migration (AC-W1)**
+  - [x] 1.1 **Cross-story coordination (do not skip):** as of 2026-07-09, TWO sibling stories from
     the same reconciliation batch *also* target migration index 43:
     `4-5-fine-grained-permissions-and-project-rbac` (`0043_project_membership_visibility_backfill.sql`)
     and `1-13-infra-and-process-hardening` (`0043_normalize_tag_case.sql`), for the same
@@ -719,32 +719,32 @@ expected reason, then implement, per AC.
     (likely `0044`); the third similarly takes the next free number after that (likely `0045`).
     Re-confirm the actual next free index against `meta/_journal.json` before writing the file — do
     not trust this story's hardcoded "43" if either sibling already claimed it.
-  - [ ] 1.2 Add `alertLeadDays`/`notifiedLeadDays` to `packages/db/src/schema/credentials.ts`,
+  - [x] 1.2 Add `alertLeadDays`/`notifiedLeadDays` to `packages/db/src/schema/credentials.ts`,
     mirroring `payment-records.ts`'s exact column definitions (defaults `[30, 7, 1]`/`[]`).
-  - [ ] 1.3 Generate/hand-write `packages/db/src/migrations/0043_credential_expiry_alerts.sql`
+  - [x] 1.3 Generate/hand-write `packages/db/src/migrations/0043_credential_expiry_alerts.sql`
     (number per 1.1's coordination check — may need to be `0044` or higher if 4-5 landed first)
     (`ALTER TABLE credentials ADD COLUMN ...` × 2, matching `0032_machine_key_rotation_dormancy_cacheable.sql`'s
     single-`ALTER TABLE`-per-statement style with `--> statement-breakpoint` separators). Update
     `packages/db/src/migrations/meta/_journal.json`.
 
-- [ ] **Task 2 — Group W: the worker itself (AC-W2 through AC-W7)**
-  - [ ] 2.1 RED: new `apps/api/src/workers/credential-expiry-alert.test.ts`, mirroring
+- [x] **Task 2 — Group W: the worker itself (AC-W2 through AC-W7)**
+  - [x] 2.1 RED: new `apps/api/src/workers/credential-expiry-alert.test.ts`, mirroring
     `cert-expiry-alert.test.ts`'s exact structure (`withExpiryAlertTestOrg`, `insertTestProject`,
     `daysFromNow`, `expectQueueEntryFired`/`expectNoQueueEntries` from `expiry-alert-test-helpers.ts`)
     — cover every AC-W2/W3/W5/W6/W7 example. Confirm failure (module doesn't exist).
-  - [ ] 2.2 GREEN: `apps/api/src/workers/credential-expiry-alert.ts`, copying `cert-expiry-alert.ts`'s
+  - [x] 2.2 GREEN: `apps/api/src/workers/credential-expiry-alert.ts`, copying `cert-expiry-alert.ts`'s
     shape exactly: `jobName: 'credential/expiry-alert'`, `templateId: 'credential.expiry'`,
     `assetType`/`assetLabel: 'credential'`, `fetchRows` against `credentials` filtered by
     `isNotNull(expiresAt)`, `buildPayload` with `{ assetId, projectId, name, expiresAt, ...baseExpiryPayload }`,
     `updateNotifiedLeadDays` against `credentials`.
-  - [ ] 2.3 Register in `apps/api/src/main.ts`: `'credential/expiry-alert': { cron: '0 8 * * *' }` in
+  - [x] 2.3 Register in `apps/api/src/main.ts`: `'credential/expiry-alert': { cron: '0 8 * * *' }` in
     `registerSchedules`, matching `withJobLogging` wiring in `registerWorkers` (AC-W4).
-  - [ ] 2.4 Extend `worker-registration.test.ts`'s `arrayContaining([...])` list with
+  - [x] 2.4 Extend `worker-registration.test.ts`'s `arrayContaining([...])` list with
     `'credential/expiry-alert'`.
-  - [ ] 2.5 Re-run all tests, confirm green.
+  - [x] 2.5 Re-run all tests, confirm green.
 
-- [ ] **Task 3 — Group E: E3-2 integration test (AC-E1)**
-  - [ ] 3.1 RED: extend `notification-backfill.test.ts`'s existing test with the `send`-call
+- [x] **Task 3 — Group E: E3-2 integration test (AC-E1)**
+  - [x] 3.1 RED: extend `notification-backfill.test.ts`'s existing test with the `send`-call
     assertions; add the new `deliverNotification`-direct-call test and the `boss.isStarted() ===
     false` negative test (new `describe`/`it` blocks in the same file, or a new sibling file if
     cleaner). Confirm the new assertions fail against current (unmodified) code only in the sense
@@ -752,42 +752,42 @@ expected reason, then implement, per AC.
     RED step here is confirming the *new assertions* are well-formed by first checking they fail
     against a deliberately broken temporary edit (e.g. commenting out `sendNotificationJobs`'s
     `boss.send` call), then reverting.
-  - [ ] 3.2 Confirm all green with the real (unmodified where correct) code.
+  - [x] 3.2 Confirm all green with the real (unmodified where correct) code.
 
-- [ ] **Task 4 — Group D: dispatcher batch fix (AC-D1 through AC-D3)**
-  - [ ] 4.1 RED: add `getPreferencesBatch` tests to `preferences.test.ts` (AC-D1's examples). Confirm
+- [x] **Task 4 — Group D: dispatcher batch fix (AC-D1 through AC-D3)**
+  - [x] 4.1 RED: add `getPreferencesBatch` tests to `preferences.test.ts` (AC-D1's examples). Confirm
     failure (function doesn't exist).
-  - [ ] 4.2 GREEN: implement `getPreferencesBatch` in `preferences.ts` (single `inArray` query +
+  - [x] 4.2 GREEN: implement `getPreferencesBatch` in `preferences.ts` (single `inArray` query +
     per-user default-filling, reusing `getPreferences`'s existing default-filling loop body, factored
     into a shared private helper if that avoids duplication).
-  - [ ] 4.3 RED: add the query-count regression test to `dispatcher.test.ts` (AC-D2's second
+  - [x] 4.3 RED: add the query-count regression test to `dispatcher.test.ts` (AC-D2's second
     example). Confirm it fails against the current per-recipient-loop code (N queries, not 1).
-  - [ ] 4.4 GREEN: refactor `createOrgAdminNotificationEntries` to call `getPreferencesBatch` once;
+  - [x] 4.4 GREEN: refactor `createOrgAdminNotificationEntries` to call `getPreferencesBatch` once;
     update `processRecipientPreferences` (or inline its logic) to read from the pre-fetched `Map`;
     delete the `TODO(perf)` comment.
-  - [ ] 4.5 Re-run all of `dispatcher.test.ts` and `preferences.test.ts`, confirm every existing test
+  - [x] 4.5 Re-run all of `dispatcher.test.ts` and `preferences.test.ts`, confirm every existing test
     still passes unmodified (AC-D2/D3 regressions) and the new tests pass.
 
-- [ ] **Task 5 — Group Q: DLQ cleanup (AC-Q1 through AC-Q4)**
-  - [ ] 5.1 Add `OperationalEvent.NOTIFICATION_DLQ_CLEANUP_SUMMARY` (AC-Q4).
-  - [ ] 5.2 Add `markNotificationFailed` to `notification-queue-ops.ts` (mirrors
+- [x] **Task 5 — Group Q: DLQ cleanup (AC-Q1 through AC-Q4)**
+  - [x] 5.1 Add `OperationalEvent.NOTIFICATION_DLQ_CLEANUP_SUMMARY` (AC-Q4).
+  - [x] 5.2 Add `markNotificationFailed` to `notification-queue-ops.ts` (mirrors
     `markNotificationSuppressed`'s exact shape).
-  - [ ] 5.3 RED: add `notification-worker-common.test.ts` (or extend an existing catchup test file)
+  - [x] 5.3 RED: add `notification-worker-common.test.ts` (or extend an existing catchup test file)
     covering AC-Q1's positive/edge examples. Confirm failure.
-  - [ ] 5.4 GREEN: add `NOTIFICATION_MAX_ATTEMPTS` constant; add `attempt_count <
+  - [x] 5.4 GREEN: add `NOTIFICATION_MAX_ATTEMPTS` constant; add `attempt_count <
     NOTIFICATION_MAX_ATTEMPTS` to both `runNotificationCatchup` query branches.
-  - [ ] 5.5 RED: new `apps/api/src/workers/notification-dlq-cleanup.test.ts` covering AC-Q2's
+  - [x] 5.5 RED: new `apps/api/src/workers/notification-dlq-cleanup.test.ts` covering AC-Q2's
     positive/edge/race examples. Confirm failure (module doesn't exist).
-  - [ ] 5.6 GREEN: implement `runNotificationDlqCleanup` in
+  - [x] 5.6 GREEN: implement `runNotificationDlqCleanup` in
     `apps/api/src/workers/notification-dlq-cleanup.ts`.
-  - [ ] 5.7 Register `'notification/dlq-cleanup': { cron: '*/30 * * * *' }` in `main.ts`
+  - [x] 5.7 Register `'notification/dlq-cleanup': { cron: '*/30 * * * *' }` in `main.ts`
     (AC-Q3); extend `worker-registration.test.ts`'s array.
-  - [ ] 5.8 Re-run all tests, confirm green.
+  - [x] 5.8 Re-run all tests, confirm green.
 
-- [ ] **Task 6 — Full verification**
-  - [ ] 6.1 Run the full `apps/api` test suite — confirm no regressions.
-  - [ ] 6.2 `make ci` (or equivalent local lint/typecheck/test gate) green.
-  - [ ] 6.3 Update `deferred-work.md`: mark E3-2, "Credential expiry notifications," and the 3 "Open
+- [x] **Task 6 — Full verification**
+  - [x] 6.1 Run the full `apps/api` test suite — confirm no regressions.
+  - [x] 6.2 `make ci` (or equivalent local lint/typecheck/test gate) green.
+  - [x] 6.3 Update `deferred-work.md`: mark E3-2, "Credential expiry notifications," and the 3 "Open
     (Epic 3 closure, Story 3.4 AC-16)" rows resolved, cross-referencing this story (do not delete the
     historical record). Also add the newly-identified, deliberately-deferred
     "configurable per-credential `alertLeadDays`" gap (Background § 1) as a new tracked row.
@@ -872,10 +872,73 @@ the queue), `routing.ts` (default `owner`-role routing applies unchanged), `rout
 
 ### Agent Model Used
 
-TBD
+GitHub Copilot CLI (current session model)
 
 ### Debug Log References
 
+- `pnpm --filter @project-vault/db test -- src/schema/machine-users-schema.test.ts`
+- `pnpm --filter @project-vault/api test -- src/workers/credential-expiry-alert.test.ts`
+- `pnpm --filter @project-vault/api test -- src/workers/notification-backfill.test.ts`
+- `pnpm --filter @project-vault/api test -- src/modules/notifications/preferences.test.ts src/notifications/dispatcher.test.ts`
+- `pnpm --filter @project-vault/api test -- src/workers/notification-worker-common.test.ts src/workers/notification-dlq-cleanup.test.ts src/__tests__/worker-registration.test.ts`
+- `pnpm --filter @project-vault/shared test -- src/constants/operational-event-types.test.ts`
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm db:migrate`
+- `pnpm check-rls`
+- `pnpm check-audit-actor-token-coverage`
+- `pnpm check-search-index`
+- `pnpm check-migration-compatibility`
+- `pnpm check-story-status-sync`
+- `pnpm check-psc-tbd-tracking`
+- `pnpm check-alert-pending-epic3`
+- `pnpm jscpd`
+- `pnpm check-audit-baseline`
+- `pnpm check-env-example`
+- `pnpm generate-spec`
+- `pnpm --filter @project-vault/api test`
+
 ### Completion Notes List
 
+- Implemented credential expiry delivery by extending the credentials schema with alert tracking
+  columns and shipping migration `0045_credential_expiry_alerts.sql` after confirming `0043` was
+  already taken by Story 1-13.
+- Added `credential/expiry-alert`, reusing the shared expiry-alert execution path for threshold
+  firing, overdue delivery, duplicate same-day suppression, and per-row failure isolation without
+  new audit writes.
+- Closed deferred notification gaps by expanding the backfill coverage, batching org-admin
+  preference lookups, and adding bounded retry/DLQ cleanup behavior for stuck queue rows.
+- `pnpm --filter @project-vault/api test` initially failed when PostgreSQL on `127.0.0.1:5432`
+  was unavailable; after starting the local db container and re-running migrations, the full suite
+  passed.
+
 ### File List
+
+- `packages/db/src/schema/credentials.ts`
+- `packages/db/src/schema/machine-users-schema.test.ts`
+- `packages/db/src/migrations/0045_credential_expiry_alerts.sql`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/shared/src/constants/operational-event-types.ts`
+- `packages/shared/src/constants/operational-event-types.test.ts`
+- `apps/api/src/main.ts`
+- `apps/api/src/__tests__/worker-registration.test.ts`
+- `apps/api/src/modules/notifications/preferences.ts`
+- `apps/api/src/modules/notifications/preferences.test.ts`
+- `apps/api/src/notifications/dispatcher.ts`
+- `apps/api/src/notifications/dispatcher.test.ts`
+- `apps/api/src/workers/credential-expiry-alert.ts`
+- `apps/api/src/workers/credential-expiry-alert.test.ts`
+- `apps/api/src/workers/notification-backfill.test.ts`
+- `apps/api/src/workers/notification-queue-ops.ts`
+- `apps/api/src/workers/notification-worker-common.ts`
+- `apps/api/src/workers/notification-worker-common.test.ts`
+- `apps/api/src/workers/notification-dlq-cleanup.ts`
+- `apps/api/src/workers/notification-dlq-cleanup.test.ts`
+- `_bmad-output/implementation-artifacts/deferred-work.md`
+- `_bmad-output/implementation-artifacts/3-5-credential-expiry-notification-delivery.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+### Change Log
+
+- 2026-07-10: Implemented credential expiry notification delivery, notification preference batching,
+  DLQ cleanup, and deferred-work/story status updates for Story 3.5.

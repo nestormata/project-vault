@@ -30,6 +30,14 @@ export const credentials = pgTable(
       .default(sql`'[]'::jsonb`)
       .$type<string[]>(),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+    alertLeadDays: jsonb('alert_lead_days')
+      .notNull()
+      .default(sql`'[30, 7, 1]'::jsonb`)
+      .$type<number[]>(),
+    notifiedLeadDays: jsonb('notified_lead_days')
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<number[]>(),
     // cron string validated at the API layer; full lifecycle handling is Story 2.4.
     rotationSchedule: text('rotation_schedule'),
     // Per-credential override of the version retention count (default applied in app layer).

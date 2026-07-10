@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { notificationPreferences } from '@project-vault/db/schema'
 import {
@@ -22,26 +22,9 @@ export type PreferenceOutput = {
   minSeverity: NotificationSeverity
 }
 
-export async function getPreferences(
-  orgId: string,
-  userId: string,
-  tx: Tx
-): Promise<PreferenceOutput[]> {
-  const stored = await tx
-    .select()
-    .from(notificationPreferences)
-    .where(
-      and(eq(notificationPreferences.orgId, orgId), eq(notificationPreferences.userId, userId))
-    )
-
+function fillDefaultPreferences(stored: PreferenceOutput[]): PreferenceOutput[] {
   const storedKeys = new Set(stored.map((r) => `${r.alertType}:${r.channel}`))
-
-  const result: PreferenceOutput[] = stored.map((r) => ({
-    alertType: r.alertType,
-    channel: r.channel as NotificationChannel,
-    frequency: r.frequency as NotificationFrequency,
-    minSeverity: r.minSeverity as NotificationSeverity,
-  }))
+  const result: PreferenceOutput[] = [...stored]
 
   for (const alertType of NOTIFICATION_ALERT_TYPES) {
     for (const channel of DEFAULT_NOTIFICATION_CHANNELS) {
@@ -59,6 +42,68 @@ export async function getPreferences(
   return result.sort(
     (a, b) => a.alertType.localeCompare(b.alertType) || a.channel.localeCompare(b.channel)
   )
+}
+
+function toPreferenceOutput(
+  rows: Array<{
+    alertType: string
+    channel: string
+    frequency: string
+    minSeverity: string
+  }>
+): PreferenceOutput[] {
+  return rows.map((r) => ({
+    alertType: r.alertType,
+    channel: r.channel as NotificationChannel,
+    frequency: r.frequency as NotificationFrequency,
+    minSeverity: r.minSeverity as NotificationSeverity,
+  }))
+}
+
+export async function getPreferences(
+  orgId: string,
+  userId: string,
+  tx: Tx
+): Promise<PreferenceOutput[]> {
+  const stored = await tx
+    .select()
+    .from(notificationPreferences)
+    .where(
+      and(eq(notificationPreferences.orgId, orgId), eq(notificationPreferences.userId, userId))
+    )
+
+  return fillDefaultPreferences(toPreferenceOutput(stored))
+}
+
+export async function getPreferencesBatch(
+  orgId: string,
+  userIds: string[],
+  tx: Tx
+): Promise<Map<string, PreferenceOutput[]>> {
+  if (userIds.length === 0) return new Map()
+
+  const stored = await tx
+    .select()
+    .from(notificationPreferences)
+    .where(
+      and(
+        eq(notificationPreferences.orgId, orgId),
+        inArray(notificationPreferences.userId, userIds)
+      )
+    )
+
+  const storedByUserId = new Map<string, PreferenceOutput[]>()
+  for (const row of stored) {
+    const prefs = storedByUserId.get(row.userId) ?? []
+    prefs.push(...toPreferenceOutput([row]))
+    storedByUserId.set(row.userId, prefs)
+  }
+
+  const result = new Map<string, PreferenceOutput[]>()
+  for (const userId of userIds) {
+    result.set(userId, fillDefaultPreferences(storedByUserId.get(userId) ?? []))
+  }
+  return result
 }
 
 export async function putPreferences(

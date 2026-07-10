@@ -53,3 +53,19 @@ export async function markNotificationSuppressed(
       .where(eq(notificationQueue.id, notificationQueueId))
   })
 }
+
+export async function markNotificationFailed(
+  notificationQueueId: string,
+  orgId: string
+): Promise<boolean> {
+  return withOrg(orgId, async (tx) => {
+    const updated = await tx
+      .update(notificationQueue)
+      .set({ status: 'failed' })
+      .where(
+        and(eq(notificationQueue.id, notificationQueueId), eq(notificationQueue.status, 'pending'))
+      )
+      .returning({ id: notificationQueue.id })
+    return updated.length > 0
+  })
+}

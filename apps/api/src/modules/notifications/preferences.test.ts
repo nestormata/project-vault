@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { withOrg } from '@project-vault/db'
 import { withTestOrg, createTestUser, deleteTestUser } from '@project-vault/db/test-helpers'
-import { getPreferences, patchPreferences, putPreferences } from './preferences.js'
+import {
+  getPreferences,
+  getPreferencesBatch,
+  patchPreferences,
+  putPreferences,
+} from './preferences.js'
 
 const FAILED_AUTH_ALERT = 'security.failed_auth_threshold'
 const SERVICE_DOWN_ALERT = 'service.down'
 const EMAIL_CHANNEL = 'email'
+const CREDENTIAL_EXPIRY_ALERT = 'credential.expiry'
 
 describe('notification preferences service', () => {
   it('returns stored value overriding default', async () => {
@@ -120,6 +126,94 @@ describe('notification preferences service', () => {
           (p) => p.alertType === SERVICE_DOWN_ALERT && p.channel === EMAIL_CHANNEL
         )
         expect(serviceDown?.frequency).toBe('immediate')
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
+
+  it('getPreferencesBatch returns default-filled entries for every requested user', async () => {
+    const firstUserId = await createTestUser('prefs-batch-default-1')
+    const secondUserId = await createTestUser('prefs-batch-default-2')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const batch = await withOrg(orgId, (tx) =>
+          getPreferencesBatch(orgId, [firstUserId, secondUserId], tx)
+        )
+
+        expect(batch.size).toBe(2)
+        for (const userId of [firstUserId, secondUserId]) {
+          const prefs = batch.get(userId)
+          expect(prefs).toBeDefined()
+          expect(prefs?.length).toBeGreaterThan(0)
+          expect(
+            prefs?.find((p) => p.alertType === FAILED_AUTH_ALERT && p.channel === EMAIL_CHANNEL)
+          ).toMatchObject({
+            frequency: 'immediate',
+            minSeverity: 'warning',
+          })
+        }
+      })
+    } finally {
+      await deleteTestUser(firstUserId)
+      await deleteTestUser(secondUserId)
+    }
+  })
+
+  it('getPreferencesBatch mixes stored overrides and defaults without leaking between users', async () => {
+    const overrideUserId = await createTestUser('prefs-batch-override')
+    const defaultUserId = await createTestUser('prefs-batch-default')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        await withOrg(orgId, (tx) =>
+          patchPreferences(
+            orgId,
+            overrideUserId,
+            [
+              {
+                alertType: CREDENTIAL_EXPIRY_ALERT,
+                channel: 'email',
+                frequency: 'digest_daily',
+                minSeverity: 'critical',
+              },
+            ],
+            tx
+          )
+        )
+
+        const batch = await withOrg(orgId, (tx) =>
+          getPreferencesBatch(orgId, [overrideUserId, defaultUserId], tx)
+        )
+
+        expect(
+          batch
+            .get(overrideUserId)
+            ?.find((p) => p.alertType === CREDENTIAL_EXPIRY_ALERT && p.channel === 'email')
+        ).toMatchObject({
+          frequency: 'digest_daily',
+          minSeverity: 'critical',
+        })
+        expect(
+          batch
+            .get(defaultUserId)
+            ?.find((p) => p.alertType === CREDENTIAL_EXPIRY_ALERT && p.channel === 'email')
+        ).toMatchObject({
+          frequency: 'immediate',
+          minSeverity: 'warning',
+        })
+      })
+    } finally {
+      await deleteTestUser(overrideUserId)
+      await deleteTestUser(defaultUserId)
+    }
+  })
+
+  it('getPreferencesBatch returns an empty map for an empty user list', async () => {
+    const userId = await createTestUser('prefs-batch-empty')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const batch = await withOrg(orgId, (tx) => getPreferencesBatch(orgId, [], tx))
+        expect(batch.size).toBe(0)
       })
     } finally {
       await deleteTestUser(userId)

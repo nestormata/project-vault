@@ -1,7 +1,11 @@
 import type { Tx } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
 import type { NotificationSeverity } from '@project-vault/shared'
-import { getPreferences, type PreferenceOutput } from '../modules/notifications/preferences.js'
+import {
+  getPreferences,
+  getPreferencesBatch,
+  type PreferenceOutput,
+} from '../modules/notifications/preferences.js'
 import { resolveRoutingRecipients } from '../modules/notifications/routing.js'
 import type { BossService } from '../lib/boss.js'
 import { env } from '../config/env.js'
@@ -87,14 +91,14 @@ async function enqueueUserChannel(options: {
 }
 
 async function processRecipientPreferences(
-  orgId: string,
   userId: string,
-  template: NotificationTemplate,
   alertSeverity: NotificationSeverity,
+  template: NotificationTemplate,
+  prefs: PreferenceOutput[],
+  orgId: string,
   tx: Tx,
   seenUserChannels: Set<string>
 ): Promise<{ jobs: NotificationQueueJob[]; slackEnabled: boolean }> {
-  const prefs = await getPreferences(orgId, userId, tx)
   const alertPrefs = prefs.filter((p) => p.alertType === template.templateId)
   const jobs: NotificationQueueJob[] = []
   let slackEnabled = false
@@ -149,17 +153,14 @@ export async function createOrgAdminNotificationEntries(
   const queueJobs: NotificationQueueJob[] = []
   const seenUserChannels = new Set<string>()
   let slackEnabled = false
-
-  // Tracked deferred optimization, not an unresolved open item.
-  // NOSONAR(typescript:S1135) TODO(perf): one getPreferences() query per recipient — batch into
-  // a single query keyed by userId once routing tables grow past small org member counts
-  // (deferred-work.md — Epic 3 closure, Story 3.4 AC-16).
+  const preferencesByUserId = await getPreferencesBatch(orgId, recipientUserIds, tx)
   for (const userId of recipientUserIds) {
     const result = await processRecipientPreferences(
-      orgId,
       userId,
-      template,
       alertSeverity,
+      template,
+      preferencesByUserId.get(userId) ?? [],
+      orgId,
       tx,
       seenUserChannels
     )

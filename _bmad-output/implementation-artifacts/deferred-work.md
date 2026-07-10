@@ -54,7 +54,7 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 |----|------|-------|--------|
 | P4 | Epic 1 retrospective or documented waiver | Nestor | ✅ Done — `epic-1-retro-2026-06-30.md` |
 | E3-1 | SMTP config split: Story 3.1 env vars vs AC-E3a Epic 9 system settings | Architect / PO | ✅ Closed (Story 3.4) — env-var SMTP config is the MVP path (Story 3.1 AC); Epic 9 (`FR86`) adds an admin system-settings UI on top without breaking the env-var fallback |
-| E3-2 | FR73 `PENDING_DELIVERY` → `notification_queue` integration test | Dev | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` (backlog, `sprint-status.yaml`) — bundled with the still-unwired credential-expiry notification delivery this AC was meant to cover end-to-end |
+| E3-2 | FR73 `PENDING_DELIVERY` → `notification_queue` integration test | Dev | ✅ Resolved 2026-07-09 by `3-5-credential-expiry-notification-delivery` — `notification-backfill.test.ts` now asserts queue-row dispatch (`boss.send('notification/deliver', ...)`), a direct `deliverNotification()` terminal-delivery path, and the `boss.isStarted() === false` negative case |
 | D1 | Reconcile `architecture.md`: `secrets` tables/endpoints → `credentials` naming | Tech Writer | ✅ Done 2026-07-09 — direct doc reconciliation (this pass); see `architecture.md`'s Naming Patterns / Canonical Schema Entity Names / API Endpoint Naming / Value Revelation Endpoint sections |
 | D2 | Operator runbook: `CREDENTIAL_RETENTION_DRY_RUN` → destructive purge rollout | Dev / Ops | ✅ Done 2026-07-09 — `docs/runbook.md` § "Credential Version Retention" (this pass) |
 
@@ -68,7 +68,7 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 | Project dashboard — `recentAccessEvents` | ✅ Resolved — real `audit_log_entries` data via `getRecentAccessEventsForProject` (`apps/api/src/modules/projects/recent-access-events.ts`); "Recent activity" section added to `+page.svelte` | — | Landed 2026-07-09 in `2-9-credential-project-web-ui-completeness` |
 | Project dashboard — `DashboardPlaceholderGrid` renders unconditionally, even on a fully-populated project dashboard, with stale "Story 2.1" copy | ✅ Resolved — `hasCredentials`/`hasServices` props now gate the Credentials/Services cards; stale "Story 2.1" Coverage-gaps copy replaced | — | Landed 2026-07-09 in `2-9-credential-project-web-ui-completeness` |
 | Project dashboard — `suggestedActions` partial completion | ✅ Resolved — `buildProjectDashboard` now returns a targeted single-category suggestion (`add_service` or `add_credential`+`import_credentials`) for partially-covered projects, and `[]` for fully-covered ones | — | Landed 2026-07-09 in `2-9-credential-project-web-ui-completeness` |
-| Credential expiry **notifications** | Columns exist (2.2/2.4); no delivery | Epic 3+ | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` (backlog, `sprint-status.yaml`) — Epic 3 has been `in-progress` since 2026-06-30 and this gap was never actually picked up despite the "Epic 3+" target passing |
+| Credential expiry **notifications** | ✅ Resolved — daily pg-boss worker + dispatcher/preferences/queue delivery landed in Story 3.5 | — | 2026-07-09: `credential/expiry-alert` now reuses the shipped expiry-alert shared runner and existing `notification_queue`/dispatcher path end-to-end; follow-up gaps moved to the Story 3.5 section below instead of leaving this as an honest-zero |
 
 ### Web UI gaps — API exists, web incomplete (Epic 2 surface)
 
@@ -143,9 +143,22 @@ UI. Two items remain intentionally open past Epic 3 closure, tracked below.
 
 | Item | Deferred to |
 |------|-------------|
-| Credential expiry notification pg-boss jobs (columns exist from Story 2.4) | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` (backlog, `sprint-status.yaml`) |
-| `notification_queue` failed status / DLQ cleanup | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` |
-| Dispatcher batch preference lookup (N+1 query per recipient) | **Scheduled 2026-07-09** as `3-5-credential-expiry-notification-delivery` — `TODO` in `dispatcher.ts` |
+| Credential expiry notification pg-boss jobs (columns exist from Story 2.4) | ✅ Resolved 2026-07-09 by `3-5-credential-expiry-notification-delivery` (`credential/expiry-alert`, migration `0045_credential_expiry_alerts.sql`, worker registration, and full alert-routing tests) |
+| `notification_queue` failed status / DLQ cleanup | ✅ Resolved 2026-07-09 by `3-5-credential-expiry-notification-delivery` (`NOTIFICATION_MAX_ATTEMPTS`, `markNotificationFailed`, `notification/dlq-cleanup`, and catchup/DLQ tests) |
+| Dispatcher batch preference lookup (N+1 query per recipient) | ✅ Resolved 2026-07-09 by `3-5-credential-expiry-notification-delivery` (`getPreferencesBatch` + dispatcher regression coverage; old `TODO` removed) |
+
+---
+
+## Follow-up from: story-3.5 credential expiry notification delivery (2026-07-09)
+
+- Per-credential `alertLeadDays` are now present in the schema and consumed by the worker, but they
+  still are **not configurable through the credentials API/web surface** — Story 3.5 deliberately
+  shipped the delivery path with the default `[30, 7, 1]` thresholds only. Future story: add
+  PATCH/create surface parity with the other monitored-asset types.
+- `expiry-alert-shared.ts` still has the **pre-existing concurrent overlap race** shared by all five
+  expiry-alert workers: two overlapping runs can both read the same row before either commit updates
+  `notifiedLeadDays`, so the same threshold can fire twice. Story 3.5 documented and tested around
+  this inherited limitation but intentionally did not add row-level locking in the shared runner.
 
 ---
 
