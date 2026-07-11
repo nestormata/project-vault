@@ -309,3 +309,9 @@ Story 9.7's own pre-implementation adversarial review (`9-7-epic-9-completion-pl
 - **Notification query values are not validated.** `apps/web/src/routes/(app)/notifications/+page.server.ts` forwards non-numeric/unsafe pages and unknown statuses to the inbox API. Runtime contract change; outside Story 10.2's test-only scope.
 - **Status-page clipboard failures are unhandled.** A rejected `navigator.clipboard.writeText` promise has no user-visible fallback in the status-page management component. Runtime UX change; outside Story 10.2's test-only scope.
 - **Invitation revoke failures escape without UI handling.** `onRevoke` in the members page resets its busy state in `finally` but has no `catch`, leaving API rejection as an unhandled promise with no visible error. Runtime UX change; outside Story 10.2's test-only scope.
+
+---
+
+## Deferred from: code review of 10-3-apps-web-complete-source-branch-coverage-buffer (2026-07-11)
+
+- **AC-D1's mutation-testing rigor was concentrated on two security-sensitive paths (`LoginForm.svelte`, credential detail lifecycle-override) rather than exhaustively applied per-test across all ~75 new characterization-test files.** Signed off 2026-07-11 (Nestor) as accepted technical debt — a proportionality judgment call given the volume of characterization tests added, not a literal read of AC-D1. No further action required.

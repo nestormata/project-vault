@@ -534,9 +534,9 @@ production deployment safety fails.
 Clean pass — verified test/config-only scope (zero `apps/api`/`packages/db` diff), coverage-buffer verifier and 85% gate logically sound with no gaming vectors found, no tautological/self-mocked tests found across the ~73 new test files.
 
 - [x] [Review][Defer] AD-5 (Svelte 5 `bind:value` on `type="number"` breaks `.trim()` in platform System Settings number fields) — confirmed transparently disclosed, not silently masked; pre-existing, deferred.
-- [ ] [Review][Decision] Mutation/TDD adequacy (AC-D1) was concentrated on two security-sensitive paths rather than exhaustively applied per-test — a proportionality judgment call given ~75 characterization-test files; needs a maintainer sign-off on whether this satisfies AC-D1 as literally written or should be logged as accepted technical debt.
+- [x] [Review][Defer] Mutation/TDD adequacy (AC-D1) was concentrated on two security-sensitive paths rather than exhaustively applied per-test — deferred, pre-existing scope. **Signed off 2026-07-11 (Nestor):** concentrating mutation-testing rigor on the two security-sensitive paths (login form, credential lifecycle-override) is accepted as sufficient given ~75 characterization-test files; logged as accepted technical debt rather than a literal re-read of AC-D1, no further action required.
 
-**Status → done** (the one decision-needed item is a scope-adequacy judgment call, not a blocking defect).
+**Status: done.**
 
 ## Dev Notes
 
