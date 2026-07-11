@@ -1,6 +1,6 @@
 # Story 6.5: Monitored Asset Creation Permission Check Fix
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -215,3 +215,7 @@ The web app's API clients (`apps/web/src/lib/api/service-endpoints.ts`'s `getSer
 - `apps/api/src/modules/monitoring/routes.test.ts` — added a `GET $key/:id` `describe.each` block (happy path, 404, cross-org 404, viewer-role access) for the services/certificates/domains trio; added `createMembershipTestHelpers`/`addUserToOrg` import and setup.
 - `apps/api/src/modules/monitoring/service-endpoints.routes.test.ts` — added a `GET /:projectId/service-endpoints/:id` describe block (happy path, 404, viewer-gets-403).
 - `_bmad-output/implementation-artifacts/6-5-monitored-asset-creation-permission-check-fix.md` (this file, addendum section)
+
+## Live Verification
+
+Both fixes above have now been confirmed end-to-end against a real, running docker instance (not just unit tests). A fresh org/owner user was registered through the actual web UI, then used to create a real service-endpoint and a real certificate through the real creation forms. The service-endpoint appeared correctly in the service-endpoints list and showed a "healthy" status sourced from the live background monitor (confirming the creation-permission-check fix: the owner role was correctly resolved via `data.orgRole` and the form was no longer blocked). Both the new service-endpoint's and the new certificate's detail pages loaded successfully with no 404 and no permission error (confirming the missing-`GET`-route fix from the addendum: `GET /api/v1/projects/{projectId}/service-endpoints/{id}` and `GET /api/v1/projects/{projectId}/certificates/{id}` now return real data instead of 404ing). This closes the gap the addendum explicitly flagged ("the definitive live-browser re-verification... will be done by the user separately") — both root causes are confirmed fixed for a real user in a real running stack, not just at the unit-test level.
