@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import Footer from '$lib/components/shell/Footer.svelte'
 
   let { children } = $props()
 </script>
@@ -15,4 +16,7 @@
     </div>
     {@render children()}
   </section>
+  <div class="mx-auto mt-6 max-w-xl">
+    <Footer />
+  </div>
 </main>

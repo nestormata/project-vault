@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { logout } from '$lib/api/auth.js'
+  import Footer from './Footer.svelte'
   import PrimaryNav from './PrimaryNav.svelte'
 
   let {
@@ -103,4 +104,7 @@
   <main class={hidePrimaryNav ? 'p-0' : 'mx-auto max-w-7xl px-4 py-6'}>
     {@render children()}
   </main>
+  <div class="border-t border-slate-200">
+    <Footer />
+  </div>
 </div>
