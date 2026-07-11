@@ -2,3 +2,11 @@
 
 @source "./**/*.{svelte,ts}";
 @source "../../../packages/shared/src/**/*.ts";
+
+@theme {
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+}

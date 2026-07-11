@@ -86,7 +86,8 @@
       {errorMessage}
     </p>
   {/if}
-  <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit"
-    >Create account</button
+  <button
+    class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700"
+    type="submit">Create account</button
   >
 </form>

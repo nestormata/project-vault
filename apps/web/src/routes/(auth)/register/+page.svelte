@@ -23,7 +23,7 @@
   <RegisterForm {invitationToken} {prefillEmail} />
   <p class="text-sm text-slate-600">
     Already have an account? <a
-      class="font-medium text-slate-950 underline"
+      class="font-medium text-brand-600 underline"
       href={resolve('/login')}>Sign in</a
     >
   </p>
