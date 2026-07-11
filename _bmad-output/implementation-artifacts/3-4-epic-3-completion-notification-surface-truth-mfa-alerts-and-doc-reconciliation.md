@@ -1,6 +1,6 @@
 # Story 3.4: Epic 3 Completion — Notification Surface Truth, MFA Alerts & Doc Reconciliation
 
-Status: in-progress
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-06-30 — Epic 3 closure story derived from epic-3-retro-2026-06-30.md.
      Closes G2 product-surface gate gaps: /alerts route truth, dashboard alert counts, MFA alert stubs,
@@ -597,7 +597,9 @@ _bmad-output/
 
 *From bmad-code-review adversarial multi-agent review (Blind Hunter, Edge Case Hunter, Acceptance Auditor) run against `git diff 7b6a898^..557966a` on 2026-07-09, in an isolated worktree.*
 
-**Status held at `in-progress` rather than `done`:** 8 of 10 patch findings were fixed on branch `fix/3-4-review-findings`, merged to `main` via PR #154 on 2026-07-10. Re-promote to `done` once post-merge CI on `main` is confirmed green (AC-15 precondition) — CI was still running as of this note. One patch finding (`RATE_LIMIT_TEST_ENFORCE` shared env var race) remains an open, non-blocking action item.
+**Re-promoted to `done` 2026-07-11:** post-merge `make ci` on `main` confirmed green — 1851/1852 tests passed; the sole failure (`src/workers/backup-snapshot.test.ts`, unrelated to this story's notification/MFA-alert scope) passed 5/5 when run in isolation, confirming cross-file test-pollution rather than a regression. AC-13's `alert.pending_epic3` guard confirmed zero matches in `apps/api/src` (`rg 'alert\.pending_epic3' apps/api/src`). Typecheck/lint clean (lint warnings only, no errors). One patch finding (`RATE_LIMIT_TEST_ENFORCE` shared env var race) remains an open, non-blocking action item.
+
+8 of 10 patch findings were fixed on branch `fix/3-4-review-findings`, merged to `main` via PR #154 on 2026-07-10.
 
 - [x] [Review][Defer] `NODE_ENV=test` rate-limit bypass has broad blast radius — `isRateLimitEnforced()` (`apps/api/src/lib/route-helpers.ts`) disables `@fastify/rate-limit` registration entirely on `authRoutes`/`vaultRoutes` whenever `NODE_ENV !== 'test'` is false, i.e. real rate limiting compiles out under `NODE_ENV=test`. A misconfigured staging/smoke-test environment reachable by real traffic that sets `NODE_ENV=test` would silently lose brute-force protection on login/register/unseal. — deferred, not covered by Story 3.5; routed to new backlog story `3-6-rate-limit-env-gating-and-mfa-preference-opt-out-hardening`.
 - [x] [Review][Defer] MFA alert "None" opt-out is silently ineffective for the newly user-exposed types — Dev Agent Record documents that `patchPreferences()`'s `channel: 'none'` handling (pre-existing Story 3.2 bug) deletes stored override rows rather than persisting suppression, so a user selecting "None" for `security.mfa_recovery_used`/`..._regenerated` in the new personal-preferences UI silently reverts to default `email`+`inbox` delivery on the next event. This diff is what makes that broken control reachable by users for security-sensitive MFA alerts for the first time. — deferred, not covered by Story 3.5 (its AC-W6 example only assumes the existing mechanism works, doesn't fix it); routed to new backlog story `3-6-rate-limit-env-gating-and-mfa-preference-opt-out-hardening`.
