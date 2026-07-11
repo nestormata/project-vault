@@ -282,6 +282,19 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
       })
       expect(res.statusCode).toBe(403)
     })
+
+    it('allows a plain member (the minimumRole boundary) to read', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-get-member')
+      const created = await createEndpointExpect201(app, owner.cookies, projectId)
+      const member = await addUserToOrg(app, owner.orgId, 'se-get-member', { orgRole: 'member' })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(member.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+    })
   })
 
   describe('PATCH /:projectId/service-endpoints/:id', () => {

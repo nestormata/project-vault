@@ -358,7 +358,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     security: {
       minimumRole: 'viewer',
       writeAuditEvent: false,
-      rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/services/:serviceId' },
+      rateLimit: { ...LIST_RATE_LIMIT, key: `GET /api/v1/projects${SERVICE_ITEM_URL}` },
     },
     handler: makeGetByIdHandler(
       ServiceParamsSchema,
@@ -558,7 +558,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: {
         ...LIST_RATE_LIMIT,
-        key: 'GET /api/v1/projects/:projectId/certificates/:certificateId',
+        key: `GET /api/v1/projects${CERTIFICATE_ITEM_URL}`,
       },
     },
     handler: makeGetByIdHandler(
@@ -749,7 +749,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     security: {
       minimumRole: 'viewer',
       writeAuditEvent: false,
-      rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/domains/:domainId' },
+      rateLimit: { ...LIST_RATE_LIMIT, key: `GET /api/v1/projects${DOMAIN_ITEM_URL}` },
     },
     handler: makeGetByIdHandler(
       DomainRecordParamsSchema,
@@ -969,7 +969,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       rateLimit: {
         ...LIST_RATE_LIMIT,
-        key: 'GET /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId',
+        key: `GET /api/v1/projects${SERVICE_ENDPOINT_ITEM_URL}`,
       },
     },
     handler: makeGetByIdHandler(

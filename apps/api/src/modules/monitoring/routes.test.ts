@@ -555,6 +555,27 @@ describe('monitoring routes (services/certificates/domains)', () => {
       expect(res.statusCode).toBe(404)
     })
 
+    it('hides a same-org, different-project record as 404 (query filters by projectId)', async () => {
+      const projectId = await createProjectViaApi(
+        app,
+        owner.cookies,
+        `${resource.key}-get-other-project-a`
+      )
+      const created = await createRecordExpect201(app, owner.cookies, projectId, resource)
+
+      const otherProjectId = await createProjectViaApi(
+        app,
+        owner.cookies,
+        `${resource.key}-get-other-project-b`
+      )
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(otherProjectId, resource, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(res.statusCode).toBe(404)
+    })
+
     it('allows an org viewer to read (same minimumRole as the list route, looser than PATCH/DELETE)', async () => {
       const projectId = await createProjectViaApi(app, owner.cookies, `${resource.key}-get-viewer`)
       const created = await createRecordExpect201(app, owner.cookies, projectId, resource)
