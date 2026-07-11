@@ -39,6 +39,11 @@ const TOKEN_IS_CREDENTIAL = 'token-is-the-credential'
 const NO_DATA_ACCESS = 'no-data-access'
 const MONITORING_LIST_READ_OMISSION_REASON =
   'List read returns operational metadata only; no secret values.'
+const MONITORING_READ_CLASSIFICATION: RouteActionClassification = {
+  action: 'read',
+  auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+  reviewer: SECURITY_OWNER,
+}
 
 export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
@@ -786,21 +791,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     reviewer: SECURITY_OWNER,
   },
   // Story 6.1 — services (payment_records), certificates (cert_records), domains (domain_records).
-  'GET /api/v1/projects/:projectId/services': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/services': MONITORING_READ_CLASSIFICATION,
   'POST /api/v1/projects/:projectId/services': {
     action: 'mutation',
     auditEvent: 'payment_record.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
-  'GET /api/v1/projects/:projectId/services/:serviceId': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/services/:serviceId': MONITORING_READ_CLASSIFICATION,
   'PATCH /api/v1/projects/:projectId/services/:serviceId': {
     action: 'mutation',
     auditEvent: 'payment_record.updated',
@@ -811,21 +808,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'payment_record.deleted',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
-  'GET /api/v1/projects/:projectId/certificates': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/certificates': MONITORING_READ_CLASSIFICATION,
   'POST /api/v1/projects/:projectId/certificates': {
     action: 'mutation',
     auditEvent: 'certificate.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
-  'GET /api/v1/projects/:projectId/certificates/:certificateId': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/certificates/:certificateId': MONITORING_READ_CLASSIFICATION,
   'PATCH /api/v1/projects/:projectId/certificates/:certificateId': {
     action: 'mutation',
     auditEvent: 'certificate.updated',
@@ -836,21 +825,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'certificate.deleted',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
-  'GET /api/v1/projects/:projectId/domains': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/domains': MONITORING_READ_CLASSIFICATION,
   'POST /api/v1/projects/:projectId/domains': {
     action: 'mutation',
     auditEvent: 'domain_record.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
-  'GET /api/v1/projects/:projectId/domains/:domainId': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/domains/:domainId': MONITORING_READ_CLASSIFICATION,
   'PATCH /api/v1/projects/:projectId/domains/:domainId': {
     action: 'mutation',
     auditEvent: 'domain_record.updated',
@@ -862,21 +843,14 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
   // Story 6.2 — service endpoints (service_endpoints), health history, monitoring alerts.
-  'GET /api/v1/projects/:projectId/service-endpoints': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/service-endpoints': MONITORING_READ_CLASSIFICATION,
   'POST /api/v1/projects/:projectId/service-endpoints': {
     action: 'mutation',
     auditEvent: 'service_endpoint.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
-  'GET /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
-    action: 'read',
-    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
-    reviewer: SECURITY_OWNER,
-  },
+  'GET /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId':
+    MONITORING_READ_CLASSIFICATION,
   'PATCH /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
     action: 'mutation',
     auditEvent: 'service_endpoint.updated',
