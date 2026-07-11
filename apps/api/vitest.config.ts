@@ -26,6 +26,7 @@ export default mergeConfig(baseVitestConfig, {
         'src/modules/platform-admin/route-common.ts',
         'src/modules/platform-admin/settings-routes.ts',
         'src/modules/platform-audit/maintenance-mode.ts',
+        'src/modules/monitoring/routes.ts',
         'src/modules/vault/key-service.ts',
         'src/modules/vault/routes.ts',
         'src/modules/vault/schema.ts',
