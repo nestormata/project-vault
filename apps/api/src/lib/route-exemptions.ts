@@ -796,6 +796,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'payment_record.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
+  'GET /api/v1/projects/:projectId/services/:serviceId': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
+  },
   'PATCH /api/v1/projects/:projectId/services/:serviceId': {
     action: 'mutation',
     auditEvent: 'payment_record.updated',
@@ -815,6 +820,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'mutation',
     auditEvent: 'certificate.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/certificates/:certificateId': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
   },
   'PATCH /api/v1/projects/:projectId/certificates/:certificateId': {
     action: 'mutation',
@@ -836,6 +846,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'domain_record.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
   },
+  'GET /api/v1/projects/:projectId/domains/:domainId': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
+  },
   'PATCH /api/v1/projects/:projectId/domains/:domainId': {
     action: 'mutation',
     auditEvent: 'domain_record.updated',
@@ -856,6 +871,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'mutation',
     auditEvent: 'service_endpoint.created',
     sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+  },
+  'GET /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
+    action: 'read',
+    auditOmissionReason: MONITORING_LIST_READ_OMISSION_REASON,
+    reviewer: SECURITY_OWNER,
   },
   'PATCH /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
     action: 'mutation',

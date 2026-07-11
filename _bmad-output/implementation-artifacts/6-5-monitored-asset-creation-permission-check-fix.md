@@ -167,3 +167,51 @@ Claude Sonnet 5 (story authored via bmad-create-story from direct source/live-br
 **Modified files:**
 - `_bmad-output/implementation-artifacts/6-5-monitored-asset-creation-permission-check-fix.md` (this file)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (status: ready-for-dev -> review)
+
+## Addendum: Second bug found during live verification
+
+Status remains `review` — this addendum documents a second, independent bug found while live-verifying the fix above, not a new story. Discovered 2026-07-11 during the same live-browser verification pass: registered a user, created a real service-endpoint through the web UI (confirmed working end-to-end after the fix above), then clicked into that service-endpoint's detail page (`/projects/{id}/service-endpoints/{endpointId}`) and got "Endpoint not found." Confirmed via direct API log inspection that `GET /api/v1/projects/{projectId}/service-endpoints/{serviceEndpointId}` returned a genuine 404 from the API itself — not a web-app routing or fetch bug.
+
+### Root cause
+
+`apps/api/src/modules/monitoring/routes.ts` registered a `PATCH` and a `DELETE` handler for each of:
+
+- `/:projectId/services/:serviceId`
+- `/:projectId/certificates/:certificateId`
+- `/:projectId/domains/:domainId`
+- `/:projectId/service-endpoints/:serviceEndpointId`
+
+...but **no `GET` handler existed for any of them**. Each type had a `GET` for the **list** endpoint (e.g. `/:projectId/services`), but never for a single record by ID. Every detail/edit page for services, certificates, domains, and service-endpoints 404'd at the API level, for every user regardless of role — a second, complete-feature-blocking bug in the same Epic 6 monitoring feature set, independent of the creation bug this story already fixed.
+
+The DB layer already had unused, ready-to-wire `find*InProject` functions for all 4 types (`findPaymentRecordInProject`, `findCertificateRecordInProject`, `findDomainRecordInProject`, `findServiceEndpointInProject` in `apps/api/src/modules/monitoring/service.ts`) — each already used internally by the corresponding `update*`/`delete*` functions, just never exposed through a route. No new DB logic was needed.
+
+### The fix
+
+Added a `GET /:projectId/services/:serviceId`, `GET /:projectId/certificates/:certificateId`, `GET /:projectId/domains/:domainId`, and `GET /:projectId/service-endpoints/:serviceEndpointId` route to `apps/api/src/modules/monitoring/routes.ts`, each:
+
+- Parsing params with the same `*ParamsSchema` PATCH/DELETE already use.
+- 404-ing with `project_not_found` if the project isn't in the caller's org (same as the list routes), then 404-ing with the resource-specific `*_not_found` code if `find*InProject` returns nothing.
+- Reusing the existing `find*InProject` DB functions and `serialize*` functions — no new DB or serialization logic.
+- Using the **same `minimumRole` as each type's own list route**, not PATCH/DELETE's: `'viewer'` for services/certificates/domains (matching their list routes), `'member'` for service-endpoints (matching its list route's deliberate divergence, per the existing comment above that trio). Rationale: viewing a single record is a subset of viewing the list; it should never require more privilege than the list.
+- A shared `makeGetByIdHandler` factory (mirroring the existing `makeListHandler` factory) to avoid duplicating the parse/404/serialize sequence 4 times.
+- Item URL string literals (`/:projectId/services/:serviceId`, etc.) were extracted into module-level constants (`SERVICE_ITEM_URL`, `CERTIFICATE_ITEM_URL`, `DOMAIN_ITEM_URL`, `SERVICE_ENDPOINT_ITEM_URL`) since the new GET routes brought each literal's use count from 2 to 3, triggering the repo's `sonarjs/no-duplicate-string` lint gate.
+
+Also updated `apps/api/src/lib/route-exemptions.ts`'s `ROUTE_ACTION_CLASSIFICATIONS` map with an entry for each new `GET .../:id` route (action: `'read'`, reusing the existing `MONITORING_LIST_READ_OMISSION_REASON` audit-omission rationale) — required by `src/__tests__/route-audit.test.ts`'s static audit-classification gate, which fails the build if any `secureRoute`-registered `/api/v1/...` route lacks a classification entry.
+
+The web app's API clients (`apps/web/src/lib/api/service-endpoints.ts`'s `getServiceEndpoint`, and the equivalent `getService`/`getCertificate`/`getDomain` functions in `services.ts`/`certificates.ts`/`domains.ts`) already called `GET /api/v1/projects/{projectId}/{type}/{id}` expecting exactly this response shape (`{ data: <Detail> }`) — they needed no changes; they were just calling a route that didn't exist yet.
+
+### Verification
+
+- `pnpm --filter api typecheck` — pass.
+- `pnpm --filter api lint` — pass (0 errors; pre-existing unrelated warnings only).
+- `apps/api/src/modules/monitoring/routes.test.ts` and `service-endpoints.routes.test.ts` — added new `GET .../:id` test blocks per resource type covering: 200 happy path (correct shape, matches created record), 404 for a nonexistent/cross-org id, and the permission check (an org `viewer` succeeds for services/certificates/domains; an org `viewer` gets 403 for service-endpoints, whose list route requires `member`+). Full monitoring module suite: 10 test files, 215 tests, all passing (includes `route-audit.test.ts`'s classification gate).
+- Did not rebuild/restart the running Docker stack's API container as part of this pass — the definitive live-browser re-verification of the detail pages will be done by the user separately, per this addendum's instructions.
+
+### File List (addendum)
+
+**Modified files:**
+- `apps/api/src/modules/monitoring/routes.ts` — added 4 `GET .../:id` routes + `makeGetByIdHandler` factory + 4 item-URL constants; added `findCertificateRecordInProject`/`findDomainRecordInProject`/`findPaymentRecordInProject` to the `service.js` import list.
+- `apps/api/src/lib/route-exemptions.ts` — added 4 `ROUTE_ACTION_CLASSIFICATIONS` entries for the new GET routes.
+- `apps/api/src/modules/monitoring/routes.test.ts` — added a `GET $key/:id` `describe.each` block (happy path, 404, cross-org 404, viewer-role access) for the services/certificates/domains trio; added `createMembershipTestHelpers`/`addUserToOrg` import and setup.
+- `apps/api/src/modules/monitoring/service-endpoints.routes.test.ts` — added a `GET /:projectId/service-endpoints/:id` describe block (happy path, 404, viewer-gets-403).
+- `_bmad-output/implementation-artifacts/6-5-monitored-asset-creation-permission-check-fix.md` (this file, addendum section)
