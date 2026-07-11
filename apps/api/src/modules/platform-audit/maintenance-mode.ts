@@ -1,10 +1,12 @@
 import { asc, eq, sql } from 'drizzle-orm'
-import type { Tx } from '@project-vault/db'
+import type { Tx, getDb } from '@project-vault/db'
 import {
   platformAuditMaintenanceState,
   platformAuditPendingEntries,
 } from '@project-vault/db/schema'
 import { writePlatformAuditEntry, type PlatformAuditFields } from './write-entry.js'
+
+type Db = ReturnType<typeof getDb>
 
 export class MaintenanceModeAlreadyActiveError extends Error {
   constructor() {
@@ -232,26 +234,39 @@ export type DeactivateMaintenanceModeResult = { active: false; deactivatedAt: Da
 /** AC-16: operator-initiated deactivation (`POST /platform/maintenance-mode { action:
  * 'deactivate' }`). Any failure during the drain-and-deactivate attempt (the log is still
  * genuinely unavailable) is rewrapped as `MaintenanceModeStillUnavailableError` — `active` is
- * left untouched (still `true`) since the transaction rolls back on throw.
+ * left untouched (still `true`) in that case.
  *
- * Code review fix: `drainPendingEntries` no longer throws on a partial/poisoned-entry failure
- * (it isolates each entry in its own SAVEPOINT and reports `remaining` instead) — this function
- * must therefore explicitly check `result.remaining` and refuse to report success while any
- * entry is still stuck, instead of the previous implicit "no throw = fully drained" assumption.
- * It must also check `result.wasActive`: if a concurrent deactivate call already finished the
- * drain (AC-16 concurrent-drain-race), this call must not fire a second, spurious
+ * Review fix (2026-07-11): `drainPendingEntries` isolates each entry in its own SAVEPOINT, but a
+ * SAVEPOINT's work is only durable once the *enclosing* transaction commits. The previous
+ * implementation ran the whole drain-and-decide sequence inside one outer transaction and threw
+ * `MaintenanceModeStillUnavailableError` from inside it whenever any entry remained undrained —
+ * that throw rolled back the entire outer transaction, discarding every SAVEPOINT that had
+ * already been released for entries that DID drain successfully. This function now runs the
+ * drain in its own top-level transaction (`db.transaction`, not a caller-supplied `tx`) so it
+ * commits unconditionally once the loop finishes; the decision to throw
+ * `MaintenanceModeStillUnavailableError` happens afterward, outside any transaction, so it can no
+ * longer undo the drain's already-committed work.
+ *
+ * `drainPendingEntries` no longer throws on a partial/poisoned-entry failure (it isolates each
+ * entry in its own SAVEPOINT and reports `remaining` instead) — this function must therefore
+ * explicitly check `result.remaining` and refuse to report success while any entry is still
+ * stuck, instead of the previous implicit "no throw = fully drained" assumption. It must also
+ * check `result.wasActive`: if a concurrent deactivate call already finished the drain (AC-16
+ * concurrent-drain-race), this call must not fire a second, spurious
  * `maintenance_mode.deactivated` write for a transition that already happened.
  */
 export async function deactivateMaintenanceMode(
-  tx: Tx,
+  db: Db,
   operatorId: string
 ): Promise<DeactivateMaintenanceModeResult> {
-  const active = await isMaintenanceModeActive(tx)
+  const active = await db.transaction((tx) => isMaintenanceModeActive(tx))
   if (!active) return { active: false, deactivatedAt: new Date() }
 
   let result: DrainResult
   try {
-    result = await drainPendingEntries(tx, operatorId, { skipLocked: false })
+    result = await db.transaction((tx) =>
+      drainPendingEntries(tx, operatorId, { skipLocked: false })
+    )
   } catch {
     throw new MaintenanceModeStillUnavailableError()
   }
@@ -266,7 +281,7 @@ export async function deactivateMaintenanceMode(
     // Nothing was queued (AC-14 proactive-activation case) — drainPendingEntries left `active`
     // untouched; force deactivation here, still gated on a real write actually succeeding.
     try {
-      await forceDeactivateWithFreshWrite(tx, operatorId)
+      await db.transaction((tx) => forceDeactivateWithFreshWrite(tx, operatorId))
     } catch {
       throw new MaintenanceModeStillUnavailableError()
     }
@@ -275,7 +290,9 @@ export async function deactivateMaintenanceMode(
 
   if (result.remaining > 0) {
     // One or more pending entries could not be drained — maintenance mode is still genuinely
-    // active; never falsely report success.
+    // active; never falsely report success. The drain's transaction above has already committed,
+    // though, so entries that DID drain successfully are durably gone from the queue even though
+    // this call still reports "still unavailable" for the ones that didn't.
     throw new MaintenanceModeStillUnavailableError()
   }
 
