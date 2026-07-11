@@ -37,7 +37,7 @@
     >
       <div>
         <div class="flex items-center gap-2">
-          <img src={resolve('/logo.png')} alt="" width="238" height="240" class="h-8 w-auto" />
+          <img src={resolve('/logo-mark.png')} alt="" width="276" height="240" class="h-8 w-auto" />
           {#if hidePrimaryNav}
             <p class="text-xl font-bold text-brand-600">Project Vault</p>
           {:else}
