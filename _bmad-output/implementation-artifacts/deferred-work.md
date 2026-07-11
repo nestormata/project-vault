@@ -315,3 +315,14 @@ Story 9.7's own pre-implementation adversarial review (`9-7-epic-9-completion-pl
 ## Deferred from: code review of 10-3-apps-web-complete-source-branch-coverage-buffer (2026-07-11)
 
 - **AC-D1's mutation-testing rigor was concentrated on two security-sensitive paths (`LoginForm.svelte`, credential detail lifecycle-override) rather than exhaustively applied per-test across all ~75 new characterization-test files.** Signed off 2026-07-11 (Nestor) as accepted technical debt — a proportionality judgment call given the volume of characterization tests added, not a literal read of AC-D1. No further action required.
+
+---
+
+## Deferred from: code review of 11-1-branding-visual-identity (2026-07-11)
+
+- Logo+wordmark markup duplicated verbatim between `AppShell.svelte` and `(auth)/+layout.svelte` with no shared `<BrandLogo>`/`<BrandMark>` component — future logo/size/link changes require editing both call sites manually.
+- `bg-brand-600`/`hover:bg-brand-700` button classes repeated verbatim across `LoginForm.svelte`, `RegisterForm.svelte`, `recovery/+page.svelte`, and `recovery/[token]/+page.svelte` instead of a shared Button component — a future rebrand means repeating this mechanical class sweep again.
+- Auth-shell logo image (`(auth)/+layout.svelte`) is not a clickable link to `/dashboard`, unlike the `AppShell.svelte` header wordmark — minor click-affordance inconsistency between the two brand-mark locations.
+- `PrimaryNav.svelte`'s active-tab pill (`bg-brand-600`) has no `hover:` state, while every other CTA recolored in this story gained `hover:bg-brand-700`.
+- Primary-CTA `bg-slate-950` styling remains on surfaces outside the 3 target surfaces named in Story 11.1 (e.g. `FormSubmitRow.svelte`, `VaultGate.svelte`, `VaultUnsealForm.svelte`, `OnboardingStep3.svelte`, `AccessNotice.svelte`, `PageAlertBanner.svelte`) — explicitly Out of Scope for 11.1, but worth a follow-up story if a full brand rollout is desired (leaving the app visually split between violet header/auth and near-black CTAs elsewhere).
+- No test assertions cover the new logo `<img>` markup or `brand-600`/`brand-700` classes in `AppShell.test.ts`, `PrimaryNav.test.ts`, `LoginForm.test.ts`, `RegisterForm.test.ts`, or the `(auth)` page tests — a future accidental revert of the brand recolor or logo removal would pass the full suite silently.

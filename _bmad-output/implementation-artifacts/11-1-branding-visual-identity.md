@@ -1,6 +1,6 @@
 # Story 11.1: branding-visual-identity
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -444,6 +444,33 @@ Claude Sonnet 5
 - `apps/web/src/lib/components/auth/LoginForm.svelte` — submit button recolored
 - `apps/web/src/lib/components/auth/RegisterForm.svelte` — submit button recolored
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — status update (ready-for-dev → review)
+
+## Review Findings
+
+Adversarial code review (`bmad-code-review`, 2026-07-11) ran three parallel layers
+(Blind Hunter, Edge Case Hunter, Acceptance Auditor) against commit `efa0b3b`. The
+Acceptance Auditor independently re-verified all 10 ACs against live worktree file
+contents (not just the diff/story claims) and returned **zero findings** — every AC,
+the Out-of-Scope list, and the Dev Agent Record's specific claims (12 files touched,
+both `recovery/[token]` buttons recolored, wrapper `text-slate-950` classes
+untouched, existing tests still passing) were independently confirmed. No
+`decision-needed` or `patch` findings were raised by any layer.
+
+- [x] [Review][Defer] Logo+wordmark markup duplicated verbatim between `AppShell.svelte` and `(auth)/+layout.svelte` with no shared component [apps/web/src/lib/components/shell/AppShell.svelte, apps/web/src/routes/(auth)/+layout.svelte] — deferred, not required by this story's scope
+- [x] [Review][Defer] `bg-brand-600`/`hover:bg-brand-700` button classes repeated verbatim across 5+ files instead of a shared Button component [LoginForm.svelte:119, RegisterForm.svelte:90, recovery/+page.svelte:60, recovery/[token]/+page.svelte:152,237] — deferred, mechanical find/replace was the story's explicit intent, componentization is a separate concern
+- [x] [Review][Defer] Auth-shell logo image is not a clickable link to `/dashboard` while `AppShell.svelte`'s wordmark is [apps/web/src/routes/(auth)/+layout.svelte] — deferred, minor click-affordance inconsistency, not an AC
+- [x] [Review][Defer] `PrimaryNav.svelte` active-tab pill has no `hover:` state while every other recolored CTA gained one [apps/web/src/lib/components/shell/PrimaryNav.svelte:35] — deferred, pre-existing interaction design, not part of this story's AC-6 scope
+- [x] [Review][Defer] Primary-CTA `bg-slate-950` styling remains on surfaces outside the 3 named target surfaces (e.g. `FormSubmitRow.svelte`, `VaultGate.svelte`, `VaultUnsealForm.svelte`, `OnboardingStep3.svelte`, `AccessNotice.svelte`, `PageAlertBanner.svelte`), producing a visually inconsistent brand experience once a user leaves the header/auth flow — deferred, explicitly Out of Scope per this story ("Replacing indigo-*/slate-* usage anywhere outside the 3 named surfaces")
+- [x] [Review][Defer] No test assertions added for the new logo `<img>` markup or `brand-600`/`brand-700` classes, so a future accidental revert would pass the full suite silently [AppShell.test.ts, PrimaryNav.test.ts, LoginForm.test.ts, RegisterForm.test.ts, (auth) page tests] — deferred, AC-10 only required existing tests to keep passing, not new coverage
+
+Dismissed as noise (false positives / already accounted for by design, not written to deferred-work.md):
+- "Missing alt text on logo images" — `alt=""` is the AC-3/AC-4-mandated decorative pattern, verified correct against `AppShell.test.ts`'s exact-match accessible-name assertions.
+- "No favicon `<link>` tag added" — the `<link rel="icon">` already existed in `app.html` pre-diff (AC-1 explicitly describes it as pre-existing); only `apple-touch-icon` was new in this diff.
+- "`icon.png` orphaned/unused" — explicitly listed as an intentional future-use asset in Out of Scope ("the 512×512 `apps/web/static/icon.png` exists for future use... not part of this story").
+- "Brand palette tokens `-50`/`-100`/`-500` unused" — by design; AC-7 explicitly reserves `brand-500` for non-text UI and `-50`/`-100` for future tinted backgrounds.
+- "Non-square 238×240 logo dimensions" — matches the actual committed asset's real pixel dimensions exactly (verified via `file`), not a defect.
+- "`resolve()` used for static asset path in `(auth)/+layout.svelte`" — consistent with the existing pattern already used in `AppShell.svelte`/`AccessNotice.svelte`, not an inconsistency.
+- "`.gitignore` raw-source comment doesn't cover favicon/apple-touch-icon originals" — minor documentation nit, no functional impact, no raw-source risk today.
 
 ## Change Log
 
