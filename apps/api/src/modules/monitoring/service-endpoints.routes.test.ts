@@ -241,6 +241,62 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
     })
   })
 
+  describe('GET /:projectId/service-endpoints/:id', () => {
+    it('returns the endpoint (200, full detail shape)', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-get')
+      const created = await createEndpointExpect201(app, owner.cookies, projectId)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+      const data = res.json<{ data: Record<string, unknown> }>().data
+      expect(data['id']).toBe(created['id'])
+      expect(data['name']).toBe(created['name'])
+      expect(data['url']).toBe(DEFAULT_ENDPOINT_URL)
+      expect(data['status']).toBeDefined()
+    })
+
+    it('returns 404 for a cross-org id', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-get-404')
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, randomUUID()),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(res.statusCode).toBe(404)
+      expect(res.json()).toMatchObject({ code: 'service_endpoint_not_found' })
+    })
+
+    it('requires member+ role — a viewer gets 403 (same minimumRole as the list route)', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-get-403')
+      const created = await createEndpointExpect201(app, owner.cookies, projectId)
+      const viewer = await addUserToOrg(app, owner.orgId, 'se-get-viewer', { orgRole: 'viewer' })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(viewer.cookies) },
+      })
+      expect(res.statusCode).toBe(403)
+    })
+
+    it('allows a plain member (the minimumRole boundary) to read', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-get-member')
+      const created = await createEndpointExpect201(app, owner.cookies, projectId)
+      const member = await addUserToOrg(app, owner.orgId, 'se-get-member', { orgRole: 'member' })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(member.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+    })
+  })
+
   describe('PATCH /:projectId/service-endpoints/:id', () => {
     it('updates checkFrequencyMinutes (happy path)', async () => {
       const projectId = await createProjectViaApi(app, owner.cookies, 'se-patch')
