@@ -10,4 +10,12 @@
   >
     GitHub
   </a>
+  <a
+    href="https://github.com/nestormata/project-vault/blob/main/LICENSE"
+    target="_blank"
+    rel="noopener noreferrer"
+    class="text-brand-600 hover:text-brand-700"
+  >
+    AGPL-3.0
+  </a>
 </footer>

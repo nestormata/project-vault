@@ -1,6 +1,7 @@
 <script>
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
+  import AuthBrandHeader from '$lib/components/shell/AuthBrandHeader.svelte'
   import VaultGate from '$lib/components/vault/VaultGate.svelte'
   import { getVaultReadiness, initVault, unsealVault } from '$lib/api/vault.js'
 
@@ -28,6 +29,9 @@
 </svelte:head>
 
 <main class="min-h-screen bg-slate-50 px-4 py-10 text-slate-950">
+  <div class="mx-auto max-w-3xl">
+    <AuthBrandHeader />
+  </div>
   <VaultGate
     readiness={readiness ?? data.readiness}
     onRetry={refreshReadiness}
