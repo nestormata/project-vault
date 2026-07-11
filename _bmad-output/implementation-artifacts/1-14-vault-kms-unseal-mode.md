@@ -1,6 +1,6 @@
 # Story 1.14: Vault KMS Unseal Mode
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -261,19 +261,19 @@ curl -X POST http://localhost:3000/api/v1/vault/unseal -H "Content-Type: applica
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `@aws-sdk/client-kms` dependency to `apps/api/package.json` (same version family as the existing `@aws-sdk/client-s3` dependency) (AC-1, AC-21)
-- [ ] Task 2: DB migration — add `kms_key_id TEXT` and `kms_encrypted_dek TEXT` nullable columns to `vault_state` (`packages/db/src/migrations/00XX_vault_kms_columns.sql`, next number after `0047`); update `packages/db/src/schema/vault-state.ts` (AC-7, AC-20)
-  - [ ] Subtask 2.1: Run `pnpm check-migration-compatibility` to confirm additive-only
-- [ ] Task 3: `apps/api/src/modules/vault/kms-provider.ts` — `KmsKeyProvider` interface + `AwsKmsProvider` implementation using `@aws-sdk/client-kms`'s `GenerateDataKeyCommand`/`DecryptCommand`, mapping AWS SDK errors to typed categories (unreachable/not-found/permission-denied) (AC-1, AC-3, AC-4, AC-5, AC-11, AC-12, AC-13, AC-21, AC-22)
-- [ ] Task 4: `apps/api/src/modules/vault/schema.ts` — add `KmsInitSchema` to the discriminated union, extend both response schemas' `kmsType` enum, relax `VaultUnsealRequestSchema`'s refine to allow zero legacy fields (AC-2, AC-8, AC-10)
-- [ ] Task 5: `apps/api/src/modules/vault/key-service.ts` — add `kms` branches to `deriveIkmForInit`/`deriveIkmForUnseal` calling `KmsKeyProvider`; wire error mapping to `AppError` subtypes (`KMS_UNREACHABLE`, `KMS_KEY_NOT_FOUND`, `KMS_PERMISSION_DENIED`, `KMS_KEY_UNAVAILABLE`); persist `kmsKeyId`/`kmsEncryptedDek` on init, read them on unseal (AC-1, AC-3–AC-6, AC-9, AC-11–AC-16)
-- [ ] Task 6: `apps/api/src/modules/vault/routes.ts` — extend response schema wiring for the new error codes' status codes (`403`, `503` alongside existing `400`/`401`/`409`) (AC-3, AC-5, AC-11, AC-12, AC-13, AC-17, AC-18)
-- [ ] Task 7: `apps/api/src/workers/key-custody-check.ts` — confirm/regression-test that `file_kms_with_backup` trigger condition remains `=== 'file'` only, unaffected by `'kms'` mode (AC-19)
-- [ ] Task 8: `apps/api/src/config/env.ts` + `.env.example` — add optional `VAULT_KMS_ENDPOINT` (AC-22)
-- [ ] Task 9: Tests — unit tests for `AwsKmsProvider` (mocked `KMSClient.send`), integration tests in `apps/api/src/__tests__/vault-lifecycle.test.ts`-style file covering AC-1 through AC-19 (happy paths, all error classes, concurrency, backward compat) (AC-1–AC-20, AC-23)
-- [ ] Task 10: Regenerate `openapi.json`; confirm Story 9.3's contract-test suite passes (AC-26)
-- [ ] Task 11: Update `README.md` lines ~54/~84 (AC-24)
-- [ ] Task 12: Update `docs/runbook.md`'s KMS section (AC-25)
+- [x] Task 1: Add `@aws-sdk/client-kms` dependency to `apps/api/package.json` (same version family as the existing `@aws-sdk/client-s3` dependency) (AC-1, AC-21)
+- [x] Task 2: DB migration — add `kms_key_id TEXT` and `kms_encrypted_dek TEXT` nullable columns to `vault_state` (`packages/db/src/migrations/0048_vault_kms_columns.sql`); update `packages/db/src/schema/vault-state.ts` (AC-7, AC-20)
+  - [x] Subtask 2.1: Run `pnpm check-migration-compatibility` to confirm additive-only
+- [x] Task 3: `apps/api/src/modules/vault/kms-provider.ts` — `KmsKeyProvider` interface + `AwsKmsProvider` implementation using `@aws-sdk/client-kms`'s `GenerateDataKeyCommand`/`DecryptCommand`, mapping AWS SDK errors to typed categories (unreachable/not-found/permission-denied) (AC-1, AC-3, AC-4, AC-5, AC-11, AC-12, AC-13, AC-21, AC-22)
+- [x] Task 4: `apps/api/src/modules/vault/schema.ts` — add `KmsInitSchema` to the discriminated union, extend both response schemas' `kmsType` enum, relax `VaultUnsealRequestSchema`'s refine to allow zero legacy fields (AC-2, AC-8, AC-10)
+- [x] Task 5: `apps/api/src/modules/vault/key-service.ts` — add `kms` branches to `deriveIkmForInit`/`deriveIkmForUnseal` calling `KmsKeyProvider`; wire error mapping to `AppError` subtypes (`KMS_UNREACHABLE`, `KMS_KEY_NOT_FOUND`, `KMS_PERMISSION_DENIED`, `KMS_KEY_UNAVAILABLE`); persist `kmsKeyId`/`kmsEncryptedDek` on init, read them on unseal (AC-1, AC-3–AC-6, AC-9, AC-11–AC-16)
+- [x] Task 6: `apps/api/src/modules/vault/routes.ts` — extend response schema wiring for the new error codes' status codes (`403`, `503` alongside existing `400`/`401`/`409`) (AC-3, AC-5, AC-11, AC-12, AC-13, AC-17, AC-18)
+- [x] Task 7: `apps/api/src/workers/key-custody-check.ts` — confirm/regression-test that `file_kms_with_backup` trigger condition remains `=== 'file'` only, unaffected by `'kms'` mode (AC-19) — code already correct pre-story; `key-custody-check.test.ts` already had `kmsType: 'kms'` regression coverage (lines 76/117), confirmed green, no code change needed
+- [x] Task 8: `apps/api/src/config/env.ts` + `.env.example` — add optional `VAULT_KMS_ENDPOINT` (AC-22)
+- [x] Task 9: Tests — unit tests for `AwsKmsProvider` (mocked `KMSClient.send`), integration tests in `apps/api/src/__tests__/vault-lifecycle.test.ts`-style file covering AC-1 through AC-19 (happy paths, all error classes, concurrency, backward compat) (AC-1–AC-20, AC-23)
+- [x] Task 10: Regenerate `openapi.json`; confirm Story 9.3's contract-test suite passes (AC-26)
+- [x] Task 11: Update `README.md` lines ~54/~84 (AC-24)
+- [x] Task 12: Update `docs/runbook.md`'s KMS section (AC-25)
 
 ## Dev Notes
 
@@ -335,14 +335,46 @@ This codebase's existing pattern for vault tests: `apps/api/src/__tests__/vault-
 
 ### Agent Model Used
 
-Claude Sonnet 5 (via `bmad-create-story` skill, story-authoring pass)
+Claude Sonnet 5 (via `bmad-create-story` skill, story-authoring pass; `bmad-dev-story` skill, implementation pass)
 
 ### Debug Log References
+
+- Local Postgres (docker-compose `db` service, `DB_HOST_PORT=5433` after `make fix-ports`) had never had migrations applied in this worktree — `vault_app` role didn't exist until migrations ran once as the `postgres` superuser. `.env`'s `DATABASE_URL` was corrected from a placeholder password to the real `dev-only-change-in-prod` password (0001_rls_and_triggers.sql) and the fixed port, matching the known ADMIN_DATABASE_URL-port-trap pattern already documented in project memory.
+- Migration `0048_vault_kms_columns.sql` required a matching `meta/_journal.json` entry (idx 48) — added by hand, following the existing entries' shape exactly.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created. Story authored from scratch (no epics.md entry exists for 1.14 — this is a genuinely new backlog item closing a disclosed v1 gap, not a re-plan of an existing epics.md story) by direct inspection of `key-service.ts`, `schema.ts`, `routes.ts`, `vault-state.ts`, `key-custody-check.ts`, `backup/storage.ts`, `env.ts`, Story 1.5, Story 9.5, `epics.md`, and `README.md` as of 2026-07-11.
+- Implementation pass (2026-07-11): all 26 ACs implemented and test-covered. TDD red-green followed throughout — new test files were written and confirmed failing (missing exports/modules) before the corresponding implementation landed; existing test files were updated in lockstep where the story's own ACs (AC-10) intentionally change prior behavior.
+- `KmsKeyProvider` interface (AC-21) + `AwsKmsProvider` (`kms-provider.ts`) classify AWS SDK errors into a provider-agnostic `KmsErrorKind` (`unreachable`/`not_found`/`permission_denied`/`unknown`); `key-service.ts` maps that `kind` to context-specific `AppError`s — deliberately different for init (`AC-4`: `400 kms_key_not_found`) vs. unseal (`AC-12`: `503 kms_key_unavailable`) for the identical underlying AWS exception classes, since the same failure means "never worked" at init vs. "a working key became unusable" at unseal.
+- Judgment call (not in the AC set, addressing adversarial-review finding 4/11): AWS `ThrottlingException`/`LimitExceededException` are classified as `unreachable` (not a fifth public error code, not `unknown`) — gives operators an actionable "retry" signal under load without inventing new API surface beyond the story's 26 ACs. An unrecognized/future AWS exception type falls back to `unknown` → `503 kms_unreachable`/`kms_unreachable`-class message, never forwarding the raw SDK error text (AC-18's no-leak guarantee holds for the unmapped case too).
+- Judgment call: added an explicit app-level guard for `kms_type='kms'` with a `NULL kms_encrypted_dek` (adversarial-review finding 7 — a gap the deferred DB-level CHECK, AC-7, could theoretically allow via a future migration bug or manual DB edit) — `unsealVault()` now throws the existing `VAULT_CORRUPTED`/503 class rather than crashing deeper in the KMS provider call. Covered by a new regression test.
+- AC-19 (key-custody-risk alert) required no code change — `apps/api/src/workers/key-custody-check.ts`'s `=== 'file'` check was already correct pre-story, and `key-custody-check.test.ts` already had `kmsType: 'kms'` regression coverage from an earlier story. Verified green, left untouched.
+- AC-16 (credential rotation) is tested by swapping the injected `KmsKeyProvider` mid-test (simulating rotated credentials resolving fresh via the AWS SDK's standard chain) rather than mocking STS directly — consistent with the story's own framing that credential rotation is transparent by construction, never plumbed through this codebase's own logic.
+- Full `apps/api` test suite (92 suites / 318 tests) and `packages/api-contract-tests` (22 tests) pass. `packages/db`'s suite has 13 pre-existing failures unrelated to this story (audit_log_entries FK/RLS-coverage-test issues, none touching `vault_state`) — confirmed identical failure count via `git stash`/re-run before this story's changes were applied.
 
 ### File List
 
-(To be populated by the dev agent during implementation — expected: `apps/api/src/modules/vault/kms-provider.ts` (new), `apps/api/src/modules/vault/key-service.ts`, `apps/api/src/modules/vault/schema.ts`, `apps/api/src/modules/vault/routes.ts`, `apps/api/src/workers/key-custody-check.ts` (test-only touch), `apps/api/src/config/env.ts`, `apps/api/package.json`, `packages/db/src/schema/vault-state.ts`, `packages/db/src/migrations/00XX_vault_kms_columns.sql` (new), `.env.example`, `README.md`, `docs/runbook.md`, `openapi.json`, plus new/extended test files.)
+- `apps/api/src/modules/vault/kms-provider.ts` (new) — `KmsKeyProvider` interface, `AwsKmsProvider` implementation, `KmsProviderError`/`KmsErrorKind` classification
+- `apps/api/src/modules/vault/kms-provider.test.ts` (new) — unit tests, mocked `KMSClient.send`
+- `apps/api/src/modules/vault/key-service.ts` — `kms` branches in `deriveIkmForInit`/`deriveIkmForUnseal`, error mapping, `__setKmsProviderForTest` test hook
+- `apps/api/src/modules/vault/schema.ts` — `KmsInitSchema`, extended `kmsType` enums, relaxed `VaultUnsealRequestSchema` refine
+- `apps/api/src/modules/vault/routes.ts` — added `503`/`403` response schema entries for the new KMS error codes
+- `apps/api/src/config/env.ts` — `VAULT_KMS_ENDPOINT` (optional, LocalStack/test-only)
+- `apps/api/package.json` / `pnpm-lock.yaml` — `@aws-sdk/client-kms` dependency
+- `packages/db/src/schema/vault-state.ts` — `kmsKeyId`/`kmsEncryptedDek` columns
+- `packages/db/src/migrations/0048_vault_kms_columns.sql` (new)
+- `packages/db/src/migrations/meta/_journal.json` — journal entry for migration 0048
+- `.env.example` — `VAULT_KMS_ENDPOINT=` documented
+- `README.md` — feature-status row + "Known v1 design gaps" bullet updated (AC-24)
+- `docs/runbook.md` — KMS integration status section rewritten (AC-25)
+- `packages/shared/openapi.json` — regenerated (AC-26)
+- `apps/api/src/__tests__/vault-kms-lifecycle.test.ts` (new) — AC-1, AC-6, AC-9, AC-10, AC-14, AC-15, AC-16, AC-20
+- `apps/api/src/__tests__/vault-kms-errors.test.ts` (new) — AC-3, AC-4, AC-5, AC-11, AC-12, AC-13
+- `apps/api/src/__tests__/vault-errors.test.ts` — AC-2, AC-10 (updated to match the relaxed Zod refine)
+
+## Change Log
+
+- 2026-07-11: Implemented Story 1.14 (AWS KMS unseal mode) via strict TDD across all 26 ACs —
+  `KmsKeyProvider`/`AwsKmsProvider`, `kms` branches in init/unseal, migration 0048, README/runbook
+  documentation closure, OpenAPI regeneration; moved story to review.

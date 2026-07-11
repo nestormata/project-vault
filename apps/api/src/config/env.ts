@@ -601,6 +601,17 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
 
+    // Story 1.14 AC-22: LocalStack/test-only KMSClient endpoint override — never consulted for
+    // anything except constructing the KMSClient's `endpoint` option. Production never sets
+    // this; the AWS SDK talks to the real regional KMS endpoint by default (mirrors
+    // BACKUP_S3_ENDPOINT's existing test-only convention). No credentials env var is required
+    // here — the only KMS-specific required input, kmsKeyId, is supplied per-request at init
+    // time (AC-1), not configured instance-wide.
+    VAULT_KMS_ENDPOINT: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().url('VAULT_KMS_ENDPOINT must be a valid URL').optional()
+    ),
+
     // Story 10-1: the global /register+/login IP rate limiter (auth/routes.ts) defaults to 60
     // req/min, which a single serial E2E run's ~7-9 real registrations/logins from one
     // container/CI-runner IP can trip (flagged as a known risk in that story's Dev Notes, since

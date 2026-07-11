@@ -26,6 +26,8 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         400: VaultErrorResponseSchema,
         403: VaultErrorResponseSchema,
         409: VaultErrorResponseSchema,
+        // Story 1.14 AC-3: kms_unreachable — AWS KMS network/timeout failure at init.
+        503: VaultErrorResponseSchema,
       },
     },
     // Exempt from rate limiting: init is protected by the bootstrap-token gate
@@ -91,6 +93,9 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         200: VaultUnsealResponseSchema,
         400: VaultErrorResponseSchema,
         401: VaultErrorResponseSchema,
+        // Story 1.14 AC-13: kms_permission_denied — AWS credentials lack kms:Decrypt.
+        403: VaultErrorResponseSchema,
+        // Story 1.14 AC-11/AC-12: kms_unreachable / kms_key_unavailable.
         503: VaultErrorResponseSchema,
       },
     },

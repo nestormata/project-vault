@@ -497,22 +497,76 @@ brute-force-feasible path (256-bit key space). Do not attempt this as a "recover
 - Maintain key material under the same operational discipline as your backups: independent,
   tested, access-controlled storage.
 
-### KMS integration status and configuration (honest disclosure)
+### KMS integration status and configuration
 
-<!-- Source: Story 9.5 AC-14 (D6); verified against packages/db/src/schema/vault-state.ts and apps/api/src/modules/vault/schema.ts (VaultInitRequestSchema only accepts 'passphrase' | 'envelope' | 'file') -->
+<!-- Source: Story 1.14 (supersedes Story 9.5 AC-14/D6's "not implemented" disclosure); verified
+     against packages/db/src/schema/vault-state.ts, apps/api/src/modules/vault/schema.ts, and
+     apps/api/src/modules/vault/kms-provider.ts as of Story 1.14. -->
 
-**As of Epic 9 / v1, true external KMS integration (AWS KMS, GCP KMS, HashiCorp Vault, etc.) is
-not implemented.** `vault_state.kms_type`'s database column allows a `'kms'` value at the schema
-level (reserved for a future release), but no init/unseal code path anywhere accepts or consumes
-it — the actual init request schema only accepts `kmsType: 'passphrase' | 'envelope' | 'file'`.
-Attempting `{"kmsType":"kms", ...}` against `POST /api/v1/vault/init` is rejected by request
-validation; it does not silently proceed as if it were configured.
+**As of Story 1.14, AWS KMS-backed unsealing (`kmsType: 'kms'`) is implemented.** V1 scope is
+AWS KMS only (not GCP KMS or HashiCorp Vault Transit — see the story's "KMS Backend Decision"
+Dev Note), behind a small `KmsKeyProvider` interface that keeps the door open for a future
+provider without revisiting the core init/unseal logic.
 
-What is available today as the closest mitigation to reduce key-custody risk:
-`'envelope'` mode's split-key design (env-half + file-half, each independently custodied — see §
-Rotating the master key). External KMS is scoped in the PRD as a "v2 advanced option," not an
-oversight. This section may go stale once a real KMS story ships — check that story's own
-documentation update at that time.
+**How it works:** at init, the server calls AWS KMS `GenerateDataKey` to obtain a plaintext data
+key (used once to derive the vault's keys, then zeroed — never stored) and an encrypted
+("wrapped") copy of that same key, which is the only thing persisted in `vault_state`
+(`kms_key_id`, `kms_encrypted_dek`). At unseal, the server calls AWS KMS `Decrypt` on the stored
+wrapped key to recover the same plaintext data key and re-derive the vault's keys — no passphrase,
+key file, or envelope half is ever supplied by the operator in this mode.
+
+**Init:**
+
+```bash
+curl -X POST http://localhost:3000/api/v1/vault/init \
+  -H "X-Vault-Bootstrap-Token: $VAULT_BOOTSTRAP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"kmsType":"kms","kmsKeyId":"arn:aws:kms:us-east-1:123456789012:key/abcd-1234-efgh-5678-ijkl90mnopqr"}'
+# → 200 { "initialized": true, "keyVersion": 1, "kmsType": "kms" }
+```
+
+`kmsKeyId` may be a full key ARN or a `alias/...` KMS alias.
+
+**Unseal (every restart) — empty body, no credentials in the request:**
+
+```bash
+curl -X POST http://localhost:3000/api/v1/vault/unseal -H "Content-Type: application/json" -d '{}'
+# → 200 { "unsealed": true, "keyVersion": 1, "kmsType": "kms" }
+```
+
+**IAM permissions required** on the API process's AWS credentials (ambient IAM role, or
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` — the same credential-provider-chain pattern already
+used for S3 backup storage):
+
+- `kms:GenerateDataKey` on the configured key — required at init only.
+- `kms:Decrypt` on the configured key — required at every unseal.
+
+No credentials env var is required specifically for KMS — the AWS SDK's standard
+credential-provider chain is used, and the only KMS-specific configuration is the optional
+`VAULT_KMS_ENDPOINT` (LocalStack/test-only KMSClient endpoint override; never set in production).
+
+**KMS key-loss procedure (permanent data-loss risk):** if the configured KMS key is deleted,
+disabled, or scheduled for deletion, unseal fails with `503 kms_key_unavailable` — the KMS-mode
+equivalent of losing a `file`-mode key file. AWS KMS supports a 7–30 day pending-deletion recovery
+window; restoring or re-enabling the key within that window and retrying unseal recovers the
+vault. After that window elapses, the vault's data is **permanently unrecoverable** — treat KMS
+key deletion protection (`kms:ScheduleKeyDeletion` restrictions, deletion-window settings) with the
+same operational discipline as backup custody.
+
+**Other failure modes an operator may see:**
+
+- `503 kms_unreachable` — network/timeout/throttling talking to AWS KMS; safe to retry once
+  connectivity is restored. Distinct from `kms_key_unavailable` above — this means "try again,"
+  not "the key may be gone."
+- `403 kms_permission_denied` — the API's AWS credentials lack `kms:GenerateDataKey` (init) or
+  `kms:Decrypt` (unseal) on the configured key. Verify the IAM/key policy.
+- `400 kms_key_not_found` (init only) — the `kmsKeyId` does not exist, or is currently disabled/
+  pending deletion, in the configured AWS region.
+
+Credential rotation (IAM role session refresh, or an operator swapping env vars and restarting)
+between init and a later unseal is transparent by construction — the server never stores or
+depends on init-time credentials; each request resolves credentials fresh via the AWS SDK's
+standard chain.
 
 ---
 
