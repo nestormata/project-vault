@@ -32,7 +32,7 @@
   {#each navItems as item (item.href)}
     {@const active = isActiveNavItem(item.href, page.url.pathname)}
     <a
-      class={`rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-slate-950 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+      class={`rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
       aria-current={active ? 'page' : undefined}
       href={resolve(item.href)}
     >

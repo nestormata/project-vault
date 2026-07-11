@@ -56,6 +56,9 @@ import {
   deleteServiceEndpoint,
   dismissMonitoringAlert,
   AlertAlreadyDismissedError,
+  findCertificateRecordInProject,
+  findDomainRecordInProject,
+  findPaymentRecordInProject,
   findServiceEndpointInProject,
   listCertificateRecords,
   listDomainRecords,
@@ -93,6 +96,14 @@ const SERVICE_ENDPOINT_NOT_FOUND = {
   message: 'Service endpoint not found',
 } as const
 const ALERT_NOT_FOUND = { code: 'alert_not_found', message: 'Alert not found' } as const
+
+// Single-record item URLs, shared by each trio's GET/PATCH/DELETE route registrations. Extracted
+// to constants (rather than repeating the literal 3x per trio) to satisfy the repo's
+// sonarjs/no-duplicate-string lint gate now that a GET route joins PATCH/DELETE on each path.
+const SERVICE_ITEM_URL = '/:projectId/services/:serviceId'
+const CERTIFICATE_ITEM_URL = '/:projectId/certificates/:certificateId'
+const DOMAIN_ITEM_URL = '/:projectId/domains/:domainId'
+const SERVICE_ENDPOINT_ITEM_URL = '/:projectId/service-endpoints/:serviceEndpointId'
 
 /** AC 1/AC 3: maps the service-layer's typed validation errors to their documented 422 body. */
 function sendServiceEndpointWriteError(reply: FastifyReply, error: unknown): boolean {
@@ -184,6 +195,32 @@ function makeListHandler<Row>(listFn: (tx: Tx, projectId: string) => Promise<Row
     if (!parsed) return reply
     const items = await listFn(parsed.secureCtx.tx, parsed.projectId)
     return { data: { items } }
+  }
+  return handler
+}
+
+/**
+ * Shared single-record GET handler factory: parses `{ projectId, <idParam> }`, 404s if the
+ * project isn't in the caller's org (same as the list handlers), then 404s with `notFoundBody`
+ * if `findFn` doesn't return a row. Mirrors makeListHandler's shape/permission level — a
+ * single-record GET is never more privileged than the list GET it's scoped under.
+ */
+function makeGetByIdHandler<Params extends { projectId: string }, Row>(
+  paramsSchema: ZodType<Params>,
+  findFn: (tx: Tx, params: Params) => Promise<Row | null>,
+  serializeFn: (row: Row) => unknown,
+  notFoundBody: { code: string; message: string }
+) {
+  const handler: MonitoringRouteHandler = async (ctx, req, reply) => {
+    const params = parseParams(paramsSchema, req, reply)
+    if (!params) return reply
+    const secureCtx = ctx as SecureRouteContext
+    if (!(await requireProjectInOrg(secureCtx.tx, params.projectId, reply))) return reply
+
+    const row = await findFn(secureCtx.tx, params)
+    if (!row) return reply.status(404).send(notFoundBody)
+
+    return { data: serializeFn(row) }
   }
   return handler
 }
@@ -313,8 +350,27 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   secureRoute(fastify, {
+    method: 'GET',
+    url: SERVICE_ITEM_URL,
+    schema: {
+      response: { 200: PaymentRecordResponseSchema, 401: ApiErrorSchema, 404: ApiErrorSchema },
+    },
+    security: {
+      minimumRole: 'viewer',
+      writeAuditEvent: false,
+      rateLimit: { ...LIST_RATE_LIMIT, key: `GET /api/v1/projects${SERVICE_ITEM_URL}` },
+    },
+    handler: makeGetByIdHandler(
+      ServiceParamsSchema,
+      findPaymentRecordInProject,
+      serializePaymentRecord,
+      SERVICE_NOT_FOUND
+    ),
+  })
+
+  secureRoute(fastify, {
     method: 'PATCH',
-    url: '/:projectId/services/:serviceId',
+    url: SERVICE_ITEM_URL,
     schema: {
       response: {
         200: PaymentRecordResponseSchema,
@@ -366,7 +422,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
 
   secureRoute(fastify, {
     method: 'DELETE',
-    url: '/:projectId/services/:serviceId',
+    url: SERVICE_ITEM_URL,
     schema: {
       response: {
         401: ApiErrorSchema,
@@ -488,8 +544,34 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   secureRoute(fastify, {
+    method: 'GET',
+    url: CERTIFICATE_ITEM_URL,
+    schema: {
+      response: {
+        200: CertificateRecordResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'viewer',
+      writeAuditEvent: false,
+      rateLimit: {
+        ...LIST_RATE_LIMIT,
+        key: `GET /api/v1/projects${CERTIFICATE_ITEM_URL}`,
+      },
+    },
+    handler: makeGetByIdHandler(
+      CertificateParamsSchema,
+      findCertificateRecordInProject,
+      serializeCertificateRecord,
+      CERTIFICATE_NOT_FOUND
+    ),
+  })
+
+  secureRoute(fastify, {
     method: 'PATCH',
-    url: '/:projectId/certificates/:certificateId',
+    url: CERTIFICATE_ITEM_URL,
     schema: {
       response: {
         200: CertificateRecordResponseSchema,
@@ -541,7 +623,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
 
   secureRoute(fastify, {
     method: 'DELETE',
-    url: '/:projectId/certificates/:certificateId',
+    url: CERTIFICATE_ITEM_URL,
     schema: {
       response: {
         401: ApiErrorSchema,
@@ -659,8 +741,27 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   secureRoute(fastify, {
+    method: 'GET',
+    url: DOMAIN_ITEM_URL,
+    schema: {
+      response: { 200: DomainRecordResponseSchema, 401: ApiErrorSchema, 404: ApiErrorSchema },
+    },
+    security: {
+      minimumRole: 'viewer',
+      writeAuditEvent: false,
+      rateLimit: { ...LIST_RATE_LIMIT, key: `GET /api/v1/projects${DOMAIN_ITEM_URL}` },
+    },
+    handler: makeGetByIdHandler(
+      DomainRecordParamsSchema,
+      findDomainRecordInProject,
+      serializeDomainRecord,
+      DOMAIN_RECORD_NOT_FOUND
+    ),
+  })
+
+  secureRoute(fastify, {
     method: 'PATCH',
-    url: '/:projectId/domains/:domainId',
+    url: DOMAIN_ITEM_URL,
     schema: {
       response: {
         200: DomainRecordResponseSchema,
@@ -712,7 +813,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
 
   secureRoute(fastify, {
     method: 'DELETE',
-    url: '/:projectId/domains/:domainId',
+    url: DOMAIN_ITEM_URL,
     schema: {
       response: {
         401: ApiErrorSchema,
@@ -851,9 +952,37 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
+  // GET single mirrors the list route's permission level ('member', not 'viewer' — see the note
+  // above the list route): viewing one endpoint shouldn't require more privilege than the list.
+  secureRoute(fastify, {
+    method: 'GET',
+    url: SERVICE_ENDPOINT_ITEM_URL,
+    schema: {
+      response: {
+        200: ServiceEndpointResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      writeAuditEvent: false,
+      rateLimit: {
+        ...LIST_RATE_LIMIT,
+        key: `GET /api/v1/projects${SERVICE_ENDPOINT_ITEM_URL}`,
+      },
+    },
+    handler: makeGetByIdHandler(
+      ServiceEndpointParamsSchema,
+      findServiceEndpointInProject,
+      serializeServiceEndpoint,
+      SERVICE_ENDPOINT_NOT_FOUND
+    ),
+  })
+
   secureRoute(fastify, {
     method: 'PATCH',
-    url: '/:projectId/service-endpoints/:serviceEndpointId',
+    url: SERVICE_ENDPOINT_ITEM_URL,
     schema: {
       response: {
         200: ServiceEndpointResponseSchema,
@@ -911,7 +1040,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
 
   secureRoute(fastify, {
     method: 'DELETE',
-    url: '/:projectId/service-endpoints/:serviceEndpointId',
+    url: SERVICE_ENDPOINT_ITEM_URL,
     schema: {
       response: {
         401: ApiErrorSchema,

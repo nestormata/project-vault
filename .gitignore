@@ -60,3 +60,12 @@ prompts.md
 # Vault key material (envelope/file mode halves) — never commit secrets
 dev-secrets/*
 !dev-secrets/.gitkeep
+
+# Story 11-1 — raw, unprocessed brand source uploads (1024x1024 originals, ~1.4-1.5MB each).
+# The derived, production-ready assets they were cropped/resized into live in
+# apps/web/static/ (logo.png, icon.png, favicon.png, apple-touch-icon.png) and ARE committed —
+# the app references them directly. These originals are only needed if the assets are ever
+# regenerated from scratch, not to build or run the app, so they stay out of version control.
+design/brand-source/
+/project-vault-logo.png
+/project-vault-icon.png

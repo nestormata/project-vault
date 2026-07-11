@@ -116,7 +116,7 @@
       </p>
     {/if}
     <button
-      class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+      class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
       type="submit"
       disabled={isSubmitting}
     >
