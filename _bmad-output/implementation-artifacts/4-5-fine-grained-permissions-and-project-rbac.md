@@ -1,6 +1,6 @@
 # Story 4.5: Fine-Grained Permissions and Project RBAC
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-09. This is an Epic 4 "completion round 2"
      closure story — same pattern as 5-5/6-4/8-6/8-7/9-7/9-8 — bundling two cross-epic security
@@ -954,6 +954,16 @@ it fails for the expected reason, then implement, per AC.
   - [x] 9.3 `make ci` green (typecheck, lint, jscpd, migrations, RLS, audit-coverage, spec-drift).
   - [x] 9.4 Confirm `openapi.json` regenerated to include the two new `403` response schemas
     (AC-P2/AC-P3) — this repo's CI checks for spec/schema drift.
+
+---
+
+### Review Findings (bmad-code-review, 2026-07-11)
+
+Clean pass — no `decision-needed` or `patch` findings. All 17 ACs (V1-V10, P1-P7) traced to matching code/tests against the merged diff; migration `0044` numbering (post 3-way `0043` collision) confirmed resolved with no residual conflict against `main`.
+
+- [x] [Review][Defer] The 6 other project-scoped modules (monitoring/machine-users/rotation) share the same visibility gap this story closes elsewhere — deferred, explicitly out-of-scope and tracked, not a regression from this diff.
+
+**Status → done.**
 
 ---
 

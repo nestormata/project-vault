@@ -521,6 +521,16 @@ Story 9.2's `audit-storage:check` job (D5/AC-18) monitors only `audit_log_entrie
 
 ---
 
+### Review Findings (bmad-code-review, 2026-07-11)
+
+Reviewed against the merged diff (PR #122). Overall a rigorous implementation (AC-1–22 traced to matching code/tests), but one real finding keeps this story at `review`:
+
+- [ ] [Review][Decision] Partial-drain data loss on operator-initiated deactivate — `deactivateMaintenanceMode`/`drainPendingEntries` (`apps/api/src/modules/platform-audit/maintenance-mode.ts`) run the whole drain inside one outer transaction; `deactivateMaintenanceMode` throws `MaintenanceModeStillUnavailableError` whenever any entry remains undrained. That throw rolls back the entire outer transaction, discarding the SAVEPOINT-isolated work already committed for entries that *did* drain successfully — contradicting the code's own "a failed entry is left in place, never silently dropped" guarantee when the queue has a mix of drainable and genuinely-poisoned entries. The opportunistic auto-drain path is unaffected (it never throws). Untested: the existing "still unavailable" test only covers the uniform-failure case (every entry fails, `drained: 0`), not the partial-success case. Needs a design decision: e.g. commit each drained entry outside the outer transaction before evaluating the remaining count, or restructure the failure-reporting so a partial drain's successes are preserved regardless of outcome.
+
+Two items intentionally left as `defer` (pre-existing, not introduced by this diff, already documented in this story's own Dev Notes/Open Questions): Story 9.1's backup/restore routes lacking `requireMfa: true`; architecture/PRD docs still describing "cryptographic chaining" instead of the shipped per-row HMAC mechanism.
+
+**Status stays `review`** pending the decision above.
+
 ## Dev Notes
 
 ### Architecture Compliance
