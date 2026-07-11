@@ -51,7 +51,7 @@ Key differentiators:
 | 🔔 **Notifications** — email + Slack delivery, per-alert-type routing, in-app inbox, credential-expiry alerts | ✅ Done | Epic 3 |
 | 🤖 **Machine user support** — scoped API keys, offline/cache fallback, GitHub Actions integration, full web UI | ✅ Done | Epic 7 — machine-user management web UI shipped in Story 8.6 |
 | 📋 **Immutable audit logs** — append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI | ✅ Done | Epic 8 — audit/compliance web UI shipped in Story 8.7 |
-| 🔑 **Vault unsealing** — master password or envelope encryption with split-key default | 🟡 Partial | External KMS mode is schema-reserved but unimplemented (v1 gap, see Story 9.5 disclosure) |
+| 🔑 **Vault unsealing** — master password, envelope encryption with split-key default, or external KMS (AWS KMS) | ✅ Done | Epic 1 — KMS mode added in Story 1.14 |
 | 🌐 **REST API** — nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init | ✅ Done | Generated OpenAPI spec + live Swagger UI (`ENABLE_API_DOCS=true`) and an independent contract-test suite shipped in Story 9.3 |
 | 🐳 **Self-hosted Docker** — `docker compose up` deployment (dev + prod compose files) | ✅ Done | Epic 1 |
 | 💾 **Built-in backup** — scheduled encrypted snapshots, retention, restore verification, admin web UI | ✅ Done | Epic 9 — core backup/restore in Story 9.1, admin UI in Story 9.7, hardening (concurrency guard, missed-backup alerts, S3-failure handling) in Story 9.6 |
@@ -81,7 +81,6 @@ Epic-by-epic status, current as of 2026-07-11 (source of truth:
 | 10. Quality & Test Automation | 🟡 In progress | New epic added 2026-07-09 from a deferred-work reconciliation pass (no epic-10 section in the original PRD/epics doc). Playwright E2E test automation (10.1), `apps/web` branch coverage hardening (10.2), and the complete-source branch coverage buffer (10.3) are done; SonarCloud new-code coverage buffer (10.4) is ready for dev |
 
 Known v1 design gaps, disclosed up front rather than discovered later:
-- External KMS (`kms` mode) for vault unsealing is schema-reserved but has no implementation (Story 1.5 / Story 9.5).
 - `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet (Story 9.2 / 9.5).
 - No live backup-job progress polling and no in-app "click to upgrade" trigger in the Platform Admin UI — both are deliberate, documented v1 scope boundaries (Story 9.7 D3/D4); self-hosted in-place upgrades remain an out-of-band `docker compose up -d` operation.
 

@@ -337,6 +337,13 @@
       "when": 1784256000000,
       "tag": "0047_notification_preference_none_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784342400000,
+      "tag": "0048_vault_kms_columns",
+      "breakpoints": true
     }
   ]
 }
