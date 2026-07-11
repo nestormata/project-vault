@@ -195,7 +195,7 @@ async function handlePostMaintenanceMode(
 
   if (parsed.data.action === 'deactivate') {
     try {
-      const result = await getDb().transaction((tx) => deactivateMaintenanceMode(tx, auth.userId))
+      const result = await deactivateMaintenanceMode(getDb(), auth.userId)
       return { active: result.active, deactivatedAt: result.deactivatedAt.toISOString() }
     } catch (error) {
       if (error instanceof MaintenanceModeStillUnavailableError) {

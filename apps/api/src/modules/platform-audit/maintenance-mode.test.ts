@@ -256,7 +256,7 @@ describe.sequential('Story 9.4 D8: platform-audit maintenance mode', () => {
     try {
       await getDb().transaction((tx) => activateMaintenanceMode(tx, { reason: 'r', userId }))
 
-      const result = await getDb().transaction((tx) => deactivateMaintenanceMode(tx, userId))
+      const result = await deactivateMaintenanceMode(getDb(), userId)
       expect(result.active).toBe(false)
 
       const [state] = await getDb()
@@ -290,9 +290,9 @@ describe.sequential('Story 9.4 D8: platform-audit maintenance mode', () => {
 
       zeroKeys() // simulate vault still sealed — the log is still "unavailable"
 
-      await expect(
-        getDb().transaction((tx) => deactivateMaintenanceMode(tx, userId))
-      ).rejects.toBeInstanceOf(MaintenanceModeStillUnavailableError)
+      await expect(deactivateMaintenanceMode(getDb(), userId)).rejects.toBeInstanceOf(
+        MaintenanceModeStillUnavailableError
+      )
 
       const [state] = await getDb()
         .select()
@@ -303,6 +303,72 @@ describe.sequential('Story 9.4 D8: platform-audit maintenance mode', () => {
       // Re-unseal for subsequent tests in this file.
       await loadInitialVaultState()
       await unsealVault({ passphrase: TEST_PASSPHRASE })
+      await tryDeleteTestUser(userId)
+    }
+  })
+
+  // Review finding (2026-07-11): a mixed queue of drainable + genuinely-poisoned entries must
+  // not lose the drainable entries' work just because the overall deactivate call still reports
+  // "still unavailable" for the poisoned one. Each entry drains in its own SAVEPOINT, but the
+  // outer deactivate call used to throw MaintenanceModeStillUnavailableError from inside the same
+  // transaction as the drain, rolling back every SAVEPOINT that had already been released —
+  // silently dropping entries the code's own contract says are "never silently dropped".
+  it('deactivateMaintenanceMode preserves a partial drain when the queue has a poisoned entry', async () => {
+    const userId = await createTestUser('maintenance-partial-drain')
+    try {
+      await getDb().transaction((tx) => activateMaintenanceMode(tx, { reason: 'r', userId }))
+
+      const firstAt = new Date('2026-01-01T00:00:00.000Z')
+      const poisonedAt = new Date('2026-01-01T00:05:00.000Z')
+      const lastAt = new Date('2026-01-01T00:10:00.000Z')
+      await getDb().transaction(async (tx) => {
+        await queuePendingEntry(
+          tx,
+          { operatorId: userId, actionType: SETTINGS_UPDATED, payload: { fieldsChanged: ['a'] } },
+          firstAt
+        )
+        // Genuinely poisoned: a forbidden key in the payload makes writePlatformAuditEntry throw
+        // every time it's retried, unlike a transient vault-sealed failure.
+        await queuePendingEntry(
+          tx,
+          { operatorId: userId, actionType: SETTINGS_UPDATED, payload: { password: 'leaked' } },
+          poisonedAt
+        )
+        await queuePendingEntry(
+          tx,
+          { operatorId: userId, actionType: SETTINGS_UPDATED, payload: { fieldsChanged: ['b'] } },
+          lastAt
+        )
+      })
+
+      await expect(deactivateMaintenanceMode(getDb(), userId)).rejects.toBeInstanceOf(
+        MaintenanceModeStillUnavailableError
+      )
+
+      // The two drainable entries are durably gone from the queue and recorded as real
+      // platform_audit_events rows, even though the overall call reported "still unavailable".
+      const remainingPending = await getDb().select().from(platformAuditPendingEntries)
+      expect(remainingPending).toHaveLength(1)
+      expect((remainingPending[0]?.intendedFields as Record<string, unknown>)['payload']).toEqual({
+        password: 'leaked',
+      })
+
+      const rows = await withPlatformOperatorContext((tx) =>
+        tx.select().from(platformAuditEvents).where(eq(platformAuditEvents.operatorId, userId))
+      )
+      const drainedTimestamps = rows.map((r) => r.createdAt.toISOString()).sort()
+      expect(drainedTimestamps).toEqual([firstAt.toISOString(), lastAt.toISOString()])
+      expect(
+        rows.every((r) => (r.payload as Record<string, unknown>)['recordedRetroactively'])
+      ).toBe(true)
+
+      // Maintenance mode itself must remain active — the queue isn't fully drained yet.
+      const [state] = await getDb()
+        .select()
+        .from(platformAuditMaintenanceState)
+        .where(eq(platformAuditMaintenanceState.id, 1))
+      expect(state?.active).toBe(true)
+    } finally {
       await tryDeleteTestUser(userId)
     }
   })
