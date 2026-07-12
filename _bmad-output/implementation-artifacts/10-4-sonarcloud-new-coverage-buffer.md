@@ -1302,3 +1302,25 @@ failed under confirmed shared-machine contention; see Debug Log for full rationa
   that completed cleanly (end of Batch 3, run6). Batches 4 onward added real test files whose
   precise effect on that percentage was never confirmed by a clean run, so 78.35% is reported as
   the honest, verifiable final number rather than an unverified estimate.
+
+  **Coordinator post-stop verification (2026-07-12)**: root-caused the persistent cross-session
+  contention as, at least in part, this worktree's own dev Postgres container accumulating leaked
+  test-org data across ~18 aborted/interrupted verification attempts spanning multiple days (one
+  clean-DB run still showed 13 `packages/db` RLS-isolation files failing with off-by-one row
+  leakage on a *freshly migrated, empty* database — traced to `apps/api#test`'s turbo dependency on
+  `@project-vault/db#test`, a pre-existing, zero-diff, out-of-scope issue unrelated to this story).
+  Reset the worktree's Postgres volume (`make docker-down-v && make db-up && make db-migrate &&
+  make check-rls` — all 49 migrations incl. `0048_vault_kms_columns` applied cleanly, RLS coverage
+  OK), then ran `apps/api`'s own suite directly (`pnpm exec vitest run`, bypassing the turbo
+  dependency graph's unrelated `packages/db` blocker) on low machine load (0.35):
+  **228/228 test files, 2039/2039 tests passed, zero failures.** A follow-up `--coverage` run
+  produced the first fully clean coverage report of this entire session:
+  **Statements 89.12% (8150/9144) | Branches 78.91% (3806/4823) | Functions 90.73% (1635/1802) |
+  Lines 91.73% (7550/8230)**. Branches remains ~53 branches short of the 80% floor (need 3859/4823)
+  — closer than any prior measurement, confirming Batch 4's tests did add real, if incomplete,
+  coverage. Per explicit user decision, stopping here rather than continuing to chase the remaining
+  gap: shipping the verified, honest current state instead of continuing an open-ended multi-day
+  loop. Status remains `in-progress` — Task 6 incomplete (branches below 80%), Tasks 7–8 not
+  started. `packages/db`'s pre-existing RLS-isolation flakiness (reproduces on a fresh empty DB,
+  zero diff from this story) is a separate, out-of-scope issue flagged for a future story, not
+  something this story's scope covers or blocks on.
