@@ -225,6 +225,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # `pnpm db:migrate` is a raw workspace script, not a `pnpm turbo` task, so it never
+      # triggers turbo's `^build` dependency chain — `packages/db` needs
+      # `@project-vault/shared`'s dist/ output to exist first (guarded-migrate.ts imports
+      # it). In the old single-job pipeline this was built as a side effect of the earlier
+      # `pnpm turbo typecheck` step (typecheck depends on generate-spec depends on ^build);
+      # this job has no typecheck step, so it needs its own explicit build.
+      - name: Build workspace packages
+        run: pnpm turbo build --filter=@project-vault/api --filter=@project-vault/db
+
       - name: Run database migrations
         run: pnpm db:migrate
         env:
