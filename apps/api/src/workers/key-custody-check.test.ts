@@ -26,6 +26,12 @@ function fakeBoss() {
   >[0]
 }
 
+// Story 10.4 branch coverage: a real logger double instead of `undefined`, so this worker's
+// logger-gated operational-log branches actually execute.
+function fakeLogger() {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+}
+
 async function clearKeyCustodyAlerts(): Promise<void> {
   await getDb().delete(adminAlerts).where(eq(adminAlerts.alertType, KEY_CUSTODY_ALERT_TYPE))
 }
@@ -89,7 +95,7 @@ describe.sequential('Story 9.2 FR109/AC-19/AC-20: key-custody-check worker', () 
       keyRotatedAt: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000),
     })
     const boss = fakeBoss()
-    await runKeyCustodyCheck(boss, undefined)
+    await runKeyCustodyCheck(boss, fakeLogger())
 
     const [row] = await getDb()
       .select()
@@ -104,7 +110,7 @@ describe.sequential('Story 9.2 FR109/AC-19/AC-20: key-custody-check worker', () 
 
   it('AC-19 idempotency: a second check does not create a duplicate active row', async () => {
     const boss = fakeBoss()
-    await runKeyCustodyCheck(boss, undefined)
+    await runKeyCustodyCheck(boss, fakeLogger())
     const rows = await getDb()
       .select()
       .from(adminAlerts)
@@ -116,7 +122,7 @@ describe.sequential('Story 9.2 FR109/AC-19/AC-20: key-custody-check worker', () 
     await clearKeyCustodyAlerts()
     await setVaultStateForTest({ kmsType: 'kms', keyRotatedAt: new Date() })
     const boss = fakeBoss()
-    await runKeyCustodyCheck(boss, undefined)
+    await runKeyCustodyCheck(boss, fakeLogger())
     const rows = await getDb()
       .select()
       .from(adminAlerts)

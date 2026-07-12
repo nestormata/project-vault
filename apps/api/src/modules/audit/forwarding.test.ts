@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditForwardingConfig, auditLogEntries } from '@project-vault/db/schema'
@@ -245,8 +245,13 @@ describe.sequential('runWebhookForwardCatchup (AC-18)', () => {
           return { status: 500, ok: false }
         }
 
+        // Story 10.4 branch coverage: a real logger double (not `undefined`) so the disable/
+        // warn operational-log branches inside recordWebhookFailure actually execute, instead of
+        // short-circuiting on `if (!logger) return` the way every other test in this file does.
+        const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+
         for (let i = 0; i < AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES; i += 1) {
-          await runWebhookForwardCatchup(undefined, scopedFailDeliver)
+          await runWebhookForwardCatchup(logger, scopedFailDeliver)
         }
         expect(attempts).toBe(AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES)
 
@@ -254,9 +259,12 @@ describe.sequential('runWebhookForwardCatchup (AC-18)', () => {
           tx.select().from(auditForwardingConfig).where(eq(auditForwardingConfig.orgId, orgId))
         )
         expect(config?.enabled).toBe(false)
+        // The final (disabling) tick logs at 'error', the earlier ones at 'warn'.
+        expect(logger.error).toHaveBeenCalled()
+        expect(logger.warn).toHaveBeenCalled()
 
         // An 11th tick makes no further attempt — the org is disabled.
-        await runWebhookForwardCatchup(undefined, scopedFailDeliver)
+        await runWebhookForwardCatchup(logger, scopedFailDeliver)
         expect(attempts).toBe(AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES)
       })
     },

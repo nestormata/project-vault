@@ -242,6 +242,38 @@ describe.sequential('Story 9.4 AC-9 through AC-16: platform-audit routes', () =>
     expect(body.data.items.every((item) => item.operatorId === operatorA.userId)).toBe(true)
   })
 
+  it('AC-9: filters by targetUserId and from/to date range narrow the result set (Story 10.4 branch coverage)', async () => {
+    const operatorB = await registerPlatformOperator(suite.app, {
+      emailPrefix: 'platform-audit-filter-b',
+      orgNamePrefix: 'Platform Audit Filter B',
+      password: PASSWORD,
+    })
+    await postMaintenance(suite.app, operatorB.cookies, { reason: 'filter-test-b' })
+
+    // targetUserId narrows to a value that matches no row — still a 200 with an empty result,
+    // exercising the query-builder's targetUserId branch without depending on maintenance-mode
+    // events carrying a targetUserId.
+    const byTargetUser = await getEvents(
+      suite.app,
+      operatorB.cookies,
+      `?targetUserId=${randomUUID()}`
+    )
+    expect(byTargetUser.statusCode).toBe(200)
+    expect(byTargetUser.json<{ data: { items: unknown[] } }>().data.items).toEqual([])
+
+    // from/to bracket the event just written — both branches of the query-builder's date-range
+    // filter execute together.
+    const from = new Date(Date.now() - 60_000).toISOString()
+    const to = new Date(Date.now() + 60_000).toISOString()
+    const byRange = await getEvents(
+      suite.app,
+      operatorB.cookies,
+      `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    )
+    expect(byRange.statusCode).toBe(200)
+    expect(byRange.json<{ data: { items: unknown[] } }>().data.items.length).toBeGreaterThan(0)
+  })
+
   it('AC-12: X-Log-Scope: platform header present on every response (success and error)', async () => {
     const operator = await registerPlatformOperator(suite.app, {
       emailPrefix: 'platform-audit-log-scope',

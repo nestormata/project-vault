@@ -191,6 +191,23 @@ describe('Story 9.6: isRetryableS3Error classification', () => {
   it('D3.13: SignatureDoesNotMatch (possible clock-skew false positive) is still classified non-retryable, a documented trade-off', () => {
     expect(isRetryableS3Error({ name: 'SignatureDoesNotMatch' })).toBe(false)
   })
+
+  it('Story 10.4 branch coverage: an unrecognized 4xx (client error) fails fast, not retryable', () => {
+    expect(isRetryableS3Error({ name: 'SomeOther4xx', $metadata: { httpStatusCode: 403 } })).toBe(
+      false
+    )
+    expect(isRetryableS3Error({ $metadata: { httpStatusCode: 400 } })).toBe(false)
+  })
+
+  it('Story 10.4 branch coverage: a 4xx whose name IS in the throttling/timeout allowlist stays retryable', () => {
+    expect(isRetryableS3Error({ name: 'SlowDown', $metadata: { httpStatusCode: 429 } })).toBe(true)
+  })
+
+  it('Story 10.4 branch coverage: a 5xx (server error) with httpStatusCode metadata is retryable', () => {
+    expect(isRetryableS3Error({ name: 'InternalError', $metadata: { httpStatusCode: 500 } })).toBe(
+      true
+    )
+  })
 })
 
 describe('Story 9.6 AC-16: cleanupOrphanedStagedFiles', () => {

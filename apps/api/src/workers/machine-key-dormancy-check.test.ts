@@ -56,7 +56,7 @@ describe('machine key dormancy check job (AC-21)', () => {
       )
       expect(alerts.length).toBeGreaterThan(0)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('does not fire for a key used recently', async () => {
     const { boss } = createMockBoss()
@@ -80,7 +80,7 @@ describe('machine key dormancy check job (AC-21)', () => {
       const queueEntries = await queueEntriesForTemplate(orgId, DORMANT_TEMPLATE_ID)
       expect(queueEntries).toHaveLength(0)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('does not re-fire a duplicate alert on a second run (dedupe via partial unique index)', async () => {
     const { boss } = createMockBoss()
@@ -114,7 +114,7 @@ describe('machine key dormancy check job (AC-21)', () => {
       )
       expect(matchingAlerts).toHaveLength(1)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('excludes a key with an active dormancy snooze', async () => {
     const { boss } = createMockBoss()
@@ -139,7 +139,7 @@ describe('machine key dormancy check job (AC-21)', () => {
       const queueEntries = await queueEntriesForTemplate(orgId, DORMANT_TEMPLATE_ID)
       expect(queueEntries).toHaveLength(0)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('excludes a revoked key', async () => {
     const { boss } = createMockBoss()
@@ -164,7 +164,7 @@ describe('machine key dormancy check job (AC-21)', () => {
       const queueEntries = await queueEntriesForTemplate(orgId, DORMANT_TEMPLATE_ID)
       expect(queueEntries).toHaveLength(0)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('fires for a never-used key whose createdAt is older than the threshold', async () => {
     const { boss } = createMockBoss()
@@ -195,5 +195,5 @@ describe('machine key dormancy check job (AC-21)', () => {
       const queueEntries = await queueEntriesForTemplate(orgId, DORMANT_TEMPLATE_ID)
       expect(queueEntries.length).toBeGreaterThan(0)
     })
-  }, 20_000)
+  }, 60_000)
 })

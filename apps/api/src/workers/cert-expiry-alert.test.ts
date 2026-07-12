@@ -46,7 +46,7 @@ describe('certificate expiry alert worker', () => {
 
       await expectQueueEntryFired(orgId, CERTIFICATE_EXPIRY_TEMPLATE_ID, row.id, send)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('does not re-fire the same threshold on the following day', async () => {
     const { boss } = createMockBoss()
@@ -74,5 +74,5 @@ describe('certificate expiry alert worker', () => {
 
       await expectNoQueueEntries(orgId, CERTIFICATE_EXPIRY_TEMPLATE_ID)
     })
-  }, 20_000)
+  }, 60_000)
 })

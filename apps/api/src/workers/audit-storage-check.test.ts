@@ -25,6 +25,14 @@ function fakeBoss() {
   >[0]
 }
 
+// Story 10.4 branch coverage: a real logger double (matching this repo's job-logging.test.ts/
+// shutdown.test.ts precedent) instead of `undefined`, so the `logger &&`-gated operational-log
+// branches inside audit-storage-check.ts (warning/critical/healthy-transition messages) actually
+// execute instead of short-circuiting.
+function fakeLogger() {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+}
+
 const CRITICAL_ALERT_TYPE = 'audit_storage.critical'
 const WARNING_ALERT_TYPE = 'audit_storage.warning'
 
@@ -60,7 +68,7 @@ describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worke
   it('AC-16/AC-17: creates a critical alert (maintenance mode) at >=95% utilization and delivers it', async () => {
     await clearAuditStorageAlerts()
     const boss = fakeBoss()
-    await runAuditStorageCheck(boss, undefined)
+    await runAuditStorageCheck(boss, fakeLogger())
 
     const [critical] = await getDb()
       .select()
@@ -73,7 +81,7 @@ describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worke
 
   it('AC-16: idempotent — a second consecutive check does not create a duplicate active critical alert', async () => {
     const boss = fakeBoss()
-    await runAuditStorageCheck(boss, undefined)
+    await runAuditStorageCheck(boss, fakeLogger())
     const activeCritical = await getDb()
       .select()
       .from(adminAlerts)
@@ -89,7 +97,7 @@ describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worke
       }),
       isStarted: () => true,
     } as unknown as Parameters<typeof runAuditStorageCheck>[0]
-    await expect(runAuditStorageCheck(boss, undefined)).rejects.toThrow()
+    await expect(runAuditStorageCheck(boss, fakeLogger())).rejects.toThrow()
   })
 
   it('AC-17: resumes normal operation — utilization dropping back below 95% clears maintenance mode and a routine write succeeds again', async () => {
@@ -107,13 +115,16 @@ describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worke
       status: 'active',
     })
 
-    await runAuditStorageCheck(fakeBoss(), undefined, 999_999)
+    const healthyLogger = fakeLogger()
+    await runAuditStorageCheck(fakeBoss(), healthyLogger, 999_999)
 
     const [critical] = await getDb()
       .select()
       .from(adminAlerts)
       .where(eq(adminAlerts.alertType, CRITICAL_ALERT_TYPE))
     expect(critical?.status).toBe('acknowledged')
+    // The wasActive-and-now-healthy transition logs a distinct maintenance-mode-exited warning.
+    expect(healthyLogger.warn).toHaveBeenCalled()
 
     await withTestOrg(async ({ tx }) => {
       expect(await shouldSuppressAuditWrite(tx, 'credential.value_revealed')).toBe(false)
@@ -152,7 +163,7 @@ describe.sequential(
       await clearAuditStorageAlerts()
       await clearPlatformAuditStorageAlerts()
       const boss = fakeBoss()
-      await runAuditStorageCheck(boss, undefined)
+      await runAuditStorageCheck(boss, fakeLogger())
 
       const [critical] = await getDb()
         .select()
@@ -165,7 +176,7 @@ describe.sequential(
     it('AC-18 edge: both logs are evaluated and alerted independently — never conflated into one alert row', async () => {
       await clearAuditStorageAlerts()
       await clearPlatformAuditStorageAlerts()
-      await runAuditStorageCheck(fakeBoss(), undefined)
+      await runAuditStorageCheck(fakeBoss(), fakeLogger())
 
       const [orgAlert] = await getDb()
         .select()
