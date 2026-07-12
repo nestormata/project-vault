@@ -1088,3 +1088,23 @@ batch of tests lands, since branch IDs are unstable across source edits.
   running — confirming contention is transient/bursty across the run's 3-hour window rather than
   a constant baseline, so a run's outcome depends heavily on exactly when within that window the
   contention spikes land. Re-ran immediately (`run13`) while load was confirmed low.
+
+  **run13: 212/225 files, 1954/1984 tests, 30 failures across 13 files, 3h11m (11419s) — the
+  longest run yet despite starting at low load (0.73).** All 30 failures are timeouts, zero
+  assertion failures. Coordinator committed the in-progress worktree as a safety snapshot
+  (`4cee929 fix(tests): added additional tests to reach 80% for sonarcube partially`, on top of
+  `3067994`) between run12 and run13 to protect against further session crashes; `git diff
+  3067994 4cee929` confirms exactly one of run13's 13 failing files was touched by this story —
+  `audit/forwarding.test.ts` (the Batch-1 fakeLogger fix). Its failure is the same
+  "auto-disables after 10 consecutive failures" test I modified, which already carried a
+  pre-existing explicit 120000ms timeout with its own comment warning "runtime grows with total
+  suite size, not just this file" (it does 11 sequential full-org-table scans via
+  `fetchAllOrgIds()`). It is now timing out even at 120s. Unlike the other 12 failing files (zero
+  diff, unambiguously environmental), this one is **plausibly compounded by this story's own
+  test-suite growth** (~15+ new test files this session, each creating test orgs the scan must
+  traverse) rather than purely external contention — flagged for attention when re-verifying, since
+  raising this specific test's timeout further only delays the same underlying scaling problem;
+  the more durable fix (out of scope for this pass) would be scoping the scan or the test's org
+  cleanup, not a bigger number. The other 12 files remain confirmed pure environmental contention.
+  Per the coordinator's directive, did not auto-launch a further run — reported run13's result and
+  paused, awaiting confirmation that the safety-commit/draft-PR is complete before resuming.
