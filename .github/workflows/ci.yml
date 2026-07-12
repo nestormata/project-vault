@@ -14,10 +14,15 @@ permissions:
   contents: read
 
 jobs:
-  quality-gates:
-    name: Quality Gates
+  # Fast pre-checks: typecheck/lint/static checks plus everything that ran before the slow
+  # "Test (with coverage)" step in the old single-job pipeline. Runs in parallel with the two
+  # test shards below (test-api-db, test-web-other) — it does NOT gate them, since it doesn't
+  # produce anything they consume. It still needs its own Postgres service: migrations,
+  # check-rls, and the API contract parity tests all touch a live, migrated database.
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 15
     env:
       # Derived from the postgres: service block below — keep in sync if it changes.
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
@@ -67,9 +72,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-turbo-
+            ${{ runner.os }}-turbo-${{ github.job }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -151,11 +156,82 @@ jobs:
       - name: Check vault-action dist/ freshness (D6/AC-11)
         run: pnpm check-vault-action-dist
 
-      # Runs last on purpose: it's the slowest step by far, and every faster check above
-      # should get a chance to fail first. The SonarCloud scan and artifact upload below
-      # both consume its lcov/coverage output and stay paired with it.
-      - name: Test (with coverage)
-        run: pnpm turbo test
+  # Shard 1 of 2 for the slow `pnpm turbo test` workload: apps/api + packages/db.
+  # These two are kept together (not split further) because turbo.json declares an explicit
+  # task dependency (`@project-vault/api#test` dependsOn `@project-vault/db#test`), and because
+  # they're the only packages under test that need a live Postgres connection — packages/agent,
+  # packages/crypto, packages/shared and packages/vault-action reference the literal string
+  # "DATABASE_URL" only in test fixtures (parse-secrets classification), never a real connection.
+  # By test-file count this shard is apps/api (228) + packages/db (40) = 268 files, vs. 212 in
+  # the other shard — not exactly even, but close, and splitting apps/api's own suite further
+  # would mean either two Postgres services racing against the same migrated schema or extra
+  # machinery to shard within a single vitest project, which isn't worth it for this margin.
+  test-api-db:
+    name: Test (api + db)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+      VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: project_vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Setup Turborepo cache
+        uses: actions/cache@v6
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ github.job }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run database migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+
+      - name: Test (with coverage) - api, db
+        run: pnpm turbo test --filter=@project-vault/api --filter=@project-vault/db
         env:
           # Must use vault_app, not postgres — the postgres superuser bypasses RLS
           # entirely, which would make the RLS isolation tests pass even if policies
@@ -165,11 +241,132 @@ jobs:
           # throwaway test database and manage RLS policies directly.
           ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
-      # Runs even if the Test step above failed (e.g. a local coverage-threshold miss) —
-      # vitest writes its full LCOV/coverage output to disk before evaluating thresholds,
-      # so the data SonarCloud needs already exists. Only a cancelled run skips this, so
-      # the dashboard always reflects the latest measured coverage instead of going stale
-      # on the last passing run.
+      - name: Upload RLS isolation coverage (SOC2 Type II evidence)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: db-coverage-${{ github.run_id }}
+          path: packages/db/coverage/
+          retention-days: 90
+
+      # Feeds the sonar job below, which needs coverage from both shards to report accurate
+      # project-wide numbers. Uploaded even on failure — vitest writes LCOV to disk before
+      # evaluating coverage thresholds, so a local threshold miss shouldn't blank out the
+      # SonarCloud dashboard for this shard's packages.
+      - name: Upload coverage for SonarCloud (api, db)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-api-db
+          path: |
+            apps/api/coverage/
+            packages/db/coverage/
+          retention-days: 1
+
+  # Shard 2 of 2: everything under test that does NOT need a live Postgres connection. No
+  # postgres service here on purpose — apps/web, packages/agent, packages/crypto,
+  # packages/shared, and packages/vault-action tests never open a real DB connection (verified:
+  # the only "DATABASE_URL" references in their test files are string literals used as
+  # classification fixtures in packages/vault-action's parse-secrets tests). 212 test files vs.
+  # 268 in test-api-db — the other shard runs a bit longer, but it also carries strictly more of
+  # the historically-slow work (apps/api's integration-style suite), so this is the more useful
+  # place to spend the balance rather than forcing an exact 50/50 file-count split.
+  test-web-other:
+    name: Test (web + other packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Setup Turborepo cache
+        uses: actions/cache@v6
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ github.job }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (with coverage) - web, agent, crypto, shared, vault-action
+        run: >-
+          pnpm turbo test --filter=@project-vault/web --filter=@project-vault/shared
+          --filter=@project-vault/agent --filter=@project-vault/crypto
+          --filter=@project-vault/vault-action
+
+      - name: Upload coverage for SonarCloud (web, agent, crypto, shared, vault-action)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-web-other
+          path: |
+            apps/web/coverage/
+            packages/agent/coverage/
+            packages/crypto/coverage/
+            packages/shared/coverage/
+            packages/vault-action/coverage/
+          retention-days: 1
+
+  # Combines both shards' coverage before running SonarCloud, so project-wide coverage numbers
+  # reflect the whole suite rather than just one shard. `if: ${{ !cancelled() }}` at the job
+  # level (not just on the individual steps) is required here: GitHub Actions skips a job's
+  # `needs` dependents by default when an upstream job fails, and this job must still run — with
+  # whatever partial coverage made it into the uploaded artifacts — even if a test shard failed
+  # on a coverage-threshold miss, matching the old single-job behavior where a failed Test step
+  # didn't block the Sonar steps that followed it.
+  sonar:
+    name: SonarCloud
+    needs: [test-api-db, test-web-other]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage (api, db)
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-shard-api-db
+          path: .
+
+      - name: Download coverage (web, agent, crypto, shared, vault-action)
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-shard-web-other
+          path: .
+
+      # Runs even if a test shard failed (e.g. a local coverage-threshold miss) — vitest writes
+      # its full LCOV/coverage output to disk before evaluating thresholds, so the data
+      # SonarCloud needs already exists in the downloaded artifacts. Only a cancelled run skips
+      # this, so the dashboard always reflects the latest measured coverage instead of going
+      # stale on the last passing run.
       - name: SonarCloud Scan
         if: ${{ !cancelled() }}
         uses: SonarSource/sonarqube-scan-action@v8.2.0
@@ -185,14 +382,6 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-      - name: Upload RLS isolation coverage (SOC2 Type II evidence)
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: db-coverage-${{ github.run_id }}
-          path: packages/db/coverage/
-          retention-days: 90
 
   docker-build:
     name: Docker Build (${{ matrix.arch }})
