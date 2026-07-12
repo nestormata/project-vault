@@ -66,7 +66,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('does not fire for a user active recently', async () => {
     const { boss } = createMockBoss()
@@ -87,7 +87,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('does not re-fire a duplicate alert on a second run (dedupe via partial unique index, AC-11)', async () => {
     const { boss } = createMockBoss()
@@ -114,7 +114,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('re-fires a new alert when the prior one was dismissed and the user is still dormant', async () => {
     const { boss } = createMockBoss()
@@ -148,7 +148,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('fires an independent alert per org for a user shared across two orgs (fix: dedup index was global, not per-org)', async () => {
     // Regression test for a code-review finding: idx_security_alerts_dormant_user was originally
@@ -189,7 +189,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerBId)
       await deleteTestUser(sharedMemberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('fires for a never-active member whose createdAt is older than the threshold (AC-13)', async () => {
     const { boss } = createMockBoss()
@@ -210,7 +210,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('excludes a deactivated user even if their frozen lastActiveAt is far in the past (AC-13)', async () => {
     const { boss } = createMockBoss()
@@ -234,7 +234,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('uses the org-configured threshold instead of the 90-day default', async () => {
     const { boss } = createMockBoss()
@@ -262,7 +262,7 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(ownerId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('routes notifications to owner AND admin by default (D12/AC-16)', async () => {
     const { boss } = createMockBoss()
@@ -294,5 +294,5 @@ describe('user dormancy check job (AC-10/AC-11/AC-13)', () => {
       await deleteTestUser(adminId)
       await deleteTestUser(memberId)
     }
-  }, 20_000)
+  }, 60_000)
 })

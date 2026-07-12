@@ -4,6 +4,7 @@ import {
   buildPinnedLookupHandler,
   isPrivateIPv4,
   isPrivateIPv6,
+  isPrivateOrReservedAddress,
   safeFetchExternal,
   UnsafeForwardingUrlError,
 } from './safe-fetch.js'
@@ -52,8 +53,35 @@ describe('isPrivateIPv6 (D4)', () => {
     // text happens to start with "fc"/"fd" — the true numeric value (0x0fc1) is far outside that
     // range's actual bit pattern (its top nibble is 0, not f).
     ['fc1::1', false],
+    // Story 10.4 branch coverage: malformed/unparseable inputs must all fail CLOSED (treated as
+    // private/refused, never silently allowed — see isPrivateIPv6's own "refuse rather than
+    // silently allow" comment), exercising expandIPv6Groups' internal guards (zone-id strip,
+    // folded-IPv4-tail failure, >1 "::" compression marker, invalid hex groups, and a group
+    // count that doesn't resolve to exactly 8).
+    ['fe80::1%eth0', true], // zone id is stripped before range-checking (still link-local)
+    ['::ffff:999.0.0.1', true], // malformed dotted-decimal tail (octet > 255) -> unparseable -> refuse
+    ['a::b::c', true], // more than one "::" compression marker is invalid -> refuse
+    ['gggg::1', true], // invalid hex group -> refuse
+    ['1:2:3:4:5:6:7:8:9', true], // 9 groups, not a valid IPv6 address -> refuse
+    ['not-an-ip-at-all', true], // not parseable at all -> refuse
   ])('%s -> private=%s', (ip, expected) => {
     expect(isPrivateIPv6(ip)).toBe(expected)
+  })
+})
+
+describe('isPrivateOrReservedAddress (Story 10.4 branch coverage)', () => {
+  it('dispatches to isPrivateIPv4 for a family-4 address', () => {
+    expect(isPrivateOrReservedAddress('10.0.0.5')).toBe(true)
+    expect(isPrivateOrReservedAddress('93.184.216.34')).toBe(false)
+  })
+
+  it('dispatches to isPrivateIPv6 for a family-6 address', () => {
+    expect(isPrivateOrReservedAddress('::1')).toBe(true)
+    expect(isPrivateOrReservedAddress('2606:4700:4700::1111')).toBe(false)
+  })
+
+  it('refuses (treats as private) an input that is not a parseable IP at all', () => {
+    expect(isPrivateOrReservedAddress('not-an-ip')).toBe(true)
   })
 })
 

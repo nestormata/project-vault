@@ -18,6 +18,12 @@ function fakeBoss() {
   >[0]
 }
 
+// Story 10.4 branch coverage: a real logger double instead of `undefined`, so this worker's
+// logger-gated operational-log branches actually execute.
+function fakeLogger() {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+}
+
 async function setMaxUsersPerOrg(value: number): Promise<void> {
   await getDb()
     .insert(systemSettings)
@@ -63,7 +69,7 @@ describe.sequential('Story 9.2 AC-13/AC-14: resource-usage-check worker', () => 
       await seedActiveMembers(orgId, 4, 'resource-usage-user')
 
       const boss = fakeBoss()
-      await runResourceUsageCheck(boss, undefined)
+      await runResourceUsageCheck(boss, fakeLogger())
 
       const rows = await getDb()
         .select()
@@ -84,8 +90,8 @@ describe.sequential('Story 9.2 AC-13/AC-14: resource-usage-check worker', () => 
         .where(eq(adminAlerts.alertType, USERS_NEAR_LIMIT_ALERT_TYPE))
       await seedActiveMembers(orgId, 4, 'resource-usage-idem')
 
-      await runResourceUsageCheck(fakeBoss(), undefined)
-      await runResourceUsageCheck(fakeBoss(), undefined)
+      await runResourceUsageCheck(fakeBoss(), fakeLogger())
+      await runResourceUsageCheck(fakeBoss(), fakeLogger())
 
       const rows = await getDb()
         .select()
@@ -111,7 +117,7 @@ describe.sequential('Story 9.2 AC-13/AC-14: resource-usage-check worker', () => 
       .set({ maxOrgs: Math.max(1, currentOrgCount - 1) })
       .where(eq(systemSettings.id, 1))
 
-    await runResourceUsageCheck(fakeBoss(), undefined)
+    await runResourceUsageCheck(fakeBoss(), fakeLogger())
 
     const [row] = await getDb()
       .select()

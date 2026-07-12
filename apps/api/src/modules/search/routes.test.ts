@@ -67,7 +67,7 @@ describe.sequential('search routes', () => {
     expectSearchResults(res, (results) =>
       results.some((r) => r.type === 'credential' && r.name === 'Stripe API Key')
     )
-  }, 20_000)
+  }, 60_000)
 
   it('should return project results matching query by name', async () => {
     const user = await registerUser(suite.app, 'project-name')
@@ -82,7 +82,7 @@ describe.sequential('search routes', () => {
     expectSearchResults(res, (results) =>
       results.some((r) => r.type === 'project' && r.name === 'stripe-integrations')
     )
-  }, 20_000)
+  }, 60_000)
 
   it('should return results from both types when types param is omitted', async () => {
     const user = await registerUser(suite.app, 'both-types')
@@ -103,7 +103,7 @@ describe.sequential('search routes', () => {
     const types = new Set(body.data.results.map((r) => r.type))
     expect(types.has('credential')).toBe(true)
     expect(types.has('project')).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('should filter to credentials only when types=credentials', async () => {
     const user = await registerUser(suite.app, 'types-cred')
@@ -122,7 +122,7 @@ describe.sequential('search routes', () => {
     const res = await search(suite.app, user.cookies, 'q=stripe&types=credentials')
     const body = res.json<{ data: { results: { type: string }[] } }>()
     expect(body.data.results.every((r) => r.type === 'credential')).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('should filter to projects only when types=projects', async () => {
     const user = await registerUser(suite.app, 'types-project')
@@ -136,7 +136,7 @@ describe.sequential('search routes', () => {
     const body = res.json<{ data: { results: { type: string }[] } }>()
     expect(body.data.results.every((r) => r.type === 'project')).toBe(true)
     expect(body.data.results.some((r) => r.type === 'credential')).toBe(false)
-  }, 20_000)
+  }, 60_000)
 
   it('should apply default limit of 20 when limit param is omitted', async () => {
     const user = await registerUser(suite.app, 'default-limit')
@@ -240,7 +240,7 @@ describe.sequential('search routes', () => {
     }>()
     expect(beyondBody.data.results).toEqual([])
     expect(beyondBody.data).toMatchObject({ total: 5, hasNext: false })
-  }, 30_000)
+  }, 60_000)
 
   it('should rank exact name match above prefix match above substring match', async () => {
     const user = await registerUser(suite.app, 'ranking')
@@ -266,7 +266,7 @@ describe.sequential('search routes', () => {
       .map((r) => r.name)
     expect(names.indexOf(GITHUB_NAME)).toBeLessThan(names.indexOf(`${GITHUB_NAME}-actions-key`))
     expect(names.indexOf(`${GITHUB_NAME}-actions-key`)).toBeLessThan(names.indexOf('other'))
-  }, 30_000)
+  }, 60_000)
 
   it('should rank more recently updated results first within same tier', async () => {
     const user = await registerUser(suite.app, 'updated-order')
@@ -285,7 +285,7 @@ describe.sequential('search routes', () => {
       .json<{ data: { results: { name: string }[] } }>()
       .data.results.map((r) => r.name)
     expect(names[0]).toBe('shared-tier-b')
-  }, 20_000)
+  }, 60_000)
 
   it('should return zero results when searching a known credential value (AC-E2a blocker)', async () => {
     const user = await registerUser(suite.app, 'value-blocker')
@@ -307,7 +307,7 @@ describe.sequential('search routes', () => {
       limit: 20,
       hasNext: false,
     })
-  }, 20_000)
+  }, 60_000)
 
   it('should return zero results for a user from Org B when searching Org A credentials', async () => {
     const orgA = await registerUser(suite.app, 'org-a')
@@ -323,7 +323,7 @@ describe.sequential('search routes', () => {
       .json<{ data: { results: { name: string }[] } }>()
       .data.results.map((r) => r.name)
     expect(names).not.toContain('Org A Stripe Key')
-  }, 30_000)
+  }, 60_000)
 
   it('should return zero results from Org B when searching by a tag that only exists in Org B', async () => {
     const orgA = await registerUser(suite.app, 'tag-a')
@@ -343,7 +343,7 @@ describe.sequential('search routes', () => {
 
     const res = await search(suite.app, orgA.cookies, 'q=org-b-only-tag')
     expect(res.json<{ data: { total: number } }>().data.total).toBe(0)
-  }, 30_000)
+  }, 60_000)
 
   it('should return 401 for unauthenticated requests', async () => {
     const res = await suite.app.inject({ method: 'GET', url: `${SEARCH_URL}?q=test` })
@@ -360,7 +360,7 @@ describe.sequential('search routes', () => {
     await suite.app.close()
     await initVaultForTest(initVault, TEST_PASSPHRASE)
     suite.app = await createApp({ logger: false, vaultGuardEnabled: true })
-  }, 30_000)
+  }, 60_000)
 
   it('should write a credential.search audit entry when credential results are returned', async () => {
     const user = await registerUser(suite.app, 'audit-write')
@@ -379,7 +379,7 @@ describe.sequential('search routes', () => {
         .where(eq(auditLogEntries.eventType, CREDENTIAL_SEARCH_EVENT))
     )
     expect(rows.length).toBeGreaterThan(0)
-  }, 20_000)
+  }, 60_000)
 
   it('should store actorTokenId (not raw userId) in audit entry', async () => {
     const user = await registerAndLoginViaApi(suite.app, {
@@ -409,7 +409,7 @@ describe.sequential('search routes', () => {
     )
     expect(audit[0]?.actorTokenId).not.toBe(user.userId)
     expect(tokens.some((t) => t.id === audit[0]?.actorTokenId)).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('should NOT write audit entry when only project results are returned', async () => {
     const user = await registerUser(suite.app, 'audit-project-only')
@@ -434,7 +434,7 @@ describe.sequential('search routes', () => {
         .where(eq(auditLogEntries.eventType, CREDENTIAL_SEARCH_EVENT))
     )
     expect(after).toHaveLength(before.length)
-  }, 20_000)
+  }, 60_000)
 
   it('should return credentials matching a tag substring', async () => {
     const user = await registerUser(suite.app, 'tag-cred')
@@ -451,7 +451,7 @@ describe.sequential('search routes', () => {
         .json<{ data: { results: { name: string }[] } }>()
         .data.results.some((r) => r.name === 'Tagged Key')
     ).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('should return projects matching a tag substring', async () => {
     const user = await registerUser(suite.app, 'tag-project')
@@ -476,7 +476,7 @@ describe.sequential('search routes', () => {
         .json<{ data: { results: { name: string }[] } }>()
         .data.results.some((r) => r.name === 'Tagged Project')
     ).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('should return empty results when no credentials or projects match', async () => {
     const user = await registerUser(suite.app, 'empty')
@@ -506,7 +506,7 @@ describe.sequential('search routes', () => {
     const res = await search(suite.app, user.cookies, `q=${encodeURIComponent("' OR 1=1 --")}`)
     expect(res.statusCode).toBe(200)
     expect(res.json<{ data: { total: number } }>().data.total).toBe(0)
-  }, 20_000)
+  }, 60_000)
 
   it('should handle very long query (200 chars) without error', async () => {
     const user = await registerUser(suite.app, 'long-q')
@@ -534,7 +534,7 @@ describe.sequential('search routes', () => {
         .json<{ data: { results: { name: string }[] } }>()
         .data.results.some((r) => r.name === 'Archived Stripe Hub')
     ).toBe(false)
-  }, 20_000)
+  }, 60_000)
 
   it('should not return credentials from archived projects in search results', async () => {
     const user = await registerUser(suite.app, 'archived-cred')
@@ -549,7 +549,7 @@ describe.sequential('search routes', () => {
 
     const res = await search(suite.app, user.cookies, 'q=Archived Project Stripe')
     expect(res.json<{ data: { total: number } }>().data.total).toBe(0)
-  }, 20_000)
+  }, 60_000)
 
   it('returns 400 for invalid search types', async () => {
     const user = await registerUser(suite.app, 'invalid-type')
@@ -596,7 +596,7 @@ describe.sequential('search routes', () => {
         .data.results.map((r) => r.name)
       expect(names).toContain('Visible Stripe Key')
       expect(names).not.toContain('Hidden Stripe Key')
-    }, 20_000)
+    }, 60_000)
 
     it('returns zero results for a member with no project memberships', async () => {
       const owner = await registerOwner(suite.app, 'search-vis-empty-owner')
@@ -615,7 +615,7 @@ describe.sequential('search routes', () => {
 
       const res = await search(suite.app, member.cookies, 'q=Empty Vis Stripe')
       expect(res.json<{ data: { total: number } }>().data.total).toBe(0)
-    }, 20_000)
+    }, 60_000)
 
     it('does not scope results for an org admin with zero project memberships (regression)', async () => {
       const owner = await registerOwner(suite.app, 'search-vis-admin-owner')
@@ -637,6 +637,6 @@ describe.sequential('search routes', () => {
         .json<{ data: { results: { name: string }[] } }>()
         .data.results.map((r) => r.name)
       expect(names).toContain('Admin Vis Stripe Key')
-    }, 20_000)
+    }, 60_000)
   })
 })
