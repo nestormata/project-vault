@@ -270,9 +270,12 @@ describe.sequential('runWebhookForwardCatchup (AC-18)', () => {
     },
     // This test issues AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES + 1 catchup ticks, and each tick's
     // fetchAllOrgIds() scans every org created anywhere in this whole (fileParallelism: false)
-    // suite run — runtime grows with total suite size, not just this file. The global 45s
-    // testTimeout is no longer enough now that the suite has grown; give this one more headroom.
-    120_000
+    // suite run — runtime grows with total suite size, not just this file. Story 10.4: even the
+    // prior 120s headroom is no longer sufficient now that the suite has grown further (2000+
+    // tests) plus shared-machine contention observed this session; raised again for headroom.
+    // A more durable fix (scoping this test's org-scan cost, out of scope for this pass) would
+    // avoid chasing this ceiling indefinitely as the suite keeps growing.
+    240_000
   )
 
   it('skips orgs with no config or a disabled config', async () => {

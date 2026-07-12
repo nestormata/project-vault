@@ -245,7 +245,7 @@ describe('runHealthCheckTick (AC 4-8, 16 — DB integration)', () => {
       expect(updated?.consecutiveFailures).toBe(0)
       expect(updated?.lastCheckedAt).not.toBeNull()
     })
-  }, 20_000)
+  }, 60_000)
 
   it('is degraded for every consecutiveFailures value strictly between 1 and downThresholdFailures when threshold > 2 (adversarial-review finding 4)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(503))
@@ -270,7 +270,7 @@ describe('runHealthCheckTick (AC 4-8, 16 — DB integration)', () => {
       const alertsBeforeDown = await alertsFor(orgId, endpoint.id)
       expect(alertsBeforeDown).toHaveLength(0)
     })
-  }, 30_000)
+  }, 60_000)
 
   it('fires exactly one service.down alert/notification on crossing the threshold, no duplicate on repeat down checks (AC 5)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(503))
@@ -306,7 +306,7 @@ describe('runHealthCheckTick (AC 4-8, 16 — DB integration)', () => {
       const alertsAfterMore = await alertsFor(orgId, endpoint.id)
       expect(alertsAfterMore).toHaveLength(1)
     })
-  }, 30_000)
+  }, 60_000)
 
   it("fires a service.recovery alert when a down endpoint's next check succeeds (AC 6)", async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
@@ -352,7 +352,7 @@ describe('runHealthCheckTick (AC 4-8, 16 — DB integration)', () => {
       const recoveryQueueEntries = await queueEntriesForTemplate(orgId, SERVICE_RECOVERY)
       expect(recoveryQueueEntries.length).toBeGreaterThan(0)
     })
-  }, 30_000)
+  }, 60_000)
 
   it('honors per-endpoint checkFrequencyMinutes: a recently-checked endpoint is not due', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(200))
@@ -378,7 +378,7 @@ describe('runHealthCheckTick (AC 4-8, 16 — DB integration)', () => {
       expect(await healthChecksFor(orgId, dueEndpoint.id)).toHaveLength(1)
       void fetchMock
     })
-  }, 20_000)
+  }, 60_000)
 
   it('a second concurrent tick invocation is skipped while the first still holds the advisory lock (ADR-6.2-09)', async () => {
     let resolveFirstFetch: (() => void) | undefined
@@ -408,5 +408,5 @@ describe('runHealthCheckTick (AC 4-8, 16 — DB integration)', () => {
       const checks = await healthChecksFor(orgId, endpoint.id)
       expect(checks).toHaveLength(1)
     })
-  }, 20_000)
+  }, 60_000)
 })

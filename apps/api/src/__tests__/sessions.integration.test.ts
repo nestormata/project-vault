@@ -147,7 +147,7 @@ describe.sequential('Session management integration', () => {
       },
     })
     await app.close()
-  }, 20_000)
+  }, 60_000)
 
   it('registration sets a seven-day MFA grace period for the owner membership', async () => {
     const user = await registerAndLogin('grace-period')
@@ -173,7 +173,7 @@ describe.sequential('Session management integration', () => {
     )
     expect(daysUntil).toBeGreaterThanOrEqual(6)
     expect(daysUntil).toBeLessThanOrEqual(7)
-  }, 20_000)
+  }, 60_000)
 
   it('GET /auth/sessions lists current and second sessions with isCurrent', async () => {
     const user = await registerAndLogin('list')
@@ -183,7 +183,7 @@ describe.sequential('Session management integration', () => {
 
     expect(sessions).toHaveLength(2)
     expect(sessions.filter((session) => session.isCurrent)).toHaveLength(1)
-  }, 20_000)
+  }, 60_000)
 
   it('DELETE /auth/sessions/:id revokes another session and target cookie is rejected', async () => {
     const user = await registerAndLogin('revoke-other')
@@ -201,7 +201,7 @@ describe.sequential('Session management integration', () => {
 
     await expectAuthMe(app, otherCookies, 401, 'session_revoked')
     await app.close()
-  }, 20_000)
+  }, 60_000)
 
   it('DELETE /auth/sessions/:id for current session clears auth cookies', async () => {
     const user = await registerAndLogin('revoke-current')
@@ -213,7 +213,7 @@ describe.sequential('Session management integration', () => {
     expect(cleared['access-token']).toBe('')
     expect(cleared['refresh-token']).toBe('')
     await app.close()
-  }, 20_000)
+  }, 60_000)
 
   it('DELETE /auth/sessions revokes all sessions except current', async () => {
     const user = await registerAndLogin('revoke-all-other')
@@ -235,7 +235,7 @@ describe.sequential('Session management integration', () => {
       await expectAuthMe(app, jar, 401, 'session_revoked')
     }
     await app.close()
-  }, 20_000)
+  }, 60_000)
 
   it('POST /auth/logout revokes current session and clears auth cookies', async () => {
     const user = await registerAndLogin('logout')
@@ -253,7 +253,7 @@ describe.sequential('Session management integration', () => {
 
     await expectAuthMe(app, user.cookies, 401, 'session_revoked')
     await app.close()
-  }, 20_000)
+  }, 60_000)
 
   it('refresh rotation revokes the predecessor access token and allows grace retry', async () => {
     const user = await registerAndLogin('refresh-rotation')
@@ -273,7 +273,7 @@ describe.sequential('Session management integration', () => {
     const graceCookies = parseSetCookies(graceRetry.headers['set-cookie'])
     expect(graceCookies['access-token']).toEqual(expect.any(String))
     expect(graceCookies['refresh-token']).toBeUndefined()
-  }, 20_000)
+  }, 60_000)
 
   it('refresh rejects revoked sessions', async () => {
     const user = await registerAndLogin('refresh-revoked')
@@ -285,7 +285,7 @@ describe.sequential('Session management integration', () => {
     const refresh = await refreshWith(user.cookies)
     expect(refresh.statusCode).toBe(401)
     expect(refresh.json()).toMatchObject({ code: 'refresh_token_revoked' })
-  }, 20_000)
+  }, 60_000)
 
   it('refresh idle timeout synchronously revokes the session', async () => {
     const user = await registerAndLogin('refresh-idle')
@@ -313,7 +313,7 @@ describe.sequential('Session management integration', () => {
         .limit(1)
     )
     expect(session?.revokedAt).toBeInstanceOf(Date)
-  }, 20_000)
+  }, 60_000)
 
   it('an authenticated request refreshes the session lastActiveAt in the database', async () => {
     const user = await registerAndLogin('activity-touch')
@@ -343,7 +343,7 @@ describe.sequential('Session management integration', () => {
     expect(session?.lastActiveAt).toBeInstanceOf(Date)
     expect(session?.lastActiveAt.getTime()).not.toBe(stale.getTime())
     expect(Date.now() - (session?.lastActiveAt as Date).getTime()).toBeLessThan(20_000)
-  }, 20_000)
+  }, 60_000)
 
   it('org owner can revoke all sessions for a user in the org', async () => {
     const admin = await registerAndLogin('admin-revoke-admin')
@@ -383,7 +383,7 @@ describe.sequential('Session management integration', () => {
         .limit(1)
     )
     expect(session?.revokedAt).toBeInstanceOf(Date)
-  }, 20_000)
+  }, 60_000)
 
   it('MAX_SESSIONS_PER_USER revokes oldest sessions on login when configured', async () => {
     const previousLimit = env.MAX_SESSIONS_PER_USER
@@ -402,5 +402,5 @@ describe.sequential('Session management integration', () => {
     } finally {
       env.MAX_SESSIONS_PER_USER = previousLimit
     }
-  }, 20_000)
+  }, 60_000)
 })

@@ -158,7 +158,7 @@ describe.sequential('dashboard stats', () => {
       expiringCount: 0,
       alertCount: 0,
     })
-  }, 30_000)
+  }, 60_000)
 
   it('project dashboard credentialStats {1,1,1}', async () => {
     const owner = await registerOwner(app, 'project-dashboard')
@@ -191,7 +191,7 @@ describe.sequential('dashboard stats', () => {
     expect(
       body.data.recentAccessEvents.every((event) => event.eventType === 'credential.created')
     ).toBe(true)
-  }, 30_000)
+  }, 60_000)
 
   it('GET /api/v1/dashboard total + expiring list (≤20 items)', async () => {
     const owner = await registerOwner(app, 'org-dashboard')
@@ -226,7 +226,7 @@ describe.sequential('dashboard stats', () => {
       response.json<{ data: { expiringWithin30Days: { items: unknown[] } } }>().data
         .expiringWithin30Days.items
     ).toHaveLength(1)
-  }, 30_000)
+  }, 60_000)
 
   it('Org Beta user → 0 credentials / empty items (RLS isolation)', async () => {
     const ownerA = await registerOwner(app, 'org-alpha')
@@ -248,7 +248,7 @@ describe.sequential('dashboard stats', () => {
         unresolvedAlertCount: 0,
       },
     })
-  }, 30_000)
+  }, 60_000)
 
   it('batched project stats use a single aggregate query for 50 projects', async () => {
     const owner = await registerOwner(app, 'query-count')
@@ -275,7 +275,7 @@ describe.sequential('dashboard stats', () => {
       await getBatchedProjectCredentialStats(countingTx, projectIds)
       expect(selectCount).toBe(1)
     })
-  }, 30_000)
+  }, 60_000)
 
   it('getProjectDashboardData marks empty projects with suggested actions', async () => {
     const owner = await registerOwner(app, 'empty-dashboard')
@@ -289,7 +289,7 @@ describe.sequential('dashboard stats', () => {
         suggestedActions: ['add_credential', 'add_service', 'import_credentials'],
       })
     })
-  }, 30_000)
+  }, 60_000)
 
   it('getOrgDashboardData includes project names on expiring items', async () => {
     const owner = await registerOwner(app, 'org-names')
@@ -302,7 +302,7 @@ describe.sequential('dashboard stats', () => {
         projectName: expect.stringMatching(/payments/i),
       })
     })
-  }, 30_000)
+  }, 60_000)
 
   it('org dashboard unresolvedAlertCount excludes dismissed alerts (AC-10)', async () => {
     const owner = await registerOwner(app, 'org-alert-count')
@@ -319,7 +319,7 @@ describe.sequential('dashboard stats', () => {
       const after = await getOrgDashboardData(tx)
       expect(after.unresolvedAlertCount).toBe(1)
     })
-  }, 30_000)
+  }, 60_000)
 
   it('project list alertCount stays 0 even with unresolved org security alerts (AC-12, ADR-3.4-02)', async () => {
     const owner = await registerOwner(app, 'list-alertcount-zero')
@@ -329,7 +329,7 @@ describe.sequential('dashboard stats', () => {
     const items = await fetchProjectListItems(app, owner.cookies)
     const payments = items.find((item) => item.id === paymentsId)
     expect(payments?.alertCount).toBe(0)
-  }, 30_000)
+  }, 60_000)
 
   it('project dashboard monitoredServiceHealth reflects real service_endpoints counts (Story 6.2 AC 15)', async () => {
     const owner = await registerOwner(app, 'service-health')
@@ -366,7 +366,7 @@ describe.sequential('dashboard stats', () => {
         isEmpty: false,
       },
     })
-  }, 30_000)
+  }, 60_000)
 
   it('getBatchedProjectServiceHealthStats groups service_endpoints.status per project (Story 6.2 AC 15)', async () => {
     const owner = await registerOwner(app, 'service-health-batch')
@@ -396,7 +396,7 @@ describe.sequential('dashboard stats', () => {
       const stats = await getBatchedProjectServiceHealthStats(tx, [projectId])
       expect(stats.get(projectId)).toEqual({ healthy: 1, degraded: 0, down: 1 })
     })
-  }, 30_000)
+  }, 60_000)
 
   it('project dashboard unresolvedAlertCount mirrors the org-wide count (AC-11, ADR-3.4-01)', async () => {
     const owner = await registerOwner(app, 'project-alert-count')
@@ -412,7 +412,7 @@ describe.sequential('dashboard stats', () => {
       expect(paymentsDashboard.unresolvedAlertCount).toBe(2)
       expect(infraDashboard.unresolvedAlertCount).toBe(2)
     })
-  }, 30_000)
+  }, 60_000)
 
   it('Story 5.2 AC-15: org dashboard shows only overdue rotations, project dashboard shows both overdue and pending', async () => {
     const owner = await registerOwner(app, 'rotation-dashboard')
@@ -459,7 +459,7 @@ describe.sequential('dashboard stats', () => {
     }>()
     const projectCredentialIds = projectBody.data.upcomingRotations.map((item) => item.credentialId)
     expect(projectCredentialIds).toEqual(expect.arrayContaining([overdue.id, pending.id]))
-  }, 30_000)
+  }, 60_000)
 
   it('AC-S1: credentials but no services → suggestedActions is exactly ["add_service"]', async () => {
     const owner = await registerOwner(app, 'partial-services')
@@ -474,7 +474,7 @@ describe.sequential('dashboard stats', () => {
       expect(dashboard.isEmpty).toBe(false)
       expect(dashboard.suggestedActions).toEqual(['add_service'])
     })
-  }, 30_000)
+  }, 60_000)
 
   it('AC-S1 example 2: services but no credentials → suggestedActions is ["add_credential", "import_credentials"]', async () => {
     const owner = await registerOwner(app, 'partial-credentials')
@@ -495,7 +495,7 @@ describe.sequential('dashboard stats', () => {
       expect(dashboard.isEmpty).toBe(false)
       expect(dashboard.suggestedActions).toEqual(['add_credential', 'import_credentials'])
     })
-  }, 30_000)
+  }, 60_000)
 
   it('AC-S2: both credentials and services present → suggestedActions is []', async () => {
     const owner = await registerOwner(app, 'fully-covered')
@@ -519,7 +519,7 @@ describe.sequential('dashboard stats', () => {
       expect(dashboard.isEmpty).toBe(false)
       expect(dashboard.suggestedActions).toEqual([])
     })
-  }, 30_000)
+  }, 60_000)
 
   it('AC-S3 regression: a fully-empty project keeps the existing 3-action suggestion list unchanged', async () => {
     const owner = await registerOwner(app, 'still-empty')
@@ -534,7 +534,7 @@ describe.sequential('dashboard stats', () => {
         'import_credentials',
       ])
     })
-  }, 30_000)
+  }, 60_000)
 
   it('Story 5.2 AC-14: computeUpcomingRotations excludes a credential with an active in_progress rotation', async () => {
     const owner = await registerOwner(app, 'rotation-active-exclude')
@@ -558,7 +558,7 @@ describe.sequential('dashboard stats', () => {
       const results = await computeUpcomingRotations(tx, { projectId, horizonDays: 30 })
       expect(results.map((r) => r.credentialId)).not.toContain(credential.id)
     })
-  }, 30_000)
+  }, 60_000)
 
   describe('org dashboard project-membership scoping (AC-V6)', () => {
     const { addUserToOrg, addProjectMember } = createMembershipTestHelpers({
@@ -601,7 +601,7 @@ describe.sequential('dashboard stats', () => {
       expect(body.data.totalCredentials).toBe(3)
       expect(body.data.expiringWithin30Days.count).toBe(1)
       expect(body.data.expiringWithin30Days.items.map((i) => i.id)).toEqual([stripeId])
-    }, 30_000)
+    }, 60_000)
 
     it('returns zero totals for an org member with no project memberships', async () => {
       const owner = await registerOwner(app, 'dash-vis-empty-owner')
@@ -623,7 +623,7 @@ describe.sequential('dashboard stats', () => {
           projectsWithOverdueRotations: { count: 0, items: [] },
         },
       })
-    }, 30_000)
+    }, 60_000)
 
     it('scopes projectsWithOverdueRotations to visible projects for an org member', async () => {
       const owner = await registerOwner(app, 'dash-vis-rotation-owner')
@@ -681,7 +681,7 @@ describe.sequential('dashboard stats', () => {
       const overdueIds = body.data.projectsWithOverdueRotations.items.map((i) => i.credentialId)
       expect(overdueIds).toContain(visibleCredential.id)
       expect(overdueIds).not.toContain(hiddenCredential.id)
-    }, 30_000)
+    }, 60_000)
 
     it('does not scope any field for an org admin with zero project memberships (regression, AC-V8)', async () => {
       const owner = await registerOwner(app, 'dash-vis-admin-owner')
@@ -701,7 +701,7 @@ describe.sequential('dashboard stats', () => {
       }>()
       expect(body.data.totalCredentials).toBe(3)
       expect(body.data.expiringWithin30Days.items.map((i) => i.id)).toEqual([stripeId])
-    }, 30_000)
+    }, 60_000)
 
     it('unresolvedAlertCount is org-wide and unscoped for both member and admin callers (AC-V6 exemption)', async () => {
       const owner = await registerOwner(app, 'dash-vis-alert-owner')
@@ -731,6 +731,6 @@ describe.sequential('dashboard stats', () => {
       expect(
         adminRes.json<{ data: { unresolvedAlertCount: number } }>().data.unresolvedAlertCount
       ).toBe(1)
-    }, 30_000)
+    }, 60_000)
   })
 })

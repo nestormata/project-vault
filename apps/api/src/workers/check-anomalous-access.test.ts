@@ -99,7 +99,7 @@ describe('check-anomalous-access worker (AC 11-12, ADR-6.2-06)', () => {
       expect(systemAuditRows).toHaveLength(1)
       expect(systemAuditRows[0]).toMatchObject({ actorType: 'system', actorTokenId: null })
     })
-  }, 20_000)
+  }, 60_000)
 
   it('does not fire below the threshold', async () => {
     const { boss } = createMockBoss()
@@ -113,7 +113,7 @@ describe('check-anomalous-access worker (AC 11-12, ADR-6.2-06)', () => {
 
       expect(await alertsFor(orgId)).toHaveLength(0)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('does not create a second alert for the same actor within the same window (dedup)', async () => {
     const { boss } = createMockBoss()
@@ -129,7 +129,7 @@ describe('check-anomalous-access worker (AC 11-12, ADR-6.2-06)', () => {
 
       expect(await alertsFor(orgId)).toHaveLength(1)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('caps revealedCredentialIds at 50 (adversarial-review finding 9)', async () => {
     const { boss } = createMockBoss()
@@ -146,7 +146,7 @@ describe('check-anomalous-access worker (AC 11-12, ADR-6.2-06)', () => {
       expect((payload['revealedCredentialIds'] as unknown[]).length).toBeLessThanOrEqual(50)
       expect(payload['revealedCount']).toBeGreaterThanOrEqual(60)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('attributes breaches per-org: two orgs each get their own scoped alert', async () => {
     const { boss } = createMockBoss()
@@ -173,5 +173,5 @@ describe('check-anomalous-access worker (AC 11-12, ADR-6.2-06)', () => {
         )
       }
     )
-  }, 20_000)
+  }, 60_000)
 })

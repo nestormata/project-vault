@@ -1,6 +1,6 @@
 # Story 10.4: SonarCloud New-Coverage Buffer
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created. -->
@@ -991,42 +991,116 @@ batch of tests lands, since branch IDs are unstable across source edits.
   itself is correct and the remaining gap is real missing branch coverage. User authorized
   continuing with behavior-focused tests (option 1), explicitly declining any exclusion for
   `src/main.ts` or any other file.
-- Task 6 is **in progress, not complete**: added 3 real new tests plus upgraded 1 existing test
-  with a real logger double, moving branches from 77.17% (3676/4763) to 77.45% (3689/4763) with
-  zero regressions (1865/1865 passing). This closed 13 of the ~134-branch gap. At this measured
-  rate — and given each authoritative full-suite verification costs 50–65 minutes and manual
-  branch-line mapping proved unreliable twice during this session (see Debug Log) — closing the
-  full gap requires roughly 9× more of this same effort. Paused to report real, verified progress
-  rather than continue unsupervised for many more hours or take a shortcut Task 5/AC-C5/AC-C6/AC-B3
-  forbid (narrowing include, excluding product code, lowering thresholds, or claiming completion
-  without re-verification).
+- Task 6 is **in progress, not complete — stopped by explicit user decision on 2026-07-12**, not
+  because the approach failed. Across Batches 1–4 (roughly a dozen verified/attempted full-suite
+  runs over multiple days), measured branches climbed from the Task 5 baseline **77.17%
+  (3676/4763) to a last-confirmed-clean 78.35% (3732/4763)** at the end of Batch 3, with further
+  batches (4 onward) adding ~25 more real, meaningful test files (pure-function sweeps plus
+  security-sensitive-module coverage) that individually pass and are `tsc`/`eslint` clean, but
+  whose net effect on the branch percentage was **never confirmed by a clean full-suite run** —
+  every attempt from Batch 4 onward (runs 7 through 18, see Debug Log for the full run-by-run
+  history) hit shared-machine resource contention (confirmed via `ps`/`uptime`/sibling-worktree
+  processes) producing pure timeout failures, never assertion failures, in files with zero
+  working-tree diff from this story. Two rounds of Vitest timeout mitigation were applied with
+  explicit user approval (global 45s→60s, then targeted per-test overrides in ~25 specific files
+  that had actually failed, narrowly scoped and never via a blind repo-wide rewrite — see Debug
+  Log for the exact `sed` patterns and manual fixes) and measurably reduced the failure count each
+  time (48 → 33 → 11 failures across successive reruns), but never reached a fully clean run before
+  the user called a stop. **The final verification attempt in this session was deliberately not
+  run to completion** — per the user's explicit 2026-07-12 stop decision, prioritizing a clean
+  commit over waiting out another ~3+ hour run.
+- Zero regressions were observed in every run that did complete: no test this story touched, or any
+  other test, ever failed on a wrong assertion — only on timeouts in an environment shared with
+  concurrent sibling sessions. This is documented in detail (per-run failure lists, `git diff`
+  confirmations, load-average readings) in the Debug Log below for whoever resumes this story.
 - Tasks 7 (fix PR + Sonar landing proof) and the remainder of Task 8 (final evidence table, AC-D7
   db/shared deferral tracking, sprint-status sync to "review") are **not started** — both depend on
-  Task 6 first clearing the local 80% branch floor.
-- Story `Status` is intentionally left as `ready-for-dev`'s successor `in-progress` (unchanged) —
-  not advanced to `review` — because Task 6 is incomplete and ACs A3, C4–C6, D1–D4, D6–D7 are not
-  yet satisfied.
-- `sprint-status.yaml` is unchanged from its existing `in-progress` entry for `10-4-...`; no
-  sync action needed since Status did not move.
+  Task 6 first clearing the local 80% branch floor, which did not happen this session.
+- Story `Status` is intentionally left as `in-progress` (unchanged) — not advanced to `review` —
+  because Task 6 is incomplete and ACs A3, C4–C6, D1–D4, D6–D7 are not yet satisfied. Per the
+  coordinator's explicit instruction, `sprint-status.yaml`'s status field was **not** touched this
+  session; the coordinator will make the story-status/PR-readiness decision.
+- **Why stopping here is the right call, not a failure of the story's own Ask-First discipline**:
+  AC-C5/AC-C6/AC-B3 forbid narrowing include, excluding product code, lowering thresholds, or
+  claiming coverage completion without re-verification — none of those shortcuts were taken. The
+  blocker was never the coverage work itself (every individual test added is real and correct);
+  it was the shared-machine environment's ability to run a ~3.5-hour, fileParallelism:false,
+  single-shared-Postgres-instance suite to completion without contention from concurrent sibling
+  sessions, repeated over multiple days. That is an infrastructure constraint outside this story's
+  or this session's control, not a defect in the approach.
 
 ### File List
 
-- `sonar-project.properties` — modified: added precise `sonar.coverage.exclusions` classification.
-- `apps/api/vitest.config.ts` — modified: replaced 21-file coverage allowlist with `src/**/*.ts` +
-  explicit test/helper/bootstrap excludes.
+**Tasks 1–4 (config/classification/guards):**
+- `sonar-project.properties` — added precise `sonar.coverage.exclusions` classification.
+- `apps/api/vitest.config.ts` — replaced 21-file coverage allowlist with `src/**/*.ts` +
+  explicit test/helper/bootstrap excludes; later raised global `testTimeout`/`hookTimeout` 45s→60s
+  (Task 6 timeout mitigation, see below).
 - `apps/api/src/__tests__/sonar-properties.test.ts` — new: TDD guard for Sonar coverage-exclusion
   classification and must-not-exclude-product invariants.
 - `apps/api/src/__tests__/vitest-config.test.ts` — new: TDD guard evaluating the merged
   `apps/api` Vitest coverage config for truthful product membership.
-- `docs/sonarqube.md` — modified: added coverage-vs-source-exclusion rationale, per-entry
-  classification table, API LCOV membership explanation, `new_coverage` vs. project-gate
-  clarification, and stale-artifact hygiene note.
-- `apps/api/src/modules/auth/service.test.ts` — modified: added `isUniqueViolation` unit tests
-  (Task 6, branch coverage).
-- `apps/api/src/modules/audit/forwarding.test.ts` — modified: upgraded the auto-disable test to use
-  a real logger double instead of `undefined` (Task 6, branch coverage).
-- `apps/api/src/modules/platform-audit/routes.test.ts` — modified: added a `targetUserId`/
-  `from`/`to` query-filter test (Task 6, branch coverage).
+- `docs/sonarqube.md` — coverage-vs-source-exclusion rationale, per-entry classification table,
+  API LCOV membership explanation, `new_coverage` vs. project-gate clarification, stale-artifact
+  hygiene note.
+
+**Task 6 — new branch-coverage test files (pure-function sweep + targeted fixes):**
+- `apps/api/src/modules/auth/service.test.ts` — `isUniqueViolation` unit tests.
+- `apps/api/src/modules/audit/forwarding.test.ts` — real-logger auto-disable assertions.
+- `apps/api/src/modules/platform-audit/routes.test.ts` — `targetUserId`/`from`/`to` filter test.
+- `apps/api/src/lib/safe-fetch.test.ts` — IPv6/malformed-input branch cases.
+- `apps/api/src/workers/audit-storage-check.test.ts`,
+  `apps/api/src/workers/key-custody-check.test.ts`,
+  `apps/api/src/workers/resource-usage-check.test.ts` — real-logger-double upgrades.
+- `apps/api/src/lib/url.test.ts` (new) — `stripTrailingSlashes`.
+- `apps/api/src/modules/backup/dump-inspect.test.ts` (new) — table-name extraction/asset-presence.
+- `apps/api/src/modules/backup/s3-upload.test.ts` — `isRetryableS3Error` 4xx/5xx cases.
+- `apps/api/src/modules/credentials/db-helpers.test.ts` (new) — `isUniqueViolation`/
+  `isLockNotAvailable`.
+- `apps/api/src/notifications/templates/account-recovery.test.ts`,
+  `project-invitation-created.test.ts`, `security-failed-auth-threshold.test.ts` (all new), and
+  `apps/api/src/notifications/templates/index.test.ts` — email/Slack template renderers.
+- `apps/api/src/modules/audit/access-report-pagination-csv.test.ts` (new) —
+  `paginateAccessReportUsers`/`buildAccessReportCsv`.
+- `apps/api/src/modules/auth/recovery-lookup.test.ts` (new) — `validateRecoveryTokenStatus`.
+- `apps/api/src/workers/prune-utils.test.ts` (new) — `deletedCountFromResult`/`runPruneJob`.
+- `apps/api/src/modules/platform-admin/compute-effective-settings.test.ts` (new) —
+  env-default vs. DB-override precedence.
+- `apps/api/src/modules/search/generate-snippet.test.ts` (new).
+- `apps/api/src/modules/compliance/hash-original-email.test.ts`,
+  `pseudonymize-identity-alias.test.ts` (both new).
+- `apps/api/src/modules/credentials/import-service-pure.test.ts` (new) —
+  `detectImportFileType`/`parseImportFileContent`/`resolveImportAction`.
+- `apps/api/src/modules/monitoring/serializers.test.ts` (new) — 6 record serializers.
+- `apps/api/src/modules/credentials/serialize-dependency.test.ts`,
+  `serialize-credential-detail.test.ts` (both new).
+- `apps/api/src/modules/invitations/lookup.test.ts` (new) — `validateInvitationStatus`.
+- `apps/api/src/modules/machine-users/bearer-token.test.ts`, `key-validity.test.ts` (both new).
+
+**Task 6 — Vitest timeout mitigation (user-approved, narrowly scoped to files that actually
+failed under confirmed shared-machine contention; see Debug Log for full rationale and exact
+`sed` patterns used):**
+- `apps/api/vitest.config.ts` — global `testTimeout`/`hookTimeout` 45s→60s.
+- `apps/api/src/workers/cert-expiry-alert.test.ts`,
+  `apps/api/src/workers/machine-key-dormancy-check.test.ts`,
+  `apps/api/src/workers/user-dormancy-check.test.ts`,
+  `apps/api/src/modules/search/routes.test.ts` — first round, per-test 20s/30s→60s.
+- `apps/api/src/modules/audit/s3-forward.test.ts` — added explicit 120s override (later files
+  needed none since this was newly added, not bumped).
+- `apps/api/src/modules/auth/mfa-login.test.ts`, `apps/api/src/modules/credentials/routes.test.ts`,
+  `apps/api/src/modules/projects/dashboard-stats.test.ts`,
+  `apps/api/src/modules/projects/routes.test.ts`, `apps/api/src/__tests__/mfa-enrollment.test.ts`,
+  `apps/api/src/__tests__/sessions.integration.test.ts`,
+  `apps/api/src/workers/check-anomalous-access.test.ts`,
+  `apps/api/src/workers/credential-expiry-alert.test.ts`,
+  `apps/api/src/workers/monitoring-health-check.test.ts`,
+  `apps/api/src/workers/rotation-break-glass-expire.test.ts`,
+  `apps/api/src/workers/rotation-recover.test.ts` — second round, per-test 20s/30s/45s→60s/90s.
+- `apps/api/src/modules/auth/recovery.routes.test.ts`, `apps/api/src/modules/org/pseudonymize.test.ts`
+  — added explicit 90s overrides (previously had none, relied on the global default).
+- `apps/api/src/modules/audit/forwarding.test.ts` — auto-disable test's explicit override raised
+  again, 120s→240s (second increase; flagged as a test whose own cumulative-scan cost keeps
+  growing with total suite size — see Debug Log for the durable-fix note).
 
 ## Change Log
 
@@ -1108,3 +1182,123 @@ batch of tests lands, since branch IDs are unstable across source edits.
   cleanup, not a bigger number. The other 12 files remain confirmed pure environmental contention.
   Per the coordinator's directive, did not auto-launch a further run — reported run13's result and
   paused, awaiting confirmation that the safety-commit/draft-PR is complete before resuming.
+
+  **Coordinator committed/pushed a safety snapshot** (draft PR
+  [#185](https://github.com/nestormata/project-vault/pull/185)) and later rebased the branch onto
+  current `origin/main` (force-push; new HEAD `5fbbee8`), resolving two conflicts:
+  `sprint-status.yaml` (kept main's completed statuses for stories finished on main since this
+  branch was cut, plus this branch's `10-4: in-progress` line) and `apps/api/vitest.config.ts`
+  (main had added `monitoring/routes.ts` to the old fixed allowlist; this story's `src/**/*.ts`
+  glob is a strict superset, so no coverage scope was lost). Post-rebase `tsc --noEmit` confirmed
+  a handful of pre-existing type errors in `vault-kms-lifecycle.test.ts`/`key-service.ts` (Story
+  1.14 KMS unseal mode) exist identically on plain `origin/main` — not introduced by the rebase,
+  not in scope here. Resumed the verification loop per the coordinator's go-ahead.
+
+  **run14: 207/225 files, 1959/2007 tests, 48 failures across 18 files, 3h21m (12004s) — the worst
+  run yet by failure count**, though the *rate* (48/2007 ≈ 2.4%) is comparable to run13's
+  (30/1984 ≈ 1.5%) given the rebase added more tests (2007 vs 1984). All failures are timeouts.
+  Two new files appear for the first time (`monitoring/routes.test.ts`,
+  `platform-audit/maintenance-mode.test.ts`, `org/pseudonymize.test.ts`,
+  `vault-errors.test.ts`, `check-anomalous-access.test.ts`) — expected, since the rebase pulled in
+  main's independent test-suite growth (more stories landed on main since this branch was cut),
+  further increasing total shared-DB state and org count for the whole run. `forwarding.test.ts`'s
+  auto-disable test failed again (consistent with the flagged cumulative-scan concern). By
+  completion, load had dropped to 0.81/1.17/1.72 — confirming contention is bursty within each
+  ~3+ hour run rather than a constant baseline. Working tree clean (nothing to re-commit); retrying
+  immediately while load is low.
+
+  **run15 failed fast (54s) for a genuinely different, real reason — not a timeout.**
+  `packages/db#test`'s `guarded-migrate.test.ts` asserted zero pending migrations and got a
+  mismatch showing `0048_vault_kms_columns` (Story 1.14's KMS-unseal migration, pulled in by the
+  coordinator's rebase onto `origin/main`) as pending. Root cause: this worktree's long-running
+  Docker Postgres container (up since early in this session) had never had that migration applied
+  — the rebase updated the migration *files* but nothing had re-run `db:migrate` against the live
+  container since. Since `@project-vault/api#test` depends on `@project-vault/db#test` in
+  `turbo.json`, this failed fast before any API test ran at all. Fixed by running
+  `make db-migrate` (applied `0048_vault_kms_columns` successfully) and `make check-rls` (still
+  green — "all org_id tables have RLS policies"). This is an environmental/session-state issue
+  from the rebase, not a code defect, and does not affect coverage measurement. Re-ran the full
+  suite immediately after applying the migration.
+
+  **run16: 214/228 files, 2006/2039 tests, 33 failures across 14 files, 3h22m (12081s).** Load had
+  dropped to 0.30/0.32/0.71 by completion. All 33 failures are timeouts. The failing-file set has
+  now **stabilized across three runs (13, 14, 16)** — the same core group each time:
+  `audit/forwarding.test.ts`, `audit/s3-forward.test.ts`, `auth/mfa-login.test.ts`,
+  `auth/recovery.routes.test.ts`, `credentials/routes.test.ts`, `projects/dashboard-stats.test.ts`,
+  `projects/routes.test.ts`, `__tests__/mfa-enrollment.test.ts`,
+  `__tests__/sessions.integration.test.ts`, `workers/check-anomalous-access.test.ts`,
+  `workers/credential-expiry-alert.test.ts`, `workers/monitoring-health-check.test.ts`,
+  `workers/rotation-break-glass-expire.test.ts`, `workers/rotation-recover.test.ts`. Extending the
+  same coordinator-approved, narrowly-scoped mitigation (per-test timeout bump, only in files that
+  have actually failed, zero blind rewrites) to this now-stable set:
+  - Ran the same precise `sed` pattern (`}, 20_000)`/`}, 30_000)` → `}, 60_000)`,
+    `}, 45_000)` → `}, 90_000)`) against the 10 newly-recurring files with existing per-test
+    overrides (`mfa-login.test.ts`, `credentials/routes.test.ts`, `dashboard-stats.test.ts`,
+    `mfa-enrollment.test.ts`, `sessions.integration.test.ts`, `check-anomalous-access.test.ts`,
+    `credential-expiry-alert.test.ts`, `monitoring-health-check.test.ts`,
+    `rotation-break-glass-expire.test.ts`, `rotation-recover.test.ts`).
+  - `mfa-login.test.ts` had one non-matching explicit `40_000` (missed by the 20/30/45 pattern);
+    bumped manually to `90_000`.
+  - `s3-forward.test.ts` had no per-test override at all — its auto-disable test shares the exact
+    `fetchAllOrgIds()`-per-tick architecture as `forwarding.test.ts`'s own auto-disable test (same
+    "runtime grows with total suite size" concern); added an explicit `120_000` override with a
+    comment cross-referencing that precedent, matching `forwarding.test.ts`'s existing value.
+  - `tsc --noEmit` and `eslint .` both clean (0 errors) on all touched files; spot-verified
+    `s3-forward.test.ts` parses correctly via a filtered dry-run (0 real tests executed, 7 skipped,
+    no syntax errors).
+  Re-ran the full suite immediately.
+
+  **run17: 223/228 files, 2028/2039 tests, 11 failures across 5 files, 3h40m (13140s) — a large
+  improvement (33→11 failures) from the extended timeout mitigation.** Load had dropped to
+  1.32/1.29/1.60 by completion. Remaining failures, all still pure timeouts:
+  `__tests__/mfa-enrollment.test.ts` (a *different* test than before — its own explicit `40_000`
+  at a line the earlier batch's regex hadn't reached), `audit/forwarding.test.ts` (still hitting
+  its already-120s ceiling — confirms the cumulative-scan cost genuinely keeps growing, not just
+  a one-off), `auth/recovery.routes.test.ts` and `org/pseudonymize.test.ts` (both had **no**
+  per-test override at all, relying on the 60s global default, and both timed out at exactly
+  60000ms), `projects/routes.test.ts` (3 tests — **missed entirely** in the prior batch's file
+  list, an oversight, still at the original `20_000`).
+  - Fixed the missed file: applied the same `sed` pattern to `projects/routes.test.ts` (20
+    occurrences, 20_000→60_000).
+  - Bumped `mfa-enrollment.test.ts`'s newly-identified `40_000` (line 141, the actual failing
+    test's own override — the earlier grep had only reported the count, not verified it was on
+    the *failing* test) to `90_000`.
+  - Added explicit `90_000` overrides to `recovery.routes.test.ts`'s rate-limit test and
+    `pseudonymize.test.ts`'s 403-rejection test (neither had one before).
+  - Raised `forwarding.test.ts`'s auto-disable test from `120_000` to `240_000`, with an updated
+    comment noting this is now the second increase and that a durable fix (scoping the test's own
+    org-scan cost) remains out of scope for this pass rather than continuing to chase the ceiling.
+  `tsc --noEmit` and `eslint .` both clean (0 errors) on all touched files. Re-ran the full suite.
+
+  **run18 (in progress, not observed to completion): 223/228 files still passing cleanly partway
+  through, including `forwarding.test.ts`'s auto-disable test now passing at 164s (under the new
+  240s ceiling) and `projects/routes.test.ts` passing fully (20/20) — the extended-timeout
+  mitigation was continuing to show real, measurable improvement.** At this point the user made
+  an explicit decision to stop the verification loop entirely (see below) rather than let this or
+  any further run continue.
+
+- **2026-07-12: STOP decision.** User decision: stop chasing the 80% branch-coverage threshold.
+  This work has spanned multiple days against persistent, unresolved shared-machine resource
+  contention (documented in exhaustive run-by-run detail above — runs 7 through 18, roughly a
+  dozen full-suite verification attempts, several exceeding 3 hours each); the decision was to
+  ship the current state rather than continue retrying indefinitely. Actions taken in response,
+  in order:
+  1. Killed the in-flight run18 process immediately (did not wait for it).
+  2. Attempted one final, focused, honest verification run
+     (`pnpm turbo test --filter=@project-vault/api`) purely to confirm current-state correctness —
+     not to chase a coverage number. This run was itself stopped before completion (~3 minutes in,
+     still in the `packages/db#test` phase) per a follow-up coordinator instruction to prioritize
+     reaching a clean commit immediately over waiting out another multi-hour run. **No coverage
+     number was obtained from this final attempt.**
+  3. No further test-writing was performed after the stop decision.
+  4. This Dev Agent Record was updated with the honest final status above (Completion Notes List)
+     rather than any claim of Task 6 completion.
+  5. `sprint-status.yaml` was deliberately left untouched (still `10-4: in-progress`) — the
+     coordinator will decide the story-status/PR-readiness transition.
+  6. All Task 6 test-file changes (Batches 1–4, both the coverage-adding tests and the timeout
+     mitigations) plus this story-file update were committed together as the final state for this
+     session.
+  **Final authoritative branch-coverage number**: 78.35% (3732/4763), from the last full-suite run
+  that completed cleanly (end of Batch 3, run6). Batches 4 onward added real test files whose
+  precise effect on that percentage was never confirmed by a clean run, so 78.35% is reported as
+  the honest, verifiable final number rather than an unverified estimate.

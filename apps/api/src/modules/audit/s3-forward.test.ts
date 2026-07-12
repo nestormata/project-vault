@@ -154,6 +154,10 @@ describe.sequential('runS3ForwardDaily (AC-19)', () => {
     })
   })
 
+  // Story 10.4: same fetchAllOrgIds()-per-tick shape as audit/forwarding.test.ts's own
+  // auto-disable test (see that file's comment) — runtime grows with total suite size, not
+  // just this file. Explicit override so it isn't silently capped by the global default under
+  // this session's much-grown shared test-org count.
   it(`auto-disables after ${AUDIT_S3_MAX_CONSECUTIVE_FAILURES} consecutive failed days`, async () => {
     await withTestOrg(async ({ orgId }) => {
       await configureS3(orgId)
@@ -172,7 +176,7 @@ describe.sequential('runS3ForwardDaily (AC-19)', () => {
       expect(config?.enabled).toBe(false)
       expect(config?.s3ConsecutiveFailureCount).toBe(AUDIT_S3_MAX_CONSECUTIVE_FAILURES)
     })
-  })
+  }, 120_000)
 
   it('supports a Minio-style custom endpoint', async () => {
     await withTestOrg(async ({ orgId }) => {

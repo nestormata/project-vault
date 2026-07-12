@@ -82,7 +82,7 @@ describe('credential expiry alert worker', () => {
       expect(send).toHaveBeenCalled()
       expect(await countAuditLogEntries(orgId)).toBe(0)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('fires a critical overdue alert once after the positive thresholds already fired', async () => {
     const { boss } = createMockBoss()
@@ -115,7 +115,7 @@ describe('credential expiry alert worker', () => {
         )
       ).toBe(true)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('does not fire when no threshold boundary is crossed', async () => {
     const { boss } = createMockBoss()
@@ -138,7 +138,7 @@ describe('credential expiry alert worker', () => {
       expect(updated?.notifiedLeadDays).toEqual([])
       await expectNoQueueEntries(orgId, CREDENTIAL_EXPIRY_TEMPLATE_ID)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('does not re-fire the same threshold when the job runs twice on the same day', async () => {
     const { boss } = createMockBoss()
@@ -161,7 +161,7 @@ describe('credential expiry alert worker', () => {
       const queueEntries = await queueEntriesForTemplate(orgId, CREDENTIAL_EXPIRY_TEMPLATE_ID)
       expect(queueEntries).toHaveLength(2)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('fires a newly crossed threshold independently of an earlier threshold', async () => {
     const { boss } = createMockBoss()
@@ -190,7 +190,7 @@ describe('credential expiry alert worker', () => {
         queueEntries.every((entry) => (entry.payload as Record<string, unknown>)['threshold'] === 1)
       ).toBe(true)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('excludes credentials with null expiresAt from the scan', async () => {
     const { boss } = createMockBoss()
@@ -210,7 +210,7 @@ describe('credential expiry alert worker', () => {
 
       await expectNoQueueEntries(orgId, CREDENTIAL_EXPIRY_TEMPLATE_ID)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('logs one row failure without aborting the rest of the org or other orgs, and still writes no audit rows', async () => {
     const { boss } = createMockBoss()
@@ -296,5 +296,5 @@ describe('credential expiry alert worker', () => {
         }
       )
     })
-  }, 20_000)
+  }, 60_000)
 })

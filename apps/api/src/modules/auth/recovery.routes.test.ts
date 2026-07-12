@@ -285,7 +285,10 @@ describe.sequential('account recovery routes', () => {
 
       expect(responses.slice(0, 10).every((code) => code === 202 || code === 404)).toBe(true)
       expect(responses[10]).toBe(429)
-    })
+    }, // Story 10.4: 11 sequential real requests; previously relied on the global testTimeout
+    // default (raised 45s->60s) but has still been observed timing out at exactly that
+    // boundary under this session's shared-machine contention. Explicit override for headroom.
+    90_000)
 
     it('rate-limits by normalized email after 5 requests (429, AC-11)', async () => {
       const email = uniqueEmail('emaillimit')

@@ -277,7 +277,7 @@ describe.sequential('credential routes', () => {
     )
     expect(auditRows.some((row) => row.resourceId === body.data.id)).toBe(true)
     expect(JSON.stringify(auditRows)).not.toContain('sk_live_example_not_a_real_key')
-  }, 20_000)
+  }, 60_000)
 
   it('GET /projects/:id/credentials/:credentialId returns metadata without value field', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'metadata-get')
@@ -324,7 +324,7 @@ describe.sequential('credential routes', () => {
       headers: { cookie: cookieHeader(owner.cookies) },
     })
     expect(missing.statusCode).toBe(404)
-  }, 20_000)
+  }, 60_000)
 
   it('POST rejects missing/empty value, unknown keys, and malformed cron', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'validation-project')
@@ -371,7 +371,7 @@ describe.sequential('credential routes', () => {
     })
     expect(tooFrequentCron.statusCode).toBe(422)
     expect(tooFrequentCron.json()).toMatchObject({ code: 'invalid_cron' })
-  }, 20_000)
+  }, 60_000)
 
   it('POST returns 404 for a project outside the caller org and 401 when unauthenticated', async () => {
     const otherProjectId = await createTestProject(app, other.cookies, 'cross-org-project')
@@ -392,7 +392,7 @@ describe.sequential('credential routes', () => {
       payload: { name: 'Key', value: 'secret' },
     })
     expect(unauthenticated.statusCode).toBe(401)
-  }, 20_000)
+  }, 60_000)
 
   it('rolls back credential creation when the audit write fails', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'create-audit-fail')
@@ -412,7 +412,7 @@ describe.sequential('credential routes', () => {
     } finally {
       auditSpy.mockRestore()
     }
-  }, 20_000)
+  }, 60_000)
 
   it('GET value reveals the current value and writes a value_revealed audit row', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'reveal-project')
@@ -434,7 +434,7 @@ describe.sequential('credential routes', () => {
     expect(
       auditRows.some((row) => (row.payload as { versionNumber?: number })?.versionNumber === 1)
     ).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('GET value returns the current version after a new version is added', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'reveal-current-project')
@@ -448,7 +448,7 @@ describe.sequential('credential routes', () => {
     const res = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ data: { value: 'v2-value', versionNumber: 2 } })
-  }, 20_000)
+  }, 60_000)
 
   it('GET value reveals the next live version when the newest version is purged', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'reveal-purged-project')
@@ -462,7 +462,7 @@ describe.sequential('credential routes', () => {
     const res = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toMatchObject({ data: { value: 'v1-value', versionNumber: 1 } })
-  }, 20_000)
+  }, 60_000)
 
   it('GET value returns 404 when missing, wrong project, or all versions purged', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'reveal-404-project')
@@ -490,7 +490,7 @@ describe.sequential('credential routes', () => {
     )
     const allPurged = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(allPurged.statusCode).toBe(404)
-  }, 20_000)
+  }, 60_000)
 
   it('AUDIT-FAILURE ROLLBACK: reveal rolls back and returns 503 with no value persisted in audit', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'reveal-audit-fail-project')
@@ -518,7 +518,7 @@ describe.sequential('credential routes', () => {
     } finally {
       auditSpy.mockRestore()
     }
-  }, 20_000)
+  }, 60_000)
 
   it('POST versions creates a monotonic version and allows duplicate values', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'add-version-project')
@@ -540,7 +540,7 @@ describe.sequential('credential routes', () => {
     expect(
       auditRows.some((row) => (row.payload as { versionNumber?: number })?.versionNumber === 2)
     ).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('POST versions returns 404 when credential is missing', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'add-version-404-project')
@@ -552,7 +552,7 @@ describe.sequential('credential routes', () => {
       payload: { value: 'secret' },
     })
     expect(missing.statusCode).toBe(404)
-  }, 20_000)
+  }, 60_000)
 
   it('VERSION-CONFLICT CONCURRENCY: concurrent add-version requests never duplicate version numbers', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'add-version-race-project')
@@ -589,7 +589,7 @@ describe.sequential('credential routes', () => {
     )
     const versionNumbers = versionRows.map((row) => row.versionNumber)
     expect(new Set(versionNumbers).size).toBe(versionNumbers.length)
-  }, 20_000)
+  }, 60_000)
 
   it('GET versions lists newest-first with isCurrent and purgedAt, never the value', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'versions-list-project')
@@ -618,14 +618,14 @@ describe.sequential('credential routes', () => {
     expect(afterPurgeBody.data.items[0]).toMatchObject({ versionNumber: 2, isCurrent: false })
     expect(afterPurgeBody.data.items[0]?.purgedAt).not.toBeNull()
     expect(afterPurgeBody.data.items[1]).toMatchObject({ versionNumber: 1, isCurrent: true })
-  }, 20_000)
+  }, 60_000)
 
   it('GET versions returns 404 when the credential is missing', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'versions-404-project')
 
     const res = await listVersions(app, owner.cookies, projectId, randomUUID())
     expect(res.statusCode).toBe(404)
-  }, 20_000)
+  }, 60_000)
 
   // ==========================================================================================
   // Story 5.3 AC-13/AC-14 regression tests: revealCurrentValue()/listVersionHistory() (Story
@@ -657,7 +657,7 @@ describe.sequential('credential routes', () => {
     expect(body.data.items).toHaveLength(3)
     expect(body.data.items.every((item) => item.abandonedAt === null)).toBe(true)
     expect(body.data.items.find((item) => item.versionNumber === 3)?.isCurrent).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('GET value falls back to the previous version when the highest version is abandoned (AC-13)', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'abandon-reveal-project')
@@ -677,7 +677,7 @@ describe.sequential('credential routes', () => {
     expect(
       afterAbandon.json<{ data: { value: string; versionNumber: number } }>().data
     ).toMatchObject({ value: 'good-value-v1', versionNumber: 1 })
-  }, 20_000)
+  }, 60_000)
 
   // Story 5.5 AC-3: instrumentation for the "single highest-risk change" in Story 5.3 —
   // revealCurrentValue() excluding an abandoned version must be visible in production
@@ -700,7 +700,7 @@ describe.sequential('credential routes', () => {
     )
     const match = metric.match(/^credential_reveal_abandoned_version_excluded_total\s+(\d+)/m)
     expect(Number(match?.[1] ?? 0)).toBeGreaterThanOrEqual(1)
-  }, 20_000)
+  }, 60_000)
 
   it('AC-3 (5.5): GET value does NOT increment credential_reveal_abandoned_version_excluded_total for a never-rotated credential', async () => {
     credentialRevealAbandonedVersionExcludedTotal.reset()
@@ -718,7 +718,7 @@ describe.sequential('credential routes', () => {
     )
     const match = metric.match(/^credential_reveal_abandoned_version_excluded_total\s+(\d+)/m)
     expect(Number(match?.[1] ?? 0)).toBe(0)
-  }, 20_000)
+  }, 60_000)
 
   it('GET versions marks isCurrent on the highest non-abandoned/non-purged version and surfaces abandonedAt (AC-14)', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'abandon-versions-project')
@@ -740,7 +740,7 @@ describe.sequential('credential routes', () => {
     ])
     expect(body.data.items[0]?.abandonedAt).not.toBeNull()
     expect(body.data.items[1]?.abandonedAt).toBeNull()
-  }, 20_000)
+  }, 60_000)
 
   it("EDGE CASE (AC-14): the credential's very first (and only) rotation was abandoned — isCurrent falls all the way back to version 1", async () => {
     const projectId = await createTestProject(app, owner.cookies, 'abandon-first-rotation-project')
@@ -760,7 +760,7 @@ describe.sequential('credential routes', () => {
 
     const valueRes = await revealValue(app, owner.cookies, projectId, credential.id)
     expect(valueRes.json<{ data: { value: string } }>().data.value).toBe('pre-rotation-baseline')
-  }, 20_000)
+  }, 60_000)
 
   // Regression: listCredentials/getCredentialDetail compute currentVersionNumber via
   // MAX(versionNumber) WHERE purgedAt IS NULL — before this fix they did NOT also exclude
@@ -783,7 +783,7 @@ describe.sequential('credential routes', () => {
     const body = res.json<{ data: { items: { id: string; currentVersionNumber: number }[] } }>()
     const item = body.data.items.find((entry) => entry.id === credential.id)
     expect(item?.currentVersionNumber).toBe(1)
-  }, 20_000)
+  }, 60_000)
 
   it('GET credential detail reports the correct currentVersionNumber after an abandonment (not the abandoned version)', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'abandon-detail-project')
@@ -801,7 +801,7 @@ describe.sequential('credential routes', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json<{ data: { currentVersionNumber: number } }>().data.currentVersionNumber).toBe(1)
-  }, 20_000)
+  }, 60_000)
 
   it('GET credentials returns an empty paginated list for a real project', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'list-empty-project')
@@ -812,7 +812,7 @@ describe.sequential('credential routes', () => {
     expect(res.json()).toEqual({
       data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
     })
-  }, 20_000)
+  }, 60_000)
 
   it('GET credentials searches metadata only and never matches or returns credential values', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'list-search-project')
@@ -854,7 +854,7 @@ describe.sequential('credential routes', () => {
       items: [],
     })
     expect(JSON.stringify(byValue.json())).not.toContain(SENTINEL_VALUE)
-  }, 20_000)
+  }, 60_000)
 
   it('GET credentials applies tag, status, expiresWithin, and combined filters', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'list-filter-project')
@@ -916,7 +916,7 @@ describe.sequential('credential routes', () => {
       total: 1,
       items: [expect.objectContaining({ name: STRIPE_PROD })],
     })
-  }, 20_000)
+  }, 60_000)
 
   it('GET credentials paginates and rejects overly deep offsets', async () => {
     const projectId = await createTestProject(app, owner.cookies, 'list-pagination-project')
@@ -940,7 +940,7 @@ describe.sequential('credential routes', () => {
     const tooDeep = await listCredentials(app, owner.cookies, projectId, '?page=102&limit=100')
     expect(tooDeep.statusCode).toBe(422)
     expect(tooDeep.json()).toMatchObject({ code: 'page_out_of_range' })
-  }, 20_000)
+  }, 60_000)
 
   it('GET credentials validates params and hides cross-org projects as 404', async () => {
     const otherProjectId = await createTestProject(app, other.cookies, 'list-other-project')
@@ -966,7 +966,7 @@ describe.sequential('credential routes', () => {
       url: `/api/v1/projects/${ownerProjectId}/credentials`,
     })
     expect(unauthenticated.statusCode).toBe(401)
-  }, 20_000)
+  }, 60_000)
 
   it('PUT credential tags replaces, clears, de-dupes, and writes audit delta', async () => {
     const projectId = await createTestProjectDirect(
@@ -1018,7 +1018,7 @@ describe.sequential('credential routes', () => {
       )
     ).toBe(true)
     expect(JSON.stringify(auditRows)).not.toContain(SENTINEL_VALUE)
-  }, 20_000)
+  }, 60_000)
 
   it('PUT credential tags normalizes mixed-case input to lowercase, and a mixed-case tag filter still matches it (AC-T1/AC-T2/AC-T6)', async () => {
     const projectId = await createTestProjectDirect(
@@ -1047,7 +1047,7 @@ describe.sequential('credential routes', () => {
 
     const byMixedCase = await listCredentials(app, owner.cookies, projectId, '?tags=Prod')
     expectSingleCredentialNamed(byMixedCase, CASE_TAGGED_KEY)
-  }, 20_000)
+  }, 60_000)
 
   it('PATCH credential tags appends as a set union and enforces post-merge bounds', async () => {
     const projectId = await createTestProjectDirect(
@@ -1092,7 +1092,7 @@ describe.sequential('credential routes', () => {
     )
     expect(tooMany.statusCode).toBe(422)
     expect(tooMany.json()).toMatchObject({ code: 'too_many_tags' })
-  }, 20_000)
+  }, 60_000)
 
   it('credential tag routes validate body, auth, project scope, and audit rollback', async () => {
     const user = await createDirectAuthenticatedUser(app, 'credential-tags-validation')
@@ -1159,7 +1159,7 @@ describe.sequential('credential routes', () => {
       payload: { tags: ['x'] },
     })
     expect(unauthenticated.statusCode).toBe(401)
-  }, 20_000)
+  }, 60_000)
 
   it('security regression: the credential value never appears in any non-reveal response body', async () => {
     const projectId = await createTestProjectDirect(owner.orgId, owner.userId, 'no-leak-project')
@@ -1183,7 +1183,7 @@ describe.sequential('credential routes', () => {
 
     const credentialList = await listCredentials(app, owner.cookies, projectId)
     expect(JSON.stringify(credentialList.json())).not.toContain(SENTINEL_VALUE)
-  }, 20_000)
+  }, 60_000)
 
   it('viewer role can list credentials but is denied on create, reveal, and add-version', async () => {
     const projectId = await createTestProjectDirect(owner.orgId, owner.userId, 'viewer-project')
@@ -1228,7 +1228,7 @@ describe.sequential('credential routes', () => {
       'secret-2'
     )
     expect(addVersionDenied.statusCode).toBe(403)
-  }, 20_000)
+  }, 60_000)
 
   it('credential routes fail closed while the vault is sealed', async () => {
     const projectId = randomUUID()
@@ -1277,7 +1277,7 @@ describe.sequential('credential routes', () => {
     await app.close()
     await initVaultForTest(initVault, TEST_PASSPHRASE)
     app = await createApp({ logger: false, vaultGuardEnabled: true })
-  }, 20_000)
+  }, 60_000)
 })
 
 describe.sequential('credential project visibility (AC-V4)', () => {
@@ -1410,7 +1410,7 @@ describe.sequential('credential project visibility (AC-V4)', () => {
       payload: { name: 'Member Cred', value: SENTINEL_VALUE },
     })
     expect(created.statusCode).toBe(201)
-  }, 20_000)
+  }, 60_000)
 })
 
 describe.sequential(
@@ -1454,7 +1454,7 @@ describe.sequential(
       const versionDenied = await addVersion(app, member.cookies, projectId, credential.id, 'v2')
       expect(versionDenied.statusCode).toBe(403)
       expect(versionDenied.json()).toMatchObject({ code: 'insufficient_project_role' })
-    }, 20_000)
+    }, 60_000)
 
     it('allows reveal and version-create for a project-role member (AC-P2/AC-P3 positive)', async () => {
       const owner = await registerOwner(app, 'cred-role-member-owner')
@@ -1473,7 +1473,7 @@ describe.sequential(
 
       const versionAllowed = await addVersion(app, member.cookies, projectId, credential.id, 'v2')
       expect(versionAllowed.statusCode).toBe(201)
-    }, 20_000)
+    }, 60_000)
 
     it('does not block a project-role viewer from metadata/history routes (AC-P4 regression)', async () => {
       const owner = await registerOwner(app, 'cred-role-p4-owner')
@@ -1499,7 +1499,7 @@ describe.sequential(
 
       const history = await listVersions(app, member.cookies, projectId, credential.id)
       expect(history.statusCode).toBe(200)
-    }, 20_000)
+    }, 60_000)
 
     it('org admin with zero project rows can still reveal and add a version (D1/D4 bypass regression)', async () => {
       const owner = await registerOwner(app, 'cred-role-admin-owner')
@@ -1517,6 +1517,6 @@ describe.sequential(
 
       const versionAllowed = await addVersion(app, admin.cookies, projectId, credential.id, 'v2')
       expect(versionAllowed.statusCode).toBe(201)
-    }, 20_000)
+    }, 60_000)
   }
 )
