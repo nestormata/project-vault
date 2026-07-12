@@ -165,13 +165,20 @@ jobs:
           # throwaway test database and manage RLS policies directly.
           ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
+      # Runs even if the Test step above failed (e.g. a local coverage-threshold miss) —
+      # vitest writes its full LCOV/coverage output to disk before evaluating thresholds,
+      # so the data SonarCloud needs already exists. Only a cancelled run skips this, so
+      # the dashboard always reflects the latest measured coverage instead of going stale
+      # on the last passing run.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v6
+        if: ${{ !cancelled() }}
+        uses: SonarSource/sonarqube-scan-action@v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: SonarCloud Quality Gate
+        if: ${{ !cancelled() }}
         uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
         with:
           pollingTimeoutSec: 600
