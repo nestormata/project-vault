@@ -1,6 +1,6 @@
 # Story 3.5: Credential Expiry Notification Delivery
 
-Status: review
+Status: done
 
 <!-- Retro-driven backlog addition — no "Story 3.5" stub exists in `_bmad-output/planning-artifacts/
      epics.md` (Epic 3 there only defines 3.1-3.3; 3.4 is retro-driven too). Bundles four
@@ -791,6 +791,18 @@ expected reason, then implement, per AC.
     (Epic 3 closure, Story 3.4 AC-16)" rows resolved, cross-referencing this story (do not delete the
     historical record). Also add the newly-identified, deliberately-deferred
     "configurable per-credential `alertLeadDays`" gap (Background § 1) as a new tracked row.
+
+---
+
+### Review Findings (bmad-code-review, 2026-07-11)
+
+Clean pass — no `decision-needed` or `patch` findings. All AC groups (W/E/D/Q) verified implemented and test-covered against the merged diff. The one previously-noted high finding (`markNotificationSuppressed` race with DLQ cleanup) is confirmed fixed. Remaining items are pre-existing/explicitly-accepted low-severity limitations documented in this story's own Background/Dev Notes, not new gaps:
+
+- [x] [Review][Defer] Known concurrent-run race in `expiry-alert-shared.ts` (stale `notifiedLeadDays` read) — deferred, pre-existing, explicitly scoped out by AC-W5.
+- [x] [Review][Defer] `markNotificationDelivered` lacks a `WHERE status = ...` guard against the reverse DLQ race — deferred, explicitly accepted cosmetic metric inaccuracy per AC-Q2.
+- [x] [Review][Defer] No dedicated `credential.expiry` template (renders via generic fallback) — deferred, explicitly out of scope per Background.
+
+**Status → done.**
 
 ---
 

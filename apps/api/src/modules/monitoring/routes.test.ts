@@ -17,6 +17,7 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { bootstrapCredentialRouteOwners } from '../credentials/credential-route-test-helpers.js'
+import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { monitoringIntegration } from './monitoring-integration-context.js'
 
 const { createApp, initVault, humanAudit } = monitoringIntegration
@@ -160,6 +161,10 @@ describe('monitoring routes (services/certificates/domains)', () => {
   let app: TestApp
   let owner: { userId: string; orgId: string; cookies: Cookies }
   let other: { userId: string; orgId: string; cookies: Cookies }
+  const { addUserToOrg } = createMembershipTestHelpers({
+    emailPrefix: 'monitoring-get',
+    orgNamePrefix: 'MonitoringGet',
+  })
 
   beforeAll(async () => {
     const bootstrap = await bootstrapCredentialRouteOwners(
@@ -503,6 +508,87 @@ describe('monitoring routes (services/certificates/domains)', () => {
           .where(eq(resource.table.id, created['id'] as string))
       )
       expect(stillExists).toHaveLength(1)
+    })
+  })
+
+  describe.each(RESOURCES)('GET $key/:id', (resource) => {
+    it('returns the record (200, same shape as list/create)', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, `${resource.key}-get`)
+      const created = await createRecordExpect201(app, owner.cookies, projectId, resource)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, resource, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+      const data = res.json<{ data: Record<string, unknown> }>().data
+      expect(data['id']).toBe(created['id'])
+      expect(data[resource.identifyingField]).toBe(resource.happyBody[resource.identifyingField])
+    })
+
+    it('returns 404 for an id that does not exist in the project', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, `${resource.key}-get-404`)
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, resource, randomUUID()),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(res.statusCode).toBe(404)
+      expect(res.json()).toMatchObject({ code: resource.notFoundCode })
+    })
+
+    it('hides a cross-org record as 404 (not 403)', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, `${resource.key}-get-cross`)
+      const created = await createRecordExpect201(app, owner.cookies, projectId, resource)
+
+      const otherProjectId = await createProjectViaApi(
+        app,
+        other.cookies,
+        `${resource.key}-get-cross-other`
+      )
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(otherProjectId, resource, created['id'] as string),
+        headers: { cookie: cookieHeader(other.cookies) },
+      })
+      expect(res.statusCode).toBe(404)
+    })
+
+    it('hides a same-org, different-project record as 404 (query filters by projectId)', async () => {
+      const projectId = await createProjectViaApi(
+        app,
+        owner.cookies,
+        `${resource.key}-get-other-project-a`
+      )
+      const created = await createRecordExpect201(app, owner.cookies, projectId, resource)
+
+      const otherProjectId = await createProjectViaApi(
+        app,
+        owner.cookies,
+        `${resource.key}-get-other-project-b`
+      )
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(otherProjectId, resource, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(res.statusCode).toBe(404)
+    })
+
+    it('allows an org viewer to read (same minimumRole as the list route, looser than PATCH/DELETE)', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, `${resource.key}-get-viewer`)
+      const created = await createRecordExpect201(app, owner.cookies, projectId, resource)
+      const viewer = await addUserToOrg(app, owner.orgId, `${resource.key}-viewer`, {
+        orgRole: 'viewer',
+      })
+
+      const res = await app.inject({
+        method: 'GET',
+        url: itemUrl(projectId, resource, created['id'] as string),
+        headers: { cookie: cookieHeader(viewer.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
     })
   })
 

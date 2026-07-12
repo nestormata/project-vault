@@ -1,6 +1,6 @@
 # Story 9.6: Backup & Restore Hardening
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 <!-- Ultimate context engine analysis completed 2026-07-07 — this story bundles Story 9.1's ("Encrypted Backup & Restore", done) 3 unresolved high-severity code-review findings, exactly the pattern Story 8-5 used to bundle 5.4's unresolved findings. It closes 3 independent gaps in the already-shipped `apps/api/src/modules/backup/` module: (1) no concurrency guard on restore itself; (2) `backup.missed` admin_alerts never auto-resolve; (3) AC-6's S3-upload-failure negative case (local staging/retry/orphan-cleanup) was never implemented. This story is fully self-contained — it pulls forward every fact from Story 9.1 a developer needs, so implementing it does not require opening 9-1's story file. -->
@@ -558,6 +558,14 @@ Integration test: parametrize over an accepted restore, a lock-rejected restore,
   - [x] 3.4 Add the orphan-cleanup scan (24h `.staged`-file sweep, `unlink` guarded against concurrent-tick `ENOENT` per D3.10) **and** the cumulative staging-disk-usage check (`BACKUP_S3_STAGING_MAX_BYTES`, D3.9/AC-16b) to `apps/api/src/workers/backup-health-check.ts`'s hourly run, each in its own `try/catch` independent of Task 2.2's alert-resolve logic and of each other; no-op when `BACKUP_S3_STAGING_PATH`/S3 destination isn't in use.
   - [x] 3.5 Tests per AC-12 through AC-18 and AC-16b.
 - [x] **Task 4 — Full integration coverage sweep (AC-19)** — confirm every item in AC-19's explicit (now 23-item) list has a corresponding test; re-run the full existing Story 9.1 `apps/api` backup/restore test suite unmodified to confirm zero regressions (AC-17); re-run the full `packages/db`-consumer regression pass (D1.12).
+
+### Review Findings (bmad-code-review, 2026-07-11)
+
+Clean pass — no `decision-needed` or `patch` findings against the merged diff (PR #128). Lock lifecycle (`acquireRestoreLock`/`unlockAndRelease`), retry classification (`isRetryableS3Error`), and orphan-cleanup idempotency all verified correct; the response-race fix (commit `aff3291`, lock release before `reply.send()`) confirmed present.
+
+- [x] [Review][Defer] `SignatureDoesNotMatch` classified non-retryable, no retry-backoff jitter, advisory-lock false-positive mislabeling on transient xact-lock hold — all pre-existing documented trade-offs (D3.13/D3.14/D1.10), not new gaps.
+
+**Status → done.**
 
 ## Dev Notes
 

@@ -8,13 +8,11 @@
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-orange)](package.json)
 
 > **⚠️ Status: Pre-launch, actively developed.** The core platform — secrets, rotation, teams,
-> monitoring, notifications, machine users, and audit logging — is functional in self-hosted
-> dev/eval environments (Epics 1, 2, 5, 6, 7, and 8 shipped; Epics 3 and 4 have all core stories
-> shipped with one closure/hardening story each still in progress or review). Production-hardening
-> features for self-hosted operators (encrypted
-> backup/restore, in-place upgrades, platform admin settings, platform operator audit log, and the
-> operator runbook — Epic 9) now include a full admin web UI (Story 9.7); three Epic 9
-> hardening/audit stories (9.4, 9.6, 9.8) are still in review. A new Epic 10 (Quality & Test
+> monitoring, notifications, machine users, audit logging, and platform operations — is functional
+> in self-hosted dev/eval environments (Epics 1–9 all shipped, done, and code-reviewed clean).
+> Production-hardening features for self-hosted operators (encrypted backup/restore, in-place
+> upgrades, platform admin settings, platform operator audit log, and the operator runbook — Epic
+> 9) include a full admin web UI (Story 9.7). A new Epic 10 (Quality & Test
 > Automation) is in progress hardening Playwright E2E coverage and CI/SonarCloud coverage gates.
 > Not yet tagged for a v1 GA release. See [Implementation Status](#implementation-status) for the
 > epic-by-epic breakdown.
@@ -49,41 +47,40 @@ Key differentiators:
 | 🔐 **Secrets management** — versioned, encrypted storage with RBAC, expiry tracking, bulk import from `.env` / JSON | ✅ Done | Epic 2 |
 | 🔄 **Manual rotation with propagation** — per-system confirmation checklist, stale-recovery, break-glass emergency mode, full web UI | ✅ Done | Epic 5 |
 | 📡 **Operational monitoring** — HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, cross-project health dashboard, public status pages | ✅ Done | Epic 6 |
-| 🏢 **Multi-user RBAC** — project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival | 🟡 Near done | Epic 4 — fine-grained permissions (per-project visibility, `read:secret_value` vs `read:secret_metadata`) in review, Story 4.5 |
-| 🔔 **Notifications** — email + Slack delivery, per-alert-type routing, in-app inbox | 🟡 Near done | Epic 3 — closure story (3.4) in progress; credential-expiry delivery (3.5) in review |
+| 🏢 **Multi-user RBAC** — project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival, fine-grained per-project visibility (`read:secret_value` vs `read:secret_metadata`) | ✅ Done | Epic 4 |
+| 🔔 **Notifications** — email + Slack delivery, per-alert-type routing, in-app inbox, credential-expiry alerts | ✅ Done | Epic 3 |
 | 🤖 **Machine user support** — scoped API keys, offline/cache fallback, GitHub Actions integration, full web UI | ✅ Done | Epic 7 — machine-user management web UI shipped in Story 8.6 |
 | 📋 **Immutable audit logs** — append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI | ✅ Done | Epic 8 — audit/compliance web UI shipped in Story 8.7 |
-| 🔑 **Vault unsealing** — master password or envelope encryption with split-key default | 🟡 Partial | External KMS mode is schema-reserved but unimplemented (v1 gap, see Story 9.5 disclosure) |
+| 🔑 **Vault unsealing** — master password, envelope encryption with split-key default, or external KMS (AWS KMS) | ✅ Done | Epic 1 — KMS mode added in Story 1.14 |
 | 🌐 **REST API** — nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init | ✅ Done | Generated OpenAPI spec + live Swagger UI (`ENABLE_API_DOCS=true`) and an independent contract-test suite shipped in Story 9.3 |
 | 🐳 **Self-hosted Docker** — `docker compose up` deployment (dev + prod compose files) | ✅ Done | Epic 1 |
-| 💾 **Built-in backup** — scheduled encrypted snapshots, retention, restore verification, admin web UI | 🟡 Near done | Epic 9 — core backup/restore shipped in Story 9.1, admin UI in Story 9.7; hardening (concurrency guard, missed-backup alerts, S3-failure handling) still in review, Story 9.6 |
+| 💾 **Built-in backup** — scheduled encrypted snapshots, retention, restore verification, admin web UI | ✅ Done | Epic 9 — core backup/restore in Story 9.1, admin UI in Story 9.7, hardening (concurrency guard, missed-backup alerts, S3-failure handling) in Story 9.6 |
 | ⚙️ **System settings & platform administration** — SMTP/backup/policy config UI, multi-org resource monitoring | ✅ Done | Epic 9 — API in Story 9.2, admin web UI (`/platform`) in Story 9.7 |
 | ⬆️ **In-place version upgrades** | ✅ Done | Epic 9 — migration-safety guard + API in Story 9.3, informational upgrade/API-docs page in Story 9.7 |
-| 🛡️ **Platform operator audit log** — instance-wide privileged-action log, distinct from per-org audit log, with integrity verification and maintenance-mode failsafe | 🟡 Near done | Epic 9 — API/schema shipped in Story 9.4 (in review), search/verify/maintenance-mode admin UI in Story 9.7; MFA-gap/audit-bypass hardening (9.8) in review |
-| 🧪 **Test automation & coverage hardening** — Playwright E2E suite, `apps/web` branch coverage, SonarCloud new-code coverage buffer | 🟡 In progress | Epic 10 (new) — E2E automation (10.1) and `apps/web` branch coverage hardening (10.2) done; complete-source coverage buffer (10.3) in review, SonarCloud new-coverage buffer (10.4) ready for dev |
+| 🛡️ **Platform operator audit log** — instance-wide privileged-action log, distinct from per-org audit log, with integrity verification and maintenance-mode failsafe | ✅ Done | Epic 9 — API/schema shipped in Story 9.4, search/verify/maintenance-mode admin UI in Story 9.7, MFA-gap/audit-bypass hardening (9.8) done |
+| 🧪 **Test automation & coverage hardening** — Playwright E2E suite, `apps/web` branch coverage, SonarCloud new-code coverage buffer | 🟡 In progress | Epic 10 (new) — E2E automation (10.1), `apps/web` branch coverage hardening (10.2), and complete-source coverage buffer (10.3) done; SonarCloud new-coverage buffer (10.4) ready for dev |
 
 ---
 
 ## Implementation Status
 
-Epic-by-epic status, current as of 2026-07-10 (source of truth:
+Epic-by-epic status, current as of 2026-07-11 (source of truth:
 [`sprint-status.yaml`](_bmad-output/implementation-artifacts/sprint-status.yaml)):
 
 | Epic | Status | What ships |
 |---|---|---|
 | 1. Vault Foundation | ✅ Done | Docker deploy, health/readiness endpoints, password + TOTP MFA auth, JWT sessions with idle timeout and revocation, structured operational logging |
 | 2. Secret & Credential Management | ✅ Done | Project-scoped credential CRUD + immutable version history, search/filter/tags, dependent-system records, expiry/rotation schedules, bulk import, onboarding wizard, cross-project search, web UI completeness pass (Story 2.9) |
-| 3. Notification Infrastructure | 🟡 In progress | Email + Slack delivery, per-alert-type routing, in-app inbox (`/notifications`) all shipped; closure story (3.4, surface truth/MFA alerts/doc reconciliation) is in progress; credential-expiry notification delivery (3.5) is in review |
-| 4. Team & Organization Management | 🟡 In progress | Invitations & role assignment, org user management, account deactivation/recovery, project archival all done; fine-grained permissions closure story (4.5 — per-project visibility gating, `read:secret_value`/`read:secret_metadata` split) is in review |
+| 3. Notification Infrastructure | ✅ Done | Email + Slack delivery, per-alert-type routing, in-app inbox (`/notifications`), credential-expiry notification delivery (3.5), and the closure story (3.4 — surface truth/MFA alerts/doc reconciliation) all done |
+| 4. Team & Organization Management | ✅ Done | Invitations & role assignment, org user management, account deactivation/recovery, project archival, and the fine-grained permissions closure story (4.5 — per-project visibility gating, `read:secret_value`/`read:secret_metadata` split) all done |
 | 5. Credential Rotation | ✅ Done | Rotation initiation + checklist, stale-recovery, break-glass emergency rotation, full rotation web UI, hardening/tech-debt closure |
 | 6. Operational Monitoring & Status | ✅ Done | Service/certificate/domain records, HTTP endpoint monitoring & alerts, cross-project health dashboard, public status pages, full monitored-asset web UI |
 | 7. Machine User Access & CI/CD | ✅ Done | Machine user identities, API keys, offline fallback cache, GitHub Actions integration, and the machine-user management web UI (Story 8.6) all shipped; retroactive hardening review (Story 8.8) done |
 | 8. Compliance, Audit & Governance | ✅ Done | Tamper-evident HMAC audit log, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, and the full audit/compliance web UI (Story 8.7) all shipped |
-| 9. Platform Operations, API & Self-Hosting | 🟡 In progress | Encrypted backup/restore (9.1), system settings/multi-org/resource monitoring (9.2), in-place upgrades + real OpenAPI generation (9.3), and the operational runbook (9.5) are done; the platform-operations admin web UI closing out the epic (Story 9.7 — `/platform` backups, settings, orgs, resource usage, upgrade/API-docs, and platform audit log pages) is also done. Platform operator audit log (9.4), backup/restore hardening (9.6), and platform-admin MFA-gap/audit-bypass hardening (9.8) are still in review |
-| 10. Quality & Test Automation | 🟡 In progress | New epic added 2026-07-09 from a deferred-work reconciliation pass (no epic-10 section in the original PRD/epics doc). Playwright E2E test automation (10.1) and `apps/web` branch coverage hardening (10.2) are done; complete-source branch coverage buffer (10.3) is in review; SonarCloud new-code coverage buffer (10.4) is ready for dev |
+| 9. Platform Operations, API & Self-Hosting | ✅ Done | Encrypted backup/restore (9.1), system settings/multi-org/resource monitoring (9.2), in-place upgrades + real OpenAPI generation (9.3), the platform operator audit log (9.4), the operational runbook (9.5), backup/restore hardening (9.6), the platform-operations admin web UI (Story 9.7 — `/platform` backups, settings, orgs, resource usage, upgrade/API-docs, and platform audit log pages), and platform-admin MFA-gap/audit-bypass hardening (9.8) are all done |
+| 10. Quality & Test Automation | 🟡 In progress | New epic added 2026-07-09 from a deferred-work reconciliation pass (no epic-10 section in the original PRD/epics doc). Playwright E2E test automation (10.1), `apps/web` branch coverage hardening (10.2), and the complete-source branch coverage buffer (10.3) are done; SonarCloud new-code coverage buffer (10.4) is ready for dev |
 
 Known v1 design gaps, disclosed up front rather than discovered later:
-- External KMS (`kms` mode) for vault unsealing is schema-reserved but has no implementation (Story 1.5 / Story 9.5).
 - `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet (Story 9.2 / 9.5).
 - No live backup-job progress polling and no in-app "click to upgrade" trigger in the Platform Admin UI — both are deliberate, documented v1 scope boundaries (Story 9.7 D3/D4); self-hosted in-place upgrades remain an out-of-band `docker compose up -d` operation.
 
@@ -115,7 +112,7 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 | Version | Target | Status |
 |---|---|---|
-| **v1 (GA)** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Epics 1, 2, 5, 6, 7, 8 fully done; Epics 3 and 4 substantially done with one closure/hardening story each still in progress or review; Epic 9 (backup, upgrades, platform admin UI, platform audit log, runbook) nearly done — core stories + admin web UI done, 3 hardening/audit stories in review; Epic 10 (test automation/coverage hardening) added mid-stream and in progress |
+| **v1 (GA)** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Epics 1–9 all fully done; Epic 10 (test automation/coverage hardening) added mid-stream and in progress |
 | **v1.1** | Webhooks, project wiki | Not started |
 | **v2** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Not started |
 

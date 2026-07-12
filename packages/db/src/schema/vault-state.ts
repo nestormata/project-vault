@@ -37,11 +37,20 @@ export const vaultState = pgTable(
     // 'passphrase' = Argon2id KDF (recommended for small teams)
     // 'envelope'   = split key: env half + file half (recommended for production)
     // 'file'       = raw binary key file (downgraded — requires explicit ack)
+    // 'kms'        = AWS KMS-wrapped data key (Story 1.14 — most-secure option, no ack required)
     kmsType: text('kms_type').notNull(),
 
     // Passphrase mode only: Argon2id salt + params for re-derivation at unseal.
     // NULL for envelope/file modes. Never contains the passphrase itself.
     keyDerivationParams: text('key_derivation_params'),
+
+    // Story 1.14: 'kms' mode only. NULL for passphrase/envelope/file modes, both before and
+    // after this column was added (AC-7/AC-20 — purely additive, no backfill). kmsKeyId is the
+    // KMS key ARN/alias supplied at init (not secret material). kmsEncryptedDek is the
+    // base64-encoded CiphertextBlob returned by AWS KMS's GenerateDataKey — safe to store at
+    // rest since only the KMS key itself can unwrap it.
+    kmsKeyId: text('kms_key_id'),
+    kmsEncryptedDek: text('kms_encrypted_dek'),
 
     initializedAt: timestamp('initialized_at', { withTimezone: true }).notNull().defaultNow(),
 

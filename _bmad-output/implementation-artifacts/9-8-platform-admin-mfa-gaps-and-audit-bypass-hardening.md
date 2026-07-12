@@ -1,6 +1,6 @@
 # Story 9.8: Platform Admin MFA Gaps and Audit-Bypass Hardening
 
-Status: review
+Status: done
 
 <!-- Hardening/bug-fix story closing two confirmed, currently-unscheduled gaps in already-shipped
      code from Stories 9.4 and 9.7 (both `done`). Not net-new feature work — every AC below is a
@@ -777,6 +777,14 @@ the expected reason, then implement, per AC.
   [apps/api/src/lib/audit-or-fail-closed.ts:174]
 
 ---
+
+### Review Findings (bmad-code-review, 2026-07-11)
+
+Clean pass against the merged diff (PR #166) — storage-only bypass classifier confirmed narrow (constraint violations, `query_canceled`, malformed lookalike SQLSTATEs all correctly rejected), MFA-exception scope confirmed limited to the one read-only route, AC-T5 reconciliation with Story 9.4's production forbidden-key sanitization confirmed correct.
+
+- [x] [Review][Defer] `writePlatformAuditEntryOrFailClosed`'s catch block now takes a row-level lock on every classified-storage write failure, serializing requests under sustained outage — deliberate correctness-over-throughput trade-off, not an oversight; deferred as accepted design.
+
+**Status → done.**
 
 ## Dev Notes
 

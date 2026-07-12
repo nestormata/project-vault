@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { logout } from '$lib/api/auth.js'
+  import Footer from './Footer.svelte'
   import PrimaryNav from './PrimaryNav.svelte'
 
   let {
@@ -36,11 +37,16 @@
       class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between"
     >
       <div>
-        {#if hidePrimaryNav}
-          <p class="text-xl font-bold">Project Vault</p>
-        {:else}
-          <a class="text-xl font-bold" href={resolve('/dashboard')}>Project Vault</a>
-        {/if}
+        <div class="flex items-center gap-2">
+          <img src={resolve('/logo-mark.png')} alt="" width="276" height="240" class="h-8 w-auto" />
+          {#if hidePrimaryNav}
+            <p class="text-xl font-bold text-brand-600">Project Vault</p>
+          {:else}
+            <a class="text-xl font-bold text-brand-600" href={resolve('/dashboard')}
+              >Project Vault</a
+            >
+          {/if}
+        </div>
         <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div>
       {#if !hidePrimaryNav}
@@ -98,4 +104,7 @@
   <main class={hidePrimaryNav ? 'p-0' : 'mx-auto max-w-7xl px-4 py-6'}>
     {@render children()}
   </main>
+  <div class="border-t border-slate-200">
+    <Footer />
+  </div>
 </div>

@@ -20,13 +20,14 @@ import type { EncryptedValue, KeyDerivationParams } from '@project-vault/crypto'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import type { VaultInitRequest, VaultUnsealRequest } from './schema.js'
+import { AwsKmsProvider, KmsProviderError, type KmsKeyProvider } from './kms-provider.js'
 
 // Three vault states (architectural invariant — do not add more):
 // 'uninitialized' → no vault_state row; only POST /vault/init is allowed
 // 'sealed'        → vault_state row exists; only POST /vault/unseal is allowed
 // 'unsealed'      → key in memory; all endpoints available
 type VaultStatus = 'uninitialized' | 'sealed' | 'unsealed'
-type KmsType = 'passphrase' | 'envelope' | 'file'
+type KmsType = 'passphrase' | 'envelope' | 'file' | 'kms'
 
 let _status: VaultStatus = 'uninitialized'
 let _primaryKey: Buffer | null = null // copy retained for encryption operations while unsealed
@@ -210,7 +211,90 @@ function assertBootstrapAuthorized(headers: Record<string, string | string[] | u
   }
 }
 
-type IkmResult = { ikm: Buffer; kdfParams: KeyDerivationParams | null }
+type IkmResult = {
+  ikm: Buffer
+  kdfParams: KeyDerivationParams | null
+  kmsKeyId?: string
+  kmsEncryptedDek?: string
+}
+
+// Story 1.14 AC-21: module-level singleton, lazily constructed so no AWS SDK client is ever
+// instantiated for non-kms deployments. `__setKmsProviderForTest` (below) lets tests inject a
+// fake KmsKeyProvider without touching AWS at all — mirrors this module's existing test-only
+// escape hatches (`__getRawBackupKeyForTest`, etc.).
+let _kmsProvider: KmsKeyProvider | null = null
+
+function getKmsProvider(): KmsKeyProvider {
+  if (!_kmsProvider) _kmsProvider = new AwsKmsProvider()
+  return _kmsProvider
+}
+
+/** Test-only: overrides (or, passed `null`, clears) the module-level KmsKeyProvider singleton.
+ * Never use outside tests — production always resolves the real AwsKmsProvider lazily. */
+export function __setKmsProviderForTest(provider: KmsKeyProvider | null): void {
+  _kmsProvider = provider
+}
+
+/** Story 1.14 AC-3/AC-4/AC-5: maps a KmsProviderError's provider-agnostic `kind` to the
+ * init-specific AppError/status code. A non-KmsProviderError (should not happen — AwsKmsProvider
+ * always wraps) is rethrown as-is rather than swallowed. */
+function mapKmsErrorForInit(error: unknown): never {
+  if (!(error instanceof KmsProviderError)) throw error
+  switch (error.kind) {
+    case 'not_found':
+      throw new AppError(
+        'KMS_KEY_NOT_FOUND',
+        'The specified KMS key was not found. Verify kmsKeyId and that the key exists in the configured AWS region.',
+        400
+      )
+    case 'permission_denied':
+      throw new AppError(
+        'KMS_PERMISSION_DENIED',
+        "The API's AWS credentials do not have permission to use the configured KMS key. Verify the IAM policy grants kms:GenerateDataKey and kms:Decrypt on this key.",
+        403
+      )
+    case 'unreachable':
+    case 'unknown':
+    default:
+      throw new AppError(
+        'KMS_UNREACHABLE',
+        'Could not reach the configured KMS provider. Verify network connectivity and KMS endpoint configuration.',
+        503
+      )
+  }
+}
+
+/** Story 1.14 AC-11/AC-12/AC-13: maps a KmsProviderError's `kind` to the unseal-specific
+ * AppError/status code — deliberately different from `mapKmsErrorForInit` for the `not_found`
+ * case (AC-12's `kms_key_unavailable`/503 vs. AC-4's `kms_key_not_found`/400), since the same
+ * underlying AWS exception class means something different depending on when it happens: at
+ * init, the key was simply never usable to begin with; at unseal, a previously-working key has
+ * become unusable, which is the KMS-mode equivalent of losing a `file`-mode key file. */
+function mapKmsErrorForUnseal(error: unknown): never {
+  if (!(error instanceof KmsProviderError)) throw error
+  switch (error.kind) {
+    case 'not_found':
+      throw new AppError(
+        'KMS_KEY_UNAVAILABLE',
+        "The KMS key required to unseal this vault is not currently usable (deleted, disabled, or pending deletion). This is a permanent data-loss risk if the key cannot be restored — see the runbook's KMS key-loss procedure.",
+        503
+      )
+    case 'permission_denied':
+      throw new AppError(
+        'KMS_PERMISSION_DENIED',
+        "The API's AWS credentials do not have permission to decrypt the vault's KMS-wrapped key. Verify the IAM policy grants kms:Decrypt on this key.",
+        403
+      )
+    case 'unreachable':
+    case 'unknown':
+    default:
+      throw new AppError(
+        'KMS_UNREACHABLE',
+        'Could not reach the configured KMS provider. The vault remains sealed. Verify network connectivity and retry.',
+        503
+      )
+  }
+}
 
 async function deriveIkmForInit(body: VaultInitRequest): Promise<IkmResult> {
   if (body.kmsType === 'passphrase') {
@@ -225,6 +309,19 @@ async function deriveIkmForInit(body: VaultInitRequest): Promise<IkmResult> {
     envHalf.fill(0)
     fileHalf.fill(0)
     return { ikm, kdfParams: null }
+  }
+  if (body.kmsType === 'kms') {
+    try {
+      const { plaintext, ciphertextBlob } = await getKmsProvider().generateDataKey(body.kmsKeyId)
+      return {
+        ikm: plaintext,
+        kdfParams: null,
+        kmsKeyId: body.kmsKeyId,
+        kmsEncryptedDek: ciphertextBlob,
+      }
+    } catch (error) {
+      mapKmsErrorForInit(error)
+    }
   }
   // file mode
   const ikm = readKeyFile(body.masterKeyPath)
@@ -264,7 +361,8 @@ function parseVaultStateRow(state: {
 async function deriveIkmForUnseal(
   kmsType: string,
   body: VaultUnsealRequest,
-  kdfParams: KeyDerivationParams | null
+  kdfParams: KeyDerivationParams | null,
+  kmsEncryptedDek: string | null
 ): Promise<Buffer> {
   if (kmsType === 'passphrase') {
     if (!body.passphrase) {
@@ -286,6 +384,26 @@ async function deriveIkmForUnseal(
     envHalf.fill(0)
     fileHalf.fill(0)
     return ikm
+  }
+  if (kmsType === 'kms') {
+    // AC-7's deferred DB-level CHECK means a NULL kms_encrypted_dek is theoretically reachable
+    // (migration bug, manual DB edit, admin script) even though the application code path never
+    // produces it — fail cleanly with the same VAULT_CORRUPTED class used for other tampered/
+    // malformed vault_state shapes, rather than crashing deeper in the KMS provider call.
+    if (!kmsEncryptedDek) {
+      throw new AppError(
+        'VAULT_CORRUPTED',
+        'vault_state data is corrupt or tampered — restore from backup or re-initialize',
+        503
+      )
+    }
+    // Extraneous legacy fields (body.passphrase/envelopeKeyPath/masterKeyPath) are never read
+    // here — AC-10's "silently ignored, not an error" requirement is satisfied by construction.
+    try {
+      return await getKmsProvider().decryptDataKey(kmsEncryptedDek)
+    } catch (error) {
+      mapKmsErrorForUnseal(error)
+    }
   }
   // file mode
   if (!body.masterKeyPath) {
@@ -354,7 +472,8 @@ export async function initVault(
   assertBootstrapAuthorized(headers)
 
   const db = getDb()
-  const { ikm, kdfParams } = await deriveIkmForInit(body)
+  const ikmResult = await deriveIkmForInit(body)
+  const { ikm, kdfParams } = ikmResult
   const { primaryKey, auditKey, backupKey, platformAuditKey } = deriveAllKeysFromIkm(ikm)
 
   const sentinel = Buffer.from(SENTINEL_PLAINTEXT, 'utf8')
@@ -371,6 +490,8 @@ export async function initVault(
       encryptedSentinel: JSON.stringify(encryptedSentinel),
       kmsType: body.kmsType,
       keyDerivationParams: kdfParams ? JSON.stringify(kdfParams) : null,
+      kmsKeyId: ikmResult.kmsKeyId ?? null,
+      kmsEncryptedDek: ikmResult.kmsEncryptedDek ?? null,
     })
     .onConflictDoNothing()
     .returning()
@@ -408,7 +529,7 @@ export async function unsealVault(
   }
   const { sentinel: storedSentinel, kdfParams } = parseVaultStateRow(state)
 
-  const ikm = await deriveIkmForUnseal(state.kmsType, body, kdfParams)
+  const ikm = await deriveIkmForUnseal(state.kmsType, body, kdfParams, state.kmsEncryptedDek)
   const { primaryKey, auditKey, backupKey, platformAuditKey } = deriveAllKeysFromIkm(ikm)
 
   let sentinelDecrypted: Buffer

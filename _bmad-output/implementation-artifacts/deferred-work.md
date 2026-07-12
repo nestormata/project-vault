@@ -309,3 +309,32 @@ Story 9.7's own pre-implementation adversarial review (`9-7-epic-9-completion-pl
 - **Notification query values are not validated.** `apps/web/src/routes/(app)/notifications/+page.server.ts` forwards non-numeric/unsafe pages and unknown statuses to the inbox API. Runtime contract change; outside Story 10.2's test-only scope.
 - **Status-page clipboard failures are unhandled.** A rejected `navigator.clipboard.writeText` promise has no user-visible fallback in the status-page management component. Runtime UX change; outside Story 10.2's test-only scope.
 - **Invitation revoke failures escape without UI handling.** `onRevoke` in the members page resets its busy state in `finally` but has no `catch`, leaving API rejection as an unhandled promise with no visible error. Runtime UX change; outside Story 10.2's test-only scope.
+
+---
+
+## Deferred from: code review of 10-3-apps-web-complete-source-branch-coverage-buffer (2026-07-11)
+
+- **AC-D1's mutation-testing rigor was concentrated on two security-sensitive paths (`LoginForm.svelte`, credential detail lifecycle-override) rather than exhaustively applied per-test across all ~75 new characterization-test files.** Signed off 2026-07-11 (Nestor) as accepted technical debt — a proportionality judgment call given the volume of characterization tests added, not a literal read of AC-D1. No further action required.
+
+---
+
+## Deferred from: code review of 11-1-branding-visual-identity (2026-07-11)
+
+- Logo+wordmark markup duplicated verbatim between `AppShell.svelte` and `(auth)/+layout.svelte` with no shared `<BrandLogo>`/`<BrandMark>` component — future logo/size/link changes require editing both call sites manually.
+- `bg-brand-600`/`hover:bg-brand-700` button classes repeated verbatim across `LoginForm.svelte`, `RegisterForm.svelte`, `recovery/+page.svelte`, and `recovery/[token]/+page.svelte` instead of a shared Button component — a future rebrand means repeating this mechanical class sweep again.
+- Auth-shell logo image (`(auth)/+layout.svelte`) is not a clickable link to `/dashboard`, unlike the `AppShell.svelte` header wordmark — minor click-affordance inconsistency between the two brand-mark locations.
+- `PrimaryNav.svelte`'s active-tab pill (`bg-brand-600`) has no `hover:` state, while every other CTA recolored in this story gained `hover:bg-brand-700`.
+- Primary-CTA `bg-slate-950` styling remains on surfaces outside the 3 target surfaces named in Story 11.1 (e.g. `FormSubmitRow.svelte`, `VaultGate.svelte`, `VaultUnsealForm.svelte`, `OnboardingStep3.svelte`, `AccessNotice.svelte`, `PageAlertBanner.svelte`) — explicitly Out of Scope for 11.1, but worth a follow-up story if a full brand rollout is desired (leaving the app visually split between violet header/auth and near-black CTAs elsewhere).
+- No test assertions cover the new logo `<img>` markup or `brand-600`/`brand-700` classes in `AppShell.test.ts`, `PrimaryNav.test.ts`, `LoginForm.test.ts`, `RegisterForm.test.ts`, or the `(auth)` page tests — a future accidental revert of the brand recolor or logo removal would pass the full suite silently.
+
+---
+
+## Deferred from: code review of 6-5-monitored-asset-creation-permission-check-fix (2026-07-11)
+
+- **GET-by-id returns 404 for an archived project while PATCH/DELETE on the same route return 410** — `apps/api/src/modules/monitoring/routes.ts`'s new `makeGetByIdHandler` mirrors the pre-existing `makeListHandler`'s `requireProjectInOrg` convention, which already diverged from PATCH/DELETE's `rejectIfProjectArchived` at the list-GET level before this diff. Extends an existing GET-vs-mutation inconsistency to item scope; normalizing archived-project handling across the whole monitoring module is out of scope for this story.
+- **New GET-by-id routes expose an extra `project_not_found` 404 branch that PATCH/DELETE never had on the same URL shape** — same root cause as above, already true of list-GET before this diff.
+- **`route-audit.test.ts`'s classification gate is a static/AST check, not a runtime verification that a route handler actually performs only reads** — pre-existing tooling limitation, not introduced by this diff.
+- **New GET routes reuse `MONITORING_LIST_READ_OMISSION_REASON` (written for bulk list reads) to justify not auditing single-record reads too, without re-deriving the rationale** — each entry sets `reviewer: SECURITY_OWNER`, routing the judgment call to the project's existing security-review process.
+- **`services` asset type is modeled as `PaymentRecord` under the hood** (`findPaymentRecordInProject`, `PaymentRecordResponseSchema`) in `apps/api/src/modules/monitoring/routes.ts` — pre-existing naming confusion predating this diff.
+- **`makeGetByIdHandler`'s generic `Params extends { projectId: string }` doesn't statically tie `paramsSchema` to the specific `:id` param declared on the route it's registered against** — a copy-paste mismatch would be caught by the existing parametrized `RESOURCES` route tests at CI time, providing a practical safety net without a compile-time guarantee.
+- **New `.server.test.ts` files for the 4 "new" routes assert only `load()`'s return shape, not that `canManageMonitoredAssets(orgRole)` actually gates the rendered form end-to-end** — matches this codebase's established test convention exactly (`credentials-new-page.server.test.ts` does the same); not a regression introduced by this diff.

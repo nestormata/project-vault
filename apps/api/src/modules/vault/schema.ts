@@ -21,10 +21,17 @@ const FileInitSchema = z.object({
   }),
 })
 
+// Story 1.14 AC-8: no acknowledge* flag — KMS is the most-secure mode, not a downgraded one.
+const KmsInitSchema = z.object({
+  kmsType: z.literal('kms'),
+  kmsKeyId: z.string().min(1),
+})
+
 export const VaultInitRequestSchema = z.discriminatedUnion('kmsType', [
   PassphraseInitSchema,
   EnvelopeInitSchema,
   FileInitSchema,
+  KmsInitSchema,
 ])
 
 export type VaultInitRequest = z.infer<typeof VaultInitRequestSchema>
@@ -32,10 +39,14 @@ export type VaultInitRequest = z.infer<typeof VaultInitRequestSchema>
 export const VaultInitResponseSchema = z.object({
   initialized: z.literal(true),
   keyVersion: z.number().int().positive(),
-  kmsType: z.enum(['passphrase', 'envelope', 'file']),
+  kmsType: z.enum(['passphrase', 'envelope', 'file', 'kms']),
 })
 
-/** Unseal body — fields validated server-side against stored kms_type. */
+/** Unseal body — fields validated server-side against stored kms_type. Story 1.14 AC-10: the
+ * Zod layer cannot know the stored mode, so it only enforces "at most one legacy field, OR
+ * zero" — the zero-field case is valid Zod-wise for every mode, but `unsealVault()` in
+ * key-service.ts still rejects it for non-kms modes via the existing per-mode required-field
+ * checks (`deriveIkmForUnseal`), unchanged for passphrase/envelope/file. */
 export const VaultUnsealRequestSchema = z
   .object({
     passphrase: z.string().min(12).optional(),
@@ -44,8 +55,8 @@ export const VaultUnsealRequestSchema = z
   })
   .refine(
     (body) =>
-      [body.passphrase, body.envelopeKeyPath, body.masterKeyPath].filter(Boolean).length === 1,
-    { message: 'Provide exactly one of: passphrase, envelopeKeyPath, or masterKeyPath' }
+      [body.passphrase, body.envelopeKeyPath, body.masterKeyPath].filter(Boolean).length <= 1,
+    { message: 'Provide at most one of: passphrase, envelopeKeyPath, or masterKeyPath' }
   )
 
 export type VaultUnsealRequest = z.infer<typeof VaultUnsealRequestSchema>
@@ -53,7 +64,7 @@ export type VaultUnsealRequest = z.infer<typeof VaultUnsealRequestSchema>
 export const VaultUnsealResponseSchema = z.object({
   unsealed: z.literal(true),
   keyVersion: z.number().int().positive(),
-  kmsType: z.enum(['passphrase', 'envelope', 'file']),
+  kmsType: z.enum(['passphrase', 'envelope', 'file', 'kms']),
 })
 
 /** Vault init/unseal error shape (`{error, message}`, not the rest of the API's `{code, message}` ApiErrorSchema). */
