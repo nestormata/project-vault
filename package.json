@@ -33,16 +33,16 @@
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "audit-ci": "^7.1.0",
-    "eslint": "^10.6.0",
+    "eslint": "^10.7.0",
     "husky": "^9.1.7",
     "jscpd": "^5.0.12",
     "lint-staged": "^17.0.8",
     "postgres": "^3.4.5",
-    "prettier": "3.9.4",
+    "prettier": "3.9.5",
     "prettier-plugin-svelte": "^4.1.1",
-    "tsx": "4.23.0",
+    "tsx": "4.23.1",
     "turbo": "latest",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
