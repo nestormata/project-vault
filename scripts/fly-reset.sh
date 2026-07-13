@@ -58,7 +58,17 @@ psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO postgres;
-DROP ROLE IF EXISTS vault_app;
+-- DROP SCHEMA CASCADE only removes objects owned BY vault_app inside that schema; it
+-- doesn't revoke database-level privileges GRANTed TO vault_app (e.g. from db:migrate's
+-- own GRANT statements), which blocks DROP ROLE with "cannot be dropped because some
+-- objects depend on it". DROP OWNED BY clears both.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vault_app') THEN
+    EXECUTE 'DROP OWNED BY vault_app';
+    EXECUTE 'DROP ROLE vault_app';
+  END IF;
+END $$;
 SQL
 
 echo "== Running migrations (creates vault_app role + RLS + schema) =="
