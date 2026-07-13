@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { sql } from 'drizzle-orm'
+import { getDb, withOrg } from '@project-vault/db'
+import { orgMemberships, userIdentityTokens } from '@project-vault/db/schema'
+import { seedFixtures, ORG_A_ID } from '@project-vault/db/seed-fixtures'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -9,6 +13,7 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createUnsealedRouteSuite } from '../../__tests__/helpers/unsealed-route-suite-test-helpers.js'
 import { registerPlatformOperator } from '../../__tests__/helpers/platform-operator-test-helpers.js'
+import { hashUserPassword } from './password.js'
 
 // Only fall back to the default local port when DATABASE_URL isn't already set (e.g. by
 // `make test`, which points at whatever host port this worktree's Postgres actually uses —
@@ -21,6 +26,8 @@ let createApp: typeof import('../../app.js').createApp
 type OpenApiDocument = {
   paths?: Record<string, unknown>
 }
+
+const TEST_PASSWORD = 'correct-horse-battery-staple'
 
 const { initVault } = await bootstrapRouteIntegrationTest()
 
@@ -152,7 +159,7 @@ describe.sequential('GET /api/v1/auth/me', () => {
     const orgName = `Me Route Org ${randomUUID()}`
     const { cookies } = await registerAndLoginViaApi(suite.app, {
       email: `me-route-${randomUUID()}@example.com`,
-      password: 'correct-horse-battery-staple',
+      password: TEST_PASSWORD,
       orgName,
     })
 
@@ -167,7 +174,7 @@ describe.sequential('GET /api/v1/auth/me', () => {
   })
 
   it('AC-A1: returns isPlatformOperator:true for a platform operator and isPlatformOperator:false for a regular user', async () => {
-    const PASSWORD = 'correct-horse-battery-staple'
+    const PASSWORD = TEST_PASSWORD
     const operator = await registerPlatformOperator(suite.app, {
       emailPrefix: `me-operator-${randomUUID()}`,
       orgNamePrefix: `Me Operator Org`,
@@ -198,5 +205,67 @@ describe.sequential('GET /api/v1/auth/me', () => {
     expect(
       (meRegular.json() as { data: { isPlatformOperator: boolean } }).data.isPlatformOperator
     ).toBe(false)
+  })
+})
+
+describe.sequential('POST /api/v1/auth/login for users seeded via raw SQL', () => {
+  const suite = createUnsealedRouteSuite(initVault, 'auth-login-seed-fixture-passphrase')
+  suite.registerLifecycle()
+
+  // Regression test for the Fly.io demo login 500: packages/db/src/seed-fixtures.ts (shared by
+  // db:seed:test and db:seed:demo) and seed-demo.ts insert orgs/users via raw SQL with
+  // hand-picked ids (ORG_A_ID etc.) instead of letting Postgres generate them via
+  // `gen_random_uuid()` — the version-4 default every other codepath, including registerUser(),
+  // relies on. This mirrors seed-demo.ts's exact pattern: seed the shared fixtures, then insert
+  // one additional real, login-able user directly into ORG_A_ID (same as the demo's login user).
+  //
+  // Before the fix, ORG_A_ID's hex suffix carried a '0' version nibble instead of a valid
+  // RFC 4122 one (1-8) — syntactically UUID-shaped, but not a valid UUID. Login succeeded
+  // logically, but AuthSessionResponseSchema's `z.uuid()` rejected `orgId` at response-
+  // serialization time, turning it into a 500 "Response doesn't match the schema" error. A
+  // normally-registered user (real random id from `defaultRandom()`, i.e. version 4) never hits
+  // this, which is why the fix belongs in the seed data, not the auth response schema.
+  it('logs in successfully for a real user planted into a seed-fixtures org (ORG_A_ID)', async () => {
+    await seedFixtures()
+
+    const userId = randomUUID()
+    const email = `seed-fixture-login-${randomUUID()}@example.com`
+    const password = TEST_PASSWORD
+    const passwordHash = await hashUserPassword(password)
+
+    await getDb().execute(
+      sql`INSERT INTO users (id, email, password_hash) VALUES (${userId}, ${email}, ${passwordHash})`
+    )
+    try {
+      // Give the raw-SQL-inserted user an identity token too (mirrors registerUser() and the
+      // seed-demo.ts fix) — otherwise its login's SESSION_CREATED audit entry gets a null
+      // actor_token_id, which fails checkAuditActorTokenCoverage since audit_log_entries is
+      // append-only.
+      await getDb().insert(userIdentityTokens).values({ userId, displayName: email })
+      await withOrg(ORG_A_ID, (tx) =>
+        tx
+          .insert(orgMemberships)
+          .values({ orgId: ORG_A_ID, userId, role: 'owner', status: 'active' })
+      )
+
+      const login = await suite.app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { email, password },
+      })
+
+      expect(login.statusCode).toBe(200)
+      expect(login.json()).toMatchObject({ data: { userId, orgId: ORG_A_ID } })
+    } finally {
+      // ORG_A_ID is a shared fixture (exported for reuse, seeded via seedFixtures() above) —
+      // unlike registerAndLoginViaApi's tests, which each mint a brand-new org, this test plants
+      // a membership directly into that shared org. Cascading delete on `users` removes the
+      // membership/session/refresh-token rows this test created (org-memberships, sessions, and
+      // refresh_tokens all have userId ON DELETE CASCADE — see packages/db/src/schema) so repeat
+      // runs don't accumulate extra owners under ORG_A_ID. The user_identity_tokens row and the
+      // audit_log_entries it's referenced by are intentionally left behind — audit history is
+      // append-only by design, and identityTokenId only gets user_id SET NULL, not deleted.
+      await getDb().execute(sql`DELETE FROM users WHERE id = ${userId}`)
+    }
   })
 })

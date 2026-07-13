@@ -4,10 +4,18 @@ import { sql } from 'drizzle-orm'
 import { getDb, withOrg } from './index.js'
 import { orgMemberships } from './schema/index.js'
 
-export const ORG_A_ID = '00000000-0000-0000-0000-000000000001'
-export const ORG_B_ID = '00000000-0000-0000-0000-000000000002'
-export const USER_1_ID = '00000000-0000-0000-0000-000000000010'
-export const USER_2_ID = '00000000-0000-0000-0000-000000000011'
+// Story fix/login-response-schema-mismatch: these must be syntactically valid RFC 4122 UUIDs
+// (version nibble 1-8, variant nibble 8/9/a/b) — not just UUID-shaped hex. AuthSessionResponseSchema
+// validates userId/orgId with z.uuid() at response-serialization time (apps/api's default for
+// every other id in the system, which comes from Postgres's gen_random_uuid(), i.e. version 4).
+// A prior version of these sentinel ids (e.g. '00000000-0000-0000-0000-000000000001') had a '0'
+// version nibble, which z.uuid() rejects outright (nil/max UUIDs are special-cased, but arbitrary
+// all-zero-with-a-suffix ids are not) — that turned an otherwise-successful login into a 500
+// "Response doesn't match the schema" for any user seeded this way.
+export const ORG_A_ID = '00000000-0000-4000-8000-000000000001'
+export const ORG_B_ID = '00000000-0000-4000-8000-000000000002'
+export const USER_1_ID = '00000000-0000-4000-8000-000000000010'
+export const USER_2_ID = '00000000-0000-4000-8000-000000000011'
 
 const BCRYPT_SENTINEL = '$2b$10$sentinelsentinelsentinelseO5z3K3K3K3K3K3K3K3K3K3K3K3K'
 

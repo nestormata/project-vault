@@ -14,6 +14,10 @@
       "types": "./dist/test-helpers.d.ts",
       "default": "./dist/test-helpers.js"
     },
+    "./seed-fixtures": {
+      "types": "./dist/seed-fixtures.d.ts",
+      "default": "./dist/seed-fixtures.js"
+    },
     "./schema": {
       "types": "./dist/schema/index.d.ts",
       "default": "./dist/schema/index.js"
