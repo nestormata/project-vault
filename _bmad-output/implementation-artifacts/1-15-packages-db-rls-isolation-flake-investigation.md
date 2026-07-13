@@ -1,6 +1,6 @@
 # Story 1.15: packages/db RLS-Isolation Test Suite Flake Investigation
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
