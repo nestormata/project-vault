@@ -20,6 +20,8 @@
 #                         lives only as a GitHub Actions secret, piped through to the seed
 #                         process (packages/db/src/seed-demo.ts), which argon2-hashes it
 #                         before it ever touches the database
+#   VAULT_BOOTSTRAP_TOKEN same value set on the api app's VAULT_BOOTSTRAP_TOKEN secret by
+#                         fly-setup.sh — required by POST /api/v1/vault/init
 set -euo pipefail
 
 DB_APP="${FLY_DB_APP:-project-vault-demo-db}"
@@ -32,6 +34,7 @@ PROXY_PORT="${FLY_DB_PROXY_PORT:-15432}"
 : "${DEMO_VAULT_PASSPHRASE:?Set DEMO_VAULT_PASSPHRASE}"
 : "${DEMO_LOGIN_EMAIL:?Set DEMO_LOGIN_EMAIL}"
 : "${DEMO_LOGIN_PASSWORD:?Set DEMO_LOGIN_PASSWORD}"
+: "${VAULT_BOOTSTRAP_TOKEN:?Set VAULT_BOOTSTRAP_TOKEN (same value set on the api app by fly-setup.sh)}"
 VAULT_APP_PASSWORD="${VAULT_APP_PASSWORD:-dev-only-change-in-prod}"
 
 for bin in flyctl pnpm jq psql curl; do
@@ -106,7 +109,7 @@ done
 echo "== Initializing + unsealing vault via ${WEB_URL} =="
 init_body="$(jq -n --arg p "$DEMO_VAULT_PASSPHRASE" '{kmsType:"passphrase",passphrase:$p}')"
 init_code="$(curl -s -o /tmp/fly-vault-init.json -w '%{http_code}' -X POST "${WEB_URL}/api/v1/vault/init" \
-  -H 'Content-Type: application/json' -d "$init_body")"
+  -H 'Content-Type: application/json' -H "X-Vault-Bootstrap-Token: ${VAULT_BOOTSTRAP_TOKEN}" -d "$init_body")"
 if [[ "$init_code" != "200" ]]; then
   cat /tmp/fly-vault-init.json >&2
   echo "vault init failed (HTTP ${init_code})" >&2

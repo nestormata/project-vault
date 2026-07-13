@@ -27,6 +27,7 @@ jobs:
       DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
       DEMO_LOGIN_EMAIL: ${{ secrets.FLY_DEMO_LOGIN_EMAIL }}
       DEMO_LOGIN_PASSWORD: ${{ secrets.FLY_DEMO_LOGIN_PASSWORD }}
+      VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 

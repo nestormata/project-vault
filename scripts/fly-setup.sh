@@ -46,6 +46,10 @@ echo "== api: secrets =="
 # non-placeholder secrets for every one of these — generate fresh randoms rather than
 # reusing docker-compose.yml's dev letter-repeated placeholders.
 VAULT_PASSPHRASE="${DEMO_VAULT_PASSPHRASE:-$(openssl rand -base64 24)}"
+# POST /api/v1/vault/init requires this exact header (apps/api/src/modules/vault routes) —
+# generated once and reused by fly-reset.sh on every subsequent reset, same override
+# pattern as VAULT_PASSPHRASE above.
+BOOTSTRAP_TOKEN="${VAULT_BOOTSTRAP_TOKEN:-$(openssl rand -base64 32)}"
 # vault_app doesn't exist yet — db:migrate creates it (packages/db/src/migrations/
 # 0001_rls_and_triggers.sql) with a hardcoded 'dev-only-change-in-prod' password.
 # scripts/fly-reset.sh ALTERs it to this same value right after every migrate run, so
@@ -66,7 +70,7 @@ flyctl secrets set -a "$API_APP" \
   MACHINE_JWT_SECRET="$(openssl rand -hex 32)" \
   STATUS_PAGE_TOKEN_HMAC_SECRET="$(openssl rand -hex 32)" \
   ERASURE_EMAIL_HASH_SECRET="$(openssl rand -hex 32)" \
-  VAULT_BOOTSTRAP_TOKEN="$(openssl rand -base64 32)" \
+  VAULT_BOOTSTRAP_TOKEN="$BOOTSTRAP_TOKEN" \
   DEMO_VAULT_PASSPHRASE="$VAULT_PASSPHRASE"
 
 echo "== web: secrets =="
