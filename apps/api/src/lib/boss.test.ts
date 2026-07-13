@@ -3,6 +3,7 @@ import { BossService } from './boss.js'
 
 const TEST_QUEUE_NAME = 'prune-revoked-tokens'
 const NOTIFICATION_EMAIL_JOB = 'notification/email'
+const BOSS_NOT_STARTED_ERROR = 'BossService not started'
 
 function createBossWithMocks(extra: Record<string, unknown> = {}) {
   return new BossService(() => ({
@@ -122,6 +123,124 @@ describe('BossService', () => {
     expect(work).toHaveBeenCalledWith(
       NOTIFICATION_EMAIL_JOB,
       { localConcurrency: 5, localGroupConcurrency: 3 },
+      expect.any(Function)
+    )
+  })
+
+  describe('Story 10.4: not-started guards', () => {
+    it('isStarted() is false before start() and true after', async () => {
+      const boss = createBossWithMocks()
+      expect(boss.isStarted()).toBe(false)
+      await boss.start()
+      expect(boss.isStarted()).toBe(true)
+    })
+
+    it('ensureQueue() throws when not started', async () => {
+      const boss = createBossWithMocks()
+      await expect(boss.ensureQueue(TEST_QUEUE_NAME)).rejects.toThrow(BOSS_NOT_STARTED_ERROR)
+    })
+
+    it('send() throws when not started', async () => {
+      const boss = createBossWithMocks()
+      await expect(boss.send(NOTIFICATION_EMAIL_JOB, {})).rejects.toThrow(BOSS_NOT_STARTED_ERROR)
+    })
+
+    it('registerSchedules() throws when not started', async () => {
+      const boss = createBossWithMocks()
+      await expect(
+        boss.registerSchedules({ [TEST_QUEUE_NAME]: { cron: '0 * * * *' } })
+      ).rejects.toThrow(BOSS_NOT_STARTED_ERROR)
+    })
+
+    it('registerWorker() throws when not started', async () => {
+      const boss = createBossWithMocks()
+      await expect(boss.registerWorker(TEST_QUEUE_NAME, async () => {})).rejects.toThrow(
+        BOSS_NOT_STARTED_ERROR
+      )
+    })
+  })
+
+  describe('Story 10.4: unavailable-API guards', () => {
+    it('ensureQueue() throws when the underlying client has no createQueue API', async () => {
+      const boss = new BossService(() => ({
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+      }))
+      await boss.start()
+      await expect(boss.ensureQueue(TEST_QUEUE_NAME)).rejects.toThrow(
+        'BossService createQueue API unavailable'
+      )
+    })
+
+    it('send() throws when the underlying client has no send API', async () => {
+      const boss = createBossWithMocks()
+      await boss.start()
+      await expect(boss.send(NOTIFICATION_EMAIL_JOB, {})).rejects.toThrow(
+        'BossService send API unavailable'
+      )
+    })
+
+    it('registerSchedules() throws when the underlying client has no schedule API', async () => {
+      const boss = createBossWithMocks()
+      await boss.start()
+      await expect(
+        boss.registerSchedules({ [TEST_QUEUE_NAME]: { cron: '0 * * * *' } })
+      ).rejects.toThrow('BossService schedule API unavailable')
+    })
+
+    it('registerWorker() throws when the underlying client has no work API', async () => {
+      const boss = createBossWithMocks()
+      await boss.start()
+      await expect(boss.registerWorker(TEST_QUEUE_NAME, async () => {})).rejects.toThrow(
+        'BossService work API unavailable'
+      )
+    })
+  })
+
+  it('constructing with a connection string builds a real PgBoss instance internally', () => {
+    // Exercises the `typeof connectionStringOrFactory === 'string'` branch of the constructor.
+    const boss = new BossService('postgres://localhost:5432/test')
+    expect(boss.isStarted()).toBe(false)
+  })
+
+  it('ensureQueue() creates a queue once and skips recreation on a second call for the same name', async () => {
+    const createQueue = vi.fn().mockResolvedValue(undefined)
+    const boss = createBossWithMocks({ createQueue })
+    await boss.start()
+
+    await boss.ensureQueue(TEST_QUEUE_NAME)
+    await boss.ensureQueue(TEST_QUEUE_NAME)
+
+    expect(createQueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('registerWorker() without options calls work() with just name and handler (no options arg)', async () => {
+    const work = vi.fn().mockResolvedValue(undefined)
+    const boss = createBossWithMocks({ work })
+    const handler = vi.fn().mockResolvedValue(undefined)
+
+    await boss.start()
+    await boss.registerWorker(TEST_QUEUE_NAME, handler)
+
+    expect(work).toHaveBeenCalledWith(TEST_QUEUE_NAME, expect.any(Function))
+    const registeredHandler = work.mock.calls[0]?.[1] as (job: { id: string }) => Promise<void>
+    await registeredHandler({ id: 'job-x' })
+    expect(handler).toHaveBeenCalledWith({ id: 'job-x' })
+  })
+
+  it('registerWorkers() dispatches a { handler, options } registration through registerWorker with options', async () => {
+    const work = vi.fn().mockResolvedValue(undefined)
+    const boss = createBossWithMocks({ work })
+    const handler = vi.fn().mockResolvedValue(undefined)
+
+    await boss.start()
+    await boss.registerWorkers({
+      [TEST_QUEUE_NAME]: { handler, options: { localConcurrency: 2 } },
+    })
+
+    expect(work).toHaveBeenCalledWith(
+      TEST_QUEUE_NAME,
+      { localConcurrency: 2 },
       expect.any(Function)
     )
   })

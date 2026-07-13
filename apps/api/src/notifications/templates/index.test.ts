@@ -47,4 +47,34 @@ describe('notification templates', () => {
     expect(rendered.text).toContain(UNKNOWN_TEMPLATE)
     expect(rendered.blocks).toEqual([])
   })
+
+  // Story 10.4 branch coverage: every EMAIL_RENDERERS dispatch-table entry has its own small
+  // wrapper (subject/text/html -> inboxTitle/inboxBody derivation) that the dedicated
+  // renderSecurityFailedAuthThreshold test above does not exercise, since it calls the
+  // underlying renderer directly rather than going through the dispatch table.
+  it('dispatches project.invitation_created through the email renderer with inbox fields derived', () => {
+    const rendered = renderEmailTemplate('project.invitation_created', {
+      projectId: 'proj-1',
+      projectName: 'Acme Vault',
+      inviterEmail: 'a@b.com',
+      role: 'member',
+      acceptUrl: 'https://vault.example.com/accept',
+    })
+    expect(rendered.inboxTitle).toContain("You've been invited to Acme Vault")
+    expect(rendered.inboxBody.length).toBeLessThanOrEqual(500)
+  })
+
+  it('dispatches auth.recovery_link_created and auth.recovery_link_sent through the email renderer', () => {
+    const created = renderEmailTemplate('auth.recovery_link_created', {
+      recoveryUrl: 'https://vault.example.com/recover',
+      initiatorEmail: null,
+    })
+    expect(created.inboxTitle).toContain('Reset your password')
+
+    const sent = renderEmailTemplate('auth.recovery_link_sent', {
+      recoveryUrl: 'https://vault.example.com/recover',
+      initiatorEmail: 'admin@example.com',
+    })
+    expect(sent.inboxTitle).toContain('password reset link')
+  })
 })

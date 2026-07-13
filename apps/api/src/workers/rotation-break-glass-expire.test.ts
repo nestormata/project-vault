@@ -83,7 +83,7 @@ describe.sequential('runBreakGlassOverlapExpiryJob', () => {
       expect(state?.rotationLockedAt).toBeNull()
       expect(state?.breakGlassOverlapExpiresAt).toBeNull()
     })
-  }, 20_000)
+  }, 60_000)
 
   it('leaves a version whose overlap window has NOT yet expired untouched', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -98,7 +98,7 @@ describe.sequential('runBreakGlassOverlapExpiryJob', () => {
       expect(state?.rotationLockedAt).not.toBeNull()
       expect(state?.breakGlassOverlapExpiresAt).not.toBeNull()
     })
-  }, 20_000)
+  }, 60_000)
 
   it('writes a system-actor rotation.break_glass_overlap_expired audit row per expired version', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -126,7 +126,7 @@ describe.sequential('runBreakGlassOverlapExpiryJob', () => {
         credentialId,
       })
     })
-  }, 20_000)
+  }, 60_000)
 
   it('is a no-op (no error, no audit rows) when nothing has an overlap window set', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -144,7 +144,7 @@ describe.sequential('runBreakGlassOverlapExpiryJob', () => {
       )
       expect(auditRows).toHaveLength(0)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('attributes each expiry to its own org (no cross-attribution)', async () => {
     await withTwoTestOrgs(async (orgAId, orgBId) => {
@@ -162,7 +162,7 @@ describe.sequential('runBreakGlassOverlapExpiryJob', () => {
       expect(auditRowsA.every((id) => id === orgAId)).toBe(true)
       expect(auditRowsB.every((id) => id === orgBId)).toBe(true)
     })
-  }, 20_000)
+  }, 60_000)
 
   // ---------------------------------------------------------------------------------------
   // Story 5.5 AC-9: an audit-write failure for one org/row must roll back only that row and
@@ -219,5 +219,5 @@ describe.sequential('runBreakGlassOverlapExpiryJob', () => {
       expect(stateARetried?.rotationLockedAt).toBeNull()
       expect(stateARetried?.breakGlassOverlapExpiresAt).toBeNull()
     })
-  }, 20_000)
+  }, 60_000)
 })

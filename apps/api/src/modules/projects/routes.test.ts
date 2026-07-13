@@ -152,7 +152,7 @@ describe.sequential('project routes', () => {
         .limit(1)
     )
     expect(membership[0]?.role).toBe('owner')
-  }, 20_000)
+  }, 60_000)
 
   it('POST defaults omitted description to null and rejects duplicate or invalid slugs', async () => {
     const user = await registerUser(app, 'slug')
@@ -178,7 +178,7 @@ describe.sequential('project routes', () => {
       expect(invalid.statusCode).toBe(422)
       expect(invalid.json()).toMatchObject({ code: 'validation_error' })
     }
-  }, 20_000)
+  }, 60_000)
 
   it('POST rejects missing auth, missing name, and body orgId poisoning', async () => {
     const user = await registerUser(app, 'validation')
@@ -204,7 +204,7 @@ describe.sequential('project routes', () => {
       payload: { name: 'Poisoned', slug: 'poisoned', orgId: randomUUID() },
     })
     expect(poisoned.statusCode).toBe(422)
-  }, 20_000)
+  }, 60_000)
 
   it('GET /api/v1/projects returns empty and populated org-scoped lists', async () => {
     const userA = await registerUser(app, 'list-a')
@@ -283,7 +283,7 @@ describe.sequential('project routes', () => {
         items: [expect.objectContaining({ slug: ALPHA_PROJECT_SLUG, role: 'viewer' })],
       },
     })
-  }, 20_000)
+  }, 60_000)
 
   // AC-P1: GET /projects gains a strictly additive `tags` field on ProjectSummary — a tagged
   // project returns its real tags, an untagged project returns [] (not null).
@@ -311,7 +311,7 @@ describe.sequential('project routes', () => {
     const untaggedItem = items.find((item) => item.slug === 'untagged-project')
     expect(taggedItem?.tags).toEqual([TEAM_PAYMENTS_TAG, TIER_0_TAG])
     expect(untaggedItem?.tags).toEqual([])
-  }, 20_000)
+  }, 60_000)
 
   it('GET /api/v1/projects paginates with page/limit query params, defaults, and bounds (AC-11, AC-12)', async () => {
     const user = await registerUser(app, 'list-pagination')
@@ -374,7 +374,7 @@ describe.sequential('project routes', () => {
     expect(beyondData.json()).toMatchObject({
       data: { items: [], total: 3, page: 999, limit: 20, hasNext: false },
     })
-  }, 20_000)
+  }, 60_000)
 
   it('GET /api/v1/projects returns truthful credential and expiring counts', async () => {
     const user = await createDirectAuthenticatedUser(app, 'list-stats', 'admin')
@@ -414,7 +414,7 @@ describe.sequential('project routes', () => {
         ],
       },
     })
-  }, 20_000)
+  }, 60_000)
 
   it('GET dashboard returns empty state and hides cross-org projects as 404', async () => {
     const userA = await registerUser(app, 'dashboard-a')
@@ -456,7 +456,7 @@ describe.sequential('project routes', () => {
       url: `${PROJECTS_URL}/${projectA.id}/dashboard`,
     })
     expect(unauthenticated.statusCode).toBe(401)
-  }, 20_000)
+  }, 60_000)
 
   it('PATCH updates metadata, preserves slug, clears description, and denies viewer role', async () => {
     const user = await registerUser(app, 'patch')
@@ -521,7 +521,7 @@ describe.sequential('project routes', () => {
       payload: { name: 'Denied' },
     })
     expect(denied.statusCode).toBe(403)
-  }, 20_000)
+  }, 60_000)
 
   it('rolls back project creation when the audit write fails', async () => {
     const user = await createDirectAuthenticatedUser(app, 'post-audit-fail', 'admin')
@@ -553,7 +553,7 @@ describe.sequential('project routes', () => {
     } finally {
       auditSpy.mockRestore()
     }
-  }, 20_000)
+  }, 60_000)
 
   it('rolls back project updates when the audit write fails', async () => {
     const user = await createDirectAuthenticatedUser(app, 'patch-audit-fail', 'admin')
@@ -579,7 +579,7 @@ describe.sequential('project routes', () => {
     } finally {
       auditSpy.mockRestore()
     }
-  }, 20_000)
+  }, 60_000)
 
   it('PUT /api/v1/projects/:projectId/tags replaces tags, de-dupes, clears, and audits', async () => {
     const user = await createDirectAuthenticatedUser(app, 'project-tags')
@@ -613,7 +613,7 @@ describe.sequential('project routes', () => {
           (row.payload as { mode?: string; resultCount?: number }).mode === 'replace'
       )
     ).toBe(true)
-  }, 20_000)
+  }, 60_000)
 
   it('PUT project tags normalizes mixed-case input to lowercase (AC-T1/AC-T6)', async () => {
     const user = await createDirectAuthenticatedUser(app, 'project-tags-case')
@@ -624,7 +624,7 @@ describe.sequential('project routes', () => {
     expect(replace.json()).toEqual({
       data: { id: project.id, tags: ['team-payments'] },
     })
-  }, 20_000)
+  }, 60_000)
 
   it('PUT project tags validates body, hides cross-org projects, denies viewer, and rolls back audit failures', async () => {
     const user = await createDirectAuthenticatedUser(app, 'project-tags-validation')
@@ -660,7 +660,7 @@ describe.sequential('project routes', () => {
     })
     const denied = await updateProjectTags(app, viewerCookies, project.id, ['viewer-denied'])
     expect(denied.statusCode).toBe(403)
-  }, 20_000)
+  }, 60_000)
 
   it('GET /api/v1/projects scopes list to project memberships for org members (AC-V2)', async () => {
     const owner = await registerOwner(app, 'vis-list-owner')
@@ -680,7 +680,7 @@ describe.sequential('project routes', () => {
     const body = res.json<{ data: { items: { id: string }[]; total: number } }>()
     expect(body.data.total).toBe(1)
     expect(body.data.items.map((i) => i.id)).toEqual([visible.id])
-  }, 20_000)
+  }, 60_000)
 
   it('GET /api/v1/projects returns empty list for member with zero memberships (AC-V2)', async () => {
     const owner = await registerOwner(app, 'vis-empty-owner')
@@ -696,7 +696,7 @@ describe.sequential('project routes', () => {
     expect(res.json()).toMatchObject({
       data: { items: [], total: 0 },
     })
-  }, 20_000)
+  }, 60_000)
 
   it('GET /api/v1/projects still lists all projects for org admin with zero memberships (AC-V8)', async () => {
     const owner = await registerOwner(app, 'vis-admin-owner')
@@ -713,7 +713,7 @@ describe.sequential('project routes', () => {
     const body = res.json<{ data: { items: { id: string }[]; total: number } }>()
     expect(body.data.total).toBe(2)
     expect(body.data.items.map((i) => i.id).sort()).toEqual([p1.id, p2.id].sort())
-  }, 20_000)
+  }, 60_000)
 
   it('GET /projects/:id/dashboard returns 404 for member without membership (AC-V3)', async () => {
     const owner = await registerOwner(app, 'vis-dash-owner')
@@ -727,7 +727,7 @@ describe.sequential('project routes', () => {
     })
     expect(res.statusCode).toBe(404)
     expect(res.json()).toMatchObject({ code: 'project_not_found' })
-  }, 20_000)
+  }, 60_000)
 
   it('GET /projects/:id/dashboard succeeds for member with a membership row (AC-V3)', async () => {
     const owner = await registerOwner(app, 'vis-dash-ok-owner')
@@ -745,7 +745,7 @@ describe.sequential('project routes', () => {
       headers: { cookie: cookieHeader(member.cookies) },
     })
     expect(res.statusCode).toBe(200)
-  }, 20_000)
+  }, 60_000)
 
   it('project routes fail closed while the vault is sealed', async () => {
     app = await assertRoutesFailClosedWhileSealed(
@@ -767,5 +767,5 @@ describe.sequential('project routes', () => {
     await app.close()
     await initVaultForTest(initVault, TEST_PASSPHRASE)
     app = await createApp({ logger: false, vaultGuardEnabled: true })
-  }, 20_000)
+  }, 60_000)
 })

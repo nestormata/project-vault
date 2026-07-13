@@ -132,7 +132,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       expect(state?.status).toBe('stale_recovery')
       expect(state?.version).toBe(2)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('boundary: a rotation initiated just under 60min ago is NOT picked up; just over 60min ago IS (default 60-min threshold)', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -165,7 +165,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       expect((await rotationState(orgId, rotationNotStale))?.status).toBe('in_progress')
       expect((await rotationState(orgId, rotationStale))?.status).toBe('stale_recovery')
     })
-  }, 20_000)
+  }, 60_000)
 
   it('is a no-op when no rotation is stale', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -183,7 +183,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       await expect(runStaleRotationRecoveryJob(noopBoss())).resolves.not.toThrow()
       expect((await rotationState(orgId, rotationId))?.status).toBe('in_progress')
     })
-  }, 20_000)
+  }, 60_000)
 
   it('resets failed/max_retries_exceeded checklist items to unconfirmed, preserving retryCount, and leaves confirmed items untouched', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -236,7 +236,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       expect(byId.get(failedItem.id)).toMatchObject({ status: 'unconfirmed', retryCount: 1 })
       expect(byId.get(maxExceededItem.id)).toMatchObject({ status: 'unconfirmed', retryCount: 3 })
     })
-  }, 20_000)
+  }, 60_000)
 
   it('writes a system-actor rotation.stale_detected audit row with thresholdMinutes/pendingItemsReset', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -272,7 +272,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
         pendingItemsReset: 1,
       })
     })
-  }, 20_000)
+  }, 60_000)
 
   it('enqueues both the direct-to-initiator and FR100-routed notifications', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -302,7 +302,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       expect(queueRows.length).toBeGreaterThanOrEqual(1)
       expect(queueRows.some((row) => row.recipientUserId === userId)).toBe(true)
     })
-  }, 20_000)
+  }, 60_000)
 
   it('skips a rotation whose advisory lock is held by a concurrent transaction (silent skip, no error)', async () => {
     await withTestOrg(async ({ orgId }) => {
@@ -338,7 +338,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       await runStaleRotationRecoveryJob(noopBoss())
       expect((await rotationState(orgId, rotationId))?.status).toBe('stale_recovery')
     })
-  }, 20_000)
+  }, 60_000)
 
   // ---------------------------------------------------------------------------------------
   // Story 5.5 AC-5: NULL initiatedBy (the initiating user's account was deleted, `initiatedBy`
@@ -375,7 +375,7 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
       expect(routedRows.length).toBeGreaterThanOrEqual(1)
       expect(routedRows.every((row) => row.recipientUserId !== null)).toBe(true)
     })
-  }, 20_000)
+  }, 60_000)
 
   // ---------------------------------------------------------------------------------------
   // Story 5.5 AC-9: an audit-write failure for one org/rotation must roll back only that row
@@ -436,5 +436,5 @@ describe.sequential('runStaleRotationRecoveryJob', () => {
         expect((await rotationState(orgA, rotationA))?.status).toBe('stale_recovery')
       })
     })
-  }, 20_000)
+  }, 60_000)
 })

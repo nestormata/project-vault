@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditForwardingConfig, auditLogEntries } from '@project-vault/db/schema'
@@ -245,8 +245,13 @@ describe.sequential('runWebhookForwardCatchup (AC-18)', () => {
           return { status: 500, ok: false }
         }
 
+        // Story 10.4 branch coverage: a real logger double (not `undefined`) so the disable/
+        // warn operational-log branches inside recordWebhookFailure actually execute, instead of
+        // short-circuiting on `if (!logger) return` the way every other test in this file does.
+        const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+
         for (let i = 0; i < AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES; i += 1) {
-          await runWebhookForwardCatchup(undefined, scopedFailDeliver)
+          await runWebhookForwardCatchup(logger, scopedFailDeliver)
         }
         expect(attempts).toBe(AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES)
 
@@ -254,17 +259,23 @@ describe.sequential('runWebhookForwardCatchup (AC-18)', () => {
           tx.select().from(auditForwardingConfig).where(eq(auditForwardingConfig.orgId, orgId))
         )
         expect(config?.enabled).toBe(false)
+        // The final (disabling) tick logs at 'error', the earlier ones at 'warn'.
+        expect(logger.error).toHaveBeenCalled()
+        expect(logger.warn).toHaveBeenCalled()
 
         // An 11th tick makes no further attempt — the org is disabled.
-        await runWebhookForwardCatchup(undefined, scopedFailDeliver)
+        await runWebhookForwardCatchup(logger, scopedFailDeliver)
         expect(attempts).toBe(AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES)
       })
     },
     // This test issues AUDIT_WEBHOOK_MAX_CONSECUTIVE_FAILURES + 1 catchup ticks, and each tick's
     // fetchAllOrgIds() scans every org created anywhere in this whole (fileParallelism: false)
-    // suite run — runtime grows with total suite size, not just this file. The global 45s
-    // testTimeout is no longer enough now that the suite has grown; give this one more headroom.
-    120_000
+    // suite run — runtime grows with total suite size, not just this file. Story 10.4: even the
+    // prior 120s headroom is no longer sufficient now that the suite has grown further (2000+
+    // tests) plus shared-machine contention observed this session; raised again for headroom.
+    // A more durable fix (scoping this test's org-scan cost, out of scope for this pass) would
+    // avoid chasing this ceiling indefinitely as the suite keeps growing.
+    240_000
   )
 
   it('skips orgs with no config or a disabled config', async () => {

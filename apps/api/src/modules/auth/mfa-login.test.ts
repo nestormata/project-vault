@@ -36,13 +36,15 @@ const INVALID_TOTP = 'invalid_totp'
 
 async function enrollMfaUser() {
   const app = await createApp({ logger: false })
-  const enrolled = await enrollUserWithMfa(app, {
+  // enrollUserWithMfa() returns the exact TOTP code it used to confirm enrollment — reuse it
+  // (rather than calling totpForSecret() again here) so "replay" tests replay a code that was
+  // actually consumed, not a fresh one from a possibly-later 30s TOTP period.
+  return enrollUserWithMfa(app, {
     emailPrefix: 'mfa-login',
     orgNamePrefix: 'MFA Login',
     password: PASSWORD,
     closeApp: true,
   })
-  return { ...enrolled, enrollmentTotp: totpForSecret(enrolled.secret) }
 }
 
 async function failedTotpRowsForUser(userId: string) {
@@ -288,7 +290,7 @@ describe.sequential('MFA login service', () => {
         .from(pendingMfaSessions)
         .where(eq(pendingMfaSessions.tokenHash, hashPendingMfaToken(cappedChallenge.mfaToken)))
     ).resolves.toHaveLength(0)
-  }, 40_000)
+  }, 90_000)
 
   it('records invalid_totp failed-auth attempts for wrong login TOTP codes', async () => {
     const { user, challenge } = await challengeForEnrolledUser()

@@ -13,7 +13,9 @@
 > Production-hardening features for self-hosted operators (encrypted backup/restore, in-place
 > upgrades, platform admin settings, platform operator audit log, and the operator runbook — Epic
 > 9) include a full admin web UI (Story 9.7). A new Epic 10 (Quality & Test
-> Automation) is in progress hardening Playwright E2E coverage and CI/SonarCloud coverage gates.
+> Automation) has all 4 stories done — Playwright E2E coverage and CI/SonarCloud coverage gates
+> (`apps/web` and `apps/api` branch coverage, SonarCloud new-code coverage buffer) are hardened;
+> epic retrospective/closure still pending.
 > Not yet tagged for a v1 GA release. See [Implementation Status](#implementation-status) for the
 > epic-by-epic breakdown.
 
@@ -58,13 +60,13 @@ Key differentiators:
 | ⚙️ **System settings & platform administration** — SMTP/backup/policy config UI, multi-org resource monitoring | ✅ Done | Epic 9 — API in Story 9.2, admin web UI (`/platform`) in Story 9.7 |
 | ⬆️ **In-place version upgrades** | ✅ Done | Epic 9 — migration-safety guard + API in Story 9.3, informational upgrade/API-docs page in Story 9.7 |
 | 🛡️ **Platform operator audit log** — instance-wide privileged-action log, distinct from per-org audit log, with integrity verification and maintenance-mode failsafe | ✅ Done | Epic 9 — API/schema shipped in Story 9.4, search/verify/maintenance-mode admin UI in Story 9.7, MFA-gap/audit-bypass hardening (9.8) done |
-| 🧪 **Test automation & coverage hardening** — Playwright E2E suite, `apps/web` branch coverage, SonarCloud new-code coverage buffer | 🟡 In progress | Epic 10 (new) — E2E automation (10.1), `apps/web` branch coverage hardening (10.2), and complete-source coverage buffer (10.3) done; SonarCloud new-coverage buffer (10.4) ready for dev |
+| 🧪 **Test automation & coverage hardening** — Playwright E2E suite, `apps/web` branch coverage, SonarCloud new-code coverage buffer | 🟡 In progress | Epic 10 (new) — all 4 stories done: E2E automation (10.1), `apps/web` branch coverage hardening (10.2), complete-source coverage buffer (10.3), SonarCloud new-coverage buffer (10.4); epic retrospective/closure still pending |
 
 ---
 
 ## Implementation Status
 
-Epic-by-epic status, current as of 2026-07-11 (source of truth:
+Epic-by-epic status, current as of 2026-07-13 (source of truth:
 [`sprint-status.yaml`](_bmad-output/implementation-artifacts/sprint-status.yaml)):
 
 | Epic | Status | What ships |
@@ -78,7 +80,7 @@ Epic-by-epic status, current as of 2026-07-11 (source of truth:
 | 7. Machine User Access & CI/CD | ✅ Done | Machine user identities, API keys, offline fallback cache, GitHub Actions integration, and the machine-user management web UI (Story 8.6) all shipped; retroactive hardening review (Story 8.8) done |
 | 8. Compliance, Audit & Governance | ✅ Done | Tamper-evident HMAC audit log, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, and the full audit/compliance web UI (Story 8.7) all shipped |
 | 9. Platform Operations, API & Self-Hosting | ✅ Done | Encrypted backup/restore (9.1), system settings/multi-org/resource monitoring (9.2), in-place upgrades + real OpenAPI generation (9.3), the platform operator audit log (9.4), the operational runbook (9.5), backup/restore hardening (9.6), the platform-operations admin web UI (Story 9.7 — `/platform` backups, settings, orgs, resource usage, upgrade/API-docs, and platform audit log pages), and platform-admin MFA-gap/audit-bypass hardening (9.8) are all done |
-| 10. Quality & Test Automation | 🟡 In progress | New epic added 2026-07-09 from a deferred-work reconciliation pass (no epic-10 section in the original PRD/epics doc). Playwright E2E test automation (10.1), `apps/web` branch coverage hardening (10.2), and the complete-source branch coverage buffer (10.3) are done; SonarCloud new-code coverage buffer (10.4) is ready for dev |
+| 10. Quality & Test Automation | 🟡 In progress | New epic added 2026-07-09 from a deferred-work reconciliation pass (no epic-10 section in the original PRD/epics doc). Playwright E2E test automation (10.1), `apps/web` branch coverage hardening (10.2), the complete-source branch coverage buffer (10.3), and the SonarCloud new-code coverage buffer (10.4) are all done; epic retrospective/closure still pending |
 
 Known v1 design gaps, disclosed up front rather than discovered later:
 - `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet (Story 9.2 / 9.5).
