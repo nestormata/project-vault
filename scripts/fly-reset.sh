@@ -91,6 +91,18 @@ echo "== Closing db proxy =="
 cleanup
 trap - EXIT
 
+echo "== Waiting for api to be reachable via ${WEB_URL} =="
+# The api machine can be mid-restart (Fly machine lifecycle, or a leftover crash-loop
+# from a first-ever deploy racing db:migrate) exactly when this script reaches here — a
+# bare vault/init call at the wrong moment gets api_unreachable. Poll /ready (proxied
+# through web) until it reports anything other than that specific reason.
+for ((i = 1; i <= 30; i++)); do
+  ready_reason="$(curl -s "${WEB_URL}/ready" 2>/dev/null | jq -r '.reason // empty')"
+  [[ "$ready_reason" != "api_unreachable" ]] && break
+  sleep 2
+  [[ $i -eq 30 ]] && { echo "api never became reachable via ${WEB_URL}/ready" >&2; exit 1; }
+done
+
 echo "== Initializing + unsealing vault via ${WEB_URL} =="
 init_body="$(jq -n --arg p "$DEMO_VAULT_PASSPHRASE" '{kmsType:"passphrase",passphrase:$p}')"
 init_code="$(curl -s -o /tmp/fly-vault-init.json -w '%{http_code}' -X POST "${WEB_URL}/api/v1/vault/init" \
