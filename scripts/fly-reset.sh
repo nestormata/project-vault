@@ -116,13 +116,19 @@ if [[ "$init_code" != "200" ]]; then
   exit 1
 fi
 
-unseal_body="$(jq -n --arg p "$DEMO_VAULT_PASSPHRASE" '{passphrase:$p}')"
-unseal_code="$(curl -s -o /tmp/fly-vault-unseal.json -w '%{http_code}' -X POST "${WEB_URL}/api/v1/vault/unseal" \
-  -H 'Content-Type: application/json' -d "$unseal_body")"
-if [[ "$unseal_code" != "200" ]]; then
-  cat /tmp/fly-vault-unseal.json >&2
-  echo "vault unseal failed (HTTP ${unseal_code})" >&2
-  exit 1
+# Passphrase-mode init already unseals in the same call (unlike envelope mode), so /ready
+# may already be true here — only call /unseal if it isn't, matching
+# scripts/operator-bootstrap.sh's same conditional (a bare unseal call after an
+# already-unsealed init gets a 400 already_unsealed, not a real failure).
+if ! curl -sf "${WEB_URL}/ready" >/dev/null 2>&1; then
+  unseal_body="$(jq -n --arg p "$DEMO_VAULT_PASSPHRASE" '{passphrase:$p}')"
+  unseal_code="$(curl -s -o /tmp/fly-vault-unseal.json -w '%{http_code}' -X POST "${WEB_URL}/api/v1/vault/unseal" \
+    -H 'Content-Type: application/json' -d "$unseal_body")"
+  if [[ "$unseal_code" != "200" ]]; then
+    cat /tmp/fly-vault-unseal.json >&2
+    echo "vault unseal failed (HTTP ${unseal_code})" >&2
+    exit 1
+  fi
 fi
 
 if ! curl -sf "${WEB_URL}/ready" >/dev/null 2>&1; then
