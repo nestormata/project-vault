@@ -27,3 +27,20 @@ export function routeExists(urlPath: string): boolean {
 
   return candidateRoots.some((root) => existsSync(path.join(root, ...segments, '+page.svelte')))
 }
+
+/**
+ * 12-1 AC-18: routeExists can't see past a dynamic `[param]` segment — it only matches literal
+ * path segments on disk. The project sub-nav's hrefs are all `/projects/:id/<suffix>`, so this
+ * checks the real `[projectId]` directory for a given static suffix (e.g. 'members', '' for the
+ * overview page itself) instead of duplicating routeExists's whole directory-walk for one case.
+ */
+export function projectRouteExists(suffix: string): boolean {
+  const segments = suffix.split('/').filter((segment) => segment.length > 0)
+  const candidateRoots = [
+    ROUTES_ROOT,
+    ...ROUTE_GROUPS.map((group) => path.join(ROUTES_ROOT, group)),
+  ]
+  return candidateRoots.some((root) =>
+    existsSync(path.join(root, 'projects', '[projectId]', ...segments, '+page.svelte'))
+  )
+}

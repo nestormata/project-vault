@@ -82,7 +82,11 @@
         <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Project dashboard
         </p>
-        <h1 class="mt-2 text-3xl font-bold text-slate-950">{data.selectedProject.name}</h1>
+        <h1 class="mt-2 text-3xl font-bold text-slate-950">
+          <a class="hover:underline" href={resolve(`/projects/${data.selectedProject.id}`)}>
+            {data.selectedProject.name}
+          </a>
+        </h1>
         {#if data.selectedProject.description}
           <p class="mt-2 text-slate-600">{data.selectedProject.description}</p>
         {/if}

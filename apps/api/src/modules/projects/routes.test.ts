@@ -458,6 +458,92 @@ describe.sequential('project routes', () => {
     expect(unauthenticated.statusCode).toBe(401)
   }, 60_000)
 
+  // 12-1 AC-1/AC-2/AC-3/AC-4/AC-5: project overview page's loader depends on this new endpoint
+  // for name/description/tags/ownership/archived-state and a viewer-safe member count (existing
+  // GET /:projectId/members is project-admin/owner-or-org-admin/owner-gated — a viewer would 403).
+  it('GET /:projectId returns overview detail with member count, and hides cross-org/nonexistent as 404', async () => {
+    const userA = await registerUser(app, 'overview-a')
+    const userB = await registerUser(app, 'overview-b')
+    const projectA = await createProject(app, userA.cookies, 'overview-project')
+    await updateProjectTags(app, userA.cookies, projectA.id, [TEAM_PAYMENTS_TAG, TIER_0_TAG])
+
+    const secondMember = await addUserToOrg(app, userA.orgId, 'overview-second-member')
+    await addProjectMember(userA.orgId, projectA.id, secondMember.userId, 'member')
+
+    // A project-level viewer (not an org admin/owner) — callerCanSeeProject requires an explicit
+    // project_memberships row for non-admin/owner org roles, so this exercises the same "any
+    // project role can see the overview, including viewer" path the persona journey (Riley-viewer)
+    // depends on.
+    const viewerOrgUser = await addUserToOrg(app, userA.orgId, 'overview-viewer')
+    await addProjectMember(userA.orgId, projectA.id, viewerOrgUser.userId, 'viewer')
+
+    const overview = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${projectA.id}`,
+      headers: { cookie: cookieHeader(viewerOrgUser.cookies) },
+    })
+    expect(overview.statusCode).toBe(200)
+    expect(overview.json()).toMatchObject({
+      data: {
+        id: projectA.id,
+        name: projectA.name,
+        slug: projectA.slug,
+        description: null,
+        tags: [TEAM_PAYMENTS_TAG, TIER_0_TAG],
+        archivedAt: null,
+        // Owner (creator) + secondMember + viewerOrgUser.
+        memberCount: 3,
+      },
+    })
+
+    const crossOrg = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${projectA.id}`,
+      headers: { cookie: cookieHeader(userB.cookies) },
+    })
+    expect(crossOrg.statusCode).toBe(404)
+    expect(crossOrg.json()).toMatchObject({ code: 'project_not_found' })
+    expect(crossOrg.json()).not.toHaveProperty('data')
+
+    const missing = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${randomUUID()}`,
+      headers: { cookie: cookieHeader(userA.cookies) },
+    })
+    expect(missing.statusCode).toBe(404)
+
+    const malformed = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/not-a-uuid`,
+      headers: { cookie: cookieHeader(userA.cookies) },
+    })
+    expect(malformed.statusCode).toBe(422)
+
+    const unauthenticated = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${projectA.id}`,
+    })
+    expect(unauthenticated.statusCode).toBe(401)
+  }, 60_000)
+
+  it('GET /:projectId surfaces archived state', async () => {
+    const user = await registerUser(app, 'overview-archived')
+    const project = await createProject(app, user.cookies, 'overview-archived-project')
+
+    await withOrg(user.orgId, (tx) =>
+      tx.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id))
+    )
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `${PROJECTS_URL}/${project.id}`,
+      headers: { cookie: cookieHeader(user.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json<{ data: { archivedAt: string | null } }>()
+    expect(body.data.archivedAt).not.toBeNull()
+  }, 60_000)
+
   it('PATCH updates metadata, preserves slug, clears description, and denies viewer role', async () => {
     const user = await registerUser(app, 'patch')
     const project = await createProject(app, user.cookies, 'patch-project')

@@ -27,6 +27,7 @@ import {
   ProjectListResponseSchema,
   ProjectMemberParamsSchema,
   ProjectMembersListResponseSchema,
+  ProjectOverviewResponseSchema,
   ProjectParamsSchema,
   ProjectTagUpdateResponseSchema,
   TagArrayBodySchema,
@@ -40,7 +41,11 @@ import {
   getProjectDashboardData,
   lookupProjectStats,
 } from './dashboard-stats.js'
-import { getProjectMembershipRole, removeProjectMembership } from './member-management.js'
+import {
+  getProjectMemberCount,
+  getProjectMembershipRole,
+  removeProjectMembership,
+} from './member-management.js'
 import { callerCanSeeProject, logVisibilityDenied } from './project-access.js'
 import {
   findBlockingRotationIds,
@@ -231,7 +236,10 @@ async function resolveTransferTargets(
   return { ok: true, targetMembership, currentOwner }
 }
 
-function serializeProjectDetail(project: typeof projects.$inferSelect, role: 'owner') {
+function serializeProjectDetail(
+  project: typeof projects.$inferSelect,
+  role: 'owner' | 'admin' | 'member' | 'viewer'
+) {
   return {
     ...project,
     role,
@@ -450,6 +458,61 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(404).send(PROJECT_NOT_FOUND)
       }
       return { data: await getProjectDashboardData(secureCtx.tx, params.projectId) }
+    },
+  })
+
+  // 12-1 AC-1/AC-2/AC-3/AC-4/AC-5: the project overview page's single detail+member-count call.
+  // Mirrors the dashboard route immediately above: visibility check (callerCanSeeProject) BEFORE
+  // any row is read, so a 404 never leaks the target project's name/description/tags (AC-3).
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId',
+    schema: {
+      response: {
+        200: ProjectOverviewResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: { minimumRole: 'viewer', writeAuditEvent: false },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(ProjectParamsSchema, req, reply)
+      if (!params) return reply
+      const secureCtx = ctx as SecureRouteContext
+      if (!(await callerCanSeeProject(secureCtx, params.projectId))) {
+        logVisibilityDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          orgRole: secureCtx.auth.orgRole,
+        })
+        return reply.status(404).send(PROJECT_NOT_FOUND)
+      }
+
+      const [project] = await secureCtx.tx
+        .select()
+        .from(projects)
+        .where(eq(projects.id, params.projectId))
+        .limit(1)
+      if (!project) {
+        return reply.status(404).send(PROJECT_NOT_FOUND)
+      }
+
+      const [role, memberCount] = await Promise.all([
+        callerProjectRole(secureCtx, params.projectId),
+        getProjectMemberCount(secureCtx.tx, params.projectId),
+      ])
+
+      return {
+        data: {
+          ...serializeProjectDetail(
+            project,
+            (role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer'
+          ),
+          tags: project.tags,
+          memberCount,
+        },
+      }
     },
   })
 

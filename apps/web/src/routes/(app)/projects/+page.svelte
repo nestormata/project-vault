@@ -197,7 +197,11 @@
           ].join(' ')}
         >
           <div class="flex items-center gap-2">
-            <h2 class="text-xl font-semibold text-slate-950">{project.name}</h2>
+            <h2 class="text-xl font-semibold text-slate-950">
+              <a class="hover:underline" href={resolve(`/projects/${project.id}`)}>
+                {project.name}
+              </a>
+            </h2>
             {#if project.isArchived}
               <span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-normal text-slate-700"
                 >Archived</span

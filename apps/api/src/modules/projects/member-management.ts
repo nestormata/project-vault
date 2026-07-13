@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import { type Tx } from '@project-vault/db'
 import { projectMemberships } from '@project-vault/db/schema'
 
@@ -41,4 +41,18 @@ export async function getProjectMembershipRole(
     )
     .limit(1)
   return membership?.role
+}
+
+/**
+ * 12-1 AC-2: the project overview's member-count summary tile. Deliberately a standalone COUNT
+ * rather than reusing the GET /:projectId/members row list — that endpoint is
+ * project-admin/owner-or-org-admin/owner-gated (callerCanManageMembers), while the overview page
+ * must show a real count to every project role, including viewer (persona journey: Riley-viewer).
+ */
+export async function getProjectMemberCount(tx: Tx, projectId: string): Promise<number> {
+  const [row] = await tx
+    .select({ count: count() })
+    .from(projectMemberships)
+    .where(eq(projectMemberships.projectId, projectId))
+  return Number(row?.count ?? 0)
 }

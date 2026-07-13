@@ -331,6 +331,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditOmissionReason: 'Dashboard read is org-scoped and returns only aggregate counts.',
     reviewer: SECURITY_OWNER,
   },
+  // 12-1 AC-1/AC-2: project overview detail (name/description/tags/ownership + member count) for
+  // the new /projects/:id page — same read-classification shape as the dashboard route above.
+  'GET /api/v1/projects/:projectId': {
+    action: 'read',
+    auditOmissionReason: 'Project overview read is org-scoped and reveals no secret values.',
+    reviewer: SECURITY_OWNER,
+  },
   'PATCH /api/v1/projects/:projectId': {
     action: 'mutation',
     auditEvent: 'project.updated',
