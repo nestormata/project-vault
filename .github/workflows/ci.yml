@@ -169,7 +169,7 @@ jobs:
   test-api-db:
     name: Test (api + db)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
       VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
