@@ -58,6 +58,11 @@ psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO postgres;
+-- drizzle-kit tracks applied migrations in its own 'drizzle' schema (default
+-- __drizzle_migrations table), separate from 'public'. Without dropping it too, the next
+-- db:migrate sees every migration already recorded as applied and does nothing — even
+-- though 'public' (and vault_app) was just wiped — so the role never gets recreated.
+DROP SCHEMA IF EXISTS drizzle CASCADE;
 -- DROP SCHEMA CASCADE only removes objects owned BY vault_app inside that schema; it
 -- doesn't revoke database-level privileges GRANTed TO vault_app (e.g. from db:migrate's
 -- own GRANT statements), which blocks DROP ROLE with "cannot be dropped because some
