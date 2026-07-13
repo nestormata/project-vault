@@ -160,20 +160,47 @@ worth trying and are left as this story's first real task, not assumed already d
    passes after (GREEN), per this repo's mandatory TDD red-green workflow (`AGENTS.md`) — unless AC
    1's fallback applies, in which case document why a reliable RED state could not be constructed.
 4. If the root cause is a real bug (options a-c above, or any newly discovered mechanism), it is
-   fixed. If it is not currently fixable without a larger change (e.g. requires a Postgres/driver
-   upgrade, or a fundamental pooling-strategy change), the story documents the trade-off and
-   proposes the smallest safe mitigation (e.g. forcing a fresh connection per `withOrg()` call in
-   test context only) rather than leaving the suite silently red or silently ignored.
+   fixed **in the production code path** (`packages/db/src/index.ts` or wherever the mechanism
+   lives), not merely in the test harness. A mitigation scoped to "test context only" (e.g. forcing
+   a fresh connection per `withOrg()` call, but only when invoked from tests) is only acceptable if
+   AC 8 has established that the same mechanism is NOT reachable/exploitable from production
+   request handling — if AC 8 finds it IS reachable, the fix must cover the production path, and a
+   test-only mitigation alone does not satisfy this AC. If truly not fixable without a larger change
+   (e.g. requires a Postgres/driver upgrade), the story documents the trade-off, proposes the
+   smallest safe mitigation, and — if the mechanism is production-reachable per AC 8 — escalates the
+   unfixed production exposure per AC 9 rather than closing quietly.
 5. Post-fix, `make test-repeat N=10` passes cleanly for `packages/db` (or the full suite, if the
    fix reordering makes isolating just `packages/db` impractical) with zero failures across all 10
    runs — this is the story's own bar for "actually fixed," not a single green run.
 6. If a CI-only trigger is confirmed (AC 1's containerized/CI-parity path), a corresponding
    safeguard is added to CI (e.g. a periodic/nightly `test-repeat`-style job for `packages/db`,
    mirroring the precedent set for the mfa-login/mfa-enrollment flake) so a recurrence surfaces
-   automatically instead of requiring another PR description footnote.
+   automatically instead of requiring another PR description footnote, AND the safeguard's failure
+   must produce an actionable alert/notification to a human (e.g. failing CI job blocks merge or
+   pages/notifies, not merely "runs periodically" with nobody watching).
 7. `packages/db`'s existing coverage thresholds (80% lines/branches/functions/statements per
    `packages/db/vitest.config.ts`) are not weakened as a side effect of any fix or added regression
    test.
+8. **Production-exploitability assessment (mandatory once AC 2 names a mechanism).** If AC 2's named
+   mechanism is (a) a genuine RLS policy gap or (b) a pooled-connection `set_config`/transaction-
+   scoping leak, the Dev Agent Record must explicitly state whether that same mechanism is reachable
+   from `packages/db`'s production callers (`apps/api` request handling via `withOrg()`/
+   `withOrgAndUser()`, not just this test suite) under real concurrent load — i.e., could a live
+   customer's `app.current_org_id` have bled across tenants in production, not just in tests. This
+   assessment must be explicit ("reachable" or "not reachable, because ...") — "we didn't check" is
+   not an acceptable answer once AC 2 implicates (a) or (b). If root cause is (c) (test-fixture-only)
+   or (d) or is never determined (AC 1's fallback), this AC is satisfied by stating that production
+   reachability does not apply because the mechanism is test-scoped only.
+9. **Closure gate.** The story may only move to `done` if either: (a) AC 2's mechanism is (c)
+   (test-fixture-only) or (d) and AC 8 confirms no production reachability, in which case the
+   Product Surface Contract's `Surface scope: none` classification stands unchanged; or (b) AC 2's
+   mechanism is (a) or (b) AND AC 8 finds it is NOT production-reachable, in which case the story
+   documents why and may still close as `done`; or (c) AC 2's mechanism is (a) or (b) AND AC 8 finds
+   it IS (or plausibly could be) production-reachable, in which case the story must NOT close as
+   `done` on this classification alone — the Product Surface Contract must be updated to reflect a
+   real tenant-isolation/security concern, and the story either resolves the production-side fix
+   within this story's scope or explicitly hands off to a dedicated security-review/incident-
+   response follow-up (opened as its own tracked story) before this story itself can close.
 
 ## Product Surface Contract
 
@@ -183,7 +210,7 @@ worth trying and are left as this story's first real task, not assumed already d
 | **Evaluator-visible** | no |
 | **Linked UI story** (if API-only) | N/A |
 | **Honest placeholder AC** (if UI deferred) | N/A |
-| **Persona journey** | N/A — internal reliability/test-infra work with no direct user-facing behavior change. If the root cause turns out to be option (a) (a genuine RLS policy gap), this classification must be revisited immediately: a real cross-org data leak is a security-relevant product concern, not just test infra, and would need its own security-impact assessment before this story can close as `done`. |
+| **Persona journey** | N/A — internal reliability/test-infra work with no direct user-facing behavior change. If the root cause turns out to be option (a) or (b), this classification must be revisited per AC 8/AC 9's closure gate: a production-reachable cross-org data leak is a security-relevant product concern, not just test infra, and this story cannot close as `done` on the `none`/`no` classification above without AC 8's explicit production-reachability finding and AC 9's closure gate being satisfied. |
 
 ## Tasks / Subtasks
 
@@ -219,7 +246,22 @@ worth trying and are left as this story's first real task, not assumed already d
 - [ ] Task 4: Stress-verify (AC: 5)
   - [ ] Subtask 4.1: `make test-repeat N=10` clean post-fix.
 - [ ] Task 5: CI safeguard, if CI-only (AC: 6)
+  - [ ] Subtask 5.1: Ensure the safeguard's failure produces an actionable alert (blocks merge or
+        notifies a human), not just a periodic run nobody watches.
 - [ ] Task 6: Confirm no coverage regression (AC: 7)
+- [ ] Task 7: Production-exploitability assessment (AC: 8)
+  - [ ] Subtask 7.1: If AC 2 names mechanism (a) or (b), trace whether `apps/api`'s request-handling
+        callers of `withOrg()`/`withOrgAndUser()` (not just this test suite) could hit the same
+        mechanism under real concurrent production load. Document the finding explicitly
+        (reachable / not reachable, with reasoning) in the Dev Agent Record.
+  - [ ] Subtask 7.2: If mechanism is (c), (d), or unresolved (AC 1 fallback), state explicitly that
+        production reachability does not apply and why.
+- [ ] Task 8: Closure gate (AC: 9)
+  - [ ] Subtask 8.1: Before marking this story `done`, confirm which closure branch (a/b/c per AC 9)
+        applies based on Task 2 and Task 7's findings, and update the Product Surface Contract table
+        above accordingly. If branch (c) applies (production-reachable real leak), do not close this
+        story as `done` without either fixing the production path within scope or opening a
+        dedicated security-review/incident-response follow-up story and linking it here.
 
 ## Dev Notes
 
