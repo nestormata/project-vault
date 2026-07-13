@@ -55,7 +55,7 @@ describe('service detail +page.svelte', () => {
         }),
       },
     })
-    expect(screen.getAllByText('—').length).toBe(2)
+    expect(screen.getAllByText('—')).toHaveLength(2)
   })
 
   it('an owner submits changes and the page re-renders with the update', async () => {

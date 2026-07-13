@@ -38,7 +38,7 @@ export class MembersPage {
   // so the members table's Email column reliably contains the invited user's email.
   memberRow(email: string) {
     return this.page.getByRole('row', {
-      name: new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      name: new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)),
     })
   }
 

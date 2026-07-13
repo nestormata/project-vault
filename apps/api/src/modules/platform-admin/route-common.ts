@@ -27,7 +27,7 @@ export const PLATFORM_ADMIN_ERROR_RESPONSES = {
 
 export function sendPlatformAuditWriteFailure(error: unknown, reply: FastifyReply): boolean {
   if (!(error instanceof SameTransactionPlatformAuditWriteError)) return false
-  void reply.status(503).send({
+  reply.status(503).send({
     code: 'platform_audit_write_failed',
     message: 'Platform audit logging is unavailable',
   })

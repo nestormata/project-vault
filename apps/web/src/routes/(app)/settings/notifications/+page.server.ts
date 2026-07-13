@@ -93,15 +93,16 @@ export const actions: Actions = {
       // but log the real cause server-side — this action exists specifically to
       // diagnose SMTP/Slack delivery problems, so silently discarding the actual
       // error here would defeat its purpose when something is genuinely broken.
+      const errorDetail =
+        error instanceof ApiClientError
+          ? `ApiClientError status=${error.status}`
+          : error instanceof Error
+            ? error.message
+            : String(error)
       process.stderr.write(
         `${JSON.stringify({
           eventType: 'web.send_test_notification_failed',
-          error:
-            error instanceof ApiClientError
-              ? `ApiClientError status=${error.status}`
-              : error instanceof Error
-                ? error.message
-                : String(error),
+          error: errorDetail,
         })}\n`
       )
       return fail(422, { error: 'Failed to send test notification' })

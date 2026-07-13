@@ -421,13 +421,13 @@ async function withCredentialParams<T>(
     secureCtx: SecureRouteContext,
     params: { projectId: string; credentialId: string }
   ) => Promise<T | null>,
-  opts: { checkVisibility?: boolean } = { checkVisibility: true }
+  opts?: { checkVisibility?: boolean }
 ) {
   const params = parseParams(CredentialParamsSchema, req, reply)
   if (!params) return reply
   const secureCtx = ctx as SecureRouteContext
   if (
-    opts.checkVisibility !== false &&
+    opts?.checkVisibility !== false &&
     (await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, CREDENTIAL_NOT_FOUND))
   ) {
     return reply

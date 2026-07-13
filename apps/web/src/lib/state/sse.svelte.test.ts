@@ -57,14 +57,14 @@ describe('sse.svelte.ts', () => {
     delete (globalThis as { EventSource?: unknown }).EventSource
 
     const disconnect = connectSse()
-    expect(FakeEventSource.instances.length).toBe(0)
+    expect(FakeEventSource.instances).toHaveLength(0)
     expect(() => disconnect()).not.toThrow()
   })
 
   it('connects a new EventSource to the stream endpoint with credentials', () => {
     const disconnect = connectSse()
 
-    expect(FakeEventSource.instances.length).toBe(1)
+    expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0].url).toBe('/api/v1/stream')
     expect(FakeEventSource.instances[0].opts).toEqual({ withCredentials: true })
 
@@ -75,7 +75,7 @@ describe('sse.svelte.ts', () => {
     const disconnectFirst = connectSse()
     const disconnectSecond = connectSse()
 
-    expect(FakeEventSource.instances.length).toBe(1)
+    expect(FakeEventSource.instances).toHaveLength(1)
     expect(() => disconnectSecond()).not.toThrow()
     // the first instance is still open (second connect didn't close it)
     expect(FakeEventSource.instances[0].closed).toBe(false)
