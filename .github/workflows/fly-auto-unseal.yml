@@ -1,0 +1,41 @@
+name: Fly Demo Auto-Unseal
+
+# Safety net between nightly resets (fly-reset.yml): the vault re-seals whenever the api
+# process restarts (decrypted key is in-memory only — apps/api/src/modules/vault/
+# key-service.ts), which can happen from a Fly host migration, a crash, or a deploy that
+# slips past fly-deploy.yml's path filter. Checks /ready hourly and re-unseals if needed,
+# so a visitor is never stuck looking at a sealed demo for more than ~1 hour.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check /ready, unseal if sealed
+    runs-on: ubuntu-latest
+    concurrency: fly-demo-auto-unseal
+    steps:
+      - name: Check and unseal if needed
+        run: |
+          WEB_URL="https://project-vault-demo-web.fly.dev"
+          reason="$(curl -s "${WEB_URL}/ready" | jq -r '.reason // empty')"
+          if [[ "$reason" != "sealed" ]]; then
+            echo "vault not sealed (reason: ${reason:-none}) — nothing to do"
+            exit 0
+          fi
+          echo "vault is sealed — unsealing"
+          body="$(jq -n --arg p "${DEMO_VAULT_PASSPHRASE}" '{passphrase:$p}')"
+          code="$(curl -s -o /tmp/unseal.json -w '%{http_code}' -X POST "${WEB_URL}/api/v1/vault/unseal" \
+            -H 'Content-Type: application/json' -d "$body")"
+          cat /tmp/unseal.json
+          if [[ "$code" != "200" ]]; then
+            echo "unseal failed (HTTP ${code})" >&2
+            exit 1
+          fi
+        env:
+          DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
