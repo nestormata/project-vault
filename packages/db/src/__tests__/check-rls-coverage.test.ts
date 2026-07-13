@@ -27,27 +27,46 @@ async function withRlsPolicyMutationLock<T>(fn: () => Promise<T>): Promise<T> {
 
 // Story 1.15: policy definitions used both by the helper below and by afterEach's
 // last-resort restore. Keeping one source of truth avoids the two drifting apart.
-const POLICY_DEFS: Record<string, string> = {
-  sessions_isolation: `CREATE POLICY sessions_isolation ON sessions
+// Code-review finding (1-15): each entry pairs its policy's CREATE statement with the table
+// it belongs to, so `table` is never a second, independently-passed value that could drift out
+// of sync with the SQL string — restorePolicy() derives the table from this map, not from a
+// caller-supplied argument.
+const POLICY_DEFS: Record<string, { table: string; createStmt: string }> = {
+  sessions_isolation: {
+    table: 'sessions',
+    createStmt: `CREATE POLICY sessions_isolation ON sessions
     USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
-  audit_log_isolation: `CREATE POLICY audit_log_isolation ON audit_log_entries
+  },
+  audit_log_isolation: {
+    table: 'audit_log_entries',
+    createStmt: `CREATE POLICY audit_log_isolation ON audit_log_entries
     USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
-  audit_exports_isolation: `CREATE POLICY audit_exports_isolation ON audit_exports
+  },
+  audit_exports_isolation: {
+    table: 'audit_exports',
+    createStmt: `CREATE POLICY audit_exports_isolation ON audit_exports
     USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
-  audit_forwarding_config_isolation: `CREATE POLICY audit_forwarding_config_isolation ON audit_forwarding_config
+  },
+  audit_forwarding_config_isolation: {
+    table: 'audit_forwarding_config',
+    createStmt: `CREATE POLICY audit_forwarding_config_isolation ON audit_forwarding_config
     USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
-  audit_retention_config_isolation: `CREATE POLICY audit_retention_config_isolation ON audit_retention_config
+  },
+  audit_retention_config_isolation: {
+    table: 'audit_retention_config',
+    createStmt: `CREATE POLICY audit_retention_config_isolation ON audit_retention_config
     USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
+  },
 }
 
 async function restorePolicy(policyName: string): Promise<void> {
   // policyName is always one of this test file's own hardcoded literals, never external input.
   // eslint-disable-next-line security/detect-object-injection -- see comment above
-  const createStmt = POLICY_DEFS[policyName]
-  if (!createStmt) throw new Error(`restorePolicy: no definition registered for ${policyName}`)
+  const def = POLICY_DEFS[policyName]
+  if (!def) throw new Error(`restorePolicy: no definition registered for ${policyName}`)
   await adminSql.unsafe(`
     DO $$ BEGIN
-      ${createStmt};
+      ${def.createStmt};
     EXCEPTION WHEN duplicate_object THEN NULL;
     END $$
   `)
@@ -74,12 +93,43 @@ async function withPolicyDropped<T>(
   policyName: string,
   fn: () => Promise<T>
 ): Promise<T> {
+  // Code-review finding (1-15): fail fast if a caller passes a table/policyName pair that
+  // doesn't match POLICY_DEFS' own record — catches a copy-paste mismatch before it drops a
+  // policy this file has no way to restore correctly, rather than silently corrupting state.
+  // policyName is always one of this test file's own hardcoded literals, never external input.
+  // eslint-disable-next-line security/detect-object-injection -- see comment above
+  const def = POLICY_DEFS[policyName]
+  if (!def || def.table !== table) {
+    throw new Error(
+      `withPolicyDropped: policyName "${policyName}" is not registered for table "${table}" ` +
+        `(POLICY_DEFS says: ${def?.table ?? 'unknown'})`
+    )
+  }
+
   return withRlsPolicyMutationLock(async () => {
-    await adminSql.unsafe(`DROP POLICY ${policyName} ON ${table}`)
+    // Code-review finding (1-15): IF EXISTS makes this resilient to a prior run having left the
+    // policy already dropped (e.g. a crash before its own restore ran) instead of throwing a
+    // confusing "policy does not exist" error that masks whatever this test actually intended to
+    // check.
+    await adminSql.unsafe(`DROP POLICY IF EXISTS ${policyName} ON ${table}`)
     try {
-      return await fn()
-    } finally {
+      const result = await fn()
       await restorePolicy(policyName)
+      return result
+    } catch (err) {
+      // Code-review finding (1-15): always attempt the restore, but never let a restore failure
+      // mask the original test failure — a `finally` block's own throw would silently replace
+      // `err` with the restore error, hiding the actual regression this test exists to catch.
+      try {
+        await restorePolicy(policyName)
+      } catch (restoreErr) {
+        // eslint-disable-next-line no-console -- test-only diagnostic, deliberately not swallowed
+        console.error(
+          `withPolicyDropped: restore of ${policyName} on ${table} failed after test error`,
+          restoreErr
+        )
+      }
+      throw err
     }
   })
 }
