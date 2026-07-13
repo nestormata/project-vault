@@ -74,8 +74,11 @@ flyctl secrets set -a "$API_APP" \
   DEMO_VAULT_PASSPHRASE="$VAULT_PASSPHRASE"
 
 echo "== web: secrets =="
+# http:// (not https://), intentional: this URL is only ever dialed over Fly's private 6PN
+# network (<app>.internal), which is itself an encrypted WireGuard overlay — api has no public
+# IP and terminates no TLS, so https:// here would just fail. NOSONAR(shell:S5332)
 flyctl secrets set -a "$WEB_APP" \
-  API_BASE_URL="http://${API_APP}.internal:3000"
+  API_BASE_URL="http://${API_APP}.internal:3000" # NOSONAR(shell:S5332)
 
 cat <<EOF
 
