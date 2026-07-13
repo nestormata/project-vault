@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
 
 const VAULT_APP_DATABASE_URL = 'postgresql://vault_app:secret@localhost:5432/project_vault'
+const SMTP_HOST_FIXTURE = 'smtp.example.com'
+const SMTP_FROM_FIXTURE = 'noreply@example.com'
 
 const BASE_ENV = {
   NODE_ENV: 'test',
@@ -962,6 +964,273 @@ describe('env', () => {
       }
       const { env } = await import('./env.js')
       expect(env.ENABLE_API_DOCS).toBe(false)
+    })
+  })
+
+  describe('Story 10.4: empty-string preprocess fallbacks for optional secret/URL fields', () => {
+    it('treats an empty-string SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/SMTP_FROM as unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_HOST: '',
+        SMTP_PORT: '',
+        SMTP_USER: '',
+        SMTP_PASS: '',
+        SMTP_FROM: '',
+      }
+      const { env } = await import('./env.js')
+      expect(env.SMTP_HOST).toBeUndefined()
+      expect(env.SMTP_PORT).toBeUndefined()
+      expect(env.SMTP_USER).toBeUndefined()
+      expect(env.SMTP_PASS).toBeUndefined()
+      expect(env.SMTP_FROM).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/SMTP_FROM when all set', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_HOST: SMTP_HOST_FIXTURE,
+        SMTP_PORT: '587',
+        SMTP_USER: 'user',
+        SMTP_PASS: 'pass',
+        SMTP_FROM: SMTP_FROM_FIXTURE,
+      }
+      const { env } = await import('./env.js')
+      expect(env.SMTP_HOST).toBe(SMTP_HOST_FIXTURE)
+      expect(env.SMTP_PORT).toBe(587)
+      expect(env.SMTP_USER).toBe('user')
+      expect(env.SMTP_PASS).toBe('pass')
+      expect(env.SMTP_FROM).toBe(SMTP_FROM_FIXTURE)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('treats an empty-string SMTP_SECURE as unset (undefined), rather than false', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_SECURE: '',
+      }
+      const { env } = await import('./env.js')
+      expect(env.SMTP_SECURE).toBeUndefined()
+    })
+
+    it.each([
+      ['true', true],
+      ['false', false],
+    ])('coerces SMTP_SECURE=%s to boolean %s', async (raw, expected) => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_SECURE: raw,
+      }
+      const { env } = await import('./env.js')
+      expect(env.SMTP_SECURE).toBe(expected)
+    })
+
+    it('requires SMTP_FROM when SMTP_HOST is set (superRefine guard)', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_HOST: SMTP_HOST_FIXTURE,
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('does not require SMTP_FROM when SMTP_HOST is unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.SMTP_HOST).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts SMTP_HOST with a valid SMTP_FROM (guard satisfied)', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_HOST: SMTP_HOST_FIXTURE,
+        SMTP_FROM: SMTP_FROM_FIXTURE,
+      }
+      const { env } = await import('./env.js')
+      expect(env.SMTP_HOST).toBe(SMTP_HOST_FIXTURE)
+      expect(env.SMTP_FROM).toBe(SMTP_FROM_FIXTURE)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('rejects a malformed SMTP_FROM value', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_HOST: SMTP_HOST_FIXTURE,
+        SMTP_FROM: 'not-an-email',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('treats an empty-string SLACK_WEBHOOK_URL as unset, and accepts a valid URL', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SLACK_WEBHOOK_URL: '',
+      }
+      const unset = await import('./env.js')
+      expect(unset.env.SLACK_WEBHOOK_URL).toBeUndefined()
+
+      resetEnvImport(exitSpy)
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SLACK_WEBHOOK_URL: 'https://hooks.slack.com/services/T00/B00/XXX',
+      }
+      const { env } = await import('./env.js')
+      expect(env.SLACK_WEBHOOK_URL).toBe('https://hooks.slack.com/services/T00/B00/XXX')
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('rejects a malformed SLACK_WEBHOOK_URL', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SLACK_WEBHOOK_URL: 'not-a-url',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('treats an empty-string VAULT_ENVELOPE_KEY_HALF as unset, and accepts a valid 32-hex value', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_ENVELOPE_KEY_HALF: '',
+      }
+      const unset = await import('./env.js')
+      expect(unset.env.VAULT_ENVELOPE_KEY_HALF).toBeUndefined()
+
+      resetEnvImport(exitSpy)
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_ENVELOPE_KEY_HALF: 'a'.repeat(32),
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_ENVELOPE_KEY_HALF).toBe('a'.repeat(32))
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('rejects a malformed VAULT_ENVELOPE_KEY_HALF', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_ENVELOPE_KEY_HALF: 'not-hex',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('treats an empty-string VAULT_BOOTSTRAP_TOKEN as unset, and accepts a value >=32 chars', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_BOOTSTRAP_TOKEN: '',
+      }
+      const unset = await import('./env.js')
+      expect(unset.env.VAULT_BOOTSTRAP_TOKEN).toBeUndefined()
+
+      resetEnvImport(exitSpy)
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_BOOTSTRAP_TOKEN: 'x'.repeat(32),
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_BOOTSTRAP_TOKEN).toBe('x'.repeat(32))
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('treats an empty-string VAULT_KMS_ENDPOINT as unset, and accepts a valid URL', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_KMS_ENDPOINT: '',
+      }
+      const unset = await import('./env.js')
+      expect(unset.env.VAULT_KMS_ENDPOINT).toBeUndefined()
+
+      resetEnvImport(exitSpy)
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_KMS_ENDPOINT: 'http://localhost:4566',
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_KMS_ENDPOINT).toBe('http://localhost:4566')
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('rejects a malformed VAULT_KMS_ENDPOINT', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_KMS_ENDPOINT: 'not-a-url',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('treats empty-string TOTP_REPLAY_HMAC_SECRET/MFA_PENDING_SESSION_HMAC_SECRET/INVITATION_TOKEN_HMAC_SECRET/RECOVERY_TOKEN_HMAC_SECRET/API_KEY_HMAC_SECRET/MACHINE_JWT_SECRET/STATUS_PAGE_TOKEN_HMAC_SECRET/ERASURE_EMAIL_HASH_SECRET as unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        TOTP_REPLAY_HMAC_SECRET: '',
+        MFA_PENDING_SESSION_HMAC_SECRET: '',
+        INVITATION_TOKEN_HMAC_SECRET: '',
+        RECOVERY_TOKEN_HMAC_SECRET: '',
+        API_KEY_HMAC_SECRET: '',
+        MACHINE_JWT_SECRET: '',
+        STATUS_PAGE_TOKEN_HMAC_SECRET: '',
+        ERASURE_EMAIL_HASH_SECRET: '',
+      }
+      const { env } = await import('./env.js')
+      // dev fallback in loadEnv() replaces the empty/undefined values, so all end up defined —
+      // this exercises the preprocess `=== '' -> undefined` branch for every one of these fields.
+      expect(env.TOTP_REPLAY_HMAC_SECRET).toBe(env.REFRESH_TOKEN_HMAC_SECRET)
+      expect(env.MFA_PENDING_SESSION_HMAC_SECRET).toHaveLength(64)
+      expect(env.INVITATION_TOKEN_HMAC_SECRET).toHaveLength(64)
+      expect(env.RECOVERY_TOKEN_HMAC_SECRET).toHaveLength(64)
+      expect(env.API_KEY_HMAC_SECRET).toHaveLength(64)
+      expect(env.MACHINE_JWT_SECRET).toHaveLength(64)
+      expect(env.STATUS_PAGE_TOKEN_HMAC_SECRET).toHaveLength(64)
+      expect(env.ERASURE_EMAIL_HASH_SECRET).toHaveLength(64)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('treats empty-string BACKUP_STORAGE_PATH/BACKUP_S3_BUCKET/BACKUP_S3_ENDPOINT/BACKUP_S3_REGION/BACKUP_DATABASE_URL/BACKUP_S3_STAGING_PATH/BACKUP_S3_STAGING_MAX_BYTES as unset (backup remains disabled)', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        BACKUP_STORAGE_PATH: '',
+        BACKUP_S3_BUCKET: '',
+        BACKUP_S3_ENDPOINT: '',
+        BACKUP_S3_REGION: '',
+        BACKUP_DATABASE_URL: '',
+        BACKUP_S3_STAGING_PATH: '',
+        BACKUP_S3_STAGING_MAX_BYTES: '',
+      }
+      const { env } = await import('./env.js')
+      expect(env.BACKUP_STORAGE_PATH).toBeUndefined()
+      expect(env.BACKUP_S3_BUCKET).toBeUndefined()
+      expect(env.BACKUP_S3_ENDPOINT).toBeUndefined()
+      expect(env.BACKUP_S3_REGION).toBeUndefined()
+      expect(env.BACKUP_DATABASE_URL).toBeUndefined()
+      expect(env.BACKUP_S3_STAGING_PATH).toBeUndefined()
+      expect(env.BACKUP_S3_STAGING_MAX_BYTES).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
     })
   })
 })

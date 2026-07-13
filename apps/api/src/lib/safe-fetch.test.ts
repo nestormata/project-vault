@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import {
+
+const undiciFetchMock = vi.fn()
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>()
+  return { ...actual, fetch: (...args: unknown[]) => undiciFetchMock(...args) }
+})
+
+const {
   assertPublicHostname,
   buildPinnedLookupHandler,
   isPrivateIPv4,
@@ -7,7 +14,7 @@ import {
   isPrivateOrReservedAddress,
   safeFetchExternal,
   UnsafeForwardingUrlError,
-} from './safe-fetch.js'
+} = await import('./safe-fetch.js')
 
 const WEBHOOK_HOSTNAME_URL = 'https://webhook.example.com/'
 const WEBHOOK_INGEST_URL = 'https://webhook.example.com/ingest'
@@ -64,6 +71,12 @@ describe('isPrivateIPv6 (D4)', () => {
     ['gggg::1', true], // invalid hex group -> refuse
     ['1:2:3:4:5:6:7:8:9', true], // 9 groups, not a valid IPv6 address -> refuse
     ['not-an-ip-at-all', true], // not parseable at all -> refuse
+    // Story 10.4 branch coverage: a dotted-decimal tail with the wrong octet count (not exactly
+    // 4) is malformed -> ipv4PartToGroups returns null -> foldIPv4Tail returns null -> refuse.
+    ['::1.2.3', true],
+    // Story 10.4 branch coverage: a "::" compression marker whose head+tail group count already
+    // exceeds 7 (i.e. there's no room left for even one all-zero filler group) is invalid -> refuse.
+    ['1:2:3:4:5:6:7::8', true],
   ])('%s -> private=%s', (ip, expected) => {
     expect(isPrivateIPv6(ip)).toBe(expected)
   })
@@ -113,6 +126,12 @@ describe('assertPublicHostname (AC-17)', () => {
     await expect(
       assertPublicHostname(WEBHOOK_HOSTNAME_URL, () => Promise.resolve([{ address: PUBLIC_IP }]))
     ).resolves.toBeUndefined()
+  })
+
+  it('falls back to treating the input as a bare hostname when it is not a valid URL (hostnameOf catch branch)', async () => {
+    const lookup = vi.fn().mockResolvedValue([{ address: PUBLIC_IP }])
+    await expect(assertPublicHostname('bare-hostname.example.com', lookup)).resolves.toBeUndefined()
+    expect(lookup).toHaveBeenCalledWith('bare-hostname.example.com')
   })
 })
 
@@ -198,5 +217,73 @@ describe('safeFetchExternal (AC-17/AC-18)', () => {
     )
 
     expect(result).toEqual({ status: 503, ok: false })
+  })
+
+  it('drains a response body under the byte cap fully, without cancelling the reader', async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined)
+    const chunks = [new Uint8Array(1000)]
+    let i = 0
+    const body = {
+      getReader: () => ({
+        read: async () =>
+          i < chunks.length
+            ? { done: false, value: chunks[i++] }
+            : { done: true, value: undefined },
+        cancel,
+      }),
+    }
+    const lookup = () => Promise.resolve([{ address: PUBLIC_IP }])
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, body })
+
+    const result = await safeFetchExternal(
+      WEBHOOK_INGEST_URL,
+      { method: POST_METHOD },
+      { fetchImpl, lookup }
+    )
+
+    expect(result).toEqual({ status: 200, ok: true })
+    expect(cancel).not.toHaveBeenCalled()
+  })
+
+  it('cancels the response body reader once bytes read exceed the 64KB cap', async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined)
+    const bigChunk = new Uint8Array(70 * 1024)
+    let served = false
+    const body = {
+      getReader: () => ({
+        read: async () => {
+          if (!served) {
+            served = true
+            return { done: false, value: bigChunk }
+          }
+          return { done: true, value: undefined }
+        },
+        cancel,
+      }),
+    }
+    const lookup = () => Promise.resolve([{ address: PUBLIC_IP }])
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, body })
+
+    const result = await safeFetchExternal(
+      WEBHOOK_INGEST_URL,
+      { method: POST_METHOD },
+      { fetchImpl, lookup }
+    )
+
+    expect(result).toEqual({ status: 200, ok: true })
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('builds and closes a real pinned-lookup undici dispatcher when no fetchImpl override is provided', async () => {
+    undiciFetchMock.mockReset()
+    undiciFetchMock.mockResolvedValue({ status: 200, body: null })
+    const lookup = () => Promise.resolve([{ address: PUBLIC_IP }])
+
+    const result = await safeFetchExternal(WEBHOOK_INGEST_URL, { method: POST_METHOD }, { lookup })
+
+    expect(result).toEqual({ status: 200, ok: true })
+    expect(undiciFetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = undiciFetchMock.mock.calls[0] as [string, Record<string, unknown>]
+    expect(init.dispatcher).toBeDefined()
   })
 })
