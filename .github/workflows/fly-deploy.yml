@@ -4,6 +4,20 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # Redeploying api restarts its process, which re-seals the vault (key material is
+    # in-memory only — see apps/api/src/modules/vault/key-service.ts). Without this filter,
+    # every push to main (docs, unrelated app code, CI config) redeploys and re-seals the
+    # demo for no reason — only these paths actually change what gets deployed.
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'fly.api.toml'
+      - 'fly.web.toml'
+      - 'fly.db.toml'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/fly-deploy.yml'
 
 permissions:
   contents: read
