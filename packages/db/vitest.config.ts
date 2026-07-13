@@ -12,7 +12,16 @@ export default mergeConfig(baseVitestConfig, {
     coverage: {
       // Schema files are declarative table definitions with no branch logic —
       // excluded same as packages/db/src/migrations (see .jscpd.json rationale).
-      include: ['src/index.ts', 'src/test-helpers.ts', 'src/check-rls-coverage.ts'],
+      // seed-fixtures.ts/seed-demo.ts added alongside the fix/login-response-schema-mismatch
+      // regression tests below — same "add to the include list" pattern as the prior
+      // fix/6-5-sonar-new-code-coverage fix for apps/api's monitoring routes.
+      include: [
+        'src/index.ts',
+        'src/test-helpers.ts',
+        'src/check-rls-coverage.ts',
+        'src/seed-fixtures.ts',
+        'src/seed-demo.ts',
+      ],
       thresholds: {
         lines: 80,
         branches: 80,

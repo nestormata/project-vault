@@ -9,9 +9,16 @@ import { getDb, withOrg } from './index.js'
 import { orgMemberships } from './schema/index.js'
 import { seedFixtures, ORG_A_ID } from './seed-fixtures.js'
 
-const DEMO_LOGIN_USER_ID = '00000000-0000-0000-0000-000000000099'
+// Must be a syntactically valid RFC 4122 UUID (version nibble 1-8) — see seed-fixtures.ts's
+// ORG_A_ID/USER_1_ID comment for why: z.uuid() rejects a '0' version nibble at response-
+// serialization time, which is exactly what turned demo login into a 500 before this fix.
+export const DEMO_LOGIN_USER_ID = '00000000-0000-4000-8000-000000000099'
 
-async function seed(): Promise<void> {
+// Exported (rather than only invoked by the top-level `if` guard below) so
+// seed-demo.test.ts can exercise this directly against a real test DB without going through
+// `tsx src/seed-demo.ts`'s process.exit() side effect — same pattern as
+// scripts/guarded-migrate.ts's exported functions + `import.meta.url` main-module guard.
+export async function seed(): Promise<void> {
   const email = process.env['DEMO_LOGIN_EMAIL']
   const password = process.env['DEMO_LOGIN_PASSWORD']
   if (!email || !password) {
@@ -28,6 +35,21 @@ async function seed(): Promise<void> {
     sql`INSERT INTO users (id, email, password_hash) VALUES (${DEMO_LOGIN_USER_ID}, ${email}, ${passwordHash})
         ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, password_hash = EXCLUDED.password_hash`
   )
+  // registerUser() (the normal signup path) always creates a user_identity_tokens row alongside
+  // the user — service.ts's createLoginSessionInTx uses it as the audit actor_token_id on every
+  // login's SESSION_CREATED entry. Without one, this user's (real, login-able) sessions would
+  // write actor_type='human' audit rows with a null actor_token_id, permanently failing
+  // checkAuditActorTokenCoverage (packages/db/src/check-audit-actor-token-coverage.ts) — append-only,
+  // so the gap would never self-heal. Guarded by a NOT EXISTS check (rather than
+  // onConflictDoNothing on the auto-generated `id`) so re-running the seed doesn't grow a fresh
+  // duplicate identity token every time.
+  await db.execute(sql`
+    INSERT INTO user_identity_tokens (user_id, display_name)
+    SELECT ${DEMO_LOGIN_USER_ID}, ${email}
+    WHERE NOT EXISTS (
+      SELECT 1 FROM user_identity_tokens WHERE user_id = ${DEMO_LOGIN_USER_ID}
+    )
+  `)
   await withOrg(ORG_A_ID, (tx) =>
     tx
       .insert(orgMemberships)
@@ -40,12 +62,14 @@ async function seed(): Promise<void> {
   )
 }
 
-try {
-  await seed()
-  process.exit(0)
-} catch (error) {
-  process.stderr.write(
-    `db:seed:demo: failed — ${error instanceof Error ? error.message : String(error)}\n`
-  )
-  process.exit(1)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try {
+    await seed()
+    process.exit(0)
+  } catch (error) {
+    process.stderr.write(
+      `db:seed:demo: failed — ${error instanceof Error ? error.message : String(error)}\n`
+    )
+    process.exit(1)
+  }
 }
