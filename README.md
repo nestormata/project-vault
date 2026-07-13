@@ -7,18 +7,6 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-orange)](package.json)
 
-> **⚠️ Status: Pre-launch, actively developed.** The core platform — secrets, rotation, teams,
-> monitoring, notifications, machine users, audit logging, and platform operations — is functional
-> in self-hosted dev/eval environments (Epics 1–9 all shipped, done, and code-reviewed clean).
-> Production-hardening features for self-hosted operators (encrypted backup/restore, in-place
-> upgrades, platform admin settings, platform operator audit log, and the operator runbook — Epic
-> 9) include a full admin web UI (Story 9.7). A new Epic 10 (Quality & Test
-> Automation) has all 4 stories done — Playwright E2E coverage and CI/SonarCloud coverage gates
-> (`apps/web` and `apps/api` branch coverage, SonarCloud new-code coverage buffer) are hardened;
-> epic retrospective/closure still pending.
-> Not yet tagged for a v1 GA release. See [Implementation Status](#implementation-status) for the
-> epic-by-epic breakdown.
-
 *Run complex projects. Miss nothing.*
 
 Project Vault is a self-hostable, open-core **Project Operations Platform (ProjOps)** — the institutional memory of an engineering project. Where every existing secrets manager organizes by environment (dev / staging / prod), Project Vault organizes by *project*: credentials, certificates, domains, services, payments, and documentation grouped under the natural unit of engineering responsibility.
@@ -44,47 +32,87 @@ Key differentiators:
 
 ## Features
 
-| Feature | Status | Notes |
-|---|---|---|
-| 🔐 **Secrets management** — versioned, encrypted storage with RBAC, expiry tracking, bulk import from `.env` / JSON | ✅ Done | Epic 2 |
-| 🔄 **Manual rotation with propagation** — per-system confirmation checklist, stale-recovery, break-glass emergency mode, full web UI | ✅ Done | Epic 5 |
-| 📡 **Operational monitoring** — HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, cross-project health dashboard, public status pages | ✅ Done | Epic 6 |
-| 🏢 **Multi-user RBAC** — project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival, fine-grained per-project visibility (`read:secret_value` vs `read:secret_metadata`) | ✅ Done | Epic 4 |
-| 🔔 **Notifications** — email + Slack delivery, per-alert-type routing, in-app inbox, credential-expiry alerts | ✅ Done | Epic 3 |
-| 🤖 **Machine user support** — scoped API keys, offline/cache fallback, GitHub Actions integration, full web UI | ✅ Done | Epic 7 — machine-user management web UI shipped in Story 8.6 |
-| 📋 **Immutable audit logs** — append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI | ✅ Done | Epic 8 — audit/compliance web UI shipped in Story 8.7 |
-| 🔑 **Vault unsealing** — master password, envelope encryption with split-key default, or external KMS (AWS KMS) | ✅ Done | Epic 1 — KMS mode added in Story 1.14 |
-| 🌐 **REST API** — nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init | ✅ Done | Generated OpenAPI spec + live Swagger UI (`ENABLE_API_DOCS=true`) and an independent contract-test suite shipped in Story 9.3 |
-| 🐳 **Self-hosted Docker** — `docker compose up` deployment (dev + prod compose files) | ✅ Done | Epic 1 |
-| 💾 **Built-in backup** — scheduled encrypted snapshots, retention, restore verification, admin web UI | ✅ Done | Epic 9 — core backup/restore in Story 9.1, admin UI in Story 9.7, hardening (concurrency guard, missed-backup alerts, S3-failure handling) in Story 9.6 |
-| ⚙️ **System settings & platform administration** — SMTP/backup/policy config UI, multi-org resource monitoring | ✅ Done | Epic 9 — API in Story 9.2, admin web UI (`/platform`) in Story 9.7 |
-| ⬆️ **In-place version upgrades** | ✅ Done | Epic 9 — migration-safety guard + API in Story 9.3, informational upgrade/API-docs page in Story 9.7 |
-| 🛡️ **Platform operator audit log** — instance-wide privileged-action log, distinct from per-org audit log, with integrity verification and maintenance-mode failsafe | ✅ Done | Epic 9 — API/schema shipped in Story 9.4, search/verify/maintenance-mode admin UI in Story 9.7, MFA-gap/audit-bypass hardening (9.8) done |
-| 🧪 **Test automation & coverage hardening** — Playwright E2E suite, `apps/web` branch coverage, SonarCloud new-code coverage buffer | 🟡 In progress | Epic 10 (new) — all 4 stories done: E2E automation (10.1), `apps/web` branch coverage hardening (10.2), complete-source coverage buffer (10.3), SonarCloud new-coverage buffer (10.4); epic retrospective/closure still pending |
+| Feature | Details |
+|---|---|
+| 🔐 **Secrets management** | Versioned, encrypted storage with RBAC, expiry tracking, bulk import from `.env` / JSON |
+| 🔄 **Manual rotation with propagation** | Per-system confirmation checklist, stale-recovery, break-glass emergency mode, full web UI |
+| 📡 **Operational monitoring** | HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, cross-project health dashboard, public status pages |
+| 🏢 **Multi-user RBAC** | Project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival, fine-grained per-project visibility (`read:secret_value` vs `read:secret_metadata`) |
+| 🔔 **Notifications** | Email + Slack delivery, per-alert-type routing, in-app inbox, credential-expiry alerts |
+| 🤖 **Machine user support** | Scoped API keys, offline/cache fallback, GitHub Actions integration, full web UI |
+| 📋 **Immutable audit logs** | Append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI |
+| 🔑 **Vault unsealing** | Master password, envelope encryption with split-key default, or external KMS (AWS KMS) |
+| 🌐 **REST API** | Nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init. Generated OpenAPI spec, live Swagger UI (`ENABLE_API_DOCS=true`), and an independent contract-test suite |
+| 🐳 **Self-hosted Docker** | `docker compose up` deployment (dev + prod compose files) |
+| 💾 **Built-in backup** | Scheduled encrypted snapshots, retention, restore verification, admin web UI, concurrency guard, missed-backup alerts, S3-failure handling |
+| ⚙️ **System settings & platform administration** | SMTP/backup/policy config UI, multi-org resource monitoring |
+| ⬆️ **In-place version upgrades** | Migration-safety guard, upgrade API, informational upgrade/API-docs page |
+| 🛡️ **Platform operator audit log** | Instance-wide privileged-action log, distinct from per-org audit log, with integrity verification, maintenance-mode failsafe, and MFA-aware access controls |
 
 ---
 
-## Implementation Status
+## Capabilities
 
-Epic-by-epic status, current as of 2026-07-13 (source of truth:
-[`sprint-status.yaml`](_bmad-output/implementation-artifacts/sprint-status.yaml)):
+A closer look at what's implemented in each area, current as of 2026-07-13:
 
-| Epic | Status | What ships |
-|---|---|---|
-| 1. Vault Foundation | ✅ Done | Docker deploy, health/readiness endpoints, password + TOTP MFA auth, JWT sessions with idle timeout and revocation, structured operational logging |
-| 2. Secret & Credential Management | ✅ Done | Project-scoped credential CRUD + immutable version history, search/filter/tags, dependent-system records, expiry/rotation schedules, bulk import, onboarding wizard, cross-project search, web UI completeness pass (Story 2.9) |
-| 3. Notification Infrastructure | ✅ Done | Email + Slack delivery, per-alert-type routing, in-app inbox (`/notifications`), credential-expiry notification delivery (3.5), and the closure story (3.4 — surface truth/MFA alerts/doc reconciliation) all done |
-| 4. Team & Organization Management | ✅ Done | Invitations & role assignment, org user management, account deactivation/recovery, project archival, and the fine-grained permissions closure story (4.5 — per-project visibility gating, `read:secret_value`/`read:secret_metadata` split) all done |
-| 5. Credential Rotation | ✅ Done | Rotation initiation + checklist, stale-recovery, break-glass emergency rotation, full rotation web UI, hardening/tech-debt closure |
-| 6. Operational Monitoring & Status | ✅ Done | Service/certificate/domain records, HTTP endpoint monitoring & alerts, cross-project health dashboard, public status pages, full monitored-asset web UI |
-| 7. Machine User Access & CI/CD | ✅ Done | Machine user identities, API keys, offline fallback cache, GitHub Actions integration, and the machine-user management web UI (Story 8.6) all shipped; retroactive hardening review (Story 8.8) done |
-| 8. Compliance, Audit & Governance | ✅ Done | Tamper-evident HMAC audit log, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, and the full audit/compliance web UI (Story 8.7) all shipped |
-| 9. Platform Operations, API & Self-Hosting | ✅ Done | Encrypted backup/restore (9.1), system settings/multi-org/resource monitoring (9.2), in-place upgrades + real OpenAPI generation (9.3), the platform operator audit log (9.4), the operational runbook (9.5), backup/restore hardening (9.6), the platform-operations admin web UI (Story 9.7 — `/platform` backups, settings, orgs, resource usage, upgrade/API-docs, and platform audit log pages), and platform-admin MFA-gap/audit-bypass hardening (9.8) are all done |
-| 10. Quality & Test Automation | 🟡 In progress | New epic added 2026-07-09 from a deferred-work reconciliation pass (no epic-10 section in the original PRD/epics doc). Playwright E2E test automation (10.1), `apps/web` branch coverage hardening (10.2), the complete-source branch coverage buffer (10.3), and the SonarCloud new-code coverage buffer (10.4) are all done; epic retrospective/closure still pending |
+### Authentication & Security
+- Docker deployment with health/readiness endpoints
+- Password + TOTP MFA authentication, JWT sessions with idle timeout and revocation
+- Structured operational logging and metrics
+- Vault unsealing via master password, envelope encryption (split-key default), or external KMS (AWS KMS)
 
-Known v1 design gaps, disclosed up front rather than discovered later:
-- `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet (Story 9.2 / 9.5).
-- No live backup-job progress polling and no in-app "click to upgrade" trigger in the Platform Admin UI — both are deliberate, documented v1 scope boundaries (Story 9.7 D3/D4); self-hosted in-place upgrades remain an out-of-band `docker compose up -d` operation.
+### Secrets & Credential Management
+- Project-scoped credential CRUD with immutable version history
+- Search/filter/tags, dependent-system records, expiry/rotation schedules
+- Bulk import from `.env` / JSON, onboarding wizard, cross-project search
+- Manual rotation workflow — initiation + checklist, stale-recovery, break-glass emergency rotation, full web UI
+
+### Teams & Organizations
+- Invitations & role assignment (Owner, Admin, Member, Viewer)
+- Org-level user management, account deactivation/recovery, project archival
+- Fine-grained per-project visibility (`read:secret_value` vs `read:secret_metadata` split)
+
+### Operational Monitoring
+- Service/certificate/domain records
+- HTTP endpoint monitoring & alerts
+- Cross-project health dashboard and public status pages
+- Full monitored-asset web UI
+
+### Notifications
+- Email + Slack delivery with per-alert-type routing
+- In-app inbox (`/notifications`)
+- Credential-expiry notification delivery
+
+### Machine Users & CI/CD
+- Machine user identities and scoped API keys
+- Offline/cache fallback for CI environments
+- GitHub Actions integration
+- Full machine-user management web UI
+
+### Audit & Compliance
+- Tamper-evident, append-only audit log with HMAC row-level integrity
+- Search, export, and external forwarding
+- Access reports and dormant-user detection
+- GDPR erasure workflow
+- Full audit/compliance web UI
+
+### Platform Operations & Backup
+- Encrypted backup/restore with scheduled snapshots, retention, and restore verification
+- System settings, multi-org provisioning, and resource-usage monitoring, all via an admin web UI
+- In-place version upgrades with a migration-safety guard
+- REST API with a generated OpenAPI spec, live Swagger UI, and an independent contract-test suite
+- Platform operator audit log, distinct from per-org audit logs, with integrity verification and a maintenance-mode failsafe
+- Operational runbook covering vault lifecycle, backup/restore, and incident response
+
+### Quality
+- Playwright end-to-end test suite covering critical user journeys, run nightly
+- Branch-coverage thresholds enforced in CI for both `apps/web` and `apps/api`
+- SonarCloud-gated code quality and new-code coverage on every PR
+- Mutation testing (Stryker) tracked nightly
+
+Current limitations, disclosed up front rather than discovered later:
+- `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet.
+- No live backup-job progress polling and no in-app "click to upgrade" trigger in the Platform Admin UI — both are deliberate scope boundaries; self-hosted in-place upgrades remain an out-of-band `docker compose up -d` operation.
 
 ---
 
@@ -114,11 +142,11 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 | Version | Target | Status |
 |---|---|---|
-| **v1 (GA)** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Epics 1–9 all fully done; Epic 10 (test automation/coverage hardening) added mid-stream and in progress |
-| **v1.1** | Webhooks, project wiki | Not started |
-| **v2** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Not started |
+| **Current** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Shipped |
+| **Next** | Webhooks, project wiki | Planned |
+| **Later** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Planned |
 
-See [Implementation Status](#implementation-status) above for the current epic-by-epic breakdown.
+See [Capabilities](#capabilities) above for the current feature breakdown.
 
 ---
 
@@ -227,7 +255,7 @@ make dev            # pnpm turbo dev (export DATABASE_URL first)
 
 ### Auth Configuration
 
-Story 1.6 adds password registration and cookie-based sessions. Local development can use the defaults in `.env.example`; production must replace every HMAC/session secret with a distinct 32+ byte random value (10 total — see "Production hardening" in [docs/operator-quickstart.md](docs/operator-quickstart.md) for the full list):
+Password registration and cookie-based sessions are supported out of the box. Local development can use the defaults in `.env.example`; production must replace every HMAC/session secret with a distinct 32+ byte random value (10 total — see "Production hardening" in [docs/operator-quickstart.md](docs/operator-quickstart.md) for the full list):
 
 ```bash
 SESSION_SECRET=$(openssl rand -hex 32)
@@ -338,12 +366,12 @@ Running a self-hosted instance day-to-day, after the first deploy: **[docs/runbo
 
 ## Contributing
 
-The codebase is live and under active development (see [Implementation Status](#implementation-status)), but the project isn't yet accepting external code contributions. Until then, the best way to contribute is:
+The codebase is live and under active development (see [Capabilities](#capabilities)), but the project isn't yet accepting external code contributions. Until then, the best way to contribute is:
 
 - ⭐ **Star this repository** to signal interest and help with OSS discovery
 - 🐛 **Open issues** for feature requests, use cases, or questions — early input shapes the roadmap
 - 💬 **Start a discussion** if you have ideas about the plugin interface, RBAC model, or integration patterns
-- 📖 **Review the planning artifacts** in `_bmad-output/planning-artifacts/` — the PRD, UX spec, and architecture docs are open, as are the in-progress story files and retrospectives in `_bmad-output/implementation-artifacts/`
+- 📖 **Review the planning artifacts** in `_bmad-output/planning-artifacts/` — the PRD, UX spec, and architecture docs are open, as are the implementation notes and retrospectives in `_bmad-output/implementation-artifacts/`
 
 Once external contributions open, a `CONTRIBUTING.md` will cover:
 - Development environment setup
@@ -364,7 +392,7 @@ Project Vault handles credentials, certificates, and sensitive operational data.
 - Secret values must never appear in logs, stack traces, or error messages
 - Full security model documented in architecture artifacts
 
-To report a security vulnerability, please **do not open a public issue**. Contact details will be published in a `SECURITY.md` at launch.
+To report a security vulnerability, please **do not open a public issue**. Contact details will be published in a `SECURITY.md` file.
 
 ---
 
