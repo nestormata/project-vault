@@ -86,24 +86,26 @@ describe('/login +page.svelte', () => {
     await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/dashboard'))
   })
 
-  it('redirects to a same-origin ?next path after a successful login', async () => {
-    pageMock.url = new URL('http://localhost/login?next=%2Fprojects')
+  it.each([
+    {
+      name: 'redirects to a same-origin ?next path after a successful login',
+      next: '%2Fprojects',
+      expected: '/projects',
+    },
+    {
+      name: 'falls back to /dashboard for a protocol-relative //-prefixed ?next (open-redirect guard)',
+      next: '%2F%2Fevil.com',
+      expected: '/dashboard',
+    },
+    {
+      name: 'falls back to /dashboard for a ?next value that is not a leading-slash path',
+      next: 'https%3A%2F%2Fevil.com',
+      expected: '/dashboard',
+    },
+  ])('$name', async ({ next, expected }) => {
+    pageMock.url = new URL(`http://localhost/login?next=${next}`)
     render(LoginPage)
     await submitLogin()
-    await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/projects'))
-  })
-
-  it('falls back to /dashboard for a protocol-relative //-prefixed ?next (open-redirect guard)', async () => {
-    pageMock.url = new URL('http://localhost/login?next=%2F%2Fevil.com')
-    render(LoginPage)
-    await submitLogin()
-    await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/dashboard'))
-  })
-
-  it('falls back to /dashboard for a ?next value that is not a leading-slash path', async () => {
-    pageMock.url = new URL('http://localhost/login?next=https%3A%2F%2Fevil.com')
-    render(LoginPage)
-    await submitLogin()
-    await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(gotoMock).toHaveBeenCalledWith(expected))
   })
 })

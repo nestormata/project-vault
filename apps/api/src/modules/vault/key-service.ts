@@ -225,7 +225,7 @@ type IkmResult = {
 let _kmsProvider: KmsKeyProvider | null = null
 
 function getKmsProvider(): KmsKeyProvider {
-  if (!_kmsProvider) _kmsProvider = new AwsKmsProvider()
+  _kmsProvider ??= new AwsKmsProvider()
   return _kmsProvider
 }
 

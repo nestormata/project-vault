@@ -230,9 +230,9 @@ describe('notification preferences service', () => {
         )
 
         const prefs = await withOrg(orgId, (tx) => getPreferences(orgId, userId, tx))
-        expect(prefs.find((p) => p.alertType === MFA_RECOVERY_ALERT && p.channel === 'none')).toBe(
-          undefined
-        )
+        expect(
+          prefs.find((p) => p.alertType === MFA_RECOVERY_ALERT && p.channel === 'none')
+        ).toBeUndefined()
         expect(
           prefs.find((p) => p.alertType === MFA_RECOVERY_ALERT && p.channel === 'email')
         ).toMatchObject({

@@ -189,7 +189,7 @@ describe('GlobalSearch', () => {
     render(GlobalSearch, { props: { open: true } })
     const dialog = screen.getByRole('dialog', { name: 'Global search' })
     await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'a' } })
-    await vi.waitFor(() => expect(screen.getAllByRole('option').length).toBe(2))
+    await vi.waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2))
 
     await fireEvent.keyDown(dialog, { key: 'ArrowDown' })
     let options = screen.getAllByRole('option')
@@ -205,7 +205,7 @@ describe('GlobalSearch', () => {
     render(GlobalSearch, { props: { open: true } })
     const dialog = screen.getByRole('dialog', { name: 'Global search' })
     await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'a' } })
-    await vi.waitFor(() => expect(screen.getAllByRole('option').length).toBe(2))
+    await vi.waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2))
 
     await fireEvent.keyDown(dialog, { key: 'ArrowUp' })
     const options = screen.getAllByRole('option')
@@ -219,7 +219,7 @@ describe('GlobalSearch', () => {
     await fireEvent.keyDown(dialog, { key: 'ArrowDown' })
     await fireEvent.keyDown(dialog, { key: 'ArrowUp' })
     // No throw, and still no results rendered.
-    expect(screen.queryAllByRole('option').length).toBe(0)
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
   })
 
   it('Enter selects and navigates to the currently-highlighted result', async () => {
