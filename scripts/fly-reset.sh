@@ -94,11 +94,18 @@ echo "== Closing db proxy =="
 cleanup
 trap - EXIT
 
+echo "== Restarting api app (schema was just wiped out from under its live DB pool —"
+echo "   stale connections/prepared statements against the dropped tables make the"
+echo "   next vault/init insert fail; restart now for a clean pool against the new"
+echo "   schema, NOT after unseal, which would immediately re-seal the vault) =="
+flyctl apps restart "$API_APP"
+
 echo "== Waiting for api to be reachable via ${WEB_URL} =="
-# The api machine can be mid-restart (Fly machine lifecycle, or a leftover crash-loop
-# from a first-ever deploy racing db:migrate) exactly when this script reaches here — a
-# bare vault/init call at the wrong moment gets api_unreachable. Poll /ready (proxied
-# through web) until it reports anything other than that specific reason.
+# The api machine can be mid-restart (the one just triggered above, Fly machine
+# lifecycle churn, or a leftover crash-loop from a first-ever deploy racing db:migrate)
+# exactly when this script reaches here — a bare vault/init call at the wrong moment
+# gets api_unreachable. Poll /ready (proxied through web) until it reports anything
+# other than that specific reason.
 for ((i = 1; i <= 30; i++)); do
   ready_reason="$(curl -s "${WEB_URL}/ready" 2>/dev/null | jq -r '.reason // empty')"
   [[ "$ready_reason" != "api_unreachable" ]] && break
@@ -135,8 +142,5 @@ if ! curl -sf "${WEB_URL}/ready" >/dev/null 2>&1; then
   echo "vault initialized/unsealed but /ready still failing — check api logs" >&2
   exit 1
 fi
-
-echo "== Restarting api app (clears any stale DB pool/session state) =="
-flyctl apps restart "$API_APP"
 
 echo "Reset complete: ${WEB_URL}"
