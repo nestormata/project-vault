@@ -1,0 +1,29 @@
+# Fly.io self-hosted api app for the project-vault demo stack.
+# Private-only, same as fly.db.toml: no public IP is ever allocated for this app. The
+# `web` app's SvelteKit routes (apps/web/src/routes/api/v1/[...path]/+server.ts and
+# routes/ready/+server.ts) proxy every browser-facing request to this app server-side
+# over Fly's internal 6PN network, so the browser only ever talks to `web`'s origin —
+# which is also what keeps auth cookies same-site (tokens.ts hardcodes sameSite:'strict',
+# so api and web being different public origins would silently break login).
+app = "project-vault-demo-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "apps/api/Dockerfile"
+  # No [build.args] / context override: fly deploy uses this file's own directory (repo
+  # root) as the build context by default, matching docker-compose.yml's `context: .` —
+  # required because the Dockerfile COPYs sibling packages/* by path from the repo root.
+
+[env]
+  NODE_ENV = "production"
+  API_PORT = "3000"
+  METRICS_BIND_HOST = "127.0.0.1"
+  LOG_LEVEL = "info"
+  VAULT_KEY_DIR = "/run/secrets"
+  # CORS_ALLOWED_ORIGINS, DATABASE_URL, ADMIN_DATABASE_URL, and every *_SECRET/*_HMAC_SECRET
+  # below are set via `fly secrets set` (scripts/fly-setup.sh) — never committed here.
+  # DATABASE_URL / ADMIN_DATABASE_URL point at project-vault-demo-db.internal:5432.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

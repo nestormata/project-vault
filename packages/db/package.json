@@ -34,7 +34,8 @@
     "build": "tsc",
     "generate": "drizzle-kit generate",
     "db:migrate": "tsx src/scripts/guarded-migrate.ts",
-    "db:seed:test": "tsx src/seed-test.ts"
+    "db:seed:test": "tsx src/seed-test.ts",
+    "db:seed:demo": "tsx src/seed-demo.ts"
   },
   "dependencies": {
     "@project-vault/crypto": "workspace:*",

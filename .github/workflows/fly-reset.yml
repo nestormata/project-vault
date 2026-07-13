@@ -1,0 +1,63 @@
+name: Fly Demo Reset
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 06:00 UTC daily — adjust to whenever the demo has the fewest live viewers.
+    - cron: '0 6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    name: Wipe + reseed the Fly.io demo database, re-init vault
+    runs-on: ubuntu-latest
+    concurrency: fly-demo-reset
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # db:migrate/db:seed:test run from source via tsx, but they import built output
+      # (dist/) from their workspace deps, so those need building first.
+      - name: Build shared/crypto/db packages
+        run: pnpm --filter @project-vault/shared --filter @project-vault/crypto --filter @project-vault/db build
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Install psql + jq
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client jq
+
+      - name: Reset demo
+        run: ./scripts/fly-reset.sh
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
+          VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
+          DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
+          DEMO_LOGIN_EMAIL: ${{ secrets.FLY_DEMO_LOGIN_EMAIL }}
+          DEMO_LOGIN_PASSWORD: ${{ secrets.FLY_DEMO_LOGIN_PASSWORD }}

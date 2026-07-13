@@ -1,0 +1,25 @@
+# Fly.io self-hosted web app for the project-vault demo stack — the only public app in
+# the demo. It proxies /api/v1/* and /ready server-side to the private `api` app (see
+# fly.api.toml), so this is the single origin the browser ever talks to.
+app = "project-vault-demo-web"
+primary_region = "iad"
+
+[build]
+  dockerfile = "apps/web/Dockerfile"
+  # Build context is this file's directory (repo root), matching docker-compose.yml.
+
+[env]
+  NODE_ENV = "production"
+  # API_BASE_URL is set via `fly secrets set` (scripts/fly-setup.sh) to
+  # http://project-vault-demo-api.internal:3000 — internal-only, never a public URL.
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

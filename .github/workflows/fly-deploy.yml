@@ -1,0 +1,37 @@
+name: Fly Demo Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy self-hosted demo (db/api/web) to Fly.io
+    runs-on: ubuntu-latest
+    concurrency: fly-demo-deploy
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # db rarely changes (stock postgres:16-alpine image, no Dockerfile) — deploy it
+      # too so a first-time bootstrap or a fly.db.toml edit still lands, but it's
+      # normally a no-op.
+      - name: Deploy db
+        run: flyctl deploy -c fly.db.toml -a project-vault-demo-db --ha=false --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Deploy api
+        run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Deploy web
+        run: flyctl deploy -c fly.web.toml -a project-vault-demo-web --ha=false --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

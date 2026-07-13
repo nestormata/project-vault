@@ -1,0 +1,30 @@
+# Fly.io self-hosted Postgres for the project-vault demo stack (db app).
+# Deliberately private-only (no `fly ips allocate-v4/v6` for this app) — only the api
+# app should ever reach it, over Fly's internal 6PN network at <app>.internal:5432.
+# No custom Dockerfile: this app deploys the stock upstream image directly, matching
+# the postgres:16-alpine pin already used by docker-compose.yml's db service.
+app = "project-vault-demo-db"
+primary_region = "iad"
+
+[build]
+  image = "postgres:16-alpine"
+
+[env]
+  POSTGRES_DB = "project_vault"
+  PGDATA = "/var/lib/postgresql/data/pgdata"
+  # POSTGRES_USER / POSTGRES_PASSWORD are set via `fly secrets set` (scripts/fly-setup.sh),
+  # not committed here — same superuser bootstrap role docker-compose.yml uses.
+
+[[mounts]]
+  source = "project_vault_demo_db_data"
+  destination = "/var/lib/postgresql/data"
+
+# Deliberately no [[services]] block: that config is for Fly's public edge proxy, which
+# this app never uses. 6PN internal reachability (project-vault-demo-db.internal:5432)
+# works as soon as postgres is listening — no proxy/services config required for it.
+# That also means this app has no proxy-driven autostop/autostart; the machine just
+# stays running once started (`fly scale count 1 -a project-vault-demo-db` after deploy).
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
