@@ -12,9 +12,13 @@ import { seedFixtures, ORG_A_ID } from './seed-fixtures.js'
 // Must be a syntactically valid RFC 4122 UUID (version nibble 1-8) — see seed-fixtures.ts's
 // ORG_A_ID/USER_1_ID comment for why: z.uuid() rejects a '0' version nibble at response-
 // serialization time, which is exactly what turned demo login into a 500 before this fix.
-const DEMO_LOGIN_USER_ID = '00000000-0000-4000-8000-000000000099'
+export const DEMO_LOGIN_USER_ID = '00000000-0000-4000-8000-000000000099'
 
-async function seed(): Promise<void> {
+// Exported (rather than only invoked by the top-level `if` guard below) so
+// seed-demo.test.ts can exercise this directly against a real test DB without going through
+// `tsx src/seed-demo.ts`'s process.exit() side effect — same pattern as
+// scripts/guarded-migrate.ts's exported functions + `import.meta.url` main-module guard.
+export async function seed(): Promise<void> {
   const email = process.env['DEMO_LOGIN_EMAIL']
   const password = process.env['DEMO_LOGIN_PASSWORD']
   if (!email || !password) {
@@ -58,12 +62,14 @@ async function seed(): Promise<void> {
   )
 }
 
-try {
-  await seed()
-  process.exit(0)
-} catch (error) {
-  process.stderr.write(
-    `db:seed:demo: failed — ${error instanceof Error ? error.message : String(error)}\n`
-  )
-  process.exit(1)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try {
+    await seed()
+    process.exit(0)
+  } catch (error) {
+    process.stderr.write(
+      `db:seed:demo: failed — ${error instanceof Error ? error.message : String(error)}\n`
+    )
+    process.exit(1)
+  }
 }
