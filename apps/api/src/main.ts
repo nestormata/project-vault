@@ -364,7 +364,12 @@ async function main(): Promise<void> {
   registerShutdown(fastify)
 
   // 6. fastify.listen()
-  await fastify.listen({ port: env.API_PORT, host: '0.0.0.0' })
+  // '::' (IPv6 any-address), not '0.0.0.0': Fly.io's private 6PN network (<app>.internal,
+  // used by the web app's server-side proxy — see fly.api.toml) is IPv6-only, so an
+  // IPv4-only bind is unreachable from other private Fly apps. Linux dual-stacks '::' by
+  // default, so IPv4 callers (docker-compose, local dev, tests hitting localhost) are
+  // unaffected.
+  await fastify.listen({ port: env.API_PORT, host: '::' })
   operationalLog(fastify.log, 'info', OperationalEvent.STARTUP_COMPLETE, 'API startup complete', {
     nodeVersion: process.version,
     serviceVersion: pkg.version,
