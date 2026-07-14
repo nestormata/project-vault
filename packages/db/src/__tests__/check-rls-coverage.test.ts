@@ -25,46 +25,125 @@ async function withRlsPolicyMutationLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+// Story 1.15: policy definitions used both by the helper below and by afterEach's
+// last-resort restore. Keeping one source of truth avoids the two drifting apart.
+// Code-review finding (1-15): each entry pairs its policy's CREATE statement with the table
+// it belongs to, so `table` is never a second, independently-passed value that could drift out
+// of sync with the SQL string — restorePolicy() derives the table from this map, not from a
+// caller-supplied argument.
+const POLICY_DEFS: Record<string, { table: string; createStmt: string }> = {
+  sessions_isolation: {
+    table: 'sessions',
+    createStmt: `CREATE POLICY sessions_isolation ON sessions
+    USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
+  },
+  audit_log_isolation: {
+    table: 'audit_log_entries',
+    createStmt: `CREATE POLICY audit_log_isolation ON audit_log_entries
+    USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
+  },
+  audit_exports_isolation: {
+    table: 'audit_exports',
+    createStmt: `CREATE POLICY audit_exports_isolation ON audit_exports
+    USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
+  },
+  audit_forwarding_config_isolation: {
+    table: 'audit_forwarding_config',
+    createStmt: `CREATE POLICY audit_forwarding_config_isolation ON audit_forwarding_config
+    USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
+  },
+  audit_retention_config_isolation: {
+    table: 'audit_retention_config',
+    createStmt: `CREATE POLICY audit_retention_config_isolation ON audit_retention_config
+    USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)`,
+  },
+}
+
+async function restorePolicy(policyName: string): Promise<void> {
+  // policyName is always one of this test file's own hardcoded literals, never external input.
+  // eslint-disable-next-line security/detect-object-injection -- see comment above
+  const def = POLICY_DEFS[policyName]
+  if (!def) throw new Error(`restorePolicy: no definition registered for ${policyName}`)
+  await adminSql.unsafe(`
+    DO $$ BEGIN
+      ${def.createStmt};
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `)
+}
+
+/**
+ * Story 1.15 root-cause fix: the previous version of this file dropped a live RLS policy
+ * directly in each test body and relied *solely* on a file-level `afterEach` hook to restore
+ * it afterwards. That left a real window — between the DROP landing and the `afterEach`
+ * firing — during which any OTHER suite querying the same shared Postgres instance (this
+ * file's own top comment already documents apps/api integration tests seeing flaky 401s from
+ * exactly this) would see the table's RLS fail *closed* (Postgres denies all non-owner access
+ * to a table with RLS enabled and zero policies) rather than leak — but that's still enough to
+ * produce a spurious "expected 1 row, got 0" failure in an unrelated suite (e.g.
+ * rls-isolation.test.ts's `sessions`/`audit_log_entries` assertions), which is a plausible
+ * explanation for this story's reported "off-by-one" `packages/db` flake. Restoring the policy
+ * *inline*, in a `finally` immediately wrapping the drop (not deferred to `afterEach`), closes
+ * that window to the smallest span physically possible (the body of `fn` itself) instead of
+ * "until this test file's current test finishes". `afterEach` is kept as a last-resort net for
+ * the one case this can't cover — the process being killed outright before `finally` runs.
+ */
+async function withPolicyDropped<T>(
+  table: string,
+  policyName: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  // Code-review finding (1-15): fail fast if a caller passes a table/policyName pair that
+  // doesn't match POLICY_DEFS' own record — catches a copy-paste mismatch before it drops a
+  // policy this file has no way to restore correctly, rather than silently corrupting state.
+  // policyName is always one of this test file's own hardcoded literals, never external input.
+  // eslint-disable-next-line security/detect-object-injection -- see comment above
+  const def = POLICY_DEFS[policyName]
+  if (!def || def.table !== table) {
+    throw new Error(
+      `withPolicyDropped: policyName "${policyName}" is not registered for table "${table}" ` +
+        `(POLICY_DEFS says: ${def?.table ?? 'unknown'})`
+    )
+  }
+
+  return withRlsPolicyMutationLock(async () => {
+    // Code-review finding (1-15): IF EXISTS makes this resilient to a prior run having left the
+    // policy already dropped (e.g. a crash before its own restore ran) instead of throwing a
+    // confusing "policy does not exist" error that masks whatever this test actually intended to
+    // check.
+    await adminSql.unsafe(`DROP POLICY IF EXISTS ${policyName} ON ${table}`)
+    try {
+      const result = await fn()
+      await restorePolicy(policyName)
+      return result
+    } catch (err) {
+      // Code-review finding (1-15): always attempt the restore, but never let a restore failure
+      // mask the original test failure — a `finally` block's own throw would silently replace
+      // `err` with the restore error, hiding the actual regression this test exists to catch.
+      try {
+        await restorePolicy(policyName)
+      } catch (restoreErr) {
+        // eslint-disable-next-line no-console -- test-only diagnostic, deliberately not swallowed
+        console.error(
+          `withPolicyDropped: restore of ${policyName} on ${table} failed after test error`,
+          restoreErr
+        )
+      }
+      throw err
+    }
+  })
+}
+
 describe('checkRlsCoverage', () => {
   afterEach(async () => {
-    // Restore policies in case a test dropped them without restoring.
+    // Story 1.15: last-resort safety net only. The primary restore is now inline (see
+    // `withPolicyDropped` above) and runs regardless of whether the test passed, failed, or
+    // threw — this hook only still matters if the process were killed before that `finally`
+    // ran (e.g. OOM/SIGKILL mid-test), which inline `finally` blocks cannot protect against.
     // DROP/CREATE POLICY require table ownership — vault_app isn't the owner.
-    await adminSql`
-      DO $$ BEGIN
-        CREATE POLICY sessions_isolation ON sessions
-          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
-    `
-    await adminSql`
-      DO $$ BEGIN
-        CREATE POLICY audit_log_isolation ON audit_log_entries
-          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
-    `
-    // Story 8.2 AC-24: restore the three new tables' policies the same way.
-    await adminSql`
-      DO $$ BEGIN
-        CREATE POLICY audit_exports_isolation ON audit_exports
-          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
-    `
-    await adminSql`
-      DO $$ BEGIN
-        CREATE POLICY audit_forwarding_config_isolation ON audit_forwarding_config
-          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
-    `
-    await adminSql`
-      DO $$ BEGIN
-        CREATE POLICY audit_retention_config_isolation ON audit_retention_config
-          USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
-    `
+    for (const policyName of Object.keys(POLICY_DEFS)) {
+      await restorePolicy(policyName)
+    }
   })
 
   it('resolves when every org_id table has an RLS policy', async () => {
@@ -72,9 +151,7 @@ describe('checkRlsCoverage', () => {
   })
 
   it('throws RlsCoverageGapError listing the table missing a policy', async () => {
-    await withRlsPolicyMutationLock(async () => {
-      await adminSql`DROP POLICY sessions_isolation ON sessions`
-
+    await withPolicyDropped('sessions', 'sessions_isolation', async () => {
       let caught: unknown
       try {
         await checkRlsCoverage(sql)
@@ -88,9 +165,7 @@ describe('checkRlsCoverage', () => {
   })
 
   it('includes audit_log_entries in the gap list when its policy is missing', async () => {
-    await withRlsPolicyMutationLock(async () => {
-      await adminSql`DROP POLICY audit_log_isolation ON audit_log_entries`
-
+    await withPolicyDropped('audit_log_entries', 'audit_log_isolation', async () => {
       let caught: unknown
       try {
         await checkRlsCoverage(sql)
@@ -107,9 +182,7 @@ describe('checkRlsCoverage', () => {
   // AC-9 precedent of never relying on the generic mechanism alone.
   for (const table of ['audit_exports', 'audit_forwarding_config', 'audit_retention_config']) {
     it(`includes ${table} in the gap list when its policy is missing`, async () => {
-      await withRlsPolicyMutationLock(async () => {
-        await adminSql.unsafe(`DROP POLICY ${table}_isolation ON ${table}`)
-
+      await withPolicyDropped(table, `${table}_isolation`, async () => {
         let caught: unknown
         try {
           await checkRlsCoverage(sql)
@@ -122,6 +195,25 @@ describe('checkRlsCoverage', () => {
       })
     })
   }
+
+  // Story 1.15 AC-3 regression test: proves the policy is restored *before* this test's own
+  // body returns — i.e. without relying on the file-level `afterEach` — closing the
+  // cross-suite race window documented on `withPolicyDropped` above. Against the pre-fix code
+  // (bare DROP + afterEach-only restore) this is RED: querying pg_policies immediately after
+  // the block still shows the policy missing, because nothing had restored it yet at that
+  // point in program order. Against the fixed code it's GREEN, because the restore is the
+  // `finally` that runs before `withPolicyDropped` returns control here.
+  it('restores the dropped policy inline, before afterEach ever runs', async () => {
+    await withPolicyDropped('sessions', 'sessions_isolation', async () => {
+      // Intentionally empty: we only care about the state immediately after this block exits.
+    })
+
+    const rows = await adminSql<{ policyname: string }[]>`
+      SELECT policyname FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'sessions' AND policyname = 'sessions_isolation'
+    `
+    expect(rows).toHaveLength(1)
+  })
 
   it('throws when no tables exist in the target database', async () => {
     const emptyDbName = `check_rls_empty_${Date.now()}`
