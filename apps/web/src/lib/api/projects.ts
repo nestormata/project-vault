@@ -3,6 +3,7 @@ import {
   type ProjectArchiveState,
   type ProjectDashboard,
   type ProjectDetail,
+  type ProjectOverview,
   type ProjectSummary,
 } from '@project-vault/shared'
 import { apiFetch } from './client.js'
@@ -69,6 +70,12 @@ export function unarchiveProject(
 
 export function getProjectDashboard(fetchFn: typeof fetch, projectId: string) {
   return apiFetch<ProjectDashboard>(fetchFn, `/api/v1/projects/${projectId}/dashboard`)
+}
+
+// 12-1 AC-1/AC-2: project overview detail (name/description/tags/ownership/archived state +
+// member count) for the new /projects/:id page.
+export function getProject(fetchFn: typeof fetch, projectId: string): Promise<ProjectOverview> {
+  return apiFetch<ProjectOverview>(fetchFn, `/api/v1/projects/${projectId}`)
 }
 
 export function updateProject(

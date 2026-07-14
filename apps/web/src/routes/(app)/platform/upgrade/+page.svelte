@@ -48,7 +48,7 @@
         </p>
         <p>
           <a
-            href={resolve('/docs/runbook.md')}
+            href="https://github.com/nestormata/project-vault/blob/main/docs/runbook.md#upgrades"
             target="_blank"
             rel="noopener noreferrer"
             class="font-medium text-indigo-600 underline"

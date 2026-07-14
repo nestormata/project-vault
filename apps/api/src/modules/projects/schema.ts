@@ -2,6 +2,7 @@ import {
   ProjectArchiveStateSchema,
   ProjectDashboardSchema,
   ProjectDetailSchema,
+  ProjectOverviewSchema,
   ProjectSummarySchema,
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
@@ -55,6 +56,11 @@ export const ProjectListResponseSchema = z
 export const ProjectDashboardResponseSchema = z
   .object({ data: ProjectDashboardSchema })
   .meta({ id: 'ProjectDashboardResponse' })
+
+// 12-1 AC-1/AC-2: GET /:projectId — the project overview page's single detail+member-count call.
+export const ProjectOverviewResponseSchema = z
+  .object({ data: ProjectOverviewSchema })
+  .meta({ id: 'ProjectOverviewResponse' })
 
 export const PatchProjectResponseSchema = z
   .object({

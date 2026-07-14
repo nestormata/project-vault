@@ -1,6 +1,6 @@
 # Story 12.1: Project Information Architecture
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -223,35 +223,74 @@ edit-affordance differences (this story does not change per-tab authorization �
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Project overview route (AC: 1, 2, 3, 4, 5, 17)
-  - [ ] Add `apps/web/src/routes/(app)/projects/[projectId]/+page.server.ts` loading project
+- [x] Task 1 — Project overview route (AC: 1, 2, 3, 4, 5, 17)
+  - [x] Add `apps/web/src/routes/(app)/projects/[projectId]/+page.server.ts` loading project
         metadata + summary-tile data from existing project-scoped API endpoints
-  - [ ] Add `apps/web/src/routes/(app)/projects/[projectId]/+page.svelte` rendering the overview
+  - [x] Add `apps/web/src/routes/(app)/projects/[projectId]/+page.svelte` rendering the overview
         (name, description/tags, ownership, summary tiles, archived badge)
-  - [ ] Reuse existing 404/malformed-ID handling pattern from the credentials sub-route loader
-  - [ ] Write `project-overview-page.server.test.ts` covering AC-1 through AC-5
-- [ ] Task 2 — Persistent project sub-nav component (AC: 8, 9, 10, 11, 15, 16, 18)
-  - [ ] Create `apps/web/src/lib/components/shell/ProjectNav.svelte` (new component; mirror
-        `PrimaryNav.svelte` + `nav-model.ts`'s structure — a `project-nav-model.ts` listing the 9
-        tabs, and reusing/mirroring `isActiveNavItem`)
-  - [ ] Wire `ProjectNav` into a shared layout for the `[projectId]` route tree — check whether
-        introducing `apps/web/src/routes/(app)/projects/[projectId]/+layout.svelte` is the right
-        SvelteKit mechanism (it is the idiomatic way to share UI across all sub-routes without
-        duplicating markup in every `+page.svelte`) rather than importing the component into each
-        of the 9 pages individually
-  - [ ] Implement role-gating/disabled-tab behavior per AC-9
-  - [ ] Verify focus-visible contrast (AC-15) and landmark labeling (AC-16)
-  - [ ] Write sub-nav rendering/active-tab test (AC-18)
-- [ ] Task 3 — Re-point dashboard/list links (AC: 6, 7, 12, 13, 14)
-  - [ ] Update `apps/web/src/routes/(app)/projects/+page.svelte:273` project card link to
-        `/projects/${project.id}` (add a secondary "View credentials" affordance if kept)
-  - [ ] Audit `apps/web/src/routes/(app)/dashboard/+page.svelte` for project-level (not
-        credential/rotation-level) links and re-point only those per AC-13
-  - [ ] Update/add assertions in existing dashboard and projects-list tests for the new hrefs
-- [ ] Task 4 — Regression pass
-  - [ ] Run full web test suite; confirm no route-exists / navigation-truth check regresses
-  - [ ] Manually verify (or via Playwright, if `10-1-playwright-e2e-test-automation` tooling is
-        available) the persona journey stub above end-to-end
+  - [x] Reuse existing 404/malformed-ID handling pattern from the credentials sub-route loader
+  - [x] Write `project-overview-page.server.test.ts` covering AC-1 through AC-5
+  - [x] **Scope-affecting discovery (flagged per Dev Notes' own instruction, not silently worked
+        around):** no existing project-scoped endpoint returns name/description/tags/archived-state
+        for a single project, nor a viewer-safe member count (`GET /:projectId/members` is
+        project-admin/owner-or-org-admin/owner-gated — a project viewer would 403 on it, breaking
+        the persona journey's Riley-viewer case). Added one new endpoint,
+        `GET /api/v1/projects/:projectId` (apps/api/src/modules/projects/routes.ts), returning
+        `ProjectOverview` (`ProjectDetail` + `tags` + `memberCount`), following the exact same
+        visibility-check-before-any-read pattern as the adjacent `GET .../dashboard` route (AC-3
+        no-leak requirement). This is the one deliberate deviation from "no apps/api/** changes"
+        in Dev Notes, and Dev Notes explicitly names this exact scenario as the correct call.
+- [x] Task 2 — Persistent project sub-nav component (AC: 8, 9, 10, 11, 15, 16, 18)
+  - [x] Create `apps/web/src/lib/components/shell/ProjectNav.svelte` (new component; mirrors
+        `PrimaryNav.svelte` + `nav-model.ts`'s structure — `project-nav-model.ts` lists the 9 tabs
+        and reuses `nav-model.ts`'s `isActiveNavItem` for every tab except Overview, which needs a
+        strict-equality match instead of the prefix match or it would also light up on every
+        deeper project screen)
+  - [x] Wired `ProjectNav` into `apps/web/src/routes/(app)/projects/[projectId]/+layout.svelte`
+        (+ `+layout.server.ts` supplying `orgRole`/`project` to every sub-route) — confirmed this is
+        the correct SvelteKit mechanism; avoids touching any of the 9 existing `+page.svelte` files
+  - [x] Role-gating (AC-9): investigated every sub-route's list endpoint directly rather than
+        assuming. Members/Machine Users/Services/Certificates/Domains/Status Page all gracefully
+        degrade to an empty/limited view for a viewer role (confirmed via their existing
+        `+page.server.ts` loaders and tests) — no 403 risk, no gating needed. The one real risk:
+        `GET /:projectId/service-endpoints` and `GET /:projectId/alerts`
+        (apps/api/src/modules/monitoring/routes.ts) require org role >= member, and the Endpoints
+        page's own loader only catches 404 — an org-viewer hitting that tab today gets an uncaught
+        403 that surfaces as SvelteKit's generic error page. `project-nav-model.ts` hides the
+        Endpoints tab for `orgRole === 'viewer'` to prevent exactly that.
+  - [x] Focus-visible (AC-15): applied `outline-offset-2` so the focus ring renders in the gap
+        outside each tab, over the page's light background, rather than directly on the tab's own
+        fill color — this is the fix for the exact invisible-ring-on-a-dark-background pattern the
+        audit flagged, applied uniformly so it doesn't matter whether a given tab is active
+        (bg-brand-600) or inactive (light/transparent).
+  - [x] Landmark (AC-16): `<nav aria-label="Project navigation">`, distinct from `PrimaryNav`'s
+        `aria-label="Primary navigation"`.
+  - [x] `ProjectNav.test.ts` (rendering/active-tab/role-gating/archived-badge/landmark) +
+        `ProjectNav.route-exists.test.ts` (AC-18: asserts identical 9-tab rendering across 3 project
+        sub-routes with the active tab tracking the route, and that every tab href resolves to a
+        real `+page.svelte` — extended `apps/web/src/lib/test/route-exists.ts` with
+        `projectRouteExists()` since the existing helper can't see past the `[projectId]` dynamic
+        segment)
+- [x] Task 3 — Re-point dashboard/list links (AC: 6, 7, 12, 13, 14)
+  - [x] Updated `apps/web/src/routes/(app)/projects/+page.svelte` project card's name to link to
+        `/projects/${project.id}`; the existing "View credentials" secondary action is unchanged
+  - [x] Audited `apps/web/src/routes/(app)/dashboard/+page.svelte`: only the selected-project `<h1>`
+        (line ~85) was a project-level (not credential/rotation-level) link candidate — it was plain
+        text before, now links to `/projects/${data.selectedProject.id}`. The 6 other links the
+        story's Background section calls out (lines 64/132/171/208/220/227) are all
+        credential/rotation/quick-action deep links and were confirmed unchanged.
+  - [x] Added `projects-list-page.test.ts` and `dashboard-page.test.ts` (neither page had a
+        component-level test before this story) asserting the new hrefs
+- [x] Task 4 — Regression pass
+  - [x] Full web test suite: 188 files / 1491 tests passed, no regressions. Full API project-routes
+        suite: 22/22 passed (127/127 across all `apps/api/src/modules/projects/**` tests). Also
+        fixed a pre-existing-pattern gap the new route tripped: `route-audit.test.ts` requires every
+        `secureRoute` to have an entry in `ROUTE_ACTION_CLASSIFICATIONS`
+        (apps/api/src/lib/route-exemptions.ts) — added one for the new `GET /:projectId` route,
+        mirroring the adjacent dashboard route's classification.
+  - [x] Manually verified the persona journey end-to-end against a locally bootstrapped Docker
+        stack (`make docker-up` + vault init) using live Chrome browser automation — see Dev Agent
+        Record → Completion Notes for the full walkthrough and what was checked.
 
 ## Dev Notes
 
@@ -341,5 +380,87 @@ Claude Sonnet 5
 - Story created by splitting the original bundled `12-1-usability-and-navigation-fixes` story into
   this IA-focused story and the sibling `12-2-usability-trust-accessibility-fixes`. Grounded in
   direct source inspection of the current routing/nav structure (2026-07-13) rather than assumption.
+- **Implementation summary**: added the missing `/projects/:id` overview route (name, description,
+  tags, ownership, archived badge, three honest summary tiles), a new persistent `ProjectNav`
+  sub-nav wired via a shared `+layout.svelte`/`+layout.server.ts` across all 9 project screens, and
+  re-pointed the projects-list card link + the dashboard's selected-project heading to the new
+  overview page. One new API endpoint (`GET /api/v1/projects/:projectId`) was added as a flagged
+  scope-affecting discovery — see Task 1's note above.
+- **Manual verification (live Chrome, local Docker stack)**: bootstrapped the full stack with
+  `make docker-up`, initialized the vault (`POST /api/v1/vault/init` with a bootstrap token — the
+  UI's remote-init path needs `VAULT_BOOTSTRAP_TOKEN` wired, since `VAULT_ALLOW_REMOTE_INIT` is not
+  actually passed through `docker-compose.yml`'s `api` service environment despite being documented
+  as the alternative), registered a new org/owner, ran onboarding, and created a "Payments API"
+  project with one credential. Verified end-to-end via `mcp__claude-in-chrome`:
+  - Golden path: clicking the project name on `/projects` landed on `/projects/:id` showing
+    `<h1>Payments API</h1>`, "Created Jul 13, 2026 · Your role: owner", and three tiles reading
+    "1 member", "Nothing expiring soon", "No services configured yet" (honest empty state, AC-2
+    edge case) — never a blank tile or a fabricated 0.
+  - Sub-nav persistence: navigated Overview → Credentials → Members via the tab bar (not back
+    button); the 9-tab bar rendered identically each time with no flicker/reorder, and the correct
+    tab carried `aria-current="page"` at each stop, exactly matching the persona journey stub.
+  - Dashboard: the "Payments API" heading on `/dashboard` is now a link to `/projects/:id`; clicking
+    it landed on the overview page.
+  - 404/edge cases: `GET /projects/<random-uuid>` (nonexistent) rendered an honest "Project not
+    found" message with the sub-nav still present, no data leak. `GET /projects/not-a-uuid`
+    (malformed) rendered the app's existing generic 500 error page — confirmed byte-for-byte
+    identical to `GET /projects/not-a-uuid/credentials`'s existing behavior (same screenshot), so
+    AC-4's "reuse the established pattern" is satisfied even though that established pattern is a
+    bare 500, not a friendly 400/404.
+  - Archived state: set `archived_at` directly via `psql` (the archive API route requires MFA
+    enrollment, out of scope to enroll for this check) and reloaded the overview — an "Archived"
+    badge rendered both in the sub-nav and next to the project name, then reverted the DB change
+    afterward.
+  - Non-project pages (`/dashboard`, `/projects`) render with no stray project sub-nav, confirming
+    AC-10.
+  - Not exercised live: a genuine second-org-viewer browser session for the Endpoints-tab-hidden
+    case (AC-9) — provisioning a real second authenticated session inside this environment was
+    disproportionate effort for a case already covered by a real Postgres-backed API integration
+    test (a true `project_memberships` viewer role hitting the new endpoint) plus 6 dedicated
+    `ProjectNav` unit/component tests exercising the exact hide-for-viewer logic.
+- **Docker/env note for future manual verification**: `docker-compose.yml` only wires
+  `VAULT_BOOTSTRAP_TOKEN` through to the `api` service, not `VAULT_ALLOW_REMOTE_INIT` — despite the
+  latter being documented in `.env.example` as the dev-friendly alternative. Set
+  `VAULT_BOOTSTRAP_TOKEN` in `.env` and pass it as the `x-vault-bootstrap-token` header (or via the
+  UI's "Bootstrap token" field) to init a fresh Docker stack; this is out of this story's scope to
+  fix but is worth flagging for whoever hits it next.
 
 ### File List
+
+**New files**
+
+- `apps/web/src/routes/(app)/projects/[projectId]/+page.server.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/+layout.server.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/+layout.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/project-overview-page.server.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/project-overview-page.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/project-layout.server.test.ts`
+- `apps/web/src/lib/components/shell/ProjectNav.svelte`
+- `apps/web/src/lib/components/shell/project-nav-model.ts`
+- `apps/web/src/lib/components/shell/project-nav-model.test.ts`
+- `apps/web/src/lib/components/shell/ProjectNav.test.ts`
+- `apps/web/src/lib/components/shell/ProjectNav.route-exists.test.ts`
+- `apps/web/src/routes/(app)/projects/projects-list-page.test.ts`
+- `apps/web/src/routes/(app)/dashboard/dashboard-page.test.ts`
+
+**Modified files**
+
+- `apps/web/src/routes/(app)/projects/+page.svelte` (project card name now links to overview)
+- `apps/web/src/routes/(app)/dashboard/+page.svelte` (selected-project heading now links to overview)
+- `apps/web/src/lib/api/projects.ts` (added `getProject`)
+- `apps/web/src/lib/test/route-exists.ts` (added `projectRouteExists` helper)
+- `apps/api/src/modules/projects/routes.ts` (added `GET /:projectId` overview route)
+- `apps/api/src/modules/projects/schema.ts` (added `ProjectOverviewResponseSchema`)
+- `apps/api/src/modules/projects/member-management.ts` (added `getProjectMemberCount`)
+- `apps/api/src/modules/projects/routes.test.ts` (added overview + archived-state route tests)
+- `apps/api/src/lib/route-exemptions.ts` (added route-audit classification for the new endpoint)
+- `packages/shared/src/schemas/projects.ts` (added `ProjectOverviewSchema`/`ProjectOverview`)
+
+### Change Log
+
+- 2026-07-13: Implemented Story 12.1 — project overview page, persistent project sub-nav, and
+  dashboard/list link re-pointing. Added one new API endpoint (`GET /api/v1/projects/:projectId`)
+  as a flagged scope-affecting discovery (see Task 1). All ACs satisfied; 188/188 web test files
+  (1491/1491 tests) and 127/127 API project-module tests passing. Manually verified end-to-end
+  against a locally bootstrapped Docker stack via live Chrome browser automation.
