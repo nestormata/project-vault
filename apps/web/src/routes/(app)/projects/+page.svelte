@@ -271,6 +271,12 @@
             {/if}
           </div>
           <div class="mt-4 flex flex-wrap items-center gap-3">
+            <a
+              class="inline-block rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
+              href={resolve(`/projects/${project.id}`)}
+            >
+              View project
+            </a>
             {#if !project.isArchived}
               <a
                 class="inline-block rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
