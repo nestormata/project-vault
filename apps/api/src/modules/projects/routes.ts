@@ -46,7 +46,7 @@ import {
   getProjectMembershipRole,
   removeProjectMembership,
 } from './member-management.js'
-import { callerCanSeeProject, logVisibilityDenied } from './project-access.js'
+import { requireProjectVisible } from './project-access.js'
 import {
   findBlockingRotationIds,
   PROJECT_ARCHIVED_ERROR,
@@ -55,6 +55,19 @@ import {
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
+
+// Shared response-schema shape for the two project-read GETs below (dashboard, overview): same
+// error surface (401/404/422), only the 200 payload differs.
+function projectReadResponseSchema<T>(schema200: T) {
+  return {
+    response: {
+      200: schema200,
+      401: ApiErrorSchema,
+      404: ApiErrorSchema,
+      422: ApiErrorSchema,
+    },
+  }
+}
 
 // Inline project-role lookup — see 4.1 D-notes / 4.4 AC-2 for why this isn't centralized as a
 // cross-module resolver yet; 3rd cross-story occurrence as of 4.2, consider extracting if a 4th
@@ -422,31 +435,34 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
+  // Shared by the two viewer-gated /:projectId* GET routes below (dashboard, overview): parses
+  // params, then applies the AC-V3/AC-V10 membership visibility gate (404s without leaking
+  // whether the project exists — 12-1 AC-3 mirrors this for the overview route).
+  async function parseVisibleProjectParams(
+    ctx: unknown,
+    req: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<{ params: { projectId: string }; secureCtx: SecureRouteContext } | null> {
+    const params = parseParams(ProjectParamsSchema, req, reply)
+    if (!params) return null
+    const secureCtx = ctx as SecureRouteContext
+    if (!(await requireProjectVisible(secureCtx, req, params.projectId))) {
+      reply.status(404).send(PROJECT_NOT_FOUND)
+      return null
+    }
+    return { params, secureCtx }
+  }
+
   secureRoute(fastify, {
     method: 'GET',
     url: '/:projectId/dashboard',
-    schema: {
-      response: {
-        200: ProjectDashboardResponseSchema,
-        401: ApiErrorSchema,
-        404: ApiErrorSchema,
-        422: ApiErrorSchema,
-      },
-    },
+    schema: projectReadResponseSchema(ProjectDashboardResponseSchema),
     security: { minimumRole: 'viewer', writeAuditEvent: false },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-      // Story 4.5 AC-V3/AC-V10: membership visibility gate before any dashboard work.
-      if (!(await callerCanSeeProject(secureCtx, params.projectId))) {
-        logVisibilityDenied(req, {
-          projectId: params.projectId,
-          callerId: secureCtx.auth.userId,
-          orgRole: secureCtx.auth.orgRole,
-        })
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
+      // Dashboard read: stats/alerts summary for the project detail view (4.4 AC-5).
+      const gate = await parseVisibleProjectParams(ctx, req, reply)
+      if (!gate) return reply
+      const { params, secureCtx } = gate
       // 4.4 AC-5: reads (including the dashboard) remain fully available on archived projects —
       // only mutations are guarded. Do not filter on archivedAt here.
       const rows = await secureCtx.tx
@@ -462,32 +478,18 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   // 12-1 AC-1/AC-2/AC-3/AC-4/AC-5: the project overview page's single detail+member-count call.
-  // Mirrors the dashboard route immediately above: visibility check (callerCanSeeProject) BEFORE
-  // any row is read, so a 404 never leaks the target project's name/description/tags (AC-3).
+  // Mirrors the dashboard route immediately above: visibility check (parseVisibleProjectParams)
+  // BEFORE any row is read, so a 404 never leaks the target project's name/description/tags (AC-3).
   secureRoute(fastify, {
     method: 'GET',
     url: '/:projectId',
-    schema: {
-      response: {
-        200: ProjectOverviewResponseSchema,
-        401: ApiErrorSchema,
-        404: ApiErrorSchema,
-        422: ApiErrorSchema,
-      },
-    },
-    security: { minimumRole: 'viewer', writeAuditEvent: false },
+    schema: projectReadResponseSchema(ProjectOverviewResponseSchema),
+    security: { writeAuditEvent: false, minimumRole: 'viewer' },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(ProjectParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-      if (!(await callerCanSeeProject(secureCtx, params.projectId))) {
-        logVisibilityDenied(req, {
-          projectId: params.projectId,
-          callerId: secureCtx.auth.userId,
-          orgRole: secureCtx.auth.orgRole,
-        })
-        return reply.status(404).send(PROJECT_NOT_FOUND)
-      }
+      // Overview read: name/description/tags/ownership + honest summary tiles (12-1 AC-1..AC-5).
+      const gate = await parseVisibleProjectParams(ctx, req, reply)
+      if (!gate) return reply
+      const { params, secureCtx } = gate
 
       const [project] = await secureCtx.tx
         .select()
