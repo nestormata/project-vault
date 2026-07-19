@@ -360,13 +360,13 @@ jobs:
           fetch-depth: 0
 
       - name: Download coverage (api, db)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: coverage-shard-api-db
           path: .
 
       - name: Download coverage (web, agent, crypto, shared, vault-action)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: coverage-shard-web-other
           path: .
