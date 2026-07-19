@@ -262,7 +262,7 @@ jobs:
       # up as a failing job on every nightly failure.
       - name: Post to Slack
         if: ${{ env.SLACK_WEBHOOK_URL != '' }}
-        uses: slackapi/slack-github-action@v3
+        uses: slackapi/slack-github-action@v4
         with:
           payload: |
             {
