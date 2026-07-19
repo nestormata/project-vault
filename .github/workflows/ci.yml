@@ -378,7 +378,7 @@ jobs:
       # stale on the last passing run.
       - name: SonarCloud Scan
         if: ${{ !cancelled() }}
-        uses: SonarSource/sonarqube-scan-action@v8.2.0
+        uses: SonarSource/sonarqube-scan-action@v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
