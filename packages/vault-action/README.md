@@ -7,6 +7,12 @@ This action is a thin wrapper around [`@project-vault/agent`](../agent) (Story 7
 machine-user authentication and programmatic secret-retrieval package) — it does not implement
 its own HTTP client, token exchange, or retry logic.
 
+> **Consuming this action?** Use `nestormata/vault-action`, not this monorepo path. GitHub
+> Marketplace requires `action.yml` at a repository root, which this monorepo subdirectory can't
+> satisfy, so [`nestormata/vault-action`](https://github.com/nestormata/vault-action) is a
+> release-only mirror that `vault-action-release.yml` publishes to on every tag (issue #112). This
+> directory remains the actual source of truth for development.
+
 ## 1. Setup — create a machine user and API key
 
 Before using this action, create a **machine user** scoped to a single project and issue it an
@@ -26,7 +32,7 @@ constraint below (D2).
 ## 2. Usage
 
 ```yaml
-- uses: project-vault/vault-action@v1
+- uses: nestormata/vault-action@v1
   with:
     vault-url: <your Project Vault base URL>
     api-key: ${{ secrets.VAULT_API_KEY }}
@@ -70,13 +76,13 @@ one project, so one `vault-action` step can only ever retrieve secrets from one 
 need secrets from two projects, use two steps, each with that project's own `api-key`:
 
 ```yaml
-- uses: project-vault/vault-action@v1
+- uses: nestormata/vault-action@v1
   with:
     vault-url: https://vault.example.com
     api-key: ${{ secrets.PROJECT_A_VAULT_API_KEY }}
     secrets: a1c2d3e4-0000-0000-0000-000000000000/DATABASE_URL as DB_URL
 
-- uses: project-vault/vault-action@v1
+- uses: nestormata/vault-action@v1
   with:
     vault-url: https://vault.example.com
     api-key: ${{ secrets.PROJECT_B_VAULT_API_KEY }}
@@ -88,7 +94,7 @@ need secrets from two projects, use two steps, each with that project's own `api
 Use a YAML block scalar (`|`) to list multiple mappings, one per line:
 
 ```yaml
-- uses: project-vault/vault-action@v1
+- uses: nestormata/vault-action@v1
   with:
     vault-url: https://vault.example.com
     api-key: ${{ secrets.VAULT_API_KEY }}
@@ -120,7 +126,7 @@ action's own `continue-on-error` **input** says. The two mechanisms are independ
 
 ```yaml
 # This action's own input — softens only "vault unreachable" failures.
-- uses: project-vault/vault-action@v1
+- uses: nestormata/vault-action@v1
   with:
     vault-url: ${{ vars.VAULT_URL }}
     api-key: ${{ secrets.VAULT_API_KEY }}
@@ -128,7 +134,7 @@ action's own `continue-on-error` **input** says. The two mechanisms are independ
     continue-on-error: 'true'
 
 # GitHub's own, unrelated step-level key — lets the JOB continue even if this step hard-fails.
-- uses: project-vault/vault-action@v1
+- uses: nestormata/vault-action@v1
   continue-on-error: true
   with:
     vault-url: ${{ vars.VAULT_URL }}
@@ -165,7 +171,7 @@ updates (the same convention `actions/checkout@v4` uses). For security-conscious
 want to avoid trusting a mutable tag, pin to a full commit SHA instead:
 
 ```yaml
-- uses: project-vault/vault-action@<full-commit-sha>
+- uses: nestormata/vault-action@<full-commit-sha>
 ```
 
 This trades convenience (no automatic patch/minor updates) for supply-chain integrity — the exact
@@ -203,7 +209,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Retrieve deploy secrets from Project Vault
-        uses: project-vault/vault-action@v1
+        uses: nestormata/vault-action@v1
         with:
           vault-url: ${{ vars.VAULT_URL }}
           api-key: ${{ secrets.VAULT_API_KEY }}
