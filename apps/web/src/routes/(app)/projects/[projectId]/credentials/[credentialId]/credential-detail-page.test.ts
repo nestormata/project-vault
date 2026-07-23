@@ -219,7 +219,21 @@ describe('credential detail +page.svelte', () => {
     expect(writeText).toHaveBeenCalledWith('sk_live_abc123')
   })
 
-  it('a clipboard failure while copying does not throw or crash the page', async () => {
+  it('AC-20: a successful copy shows a visible, announced confirmation', async () => {
+    revealCredentialValueMock.mockResolvedValue({ value: 'sk_live_abc123', versionNumber: 1 })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, { props: { data: baseData() } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
+    await screen.findByText('sk_live_abc123')
+    await fireEvent.click(screen.getByRole('button', { name: /^copy$/i }))
+
+    const status = await screen.findByRole('status', { name: '' })
+    expect(status.textContent).toMatch(/copied to clipboard/i)
+  })
+
+  it('AC-21: a clipboard failure while copying announces a failure message via the same status region', async () => {
     revealCredentialValueMock.mockResolvedValue({ value: 'sk_live_abc123', versionNumber: 1 })
     const writeText = vi.fn().mockRejectedValue(new Error('denied'))
     Object.assign(navigator, { clipboard: { writeText } })
@@ -229,6 +243,7 @@ describe('credential detail +page.svelte', () => {
     await screen.findByText('sk_live_abc123')
     await fireEvent.click(screen.getByRole('button', { name: /^copy$/i }))
 
+    expect(await screen.findByText(/couldn't copy/i)).toBeTruthy()
     expect(screen.getByText('sk_live_abc123')).toBeTruthy()
   })
 

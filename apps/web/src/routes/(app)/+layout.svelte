@@ -2,6 +2,7 @@
   import AppShell from '$lib/components/shell/AppShell.svelte'
   import GlobalSearch from '$lib/components/shell/GlobalSearch.svelte'
   import OnboardingWizard from '$lib/components/onboarding/OnboardingWizard.svelte'
+  import { invalidateAll } from '$app/navigation'
   import { onMount, onDestroy } from 'svelte'
   import {
     subscribeToInboxEvents,
@@ -46,7 +47,16 @@
       user={data.user}
       projects={data.projects}
       importRouteLive={data.importRouteLive}
-      oncompleted={() => {
+      oncompleted={async () => {
+        // AC-1/2/3: the dashboard's +page.server.ts load already ran (in parallel, as part of the
+        // initial navigation to /dashboard) before the wizard's mutations landed, so its `data`
+        // is stale by the time `children()` first mounts. `invalidateAll()` re-runs every load
+        // function for the current route (this layout's and the page's) with the wizard's writes
+        // now durably committed, so `children()` only ever mounts with fresh data — no client-side
+        // polling loop or artificial delay, and no window where a partial/failed mutation could
+        // still flip this to true (the wizard itself only calls `oncompleted` after its own
+        // mutation promise has settled — see OnboardingWizard.svelte/onboarding-logic.ts).
+        await invalidateAll()
         onboardingDone = true
       }}
     />

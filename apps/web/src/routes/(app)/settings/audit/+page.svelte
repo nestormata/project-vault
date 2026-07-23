@@ -8,6 +8,7 @@
   import { buildSearchSubmitHandler } from '$lib/audit/search-form.js'
   import { buildPageHref } from '$lib/audit/page-href.js'
   import { buildDateRangePart } from '$lib/audit/date-range.js'
+  import { getEventTypeLabel } from '$lib/utils/event-type-labels.js'
 
   let { data } = $props()
 
@@ -161,7 +162,9 @@
                 class="cursor-pointer border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
                 onclick={() => toggleRow(event.id)}
               >
-                <td class="px-4 py-3 font-medium text-slate-900">{event.eventType}</td>
+                <td class="px-4 py-3 font-medium text-slate-900"
+                  >{getEventTypeLabel(event.eventType)}</td
+                >
                 <td class="px-4 py-3 text-slate-600">{event.actorDisplayName}</td>
                 <td class="px-4 py-3 text-slate-600">{event.resourceType ?? '—'}</td>
                 <td class="px-4 py-3 text-slate-600">{event.projectId ?? '—'}</td>

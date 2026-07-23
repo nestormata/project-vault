@@ -151,6 +151,7 @@
   onDestroy(() => {
     revealedValue = null
     revealVersion = null
+    if (copyStatusTimeout) clearTimeout(copyStatusTimeout)
   })
 
   async function revealValue() {
@@ -177,12 +178,29 @@
     }
   }
 
+  // AC-20/21: mirrors the existing `role="status"`/`aria-live="polite"` "✓ Credential saved
+  // securely" pattern used elsewhere on this same page — a brief, auto-dismissing, announced
+  // confirmation (or failure message) rather than a silent no-op or an unhandled rejection.
+  let copyStatus = $state<{ kind: 'success' | 'failure'; message: string } | null>(null)
+  let copyStatusTimeout: ReturnType<typeof setTimeout> | null = null
+
+  function showCopyStatus(kind: 'success' | 'failure', message: string) {
+    if (copyStatusTimeout) clearTimeout(copyStatusTimeout)
+    copyStatus = { kind, message }
+    copyStatusTimeout = setTimeout(() => {
+      copyStatus = null
+      copyStatusTimeout = null
+    }, 3000)
+  }
+
   async function copyValue() {
     if (!revealedValue) return
     try {
       await navigator.clipboard.writeText(revealedValue)
+      showCopyStatus('success', 'Copied to clipboard')
     } catch {
-      // Clipboard may be unavailable in some contexts.
+      // Clipboard may be unavailable in some contexts (permissions denied, non-secure context).
+      showCopyStatus('failure', "Couldn't copy — copy manually")
     }
   }
 
@@ -356,6 +374,14 @@
               Hide
             </button>
           </div>
+          {#if copyStatus}
+            <p
+              class={`mt-2 text-sm ${copyStatus.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
+              role="status"
+            >
+              {copyStatus.message}
+            </p>
+          {/if}
           {#if revealVersion !== null}
             <p class="mt-2 text-sm text-slate-600">Version {revealVersion}</p>
           {/if}

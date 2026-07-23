@@ -55,7 +55,7 @@
   }
 </script>
 
-<OnboardingDialog bind:dialogRef labelledby={headingId}>
+<OnboardingDialog bind:dialogRef labelledby={headingId} onClose={() => void dismissWizard()}>
   {#if step === 1}
     <OnboardingStep1
       orgName={user.orgId}

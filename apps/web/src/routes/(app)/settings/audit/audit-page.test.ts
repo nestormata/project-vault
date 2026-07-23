@@ -75,8 +75,28 @@ describe('/settings/audit +page.svelte', () => {
   it('AC-B1: renders a real, unfiltered first page of events in a table', () => {
     render(AuditPage, { props: { data: allowedData() } })
 
-    expect(screen.getByText('credential.access')).toBeTruthy()
+    expect(screen.getByText('Credential Access')).toBeTruthy()
     expect(screen.getByText('Dana Smith')).toBeTruthy()
+  })
+
+  it('AC-22: renders event types through the shared human-readable label mapping, not the raw code', () => {
+    render(AuditPage, {
+      props: { data: allowedData({ events: [{ ...SAMPLE_EVENT, eventType: 'SESSION_CREATED' }] }) },
+    })
+
+    expect(screen.getByText('Session Created')).toBeTruthy()
+    expect(screen.queryByText('SESSION_CREATED')).toBeNull()
+  })
+
+  it('AC-23: an unmapped event type renders a humanized fallback, not the raw code', () => {
+    render(AuditPage, {
+      props: {
+        data: allowedData({ events: [{ ...SAMPLE_EVENT, eventType: 'brand_new.event_type' }] }),
+      },
+    })
+
+    expect(screen.getByText('Brand New Event Type')).toBeTruthy()
+    expect(screen.queryByText('brand_new.event_type')).toBeNull()
   })
 
   it('AC-B1 edge: an honest empty state for a brand-new org', () => {
@@ -136,7 +156,7 @@ describe('/settings/audit +page.svelte', () => {
   it('AC-B3: clicking an event row expands a detail panel with fields already in the response, no second API call', async () => {
     render(AuditPage, { props: { data: allowedData() } })
 
-    await fireEvent.click(screen.getByText('credential.access'))
+    await fireEvent.click(screen.getByText('Credential Access'))
 
     expect(await screen.findByText(/cred-1/)).toBeTruthy()
     expect(screen.getAllByText(/203\.0\.113\.4/).length).toBeGreaterThanOrEqual(1)

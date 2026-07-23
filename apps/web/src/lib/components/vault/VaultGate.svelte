@@ -11,7 +11,12 @@
   <div class="space-y-2">
     <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">{model.eyebrow}</p>
     <h1 class="text-3xl font-bold text-slate-950">{model.title}</h1>
-    <p class="text-slate-600">{model.message}</p>
+    {#if model.explanation}
+      <p class="text-slate-600">{model.explanation}</p>
+    {/if}
+    {#if model.message}
+      <p class="text-sm text-slate-500">{model.message}</p>
+    {/if}
   </div>
 {/snippet}
 

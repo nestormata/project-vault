@@ -1,23 +1,10 @@
 <script lang="ts">
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
+  import { getEventTypeLabel } from '$lib/utils/event-type-labels.js'
   import type { ActionData, PageData } from './$types.js'
 
   const { data, form }: { data: PageData; form: ActionData } = $props()
-
-  const ALERT_TYPE_LABELS: Record<string, string> = {
-    'security.failed_auth_threshold': 'Failed Login Threshold',
-    'security.mfa_recovery_used': 'MFA Recovery Code Used',
-    'security.mfa_recovery_codes_regenerated': 'MFA Recovery Codes Regenerated',
-    'credential.expiry': 'Credential Expiry',
-    'service.down': 'Service Down',
-    'service.recovery': 'Service Recovery',
-    'rotation.stale': 'Stale Rotation',
-    'backup.failure': 'Backup Failure',
-    'machine_key.expiry': 'Machine Key Expiry',
-    'security.anomalous_access': 'Anomalous Access',
-    'machine_cache.activated': 'Offline Cache Activated',
-  }
 
   const CHANNEL_LABELS: Record<string, string> = {
     delivered: 'Delivered',
@@ -64,7 +51,7 @@
         {#each data.preferences as pref (pref.alertType + ':' + pref.channel)}
           <tr>
             <td class="px-6 py-4 text-sm font-medium text-gray-900">
-              {ALERT_TYPE_LABELS[pref.alertType] ?? pref.alertType}
+              {getEventTypeLabel(pref.alertType)}
             </td>
             <td class="px-6 py-4 text-sm capitalize text-gray-500">{pref.channel}</td>
             <td class="px-6 py-4 text-sm text-gray-500">
@@ -75,7 +62,11 @@
               <form method="POST" action="?/updatePreference" use:enhance>
                 <input type="hidden" name="alertType" value={pref.alertType} />
                 <input type="hidden" name="channel" value={pref.channel} />
-                <select name="frequency" class="mr-2 rounded border-gray-300 text-sm">
+                <select
+                  name="frequency"
+                  class="mr-2 rounded border-gray-300 text-sm"
+                  aria-label={`Frequency for ${getEventTypeLabel(pref.alertType)} via ${pref.channel}`}
+                >
                   <option value="immediate" selected={pref.frequency === 'immediate'}
                     >Immediate</option
                   >
@@ -83,7 +74,11 @@
                     >Daily digest</option
                   >
                 </select>
-                <select name="minSeverity" class="mr-2 rounded border-gray-300 text-sm">
+                <select
+                  name="minSeverity"
+                  class="mr-2 rounded border-gray-300 text-sm"
+                  aria-label={`Minimum severity for ${getEventTypeLabel(pref.alertType)} via ${pref.channel}`}
+                >
                   <option value="info" selected={pref.minSeverity === 'info'}>Info+</option>
                   <option value="warning" selected={pref.minSeverity === 'warning'}>Warning+</option
                   >
@@ -116,7 +111,7 @@
           {#each data.routing as route (route.alertType)}
             <div class="mb-3 flex items-center gap-4">
               <span class="w-64 text-sm text-gray-700">
-                {ALERT_TYPE_LABELS[route.alertType] ?? route.alertType}
+                {getEventTypeLabel(route.alertType)}
               </span>
               <select
                 name="routeTo_{route.alertType}"

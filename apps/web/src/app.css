@@ -6,7 +6,21 @@
 @theme {
   --color-brand-50: #f5f3ff;
   --color-brand-100: #ede9fe;
+  --color-brand-400: #a78bfa;
   --color-brand-500: #8b5cf6;
   --color-brand-600: #7c3aed;
   --color-brand-700: #6d28d9;
+}
+
+/* AC-12/13: the default browser focus outline is near-invisible against the app's dark
+   (bg-slate-950) button treatment — fails WCAG 2.1 AA 2.4.7's 3:1 non-text contrast minimum.
+   Fixed once, here, at the shared `.bg-slate-950` selector level so every current and future
+   dark button inherits a visibly contrasting ring without being touched individually. The inner
+   shadow matches the button's own background (creating an offset), and the outer ring uses
+   brand-400, which has strong contrast against near-black slate-950. */
+.bg-slate-950:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--color-slate-950),
+    0 0 0 4px var(--color-brand-400);
 }

@@ -126,4 +126,71 @@ describe('OnboardingWizard', () => {
     expect(screen.getByRole('button', { name: 'Hide value' })).toBeTruthy()
     expect((screen.getByLabelText('Credential value') as HTMLInputElement).type).toBe('text')
   })
+
+  describe('AC-5/6/7: escape hatch', () => {
+    it('AC-5: renders a visible close control on step 1', () => {
+      renderWizard()
+      expect(screen.getByRole('button', { name: /close/i })).toBeTruthy()
+    })
+
+    it('AC-5: renders a visible close control on step 2', async () => {
+      renderWizard()
+      await goToCredentialStep(screen, fireEvent)
+      expect(screen.getByRole('button', { name: /close/i })).toBeTruthy()
+    })
+
+    it('AC-5: clicking the close button dismisses the wizard', async () => {
+      const oncompleted = vi.fn()
+      installFetchMock(
+        () => new Response(JSON.stringify({ completed: true, completedAt: 'now' }), { status: 200 })
+      )
+      renderWizard({ oncompleted })
+
+      await fireEvent.click(screen.getByRole('button', { name: /close/i }))
+
+      await vi.waitFor(() => expect(oncompleted).toHaveBeenCalled())
+    })
+
+    it('AC-6: pressing Escape closes the dialog via the same handler as the close button', async () => {
+      const oncompleted = vi.fn()
+      installFetchMock(
+        () => new Response(JSON.stringify({ completed: true, completedAt: 'now' }), { status: 200 })
+      )
+      renderWizard({ oncompleted })
+
+      await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+
+      await vi.waitFor(() => expect(oncompleted).toHaveBeenCalled())
+    })
+
+    it('AC-7: dismissing mid-step-2 (after a credential was already saved) does not re-submit the credential or lose the saved state', async () => {
+      const createCredentialCalls: string[] = []
+      installFetchMock((url, init) => {
+        if (String(url).includes('/credentials') && init?.method === 'POST') {
+          createCredentialCalls.push('create')
+          return credentialCreateSuccess()
+        }
+        if (String(url).includes('/users/me/onboarding') && init?.method === 'POST') {
+          return new Response(JSON.stringify({ completed: true, completedAt: 'now' }), {
+            status: 200,
+          })
+        }
+        return new Response(JSON.stringify({ completed: false }), { status: 200 })
+      })
+      const oncompleted = vi.fn()
+      renderWizard({ oncompleted })
+
+      await goToCredentialStep(screen, fireEvent)
+      await fillCredentialForm(screen, fireEvent, { name: 'MY_API_KEY', value: 'sk_live_abc123' })
+      await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
+      expect(await screen.findByText(/Credential saved securely/i)).toBeTruthy()
+      expect(createCredentialCalls).toHaveLength(1)
+
+      await fireEvent.click(screen.getByRole('button', { name: /close/i }))
+
+      await vi.waitFor(() => expect(oncompleted).toHaveBeenCalled())
+      // No second credential-create call was fired by dismissing early.
+      expect(createCredentialCalls).toHaveLength(1)
+    })
+  })
 })
