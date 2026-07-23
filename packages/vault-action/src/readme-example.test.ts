@@ -53,7 +53,7 @@ describe('README.md example workflow (AC-13)', () => {
     expect(jobNames.length).toBeGreaterThan(0)
 
     const allSteps = jobNames.flatMap((jobName) => parsed.jobs[jobName]?.steps ?? [])
-    const actionStep = allSteps.find((step) => step.uses?.startsWith('project-vault/vault-action@'))
+    const actionStep = allSteps.find((step) => step.uses?.startsWith('nestormata/vault-action@'))
     expect(actionStep).toBeDefined()
     expect(actionStep?.with).toMatchObject({
       'vault-url': expect.any(String),

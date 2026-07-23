@@ -12,6 +12,13 @@ name: vault-action Release
 # required-review settings, so moving the mutable vault-action-v1 tag always traces back to a
 # reviewed change, not a unilateral push. Verify this repo-configuration step manually; flagged
 # again in packages/vault-action/README.md and this story's Completion Notes.
+#
+# MARKETPLACE MIRROR (issue #112): GitHub Marketplace requires action.yml at a repository root,
+# which a monorepo subdirectory can never satisfy. The final step below pushes the built
+# action.yml + dist/ to the standalone nestormata/vault-action repo (build-mirror only, no
+# independent source) using the VAULT_ACTION_MIRROR_TOKEN repo secret — a fine-grained PAT scoped
+# to Contents: write on that repo only. If that secret is missing/expired the mirror step fails
+# but the tag/major-tag move above it has already succeeded.
 
 on:
   push:
@@ -106,3 +113,46 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f "${{ steps.major-tag.outputs.major_tag }}" "${{ steps.major-tag.outputs.full_tag }}"
           git push origin "${{ steps.major-tag.outputs.major_tag }}" --force
+
+      # Issue #112 / GitHub Marketplace requires action.yml at a repo ROOT — impossible for this
+      # monorepo. nestormata/vault-action is a build-mirror-only repo (no independent source, no
+      # PRs) that this step publishes the just-verified action.yml + dist/ to, tagged to match this
+      # release, so `nestormata/vault-action@v1` / `@v1.0.0` resolve there. Source of truth stays
+      # in this monorepo's packages/vault-action.
+      - name: Mirror action.yml + dist/ to nestormata/vault-action
+        if: steps.tagcheck.outputs.is_full_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.VAULT_ACTION_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION_TAG="${{ steps.major-tag.outputs.full_tag }}"        # e.g. vault-action-v1.0.0
+          MIRROR_TAG="v${VERSION_TAG#vault-action-v}"                   # e.g. v1.0.0
+          MIRROR_MAJOR_TAG="${{ steps.major-tag.outputs.major_tag }}"
+          MIRROR_MAJOR_TAG="v${MIRROR_MAJOR_TAG#vault-action-v}"        # e.g. v1
+
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/nestormata/vault-action.git" /tmp/vault-action-mirror
+          cd /tmp/vault-action-mirror
+          rm -rf dist action.yml
+          cp -r "$GITHUB_WORKSPACE/packages/vault-action/action.yml" action.yml
+          cp -r "$GITHUB_WORKSPACE/packages/vault-action/dist" dist
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add action.yml dist
+          if git diff --cached --quiet; then
+            echo "No build changes to mirror for $MIRROR_TAG (README/LICENSE unaffected)."
+          else
+            git commit -m "Mirror ${VERSION_TAG} build from nestormata/project-vault@${GITHUB_SHA}"
+            git push origin main
+          fi
+
+          git tag -f "$MIRROR_TAG"
+          git push origin "$MIRROR_TAG" --force
+          git tag -f "$MIRROR_MAJOR_TAG" "$MIRROR_TAG"
+          git push origin "$MIRROR_MAJOR_TAG" --force
+
+          gh release create "$MIRROR_TAG" \
+            --repo nestormata/vault-action \
+            --title "$MIRROR_TAG" \
+            --notes "Mirrored from nestormata/project-vault@${GITHUB_SHA}. See release notes on that repository for details." \
+            --latest || echo "Release $MIRROR_TAG may already exist on the mirror — check manually."

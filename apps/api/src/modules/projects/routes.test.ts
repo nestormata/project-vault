@@ -38,6 +38,10 @@ const PROJECTS_URL = '/api/v1/projects'
 const ALPHA_PROJECT_SLUG = 'alpha-project'
 const TEAM_PAYMENTS_TAG = 'team-payments'
 const TIER_0_TAG = 'tier-0'
+// Computed relative to wall-clock "now" so the "expiring soon" (within 30 days) bucket stays
+// true regardless of when the suite runs — a hardcoded future date silently becomes past-dated
+// (and reclassified as expired) once real time catches up to it.
+const EXPIRING_SOON = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
 
 function uniqueEmail(label: string): string {
@@ -383,7 +387,7 @@ describe.sequential('project routes', () => {
     await createCredentialViaApi(app, user.cookies, projectId, {
       name: 'Stripe Secret Key',
       value: 'sk_test',
-      expiresAt: '2026-07-15T00:00:00.000Z',
+      expiresAt: EXPIRING_SOON,
     })
     await createCredentialViaApi(app, user.cookies, projectId, {
       name: 'Legacy API Token',
