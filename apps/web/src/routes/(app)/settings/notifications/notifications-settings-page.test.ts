@@ -29,7 +29,7 @@ describe('/settings/notifications +page.svelte', () => {
     expect(screen.getAllByText('Immediate').length).toBeGreaterThan(0)
   })
 
-  it('falls back to the raw alert type when no human label is registered', () => {
+  it('AC-23: falls back to a readable humanized label (not the raw code) when no human label is registered', () => {
     render(NotificationsPage, {
       props: {
         data: baseData({
@@ -46,8 +46,46 @@ describe('/settings/notifications +page.svelte', () => {
       },
     })
 
-    expect(screen.getByText('unmapped.custom_type')).toBeTruthy()
+    expect(screen.getByText('Unmapped Custom Type')).toBeTruthy()
+    expect(screen.queryByText('unmapped.custom_type')).toBeNull()
     expect(screen.getAllByText('Daily digest').length).toBeGreaterThan(0)
+  })
+
+  it("AC-16: each row's frequency/minSeverity selects get a row-scoped accessible name", () => {
+    render(NotificationsPage, {
+      props: {
+        data: baseData({
+          preferences: [
+            {
+              alertType: 'credential.expiry',
+              channel: 'email',
+              frequency: 'immediate',
+              minSeverity: 'warning',
+            },
+            {
+              alertType: 'service.down',
+              channel: 'sms',
+              frequency: 'digest_daily',
+              minSeverity: 'critical',
+            },
+          ],
+        }),
+        form: null,
+      },
+    })
+
+    expect(
+      screen.getByRole('combobox', { name: 'Frequency for Credential Expiry via email' })
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('combobox', { name: 'Minimum severity for Credential Expiry via email' })
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('combobox', { name: 'Frequency for Service Down via sms' })
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('combobox', { name: 'Minimum severity for Service Down via sms' })
+    ).toBeTruthy()
   })
 
   it('a non-admin sees no org routing table and no test-notification panel', () => {

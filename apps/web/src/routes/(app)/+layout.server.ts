@@ -22,6 +22,12 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
     } catch {
       projects = { items: [], total: 0 }
     }
+    // AC-8: the wizard's auto-launch gate is "does this org have any projects", not "has this
+    // specific user personally completed onboarding" — a second admin/owner joining an org that
+    // already has ≥1 project should never see the wizard, even though their own per-user
+    // onboarding row doesn't exist yet. An org with 0 projects still gates on the per-user flag
+    // (a newly joining member should see the wizard if the org genuinely has no project yet).
+    if (projects.total > 0) onboardingCompleted = true
   }
 
   let unreadCount = 0

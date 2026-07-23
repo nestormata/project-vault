@@ -77,7 +77,10 @@ describe('AppShell.svelte', () => {
     const titleLink = screen.getByRole('link', { name: 'Project Vault' })
     expect(titleLink.getAttribute('href')).toBe('/dashboard')
     expect(screen.getByTestId('primary-nav')).toBeTruthy()
-    expect(screen.getByRole('link', { name: /notifications/i })).toBeTruthy()
+    // AC-24: the primary nav item and the header's notification-bell link now share the same
+    // "Notifications" accessible name (nav label renamed from "Alerts" to match the destination
+    // page's own heading) — both are expected to be present.
+    expect(screen.getAllByRole('link', { name: /notifications/i }).length).toBeGreaterThanOrEqual(2)
   })
 
   it('does not show an unread badge when unreadCount is 0', () => {

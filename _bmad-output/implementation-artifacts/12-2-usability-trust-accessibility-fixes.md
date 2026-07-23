@@ -1,6 +1,6 @@
 # Story 12.2: Usability Trust and Accessibility Fixes
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -290,28 +290,28 @@ human-readable labels (e.g. "Backup failure") rather than a mix of `audit_storag
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Dashboard staleness fix (AC: 1, 2, 3, 4)
-  - [ ] Trace `OnboardingWizard.svelte`/`onboarding-logic.ts`'s completion → `/dashboard` transition
-  - [ ] Fix the actual root cause (invalidation/race/hard-nav — see AC-2)
-  - [ ] Add a test simulating a slow final mutation (AC-3) and a failing final mutation (AC-4)
-- [ ] Task 2 — Onboarding modal escape hatch (AC: 5, 6, 7, 8)
-  - [ ] Add visible close/skip control to `OnboardingDialog.svelte`
-  - [ ] Add Escape-key handler wired to the same close logic
-  - [ ] Verify no unintended mutation/rollback on early dismissal
-  - [ ] Gate auto-launch on org project count, not "first user"
-- [ ] Task 3 — Sealed-vault explanation (AC: 9, 10, 11)
-  - [ ] Extend `gate-model.ts`'s three state branches with static explanatory copy
-  - [ ] Add tests for empty/missing API `message`
-- [ ] Task 4 — Accessibility fixes (AC: 12-21)
-  - [ ] Fix focus-visible ring at the shared dark-button style level
-  - [ ] Add danger-zone visual grouping + confirmation parity on Settings → Users
-  - [ ] Add row-scoped `aria-label`s to Notification-preferences `<select>`s
-  - [ ] Add `apps/web/src/routes/+error.svelte` with app shell + status-aware copy
-  - [ ] Add `role="status"` clipboard-copy confirmation (success + failure)
-- [ ] Task 5 — Naming/content consistency (AC: 22-26)
-  - [ ] Add shared event-type label mapping module; wire into Notifications settings + Audit log
-  - [ ] Reconcile "Alerts" nav label vs. "Notifications" page heading
-  - [ ] Fix register-page copy; update its test assertions
+- [x] Task 1 — Dashboard staleness fix (AC: 1, 2, 3, 4)
+  - [x] Trace `OnboardingWizard.svelte`/`onboarding-logic.ts`'s completion → `/dashboard` transition
+  - [x] Fix the actual root cause (invalidation/race/hard-nav — see AC-2)
+  - [x] Add a test simulating a slow final mutation (AC-3) and a failing final mutation (AC-4)
+- [x] Task 2 — Onboarding modal escape hatch (AC: 5, 6, 7, 8)
+  - [x] Add visible close/skip control to `OnboardingDialog.svelte`
+  - [x] Add Escape-key handler wired to the same close logic
+  - [x] Verify no unintended mutation/rollback on early dismissal
+  - [x] Gate auto-launch on org project count, not "first user"
+- [x] Task 3 — Sealed-vault explanation (AC: 9, 10, 11)
+  - [x] Extend `gate-model.ts`'s three state branches with static explanatory copy
+  - [x] Add tests for empty/missing API `message`
+- [x] Task 4 — Accessibility fixes (AC: 12-21)
+  - [x] Fix focus-visible ring at the shared dark-button style level
+  - [x] Add danger-zone visual grouping + confirmation parity on Settings → Users
+  - [x] Add row-scoped `aria-label`s to Notification-preferences `<select>`s
+  - [x] Add `apps/web/src/routes/+error.svelte` with app shell + status-aware copy
+  - [x] Add `role="status"` clipboard-copy confirmation (success + failure)
+- [x] Task 5 — Naming/content consistency (AC: 22-26)
+  - [x] Add shared event-type label mapping module; wire into Notifications settings + Audit log
+  - [x] Reconcile "Alerts" nav label vs. "Notifications" page heading
+  - [x] Fix register-page copy; update its test assertions
 
 ## Out of scope for this story
 
@@ -412,4 +412,117 @@ Claude Sonnet 5
   "cron placeholder contrast" were present in the audit doc but never made it into the original
   bundled story's numbered ACs — documented under Out of scope rather than silently added or dropped.
 
+- **Implementation (2026-07-23), TDD red-green throughout, all 26 ACs implemented:**
+  - **AC-1–4 (dashboard staleness):** Root-caused via direct trace, not assumption — the wizard
+    never `goto()`s at all; `(app)/+layout.svelte` renders `OnboardingWizard` in place of
+    `children()` behind an `{#if !onboardingDone}`, so the dashboard route's `+page.server.ts`
+    `load` had already fired (in parallel with the layout's own load, as part of the initial
+    navigation) *before* the wizard's mutations landed, and was never re-run once `onboardingDone`
+    flipped client-side. Fixed by awaiting `invalidateAll()` in the layout's `oncompleted` handler
+    before flipping `onboardingDone`, so `children()` never mounts with stale data — no polling
+    loop, no artificial delay. AC-3/AC-4 were largely already covered by each wizard step awaiting
+    its own mutation before advancing/calling `oncompleted`; added regression tests proving the
+    slow/failing cases explicitly.
+  - **AC-5–8 (onboarding escape hatch):** Added a visible "×" close button (`aria-label="Close"`)
+    and an `Escape` keydown handler to `OnboardingDialog.svelte`, both wired to the wizard's
+    existing `dismissWizard()` (previously only reachable via the viewer no-permission paths) —
+    reuses the established fail-open `completeOnboarding` + `oncompleted()` pattern rather than
+    inventing new dismissal semantics. AC-8: `(app)/+layout.server.ts` now treats onboarding as
+    completed whenever the org already has ≥1 project, regardless of this specific user's own
+    per-user onboarding flag (previously gated purely on "has *this user* completed onboarding",
+    which is the literal root cause of the wizard force-firing for a second admin joining an
+    already-set-up org).
+  - **AC-9–11 (sealed-vault explanation):** `gate-model.ts`'s `VaultGateModel` gained a new
+    `explanation` field, populated with distinct static copy for all three gated states
+    (`uninitialized`/`sealed`/`unavailable`), rendered by `VaultGate.svelte` independently of
+    (and unconditionally alongside) whatever `readiness.message` the API returns — verified via a
+    test asserting the explanation still renders when `message` is `''`.
+  - **AC-12–13 (focus-visible contrast):** Fixed once at a shared `.bg-slate-950:focus-visible`
+    CSS rule in `app.css` (keyed off the existing utility class already used by ~35 buttons app-
+    wide, so no per-button changes were needed) using a new `--color-brand-400` theme token as the
+    ring color. Verified by computation (not eyeballing): a new `color-contrast.ts` WCAG
+    luminance/contrast-ratio utility asserts the ring color meets the 3:1 AA 2.4.7 minimum against
+    `slate-950`.
+  - **AC-14–15 (destructive-action grouping + confirmation parity):** Settings → Users now groups
+    Deactivate/Remove/Request-erasure in a bordered, labeled "Danger zone" with a warning icon on
+    each button (verified via `data-testid="danger-zone"` + icon-count assertions, not just
+    color-class checks). `onSubmitErasureRequest` gained the same named `confirm(...)` pattern
+    already used by deactivate/remove, tested with two different users to prove the message isn't
+    a static placeholder.
+  - **AC-16 (notification row aria-labels):** Reused the exact
+    `` `Role for ${user.email} in ${project.projectName}` `` convention already established in
+    `settings/users/+page.svelte`; both `frequency`/`minSeverity` `<select>`s now carry
+    row-scoped `aria-label`s.
+  - **AC-17–19 (404/error page):** New `apps/web/src/routes/+error.svelte` — a minimal branded
+    shell (not the full `AppShell`, which requires an authenticated `user` prop the error page
+    can't always supply) using semantic `<header>`/`<nav>`/`<main>` for landmark coverage,
+    status-aware copy (`page.status`/`page.error`), and a single back-link that reads
+    `page.data.user` when available (e.g. a genuine 500 thrown after `(app)/+layout.server.ts`
+    already ran) and falls back to `/` — confirmed via `root-page.server.test.ts` that `/` already
+    redirects correctly by auth state — documented here per AC-18 as the taken approach.
+  - **AC-20–21 (clipboard confirmation):** Reused the same `role="status"` pattern already used
+    for "✓ Credential saved securely" on the same page; added an auto-dismissing (3s) success/
+    failure status message to `copyValue()`.
+  - **AC-22–23 (event-type label mapping):** New `apps/web/src/lib/utils/event-type-labels.ts`
+    (colocated with the existing `format-bytes.ts` utility convention, not a new `format/`
+    directory). `getEventTypeLabel()` combines a curated override map with labels auto-derived
+    from every canonical `AuditEvent` constant in `@project-vault/shared` (a completeness guard
+    test iterates all of them), falling back to a humanized title-case transform
+    (`humanizeEventType`) for any code with no entry — addresses the adversarial review's
+    completeness-gap finding beyond the AC's literal minimum. Wired into both
+    `settings/notifications/+page.svelte` and `settings/audit/+page.svelte`, replacing two
+    separate inline `ALERT_TYPE_LABELS` maps.
+  - **AC-24 (nav/heading consistency):** Renamed the nav item from "Alerts" to "Notifications" in
+    `nav-model.ts` — "Notifications" is the dominant term (page `<h1>`, page title, route name,
+    settings page name), so the nav label moved to match rather than the reverse.
+  - **AC-25–26 (register copy):** Replaced the scarcity-implying "Create the first organization
+    account for this vault" with "Create a new, independent organization in this vault" (option
+    (b) from the AC, since org count isn't already loaded on this unauthenticated route); updated
+    the existing register-page test assertion to match.
+  - Full targeted test suite (`apps/web`): 1535/1535 passing, plus `eslint .` (0 errors, pre-existing
+    warnings only) and `svelte-kit sync && tsc --noEmit` (clean) both green.
+
 ### File List
+
+**New:**
+- `apps/web/src/routes/+error.svelte`
+- `apps/web/src/routes/error-page.test.ts`
+- `apps/web/src/lib/utils/event-type-labels.ts`
+- `apps/web/src/lib/utils/event-type-labels.test.ts`
+- `apps/web/src/lib/utils/color-contrast.ts`
+- `apps/web/src/lib/utils/color-contrast.test.ts`
+- `apps/web/src/app.css.test.ts`
+- `apps/web/src/lib/components/shell/nav-model.test.ts`
+
+**Modified:**
+- `apps/web/src/routes/(app)/+layout.svelte`
+- `apps/web/src/routes/(app)/+layout.server.ts`
+- `apps/web/src/routes/(app)/app-layout.test.ts`
+- `apps/web/src/routes/(app)/app-layout.server.test.ts`
+- `apps/web/src/lib/components/onboarding/OnboardingDialog.svelte`
+- `apps/web/src/lib/components/onboarding/OnboardingWizard.svelte`
+- `apps/web/src/lib/components/onboarding/OnboardingWizard.test.ts`
+- `apps/web/src/lib/components/vault/gate-model.ts`
+- `apps/web/src/lib/components/vault/VaultGate.svelte`
+- `apps/web/src/lib/components/vault/VaultGate.test.ts`
+- `apps/web/src/routes/vault.test.ts`
+- `apps/web/src/app.css`
+- `apps/web/src/routes/(app)/settings/users/+page.svelte`
+- `apps/web/src/routes/(app)/settings/users/users-page.test.ts`
+- `apps/web/src/routes/(app)/settings/notifications/+page.svelte`
+- `apps/web/src/routes/(app)/settings/notifications/notifications-settings-page.test.ts`
+- `apps/web/src/routes/(app)/settings/audit/+page.svelte`
+- `apps/web/src/routes/(app)/settings/audit/audit-page.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts`
+- `apps/web/src/lib/components/shell/nav-model.ts`
+- `apps/web/src/lib/components/shell/AppShell.test.ts`
+- `apps/web/src/routes/mobile-smoke.test.ts`
+- `apps/web/src/routes/(auth)/register/+page.svelte`
+- `apps/web/src/routes/(auth)/register/page.test.ts`
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-07-23 | Story implemented end-to-end (all 26 ACs, TDD red-green): dashboard-staleness fix via `invalidateAll`, onboarding escape hatch + org-based wizard gate, sealed-vault static explanations, shared focus-visible fix, danger-zone grouping + erasure confirmation, notification row aria-labels, branded 404/error page, clipboard copy confirmation, shared event-type label mapping, nav/heading rename, register copy fix. Status: ready-for-dev → review. |

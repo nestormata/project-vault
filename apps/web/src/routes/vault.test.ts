@@ -50,6 +50,50 @@ describe('vault operator UI', () => {
     expect(model.showUnseal).toBe(false)
   })
 
+  describe('AC-9/10/11: sealed-vault (and sibling states) plain-language explanation', () => {
+    it('AC-10: uninitialized has a static explanation distinct from sealed/unavailable', () => {
+      const model = getVaultGateModel({ state: 'uninitialized', message: 'api says hi' })
+
+      expect(model.explanation.length).toBeGreaterThan(0)
+      expect(model.explanation.toLowerCase()).toContain('never been set up')
+    })
+
+    it('AC-9: sealed has a static explanation of what "sealed" means', () => {
+      const model = getVaultGateModel({ state: 'sealed', message: 'api says hi' })
+
+      expect(model.explanation.length).toBeGreaterThan(0)
+      expect(model.explanation.toLowerCase()).toContain('encryption key')
+      expect(model.explanation.toLowerCase()).toContain('not currently loaded into memory')
+    })
+
+    it('AC-10: unavailable has its own distinct static explanation', () => {
+      const model = getVaultGateModel({ state: 'unavailable', message: 'api says hi' })
+
+      expect(model.explanation.length).toBeGreaterThan(0)
+      expect(model.explanation).not.toBe(
+        getVaultGateModel({ state: 'sealed', message: '' }).explanation
+      )
+      expect(model.explanation).not.toBe(
+        getVaultGateModel({ state: 'uninitialized', message: '' }).explanation
+      )
+    })
+
+    it('AC-11: the explanation is present even when the API message is an empty string', () => {
+      const model = getVaultGateModel({ state: 'sealed', message: '' })
+
+      expect(model.explanation.length).toBeGreaterThan(0)
+    })
+
+    it('AC-11: the explanation is present even when the API message is undefined', () => {
+      const model = getVaultGateModel({
+        state: 'sealed',
+        message: undefined as unknown as string,
+      })
+
+      expect(model.explanation.length).toBeGreaterThan(0)
+    })
+  })
+
   it('mounts vault gate in a user-visible vault route', () => {
     const vaultPagePath = resolve(routeRoot, '(vault)/vault/+page.svelte')
 

@@ -17,7 +17,7 @@
     <p class="text-slate-600">
       {invitationToken
         ? "You don't have an account yet — create one to join the project."
-        : 'Create the first organization account for this vault.'}
+        : 'Create a new, independent organization in this vault.'}
     </p>
   </div>
   <RegisterForm {invitationToken} {prefillEmail} />

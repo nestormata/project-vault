@@ -9,7 +9,7 @@ describe('mobile shell smoke', () => {
       'Dashboard',
       'Projects',
       'Credentials',
-      'Alerts',
+      'Notifications',
       'Health',
       'Settings',
     ])

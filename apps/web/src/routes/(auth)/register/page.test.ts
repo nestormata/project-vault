@@ -29,7 +29,10 @@ describe('/register +page.svelte', () => {
   it('shows the first-organization copy and an org-name field when there is no invitation token', () => {
     render(RegisterPage)
 
-    expect(screen.getByText(/create the first organization account for this vault\./i)).toBeTruthy()
+    // AC-25: "first organization" claimed scarcity that isn't true (every registration always
+    // creates a new, independent org regardless of how many already exist) — replaced with
+    // copy that's accurate no matter the instance's actual org count.
+    expect(screen.getByText(/create a new, independent organization/i)).toBeTruthy()
     expect(screen.getByLabelText(/organization name/i)).toBeTruthy()
   })
 

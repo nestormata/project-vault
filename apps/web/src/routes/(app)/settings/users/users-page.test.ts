@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const gotoMock = vi.hoisted(() => vi.fn())
@@ -48,6 +48,11 @@ beforeEach(() => {
   deactivateOrgUserMock.mockReset()
   removeOrgUserMock.mockReset()
   sendRecoveryLinkMock.mockReset()
+  // AC-15: "Request erasure" now requires a named confirmation like the other destructive
+  // actions already have — default it to confirmed so the existing AC-K submit-flow tests (which
+  // predate this requirement) keep exercising the actual submit behavior; tests below override
+  // this per-case to verify the confirmation prompt itself.
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
 afterEach(() => {
@@ -398,6 +403,63 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       expect(await screen.findByText(/failed to create erasure request/i)).toBeTruthy()
       await fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
       expect(screen.queryByLabelText(/requested by/i)).toBeNull()
+    })
+
+    it('AC-15: submitting the erasure request asks for a confirmation naming the target user and does not call the API if declined', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      render(UsersPage, { props: { data: baseData({ orgRole: 'admin' }) } })
+      const buttons = screen.getAllByRole('button', { name: /request erasure/i })
+      await fireEvent.click(buttons[buttons.length - 1] as HTMLElement)
+      await fireEvent.input(screen.getByLabelText(/reason/i), { target: { value: 'x' } })
+      await fireEvent.input(screen.getByLabelText(/requested by/i), { target: { value: 'y' } })
+      await fireEvent.click(screen.getByRole('button', { name: /submit request/i }))
+
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining(memberUser.email))
+      expect(createErasureRequestMock).not.toHaveBeenCalled()
+    })
+
+    it('AC-15 edge: the confirmation message differs per user (uses the actual target email, not a static placeholder)', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      render(UsersPage, { props: { data: baseData({ orgRole: 'admin' }) } })
+
+      const buttons = screen.getAllByRole('button', { name: /request erasure/i })
+      await fireEvent.click(buttons[0] as HTMLElement)
+      await fireEvent.click(screen.getByRole('button', { name: /submit request/i }))
+      const firstMessage = confirmSpy.mock.calls.at(-1)?.[0]
+
+      await fireEvent.click(buttons[buttons.length - 1] as HTMLElement)
+      await fireEvent.click(screen.getByRole('button', { name: /submit request/i }))
+      const lastMessage = confirmSpy.mock.calls.at(-1)?.[0]
+
+      expect(firstMessage).toContain(ownerUser.email)
+      expect(lastMessage).toContain(memberUser.email)
+      expect(firstMessage).not.toBe(lastMessage)
+    })
+  })
+
+  describe('AC-14: destructive actions are visually distinguished by more than color', () => {
+    it('groups Deactivate/Remove/Request erasure in a labeled danger zone, separate from Send recovery link and Pseudonymize identity', () => {
+      render(UsersPage, { props: { data: baseData({ orgRole: 'owner' }) } })
+
+      const dangerZones = screen.getAllByTestId('danger-zone')
+      expect(dangerZones.length).toBeGreaterThan(0)
+
+      const zone = dangerZones[0] as HTMLElement
+      expect(within(zone).getByText(/danger zone/i)).toBeTruthy()
+      expect(within(zone).getByRole('button', { name: /deactivate account/i })).toBeTruthy()
+      expect(within(zone).getByRole('button', { name: /remove from organization/i })).toBeTruthy()
+      expect(within(zone).getByRole('button', { name: /request erasure/i })).toBeTruthy()
+      expect(within(zone).queryByRole('button', { name: /send recovery link/i })).toBeNull()
+      expect(within(zone).queryByRole('button', { name: /pseudonymize identity/i })).toBeNull()
+    })
+
+    it('renders a non-color (icon) signal on every destructive action, not just a color class', () => {
+      render(UsersPage, { props: { data: baseData({ orgRole: 'owner' }) } })
+
+      const zone = screen.getAllByTestId('danger-zone')[0] as HTMLElement
+      const icons = zone.querySelectorAll('svg[aria-hidden="true"]')
+      // One icon per destructive action rendered for this user (deactivate, remove, erasure).
+      expect(icons.length).toBeGreaterThanOrEqual(3)
     })
   })
 

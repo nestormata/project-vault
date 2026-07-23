@@ -56,4 +56,19 @@ describe('VaultGate.svelte', () => {
     expect(screen.queryByLabelText('Bootstrap token')).toBeNull()
     expect(screen.queryByLabelText('Vault passphrase')).toBeNull()
   })
+
+  it('AC-9: renders the static sealed explanation alongside the API-supplied message', () => {
+    render(VaultGate, {
+      props: props({ state: 'sealed', message: 'Manual unseal is required.' }),
+    })
+
+    expect(screen.getByText('Manual unseal is required.')).toBeTruthy()
+    expect(screen.getByText(/not currently loaded into memory/i)).toBeTruthy()
+  })
+
+  it('AC-11: still renders the static explanation when the API message is empty', () => {
+    render(VaultGate, { props: props({ state: 'sealed', message: '' }) })
+
+    expect(screen.getByText(/not currently loaded into memory/i)).toBeTruthy()
+  })
 })

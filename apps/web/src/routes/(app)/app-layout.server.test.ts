@@ -54,14 +54,26 @@ describe('/(app) +layout.server.ts', () => {
     expect(result.unreadCount).toBe(4)
   })
 
-  it('when onboarding is not completed, lists projects and includes them', async () => {
+  it('when the per-user onboarding flag is not set and the org has no projects yet, lists projects (empty) and keeps the wizard gate open', async () => {
+    getOnboardingStatusMock.mockResolvedValue({ completed: false })
+    listProjectsMock.mockResolvedValue({ items: [], total: 0 })
+    getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+
+    const result = await load(makeEvent(baseUser))
+
+    expect(result.onboardingCompleted).toBe(false)
+    expect(listProjectsMock).toHaveBeenCalled()
+    expect(result.projects).toEqual([])
+  })
+
+  it('AC-8: when the per-user onboarding flag is not set but the org already has a project, still fetches and returns it (even though the wizard gate closes)', async () => {
     getOnboardingStatusMock.mockResolvedValue({ completed: false })
     listProjectsMock.mockResolvedValue({ items: [{ id: 'p1', name: 'Payments' }], total: 1 })
     getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
 
     const result = await load(makeEvent(baseUser))
 
-    expect(result.onboardingCompleted).toBe(false)
+    expect(result.onboardingCompleted).toBe(true)
     expect(listProjectsMock).toHaveBeenCalled()
     expect(result.projects).toEqual([{ id: 'p1', name: 'Payments' }])
   })
