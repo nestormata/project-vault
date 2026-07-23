@@ -12,7 +12,7 @@ function hexToRgb(hex: string): [number, number, number] {
           .map((char) => char + char)
           .join('')
       : normalized
-  const num = parseInt(value, 16)
+  const num = Number.parseInt(value, 16)
   return [(num >> 16) & 255, (num >> 8) & 255, num & 255]
 }
 
