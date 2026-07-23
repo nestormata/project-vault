@@ -65,8 +65,11 @@ const PASSWORD = 'correct-horse-battery-staple'
 const PROJECTS_URL = '/api/v1/projects'
 const DASHBOARD_URL = '/api/v1/dashboard'
 
-// Fixed relative to PostgreSQL now() during integration tests.
-const STRIPE_EXPIRES = '2026-07-15T00:00:00.000Z'
+// Computed relative to wall-clock "now" so the "expiring soon" (within 30 days) bucket stays
+// true regardless of when the suite runs. A hardcoded future date silently becomes past-dated
+// (and reclassified as "expired") once real time catches up to it.
+const STRIPE_EXPIRES = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
+// Always in the past — a fixed date works here since "expired" only requires expiresAt <= now.
 const LEGACY_EXPIRES = '2026-06-01T00:00:00.000Z'
 
 async function registerOwner(app: TestApp, label: string) {
