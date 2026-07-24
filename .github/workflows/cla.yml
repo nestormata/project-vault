@@ -1,0 +1,58 @@
+# CLA Assistant — required status check enforcing the Contributor License Agreement
+# (see /CONTRIBUTING.md and /CLA.md).
+#
+# Tooling provenance (maintenance-rot safeguard — see story 14-0):
+#   The originally popular free CLA bot, contributor-assistant/github-action, was archived
+#   and made read-only on 2026-03-23. As of 2026-07-24, this workflow uses the actively
+#   maintained fork rdkcentral/contributor-assistant_github-action (tag v2.7.0, last pushed
+#   2026-06-13), pinned to an exact commit SHA per this repo's third-party-Action-pinning
+#   preference for less-trusted forks. If you're reading this later and wondering "is this
+#   still the right choice" — it was last verified on the date above; re-check maintenance
+#   status (archived? stale?) before assuming it still is.
+name: "CLA Assistant"
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cla-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "CLA Assistant"
+        if: >
+          (github.event.comment.body == 'recheck' ||
+           github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') ||
+          github.event_name == 'pull_request_target'
+        # rdkcentral/contributor-assistant_github-action, tag v2.7.0 (pinned to commit SHA,
+        # not the floating tag — see provenance note above).
+        uses: rdkcentral/contributor-assistant_github-action@2c505e3cbfadaa766a7dd6e00e9b22c26509c13c # v2.7.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-signatures: "signatures/version1/cla.json"
+          path-to-document: "https://github.com/nestormata/project-vault/blob/main/CLA.md"
+          # NOT "main": the action commits signature records directly to this branch, and the
+          # action's own docs warn "branch should not be protected". This repo's `main` has
+          # branch protection enabled (required PR reviews) — a direct push there would be
+          # rejected, silently breaking signature persistence. Use a dedicated, unprotected
+          # branch instead. Follow-up for a repo admin (alongside the required-status-check
+          # setup already tracked in story 14-0): create an unprotected `cla-signatures` branch
+          # if the action does not create one automatically on first signature.
+          branch: "cla-signatures"
+          # Exclude the repo owner and known bot accounts so they are never blocked by the
+          # gate on their own PRs (see story 14-0 AC5 negative case).
+          allowlist: "nestormata,dependabot[bot],dependabot-preview[bot]"
+          # If the Action itself fails to run (e.g. a GitHub Actions outage), the required
+          # status check for this job fails closed by default — GitHub reports a required
+          # check as failing/missing rather than passing when the job that produces it
+          # doesn't complete successfully.
+          lock-pullrequest-aftermerge: true

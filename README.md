@@ -374,19 +374,19 @@ Running a self-hosted instance day-to-day, after the first deploy: **[docs/runbo
 
 ## Contributing
 
-The codebase is live and under active development (see [Capabilities](#capabilities)), but the project isn't yet accepting external code contributions. Until then, the best way to contribute is:
+The codebase is live and under active development (see [Capabilities](#capabilities)). External
+code contributions are governed by [`CONTRIBUTING.md`](./CONTRIBUTING.md), which covers the PR
+workflow and the Contributor License Agreement (CLA) that every external PR must satisfy —
+including a plain-language disclosure that contributions may be used in a closed-source
+commercial SaaS product built on top of this AGPLv3 core. See [`CLA.md`](./CLA.md) for the full
+CLA text.
+
+Other ways to contribute without opening a PR:
 
 - ⭐ **Star this repository** to signal interest and help with OSS discovery
 - 🐛 **Open issues** for feature requests, use cases, or questions — early input shapes the roadmap
 - 💬 **Start a discussion** if you have ideas about the plugin interface, RBAC model, or integration patterns
 - 📖 **Review the planning artifacts** in `_bmad-output/planning-artifacts/` — the PRD, UX spec, and architecture docs are open, as are the implementation notes and retrospectives in `_bmad-output/implementation-artifacts/`
-
-Once external contributions open, a `CONTRIBUTING.md` will cover:
-- Development environment setup
-- Code style and conventions
-- Security-sensitive code path requirements
-- Plugin development guide
-- PR review process
 
 ---
 
