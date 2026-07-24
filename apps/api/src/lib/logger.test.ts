@@ -82,4 +82,26 @@ describe('operationalLog', () => {
     expect(payload.port).toBe(3000)
     expect(message).toBe('API startup complete')
   })
+
+  it('Story 14.2: supports fatal-equivalent severity for boot-time fail-safe logging', () => {
+    const calls: Array<[unknown, string]> = []
+    const logger = {
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+      fatal: (payload: unknown, message: string) => {
+        calls.push([payload, message])
+      },
+    } as unknown as Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
+
+    operationalLog(logger, 'fatal', 'extension.load_failed', 'extension failed to load', {
+      reason: 'import_error',
+    })
+
+    expect(calls).toHaveLength(1)
+    const [payload, message] = calls[0] as [Record<string, unknown>, string]
+    expect(payload.eventType).toBe('extension.load_failed')
+    expect(payload.reason).toBe('import_error')
+    expect(message).toBe('extension failed to load')
+  })
 })

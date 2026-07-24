@@ -17102,7 +17102,39 @@
       "get": {
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "extensions_status": {
+                      "type": "string",
+                      "enum": [
+                        "not_configured",
+                        "loaded",
+                        "load_failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "version",
+                    "extensions_status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
@@ -28485,6 +28517,62 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/extensions/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "apiVersion": {
+                          "type": "string"
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "auth-provider",
+                              "notification-channel",
+                              "ui-panel"
+                            ]
+                          }
+                        },
+                        "loadedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "apiVersion",
+                        "capabilities",
+                        "loadedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "string",
+                      "nullable": true,
+                      "enum": [
+                        null
+                      ]
                     }
                   ]
                 }
