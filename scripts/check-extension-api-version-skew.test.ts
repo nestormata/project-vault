@@ -168,4 +168,27 @@ describe('git-backed helpers (real temporary git repositories)', () => {
     expect(result.skew).toBe(true)
     expect(result.changedSrcFiles).toContain(SRC_INDEX_PATH)
   })
+
+  it('runVersionSkewCheck: still detects skew even when the live base branch tip has since bumped the version for an unrelated reason (merge-base, not tip, is the "before")', () => {
+    const { root, baseSha } = makeFixtureRepo()
+
+    // A PR branch forks at baseSha and changes src/** WITHOUT bumping the version.
+    git(root, ['checkout', '-b', 'pr-branch', baseSha])
+    writeFixture(root, SRC_INDEX_PATH, CHANGED_SRC_CONTENT)
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'src change without version bump'])
+    const prHeadSha = git(root, ['rev-parse', 'HEAD'])
+
+    // Meanwhile, main moves on independently and bumps the version for an unrelated reason.
+    git(root, ['checkout', 'main'])
+    writeFixture(root, PACKAGE_JSON_PATH, JSON.stringify({ version: '1.0.1' }, null, 2))
+    git(root, ['add', '-A'])
+    git(root, ['commit', '-m', 'unrelated version bump on main'])
+
+    // Comparing the PR branch against the CURRENT tip of main must still report skew: the PR
+    // itself never bumped the version relative to where it actually forked (baseSha).
+    const result = runVersionSkewCheck(root, { base: 'main', head: prHeadSha })
+    expect(result.skew).toBe(true)
+    expect(result.changedSrcFiles).toContain(SRC_INDEX_PATH)
+  })
 })

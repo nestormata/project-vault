@@ -50,6 +50,24 @@ export function getChangedFiles(repoRoot: string, base: string, head: string): s
     .filter((line) => line.length > 0)
 }
 
+/**
+ * Resolves the merge-base commit of `base` and `head`, or `undefined` if it can't be computed
+ * (e.g. unrelated histories, shallow clone). `getChangedFiles`'s three-dot diff is already
+ * merge-base-relative — the `version` field comparison must use the SAME merge-base commit for
+ * "before", not the current tip of `base`. Using the live tip of `base` (e.g. `origin/main`)
+ * would let unrelated commits merged into `base` *after* this PR branched off mask a real skew:
+ * if `base` moved its `version` field for an unrelated reason after branch-off, `baseVersion`
+ * (read from the tip) could differ from `headVersion` even though *this* PR's `head` never
+ * bumped the version relative to where it actually forked — a false "no skew" pass.
+ */
+export function getMergeBase(repoRoot: string, base: string, head: string): string | undefined {
+  try {
+    return git(repoRoot, ['merge-base', base, head]).trim()
+  } catch {
+    return undefined
+  }
+}
+
 /** The `version` field of `filePath`'s JSON content at `ref`, or `undefined` if the file/ref/field doesn't resolve. */
 export function getFileVersionAtRef(
   repoRoot: string,
@@ -92,7 +110,11 @@ export function runVersionSkewCheck(
   range: DiffRange
 ): { skew: boolean; changedSrcFiles: string[] } {
   const changedFiles = getChangedFiles(repoRoot, range.base, range.head)
-  const baseVersion = getFileVersionAtRef(repoRoot, range.base, EXTENSION_API_PACKAGE_JSON)
+  // Read the "before" version at the merge-base, not the live tip of `range.base` — see
+  // `getMergeBase`'s doc comment. Falls back to `range.base` itself if the merge-base can't be
+  // resolved (e.g. unrelated histories), matching this function's prior behavior in that case.
+  const baseRef = getMergeBase(repoRoot, range.base, range.head) ?? range.base
+  const baseVersion = getFileVersionAtRef(repoRoot, baseRef, EXTENSION_API_PACKAGE_JSON)
   const headVersion = getFileVersionAtRef(repoRoot, range.head, EXTENSION_API_PACKAGE_JSON)
   const skew = detectVersionSkew({ changedFiles, baseVersion, headVersion })
   return {
