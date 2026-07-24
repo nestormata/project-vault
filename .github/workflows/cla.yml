@@ -40,7 +40,14 @@ jobs:
         with:
           path-to-signatures: "signatures/version1/cla.json"
           path-to-document: "https://github.com/nestormata/project-vault/blob/main/CLA.md"
-          branch: "main"
+          # NOT "main": the action commits signature records directly to this branch, and the
+          # action's own docs warn "branch should not be protected". This repo's `main` has
+          # branch protection enabled (required PR reviews) — a direct push there would be
+          # rejected, silently breaking signature persistence. Use a dedicated, unprotected
+          # branch instead. Follow-up for a repo admin (alongside the required-status-check
+          # setup already tracked in story 14-0): create an unprotected `cla-signatures` branch
+          # if the action does not create one automatically on first signature.
+          branch: "cla-signatures"
           # Exclude the repo owner and known bot accounts so they are never blocked by the
           # gate on their own PRs (see story 14-0 AC5 negative case).
           allowlist: "nestormata,dependabot[bot],dependabot-preview[bot]"
