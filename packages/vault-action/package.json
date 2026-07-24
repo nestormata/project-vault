@@ -22,8 +22,8 @@
     "@types/node": "^26.1.1",
     "@vercel/ncc": "^0.44.1",
     "@vitest/coverage-v8": "^4.1.10",
-    "eslint": "^10.6.0",
-    "typescript": "^6.0.3",
+    "eslint": "^10.7.0",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10",
     "yaml": "^2.9.0"
   }
