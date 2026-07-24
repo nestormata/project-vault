@@ -293,6 +293,38 @@ has documented false-positive guards (e.g. an identifier merely containing the s
 is not flagged) — if you do see a refusal, it is a genuine keyword match. Read the named file/line
 first; `--allow-destructive` bypasses the safety check entirely rather than re-verifying it.
 
+### Phase 2 upgrade — multi-field secrets
+
+<!-- Source: Story 13.1 AC-3, AC-7; verified against packages/db/src/migrations/0049_credentials_current_version_id_backfill.sql -->
+
+Migration `0049_credentials_current_version_id_backfill.sql` adds `credentials.current_version_id`
+(nullable, no default) and backfills it for every pre-existing credential, plus adds
+`credential_versions.schema_version`/`field_meta` (safe, defaulted column additions — no
+backfill UPDATE needed for those two). It is a **required, ordered prerequisite** for any later
+Phase 2 (Structured Multi-Field Secrets) release: the migration must be applied and complete
+before deploying any application version whose code assumes `current_version_id` is non-null.
+Deploying such app code first will crash on any row the backfill hasn't yet reached, or read
+`NULL` and mis-render.
+
+1. Run `make db-migrate` (or the standard in-place upgrade procedure above) as part of the normal
+   upgrade — no separate step is required, this ships like any other migration.
+2. Confirm it completes with **zero skipped/orphaned rows** in the migration output before
+   deploying the new application image. The migration logs a `RAISE NOTICE` per skipped
+   (zero-version) credential, naming only its id (never `encrypted_value` or any plaintext field),
+   plus a final summary line: `N credentials backfilled, M skipped (zero versions) - see notices
+   above for ids`. A non-zero `M` is not a migration failure — the migration still exits `0` — but
+   it does flag pre-existing orphaned credentials worth investigating separately.
+3. **Re-run safety:** the backfill UPDATE is idempotent (guarded by
+   `WHERE current_version_id IS NULL`) — if the migration step is interrupted (connection drop,
+   deploy timeout), simply re-running `make db-migrate` is always the correct recovery action, no
+   manual cleanup required.
+4. **Maintenance window:** this backfill is a single, unbatched `UPDATE` (matching this repo's
+   `0043`/`0044` precedent), validated for fleets up to low tens of thousands of credentials. If
+   your `credentials` table is significantly larger, run this migration during a low-traffic
+   maintenance window — an unbatched UPDATE at that scale can hold a table-level lock long enough
+   to cause visible latency on concurrent credential reads/writes. No batching is implemented in
+   this migration.
+
 ---
 
 ## Backup & Recovery

@@ -344,6 +344,13 @@
       "when": 1784342400000,
       "tag": "0048_vault_kms_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784428800000,
+      "tag": "0049_credentials_current_version_id_backfill",
+      "breakpoints": true
     }
   ]
 }
