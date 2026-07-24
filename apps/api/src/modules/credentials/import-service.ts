@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentialVersions,
@@ -23,7 +23,20 @@ import {
   isUniqueViolation,
   lockCredentialInProject,
 } from './db-helpers.js'
+import { fieldMetaForResponse } from './field-set.js'
 import { findProjectInOrg } from './service.js'
+
+/** Thrown when a "new_version" import conflict-resolution action targets a credential that is
+ *  already multi-field (created/edited via a template since Story 13.2) — the import's single-key
+ *  value must never silently collapse an existing multi-field secret's other fields down to one.
+ *  Pre-13.2, every credential was single-field, so this could not happen; it is now a real risk
+ *  since `new_version` matches by credential *name*, not by field shape. */
+export class ImportTargetMultiFieldError extends Error {
+  constructor() {
+    super('import_target_is_multi_field')
+    this.name = 'ImportTargetMultiFieldError'
+  }
+}
 
 export const IMPORT_ENTRY_LIMIT = 500
 export const IMPORT_TTL_MS = 15 * 60 * 1000
@@ -281,6 +294,38 @@ async function insertImportedCredential(
   return newCred.id
 }
 
+// A "new_version" action matches an import row to an existing credential by *name* only — it
+// knows nothing about that credential's field shape. Since Story 13.2, credentials can be
+// multi-field; blindly writing the import's single-key value as the new version would silently
+// discard every other field. Refuse rather than corrupt the secret (see
+// `ImportTargetMultiFieldError`).
+async function assertImportTargetNotMultiField(tx: Tx, credentialId: string): Promise<void> {
+  const [currentVersionRow] = await tx
+    .select({
+      versionNumber: credentialVersions.versionNumber,
+      schemaVersion: credentialVersions.schemaVersion,
+      fieldMeta: credentialVersions.fieldMeta,
+    })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.credentialId, credentialId),
+        isNull(credentialVersions.purgedAt),
+        isNull(credentialVersions.abandonedAt)
+      )
+    )
+    .orderBy(desc(credentialVersions.versionNumber))
+    .limit(1)
+  const currentFields = fieldMetaForResponse(
+    currentVersionRow?.schemaVersion ?? 1,
+    currentVersionRow?.fieldMeta
+  )
+  const isTargetMultiField =
+    currentFields.length > 1 ||
+    (currentFields[0] !== undefined && currentFields[0].key !== DEFAULT_FIELD_KEY)
+  if (isTargetMultiField) throw new ImportTargetMultiFieldError()
+}
+
 async function insertImportedVersion(
   tx: Tx,
   params: {
@@ -296,6 +341,8 @@ async function insertImportedVersion(
     projectId: params.projectId,
   })
   if (!cred) throw new Error('Credential not found for new_version import')
+
+  await assertImportTargetNotMultiField(tx, params.credentialId)
 
   const [maxRow] = await tx
     .select({ max: sql<number>`COALESCE(MAX(${credentialVersions.versionNumber}), 0)` })

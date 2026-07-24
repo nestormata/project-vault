@@ -500,4 +500,43 @@ describe.sequential('credential field-set routes (Story 13.2)', () => {
     }>().data
     expect(revealed.value).toBe('edited-value')
   })
+
+  it('rejects a legacy { value } edit on an already-multi-field secret with 422, leaving it untouched', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'legacy-body-guard')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Multi',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'bob', sensitive: false },
+        { key: 'password', value: 'pw', sensitive: true },
+      ],
+    })
+
+    const res = await addVersion(app, owner.cookies, projectId, id, { value: 'collapse-attempt' })
+    expect(res.statusCode).toBe(422)
+    expect(res.json<{ code: string }>().code).toBe('legacy_shape_field_loss')
+
+    // zero side effects: still one version, still both fields
+    const items = (await listVersions(app, owner.cookies, projectId, id)).json<{
+      data: { items: Array<{ versionNumber: number }> }
+    }>().data.items
+    expect(items).toHaveLength(1)
+    const detail = (await getDetail(app, owner.cookies, projectId, id)).json<{
+      data: { fields: Array<{ key: string }> }
+    }>().data
+    expect(detail.fields.map((f) => f.key)).toEqual(['username', 'password'])
+  })
+
+  it('unwrapRevealValue-via-API: reveal returns the bare value for a single-field api_key-templated secret', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'apikey-reveal')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'API key secret',
+      template: 'api_key',
+      fields: [{ key: 'key', value: 'sk_live_abc123', sensitive: true }],
+    })
+    const revealed = (await reveal(app, owner.cookies, projectId, id)).json<{
+      data: { value: string }
+    }>().data
+    expect(revealed.value).toBe('sk_live_abc123')
+  })
 })

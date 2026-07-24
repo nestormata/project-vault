@@ -17,9 +17,11 @@ import {
   lockCredentialInProject,
 } from './db-helpers.js'
 import {
+  assertLegacyShapeSafe,
   buildFieldMeta,
   computeFieldDelta,
   fieldMetaForResponse,
+  isFieldSetBody,
   resolveFieldSet,
   serializeFieldEnvelope,
   unwrapRevealValue,
@@ -384,6 +386,7 @@ export type AddCredentialVersionResult = {
     template?: string
     addedFields: string[]
     removedFields: string[]
+    renamedFields: Array<{ from: string; to: string }>
   }
 }
 
@@ -434,14 +437,21 @@ export async function addCredentialVersion(
   })
   if (!cred) return null
 
+  // Current version's field keys → the "before" side of the AC-9 audit delta, and also used to
+  // guard the legacy `{ value }` shape below.
+  const oldKeys = await currentFieldKeys(tx, input.credentialId)
+
+  // A legacy `{ value }` body must never be usable to silently collapse an already-multi-field
+  // secret down to one field (data loss) — it exists purely for backward compatibility with
+  // pre-existing single-value clients (AC-5/AC-7), not as a way to blow away a template-based
+  // secret's other fields. Throws before any write, zero side effects, no audit event.
+  assertLegacyShapeSafe(!isFieldSetBody(input.body), oldKeys)
+
   // Story 13.2 — uniqueness-validate the FINAL field set before any write (may throw
   // FieldKeyConflictError → 409 with zero side effects, AC-3); a legacy `{ value }` body
   // synthesizes a single default field (AC-7 legacy → schema_version 2 transition on first edit).
   const resolved = resolveFieldSet(input.body)
   const fieldMeta = buildFieldMeta(resolved)
-
-  // Current version's field keys → the "before" side of the AC-9 audit delta.
-  const oldKeys = await currentFieldKeys(tx, input.credentialId)
 
   const [maxRow] = await tx
     .select({ max: sql<number>`COALESCE(MAX(${credentialVersions.versionNumber}), 0)` })
@@ -476,6 +486,7 @@ export async function addCredentialVersion(
         ...(resolved.template ? { template: resolved.template } : {}),
         addedFields: delta.addedFields,
         removedFields: delta.removedFields,
+        renamedFields: delta.renamedFields,
       },
     }
   } catch (error) {

@@ -132,6 +132,16 @@ describe('legacy read paths (AC-7)', () => {
     expect(unwrapRevealValue(2, env)).toBe(env)
   })
 
+  it('unwrapRevealValue unwraps a single-field v2 row keyed other than the default (e.g. api_key/secure_note templates)', () => {
+    const env = serializeFieldEnvelope(
+      resolveFieldSet({
+        fields: [{ key: 'key', value: 'sk_live_x', sensitive: true }],
+        template: 'api_key',
+      })
+    )
+    expect(unwrapRevealValue(2, env)).toBe('sk_live_x')
+  })
+
   it('parseFieldsFromPlaintext wraps a legacy bare string into a single default field', () => {
     expect(parseFieldsFromPlaintext(1, 'bare')).toEqual([
       { key: 'value', value: 'bare', sensitive: true },
@@ -140,10 +150,11 @@ describe('legacy read paths (AC-7)', () => {
 })
 
 describe('computeFieldDelta (AC-9)', () => {
-  it('reports added and removed keys (a rename surfaces as one added + one removed)', () => {
+  it('reports a single add+remove pair as a rename (AC-9 positive example)', () => {
     expect(computeFieldDelta(['username', 'password'], ['login', 'password'])).toEqual({
-      addedFields: ['login'],
-      removedFields: ['username'],
+      addedFields: [],
+      removedFields: [],
+      renamedFields: [{ from: 'username', to: 'login' }],
     })
   })
 
@@ -151,10 +162,23 @@ describe('computeFieldDelta (AC-9)', () => {
     expect(computeFieldDelta(['username', 'password'], ['username', 'password', 'notes'])).toEqual({
       addedFields: ['notes'],
       removedFields: [],
+      renamedFields: [],
     })
   })
 
   it('is case-insensitive (no spurious churn for a case-only change of an unchanged key)', () => {
-    expect(computeFieldDelta(['Host'], ['host'])).toEqual({ addedFields: [], removedFields: [] })
+    expect(computeFieldDelta(['Host'], ['host'])).toEqual({
+      addedFields: [],
+      removedFields: [],
+      renamedFields: [],
+    })
+  })
+
+  it('reports multiple simultaneous adds/removes as plain adds/removes, not a rename', () => {
+    expect(computeFieldDelta(['a', 'b'], ['c', 'd'])).toEqual({
+      addedFields: ['c', 'd'],
+      removedFields: ['a', 'b'],
+      renamedFields: [],
+    })
   })
 })

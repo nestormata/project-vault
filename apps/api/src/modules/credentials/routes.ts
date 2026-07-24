@@ -74,7 +74,7 @@ import {
   revealCurrentValue,
   updateCredentialTags,
 } from './service.js'
-import { FieldKeyConflictError } from './field-set.js'
+import { FieldKeyConflictError, LegacyShapeFieldLossError } from './field-set.js'
 import {
   addCredentialDependency,
   archiveCredentialDependency,
@@ -319,6 +319,14 @@ async function runCredentialFieldSetWrite<T>(
   } catch (error) {
     if (error instanceof FieldKeyConflictError) {
       reply.status(409).send(fieldKeyConflictResponse(error))
+      return { ok: false }
+    }
+    if (error instanceof LegacyShapeFieldLossError) {
+      reply.status(422).send({
+        code: 'legacy_shape_field_loss',
+        message:
+          'This secret has multiple fields; use the field-set shape (fields: [...]) to edit it instead of the legacy single-value shape.',
+      })
       return { ok: false }
     }
     if (error instanceof VersionConflictError) {
