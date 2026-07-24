@@ -1,6 +1,6 @@
 # Story 14.0: Establish AGPLv3 License and Contributor Agreement
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -92,25 +92,25 @@ so that self-hosters can freely use and modify Project Vault, external contribut
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Fill in LICENSE notice and package.json license field (AC: 1, 2)
-  - [ ] Resolve the copyright holder name/entity with the user (see Dev Notes Open Question) before editing
-  - [ ] Replace the two placeholder lines in LICENSE's "How to Apply" section with the real notice
-  - [ ] Add `"license": "AGPL-3.0-or-later"` to `package.json`
-  - [ ] Verify via the grep/node checks in AC7
-- [ ] Task 2: Write CONTRIBUTING.md and the CLA document (AC: 3, 4, 7)
-  - [ ] Draft CONTRIBUTING.md with contribution workflow, CLA requirement, and the mandatory SaaS-use disclosure clause
-  - [ ] Draft the CLA text itself (dual-clause: stays-AGPLv3 + maintainer-sublicensing-grant), stored as a linked document (e.g. `CLA.md` or wherever the chosen CLA bot expects it)
-  - [ ] Add the "not legal advice, attorney review pending" internal note
-  - [ ] Add the self-hosting-is-unrestricted clarification to CONTRIBUTING.md
-- [ ] Task 3: Wire up automated CLA enforcement (AC: 5)
-  - [ ] Research current maintenance status of CLA GitHub Actions (do not trust this story's snapshot — re-verify)
-  - [ ] Select a self-contained, actively-maintained action; pin to an exact commit SHA matching this repo's existing Action-pinning convention
-  - [ ] Configure owner/bot exclusion list
-  - [ ] Configure as a required status check on the default branch
-  - [ ] Verify fail-closed behavior on Action failure
-  - [ ] Open a real test PR from a throwaway/alt account (or documented equivalent) to confirm the gate actually blocks merge and the bot comment appears
-- [ ] Task 4: Add PR template referencing the CLA (AC: 6)
-  - [ ] Create `.github/pull_request_template.md` with a CLA-requirement line linking to CONTRIBUTING.md
+- [x] Task 1: Fill in LICENSE notice and package.json license field (AC: 1, 2)
+  - [x] Resolve the copyright holder name/entity with the user (see Dev Notes Open Question) before editing
+  - [x] Replace the two placeholder lines in LICENSE's "How to Apply" section with the real notice
+  - [x] Add `"license": "AGPL-3.0-or-later"` to `package.json`
+  - [x] Verify via the grep/node checks in AC7
+- [x] Task 2: Write CONTRIBUTING.md and the CLA document (AC: 3, 4, 7)
+  - [x] Draft CONTRIBUTING.md with contribution workflow, CLA requirement, and the mandatory SaaS-use disclosure clause
+  - [x] Draft the CLA text itself (dual-clause: stays-AGPLv3 + maintainer-sublicensing-grant), stored as a linked document (e.g. `CLA.md` or wherever the chosen CLA bot expects it)
+  - [x] Add the "not legal advice, attorney review pending" internal note
+  - [x] Add the self-hosting-is-unrestricted clarification to CONTRIBUTING.md
+- [x] Task 3: Wire up automated CLA enforcement (AC: 5)
+  - [x] Research current maintenance status of CLA GitHub Actions (do not trust this story's snapshot — re-verify)
+  - [x] Select a self-contained, actively-maintained action; pin to an exact commit SHA matching this repo's existing Action-pinning convention
+  - [x] Configure owner/bot exclusion list
+  - [ ] Configure as a required status check on the default branch — **NOT DONE**: requires GitHub repository branch-protection admin settings, which cannot be configured from within this git worktree/sandbox. Workflow file is ready; a repo admin must add "cla-check" as a required status check on `main` in GitHub's branch protection UI/API.
+  - [x] Verify fail-closed behavior on Action failure (documented reasoning in workflow comments; GitHub reports a required check as failing when its producing job doesn't complete)
+  - [ ] Open a real test PR from a throwaway/alt account (or documented equivalent) to confirm the gate actually blocks merge and the bot comment appears — **NOT DONE**: this requires live interaction with the real GitHub repo (a second account opening a PR against `nestormata/project-vault`), which is not achievable from this sandboxed environment. See Completion Notes.
+- [x] Task 4: Add PR template referencing the CLA (AC: 6)
+  - [x] Create `.github/pull_request_template.md` with a CLA-requirement line linking to CONTRIBUTING.md
 
 ## Dev Notes
 
@@ -138,10 +138,43 @@ so that self-hosters can freely use and modify Project Vault, external contribut
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 5 (claude-sonnet-5)
 
 ### Debug Log References
 
+- Verification checks (AC7) run RED (pre-implementation, all failing as expected) then GREEN (post-implementation, all passing) — see Completion Notes for exact output.
+- CLA-action research: `gh api repos/contributor-assistant/github-action` confirmed `archived: true`, `pushed_at: 2026-03-23`. `gh api repos/rdkcentral/contributor-assistant_github-action` confirmed `archived: false`, `pushed_at: 2026-06-13`, tag `v2.7.0` at commit `2c505e3cbfadaa766a7dd6e00e9b22c26509c13c`. `gh api repos/SiliconLabsSoftware/action-cla-assistant` also non-archived but less recently pushed (2026-06-02); rdkcentral's fork chosen as the more recently active of the two.
+
 ### Completion Notes List
 
+- **AC1 (LICENSE notice):** Replaced the two unfilled placeholder lines in LICENSE's "How to Apply These Terms" section (lines 632-633) with a real notice: `Project Vault — self-hosted secrets and credentials management platform` / `Copyright (C) 2026  Nestor Mata Cuthbert`. No other line in the 661-line legal body was touched (`git diff LICENSE` shows only these 2 lines changed). Matches the copyright line already present in README.md's existing License section, confirming consistency with prior precedent.
+- **AC2 (package.json license field):** Added `"license": "AGPL-3.0-or-later"` to root `package.json`, matching the LICENSE file's own "or any later version" FSF standard text.
+- **AC3 (CONTRIBUTING.md):** Created at repo root. States the CLA-at-first-PR-time-via-bot timing near the top (before the workflow steps), the SaaS-use disclosure clause in plain language, the self-hosting/forking-is-unaffected clarification, and the explicit no-de-minimis-exception scope decision. Links to README.md's existing dev-setup/CI sections rather than duplicating them. Also updated README.md's "Contributing" section (previously stated the project wasn't accepting external contributions) to reference the new CONTRIBUTING.md/CLA.md so the two documents don't contradict each other.
+- **AC4 (CLA.md):** Created at repo root. Individual-contributor CLA with both required clauses (stays-AGPLv3-forever + separate perpetual/sublicensable grant for commercial/closed-source use), a "not legal advice, attorney review pending" notice that is explicitly preserved (not resolved away), and an explicit documented scope note that a corporate/entity CLA variant is a future addition, not built in v1.
+- **AC5 (automated CLA enforcement):** Re-verified at implementation time via `gh api` (not trusting the story's snapshot) that `contributor-assistant/github-action` is archived (confirmed) and that `rdkcentral/contributor-assistant_github-action` is an actively maintained fork (non-archived, pushed 2026-06-13, tagged releases). Selected it, self-contained (in-repo signature storage, no third-party hosted DB), and pinned `.github/workflows/cla.yml` to the exact commit SHA `2c505e3cbfadaa766a7dd6e00e9b22c26509c13c` (tag `v2.7.0`) rather than a floating tag. Configured `allowlist: nestormata,dependabot[bot],dependabot-preview[bot]` to exclude the repo owner and known bots. Added a dated provenance comment in the workflow file per the story's maintenance-rot safeguard requirement.
+  - **Note on this repo's existing Action-pinning convention:** contrary to the story's Dev Notes assumption ("this repo already pins other third-party actions" to exact SHA), inspection of all existing `.github/workflows/*.yml` files found every third-party Action (`actions/checkout`, `actions/setup-node`, `pnpm/action-setup`, `SonarSource/*`, `docker/*`, `aquasecurity/trivy-action`, etc.) pinned to a floating version tag or `@master`, not a SHA — and `.github/dependabot.yml` has a `github-actions` ecosystem entry, implying the existing convention relies on Dependabot to bump version tags, not SHA-pinning. AC5's own text still explicitly requires exact-SHA pinning for the CLA action regardless of what convention is found, so I followed AC5's explicit instruction over the (evidently stale) convention claim in Dev Notes — SHA-pinning is also the more defensible security choice for a less-trusted third-party fork. Flagging this discrepancy for review rather than silently reconciling it.
+  - **NOT completed (documented, not silently skipped):** (a) configuring `cla-check` as a GitHub branch-protection *required* status check on `main` — this is a repo-admin action in GitHub's settings/API, not achievable from this sandboxed git worktree; the workflow is ready to be added once someone with admin access does so. (b) Live verification via a real test PR from a fresh/unsigned GitHub account confirming the bot comments and blocks merge — also not achievable from this sandboxed environment (no ability to open PRs against the live `nestormata/project-vault` GitHub repo from here). Both are explicitly called out as open follow-ups rather than claimed as done.
+- **AC6 (PR template):** Created `.github/pull_request_template.md` with an explicit CLA section linking to both `CONTRIBUTING.md` and `CLA.md`.
+- **AC7 (verification checklist):** All file-inspection checks re-run and passing after implementation:
+  - `grep -rn "<name of author>\|<year>  <name" LICENSE` → no matches (was 1 match pre-implementation)
+  - `node -p "require('./package.json').license"` → `AGPL-3.0-or-later` (was `undefined` pre-implementation)
+  - `CONTRIBUTING.md` exists, contains CLA-required statement + SaaS-use disclosure
+  - `CLA.md` exists, contains both the stays-AGPLv3 and sublicense-for-commercial-use clauses
+  - `.github/pull_request_template.md` exists and references the CLA
+  - The one AC7 item requiring live GitHub verification (test PR from an unsigned account) is the documented open item above — not claimed as done.
+- **Scope check:** No `apps/api` or `apps/web` files were touched. Changed/added files are all governance/documentation/CI-config (LICENSE, package.json, README.md, CONTRIBUTING.md, CLA.md, `.github/pull_request_template.md`, `.github/workflows/cla.yml`), consistent with `Surface scope: none`.
+- **Attorney review caveat:** preserved as an explicit open item in `CLA.md`'s header, per Dev Notes instruction not to remove it.
+
 ### File List
+
+- `LICENSE` (modified — notice section only, lines 632-633)
+- `package.json` (modified — added `license` field)
+- `README.md` (modified — updated "Contributing" section to reference new CONTRIBUTING.md/CLA.md)
+- `CONTRIBUTING.md` (new)
+- `CLA.md` (new)
+- `.github/pull_request_template.md` (new)
+- `.github/workflows/cla.yml` (new)
+
+### Change Log
+
+- 2026-07-24: Implemented story 14-0 — filled AGPLv3 LICENSE notice and `package.json` license field, added `CONTRIBUTING.md` and `CLA.md`, wired up `rdkcentral/contributor-assistant_github-action` (SHA-pinned) as a CLA-enforcement GitHub Action, and added a PR template referencing the CLA. Status: ready-for-dev → review. Two AC5 sub-items (branch-protection required-check configuration; live test-PR verification) documented as not achievable from this sandboxed environment and left as explicit follow-ups for a repo admin.

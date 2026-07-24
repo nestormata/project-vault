@@ -2,6 +2,7 @@
   "name": "project-vault",
   "version": "0.0.1",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=24.0.0",
     "pnpm": ">=9.0.0"
