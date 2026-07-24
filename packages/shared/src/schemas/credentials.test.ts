@@ -29,6 +29,8 @@ describe('credential response schemas', () => {
         cacheable: true,
         retentionCount: 3,
         currentVersionNumber: 1,
+        schemaVersion: 2,
+        fields: [{ key: 'value', sensitive: true }],
         createdBy: USER_ID,
         createdAt: CREATED_AT,
         updatedAt: CREATED_AT,
@@ -77,6 +79,8 @@ describe('credential response schemas', () => {
         cacheable: true,
         retentionCount: 0,
         currentVersionNumber: 1,
+        schemaVersion: 1,
+        fields: [{ key: 'value', sensitive: true }],
         createdBy: null,
         createdAt: CREATED_AT,
         updatedAt: CREATED_AT,
@@ -103,6 +107,7 @@ describe('credential response schemas', () => {
         isCurrent: false,
         purgedAt: CREATED_AT,
         abandonedAt: null,
+        schemaVersion: 1,
       })
     ).toMatchObject({ isCurrent: false, purgedAt: CREATED_AT })
   })
@@ -129,6 +134,7 @@ describe('credential response schemas', () => {
         isCurrent: false,
         purgedAt: null,
         abandonedAt: CREATED_AT,
+        schemaVersion: 2,
       })
     ).toMatchObject({ isCurrent: false, abandonedAt: CREATED_AT })
   })

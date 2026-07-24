@@ -435,4 +435,105 @@ describe.sequential('credential bulk import routes', () => {
       auditSpy.mockRestore()
     }
   }, 20_000)
+
+  // Story 13.2 AC-6 — bulk import must NOT group related keys into a multi-field secret; it creates
+  // one single-field credential per imported key/value pair (schema_version 2, single default
+  // field), the same as an untemplated create. A plausible regression is routing import through the
+  // new template-aware grouping path and auto-grouping by key prefix — this guards against it.
+  it('AC-6: import creates one single-field secret per key, never a grouped multi-field secret', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'import-no-group')
+    const preview = await uploadCredentialImport(
+      app,
+      owner.cookies,
+      projectId,
+      'DB_HOST=db.example.com\nDB_USER=svc\nDB_PASS=hunter2\n',
+      'grouping.env'
+    )
+    const importId = preview.json<{ data: { importId: string } }>().data.importId
+    const confirm = await confirmCredentialImport(app, owner.cookies, projectId, {
+      importId,
+      defaultAction: 'create_new',
+    })
+    expect(confirm.statusCode).toBe(200)
+
+    // three separate credentials, not one db_connection-grouped secret
+    const creds = await withOrg(owner.orgId, (tx) =>
+      tx.select().from(credentials).where(eq(credentials.projectId, projectId))
+    )
+    expect(creds.map((c) => c.name).sort()).toEqual(['DB_HOST', 'DB_PASS', 'DB_USER'])
+
+    // each imported version is a single-default-field schema_version 2 row
+    for (const cred of creds) {
+      const [version] = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({
+            schemaVersion: credentialVersions.schemaVersion,
+            fieldMeta: credentialVersions.fieldMeta,
+          })
+          .from(credentialVersions)
+          .where(eq(credentialVersions.credentialId, cred.id))
+      )
+      expect(version?.schemaVersion).toBe(2)
+      expect(version?.fieldMeta).toEqual([{ key: 'value', sensitive: true }])
+      // never grouped — exactly one field, no host/user/pass template fields
+      expect(JSON.stringify(version?.fieldMeta)).not.toContain('host')
+    }
+  }, 20_000)
+
+  it('refuses a "new_version" import action that would collapse an already-multi-field credential', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'import-multi-guard')
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${projectId}/credentials`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {
+        name: 'DB_CONN',
+        template: 'db_connection',
+        fields: [
+          { key: 'host', value: 'db.example.com', sensitive: false },
+          { key: 'port', value: '5432', sensitive: false },
+          { key: 'database', value: 'app', sensitive: false },
+          { key: 'username', value: 'svc', sensitive: false },
+          { key: 'password', value: 'hunter2', sensitive: true },
+        ],
+      },
+    })
+    expect(created.statusCode).toBe(201)
+    const existingId = created.json<{ data: { id: string } }>().data.id
+
+    const preview = await uploadCredentialImport(
+      app,
+      owner.cookies,
+      projectId,
+      'DB_CONN=new-single-value\n',
+      'multi-guard.env'
+    )
+    const importId = preview.json<{ data: { importId: string } }>().data.importId
+
+    const confirm = await confirmCredentialImport(app, owner.cookies, projectId, {
+      importId,
+      defaultAction: 'new_version',
+    })
+    // the confirm call fails closed rather than silently discarding host/port/database/username
+    expect(confirm.statusCode).toBeGreaterThanOrEqual(400)
+
+    // zero side effects: the multi-field secret still has exactly one version and all 5 fields
+    const versions = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({
+          versionNumber: credentialVersions.versionNumber,
+          fieldMeta: credentialVersions.fieldMeta,
+        })
+        .from(credentialVersions)
+        .where(eq(credentialVersions.credentialId, existingId))
+    )
+    expect(versions).toHaveLength(1)
+    expect((versions[0]?.fieldMeta as Array<{ key: string }>).map((f) => f.key)).toEqual([
+      'host',
+      'port',
+      'database',
+      'username',
+      'password',
+    ])
+  }, 20_000)
 })

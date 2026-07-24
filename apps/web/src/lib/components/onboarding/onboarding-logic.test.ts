@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from '$lib/api/client.js'
 import {
+  buildTemplateFieldDrafts,
   canCreateCredential,
   canCreateProject,
   containsForbiddenStructuralTerm,
+  duplicateFieldKeyIndex,
   mapCredentialSubmitError,
   onboardingCopy,
   parseTagsInput,
   validateCredentialForm,
+  validateFieldSet,
 } from './onboarding-logic.js'
 
 describe('onboarding logic', () => {
@@ -157,5 +160,68 @@ describe('onboarding API client', () => {
         body: JSON.stringify({ completed: true }),
       })
     )
+  })
+})
+
+describe('field-set form logic (Story 13.2)', () => {
+  it('buildTemplateFieldDrafts pre-populates a template with empty values (AC-1/AC-2)', () => {
+    expect(buildTemplateFieldDrafts('login')).toEqual([
+      { key: 'username', value: '', sensitive: false },
+      { key: 'password', value: '', sensitive: true },
+    ])
+    expect(buildTemplateFieldDrafts('custom')).toEqual([])
+  })
+
+  it('duplicateFieldKeyIndex flags a case-insensitive collision (client affordance, AC-3)', () => {
+    expect(duplicateFieldKeyIndex([{ key: 'user' }, { key: 'User' }])).toBe(1)
+    expect(duplicateFieldKeyIndex([{ key: 'user' }, { key: 'pass' }])).toBe(-1)
+    // blank keys are not compared as duplicates
+    expect(duplicateFieldKeyIndex([{ key: '' }, { key: '' }])).toBe(-1)
+  })
+
+  it('validateFieldSet requires at least one field', () => {
+    const res = validateFieldSet([])
+    expect(res.ok).toBe(false)
+    expect(res.formError).toMatch(/at least one field/i)
+  })
+
+  it('validateFieldSet flags empty and invalid keys', () => {
+    const res = validateFieldSet([
+      { key: '', value: 'x', sensitive: false },
+      { key: 'bad/key', value: 'y', sensitive: false },
+    ])
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors[0]).toMatch(/required/i)
+    expect(res.fieldErrors[1]).toMatch(/letters/i)
+  })
+
+  it('validateFieldSet flags a duplicate key on the colliding row', () => {
+    const res = validateFieldSet([
+      { key: 'token', value: 'a', sensitive: true },
+      { key: 'Token', value: 'b', sensitive: true },
+    ])
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors[1]).toMatch(/duplicate/i)
+  })
+
+  it('validateFieldSet passes a clean field set', () => {
+    expect(
+      validateFieldSet([
+        { key: 'username', value: 'a', sensitive: false },
+        { key: 'password', value: 'b', sensitive: true },
+      ]).ok
+    ).toBe(true)
+  })
+
+  it('mapCredentialSubmitError surfaces the conflicting key on a 409 field_key_conflict (AC-3)', () => {
+    const mapped = mapCredentialSubmitError(
+      new ApiClientError(
+        409,
+        { code: 'field_key_conflict' },
+        'A field named "Username" already exists on this secret'
+      )
+    )
+    expect(mapped.fieldKeyConflict).toBe('Username')
+    expect(mapped.errorMessage).toMatch(/already exists/i)
   })
 })

@@ -74,6 +74,7 @@ import {
   revealCurrentValue,
   updateCredentialTags,
 } from './service.js'
+import { FieldKeyConflictError, LegacyShapeFieldLossError } from './field-set.js'
 import {
   addCredentialDependency,
   archiveCredentialDependency,
@@ -297,6 +298,45 @@ async function rejectIfCredentialLifecycleUpdateBlocked(
     return true
   return rejectIfProjectArchived(secureCtx.tx, projectId, reply)
 }
+// Story 13.2 AC-3 — a field-key collision (case-insensitive) is surfaced with the conflicting key
+// so the web can attach an inline error to the specific field being renamed/added.
+function fieldKeyConflictResponse(error: FieldKeyConflictError) {
+  return {
+    code: 'field_key_conflict' as const,
+    message: `A field named "${error.conflictingKey}" already exists on this secret`,
+  }
+}
+
+// Story 13.2 AC-3/AC-9 — wraps a create/edit field-set write, mapping a field-key collision or a
+// concurrent-version conflict to a 409 (with no audit event, since the throw precedes the audit
+// write). Shared by the create and version-create handlers so the 409 mapping lives in one place.
+async function runCredentialFieldSetWrite<T>(
+  reply: FastifyReply,
+  run: () => Promise<T>
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  try {
+    return { ok: true, value: await run() }
+  } catch (error) {
+    if (error instanceof FieldKeyConflictError) {
+      reply.status(409).send(fieldKeyConflictResponse(error))
+      return { ok: false }
+    }
+    if (error instanceof LegacyShapeFieldLossError) {
+      reply.status(422).send({
+        code: 'legacy_shape_field_loss',
+        message:
+          'This secret has multiple fields; use the field-set shape (fields: [...]) to edit it instead of the legacy single-value shape.',
+      })
+      return { ok: false }
+    }
+    if (error instanceof VersionConflictError) {
+      reply.status(409).send({ code: 'version_conflict', message: error.message })
+      return { ok: false }
+    }
+    throw error
+  }
+}
+
 const DEPENDENCY_NOT_FOUND = {
   code: 'dependency_not_found',
   message: 'Dependency not found',
@@ -497,6 +537,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         201: CredentialDetailResponseSchema,
         401: ApiErrorSchema,
         404: ApiErrorSchema,
+        409: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
@@ -535,12 +576,16 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const projectExists = await findProjectInOrg(secureCtx.tx, params.projectId)
       if (!projectExists) return reply.status(404).send(PROJECT_NOT_FOUND)
 
-      const { credential, detail } = await createCredentialWithFirstVersion(secureCtx.tx, {
-        orgId: secureCtx.auth.orgId,
-        projectId: params.projectId,
-        userId: secureCtx.auth.userId,
-        body: parsed.data,
-      })
+      const created = await runCredentialFieldSetWrite(reply, () =>
+        createCredentialWithFirstVersion(secureCtx.tx, {
+          orgId: secureCtx.auth.orgId,
+          projectId: params.projectId,
+          userId: secureCtx.auth.userId,
+          body: parsed.data,
+        })
+      )
+      if (!created.ok) return reply
+      const { credential, detail } = created.value
 
       await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
@@ -867,29 +912,27 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       // not just creation of brand-new credentials.
       if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
 
-      let version
-      try {
-        version = await addCredentialVersion(secureCtx.tx, {
+      const outcome = await runCredentialFieldSetWrite(reply, () =>
+        addCredentialVersion(secureCtx.tx, {
           orgId: secureCtx.auth.orgId,
           credentialId: params.credentialId,
           projectId: params.projectId,
           userId: secureCtx.auth.userId,
           body: parsed.data,
         })
-      } catch (error) {
-        if (error instanceof VersionConflictError) {
-          return reply.status(409).send({ code: 'version_conflict', message: error.message })
-        }
-        throw error
-      }
-      if (!version) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      )
+      if (!outcome.ok) return reply
+      if (!outcome.value) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      const { version, auditPayload } = outcome.value
 
+      // Story 13.2 AC-9 — the audit event names the changed field keys (added/removed) and template,
+      // never any plaintext value; only written on a successful field-set version write.
       await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         actorUserId: secureCtx.auth.userId,
         eventType: 'credential.version_created',
         resourceId: params.credentialId,
-        payload: { versionNumber: version.versionNumber },
+        payload: auditPayload,
         request: req,
       })
 

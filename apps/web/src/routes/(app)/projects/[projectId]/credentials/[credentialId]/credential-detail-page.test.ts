@@ -12,13 +12,18 @@ const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
 
-vi.mock('$lib/api/credentials.js', () => ({
-  updateCredentialLifecycle: updateCredentialLifecycleMock,
-  addCredentialDependency: addCredentialDependencyMock,
-  archiveCredentialDependency: archiveCredentialDependencyMock,
-  revealCredentialValue: revealCredentialValueMock,
-  addCredentialVersion: addCredentialVersionMock,
-}))
+vi.mock('$lib/api/credentials.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('$lib/api/credentials.js')>('$lib/api/credentials.js')
+  return {
+    updateCredentialLifecycle: updateCredentialLifecycleMock,
+    addCredentialDependency: addCredentialDependencyMock,
+    archiveCredentialDependency: archiveCredentialDependencyMock,
+    revealCredentialValue: revealCredentialValueMock,
+    addCredentialVersion: addCredentialVersionMock,
+    parseRevealedFields: actual.parseRevealedFields,
+  }
+})
 
 import { ApiClientError } from '$lib/api/client.js'
 import CredentialDetailPage from './+page.svelte'
@@ -424,5 +429,101 @@ describe('credential detail +page.svelte', () => {
       },
     })
     expect(screen.getByText('completed')).toBeTruthy()
+  })
+
+  // -------- Story 13.2: multi-field secrets --------
+
+  const MULTI_FIELD_CREDENTIAL = {
+    ...CREDENTIAL,
+    schemaVersion: 2,
+    fields: [
+      { key: 'host', sensitive: false, template: 'db_connection' },
+      { key: 'password', sensitive: true, template: 'db_connection' },
+    ],
+  }
+
+  it('AC-7: a legacy single-field secret renders the single-value form, no field chrome', () => {
+    // baseData()'s CREDENTIAL has no `fields`, so it defaults to one unnamed "value" field.
+    render(CredentialDetailPage, { props: { data: baseData() } })
+    expect(screen.queryByTestId('field-list')).toBeNull()
+    expect(screen.getByLabelText(/new value/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /edit fields/i })).toBeNull()
+  })
+
+  it('renders the field list and an Edit fields button for a multi-field secret', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL }) },
+    })
+    const list = screen.getByTestId('field-list')
+    expect(list.textContent).toContain('host')
+    expect(list.textContent).toContain('password')
+    expect(screen.getByRole('button', { name: /edit fields/i })).toBeTruthy()
+    // the single-value "Add version" form is not shown for a multi-field secret
+    expect(screen.queryByLabelText(/new value/i)).toBeNull()
+  })
+
+  it('AC-4/AC-8: editing reveals current values, then saves the full field set', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      value: JSON.stringify([
+        { key: 'host', value: 'db.example.com', sensitive: false },
+        { key: 'password', value: 'old-pw', sensitive: true },
+      ]),
+      versionNumber: 3,
+    })
+    addCredentialVersionMock.mockResolvedValue({ credentialId, versionNumber: 4 })
+
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL }) },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /edit fields/i }))
+
+    // current values pre-filled (round-trip), no reveal-first gate (AC-8)
+    await vi.waitFor(() =>
+      expect((screen.getByLabelText('Field 1 value') as HTMLInputElement).value).toBe(
+        'db.example.com'
+      )
+    )
+    await fireEvent.input(screen.getByLabelText('Field 2 value'), {
+      target: { value: 'brand-new-pw' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /save fields/i }))
+
+    expect(addCredentialVersionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId,
+      expect.objectContaining({
+        fields: [
+          { key: 'host', value: 'db.example.com', sensitive: false },
+          { key: 'password', value: 'brand-new-pw', sensitive: true },
+        ],
+      })
+    )
+  })
+
+  it('AC-3: a 409 field_key_conflict on save shows an inline error on the colliding field', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      value: JSON.stringify([
+        { key: 'host', value: 'h', sensitive: false },
+        { key: 'password', value: 'p', sensitive: true },
+      ]),
+      versionNumber: 3,
+    })
+    addCredentialVersionMock.mockRejectedValue(
+      new ApiClientError(
+        409,
+        { code: 'field_key_conflict' },
+        'A field named "host" already exists on this secret'
+      )
+    )
+
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL }) },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /edit fields/i }))
+    await vi.waitFor(() => screen.getByLabelText('Field 1 value'))
+    await fireEvent.click(screen.getByRole('button', { name: /save fields/i }))
+
+    await vi.waitFor(() => expect(screen.getAllByText(/already exists/i).length).toBeGreaterThan(0))
   })
 })
