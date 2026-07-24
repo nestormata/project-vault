@@ -4,6 +4,9 @@ inputDocuments:
   - "_bmad-output/planning-artifacts/prd.md"
   - "_bmad-output/planning-artifacts/architecture.md"
   - "_bmad-output/planning-artifacts/ux-design-specification.md"
+phase2AmendmentHistory:
+  - date: '2026-07-23'
+    changes: 'Extracted Phase 2 PRD/architecture scope (FR10/12/18/96 amended, FR111-121) into Requirements Inventory and appended Epic 13 (Structured Multi-Field Secrets), Epic 14 (Extension Architecture & Pluggable Authentication, Story 0 = AGPLv3/CLA), Epic 15 (Localization), Epic 16 (Custom Theming) to the Epic List. Originally proposed as 3 epics; a 5-agent adversarial review (architecture completeness, cross-doc consistency, security, epic-dependency validation, UX/edge-cases) found and fixed 14 issues before the epic list was finalized — including an undocumented SSO identity-binding gap, missing CSRF/state validation, a broken FR Coverage Map (all Phase 2 FRs had been left mapped to a single epic), and the i18n+theming bundle lacking cohesion (split into 15/16). A follow-up elicitation pass moved the AGPLv3 story from a standalone untracked prerequisite into Epic 14 Story 0, and reordered recommended build sequence to Epic 14 first (business-critical path) ahead of Epic 13. Step 2 (design epics) complete for this amendment; step 3 (create stories) not yet started for epics 13-16.'
 ---
 
 # Project Vault - Epic Breakdown
@@ -150,6 +153,44 @@ This document provides the complete epic and story breakdown for Project Vault, 
 
 ---
 
+### Phase 2 Additions (2026-07-23, revised twice on 2026-07-23 — four new epics: 13, 14, 15, 16)
+
+*Extracted from prd.md Phase 2 (Extension/Hook Architecture, AGPLv3 licensing boundary, multi-field secrets, i18n, theming) and architecture.md's corresponding decisions/patterns/structure additions. FR99-FR110 above were already covered by existing epics before this pass and needed no new epic — only the following are new. Originally proposed as three epics (13/14/15); a 5-agent review found the i18n+theming bundle (then Epic 15) lacked the shared-module cohesion that justifies bundling (no shared backend module, no shared data model — unlike Epic 6's legitimate bundling of monitored-asset types, which share one alert pipeline), so it's split into Epic 15 (Localization) and Epic 16 (Theming).*
+
+*The AGPLv3/CLA item was initially pulled out as a standalone prerequisite (whole-repo governance, not SSO-specific — bundling process work into a feature epic is the anti-pattern this project's epic-design principles warn against). A follow-up elicitation pass reconsidered this: a standalone story with no epic home is untracked in this project's convention (every retro/rollup happens at the epic level via sprint-status.yaml) and risks silently never getting scheduled. **Resolution: it's Epic 14's Story 0** — not because it's SSO-specific, but because this project tracks work at the epic level and Epic 14 is where it's most urgently needed (see recommended build order below).*
+
+**Recommended build order: Epic 14 → Epic 13 → Epic 15 → Epic 16** (epic numbers are stable identifiers, not a sequencing mandate — same convention as epics 10-12, which weren't built in ID order either). All four epics are independent and could ship in any order; this order reflects business priority, not a dependency. Epic 14 is the business-critical path — the whole Phase 2 initiative traces back to enabling a hosted SaaS business on the Extension API, and AGPLv3 relicensing before any public-facing Extension API ships avoids a disruptive mid-flight relicense for early adopters. Epic 13 (multi-field secrets) has no urgency driving it ahead of that. Epic 15/16 are correctly last — lowest risk, no dependency, no urgency.
+
+**Epic 13 — Secret & Credential Management (amended + new)**
+- FR10 (amended): secrets now support one or more named fields (not just a single value); a secret created without a template has one default field — no migration for existing secrets
+- FR111: built-in secret templates (Login, Database Connection, API Key, Secure Note, Custom) pre-populate field names; fields addable/renamable/removable regardless of template
+- FR112: per-field sensitivity flag (masked/visible-in-list); masked fields require explicit reveal; field keys unique per secret (case-insensitive), rename collision rejected not silently overwritten
+- FR12 (amended): a version is the full field-set at a point in time; any field change creates a new version of the whole secret
+- FR96 (amended): reveal action can target a specific masked field; audit log records which field(s) were revealed
+- FR18 (amended, Rotation & Propagation): rotation can target specific field(s) of a multi-field secret; the resulting version is still a full field-set snapshot; `credential_dependencies` gains an optional field-level scope so the rotation checklist can correctly filter which dependent systems are affected by a partial-field rotation
+
+**Epic 14 — Extension Architecture & Pluggable Authentication**
+- **Story 0 (build first, blocks the rest of this epic):** AGPLv3 relicense + CLA setup (LICENSE file, CONTRIBUTING.md/CLA-assistant or equivalent) — see prd.md Licensing & Contribution Model. Whole-repo governance, not SSO-specific, but homed here (not standalone) because this project tracks work at the epic level, and here is where it's urgently needed: relicensing before any public-facing Extension API ships avoids a disruptive mid-flight relicense for early adopters.
+- FR113: versioned Extension API with defined extension points (auth-provider, notification-channel, UI-panel) an external package registers against via typed, code-based registration
+- FR114: a configured extension package loads at startup if present; system remains fully functional with zero extension packages installed
+- FR115 (amended on review): one or more external authentication provider strategies can register via the Extension API, participating in auth alongside the built-in local/MFA strategy (which always remains available); a successful external login resolves to an existing, explicitly-linked identity — never auto-provisioned or auto-linked by email match alone; first-time login with no link requires a pending invitation or explicit OrgAdmin action; MFA enforcement for Owner/Admin applies identically regardless of auth source
+- FR116 (deferred — not in this epic's scope): third-party community extensions with declared permission scopes and explicit approval — the loader in this epic only accepts the founder's exact designated private package identity; no general install pathway ships yet. **Journey 7 (Jordan) in prd.md depicts this future state and is explicitly out of scope for this epic's stories** — do not draft acceptance criteria against it.
+- Security items required by this epic, not optional hardening: CSRF/state-parameter validation on the SSO callback flow (state stored server-side, short-TTL, single-use, never a bare query param); fixed SSO callback route shape `POST /api/v1/auth/sso/callback/:providerName`; email-first login screen with domain-based SSO routing (`org_sso_domains` lookup)
+
+**Epic 15 — Localization**
+- FR117: users select preferred display language from supported locales
+- FR118: UI text/dates/notifications render in the user's language, falling back to English for untranslated content; user-generated content (credential names, project names, notes) is never translated, including when interpolated into translated notification templates
+- FR119: Organization Admins configure a default locale for newly invited users
+- Note: supported locale set is build-time (new language = a deploy); locale *selection* among supported locales is runtime (no rebuild) — these are different mechanisms, keep them distinct in story scoping
+- Note: audit log exports remain locale-invariant (ISO 8601 dates, English) regardless of UI locale, to preserve UX-DR13's auditor-comprehensibility requirement
+
+**Epic 16 — Custom Theming**
+- FR120: administrators install custom themes as structured (JSON/YAML) definitions in a designated, non-tracked directory — no code changes; theme token values validated against a per-type CSS grammar before compilation (color/length/enum), rejecting anything that doesn't match rather than raw-interpolating into CSS
+- FR121: users select the active theme from base + installed custom themes; an admin-deleted theme that's still selected by a user falls back to base theme silently plus a one-time dismissible notice, never a broken UI
+- Reload endpoint (`POST /api/v1/admin/themes/reload`, OrgAdmin-only) validates files independently — one malformed file doesn't block others — and reports per-file, specific failure reasons
+
+---
+
 ### NonFunctional Requirements
 
 **NFR-PERF1:** Secret fetch (by-id/name): p95 ≤100ms at reference load (20 concurrent human + 10 concurrent machine API calls; 2 vCPU / 4GB RAM / SSD)
@@ -201,7 +242,12 @@ This document provides the complete epic and story breakdown for Project Vault, 
 **NFR-MAINT4:** Prometheus-compatible metrics endpoint; defaults to localhost-only binding (configurable)
 **NFR-MAINT5:** Multi-arch container builds: AMD64 + ARM64
 **NFR-MAINT6:** API v1 compatibility policy: no breaking changes within v1.x
-**NFR-MAINT7:** Internationalization: English-only in v1; no hardcoded strings in UI components
+**NFR-MAINT7 (superseded 2026-07-23 — see NFR-I18N1 below):** ~~Internationalization: English-only in v1; no hardcoded strings in UI components~~
+
+**NFR-I18N1 (Phase 2):** No hardcoded strings in UI components; locale switch completes without a page reload; missing translations fall back to English rather than a translation key or blank string; locale files structured for community-contributed translations without core code changes
+**NFR-EXT1 (Phase 2):** Extension API is semver-versioned independently of the app; breaking changes require an explicit major bump + changelog + migration note; core performs startup capability-negotiation and fails loudly (not silently) on incompatibility
+**NFR-EXT2 (Phase 2, Security):** Third-party community extensions execute in a sandboxed, out-of-process execution environment with no default access to decrypted secret values; capability scopes declared in a manifest, enforced by extension provenance not self-declaration; the founder's first-party private extension is exempt from sandboxing but not from capability declaration
+**NFR-THEME1 (Phase 2):** Installing or switching a theme requires no application rebuild and no restart; a malformed theme definition fails validation at load time and falls back to the base theme rather than rendering a broken UI
 
 ---
 
@@ -268,6 +314,41 @@ This document provides the complete epic and story breakdown for Project Vault, 
 **Background Processing**
 - Background jobs (health checks, rotation, monitoring) run in separate thread/process pool from request handling; org_id context enforced via same PostgreSQL RLS mechanism as HTTP requests; must not block UI
 
+**Multi-Field Secrets Data Model (Phase 2, from architecture.md — Epic 13)**
+- `credential_versions.fields` — JSONB column, whole field-set encrypted as one envelope (same `{version, iv, ciphertext, tag}` format as every other encrypted field); `credential_versions.field_meta` — unencrypted JSONB (field keys/sensitivity/template, unique keys per secret), nullable
+- **`credential_versions.schema_version smallint NOT NULL DEFAULT 1`** — the authoritative format discriminator (1=legacy bare string, 2=field-set JSON), not `field_meta`'s nullability (revised on review: a nullable column doing double duty as data and version-marker was fragile). Legacy rows decrypt exactly as today (bare string, not JSON) and are wrapped into the field-set response shape at the application layer — the stored ciphertext is never touched. Genuinely migration-free but not by "old rows already contain JSON" (a corrected assumption — see architecture.md validation notes)
+- `credentials.current_version_id` — explicit FK, flipped atomically in the existing rotation-completion compound transaction, never derived via `MAX(created_at)`; **one-time backfill migration required** (same pattern as `check-rls-coverage.ts`) setting it to each pre-existing credential's latest version — without this, pre-Phase-2 credentials never rotated since would have a permanently NULL pointer
+- `rotations.target_fields text[]` — nullable; NULL = whole-secret rotation, non-null = specific field keys targeted
+- `credential_dependencies.field_key text` — nullable; NULL = dependency applies to the whole credential, non-null = scoped to that field. Closes a gap where field-scoped rotation had no data-model support for computing which dependencies are actually affected by a partial-field change
+- Field-scoped rotation reuses the existing credential-level advisory lock and `409 ROTATION_IN_PROGRESS` — no new concurrency primitive
+- Field-level reveal audit: `audit_log_entries.revealed_fields text[]`, populated only on `CREDENTIAL_VALUE_REVEALED`; machine reveal route gains an optional `?field=` query param
+- `.env`/JSON bulk import creates single-field secrets only, one per imported key — no automatic grouping into multi-field secrets
+
+**Extension / Hook Architecture (Phase 2, from architecture.md — Epic 14)**
+- New workspace package `packages/extension-api`: `defineExtension()`, typed hook interfaces (`AuthStrategy`, `NotificationChannel`, `UIPanel`), `registerExtension(manifest, hooksFactory)` — `hooksFactory` is a **lazy factory**, invoked only after capability negotiation passes, so zero extension code runs before the gate
+- Loading: `apps/api/src/extensions/loader.ts` reads `VAULT_EXTENSIONS_PACKAGE` env var; absent = zero behavior change (tested default for self-hosted); a failed load does not crash core — surfaces as `extensions_status: "load_failed"` on `GET /health` (FR81) plus an `AuditEvent.EXTENSION_LOAD_FAILED` entry (fixed-enum reason, never a raw stack trace)
+- Auth hooks: `registerAuthStrategy()` Fastify decorator in `modules/auth/strategies.ts`; local strategy always index 0; `authStrategies` is a list core always iterates — extension presence changes data, never the code path
+- **Identity binding (added on review — closes the sharpest gap found):** `AuthResult` asserts `{externalSubject, providerName, email?, displayName?}`, never a bare `userId`. New table `external_identities` (org_id, user_id FK, provider_name, external_subject) resolves it. No auto-link-by-email — first-time external login with no existing link requires a pending invitation or explicit OrgAdmin action.
+- **CSRF/state validation on the SSO callback** — server-generated `state`/`RelayState`, stored server-side keyed to a short-TTL single-use httpOnly cookie, validated before `onAuthenticate()` runs. Fixed callback route: `POST /api/v1/auth/sso/callback/:providerName`.
+- **Login UI:** email-first — email domain resolves to an org's SSO config (`org_sso_domains` table) before showing SSO redirect vs. password field
+- `GET /api/v1/admin/extensions/status` — returns the loaded extension's manifest or null; backs the `(app)/admin/extensions/` status/audit view (no install UI — loader is origin-locked to the founder's designated package only)
+- `capabilities[]` in the manifest is informational/audit-only this phase, not an enforced authorization boundary — **with a stated forcing function**: the future community-extension sandboxing work item's Definition of Done explicitly includes flipping this to enforced, so it isn't silently forgotten
+
+**Internationalization (Phase 2, from architecture.md — Epic 15)**
+- Paraglide JS (`@inlang/paraglide-js`), `apps/web/messages/{locale}.json`; supported locale set is build-time (new language = deploy), locale *selection* is runtime (no rebuild)
+- User-generated content (credential/project names, notes) is never translated, including when interpolated into translated notification templates
+- Audit exports remain locale-invariant (ISO 8601, English) regardless of UI locale, to protect UX-DR13's auditor-comprehensibility requirement
+
+**Theming (Phase 2, from architecture.md — Epic 16)**
+- Tailwind v4 native `@theme` CSS custom properties; `VAULT_THEMES_DIR` env var (default `/data/themes`, inside the persistent Docker volume, not the image); explicit `POST /api/v1/admin/themes/reload` trigger (OrgAdmin-only) — no filesystem watcher; per-file validation with specific failure reasons, one bad file doesn't block others
+- Theme asset URLs validated against the existing webhook SSRF blocklist at install/reload time (browser fetches assets directly — no server-side proxy, so no per-request re-validation needed)
+- Theme token values validated against a per-type CSS grammar before compiling into custom properties — prevents CSS injection via a hostile theme file
+- Admin-deleted-but-still-selected theme falls back to base theme silently plus a one-time dismissible notice — never a broken UI
+
+**Licensing (Phase 2, from prd.md — Epic 14 Story 0, see epic definition above)**
+- Core license: AGPLv3; requires a CLA from external contributors (not a bare DCO). Whole-repository governance, homed in Epic 14 as Story 0 for tracking reasons (this project tracks work at the epic level), not because it's SSO-specific — build it first, before FR113-115.
+- Not an engineering task per se, but repo-level LICENSE file and CONTRIBUTING.md/CLA setup should land alongside or before this epic if not already in place — flagged for story-level scoping in the next step
+
 ---
 
 ### UX Design Requirements
@@ -287,6 +368,8 @@ This document provides the complete epic and story breakdown for Project Vault, 
 - **UX-DR13:** Audit log integrity verification is a mandatory first step in every compliance export flow (not optional); verification result travels with the exported file; verification output is comprehensible to a non-cryptographer and acceptable to an auditor
 - **UX-DR14:** Every empty/zero state communicates project potential — shows asset categories that belong here and offers a direct path to first action; an empty project must never appear as a dead end
 - **UX-DR15:** Responsive web application — same product adapts to desktop, tablet, and mobile; information density adapts to viewport; no interaction requires a specific device or input method; WCAG 2.1 AA is a baseline, not an enhancement
+
+**⚠️ Gap (2026-07-23):** No UX Design Specification update accompanied Phase 2 — `ux-design-specification.md` was not touched during the PRD/architecture amendment. The new admin surfaces (`(app)/admin/extensions/`, `(app)/admin/themes/`, `(app)/settings/language/`) have architectural placement but no interaction/visual design treatment. Existing UX-DR3 (correct-path-is-default-path for security-critical config) plausibly extends to the extensions/themes admin views, but this hasn't been confirmed with a UX pass. Flagging for story-level scoping — stories touching these surfaces may need a lightweight UX review step, or explicit acceptance that they follow existing admin-panel conventions without new UX-DR coverage.
 
 ---
 
@@ -398,6 +481,21 @@ This document provides the complete epic and story breakdown for Project Vault, 
 | FR108 | Epic 5 | Break-glass emergency rotation |
 | FR109 | Epic 9 | Key custody risk alert |
 | FR110 | Epic 7 | Machine user key dormancy |
+| FR10 (amended) | Epic 13 | Multi-field secret storage |
+| FR111 | Epic 13 | Secret templates |
+| FR112 | Epic 13 | Per-field sensitivity/masking |
+| FR12 (amended) | Epic 13 | Whole-field-set versioning |
+| FR96 (amended) | Epic 13 | Field-scoped reveal + audit |
+| FR18 (amended) | Epic 13 | Field-scoped rotation |
+| FR113 | Epic 14 | Extension API package |
+| FR114 | Epic 14 | Extension loader |
+| FR115 (amended) | Epic 14 | Auth extension hooks + identity binding |
+| FR116 (deferred) | — | Community extensions — out of Epic 14 scope; Journey 7 is aspirational |
+| FR117 | Epic 15 | Locale selection |
+| FR118 | Epic 15 | Localized rendering + fallback |
+| FR119 | Epic 15 | Org default locale |
+| FR120 | Epic 16 | Theme installation |
+| FR121 | Epic 16 | Theme selection |
 
 ---
 
@@ -466,6 +564,10 @@ Every story must satisfy **all** of the following before it is considered comple
 | Epic 7: Machine User Access | ⚪ v1 GA | Blocked on FR37 SDK scope decision |
 | Epic 8: Compliance, Audit & Governance | ⚪ v1 GA | Enterprise features; audit log writes from day 1 |
 | Epic 9: Platform Operations, API & Self-Hosting | ⚪ v1 GA | Production hardening; requires stable feature API |
+| Epic 14: Extension Architecture & Pluggable Authentication | 🟠 Phase 2 | Recommended build order: first of the four Phase 2 epics — business-critical path (enables the hosted SaaS model); Story 0 (AGPLv3 relicense) blocks the rest of this epic |
+| Epic 13: Structured Multi-Field Secrets | 🟠 Phase 2 | Independent of Epic 14; no urgency driving it ahead |
+| Epic 15: Localization | 🟠 Phase 2 | Independent; lowest risk |
+| Epic 16: Custom Theming | 🟠 Phase 2 | Independent; lowest risk |
 
 **Recommended beta target:** Epics 1–6 with within-epic cuts (see notes per epic) ≈ 55 FRs.
 **Post-beta v1 GA:** Epics 7–9 complete the full feature set.
@@ -2173,3 +2275,462 @@ The platform exposes a verified complete versioned REST API with finalized OpenA
 **And** the runbook includes a "Quarterly Operations Checklist" section with: backup restore validation, audit log integrity check, dormant user review, key custody review, CVE scan review, `.trivyignore` expiry audit.
 
 **And** this story has no integration tests — it is a documentation deliverable; acceptance is verified by a documentation review where a team member who was not the author successfully completes the "first-time deployment" and "manual unseal" procedures against a clean environment without asking questions.
+
+---
+
+### Epic 14: Extension Architecture & Pluggable Authentication
+**🟠 Phase 2 — Recommended build order: first of the four Phase 2 epics**
+
+Self-hosters can extend the platform via a documented, versioned Extension API; enterprise and hosted-SaaS users can log in via their organization's SSO provider instead of a local password, while local auth always remains available as fallback. This epic is the business-critical path for Phase 2 — the founder's hosted SaaS model depends on the Extension API and the AGPLv3 licensing boundary it's paired with, which is why it's sequenced before Epic 13 despite the lower epic number. Story 0 (AGPLv3 relicense + CLA) blocks the rest of this epic — the public-facing Extension API must not ship under a to-be-decided license.
+
+Third-party community extensions (FR116) are explicitly out of scope — this epic's loader accepts only the founder's exact, pinned private package identity; there is no general install pathway, no permission-scope approval UI, and no sandboxing. Journey 7 (Jordan) in prd.md depicts that future state and must not be used as a source of acceptance criteria for this epic's stories.
+
+**FRs covered:** FR113, FR114, FR115 (amended), FR116 (deferred — tracked for completeness, not built here)
+> ⚠️ **Story 0 (AGPLv3 + CLA) is a prerequisite for this epic, not a feature story** — no FR maps to it; it exists because this project tracks work at the epic level and this is where the licensing work is most urgently needed.
+> ⚠️ **Security-critical, not optional hardening:** CSRF/state-parameter validation on the SSO callback, the `external_identities` identity-binding table (no auto-link-by-email), and the fixed `POST /api/v1/auth/sso/callback/:providerName` route shape are all part of FR115's acceptance criteria, not follow-up work — see architecture.md Authentication & Security for the full design, added after a security review found the original hook design had no identity-validation mechanism at all.
+> ⚠️ **Dependency note:** `authStrategies` list and `registerAuthStrategy()` land in `apps/api/src/modules/auth/strategies.ts` — this epic does not touch `modules/credentials/` (Epic 13) at all; the two epics share no backend module.
+
+#### Story 14.0: Establish AGPLv3 License and Contributor Agreement
+
+**As a** project maintainer preparing to build a commercial extension on top of the open-source core,
+**I want** the repository relicensed to AGPLv3 with a Contributor License Agreement process for external contributions,
+**So that** the open-source core can remain freely self-hostable while legally enabling a closed-source SaaS extension and deterring uncompensated competing hosted forks.
+
+**Acceptance Criteria:**
+
+**Given** the relicensing work is complete,
+**When** the repository root is inspected,
+**Then** a `LICENSE` file containing the full AGPLv3 text is present.
+
+**And** `CONTRIBUTING.md` documents that external contributions require signing a CLA before merge, and explicitly discloses that contributions may be used in a closed-source commercial SaaS extension maintained by the project owner — the CLA text itself must carry this disclosure, not just internal documentation (per prd.md's Licensing & Contribution Model: transparency here is a stated requirement, not optional).
+
+**And** a CLA-assistant bot (or equivalent, e.g. a `cla-assistant` GitHub Action) is configured to block PR merges from unsigned contributors.
+
+**Given** a new external contributor opens their first PR,
+**When** the CLA-assistant check runs,
+**Then** the PR is blocked from merge until the contributor signs the CLA via the automated flow.
+
+**And** existing PR templates reference the CLA requirement.
+
+**And** this story has no automated tests — acceptance is verified by a maintainer confirming the `LICENSE` file, `CONTRIBUTING.md`, and CLA bot are correctly configured, and a test PR from an unsigned account is actually blocked from merging.
+
+---
+
+#### Story 14.1: Define and Publish the Extension API Package
+
+**As a** developer building an extension for Project Vault (starting with the founder's own private SaaS package),
+**I want** a versioned, typed Extension API package with capability negotiation,
+**So that** my extension registers hooks against a stable contract and gets a clear failure instead of silent breakage when core's extension surface changes.
+
+**Acceptance Criteria:**
+
+**Given** the monorepo workspace,
+**When** `packages/extension-api` is created,
+**Then** it exports `defineExtension()`, `registerExtension(manifest: ExtensionManifest, hooksFactory: () => ExtensionHooks)`, and an `EXTENSION_API_VERSION` semver constant.
+
+**And** it exports typed hook interfaces `AuthStrategy`, `NotificationChannel`, `UIPanel` from `hooks/`, all re-exported from the package root — an extension author's only import path is `@project-vault/extension-api`, never a `hooks/` subpath directly.
+
+**And** every hook interface method (`onAuthenticate`, `onNotify`, `onRenderPanel`) is typed as returning `Promise<T>` — a hook method typed to return a non-Promise value fails TypeScript compilation.
+
+**Given** an extension manifest declaring `apiVersion: "^1.2.0"` and core's `EXTENSION_API_VERSION` is `"1.3.0"`,
+**When** `registerExtension(manifest, hooksFactory)` is called,
+**Then** `semver.satisfies(EXTENSION_API_VERSION, manifest.apiVersion)` passes, `hooksFactory()` is invoked, and its returned hooks are accepted.
+
+**Given** an extension manifest declaring `apiVersion: "^2.0.0"` against the same core version,
+**When** `registerExtension()` is called,
+**Then** the semver check fails, `registerExtension()` throws synchronously, and **`hooksFactory` is never invoked** — zero extension code executes.
+
+**Given** a manifest's `name` field,
+**When** validated at registration,
+**Then** it must match `/^[a-z0-9]+(\.[a-z0-9-]+)+$/` (reverse-DNS style) or registration is rejected.
+
+**Given** the CI pipeline,
+**When** any file under `packages/extension-api/src/**` changes without a corresponding `package.json` version bump in the same commit,
+**Then** CI fails with an explicit error naming the version-skew guard.
+
+---
+
+#### Story 14.2: Load a Configured Extension at Startup, Fail-Safe
+
+**As a** self-hosted administrator,
+**I want** the vault to load my configured extension package at startup without risking an outage if it's misconfigured,
+**So that** a bad extension config never takes down my vault.
+
+**Acceptance Criteria:**
+
+**Given** `VAULT_EXTENSIONS_PACKAGE` is unset,
+**When** the API starts,
+**Then** zero extension code loads, `GET /health` reports no active extension, and all core functionality is identical to a build with no extension system at all.
+
+**Given** `VAULT_EXTENSIONS_PACKAGE` is set to a valid, resolvable package name,
+**When** the API starts,
+**Then** `apps/api/src/extensions/loader.ts` dynamically imports it via native ESM `import()`, validates the manifest (name pattern + capability negotiation per Story 14.1) **before** `hooksFactory()` is invoked, wires the returned hooks in on success, writes an `AuditEvent.EXTENSION_LOADED` entry with `manifest.name`, `manifest.apiVersion`, `manifest.capabilities`, and `GET /api/v1/admin/extensions/status` (OrgAdmin only) returns the loaded manifest.
+
+**And** this story is testable with a minimal stub hook (e.g. a no-op `NotificationChannel` implementation) — it does not require Story 14.3's auth-strategy machinery to exist first; "wires hooks in" means generic hook-type dispatch, not auth-specific behavior.
+
+**Given** `VAULT_EXTENSIONS_PACKAGE` is set to a package that fails to import, fails manifest validation, or fails capability negotiation,
+**When** the API starts,
+**Then** the failure is caught at the loader call site, logged at fatal-equivalent severity with a **fixed-enum reason** (`import_error` | `manifest_invalid` | `capability_mismatch`) — never the raw exception message or stack trace — an `AuditEvent.EXTENSION_LOAD_FAILED` entry is written with that reason, `GET /health` reports `extensions_status: "load_failed"`, and **the API process still starts and serves all core functionality.**
+
+**Given** no extension is loaded,
+**When** `GET /api/v1/admin/extensions/status` is called by an OrgAdmin,
+**Then** it returns `null`.
+
+**And** a non-OrgAdmin calling this endpoint receives `403`.
+
+---
+
+#### Story 14.3: Authenticate via a Registered External Provider Strategy
+
+**As an** enterprise user whose organization uses SSO,
+**I want** to log in to Project Vault through my organization's identity provider,
+**So that** I don't need a separate password and my company's existing SSO/MFA policy applies.
+
+**Acceptance Criteria:**
+
+**Given** the API boots,
+**When** the local email/password + MFA strategy registers (before any extension bootstrap runs),
+**Then** it occupies index 0 of `authStrategies` and remains registered regardless of what any extension does.
+
+**Given** an extension calls `registerAuthStrategy(strategy)` during its `hooksFactory`-provided registration,
+**When** registration completes,
+**Then** the strategy is appended to `authStrategies` — append-only at boot, no runtime add/remove.
+
+**Given** a user initiates SSO login,
+**When** the server responds,
+**Then** it generates a cryptographically random `state` value and stores it server-side, keyed to a short-TTL (10 min), single-use, `httpOnly; Secure; SameSite=Lax` cookie — never a bare query parameter.
+
+**Given** the IdP redirects back to `POST /api/v1/auth/sso/callback/:providerName`,
+**When** the callback is received,
+**Then** the `state`/`RelayState` is validated against the stored value **before** `onAuthenticate()` is invoked; a missing, mismatched, expired, or already-consumed `state` is rejected with a generic auth error and `onAuthenticate()` is never called.
+
+**Given** a valid callback with a matched `state`,
+**When** the registered strategy's `onAuthenticate()` returns `{ externalSubject, providerName, email?, displayName? }`,
+**Then** the system looks up `external_identities` by `(org_id, providerName, externalSubject)`.
+
+**Given** a matching `external_identities` row exists,
+**When** the lookup succeeds,
+**Then** `issueSession()` is called for that row's `user_id` — identical session/JWT lifecycle to local login — and if that user is OrgAdmin/Owner without MFA enrolled, the identical `403 MFA_ENROLLMENT_REQUIRED` check applies exactly as it would for local login.
+
+**Given** the `external_identities` lookup succeeds but `issueSession()` itself then fails (e.g. a transient DB error),
+**When** this happens after the single-use `state` cookie has already been consumed,
+**Then** the user sees a clear "login failed, please try again" error and can immediately restart the SSO flow (a fresh `state` is generated) — the consumed `state` from the failed attempt is never required again, so the user is never stuck unable to retry.
+
+**Given** no matching `external_identities` row exists (first-time external login),
+**When** the lookup misses,
+**Then** **no session is issued and no user is auto-provisioned** — the user is shown a "link your account" step requiring either a pending invitation for that email or an explicit OrgAdmin-initiated linking action, and the system never creates an `external_identities` row solely because `AuthResult.email` matches an existing `users.email`.
+
+**Given** the one registered external strategy's `onAuthenticate()` throws or rejects — note: this phase's loader is origin-locked to a single extension (Story 14.2), so at most one external strategy can ever be registered alongside local; this AC is scoped to that reality, not a multi-strategy fallback scenario,
+**When** the dispatch layer in `strategies.ts` invokes it,
+**Then** the error is caught, logged via `pino.error`, and local login remains fully reachable regardless of the external strategy's failure state — the user sees a clear error for the SSO attempt specifically, not a broken login page.
+
+**And** this story requires an integration test asserting that a forged `AuthResult` for an arbitrary `externalSubject` with no corresponding `external_identities` row is rejected, not silently accepted — this is the test that guards the identity-binding gap this story exists to close.
+
+---
+
+#### Story 14.4: Route Login to SSO by Email Domain
+
+**As a** user at a company that uses SSO,
+**I want** the login screen to automatically offer SSO once I enter my work email,
+**So that** I don't have to know in advance whether my org uses SSO or hunt for a separate button.
+
+**Acceptance Criteria:**
+
+**Given** an org has registered an SSO strategy and configured an `org_sso_domains` entry mapping `"acme.com"` to that strategy,
+**When** a user on the login screen enters an email ending in `@acme.com`,
+**Then** the client looks up the domain via the server and is redirected into that org's SSO flow (per Story 14.3) — no password field is shown.
+
+**Given** a user enters an email whose domain has no `org_sso_domains` mapping,
+**When** the lookup completes,
+**Then** the password field renders and local login proceeds normally.
+
+**Given** the `org_sso_domains` lookup itself fails (e.g. a transient DB error),
+**When** this happens during login,
+**Then** the login screen fails open to the password field — same fail-safe philosophy as the extension loader (Story 14.2) — never a hung or broken login screen.
+
+**Given** an org has no SSO extension registered at all,
+**When** any user logs in,
+**Then** the login screen never attempts an SSO domain lookup — only local email/password is shown, matching the "core never special-cases the extension" invariant: with zero extensions installed, this code path behaves exactly as it does today.
+
+---
+
+### Epic 13: Structured Multi-Field Secrets
+**🟠 Phase 2**
+
+Users can store real-world credentials that need more than one field (username+password, database connection strings) using built-in templates, with per-field masking and field-scoped rotation — instead of splitting them across multiple awkwardly-named single-value secrets. Fully self-contained within existing credential management; independent of Epic 14, 15, and 16.
+
+**FRs covered:** FR10 (amended), FR111, FR112, FR12 (amended), FR96 (amended), FR18 (amended)
+> ⚠️ **Data model prerequisites, not optional:** `credential_versions.schema_version` (the format discriminator), the `credentials.current_version_id` backfill migration for pre-existing credentials, field-key uniqueness enforcement, and `credential_dependencies.field_key` (for field-scoped rotation checklist filtering) are all part of this epic's acceptance criteria — added after an architecture review found the original design had gaps in exactly these spots. See architecture.md Data Architecture for the full design.
+> ⚠️ **Backward compatibility is mandatory, not best-effort:** every pre-existing single-value secret must continue to work with zero migration of its stored ciphertext — only new writes use the field-set format. Any story that touches the read/write path for `credential_versions` must include an explicit test against a legacy (`schema_version = 1`) row.
+
+#### Story 13.1: Backfill `current_version_id` for Existing Credentials
+
+**As a** platform operator upgrading to a version of Project Vault that ships multi-field secrets,
+**I want** every existing credential's `current_version_id` backfilled automatically during the upgrade,
+**So that** no credential is left with an undefined "current version" after the upgrade completes.
+
+**Acceptance Criteria:**
+
+**Given** a Postgres database with existing `credentials` rows created before this migration,
+**When** the Phase 2 migration runs,
+**Then** `credentials.current_version_id` is set for every row to the `id` of its latest `credential_versions` row by `created_at`.
+
+**Given** a credential with multiple existing versions,
+**When** the backfill runs,
+**Then** `current_version_id` points to the most recently created version, not the first.
+
+**And** the migration must complete before the application version that assumes non-null `current_version_id` deploys — documented as an explicit deployment-ordering requirement in the migration's own header comment and the upgrade runbook.
+
+**Given** existing `credential_versions` rows,
+**When** the migration runs,
+**Then** their `schema_version` column defaults to `1` (legacy bare-string format) and `field_meta` remains `NULL` — no re-encryption, no ciphertext touched.
+
+**Given** a `credentials` row with zero `credential_versions` rows (orphaned/corrupted state),
+**When** the backfill runs,
+**Then** it skips that row, logs it explicitly, and surfaces it in the migration's summary output rather than crashing the migration or silently leaving `current_version_id` in an undefined state.
+
+**And** this story requires an integration test verifying: (a) a credential with 5 versions backfills to the version with the max `created_at`, (b) a credential with exactly 1 version backfills correctly, (c) the migration is idempotent — running it twice produces the same result, (d) a credential with zero versions is skipped and logged, not crashed on.
+
+---
+
+#### Story 13.2: Store and Edit a Secret with Multiple Named Fields via Templates
+
+**As a** user managing a credential that has more than one meaningful piece of information (e.g. a database login),
+**I want** to create a secret using a template that defines its fields, and add/rename/remove fields freely,
+**So that** I can store a Login, Database Connection, API Key, or custom credential as one coherent record instead of splitting it across several oddly-named single-value secrets.
+
+**Acceptance Criteria:**
+
+**Given** a user creating a new secret,
+**When** they select the Login template,
+**Then** the create form pre-populates fields for username and password (masked by default per Story 13.3).
+
+**And** the Database Connection, API Key, Secure Note, and Custom templates each pre-populate their own appropriate field set when selected (Custom starts empty).
+
+**Given** a user editing a secret's field set,
+**When** they add, rename, or remove a field,
+**Then** the change is validated against field-key uniqueness (case-insensitive) within that secret — a rename colliding with an existing field key on the same secret is rejected with `409`, never silently overwritten.
+
+**Given** any field value is created, edited, or removed,
+**When** the change is saved,
+**Then** a new `credential_versions` row is written with `schema_version = 2`, the full field-set JSON as `fields` (encrypted as one envelope), and `field_meta` populated with the current field keys/sensitivity/template — the previous version is retained, immutable, per FR12's "any field change creates a new version of the whole secret" — and `credentials.current_version_id` flips to the new version's `id` atomically in the same transaction.
+
+**Given** a secret created without selecting a template,
+**When** saved,
+**Then** it has exactly one default field, preserving pre-existing single-value creation behavior.
+
+**Given** the `.env`/JSON bulk import flow (FR17, pre-existing),
+**When** credentials are imported,
+**Then** each imported key/value pair creates a single-field secret — bulk import does not group related keys into a multi-field secret. This is a regression guard confirming existing import behavior is unchanged, not new behavior for this story to build.
+
+**Given** a pre-existing secret with `schema_version = 1` (legacy, single value),
+**When** a user views or edits it,
+**Then** it renders as a single unnamed field in the UI, identical to its pre-Phase-2 appearance, and editing it for the first time transitions it to `schema_version = 2` on save.
+
+**And** editing a `sensitive: true` field's value (e.g. setting a new password) is a blind overwrite — it does **not** require revealing the field's current value first. This is independent of Story 13.3's reveal capability; edit and reveal are separate actions.
+
+---
+
+#### Story 13.3: Control Field Visibility and Reveal Sensitive Fields
+
+**As a** user viewing a multi-field secret,
+**I want** each field to have its own masking behavior, and to reveal only the field I need,
+**So that** I don't expose more sensitive data than necessary and can quickly reference non-sensitive fields like a username without an extra step.
+
+**Acceptance Criteria:**
+
+**Given** a secret's `field_meta`,
+**When** the credential list or detail view renders,
+**Then** it reads `field_meta` only — never calling `withSecret()` — to determine which field keys exist and whether each is sensitive.
+
+**Given** a field marked `sensitive: false` (e.g. username),
+**When** the detail view renders,
+**Then** its value is visible without a reveal action (still gated by normal access control, just not an extra UI step).
+
+**Given** a field marked `sensitive: true` (e.g. password),
+**When** the detail view renders,
+**Then** the value is masked and requires an explicit reveal action.
+
+**Given** a user reveals a specific field,
+**When** the reveal request is made,
+**Then** `GET .../credentials/{id}/value?field={key}` is called, returning only that field's value, and an `AuditEvent.CREDENTIAL_VALUE_REVEALED` entry is written with `revealed_fields: [key]` — recording exactly which field was revealed, not just that "the secret" was accessed.
+
+**Given** a user reveals a secret without specifying `?field=`,
+**When** the request completes,
+**Then** all non-masked-by-default fields are returned in one response, `revealed_fields` lists every sensitive field actually included, and masked fields not explicitly requested are **omitted from the response body entirely** — never sent as `null` or a placeholder.
+
+**Given** a legacy (`schema_version = 1`) secret,
+**When** revealed,
+**Then** it behaves exactly as today — single value returned, single audit entry — no behavior change.
+
+**Given** a reveal request with `?field=` naming a key that doesn't exist on that secret,
+**When** the request is processed,
+**Then** it returns `400` with a clear error, not a silent empty response or a `500`.
+
+---
+
+#### Story 13.4: Rotate Specific Fields of a Multi-Field Secret
+
+**As a** user who needs to rotate just the password of a multi-field secret without touching its username,
+**I want** to select which field(s) a rotation targets,
+**So that** I don't have to treat an unrelated field as changed when only one credential component actually rotated.
+
+**Acceptance Criteria:**
+
+**Given** a user initiates a rotation on a multi-field secret,
+**When** they reach the rotation initiation screen,
+**Then** they can select one or more specific fields to rotate, or rotate the whole secret.
+
+**Given** a rotation targeting specific field(s),
+**When** initiated,
+**Then** `rotations.target_fields` is set to the array of targeted field keys; a whole-secret rotation leaves `target_fields` `NULL`.
+
+**Given** a rotation request naming a field key that no longer exists on the credential (e.g. renamed or removed since the rotation form was loaded),
+**When** the initiation request is processed,
+**Then** it is rejected with a specific validation error naming the missing field key — not silently accepted or applied to the wrong field.
+
+**Given** `credential_dependencies` rows for the credential being rotated — some scoped to a specific `field_key`, some with `field_key NULL` (whole-credential),
+**When** the rotation checklist is generated,
+**Then** it includes only dependencies where `field_key IS NULL OR field_key = ANY(target_fields)` — dependencies scoped to fields not being rotated are excluded from this rotation's checklist.
+
+**Given** the rotation completes (all checklist items confirmed),
+**When** the completion transaction runs,
+**Then** a new `credential_versions` row is written containing the updated field(s) and the previous values for all non-targeted fields unchanged — still one atomic full-field-set snapshot per FR12 — and `current_version_id` flips atomically in the same transaction as the existing rotation-completion compound transaction.
+
+**Given** this rotation reuses the existing credential-level advisory lock,
+**When** a second rotation attempt (whole-secret or another field subset) is made on the same credential while one is in progress,
+**Then** it receives the existing explicit `409 ROTATION_IN_PROGRESS` response — never silent interleaving — regardless of whether the two rotations target overlapping or disjoint fields.
+
+**Given** a legacy single-value secret,
+**When** rotated,
+**Then** rotation behaves exactly as it does today — `target_fields` remains `NULL`, no behavior change.
+
+---
+
+### Epic 15: Localization
+**🟠 Phase 2**
+
+Users can use the product in their preferred language. Independent of Epic 13, 14, and 16 — no shared backend module, no shared data model.
+
+**FRs covered:** FR117, FR118, FR119
+> ⚠️ **Scope boundary:** the supported locale set is build-time (adding a new language is a deploy); locale *selection* among already-supported locales is runtime. Don't conflate these in story acceptance criteria.
+> ⚠️ User-generated content (credential names, project names, notes) is never translated — including when interpolated into translated notification templates. Audit log exports stay locale-invariant (ISO 8601, English) to preserve UX-DR13's auditor-comprehensibility requirement.
+
+#### Story 15.1: Select and Use a Preferred Display Language
+
+**As a** user,
+**I want** to choose my preferred display language from the set of supported locales and have the interface render in that language,
+**So that** I can use Project Vault comfortably in the language I think in.
+
+**Acceptance Criteria:**
+
+**Given** the set of supported locales compiled into the build,
+**When** a user opens their language settings,
+**Then** they see a list of all currently supported locales to choose from.
+
+**Given** a user selects a locale from the supported set,
+**When** the selection is saved,
+**Then** the UI immediately renders in that language — no page reload required, no rebuild required (locale selection is a runtime operation).
+
+**Given** a message key with no translation in the user's selected locale,
+**When** the UI renders that string,
+**Then** it falls back to English for that specific string, per-string — not an all-or-nothing switch to English for the whole page, not a blank string or raw translation key.
+
+**Given** user-generated content — credential names, project names, notes,
+**When** the UI renders alongside translated strings,
+**Then** that content is never translated, even when interpolated into a translated notification template (e.g., "Credential 'grafana-admin' expires in 5 days" — the template text translates, `grafana-admin` never does).
+
+**Given** an audit log export,
+**When** generated, regardless of the user's UI locale,
+**Then** dates are ISO 8601 and all text is English — audit exports are locale-invariant, protecting UX-DR13's auditor-comprehensibility requirement.
+
+**And** adding a new supported locale to the codebase requires a deploy (build-time compilation via Paraglide) — explicitly a different mechanism than locale selection, not in this story's scope to change.
+
+---
+
+#### Story 15.2: Configure Organization Default Locale for New Users
+
+**As an** Organization Admin,
+**I want** to set a default display language for newly invited users,
+**So that** new team members land in the right language from their first login without each person having to change it manually.
+
+**Acceptance Criteria:**
+
+**Given** an OrgAdmin sets a default locale for their organization,
+**When** a new user is invited and accepts,
+**Then** their initial locale preference is set to the org's configured default.
+
+**Given** a user with an org-assigned default locale,
+**When** they change their personal language setting afterward,
+**Then** their individual preference overrides the org default going forward — the org default only seeds the initial value.
+
+**Given** an org has not configured a default locale,
+**When** a new user is invited,
+**Then** their locale defaults to English, consistent with existing pre-Phase-2 behavior.
+
+---
+
+### Epic 16: Custom Theming
+**🟠 Phase 2**
+
+Administrators can brand a self-hosted instance with a custom theme without touching code. Independent of Epic 13, 14, and 15.
+
+**FRs covered:** FR120, FR121
+> ⚠️ **Security-critical, not optional hardening:** theme token values must be validated against a per-type CSS grammar before compiling into custom properties (prevents CSS injection via a hostile theme file), and theme asset URLs must be validated against the existing webhook SSRF blocklist at install/reload time — both are part of this epic's acceptance criteria, added after a security review flagged the original design as unaddressed on both points. See architecture.md Frontend Architecture (Theming).
+> ⚠️ Reload must validate theme files independently (one malformed file doesn't block others) and report specific, actionable per-file failure reasons — not a generic error.
+
+#### Story 16.1: Install and Compile a Custom Theme
+
+**As a** self-hosted administrator,
+**I want** to install a custom theme by placing a structured definition file in a designated directory and triggering a reload,
+**So that** I can brand my instance without modifying application code or rebuilding the application.
+
+**Acceptance Criteria:**
+
+**Given** `VAULT_THEMES_DIR` (default `/data/themes`, inside the persistent Docker volume, not the application image),
+**When** an admin places a structured (JSON/YAML) theme definition file there,
+**Then** it is picked up on the next reload — automatic on container startup, or via `POST /api/v1/admin/themes/reload` (OrgAdmin only).
+
+**Given** `VAULT_THEMES_DIR` is unset or the directory doesn't exist,
+**When** the reload runs,
+**Then** this is not an error — zero custom themes are available, base theme only, identical to the "absent = zero behavior change" pattern used by the extension loader.
+
+**Given** the reload endpoint processes multiple theme files,
+**When** one file is malformed — including a file that isn't valid JSON/YAML at all (wrong extension, binary garbage, truncated content), not just valid-syntax-wrong-schema,
+**Then** validation is per-file — the malformed file fails independently and does not block the other valid files from loading. The response reports `{ loaded: string[], failed: { file: string, reason: string }[] }` with a specific, actionable `reason` (e.g. "token `primaryColor`: invalid color value", or "not valid JSON/YAML"), never a generic "validation failed."
+
+**Given** a canonical theme token registry (`packages/shared/constants/theme-tokens.ts` or equivalent) defining every valid token key and its type (`color` | `length` | enum-with-declared-values),
+**When** a theme file's token values are compiled into `[data-theme="name"]` CSS custom-property declarations,
+**Then** each value is validated against its token's declared type from the registry — `color` tokens accept only a constrained color grammar (no `url()`, no `;`, no `}`), `length` tokens accept only numeric+unit patterns, enum tokens accept only their declared values — and any token key not present in the registry, or any value that doesn't match its type's grammar, fails validation (same fallback-to-base-theme behavior as a malformed file) rather than being raw-interpolated into CSS. This registry is a required deliverable of this story, not an assumed pre-existing artifact — without it, "per-type grammar" has nothing concrete to validate against.
+
+**Given** a theme's asset references (fonts, images, logo),
+**When** validated at install/reload time,
+**Then** each URL is checked against the same SSRF blocklist already established for webhook URLs (RFC 1918 / localhost / link-local / cloud metadata endpoints) — a theme is admin-installed but still effectively untrusted input. Assets are fetched directly by the browser, not proxied server-side, so this is a one-time check at install/reload, not a per-request re-validation.
+
+**Given** a theme fails validation for any reason (malformed structure, invalid token grammar, blocklisted asset URL),
+**When** the reload processes it,
+**Then** the system falls back to the base theme for anyone with that theme selected, rather than rendering a broken or unsafe UI.
+
+**And** a successful reload writes an `AuditEvent.THEME_RELOADED` entry.
+
+---
+
+#### Story 16.2: Select an Active Theme
+
+**As a** user,
+**I want** to choose which installed theme is active for my view,
+**So that** I see the branding my organization has configured, or the default if none is selected.
+
+**Acceptance Criteria:**
+
+**Given** the base theme and any successfully installed custom themes,
+**When** a user opens theme selection,
+**Then** they see all currently available themes to choose from.
+
+**Given** a user selects a theme,
+**When** the selection is saved,
+**Then** the UI immediately applies the `[data-theme="name"]` CSS custom-property overrides — no rebuild, no restart.
+
+**Given** a user has a custom theme selected,
+**When** an admin removes that theme's file from `VAULT_THEMES_DIR` and reloads,
+**Then** the user's next page load falls back to the base theme silently, plus a one-time, dismissible in-app notice ("your selected theme is no longer available, showing the default") — never a broken or unstyled UI, never a hard error blocking product access.

@@ -4,10 +4,18 @@ inputDocuments:
   - "_bmad-output/planning-artifacts/product-brief-Project-Vault.md"
   - "_bmad-output/planning-artifacts/product-brief-Project-Vault-distillate.md"
 workflowType: 'prd'
-lastEdited: '2026-05-28'
+lastEdited: '2026-07-23'
 editHistory:
   - date: '2026-05-28'
     changes: 'Post-validation pass: closed FR31/FR37/FR71/FR73 threshold defaults; fixed TLS inbound/outbound split in Domain Requirements; updated MVP scope list (webhooks v1.1, wiki v1.1); added FR13/FR30 gap notes; moved v1 sustainability paragraph to Executive Summary; added machine user onboarding acceptance criterion; replaced axe-core tool name with tool-agnostic description in Accessibility NFR'
+  - date: '2026-07-23'
+    changes: 'Added new Phase 2 (inserted before former Phase 2/v1.1, renumbering subsequent phases to 3-5): Extension/Hook Architecture (general-purpose, distinct from rotation plugins), AGPLv3 relicense + CLA, multi-field secrets (field-set model with templates), i18n/localization, and structured non-code theming. New FR groups: Extension & Plugin Architecture (FR113-116, FR116 deferred), Internationalization & Localization (FR117-119), Theming (FR120-121); amended FR10/FR12/FR18/FR96 for multi-field secrets; added FR111-112. Renumbered 2026-07-23 from an initial FR99/FR100/FR106-114 assignment after discovering FR99-FR110 were already in use in epics.md for unrelated capabilities (see below) — final numbering is FR111-121. Extension trust model split by provenance: founder-only private SaaS extension is in-process/trusted, third-party community extensions (deferred to a later phase) are sandboxed/out-of-process with no default secret-value access. Replaced placeholder i18n NFR with real locale/fallback requirements; added Extension API stability, theming, and extension-trust-isolation NFRs. Frontmatter: added licenseModel and extensionModel classification fields.'
+  - date: '2026-07-23'
+    changes: 'Post-validation refinement pass: fixed WASM implementation-leakage wording (2 occurrences) to capability-level language; added 4 new user journeys (Priya/hosted-SaaS auth extension, Jordan/community extension, Amara/i18n+theming, Noah/multi-field secrets) closing the traceability gap for all Phase 2 capabilities; added competing-hosted-fork risk row to Domain-Specific Requirements Risk Mitigations table; updated journey count references from 5 to 9.'
+  - date: '2026-07-23'
+    changes: '5-agent adversarial review during Create Epics and Stories: amended FR115 to require explicit identity binding for external auth (no auto-link-by-email, invitation/OrgAdmin-linked only — closes a real gap, not just a documentation nit); added a scope note to Journey 7 (Jordan) clarifying it depicts a future, sandboxing-dependent state, not what the current Extension Architecture epic builds — was previously contradicting FR116s deferred status without saying so.'
+  - date: '2026-07-23'
+    changes: 'Discovered during Create Epics and Stories workflow: epics.md already used FR99-FR110 for 11 requirements added during epic/story work (recovery notifications, alert routing, machine-key rotation overlap and dormancy detection, account-recovery audit, platform operator audit log, dependent-system archival, break-glass rotation, master-key custody alerting, in-product notification inbox) that were never written back to this PRD. Two fixes applied: (1) renumbered this PRDs Phase 2 additions from FR99/FR100/FR106-114 to FR111-121 to resolve the collision; (2) back-ported all 11 missing FRs into their correct existing capability groups, each tagged "back-ported from epics.md 2026-07-23". FR106 has no corresponding epics.md requirement and is left intentionally unassigned rather than invented. Architecture.md FR cross-references updated to match the renumbering.'
 classification:
   projectType: "Data-sensitive infrastructure platform — web UI + REST API primary, self-hosted Docker as primary trust path, SaaS convenience tier (v2). Two funnels: OSS (indie/solo) and commercial (mid-size teams)."
   domain: "Project Infrastructure Management — secrets lifecycle, operational visibility, credential automation"
@@ -18,6 +26,8 @@ classification:
   propagationArchitecture: "Hybrid push/pull plugin interface — manual/assisted uses pull + human checklist; automated plugins use push via provider API or SSH/WinRM"
   multiTenancy: "Tenant-aware data model from v1; SaaS v2 uses isolated instances per customer"
   buyerVsUser: "User = engineer/DevOps | Buyer = Engineering Manager/CTO — PRD addresses both frames"
+  licenseModel: "AGPLv3 for the open-source core (OSI-approved; network-copyleft deters uncompensated competing hosted forks without legally blocking them); CLA required from external contributors so the founder retains rights to use contributions in the closed-source SaaS extension. Not legal advice — requires attorney review pre-launch."
+  extensionModel: "Two audiences: (1) third-party community extensions, self-hosted, sandboxed/out-of-process, no default secret-value access — deferred past initial extension rollout; (2) founder's own closed-source multi-tenant SaaS extension, in-process/trusted, deployed only on infrastructure the founder controls, never distributed to self-hosters"
 prdFlaggedRequirements:
   - "Drift detection: alert when credentials are stale or systems lag behind current secret version"
   - "Secret versioning pinned to deploy-time for machine users"
@@ -56,6 +66,7 @@ Key differentiators:
 - **Operational scope** — certificates, domains, payment dates, uptime, and documentation live alongside credentials because they are all part of keeping a project running
 - **Self-hosted primary, SaaS optional** — data sovereignty is the default trust path; managed hosting is a convenience tier
 - **Compliance by design** — audit logs, RBAC, and versioning are structured to support SOC 2 Type II and ISO 27001 evidence collection from day one
+- **Extensible by design** — a versioned Extension API lets self-hosters build their own extensions and lets Project Vault's own hosted SaaS tier extend the same open-source core, without either forking it or shipping closed-source code inside the public repo
 
 ## Project Classification
 
@@ -150,6 +161,11 @@ The smallest version that proves the core concept: a project has a single operat
 
 ### Growth Features (Post-MVP)
 
+- **Extension / Hook Architecture** — versioned Extension API; founder's private, closed-source SaaS extension (in-process, trusted); auth-provider hooks (SSO/SAML/OIDC/custom) as the first extension point
+- **Multi-field secrets** — field-set secret model with built-in templates (Login, Database Connection, API Key, Secure Note, Custom), per-field sensitivity/masking, field-scoped rotation
+- **Internationalization & Localization** — multi-language UI support
+- **Theming** — structured, non-code custom themes loaded from a designated directory
+- **Third-party community extensions** (deferred within Growth — depends on the Extension API above having shipped) — sandboxed/out-of-process, permission-scoped, no default secret-value access
 - Automated provider plugins: AWS (IAM, RDS, Secrets Manager), Azure, GCP, Linux/Unix SSH, Windows (WinRM), major databases (MySQL, PostgreSQL)
 - Drift detection: alerts when credentials are stale or systems lag behind current secret version (fires within 5 min of threshold breach)
 - AI-assisted anomaly detection: unusual access patterns, unexpected geographic access, dormant service credential alerts
@@ -250,6 +266,72 @@ Long-term: provider integration marketplace with community plugins for any syste
 
 ---
 
+### Journey 6 — Priya: "Logging In With the Company Identity" *(Enterprise User — Hosted SaaS / Auth Extension Path)*
+
+**Who:** Priya is an IT admin at a 200-person company that just signed up for Project Vault's hosted SaaS tier. Company policy requires every tool to authenticate through their existing SSO provider — no separate passwords for engineers to manage or for Priya to audit.
+
+**Opening scene:** Priya opens her Project Vault Cloud organization settings and looks for an SSO option. It's there — she's not expecting to find it in a self-hosted deployment, because it isn't: this is a hosted-SaaS-only capability, delivered through Project Vault's private extension rather than the open-source core.
+
+**Rising action:** Priya connects the company's identity provider. She tests with her own account: logging in redirects to the company's SSO login, authenticates, and lands her back in Project Vault already signed in. She invites the rest of the IT team — each teammate logs in with their existing corporate identity, no new password created.
+
+**Climax:** Three months later, an engineer leaves the company. Priya deactivates the account in the corporate identity provider, as she always does. She doesn't have to remember to also revoke it in Project Vault — the connected identity provider is the source of truth, and the next login attempt fails at the identity provider itself. She checks the Project Vault audit log to confirm: no access since deactivation.
+
+**Resolution:** Priya never has to think about Project Vault as a separate identity system. It behaves like every other SSO-connected tool the company uses — while the local email/password + MFA path she doesn't need still works underneath it, unaffected, for the OSS self-hosted teams who don't have an identity provider to connect.
+
+**Requirements revealed:** external authentication provider hooks (SSO/SAML/OIDC), built-in local/MFA auth remaining available as fallback regardless of extensions installed, hosted-SaaS-only capability delivered via extension rather than core.
+
+---
+
+### Journey 7 — Jordan: "Building the Integration Nobody Else Needed" *(Self-Hosted Power User — Community Extension Path — ASPIRATIONAL, FUTURE PHASE)*
+
+**⚠️ Scope note (added on review):** this journey depicts the *target* community-extension experience once sandboxing ships (FR116 — see Extension & Plugin Architecture) — it is explicitly **not** what the Extension Architecture epic builds now. This phase's loader only accepts one exact, pinned package identity (the founder's own); there is no general install pathway, no permission-scope approval screen, and no official/unverified distinction yet, because the sandboxing infrastructure this journey depends on doesn't exist yet (see Domain-Specific Requirements → Technical Constraints and the Roadmap's Phase 4 community-extension entry). Keep this journey as forward-looking product vision, not a source of acceptance criteria for the current epic.
+
+**Who:** Jordan runs a self-hosted Project Vault instance for a five-person agency. Their internal ticketing tool has no reason to exist as a Project Vault feature — but Jordan wants a notification to land there whenever a credential is 5 days from expiring, instead of relying on email.
+
+**Opening scene:** Jordan reads the published Extension API documentation and writes a small extension that registers a notification-channel hook, posting a message to the ticketing tool's webhook whenever an expiry alert fires. No core code was touched — the extension is a separate package, installed by pointing Project Vault at it.
+
+**Rising action:** Before it activates, Project Vault shows Jordan the extension's declared permission scopes — notification events only, no secret-value access — and requires explicit approval. Jordan approves, the extension registers, and the next expiry alert shows up in the ticketing tool within a minute.
+
+**Edge case:** A teammate later tries to install a similar-looking extension downloaded from a forum post. Project Vault flags it as unverified third-party code, requiring a separate acknowledgment before it can even declare permissions — and the declared scopes include a request for secret-value access the notification use case doesn't need. Seeing the scope mismatch on the approval screen, the teammate cancels the install.
+
+**Resolution:** Jordan's extension runs in its own sandboxed process — a bug in it can't touch the vault's stored secrets. Project Vault stays fully functional with or without it installed; Jordan removes it during a slow week without anything else in the product noticing.
+
+**Requirements revealed:** third-party community extensions (sandboxed, out-of-process), manifest-declared permission scopes with no default secret-value access, explicit admin approval before activation, official/signed vs. unverified-community distinction, system remains fully functional with zero extensions installed.
+
+---
+
+### Journey 8 — Amara: "A Vault That Speaks the Team's Language" *(International Team — i18n & Theming Path)*
+
+**Who:** Amara leads a twelve-person engineering team in Lyon. Most of her engineers are comfortable in English for code, but the team's ops lead — who checks Project Vault daily for expiry alerts and rotation status, not code — is far faster and makes fewer mistakes reading it in French.
+
+**Opening scene:** Amara sets the organization's default locale to French for newly invited users. The ops lead's next login renders the dashboard, alert text, and notification emails in French; the credential names and technical values are untouched, exactly as expected.
+
+**Rising action:** Two new hires join from the Lisbon office. Portuguese isn't in the list of supported locales yet — but rather than seeing broken text or blank labels, their UI falls back cleanly to English wherever a Portuguese translation doesn't exist, section by section, not as an all-or-nothing switch.
+
+**Climax:** Separately, Amara's design lead asks if the login screen can carry the company's own colors and logo instead of Project Vault's default look, since the agency demos this to clients. Amara drops a structured theme definition — tokens and asset references, no code — into the instance's configured theme directory and restarts nothing; the new theme shows up as a selectable option immediately.
+
+**Resolution:** The product feels like it belongs to the team, in the language they think in and the visual identity they present to clients — without anyone touching a line of Project Vault's source.
+
+**Requirements revealed:** user-selectable display language, organization default locale for new users, graceful per-string fallback to English for untranslated content, structured non-code theme installation from a designated directory, runtime theme switching with no rebuild.
+
+---
+
+### Journey 9 — Noah: "One Login, Three Things to Remember" *(Everyday User — Multi-Field Secrets Path)*
+
+**Who:** Noah manages a project's monitoring stack. The Grafana admin login isn't just a password — it's a username, a password, and a TOTP recovery code, and until now he's been splitting it across three separate single-value secrets with awkward names like `grafana-admin-user` and `grafana-admin-pw`.
+
+**Opening scene:** Noah creates a new secret using the built-in Login template. It prompts for username and password as named fields instead of one opaque value; he adds a third custom field for the recovery code and marks it masked, same as the password.
+
+**Rising action:** In the credential list, the username shows in plain view — useful for a quick glance — while the password and recovery code stay masked until Noah explicitly reveals them. Each reveal is logged separately: the audit trail shows exactly which field was viewed and when, not just "the secret was accessed."
+
+**Climax:** Three months later, a routine security review requires rotating the Grafana password but not the username or recovery code. Noah starts a rotation and selects only the password field. The checklist tracks just that field's propagation; when it's confirmed, Project Vault creates a new version with the updated password and the username and recovery code carried forward unchanged.
+
+**Resolution:** Noah's old single-value secrets from before this capability shipped still work exactly as they did — each is just a one-field secret under the hood, no migration, no broken links, no re-import.
+
+**Requirements revealed:** multi-field secrets with built-in templates, per-field sensitivity/masking, field-level reveal audit logging, field-scoped rotation within a whole-secret version model, full backward compatibility with pre-existing single-value secrets.
+
+---
+
 ### Journey Requirements Summary
 
 | Journey | Capabilities Revealed |
@@ -259,6 +341,10 @@ Long-term: provider integration marketplace with community plugins for any syste
 | Morgan (incident response) | Drift detection, version tracking per system, mobile UI, incomplete-rotation warnings, post-mortem audit trail |
 | CI-Bot (machine user) | Machine API auth, scoped permissions, sub-100ms fetch, offline fallback, fallback alerting |
 | Dana (compliance) | Audit log filtering/export, rotation history, user deactivation, future: SOC 2 evidence export |
+| Priya (hosted SaaS / auth extension) | External auth provider hooks (SSO/SAML/OIDC), built-in auth as fallback, hosted-SaaS-only capability via extension |
+| Jordan (community extension) | Sandboxed third-party extensions, permission-scoped manifest, explicit approval, no default secret-value access, official/unverified distinction |
+| Amara (i18n & theming) | User/org locale selection, per-string English fallback, structured non-code themes, runtime theme switching |
+| Noah (multi-field secrets) | Field-set secrets with templates, per-field masking, field-level reveal audit, field-scoped rotation, backward compatibility |
 
 ## Domain-Specific Requirements
 
@@ -281,6 +367,8 @@ Long-term: provider integration marketplace with community plugins for any syste
 - **External log shipping (open tier):** Webhook/export capability for shipping logs to external write-once sinks (S3 Object Lock, WORM storage) available in open tier. Pre-built sink integrations (Splunk, Datadog) are commercial Growth features.
 - **Built-in backup tooling (v1):** Scheduled encrypted snapshots of vault state; configurable retention policy; restore verification tooling; backup health alerts. Backup encryption key derived from the same unsealing ceremony (master password or Shamir shares) — never stored server-side independently.
 - **Plugin security boundary:** v1 ships manual/assisted plugin only (no external system connections); full container-level sandboxing with seccomp profiles applies when external-connecting plugins ship in v2. Plugin SDK published in v1 documents the v2 sandboxing model so community plugins are written sandbox-compatible.
+- **Extension API boundary (general-purpose, distinct from the rotation plugin system above):** the core publishes a versioned Extension API package with typed registration entrypoints for defined extension points (authentication provider, notification channel, UI panel). Extension-point contract changes are backward-compatible for at least one minor release cycle; the core performs startup capability-negotiation against a declared semver range and fails loudly, not silently, on an incompatible extension. No core code path may special-case or hard-import a specific extension implementation — the system must run fully functional with zero extension packages present, as a supported and tested configuration.
+- **Extension trust boundary is provenance-based, not self-declared:** the founder's own first-party extension (used to build the private SaaS tier) runs in-process and trusted. Third-party community extensions installed by self-hosting admins run in a sandboxed, out-of-process execution environment (reusing the rotation-plugin isolation tiers above), require a manifest declaring capability scopes, require explicit admin approval before activation, and have no default access to decrypted secret values — narrowly-scoped secret-value access requires an explicit, distinct grant. An extension cannot elevate its own trust tier by claiming to be first-party; the loader enforces this by extension origin, not by manifest content. Community extension support is scoped to a later phase (see Product Scope); the trust boundary is specified now so the architecture isn't retrofitted.
 - **Offline cache encryption:** Machine user offline/cache fallback stores secrets encrypted-at-rest using the machine user's scoped key; only the in-use decrypted value is zeroed from memory after use. Encrypted cache persists for fallback availability.
 - **Memory security:** Decrypted secret values zeroed from memory immediately after use; no plaintext secret caching in application memory beyond minimum necessary lifetime.
 - **Rate limiting & brute force protection:** Exponential backoff after N failed auth attempts; IP-based rate limiting on all authentication endpoints including vault unsealing; alerting on repeated failures; configurable lockout policy.
@@ -324,6 +412,7 @@ Long-term: provider integration marketplace with community plugins for any syste
 | Audit log exhaustion (DoS) | Per-user rate limits on secret fetch; log storage monitoring and alerts |
 | Timing attacks | Constant-time comparison for all secret/token operations |
 | Backup key circular dependency | Backup key derived from unsealing ceremony; never stored independently |
+| Competing hosted fork | AGPLv3 network-copyleft requires a forked competitor to disclose their modified source to their users — deters uncompensated competition without legally blocking it; see Licensing & Contribution Model |
 | Log integrity (external verification) | External log shipping to write-once sink; open tier capability |
 
 ## Innovation & Novel Patterns
@@ -381,6 +470,7 @@ The following patterns should be designed into the v1 data model even if feature
 - **Project ownership and transfer** — projects have an owner; ownership transition workflow triggers on departure; enables agency/consultant handoff export
 - **Credential subscription** — credential owned by one project, subscribed to by others; enabling shared infrastructure management
 - **Environment as attribute** — environments as tags/attributes on credentials within a project, never as structural organizing layers
+- **Field-set secrets** — a secret's content is an ordered set of named fields (not a single opaque value), with a small set of built-in templates (Login, Database Connection, API Key, Secure Note, Custom) as UI/validation scaffolding over uniform underlying storage; existing single-value secrets are a one-field case of this model, requiring no migration
 
 ### Risk Mitigation
 
@@ -465,7 +555,7 @@ Additional gates may be added as pricing is validated (rotation frequency, API r
 
 **Human users:**
 - v1: Local authentication (email/password) with secure session management
-- v2: SSO/SAML (explicitly deferred)
+- v2: SSO/SAML (explicitly deferred as a built-in core feature — see Extension / Hook Architecture below for the pluggable-auth-provider path, which is how SSO/SAML/OIDC reaches production without becoming core scope)
 - **MFA: Required in v1.** TOTP minimum. Enforcement policy: MFA available to all users; for Team and Small Company tiers, Owners and Admins must have MFA enabled before inviting members. Solo/Indie: strongly encouraged, not enforced.
 - **Account recovery — explicit security model:**
   - Recovery codes issued at MFA enrollment (one-time, downloadable); this is the primary recovery path
@@ -535,7 +625,42 @@ Fallback strategy is split by deployment context, since ephemeral environments (
 
 ---
 
+### Extension / Hook Architecture
+
+*General-purpose extensibility — distinct from the rotation plugin system in the next section, which is scoped only to credential propagation.*
+
+- The core publishes a versioned `@project-vault/extension-api` package: typed registration interfaces for defined extension points (authentication provider, notification channel, UI panel), plus a `registerExtension()` bootstrap entrypoint.
+- **Mechanism:** code-based registration API (Fastify decorator/hook style, comparable to `fastify.register()` and Passport.js's `.use(strategy)`), not a declarative manifest-as-mechanism. A thin manifest carries identity and a semver capability range only, used for startup compatibility negotiation — not for wiring hooks.
+- **Loading:** the core conditionally imports a configured extension package (env-gated) at startup if present. Absence of any extension package is a supported, tested configuration — the OSS core is never crippled by the extension system's existence.
+- **Two audiences, two trust tiers (see Domain-Specific Requirements → Technical Constraints for the full trust boundary):**
+  - The founder's own private, closed-source SaaS extension — in-process, trusted, deployed only on infrastructure the founder controls, never distributed to self-hosters.
+  - Third-party community extensions built by self-hosters for their own instances — out-of-process/sandboxed, permission-scoped, no default secret-value access. **Scoped to a later phase** (see Product Scope); the extension-point API and trust boundary are specified now so this isn't retrofitted.
+- **Auth hooks are the first concrete extension point:** an extension can register one or more external authentication provider strategies (SSO/SAML/OIDC/custom) that participate in the auth flow via Fastify's request hook chain, alongside the built-in local/MFA strategy, which remains available as fallback regardless of which extensions are installed.
+- **Licensing note:** this architecture is what makes the AGPLv3 open-core model work — see Licensing & Contribution Model below.
+
+---
+
+### Theming
+
+- Core ships one base theme.
+- Additional themes are structured definitions (JSON/YAML tokens + asset references, not CSS-only) loaded at runtime from a designated, non-tracked directory/config path — installing a theme never requires modifying application code or rebuilding the application.
+- Administrators select the active theme from the base theme plus any installed custom themes.
+
+---
+
+### Licensing & Contribution Model
+
+- **Core license: AGPLv3** — OSI-approved, freely self-hostable and modifiable. As sole copyright holder, the founder is not bound by the core's own license for his own use, which is what permits the in-process, closed-source private SaaS extension described above without a disclosure obligation.
+- **AGPLv3's network-use clause is the deterrent mechanism, not a legal block:** a third party who forks the core and hosts a competing paid service must disclose the complete source of *their modified version* to users interacting with it over a network. This does not prevent competition; it prevents a competitor from quietly building proprietary features on top of the OSS core without contributing back.
+- **External contributions require a CLA** (not a bare DCO): a Contributor License Agreement that keeps the outbound project AGPLv3 while separately granting the founder rights to use each contribution in the closed-source SaaS extension. The dual-use intent is disclosed transparently in the CLA text.
+- **Self-hosted community extensions and AGPL scope:** extensions communicating with core only through the versioned Extension API (a defined, arm's-length interface) are architecturally positioned as separate works, not derivatives of the AGPL core — this is the same boundary that lets community extensions exist without forcing every self-hoster's custom extension to be AGPL-licensed.
+- **Not legal advice.** A real IP/open-source licensing attorney must review the CLA text and the extension-API architecture before launch.
+
+---
+
 ### Plugin Architecture & Rotation
+
+*Rotation-specific — see Extension / Hook Architecture above for the general-purpose extension system.*
 
 **v1:**
 - Plugin interface defined and published (open to community)
@@ -744,7 +869,17 @@ Marketing must not claim certifications that don't exist. "Built for compliance"
 
 The complete problem-solver: teams trust Project Vault as their single source of operational truth for credentials, expiry dates, and rotation history. Machine users authenticate via API keys with in-memory fallback for brief unavailability. Dashboard shows live project health. Notes keep credential context co-located. GitHub Actions and GitLab CI integrations make secret injection a one-liner.
 
-**Phase 2 — v1.1 (Fast-follow, 1–3 months post-launch)**
+**Phase 2 — Extension Architecture, Multi-Field Secrets, i18n & Theming**
+
+*Inserted 2026-07-23; renumbers original Phase 2 (v1.1) → Phase 3, Phase 3 (v2) → Phase 4, Phase 4 (Vision) → Phase 5. This phase numbering tracks the PRD's roadmap sequence and is decoupled from shipped epic numbering (epics 1–12 already cover v1 MVP and several v1.1/v2-scoped items delivered ahead of this roadmap ordering).*
+
+- Extension / Hook Architecture: versioned Extension API, founder's private closed-source SaaS extension (in-process, trusted), auth-provider hooks
+- Multi-field secrets: field-set model, built-in templates, per-field masking, field-scoped rotation
+- Internationalization & Localization
+- Theming: structured custom themes from a non-tracked directory
+- AGPLv3 relicense + CLA for external contributors (precondition for the extension architecture's business model to function)
+
+**Phase 3 — v1.1 (Fast-follow)**
 
 Close the gaps early adopters surface:
 - Encrypted file fallback for persistent services (VPS, long-running Docker)
@@ -757,12 +892,13 @@ Close the gaps early adopters surface:
 - Doppler + Infisical migration import
 - Multi-org support via UI (schema already supports it)
 
-**Phase 3 — v2 (Growth, 3–9 months post-launch)**
+**Phase 4 — v2 (Growth, 3–9 months post-launch)**
 
 Commercial tier unlocked; SaaS hosting:
 - Automated provider plugin library (AWS, Azure, GCP, Linux/Unix, databases)
-- SSO/SAML (enterprise buyer unlock)
-- Multi-tenant SaaS hosting (commercial tier)
+- SSO/SAML (enterprise buyer unlock, delivered via the Phase 2 auth-hook extension point, not built-in core)
+- Multi-tenant SaaS hosting — the founder's privately-hosted, closed-source extension (per Phase 2 Extension Architecture); never distributed to self-hosters
+- Third-party community extensions — sandboxed/out-of-process, permission-scoped (deferred from Phase 2; ships once the Extension API has real usage)
 - Shamir's Secret Sharing key unsealing
 - Customer-managed encryption keys (CMK)
 - Drift detection and version-lag alerting
@@ -770,11 +906,11 @@ Commercial tier unlocked; SaaS hosting:
 - Behavioral anomaly detection (beyond threshold alerting)
 - Secret versioning pinned to deploy-time
 
-**Phase 4 — Vision**
+**Phase 5 — Vision**
 
 - Zero trust network capabilities
 - Formal SOC 2 Type II + ISO 27001 certifications
-- Provider integration marketplace (community plugins)
+- Provider integration marketplace (community plugins, building on the Phase 4 community extension system)
 - Cross-project security intelligence
 - "Project handoff export" for agencies/consultants
 
@@ -860,9 +996,11 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 
 ### Secret & Credential Management
 
-- **FR10:** Users can store a secret with a name, value, description, tags, expiry date, and linked dependent systems within a project
+- **FR10 (amended):** Users can store a secret with a name, description, tags, expiry date, and linked dependent systems within a project, plus one or more named fields each holding a value; a secret created without specifying a template has a single default field, preserving pre-existing single-value behavior with no migration required
+- **FR111:** The system provides built-in secret templates (Login, Database Connection, API Key, Secure Note, Custom) that pre-populate a secret's field names; users can add, rename, or remove fields regardless of template
+- **FR112:** Each field on a secret has an independent sensitivity flag (masked or visible-in-list); masked fields require an explicit reveal action (see FR96 for reveal audit behavior)
 - **FR11:** Users can retrieve the current version of any secret they are authorized to access
-- **FR12:** The system maintains a complete immutable version history for every secret
+- **FR12 (amended):** The system maintains a complete immutable version history for every secret, where a version is the full field-set as of that point in time; any change to any single field creates a new version of the whole secret
 - *(FR13 intentionally reserved — merged into FR12 during consolidation)*
 - **FR14:** Users can search and filter credentials within a project by name, tag, status, and expiry
 - **FR15:** Users can set expiry dates and rotation schedules on individual credentials
@@ -870,13 +1008,14 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR17:** Users can import credentials in bulk from `.env` files and JSON exports
 - **FR64:** Users can view which human users and machine users currently have access to a specific credential, based on their project roles
 - **FR95:** Users can add, edit, and remove tags on credentials and projects for organization and cross-project filtering
-- **FR96:** Users can reveal the current value of a secret they are authorized to access, with each reveal event captured in the audit log
+- **FR96 (amended):** Users can reveal the current value of a secret (or, for multi-field secrets, a specific masked field) they are authorized to access, with each reveal event captured in the audit log including which specific field(s) were revealed
+- **FR105 (back-ported from epics.md 2026-07-23 — see note below):** The system enforces a configurable secret version retention policy (default: retain 3 versions; minimum: 1 — the current version only; maximum: configurable per tier). Versions beyond the retention window are cryptographically deleted (encryption key material destroyed, not merely record-deleted) after they are no longer referenced by any in-progress or stale-recovery rotation. Version pruning events are recorded in the audit log. Versions referenced by an incomplete rotation are exempt from pruning until the rotation concludes.
 
 ---
 
 ### Rotation & Propagation
 
-- **FR18:** Users can initiate a rotation workflow for any stored credential
+- **FR18 (amended):** Users can initiate a rotation workflow for any stored credential and, for multi-field secrets, select which field(s) are being rotated (e.g., password only, keeping username unchanged); the resulting new version is still a full field-set snapshot per FR12
 - **FR19:** The system generates a per-system confirmation checklist for every rotation, listing all recorded dependent systems
 - **FR20:** Users can mark each system on the rotation checklist as confirmed-updated
 - **FR21:** The system prevents a rotation from being marked complete while systems on the checklist remain unconfirmed
@@ -885,6 +1024,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR65:** Users can view a consolidated list of credentials with upcoming rotation schedules, filterable by time horizon
 - **FR66:** Users can view the live status of an in-progress rotation — which dependent systems are confirmed, which are pending, and who last acted on the checklist
 - **FR75:** Users can record and respond to a system confirmation failure during an active rotation — marking a specific system as failed, retrying the confirmation, or escalating — without abandoning the rotation
+- **FR108 (back-ported from epics.md 2026-07-23):** The system supports a break-glass emergency rotation mode, accessible to Organization Admins, that initiates rotation and immediately retires the old credential without waiting for dependent system confirmations; the break-glass action is recorded as a separate high-severity audit event, automatically notifies all org admins via FR100's alert routing, and creates a mandatory post-rotation review task requiring confirmation that all dependent systems have been updated within a configurable grace window (default: 4 hours); the review task and its resolution are recorded in the audit log
 
 ---
 
@@ -901,6 +1041,8 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR67:** Users can dismiss or snooze an expiry alert for a specific asset, with the dismissal recorded in the audit log
 - **FR76:** Users can view a cross-project health status page showing the live availability status of all monitored services and endpoints across every project they can access — distinct from the per-project dashboard, which shows all asset types for one project
 - **FR77:** Project Owners can enable an optional public-facing status page for a project — a shareable URL that displays the current health status of selected services to external stakeholders without requiring an account
+- **FR99 (back-ported from epics.md 2026-07-23):** The system sends a recovery notification when a previously unreachable monitored endpoint becomes reachable again
+- **FR100 (back-ported from epics.md 2026-07-23):** Administrators can configure per-alert-type routing — designating specific users or roles as recipients for each alert category (anomalous access, fallback activation, machine user key expiry, service down/recovery, backup failure, failed auth threshold) rather than routing all alerts exclusively to Organization Admins
 
 ---
 
@@ -915,6 +1057,8 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR38:** The system records fallback cache usage events in the audit log and alerts administrators when the fallback activates
 - **FR39:** The system provides native integrations that allow CI/CD pipelines to retrieve secrets directly within GitHub Actions and GitLab CI workflows
 - **FR68:** Administrators can configure expiry dates on machine user API keys and receive alerts before a key expires
+- **FR101 (back-ported from epics.md 2026-07-23):** Machine user API key rotation supports a configurable overlap grace period — the new key becomes active before the old key is revoked, enabling zero-downtime rotation for long-running services without a restart or deployment window; the overlap grace period is configurable with a maximum enforced cap (default: 1h, max: 24h); while overlap is active, the system emits a machine-key-overlap-active alert to FR100-configured recipients; if the old key is used during the overlap window after the new key has been confirmed active by at least one successful authentication, an anomaly alert is generated
+- **FR110 (back-ported from epics.md 2026-07-23):** The system detects machine user API keys that have not been used for authentication within a configurable inactivity threshold (default: 90 days) and alerts Organization Admins via FR100 routing; the alert includes the machine user name, last-used date, and the projects and credentials in scope; admins can dismiss with a recorded reason, revoke, or extend; machine user keys with no recorded use since creation flag after the same dormancy threshold
 
 ---
 
@@ -930,6 +1074,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **FR70:** Organization Admins can configure audit log retention periods within the limits set by their subscription tier
 - **FR71:** The system detects user accounts that have been inactive beyond a configurable threshold and alerts Organization Admins (default: 90 days)
 - **FR78:** Administrators can verify audit log integrity against the last recorded checkpoint
+- **FR102 (back-ported from epics.md 2026-07-23):** Account recovery initiation, each admin approval step, and recovery completion are recorded in the audit log as privileged events; user deactivation with in-progress rotation workflows triggers explicit orphan handling (cancel, transfer to another admin, or hold pending review) — the chosen outcome is recorded in the audit log
 
 ---
 
@@ -970,6 +1115,9 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 
 - **FR86:** Administrators can configure system-level settings through the product UI — including SMTP configuration, backup schedule, notification defaults, and instance-level policy
 - **FR87:** Administrators can view current resource usage (projects, secrets, users) against their subscription tier limits and receive alerts when approaching limits
+- **FR103 (back-ported from epics.md 2026-07-23):** Platform operator actions on the instance (cross-org incident investigation, instance-level configuration changes, operator-initiated user or org modifications) are logged in a separate immutable platform audit log that is independently verifiable, not visible to org admins, and retained independently of per-org audit log retention policies; the same write-failure invariant applies as to per-org audit logs — platform operator actions fail if the platform audit write fails; an explicit operator-acknowledged maintenance mode exists to temporarily bypass this for emergency recovery, and any such bypass is recorded when the log becomes available
+- **FR104 (back-ported from epics.md 2026-07-23):** Users with rotation initiation permission can remove or archive a dependent system record from a credential's dependency list; removal is recorded in the audit log; archived records are hidden from new rotation checklists but preserved in all historical rotation records where they appeared
+- **FR109 (back-ported from epics.md 2026-07-23):** On startup and on a weekly schedule, the system evaluates the master key custody configuration and surfaces a persistent admin dashboard alert if: (a) the master key is stored only as an environment variable with no KMS or escrow configured, AND (b) backup is enabled; the alert states explicitly that backups will be unrecoverable if the host environment is lost, and provides a direct path to configure KMS integration; this condition is also reflected in the readiness endpoint (FR81) as a degraded-configuration warning
 
 ---
 
@@ -982,6 +1130,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 ### Notification Preferences
 
 - **FR94:** Users can configure personal notification preferences including delivery channel, frequency (per-event or digest), and minimum severity threshold
+- **FR107 (back-ported from epics.md 2026-07-23):** The system maintains a persistent in-product notification inbox per user, surfacing all alerts and system events routed to them (per FR94 preferences) regardless of whether they were also delivered via email or Slack. Inbox entries persist until explicitly dismissed or automatically expire per configurable retention (default: 90 days). Unread count is visible in the global navigation at all times. This provides a no-configuration-required baseline for users relying on the web UI as their primary interface.
 
 ---
 
@@ -994,7 +1143,33 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 
 ---
 
-> **Final count: 95 FRs across 12 capability areas.** All 5 user journeys fully covered. All MVP scope items represented. All domain, project-type, and scoping requirements traceable to at least one FR.
+### Extension & Plugin Architecture
+
+*General-purpose extensibility — distinct from the existing rotation plugin FRs above (FR18–FR23, FR75), which are scoped only to credential propagation.*
+
+- **FR113:** The system exposes a versioned Extension API with defined extension points (authentication provider, notification channel, UI panel) that an external package can register against via a typed, code-based registration API
+- **FR114:** The system loads a configured extension package at startup if present; the system remains fully functional with zero extension packages installed
+- **FR115 (amended on review):** The system supports registering one or more external authentication provider strategies via the Extension API, participating in the authentication flow alongside the built-in local/MFA strategy, which always remains available as fallback. A successful external authentication resolves to an existing, explicitly-linked user identity — never auto-provisioned or auto-linked by matching email address alone; a first-time external login with no existing link requires a pending invitation or explicit Organization Admin action to complete. MFA enforcement for Owner/Admin roles applies identically regardless of authentication source.
+- **FR116 (deferred — see Product Scope):** Administrators can install third-party community extensions with declared permission scopes, requiring explicit approval before activation and running with no default access to decrypted secret values
+
+---
+
+### Internationalization & Localization
+
+- **FR117:** Users can select their preferred display language from the set of supported locales
+- **FR118:** The system renders UI text, dates, and notification content in the user's selected language, falling back to English for any untranslated content
+- **FR119:** Organization Admins can configure a default locale for newly invited users within their organization
+
+---
+
+### Theming
+
+- **FR120:** Administrators can install custom themes as structured (JSON/YAML) definitions placed in a designated, non-tracked directory, without modifying application code
+- **FR121:** Users can select the active theme from the base theme and any installed custom themes
+
+---
+
+> **Final count: 95 FRs across 12 capability areas** at initial PRD publication; see edit history for: (a) 11 FRs (FR99–FR105, FR107–FR110) back-ported 2026-07-23 from epics.md, where they were added during epic/story work but never written back to this PRD — a pre-existing drift between this document and epics.md, now reconciled; **FR106 has no corresponding requirement in epics.md and is intentionally left unassigned** — origin of the gap is undocumented, left as-is rather than inventing a requirement to fill it; (b) 11 new Phase 2 FRs (FR111, FR112, FR113–FR121) for Extension/Hook Architecture, multi-field secrets, i18n, and theming. All 9 user journeys fully covered (5 v1 MVP + 4 Phase 2). All MVP scope items represented. All domain, project-type, and scoping requirements traceable to at least one FR.
 
 ---
 
@@ -1032,6 +1207,7 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - **Credential entropy:** API keys ≥256 bits; generated passwords ≥128 bits or policy-defined minimum
 - **CVE response:** critical vulnerabilities patched ≤7 days; high severity ≤30 days
 - **Incident notification:** security incidents affecting stored credentials → user notification ≤72h of confirmed incident
+- **Extension trust isolation:** third-party community extensions execute in a sandboxed, out-of-process execution environment; no default access to decrypted secret values; capability scopes declared in a manifest and enforced by the host loader based on extension provenance, not self-declaration. The founder's first-party private extension is exempt from sandboxing (in-process, trusted) but not from capability declaration.
 
 ### Reliability
 
@@ -1067,4 +1243,6 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 - Prometheus-compatible metrics endpoint; defaults to localhost-only binding (configurable for external scraping)
 - Multi-arch container builds: AMD64 + ARM64
 - API v1 compatibility policy: no breaking changes within v1.x
-- Internationalization: English-only in v1; i18n architecture constraint: no hardcoded strings in UI components
+- **Internationalization:** no hardcoded strings in UI components; locale switch completes without a page reload; missing translations fall back to English rather than rendering a translation key or blank string; locale files structured for community-contributed translations without core code changes
+- **Extension API stability:** the Extension API is semver-versioned independently of the application; breaking changes require an explicit major version bump, a changelog entry, and a documented migration note; core performs startup capability-negotiation against a declared extension semver range and fails loudly (not silently) on incompatibility
+- **Theming:** installing or switching a theme requires no application rebuild and no restart; a malformed theme definition fails validation at load time with a clear error, falling back to the base theme rather than rendering a broken UI
