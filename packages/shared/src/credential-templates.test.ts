@@ -77,8 +77,8 @@ describe('normalizeFieldKey (AC-3)', () => {
   })
 
   it('collapses NFC/NFD Unicode-equivalent keys to the same normalized value', () => {
-    const composed = 'café' // é as single code point (NFC)
-    const decomposed = 'café' // e + combining acute (NFD)
+    const composed = 'café' // é as a single NFC code point
+    const decomposed = composed.normalize('NFD') // e + combining acute, derived at runtime
     expect(composed).not.toBe(decomposed)
     expect(normalizeFieldKey(composed)).toBe(normalizeFieldKey(decomposed))
   })
