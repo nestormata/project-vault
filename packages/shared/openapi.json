@@ -1129,6 +1129,66 @@
           "memberCount"
         ]
       },
+      "CredentialTemplateInput": {
+        "type": "string",
+        "enum": [
+          "login",
+          "db_connection",
+          "api_key",
+          "secure_note",
+          "custom"
+        ]
+      },
+      "FieldInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "sensitive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "sensitive"
+        ],
+        "additionalProperties": false
+      },
+      "FieldMetaInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "template": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredentialTemplateInput"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "sensitive"
+        ],
+        "additionalProperties": false
+      },
       "CredentialDetailInput": {
         "type": "object",
         "properties": {
@@ -1184,6 +1244,18 @@
             "exclusiveMinimum": true,
             "maximum": 9007199254740991
           },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldMetaInput"
+            }
+          },
           "createdBy": {
             "nullable": true,
             "type": "string",
@@ -1213,9 +1285,45 @@
           "cacheable",
           "retentionCount",
           "currentVersionNumber",
+          "schemaVersion",
+          "fields",
           "createdBy",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "CredentialFieldsValueInput": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldInput"
+            }
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
+          },
+          "versionNumber": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "fields",
+          "schemaVersion",
+          "versionNumber",
+          "retrievedAt"
         ]
       },
       "CredentialValueInput": {
@@ -1276,6 +1384,12 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -1284,7 +1398,8 @@
           "createdAt",
           "isCurrent",
           "purgedAt",
-          "abandonedAt"
+          "abandonedAt",
+          "schemaVersion"
         ]
       },
       "CredentialSummaryInput": {
@@ -3668,65 +3783,154 @@
         ]
       },
       "CreateCredentialBodyInput": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "nullable": true,
+                "type": "string",
+                "maxLength": 1024
+              },
+              "tags": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50
+                }
+              },
+              "expiresAt": {
+                "nullable": true,
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "rotationSchedule": {
+                "nullable": true,
+                "type": "string"
+              },
+              "cacheable": {
+                "type": "boolean"
+              },
+              "template": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CredentialTemplateInput"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FieldInput"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "fields"
+            ],
+            "additionalProperties": false
           },
-          "value": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 65536
-          },
-          "description": {
-            "nullable": true,
-            "type": "string",
-            "maxLength": 1024
-          },
-          "tags": {
-            "maxItems": 20,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 50
-            }
-          },
-          "expiresAt": {
-            "nullable": true,
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          },
-          "rotationSchedule": {
-            "nullable": true,
-            "type": "string"
-          },
-          "cacheable": {
-            "type": "boolean"
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "nullable": true,
+                "type": "string",
+                "maxLength": 1024
+              },
+              "tags": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50
+                }
+              },
+              "expiresAt": {
+                "nullable": true,
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "rotationSchedule": {
+                "nullable": true,
+                "type": "string"
+              },
+              "cacheable": {
+                "type": "boolean"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "name",
+              "value"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "name",
-          "value"
-        ],
-        "additionalProperties": false
+        ]
       },
       "AddVersionBodyInput": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 65536
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "template": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CredentialTemplateInput"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FieldInput"
+                }
+              }
+            },
+            "required": [
+              "fields"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "value"
-        ],
-        "additionalProperties": false
+        ]
       },
       "CredentialParamsInput": {
         "type": "object",
@@ -9569,6 +9773,66 @@
         ],
         "additionalProperties": false
       },
+      "CredentialTemplate": {
+        "type": "string",
+        "enum": [
+          "login",
+          "db_connection",
+          "api_key",
+          "secure_note",
+          "custom"
+        ]
+      },
+      "Field": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "sensitive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "sensitive"
+        ],
+        "additionalProperties": false
+      },
+      "FieldMeta": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "template": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredentialTemplate"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "sensitive"
+        ],
+        "additionalProperties": false
+      },
       "CredentialDetail": {
         "type": "object",
         "properties": {
@@ -9624,6 +9888,18 @@
             "exclusiveMinimum": true,
             "maximum": 9007199254740991
           },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldMeta"
+            }
+          },
           "createdBy": {
             "nullable": true,
             "type": "string",
@@ -9653,9 +9929,46 @@
           "cacheable",
           "retentionCount",
           "currentVersionNumber",
+          "schemaVersion",
+          "fields",
           "createdBy",
           "createdAt",
           "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "CredentialFieldsValue": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            }
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
+          },
+          "versionNumber": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
+          },
+          "retrievedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "fields",
+          "schemaVersion",
+          "versionNumber",
+          "retrievedAt"
         ],
         "additionalProperties": false
       },
@@ -9718,6 +10031,12 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -9726,7 +10045,8 @@
           "createdAt",
           "isCurrent",
           "purgedAt",
-          "abandonedAt"
+          "abandonedAt",
+          "schemaVersion"
         ],
         "additionalProperties": false
       },
@@ -12198,65 +12518,154 @@
         "additionalProperties": false
       },
       "CreateCredentialBody": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "nullable": true,
+                "type": "string",
+                "maxLength": 1024
+              },
+              "tags": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50
+                }
+              },
+              "expiresAt": {
+                "nullable": true,
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "rotationSchedule": {
+                "nullable": true,
+                "type": "string"
+              },
+              "cacheable": {
+                "type": "boolean"
+              },
+              "template": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CredentialTemplate"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Field"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "fields"
+            ],
+            "additionalProperties": false
           },
-          "value": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 65536
-          },
-          "description": {
-            "nullable": true,
-            "type": "string",
-            "maxLength": 1024
-          },
-          "tags": {
-            "maxItems": 20,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 50
-            }
-          },
-          "expiresAt": {
-            "nullable": true,
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          },
-          "rotationSchedule": {
-            "nullable": true,
-            "type": "string"
-          },
-          "cacheable": {
-            "type": "boolean"
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "nullable": true,
+                "type": "string",
+                "maxLength": 1024
+              },
+              "tags": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50
+                }
+              },
+              "expiresAt": {
+                "nullable": true,
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "rotationSchedule": {
+                "nullable": true,
+                "type": "string"
+              },
+              "cacheable": {
+                "type": "boolean"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "name",
+              "value"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "name",
-          "value"
-        ],
-        "additionalProperties": false
+        ]
       },
       "AddVersionBody": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 65536
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "template": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CredentialTemplate"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Field"
+                }
+              }
+            },
+            "required": [
+              "fields"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "value"
-        ],
-        "additionalProperties": false
+        ]
       },
       "CredentialParams": {
         "type": "object",
@@ -22727,6 +23136,16 @@
             }
           },
           "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Default Response",
             "content": {
               "application/json": {

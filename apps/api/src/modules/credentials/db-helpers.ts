@@ -1,6 +1,24 @@
 import { and, eq } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { credentials, vaultState } from '@project-vault/db/schema'
+import { credentialVersions, credentials, vaultState } from '@project-vault/db/schema'
+
+/**
+ * Story 13.2 AC-4 — inserts a new `credential_versions` row and flips
+ * `credentials.current_version_id` to it, atomically in the same transaction. Shared by the
+ * create, add-version, and bulk-import write paths so the atomic pointer-flip is expressed once.
+ */
+export async function insertVersionAndSetCurrent(
+  tx: Tx,
+  values: typeof credentialVersions.$inferInsert
+): Promise<typeof credentialVersions.$inferSelect> {
+  const [version] = await tx.insert(credentialVersions).values(values).returning()
+  if (!version) throw new Error('Credential version insert returned no row')
+  await tx
+    .update(credentials)
+    .set({ currentVersionId: version.id })
+    .where(eq(credentials.id, values.credentialId))
+  return version
+}
 
 export function isUniqueViolation(error: unknown): boolean {
   const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined

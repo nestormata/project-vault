@@ -2,18 +2,24 @@
   import { onDestroy } from 'svelte'
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
-  import type { SystemType } from '@project-vault/shared'
+  import type { FieldMeta, SystemType } from '@project-vault/shared'
+  import { DEFAULT_FIELD_KEY } from '@project-vault/shared'
   import {
     addCredentialDependency,
     addCredentialVersion,
     archiveCredentialDependency,
+    parseRevealedFields,
     revealCredentialValue,
     updateCredentialLifecycle,
   } from '$lib/api/credentials.js'
   import { ApiClientError } from '$lib/api/client.js'
+  import FieldSetEditor from '$lib/components/credentials/FieldSetEditor.svelte'
   import {
     canCreateCredential,
+    mapCredentialSubmitError,
     onboardingCopy,
+    validateFieldSet,
+    type FieldDraft,
   } from '$lib/components/onboarding/onboarding-logic.js'
   import {
     lifecycleDateInputToIso,
@@ -238,6 +244,89 @@
       addingVersion = false
     }
   }
+
+  // Story 13.2 — the current version's field metadata (keys/sensitivity). A legacy schema_version=1
+  // secret (or any single-default-field secret) renders as one unnamed masked field, identical to
+  // its pre-Phase-2 appearance (AC-7); anything else renders the multi-field editor.
+  const fieldMeta = $derived<FieldMeta[]>(
+    data.credential?.fields ?? [{ key: DEFAULT_FIELD_KEY, sensitive: true }]
+  )
+  const isMultiField = $derived(
+    fieldMeta.length > 1 || (fieldMeta[0]?.key ?? DEFAULT_FIELD_KEY) !== DEFAULT_FIELD_KEY
+  )
+
+  let editingFieldSet = $state(false)
+  let editFields = $state<FieldDraft[]>([])
+  let fieldSetErrors = $state<Record<number, string>>({})
+  let fieldSetFormError = $state<string | null>(null)
+  let loadingFieldSet = $state(false)
+
+  // AC-8 — editing a sensitive field is a blind overwrite: we reveal current values only to
+  // pre-fill the form so unchanged fields round-trip (AC-4); there is no "reveal to edit" gate and
+  // the user can overwrite any field directly.
+  async function startEditFieldSet(): Promise<void> {
+    if (loadingFieldSet || !data.credential) return
+    loadingFieldSet = true
+    fieldSetFormError = null
+    try {
+      const revealed = await revealCredentialValue(fetch, data.projectId, data.credentialId)
+      editFields = parseRevealedFields(fieldMeta, revealed.value).map((f) => ({ ...f }))
+      fieldSetErrors = {}
+      editingFieldSet = true
+    } catch (error) {
+      fieldSetFormError =
+        error instanceof Error ? error.message : 'Could not load fields for editing.'
+    } finally {
+      loadingFieldSet = false
+    }
+  }
+
+  function addEditField(): void {
+    editFields = [...editFields, { key: '', value: '', sensitive: false }]
+  }
+  function removeEditField(index: number): void {
+    editFields = editFields.filter((_, i) => i !== index)
+    fieldSetErrors = {}
+  }
+
+  async function saveFieldSet(): Promise<void> {
+    if (addingVersion || !data.credential) return
+    const result = validateFieldSet(editFields)
+    fieldSetErrors = result.fieldErrors
+    if (!result.ok) {
+      fieldSetFormError = result.formError ?? null
+      return
+    }
+    addingVersion = true
+    fieldSetFormError = null
+    try {
+      await addCredentialVersion(fetch, data.projectId, data.credentialId, {
+        fields: editFields.map((f) => ({
+          key: f.key.trim(),
+          value: f.value,
+          sensitive: f.sensitive,
+        })),
+      })
+      editingFieldSet = false
+      editFields = []
+      await invalidateAll()
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 410) {
+        fieldSetFormError = ARCHIVED_PROJECT_BANNER
+      } else {
+        const mapped = mapCredentialSubmitError(error)
+        fieldSetFormError = mapped.errorMessage
+        if (mapped.fieldKeyConflict) {
+          const idx = editFields.findIndex(
+            (f) => f.key.trim().toLowerCase() === mapped.fieldKeyConflict?.toLowerCase()
+          )
+          if (idx >= 0) fieldSetErrors = { ...fieldSetErrors, [idx]: mapped.errorMessage }
+        }
+      }
+    } finally {
+      addingVersion = false
+    }
+  }
 </script>
 
 <svelte:head>
@@ -342,6 +431,16 @@
 
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold text-slate-950">Secret value</h2>
+      {#if isMultiField && !editingFieldSet}
+        <ul class="mt-3 space-y-1" data-testid="field-list">
+          {#each fieldMeta as meta (meta.key)}
+            <li class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <span class="font-medium text-slate-900">{meta.key}</span>
+              <span class="text-slate-500">{meta.sensitive ? 'Masked' : 'Text'}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
       {#if canReveal}
         {#if revealedValue === null}
           <button
@@ -391,37 +490,88 @@
         {/if}
 
         <div class="mt-6 border-t border-slate-200 pt-6">
-          <h3 class="font-semibold text-slate-950">Add new version</h3>
-          <form
-            class="mt-3 space-y-3"
-            onsubmit={(event) => {
-              event.preventDefault()
-              void onAddVersion()
-            }}
-          >
-            <div class="space-y-1">
-              <label class="block text-sm font-medium text-slate-800" for="new-version-value">
-                New value
-              </label>
-              <textarea
-                id="new-version-value"
-                class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"
-                bind:value={newVersionValue}></textarea>
-            </div>
-            {#if addVersionError}
-              <p class="text-sm text-red-700" role="alert">{addVersionError}</p>
+          {#if isMultiField}
+            <h3 class="font-semibold text-slate-950">Edit fields</h3>
+            {#if !editingFieldSet}
+              <button
+                class="mt-3 rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                type="button"
+                disabled={loadingFieldSet}
+                onclick={() => void startEditFieldSet()}
+              >
+                {loadingFieldSet ? 'Loading…' : 'Edit fields'}
+              </button>
+            {:else}
+              <form
+                class="mt-3 space-y-3"
+                onsubmit={(event) => {
+                  event.preventDefault()
+                  void saveFieldSet()
+                }}
+              >
+                <FieldSetEditor
+                  bind:fields={editFields}
+                  errors={fieldSetErrors}
+                  onAdd={addEditField}
+                  onRemove={removeEditField}
+                />
+                {#if fieldSetFormError}
+                  <p class="text-sm text-red-700" role="alert">{fieldSetFormError}</p>
+                {/if}
+                <div class="flex gap-2">
+                  <button
+                    class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    type="submit"
+                    disabled={addingVersion}
+                  >
+                    {addingVersion ? 'Saving…' : 'Save fields'}
+                  </button>
+                  <button
+                    class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+                    type="button"
+                    onclick={() => {
+                      editingFieldSet = false
+                      editFields = []
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             {/if}
-            {#if addVersionBanner}
-              <p class="text-sm text-red-700" role="alert">{addVersionBanner}</p>
-            {/if}
-            <button
-              class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-              type="submit"
-              disabled={addingVersion}
+          {:else}
+            <h3 class="font-semibold text-slate-950">Add new version</h3>
+            <form
+              class="mt-3 space-y-3"
+              onsubmit={(event) => {
+                event.preventDefault()
+                void onAddVersion()
+              }}
             >
-              {addingVersion ? 'Adding…' : 'Add version'}
-            </button>
-          </form>
+              <div class="space-y-1">
+                <label class="block text-sm font-medium text-slate-800" for="new-version-value">
+                  New value
+                </label>
+                <textarea
+                  id="new-version-value"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"
+                  bind:value={newVersionValue}></textarea>
+              </div>
+              {#if addVersionError}
+                <p class="text-sm text-red-700" role="alert">{addVersionError}</p>
+              {/if}
+              {#if addVersionBanner}
+                <p class="text-sm text-red-700" role="alert">{addVersionBanner}</p>
+              {/if}
+              <button
+                class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                type="submit"
+                disabled={addingVersion}
+              >
+                {addingVersion ? 'Adding…' : 'Add version'}
+              </button>
+            </form>
+          {/if}
         </div>
       {:else}
         <p class="mt-3 text-sm text-slate-600">

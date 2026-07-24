@@ -26,6 +26,7 @@ import {
   isUniqueViolation,
   lockCredentialInProject,
 } from '../credentials/db-helpers.js'
+import { unwrapRevealValue } from '../credentials/field-set.js'
 import type {
   BreakGlassRotationBody,
   CompleteRotationBody,
@@ -126,6 +127,7 @@ export async function initiateRotation(
           id: credentialVersions.id,
           versionNumber: credentialVersions.versionNumber,
           encryptedValue: credentialVersions.encryptedValue,
+          schemaVersion: credentialVersions.schemaVersion,
         })
         .from(credentialVersions)
         .where(
@@ -148,7 +150,12 @@ export async function initiateRotation(
         const previousPlaintext = await withSecret(previousVersion.encryptedValue, (plaintext) =>
           Promise.resolve(plaintext.toString('utf8'))
         )
-        sameValueAsPrevious = constantTimeEqual(previousPlaintext, input.body.newValue)
+        // Story 13.2 — a single-value secret is now stored as a schema_version = 2 field envelope;
+        // unwrap it back to the bare value before the same-value comparison (legacy schema_version
+        // = 1 rows return the bare string unchanged). Whole-value rotation still targets a
+        // single-value secret; field-scoped rotation is Story 13.5.
+        const previousValue = unwrapRevealValue(previousVersion.schemaVersion, previousPlaintext)
+        sameValueAsPrevious = constantTimeEqual(previousValue, input.body.newValue)
       }
 
       const keyVersion = await currentKeyVersion(trx)

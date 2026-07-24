@@ -7,9 +7,23 @@ import {
   credentialDependencies,
 } from '@project-vault/db/schema'
 import { withSecret } from '@project-vault/crypto'
+import type { FieldMeta } from '@project-vault/shared'
 import { dedupeTags, normalizeTag, tagDelta } from '../../lib/tags.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
-import { currentKeyVersion, isUniqueViolation, lockCredentialInProject } from './db-helpers.js'
+import {
+  currentKeyVersion,
+  insertVersionAndSetCurrent,
+  isUniqueViolation,
+  lockCredentialInProject,
+} from './db-helpers.js'
+import {
+  buildFieldMeta,
+  computeFieldDelta,
+  fieldMetaForResponse,
+  resolveFieldSet,
+  serializeFieldEnvelope,
+  unwrapRevealValue,
+} from './field-set.js'
 import type {
   AddVersionBody,
   CreateCredentialBody,
@@ -44,9 +58,23 @@ type CredentialListParams = {
 }
 type TagUpdateMode = 'replace' | 'append'
 
+export type CredentialFieldInfo = {
+  schemaVersion: number
+  fields: FieldMeta[]
+}
+
+// Story 13.2 — default field info for a freshly-created single-default-field secret, and the
+// fallback for callers that don't supply it (keeps the serialize helper's older 2-arg call sites,
+// e.g. the pure serialize test, working).
+const DEFAULT_FIELD_INFO: CredentialFieldInfo = {
+  schemaVersion: 2,
+  fields: [{ key: 'value', sensitive: true }],
+}
+
 export function serializeCredentialDetail(
   credential: typeof credentials.$inferSelect,
-  currentVersionNumber: number
+  currentVersionNumber: number,
+  fieldInfo: CredentialFieldInfo = DEFAULT_FIELD_INFO
 ) {
   return {
     id: credential.id,
@@ -60,6 +88,8 @@ export function serializeCredentialDetail(
     cacheable: credential.cacheable,
     retentionCount: credential.retentionCount,
     currentVersionNumber,
+    schemaVersion: fieldInfo.schemaVersion,
+    fields: fieldInfo.fields,
     createdBy: credential.createdBy,
     createdAt: credential.createdAt.toISOString(),
     updatedAt: credential.updatedAt.toISOString(),
@@ -209,7 +239,12 @@ export async function createCredentialWithFirstVersion(
   }
 ) {
   const keyVersion = await currentKeyVersion(tx)
-  const encryptedValue = await encryptValue(input.body.value)
+  // Story 13.2 — every new create writes schema_version = 2. A legacy `{ value }` body synthesizes
+  // exactly one default field (AC-5); a `{ fields }` body is uniqueness-validated first (may throw
+  // FieldKeyConflictError → 409, before any write).
+  const resolved = resolveFieldSet(input.body)
+  const fieldMeta = buildFieldMeta(resolved)
+  const encryptedValue = await encryptValue(serializeFieldEnvelope(resolved))
 
   const [credential] = await tx
     .insert(credentials)
@@ -228,16 +263,21 @@ export async function createCredentialWithFirstVersion(
     .returning()
   if (!credential) throw new Error('Credential insert returned no row')
 
-  await tx.insert(credentialVersions).values({
+  await insertVersionAndSetCurrent(tx, {
     orgId: input.orgId,
     credentialId: credential.id,
     encryptedValue,
     keyVersion,
     versionNumber: 1,
+    schemaVersion: 2,
+    fieldMeta,
     createdBy: input.userId,
   })
 
-  return { credential, detail: serializeCredentialDetail(credential, 1) }
+  return {
+    credential,
+    detail: serializeCredentialDetail(credential, 1, { schemaVersion: 2, fields: fieldMeta }),
+  }
 }
 
 export async function getCredentialDetail(
@@ -247,22 +287,17 @@ export async function getCredentialDetail(
   const credential = await findCredentialInProject(tx, params)
   if (!credential) return null
 
-  const [versionRow] = await tx
-    .select({
-      currentVersionNumber: sql<number>`MAX(${credentialVersions.versionNumber})`,
-    })
-    .from(credentialVersions)
-    .where(
-      and(
-        eq(credentialVersions.credentialId, params.credentialId),
-        isNull(credentialVersions.purgedAt),
-        // Story 5.3 AC-13/AC-14 regression fix — see listCredentials' identical comment above.
-        isNull(credentialVersions.abandonedAt)
-      )
-    )
+  // Story 13.2 — the current (highest non-purged, non-abandoned) version's format so the detail
+  // response can carry schema_version + field metadata for the field-list UI. A legacy
+  // schema_version = 1 row (or null field_meta) wraps into a single unnamed default field (AC-7).
+  const versionRow = await selectCurrentVersionMeta(tx, params.credentialId)
 
-  const currentVersionNumber = Number(versionRow?.currentVersionNumber ?? 1)
-  return serializeCredentialDetail(credential, currentVersionNumber)
+  const currentVersionNumber = Number(versionRow?.versionNumber ?? 1)
+  const schemaVersion = versionRow?.schemaVersion ?? 1
+  return serializeCredentialDetail(credential, currentVersionNumber, {
+    schemaVersion,
+    fields: fieldMetaForResponse(schemaVersion, versionRow?.fieldMeta),
+  })
 }
 
 export async function findCredentialInProject(
@@ -342,6 +377,47 @@ export async function updateCredentialTags(
   }
 }
 
+export type AddCredentialVersionResult = {
+  version: typeof credentialVersions.$inferSelect
+  auditPayload: {
+    versionNumber: number
+    template?: string
+    addedFields: string[]
+    removedFields: string[]
+  }
+}
+
+// The current (highest non-purged/non-abandoned) version's number + value-envelope format. Shared
+// by getCredentialDetail (field metadata for the response) and addCredentialVersion (the "before"
+// side of the AC-9 audit delta), so the two never diverge on what "current version" means.
+async function selectCurrentVersionMeta(
+  tx: Tx,
+  credentialId: string
+): Promise<{ versionNumber: number; schemaVersion: number; fieldMeta: unknown } | undefined> {
+  const [row] = await tx
+    .select({
+      versionNumber: credentialVersions.versionNumber,
+      schemaVersion: credentialVersions.schemaVersion,
+      fieldMeta: credentialVersions.fieldMeta,
+    })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.credentialId, credentialId),
+        isNull(credentialVersions.purgedAt),
+        isNull(credentialVersions.abandonedAt)
+      )
+    )
+    .orderBy(desc(credentialVersions.versionNumber))
+    .limit(1)
+  return row
+}
+
+async function currentFieldKeys(tx: Tx, credentialId: string): Promise<string[]> {
+  const row = await selectCurrentVersionMeta(tx, credentialId)
+  return fieldMetaForResponse(row?.schemaVersion ?? 1, row?.fieldMeta).map((f) => f.key)
+}
+
 export async function addCredentialVersion(
   tx: Tx,
   input: {
@@ -351,12 +427,21 @@ export async function addCredentialVersion(
     userId: string
     body: AddVersionBody
   }
-) {
+): Promise<AddCredentialVersionResult | null> {
   const cred = await lockCredentialInProject(tx, {
     credentialId: input.credentialId,
     projectId: input.projectId,
   })
   if (!cred) return null
+
+  // Story 13.2 — uniqueness-validate the FINAL field set before any write (may throw
+  // FieldKeyConflictError → 409 with zero side effects, AC-3); a legacy `{ value }` body
+  // synthesizes a single default field (AC-7 legacy → schema_version 2 transition on first edit).
+  const resolved = resolveFieldSet(input.body)
+  const fieldMeta = buildFieldMeta(resolved)
+
+  // Current version's field keys → the "before" side of the AC-9 audit delta.
+  const oldKeys = await currentFieldKeys(tx, input.credentialId)
 
   const [maxRow] = await tx
     .select({ max: sql<number>`COALESCE(MAX(${credentialVersions.versionNumber}), 0)` })
@@ -365,22 +450,34 @@ export async function addCredentialVersion(
   const nextVersion = Number(maxRow?.max ?? 0) + 1
 
   const keyVersion = await currentKeyVersion(tx)
-  const encryptedValue = await encryptValue(input.body.value)
+  const encryptedValue = await encryptValue(serializeFieldEnvelope(resolved))
 
   try {
-    const [version] = await tx
-      .insert(credentialVersions)
-      .values({
-        orgId: input.orgId,
-        credentialId: input.credentialId,
-        encryptedValue,
-        keyVersion,
-        versionNumber: nextVersion,
-        createdBy: input.userId,
-      })
-      .returning()
-    if (!version) throw new Error('Credential version insert returned no row')
-    return version
+    // Story 13.2 AC-4 — insert the new version and flip current_version_id atomically (shared helper).
+    const version = await insertVersionAndSetCurrent(tx, {
+      orgId: input.orgId,
+      credentialId: input.credentialId,
+      encryptedValue,
+      keyVersion,
+      versionNumber: nextVersion,
+      schemaVersion: 2,
+      fieldMeta,
+      createdBy: input.userId,
+    })
+
+    const delta = computeFieldDelta(
+      oldKeys,
+      fieldMeta.map((f) => f.key)
+    )
+    return {
+      version,
+      auditPayload: {
+        versionNumber: version.versionNumber,
+        ...(resolved.template ? { template: resolved.template } : {}),
+        addedFields: delta.addedFields,
+        removedFields: delta.removedFields,
+      },
+    }
   } catch (error) {
     if (isUniqueViolation(error)) throw new VersionConflictError()
     throw error
@@ -398,6 +495,7 @@ export async function revealCurrentValue(
     .select({
       versionNumber: credentialVersions.versionNumber,
       encryptedValue: credentialVersions.encryptedValue,
+      schemaVersion: credentialVersions.schemaVersion,
     })
     .from(credentialVersions)
     .where(
@@ -435,9 +533,12 @@ export async function revealCurrentValue(
   const abandonedVersionExcluded = Boolean(higherAbandonedVersion)
 
   // reveal path: Buffer->string permitted here (the one sanctioned conversion site)
-  const value = await withSecret(version.encryptedValue, async (plaintext) =>
-    plaintext.toString('utf8')
-  )
+  const plaintext = await withSecret(version.encryptedValue, async (buf) => buf.toString('utf8'))
+  // Story 13.2 AC-7 — legacy (schema_version = 1) rows decrypt to a bare string; a
+  // single-default-field v2 row unwraps to its bare value (backward compatible); a genuine
+  // multi-field v2 row returns the full JSON field envelope. The stored ciphertext is never
+  // re-parsed or re-encrypted.
+  const value = unwrapRevealValue(version.schemaVersion, plaintext)
   return { status: 'found', value, versionNumber: version.versionNumber, abandonedVersionExcluded }
 }
 
@@ -455,6 +556,7 @@ export async function listVersionHistory(
       createdAt: credentialVersions.createdAt,
       purgedAt: credentialVersions.purgedAt,
       abandonedAt: credentialVersions.abandonedAt,
+      schemaVersion: credentialVersions.schemaVersion,
     })
     .from(credentialVersions)
     .where(eq(credentialVersions.credentialId, params.credentialId))
@@ -475,5 +577,6 @@ export async function listVersionHistory(
     isCurrent: row.versionNumber === currentVersionNumber,
     purgedAt: row.purgedAt?.toISOString() ?? null,
     abandonedAt: row.abandonedAt?.toISOString() ?? null,
+    schemaVersion: row.schemaVersion,
   }))
 }

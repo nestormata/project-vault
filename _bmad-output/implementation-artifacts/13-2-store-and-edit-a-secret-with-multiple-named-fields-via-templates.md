@@ -1,6 +1,6 @@
 # Story 13.2: Store and Edit a Secret with Multiple Named Fields via Templates
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -260,68 +260,68 @@ history.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Shared template registry + field-set types (AC: 1, 2, 5)
-  - [ ] Subtask 1.1: Add a template registry (e.g. `packages/shared/src/credential-templates.ts`) defining
+- [x] Task 1: Shared template registry + field-set types (AC: 1, 2, 5)
+  - [x] Subtask 1.1: Add a template registry (e.g. `packages/shared/src/credential-templates.ts`) defining
     the 5 templates' field sets exactly as enumerated in AC-2's positive example — single source of truth
     consumed by both `apps/api` (validation/default-field synthesis) and `apps/web` (template selector UI).
-  - [ ] Subtask 1.2: Add `FieldSchema = { key: string, value: string, sensitive: boolean }` and
+  - [x] Subtask 1.2: Add `FieldSchema = { key: string, value: string, sensitive: boolean }` and
     `FieldMetaSchema = { key: string, sensitive: boolean, template?: CredentialTemplate }` Zod schemas to
     `packages/shared/src/schemas/credentials.ts`, enum-constraining `template` to the 5 known values.
-  - [ ] Subtask 1.3: Extend `CredentialDetailSchema`/`CredentialSummarySchema` (or add a new
+  - [x] Subtask 1.3: Extend `CredentialDetailSchema`/`CredentialSummarySchema` (or add a new
     `CredentialFieldsResponseSchema`) to carry `fields`/`fieldMeta`-derived data in API responses.
-- [ ] Task 2: DB schema/service — field-set write path (AC: 3, 4, 5, 7, 8)
-  - [ ] Subtask 2.1: Extend `CreateCredentialBodySchema` (`apps/api/src/modules/credentials/schema.ts`) to
+- [x] Task 2: DB schema/service — field-set write path (AC: 3, 4, 5, 7, 8)
+  - [x] Subtask 2.1: Extend `CreateCredentialBodySchema` (`apps/api/src/modules/credentials/schema.ts`) to
     accept either the existing `{ value }` shape (untemplated single-value, preserved for compatibility)
     or a new `{ template?, fields: Field[] }` shape — discriminate cleanly, do not silently coerce one into
     the other.
-  - [ ] Subtask 2.2: Extend `AddVersionBodySchema` similarly for the edit/field-set-update path (new
+  - [x] Subtask 2.2: Extend `AddVersionBodySchema` similarly for the edit/field-set-update path (new
     fields array replacing the single `{ value }` shape when editing a multi-field secret).
-  - [ ] Subtask 2.3: Add field-key uniqueness validation (case-insensitive, trimmed) at the service layer
+  - [x] Subtask 2.3: Add field-key uniqueness validation (case-insensitive, trimmed) at the service layer
     in `apps/api/src/modules/credentials/service.ts` — reject with `409 field_key_conflict` before any
     write, per AC-3.
-  - [ ] Subtask 2.4: Update `createCredentialWithFirstVersion` to write `schemaVersion: 2`, encrypted
+  - [x] Subtask 2.4: Update `createCredentialWithFirstVersion` to write `schemaVersion: 2`, encrypted
     `fields` envelope, and `fieldMeta` when a template/fields payload is given; default to the single
     "no template" field (AC-5) when the legacy `{ value }` shape is given, keeping `schema_version = 2` for
     all new creates (only truly pre-existing rows stay at `schema_version = 1`).
-  - [ ] Subtask 2.5: Update `addCredentialVersion` (or add a sibling function) to write the same
+  - [x] Subtask 2.5: Update `addCredentialVersion` (or add a sibling function) to write the same
     `schemaVersion: 2`/`fields`/`fieldMeta` shape on edit, flipping `credentials.current_version_id`
     atomically in the same `tx` as the new `credential_versions` insert (AC-4) — reuse the existing
     `lockCredentialInProject` row-lock and `VersionConflictError`/`isUniqueViolation` race handling.
-  - [ ] Subtask 2.6: Update `getCredentialDetail`/`revealCurrentValue`/`listVersionHistory`
+  - [x] Subtask 2.6: Update `getCredentialDetail`/`revealCurrentValue`/`listVersionHistory`
     (`apps/api/src/modules/credentials/service.ts`) to branch on `schema_version`: `1` → wrap the bare-
     string decrypted value into a single default field at serialization time (no ciphertext touched);
     `2` → decrypt and parse the `fields` JSON envelope directly.
-  - [ ] Subtask 2.7: Confirm `apps/api/src/modules/credentials/import-service.ts` still creates one
+  - [x] Subtask 2.7: Confirm `apps/api/src/modules/credentials/import-service.ts` still creates one
     single-field (`schema_version = 2`, one default field) credential per imported key — add the AC-6
     regression test, do not change its grouping behavior.
-- [ ] Task 3: Web UI — template selector + field-set editor (AC: 1, 2, 3, 8)
-  - [ ] Subtask 3.1: Add a template-selector control to
+- [x] Task 3: Web UI — template selector + field-set editor (AC: 1, 2, 3, 8)
+  - [x] Subtask 3.1: Add a template-selector control to
     `apps/web/src/routes/(app)/projects/[projectId]/credentials/new/+page.svelte`, replacing the single
     `value` input with a dynamic field-list editor once a template is chosen (or immediately, defaulting
     to the existing single-field UX when no template is picked, per AC-5).
-  - [ ] Subtask 3.2: Add add/rename/remove field controls; surface the `409 field_key_conflict` response
+  - [x] Subtask 3.2: Add add/rename/remove field controls; surface the `409 field_key_conflict` response
     as an inline error on the specific field being renamed/added (per AC-3's persona-journey step 6) —
     reuse `mapCredentialSubmitError`-style error mapping in `apps/web/src/lib/components/onboarding/
     onboarding-logic.ts` (extend it for the new error code) rather than inventing a parallel error path.
-  - [ ] Subtask 3.3: Extend `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/
+  - [x] Subtask 3.3: Extend `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/
     +page.svelte` (detail) and its edit flow to render `fields`/render a single unnamed field for legacy
     `schema_version = 1` secrets (AC-7) — no visual difference from today for legacy secrets.
-  - [ ] Subtask 3.4: Ensure editing a sensitive field's value never requires a prior reveal call (AC-8) —
+  - [x] Subtask 3.4: Ensure editing a sensitive field's value never requires a prior reveal call (AC-8) —
     a masked input the user can type directly into, with no "reveal to edit" gate.
-  - [ ] Subtask 3.5: Update `apps/web/src/lib/api/credentials.ts` client functions for the new
+  - [x] Subtask 3.5: Update `apps/web/src/lib/api/credentials.ts` client functions for the new
     create/edit field-set request/response shapes.
-- [ ] Task 4: Tests (AC: all — see Testing Requirements below for the legacy-row mandate)
-  - [ ] Subtask 4.1: API unit/integration tests for template default-field synthesis (AC-1, AC-2),
+- [x] Task 4: Tests (AC: all — see Testing Requirements below for the legacy-row mandate)
+  - [x] Subtask 4.1: API unit/integration tests for template default-field synthesis (AC-1, AC-2),
     field-key uniqueness/409 (AC-3, all 4 edge cases enumerated), atomic version-write + current_version_id
     flip incl. rollback-on-race (AC-4), untemplated single-default-field creation (AC-5), bulk-import
     regression guard (AC-6), explicit `schema_version = 1` legacy-row fixture tests across every touched
     read/write function (AC-7), and blind-overwrite-without-reveal (AC-8).
-  - [ ] Subtask 4.2: Web component/page tests for the template selector, field add/rename/remove
+  - [x] Subtask 4.2: Web component/page tests for the template selector, field add/rename/remove
     validation UI, the 409-conflict inline error path, and legacy single-field rendering.
-  - [ ] Subtask 4.3: E2E/journey test extension (`apps/web/e2e/journeys/` — see existing `j1-onboarding-
+  - [x] Subtask 4.3: E2E/journey test extension (`apps/web/e2e/journeys/` — see existing `j1-onboarding-
     and-first-credential.spec.ts` for the pattern) covering the Login-template create → edit-add-field →
     save persona journey.
-  - [ ] Subtask 4.4: Test the audit event emitted on field-set version creation (AC-9): asserts
+  - [x] Subtask 4.4: Test the audit event emitted on field-set version creation (AC-9): asserts
     added/renamed/removed field keys and template are present, no plaintext value substring appears, and
     no event is emitted on a failed (409) write.
 
@@ -509,12 +509,60 @@ history.
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Opus 4.8 (claude-opus-4-8[1m])
 
 ### Debug Log References
 
+- Regression found & fixed during implementation: rotation's `initiateRotation` `sameValueAsPrevious`
+  check decrypted the current version and compared it to the raw new value. Because single-value
+  secrets now encrypt a schema_version=2 field envelope, the comparison broke; fixed by unwrapping via
+  `unwrapRevealValue(schemaVersion, plaintext)` before the constant-time compare
+  (`apps/api/src/modules/rotation/service.ts`).
+
 ### Completion Notes List
 
+**Story 13.2 implementation (Opus 4.8) — all 4 tasks complete, all ACs test-verified except where noted.**
+
+- **Task 1 (shared):** `packages/shared/src/credential-templates.ts` registry (5 templates, exact field
+  sets per AC-2, `DEFAULT_FIELD_KEY='value'`, `MAX_FIELDS_PER_SECRET=50`, `FIELD_KEY_PATTERN`,
+  `normalizeFieldKey` = trim+NFC+lowercase). Shared Zod: `FieldSchema`, `FieldMetaSchema`,
+  `FieldArraySchema` (min 1, max 50), `CredentialTemplateSchema` (enum). `CredentialDetailSchema` extended
+  additively with `schemaVersion` + `fields` (FieldMeta[]); `CredentialVersionSummarySchema` +
+  `schemaVersion`. 19 registry tests + updated shared schema tests.
+- **Task 2 (API):** `CreateCredentialBodySchema`/`AddVersionBodySchema` are now discriminated unions
+  (legacy `{value}` OR `{template?, fields}`) — unknown template → 422, mixed value+fields → 422.
+  New `field-set.ts` helper (uniqueness via a `Set`, `__proto__`-safe; envelope build/parse;
+  legacy-wrap; audit delta). The encrypted `fields` envelope is stored in the existing
+  `credential_versions.encrypted_value` column (JSON for v2); `field_meta` is plaintext keys/sensitivity/
+  template only. Every new create/edit writes `schema_version=2` and flips `credentials.current_version_id`
+  atomically via a shared `insertVersionAndSetCurrent` helper. `revealCurrentValue` branches on
+  schema_version (legacy bare string; single-default-field v2 unwraps to bare value for backward compat;
+  multi-field v2 returns the JSON envelope). `getCredentialDetail`/`listVersionHistory` carry schema_version
+  + field metadata. Bulk import writes single-default-field v2 rows (never grouped). 409 `field_key_conflict`
+  emits no audit event. Machine-user reveal path re-verified against a legacy fixture.
+- **Task 3 (Web):** template selector + dynamic field editor (shared `FieldSetEditor.svelte`) on the create
+  form; field-set edit flow on the detail page (multi-field reveals current values to round-trip, legacy
+  single-field secret renders unchanged); inline 409 `field_key_conflict` error on the colliding field via
+  extended `mapCredentialSubmitError`; client-side duplicate-key affordance (`validateFieldSet`,
+  `duplicateFieldKeyIndex`); `credentials.ts` client typing + `parseRevealedFields`.
+- **Task 4 (tests):** shared registry/schema tests; API `field-set.test.ts` (pure) + `field-set-routes.test.ts`
+  (16 integration tests covering AC-1..AC-9 incl. NFC/whitespace/`__proto__` collisions, remove-then-reuse,
+  rollback-on-audit-failure atomicity, field_meta-no-plaintext, legacy schema_version=1 fixtures for
+  getCredentialDetail/revealCurrentValue/listVersionHistory/edit-transition); AC-6 import regression;
+  machine-user legacy fixture; web onboarding-logic unit tests, new-page + detail-page component tests.
+- **Test results:** shared 154 passed; web 1552 passed (full suite); API — all touched suites green
+  (field-set 34, field-set-routes 16, routes 41, import 10, machine-credential, rotation 81). `make check-rls`
+  no-op (no new columns). Lint 0 errors (api/web/shared), typecheck clean, `jscpd` 0 clones, OpenAPI spec
+  regenerated.
+- **e2e:** `apps/web/e2e/journeys/j5-multi-field-secret.spec.ts` written (Login-template create → edit-add-field
+  → save + collision inline error) but NOT executed — the full running api/web/db+Playwright stack was not
+  brought up (only a DB was provisioned for integration tests).
+- **Deliberate design note (AC-4/AC-7 invariant):** schema_version=2 ⟺ the ciphertext is a JSON field
+  envelope. A single-value create (legacy `{value}`) becomes v2 with one `value` field; reveal unwraps it to
+  the bare value so existing API/CLI clients are unaffected. Only genuinely pre-existing rows remain
+  schema_version=1. `current_version_id` is now written by create/edit/import but is not yet *read* by any
+  code path (reads still use MAX(version_number)); rotation does not maintain it (whole-value rotation writes
+  schema_version=1 versions) — consistent with rotation/field-scoped work being Story 13.5.
 - Ultimate context engine analysis completed - comprehensive developer guide created.
 - 5-round advanced elicitation applied (Failure Mode Analysis, Pre-mortem Analysis, Security Audit
   Personas, User Persona Focus Group, Challenge from Critical Perspective): added AC-9 (audit event on
@@ -527,3 +575,41 @@ history.
   existing `lockCredentialInProject`/`VersionConflictError` mechanism rather than needing something new.
 
 ### File List
+
+**Added**
+- `packages/shared/src/credential-templates.ts`
+- `packages/shared/src/credential-templates.test.ts`
+- `apps/api/src/modules/credentials/field-set.ts`
+- `apps/api/src/modules/credentials/field-set.test.ts`
+- `apps/api/src/modules/credentials/field-set-routes.test.ts`
+- `apps/web/src/lib/components/credentials/FieldSetEditor.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/new/credentials-new-page.test.ts`
+- `apps/web/e2e/journeys/j5-multi-field-secret.spec.ts`
+
+**Modified**
+- `packages/shared/src/schemas/credentials.ts`
+- `packages/shared/src/schemas/credentials.test.ts`
+- `packages/shared/src/index.ts`
+- `packages/shared/openapi.json` (regenerated)
+- `apps/api/src/modules/credentials/schema.ts`
+- `apps/api/src/modules/credentials/schema.test.ts`
+- `apps/api/src/modules/credentials/service.ts`
+- `apps/api/src/modules/credentials/routes.ts`
+- `apps/api/src/modules/credentials/db-helpers.ts`
+- `apps/api/src/modules/credentials/import-service.ts`
+- `apps/api/src/modules/credentials/credential-import.test.ts`
+- `apps/api/src/modules/rotation/service.ts`
+- `apps/api/src/modules/machine-users/machine-credential-routes.test.ts`
+- `apps/web/src/lib/api/credentials.ts`
+- `apps/web/src/lib/components/onboarding/onboarding-logic.ts`
+- `apps/web/src/lib/components/onboarding/onboarding-logic.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/new/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+## Change Log
+
+| Date | Version | Description | Author |
+|------|---------|-------------|--------|
+| 2026-07-24 | 0.1 | Implemented Story 13.2 — shared template registry + field-set schemas; discriminated create/edit bodies; service-layer field-key uniqueness (409), atomic schema_version=2 field-set writes + `current_version_id` flip; schema_version-branched reads; legacy-row compatibility; bulk-import single-field regression; audit delta (AC-9); web template selector + field editor + inline 409; e2e journey spec (written). Status → review. | Amelia (Opus 4.8) |

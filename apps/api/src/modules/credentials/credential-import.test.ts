@@ -435,4 +435,48 @@ describe.sequential('credential bulk import routes', () => {
       auditSpy.mockRestore()
     }
   }, 20_000)
+
+  // Story 13.2 AC-6 — bulk import must NOT group related keys into a multi-field secret; it creates
+  // one single-field credential per imported key/value pair (schema_version 2, single default
+  // field), the same as an untemplated create. A plausible regression is routing import through the
+  // new template-aware grouping path and auto-grouping by key prefix — this guards against it.
+  it('AC-6: import creates one single-field secret per key, never a grouped multi-field secret', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'import-no-group')
+    const preview = await uploadCredentialImport(
+      app,
+      owner.cookies,
+      projectId,
+      'DB_HOST=db.example.com\nDB_USER=svc\nDB_PASS=hunter2\n',
+      'grouping.env'
+    )
+    const importId = preview.json<{ data: { importId: string } }>().data.importId
+    const confirm = await confirmCredentialImport(app, owner.cookies, projectId, {
+      importId,
+      defaultAction: 'create_new',
+    })
+    expect(confirm.statusCode).toBe(200)
+
+    // three separate credentials, not one db_connection-grouped secret
+    const creds = await withOrg(owner.orgId, (tx) =>
+      tx.select().from(credentials).where(eq(credentials.projectId, projectId))
+    )
+    expect(creds.map((c) => c.name).sort()).toEqual(['DB_HOST', 'DB_PASS', 'DB_USER'])
+
+    // each imported version is a single-default-field schema_version 2 row
+    for (const cred of creds) {
+      const [version] = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({
+            schemaVersion: credentialVersions.schemaVersion,
+            fieldMeta: credentialVersions.fieldMeta,
+          })
+          .from(credentialVersions)
+          .where(eq(credentialVersions.credentialId, cred.id))
+      )
+      expect(version?.schemaVersion).toBe(2)
+      expect(version?.fieldMeta).toEqual([{ key: 'value', sensitive: true }])
+      // never grouped — exactly one field, no host/user/pass template fields
+      expect(JSON.stringify(version?.fieldMeta)).not.toContain('host')
+    }
+  }, 20_000)
 })

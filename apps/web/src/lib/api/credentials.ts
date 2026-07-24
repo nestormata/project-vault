@@ -2,20 +2,26 @@ import type {
   CredentialDependency,
   CredentialDetail,
   CredentialSummary,
+  CredentialTemplate,
   CredentialValue,
   CredentialVersionSummary,
+  Field,
+  FieldMeta,
   ImportAction,
   ParsedImportItem,
   SystemType,
 } from '@project-vault/shared'
+import { DEFAULT_FIELD_KEY } from '@project-vault/shared'
 import { apiFetch, parseApiEnvelope } from './client.js'
 
-export type CreateCredentialRequest = {
+// Story 13.2 — create accepts either the legacy single-value shape or a structured field set.
+type CreateCredentialCommon = {
   name: string
-  value: string
   description?: string | null
   tags?: string[]
 }
+export type CreateCredentialRequest = CreateCredentialCommon &
+  ({ value: string } | { template?: CredentialTemplate; fields: Field[] })
 
 export type CreateCredentialResponse = {
   id: string
@@ -201,12 +207,39 @@ export function archiveCredentialDependency(
   )
 }
 
-export type AddCredentialVersionRequest = { value: string }
+// Story 13.2 — an edit is either a legacy single value or a full field set.
+export type AddCredentialVersionRequest =
+  { value: string } | { template?: CredentialTemplate; fields: Field[] }
 
 export type AddCredentialVersionResponse = {
   credentialId: string
   versionNumber: number
   createdAt: string
+}
+
+/**
+ * Reconstructs the current field values from a reveal response so the edit form can round-trip
+ * every field (AC-4). A legacy/single-default-field secret's reveal returns the bare value; a
+ * multi-field secret's reveal returns the JSON field envelope. `fieldMeta` (from the detail
+ * response) supplies key order and sensitivity.
+ */
+export function parseRevealedFields(fieldMeta: FieldMeta[], revealedValue: string): Field[] {
+  if (fieldMeta.length === 1 && fieldMeta[0]?.key === DEFAULT_FIELD_KEY) {
+    const only = fieldMeta[0]
+    return [{ key: only.key, value: revealedValue, sensitive: only.sensitive }]
+  }
+  try {
+    const parsed = JSON.parse(revealedValue) as Array<{ key: string; value?: string }>
+    const valueByKey = new Map(parsed.map((f) => [f.key, f.value ?? '']))
+    return fieldMeta.map((m) => ({
+      key: m.key,
+      value: valueByKey.get(m.key) ?? '',
+      sensitive: m.sensitive,
+    }))
+  } catch {
+    // Fall back to a single field if the envelope is unexpectedly not JSON.
+    return fieldMeta.map((m) => ({ key: m.key, value: '', sensitive: m.sensitive }))
+  }
 }
 
 export function addCredentialVersion(

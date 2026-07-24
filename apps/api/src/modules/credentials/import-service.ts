@@ -8,18 +8,62 @@ import {
 } from '@project-vault/db/schema'
 import { encrypt } from '@project-vault/crypto'
 import {
+  DEFAULT_FIELD_KEY,
   parseEnvFile,
   parseJsonImportFile,
   type EnvParseResult,
+  type FieldMeta,
   type ImportAction,
   type JsonParseResult,
 } from '@project-vault/shared'
 import { getPrimaryKey } from '../vault/key-service.js'
-import { currentKeyVersion, isUniqueViolation, lockCredentialInProject } from './db-helpers.js'
+import {
+  currentKeyVersion,
+  insertVersionAndSetCurrent,
+  isUniqueViolation,
+  lockCredentialInProject,
+} from './db-helpers.js'
 import { findProjectInOrg } from './service.js'
 
 export const IMPORT_ENTRY_LIMIT = 500
 export const IMPORT_TTL_MS = 15 * 60 * 1000
+
+// Story 13.2 AC-6 — bulk import creates ONE single-field secret per imported key. It deliberately
+// does NOT route through the template-aware field-set grouping (`resolveFieldSet`): a `.env` with
+// DB_HOST/DB_USER/DB_PASS stays three separate credentials, never one grouped db_connection secret.
+// Each imported version is written with the same schema_version = 2 single-default-field shape as
+// an untemplated create (AC-5), so imported secrets are not special-cased onto legacy schema_version 1.
+const IMPORT_FIELD_META: FieldMeta[] = [{ key: DEFAULT_FIELD_KEY, sensitive: true }]
+function importFieldEnvelope(value: string): string {
+  return JSON.stringify([{ key: DEFAULT_FIELD_KEY, value, sensitive: true }])
+}
+
+// Story 13.2 — insert an imported credential_versions row (single-default-field, schema_version 2)
+// and flip credentials.current_version_id atomically in the same tx (AC-4). Shared by the
+// create-new and new-version import paths so they never drift.
+async function insertImportedVersionRow(
+  tx: Tx,
+  params: {
+    orgId: string
+    credentialId: string
+    versionNumber: number
+    userId: string
+    item: PendingImportItemRecord
+  }
+): Promise<void> {
+  await insertVersionAndSetCurrent(tx, {
+    orgId: params.orgId,
+    credentialId: params.credentialId,
+    encryptedValue: params.item.encryptedValue,
+    keyVersion: params.item.keyVersion,
+    versionNumber: params.versionNumber,
+    schemaVersion: 2,
+    fieldMeta: IMPORT_FIELD_META,
+    createdBy: params.userId,
+    rotationLockedAt: null,
+    purgedAt: null,
+  })
+}
 
 export type ImportFileType = 'env' | 'json'
 
@@ -88,7 +132,10 @@ async function encryptImportEntries(
 
   try {
     for (const entry of entries) {
-      const plaintext = Buffer.from(entry.value, 'utf8')
+      // Story 13.2 AC-6 — encrypt the single-default-field JSON envelope (schema_version 2 shape),
+      // not the bare string, so the reveal/detail read paths treat imported secrets identically to
+      // untemplated creates.
+      const plaintext = Buffer.from(importFieldEnvelope(entry.value), 'utf8')
       let encryptedValue
       try {
         encryptedValue = await encrypt(plaintext, keyMaterial)
@@ -223,15 +270,12 @@ async function insertImportedCredential(
     .returning({ id: credentials.id })
   if (!newCred) throw new Error('Credential insert returned no row')
 
-  await tx.insert(credentialVersions).values({
+  await insertImportedVersionRow(tx, {
     orgId: params.orgId,
     credentialId: newCred.id,
-    encryptedValue: params.item.encryptedValue,
-    keyVersion: params.item.keyVersion,
     versionNumber: 1,
-    createdBy: params.userId,
-    rotationLockedAt: null,
-    purgedAt: null,
+    userId: params.userId,
+    item: params.item,
   })
 
   return newCred.id
@@ -260,15 +304,12 @@ async function insertImportedVersion(
   const nextVersion = Number(maxRow?.max ?? 0) + 1
 
   try {
-    await tx.insert(credentialVersions).values({
+    await insertImportedVersionRow(tx, {
       orgId: params.orgId,
       credentialId: params.credentialId,
-      encryptedValue: params.item.encryptedValue,
-      keyVersion: params.item.keyVersion,
       versionNumber: nextVersion,
-      createdBy: params.userId,
-      rotationLockedAt: null,
-      purgedAt: null,
+      userId: params.userId,
+      item: params.item,
     })
   } catch (error) {
     if (isUniqueViolation(error)) {

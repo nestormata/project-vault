@@ -94,11 +94,79 @@ describe('credential create body schema', () => {
   })
 })
 
+describe('credential create body schema — field-set variant (Story 13.2)', () => {
+  it('accepts a templated field-set body', () => {
+    expect(
+      CreateCredentialBodySchema.parse({
+        name: 'DB login',
+        template: 'login',
+        fields: [
+          { key: 'username', value: 'alice', sensitive: false },
+          { key: 'password', value: 'pw', sensitive: true },
+        ],
+      })
+    ).toMatchObject({ template: 'login' })
+  })
+
+  it('accepts a field-set body with no template (untemplated multi-field)', () => {
+    expect(
+      CreateCredentialBodySchema.parse({
+        name: 'Custom',
+        fields: [{ key: 'token', value: 'x', sensitive: true }],
+      })
+    ).toMatchObject({ fields: [{ key: 'token' }] })
+  })
+
+  it('rejects an unknown template value (AC-2) — never coerced to custom', () => {
+    expect(() =>
+      CreateCredentialBodySchema.parse({
+        name: 'Bad',
+        template: 'sftp_login',
+        fields: [{ key: 'value', value: 'x', sensitive: true }],
+      })
+    ).toThrow()
+  })
+
+  it('rejects an empty fields array (Custom must reach >=1 before save)', () => {
+    expect(() =>
+      CreateCredentialBodySchema.parse({ name: 'Empty', template: 'custom', fields: [] })
+    ).toThrow()
+  })
+
+  it('rejects a body mixing value and fields (clean discrimination)', () => {
+    expect(() =>
+      CreateCredentialBodySchema.parse({
+        name: 'Mixed',
+        value: 'x',
+        fields: [{ key: 'a', value: 'b', sensitive: false }],
+      })
+    ).toThrow()
+  })
+
+  it('rejects a field key with a disallowed character', () => {
+    expect(() =>
+      CreateCredentialBodySchema.parse({
+        name: 'Bad key',
+        fields: [{ key: 'bad/key', value: 'x', sensitive: false }],
+      })
+    ).toThrow()
+  })
+})
+
 describe('add version body schema', () => {
   it('accepts a valid value', () => {
     expect(AddVersionBodySchema.parse({ value: 'rotated-secret' })).toEqual({
       value: 'rotated-secret',
     })
+  })
+
+  it('accepts a field-set edit body', () => {
+    expect(
+      AddVersionBodySchema.parse({
+        template: 'login',
+        fields: [{ key: 'password', value: 'new', sensitive: true }],
+      })
+    ).toMatchObject({ fields: [{ key: 'password' }] })
   })
 
   it('rejects unknown keys', () => {

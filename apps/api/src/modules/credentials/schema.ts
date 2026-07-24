@@ -3,8 +3,10 @@ import {
   CredentialDependencySchema,
   CredentialDetailSchema,
   CredentialSummarySchema,
+  CredentialTemplateSchema,
   CredentialValueSchema,
   CredentialVersionSummarySchema,
+  FieldArraySchema,
   ImportActionSchema,
   SystemTypeSchema,
   validateRotationCron,
@@ -30,21 +32,49 @@ const lifecycleFieldsSchema = z.object({
   cacheable: z.boolean().optional(),
 })
 
-export const CreateCredentialBodySchema = z
+const createCredentialCommonShape = {
+  name: z.string().trim().min(1).max(256),
+  description: z.string().max(1024).trim().nullable().optional(),
+  tags: z.array(z.string().min(1).max(50)).max(20).optional(),
+  ...lifecycleFieldsSchema.shape,
+}
+
+// Legacy single-value create shape (backward compatible — existing API/CLI clients, AC-5 regression
+// guard). Preserved as one variant of a discriminated union rather than coerced into the field-set
+// shape.
+const CreateCredentialLegacyBodySchema = z
   .object({
-    name: z.string().trim().min(1).max(256),
+    ...createCredentialCommonShape,
     value: z.string().min(1).max(65536),
-    description: z.string().max(1024).trim().nullable().optional(),
-    tags: z.array(z.string().min(1).max(50)).max(20).optional(),
-    ...lifecycleFieldsSchema.shape,
   })
   .strict()
   .superRefine(rotationScheduleRefine)
+
+// Story 13.2 — structured field-set create shape. `template` is enum-constrained to the 5 known
+// values (unknown value → 422, never silently treated as custom); it may be omitted entirely.
+const CreateCredentialFieldSetBodySchema = z
+  .object({
+    ...createCredentialCommonShape,
+    template: CredentialTemplateSchema.optional(),
+    fields: FieldArraySchema,
+  })
+  .strict()
+  .superRefine(rotationScheduleRefine)
+
+export const CreateCredentialBodySchema = z
+  .union([CreateCredentialFieldSetBodySchema, CreateCredentialLegacyBodySchema])
   .meta({ id: 'CreateCredentialBody' })
 
-export const AddVersionBodySchema = z
-  .object({ value: z.string().min(1).max(65536) })
+const AddVersionLegacyBodySchema = z.object({ value: z.string().min(1).max(65536) }).strict()
+const AddVersionFieldSetBodySchema = z
+  .object({
+    template: CredentialTemplateSchema.optional(),
+    fields: FieldArraySchema,
+  })
   .strict()
+
+export const AddVersionBodySchema = z
+  .union([AddVersionFieldSetBodySchema, AddVersionLegacyBodySchema])
   .meta({ id: 'AddVersionBody' })
 
 export const CredentialParamsSchema = z

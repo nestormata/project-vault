@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { apiKeys, auditLogEntries } from '@project-vault/db/schema'
+import { apiKeys, auditLogEntries, credentialVersions } from '@project-vault/db/schema'
+import { encryptValue } from '../../lib/encrypt-value.js'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -132,6 +133,44 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
           cacheable: true,
         },
       })
+    })
+
+    // Story 13.2 AC-7 — the machine reveal route shares revealCurrentValue with the human path, so
+    // it must still decrypt a genuine legacy schema_version = 1 (bare-string ciphertext) row.
+    it('returns the bare value for a legacy schema_version 1 credential', async () => {
+      const owner = await registerOwner(app, 'legacy')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'machine-cred-legacy')
+      const credId = await createCredentialViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        'LEGACY_URL',
+        'seed'
+      )
+      // rewrite the version into a genuine legacy bare-string row
+      const legacyCiphertext = await encryptValue('postgres://legacy-bare')
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(credentialVersions)
+          .set({ schemaVersion: 1, fieldMeta: null, encryptedValue: legacyCiphertext })
+          .where(
+            and(
+              eq(credentialVersions.credentialId, credId),
+              eq(credentialVersions.versionNumber, 1)
+            )
+          )
+      )
+      const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: machineCredentialValueUrl(projectId, 'LEGACY_URL'),
+        headers: { authorization: `Bearer ${jwt}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json<{ data: { value: string } }>().data.value).toBe('postgres://legacy-bare')
     })
 
     it('handles a credential name containing a slash', async () => {
