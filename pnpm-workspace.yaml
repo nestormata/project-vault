@@ -2,6 +2,8 @@ packages:
   - "apps/*"
   - "packages/*"
 overrides:
+  "@fastify/static": ^10.1.1
+  postcss: ^8.5.18
   fast-jwt: ^6.2.4
   "minimatch@>=10 <10.2.3": ^10.2.5
   tsx: 4.21.1

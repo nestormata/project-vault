@@ -1,6 +1,6 @@
 # Story 13.2: Store and Edit a Secret with Multiple Named Fields via Templates
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

@@ -174,8 +174,8 @@ export function computeFieldDelta(
   removedFields: string[]
   renamedFields: Array<{ from: string; to: string }>
 } {
-  const oldSet = new Set(oldKeys.map(normalizeFieldKey))
-  const newSet = new Set(newKeys.map(normalizeFieldKey))
+  const oldSet = new Set(oldKeys.map((k) => normalizeFieldKey(k)))
+  const newSet = new Set(newKeys.map((k) => normalizeFieldKey(k)))
   const added = newKeys.filter((k) => !oldSet.has(normalizeFieldKey(k)))
   const removed = oldKeys.filter((k) => !newSet.has(normalizeFieldKey(k)))
 
