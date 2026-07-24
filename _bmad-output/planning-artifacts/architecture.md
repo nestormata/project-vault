@@ -4,6 +4,14 @@ workflowType: 'architecture'
 lastStep: 8
 status: 'complete'
 completedAt: '2026-05-28'
+lastAmended: '2026-07-23'
+amendmentHistory:
+  - date: '2026-07-23'
+    changes: 'Phase 2 PRD scope (Extension/Hook Architecture, AGPLv3 licensing boundary, multi-field secrets, i18n, theming): added architectural decisions for credential_versions.fields/field_meta JSONB, credentials.current_version_id, registerAuthStrategy() auth hooks, packages/extension-api with capability-negotiation gate, VAULT_EXTENSIONS_PACKAGE dynamic-import loader (no crash on failure, no community-extension pathway yet), Paraglide JS i18n, Tailwind v4 theming. Community extension sandboxing runtime explicitly deferred as a decision (not a gap) pending that phase. Advanced-elicitation pass (Architecture Decision Records, Chaos Monkey, Failure Mode Analysis) applied before finalizing — see decisions for serializable-hook-contract and origin-locked-loader rationale. Implementation Patterns (Step 5) and Project Structure (Step 6) extended to match, each with their own advanced-elicitation pass (Code Review Gauntlet, Mentor and Apprentice, Rubber Duck Debugging Evolved) — surfaced the lazy-hooksFactory correction and the capabilities[]-is-informational-only clarification.'
+  - date: '2026-07-23'
+    changes: 'Architecture Validation (Step 7) — Phase 2 re-validation found and fixed 3 critical gaps: (1) multi-field secret backward-compatibility claim was factually wrong (old ciphertext is a bare string, not JSON — fixed with a field_meta IS NULL legacy-row discriminator handled at the application layer, not by reinterpreting stored bytes), (2) rotations.target_fields column was missing (rotation history could not record which fields changed), (3) GET /api/v1/admin/extensions/status endpoint was missing (admin UI page had no backing route). All three fixed in this pass, not merely logged. Overall status: READY FOR IMPLEMENTATION, confidence HIGH.'
+  - date: '2026-07-23'
+    changes: '5-agent adversarial review during Create Epics and Stories (architecture completeness, cross-doc consistency, security, epic-dependency validation, UX/edge-cases) surfaced 14 items, all fixed: SSO identity binding was entirely undocumented (added AuthResult/external_identities/no-auto-link-by-email — the sharpest finding, a real auth-bypass-shaped gap, not a nuance); added CSRF/state-parameter validation and a fixed SSO callback route; added credentials.current_version_id backfill migration requirement; replaced field_meta IS NULL with an explicit credential_versions.schema_version column; added field-key uniqueness enforcement; added credential_dependencies.field_key for field-scoped rotation checklist filtering; added a stated forcing function tying capabilities[] enforcement to the sandboxing work item; hardened theming (asset-fetch-location clarification, CSS-injection token grammar, per-file reload validation, orphaned-theme fallback); added email-first SSO login UI routing; documented .env import behavior for multi-field secrets. See Authentication & Security, Data Architecture, and Frontend Architecture (Theming) sections for the additions.'
 project_name: 'Project Vault'
 user_name: 'Nestor'
 date: '2026-05-28'
@@ -262,6 +270,21 @@ second story before any feature implementation begins.
 - Error monitoring: Sentry (v1.1 — structured logs + Prometheus sufficient for v1)
 - Horizontal scaling / shared cache: in-memory LRU tier cache is a single-instance constraint; Redis or DB-backed cache required before multi-container deployment
 - WebSocket upgrade: SSE covers all server-push use cases in v1
+- Community extension sandboxing runtime (subprocess vs. WASM/Wasmtime/Wasmer vs. worker_threads-based isolation): **deliberately not decided now.** Researched candidates all have real trade-offs (Node `vm` is explicitly not a security boundary per Node's own docs; `isolated-vm`-style in-process isolation has a real CVE history; `worker_threads` alone doesn't stop `SharedArrayBuffer`-mediated access; WASM runtimes are the most credible modern option but add meaningful build/runtime complexity). The PRD defers third-party community extensions to a later Growth phase — deciding the sandboxing runtime now risks anchoring on a technology stale by the time it's built. **What is decided now instead:** the Extension API hook contract is serializable-data-only (see Authentication & Security), which keeps the eventual choice of sandboxing transport an implementation detail, not an API-breaking migration.
+- **Forcing function (added on review, closes a footgun):** the `capabilities[]` informational-only decision (see API & Communication Patterns) is deliberately coupled to this deferral, not independent of it. **The community-extension sandboxing work item's Definition of Done explicitly includes flipping `capabilities[]` enforcement on** — a loader-level check that rejects any hook registration not declared in the extension's manifest. Sandboxing without this flip would ship physical process isolation while silently leaving the authorization-scope promise in the Security NFR ("Extension trust isolation") unfulfilled. This bullet is the tracking marker; do not close the sandboxing work without it.
+
+**Phase 2 Critical Decisions (added 2026-07-23 — PRD Phase 2 scope):**
+- Multi-field secrets: `credential_versions.fields` encrypted JSONB envelope (whole field-set is one ciphertext), `credential_versions.field_meta` unencrypted JSONB (field keys/sensitivity/template — never values)
+- `credentials.current_version_id` — explicit FK, flipped atomically in the same rotation-completion transaction (extends the existing compound-transaction pattern to the version pointer itself)
+- Extension loading: `VAULT_EXTENSIONS_PACKAGE` env var + native ESM dynamic `import()`; absent = zero behavior change
+- Extension API hook contract: serializable-data-only across every hook boundary, including the founder's in-process trusted extension
+- No community-extension install pathway yet — loader accepts only the founder's exact designated private package identity, closing the interim trust gap before sandboxing exists
+
+**Phase 2 Important Decisions:**
+- Auth extension hooks via `registerAuthStrategy()` Fastify decorator; local strategy always index 0, never removable
+- i18n: Paraglide JS (`@inlang/paraglide-js`) — SvelteKit's officially recommended compiler-based library
+- Theming: Tailwind v4 native `@theme` CSS custom properties, compiled from structured theme files at read time (not build time)
+- `packages/extension-api` workspace package with hard-gate capability negotiation (semver check before any hook wiring)
 
 ### Data Architecture
 
@@ -299,6 +322,19 @@ second story before any feature implementation begins.
 **Full-text Search:**
 - PostgreSQL `tsvector` for cross-project search (FR80)
 - Sufficient for v1 at target scale (10,000 secrets); no external search engine needed
+
+**Multi-field secrets (Phase 2 — FR10/FR12/FR18/FR96/FR111/FR112):**
+- `credential_versions.fields` — JSONB column holding the encrypted envelope. **Correction found during validation:** the plaintext encrypted today is a bare string (confirmed by the existing revelation path: `withSecret(encryptedValue, (plaintext: Buffer) => plaintext.toString('utf8'))` returns a raw string, not JSON) — so claiming old ciphertext can simply be "read as" `{"value": "..."}` is false; the stored bytes don't parse as JSON. For legacy rows, the read path decrypts exactly as it does today (`plaintext.toString('utf8')` → bare string) and the *application layer* wraps it into the `{ fields: [{ key: 'value', ... }] }` response shape at serialization time — the stored ciphertext itself is never touched or re-encrypted. This is genuinely migration-free (no batch re-encryption job, no downtime), but it is NOT "old rows already contain JSON" — that claim from the initial pass was wrong and is corrected here.
+- `credential_versions.field_meta` — separate, **unencrypted** JSONB column, **nullable**: `[{ key: string, sensitive: boolean, template?: 'login' | 'db_connection' | 'api_key' | 'secure_note' | 'custom' }]` for Phase 2+ rows; `NULL` for legacy rows. List/masking UI reads `field_meta` only — it never calls `withSecret()` to render which fields exist or whether they're masked; a `NULL` `field_meta` renders as a single unnamed masked field, matching current single-value UI behavior exactly. Only an explicit reveal action touches the encrypted `fields` envelope. **Trade-off, stated explicitly:** `field_meta.key` (the field's label, e.g. "password") sits in cleartext — this is intentional, not an oversight. The encryption boundary in this system has always been "protect the value," not "protect the schema of what the user named it" (the same trade-off every credential manager with custom fields makes); `field_meta` requires no permission beyond what's already needed to see the credential exists, since it's RLS-scoped identically to the rest of the row, and the masking UI cannot function without reading it unencrypted.
+- **`credential_versions.schema_version smallint NOT NULL DEFAULT 1`** — replaces `field_meta IS NULL` as the legacy/Phase-2 discriminator (added on review: a nullable column doing double duty as both real metadata and a format-version marker is fragile — a future write-path bug that writes Phase 2 JSON ciphertext but leaves `field_meta` NULL would misread structured data as a legacy bare string, an information-shape confusion bug, not a security boundary crossing, but a real bug class). `1` = legacy bare-string plaintext, `2` = field-set JSON plaintext with `field_meta` populated. Every write path sets this explicitly; the read path branches on `schema_version`, not on `field_meta`'s nullability.
+- **Field key uniqueness (added on review — was unaddressed):** field keys within a single secret's `field_meta` must be unique (case-insensitive comparison). Enforced at the service layer on field create/rename — a rename that collides with an existing field key on the same secret is rejected with a `409` validation error, never a silent overwrite.
+- `credentials.current_version_id` — explicit FK to `credential_versions.id`. Flipped atomically inside the same rotation-completion transaction that already writes the new `credential_versions` row, updates `rotations.status`, and confirms `rotation_checklist_items` (per the existing compound-transaction Reliability NFR). Never derived via `MAX(created_at)` — a derived pointer is ambiguous during the window between a new version's insert and the rotation's confirmation.
+- **Backfill migration (added on review — was a silent gap):** a one-time migration (same script pattern as `check-rls-coverage.ts`) sets `current_version_id` on every pre-existing `credentials` row to its latest `credential_versions.id` by `created_at`, run as part of the Phase 2 migration and required to complete before any application code that assumes `current_version_id` is non-null deploys. Without this, every credential that predates Phase 2 and has never been rotated since would have a permanently `NULL` pointer with no defined read behavior.
+- **`credential_dependencies.field_key text` — new nullable column (added on review, closes an internal inconsistency):** the original Phase 2 pass claimed field-scoped rotation's checklist "scopes to the dependent systems affected by the changed field(s)" but `credential_dependencies` had no column tying a dependency to a specific field, making that claim architecturally unimplementable as stated. `NULL` = the dependency applies to the credential as a whole (any field change affects it — the correct default, and the only behavior for pre-Phase-2 single-value secrets); non-null = the dependency is scoped to that specific field key. Rotation checklist generation filters `credential_dependencies` by `target_fields IS NULL OR field_key IS NULL OR field_key = ANY(target_fields)`.
+- **Field-scoped rotation reuses the existing credential-level advisory lock** (pg-boss `rotation:*`, `teamConcurrency: 1` — see Data Flow #4) — no new concurrency primitive; a second concurrent rotation attempt gets the existing explicit `409 ROTATION_IN_PROGRESS` (see Process Patterns), never silent interleaving. A rotation targeting a subset of fields (e.g., password only) still locks the whole credential for its duration; the lock and confirm-then-retire state machine are unchanged from whole-value rotation.
+- **`rotations.target_fields text[]`** — new nullable column: `NULL` means whole-secret rotation (single-value secrets, or a multi-field secret rotated in full), non-null lists the specific field keys targeted (e.g., `['password']`). Required for rotation history (FR23) to answer "what actually changed" for a multi-field secret, not just "that a rotation happened."
+- **Field-level reveal audit (FR96/FR112):** `audit_log_entries` gains a `revealed_fields text[]` column, nullable, populated only on `AuditEvent.CREDENTIAL_VALUE_REVEALED` — records which field key(s) were revealed in that event rather than only "the secret was accessed." The machine user reveal route (`GET /api/v1/machine/projects/{projectId}/credentials/{name}/value`) accepts an optional `?field=` query param for field-scoped fetch; omitting it returns all non-masked-by-default fields in one response, consistent with the current single-value response shape for backward compatibility.
+- **Bulk import interaction (added on review — was undocumented):** `.env`/JSON import (FR17) creates single-field secrets only, one per imported key/value pair — bulk import does not attempt to group related keys into a multi-field secret (e.g., `DB_USER`/`DB_PASS` import as two separate single-field secrets, not one two-field secret). Grouping into multi-field secrets is a manual, post-import user action. This keeps import behavior unambiguous and matches existing conflict-resolution semantics (FR17) without inventing new heuristics for what "related" means.
 
 **Email:**
 - `nodemailer` with SMTP transport
@@ -344,6 +380,22 @@ second story before any feature implementation begins.
 - Populated by Fastify auth middleware on every authenticated request
 - `tierLimits` fetched from in-memory LRU cache (≤60s TTL)
 - Sealed `SecureRoute` handler abstraction — all routes use it; concerns are opt-out not opt-in
+
+**Auth extension hooks (Phase 2 — FR115):**
+- `registerAuthStrategy(strategy: AuthStrategy)` — a Fastify decorator exported from `apps/api/src/modules/auth/strategies.ts`. The built-in local (email/password + MFA) strategy registers first, at module load, before any extension bootstrap runs. Extensions call `registerAuthStrategy()` during their own registration; `authStrategies` is append-only at boot — no runtime add/remove.
+- **Architectural invariant — the enforceable definition of "core never special-cases the extension":** `POST /api/v1/auth/login` and the SSO callback route always iterate `authStrategies` (a list, never empty — local is always index 0). The route handler code is identical whether the list has 1 entry or 5; an installed extension changes DATA (list contents), never the CODE PATH.
+- External strategies call the same internal `issueSession()` local login uses — same `sessions`/`refresh_tokens` rows, same JWT TTL/rotation, same MFA-enforcement invariant for OrgAdmin/Owner. An SSO-authenticated OrgAdmin without MFA enrolled hits the identical `403 MFA_ENROLLMENT_REQUIRED` check as a local-auth OrgAdmin — this is architecturally guaranteed, not just claimed, by the identity-binding design below: an SSO login always resolves to a real `users` row with the same `mfa_enrolled_at` field, never a synthetic session bypassing it.
+- **Per-strategy fault isolation:** each strategy invocation is wrapped in try/catch at the dispatch layer in `strategies.ts`; a thrown/rejected strategy is logged (`pino.error`) and skipped — never propagates to the request handler. Local strategy remains reachable regardless of any extension strategy's failure state.
+- **Hook payload contract — serializable data only, even in-process:** every Extension API hook (auth-provider, notification-channel, UI-panel) receives and returns only plain JSON-serializable data — no live DB client, no `SecureRoute`/`AuthContext` object, no `SecretValue`/decrypted-value reference, no Drizzle query builder. Applies identically to the founder's own in-process trusted extension. Cost today: negligible. Benefit: swapping the transport to subprocess/WASM message-passing later (when community extension sandboxing ships) is an internal implementation change behind the same interface, not an Extension API breaking change.
+
+**Identity binding for external auth strategies (added on review — was a silent gap, the sharpest finding of this pass):** the original design let `onAuthenticate()` return an `AuthResult` that flowed unvalidated into `issueSession()`, with no stated mechanism for resolving that result to an actual `users` row. This is architecturally the entire attack surface a malicious or buggy auth extension would have — unlike the sandboxing deferral, it was never flagged as deferred, it was just missing. Fixed as follows:
+- **`AuthResult` shape:** `{ externalSubject: string, providerName: string, email?: string, displayName?: string }` — the strategy asserts an external identity, never an internal `userId` directly. No strategy, including the founder's own trusted extension, may assert `userId` — this keeps the identity-binding check uniform regardless of trust level, so the mechanism doesn't need to change when community extensions eventually use the same hook.
+- **New table `external_identities`**: `(id uuid PK, org_id uuid, user_id uuid FK → users.id, provider_name text, external_subject text, created_at timestamptz)`, unique on `(org_id, provider_name, external_subject)`. `issueSession()` for a non-local strategy looks up this table by `(org_id, providerName, externalSubject)` from the `AuthResult` — a hit resolves to `user_id` and proceeds exactly like local login from that point; a miss does **not** auto-provision.
+- **No auto-link-by-email.** Auto-provisioning or linking an `external_identities` row purely because `AuthResult.email` matches an existing `users.email` is explicitly rejected as a decision — email verification status varies by IdP and by extension trustworthiness, and auto-linking by email is a known account-takeover vector (a compromised or misconfigured IdP asserting an arbitrary email would silently gain access to that email's existing account). **On a miss:** the login flow surfaces a "link your account" step, consistent with this product's existing invite-based membership model (FR2) — a pending invitation for that email, or an OrgAdmin-initiated linking action, is required to create the `external_identities` row. First-time SSO login with no matching invitation or admin-initiated link is rejected, not auto-provisioned.
+- **CSRF / state-parameter validation (added on review — was entirely undocumented, a known severe vulnerability class for SSO flows):** at auth-initiation (`GET /api/v1/auth/sso/start` or equivalent), the server generates a cryptographically random `state` value (OAuth/OIDC) or `RelayState` (SAML), stores it server-side keyed to a short-TTL (10 min), single-use, `httpOnly; Secure; SameSite=Lax` cookie — never client-readable, never round-tripped through a query parameter alone. On callback, the strategy's dispatch handler validates the returned `state`/`RelayState` against the stored value before `onAuthenticate()` is even invoked; a mismatch or expired/already-consumed state is rejected with a generic auth error, never silently ignored.
+- **SSO callback route shape:** one fixed route, `POST /api/v1/auth/sso/callback/:providerName` — `providerName` in the path (not extension-defined) dispatches to the matching registered strategy in `authStrategies`. This keeps the "list, never a special case" invariant intact at the route-topology level too, not just in the dispatch code.
+- **Login screen UI:** email-first. The user enters their email on the initial login screen; the server checks whether that email's domain maps to an org with an SSO strategy registered (a simple `org_sso_domains` lookup, org-configured) — if yes, the browser redirects into that strategy's SSO flow; if no, the password field renders. This avoids requiring the user to know their org's SSO status upfront and avoids a separate org-picker step for the common case.
+- **All hook methods are `async`/`Promise`-returning — never sync,** including `onRenderPanel`. Uniform async contract lets core await every hook identically regardless of implementation; a sync method would be the one inconsistent case an unfamiliar agent could plausibly write.
 
 ### API & Communication Patterns
 
@@ -418,6 +470,12 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 - In-app notification when newer image available (checked against GHCR API on startup, cached 24h)
 - Upgrade procedure: `docker compose pull && docker compose up -d` with documented in-place runbook (FR50)
 
+**Extension API package (Phase 2 — FR113/FR114):**
+- New workspace package `packages/extension-api`: exports `defineExtension()`, typed hook interfaces (`AuthStrategy`, `NotificationChannel`, `UIPanel`), and `registerExtension(manifest: ExtensionManifest, hooksFactory: () => ExtensionHooks)`. Depended on by `apps/api` (core) and by any extension package (private today; community, once sandboxing ships).
+- **`hooksFactory` is lazy — this is what makes capability negotiation a real gate, not an aspirational one.** `registerExtension()` validates `manifest` (identity + `semver.satisfies(EXTENSION_API_VERSION, manifest.apiVersion)`, via the `semver` npm package — not hand-rolled range parsing) *before* ever calling `hooksFactory()`. If negotiation fails, `hooksFactory` is never invoked — no extension code runs at all, let alone wires into `authStrategies`, notification dispatch, or UI panels. An eager `hooks` object (constructed before negotiation) would make "gate before any hook wires" false, since side effects during construction would already have run.
+- **`capabilities: string[]` in the manifest is informational/audit-only in this phase — not an enforced authorization boundary.** Nothing currently stops an extension from calling `registerAuthStrategy()` regardless of what it declared in `capabilities`. This is a deliberate, stated deferral (not an accidental gap): meaningful enforcement requires the same trust infrastructure being built for community-extension sandboxing, and enforcing it early against a single origin-locked, fully-trusted extension adds cost without adding real security. Declared `capabilities` are recorded in the `EXTENSION_LOADED` audit event for visibility.
+- **`packages/extension-api` version-skew CI guard:** a script (same pattern as this repo's existing `check-story-status-sync.ts`/`check-psc-tbd-tracking.ts` guards) fails CI if any file under `packages/extension-api/src/**` changes without a corresponding `package.json` version bump in the same commit — prevents the private extension repo silently building against stale published types.
+
 ### Frontend Architecture
 
 **Framework:** SvelteKit 2 + Svelte 5 (runes-first)
@@ -444,6 +502,21 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 - `(app)/` — authenticated routes
 - `(app)/projects/[projectId]/` — project-scoped routes
 
+**Internationalization (Phase 2 — FR117/FR118/FR119):**
+- Paraglide JS (`@inlang/paraglide-js`) — SvelteKit's officially recommended, compiler-based i18n library; tree-shaken, typesafe message functions, ~70% smaller bundles than runtime i18n libraries
+- Message files: `apps/web/messages/{locale}.json`
+- **Supported locale set is build-time; locale selection is runtime.** Adding a new language requires a deploy (compiler step). A user's or org's locale *selection* (FR117/FR119) among already-supported locales is instant — no rebuild. These are two different mechanisms that read the same in the PRD's prose; keep them distinct in implementation and in any UI copy that references "language settings."
+- Missing keys fall back to English per Paraglide's built-in fallback chain (NFR)
+
+**Theming (Phase 2 — FR120/FR121):**
+- Base theme: default Tailwind v4 `@theme` block. Tailwind v4 maps all design tokens to CSS custom properties natively — no custom CSS-in-JS runtime needed.
+- A structured theme file (JSON/YAML tokens + asset references) placed in the configured, non-tracked theme directory is compiled server-side, **on read** (not at build time), into a `[data-theme="name"]` CSS custom-property override block served alongside the app shell — genuine runtime switching, satisfying the "no rebuild" NFR directly via Tailwind v4's native mechanism.
+- **Theme asset URLs are never fetched server-side (added on review — was ambiguous).** Asset references (fonts, images, logo) in a theme definition are passed through to the compiled `[data-theme]` block as literal URLs; the browser fetches them directly, the server never proxies or caches them. This means the webhook-style DNS-rebinding TOCTOU concern (resolve-then-fetch-later) doesn't apply the same way here — there is no server-side fetch step to rebind against. What the server-side blocklist check *does* still matter for: rejecting an asset URL that targets internal infrastructure at **install/reload time**, so the compiled theme served to browsers never contains a reference an org's network topology would let a browser reach that a public one couldn't (e.g., an internal service reachable only from inside the Docker network, if the admin's own browser happens to have that access) — same blocklist (RFC 1918 / localhost / link-local / cloud metadata endpoints) as webhooks, checked once at install/reload, not re-validated per-request since there's no server-side fetch to re-validate.
+- **Theme token CSS-injection sanitization (added on review — was unaddressed, a real XSS-adjacent surface for a credentials-manager UI):** theme JSON/YAML token values are compiled directly into CSS custom-property declarations (`--token-name: <value>;`). Without validation, a hostile value could break out of the custom-property value position and inject arbitrary CSS — a real technique (CSS-selector-based exfiltration of form input values) that matters more than average here given this UI sometimes populates `<input>` fields with sensitive values. **Every token value is validated against a strict, per-token-type grammar before compilation** — a `<color>` token accepts only a constrained color grammar (hex/rgb/hsl, no `url()`, no `;`, no `}`), a `<length>` token accepts only a numeric+unit pattern, enum-typed tokens (e.g., a named font-weight) accept only their declared enum values. Any value that doesn't match its token's grammar fails validation (same fallback-to-base-theme behavior as a malformed theme file) rather than being string-concatenated raw. This is the CSS-compilation-path equivalent of the existing `{@html}` CI gate (Format Patterns) — same category of protection, different surface.
+- **Theme validation failure:** malformed or blocklist-violating theme definitions fail validation at load time with a logged error; the system falls back to the base theme rather than rendering a broken or unsafe UI (NFR).
+- **Missing `VAULT_THEMES_DIR` is not an error** — same "absent = zero behavior change" parallel as the extension loader: no directory means zero custom themes, base theme only. The reload endpoint (see Process Patterns) treats a missing directory identically to an empty one.
+- **Orphaned theme selection (added on review):** if an admin removes a theme file from `VAULT_THEMES_DIR` and reloads while a user has that theme selected, the user's next page load falls back to the base theme silently (same behavior as a validation failure) plus a one-time, dismissible in-app notice ("your selected theme is no longer available, showing the default") — never a broken/unstyled UI and never a hard error blocking the user from the product.
+
 ### Infrastructure & Deployment
 
 **Deployment:** Docker / Docker Compose (self-hosted primary)
@@ -469,6 +542,13 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 
 **Environment configuration:** 12-factor; all config via environment variables
 
+**Extension loading (Phase 2 — FR114):**
+- `apps/api` reads `VAULT_EXTENSIONS_PACKAGE` (npm package name, private-registry-resolvable) at boot. Unset: zero extension code loads, zero behavior change — the tested, supported default for self-hosted Docker deployments. Set: native ESM `import()` (no bundler/loader plugin required — stable since Node 12), then call its exported `register()`.
+- **Extension load failure does not crash core:** a failed import or failed capability negotiation is caught at the call site in `apps/api/src/extensions/loader.ts`, logged at `pino.fatal`-equivalent severity, and surfaced as `extensions_status: "load_failed"` on the existing `GET /health` readiness payload (FR81) — the API process still starts and serves all core functionality. Deliberate divergence from a hard boot-crash: a self-hosted admin's extension misconfiguration must not take down their vault.
+- **No community-extension install pathway yet:** `loader.ts` resolves `VAULT_EXTENSIONS_PACKAGE` by exact package identity only (the founder's designated private package name, pinned) — no admin-facing "install an extension from anywhere" flow exists. Sandboxing is a prerequisite for safely loading arbitrary third-party code and doesn't exist yet; FR116 stays deferred at the loader level, not just the UI/approval-flow level, closing the interim window where a community extension could otherwise run with the same in-process trust as the founder's own code.
+- The self-hosted Docker image build never includes or requires `VAULT_EXTENSIONS_PACKAGE` to resolve. The private SaaS deployment (Growth-phase, founder-controlled infrastructure only) is a separate build/deploy target that layers the extension package on top — out of scope for the OSS Docker Compose artifact.
+- **`GET /api/v1/admin/extensions/status`** (OrgAdmin only) — returns the currently loaded extension's manifest (`name`, `apiVersion`, `capabilities`, `loadedAt`) or `null` if none is loaded/failed. Backs the `(app)/admin/extensions/` status view already in the project structure; found missing during validation — the admin UI page had no route to read from.
+
 ### Decision Impact Analysis
 
 **Implementation Sequence (order matters):**
@@ -491,6 +571,8 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 - `packages/crypto` ← depended on by `apps/api` only (server-side only)
 - pg-boss workers ← depend on `packages/db` for job payload types and `packages/crypto` for secret operations
 - SSE stream ← depends on injected EventEmitter shared between HTTP handlers and pg-boss workers
+- `packages/extension-api` ← depended on by `apps/api` (core loader + hook dispatch) and any extension package (external, private today, community once sandboxing ships)
+- `apps/web` ← depends on `@inlang/paraglide-js` compiler output for message functions
 - `apps/web` typecheck ← depends on `api#generate-spec` via Turborepo task graph
 
 ## Implementation Patterns & Consistency Rules
@@ -498,6 +580,8 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 ### Critical Conflict Points Identified
 
 15 areas where AI agents working independently could make incompatible choices, addressed across 4 rounds of elicitation: naming conventions, API noun/URL structure, database schema conventions, audit event type format, SSE event naming, pg-boss job naming, file/module organization, TypeScript usage patterns, Drizzle query layer ownership, error handling, loading state, date/time handling, SSE connection lifecycle, integration test setup, and commit convention.
+
+**Phase 2 additions (2026-07-23):** 6 further conflict points closed for the PRD's extension/i18n/theming/multi-field-secrets scope — extension hook naming and manifest identity format, extension/theme audit event registry entries, extension and theme filesystem layout (including the `VAULT_THEMES_DIR` persistent-volume requirement), the extension manifest TypeScript shape, the field-set secret response shape (masked-vs-omitted convention), and the theme-reload trigger (explicit action, not a filesystem watcher).
 
 ### Naming Patterns
 
@@ -564,6 +648,9 @@ export const AuditEvent = {
   MFA_ENROLLED: 'MFA_ENROLLED',
   MFA_RECOVERY_USED: 'MFA_RECOVERY_USED',
   LOGIN_FAILED: 'LOGIN_FAILED',
+  EXTENSION_LOADED: 'extension.loaded',
+  EXTENSION_LOAD_FAILED: 'extension.load_failed',
+  THEME_RELOADED: 'theme.reloaded',
 } as const
 export type AuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent]
 // NOTE: earlier auth/session/MFA entries keep the legacy uppercase-string value style
@@ -619,6 +706,18 @@ GET /api/v1/projects/{projectId}/credentials/{credentialId}/value
 - Scope optional: `feat(rotation): add mid-rotation dependency discovery`
 - Enforced by `commitlint` in CI; required for changelog generation and version tagging
 
+**Extension Hook Naming (Phase 2):**
+- Hook interface methods: `onX` prefix, verb-first, **always `async`/`Promise`-returning — never sync, including `onRenderPanel`** — `onAuthenticate(credentials): Promise<AuthResult | null>`, `onNotify(event): Promise<void>`, `onRenderPanel(context): Promise<PanelDefinition>`
+- Extension manifest identity field: `name` — reverse-DNS-style string (`com.projectvault.saas-extension`), validated against `/^[a-z0-9]+(\.[a-z0-9-]+)+$/` at registration. Collision-handling across multiple extensions is N/A while the loader is origin-locked to a single designated package (see Infrastructure & Deployment) — do not build multi-extension collision logic prematurely.
+- Env vars: `VAULT_EXTENSIONS_PACKAGE` (extension loading), `VAULT_THEMES_DIR` (theme directory — see Structure Patterns) — both follow the existing `VAULT_*` env var prefix already used elsewhere in this codebase; never bare names like `EXTENSIONS_PACKAGE`
+
+**Extension & Theme Audit Event Names (add to `packages/shared/constants/audit-events.ts` — lowercase dot-notation, matching the domain-event style already established, not the legacy uppercase style):**
+```typescript
+EXTENSION_LOADED: 'extension.loaded',
+EXTENSION_LOAD_FAILED: 'extension.load_failed',
+THEME_RELOADED: 'theme.reloaded',
+```
+
 ### Structure Patterns
 
 **Backend Module Organization (`apps/api/src/`):**
@@ -661,6 +760,19 @@ lib/
 - Unit tests: co-located `*.test.ts` next to the file under test
 - Integration tests: `apps/api/src/__tests__/` — always use `withTestOrg()` helper
 - E2E: `apps/web/e2e/` — Playwright
+
+**Extension & Theming Structure (Phase 2):**
+```
+packages/extension-api/
+  src/
+    index.ts        # defineExtension(), registerExtension(), EXTENSION_API_VERSION
+    hooks/           # AuthStrategy, NotificationChannel, UIPanel type definitions
+apps/api/src/
+  extensions/
+    loader.ts        # VAULT_EXTENSIONS_PACKAGE resolution, capability negotiation, registration
+apps/web/messages/{locale}.json   # Paraglide i18n message files (already stated in Frontend Architecture)
+```
+- **Theme directory:** `VAULT_THEMES_DIR` env var, default `/data/themes` inside the Docker Compose volume already mounted for persistent state — never a path inside the application image (themes must survive image upgrades). Documented in the deployment guide alongside the existing backup/data volume conventions.
 
 ### Format Patterns
 
@@ -708,6 +820,26 @@ On failure: `{ verified: false, firstFailedEntryId: string, ... }`
 This is the ONLY integrity verification endpoint.
 
 **CSV Export Column Naming:** camelCase headers, ISO 8601 timestamps, `true`/`false` booleans
+
+**Extension Manifest Shape (`packages/extension-api`, Phase 2):**
+```typescript
+interface ExtensionManifest {
+  name: string              // reverse-DNS style, see Naming Patterns
+  apiVersion: string        // semver range this extension targets, e.g. "^1.2.0" — checked via semver.satisfies(), never hand-rolled
+  capabilities: ('auth-provider' | 'notification-channel' | 'ui-panel')[]  // informational/audit-only this phase — see rationale below
+}
+// registerExtension() takes a lazy factory, not eager hooks — negotiation runs before this is ever called
+function registerExtension(manifest: ExtensionManifest, hooksFactory: () => ExtensionHooks): void
+```
+- Thin by design — identity + capability negotiation only. Actual hook wiring is a typed code-based registration call (`registerAuthStrategy(strategy)`, etc.), not manifest-declared — see Authentication & Security decision rationale.
+- **`capabilities[]` is not yet an enforced authorization boundary** — nothing currently stops an extension from calling a hook-registration function outside its declared capabilities. This is deliberate for the current single-trusted-extension phase (see API & Communication Patterns rationale); do not assume it gates anything until community-extension sandboxing ships.
+- **All public types re-export from the package root** (`@project-vault/extension-api`) — an extension author never imports from a `hooks/` subpath directly.
+
+**Field-Set Secret Response Shape (multi-field secrets, Phase 2):**
+```typescript
+{ data: { fields: Array<{ key: string, value?: string, sensitive: boolean, template?: string }>, versionNumber: number } }
+```
+- `value` is present per-field only when that field was included in the reveal request (see the `?field=` query param decision in Data Architecture) — masked fields not explicitly revealed omit `value` entirely rather than sending a placeholder string, so the client never has to distinguish "empty" from "masked-and-not-fetched"
 
 ### Communication Patterns
 
@@ -759,6 +891,8 @@ let items = $state<Item[]>([])
 export function getItems() { return items }
 export function addItem(i: Item) { items = [...items, i] }
 ```
+
+**Extension Lifecycle Audit Trail (Phase 2):** `apps/api/src/extensions/loader.ts` writes `AuditEvent.EXTENSION_LOADED` (with `manifest.name`, `manifest.apiVersion`, `manifest.capabilities`) on successful registration and `AuditEvent.EXTENSION_LOAD_FAILED` on failure. **The failure reason is a fixed enum — `'import_error' | 'manifest_invalid' | 'capability_mismatch'` — never the raw exception message or stack trace,** consistent with this codebase's existing "secret values must not appear in logs, stack traces, or error messages" pattern (Non-Functional Requirements → Security), extended here since a failed extension import could otherwise leak internal paths or config content. Same admin audit trail as the existing "Vault configuration change management" pattern (key unsealing policy, RBAC structure changes) — extension load is a security-relevant admin-facing event, not merely an operational health signal, consistent with this product's 100% audit-completeness NFR. Theme reload (see Process Patterns) similarly writes `AuditEvent.THEME_RELOADED`.
 
 ### Process Patterns
 
@@ -826,6 +960,11 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 
 **Loading State:** `isLoading` for fetches; `is{Action}ing` for mutations; always reset in `finally`
 **Validation Timing:** backend via Fastify+Zod before any business logic; frontend on blur + submit
+
+**Theme Reload Trigger (Phase 2 — explicit action, not filesystem watch):** an OrgAdmin-only `POST /api/v1/admin/themes/reload` endpoint (or equivalent admin-UI action) reads `VAULT_THEMES_DIR` once at invocation, validates and compiles all theme files found, and writes `AuditEvent.THEME_RELOADED`. No `fs.watch()` — a low-frequency operation doesn't justify a persistent watcher process, its debounce logic, or its silent-failure modes. Startup also performs one reload pass automatically, so a fresh container picks up mounted themes without a manual trigger.
+- **Reload response specificity (added on review):** the reload endpoint validates theme files independently — one malformed file does not block the others from loading. The response reports per-file status: `{ loaded: string[], failed: { file: string, reason: string }[] }`, where `reason` is a specific, actionable validation message (e.g., "token `primaryColor`: invalid color value", not a generic "validation failed") so an admin can fix the actual problem without guessing.
+
+**Extension Registration Ordering (Phase 2 — restated from Authentication & Security for implementation-time visibility):** boot sequence is (1) built-in local auth strategy registers, (2) `VAULT_EXTENSIONS_PACKAGE` resolved if set, (3) manifest validated + `semver.satisfies()` capability negotiation checked — `hooksFactory` is **not yet called**, so zero extension code has executed at this point, (4) on success, `hooksFactory()` is invoked and its returned hooks append to `authStrategies`/notification dispatch/UI panels, then `AuditEvent.EXTENSION_LOADED` writes; on failure at any point in (2)-(3), `hooksFactory` is never called, core continues with local-only auth, and `AuditEvent.EXTENSION_LOAD_FAILED` writes with a fixed-enum reason — never a partial registration.
 
 ### Enforcement Guidelines
 
@@ -900,24 +1039,29 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 | Backup & Restore | `modules/backup/` | `(app)/admin/backup/` | `workers/backup-snapshot.ts` |
 | Org Health (Buyer View) | `modules/org-health/` | `(app)/org-health/` | `workers/org-health-snapshot.ts` |
 | Compliance Reporting | `modules/compliance/` | `(app)/admin/compliance/` | — |
+| Extension & Plugin Architecture (Phase 2, FR113-116) | `packages/extension-api/`, `apps/api/src/extensions/loader.ts`, `modules/auth/strategies.ts` | `(app)/admin/extensions/` (status/audit view only — no install UI yet, see Infrastructure & Deployment) | — |
+| Internationalization & Localization (Phase 2, FR117-119) | — (no backend module; locale preference stored on `users`/`organizations`) | `apps/web/messages/{locale}.json`, `(app)/settings/language/` | — |
+| Theming (Phase 2, FR120-121) | `apps/api/src/modules/theming/` (reload endpoint) | `apps/web/src/lib/theme/`, `(app)/admin/themes/` | — |
 
 ### Canonical Schema Entity Names (complete)
 
 | Entity | Table Name | Notes |
 |---|---|---|
-| Credentials | `credentials` | Core credential storage |
-| Credential versions | `credential_versions` | Immutable — no `updated_at` |
-| Credential dependencies | `credential_dependencies` | Systems depending on a credential |
-| Rotation records | `rotations` | One per initiated rotation |
+| Credentials | `credentials` | Core credential storage; `current_version_id` FK → `credential_versions.id`, flipped atomically on rotation completion |
+| Credential versions | `credential_versions` | Immutable — no `updated_at`; `fields` JSONB (encrypted envelope, whole field-set), `field_meta` JSONB (unencrypted: field keys/sensitivity/template, unique field keys per secret), `schema_version smallint NOT NULL DEFAULT 1` (1=legacy bare string, 2=field-set JSON — the authoritative format discriminator) |
+| Credential dependencies | `credential_dependencies` | Systems depending on a credential; `field_key text` nullable — NULL = depends on the whole credential, non-null = scoped to that field (multi-field secrets) |
+| Rotation records | `rotations` | One per initiated rotation; `target_fields text[]` nullable — NULL = whole-secret, non-null = specific field keys (multi-field secrets) |
 | Rotation checklist items | `rotation_checklist_items` | Per-system confirmation records |
 | Projects | `projects` | Primary org unit |
 | Users | `users` | Human users; includes `mfa_enrolled_at` |
 | MFA enrollments | `mfa_enrollments` | TOTP devices; supports future multi-device |
+| External identities (Phase 2) | `external_identities` | SSO/auth-extension identity binding; `(id, org_id, user_id FK, provider_name, external_subject, created_at)`, unique `(org_id, provider_name, external_subject)`; no auto-link-by-email — see Auth extension hooks |
+| Org SSO domain mapping (Phase 2) | `org_sso_domains` | Maps an email domain to an org's registered SSO strategy for email-first login routing |
 | Machine users | `machine_users` | CI/CD + service identities |
 | API keys | `api_keys` | Hashed; includes `hmac_key_version integer NOT NULL DEFAULT 1` |
 | Sessions | `sessions` | JWT revocation; `(id uuid PK, jti text UNIQUE NOT NULL, user_id uuid FK, expires_at timestamptz, revoked_at timestamptz)` — one row per issued JWT; new row on each silent refresh. **No `org_id` — RLS exception (see below).** |
 | Refresh tokens | `refresh_tokens` | `(id uuid PK, session_id uuid FK → sessions.id, token_hash text NOT NULL, expires_at timestamptz NOT NULL, used_at timestamptz, new_session_id uuid FK → sessions.id, revoked_at timestamptz)` — one row per issued token. **Grace window pattern:** on refresh, set `used_at = now()` and `new_session_id` before issuing new tokens; retry within 30s of `used_at` re-issues same new tokens (idempotent); after 30s, `used` becomes `revoked`. `session:cleanup` worker removes rows where `expires_at < now() - interval '1 day'`. **No `org_id` — RLS exception (see below).** |
-| Audit log (security) | `audit_log_entries` | Immutable — no `updated_at`; composite index `(created_at DESC, id DESC)` |
+| Audit log (security) | `audit_log_entries` | Immutable — no `updated_at`; composite index `(created_at DESC, id DESC)`; `revealed_fields text[]` nullable, populated only on `CREDENTIAL_VALUE_REVEALED` for multi-field secrets |
 | Audit log (operational) | `audit_log_operational` | Background events; independent retention |
 | Organizations | `organizations` | Org/tenant root |
 | Org members | `org_memberships` | User ↔ org association |
@@ -973,11 +1117,14 @@ project-vault/
 │   │       │   ├── rate-limit.ts
 │   │       │   ├── swagger.ts        # @fastify/swagger — reads routes, generates OpenAPI spec
 │   │       │   └── sse.ts            # Thin SSE route — delegates to lib/sse-ring-buffer.ts
+│   │       ├── extensions/           # Phase 2 — general-purpose extension loading, distinct from plugins/ (rotation plugins)
+│   │       │   └── loader.ts         # VAULT_EXTENSIONS_PACKAGE resolution, semver.satisfies() gate, hooksFactory invocation, EXTENSION_LOADED/EXTENSION_LOAD_FAILED audit
 │   │       ├── modules/
 │   │       │   ├── auth/
 │   │       │   │   ├── routes.ts     # POST /auth/login, /auth/logout, /auth/refresh
 │   │       │   │   ├── service.ts
 │   │       │   │   ├── mfa.ts        # TOTP enroll, verify, recovery codes (otpauth)
+│   │       │   │   ├── strategies.ts # Phase 2: registerAuthStrategy(); authStrategies list, local always index 0
 │   │       │   │   └── schema.ts
 │   │       │   ├── projects/
 │   │       │   │   ├── routes.ts     # CRUD + members + archive
@@ -1042,6 +1189,10 @@ project-vault/
 │   │       │   │   ├── routes.ts     # POST /admin/backup/trigger, GET /admin/backup/status
 │   │       │   │   ├── service.ts    # Delegates to packages/crypto/workers/backup-encrypt.worker.ts
 │   │       │   │   └── schema.ts
+│   │       │   ├── theming/          # Phase 2: OrgAdmin-only, flat module (not nested under admin/)
+│   │       │   │   ├── routes.ts     # POST /admin/themes/reload
+│   │       │   │   ├── service.ts    # Reads VAULT_THEMES_DIR, validates + compiles theme files
+│   │       │   │   └── schema.ts
 │   │       │   └── integrations/
 │   │       │       ├── github-actions/
 │   │       │       │   ├── routes.ts # POST /api/v1/integrations/github-actions/token
@@ -1092,6 +1243,9 @@ project-vault/
 │       ├── tsconfig.json
 │       ├── .env.example
 │       ├── playwright.config.ts              # globalSetup: './e2e/global-setup.ts'
+│       ├── messages/                         # Phase 2 — Paraglide i18n, build-time compiled
+│       │   ├── en.json
+│       │   └── {locale}.json                 # additional locales — new file = new locale = requires a deploy
 │       ├── e2e/
 │       │   ├── .env.test                     # API startup secrets for E2E test server (not committed)
 │       │   ├── global-setup.ts               # Loads e2e/.env.test → starts API → runs migrations → seeds
@@ -1144,8 +1298,10 @@ project-vault/
 │           │       │   ├── users/
 │           │       │   ├── backup/
 │           │       │   ├── compliance/          # SOC2/ISO reporting (OrgAdmin only)
+│           │       │   ├── extensions/          # Phase 2 — status/audit view only, no install UI (loader is origin-locked)
+│           │       │   ├── themes/              # Phase 2 — reload trigger + active theme selection
 │           │       │   └── settings/
-│           │       └── settings/
+│           │       └── settings/                # Phase 2: language preference lives here (FR117)
 │           └── lib/
 │               ├── components/
 │               │   ├── ui/                       # shadcn-svelte base components
@@ -1161,6 +1317,8 @@ project-vault/
 │               │   └── notifications.svelte.ts
 │               ├── api/
 │               │   └── client.ts                 # openapi-fetch typed client
+│               ├── theme/                         # Phase 2 — reads compiled [data-theme] CSS custom-property blocks
+│               │   └── apply-theme.ts
 │               └── utils/
 │                   ├── dates.ts
 │                   └── format.ts
@@ -1226,6 +1384,15 @@ project-vault/
 │   │   ├── openapi.json              # Generated — IS committed; CI verifies freshness
 │   │   └── api-types.ts              # Generated — IS committed; DO NOT EDIT
 │   │
+│   ├── extension-api/                # Phase 2 — types + hook contracts only, no implementation logic
+│   │   ├── package.json              # version bump required in same commit as any src/ surface change (CI-enforced)
+│   │   ├── tsconfig.json
+│   │   ├── index.ts                  # defineExtension(), registerExtension(), EXTENSION_API_VERSION — re-exports all hook types
+│   │   └── hooks/
+│   │       ├── auth-strategy.ts      # AuthStrategy interface
+│   │       ├── notification-channel.ts
+│   │       └── ui-panel.ts
+│   │
 │   ├── tsconfig/
 │   │   ├── base.json
 │   │   ├── node.json
@@ -1264,6 +1431,7 @@ Software-only audit log integrity (row checksums + cryptographic chaining) detec
 - `packages/db` — only package permitted to hold Drizzle schema and execute queries; exports `withOrg`, `withOrgReadScope`, `withAdminAccess`, `withRotationLock`, `Tx`
 - `packages/crypto` — encryption/decryption only; `apps/web` never touches crypto
 - `packages/shared` — API contract between api and web; no business logic; `openapi.json` and `api-types.ts` are committed and CI-verified for freshness
+- `packages/extension-api` — types + hook contracts only, no implementation logic; serializable-data-only across every hook boundary (no `Tx`, no `SecretValue`, no `AuthContext` exported); version-skew CI guard enforces publish-in-lockstep with any surface change
 - RLS at database level enforces org isolation; `SET LOCAL` always scoped to transaction via db helpers
 - `lib/org-queries.ts` — shared aggregation layer; both `org-health/` and `compliance/` import from here
 
@@ -1303,6 +1471,8 @@ Software-only audit log integrity (row checksums + cryptographic chaining) detec
 3. Monitoring worker → pg-boss `health:check` → HTTP probe → result stored → `emitSseEvent('service.health.changed', ...)` → SSE stream → dashboard update
 4. Rotation → human initiates → advisory lock on credential → checklist from `credential_dependencies` → per-system confirmation → all confirmed → old version retired → `AuditEvent.ROTATION_COMPLETED` → SSE + audit
 5. Org health → pg-boss `org:health-snapshot` every 30min → `lib/org-queries.ts` joins → `org_health_snapshots` row written → `GET /organizations/{orgId}/health` returns snapshot (fast single-row read)
+6. External auth (Phase 2) → SSO callback route → matching `AuthStrategy` in `authStrategies` → `issueSession()` (same path as local login) → MFA-enforcement invariant checked identically → response
+7. Extension boot (Phase 2) → `VAULT_EXTENSIONS_PACKAGE` resolved → dynamic `import()` → `registerExtension()` → capability negotiation gate → hooks wired into `authStrategies`/notification dispatch/UI panels, or load failure logged + `extensions_status: "load_failed"` on `/health`, core continues unaffected
 
 ## Architecture Validation Results
 
@@ -1469,3 +1639,75 @@ Follow the Implementation Sequence (Step 2 in Decision Impact Analysis):
 2. `packages/db` — PostgreSQL schema, RLS policies, Drizzle migrations, `api_instances` table, `withOrg()` helpers, `check-rls-coverage.ts` CI script
 3. `packages/crypto` — AES-256-GCM + HKDF + Argon2id + `withSecret()` + `SecretValue` + `AuditLogDecryptedEntry`
 4. Fastify auth foundation — `createApp()` factory, registration, login, session, MFA, JWT, revocation
+
+---
+
+## Architecture Validation Results — Phase 2 Re-Validation (2026-07-23)
+
+**Trigger:** PRD Phase 2 addition (Extension/Hook Architecture, AGPLv3 licensing boundary, multi-field secrets, i18n, theming) — architectural decisions, implementation patterns, and project structure amended across Steps 4-6 of this workflow, with a 3-round advanced elicitation pass (Architecture Decision Records + Chaos Monkey + Failure Mode Analysis on decisions; Code Review Gauntlet + Mentor/Apprentice + Rubber Duck on patterns).
+
+### Coherence Validation ✅
+
+**Decision Compatibility:** All Phase 2 technology choices verified against the existing stack — Paraglide JS confirmed as SvelteKit's own recommended i18n library (compatible with Svelte 5); Tailwind v4's native `@theme` CSS custom properties used for theming rather than a new runtime dependency; `semver` npm package for capability negotiation (standard, framework-agnostic). No new database, no new API framework, no conflicting technology introduced.
+
+**Pattern Consistency:** Phase 2 naming follows established conventions exactly — `snake_case` DB columns, `camelCase` API/JSON, `{domain}.{event}` audit event dot-notation (matching the modern half of the registry, not the legacy uppercase half), `VAULT_*` env var prefix. Extension hook naming (`onX`, always async) and manifest identity (reverse-DNS) are new but internally consistent and cross-referenced from four separate sections (Auth & Security, API & Communication, Naming Patterns, Format Patterns) without contradiction.
+
+**Structure Alignment:** New structure (`packages/extension-api/`, `apps/api/src/extensions/`, `modules/theming/`, `apps/web/messages/`, `lib/theme/`) inserted into the existing tree at the correct layers — extension-api sits alongside `packages/crypto`/`packages/shared` as a boundary-enforced package (Data Boundaries updated); `modules/theming/` follows the existing flat-module convention set by `modules/backup/`.
+
+**One real coherence defect found and fixed during this validation pass:** the initial Data Architecture decision claimed pre-existing single-value secrets could be "read as" `{"value": "..."}` JSON with zero migration. Cross-checking against the already-documented revelation path (`withSecret(...).then(plaintext => plaintext.toString('utf8'))`, which returns a bare string, not JSON) showed this was false — old ciphertext doesn't parse as JSON. **Corrected:** old rows decrypt exactly as they do today, and the bare-string result is wrapped into the field-set response shape at the *application layer*, not by reinterpreting stored bytes. Still genuinely migration-free (no batch re-encryption, no downtime) — the claim is now accurate rather than merely convenient. *(Superseded by a later review pass, same day: the legacy/Phase-2 discriminator itself was upgraded from `field_meta IS NULL` to an explicit `credential_versions.schema_version` column — see Data Architecture — for the same reason this defect was found: inferring format from a nullable column's presence/absence is fragile. The migration-free property described here is unchanged by that later revision.)*
+
+### Requirements Coverage Validation ✅
+
+| Phase 2 FR | Architectural Support |
+|---|---|
+| FR10 (amended), FR12 (amended), FR111, FR112 | `credential_versions.fields`/`field_meta` JSONB, legacy-row discriminator, per-field reveal audit (`revealed_fields`) |
+| FR18 (amended), FR23 (rotation history) | `rotations.target_fields`, existing advisory-lock serialization + `409 ROTATION_IN_PROGRESS` reused unchanged |
+| FR96 (amended) | `?field=` query param on the machine reveal route; field-set response omits `value` for un-revealed fields |
+| FR113, FR114 | `packages/extension-api`, `apps/api/src/extensions/loader.ts`, capability negotiation via lazy `hooksFactory` |
+| FR115 | `registerAuthStrategy()`, `authStrategies` list invariant, shared `issueSession()` |
+| FR116 (deferred) | Loader is origin-locked by design — deferral enforced at the loader, not just the UI layer |
+| FR117, FR118, FR119 | Paraglide JS, `apps/web/messages/{locale}.json`, build-time-locale-set vs. runtime-selection distinction documented |
+| FR120, FR121 | Tailwind v4 `@theme` runtime override, `VAULT_THEMES_DIR`, explicit reload trigger |
+
+**Non-Functional Requirements:** Extension API stability NFR → capability negotiation hard gate + version-skew CI guard. Theming "no rebuild" NFR → Tailwind v4 native mechanism, verified against real documentation, not assumed. Extension trust isolation NFR → serializable-hook-contract decision (made cheap now, pays off if/when sandboxing ships). i18n fallback NFR → Paraglide's built-in fallback chain.
+
+### Implementation Readiness Validation ✅
+
+**Decision Completeness:** All Phase 2 critical/important decisions added to Decision Priority Analysis with explicit rationale; the one deliberately deferred decision (community-extension sandboxing runtime) is recorded as a decision *not* to decide, with the reasoning stated, not left as a silent gap.
+
+**Structure Completeness:** Every new package, module, and route referenced in the decisions and patterns sections is now present in the literal project tree — verified by cross-reference, not assumed (this is where the missing `GET /api/v1/admin/extensions/status` endpoint and `rotations.target_fields` column were caught).
+
+**Pattern Completeness:** 6 additional conflict points closed (see Implementation Patterns → Critical Conflict Points Identified) across Naming, Structure, Format, Communication, and Process — including two genuine ambiguities an unfamiliar agent would have hit (capabilities[] enforcement status, sync-vs-async hook methods) surfaced specifically by the Mentor/Apprentice and Code Review Gauntlet elicitation passes.
+
+### Gap Analysis Results
+
+**Critical gaps found and resolved during this pass:**
+1. Multi-field secret backward-compatibility claim was factually wrong (fixed above)
+2. `rotations.target_fields` was missing — rotation history couldn't record which fields changed for a multi-field secret
+3. `(app)/admin/extensions/` had no backing API route
+
+**No critical gaps remain.** Important/nice-to-have items carried forward unchanged from the original validation (break-glass revocation, plugin network namespace isolation, Redis shared cache, KMS integration, dual-approval rotation) — none affected by Phase 2 scope.
+
+### Validation Issues Addressed
+
+All three critical gaps above were fixed in this same pass (Data Architecture, Data Architecture, Infrastructure & Deployment sections respectively) — see architecture.md edit history via `amendmentHistory` frontmatter for the full change record.
+
+### Architecture Completeness Checklist (Phase 2 additions)
+
+- [x] Phase 2 requirements analyzed and mapped to architectural components
+- [x] Phase 2 critical/important decisions documented with rationale (including one explicit deferral)
+- [x] Phase 2 implementation patterns defined across all 5 categories, adversarially reviewed
+- [x] Phase 2 structure fully specified to file level and cross-checked against decisions/patterns
+- [x] Phase 2 requirements-to-structure mapping complete
+
+### Architecture Readiness Assessment (Phase 2)
+
+**Overall Status:** READY FOR IMPLEMENTATION ✅
+
+**Confidence Level: HIGH** — 2 full advanced-elicitation rounds (6 methods total) across decisions and patterns; 3 critical gaps found by this validation pass were fixed, not merely noted; the one deliberately deferred item (sandboxing runtime) is a stated decision with rationale, not an oversight.
+
+**Key Strengths (Phase 2 specifically):**
+- Trust boundary (first-party in-process vs. third-party sandboxed) stated consistently across every section that touches it — checked for contradiction, found none
+- The lazy-`hooksFactory` correction closes a real gap between "capability negotiation is a hard gate" as stated and what would have actually happened with eager hook construction
+- Backward compatibility for multi-field secrets is now accurate, not just claimed
+- Deferred scope (community extensions) is deferred at the architecture/loader level, not just the product/UI level — no interim trust gap

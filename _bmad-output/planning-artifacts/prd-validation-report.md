@@ -1,7 +1,7 @@
 ---
 validationTarget: '_bmad-output/planning-artifacts/prd.md'
 validationDate: '2026-05-27'
-revalidationDate: '2026-05-28'
+revalidationDate: '2026-07-23'
 inputDocuments:
   - '_bmad-output/planning-artifacts/product-brief-Project-Vault.md'
   - '_bmad-output/planning-artifacts/product-brief-Project-Vault-distillate.md'
@@ -20,6 +20,7 @@ validationStepsCompleted:
   - step-v-11-holistic-quality-validation
   - step-v-12-completeness-validation
   - step-v-revalidation-2026-05-28
+  - step-v-revalidation-2026-07-23
 validationStatus: COMPLETE
 holisticQualityRating: '5/5 — Excellent'
 overallStatus: Pass
@@ -635,3 +636,50 @@ The following representative FRs demonstrate the high-quality pattern across all
 Steps 2, 3, 4, 8, 9, 12 — all Pass, no affected content.
 
 **Net result:** 0 critical → 0 critical | 5 warnings → 0 warnings | 2 informational → 0 informational
+
+---
+
+## Re-Validation Summary (2026-07-23)
+
+**Trigger:** PRD Edit Workflow — Phase 2 addition (Extension/Hook Architecture, AGPLv3 relicense + CLA, multi-field secrets, i18n/localization, structured theming). 19 new/amended FRs (FR10, FR12, FR18, FR96 amended; FR99, FR100, FR106–FR114 added), 3 new capability areas, new Extension/Hook Architecture, Theming, and Licensing & Contribution Model subsections, new Phase 2 inserted into the roadmap (renumbering former Phases 2–4 to 3–5).
+
+**Steps Re-Checked (delta validation, full-document scan):**
+
+| Step | Result | Severity |
+|---|---|---|
+| Format Detection | BMAD Standard — unchanged, 6/6 core sections | ✅ Pass |
+| Information Density | 0 filler/wordy/redundant violations in new content | ✅ Pass |
+| Measurability | 0 subjective-adjective / vague-quantifier violations in new FRs/NFRs | ✅ Pass |
+| Implementation Leakage | 1 new violation — see Warnings | ⚠️ Warning |
+| Traceability | New FR groups trace to Executive Summary differentiator, Growth Scope, and Phase 2 roadmap (business objective) but not to any of the 5 existing User Journeys | ⚠️ Warning |
+| Template Completeness | 0 template variables remaining | ✅ Pass |
+| Frontmatter Completeness | `lastEdited`, `editHistory`, `licenseModel`, `extensionModel` all populated | ✅ Pass |
+| Domain / Project-Type Compliance | Unaffected — no new domain triggered | ✅ Pass (unchanged) |
+
+**Steps Carried Forward (no changes, results unchanged):** Product Brief Coverage, Domain Compliance, Project-Type Compliance — all Pass, not affected by this edit.
+
+### Warnings: 0 ✅ *(was 2 — both resolved 2026-07-23)*
+
+~~1. **Implementation leakage — "WASM sandbox" in the new Security NFR.**~~ — **RESOLVED.** Both occurrences (Security NFR and Technical Constraints) reworded to "sandboxed, out-of-process execution environment." The one remaining "WASM" mention in the PRD is pre-existing rotation-plugin content (line 666), outside this edit's scope, previously validated 5/5.
+~~2. **Traceability gap — no User Journey covers the Phase 2 capabilities.**~~ — **RESOLVED.** Added 4 new user journeys: Priya (hosted-SaaS auth extension), Jordan (community extension), Amara (i18n + theming), Noah (multi-field secrets). Journey Requirements Summary table updated; journey count updated from 5 to 9 throughout.
+
+### Critical Issues: 0 ✅
+
+### Informational: 0 ✅ *(was 1 — resolved 2026-07-23)*
+
+~~1. Risk Mitigations table missing a competing-hosted-fork risk row.~~ — **RESOLVED.** Added row: "Competing hosted fork | AGPLv3 network-copyleft requires a forked competitor to disclose their modified source to their users..."
+
+### Strengths (Phase 2 addition specifically)
+
+- **Trust boundary specified before implementation, not retrofitted** — the provenance-based extension trust model (first-party in-process vs. third-party sandboxed) is stated consistently across Technical Constraints, Infrastructure Requirements, Security NFRs, and the Roadmap — no contradiction found across the 4 places it's referenced
+- **Backward compatibility made explicit** — FR10/FR12/FR18/FR96 amendments each state the pre-existing single-value-secret behavior is preserved with no migration required, avoiding a silent breaking change to 12 shipped epics
+- **Deferred scope is scoped, not vague** — FR109 (community extensions) is explicitly marked deferred with a stated dependency (Extension API must ship first), consistent with this PRD's existing "deliberately excluded from v1" pattern
+- **Legal caveats carried through correctly** — "not legal advice / attorney review required" appears in both the frontmatter classification and the Licensing & Contribution Model section, not just one
+
+### Overall Status: **Pass** ✅
+
+**Holistic Quality: 5/5 — Excellent, unchanged.** Both warnings and the informational item identified in this pass were resolved same-day. Zero critical issues, zero warnings, zero informational items remain — matching the standard this PRD held after the 2026-05-28 revalidation.
+
+**Recommendation:** PRD is complete and ready for downstream use (UX Design, Architecture, Epics & Stories) covering the Phase 2 additions.
+
+**Post-validation note (2026-07-23, during Create Epics and Stories):** the FR99/FR100/FR106–FR114 numbering referenced throughout this report's Phase 2 sections was superseded — those numbers collided with 11 unrelated FRs already in use in epics.md (added during earlier epic/story work, never back-ported to this PRD). Renumbered to FR111–FR121; the 11 colliding FRs were back-ported into this PRD in their correct capability groups. See prd.md editHistory for the full record. This does not change the validation verdict — findings below remain accurate against the current, renumbered content.
