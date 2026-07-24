@@ -1,6 +1,6 @@
 # Story 14.1: Define and Publish the Extension API Package
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
