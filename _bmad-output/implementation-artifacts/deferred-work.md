@@ -344,3 +344,36 @@ Story 9.7's own pre-implementation adversarial review (`9-7-epic-9-completion-pl
 ## Deferred from: Epic 10 retrospective (2026-07-13)
 
 - **`packages/db`'s RLS-isolation test suite (13 files) has a pre-existing off-by-one row-leakage flake, reproducing on a freshly migrated, *empty* database** — confirmed zero-diff from Story 10-4 (the story that surfaced it while investigating unrelated CI instability). Traced to `apps/api#test`'s turbo dependency on `@project-vault/db#test` pulling in the flaky suite as a side effect. Not yet determined whether this is a genuine RLS/tenant-isolation defect (security-relevant) or a test-harness ordering artifact — that determination is exactly what the follow-up investigation should establish. **A dedicated investigation story is already being authored by a separate, parallel agent as of this entry's date; do not schedule a duplicate.** This entry exists so the finding survives even if that parallel effort stalls — reconcile/remove once that story lands in `sprint-status.yaml`. See `epic-10-retro-2026-07-13.md` (TD10-1) and `10-4-sonarcloud-new-coverage-buffer.md` (~lines 1349-1369) for full detail.
+
+---
+
+## Deferred from: Epic 12 retrospective (2026-07-24)
+
+*Backfilled from `12-2-usability-trust-accessibility-fixes.md`'s own "Out of scope for this story"
+section and both stories' adversarial-review medium-severity findings — none of these were entered
+here at story-completion time, which is itself the retro's finding #2 (a recurrence of the
+"deferral must be paired with a tracked artifact" pattern first flagged in the Epic 5 retro).*
+
+**From `12-2-usability-trust-accessibility-fixes.md` "Out of scope":**
+- Notification Preferences table redesign — named in the usability audit, explicitly deferred.
+- "Reveal value" fields have no auto-hide/timeout after being revealed.
+- Cron-field inputs have no inline help text or preset options.
+- Login-page tagline styling was not brought in line with the rest of the brand pass.
+- **Persistent MFA banner is not implemented as a real link/button** — the story's own notes flag
+  this as "likely an oversight in the original story's scoping," not a deliberate deferral; treat
+  as higher priority than the rest of this list (correctness/accessibility gap, not polish).
+- Dormancy-threshold caveat visibility and cron-field contrast were not addressed.
+- Platform-operator-only screens were never covered by the original usability audit at all — no
+  accessibility/usability pass has ever been done on that surface.
+
+**From `12-1-project-information-architecture-adversarial-review.md`:**
+- AC-2 summary tiles have no specified partial-failure behavior (what renders if one tile's query
+  fails while others succeed).
+- AC-9 hides/disables the Endpoints tab in the UI for viewer role, but nothing verifies the
+  underlying route itself still enforces that authorization server-side.
+- No explicit tenant-isolation AC covers the summary-tile queries themselves.
+
+**From `12-2-usability-trust-accessibility-fixes-adversarial-review.md`:**
+- AC-8's org-state gate has an unaddressed race condition.
+
+See `epic-12-retro-2026-07-24.md` findings #2 and #3 for full context.
