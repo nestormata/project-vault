@@ -84,6 +84,10 @@ export const AuditEvent = {
   // Story 8.3 AC-7/AC-21
   ACCESS_REPORT_GENERATED: 'audit.access_report_generated',
   USER_PSEUDONYMIZED: 'user.pseudonymized',
+  // Story 14.2: boot-time extension load lifecycle — written per-org (system-actor fanout, no
+  // single natural org for a boot-time event) via apps/api/src/extensions/loader.ts.
+  EXTENSION_LOADED: 'extension.loaded',
+  EXTENSION_LOAD_FAILED: 'extension.load_failed',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

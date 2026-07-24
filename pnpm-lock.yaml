@@ -111,6 +111,9 @@ importers:
       '@project-vault/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@project-vault/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
       '@project-vault/shared':
         specifier: workspace:*
         version: link:../../packages/shared

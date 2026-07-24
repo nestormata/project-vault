@@ -612,6 +612,15 @@ const envSchema = z
       z.string().url('VAULT_KMS_ENDPOINT must be a valid URL').optional()
     ),
 
+    // Story 14.2: optional, exact package identity of a founder-trusted extension package to
+    // dynamically import() at boot (apps/api/src/extensions/loader.ts). Self-hosted Docker
+    // deployments never need this — leave unset (or empty string, same as unset) for the
+    // tested, supported default with zero extension code loaded.
+    VAULT_EXTENSIONS_PACKAGE: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(1).optional()
+    ),
+
     // Story 10-1: the global /register+/login IP rate limiter (auth/routes.ts) defaults to 60
     // req/min, which a single serial E2E run's ~7-9 real registrations/logins from one
     // container/CI-runner IP can trip (flagged as a known risk in that story's Dev Notes, since

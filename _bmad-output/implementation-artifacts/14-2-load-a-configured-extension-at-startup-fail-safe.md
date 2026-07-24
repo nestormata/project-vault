@@ -1,6 +1,6 @@
 # Story 14.2: Load a Configured Extension at Startup, Fail-Safe
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -88,48 +88,48 @@ so that a bad extension config never takes down my vault.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `VAULT_EXTENSIONS_PACKAGE` to env config (AC: 1, 2, 3)
-  - [ ] Write a failing test in `apps/api/src/config/env.test.ts` asserting `env.VAULT_EXTENSIONS_PACKAGE` is `undefined` when unset and equals the provided string when set (follow the existing `SMTP_USER`/`SMTP_PASS` `z.preprocess((v) => (v === '' ? undefined : v), z.string().optional())` pattern so an empty-string env var behaves identically to unset)
-  - [ ] Add the Zod field to `apps/api/src/config/env.ts`'s schema; confirm test passes
-  - [ ] Add `VAULT_EXTENSIONS_PACKAGE=` (commented, blank) to `apps/api/.env.example` with a one-line comment explaining it's optional and self-hosted Docker never needs it
-- [ ] Task 2: Define the loader's internal failure-reason enum and module-level extension state (AC: 2, 3)
-  - [ ] Write failing unit tests for `apps/api/src/extensions/loader.ts` (new file, new co-located `loader.test.ts`) covering: unset env → no-op; valid package → hooks stored + manifest retrievable; each of the three failure reasons (3a/3b/3c) → no throw escapes, state reflects `load_failed`, manifest retrieval returns `null`
-  - [ ] Implement `loader.ts`: `loadExtension(packageName: string | undefined): Promise<void>` (or similar) that:
+- [x] Task 1: Add `VAULT_EXTENSIONS_PACKAGE` to env config (AC: 1, 2, 3)
+  - [x] Write a failing test in `apps/api/src/config/env.test.ts` asserting `env.VAULT_EXTENSIONS_PACKAGE` is `undefined` when unset and equals the provided string when set (follow the existing `SMTP_USER`/`SMTP_PASS` `z.preprocess((v) => (v === '' ? undefined : v), z.string().optional())` pattern so an empty-string env var behaves identically to unset)
+  - [x] Add the Zod field to `apps/api/src/config/env.ts`'s schema; confirm test passes
+  - [x] Add `VAULT_EXTENSIONS_PACKAGE=` (commented, blank) to `apps/api/.env.example` with a one-line comment explaining it's optional and self-hosted Docker never needs it
+- [x] Task 2: Define the loader's internal failure-reason enum and module-level extension state (AC: 2, 3)
+  - [x] Write failing unit tests for `apps/api/src/extensions/loader.ts` (new file, new co-located `loader.test.ts`) covering: unset env → no-op; valid package → hooks stored + manifest retrievable; each of the three failure reasons (3a/3b/3c) → no throw escapes, state reflects `load_failed`, manifest retrieval returns `null`
+  - [x] Implement `loader.ts`: `loadExtension(packageName: string | undefined): Promise<void>` (or similar) that:
     - no-ops if `packageName` is falsy
     - wraps the dynamic `import()` + `registerExtension()` call chain in try/catch, mapping `ExtensionRegistrationError.reason` (`'invalid-name'` → `'manifest_invalid'`, `'incompatible-version'` → `'capability_mismatch'`) and any other thrown/rejected error (including a `hooksFactory()` crash, per AC-3d) to `'import_error'`
     - applies a bounded timeout around the `import()` + registration chain (see Dev Notes judgment call) — on timeout, treat identically to `'import_error'`; attach a no-op `.catch()` to the losing (still-running) promise so a late rejection after timeout cannot produce an unhandled rejection, and ignore a late resolution (state is already finalized) — test both cases explicitly
     - stores the outcome in module-level state: `{ status: 'not_configured' | 'loaded' | 'load_failed', manifest?: {...}, loadedAt?: string, hooks?: Record<string, unknown> }`
     - guards against double-invocation: if state is already `'loaded'` or `'load_failed'` when called again, no-op + warn-log rather than re-running `hooksFactory()` or overwriting state — test this
-  - [ ] Export `getExtensionStatus()` (returns the module-level state) and `getExtensionsHealthField()` (returns just the `extensions_status` string for `GET /health`) — small, focused accessors so `routes/health.ts` and the new status route don't reach into loader internals directly
-  - [ ] Never invoke `hooksFactory` before both the reverse-DNS name check and the semver capability check pass (this is `registerExtension()`'s own guarantee from Story 14.1 — the loader must not add an eager pre-call of its own around it)
-- [ ] Task 3: Wire audit writes for load success/failure (AC: 2, 3)
-  - [ ] Resolve the "boot-time event has no org context" gap per the Dev Notes judgment call below **before** writing code — this determines the audit-write call shape
-  - [ ] Write failing tests asserting an `AuditEvent.EXTENSION_LOADED` / `AuditEvent.EXTENSION_LOAD_FAILED` row is written with the correct payload shape and fixed-enum `reason` (failure case) — use the same DB-integration test harness pattern as `apps/api/src/__tests__/*.test.ts` (`withTestOrg`), adapted for a boot-time (non-request) call site
-  - [ ] Write a failing test asserting that if the per-org audit write throws for one org during the fanout, the loop continues for remaining orgs (log-and-continue, not abort) and `loadExtension()`'s own resolution/state is unaffected by the audit-write failure
-  - [ ] Implement the audit write per the resolved judgment call
-  - [ ] Add `EXTENSION_LOADED: 'extension.loaded'` and `EXTENSION_LOAD_FAILED: 'extension.load_failed'` to `packages/shared/src/constants/audit-events.ts`'s `AuditEvent` object (lowercase dot-notation, matching the modern half of the registry — see architecture.md) — write/update `packages/shared/src/constants/audit-events.test.ts` first if it asserts the full key set
-- [ ] Task 4: Add operational (pino) fatal-equivalent logging on failure (AC: 3)
-  - [ ] Write a failing test asserting the loader logs via the structured logger at `fatal`-equivalent severity with `{ eventType: <appropriate OperationalEvent or new constant>, reason }` and explicitly does **not** include `err`/`stack`/raw exception message fields
-  - [ ] Implement using this codebase's existing logging helpers (`operationalLog` / `serializeLogError` pattern in `apps/api/src/lib/logger.ts` — but do **not** use `serializeLogError` as-is here since it includes `message`/`stack`; either write a redacted variant or log only the fixed-enum reason, following the "secret values/stack traces must not appear in logs" precedent already established for other security-sensitive log paths)
-- [ ] Task 5: Extend `GET /health` with `extensions_status` (AC: 1, 2, 3, 6)
-  - [ ] Write failing tests in `apps/api/src/routes/health.test.ts` for all three `extensions_status` values, and assert `GET /health` still returns `200` unauthenticated in every case
-  - [ ] Update the `ReadyResponseSchema`-adjacent schema for `/health` (currently untyped `{status, version}` — add a schema if none exists, or extend inline) to include `extensions_status: z.enum(['not_configured', 'loaded', 'load_failed'])`
-  - [ ] Update `healthRoutes`'s `/health` handler (not `/ready` — confirm this placement against AC-1/2/3's literal "GET /health reports..." language; do not conflate with the separate `/ready` endpoint's DB/vault-seal readiness semantics) to call `getExtensionsHealthField()` and include it in the response
-- [ ] Task 6: Add `GET /api/v1/admin/extensions/status` route (AC: 2, 4, 5)
-  - [ ] Write failing integration tests (new file `apps/api/src/extensions/status-routes.test.ts` or co-located with the route file) covering: OrgAdmin + loaded → manifest JSON; OrgAdmin + not loaded/failed → `null`; non-admin roles (member, viewer) → `403`; unauthenticated → `401`
-  - [ ] Implement `apps/api/src/extensions/status-routes.ts` using `secureRoute()` (see `modules/admin/routes.ts` for the pattern) with `security: { allowedRoles: ['admin'], requireMfa: true, writeAuditEvent: false }` (a read-only status check does not itself need its own audit event — confirm this against the "OrgAdmin only" language in epics.md, which does not require auditing the *read*, only the *load*)
-  - [ ] Register the route in `apps/api/src/app.ts` — mount at the `ADMIN_PREFIX` alongside `adminRoutes`/`backupRoutes`/etc. (see existing registration block, line ~270), since this is functionally an admin-status read even though the implementation file lives under `extensions/` rather than `modules/admin/` (judgment call — see Dev Notes)
-- [ ] Task 7: Invoke the loader at boot, in the correct startup order (AC: 1, 2, 3)
-  - [ ] Write/extend a boot-sequence test (integration-style, mocking I/O similar to `generate-spec.ts`'s dry-run pattern, or a dedicated `main`-adjacent test) asserting the loader runs and does not block/crash `createApp()`/`main()` startup in either the success or failure case
-  - [ ] Call `loadExtension(env.VAULT_EXTENSIONS_PACKAGE)` from the correct place in `apps/api/src/app.ts`'s `createApp()` (after core routes are registered, so `authStrategies`'s local-first invariant from architecture.md is trivially satisfied even though this story does not yet wire `registerAuthStrategy()` — that's Story 14.3) — **not** from `main.ts`, to keep `createApp()` a complete, testable unit the way `health.test.ts` already exercises it via `createApp({ logger: false })`
-  - [ ] Confirm via a test that a thrown/rejected `loadExtension()` call is impossible to escape uncaught (the function itself never rejects — it always resolves, storing failure state internally) so a bug in this story's own code cannot regress AC-3's "still starts" guarantee
-- [ ] Task 8: Route-audit and CI conformance (AC: 4, 5)
-  - [ ] Run `apps/api/src/__tests__/route-audit.test.ts` — confirm the new `GET /api/v1/admin/extensions/status` route is exempted correctly or (expected) passes because it uses `secureRoute()` and appears in `secureRoutes: Set<string>`
-  - [ ] If `route-exemptions.ts` needs a new entry for `/health`'s response-shape change, confirm none is needed (it's an additive field, not a new route)
-- [ ] Task 9: Full regression pass
-  - [ ] `pnpm turbo typecheck/lint/test --filter=@project-vault/api` (and `--filter=@project-vault/shared` for the audit-events change)
-  - [ ] `make ci`-equivalent local run if time permits, or at minimum the story's own new/changed test files plus `apps/api/src/__tests__/route-audit.test.ts` and `apps/api/src/routes/health.test.ts`
-  - [ ] Confirm this repo's 80/80/80/80 coverage bar is met for new files (`loader.ts`, `status-routes.ts`)
+  - [x] Export `getExtensionStatus()` (returns the module-level state) and `getExtensionsHealthField()` (returns just the `extensions_status` string for `GET /health`) — small, focused accessors so `routes/health.ts` and the new status route don't reach into loader internals directly
+  - [x] Never invoke `hooksFactory` before both the reverse-DNS name check and the semver capability check pass (this is `registerExtension()`'s own guarantee from Story 14.1 — the loader must not add an eager pre-call of its own around it)
+- [x] Task 3: Wire audit writes for load success/failure (AC: 2, 3)
+  - [x] Resolve the "boot-time event has no org context" gap per the Dev Notes judgment call below **before** writing code — this determines the audit-write call shape
+  - [x] Write failing tests asserting an `AuditEvent.EXTENSION_LOADED` / `AuditEvent.EXTENSION_LOAD_FAILED` row is written with the correct payload shape and fixed-enum `reason` (failure case) — use the same DB-integration test harness pattern as `apps/api/src/__tests__/*.test.ts` (`withTestOrg`), adapted for a boot-time (non-request) call site
+  - [x] Write a failing test asserting that if the per-org audit write throws for one org during the fanout, the loop continues for remaining orgs (log-and-continue, not abort) and `loadExtension()`'s own resolution/state is unaffected by the audit-write failure
+  - [x] Implement the audit write per the resolved judgment call
+  - [x] Add `EXTENSION_LOADED: 'extension.loaded'` and `EXTENSION_LOAD_FAILED: 'extension.load_failed'` to `packages/shared/src/constants/audit-events.ts`'s `AuditEvent` object (lowercase dot-notation, matching the modern half of the registry — see architecture.md) — write/update `packages/shared/src/constants/audit-events.test.ts` first if it asserts the full key set
+- [x] Task 4: Add operational (pino) fatal-equivalent logging on failure (AC: 3)
+  - [x] Write a failing test asserting the loader logs via the structured logger at `fatal`-equivalent severity with `{ eventType: <appropriate OperationalEvent or new constant>, reason }` and explicitly does **not** include `err`/`stack`/raw exception message fields
+  - [x] Implement using this codebase's existing logging helpers (`operationalLog` / `serializeLogError` pattern in `apps/api/src/lib/logger.ts` — but do **not** use `serializeLogError` as-is here since it includes `message`/`stack`; either write a redacted variant or log only the fixed-enum reason, following the "secret values/stack traces must not appear in logs" precedent already established for other security-sensitive log paths)
+- [x] Task 5: Extend `GET /health` with `extensions_status` (AC: 1, 2, 3, 6)
+  - [x] Write failing tests in `apps/api/src/routes/health.test.ts` for all three `extensions_status` values, and assert `GET /health` still returns `200` unauthenticated in every case
+  - [x] Update the `ReadyResponseSchema`-adjacent schema for `/health` (currently untyped `{status, version}` — add a schema if none exists, or extend inline) to include `extensions_status: z.enum(['not_configured', 'loaded', 'load_failed'])`
+  - [x] Update `healthRoutes`'s `/health` handler (not `/ready` — confirm this placement against AC-1/2/3's literal "GET /health reports..." language; do not conflate with the separate `/ready` endpoint's DB/vault-seal readiness semantics) to call `getExtensionsHealthField()` and include it in the response
+- [x] Task 6: Add `GET /api/v1/admin/extensions/status` route (AC: 2, 4, 5)
+  - [x] Write failing integration tests (new file `apps/api/src/extensions/status-routes.test.ts` or co-located with the route file) covering: OrgAdmin + loaded → manifest JSON; OrgAdmin + not loaded/failed → `null`; non-admin roles (member, viewer) → `403`; unauthenticated → `401`
+  - [x] Implement `apps/api/src/extensions/status-routes.ts` using `secureRoute()` (see `modules/admin/routes.ts` for the pattern) with `security: { allowedRoles: ['admin'], requireMfa: true, writeAuditEvent: false }` (a read-only status check does not itself need its own audit event — confirm this against the "OrgAdmin only" language in epics.md, which does not require auditing the *read*, only the *load*)
+  - [x] Register the route in `apps/api/src/app.ts` — mount at the `ADMIN_PREFIX` alongside `adminRoutes`/`backupRoutes`/etc. (see existing registration block, line ~270), since this is functionally an admin-status read even though the implementation file lives under `extensions/` rather than `modules/admin/` (judgment call — see Dev Notes)
+- [x] Task 7: Invoke the loader at boot, in the correct startup order (AC: 1, 2, 3)
+  - [x] Write/extend a boot-sequence test (integration-style, mocking I/O similar to `generate-spec.ts`'s dry-run pattern, or a dedicated `main`-adjacent test) asserting the loader runs and does not block/crash `createApp()`/`main()` startup in either the success or failure case
+  - [x] Call `loadExtension(env.VAULT_EXTENSIONS_PACKAGE)` from the correct place in `apps/api/src/app.ts`'s `createApp()` (after core routes are registered, so `authStrategies`'s local-first invariant from architecture.md is trivially satisfied even though this story does not yet wire `registerAuthStrategy()` — that's Story 14.3) — **not** from `main.ts`, to keep `createApp()` a complete, testable unit the way `health.test.ts` already exercises it via `createApp({ logger: false })`
+  - [x] Confirm via a test that a thrown/rejected `loadExtension()` call is impossible to escape uncaught (the function itself never rejects — it always resolves, storing failure state internally) so a bug in this story's own code cannot regress AC-3's "still starts" guarantee
+- [x] Task 8: Route-audit and CI conformance (AC: 4, 5)
+  - [x] Run `apps/api/src/__tests__/route-audit.test.ts` — confirm the new `GET /api/v1/admin/extensions/status` route is exempted correctly or (expected) passes because it uses `secureRoute()` and appears in `secureRoutes: Set<string>`
+  - [x] If `route-exemptions.ts` needs a new entry for `/health`'s response-shape change, confirm none is needed (it's an additive field, not a new route)
+- [x] Task 9: Full regression pass
+  - [x] `pnpm turbo typecheck/lint/test --filter=@project-vault/api` (and `--filter=@project-vault/shared` for the audit-events change)
+  - [x] `make ci`-equivalent local run if time permits, or at minimum the story's own new/changed test files plus `apps/api/src/__tests__/route-audit.test.ts` and `apps/api/src/routes/health.test.ts`
+  - [x] Confirm this repo's 80/80/80/80 coverage bar is met for new files (`loader.ts`, `status-routes.ts`)
 
 ## Dev Notes
 
@@ -209,12 +209,125 @@ No `apps/web` changes — see Product Surface Contract; UI is explicitly out of 
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story
 
 ### Debug Log References
 
+- All new/changed test files run RED-first (confirmed failing for the expected reason) before
+  each corresponding implementation change, per AGENTS.md TDD process.
+- `apps/api/src/extensions/` full suite: 4 files / 26 tests passing (loader.test.ts,
+  loader-audit.integration.test.ts, status-routes.test.ts, boot.test.ts).
+- `apps/api/src/routes/health.test.ts`: 12/12 passing. `apps/api/src/config/env.test.ts`:
+  84/84 passing. `apps/api/src/lib/logger.test.ts`: 8/8 passing.
+  `apps/api/src/__tests__/route-audit.test.ts`: 10/10 passing (new status route registers via
+  `secureRoute()` and is picked up automatically, no manual exemption needed).
+- `packages/shared` full suite: 137/137 passing (new `AuditEvent`/`OperationalEvent` entries).
+- `pnpm turbo typecheck lint --filter=@project-vault/api --filter=@project-vault/shared
+  --filter=@project-vault/extension-api --filter=@project-vault/db`: 14/14 tasks successful, 0
+  lint errors (pre-existing warnings only, unrelated to this story's files).
+- Coverage on new files: `apps/api/src/extensions/loader.ts` 98.27%/100%/94.44%/98.07%
+  (statements/branches/functions/lines); `apps/api/src/extensions/status-routes.ts` 100% across
+  all four metrics — both clear the repo's 80/80/80/80 bar.
+- `npx jscpd apps/api/src/extensions packages/shared/src/constants`: 0 clones found.
+- `npx tsx scripts/check-env-example.ts`: OK (90 schema keys verified, including
+  `VAULT_EXTENSIONS_PACKAGE`).
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created
+- **AC-1 (no extension configured, zero behavior change):** `VAULT_EXTENSIONS_PACKAGE` unset (or
+  empty string, via the same `z.preprocess` empty-string-as-unset pattern as `SMTP_USER`) makes
+  `loadExtension()` no-op before any `import()` call; `GET /health` reports
+  `extensions_status: "not_configured"`; `GET /api/v1/admin/extensions/status` returns `null`.
+- **AC-2 (valid extension loads and is audited):** `loader.ts` dynamically imports via native
+  ESM `import()` (injectable `importFn` seam, default `(spec) => import(spec)`), calls
+  `registerExtension()` from `@project-vault/extension-api` (manifest + capability negotiation
+  before `hooksFactory()` — enforced by the already-published Story 14.1 package, not
+  re-implemented here), stores hooks/manifest in module-level state, writes
+  `AuditEvent.EXTENSION_LOADED` per-org, and both `GET /api/v1/admin/extensions/status` and
+  `GET /health`'s `extensions_status` reflect `"loaded"`.
+- **AC-3 (fail-safe on load failure), sub-cases 3a-3e:** every failure path is caught at the
+  loader call site, mapped to the fixed enum, logged at `fatal`-equivalent severity with only
+  `{ eventType, reason }` (never the raw message/stack — verified with a dedicated test asserting
+  the payload excludes `err`/`stack`/`message` and doesn't leak a sample "secret path" string),
+  and audited via `AuditEvent.EXTENSION_LOAD_FAILED`. The API process keeps serving all core
+  routes identically to AC-1.
+  - 3a `import_error`: `import()` rejects (dedicated test).
+  - 3b `manifest_invalid`: `registerExtension()` throws `ExtensionRegistrationError('invalid-name', …)`, mapped explicitly (dedicated test); `hooksFactory` proven never called.
+  - 3c `capability_mismatch`: `registerExtension()` throws `ExtensionRegistrationError('incompatible-version', …)`, mapped explicitly (dedicated test).
+  - 3d `hooksFactory()` crash after negotiation passed: caught by the same try/catch, mapped to `import_error` per the judgment call (dedicated test, `loadExtension()` proven to still resolve rather than reject/throw).
+  - 3e timeout/hang: bounded `Promise.race` (default 5000ms, injectable `timeoutMs` for tests) maps a hang to `import_error`; the losing promise gets a no-op `.catch()` attached immediately (dedicated test proves no `unhandledRejection` fires on a late rejection) and a late resolution is simply never consumed by the race, so it cannot retroactively flip already-finalized `load_failed` state to `loaded` (dedicated test).
+- **AC-4 (status endpoint — null when nothing loaded):** `GET /api/v1/admin/extensions/status`
+  returns `200` with body `null` (verified distinct from `404`/`{}`) both when unset and after a
+  failed load.
+- **AC-5 (status endpoint — RBAC):** `allowedRoles: ['admin']` only (not `['owner', 'admin']`) —
+  dedicated tests prove `member`, `viewer`, AND `owner` all get `403`, and an unauthenticated
+  caller gets `401`.
+- **AC-6 (`/health` never blocks/requires auth):** dedicated parametrized test asserts all three
+  `extensions_status` values return `200` unauthenticated; `/ready`'s separate 503 semantics
+  (DB/vault-seal) are untouched.
+- **Judgment calls (Dev Notes) implemented as documented, all flagged here for maintainer
+  confirmation per the story's own instruction:**
+  1. Boot-time audit has no natural org — implemented as an org-fanout (`fetchAllOrgIds()` +
+     `withOrg(orgId, writeSystemAuditRow(...))` per org), with each per-org write individually
+     try/caught (log-and-continue via a new `OperationalEvent.EXTENSION_AUDIT_FANOUT_ROW_FAILED`)
+     so neither one bad org nor a whole-enumeration failure can affect `loadExtension()`'s own
+     resolution or crash boot (dedicated tests for both).
+  2. `hooksFactory()` crash and load timeout both map to `'import_error'` (no 4th enum value
+     invented).
+  3. Timeout-loser-promise handling implemented exactly as specified (no-op `.catch()`, discard
+     late resolution).
+  4. Audit fanout failure isolation implemented as its own try/catch per org.
+  5. Idempotency guard implemented: a second `loadExtension()` call while state is already
+     resolved no-ops and warn-logs (new `OperationalEvent.EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED`),
+     verified for both the `loaded` and `load_failed` prior-state cases.
+- **RBAC role mapping** (`allowedRoles: ['admin']`, not `['owner', 'admin']`) and **`/health` vs
+  `/ready` placement** (extended `/health`, left `/ready` untouched) both implemented exactly per
+  the Dev Notes' resolved judgment calls, with tests proving the specific edge case each
+  resolution was meant to cover (owner-gets-403; unauthenticated-gets-401; all three
+  `extensions_status` values stay 200 on `/health`).
+- **Scope discipline:** no `authStrategies`/`registerAuthStrategy()` wiring (Story 14.3's scope,
+  confirmed absent from `loader.ts`), no `apps/web` changes, no `packages/extension-api` changes
+  (pure consumer of Story 14.1's published `registerExtension()`/`ExtensionManifest`/
+  `ExtensionRegistrationError` surface — verified no gap was found requiring a package change).
+- Two small pre-existing-type widenings were needed to support fatal-equivalent logging without
+  breaking any existing call site: `operationalLog()`'s logger parameter widened from a `Pick<...>`
+  to a `Partial<Pick<...>>` (adding `'fatal'` as a valid level) rather than adding function
+  overloads — overloads would have silently narrowed `modules/backup/routes.ts`'s
+  `Parameters<typeof operationalLog>[0]`-derived type; and `lib/fastify-app.ts`'s hand-rolled
+  `FastifyLogger` type gained a `fatal` method (every real Fastify/pino logger already has it).
+  Both changes are additive/backward-compatible — confirmed via a full `apps/api` typecheck pass.
+- Added `@project-vault/extension-api` as a runtime dependency of `apps/api` (previously
+  unconsumed since Story 14.1, per that story's own Dev Notes — this story is its first
+  consumer).
 
 ### File List
+
+**New:**
+- `apps/api/src/extensions/loader.ts`
+- `apps/api/src/extensions/loader.test.ts`
+- `apps/api/src/extensions/loader-audit.integration.test.ts`
+- `apps/api/src/extensions/status-routes.ts`
+- `apps/api/src/extensions/status-routes.test.ts`
+- `apps/api/src/extensions/boot.test.ts`
+
+**Modified:**
+- `apps/api/src/config/env.ts` (+ `env.test.ts`)
+- `apps/api/.env.example` (repo root `.env.example`)
+- `apps/api/src/routes/health.ts` (+ `health.test.ts`)
+- `apps/api/src/app.ts`
+- `apps/api/src/lib/logger.ts` (+ `logger.test.ts`)
+- `apps/api/src/lib/fastify-app.ts`
+- `apps/api/package.json` (added `@project-vault/extension-api` dependency)
+- `packages/shared/src/constants/audit-events.ts` (+ `audit-events.test.ts`)
+- `packages/shared/src/constants/operational-event-types.ts` (+ `operational-event-types.test.ts`)
+- `pnpm-lock.yaml` (dependency addition)
+
+## Change Log
+
+- 2026-07-24: Implemented via bmad-dev-story, TDD red-green throughout. All 6 ACs (AC-3 with all
+  5 lettered sub-cases 3a-3e) satisfied; all 9 tasks/subtasks complete. `apps/api/src/extensions/`
+  new subsystem (loader.ts, status-routes.ts) with 6 new/changed test files, 100%/98%+ coverage
+  on both new files. `packages/shared` gained `EXTENSION_LOADED`/`EXTENSION_LOAD_FAILED` audit
+  events and two new operational-event constants. `GET /health` gained an additive
+  `extensions_status` field; new `GET /api/v1/admin/extensions/status` route registered at
+  `ADMIN_PREFIX`. Status: in-progress → review.

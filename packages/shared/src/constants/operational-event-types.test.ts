@@ -116,4 +116,14 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.BACKUP_RESTORE_ATTEMPTED).toBe('backup.restore_attempted')
     expect(OperationalEvent.BACKUP_MISSED_RESOLVE_FAILED).toBe('backup.missed_resolve_failed')
   })
+
+  it('exposes the Story 14.2 extension load event types', () => {
+    expect(OperationalEvent.EXTENSION_LOAD_FAILED).toBe('extension.load_failed')
+    expect(OperationalEvent.EXTENSION_AUDIT_FANOUT_ROW_FAILED).toBe(
+      'extension.audit_fanout_row_failed'
+    )
+    expect(OperationalEvent.EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED).toBe(
+      'extension.load_double_invocation_ignored'
+    )
+  })
 })

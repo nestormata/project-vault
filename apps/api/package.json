@@ -37,6 +37,7 @@
     "@fastify/type-provider-zod": "^1.0.0",
     "@project-vault/crypto": "workspace:*",
     "@project-vault/db": "workspace:*",
+    "@project-vault/extension-api": "workspace:*",
     "@project-vault/shared": "workspace:*",
     "bcrypt": "^6.0.0",
     "drizzle-orm": "^0.45.0",

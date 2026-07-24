@@ -48,6 +48,8 @@ import { cacheActivatedRoutes } from './modules/machine-users/cache-activated-ro
 import { securityAlertActionsRoutes } from './modules/org/security-alert-actions-routes.js'
 import { organizationSettingsRoutes } from './modules/org/organization-settings-routes.js'
 import { erasureRoutes } from './modules/compliance/erasure-routes.js'
+import { extensionStatusRoutes } from './extensions/status-routes.js'
+import { loadExtension } from './extensions/loader.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
 import { machineJwtPlugin } from './plugins/machine-jwt.js'
@@ -272,6 +274,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(settingsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(orgsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(resourceUsageRoutes, { prefix: ADMIN_PREFIX })
+  // Story 14.2: functionally an admin-status read, so mounted at ADMIN_PREFIX alongside the
+  // routes above even though the implementation file lives under extensions/ (conceptually part
+  // of the extension subsystem, not modules/admin/'s "system config only" scope) — see Dev Notes.
+  await fastify.register(extensionStatusRoutes, { prefix: ADMIN_PREFIX })
   // Story 9.4 AC-10: a distinct sibling module to platform-admin (audit-log read/verify vs.
   // instance administration) under its own '/api/v1/platform' prefix, not nested under
   // ADMIN_PREFIX.
@@ -282,6 +288,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(cacheActivatedRoutes, { prefix: '/api/v1/machine' })
   await fastify.register(securityAlertActionsRoutes, { prefix: '/api/v1/security-alerts' })
   await fastify.register(organizationSettingsRoutes, { prefix: '/api/v1/organizations' })
+
+  // Story 14.2 Task 7: after every core route is registered, so the local-first invariant is
+  // trivially satisfied even though this story doesn't yet wire registerAuthStrategy() (that's
+  // Story 14.3). Called here (not from main.ts) so createApp() stays a complete, testable unit.
+  // loadExtension() is designed to never throw/reject — a bug in this story's own code cannot
+  // regress AC-3's "still starts" guarantee — but `await` (not fire-and-forget) so state is
+  // fully resolved before createApp() returns to any caller (e.g. /health's first response).
+  await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, { logger: fastify.log })
 
   return fastify
 }

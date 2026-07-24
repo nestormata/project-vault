@@ -7,6 +7,15 @@ import { z } from 'zod/v4'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { getVaultStatus } from '../modules/vault/key-service.js'
+import { getExtensionsHealthField } from '../extensions/loader.js'
+
+// Story 14.2 AC-1/2/3/6: additive field, always present, never causes /health to deviate from
+// its existing unconditional-200 liveness contract — extension state is informational only.
+const HealthResponseSchema = z.object({
+  status: z.literal('ok'),
+  version: z.string(),
+  extensions_status: z.enum(['not_configured', 'loaded', 'load_failed']),
+})
 
 const ReadyResponseSchema = z.object({
   status: z.literal('ready'),
@@ -68,8 +77,21 @@ export async function healthRoutes(
   fastify: FastifyApp,
   options: { dbPool?: DbPool }
 ): Promise<void> {
-  fastify.get('/health', async (_req: FastifyRequest, reply: FastifyReply) => {
-    return reply.send({ status: 'ok', version: pkg.version })
+  fastify.route({
+    method: 'GET',
+    url: '/health',
+    schema: {
+      response: {
+        200: HealthResponseSchema,
+      },
+    },
+    handler: async (_req: FastifyRequest, reply: FastifyReply) => {
+      return reply.send({
+        status: 'ok',
+        version: pkg.version,
+        extensions_status: getExtensionsHealthField(),
+      })
+    },
   })
 
   fastify.route({
