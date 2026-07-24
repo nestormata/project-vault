@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentialVersions,
@@ -24,7 +24,7 @@ import {
   lockCredentialInProject,
 } from './db-helpers.js'
 import { fieldMetaForResponse } from './field-set.js'
-import { findProjectInOrg } from './service.js'
+import { findProjectInOrg, selectCurrentVersionMeta } from './service.js'
 
 /** Thrown when a "new_version" import conflict-resolution action targets a credential that is
  *  already multi-field (created/edited via a template since Story 13.2) — the import's single-key
@@ -300,22 +300,7 @@ async function insertImportedCredential(
 // discard every other field. Refuse rather than corrupt the secret (see
 // `ImportTargetMultiFieldError`).
 async function assertImportTargetNotMultiField(tx: Tx, credentialId: string): Promise<void> {
-  const [currentVersionRow] = await tx
-    .select({
-      versionNumber: credentialVersions.versionNumber,
-      schemaVersion: credentialVersions.schemaVersion,
-      fieldMeta: credentialVersions.fieldMeta,
-    })
-    .from(credentialVersions)
-    .where(
-      and(
-        eq(credentialVersions.credentialId, credentialId),
-        isNull(credentialVersions.purgedAt),
-        isNull(credentialVersions.abandonedAt)
-      )
-    )
-    .orderBy(desc(credentialVersions.versionNumber))
-    .limit(1)
+  const currentVersionRow = await selectCurrentVersionMeta(tx, credentialId)
   const currentFields = fieldMetaForResponse(
     currentVersionRow?.schemaVersion ?? 1,
     currentVersionRow?.fieldMeta

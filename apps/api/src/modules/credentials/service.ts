@@ -393,7 +393,7 @@ export type AddCredentialVersionResult = {
 // The current (highest non-purged/non-abandoned) version's number + value-envelope format. Shared
 // by getCredentialDetail (field metadata for the response) and addCredentialVersion (the "before"
 // side of the AC-9 audit delta), so the two never diverge on what "current version" means.
-async function selectCurrentVersionMeta(
+export async function selectCurrentVersionMeta(
   tx: Tx,
   credentialId: string
 ): Promise<{ versionNumber: number; schemaVersion: number; fieldMeta: unknown } | undefined> {
