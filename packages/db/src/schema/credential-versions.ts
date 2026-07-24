@@ -1,7 +1,16 @@
 // IMMUTABLE (insert-only) EXCEPT the retention cryptographic-purge UPDATE.
 // No updated_at column and NO append-only trigger: the retention job must be able to
 // overwrite encrypted_value with zeros and clear key_version (the only sanctioned mutation).
-import { pgTable, uuid, integer, jsonb, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  integer,
+  smallint,
+  jsonb,
+  timestamp,
+  uniqueIndex,
+  index,
+} from 'drizzle-orm/pg-core'
 import { orgScoped } from './helpers.js'
 import { users } from './users.js'
 import { credentials } from './credentials.js'
@@ -42,6 +51,15 @@ export const credentialVersions = pgTable(
     abandonedAt: timestamp('abandoned_at', { withTimezone: true }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Story 13.1 AC-4 — discriminates the encrypted_value envelope's shape. 1 = legacy bare
+    // encrypted-string format (every pre-existing row, via column default — no backfill UPDATE
+    // needed). Epic 13's structured multi-field format introduces schema_version 2+ starting in
+    // a later story; this column and fieldMeta are wholly new and inert until then.
+    schemaVersion: smallint('schema_version').notNull().default(1),
+    // Story 13.1 AC-4 — structured-field metadata (e.g. field names/order) for schema_version 2+
+    // rows. Nullable, no default: every pre-existing row gets NULL, matching schema_version 1's
+    // bare-string format having no field structure to describe.
+    fieldMeta: jsonb('field_meta'),
   },
   (t) => ({
     // Enforces version-number uniqueness per credential at the DB layer (prevents races).

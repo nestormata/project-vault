@@ -1,6 +1,6 @@
 # Story 13.1: Backfill `current_version_id` for Existing Credentials
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -193,33 +193,33 @@ as a result of this story. There is no user-facing capability to build a placeho
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `current_version_id` and `credential_versions.schema_version`/`field_meta` columns (AC: 1, 3, 4)
-  - [ ] Subtask 1.1: Determine the next migration number by checking `packages/db/src/migrations/meta/_journal.json` / the highest-numbered `.sql` file at implementation time — do not hardcode a number now (this repo has had a real migration-number collision on a parallel branch before; see Dev Notes).
-  - [ ] Subtask 1.2: Author `NNNN_credentials_current_version_id.sql` (or a combined single migration if preferred — see Dev Notes on sequencing options) adding `credentials.current_version_id UUID NULL REFERENCES credential_versions(id)` (nullable, no default — deliberately not NOT NULL yet, per AC-3).
-  - [ ] Subtask 1.3: In the same or a co-located migration, add `credential_versions.schema_version SMALLINT NOT NULL DEFAULT 1` and `credential_versions.field_meta JSONB NULL` (AC-4) — no backfill UPDATE needed for these two, the column default/nullability handles existing rows automatically.
-  - [ ] Subtask 1.4: Write the migration's header comment per house style (see `0043`/`0044` precedent in Dev Notes) documenting: purpose, AC references, the tiebreak rule (AC-2), the deployment-ordering requirement (AC-3), and the "no RLS session context inside a migration" note.
-- [ ] Task 2: Write the backfill `UPDATE` statement (AC: 1, 2, 5)
-  - [ ] Subtask 2.1: `UPDATE credentials SET current_version_id = (SELECT id FROM credential_versions WHERE credential_id = credentials.id ORDER BY created_at DESC, id DESC LIMIT 1) WHERE current_version_id IS NULL` (or equivalent set-based form) — join-scoped, not RLS-scoped.
-  - [ ] Subtask 2.2: Add a `RAISE NOTICE` (or a `DO $$ ... $$` block producing one) for each credential where the correlated subquery returns no row, naming the credential's id explicitly (AC-5).
-  - [ ] Subtask 2.3: Add a final summary `RAISE NOTICE` reporting counts backfilled vs. skipped.
-- [ ] Task 3: Update Drizzle schema source of truth (AC: 1, 4)
-  - [ ] Subtask 3.1: Add `currentVersionId` to `packages/db/src/schema/credentials.ts` matching the new column (nullable UUID FK).
-  - [ ] Subtask 3.2: Add `schemaVersion` and `fieldMeta` to `packages/db/src/schema/credential-versions.ts`.
-  - [ ] Subtask 3.3: Confirm `drizzle-kit generate` (or a manual diff check) does not propose a duplicate/conflicting migration against the hand-authored SQL — hand-authored migrations must stay in sync with the schema file per this repo's established convention.
-- [ ] Task 4: Update the upgrade runbook (AC: 3)
-  - [ ] Subtask 4.1: Locate the existing operational/upgrade runbook (see Dev Notes — likely `9-5-operational-runbook-and-deployment-guide.md`'s delivered doc) and add the Phase 2 migration-ordering note.
-- [ ] Task 5: Integration tests (AC: 6, plus edge cases from AC-1/2/5)
-  - [ ] Subtask 5.1: Create `packages/db/src/__tests__/migration-NNNN-current-version-id-backfill.test.ts` following the `migration-0044-...`/`migration-0043-...` reproduced-statement pattern.
-  - [ ] Subtask 5.2: Implement the 6 cases enumerated in AC-6 (including the lifecycle-marked-versions edge case) plus the cross-org fixture check from AC-1.
-  - [ ] Subtask 5.3: Assert `encrypted_value` unchanged (byte-for-byte) for all touched rows (AC-4 regression guard).
-  - [ ] Subtask 5.4: Assert the `RAISE NOTICE` text for a skipped/orphaned credential contains only the credential id, never `encrypted_value` or plaintext (AC-7).
-- [ ] Task 7: Operational impact documentation (AC: 7)
-  - [ ] Subtask 7.1: State the row-count scale this single-statement UPDATE was validated against in the migration header comment.
-  - [ ] Subtask 7.2: Add a maintenance-window recommendation to the runbook update from Task 4 (low-traffic window precaution, no batching implemented in this story).
-- [ ] Task 6: Verify guarded-migration safety and CI (AC: 3, all)
-  - [ ] Subtask 6.1: Run `pnpm db:migrate` (or `make db-migrate`) locally against a fresh/dev DB and confirm `guarded-migrate.ts` does not flag the migration as destructive.
-  - [ ] Subtask 6.2: Run `make check-rls` to confirm the new columns don't create an RLS coverage gap (new columns on existing RLS-covered tables — should be a no-op, but confirm).
-  - [ ] Subtask 6.3: Run `pnpm --filter @project-vault/db test` and confirm the new test file and the full package suite pass.
+- [x] Task 1: Add `current_version_id` and `credential_versions.schema_version`/`field_meta` columns (AC: 1, 3, 4)
+  - [x] Subtask 1.1: Determine the next migration number by checking `packages/db/src/migrations/meta/_journal.json` / the highest-numbered `.sql` file at implementation time — do not hardcode a number now (this repo has had a real migration-number collision on a parallel branch before; see Dev Notes).
+  - [x] Subtask 1.2: Author `NNNN_credentials_current_version_id.sql` (or a combined single migration if preferred — see Dev Notes on sequencing options) adding `credentials.current_version_id UUID NULL REFERENCES credential_versions(id)` (nullable, no default — deliberately not NOT NULL yet, per AC-3).
+  - [x] Subtask 1.3: In the same or a co-located migration, add `credential_versions.schema_version SMALLINT NOT NULL DEFAULT 1` and `credential_versions.field_meta JSONB NULL` (AC-4) — no backfill UPDATE needed for these two, the column default/nullability handles existing rows automatically.
+  - [x] Subtask 1.4: Write the migration's header comment per house style (see `0043`/`0044` precedent in Dev Notes) documenting: purpose, AC references, the tiebreak rule (AC-2), the deployment-ordering requirement (AC-3), and the "no RLS session context inside a migration" note.
+- [x] Task 2: Write the backfill `UPDATE` statement (AC: 1, 2, 5)
+  - [x] Subtask 2.1: `UPDATE credentials SET current_version_id = (SELECT id FROM credential_versions WHERE credential_id = credentials.id ORDER BY created_at DESC, id DESC LIMIT 1) WHERE current_version_id IS NULL` (or equivalent set-based form) — join-scoped, not RLS-scoped.
+  - [x] Subtask 2.2: Add a `RAISE NOTICE` (or a `DO $$ ... $$` block producing one) for each credential where the correlated subquery returns no row, naming the credential's id explicitly (AC-5).
+  - [x] Subtask 2.3: Add a final summary `RAISE NOTICE` reporting counts backfilled vs. skipped.
+- [x] Task 3: Update Drizzle schema source of truth (AC: 1, 4)
+  - [x] Subtask 3.1: Add `currentVersionId` to `packages/db/src/schema/credentials.ts` matching the new column (nullable UUID FK).
+  - [x] Subtask 3.2: Add `schemaVersion` and `fieldMeta` to `packages/db/src/schema/credential-versions.ts`.
+  - [x] Subtask 3.3: Confirm `drizzle-kit generate` (or a manual diff check) does not propose a duplicate/conflicting migration against the hand-authored SQL — hand-authored migrations must stay in sync with the schema file per this repo's established convention.
+- [x] Task 4: Update the upgrade runbook (AC: 3)
+  - [x] Subtask 4.1: Locate the existing operational/upgrade runbook (see Dev Notes — likely `9-5-operational-runbook-and-deployment-guide.md`'s delivered doc) and add the Phase 2 migration-ordering note.
+- [x] Task 5: Integration tests (AC: 6, plus edge cases from AC-1/2/5)
+  - [x] Subtask 5.1: Create `packages/db/src/__tests__/migration-NNNN-current-version-id-backfill.test.ts` following the `migration-0044-...`/`migration-0043-...` reproduced-statement pattern.
+  - [x] Subtask 5.2: Implement the 6 cases enumerated in AC-6 (including the lifecycle-marked-versions edge case) plus the cross-org fixture check from AC-1.
+  - [x] Subtask 5.3: Assert `encrypted_value` unchanged (byte-for-byte) for all touched rows (AC-4 regression guard).
+  - [x] Subtask 5.4: Assert the `RAISE NOTICE` text for a skipped/orphaned credential contains only the credential id, never `encrypted_value` or plaintext (AC-7).
+- [x] Task 7: Operational impact documentation (AC: 7)
+  - [x] Subtask 7.1: State the row-count scale this single-statement UPDATE was validated against in the migration header comment.
+  - [x] Subtask 7.2: Add a maintenance-window recommendation to the runbook update from Task 4 (low-traffic window precaution, no batching implemented in this story).
+- [x] Task 6: Verify guarded-migration safety and CI (AC: 3, all)
+  - [x] Subtask 6.1: Run `pnpm db:migrate` (or `make db-migrate`) locally against a fresh/dev DB and confirm `guarded-migrate.ts` does not flag the migration as destructive.
+  - [x] Subtask 6.2: Run `make check-rls` to confirm the new columns don't create an RLS coverage gap (new columns on existing RLS-covered tables — should be a no-op, but confirm).
+  - [x] Subtask 6.3: Run `pnpm --filter @project-vault/db test` and confirm the new test file and the full package suite pass.
 
 ## Dev Notes
 
@@ -356,12 +356,92 @@ as a result of this story. There is no user-facing capability to build a placeho
 
 ### Agent Model Used
 
-TBD (filled by dev-story)
+Claude Sonnet 5
 
 ### Debug Log References
+
+- `make bootstrap` (fresh worktree DB, port auto-bumped to 5433) → `make db-migrate` applied
+  migrations `0000`..`0049` cleanly; `guarded-migrate.ts` did not flag `0049` as destructive.
+- `make check-rls` → "check-rls-coverage: all org_id tables have RLS policies — OK" (new columns
+  are on already-RLS-covered tables; confirmed no gap).
+- `pnpm check-migration-compatibility` → "no destructive statements in any committed migration —
+  OK" (full-history static scan, includes `0049`).
+- `pnpm --filter @project-vault/db exec vitest run migration-0049` → 2 files, 14/14 tests passed.
+- `pnpm --filter @project-vault/db test` (full package suite, coverage) → 44 files, 216/216 tests
+  passed; coverage 92.5%/80.85%/100%/92.92% (stmts/branch/funcs/lines), unchanged from baseline.
+- `pnpm --filter @project-vault/db typecheck` → clean. `pnpm --filter @project-vault/db lint` → 0
+  errors (24 pre-existing warnings elsewhere, unrelated to this story's files).
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Next migration number confirmed via `meta/_journal.json` at implementation time: **0049**
+  (`0048_vault_kms_columns` was latest; no collision found). Journal entry added manually (this
+  migration is hand-authored/data-DDL-only, matching the `0043`/`0044`/`0048` precedent of no
+  companion snapshot file).
+- `0049_credentials_current_version_id_backfill.sql`: adds `credentials.current_version_id`
+  (nullable UUID FK, no default) and `credential_versions.schema_version`
+  (`SMALLINT NOT NULL DEFAULT 1`) / `field_meta` (`JSONB NULL`). The bulk backfill is one
+  set-based `UPDATE ... FROM (SELECT DISTINCT ON (credential_id) ...)` statement (AC-7's
+  "single-statement UPDATE" scale decision — not a per-row loop), ordered
+  `created_at DESC, id DESC` per AC-2's tiebreak rule and guarded by
+  `WHERE current_version_id IS NULL` for idempotency/re-run safety (AC-6c, AC-7). A separate
+  `DO $$ ... $$` block only enumerates zero-version credentials for a `RAISE NOTICE` per row (id
+  only) plus a final summary count (AC-5) — it does not redo the bulk work.
+- AC-1 (cross-org correctness): verified via a two-org fixture test; the migration itself has no
+  RLS/org scoping (correctness comes from the `credential_id` join alone, per the documented "no
+  RLS session context inside a migration" convention from migration `0044`).
+- AC-4 (no re-encryption): verified via a byte-for-byte `encrypted_value` equality assertion
+  before/after the backfill.
+- AC-6's 4 required cases (a-d) plus 3 additional cases were implemented: (AC-1) two-org
+  correctness, (AC-2) created_at-tie determinism (stable across re-runs), and the
+  purged/abandoned-lifecycle edge case (AC-1's own edge example) — 8 tests total in
+  `migration-0049-current-version-id-backfill.test.ts`.
+- AC-7's RAISE NOTICE content-safety requirement is covered by a static test
+  (`migration-0049-safety.test.ts`, 6 assertions) reading the actual `.sql` file and asserting
+  every `RAISE NOTICE` line references only the credential id/aggregate counts, never
+  `encrypted_value`/`ciphertext`/`plaintext` — matching this repo's existing
+  `migration-0036-safety.test.ts`/`migration-0047-safety.test.ts` static-inspection pattern (no
+  live NOTICE-capture wiring needed).
+- Drizzle schema: `credentials.ts` now imports `credentialVersions` from `./credential-versions.js`
+  for the FK reference (`.references((): AnyPgColumn => credentialVersions.id)`), and
+  `credential-versions.ts` already imported `credentials` — this introduces a circular ES module
+  import between the two schema files. Verified safe at runtime (lazy `.references()` callback,
+  live ESM bindings; full test suite green) — no prior circular-reference precedent existed in
+  this schema package before this story, flagged here for reviewer awareness.
+- Subtask 3.3 (`drizzle-kit generate` non-conflict check): running `drizzle-kit generate` was not
+  meaningful in this repo as a targeted check — the last committed schema snapshot is
+  `0033_snapshot.json`; migrations `0034`-`0049` (16 migrations, all hand-authored/data-DDL-only)
+  have no snapshot files, an established pre-existing convention, not something this story
+  introduced or could resolve in isolation. Verified sync the practical way instead: applied
+  `0049` to a fresh DB via `make db-migrate` and confirmed the Drizzle schema's new columns
+  (`currentVersionId`, `schemaVersion`, `fieldMeta`) query/insert correctly against the live
+  table in the new test file — the schema and the hand-authored SQL agree in practice.
+- Runbook: added a new "### Phase 2 upgrade — multi-field secrets" subsection under `docs/
+  runbook.md`'s existing `## Upgrades` section (does not add/rename/reorder any `## ` heading, so
+  AC-1 from Story 9.5 — `grep -c '^## '` returns 7 — remains satisfied), citing migration `0049`
+  by number, the zero-skipped-rows confirmation step, re-run safety, and the maintenance-window
+  recommendation (AC-3, AC-7).
+- No application code touched (`apps/api/`, `apps/web/` untouched) — consistent with
+  `Surface scope: none`. `current_version_id` remains inert; nothing reads/writes it yet (deferred
+  to Story 13.2 per this story's own Dev Notes).
 
 ### File List
+
+- `packages/db/src/migrations/0049_credentials_current_version_id_backfill.sql` (new)
+- `packages/db/src/migrations/meta/_journal.json` (edit — added entry for `0049`)
+- `packages/db/src/schema/credentials.ts` (edit — added `currentVersionId`)
+- `packages/db/src/schema/credential-versions.ts` (edit — added `schemaVersion`, `fieldMeta`)
+- `packages/db/src/__tests__/migration-0049-current-version-id-backfill.test.ts` (new)
+- `packages/db/src/__tests__/migration-0049-safety.test.ts` (new)
+- `docs/runbook.md` (edit — added "Phase 2 upgrade — multi-field secrets" subsection under
+  `## Upgrades`)
+
+## Change Log
+
+- 2026-07-24: Implemented via bmad-dev-story. Added migration `0049_credentials_current_version_id_backfill.sql`
+  (nullable `credentials.current_version_id` FK + backfill UPDATE; `credential_versions.schema_version`/
+  `field_meta` columns), matching Drizzle schema updates, an 8-case integration test file plus a
+  static safety test, and a new runbook subsection. All 7 ACs satisfied; 216/216 `@project-vault/db`
+  package tests pass (14 new); `make check-rls`, `pnpm check-migration-compatibility`, typecheck, and
+  lint all clean. Status: in-progress -> review.

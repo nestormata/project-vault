@@ -8,11 +8,13 @@ import {
   index,
   check,
   boolean,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { orgScoped } from './helpers.js'
 import { users } from './users.js'
 import { projects } from './projects.js'
+import { credentialVersions } from './credential-versions.js'
 
 export const credentials = pgTable(
   'credentials',
@@ -47,6 +49,13 @@ export const credentials = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     // Story 7.2 D7 — opt-out flag for the offline agent's local cache (default cacheable).
     cacheable: boolean('cacheable').notNull().default(true),
+    // Story 13.1 — explicit FK to the "current" credential_versions row (nullable, no default;
+    // backfilled for pre-existing rows by migration 0049). NOT NULL enforcement is deliberately
+    // deferred to a later migration (see 0049's header comment) — a zero-version credential has
+    // no valid value to assign. Inert until Story 13.2 starts writing to it.
+    currentVersionId: uuid('current_version_id').references(
+      (): AnyPgColumn => credentialVersions.id
+    ),
   },
   (t) => ({
     projectCreatedIdx: index('idx_credentials_project_created').on(t.projectId, t.createdAt.desc()),
