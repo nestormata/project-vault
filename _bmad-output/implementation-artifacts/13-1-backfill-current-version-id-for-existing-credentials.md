@@ -1,6 +1,6 @@
 # Story 13.1: Backfill `current_version_id` for Existing Credentials
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
