@@ -277,12 +277,12 @@ jobs:
 
   # Shard 2 of 2: everything under test that does NOT need a live Postgres connection. No
   # postgres service here on purpose — apps/web, packages/agent, packages/crypto,
-  # packages/shared, and packages/vault-action tests never open a real DB connection (verified:
-  # the only "DATABASE_URL" references in their test files are string literals used as
-  # classification fixtures in packages/vault-action's parse-secrets tests). 212 test files vs.
-  # 268 in test-api-db — the other shard runs a bit longer, but it also carries strictly more of
-  # the historically-slow work (apps/api's integration-style suite), so this is the more useful
-  # place to spend the balance rather than forcing an exact 50/50 file-count split.
+  # packages/shared, packages/vault-action, and packages/extension-api tests never open a real DB
+  # connection (verified: the only "DATABASE_URL" references in their test files are string
+  # literals used as classification fixtures in packages/vault-action's parse-secrets tests). 212
+  # test files vs. 268 in test-api-db — the other shard runs a bit longer, but it also carries
+  # strictly more of the historically-slow work (apps/api's integration-style suite), so this is
+  # the more useful place to spend the balance rather than forcing an exact 50/50 file-count split.
   test-web-other:
     name: Test (web + other packages)
     runs-on: ubuntu-latest
@@ -325,13 +325,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test (with coverage) - web, agent, crypto, shared, vault-action
+      - name: Test (with coverage) - web, agent, crypto, shared, vault-action, extension-api
         run: >-
           pnpm turbo test --filter=@project-vault/web --filter=@project-vault/shared
           --filter=@project-vault/agent --filter=@project-vault/crypto
-          --filter=@project-vault/vault-action
+          --filter=@project-vault/vault-action --filter=@project-vault/extension-api
 
-      - name: Upload coverage for SonarCloud (web, agent, crypto, shared, vault-action)
+      - name: Upload coverage for SonarCloud (web, agent, crypto, shared, vault-action, extension-api)
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -342,6 +342,7 @@ jobs:
             packages/crypto/coverage/
             packages/shared/coverage/
             packages/vault-action/coverage/
+            packages/extension-api/coverage/
           retention-days: 1
 
   # Combines both shards' coverage before running SonarCloud, so project-wide coverage numbers
