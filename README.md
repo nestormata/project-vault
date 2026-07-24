@@ -7,6 +7,8 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-orange)](package.json)
 
+TEST CHANGE TO DISREGARD
+
 *Run complex projects. Miss nothing.*
 
 Project Vault is a self-hostable, open-core **Project Operations Platform (ProjOps)** — the institutional memory of an engineering project. Where every existing secrets manager organizes by environment (dev / staging / prod), Project Vault organizes by *project*: credentials, certificates, domains, services, payments, and documentation grouped under the natural unit of engineering responsibility.
