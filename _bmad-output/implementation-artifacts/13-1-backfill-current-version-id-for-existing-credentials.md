@@ -168,6 +168,29 @@ as a result of this story. There is no user-facing capability to build a placeho
      `withTestOrg`/`createTestUser` from `packages/db/src/test-helpers.ts`, so this test never touches
      unrelated data from other tests running concurrently against the same database.
 
+7. **Given** the backfill `UPDATE` runs against a `credentials` table at production scale,
+   **when** the migration executes,
+   **then** the lock duration and re-run safety of the operation are explicit, documented properties —
+   not implicit assumptions discovered at deploy time.
+
+   - *Positive example:* The migration header comment states the expected row-count scale this
+     single-statement UPDATE was validated against (see Dev Notes — "Operational impact" for the
+     decision and threshold), and confirms via the idempotency guard (`WHERE current_version_id IS
+     NULL`) that a killed/interrupted migration run is always safe to simply re-run — no manual cleanup
+     required.
+   - *Negative/edge example:* If the operator's fleet has an unusually large `credentials` table (see
+     Dev Notes threshold), running this migration during peak traffic could hold a table-level lock long
+     enough to cause visible latency/timeouts on concurrent credential reads/writes — this is an
+     **operational impact**, not covered by "Surface scope: none" (which only speaks to application-code
+     and API-response changes, not migration-time lock behavior). The runbook update (AC-3) must mention
+     running this migration during a low-traffic maintenance window as a precaution, even though no
+     batching is implemented in this story.
+   - *Negative/edge example:* Add a regression test asserting the migration's `RAISE NOTICE` output for
+     a skipped/orphaned credential (AC-5) contains only the credential's `id` — never `encrypted_value`
+     or any decrypted/plaintext field — so a future edit to the NOTICE message can't accidentally leak
+     sensitive data into migration logs, which are often retained/shipped to less-restricted log
+     aggregation than application logs.
+
 ## Tasks / Subtasks
 
 - [ ] Task 1: Add `current_version_id` and `credential_versions.schema_version`/`field_meta` columns (AC: 1, 3, 4)
@@ -189,6 +212,10 @@ as a result of this story. There is no user-facing capability to build a placeho
   - [ ] Subtask 5.1: Create `packages/db/src/__tests__/migration-NNNN-current-version-id-backfill.test.ts` following the `migration-0044-...`/`migration-0043-...` reproduced-statement pattern.
   - [ ] Subtask 5.2: Implement the 6 cases enumerated in AC-6 (including the lifecycle-marked-versions edge case) plus the cross-org fixture check from AC-1.
   - [ ] Subtask 5.3: Assert `encrypted_value` unchanged (byte-for-byte) for all touched rows (AC-4 regression guard).
+  - [ ] Subtask 5.4: Assert the `RAISE NOTICE` text for a skipped/orphaned credential contains only the credential id, never `encrypted_value` or plaintext (AC-7).
+- [ ] Task 7: Operational impact documentation (AC: 7)
+  - [ ] Subtask 7.1: State the row-count scale this single-statement UPDATE was validated against in the migration header comment.
+  - [ ] Subtask 7.2: Add a maintenance-window recommendation to the runbook update from Task 4 (low-traffic window precaution, no batching implemented in this story).
 - [ ] Task 6: Verify guarded-migration safety and CI (AC: 3, all)
   - [ ] Subtask 6.1: Run `pnpm db:migrate` (or `make db-migrate`) locally against a fresh/dev DB and confirm `guarded-migrate.ts` does not flag the migration as destructive.
   - [ ] Subtask 6.2: Run `make check-rls` to confirm the new columns don't create an RLS coverage gap (new columns on existing RLS-covered tables — should be a no-op, but confirm).
@@ -262,6 +289,22 @@ as a result of this story. There is no user-facing capability to build a placeho
   `migration-NNNN-safety.test.ts`-style check if the repo convention calls for one (see `migration-0047-
   safety.test.ts`, `migration-0036-safety.test.ts` for that pattern — confirm at implementation time
   whether this migration needs its own).
+- **Operational impact (Advanced Elicitation finding — batching decision):** this story deliberately
+  ships a single unbatched `UPDATE ... WHERE current_version_id IS NULL` rather than a chunked/looped
+  backfill. Rationale: this repo's precedent migrations (`0043`, `0044`) use the same unbatched pattern
+  at this fleet's current scale, and premature batching adds real complexity (chunk-size tuning,
+  progress tracking, resumability logic beyond the idempotency guard already provided). Decision:
+  accept the single-statement UPDATE for now; if a specific deployment's `credentials` row count is
+  large enough that a table-level lock for the UPDATE's duration would be operationally risky (no hard
+  threshold is defined here — this is a judgment call for the operator, informed by their own table
+  size), the runbook note (AC-3/AC-7) instructs running during a low-traffic maintenance window rather
+  than the story doing bespoke batching. If a future deployment's scale invalidates this assumption,
+  that's a follow-up story, not a retrofit here.
+- **Re-run safety is a deliberate, tested property, not an accident:** the `WHERE current_version_id IS
+  NULL` guard (Task 2.1) means an interrupted/killed migration run (connection drop, deploy timeout) is
+  always safe to simply re-run to completion — already-backfilled rows are skipped, not reprocessed.
+  State this explicitly in the migration header comment so an operator who sees a failed `db-migrate`
+  run knows re-running is the correct recovery action, not a cause for concern about corrupted state.
 - **Runbook location:** the existing operational/upgrade runbook was delivered by Story 9.5 (see
   `_bmad-output/implementation-artifacts/9-5-operational-runbook-and-deployment-guide.md` for its scope
   and the actual doc path it produced) — locate and extend that doc for AC-3's "documented ... in the
