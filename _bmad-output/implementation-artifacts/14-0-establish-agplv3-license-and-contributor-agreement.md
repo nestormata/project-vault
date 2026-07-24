@@ -1,6 +1,6 @@
 # Story 14.0: Establish AGPLv3 License and Contributor Agreement
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
