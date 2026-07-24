@@ -37,6 +37,12 @@ jobs:
         uses: rdkcentral/contributor-assistant_github-action@2c505e3cbfadaa766a7dd6e00e9b22c26509c13c # v2.7.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # v2.7.0 (the latest tag as of the provenance date above) bundles dependencies that
+          # emit Node's DEP0040 (punycode) and DEP0169 (url.parse) deprecation warnings on
+          # startup. These originate inside the action's own dist bundle, not this repo's code,
+          # and there's no newer tag yet that resolves them upstream — silence them here so real
+          # signal isn't buried in noise; revisit when a newer release lands.
+          NODE_OPTIONS: "--no-deprecation"
         with:
           path-to-signatures: "signatures/version1/cla.json"
           path-to-document: "https://github.com/nestormata/project-vault/blob/main/CLA.md"
@@ -44,9 +50,8 @@ jobs:
           # action's own docs warn "branch should not be protected". This repo's `main` has
           # branch protection enabled (required PR reviews) — a direct push there would be
           # rejected, silently breaking signature persistence. Use a dedicated, unprotected
-          # branch instead. Follow-up for a repo admin (alongside the required-status-check
-          # setup already tracked in story 14-0): create an unprotected `cla-signatures` branch
-          # if the action does not create one automatically on first signature.
+          # branch instead — `cla-signatures` (created 2026-07-24, orphan branch, unprotected)
+          # holds only `signatures/version1/cla.json`, which the action updates in place.
           branch: "cla-signatures"
           # Exclude the repo owner and known bot accounts so they are never blocked by the
           # gate on their own PRs (see story 14-0 AC5 negative case).

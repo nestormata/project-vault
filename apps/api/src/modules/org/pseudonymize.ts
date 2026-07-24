@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomInt } from 'node:crypto'
 import { and, eq, isNull, ne } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { orgMemberships, userIdentityTokens } from '@project-vault/db/schema'
@@ -17,11 +17,12 @@ const ALIAS_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const ALIAS_LENGTH = 8
 
 function generateAlias(): string {
-  const bytes = randomBytes(ALIAS_LENGTH)
   let alias = ''
   for (let i = 0; i < ALIAS_LENGTH; i += 1) {
-    // eslint-disable-next-line security/detect-object-injection -- index is `byte % alphabet.length`.
-    alias += ALIAS_ALPHABET[(bytes[i] as number) % ALIAS_ALPHABET.length]
+    // `randomInt` rejection-samples internally, so every alphabet index is equally likely
+    // (a plain `randomBytes()[i] % alphabet.length` would be biased since 256 isn't a multiple
+    // of `ALIAS_ALPHABET.length`).
+    alias += ALIAS_ALPHABET[randomInt(0, ALIAS_ALPHABET.length)]
   }
   return `user_${alias}`
 }
