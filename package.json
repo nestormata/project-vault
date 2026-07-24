@@ -25,6 +25,7 @@
     "check-migration-compatibility": "tsx scripts/migration-compatibility-check.ts",
     "check-story-status-sync": "tsx scripts/check-story-status-sync.ts",
     "check-psc-tbd-tracking": "tsx scripts/check-psc-tbd-tracking.ts",
+    "check-extension-api-version-skew": "tsx scripts/check-extension-api-version-skew.ts",
     "docker:smoke": "bash scripts/docker-smoke.sh",
     "prepare": "husky"
   },

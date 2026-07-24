@@ -107,6 +107,9 @@ jobs:
       - name: Check PSC TBD UI deferrals tracked in deferred-work.md (retro P7-1/P8-2/P9-1)
         run: pnpm check-psc-tbd-tracking
 
+      - name: Check extension-api version-skew (Story 14.1 AC7)
+        run: pnpm check-extension-api-version-skew
+
       - name: Check for duplicate code
         run: pnpm jscpd
 
