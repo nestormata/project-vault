@@ -1,6 +1,6 @@
 # Story 14.1: Define and Publish the Extension API Package
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -51,38 +51,38 @@ N/A — see rationale above. There is no in-app or API user journey to exercise;
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Scaffold `packages/extension-api` workspace package (AC: 1)
-  - [ ] Add `packages/extension-api/package.json` modeled on `packages/shared/package.json` (name `@project-vault/extension-api`, `type: module`, `main`/`types`/`exports` pointing at `dist/`, `typecheck`/`lint`/`test`/`build` scripts, `@project-vault/eslint-config` + `@project-vault/tsconfig` devDependencies) — see Dev Notes on the `private` field decision
-  - [ ] Add `packages/extension-api/tsconfig.json` extending `@project-vault/tsconfig` (node variant)
-  - [ ] Add `semver` as a runtime dependency and `@types/semver` as a devDependency (new to this monorepo — not used elsewhere yet, confirmed via repo-wide grep during story creation)
-  - [ ] Register the new package so `pnpm install` / turbo picks it up (pnpm workspace glob already covers `packages/*`; verify `pnpm-workspace.yaml` needs no change)
-- [ ] Task 2: Define hook interfaces (AC: 2, 3)
-  - [ ] `src/hooks/auth-strategy.ts` — `AuthStrategy` interface, `onAuthenticate(...): Promise<AuthResult>` (shape per architecture.md: `{ externalSubject, providerName, email?, displayName? }` — this story only needs the type, not the runtime dispatch which lands in Story 14.3)
-  - [ ] `src/hooks/notification-channel.ts` — `NotificationChannel` interface, `onNotify(...): Promise<void>`
-  - [ ] `src/hooks/ui-panel.ts` — `UIPanel` interface, `onRenderPanel(...): Promise<UIPanelResult>` (or equivalent serializable return type)
-  - [ ] Keep every hook boundary type serializable-data-only per architecture.md's Data Boundaries — no `Tx`, no `SecretValue`, no `AuthContext` exported from this package
-  - [ ] `src/index.ts` re-exports all three hook types — add a lint/test guard (or code comment + review checklist item) preventing a future `hooks/` subpath export from the package root's `exports` map
-  - [ ] Add a `// @ts-expect-error` negative-type-test fixture proving a non-Promise-returning hook method fails compilation (AC3)
-- [ ] Task 3: Implement `ExtensionManifest`, `defineExtension()`, `registerExtension()` (AC: 1, 4, 5, 6)
-  - [ ] `ExtensionManifest` type: `{ name: string, apiVersion: string, capabilities: ('auth-provider' | 'notification-channel' | 'ui-panel')[] }` per architecture.md's Extension Manifest Shape
-  - [ ] `EXTENSION_API_VERSION` — export as a semver string constant; this story sets it to `"1.0.0"` as the initial package version (bump alongside `package.json`'s own `version` per the version-skew guard)
-  - [ ] `defineExtension()` — thin manifest-authoring helper (identity-only convenience wrapper; confirm exact shape against how an extension author is expected to call it — no architecture spec beyond the name exists yet, so keep it minimal: likely `defineExtension(manifest: ExtensionManifest): ExtensionManifest`, a typed identity function that gives extension authors autocomplete without a runtime effect)
-  - [ ] `registerExtension(manifest, hooksFactory)` — validate `manifest.name` against the reverse-DNS regex (AC6) **before** the semver check; validate `semver.satisfies(EXTENSION_API_VERSION, manifest.apiVersion)` (AC4/5) **before** ever calling `hooksFactory()` — order matters: both validation steps must complete with zero calls to `hooksFactory` on any failure
-  - [ ] `hooksFactory` must be lazy — do not construct hooks eagerly anywhere in the validation path
-  - [ ] Define `class ExtensionRegistrationError extends Error { reason: 'invalid-name' | 'incompatible-version' }` and throw it (not a bare `Error`) from both the name-validation and version-negotiation failure paths, so a future caller (Story 14.2's loader) can branch on `error.reason` instead of parsing the message string
-  - [ ] Decide and document explicitly how `semver.satisfies()` treats a prerelease `EXTENSION_API_VERSION` (e.g. `"1.3.0-beta.1"`) against a non-prerelease manifest range — call `semver.satisfies()` with an explicit `{ includePrerelease: <true|false> }` option rather than relying on the library default, and note the chosen behavior in a code comment
-- [ ] Task 4: Version-skew CI guard (AC: 7)
-  - [ ] New script `scripts/check-extension-api-version-skew.ts`, following the git-diff-inspection pattern of `scripts/check-story-status-sync.ts` (diff detection) — determine PR base/head, check whether `packages/extension-api/src/**` changed without `packages/extension-api/package.json`'s `version` field changing in the same diff
-  - [ ] Add corresponding `check-extension-api-version-skew.test.ts` unit test (repo convention: every `check-*.ts` guard has a co-located `.test.ts`)
-  - [ ] Add root `package.json` script `check-extension-api-version-skew` (same naming convention as `check-story-status-sync`, `check-psc-tbd-tracking`)
-  - [ ] Wire into `Makefile`'s `ci:` target (alongside `check-story-status-sync`/`check-psc-tbd-tracking`) and into `.github/workflows/ci.yml`'s CI job (same step group as the other `pnpm check-*` invocations)
-- [ ] Task 5: Tests
-  - [ ] Unit tests for `registerExtension()`: compatible manifest accepted (AC4), incompatible `apiVersion` rejected + `hooksFactory` never called (AC5), invalid `name` rejected + `hooksFactory` never called (AC6, ≥2 invalid shapes + 1 valid), name-vs-semver validation ordering
-  - [ ] Test that rejection errors are instances of `ExtensionRegistrationError` with the correct `reason` (`"invalid-name"` vs `"incompatible-version"`) for each failure path (AC5/AC6)
-  - [ ] Test the chosen prerelease-handling behavior explicitly: a prerelease `EXTENSION_API_VERSION` against a manifest range, asserting the documented `includePrerelease` choice actually takes effect (AC5)
-  - [ ] Type-level test proving Promise-typed hook methods are enforced (AC3)
-  - [ ] Unit test(s) for the new version-skew guard script (Task 4) covering: no `src/**` change (pass), `src/**` change + version bump (pass), `src/**` change without version bump (fail with the guard's named error)
-  - [ ] `packages/extension-api` reaches this repo's standard coverage bar (check `packages/shared`'s current thresholds as the closest analog — types/contracts package, minimal branching logic)
+- [x] Task 1: Scaffold `packages/extension-api` workspace package (AC: 1)
+  - [x] Add `packages/extension-api/package.json` modeled on `packages/shared/package.json` (name `@project-vault/extension-api`, `type: module`, `main`/`types`/`exports` pointing at `dist/`, `typecheck`/`lint`/`test`/`build` scripts, `@project-vault/eslint-config` + `@project-vault/tsconfig` devDependencies) — see Dev Notes on the `private` field decision
+  - [x] Add `packages/extension-api/tsconfig.json` extending `@project-vault/tsconfig` (node variant)
+  - [x] Add `semver` as a runtime dependency and `@types/semver` as a devDependency (new to this monorepo — not used elsewhere yet, confirmed via repo-wide grep during story creation)
+  - [x] Register the new package so `pnpm install` / turbo picks it up (pnpm workspace glob already covers `packages/*`; verified `pnpm-workspace.yaml` needs no change — `pnpm install` picked up the new package automatically)
+- [x] Task 2: Define hook interfaces (AC: 2, 3)
+  - [x] `src/hooks/auth-strategy.ts` — `AuthStrategy` interface, `onAuthenticate(...): Promise<AuthResult>` (shape per architecture.md: `{ externalSubject, providerName, email?, displayName? }` — this story only needs the type, not the runtime dispatch which lands in Story 14.3)
+  - [x] `src/hooks/notification-channel.ts` — `NotificationChannel` interface, `onNotify(...): Promise<void>`
+  - [x] `src/hooks/ui-panel.ts` — `UIPanel` interface, `onRenderPanel(...): Promise<UIPanelResult>` (or equivalent serializable return type)
+  - [x] Keep every hook boundary type serializable-data-only per architecture.md's Data Boundaries — no `Tx`, no `SecretValue`, no `AuthContext` exported from this package
+  - [x] `src/index.ts` re-exports all three hook types — added `index.test.ts`'s structural assertion (`package.json#exports` keys equal `['.']`) plus a review-checklist comment in `index.ts` itself, preventing a future `hooks/` subpath export from the package root's `exports` map
+  - [x] Add a `// @ts-expect-error` negative-type-test fixture proving a non-Promise-returning hook method fails compilation (AC3)
+- [x] Task 3: Implement `ExtensionManifest`, `defineExtension()`, `registerExtension()` (AC: 1, 4, 5, 6)
+  - [x] `ExtensionManifest` type: `{ name: string, apiVersion: string, capabilities: ('auth-provider' | 'notification-channel' | 'ui-panel')[] }` per architecture.md's Extension Manifest Shape
+  - [x] `EXTENSION_API_VERSION` — export as a semver string constant; this story sets it to `"1.0.0"` as the initial package version (bump alongside `package.json`'s own `version` per the version-skew guard)
+  - [x] `defineExtension()` — thin manifest-authoring helper (identity-only convenience wrapper: `defineExtension(manifest: ExtensionManifest): ExtensionManifest`, a typed identity function)
+  - [x] `registerExtension(manifest, hooksFactory)` — validates `manifest.name` against the reverse-DNS regex (AC6) **before** the semver check; validates `semver.satisfies(EXTENSION_API_VERSION, manifest.apiVersion, { includePrerelease: false })` (AC4/5) **before** ever calling `hooksFactory()` — both validation steps complete with zero calls to `hooksFactory` on any failure (verified via spy assertions)
+  - [x] `hooksFactory` is lazy — `registerExtension()` never references it until both gates pass (verified with a side-effecting factory in a dedicated test)
+  - [x] Defined `class ExtensionRegistrationError extends Error { reason: 'invalid-name' | 'incompatible-version' }` and throws it (not a bare `Error`) from both the name-validation and version-negotiation failure paths
+  - [x] Documented and tested explicit prerelease handling: `isApiVersionCompatible()` calls `semver.satisfies(coreVersion, range, { includePrerelease: false })` explicitly — a stable manifest range does NOT satisfy a prerelease core version unless the manifest's own range opts into that prerelease line; rationale documented in a code comment in `register-extension.ts` and covered by three dedicated tests
+- [x] Task 4: Version-skew CI guard (AC: 7)
+  - [x] New script `scripts/check-extension-api-version-skew.ts`, following the git-diff-inspection pattern of `scripts/check-story-status-sync.ts` — resolves PR base/head (`GITHUB_BASE_REF`/`GITHUB_SHA` on GitHub Actions, `main`/`HEAD` fallback locally), diffs `packages/extension-api/src/**` against the actual before/after `version` field value read via `git show <ref>:package.json`
+  - [x] Added co-located `check-extension-api-version-skew.test.ts` (14 tests, incl. 3 real-temp-git-repo integration tests covering: no `src/**` change → pass, `src/**` change + version bump → pass, `src/**` change without version bump → fail)
+  - [x] Added root `package.json` script `check-extension-api-version-skew` (same naming convention as `check-story-status-sync`, `check-psc-tbd-tracking`)
+  - [x] Wired into `Makefile`'s `ci:` target (alongside `check-story-status-sync`/`check-psc-tbd-tracking`) and into `.github/workflows/ci.yml`'s CI job (same step group as the other `pnpm check-*` invocations)
+- [x] Task 5: Tests
+  - [x] Unit tests for `registerExtension()`: compatible manifest accepted (AC4), incompatible `apiVersion` rejected + `hooksFactory` never called (AC5), invalid `name` rejected + `hooksFactory` never called (AC6, 2 invalid shapes + 1 valid), name-vs-semver validation ordering
+  - [x] Tests assert rejection errors are instances of `ExtensionRegistrationError` with the correct `reason` (`"invalid-name"` vs `"incompatible-version"`) for each failure path (AC5/AC6), via a shared `expectRejection()` helper that also asserts zero `hooksFactory` calls
+  - [x] Tested the chosen prerelease-handling behavior explicitly: a prerelease `EXTENSION_API_VERSION`-shaped core version against stable and prerelease-opted-in manifest ranges (AC5)
+  - [x] Type-level test proving Promise-typed hook methods are enforced (AC3) — verified the fixture actually catches a regression by temporarily loosening `AuthStrategy.onAuthenticate`'s return type and confirming `tsc --noEmit` failed with "Unused '@ts-expect-error' directive", then restored it
+  - [x] Unit tests for the new version-skew guard script (Task 4) — see above
+  - [x] `packages/extension-api` reaches this repo's standard coverage bar: 93.75% statements, 100% branches, 80% functions, 93.75% lines (global thresholds of 80/80/80/80 from `@project-vault/tsconfig/vitest.base`, same as `packages/shared`)
 
 ## Dev Notes
 
@@ -123,6 +123,60 @@ Claude Sonnet 5 (claude-sonnet-5)
 
 ### Debug Log References
 
+- Confirmed RED before implementation: ran `pnpm exec tsc --noEmit` in `packages/extension-api` with only test files present — 14 `TS2307: Cannot find module` errors (one per not-yet-created source module), plus `pnpm exec vitest run scripts/check-extension-api-version-skew.test.ts` failing the same way before `check-extension-api-version-skew.ts` existed.
+- Verified the AC3 negative-type-test fixture is load-bearing (not a vacuous pass): temporarily loosened `AuthStrategy.onAuthenticate`'s return type to `AuthResult | Promise<AuthResult>` and re-ran `tsc --noEmit` — it failed with `Unused '@ts-expect-error' directive`, proving the fixture would catch a real regression. Reverted immediately after.
+- `pnpm turbo typecheck/lint/test --filter=@project-vault/extension-api` all green; `pnpm exec jscpd apps packages scripts` reports 0 clones after adding this story's files.
+
 ### Completion Notes List
 
+- Scaffolded `packages/extension-api` (AC1) modeled on `packages/shared`: `package.json` (`private: true`, `"version": "1.0.0"`, `semver` runtime dep + `@types/semver` dev dep), `tsconfig.json`, `eslint.config.js`, `vitest.config.ts`. No `pnpm-workspace.yaml` change was needed (existing `packages/*` glob already covers it).
+- `src/hooks/{auth-strategy,notification-channel,ui-panel}.ts` define `AuthStrategy`/`NotificationChannel`/`UIPanel` with Promise-typed methods only, serializable-data-only payloads (AC2/AC3). `src/hooks/type-fixtures.ts` is a compile-only `@ts-expect-error` fixture proving the Promise constraint is enforced (AC3).
+- `src/manifest.ts` defines `ExtensionManifest`, `EXTENSION_API_VERSION = "1.0.0"`, and `defineExtension()` (typed identity function) (AC1).
+- `src/errors.ts` defines `ExtensionRegistrationError` discriminated by `reason: 'invalid-name' | 'incompatible-version'` (AC5/AC6).
+- `src/register-extension.ts` implements `registerExtension()`: validates the reverse-DNS name regex first, then `isApiVersionCompatible()` (wraps `semver.satisfies(core, range, { includePrerelease: false })`, explicit/deliberate prerelease handling), both **before** ever calling `hooksFactory` — proven via spy/mock zero-call assertions on every rejection path (AC4/AC5/AC6).
+- `src/index.ts` re-exports everything from the package root only; `package.json#exports` declares only `"."` (no `hooks/` subpath), asserted structurally by `index.test.ts` (AC2).
+- Added `scripts/check-extension-api-version-skew.ts` + co-located `.test.ts` (AC7), following `check-story-status-sync.ts`'s pattern: resolves a base/head diff range (`GITHUB_BASE_REF`/`GITHUB_SHA` on CI, `main`/`HEAD` locally), diffs `packages/extension-api/src/**`, and compares the actual `version` field value (not just file-touched) via `git show <ref>:package.json`. Wired into root `package.json`, `Makefile`'s `ci:` target, and `.github/workflows/ci.yml`.
+- Final test run: `packages/extension-api` — 7 test files, 24 tests passed, coverage 93.75% stmts / 100% branch / 80% functions / 93.75% lines (meets the repo's 80/80/80/80 bar). `scripts/check-extension-api-version-skew.test.ts` — 14 tests passed. No regressions in touched config files (`package.json`, `Makefile`, `.github/workflows/ci.yml` are additive-only diffs).
+- Scope held to this story's boundary: no `apps/api`/`apps/web` changes made.
+
 ### File List
+
+- `packages/extension-api/package.json` (new)
+- `packages/extension-api/tsconfig.json` (new)
+- `packages/extension-api/eslint.config.js` (new)
+- `packages/extension-api/vitest.config.ts` (new)
+- `packages/extension-api/src/index.ts` (new)
+- `packages/extension-api/src/index.test.ts` (new)
+- `packages/extension-api/src/manifest.ts` (new)
+- `packages/extension-api/src/manifest.test.ts` (new)
+- `packages/extension-api/src/errors.ts` (new)
+- `packages/extension-api/src/register-extension.ts` (new)
+- `packages/extension-api/src/register-extension.test.ts` (new)
+- `packages/extension-api/src/hooks/auth-strategy.ts` (new)
+- `packages/extension-api/src/hooks/auth-strategy.test.ts` (new)
+- `packages/extension-api/src/hooks/notification-channel.ts` (new)
+- `packages/extension-api/src/hooks/notification-channel.test.ts` (new)
+- `packages/extension-api/src/hooks/ui-panel.ts` (new)
+- `packages/extension-api/src/hooks/ui-panel.test.ts` (new)
+- `packages/extension-api/src/hooks/type-fixtures.ts` (new)
+- `packages/extension-api/src/hooks/type-fixtures.test.ts` (new)
+- `scripts/check-extension-api-version-skew.ts` (new)
+- `scripts/check-extension-api-version-skew.test.ts` (new)
+- `package.json` (modified — new `check-extension-api-version-skew` script)
+- `Makefile` (modified — new `pnpm check-extension-api-version-skew` step in `ci:` target)
+- `.github/workflows/ci.yml` (modified — new "Check extension-api version-skew" CI step)
+- `pnpm-lock.yaml` (modified — `semver`/`@types/semver` added)
+
+## Change Log
+
+- 2026-07-24: Implemented Story 14.1 end-to-end via TDD (tests written and confirmed failing
+  before each source file existed). Scaffolded `packages/extension-api` with
+  `defineExtension()`/`registerExtension()`/`EXTENSION_API_VERSION`/typed hook interfaces
+  (`AuthStrategy`/`NotificationChannel`/`UIPanel`), all Promise-typed and root-only exported.
+  `registerExtension()` validates reverse-DNS manifest names and semver capability compatibility
+  (via the `semver` package, explicit `includePrerelease: false`) before ever invoking
+  `hooksFactory`, throwing a typed `ExtensionRegistrationError` discriminated by `reason` — every
+  rejection path is verified with a zero-call spy assertion on `hooksFactory`, not just that it
+  throws. Added `scripts/check-extension-api-version-skew.ts` (+ test) and wired it into
+  `Makefile`'s `ci:` target, `.github/workflows/ci.yml`, and root `package.json` (AC7). No
+  `apps/api`/`apps/web` changes — this package is unconsumed until Stories 14.2/14.3.
