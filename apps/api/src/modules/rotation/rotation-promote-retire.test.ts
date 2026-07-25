@@ -9,6 +9,7 @@ import {
   createCredentialViaApi,
 } from '../credentials/credential-route-test-helpers.js'
 import { cookieHeader } from '../../__tests__/helpers/auth-test-helpers.js'
+import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import {
   createApp,
   createDirectAuthenticatedUser,
@@ -310,6 +311,38 @@ describe.sequential('rotation promote/retire/staged-value routes (Story 5.6)', (
 
     const res = await stagedValueViaApi(app, sameOrgViewerCookies, ids)
     expect(res.statusCode).toBe(403)
+  })
+
+  it('Review fix (AC-8.1): a project-role viewer with a sufficient org role cannot reveal a staged value (mirrors the ordinary value route project-role gate)', async () => {
+    const STAGED_VALUE_PROJECT_ROLE_LABEL = 'staged-value-project-role'
+    const { addUserToOrg, addProjectMember } = createMembershipTestHelpers({
+      emailPrefix: STAGED_VALUE_PROJECT_ROLE_LABEL,
+      orgNamePrefix: 'StagedValueProjectRole',
+    })
+    const ids = await initiateAndGetIds(app, owner.cookies, STAGED_VALUE_PROJECT_ROLE_LABEL)
+    // Org-level role is 'member' (sufficient by itself), but the project-scoped role is
+    // downgraded to 'viewer' — before the review fix, loadRotationScopedParams never checked
+    // this, so the staged-value route allowed reveal here while the ordinary value route (which
+    // does call rejectIfInsufficientProjectRoleForReveal) would have blocked it.
+    const projectMember = await addUserToOrg(app, owner.orgId, STAGED_VALUE_PROJECT_ROLE_LABEL, {
+      orgRole: 'member',
+    })
+    await addProjectMember(owner.orgId, ids.projectId, projectMember.userId, 'viewer')
+
+    const res = await stagedValueViaApi(app, projectMember.cookies, ids)
+    expect(res.statusCode).toBe(403)
+    expect(res.json<{ code: string }>().code).toBe('insufficient_project_role')
+
+    // Same gate, same rejection, on the ordinary value route once promoted — proves parity, not
+    // just that the staged-value route independently rejects for some other reason.
+    await promoteViaApi(app, owner.cookies, ids, { acknowledgedNoDependencies: true })
+    const ordinaryRes = await app.inject({
+      method: 'GET',
+      url: credentialValueUrl(ids.projectId, ids.credentialId),
+      headers: { cookie: cookieHeader(projectMember.cookies) },
+    })
+    expect(ordinaryRes.statusCode).toBe(403)
+    expect(ordinaryRes.json<{ code: string }>().code).toBe('insufficient_project_role')
   })
 
   it('AC-10/Example 10a: archiving a project with a staged or promoted rotation is blocked', async () => {

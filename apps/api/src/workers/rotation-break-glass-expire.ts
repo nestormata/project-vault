@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
-import { AuditEvent, OperationalEvent } from '@project-vault/shared'
+import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
-import { credentialVersions, rotations } from '@project-vault/db/schema'
+import { credentialVersions } from '@project-vault/db/schema'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { tryAcquireCredentialScopedLock } from '../lib/rotation-locks.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
@@ -59,33 +59,18 @@ async function expireOneVersion(orgId: string, candidate: ExpiredVersionRow): Pr
     })
     rotationBreakGlassOverlapExpirationsTotal.inc()
 
-    // Story 5.6 AC-9.1e/AC-9.3: the deferred ROTATION_OLD_RETIRED audit event — fired at the
-    // moment the physical cryptographic purge actually happens (the UPDATE above), matching when
-    // the old version really stops being retrievable, not when break-glass itself ran. Only
-    // break-glass rotations reach this worker (the ordinary staged/promoted/retired path's
-    // ROTATION_OLD_RETIRED is written synchronously by retireRotation's route handler instead).
-    const [breakGlassRotation] = await tx
-      .select({ id: rotations.id })
-      .from(rotations)
-      .where(
-        and(
-          eq(rotations.previousVersionId, candidate.id),
-          eq(rotations.status, 'break_glass_complete')
-        )
-      )
-      .limit(1)
-    if (breakGlassRotation) {
-      await writeSystemAuditRow(tx, {
-        orgId,
-        eventType: AuditEvent.ROTATION_OLD_RETIRED,
-        payload: {
-          rotationId: breakGlassRotation.id,
-          credentialVersionId: candidate.id,
-          credentialId: candidate.credentialId,
-          breakGlass: true,
-        },
-      })
-    }
+    // Review fix (5-6 code review, AC-9.1e/AC-9.3): the deferred ROTATION_OLD_RETIRED audit
+    // event used to be written here, but this UPDATE only clears rotationLockedAt/
+    // breakGlassOverlapExpiresAt — it lifts the FR105 retention exemption, it does NOT
+    // cryptographically purge the ciphertext. The actual zero-then-null purge happens later,
+    // whenever prune-credential-versions.ts's own retentionCount-gated cycle next reaches this
+    // now-unlocked version — which, depending on retentionCount and how many other versions this
+    // credential has, can be well after this job runs, or (if the version stays inside the
+    // retention window) may not happen for a long time. Writing "old retired" here would
+    // therefore claim cryptographic destruction that had not actually occurred yet.
+    // prune-credential-versions.ts's purgeVersion() now writes ROTATION_OLD_RETIRED itself, at
+    // the moment it actually zeroes the ciphertext for a break-glass rotation's previous version
+    // — see that file for the deferred write.
   })
 }
 

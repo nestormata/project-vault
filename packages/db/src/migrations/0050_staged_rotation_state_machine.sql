@@ -61,25 +61,32 @@ DO $$
 DECLARE
   invariant_failures integer;
 BEGIN
-  -- row_number() (not MAX on a record — Postgres has no MAX aggregate for anonymous record
-  -- types) ranks each credential's promoted versions by (promoted_at DESC, version_number DESC)
-  -- and counts how many credentials have anything other than exactly one rank-1 row.
+  -- Review fix (5-6 code review, Edge Case Hunter finding): the original version of this check
+  -- used row_number() to rank each credential's promoted versions, then flagged any credential
+  -- with count(rn = 1) <> 1. row_number() is guaranteed by definition to assign exactly one
+  -- rank-1 row per PARTITION BY group, even when multiple rows tie on the ORDER BY columns — so
+  -- that HAVING clause could never match anything, meaning the check always reported zero
+  -- failures regardless of whether the backfill was actually correct. rank() (not MAX on a
+  -- record — Postgres has no MAX aggregate for anonymous record types) instead assigns the SAME
+  -- rank to genuine (promoted_at, version_number) ties, so count(*) FILTER (WHERE rnk = 1) > 1
+  -- can now actually trigger and catch a real duplicate-"current"-version anomaly for a
+  -- credential, turning this from a check that could never fail into one that can.
   SELECT count(*) INTO invariant_failures
   FROM (
     SELECT credential_id
     FROM (
       SELECT
         credential_id,
-        row_number() OVER (
+        rank() OVER (
           PARTITION BY credential_id ORDER BY promoted_at DESC, version_number DESC
-        ) AS rn
+        ) AS rnk
       FROM credential_versions
       WHERE promoted_at IS NOT NULL
         AND purged_at IS NULL
         AND abandoned_at IS NULL
     ) AS ranked
     GROUP BY credential_id
-    HAVING count(*) FILTER (WHERE rn = 1) <> 1
+    HAVING count(*) FILTER (WHERE rnk = 1) <> 1
   ) AS failing;
 
   RAISE NOTICE 'migration 0050: % credential(s) failed the exactly-one-current-version invariant check (expected 0)', invariant_failures;

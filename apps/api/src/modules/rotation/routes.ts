@@ -7,7 +7,7 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
 import { buildPaginationMeta, paginationOffset, parsePagination } from '../../lib/pagination.js'
-import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { roleRank, secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import type { BossService } from '../../lib/boss.js'
 import {
@@ -17,6 +17,7 @@ import {
 } from '../../notifications/dispatcher.js'
 import { env } from '../../config/env.js'
 import { PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
+import { effectiveProjectRole } from '../projects/project-access.js'
 import {
   AbandonRotationBodySchema,
   AbandonRotationResponseSchema,
@@ -119,6 +120,41 @@ const CHECKLIST_ITEM_NOT_FOUND = {
   code: 'checklist_item_not_found',
   message: 'Checklist item not found',
 } as const
+const INSUFFICIENT_PROJECT_ROLE = {
+  code: 'insufficient_project_role',
+  message: 'Your role in this project does not permit revealing credential values',
+} as const
+
+/** Review finding (5-6 code review): AC-8.1 requires the staged-value route to mirror the
+ *  ordinary value-reveal route's permission gate "exactly" — but `loadRotationScopedParams`
+ *  only checks the credential exists in the project, it never re-checks the caller's
+ *  *effective project role* the way `credentials/routes.ts`'s
+ *  `rejectIfInsufficientProjectRoleForReveal` does for GET .../value. Without this check, a
+ *  caller with a sufficient org-level role but a downgraded/insufficient *project*-level role
+ *  could read a staged value via this new route while being correctly blocked from the ordinary
+ *  value route — a real gate weakening on what AC-8.7 itself calls "a genuinely new
+ *  secret-disclosure surface". Mirrors `rejectIfInsufficientProjectRoleForReveal` verbatim. */
+async function rejectIfInsufficientProjectRoleForStagedValueReveal(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string,
+  credentialId: string
+): Promise<boolean> {
+  const effective = await effectiveProjectRole(secureCtx, projectId)
+  if (roleRank(effective) >= roleRank('member')) return false
+  req.log.warn(
+    {
+      eventType: OperationalEvent.CREDENTIAL_REVEAL_FAILURE,
+      orgId: secureCtx.auth.orgId,
+      credentialId,
+      reason: 'insufficient_project_role',
+    },
+    'Staged credential value reveal failed'
+  )
+  reply.status(403).send(INSUFFICIENT_PROJECT_ROLE)
+  return true
+}
 
 /** Shared by initiate and break-glass: both service calls return `status:
  *  'credential_not_found'` for the same cross-org/nonexistent-credential case. A type predicate
@@ -1721,7 +1757,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
     security: {
       minimumRole: 'member',
       rateLimit: {
-        max: 30,
+        max: 120,
         timeWindowMs: 60_000,
         key: 'GET /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/staged-value',
       },
@@ -1731,6 +1767,19 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       const loaded = await loadRotationScopedParams(ctx, req, reply)
       if (!loaded) return reply
       const { params, secureCtx } = loaded
+
+      // AC-8.1: mirror the ordinary value-reveal route's project-role gate exactly (review fix
+      // — this was previously missing, see rejectIfInsufficientProjectRoleForStagedValueReveal).
+      if (
+        await rejectIfInsufficientProjectRoleForStagedValueReveal(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          params.credentialId
+        )
+      )
+        return reply
 
       const result = await getStagedValue(secureCtx.tx, params)
       if (result.status !== 'found') {

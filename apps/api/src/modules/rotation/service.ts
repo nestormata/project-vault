@@ -1357,6 +1357,17 @@ export async function getStagedValue(
     return { status: 'not_staged', currentStatus: rotation.status }
   }
 
+  // Review fix (5-6 code review, AC-5.6): the `rotation.status !== 'staged'` check above and
+  // this version fetch are two separate statements with no lock between them (this route
+  // deliberately does not take the rotation-scoped advisory lock, since it's a read — see
+  // AC-5.6's rationale). Without `isNull(abandonedAt)` here, a concurrent abandon (either the
+  // ordinary abandonRotation() or break-glass's supersedeActiveRotation(), both of which set
+  // credentialVersions.abandonedAt on this exact row in the same transaction they flip
+  // rotations.status away from 'staged') could commit in the narrow window between the two
+  // statements above, and this query — reading only by id, with no re-check of abandonment —
+  // would still return the now-abandoned version's plaintext. Filtering on abandonedAt here
+  // closes that window using the same idiom `revealCurrentValue()`'s current-version query
+  // already relies on (CR5) for the identical purpose.
   const [version] = await tx
     .select({
       versionNumber: credentialVersions.versionNumber,
@@ -1364,7 +1375,9 @@ export async function getStagedValue(
       schemaVersion: credentialVersions.schemaVersion,
     })
     .from(credentialVersions)
-    .where(eq(credentialVersions.id, rotation.newVersionId))
+    .where(
+      and(eq(credentialVersions.id, rotation.newVersionId), isNull(credentialVersions.abandonedAt))
+    )
     .limit(1)
   if (!version?.encryptedValue) return { status: 'rotation_not_found' }
 

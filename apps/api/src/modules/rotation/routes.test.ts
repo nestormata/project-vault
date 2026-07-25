@@ -2396,11 +2396,14 @@ describe.sequential(
       expect(supersededVersion?.breakGlassOverlapExpiresAt).not.toBeNull()
     }, 20_000)
 
-    // Story 5.6 AC-9 Example 9a: ROTATION_PROMOTED fires at break-glass time (same transaction),
-    // ROTATION_OLD_RETIRED is deferred until the existing overlap-expiry worker actually performs
-    // the physical purge — not fired eagerly while the old value is still, deliberately, usable
-    // during the overlap window.
-    it('AC-9 Example 9a: ROTATION_PROMOTED fires immediately, ROTATION_OLD_RETIRED is deferred to overlap expiry', async () => {
+    // Story 5.6 AC-9 Example 9a: ROTATION_PROMOTED fires at break-glass time (same transaction).
+    // ROTATION_OLD_RETIRED is deferred further than just the overlap-expiry worker (review fix,
+    // AC-9.1e/AC-9.3) — the overlap-expiry worker only lifts the FR105 exemption
+    // (rotationLockedAt), it does not zero the ciphertext; ROTATION_OLD_RETIRED now fires from
+    // prune-credential-versions.ts's purgeVersion(), at the moment the old value is actually,
+    // physically purged, which can be a later, separate job run.
+    it('AC-9 Example 9a: ROTATION_PROMOTED fires immediately; ROTATION_OLD_RETIRED waits for the actual physical purge, not just overlap expiry', async () => {
+      const OLD_RETIRED_EVENT_TYPE = 'rotation.old_retired'
       const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-audit-sequence')
       const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
         name: 'Break Glass Audit Sequence Key',
@@ -2426,7 +2429,7 @@ describe.sequential(
         tx
           .select({ payload: auditLogEntries.payload })
           .from(auditLogEntries)
-          .where(eq(auditLogEntries.eventType, 'rotation.old_retired'))
+          .where(eq(auditLogEntries.eventType, OLD_RETIRED_EVENT_TYPE))
       )
       expect(
         retiredRowsBeforeExpiry.some(
@@ -2435,8 +2438,7 @@ describe.sequential(
       ).toBe(false)
 
       // Force the overlap window into the past (matching the overlap-expiry worker's own test
-      // pattern) and run the worker — this is when the physical purge, and the deferred
-      // ROTATION_OLD_RETIRED audit event, actually happen.
+      // pattern) and run the worker.
       await withOrg(owner.orgId, (tx) =>
         tx
           .update(credentialVersions)
@@ -2466,16 +2468,56 @@ describe.sequential(
             )
           )
       )
+      // Review fix (5-6 code review, AC-9.1e/AC-9.3): the overlap-expiry worker only lifts the
+      // FR105 exemption (clears rotationLockedAt) — it does not itself zero the ciphertext, so
+      // ROTATION_OLD_RETIRED must NOT be written yet at this point (the old value has not
+      // actually been cryptographically destroyed).
       expect(oldVersionAfterExpiry[0]?.rotationLockedAt).toBeNull()
+      expect(oldVersionAfterExpiry[0]?.purgedAt).toBeNull()
 
-      const retiredRowsAfterExpiry = await withOrg(owner.orgId, (tx) =>
+      const retiredRowsAfterOverlapExpiryOnly = await withOrg(owner.orgId, (tx) =>
         tx
           .select({ payload: auditLogEntries.payload })
           .from(auditLogEntries)
-          .where(eq(auditLogEntries.eventType, 'rotation.old_retired'))
+          .where(eq(auditLogEntries.eventType, OLD_RETIRED_EVENT_TYPE))
       )
       expect(
-        retiredRowsAfterExpiry.some(
+        retiredRowsAfterOverlapExpiryOnly.some(
+          (row) => (row.payload as { rotationId?: string }).rotationId === rotationId
+        )
+      ).toBe(false)
+
+      // The old version is no longer exempt (rotationLockedAt is null), but the ordinary
+      // retentionCount-gated pruning job is what actually performs the physical purge — force
+      // retentionCount down to 1 so it's eligible this run, matching the pattern of the AC-3
+      // regression tests in prune-credential-versions.test.ts.
+      await withOrg(owner.orgId, (tx) =>
+        tx.update(credentials).set({ retentionCount: 1 }).where(eq(credentials.id, credential.id))
+      )
+      const { pruneCredentialVersions } = await import('../../workers/prune-credential-versions.js')
+      await pruneCredentialVersions()
+
+      const oldVersionAfterPrune = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ purgedAt: credentialVersions.purgedAt })
+          .from(credentialVersions)
+          .where(
+            and(
+              eq(credentialVersions.credentialId, credential.id),
+              eq(credentialVersions.versionNumber, 1)
+            )
+          )
+      )
+      expect(oldVersionAfterPrune[0]?.purgedAt).not.toBeNull()
+
+      const retiredRowsAfterPrune = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ payload: auditLogEntries.payload })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, OLD_RETIRED_EVENT_TYPE))
+      )
+      expect(
+        retiredRowsAfterPrune.some(
           (row) => (row.payload as { rotationId?: string }).rotationId === rotationId
         )
       ).toBe(true)
