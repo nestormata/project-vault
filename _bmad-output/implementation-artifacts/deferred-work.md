@@ -378,3 +378,39 @@ here at story-completion time, which is itself the retro's finding #2 (a recurre
 - AC-8's org-state gate has an unaddressed race condition.
 
 See `epic-12-retro-2026-07-24.md` findings #2 and #3 for full context.
+
+---
+
+## Deferred from: Story 5-6 code review (2026-07-25) — PAUSED, decision needed before continuing
+
+**Status: story 5-6 is implemented and committed on `feature/5-6-staged-primary-secondary-rotation-state-machine`
+(commits `2c99e55` implementation + `d5cb7d1` code-review fixes), but the branch has NOT been pushed
+and no PR has been opened.** `pick-story`'s C2 (code review) is done; C3 (CI gate), C4 (sprint-status
+-> done), C5 (push), C6 (PR) have not run. `sprint-status.yaml` still shows this story as `review`,
+which is correct/safe to leave as-is while paused.
+
+**The one open decision blocking C3 onward:**
+
+`supersedeActiveRotation()` (used by break-glass) does not handle the case where a credential
+already has a **promoted-but-unretired** rotation in flight. Concretely: break-glass does not block
+or auto-abandon that earlier rotation — it silently proceeds and creates a third version. Because
+the new break-glass version gets a later `promoted_at`, it wins the `ORDER BY promoted_at DESC`
+current-version selection and silently displaces the earlier promoted rotation's value as "current."
+The earlier rotation is left orphaned in `promoted` state indefinitely, with no forward path except
+a human noticing. The code has a comment acknowledging this, but there is no test for it, and the
+actual runtime consequence (silent value displacement on a live credential) is worse than "documented
+gap" suggests. Full write-up, including why "leave it as a documented gap" is NOT simply safe (it
+doesn't actually prevent the un-serve-a-live-value outcome the original design was trying to avoid),
+is in the code-review agent's report — see this session's transcript, or re-run `bmad-code-review`
+against commit `2c99e55` for the same finding.
+
+Nestor was asked to choose between three options (hard-block break-glass when a promoted-but-unretired
+rotation exists; supersede-and-abandon it automatically, matching existing behavior for staged/
+in_progress rotations; or ship as a documented/tested gap with a tracked follow-up) and asked to pause
+rather than decide immediately — so **no option has been chosen yet.**
+
+**To resume:** decide the break-glass-vs-promoted-rotation behavior, implement it (touches
+`apps/api/src/modules/rotation/service.ts`'s `supersedeActiveRotation()` and needs a new regression
+test), commit, then continue `pick-story`'s Path C from C3 (`make ci`) onward in the existing worktree
+at `.claude/worktrees/feature/5-6-staged-primary-secondary-rotation-state-machine`. Story 2-10 is
+queued behind this one (it depends on 5-6 landing first) — see `sprint-status.yaml`'s 2-10 entry.
