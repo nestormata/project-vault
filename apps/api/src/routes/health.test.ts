@@ -28,8 +28,23 @@ vi.mock('../modules/vault/key-service.js', () => ({
   getVaultStatus: () => mockVaultStatus.value,
 }))
 
+// Story 14.2: /health's extensions_status comes from the loader's module-level state. Mocked
+// here so this route-level test can control all three values without loading a real extension
+// package; loader.test.ts covers the loader's own state-transition logic directly.
+const { mockExtensionsHealth } = vi.hoisted(() => ({
+  mockExtensionsHealth: {
+    value: 'not_configured' as 'not_configured' | 'loaded' | 'load_failed',
+  },
+}))
+
+vi.mock('../extensions/loader.js', () => ({
+  loadExtension: async () => undefined,
+  getExtensionsHealthField: () => mockExtensionsHealth.value,
+}))
+
 beforeEach(() => {
   mockVaultStatus.value = 'unsealed'
+  mockExtensionsHealth.value = 'not_configured'
 })
 
 describe('GET /health', () => {
@@ -46,6 +61,34 @@ describe('GET /health', () => {
     expect(body.status).toBe('ok')
     expect(typeof body.version).toBe('string')
     await app.close()
+  })
+
+  describe('Story 14.2: extensions_status', () => {
+    it('is "not_configured" when no extension is configured (AC-1)', async () => {
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ extensions_status: string }>()
+      expect(body.extensions_status).toBe('not_configured')
+      await app.close()
+    })
+
+    it.each(['loaded', 'load_failed'] as const)(
+      'reports extensions_status "%s" without requiring auth and without a non-200 status (AC-2/3/6)',
+      async (status) => {
+        mockExtensionsHealth.value = status
+        const app = await createApp({ logger: false })
+
+        const response = await app.inject({ method: 'GET', url: '/health' })
+
+        expect(response.statusCode).toBe(200)
+        const body = response.json<{ extensions_status: string }>()
+        expect(body.extensions_status).toBe(status)
+        await app.close()
+      }
+    )
   })
 })
 

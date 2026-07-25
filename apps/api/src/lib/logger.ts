@@ -58,9 +58,18 @@ export function createLoggerConfig(
  * use request.log (or request.log.child()) directly, never this function, so a
  * real trace ID is never masked by the sentinel value.
  */
+// `logger` is `Partial<...>` (not a plain `Pick`) rather than adding function overloads: an
+// overloaded signature breaks every existing call site that derives its own logger parameter
+// type via `Parameters<typeof operationalLog>[0]` (e.g. modules/backup/routes.ts's
+// `reportBackupFailureAlert`) — `Parameters<T>` on an overloaded function resolves to only the
+// last declared overload, silently narrowing those call sites to `Pick<FastifyBaseLogger,
+// 'fatal'>`. A single `Partial<...>` signature keeps every pre-existing narrower
+// `WorkerLogger`-style logger (info/warn/error, no `.fatal`) assignable unchanged, while still
+// letting Story 14.2's fatal-equivalent boot-time logging (apps/api/src/extensions/loader.ts)
+// pass `level: 'fatal'` with a logger that implements `.fatal`.
 export function operationalLog(
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>,
-  level: 'info' | 'warn' | 'error',
+  logger: Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>,
+  level: 'info' | 'warn' | 'error' | 'fatal',
   eventType: string,
   message: string,
   fields?: Record<string, unknown>
@@ -68,13 +77,16 @@ export function operationalLog(
   const payload = { ...fields, eventType, traceId: SYSTEM_TRACE_ID }
   switch (level) {
     case 'info':
-      logger.info(payload, message)
+      logger.info?.(payload, message)
       break
     case 'warn':
-      logger.warn(payload, message)
+      logger.warn?.(payload, message)
       break
     case 'error':
-      logger.error(payload, message)
+      logger.error?.(payload, message)
+      break
+    case 'fatal':
+      logger.fatal?.(payload, message)
       break
   }
 }

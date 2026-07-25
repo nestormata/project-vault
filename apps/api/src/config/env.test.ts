@@ -1233,4 +1233,37 @@ describe('env', () => {
       expect(exitSpy).not.toHaveBeenCalled()
     })
   })
+
+  describe('Story 14.2: VAULT_EXTENSIONS_PACKAGE', () => {
+    it('is undefined when unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_EXTENSIONS_PACKAGE).toBeUndefined()
+    })
+
+    it('treats an empty string the same as unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_EXTENSIONS_PACKAGE: '',
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_EXTENSIONS_PACKAGE).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('equals the provided string when set', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_EXTENSIONS_PACKAGE: '@acme/vault-extension',
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_EXTENSIONS_PACKAGE).toBe('@acme/vault-extension')
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
 })

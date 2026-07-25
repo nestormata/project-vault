@@ -183,6 +183,18 @@ export const OperationalEvent = {
   // Story 9.4 AC-17/AC-18: platform operator audit log retention pruning and storage monitoring.
   PLATFORM_AUDIT_RETENTION_PRUNE_SUMMARY: 'platform_audit.retention_prune.summary',
   PLATFORM_AUDIT_STORAGE_CHECK_FAILED: 'platform_audit_storage.check_failed',
+
+  // Story 14.2: extension loader (apps/api/src/extensions/loader.ts). Fatal-equivalent
+  // failure-reason log — never carries the raw exception message/stack (fixed-enum reason
+  // only, matching this codebase's secret-redaction-in-logs precedent).
+  EXTENSION_LOAD_FAILED: 'extension.load_failed',
+  // A single org's boot-time audit-fanout row failed to write — log-and-continue, distinct
+  // from an actual extension load failure so the two are never conflated in monitoring.
+  EXTENSION_AUDIT_FANOUT_ROW_FAILED: 'extension.audit_fanout_row_failed',
+  // Dev Notes judgment call #5: a second loadExtension() invocation after state already
+  // resolved (loaded or load_failed) is ignored rather than re-run — warn-logged so a
+  // regression that double-invokes the loader is still visible in monitoring.
+  EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED: 'extension.load_double_invocation_ignored',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

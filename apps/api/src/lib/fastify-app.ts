@@ -8,6 +8,10 @@ type FastifyLogger = {
   info: (payload: unknown, message?: string) => void
   warn: (payload: unknown, message?: string) => void
   error: (payload: unknown, message?: string) => void
+  // Story 14.2: fatal-equivalent boot-time logging (apps/api/src/extensions/loader.ts) needs
+  // this in addition to the pre-existing info/warn/error trio — every real Fastify/pino logger
+  // already implements it.
+  fatal: (payload: unknown, message?: string) => void
 }
 
 export type FastifyApp = {
