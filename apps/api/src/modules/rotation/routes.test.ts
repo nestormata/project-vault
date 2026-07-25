@@ -78,6 +78,18 @@ async function createInitiatedRotationFixture(
   return { projectId, credentialId: credential.id, rotationId }
 }
 
+/** Story 5.6 AC-6.4/AC-7: the legacy `complete` route is now reachable ONLY for rotations still
+ *  `in_progress` — a status new-code never writes after this story ships, only present via the
+ *  AC-7 migration's backfill of pre-5.6 in-flight rows. Tests that exercise `complete`'s own
+ *  still-unchanged logic (Story 5.2/5.5 behavior, preserved verbatim by this story) simulate that
+ *  migrated-legacy-row shape directly, rather than through the (now `staged`-by-default) public
+ *  initiation API. */
+async function forceRotationToInProgress(orgId: string, rotationId: string): Promise<void> {
+  await withOrg(orgId, (tx) =>
+    tx.update(rotations).set({ status: 'in_progress' }).where(eq(rotations.id, rotationId))
+  )
+}
+
 async function getRotationDetailViaApi(
   app: TestApp,
   cookies: Record<string, string>,
@@ -283,6 +295,22 @@ async function completeRotationViaApi(
   return app.inject({
     method: 'POST',
     url: completeRotationUrl(ids.projectId, ids.credentialId, ids.rotationId),
+    headers: { cookie: cookieHeader(cookies) },
+    payload: body,
+  })
+}
+
+// Story 5.6 Task 2: promote/retire/staged-value route helpers, following completeRotationViaApi's
+// exact shape.
+async function promoteRotationViaApi(
+  app: TestApp,
+  cookies: Record<string, string>,
+  ids: { projectId: string; credentialId: string; rotationId: string },
+  body: Record<string, unknown> = {}
+) {
+  return app.inject({
+    method: 'POST',
+    url: `${rotationsUrl(ids.projectId, ids.credentialId)}/${ids.rotationId}/promote`,
     headers: { cookie: cookieHeader(cookies) },
     payload: body,
   })
@@ -538,7 +566,8 @@ describe.sequential('rotation routes', () => {
         checklistItems: { systemName: string; status: string }[]
       }
     }>()
-    expect(body.data.status).toBe('in_progress')
+    // Story 5.6 AC-2.2: new rotations are inserted as 'staged' (was 'in_progress' pre-5.6).
+    expect(body.data.status).toBe('staged')
     expect(body.data.version).toBe(1)
     expect(body.data.checklistItems).toHaveLength(2)
     expect(body.data.checklistItems.map((i) => i.systemName)).toEqual(
@@ -563,14 +592,9 @@ describe.sequential('rotation routes', () => {
     )
     expect(lockedVersion[0]?.rotationLockedAt).not.toBeNull()
 
-    // The new value is live immediately (reveal always serves the highest non-purged version).
-    await expectCredentialValue(
-      app,
-      owner.cookies,
-      projectId,
-      credential.id,
-      'sk_live_ROTATED_not_a_real_key'
-    )
+    // Story 5.6 AC-1 Example 1b: the OLD value remains current/servable while staged — the
+    // opposite of the pre-5.6 behavior, which served the new value immediately.
+    await expectCredentialValue(app, owner.cookies, projectId, credential.id, SENTINEL_VALUE)
 
     const auditRows = await withOrg(owner.orgId, (tx) =>
       tx
@@ -698,7 +722,7 @@ describe.sequential('rotation routes', () => {
     )
     expect(sameOrgDetailRes.statusCode).toBe(200)
     expect(sameOrgDetailRes.json()).toMatchObject({
-      data: { id: rotationId, status: 'in_progress' },
+      data: { id: rotationId, status: 'staged' },
     })
 
     const historyRes = await getRotationHistoryViaApi(
@@ -1129,6 +1153,9 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
     const fixture = await createRotationWithDependenciesFixture(app, owner.cookies, 'not-active', 1)
     const { item } = await confirmFirstItem(app, owner.cookies, fixture)
 
+    // Story 5.6 AC-6.4: complete is only reachable for genuinely in_progress rows (the AC-7
+    // migration window) — simulate that here since new initiations are staged by default.
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
     expect(completeRes.statusCode).toBe(200)
     expect(completeRes.json()).toMatchObject({ data: { status: 'completed' } })
@@ -1369,6 +1396,8 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'race-complete',
       1
     )
+    // Story 5.6 AC-6.4: complete is only reachable for genuinely in_progress rows.
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     const item = must(fixture.items[0])
 
     // See holdRotationLockAndFire's comment above: CI observed this as both [200, 200] and
@@ -1407,6 +1436,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'complete-happy',
       2
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     for (const item of fixture.items) {
       const res = await confirmChecklistItemViaApi(app, owner.cookies, {
         ...fixture,
@@ -1442,6 +1472,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'complete-incomplete',
       2
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     const res = await completeRotationViaApi(app, owner.cookies, fixture)
     expect(res.statusCode).toBe(422)
     const body = res.json<{ code: string; pendingItems: unknown[] }>()
@@ -1464,6 +1495,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'complete-zero-dep',
       0
     )
+    await forceRotationToInProgress(owner.orgId, zeroDepFixture.rotationId)
     const withoutAck = await completeRotationViaApi(app, owner.cookies, zeroDepFixture)
     expect(withoutAck.statusCode).toBe(422)
     expect(withoutAck.json()).toMatchObject({
@@ -1482,6 +1514,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'complete-zero-dep-ignored',
       2
     )
+    await forceRotationToInProgress(owner.orgId, populatedFixture.rotationId)
     const ignoredFlag = await completeRotationViaApi(app, owner.cookies, populatedFixture, {
       acknowledgedNoDependencies: true,
     })
@@ -1516,6 +1549,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'complete-retention',
       0
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     await withOrg(owner.orgId, (tx) =>
       tx
         .update(credentials)
@@ -1582,6 +1616,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'single-actor-true',
       2
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     for (const item of fixture.items) {
       const res = await confirmChecklistItemViaApi(app, owner.cookies, {
         ...fixture,
@@ -1604,6 +1639,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'single-actor-false',
       2
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     const memberUser = await createDirectAuthenticatedUser(app, 'single-actor-member', 'member')
     const memberCookies = await loginExistingUserInOrg(app, {
       userId: memberUser.userId,
@@ -1632,6 +1668,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'single-actor-zero-dep',
       0
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     const completeRes = await completeRotationViaApi(app, owner.cookies, fixture, {
       acknowledgedNoDependencies: true,
     })
@@ -1653,6 +1690,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'single-actor-null-collision',
       2
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     for (const item of fixture.items) {
       const res = await confirmChecklistItemViaApi(app, owner.cookies, {
         ...fixture,
@@ -1691,6 +1729,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'version-ids',
       1
     )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
     for (const item of fixture.items) {
       const res = await confirmChecklistItemViaApi(app, owner.cookies, {
         ...fixture,
@@ -1927,6 +1966,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       'audit-fail-complete',
       1
     )
+    await forceRotationToInProgress(owner.orgId, completeFixture.rotationId)
     await confirmChecklistItemViaApi(app, owner.cookies, {
       ...completeFixture,
       itemId: must(completeFixture.items[0]).id,
@@ -2354,6 +2394,91 @@ describe.sequential(
       const supersededVersion = versionRows.find((v) => v.versionNumber === 1)
       expect(supersededVersion?.rotationLockedAt).not.toBeNull()
       expect(supersededVersion?.breakGlassOverlapExpiresAt).not.toBeNull()
+    }, 20_000)
+
+    // Story 5.6 AC-9 Example 9a: ROTATION_PROMOTED fires at break-glass time (same transaction),
+    // ROTATION_OLD_RETIRED is deferred until the existing overlap-expiry worker actually performs
+    // the physical purge — not fired eagerly while the old value is still, deliberately, usable
+    // during the overlap window.
+    it('AC-9 Example 9a: ROTATION_PROMOTED fires immediately, ROTATION_OLD_RETIRED is deferred to overlap expiry', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'bg-audit-sequence')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Break Glass Audit Sequence Key',
+        value: 'pre-incident-sequence-value',
+      })
+
+      const res = await breakGlassViaApi(app, owner.cookies, projectId, credential.id, {
+        newValue: 'sk_live_EMERGENCY_SEQUENCE',
+        reason: 'AC-9 audit sequencing test, INC-9001',
+      })
+      expect(res.statusCode).toBe(201)
+      const rotationId = res.json<{ data: { id: string } }>().data.id
+
+      const promotedRowsBeforeExpiry = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ resourceId: auditLogEntries.resourceId })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'rotation.promoted'))
+      )
+      expect(promotedRowsBeforeExpiry.some((row) => row.resourceId === rotationId)).toBe(true)
+
+      const retiredRowsBeforeExpiry = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ payload: auditLogEntries.payload })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'rotation.old_retired'))
+      )
+      expect(
+        retiredRowsBeforeExpiry.some(
+          (row) => (row.payload as { rotationId?: string }).rotationId === rotationId
+        )
+      ).toBe(false)
+
+      // Force the overlap window into the past (matching the overlap-expiry worker's own test
+      // pattern) and run the worker — this is when the physical purge, and the deferred
+      // ROTATION_OLD_RETIRED audit event, actually happen.
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(credentialVersions)
+          .set({ breakGlassOverlapExpiresAt: new Date(Date.now() - 60_000) })
+          .where(
+            and(
+              eq(credentialVersions.credentialId, credential.id),
+              eq(credentialVersions.versionNumber, 1)
+            )
+          )
+      )
+      const { runBreakGlassOverlapExpiryJob } =
+        await import('../../workers/rotation-break-glass-expire.js')
+      await runBreakGlassOverlapExpiryJob()
+
+      const oldVersionAfterExpiry = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({
+            purgedAt: credentialVersions.purgedAt,
+            rotationLockedAt: credentialVersions.rotationLockedAt,
+          })
+          .from(credentialVersions)
+          .where(
+            and(
+              eq(credentialVersions.credentialId, credential.id),
+              eq(credentialVersions.versionNumber, 1)
+            )
+          )
+      )
+      expect(oldVersionAfterExpiry[0]?.rotationLockedAt).toBeNull()
+
+      const retiredRowsAfterExpiry = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ payload: auditLogEntries.payload })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'rotation.old_retired'))
+      )
+      expect(
+        retiredRowsAfterExpiry.some(
+          (row) => (row.payload as { rotationId?: string }).rotationId === rotationId
+        )
+      ).toBe(true)
     }, 20_000)
 
     // ---------------------------------------------------------------------------------------
@@ -2859,10 +2984,11 @@ describe.sequential(
     // ---------------------------------------------------------------------------------------
 
     it('POST abandon: stale_recovery -> abandoned; the never-completed new value stops being current, the old value is restored', async () => {
+      const ABANDON_HAPPY_ORIGINAL_VALUE = 'pre-rotation-value'
       const projectId = await createCredentialTestProject(app, owner.cookies, 'abandon-happy')
       const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
         name: 'Abandon Endpoint Key',
-        value: 'pre-rotation-value',
+        value: ABANDON_HAPPY_ORIGINAL_VALUE,
       })
       const initiate = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
         newValue: 'never-validated-value',
@@ -2870,13 +2996,17 @@ describe.sequential(
       const rotationId = initiate.json<{ data: { id: string } }>().data.id
       await forceStaleRecovery(owner.orgId, rotationId)
 
+      // Story 5.6 AC-1 Example 1b: the staged new value never becomes "current" (promoted_at
+      // stays NULL for a staged rotation, even one force-transitioned straight to
+      // stale_recovery for this test) — the old value stays current throughout, before AND
+      // after abandon, the opposite of the pre-5.6 "new value live immediately" behavior.
       const beforeAbandon = await app.inject({
         method: 'GET',
         url: credentialValueUrl(projectId, credential.id),
         headers: { cookie: cookieHeader(owner.cookies) },
       })
       expect(beforeAbandon.json<{ data: { value: string } }>().data.value).toBe(
-        'never-validated-value'
+        ABANDON_HAPPY_ORIGINAL_VALUE
       )
 
       const res = await resolutionViaApi(
@@ -2893,7 +3023,9 @@ describe.sequential(
         url: credentialValueUrl(projectId, credential.id),
         headers: { cookie: cookieHeader(owner.cookies) },
       })
-      expect(afterAbandon.json<{ data: { value: string } }>().data.value).toBe('pre-rotation-value')
+      expect(afterAbandon.json<{ data: { value: string } }>().data.value).toBe(
+        ABANDON_HAPPY_ORIGINAL_VALUE
+      )
 
       const auditRows = await withOrg(owner.orgId, (tx) =>
         tx
@@ -2958,16 +3090,63 @@ describe.sequential(
     // AC-17: resume/abandon invalid-state 422
     // ---------------------------------------------------------------------------------------
 
-    it('POST resume/abandon against a non-stale rotation returns 422 rotation_not_stale', async () => {
+    it('POST resume against a non-stale rotation returns 422 rotation_not_stale', async () => {
       const { projectId, credentialId, rotationId } = await createInitiatedRotationFixture(
         app,
         owner.cookies,
         'resolve-not-stale'
       )
 
+      // Story 5.6 AC-2.2: new rotations are staged by default, not in_progress — resume never
+      // accepts `staged` (only `stale_recovery`), so it's still rejected, just with the new
+      // default status string in the response.
       const ids = { projectId, credentialId, rotationId }
-      await expectResolutionRejectedNotStale(app, owner.cookies, ids, 'resume', 'in_progress')
-      await expectResolutionRejectedNotStale(app, owner.cookies, ids, 'abandon', 'in_progress')
+      await expectResolutionRejectedNotStale(app, owner.cookies, ids, 'resume', 'staged')
+    })
+
+    // Story 5.6 AC-2.5: abandon now DOES accept `staged` as a valid starting state — an
+    // unpromoted staged rotation is exactly as abandonable as an in_progress one was pre-5.6.
+    it('POST abandon against a staged (not yet promoted) rotation succeeds — AC-2.5', async () => {
+      const { projectId, credentialId, rotationId } = await createInitiatedRotationFixture(
+        app,
+        owner.cookies,
+        'resolve-staged-abandonable'
+      )
+
+      const res = await resolutionViaApi(
+        app,
+        owner.cookies,
+        { projectId, credentialId, rotationId },
+        'abandon'
+      )
+      expect(res.statusCode).toBe(200)
+      expect(res.json<{ data: { status: string } }>().data.status).toBe('abandoned')
+    })
+
+    // Story 5.6 AC-2.5: `promoted` is explicitly NOT abandonable — the only forward paths once
+    // promoted are retire, or leaving it promoted-but-unretired indefinitely (FR22).
+    it('POST abandon against a promoted rotation returns 409 rotation_not_abandonable_after_promotion', async () => {
+      const { projectId, credentialId, rotationId } = await createInitiatedRotationFixture(
+        app,
+        owner.cookies,
+        'resolve-promoted-not-abandonable'
+      )
+      const promoteRes = await promoteRotationViaApi(
+        app,
+        owner.cookies,
+        { projectId, credentialId, rotationId },
+        { acknowledgedNoDependencies: true }
+      )
+      expect(promoteRes.statusCode).toBe(200)
+
+      const res = await resolutionViaApi(
+        app,
+        owner.cookies,
+        { projectId, credentialId, rotationId },
+        'abandon'
+      )
+      expect(res.statusCode).toBe(409)
+      expect(res.json()).toMatchObject({ code: 'rotation_not_abandonable_after_promotion' })
     })
 
     it('POST resume immediately after a successful abandon of the same rotation returns 422 (now abandoned, not stale_recovery)', async () => {
@@ -3073,6 +3252,7 @@ describe.sequential(
         data: { id: string; checklistItems: { id: string; systemName: string }[] }
       }>()
       expect(firstBody.data.checklistItems).toHaveLength(2)
+      await forceRotationToInProgress(owner.orgId, firstBody.data.id)
 
       for (const item of firstBody.data.checklistItems) {
         const confirmRes = await confirmChecklistItemViaApi(app, owner.cookies, {

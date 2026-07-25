@@ -351,6 +351,13 @@
       "when": 1784428800000,
       "tag": "0049_credentials_current_version_id_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784515200000,
+      "tag": "0050_staged_rotation_state_machine",
+      "breakpoints": true
     }
   ]
 }

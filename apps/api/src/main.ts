@@ -22,6 +22,7 @@ import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
 import { runBreakGlassOverlapExpiryJob } from './workers/rotation-break-glass-expire.js'
 import { runStaleRotationRecoveryJob } from './workers/rotation-recover.js'
+import { runStaleStagedAlertJob } from './workers/rotation-stale-staged-alert.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
 import { runPaymentExpiryAlertJob } from './workers/payment-expiry-alert.js'
 import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
@@ -75,6 +76,10 @@ const NOTIFICATION_CATCHUP_CRON = '*/10 * * * *'
 // Story 5.3 AC-8/AC-9 job names, referenced at multiple registration sites below.
 const ROTATION_BREAK_GLASS_EXPIRE_JOB = 'rotation/break-glass-expire'
 const ROTATION_RECOVER_JOB = 'rotation/recover'
+// Story 5.6 AC-4: daily cadence (matching credentials/prune-versions and the expiry-alert jobs'
+// once-a-day pattern) — a 14-day-default threshold has no need for the crash-recovery job's
+// every-15-minutes cadence.
+const ROTATION_STALE_STAGED_ALERT_JOB = 'rotation/stale-staged-alert'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
@@ -161,6 +166,7 @@ async function main(): Promise<void> {
       'credentials/prune-versions': { cron: '0 3 * * *' },
       [ROTATION_BREAK_GLASS_EXPIRE_JOB]: { cron: '* * * * *' },
       [ROTATION_RECOVER_JOB]: { cron: '*/15 * * * *' },
+      [ROTATION_STALE_STAGED_ALERT_JOB]: { cron: '0 8 * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
       'payment/expiry-alert': { cron: '0 8 * * *' },
       'cert/expiry-alert': { cron: '0 8 * * *' },
@@ -233,6 +239,10 @@ async function main(): Promise<void> {
       [ROTATION_RECOVER_JOB]: (job) =>
         withJobLogging(fastify.log, ROTATION_RECOVER_JOB, job.id ?? 'unknown', () =>
           runStaleRotationRecoveryJob(boss, fastify.log)
+        ),
+      [ROTATION_STALE_STAGED_ALERT_JOB]: (job) =>
+        withJobLogging(fastify.log, ROTATION_STALE_STAGED_ALERT_JOB, job.id ?? 'unknown', () =>
+          runStaleStagedAlertJob(boss, fastify.log)
         ),
       'import/cleanup-expired': (job) =>
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>

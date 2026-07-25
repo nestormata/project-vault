@@ -3,8 +3,10 @@ import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { credentialVersions } from '@project-vault/db/schema'
 import { auditLogEntries } from '@project-vault/db/schema'
-import { withTestOrg } from '@project-vault/db/test-helpers'
+import { withTestOrg, createTestUser, deleteTestUser } from '@project-vault/db/test-helpers'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
+import { initiateRotation, promoteRotation, retireRotation } from '../modules/rotation/service.js'
+import { encryptValue } from '../lib/encrypt-value.js'
 import {
   findAuditRowOrgIds,
   seedWorkerCredential,
@@ -49,6 +51,33 @@ async function seedVersion(
         keyVersion: 1,
         rotationLockedAt: opts.rotationLockedAt ?? null,
         abandonedAt: opts.abandonedAt ?? null,
+      })
+      .returning({ id: credentialVersions.id })
+  )
+  if (!version) throw new Error('expected test version to be inserted')
+  return version.id
+}
+
+/** Story 5.6 AC-3 tests: unlike seedVersion's dummy fixed ciphertext (fine for prune-job-only
+ *  tests that never decrypt), initiateRotation's same-value comparison DOES decrypt the previous
+ *  version — so these tests need a genuinely vault-encrypted seed row. */
+async function seedRealVersion(
+  orgId: string,
+  credentialId: string,
+  versionNumber: number,
+  value: string
+): Promise<string> {
+  const encryptedValue = await encryptValue(value)
+  const [version] = await withOrg(orgId, (tx) =>
+    tx
+      .insert(credentialVersions)
+      .values({
+        orgId,
+        credentialId,
+        versionNumber,
+        encryptedValue,
+        keyVersion: 1,
+        promotedAt: new Date(),
       })
       .returning({ id: credentialVersions.id })
   )
@@ -225,6 +254,114 @@ describe.sequential('pruneCredentialVersions', () => {
       const auditRowsB = await findAuditRowOrgIds(orgBId, VERSION_PURGED)
       expect(auditRowsA.every((id) => id === orgAId)).toBe(true)
       expect(auditRowsB.every((id) => id === orgBId)).toBe(true)
+    })
+  }, 20_000)
+
+  // ---------------------------------------------------------------------------------------
+  // Story 5.6 AC-3: the FR105 retention exemption now clears only at explicit `retire`, not at
+  // `promote` — a promoted-but-unretired version must survive the ordinary retention job
+  // indefinitely (the literal reproduction of the sprint-change-proposal's highest-severity
+  // Round-3 elicitation finding).
+  // ---------------------------------------------------------------------------------------
+
+  it('AC-3.2: a promoted-but-unretired version survives the pruning job at retentionCount=1', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const userId = await createTestUser('prune-ac3-promoted')
+      try {
+        const projectId = await seedProject(orgId)
+        const credentialId = await seedCredential(orgId, projectId, 1)
+        await seedRealVersion(orgId, credentialId, 1, 'ac3-original-value')
+        const initiated = await withOrg(orgId, (tx) =>
+          initiateRotation(tx, {
+            orgId,
+            projectId,
+            credentialId,
+            userId,
+            body: { newValue: 'ac3-new-value', notes: null },
+          })
+        )
+        if (initiated.status !== 'initiated') throw new Error('expected rotation to initiate')
+
+        const promoted = await withOrg(orgId, (tx) =>
+          promoteRotation(tx, {
+            orgId,
+            projectId,
+            credentialId,
+            rotationId: initiated.rotation.id,
+            userId,
+            body: { acknowledgedNoDependencies: true },
+          })
+        )
+        if (promoted.outcome !== 'promoted') throw new Error('expected rotation to promote')
+
+        await pruneCredentialVersions()
+
+        const versions = await versionsFor(orgId, credentialId)
+        const oldVersion = versions.find((v) => v.versionNumber === 1)
+        expect(oldVersion?.purgedAt).toBeNull()
+        expect(oldVersion?.encryptedValue).not.toBeNull()
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+  }, 20_000)
+
+  it('AC-3.3: after retire, the old version is already purged and the pruning job is a safe no-op', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const userId = await createTestUser('prune-ac3-retired')
+      try {
+        const projectId = await seedProject(orgId)
+        const credentialId = await seedCredential(orgId, projectId, 1)
+        await seedRealVersion(orgId, credentialId, 1, 'ac3-original-value')
+        const initiated = await withOrg(orgId, (tx) =>
+          initiateRotation(tx, {
+            orgId,
+            projectId,
+            credentialId,
+            userId,
+            body: { newValue: 'ac3-new-value-2', notes: null },
+          })
+        )
+        if (initiated.status !== 'initiated') throw new Error('expected rotation to initiate')
+
+        const promoted = await withOrg(orgId, (tx) =>
+          promoteRotation(tx, {
+            orgId,
+            projectId,
+            credentialId,
+            rotationId: initiated.rotation.id,
+            userId,
+            body: { acknowledgedNoDependencies: true },
+          })
+        )
+        if (promoted.outcome !== 'promoted') throw new Error('expected rotation to promote')
+
+        const retired = await withOrg(orgId, (tx) =>
+          retireRotation(tx, {
+            orgId,
+            projectId,
+            credentialId,
+            rotationId: initiated.rotation.id,
+            userId,
+            body: { acknowledgedNoDependencies: true },
+          })
+        )
+        if (retired.outcome !== 'retired') throw new Error('expected rotation to retire')
+
+        const versionsBeforePrune = await versionsFor(orgId, credentialId)
+        const oldVersionBefore = versionsBeforePrune.find((v) => v.versionNumber === 1)
+        expect(oldVersionBefore?.purgedAt).not.toBeNull()
+
+        // Idempotent double-purge guard (AC-3.3/AC-5.3): re-running the pruning job against an
+        // already-purged version must be a safe no-op, not an error.
+        await expect(pruneCredentialVersions()).resolves.not.toThrow()
+
+        const versionsAfterPrune = await versionsFor(orgId, credentialId)
+        const oldVersionAfter = versionsAfterPrune.find((v) => v.versionNumber === 1)
+        expect(oldVersionAfter?.purgedAt?.getTime()).toBe(oldVersionBefore?.purgedAt?.getTime())
+      } finally {
+        await deleteTestUser(userId)
+      }
     })
   }, 20_000)
 

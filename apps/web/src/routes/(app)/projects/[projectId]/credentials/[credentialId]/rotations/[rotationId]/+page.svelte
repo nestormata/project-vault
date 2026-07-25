@@ -2,8 +2,17 @@
   import { onDestroy, onMount } from 'svelte'
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
-  import { completeRotation, getRotation } from '$lib/api/rotations.js'
-  import type { ChecklistIncompleteErrorBody } from '$lib/api/rotations.js'
+  import {
+    completeRotation,
+    getRotation,
+    getStagedValue,
+    promoteRotation,
+    retireRotation,
+  } from '$lib/api/rotations.js'
+  import type {
+    ChecklistIncompleteErrorBody,
+    RotationAcknowledgementRequiredErrorBody,
+  } from '$lib/api/rotations.js'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import ChecklistItemRow from '$lib/components/rotations/ChecklistItemRow.svelte'
@@ -20,7 +29,9 @@
   } from '$lib/components/rotations/rotation-copy.js'
   import type { RotationChecklistItem, RotationDetail } from '@project-vault/shared'
 
-  const ACTIVE_STATUSES = new Set(['in_progress', 'stale_recovery'])
+  // Story 5.6: staged/promoted are also pollable — a rotation isn't done changing state just
+  // because it left in_progress.
+  const ACTIVE_STATUSES = new Set(['in_progress', 'staged', 'promoted', 'stale_recovery'])
 
   let { data } = $props()
 
@@ -45,7 +56,28 @@
   )
   const totalCount = $derived(rotation ? rotation.checklistItems.length : 0)
   const allConfirmed = $derived(totalCount > 0 && confirmedCount === totalCount)
-  const canPerformItemActions = $derived(canAct && rotation?.status === 'in_progress')
+  // Story 5.6 AC-8.5: the checklist stays workable through staged AND promoted (dependent-system
+  // owners keep confirming after promotion, up until retire) — matches the backend's
+  // CHECKLIST_ACTION_ALLOWED_STATUSES.
+  const canPerformItemActions = $derived(
+    canAct &&
+      (rotation?.status === 'in_progress' ||
+        rotation?.status === 'staged' ||
+        rotation?.status === 'promoted')
+  )
+
+  // Story 5.6 Task 6: promote/retire state.
+  let promoting = $state(false)
+  let promoteError = $state<string | null>(null)
+  let promotePendingItemNames = $state<string[]>([])
+  let acknowledgeIncompleteChecklistForPromote = $state(false)
+  let retiring = $state(false)
+  let retireError = $state<string | null>(null)
+  let retirePendingItemNames = $state<string[]>([])
+  let acknowledgeIncompleteChecklistForRetire = $state(false)
+  let stagedValue = $state<string | null>(null)
+  let stagedValueError = $state<string | null>(null)
+  let revealingStagedValue = $state(false)
 
   async function refetch() {
     try {
@@ -139,6 +171,126 @@
     }
   }
 
+  // Story 5.6 AC-2/AC-5/AC-6: promote — staged -> promoted. Advisory checklist: pending items
+  // never hard-block, they require the acknowledgeIncompleteChecklist flag instead.
+  async function submitPromote() {
+    if (!rotation || promoting) return
+    promoting = true
+    promoteError = null
+    promotePendingItemNames = []
+    try {
+      const body =
+        totalCount === 0
+          ? { acknowledgedNoDependencies: true }
+          : acknowledgeIncompleteChecklistForPromote
+            ? { acknowledgeIncompleteChecklist: true }
+            : {}
+      rotation = await promoteRotation(
+        fetch,
+        data.projectId,
+        data.credentialId,
+        data.rotationId,
+        body
+      )
+      acknowledgeIncompleteChecklistForPromote = false
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        if (error.status === 422 && error.code === 'acknowledgement_required') {
+          const body = error.body as unknown as RotationAcknowledgementRequiredErrorBody
+          promotePendingItemNames = body.pendingItems.map((item) => item.systemName)
+          promoteError =
+            body.totalItemCount === 0
+              ? 'Please confirm the credential is updated everywhere before promoting.'
+              : 'Some systems have not confirmed yet — acknowledge to promote anyway:'
+        } else if (error.status === 409 && error.code === 'concurrent_modification') {
+          await handleConcurrentModification()
+        } else if (error.status === 409 && error.code === 'rotation_not_promotable') {
+          await refetch()
+        } else {
+          promoteError = mapRotationMutationError(
+            error,
+            { actionLabel: 'promote this value' },
+            'Could not promote rotation.'
+          )
+        }
+      } else {
+        promoteError = error instanceof Error ? error.message : 'Could not promote rotation.'
+      }
+    } finally {
+      promoting = false
+    }
+  }
+
+  // Story 5.6 AC-2/AC-5/AC-6: retire — promoted -> retired (cryptographic purge of the old
+  // value). Acknowledgement is independent of whatever was acknowledged at promote time (AC-8.5).
+  async function submitRetire() {
+    if (!rotation || retiring) return
+    retiring = true
+    retireError = null
+    retirePendingItemNames = []
+    try {
+      const body =
+        totalCount === 0
+          ? { acknowledgedNoDependencies: true }
+          : acknowledgeIncompleteChecklistForRetire
+            ? { acknowledgeIncompleteChecklist: true }
+            : {}
+      rotation = await retireRotation(
+        fetch,
+        data.projectId,
+        data.credentialId,
+        data.rotationId,
+        body
+      )
+      acknowledgeIncompleteChecklistForRetire = false
+      stagedValue = null
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        if (error.status === 422 && error.code === 'acknowledgement_required') {
+          const body = error.body as unknown as RotationAcknowledgementRequiredErrorBody
+          retirePendingItemNames = body.pendingItems.map((item) => item.systemName)
+          retireError =
+            body.totalItemCount === 0
+              ? 'Please confirm the credential is updated everywhere before retiring the old value.'
+              : 'Some systems have not confirmed yet — acknowledge to retire anyway:'
+        } else if (error.status === 409 && error.code === 'concurrent_modification') {
+          await handleConcurrentModification()
+        } else if (error.status === 409 && error.code === 'rotation_not_retirable') {
+          await refetch()
+        } else {
+          retireError = mapRotationMutationError(
+            error,
+            { actionLabel: 'retire the old value' },
+            'Could not retire rotation.'
+          )
+        }
+      } else {
+        retireError = error instanceof Error ? error.message : 'Could not retire rotation.'
+      }
+    } finally {
+      retiring = false
+    }
+  }
+
+  // Story 5.6 AC-8: independently-retrievable staged value, same reveal-confirmation UX pattern
+  // as the ordinary value-reveal button (fetched on demand, not preloaded).
+  async function revealStagedValue() {
+    if (revealingStagedValue) return
+    revealingStagedValue = true
+    stagedValueError = null
+    try {
+      const result = await getStagedValue(fetch, data.projectId, data.credentialId, data.rotationId)
+      stagedValue = result.value
+    } catch (error) {
+      stagedValueError =
+        error instanceof ApiClientError
+          ? mapRotationMutationError(error, {}, 'Could not reveal the staged value.')
+          : 'Could not reveal the staged value.'
+    } finally {
+      revealingStagedValue = false
+    }
+  }
+
   function clearPoll() {
     if (pollTimer) clearInterval(pollTimer)
     pollTimer = undefined
@@ -179,6 +331,38 @@
     }
   })
 </script>
+
+{#snippet noDependenciesCheckbox()}
+  <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
+    <input type="checkbox" bind:checked={acknowledgedNoDependencies} />
+    I confirm this credential is updated in all consuming systems
+  </label>
+{/snippet}
+
+{#snippet pendingItemsList(names: string[])}
+  {#if names.length > 0}
+    <ul class="mt-1 list-disc pl-5">
+      {#each names as name (name)}
+        <li>{name}</li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
+
+{#snippet mutationErrorBanner(message: string, pendingNames: string[])}
+  <div
+    class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+    role="alert"
+  >
+    <p>
+      {message}
+      {#if message.includes('MFA')}
+        <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
+      {/if}
+    </p>
+    {@render pendingItemsList(pendingNames)}
+  </div>
+{/snippet}
 
 <svelte:head>
   <title>Rotation | Project Vault</title>
@@ -248,6 +432,41 @@
       />
     {/if}
 
+    {#if rotation.status === 'staged' || rotation.status === 'promoted'}
+      <p class="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" role="note">
+        {rotationCopy.checklistIsAdvisory}
+      </p>
+    {/if}
+
+    {#if rotation.status === 'staged' && canAct}
+      <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-950">Staged value</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          The new value is independently retrievable while staged, so dependent systems can be
+          updated ahead of promotion.
+        </p>
+        {#if stagedValue}
+          <p
+            class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-sm break-all"
+          >
+            {stagedValue}
+          </p>
+        {:else}
+          <button
+            type="button"
+            class="mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 disabled:opacity-60"
+            disabled={revealingStagedValue}
+            onclick={() => void revealStagedValue()}
+          >
+            {revealingStagedValue ? 'Revealing…' : 'Reveal staged value'}
+          </button>
+        {/if}
+        {#if stagedValueError}
+          <p class="mt-2 text-sm text-red-800" role="alert">{stagedValueError}</p>
+        {/if}
+      </section>
+    {/if}
+
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold text-slate-950">Checklist</h2>
       {#if rotation.checklistItems.length === 0}
@@ -275,10 +494,7 @@
       <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 class="text-lg font-semibold text-slate-950">Complete rotation</h2>
         {#if totalCount === 0}
-          <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
-            <input type="checkbox" bind:checked={acknowledgedNoDependencies} />
-            I confirm this credential is updated in all consuming systems
-          </label>
+          {@render noDependenciesCheckbox()}
         {/if}
         <button
           type="button"
@@ -294,26 +510,79 @@
           </p>
         {/if}
         {#if completeError}
-          <div
-            class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-            role="alert"
-          >
-            <p>
-              {completeError}
-              {#if completeError.includes('MFA')}
-                <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
-              {/if}
-            </p>
-            {#if pendingItemNames.length > 0}
-              <ul class="mt-1 list-disc pl-5">
-                {#each pendingItemNames as name (name)}
-                  <li>{name}</li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
+          {@render mutationErrorBanner(completeError, pendingItemNames)}
         {/if}
       </section>
+    {/if}
+
+    {#if rotation.status === 'staged' && canManage}
+      <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-950">Promote</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          Promoting makes the staged value the new current value. The old value moves to a Retire
+          step you control separately.
+        </p>
+        {#if totalCount === 0}
+          {@render noDependenciesCheckbox()}
+        {:else if !allConfirmed}
+          <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
+            <input type="checkbox" bind:checked={acknowledgeIncompleteChecklistForPromote} />
+            Promote even though not every system has confirmed yet
+          </label>
+        {/if}
+        <button
+          type="button"
+          class="mt-4 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          disabled={promoting ||
+            (totalCount === 0
+              ? !acknowledgedNoDependencies
+              : !allConfirmed && !acknowledgeIncompleteChecklistForPromote)}
+          onclick={() => void submitPromote()}
+        >
+          {promoting ? 'Promoting…' : 'Promote'}
+        </button>
+        {#if promoteError}
+          {@render mutationErrorBanner(promoteError, promotePendingItemNames)}
+        {/if}
+      </section>
+    {/if}
+
+    {#if rotation.status === 'promoted' && canManage}
+      <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-950">Retire</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          Retiring cryptographically deletes the old value. This is irreversible — retire only once
+          every dependent system has switched to the new value.
+        </p>
+        {#if totalCount === 0}
+          {@render noDependenciesCheckbox()}
+        {:else if !allConfirmed}
+          <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
+            <input type="checkbox" bind:checked={acknowledgeIncompleteChecklistForRetire} />
+            Retire even though not every system has confirmed yet
+          </label>
+        {/if}
+        <button
+          type="button"
+          class="mt-4 rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          disabled={retiring ||
+            (totalCount === 0
+              ? !acknowledgedNoDependencies
+              : !allConfirmed && !acknowledgeIncompleteChecklistForRetire)}
+          onclick={() => void submitRetire()}
+        >
+          {retiring ? 'Retiring…' : 'Retire old value'}
+        </button>
+        {#if retireError}
+          {@render mutationErrorBanner(retireError, retirePendingItemNames)}
+        {/if}
+      </section>
+    {/if}
+
+    {#if rotation.status === 'retired'}
+      <p class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+        This rotation is retired. The old value has been cryptographically deleted.
+      </p>
     {/if}
 
     {#if rotation.status === 'abandoned'}

@@ -11,6 +11,12 @@ export const rotationCopy = {
   startRotationRequiresAdmin: 'Starting a rotation requires Admin access or higher.',
   checklistActionsRequireMember:
     'You have read access to this rotation. Confirming, completing, or resolving rotations requires Member access or higher.',
+  // Story 5.6 FR21/Morgan-member persona note: the checklist no longer blocks promote/retire —
+  // this replaces any copy that implied it was a hard gate.
+  checklistIsAdvisory:
+    'This checklist is advisory — an admin may promote or retire before all items are confirmed.',
+  promoteRequiresAdmin: 'Promoting the staged value requires Admin access or higher.',
+  retireRequiresAdmin: 'Retiring the old value requires Admin access or higher.',
 } as const
 
 export function checklistItemStatusLabel(status: RotationChecklistItemStatus): string {
@@ -37,6 +43,14 @@ export function rotationStatusLabel(status: RotationStatus): string {
 
 export function rotationStatusBadgeClass(status: RotationStatus): string {
   switch (status) {
+    // Story 5.6: staged/promoted/retired get their own distinct classes — never fall through to
+    // the generic slate default (a status-label mapping that blanks/throws on an unrecognized
+    // enum value would be a silent regression for every rotation card on the dashboard).
+    case 'staged':
+      return 'rounded-full bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-800'
+    case 'promoted':
+      return 'rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900'
+    case 'retired':
     case 'completed':
       return 'rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800'
     case 'in_progress':

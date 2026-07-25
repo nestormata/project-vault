@@ -13,8 +13,14 @@ export function optionalTrimmedNotes(maxLength: number) {
     .transform((v) => v || null)
 }
 
+// Story 5.6 AC-2.1: 'staged'/'promoted'/'retired' added (purely additive) — 'in_progress'/
+// 'completed' retained for historical-row compatibility (AC-7's migration window), never
+// written by new code once this story ships.
 export const RotationStatusSchema = z.enum([
   'in_progress',
+  'staged',
+  'promoted',
+  'retired',
   'completed',
   'abandoned',
   'stale_recovery',
@@ -118,6 +124,25 @@ export const CompleteRotationBodySchema = z
   .strict()
   .meta({ id: 'CompleteRotationBody' })
 
+// Story 5.6 AC-6.1: promote/retire's advisory-checklist acknowledgement flag — required only
+// when pending checklist items exist at call time; the zero-item case still uses
+// acknowledgedNoDependencies (unchanged from completeRotation's existing semantics).
+export const PromoteRotationBodySchema = z
+  .object({
+    acknowledgedNoDependencies: z.boolean().optional(),
+    acknowledgeIncompleteChecklist: z.boolean().optional(),
+  })
+  .strict()
+  .meta({ id: 'PromoteRotationBody' })
+
+export const RetireRotationBodySchema = z
+  .object({
+    acknowledgedNoDependencies: z.boolean().optional(),
+    acknowledgeIncompleteChecklist: z.boolean().optional(),
+  })
+  .strict()
+  .meta({ id: 'RetireRotationBody' })
+
 export const UpcomingRotationsQuerySchema = z
   .object({
     horizon: z.enum(['7d', '30d', '90d']).default('30d'),
@@ -129,6 +154,8 @@ export type ConfirmChecklistItemBody = z.infer<typeof ConfirmChecklistItemBodySc
 export type FailChecklistItemBody = z.infer<typeof FailChecklistItemBodySchema>
 export type RetryChecklistItemBody = z.infer<typeof RetryChecklistItemBodySchema>
 export type CompleteRotationBody = z.infer<typeof CompleteRotationBodySchema>
+export type PromoteRotationBody = z.infer<typeof PromoteRotationBodySchema>
+export type RetireRotationBody = z.infer<typeof RetireRotationBodySchema>
 export type UpcomingRotationsQuery = z.infer<typeof UpcomingRotationsQuerySchema>
 
 export type RotationStatus = z.infer<typeof RotationStatusSchema>

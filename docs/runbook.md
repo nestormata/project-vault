@@ -325,6 +325,50 @@ Deploying such app code first will crash on any row the backfill hasn't yet reac
    to cause visible latency on concurrent credential reads/writes. No batching is implemented in
    this migration.
 
+### Story 5.6 upgrade — staged rotation state machine
+
+<!-- Source: Story 5.6 AC-7/Task 1; verified against packages/db/src/migrations/0050_staged_rotation_state_machine.sql -->
+
+Migration `0050_staged_rotation_state_machine.sql` inverts credential "current version" selection
+from unconditional-highest-version-number to a `credential_versions.promoted_at`-gated query, and
+widens `rotations.status` to add `staged`/`promoted`/`retired`. **This is the single most
+safety-critical migration this project has shipped for the rotation subsystem** — get the
+backfill ordering wrong, and every in-flight rotation at deploy time either loses its new value's
+visibility or silently un-serves a value dependent systems have already switched to.
+
+1. Any `rotations` row still `status = 'in_progress'` at the moment this migration runs is
+   migrated to `status = 'promoted'` (**not** `staged`) — its new value is already live/servable
+   under the pre-5.6 model, and moving it to `staged` would immediately revert `GET
+   .../credentials/:id/value` to the old, pre-rotation value for that credential, with zero
+   warning. This is intentional (see the story file's AC-7/ADR-5.6-02), not an oversight — do not
+   "fix" this to `staged` in a future edit.
+2. Every other `credential_versions` row (not touched by step 1) gets `promoted_at = created_at`
+   — the ordinary blanket backfill, matching the pre-5.6 behavior for every credential whose
+   rotation history is already terminal (`completed`/`abandoned`/`stale_recovery`/
+   `break_glass_complete`) or has never been rotated.
+3. **Self-verification, read this before trusting a green migration run:** the migration ends
+   with a `DO $$ ... RAISE NOTICE 'migration 0050: N credential(s) failed the
+   exactly-one-current-version invariant check (expected 0)' ... END $$` block. **Grep the
+   migration output for this line and confirm `N` is `0`** before considering the deploy
+   successful — a non-zero count means some credential's "current" version selection is
+   ambiguous or wrong, and needs manual investigation (query
+   `credential_versions WHERE credential_id = '<id>' ORDER BY promoted_at DESC, version_number
+   DESC` for the affected credential) before proceeding, not a reason to roll back blindly.
+4. **Re-run safety:** both backfill `UPDATE`s are idempotent (guarded by `WHERE status =
+   'in_progress'` and `WHERE promoted_at IS NULL` respectively — a second run finds zero
+   matching rows for whichever step already completed). If the migration is interrupted mid-run,
+   simply re-running `make db-migrate` is the correct recovery action.
+5. **No maintenance window strictly required** — the backfill UPDATEs are set-based but scoped by
+   status/null-checks (not a full-table rewrite), matching this repo's existing migration-scale
+   precedent. Still validated only for fleets up to low tens of thousands of credentials; a
+   significantly larger `rotations`/`credential_versions` table warrants the same low-traffic
+   window caution as the Phase 2 migration above.
+6. Once this migration lands, the legacy `POST .../rotations/:rotationId/complete` route is
+   reachable **only** for rows still `in_progress` (a shrinking population from step 1's
+   migrated rows and any historical rows that predate this migration but were somehow still
+   `in_progress`) — operators should expect that route's call volume to trend toward zero over
+   time as those rows are individually retired via the new `POST .../retire` endpoint.
+
 ---
 
 ## Backup & Recovery

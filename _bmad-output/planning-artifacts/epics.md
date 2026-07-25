@@ -1753,6 +1753,16 @@ Users can initiate rotation workflows with per-system confirmation checklists (i
 
 ---
 
+### Story 5.6: Staged Primary/Secondary Rotation State Machine
+
+> Added 2026-07-24 via `bmad-correct-course` (`sprint-change-proposal-2026-07-24.md`), amending Epic 5's shipped Story 5.2 confirm-all-then-retire completion model. Not present in the original Epic 5 plan above — see `_bmad-output/implementation-artifacts/5-6-staged-primary-secondary-rotation-state-machine.md` for the full 10-AC story spec, this entry is a summary pointer, not the source of truth.
+
+**FRs covered:** FR18 (re-amended), FR21 (re-amended), FR22 (re-amended), FR105 (amended)
+
+Inverts the rotation completion model from "confirm every checklist item, then complete in one step" to a three-state machine: `staged` (new value created, independently retrievable, old value still current/servable) → `promoted` (new value becomes current, old value moves to a retire-pending state) → `retired` (old value cryptographically deleted). The per-system confirmation checklist (FR19/FR20) becomes advisory rather than blocking for both the promote and retire transitions — an explicit acknowledgement is required only if items are still unconfirmed at the moment of the action, recorded in rotation history. `rotations.status` gains `staged`/`promoted`/`retired` (purely additive; `in_progress`/`completed` retained for historical-row compatibility). A dedicated migration handles in-flight `in_progress` rotations at deploy time by mapping them to `promoted` (not `staged`) so a value already live under the pre-5.6 model is never silently un-served. FR105's retention exemption now clears only at explicit retire, not at promote. A new, wholly separate 14-day stale-staged alert worker (distinct from the existing 1-hour `stale_recovery` crash-recovery job) flags staged rotations nobody has acted on. Break-glass (FR108) is unaffected at the FR level — its ADR-level behavior amendment (staged-then-instantly-promoted, with `ROTATION_OLD_RETIRED` deferred to the existing overlap-expiry worker) is an audit-trail enrichment, not a new capability. Project/credential archival's active-rotation guard is widened to cover `staged`/`promoted` alongside the existing `in_progress`/`stale_recovery`. Surface scope: both API and web UI (Story 5.4's shipped rotation UI gets an Active/Staged/Retire card rework).
+
+---
+
 ### Epic 6: Operational Monitoring & Status — Services, Certificates, Domains & Mobile
 **🟣 Tier 2 — Operational beta (recommended beta target)** *(completes the proactive alert story)*
 > 🔵 **Beta cuts (T2 recommended scope):** FR72 (mobile browser) and FR76/FR77 (public status pages) are deferrable. Desktop-first monitoring is sufficient for beta validation. Public status pages are a customer-facing feature better suited for GA.

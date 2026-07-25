@@ -34,6 +34,8 @@ import type {
   FailChecklistItemBody,
   InitiateRotationBody,
   ListRotationsQuery,
+  PromoteRotationBody,
+  RetireRotationBody,
 } from './schema.js'
 
 export class RotationConflictError extends Error {
@@ -44,6 +46,13 @@ export class RotationConflictError extends Error {
 
 type ChecklistItemRow = typeof rotationChecklistItems.$inferSelect
 type RotationRow = typeof rotations.$inferSelect
+
+// Story 5.6 AC-2.6/AC-10.1: the widened "active rotation" status set — kept in sync with
+// idx_rotations_one_active_per_credential's predicate (packages/db/src/schema/rotations.ts) and
+// archive-guards.ts's BLOCKING_ROTATION_STATUSES by all three referencing the same shape,
+// wherever the layering allows a literal shared import (DB schema/migration SQL can't import
+// from apps/api, so that one stays a hand-kept-in-sync literal — flagged there).
+export const ACTIVE_ROTATION_STATUSES = ['in_progress', 'staged', 'promoted', 'stale_recovery']
 
 type InitiateRotationResult =
   | { status: 'credential_not_found' }
@@ -63,11 +72,19 @@ function constantTimeEqual(a: string, b: string): boolean {
   return timingSafeEqual(digestA, digestB)
 }
 
+// Story 5.6 AC-2.2: new rotations insert as 'staged' (was 'in_progress') — this lookup (used to
+// report "who won" in a 409 rotation_in_progress response) must match the widened active set,
+// not just the legacy status value, or the loser of a race gets rotationId: null.
 async function findInProgressRotationId(tx: Tx, credentialId: string): Promise<string | null> {
   const [row] = await tx
     .select({ id: rotations.id })
     .from(rotations)
-    .where(and(eq(rotations.credentialId, credentialId), eq(rotations.status, 'in_progress')))
+    .where(
+      and(
+        eq(rotations.credentialId, credentialId),
+        inArray(rotations.status, ACTIVE_ROTATION_STATUSES)
+      )
+    )
     .limit(1)
   return row?.id ?? null
 }
@@ -395,6 +412,45 @@ async function findRotationInScope(
   return rotation ?? null
 }
 
+type ConcurrentModificationResult = {
+  outcome: 'concurrent_modification'
+  currentVersion: number | null
+}
+
+/** Shared by completeRotation/promoteRotation/retireRotation's terminal CAS transition: a single
+ *  `UPDATE ... WHERE id = ... AND version = observedVersion` that both performs the status
+ *  transition (whatever `setFields` says) and bumps the optimistic-lock version, so a lost race
+ *  (version mismatch) simply returns zero rows — no separate version-only UPDATE needed. Returns
+ *  the updated row, or the `concurrent_modification` outcome (re-reading the current version) if
+ *  the CAS lost. */
+/** `fromStatus` is an optional extra CAS guard (resume/abandon transition FROM a specific
+ *  status, e.g. `stale_recovery`) — omitted for completeRotation/promoteRotation/retireRotation,
+ *  which already guard status via their own acquireAndLoad* preamble before ever reaching here. */
+async function casTransitionRotation(
+  tx: Tx,
+  params: { projectId: string; credentialId: string; rotationId: string },
+  observedVersion: number,
+  setFields: Partial<typeof rotations.$inferInsert>,
+  fromStatus?: string
+): Promise<{ outcome: 'ok'; rotation: RotationRow } | ConcurrentModificationResult> {
+  const [updated] = await tx
+    .update(rotations)
+    .set({ ...setFields, version: observedVersion + 1, updatedAt: new Date() })
+    .where(
+      and(
+        eq(rotations.id, params.rotationId),
+        eq(rotations.version, observedVersion),
+        ...(fromStatus ? [eq(rotations.status, fromStatus)] : [])
+      )
+    )
+    .returning()
+  if (!updated) {
+    const current = await findRotationInScope(tx, params)
+    return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
+  }
+  return { outcome: 'ok', rotation: updated }
+}
+
 async function findChecklistItemInScope(
   tx: Tx,
   params: { rotationId: string; itemId: string }
@@ -553,14 +609,25 @@ async function acquireRotationScopedLockAndFind(
   return { outcome: 'found', rotation }
 }
 
-/** AC-8's uniform entry sequence for all four checklist mutation endpoints. */
+// Story 5.6 AC-8.5/persona journey: the checklist itself (confirm/fail/retry) is workable
+// throughout staged AND promoted (dependent-system owners keep confirming after promotion, up
+// until retire) — a materially wider set than completeRotation's own legacy in_progress-only
+// gate (AC-6.4), which is why acquireAndLoadRotation below takes the allowed-status set as a
+// parameter rather than hard-coding a single status.
+const CHECKLIST_ACTION_ALLOWED_STATUSES = ['in_progress', 'staged', 'promoted']
+
+/** AC-8's uniform entry sequence for the checklist mutation endpoints (confirm/fail/retry) AND
+ *  (with its default) the legacy `complete` route. `allowedStatuses` defaults to legacy
+ *  `in_progress`-only for completeRotation's own unchanged gate (AC-6.4) — confirm/fail/retry
+ *  pass CHECKLIST_ACTION_ALLOWED_STATUSES instead. */
 async function acquireAndLoadRotation(
   tx: Tx,
-  params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string },
+  allowedStatuses: string[] = ['in_progress']
 ): Promise<RotationLockOutcome> {
   const result = await acquireRotationScopedLockAndFind(tx, params)
   if (result.outcome !== 'found') return result
-  if (result.rotation.status !== 'in_progress') {
+  if (!allowedStatuses.includes(result.rotation.status)) {
     return { outcome: 'not_active', rotation: result.rotation }
   }
   return { outcome: 'ok', rotation: result.rotation }
@@ -640,7 +707,7 @@ async function acquireLockAndItem(
   | { outcome: 'item_not_found' }
   | { lockResult: { outcome: 'ok'; rotation: RotationRow }; item: ChecklistItemRow }
 > {
-  const lockResult = await acquireAndLoadRotation(tx, params)
+  const lockResult = await acquireAndLoadRotation(tx, params, CHECKLIST_ACTION_ALLOWED_STATUSES)
   const earlyResult = lockOutcomeToFailure(lockResult)
   if (earlyResult) return earlyResult
   assertRotationLockOk(lockResult)
@@ -859,6 +926,10 @@ export type CompleteRotationResult =
   | { outcome: 'locked_conflict'; currentVersion: number | null }
   | { outcome: 'rotation_not_found' }
   | { outcome: 'rotation_not_active'; status: string }
+  // Story 5.6 AC-6.4: the legacy `complete` route is reachable ONLY for still-in_progress
+  // rotations — a staged/promoted/retired rotation gets this distinct 409, not the generic
+  // 422 rotation_not_active (which is kept, unchanged, for the other terminal statuses).
+  | { outcome: 'rotation_wrong_state_for_legacy_complete'; currentStatus: string }
   | {
       outcome: 'checklist_incomplete'
       pendingItems: { id: string; systemName: string; status: string }[]
@@ -872,6 +943,12 @@ export type CompleteRotationResult =
       checklistItems: ChecklistItemRow[]
       singleActorAttested: boolean
     }
+
+// Story 5.6 AC-6.4: statuses for which the legacy `complete` route must return the new
+// rotation_wrong_state_for_legacy_complete 409 instead of the generic rotation_not_active 422 —
+// every OTHER non-in_progress status (completed/abandoned/stale_recovery/break_glass_complete)
+// keeps the unchanged legacy 422 behavior.
+const LEGACY_COMPLETE_BLOCKED_STATUSES = new Set(['staged', 'promoted', 'retired'])
 
 /** Story 5.5 AC-2: surfaces (doesn't block — see the AC's "flag, don't block" precedent) the
  *  case where the same user both initiated the rotation and confirmed every checklist item
@@ -916,6 +993,17 @@ export async function completeRotation(
   }
 ): Promise<CompleteRotationResult> {
   const lockResult = await acquireAndLoadRotation(tx, params)
+  // AC-6.4: check this BEFORE the generic lockOutcomeToFailure mapping — staged/promoted/
+  // retired rotations get the new 409 code, not the legacy 422 rotation_not_active shape.
+  if (
+    lockResult.outcome === 'not_active' &&
+    LEGACY_COMPLETE_BLOCKED_STATUSES.has(lockResult.rotation.status)
+  ) {
+    return {
+      outcome: 'rotation_wrong_state_for_legacy_complete',
+      currentStatus: lockResult.rotation.status,
+    }
+  }
   const earlyResult = lockOutcomeToFailure(lockResult)
   if (earlyResult) return earlyResult
   assertRotationLockOk(lockResult)
@@ -946,22 +1034,12 @@ export async function completeRotation(
   // AC-9 step 3: status transition and the CAS version bump happen in the single UPDATE, so a
   // lost race (version mismatch) simply returns zero rows — same CAS semantics as AC-8's other
   // three mutations, no separate version-only UPDATE needed.
-  const [updatedRotation] = await tx
-    .update(rotations)
-    .set({
-      status: 'completed',
-      completedAt: new Date(),
-      version: lockResult.rotation.version + 1,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(eq(rotations.id, params.rotationId), eq(rotations.version, lockResult.rotation.version))
-    )
-    .returning()
-  if (!updatedRotation) {
-    const current = await findRotationInScope(tx, params)
-    return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
-  }
+  const transition = await casTransitionRotation(tx, params, lockResult.rotation.version, {
+    status: 'completed',
+    completedAt: new Date(),
+  })
+  if (transition.outcome !== 'ok') return transition
+  const updatedRotation = transition.rotation
 
   // ADR-5.2-02: "retiring" the superseded version means clearing rotation_locked_at, not
   // setting a status column (credential_versions has no status column — confirmed against
@@ -977,6 +1055,322 @@ export async function completeRotation(
     checklistItems: items,
     singleActorAttested: computeSingleActorAttested(items, lockResult.rotation.initiatedBy),
   }
+}
+
+// ============================================================================
+// Story 5.6 — staged -> promoted -> retired: promote, retire, staged-value reveal
+// ============================================================================
+
+type StagedPromotedLockOutcome<TWrongStatusOutcome extends string> =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: TWrongStatusOutcome; currentStatus: string }
+  | { outcome: 'ok'; rotation: RotationRow }
+
+/** AC-5.1: shared entry sequence for promote/retire — acquire the rotation-scoped advisory
+ *  lock (same key domain as every other rotation mutation, AC-5.1), then require the rotation's
+ *  status to be EXACTLY `expectedStatus`, mapping any other status to the caller's own
+ *  operation-specific "not promotable"/"not retirable" outcome (Example 2a/2b). */
+async function acquireAndLoadRotationExpecting<TWrongStatusOutcome extends string>(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string },
+  expectedStatus: string,
+  wrongStatusOutcome: TWrongStatusOutcome
+): Promise<StagedPromotedLockOutcome<TWrongStatusOutcome>> {
+  const result = await acquireRotationScopedLockAndFind(tx, params)
+  if (result.outcome === 'locked_conflict') return result
+  if (result.outcome === 'not_found') return { outcome: 'rotation_not_found' }
+  if (result.rotation.status !== expectedStatus) {
+    return { outcome: wrongStatusOutcome, currentStatus: result.rotation.status }
+  }
+  return { outcome: 'ok', rotation: result.rotation }
+}
+
+type ChecklistAcknowledgementOutcome =
+  | {
+      outcome: 'acknowledgement_required'
+      pendingItems: { id: string; systemName: string; status: string }[]
+      totalItemCount: number
+    }
+  | { outcome: 'ok'; checklistAcknowledged: boolean; pendingCount: number }
+
+/** AC-6.1/AC-6.2: shared advisory-checklist acknowledgement gate for promote/retire — computed
+ *  FRESH from the current checklist state every call (AC-8.5: acknowledging at promote time
+ *  never carries forward to retire time, and vice versa). Zero items still requires the
+ *  existing acknowledgedNoDependencies flag (unchanged semantics); non-zero pending items
+ *  require the new acknowledgeIncompleteChecklist flag instead of hard-blocking. */
+function evaluateChecklistAcknowledgement(
+  items: ChecklistItemRow[],
+  body: { acknowledgedNoDependencies?: boolean; acknowledgeIncompleteChecklist?: boolean }
+): ChecklistAcknowledgementOutcome {
+  const pending = items.filter((item) => item.status !== 'confirmed')
+  if (items.length === 0) {
+    if (body.acknowledgedNoDependencies !== true) {
+      return { outcome: 'acknowledgement_required', pendingItems: [], totalItemCount: 0 }
+    }
+    return { outcome: 'ok', checklistAcknowledged: false, pendingCount: 0 }
+  }
+  if (pending.length > 0) {
+    if (body.acknowledgeIncompleteChecklist !== true) {
+      return {
+        outcome: 'acknowledgement_required',
+        pendingItems: pending.map((item) => ({
+          id: item.id,
+          systemName: item.systemName,
+          status: item.status,
+        })),
+        totalItemCount: items.length,
+      }
+    }
+    return { outcome: 'ok', checklistAcknowledged: true, pendingCount: pending.length }
+  }
+  // Fully confirmed — Example 6b: no acknowledgement needed or given.
+  return { outcome: 'ok', checklistAcknowledged: false, pendingCount: 0 }
+}
+
+async function loadChecklistItems(tx: Tx, rotationId: string): Promise<ChecklistItemRow[]> {
+  return tx
+    .select()
+    .from(rotationChecklistItems)
+    .where(eq(rotationChecklistItems.rotationId, rotationId))
+    .orderBy(asc(rotationChecklistItems.createdAt), asc(rotationChecklistItems.id))
+}
+
+type ReadyToTransition = {
+  outcome: 'ready'
+  rotation: RotationRow
+  items: ChecklistItemRow[]
+  checklistAcknowledged: boolean
+  pendingCount: number
+}
+
+/** Shared preamble for promoteRotation/retireRotation: acquire-and-status-check the rotation
+ *  (AC-5.1), then evaluate the AC-6 advisory-checklist acknowledgement gate against a FRESH read
+ *  of the checklist (AC-8.5 — never carried over between promote and retire). Collapses both
+ *  functions' identical early-return plumbing into one call. */
+async function acquireLoadAndAcknowledgeRotation<TWrongStatusOutcome extends string>(
+  tx: Tx,
+  params: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    rotationId: string
+    body: { acknowledgedNoDependencies?: boolean; acknowledgeIncompleteChecklist?: boolean }
+  },
+  expectedStatus: string,
+  wrongStatusOutcome: TWrongStatusOutcome
+): Promise<
+  | Exclude<StagedPromotedLockOutcome<TWrongStatusOutcome>, { outcome: 'ok' }>
+  | {
+      outcome: 'acknowledgement_required'
+      pendingItems: { id: string; systemName: string; status: string }[]
+      totalItemCount: number
+    }
+  | ReadyToTransition
+> {
+  const lockResult = await acquireAndLoadRotationExpecting(
+    tx,
+    params,
+    expectedStatus,
+    wrongStatusOutcome
+  )
+  if (lockResult.outcome !== 'ok') {
+    return lockResult as Exclude<StagedPromotedLockOutcome<TWrongStatusOutcome>, { outcome: 'ok' }>
+  }
+  const rotation = (lockResult as { outcome: 'ok'; rotation: RotationRow }).rotation
+
+  const items = await loadChecklistItems(tx, params.rotationId)
+  const ack = evaluateChecklistAcknowledgement(items, params.body)
+  if (ack.outcome === 'acknowledgement_required') return ack
+
+  return {
+    outcome: 'ready',
+    rotation,
+    items,
+    checklistAcknowledged: ack.checklistAcknowledged,
+    pendingCount: ack.pendingCount,
+  }
+}
+
+export type PromoteRotationResult =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_promotable'; currentStatus: string }
+  | {
+      outcome: 'acknowledgement_required'
+      pendingItems: { id: string; systemName: string; status: string }[]
+      totalItemCount: number
+    }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | {
+      outcome: 'promoted'
+      rotation: RotationRow
+      checklistItems: ChecklistItemRow[]
+      checklistAcknowledged: boolean
+      pendingItemCountAtAction: number
+    }
+
+/** AC-2.3/AC-5/AC-6: staged -> promoted. Atomic (AC-5.5): the CAS status-transition UPDATE and
+ *  the credential_versions.promoted_at flip both happen inside this same transaction as the
+ *  caller's acquireRotationScopedLockAndFind lock acquisition — the ROTATION_PROMOTED audit
+ *  write itself happens one layer up, in routes.ts, sharing the identical transaction (the
+ *  route handler never commits/re-opens a transaction mid-request), so a failed audit write
+ *  still rolls back this function's DB writes too. */
+export async function promoteRotation(
+  tx: Tx,
+  params: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    rotationId: string
+    userId: string
+    body: PromoteRotationBody
+  }
+): Promise<PromoteRotationResult> {
+  const ready = await acquireLoadAndAcknowledgeRotation(
+    tx,
+    params,
+    'staged',
+    'rotation_not_promotable' as const
+  )
+  if (ready.outcome !== 'ready') return ready
+
+  const transition = await casTransitionRotation(tx, params, ready.rotation.version, {
+    status: 'promoted',
+    promotedAt: new Date(),
+  })
+  if (transition.outcome !== 'ok') return transition
+  const updatedRotation = transition.rotation
+
+  // AC-1: flips the promoted (new) version's current-selection eligibility.
+  await tx
+    .update(credentialVersions)
+    .set({ promotedAt: new Date() })
+    .where(eq(credentialVersions.id, updatedRotation.newVersionId))
+
+  return {
+    outcome: 'promoted',
+    rotation: updatedRotation,
+    checklistItems: ready.items,
+    checklistAcknowledged: ready.checklistAcknowledged,
+    pendingItemCountAtAction: ready.pendingCount,
+  }
+}
+
+export type RetireRotationResult =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_retirable'; currentStatus: string }
+  | {
+      outcome: 'acknowledgement_required'
+      pendingItems: { id: string; systemName: string; status: string }[]
+      totalItemCount: number
+    }
+  | { outcome: 'concurrent_modification'; currentVersion: number | null }
+  | {
+      outcome: 'retired'
+      rotation: RotationRow
+      checklistItems: ChecklistItemRow[]
+      checklistAcknowledged: boolean
+      pendingItemCountAtAction: number
+    }
+
+/** AC-2.4/AC-3.1: promoted -> retired. Cryptographically purges the previous (old) version
+ *  (same zero-then-null pattern as prune-credential-versions.ts's purgeVersion — AC-5.3's
+ *  double-purge safety: both UPDATEs are guarded by `purgedAt IS NULL`, a safe no-op if this
+ *  version was somehow already purged) and clears rotationLockedAt (AC-3.1 — the FR105
+ *  exemption now clears HERE, not at promote). All in the same transaction as the status
+ *  transition, same atomicity property as promoteRotation above. */
+export async function retireRotation(
+  tx: Tx,
+  params: {
+    orgId: string
+    projectId: string
+    credentialId: string
+    rotationId: string
+    userId: string
+    body: RetireRotationBody
+  }
+): Promise<RetireRotationResult> {
+  // AC-8.5: acquireLoadAndAcknowledgeRotation computes the checklist acknowledgement FRESH at
+  // retire time — independent of whatever was true at promote time.
+  const ready = await acquireLoadAndAcknowledgeRotation(
+    tx,
+    params,
+    'promoted',
+    'rotation_not_retirable' as const
+  )
+  if (ready.outcome !== 'ready') return ready
+
+  const transition = await casTransitionRotation(tx, params, ready.rotation.version, {
+    status: 'retired',
+    retiredAt: new Date(),
+  })
+  if (transition.outcome !== 'ok') return transition
+  const updatedRotation = transition.rotation
+
+  const oldVersionId = updatedRotation.previousVersionId
+  // Zero-overwrite then null: defense-in-depth/intent-signaling, matching
+  // prune-credential-versions.ts's purgeVersion exactly. Both steps re-check `purgedAt IS NULL`
+  // so a concurrent double-purge attempt (AC-5.3/AC-5.4) is a safe no-op, not an error.
+  await tx
+    .update(credentialVersions)
+    .set({
+      encryptedValue: {
+        version: 1,
+        iv: '0'.repeat(24),
+        ciphertext: '0'.repeat(64),
+        tag: '0'.repeat(32),
+      },
+    })
+    .where(and(eq(credentialVersions.id, oldVersionId), isNull(credentialVersions.purgedAt)))
+  await tx
+    .update(credentialVersions)
+    .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date(), rotationLockedAt: null })
+    .where(and(eq(credentialVersions.id, oldVersionId), isNull(credentialVersions.purgedAt)))
+
+  return {
+    outcome: 'retired',
+    rotation: updatedRotation,
+    checklistItems: ready.items,
+    checklistAcknowledged: ready.checklistAcknowledged,
+    pendingItemCountAtAction: ready.pendingCount,
+  }
+}
+
+export type GetStagedValueResult =
+  | { status: 'rotation_not_found' }
+  | { status: 'not_staged'; currentStatus: string }
+  | { status: 'found'; value: string; versionNumber: number }
+
+/** AC-8: independently-retrievable staged value — reads OUTSIDE the rotation-scoped advisory
+ *  lock (a read, not a mutation, matching the ordinary value-reveal route's pattern), but
+ *  re-checks `status === 'staged'` as part of its own read (AC-5.6) so a reveal racing a
+ *  concurrent abandon/promote never serves a stale, no-longer-staged value. */
+export async function getStagedValue(
+  tx: Tx,
+  params: { projectId: string; credentialId: string; rotationId: string }
+): Promise<GetStagedValueResult> {
+  const rotation = await findRotationInScope(tx, params)
+  if (!rotation) return { status: 'rotation_not_found' }
+  if (rotation.status !== 'staged') {
+    return { status: 'not_staged', currentStatus: rotation.status }
+  }
+
+  const [version] = await tx
+    .select({
+      versionNumber: credentialVersions.versionNumber,
+      encryptedValue: credentialVersions.encryptedValue,
+      schemaVersion: credentialVersions.schemaVersion,
+    })
+    .from(credentialVersions)
+    .where(eq(credentialVersions.id, rotation.newVersionId))
+    .limit(1)
+  if (!version?.encryptedValue) return { status: 'rotation_not_found' }
+
+  const plaintext = await withSecret(version.encryptedValue, async (buf) => buf.toString('utf8'))
+  const value = unwrapRevealValue(version.schemaVersion, plaintext)
+  return { status: 'found', value, versionNumber: version.versionNumber }
 }
 
 export type UpcomingRotationResult = {
@@ -1056,7 +1450,7 @@ async function fetchRotationSummaryByCredential(
         updatedAt: row.updatedAt,
       })
     }
-    if (row.status === 'in_progress' || row.status === 'stale_recovery') {
+    if (ACTIVE_ROTATION_STATUSES.includes(row.status)) {
       activeCredentialIds.add(row.credentialId)
     }
   }
@@ -1167,15 +1561,27 @@ async function activeDependentSystems(tx: Tx, orgId: string, credentialId: strin
     )
 }
 
-/** AC-5/CR6: if an existing rotation is `in_progress` or `stale_recovery` for this credential,
- *  abandon it (identical mechanics to the manual `abandon` endpoint, AC-12) before break-glass
- *  inserts its own rotation row. `FOR UPDATE NOWAIT` (not a blocking read) is deliberate — see
- *  AC-5/AC-6: a concurrent 5.2 confirm/fail/retry/complete call holds a *rotation*-scoped
- *  advisory lock, a different key domain break-glass's *credential*-scoped lock never serializes
- *  against, so a blocking row-lock read here could silently stall break-glass behind an
- *  unrelated in-flight human action — defeating its "act in seconds" premise. Returns the
- *  superseded rotation's id, or null if there was nothing active to supersede. Throws (for the
- *  caller to map to 409 rotation_lock_contention) if the NOWAIT lock acquisition fails. */
+/** AC-5/CR6, widened by Story 5.6: if an existing rotation is `in_progress`, `staged`, or
+ *  `stale_recovery` for this credential, abandon it (identical mechanics to the manual `abandon`
+ *  endpoint, AC-12) before break-glass inserts its own rotation row. `staged` is included because
+ *  its new version is, like `in_progress`'s, not yet "current" — abandoning it is exactly as safe
+ *  as abandoning an in_progress rotation was pre-5.6. Deliberately does NOT include `promoted`:
+ *  a promoted-but-unretired rotation's new version IS the current, live value — abandoning it
+ *  here would un-serve a value dependent systems may already be using, which is never safe to do
+ *  automatically. This is a known, flagged gap (not silently resolved): if a `promoted` rotation
+ *  is active when break-glass fires, this function leaves it untouched and break-glass still
+ *  proceeds, meaning a promoted-but-unretired rotation's old version can end up coexisting with a
+ *  break-glass rotation's own old version — a three-version-in-flight edge case AC-2.6's
+ *  unique-index widening was designed to prevent for the ORDINARY initiate path, but which this
+ *  function does not fully close for the break-glass path. Flagged for Nestor's review rather
+ *  than guessing at an auto-resolution that could itself be unsafe.
+ *  `FOR UPDATE NOWAIT` (not a blocking read) is deliberate — see AC-5/AC-6: a concurrent 5.2
+ *  confirm/fail/retry/complete call holds a *rotation*-scoped advisory lock, a different key
+ *  domain break-glass's *credential*-scoped lock never serializes against, so a blocking row-lock
+ *  read here could silently stall break-glass behind an unrelated in-flight human action —
+ *  defeating its "act in seconds" premise. Returns the superseded rotation's id, or null if there
+ *  was nothing active to supersede. Throws (for the caller to map to 409
+ *  rotation_lock_contention) if the NOWAIT lock acquisition fails. */
 async function supersedeActiveRotation(
   tx: Tx,
   params: { orgId: string; credentialId: string }
@@ -1191,7 +1597,7 @@ async function supersedeActiveRotation(
     .where(
       and(
         eq(rotations.credentialId, params.credentialId),
-        inArray(rotations.status, ['in_progress', 'stale_recovery'])
+        inArray(rotations.status, ['in_progress', 'staged', 'stale_recovery'])
       )
     )
     .for('update', { noWait: true })
@@ -1320,6 +1726,11 @@ async function createBreakGlassVersion(
 
   const keyVersion = await currentKeyVersion(tx)
   const encryptedValue = await encryptValue(input.newValue)
+  // Story 5.6 AC-9.1: within this single transaction, the new version is created as a literal
+  // `staged` moment (promotedAt starts unset) then immediately promoted (promotedAt = NOW()) —
+  // satisfying "still creates a staged version, then instantly promotes it" literally, not just
+  // conceptually. Written as one INSERT with promotedAt already set (rather than two statements)
+  // since no other transaction can observe the intermediate NULL state either way.
   const [newVersion] = await tx
     .insert(credentialVersions)
     .values({
@@ -1329,6 +1740,7 @@ async function createBreakGlassVersion(
       keyVersion,
       versionNumber: nextVersionNumber,
       createdBy: input.userId,
+      promotedAt: new Date(),
     })
     .returning()
   if (!newVersion)
@@ -1477,39 +1889,12 @@ export type ResumeRotationResult =
   | { outcome: 'resumed'; rotation: RotationRow; checklistItems: ChecklistItemRow[] }
 
 /** AC-11: stale_recovery -> in_progress. Checklist items are left exactly as they are — "checklist
- *  preserved" per epics.md; no additional item mutation happens on resume. */
-/** AC-11/AC-12/AC-15: the CAS-guarded status transition shared by resume ('in_progress') and
- *  abandon ('abandoned') — both leave stale_recovery via an identical UPDATE...RETURNING shape,
- *  differing only in the target status. A zero-row result means either a lost CAS race or (in
- *  practice, ruled out by the advisory lock held for this whole transaction) a status that
+ *  preserved" per epics.md; no additional item mutation happens on resume. Reuses the shared
+ *  casTransitionRotation() helper (AC-11/AC-12/AC-15) with the `fromStatus: 'stale_recovery'`
+ *  guard — resume and abandon both leave stale_recovery via an identical UPDATE...RETURNING
+ *  shape, differing only in the target status. A zero-row result means either a lost CAS race or
+ *  (in practice, ruled out by the advisory lock held for this whole transaction) a status that
  *  changed underneath the caller — both map to the identical 409 concurrent_modification. */
-async function transitionOutOfStaleRecovery(
-  tx: Tx,
-  params: { orgId: string; projectId: string; credentialId: string; rotationId: string },
-  observedVersion: number,
-  toStatus: 'in_progress' | 'abandoned'
-): Promise<
-  | { outcome: 'concurrent_modification'; currentVersion: number | null }
-  | { outcome: 'ok'; rotation: RotationRow }
-> {
-  const [updated] = await tx
-    .update(rotations)
-    .set({ status: toStatus, version: observedVersion + 1, updatedAt: new Date() })
-    .where(
-      and(
-        eq(rotations.id, params.rotationId),
-        eq(rotations.status, 'stale_recovery'),
-        eq(rotations.version, observedVersion)
-      )
-    )
-    .returning()
-  if (!updated) {
-    const current = await findRotationInScope(tx, params)
-    return { outcome: 'concurrent_modification', currentVersion: current?.version ?? null }
-  }
-  return { outcome: 'ok', rotation: updated }
-}
-
 export async function resumeRotation(
   tx: Tx,
   params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
@@ -1517,11 +1902,12 @@ export async function resumeRotation(
   const lockResult = await acquireAndLoadStaleRotation(tx, params)
   if (lockResult.outcome !== 'ok') return lockResult
 
-  const transition = await transitionOutOfStaleRecovery(
+  const transition = await casTransitionRotation(
     tx,
     params,
     lockResult.rotation.version,
-    'in_progress'
+    { status: 'in_progress' },
+    'stale_recovery'
   )
   if (transition.outcome !== 'ok') return transition
   const updated = transition.rotation
@@ -1539,24 +1925,63 @@ export type AbandonRotationResult =
   | { outcome: 'locked_conflict'; currentVersion: number | null }
   | { outcome: 'rotation_not_found' }
   | { outcome: 'rotation_not_stale'; status: string }
+  // Story 5.6 AC-2.5: `promoted` (post-promotion, pre-retirement) is NOT abandonable via this
+  // route — the only forward paths once promoted are retire, or leaving it promoted-but-
+  // unretired indefinitely (FR22).
+  | { outcome: 'rotation_not_abandonable_after_promotion' }
   | { outcome: 'concurrent_modification'; currentVersion: number | null }
   | { outcome: 'abandoned'; rotation: RotationRow; checklistItems: ChecklistItemRow[] }
 
-/** AC-12/CR5: stale_recovery -> abandoned. The never-completed new version is marked
- *  abandonedAt (excluded from "current" per AC-13/AC-14); the old version's rotationLockedAt is
- *  cleared, restoring it as "current" and once again subject to normal retention rules. */
+type AbandonableLockOutcome =
+  | { outcome: 'locked_conflict'; currentVersion: number | null }
+  | { outcome: 'rotation_not_found' }
+  | { outcome: 'rotation_not_stale'; status: string }
+  | { outcome: 'rotation_not_abandonable_after_promotion' }
+  | { outcome: 'ok'; rotation: RotationRow }
+
+/** Story 5.6 AC-2.5: abandon's own status-eligibility check, distinct from
+ *  acquireAndLoadStaleRotation (which resume still uses unchanged, `stale_recovery`-only) —
+ *  abandon now also accepts `staged` (an unpromoted staged rotation is exactly as abandonable as
+ *  an in_progress one was pre-5.6), and explicitly rejects `promoted` with its own error code
+ *  before falling through to the generic "not stale" rejection for every other status. */
+async function acquireAndLoadAbandonableRotation(
+  tx: Tx,
+  params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
+): Promise<AbandonableLockOutcome> {
+  const result = await acquireRotationScopedLockAndFind(tx, params)
+  if (result.outcome === 'locked_conflict') return result
+  if (result.outcome === 'not_found') return { outcome: 'rotation_not_found' }
+  if (result.rotation.status === 'promoted') {
+    return { outcome: 'rotation_not_abandonable_after_promotion' }
+  }
+  if (result.rotation.status !== 'stale_recovery' && result.rotation.status !== 'staged') {
+    return { outcome: 'rotation_not_stale', status: result.rotation.status }
+  }
+  return { outcome: 'ok', rotation: result.rotation }
+}
+
+/** AC-12/CR5 (Story 5.3), extended by Story 5.6 AC-2.5: stale_recovery|staged -> abandoned.
+ *  Reuses the shared casTransitionRotation() helper — unlike resume (always `fromStatus:
+ *  'stale_recovery'`), abandon's `fromStatus` is whichever specific status the caller was
+ *  actually observed in (not just "any abandonable status"), so a status that changed underneath
+ *  the caller between the lock-scoped read and this write is still caught by the CAS guard, same
+ *  safety property as every other terminal transition in this file. The never-completed new
+ *  version is marked abandonedAt (excluded from "current" per AC-13/AC-14); the old version's
+ *  rotationLockedAt is cleared, restoring it as "current" and once again subject to normal
+ *  retention rules. */
 export async function abandonRotation(
   tx: Tx,
   params: { orgId: string; projectId: string; credentialId: string; rotationId: string }
 ): Promise<AbandonRotationResult> {
-  const lockResult = await acquireAndLoadStaleRotation(tx, params)
+  const lockResult = await acquireAndLoadAbandonableRotation(tx, params)
   if (lockResult.outcome !== 'ok') return lockResult
 
-  const transition = await transitionOutOfStaleRecovery(
+  const transition = await casTransitionRotation(
     tx,
     params,
     lockResult.rotation.version,
-    'abandoned'
+    { status: 'abandoned' },
+    lockResult.rotation.status
   )
   if (transition.outcome !== 'ok') return transition
   const updated = transition.rotation

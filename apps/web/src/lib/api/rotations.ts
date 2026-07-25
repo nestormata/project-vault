@@ -44,6 +44,22 @@ export type CompleteRotationRequest = {
   acknowledgedNoDependencies?: boolean
 }
 
+// Story 5.6 AC-6: promote/retire share the same advisory-checklist acknowledgement shape.
+export type PromoteRotationRequest = {
+  acknowledgedNoDependencies?: boolean
+  acknowledgeIncompleteChecklist?: boolean
+}
+
+export type RetireRotationRequest = {
+  acknowledgedNoDependencies?: boolean
+  acknowledgeIncompleteChecklist?: boolean
+}
+
+export type StagedValueResponse = {
+  value: string
+  versionNumber: number
+}
+
 export type BreakGlassRotationRequest = {
   newValue: string
   reason: string
@@ -107,6 +123,27 @@ export type RotationNotStaleErrorBody = {
   code: 'rotation_not_stale'
   message: string
   status: RotationStatus
+}
+
+// Story 5.6 AC-2 Example 2a/2b: promote/retire called against the wrong status.
+export type RotationNotPromotableErrorBody = {
+  code: 'rotation_not_promotable'
+  message: string
+  currentStatus: RotationStatus
+}
+
+export type RotationNotRetirableErrorBody = {
+  code: 'rotation_not_retirable'
+  message: string
+  currentStatus: RotationStatus
+}
+
+// Story 5.6 AC-6.1: the soft-prompt shape promote/retire return instead of hard-blocking.
+export type RotationAcknowledgementRequiredErrorBody = {
+  code: 'acknowledgement_required'
+  message: string
+  pendingItems: { id: string; systemName: string; status: RotationChecklistItemStatus }[]
+  totalItemCount: number
 }
 
 // AC-21: two rotation-affecting calls raced for the same credential's advisory lock.
@@ -217,6 +254,50 @@ export function completeRotation(
     fetchFn,
     `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/complete`,
     { method: 'POST', body: JSON.stringify(body) }
+  )
+}
+
+// Story 5.6 AC-2/AC-5: staged -> promoted.
+export function promoteRotation(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  rotationId: string,
+  body: PromoteRotationRequest = {}
+) {
+  return apiFetch<RotationDetail>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/promote`,
+    { method: 'POST', body: JSON.stringify(body) }
+  )
+}
+
+// Story 5.6 AC-2/AC-5: promoted -> retired (cryptographically purges the old version).
+export function retireRotation(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  rotationId: string,
+  body: RetireRotationRequest = {}
+) {
+  return apiFetch<RotationDetail>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/retire`,
+    { method: 'POST', body: JSON.stringify(body) }
+  )
+}
+
+// Story 5.6 AC-8: independently-retrievable staged value, scoped strictly to the pre-promotion
+// staging window (404s once promoted).
+export function getStagedValue(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  rotationId: string
+) {
+  return apiFetch<StagedValueResponse>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/staged-value`
   )
 }
 

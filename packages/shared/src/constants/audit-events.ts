@@ -50,6 +50,11 @@ export const AuditEvent = {
   ROTATION_STALE_DETECTED: 'rotation.stale_detected',
   ROTATION_RESUMED: 'rotation.resumed',
   ROTATION_ABANDONED: 'rotation.abandoned',
+  // Story 5.6
+  ROTATION_PROMOTED: 'rotation.promoted',
+  ROTATION_OLD_RETIRED: 'rotation.old_retired',
+  ROTATION_STALE_STAGED_DETECTED: 'rotation.stale_staged_detected',
+  STAGED_VALUE_REVEALED: 'rotation.staged_value_revealed',
   PAYMENT_RECORD_CREATED: 'payment_record.created',
   PAYMENT_RECORD_UPDATED: 'payment_record.updated',
   PAYMENT_RECORD_DELETED: 'payment_record.deleted',

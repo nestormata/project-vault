@@ -476,6 +476,22 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'rotation.abandoned',
     sameTransactionAuditService: 'writeResolutionAuditOrThrow',
   },
+  // Story 5.6
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/promote': {
+    action: 'mutation',
+    auditEvent: 'rotation.promoted',
+    sameTransactionAuditService: 'writeRotationAuditEntry',
+  },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/retire': {
+    action: 'mutation',
+    auditEvent: 'rotation.old_retired',
+    sameTransactionAuditService: 'writeRotationAuditEntry',
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/staged-value': {
+    action: SENSITIVE_READ,
+    auditEvent: 'rotation.staged_value_revealed',
+    sameTransactionAuditService: 'writeRotationAuditEntry',
+  },
   'POST /api/v1/projects/:projectId/credentials/import': {
     action: 'mutation',
     auditEvent: 'credential.bulk_import_initiated',

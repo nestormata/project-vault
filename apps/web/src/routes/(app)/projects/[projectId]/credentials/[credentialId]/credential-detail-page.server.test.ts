@@ -159,6 +159,69 @@ describe('credential detail +page.server.ts rotation section', () => {
     expect(result.activeRotationId).toBe(rotationId)
   })
 
+  it('Story 5.6: treats staged as an active rotation status', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'staged' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'staged' }],
+      page: 1,
+      limit: 10,
+      total: 1,
+      hasMore: false,
+    })
+
+    const result = await load(makeEvent())
+
+    expect(result.activeRotationId).toBe(rotationId)
+  })
+
+  it('Story 5.6: treats promoted (unretired) as an active rotation status', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'promoted' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'promoted' }],
+      page: 1,
+      limit: 10,
+      total: 1,
+      hasMore: false,
+    })
+
+    const result = await load(makeEvent())
+
+    expect(result.activeRotationId).toBe(rotationId)
+  })
+
+  it('Story 5.6: does not treat retired as active — the state machine is done, a new rotation may start', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'retired' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'retired' }],
+      page: 1,
+      limit: 10,
+      total: 1,
+      hasMore: false,
+    })
+
+    const result = await load(makeEvent())
+
+    expect(result.activeRotationId).toBeNull()
+  })
+
   it('does not treat break_glass_complete as active — it is terminal and must not permanently block starting a new rotation', async () => {
     listRotationsMock.mockResolvedValueOnce({
       items: [{ id: rotationId, status: 'break_glass_complete' }],

@@ -307,4 +307,10 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
     "purge_expired_platform_audit_entries()'s DELETE FROM platform_audit_events is the sanctioned, session-flag-gated exception to this story's own append-only trigger — same pattern as 0036's audit_log_entries purge function.",
   '0047_notification_preference_none_channel':
     "notification_preferences_channel_check must be dropped and re-added to widen its allowed set with the new reviewed 'none' opt-out value; the paired migration safety test verifies no unrelated destructive schema/data change rides along.",
+  // Story 5.6 AC-7/Task 1: rotations_status_check must be dropped and re-added (same
+  // cannot-widen-in-place limitation as 0047) to add 'staged'/'promoted'/'retired' while keeping
+  // every existing value. The paired migration safety test verifies the only DROP CONSTRAINT/
+  // ADD CONSTRAINT pair present is this exact rewrite, with no unrelated destructive statement.
+  '0050_staged_rotation_state_machine':
+    "rotations_status_check must be dropped and re-added to widen its allowed set with the new 'staged'/'promoted'/'retired' values — identical reviewed pattern to 0047's notification_preferences_channel_check widening.",
 }

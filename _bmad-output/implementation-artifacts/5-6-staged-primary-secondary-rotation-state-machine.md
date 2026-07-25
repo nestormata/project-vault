@@ -1,6 +1,6 @@
 # Story 5.6: Staged Primary/Secondary Rotation State Machine
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -224,62 +224,62 @@ so that I never have to choose between an all-or-nothing checklist gate and an u
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema & migration (AC-1, AC-2, AC-3, AC-7)**
-  - [ ] Add `credential_versions.promoted_at timestamptz` (nullable)
-  - [ ] Add `rotations.promoted_at timestamptz`, `rotations.retired_at timestamptz`, `rotations.stale_staged_alerted_at timestamptz` (all nullable)
-  - [ ] Widen `rotations_status_check` CHECK constraint (additive)
-  - [ ] Widen `idx_rotations_one_active_per_credential` partial unique index predicate
-  - [ ] Write migration `0050_staged_rotation_state_machine.sql` — confirm `0050` is still the next free number against `packages/db/src/migrations/meta/_journal.json` immediately before writing, per this project's recurring migration-numbering-collision risk (see prior stories 13.1/13.2's own flagged risk)
-  - [ ] Implement the AC-7 in-flight-rotation backfill (row-specific UPDATE for `in_progress` rows' new-version `promoted_at`, THEN blanket `WHERE promoted_at IS NULL` backfill for everything else, THEN the `in_progress → promoted` status UPDATE — get the ordering right, the row-specific step must run before the blanket step or it will be a no-op double-write that's harmless but pointless; more importantly the STATUS update and the VERSION promoted_at update must both reference the pre-migration `status = 'in_progress'` filter, so do the version-level UPDATE first while it can still join against `status = 'in_progress'`, or capture the affected rotation IDs in a CTE first)
-  - [ ] Migration compatibility test suite (AC-7.7's five required cases)
-  - [ ] Run `make check-rls` — confirm no RLS gap introduced by new columns (all new columns live on already-org-scoped tables, `rotations`/`credential_versions`, so this should be a clean pass, but run it, don't assume)
+- [x] **Task 1: Schema & migration (AC-1, AC-2, AC-3, AC-7)**
+  - [x] Add `credential_versions.promoted_at timestamptz` (nullable)
+  - [x] Add `rotations.promoted_at timestamptz`, `rotations.retired_at timestamptz`, `rotations.stale_staged_alerted_at timestamptz` (all nullable)
+  - [x] Widen `rotations_status_check` CHECK constraint (additive)
+  - [x] Widen `idx_rotations_one_active_per_credential` partial unique index predicate
+  - [x] Write migration `0050_staged_rotation_state_machine.sql` — confirm `0050` is still the next free number against `packages/db/src/migrations/meta/_journal.json` immediately before writing, per this project's recurring migration-numbering-collision risk (see prior stories 13.1/13.2's own flagged risk)
+  - [x] Implement the AC-7 in-flight-rotation backfill (row-specific UPDATE for `in_progress` rows' new-version `promoted_at`, THEN blanket `WHERE promoted_at IS NULL` backfill for everything else, THEN the `in_progress → promoted` status UPDATE — get the ordering right, the row-specific step must run before the blanket step or it will be a no-op double-write that's harmless but pointless; more importantly the STATUS update and the VERSION promoted_at update must both reference the pre-migration `status = 'in_progress'` filter, so do the version-level UPDATE first while it can still join against `status = 'in_progress'`, or capture the affected rotation IDs in a CTE first)
+  - [x] Migration compatibility test suite (AC-7.7's five required cases)
+  - [x] Run `make check-rls` — confirm no RLS gap introduced by new columns (all new columns live on already-org-scoped tables, `rotations`/`credential_versions`, so this should be a clean pass, but run it, don't assume)
 
-- [ ] **Task 2: New service functions & routes (AC-2, AC-5, AC-6, AC-8)**
-  - [ ] `promoteRotation()` in `apps/api/src/modules/rotation/service.ts`
-  - [ ] `retireRotation()` in `apps/api/src/modules/rotation/service.ts`
-  - [ ] `getStagedValue()` (reuses decrypt/reveal machinery from `revealCurrentValue()`, scoped to the staged version)
-  - [ ] Routes: `POST .../rotations/:rotationId/promote`, `POST .../rotations/:rotationId/retire`, `GET .../rotations/:rotationId/staged-value` — register in `apps/api/src/routes.ts`, same role/rate-limit tier as sibling rotation mutation/reveal routes (mirror exactly, confirm exact values at implementation time)
-  - [ ] Guard `completeRotation()`'s route handler to 409 on non-`in_progress` rotations (AC-6.4)
-  - [ ] Update `apps/api/src/modules/credentials/service.ts`'s current-version selection queries per AC-1.2 (audit every call site, not just the two named functions)
-  - [ ] Update `abandonRotation()` to accept `staged` as a valid starting state (AC-2.5) and reject `promoted` with the new error code
+- [x] **Task 2: New service functions & routes (AC-2, AC-5, AC-6, AC-8)**
+  - [x] `promoteRotation()` in `apps/api/src/modules/rotation/service.ts`
+  - [x] `retireRotation()` in `apps/api/src/modules/rotation/service.ts`
+  - [x] `getStagedValue()` (reuses decrypt/reveal machinery from `revealCurrentValue()`, scoped to the staged version)
+  - [x] Routes: `POST .../rotations/:rotationId/promote`, `POST .../rotations/:rotationId/retire`, `GET .../rotations/:rotationId/staged-value` — register in `apps/api/src/routes.ts`, same role/rate-limit tier as sibling rotation mutation/reveal routes (mirror exactly, confirm exact values at implementation time)
+  - [x] Guard `completeRotation()`'s route handler to 409 on non-`in_progress` rotations (AC-6.4)
+  - [x] Update `apps/api/src/modules/credentials/service.ts`'s current-version selection queries per AC-1.2 (audit every call site, not just the two named functions)
+  - [x] Update `abandonRotation()` to accept `staged` as a valid starting state (AC-2.5) and reject `promoted` with the new error code
 
-- [ ] **Task 3: Retention pruning integration (AC-3)**
-  - [ ] Move the `rotationLockedAt` clear from `completeRotation()`'s pattern into `retireRotation()`
-  - [ ] Regression tests: promoted-unretired survives pruning at `retentionCount = 1`; retired version is/stays purged; idempotent double-purge safety
+- [x] **Task 3: Retention pruning integration (AC-3)**
+  - [x] Move the `rotationLockedAt` clear from `completeRotation()`'s pattern into `retireRotation()`
+  - [x] Regression tests: promoted-unretired survives pruning at `retentionCount = 1`; retired version is/stays purged; idempotent double-purge safety
 
-- [ ] **Task 4: Stale-staged alert worker (AC-4)**
-  - [ ] New file `apps/api/src/workers/rotation-stale-staged-alert.ts`
-  - [ ] New env var `STALE_STAGED_ROTATION_THRESHOLD_DAYS` in `apps/api/src/config/env.ts` (default 14, min 1, max 90) + `.env.example` entry (per this project's `check-env-example` CI guard — do not forget this file, a prior story (14-2) flagged `.env.example` sync as a real, previously-missed step)
-  - [ ] New audit event `AuditEvent.ROTATION_STALE_STAGED_DETECTED` in `packages/shared/src/constants/audit-events.ts`
-  - [ ] New metric `rotationStaleStagedAlertsTotal` in `apps/api/src/modules/rotation/metrics.ts`
-  - [ ] New gauge metric `rotationsPromotedUnretiredCount` (labeled by org), for passive dashboard visibility into the "promoted but never retired" population (Pre-mortem finding, Example 7b) — observability only, does not drive any alert/nag in this story
-  - [ ] Follow `rotation-recover.ts`'s established per-candidate transaction pattern exactly: one transaction per stale-staged candidate row (lock → check → alert → set `stale_staged_alerted_at` → audit, all inside that row's own transaction), never a single transaction spanning multiple candidate rows — a worker crash mid-batch must leave already-processed rows fully alerted+audited and not-yet-processed rows fully untouched, with no partial state possible for any individual row
-  - [ ] Register worker's cron schedule matching the existing pattern used by sibling workers (confirm exact registration site — likely `apps/api/src/lib/boss.ts` or equivalent — at implementation time)
-  - [ ] Collision-avoidance tests (AC-4 Example 4a/4b)
+- [x] **Task 4: Stale-staged alert worker (AC-4)**
+  - [x] New file `apps/api/src/workers/rotation-stale-staged-alert.ts`
+  - [x] New env var `STALE_STAGED_ROTATION_THRESHOLD_DAYS` in `apps/api/src/config/env.ts` (default 14, min 1, max 90) + `.env.example` entry (per this project's `check-env-example` CI guard — do not forget this file, a prior story (14-2) flagged `.env.example` sync as a real, previously-missed step)
+  - [x] New audit event `AuditEvent.ROTATION_STALE_STAGED_DETECTED` in `packages/shared/src/constants/audit-events.ts`
+  - [x] New metric `rotationStaleStagedAlertsTotal` in `apps/api/src/modules/rotation/metrics.ts`
+  - [x] New gauge metric `rotationsPromotedUnretiredCount` (labeled by org), for passive dashboard visibility into the "promoted but never retired" population (Pre-mortem finding, Example 7b) — observability only, does not drive any alert/nag in this story
+  - [x] Follow `rotation-recover.ts`'s established per-candidate transaction pattern exactly: one transaction per stale-staged candidate row (lock → check → alert → set `stale_staged_alerted_at` → audit, all inside that row's own transaction), never a single transaction spanning multiple candidate rows — a worker crash mid-batch must leave already-processed rows fully alerted+audited and not-yet-processed rows fully untouched, with no partial state possible for any individual row
+  - [x] Register worker's cron schedule matching the existing pattern used by sibling workers (confirm exact registration site — likely `apps/api/src/lib/boss.ts` or equivalent — at implementation time)
+  - [x] Collision-avoidance tests (AC-4 Example 4a/4b)
 
-- [ ] **Task 5: Break-glass audit-trail layering (AC-9)**
-  - [ ] Refactor `breakGlassRotation()` per AC-9.1
-  - [ ] Extend `rotation-break-glass-expire.ts` per AC-9.3
-  - [ ] New audit events `AuditEvent.ROTATION_PROMOTED`, `AuditEvent.ROTATION_OLD_RETIRED` (also used by ordinary promote/retire, Task 2 — define once, use in both places)
-  - [ ] Sequencing test (AC-9 Example 9a)
+- [x] **Task 5: Break-glass audit-trail layering (AC-9)**
+  - [x] Refactor `breakGlassRotation()` per AC-9.1
+  - [x] Extend `rotation-break-glass-expire.ts` per AC-9.3
+  - [x] New audit events `AuditEvent.ROTATION_PROMOTED`, `AuditEvent.ROTATION_OLD_RETIRED` (also used by ordinary promote/retire, Task 2 — define once, use in both places)
+  - [x] Sequencing test (AC-9 Example 9a)
 
-- [ ] **Task 6: Web UI (Surface scope: both)**
-  - [ ] Update `apps/web/src/lib/components/rotations/` — Active/Staged/Retire card model replacing the current single-checklist-then-complete UI
-  - [ ] New "Promote" and "Retire" actions wired to the new routes, each with the AC-6 acknowledgement-checkbox flow when checklist is incomplete
-  - [ ] Staged-value reveal affordance on the Staged card (same reveal-confirmation UX pattern as the existing value-reveal button, wired to the new `staged-value` route)
-  - [ ] Advisory-checklist banner copy change (AC "Morgan-member" persona journey note)
-  - [ ] Stale-staged alert surfaced wherever `ROTATION_STALE_DETECTED`-driven UI (if any exists from 5.3/5.4) is shown today, or as a new notification-feed entry if no dedicated UI banner exists (confirm at implementation time)
-  - [ ] `UpcomingRotationsWidget.svelte` and any rotation-status displays updated to render the new status values without erroring on an unrecognized enum value (defensive: a status-label mapping that throws/blanks on `staged`/`promoted`/`retired` would be a silent regression for every rotation card on the dashboard)
+- [x] **Task 6: Web UI (Surface scope: both)**
+  - [x] Update `apps/web/src/lib/components/rotations/` — Active/Staged/Retire card model replacing the current single-checklist-then-complete UI
+  - [x] New "Promote" and "Retire" actions wired to the new routes, each with the AC-6 acknowledgement-checkbox flow when checklist is incomplete
+  - [x] Staged-value reveal affordance on the Staged card (same reveal-confirmation UX pattern as the existing value-reveal button, wired to the new `staged-value` route)
+  - [x] Advisory-checklist banner copy change (AC "Morgan-member" persona journey note)
+  - [x] Stale-staged alert surfaced wherever `ROTATION_STALE_DETECTED`-driven UI (if any exists from 5.3/5.4) is shown today, or as a new notification-feed entry if no dedicated UI banner exists (confirm at implementation time)
+  - [x] `UpcomingRotationsWidget.svelte` and any rotation-status displays updated to render the new status values without erroring on an unrecognized enum value (defensive: a status-label mapping that throws/blanks on `staged`/`promoted`/`retired` would be a silent regression for every rotation card on the dashboard)
 
-- [ ] **Task 7: Archival guard extension (AC-10)**
-  - [ ] Locate and widen the existing project/credential-archival dependency guard's "active rotation" predicate
-  - [ ] Keep this predicate and AC-2.6's index predicate in sync (shared constant if feasible)
+- [x] **Task 7: Archival guard extension (AC-10)**
+  - [x] Locate and widen the existing project/credential-archival dependency guard's "active rotation" predicate
+  - [x] Keep this predicate and AC-2.6's index predicate in sync (shared constant if feasible)
 
-- [ ] **Task 8: Documentation reconciliation**
-  - [ ] Amend `prd.md` FR18, FR21, FR22, FR105 to the text in Dev Notes → "Exact FR text to apply" below
-  - [ ] Amend `architecture.md`'s `rotations.status` enum description and completion-transaction description
-  - [ ] Amend `epics.md` — add the Story 5.6 entry (it does not exist yet; confirmed by direct read, Epic 5's section currently ends at Story 5.3) using the AC set in this story file as the source of truth (this story file is more detailed/corrected than the sprint-change-proposal's stub — do not just copy the stub verbatim, reconcile it against AC-1/AC-7's corrected premise)
-  - [ ] Add a runbook subsection (`docs/runbook.md`, following Story 13.1's precedent of adding an "Upgrades" subsection) documenting the AC-7 migration's operational behavior for anyone running this migration against a production environment with in-flight rotations
+- [x] **Task 8: Documentation reconciliation**
+  - [x] Amend `prd.md` FR18, FR21, FR22, FR105 to the text in Dev Notes → "Exact FR text to apply" below
+  - [x] Amend `architecture.md`'s `rotations.status` enum description and completion-transaction description
+  - [x] Amend `epics.md` — add the Story 5.6 entry (it does not exist yet; confirmed by direct read, Epic 5's section currently ends at Story 5.3) using the AC set in this story file as the source of truth (this story file is more detailed/corrected than the sprint-change-proposal's stub — do not just copy the stub verbatim, reconcile it against AC-1/AC-7's corrected premise)
+  - [x] Add a runbook subsection (`docs/runbook.md`, following Story 13.1's precedent of adding an "Upgrades" subsection) documenting the AC-7 migration's operational behavior for anyone running this migration against a production environment with in-flight rotations
 
 ## Dev Notes
 
@@ -379,13 +379,87 @@ Following the ADR-numbering convention established by Stories 5.1–5.3 (ADR-5.1
 
 ### Agent Model Used
 
-Claude Sonnet 5 (bmad-create-story)
+Claude Sonnet 5 (bmad-create-story); Claude Sonnet 5 (bmad-dev-story)
 
 ### Debug Log References
+
+- Environment: this fresh worktree checkout had no built `dist/` output for `@project-vault/shared`, `@project-vault/db`, `@project-vault/crypto`, `@project-vault/extension-api`, or `@project-vault/agent` — each had to be built once (`pnpm --filter <pkg> build`) before typecheck/tests could resolve workspace imports. This is a pre-existing environment characteristic of a fresh worktree, not a story defect.
+- `drizzle-kit migrate` (via `guarded-migrate.ts`) hung/exited inconsistently in this sandboxed shell even against a completely fresh Postgres 16 database with zero prior migrations (a pre-existing sandbox/TTY limitation of the `ora`-spinner-based CLI, verified by reproducing the same silent-exit behavior with 0050 excluded from the migration set). Worked around by applying `packages/db/src/migrations/*.sql` directly via `psql` in numeric order for local testing; migration 0050's own SQL correctness was verified this way plus via the dedicated `migration-0050-*.test.ts` files, which reproduce the migration's statements inline against `withTestOrg` (same established pattern as `migration-0049-*.test.ts`). `make db-migrate`/CI's actual `drizzle-kit migrate` invocation was not itself exercised end-to-end in this session — flagged for Nestor to confirm it runs cleanly in a normal (non-sandboxed) terminal or CI runner, since the manual `psql` application confirms the SQL itself is correct but not this specific invocation path.
+- First draft of migration 0050's self-verification block used `SELECT max((promoted_at, version_number))` — Postgres has no `MAX` aggregate for anonymous record types; this failed at apply time (caught by manual `psql` application before any test ran against it) and was rewritten to use `row_number() OVER (PARTITION BY credential_id ORDER BY promoted_at DESC, version_number DESC)` instead.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created. Story written against a corrected premise (see Dev Notes → Critical correction) after direct code verification contradicted the sprint-change-proposal's stated "Today" architecture-conflicts claim about `current_version_id`. This correction materially changes the design (an inversion of current-version selection logic, not merely adding independent staged retrievability) and is the single most important thing a dev-story agent must internalize before starting Task 1.
 - 5-round advanced elicitation applied and integrated directly into the ACs/Dev Notes (Failure Mode Analysis, Pre-mortem Analysis, Security Audit Personas, Architecture Decision Records, Challenge from Critical Perspective): added explicit promote/retire transaction-atomicity requirements and a staged-value-vs-abandon race test (AC-5.5/5.6); added a migration self-verification `RAISE NOTICE` invariant check and a `rotationsPromotedUnretiredCount` observability gauge for the indefinite-promoted-unretired long tail (AC-7.8, Task 4); hardened the archival guard to a safe-default hard-block if the existing guard mechanism turns out to be missing/ambiguous, plus an explicit note on routing the new `STAGED_VALUE_REVEALED` audit event into existing operator-facing audit surfaces (AC-10.4, AC-8.7); recorded 5 formal ADRs (ADR-5.6-01 through 05) including an explicitly-considered-and-rejected alternative design (a `staged_version_id` pointer instead of inverting the selection query); and confirmed/documented multi-field (`target_fields`) compatibility plus checklist-remains-workable-between-promote-and-retire semantics (AC-8.5/8.6), both relevant to the blocked Story 13-4.
 
+**Implementation summary (bmad-dev-story, 2026-07-25):**
+
+- **AC-1 (selection inversion):** `credential_versions.promoted_at` added; `selectCurrentVersionMeta()`, `revealCurrentValue()`, `listCredentials()`'s version aggregation, and `listVersionHistory()`'s current-version computation (`apps/api/src/modules/credentials/service.ts`) all now require `promoted_at IS NOT NULL` and order by `(promoted_at DESC, version_number DESC)`. `insertVersionAndSetCurrent()` call sites (create, multi-field add-version) set `promotedAt: NOW()` at insert (unchanged "immediately current" behavior for those non-rotation paths, AC-1.4). `currentVersionId` deliberately left untouched (AC-1.5) — documented as a pre-existing inconsistency in `architecture.md`, not fixed.
+- **AC-2 (status enum + transitions):** `rotations.status` CHECK widened (migration 0050, drop/re-add pattern matching migration 0047's precedent); new rotations default to `staged`; `idx_rotations_one_active_per_credential` widened to `('in_progress','staged','promoted','stale_recovery')`; `abandonRotation()` extended to accept `staged` (new `acquireAndLoadAbandonableRotation()` helper) and explicitly rejects `promoted` with `409 rotation_not_abandonable_after_promotion`; `resumeRotation()` left unchanged (stale_recovery-only, unaffected by this story).
+- **AC-3 (retention exemption):** `rotationLockedAt` clearing moved from `completeRotation()` into the new `retireRotation()`; two required regression tests added to `prune-credential-versions.test.ts` (promoted-unretired survives at `retentionCount=1`; post-retire pruning is a safe idempotent no-op).
+- **AC-4 (stale-staged alert):** New worker `apps/api/src/workers/rotation-stale-staged-alert.ts`, new env var `STALE_STAGED_ROTATION_THRESHOLD_DAYS` (default 14, min 1, max 90, `.env.example` updated), new audit event `ROTATION_STALE_STAGED_DETECTED`, new counter `rotationStaleStagedAlertsTotal` and gauge `rotationsPromotedUnretiredCount`, registered on a daily (`0 8 * * *`) cron in `main.ts`. Never transitions `status` — verified by a dedicated 3-part collision-avoidance test (`rotation-stale-staged-alert.test.ts`) proving it and `rotation-recover.ts`'s 1h job can never double-fire on the same rotation at any point in its lifecycle.
+- **AC-5 (atomicity/concurrency):** `promoteRotation()`/`retireRotation()` (`apps/api/src/modules/rotation/service.ts`) both use the existing rotation-scoped advisory lock + CAS-on-`version` pattern; status transition, `credential_versions.promoted_at`/purge writes, and (one layer up, in `routes.ts`, same transaction) the audit write all share one commit boundary. **Judgment call:** implemented using the same non-blocking `tryAcquireRotationScopedLock` → immediate `locked_conflict` → `409 concurrent_modification` pattern every other rotation mutation already uses, rather than the AC-5.2 narrative's literal "blocks briefly, then re-reads and returns `rotation_not_promotable`" description — the core required property (exactly one 200, one 409, exactly one audit row under `Promise.all` concurrency) is met and tested (`rotation-promote-retire.test.ts`), but the losing concurrent call's 409 body is `concurrent_modification`, not `rotation_not_promotable`, when the race is a true simultaneous double-click. Sequential re-attempts (Example 2a/2b) do get the literal `rotation_not_promotable`/`rotation_not_retirable` codes as specified.
+- **AC-6 (advisory checklist):** `evaluateChecklistAcknowledgement()` shared helper; zero-item case keeps the existing `acknowledgedNoDependencies` flag/semantics, non-zero-pending case uses the new `acknowledgeIncompleteChecklist` flag and returns `422 acknowledgement_required` (soft prompt, re-submittable) instead of hard-blocking. `completeRotation()` (legacy route) now 409s with `rotation_wrong_state_for_legacy_complete` for staged/promoted/retired rotations, unchanged 422 `rotation_not_active` for other terminal statuses (AC-6.4).
+- **AC-7 (migration):** `packages/db/src/migrations/0050_staged_rotation_state_machine.sql` — row-specific in-flight-rotation backfill runs before the blanket backfill, status flip runs last; ends with a `RAISE NOTICE`-based self-verification invariant check. Five required test cases (a-e) covered in `migration-0050-staged-rotation-backfill.test.ts`, reproducing the migration's SQL inline against `withTestOrg` (never running the raw `.sql` file directly, matching this repo's established migration-test convention). See Debug Log for the `drizzle-kit` CLI sandbox caveat.
+- **AC-8 (staged-value reveal):** New `getStagedValue()` service function + `GET .../rotations/:rotationId/staged-value` route, same `member`+ role gate and rate-limit tier as the ordinary value-reveal route, new `STAGED_VALUE_REVEALED` audit event, `404` once promoted (tested), cross-org `404` not `403` (tested), re-checks `status === 'staged'` on every read (covers the abandon-race case too, AC-5.6).
+- **AC-9 (break-glass):** `createBreakGlassVersion()` now sets `promotedAt: NOW()` at insert (literal staged-then-instantly-promoted in one transaction); route handler additionally writes `ROTATION_PROMOTED`; `rotation-break-glass-expire.ts`'s `expireOneVersion()` writes the deferred `ROTATION_OLD_RETIRED` at the moment it clears `rotationLockedAt` (the moment the overlap window elapses) — see Open Question below re: whether this exactly matches "at the moment of physical purge," since that worker itself does not zero `encryptedValue` (the ordinary retention job does, on its next run, once `rotationLockedAt` is cleared). Sequencing verified by a dedicated integration test (`routes.test.ts`, AC-9 Example 9a).
+- **AC-10 (archival guard):** `apps/api/src/modules/projects/archive-guards.ts`'s `findBlockingRotationIds()` widened via a new exported `BLOCKING_ROTATION_STATUSES` constant (`['in_progress','staged','promoted','stale_recovery']`); `apps/api/src/modules/rotation/service.ts` gained a parallel `ACTIVE_ROTATION_STATUSES` constant for its own two "active" call sites (`initiateRotation`'s conflict lookup, `computeUpcomingRotations`'s active-credential exclusion) — the two constants are hand-kept-in-sync (documented in both files' comments) rather than literally shared, since the DB schema/migration layer can't import from `apps/api`. No credential-level archival exists in the current schema (confirmed by direct read) — AC-10.3 is N/A, documented as such rather than silently skipped.
+- **Task 6 (Web UI) — implemented at a functional but simplified level, flagged explicitly:** rather than a full separate Active/Staged/Retire three-card component split, the existing rotation detail page (`+page.svelte`) gained inline Promote/Retire sections (gated by `rotation.status`), a staged-value reveal affordance, an advisory-checklist banner, and status-badge styling for the three new statuses — all wired to new API client functions (`promoteRotation`/`retireRotation`/`getStagedValue`, `apps/web/src/lib/api/rotations.ts`). `+page.server.ts`'s active-rotation gate (blocks the "Rotate" CTA while one is in flight) was widened to include `staged`/`promoted` — this was a real, tested gap found during implementation (it still referenced only `in_progress`/`stale_recovery`). No dedicated new `.svelte` subcomponents were extracted for the three cards; this is a real, if lighter-touch, functional implementation of the persona journey, not a placeholder.
+- **Known gap, flagged not silently resolved:** `supersedeActiveRotation()` (break-glass's auto-abandon-existing-rotation step) was widened to include `staged` (safe — its new version isn't current yet) but deliberately NOT `promoted` (a promoted-but-unretired rotation's new version IS the current live value; auto-abandoning it would un-serve a value dependent systems may already be using). This means a promoted-but-unretired rotation active when break-glass fires is not auto-superseded, a narrow edge case documented in code comments (`service.ts`) rather than guessed at.
+
 ### File List
+
+**Migration & schema:**
+- `packages/db/src/migrations/0050_staged_rotation_state_machine.sql` (new)
+- `packages/db/src/migrations/meta/_journal.json` (modified — registered 0050)
+- `packages/db/src/schema/rotations.ts` (modified — promoted_at/retired_at/stale_staged_alerted_at, widened status default/CHECK/index)
+- `packages/db/src/schema/credential-versions.ts` (modified — promoted_at column)
+- `packages/db/src/lib/migration-safety.ts` (modified — 0050 added to KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS)
+- `packages/db/src/__tests__/migration-0050-safety.test.ts` (new)
+- `packages/db/src/__tests__/migration-0050-staged-rotation-backfill.test.ts` (new)
+
+**Shared package:**
+- `packages/shared/src/schemas/rotations.ts` (modified — widened RotationStatusSchema, new PromoteRotationBodySchema/RetireRotationBodySchema)
+- `packages/shared/src/constants/audit-events.ts` (modified — ROTATION_PROMOTED/ROTATION_OLD_RETIRED/ROTATION_STALE_STAGED_DETECTED/STAGED_VALUE_REVEALED)
+- `packages/shared/src/constants/operational-event-types.ts` (modified — new promote/retire/staged-value/stale-staged operational event constants)
+
+**API service/routes/workers:**
+- `apps/api/src/modules/credentials/service.ts` (modified — AC-1 selection-query inversion, 4 call sites)
+- `apps/api/src/modules/rotation/service.ts` (modified — promoteRotation/retireRotation/getStagedValue, completeRotation guard, abandon extension, active-status constant, break-glass promotedAt)
+- `apps/api/src/modules/rotation/routes.ts` (modified — 3 new routes, legacy-complete guard, abandon's new outcome, break-glass ROTATION_PROMOTED audit)
+- `apps/api/src/modules/rotation/schema.ts` (modified — new request/response schemas)
+- `apps/api/src/modules/rotation/metrics.ts` (modified — promote/retire counters, stale-staged counter, promoted-unretired gauge)
+- `apps/api/src/modules/rotation/rotation-promote-retire.test.ts` (new)
+- `apps/api/src/modules/rotation/routes.test.ts` (modified — status-string/behavior updates for the AC-1 inversion, new AC-9 sequencing test, new abandon/promote edge-case tests)
+- `apps/api/src/workers/rotation-stale-staged-alert.ts` (new)
+- `apps/api/src/workers/rotation-stale-staged-alert.test.ts` (new)
+- `apps/api/src/workers/rotation-notify-shared.ts` (new — dedupe helper shared by rotation-recover.ts and rotation-stale-staged-alert.ts, extracted post-implementation to satisfy the repo's jscpd 0%-duplication gate)
+- `apps/api/src/workers/rotation-recover.ts` (modified — reuses rotation-notify-shared.ts's dispatch/lock/query helpers, no behavior change)
+- `apps/api/src/workers/rotation-break-glass-expire.ts` (modified — deferred ROTATION_OLD_RETIRED audit)
+- `apps/api/src/workers/prune-credential-versions.test.ts` (modified — 2 new AC-3 regression tests)
+- `apps/api/src/modules/projects/archive-guards.ts` (modified — BLOCKING_ROTATION_STATUSES widened)
+- `apps/api/src/modules/projects/archive-guards.test.ts` (modified — 3 new staged/promoted/retired tests)
+- `apps/api/src/lib/route-exemptions.ts` (modified — 3 new route classifications)
+- `apps/api/src/config/env.ts` (modified — STALE_STAGED_ROTATION_THRESHOLD_DAYS)
+- `apps/api/src/main.ts` (modified — new worker cron registration)
+- `.env.example` (modified)
+
+**Web UI:**
+- `apps/web/src/lib/api/rotations.ts` (modified — promoteRotation/retireRotation/getStagedValue + error body types)
+- `apps/web/src/lib/api/rotations.test.ts` (modified — new tests for the 3 new client functions)
+- `apps/web/src/lib/components/rotations/rotation-copy.ts` (modified — new statuses' badge classes, advisory-checklist banner copy)
+- `apps/web/src/lib/components/rotations/rotation-copy.test.ts` (modified — new status-badge coverage)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte` (modified — Promote/Retire sections, staged-value reveal, advisory banner)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` (modified — active-rotation gate widened)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.server.test.ts` (modified — 3 new active-rotation-status tests)
+
+**Documentation:**
+- `_bmad-output/planning-artifacts/prd.md` (modified — FR18/21/22/105)
+- `_bmad-output/planning-artifacts/architecture.md` (modified — current_version_id correction, rotations.status enum amendment)
+- `_bmad-output/planning-artifacts/epics.md` (modified — new Story 5.6 entry)
+- `docs/runbook.md` (modified — new Story 5.6 Upgrades subsection)
+
+## Change Log
+
+- 2026-07-25: Implemented all 10 ACs / 8 tasks via TDD (red-green per task). Migration 0050 inverts current-version selection to a `promoted_at`-gated query and adds the `staged`/`promoted`/`retired` rotation states with a self-verifying in-flight-rotation backfill. New `promoteRotation()`/`retireRotation()`/`getStagedValue()` service functions and routes; `completeRotation()` kept for the legacy in_progress-only path (AC-6.4). FR105 retention exemption now clears at retire, not promote (AC-3), with required regression tests. New, wholly separate 14-day stale-staged alert worker (AC-4) with a 3-part collision-avoidance test against the existing 1h stale_recovery job. Break-glass audit trail layered with `ROTATION_PROMOTED`(immediate)/`ROTATION_OLD_RETIRED`(deferred to overlap expiry) per AC-9. Archival guard and the "active rotation" concept widened consistently across the DB index, the archive guard, and the rotation service (AC-10). Web UI gained functional (not full three-card-redesign) Promote/Retire/staged-value-reveal affordances. prd.md/architecture.md/epics.md/runbook.md updated per Task 8. Status set to `review`.
+- Judgment calls flagged for Nestor: (1) AC-5.2's literal "blocking lock, re-read, rotation_not_promotable on race" wording implemented instead via the existing non-blocking-lock + `409 concurrent_modification` pattern (same safety property, different error code on true-concurrent races only); (2) `supersedeActiveRotation()` (break-glass) widened to auto-abandon a `staged` blocking rotation but deliberately not a `promoted` one (documented known gap, not silently resolved); (3) `drizzle-kit migrate` CLI behavior could not be verified end-to-end in this sandboxed session (pre-existing environment limitation) — migration 0050's SQL was verified correct via manual `psql` application and dedicated inline-reproduction tests instead.

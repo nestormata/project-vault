@@ -3,6 +3,8 @@ import {
   ConfirmChecklistItemBodySchema,
   FailChecklistItemBodySchema,
   optionalTrimmedNotes,
+  PromoteRotationBodySchema,
+  RetireRotationBodySchema,
   RetryChecklistItemBodySchema,
   RotationChecklistItemSchema,
   RotationChecklistItemStatusSchema,
@@ -19,6 +21,8 @@ export {
   CompleteRotationBodySchema,
   ConfirmChecklistItemBodySchema,
   FailChecklistItemBodySchema,
+  PromoteRotationBodySchema,
+  RetireRotationBodySchema,
   RetryChecklistItemBodySchema,
   UpcomingRotationsQuerySchema,
 }
@@ -234,6 +238,75 @@ export const AbandonRotationResponseSchema = z
   .object({ data: RotationDetailSchema })
   .meta({ id: 'AbandonRotationResponse' })
 
+// Story 5.6 AC-2/AC-6: promote/retire response + failure shapes.
+export const PromoteRotationResponseSchema = z
+  .object({ data: RotationDetailSchema })
+  .meta({ id: 'PromoteRotationResponse' })
+
+export const RetireRotationResponseSchema = z
+  .object({ data: RotationDetailSchema })
+  .meta({ id: 'RetireRotationResponse' })
+
+export const RotationNotPromotableResponseSchema = z
+  .object({
+    code: z.literal('rotation_not_promotable'),
+    message: z.string(),
+    currentStatus: RotationStatusSchema,
+  })
+  .meta({ id: 'RotationNotPromotableResponse' })
+
+export const RotationNotRetirableResponseSchema = z
+  .object({
+    code: z.literal('rotation_not_retirable'),
+    message: z.string(),
+    currentStatus: RotationStatusSchema,
+  })
+  .meta({ id: 'RotationNotRetirableResponse' })
+
+// AC-6.1: soft-prompt shape shared by promote/retire — same fields as the legacy
+// checklist_incomplete response, renamed/repurposed as a re-submittable prompt.
+export const RotationAcknowledgementRequiredResponseSchema = z
+  .object({
+    code: z.literal('acknowledgement_required'),
+    message: z.string(),
+    pendingItems: z.array(
+      z.object({
+        id: z.uuid(),
+        systemName: z.string(),
+        status: RotationChecklistItemStatusSchema,
+      })
+    ),
+    totalItemCount: z.number().int().nonnegative(),
+  })
+  .meta({ id: 'RotationAcknowledgementRequiredResponse' })
+
+// AC-6.4: completeRotation's legacy route, called against a rotation no longer in in_progress.
+export const RotationWrongStateForLegacyCompleteResponseSchema = z
+  .object({
+    code: z.literal('rotation_wrong_state_for_legacy_complete'),
+    message: z.string(),
+    currentStatus: RotationStatusSchema,
+  })
+  .meta({ id: 'RotationWrongStateForLegacyCompleteResponse' })
+
+// AC-2.5: abandon called against a `promoted` (post-promotion, pre-retirement) rotation.
+export const RotationNotAbandonableAfterPromotionResponseSchema = z
+  .object({
+    code: z.literal('rotation_not_abandonable_after_promotion'),
+    message: z.string(),
+  })
+  .meta({ id: 'RotationNotAbandonableAfterPromotionResponse' })
+
+// AC-8: staged-value reveal route.
+export const StagedValueResponseSchema = z
+  .object({
+    data: z.object({
+      value: z.string(),
+      versionNumber: z.number().int().positive(),
+    }),
+  })
+  .meta({ id: 'StagedValueResponse' })
+
 export type InitiateRotationBody = z.infer<typeof InitiateRotationBodySchema>
 export type BreakGlassRotationBody = z.infer<typeof BreakGlassRotationBodySchema>
 export type ResumeRotationBody = z.infer<typeof ResumeRotationBodySchema>
@@ -247,3 +320,7 @@ export type FailChecklistItemBody = z.infer<typeof FailChecklistItemBodySchema>
 export type RetryChecklistItemBody = z.infer<typeof RetryChecklistItemBodySchema>
 export type CompleteRotationBody = z.infer<typeof CompleteRotationBodySchema>
 export type UpcomingRotationsQuery = z.infer<typeof UpcomingRotationsQuerySchema>
+// PromoteRotationBody/RetireRotationBody: re-exported directly from @project-vault/shared
+// (below) rather than locally re-inferred, since @project-vault/shared already exports the
+// identical type — avoids a near-duplicate `z.infer<...>` line jscpd would otherwise flag.
+export type { PromoteRotationBody, RetireRotationBody } from '@project-vault/shared'

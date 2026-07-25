@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
-import { OperationalEvent } from '@project-vault/shared'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
-import { credentialVersions } from '@project-vault/db/schema'
+import { credentialVersions, rotations } from '@project-vault/db/schema'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { tryAcquireCredentialScopedLock } from '../lib/rotation-locks.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
@@ -58,6 +58,34 @@ async function expireOneVersion(orgId: string, candidate: ExpiredVersionRow): Pr
       payload: { credentialVersionId: candidate.id, credentialId: candidate.credentialId },
     })
     rotationBreakGlassOverlapExpirationsTotal.inc()
+
+    // Story 5.6 AC-9.1e/AC-9.3: the deferred ROTATION_OLD_RETIRED audit event — fired at the
+    // moment the physical cryptographic purge actually happens (the UPDATE above), matching when
+    // the old version really stops being retrievable, not when break-glass itself ran. Only
+    // break-glass rotations reach this worker (the ordinary staged/promoted/retired path's
+    // ROTATION_OLD_RETIRED is written synchronously by retireRotation's route handler instead).
+    const [breakGlassRotation] = await tx
+      .select({ id: rotations.id })
+      .from(rotations)
+      .where(
+        and(
+          eq(rotations.previousVersionId, candidate.id),
+          eq(rotations.status, 'break_glass_complete')
+        )
+      )
+      .limit(1)
+    if (breakGlassRotation) {
+      await writeSystemAuditRow(tx, {
+        orgId,
+        eventType: AuditEvent.ROTATION_OLD_RETIRED,
+        payload: {
+          rotationId: breakGlassRotation.id,
+          credentialVersionId: candidate.id,
+          credentialId: candidate.credentialId,
+          breakGlass: true,
+        },
+      })
+    }
   })
 }
 

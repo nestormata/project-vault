@@ -37,19 +37,29 @@ import {
   InvalidItemStatusResponseSchema,
   ListRotationsQuerySchema,
   MaxRetriesExceededResponseSchema,
+  PromoteRotationBodySchema,
+  PromoteRotationResponseSchema,
   ResumeRotationBodySchema,
   ResumeRotationResponseSchema,
+  RetireRotationBodySchema,
+  RetireRotationResponseSchema,
   RetryChecklistItemBodySchema,
   RetryChecklistItemResponseSchema,
+  RotationAcknowledgementRequiredResponseSchema,
   RotationChecklistItemParamsSchema,
   RotationConflictResponseSchema,
   RotationCredentialParamsSchema,
   RotationDetailResponseSchema,
   RotationHistoryResponseSchema,
   RotationLockContentionResponseSchema,
+  RotationNotAbandonableAfterPromotionResponseSchema,
   RotationNotActiveResponseSchema,
+  RotationNotPromotableResponseSchema,
+  RotationNotRetirableResponseSchema,
   RotationNotStaleResponseSchema,
   RotationParamsSchema,
+  RotationWrongStateForLegacyCompleteResponseSchema,
+  StagedValueResponseSchema,
   UpcomingRotationsQuerySchema,
   UpcomingRotationsResponseSchema,
   type AbandonRotationBody,
@@ -58,9 +68,12 @@ import {
   type ConfirmChecklistItemBody,
   type FailChecklistItemBody,
   type InitiateRotationBody,
+  type PromoteRotationBody,
   type ResumeRotationBody,
+  type RetireRotationBody,
   type RotationParams,
 } from './schema.js'
+import type { CompleteRotationResult } from './service.js'
 import {
   RotationConflictError,
   abandonRotation,
@@ -70,10 +83,13 @@ import {
   failChecklistItem,
   findCredentialInProject,
   getRotationDetail,
+  getStagedValue,
   getUpcomingRotations,
   initiateRotation,
   listRotationHistory,
+  promoteRotation,
   resumeRotation,
+  retireRotation,
   retryChecklistItem,
   serializeBreakGlassRotation,
   serializeChecklistItem,
@@ -86,7 +102,9 @@ import {
   rotationChecklistRetriesTotal,
   rotationCompletionsTotal,
   rotationInitiationsTotal,
+  rotationPromotionsTotal,
   rotationResolutionsTotal,
+  rotationRetirementsTotal,
 } from './metrics.js'
 
 const CREDENTIAL_NOT_FOUND = {
@@ -131,6 +149,29 @@ function writeRotationAuditEntry(
     resourceType: 'rotation',
     request: req,
     ...input,
+  })
+}
+
+/** Shared by break-glass's instant-promote audit write and the ordinary `promote` route: both
+ *  write `AuditEvent.ROTATION_PROMOTED` with the same core payload shape (credentialId/
+ *  projectId/newVersionId), differing only in the caller-specific extra fields. */
+function writeRotationPromotedAudit(
+  tx: SecureRouteContext['tx'],
+  auth: SecureRouteContext['auth'],
+  req: FastifyRequest,
+  rotation: { id: string; newVersionId: string },
+  params: { credentialId: string; projectId: string },
+  extraPayload: Record<string, unknown>
+): Promise<void> {
+  return writeRotationAuditEntry(tx, auth, req, {
+    eventType: AuditEvent.ROTATION_PROMOTED,
+    resourceId: rotation.id,
+    payload: {
+      credentialId: params.credentialId,
+      projectId: params.projectId,
+      newVersionId: rotation.newVersionId,
+      ...extraPayload,
+    },
   })
 }
 
@@ -303,6 +344,222 @@ function rotationNotActiveResponse(status: string) {
   }
 }
 
+/** Split out of the `complete` route handler purely to keep that function's own cyclomatic
+ *  complexity down (this repo's eslint `complexity` rule caps at 10) — unchanged legacy
+ *  checklist_incomplete/acknowledgement_required response bodies, just relocated. */
+function replyForCompleteBlockedOutcome(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  result:
+    | {
+        outcome: 'checklist_incomplete'
+        pendingItems: { id: string; systemName: string; status: string }[]
+        totalItemCount: number
+      }
+    | { outcome: 'acknowledgement_required' },
+  logParams: Record<string, unknown>
+): unknown {
+  if (result.outcome === 'checklist_incomplete') {
+    rotationCompletionsTotal.inc({ outcome: 'checklist_incomplete' })
+    req.log.info(
+      {
+        eventType: OperationalEvent.ROTATION_COMPLETE_CHECKLIST_INCOMPLETE,
+        ...logParams,
+        pendingCount: result.pendingItems.length,
+      },
+      'Rotation complete rejected — checklist incomplete'
+    )
+    return reply.status(422).send({
+      code: 'checklist_incomplete',
+      message: `${result.pendingItems.length} of ${result.totalItemCount} checklist items are not yet confirmed.`,
+      pendingItems: result.pendingItems,
+    })
+  }
+  rotationCompletionsTotal.inc({ outcome: 'acknowledgement_required' })
+  req.log.info(
+    { eventType: OperationalEvent.ROTATION_COMPLETE_ACKNOWLEDGEMENT_REQUIRED, ...logParams },
+    'Rotation complete rejected — acknowledgement required'
+  )
+  return reply.status(422).send({
+    code: 'acknowledgement_required',
+    message:
+      'This credential has no recorded dependent systems. Confirm you have manually verified the credential is updated everywhere it is used before completing.',
+    checklistItemCount: 0 as const,
+  })
+}
+
+type AcknowledgementRequiredOutcome = {
+  outcome: 'acknowledgement_required'
+  pendingItems: { id: string; systemName: string; status: string }[]
+  totalItemCount: number
+}
+
+type WrongStatusOutcome<TCode extends string> = { outcome: TCode; currentStatus: string }
+
+/** Shared by promote's and retire's own thin wrappers below — both blocked-outcome shapes
+ *  (wrong-status 409, acknowledgement-required 422) are otherwise identical, differing only in
+ *  wording/metric/event-constant, which the caller supplies. Split out purely to keep the
+ *  `promote`/`retire` route handlers' own cyclomatic complexity down (this repo's eslint
+ *  `complexity` rule caps at 10) without duplicating the two response bodies verbatim. */
+function replyForPromoteOrRetireBlockedOutcome<TCode extends string>(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  result: WrongStatusOutcome<TCode> | AcknowledgementRequiredOutcome,
+  logParams: Record<string, unknown>,
+  config: {
+    metric: { inc(labels: { outcome: string }): void }
+    wrongStatus: {
+      event: string
+      logMessage: string
+      code: TCode
+      message: string
+      metricOutcome: string
+    }
+    acknowledgement: { event: string; logMessage: string; zeroItemsMessage: string }
+  }
+): unknown {
+  if (result.outcome === config.wrongStatus.code) {
+    const wrongStatusResult = result as WrongStatusOutcome<TCode>
+    config.metric.inc({ outcome: config.wrongStatus.metricOutcome })
+    req.log.info(
+      { eventType: config.wrongStatus.event, ...logParams },
+      config.wrongStatus.logMessage
+    )
+    return reply.status(409).send({
+      code: config.wrongStatus.code,
+      message: config.wrongStatus.message,
+      currentStatus: wrongStatusResult.currentStatus,
+    })
+  }
+  const ackResult = result as AcknowledgementRequiredOutcome
+  config.metric.inc({ outcome: 'acknowledgement_required' })
+  req.log.info(
+    { eventType: config.acknowledgement.event, ...logParams },
+    config.acknowledgement.logMessage
+  )
+  return reply.status(422).send({
+    code: 'acknowledgement_required' as const,
+    message:
+      ackResult.totalItemCount === 0
+        ? config.acknowledgement.zeroItemsMessage
+        : `${ackResult.pendingItems.length} of ${ackResult.totalItemCount} checklist items are not yet confirmed. Acknowledge to proceed anyway.`,
+    pendingItems: ackResult.pendingItems,
+    totalItemCount: ackResult.totalItemCount,
+  })
+}
+
+function replyForPromoteBlockedOutcome(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  result:
+    { outcome: 'rotation_not_promotable'; currentStatus: string } | AcknowledgementRequiredOutcome,
+  logParams: Record<string, unknown>
+): unknown {
+  return replyForPromoteOrRetireBlockedOutcome(reply, req, result, logParams, {
+    metric: rotationPromotionsTotal,
+    wrongStatus: {
+      event: OperationalEvent.ROTATION_PROMOTE_NOT_PROMOTABLE,
+      logMessage: 'Rotation promote rejected — not staged',
+      code: 'rotation_not_promotable' as const,
+      message: 'This rotation is not in the staged state.',
+      metricOutcome: 'not_promotable',
+    },
+    acknowledgement: {
+      event: OperationalEvent.ROTATION_PROMOTE_ACKNOWLEDGEMENT_REQUIRED,
+      logMessage: 'Rotation promote rejected — acknowledgement required',
+      zeroItemsMessage:
+        'This credential has no recorded dependent systems. Confirm you have manually verified the credential before promoting.',
+    },
+  })
+}
+
+function replyForRetireBlockedOutcome(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  result:
+    { outcome: 'rotation_not_retirable'; currentStatus: string } | AcknowledgementRequiredOutcome,
+  logParams: Record<string, unknown>
+): unknown {
+  return replyForPromoteOrRetireBlockedOutcome(reply, req, result, logParams, {
+    metric: rotationRetirementsTotal,
+    wrongStatus: {
+      event: OperationalEvent.ROTATION_RETIRE_NOT_RETIRABLE,
+      logMessage: 'Rotation retire rejected — not promoted',
+      code: 'rotation_not_retirable' as const,
+      message: 'This rotation is not in the promoted state.',
+      metricOutcome: 'not_retirable',
+    },
+    acknowledgement: {
+      event: OperationalEvent.ROTATION_RETIRE_ACKNOWLEDGEMENT_REQUIRED,
+      logMessage: 'Rotation retire rejected — acknowledgement required',
+      zeroItemsMessage:
+        'This credential has no recorded dependent systems. Confirm you have manually verified the credential before retiring the old value.',
+    },
+  })
+}
+
+type CompleteEarlyFailureOutcome = Extract<
+  CompleteRotationResult,
+  {
+    outcome:
+      | 'locked_conflict'
+      | 'concurrent_modification'
+      | 'rotation_not_found'
+      | 'rotation_not_active'
+      | 'rotation_wrong_state_for_legacy_complete'
+  }
+>
+
+/** Type-guard companion to replyForCompleteEarlyFailure below — same pattern as
+ *  isCommonLockOutcome/isResolutionFailure above: a single `if` in the caller (not one per
+ *  outcome) keeps the `complete` handler's own cyclomatic complexity down while still letting
+ *  TypeScript narrow `result` to the CompleteEarlyFailureOutcome union. */
+function isCompleteEarlyFailure(
+  result: CompleteRotationResult
+): result is CompleteEarlyFailureOutcome {
+  return (
+    result.outcome === 'locked_conflict' ||
+    result.outcome === 'concurrent_modification' ||
+    result.outcome === 'rotation_not_found' ||
+    result.outcome === 'rotation_not_active' ||
+    result.outcome === 'rotation_wrong_state_for_legacy_complete'
+  )
+}
+
+/** Combines complete's first four early-failure checks (concurrent/not-found/not-active/
+ *  legacy-wrong-state) into a single helper — split out purely to keep the `complete` handler's
+ *  own cyclomatic complexity down (this repo's eslint `complexity` rule caps at 10). */
+function replyForCompleteEarlyFailure(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  result: CompleteEarlyFailureOutcome,
+  logParams: Record<string, unknown>
+): unknown {
+  if (result.outcome === 'locked_conflict' || result.outcome === 'concurrent_modification') {
+    req.log.info(
+      { eventType: OperationalEvent.ROTATION_COMPLETE_CONCURRENT_MODIFICATION, ...logParams },
+      'Rotation complete rejected — concurrent modification'
+    )
+    return reply.status(409).send(concurrentModificationResponse(result.currentVersion))
+  }
+  if (result.outcome === 'rotation_not_found') return reply.status(404).send(ROTATION_NOT_FOUND)
+  if (result.outcome === 'rotation_not_active') {
+    return reply.status(422).send(rotationNotActiveResponse(result.status))
+  }
+  if (result.outcome === 'rotation_wrong_state_for_legacy_complete') {
+    req.log.info(
+      { eventType: OperationalEvent.ROTATION_LEGACY_COMPLETE_WRONG_STATE, ...logParams },
+      'Rotation complete rejected — rotation has moved past the legacy in_progress model'
+    )
+    return reply.status(409).send({
+      code: 'rotation_wrong_state_for_legacy_complete' as const,
+      message: 'This rotation uses the new staged/promote/retire flow — use retire instead.',
+      currentStatus: result.currentStatus,
+    })
+  }
+  return undefined
+}
+
 function concurrentModificationResponse(currentVersion: number | null) {
   return {
     code: 'concurrent_modification' as const,
@@ -371,6 +628,52 @@ function replyForCommonLockOutcome(
     return reply.status(422).send(rotationNotActiveResponse(outcome.status ?? 'unknown'))
   }
   return reply.status(404).send(CHECKLIST_ITEM_NOT_FOUND)
+}
+
+/** Shared by GET rotation detail and GET staged-value: parse `{projectId, credentialId,
+ *  rotationId}` params and confirm the credential exists in that project, sending the 404 reply
+ *  itself on either failure. Returns undefined (reply already sent) or the loaded params +
+ *  secure context for the caller to continue with its own route-specific logic. */
+async function loadRotationScopedParams(
+  ctx: unknown,
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<{ params: RotationParams; secureCtx: SecureRouteContext } | undefined> {
+  const params = parseParams(RotationParamsSchema, req, reply)
+  if (!params) return undefined
+  const secureCtx = ctx as SecureRouteContext
+
+  const credentialExists = await findCredentialInProject(secureCtx.tx, params)
+  if (!credentialExists) {
+    reply.status(404).send(CREDENTIAL_NOT_FOUND)
+    return undefined
+  }
+  return { params, secureCtx }
+}
+
+/** complete/promote/retire all build this identical {orgId, projectId, credentialId, rotationId,
+ *  userId, body} args object from the parsed route params + secure context + parsed body before
+ *  calling their own service function. */
+function rotationMutationArgs<TBody>(
+  secureCtx: SecureRouteContext,
+  params: RotationParams,
+  body: TBody
+): {
+  orgId: string
+  projectId: string
+  credentialId: string
+  rotationId: string
+  userId: string
+  body: TBody
+} {
+  return {
+    orgId: secureCtx.auth.orgId,
+    projectId: params.projectId,
+    credentialId: params.credentialId,
+    rotationId: params.rotationId,
+    userId: secureCtx.auth.userId,
+    body,
+  }
 }
 
 /** confirm/fail/retry/complete all build this identical scope-and-actor params object from the
@@ -629,6 +932,23 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
           },
         })
 
+        // Story 5.6 AC-9.1c: break-glass's new version is instantly promoted (service.ts sets
+        // promotedAt at insert time, in the same transaction) — this audit event gives 5.6's
+        // promote vocabulary full coverage of the break-glass path too. ROTATION_OLD_RETIRED is
+        // deliberately NOT written here (AC-9.1e) — it's deferred to the moment the existing
+        // overlap-expiry worker actually performs the physical purge, matching when the old
+        // version stops being retrievable, not when break-glass itself runs.
+        await writeRotationPromotedAudit(
+          secureCtx.tx,
+          secureCtx.auth,
+          req,
+          result.rotation,
+          params,
+          {
+            breakGlass: true,
+          }
+        )
+
         if (result.supersededRotationId) {
           await writeRotationAuditEntry(secureCtx.tx, secureCtx.auth, req, {
             eventType: AuditEvent.ROTATION_SUPERSEDED_BY_BREAK_GLASS,
@@ -731,12 +1051,9 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
     },
     security: { minimumRole: 'viewer', writeAuditEvent: false },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(RotationParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      const credentialExists = await findCredentialInProject(secureCtx.tx, params)
-      if (!credentialExists) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      const loaded = await loadRotationScopedParams(ctx, req, reply)
+      if (!loaded) return reply
+      const { params, secureCtx } = loaded
 
       const detail = await getRotationDetail(secureCtx.tx, params)
       if (!detail) return reply.status(404).send(ROTATION_NOT_FOUND)
@@ -1129,7 +1446,10 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: ConcurrentModificationResponseSchema,
+        409: z.union([
+          ConcurrentModificationResponseSchema,
+          RotationWrongStateForLegacyCompleteResponseSchema,
+        ]),
         // ApiErrorSchema deliberately listed LAST: it's a non-.strict() schema that would
         // otherwise successfully (and silently) match any of the more specific error shapes
         // above and strip their extra fields, since zod tries union members in array order and
@@ -1157,54 +1477,19 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      const result = await completeRotation(secureCtx.tx, {
-        orgId: secureCtx.auth.orgId,
-        projectId: params.projectId,
-        credentialId: params.credentialId,
-        rotationId: params.rotationId,
-        userId: secureCtx.auth.userId,
-        body: parsed.data,
-      })
+      const result = await completeRotation(
+        secureCtx.tx,
+        rotationMutationArgs(secureCtx, params, parsed.data)
+      )
 
-      if (result.outcome === 'locked_conflict' || result.outcome === 'concurrent_modification') {
-        req.log.info(
-          { eventType: OperationalEvent.ROTATION_COMPLETE_CONCURRENT_MODIFICATION, ...params },
-          'Rotation complete rejected — concurrent modification'
-        )
-        return reply.status(409).send(concurrentModificationResponse(result.currentVersion))
+      if (isCompleteEarlyFailure(result)) {
+        return replyForCompleteEarlyFailure(reply, req, result, params)
       }
-      if (result.outcome === 'rotation_not_found') return reply.status(404).send(ROTATION_NOT_FOUND)
-      if (result.outcome === 'rotation_not_active') {
-        return reply.status(422).send(rotationNotActiveResponse(result.status))
-      }
-      if (result.outcome === 'checklist_incomplete') {
-        rotationCompletionsTotal.inc({ outcome: 'checklist_incomplete' })
-        req.log.info(
-          {
-            eventType: OperationalEvent.ROTATION_COMPLETE_CHECKLIST_INCOMPLETE,
-            ...params,
-            pendingCount: result.pendingItems.length,
-          },
-          'Rotation complete rejected — checklist incomplete'
-        )
-        return reply.status(422).send({
-          code: 'checklist_incomplete',
-          message: `${result.pendingItems.length} of ${result.totalItemCount} checklist items are not yet confirmed.`,
-          pendingItems: result.pendingItems,
-        })
-      }
-      if (result.outcome === 'acknowledgement_required') {
-        rotationCompletionsTotal.inc({ outcome: 'acknowledgement_required' })
-        req.log.info(
-          { eventType: OperationalEvent.ROTATION_COMPLETE_ACKNOWLEDGEMENT_REQUIRED, ...params },
-          'Rotation complete rejected — acknowledgement required'
-        )
-        return reply.status(422).send({
-          code: 'acknowledgement_required',
-          message:
-            'This credential has no recorded dependent systems. Confirm you have manually verified the credential is updated everywhere it is used before completing.',
-          checklistItemCount: 0 as const,
-        })
+      if (
+        result.outcome === 'checklist_incomplete' ||
+        result.outcome === 'acknowledgement_required'
+      ) {
+        return replyForCompleteBlockedOutcome(reply, req, result, params)
       }
 
       const confirmedCount = result.checklistItems.filter(
@@ -1253,6 +1538,228 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       return {
         data: serializeRotationDetail(result.rotation, result.checklistItems),
       }
+    },
+  })
+
+  // Story 5.6 AC-5 Example 5a: promote/retire mirror complete's role gate and rate-limit tier
+  // verbatim — same 60/min checklist-mutation bucket, admin+MFA gate.
+  function promoteRetireRateLimit(key: string) {
+    return { max: 60, timeWindowMs: 60_000, key } as const
+  }
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/rotations/:rotationId/promote',
+    schema: {
+      response: {
+        200: PromoteRotationResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: z.union([ConcurrentModificationResponseSchema, RotationNotPromotableResponseSchema]),
+        422: z.union([RotationAcknowledgementRequiredResponseSchema, ApiErrorSchema]),
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: promoteRetireRateLimit(
+        'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/promote'
+      ),
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(RotationParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody<PromoteRotationBody>(PromoteRotationBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await promoteRotation(
+        secureCtx.tx,
+        rotationMutationArgs(secureCtx, params, parsed.data)
+      )
+
+      if (result.outcome === 'locked_conflict' || result.outcome === 'concurrent_modification') {
+        rotationPromotionsTotal.inc({ outcome: 'concurrent_modification' })
+        req.log.info(
+          { eventType: OperationalEvent.ROTATION_PROMOTE_CONCURRENT_MODIFICATION, ...params },
+          'Rotation promote rejected — concurrent modification'
+        )
+        return reply.status(409).send(concurrentModificationResponse(result.currentVersion))
+      }
+      if (result.outcome === 'rotation_not_found') return reply.status(404).send(ROTATION_NOT_FOUND)
+      if (
+        result.outcome === 'rotation_not_promotable' ||
+        result.outcome === 'acknowledgement_required'
+      ) {
+        return replyForPromoteBlockedOutcome(reply, req, result, params)
+      }
+
+      try {
+        await writeRotationPromotedAudit(
+          secureCtx.tx,
+          secureCtx.auth,
+          req,
+          result.rotation,
+          params,
+          {
+            checklistAcknowledged: result.checklistAcknowledged,
+            pendingItemCountAtAction: result.pendingItemCountAtAction,
+          }
+        )
+      } catch (error) {
+        rotationPromotionsTotal.inc({ outcome: 'audit_failed' })
+        req.log.error(
+          { eventType: OperationalEvent.ROTATION_PROMOTE_AUDIT_FAILED, ...params },
+          'Rotation promote audit write failed — transaction will roll back'
+        )
+        throw error
+      }
+
+      rotationPromotionsTotal.inc({ outcome: 'success' })
+      req.log.info(
+        { eventType: OperationalEvent.ROTATION_PROMOTE_SUCCESS, ...params },
+        'Rotation promoted'
+      )
+      return { data: serializeRotationDetail(result.rotation, result.checklistItems) }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/rotations/:rotationId/retire',
+    schema: {
+      response: {
+        200: RetireRotationResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: z.union([ConcurrentModificationResponseSchema, RotationNotRetirableResponseSchema]),
+        422: z.union([RotationAcknowledgementRequiredResponseSchema, ApiErrorSchema]),
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: promoteRetireRateLimit(
+        'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/retire'
+      ),
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(RotationParamsSchema, req, reply)
+      if (!params) return reply
+      const parsed = parseBody<RetireRotationBody>(RetireRotationBodySchema, req, reply)
+      if (!parsed.success) return reply
+      const secureCtx = ctx as SecureRouteContext
+
+      const result = await retireRotation(
+        secureCtx.tx,
+        rotationMutationArgs(secureCtx, params, parsed.data)
+      )
+
+      if (result.outcome === 'locked_conflict' || result.outcome === 'concurrent_modification') {
+        rotationRetirementsTotal.inc({ outcome: 'concurrent_modification' })
+        req.log.info(
+          { eventType: OperationalEvent.ROTATION_RETIRE_CONCURRENT_MODIFICATION, ...params },
+          'Rotation retire rejected — concurrent modification'
+        )
+        return reply.status(409).send(concurrentModificationResponse(result.currentVersion))
+      }
+      if (result.outcome === 'rotation_not_found') return reply.status(404).send(ROTATION_NOT_FOUND)
+      if (
+        result.outcome === 'rotation_not_retirable' ||
+        result.outcome === 'acknowledgement_required'
+      ) {
+        return replyForRetireBlockedOutcome(reply, req, result, params)
+      }
+
+      try {
+        await writeRotationAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+          eventType: AuditEvent.ROTATION_OLD_RETIRED,
+          resourceId: result.rotation.id,
+          payload: {
+            credentialId: params.credentialId,
+            projectId: params.projectId,
+            previousVersionId: result.rotation.previousVersionId,
+            checklistAcknowledged: result.checklistAcknowledged,
+            pendingItemCountAtAction: result.pendingItemCountAtAction,
+          },
+        })
+      } catch (error) {
+        rotationRetirementsTotal.inc({ outcome: 'audit_failed' })
+        req.log.error(
+          { eventType: OperationalEvent.ROTATION_RETIRE_AUDIT_FAILED, ...params },
+          'Rotation retire audit write failed — transaction will roll back'
+        )
+        throw error
+      }
+
+      rotationRetirementsTotal.inc({ outcome: 'success' })
+      req.log.info(
+        { eventType: OperationalEvent.ROTATION_RETIRE_SUCCESS, ...params },
+        'Rotation retired'
+      )
+      return { data: serializeRotationDetail(result.rotation, result.checklistItems) }
+    },
+  })
+
+  // AC-8: staged-value reveal — same role/rate-limit tier as the ordinary value-reveal route
+  // (credentials/routes.ts's GET .../value), mirrored verbatim per AC-8.1/AC-8.4.
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/credentials/:credentialId/rotations/:rotationId/staged-value',
+    schema: {
+      response: {
+        200: StagedValueResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      rateLimit: {
+        max: 30,
+        timeWindowMs: 60_000,
+        key: 'GET /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/staged-value',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const loaded = await loadRotationScopedParams(ctx, req, reply)
+      if (!loaded) return reply
+      const { params, secureCtx } = loaded
+
+      const result = await getStagedValue(secureCtx.tx, params)
+      if (result.status !== 'found') {
+        req.log.info(
+          { eventType: OperationalEvent.ROTATION_STAGED_VALUE_REVEAL_NOT_STAGED, ...params },
+          'Staged value reveal rejected — rotation not found or not staged'
+        )
+        return reply.status(404).send(ROTATION_NOT_FOUND)
+      }
+
+      try {
+        await writeRotationAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+          eventType: AuditEvent.STAGED_VALUE_REVEALED,
+          resourceId: params.rotationId,
+          payload: { credentialId: params.credentialId, projectId: params.projectId },
+        })
+      } catch (error) {
+        req.log.error(
+          { eventType: OperationalEvent.ROTATION_STAGED_VALUE_REVEAL_NOT_STAGED, ...params },
+          'Staged value reveal audit write failed — transaction will roll back'
+        )
+        throw error
+      }
+
+      req.log.info(
+        { eventType: OperationalEvent.ROTATION_STAGED_VALUE_REVEAL_SUCCESS, ...params },
+        'Staged value revealed'
+      )
+      return { data: { value: result.value, versionNumber: result.versionNumber } }
     },
   })
 
@@ -1330,7 +1837,10 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: ConcurrentModificationResponseSchema,
+        409: z.union([
+          ConcurrentModificationResponseSchema,
+          RotationNotAbandonableAfterPromotionResponseSchema,
+        ]),
         422: z.union([RotationNotStaleResponseSchema, ApiErrorSchema]),
       },
     },
@@ -1352,6 +1862,20 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
 
       const result = await callResolutionService(abandonRotation, secureCtx, params)
+
+      // Story 5.6 AC-2.5: `promoted` is not abandonable via this route — checked before the
+      // shared resolution-failure mapping, which doesn't know about this abandon-specific outcome.
+      if (result.outcome === 'rotation_not_abandonable_after_promotion') {
+        req.log.info(
+          { eventType: OperationalEvent.ROTATION_ABANDON_NOT_STALE, ...params },
+          'Rotation abandon rejected — already promoted'
+        )
+        return reply.status(409).send({
+          code: 'rotation_not_abandonable_after_promotion' as const,
+          message:
+            'This rotation has already been promoted. Retire it instead — abandon is no longer available.',
+        })
+      }
 
       if (isResolutionFailure(result)) {
         return replyForResolutionFailure(reply, req, result, params, {

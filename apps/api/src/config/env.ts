@@ -551,6 +551,13 @@ const envSchema = z
     // break-glass minutes later. Read fresh on every call, same convention as
     // ROTATION_MAX_RETRIES/STALE_ROTATION_THRESHOLD_MINUTES.
     BREAK_GLASS_IDEMPOTENCY_WINDOW_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
+    // Story 5.6 AC-4/ADR-5.6-04: the NEW, wholly separate stale-STAGED alert threshold — sized
+    // in DAYS (not minutes), deliberately incompatible in scale with
+    // STALE_ROTATION_THRESHOLD_MINUTES (whose own max, 10080 min / 7 days, is already smaller
+    // than this var's 14-day default) so the two can never be confused or accidentally unified
+    // by a future refactor. Read fresh on every worker run, same convention as the other
+    // rotation thresholds above.
+    STALE_STAGED_ROTATION_THRESHOLD_DAYS: z.coerce.number().int().min(1).max(90).default(14),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(19456).max(262144).default(65536),
     ARGON2_TIME_COST: z.coerce.number().int().min(2).default(3),
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(4),

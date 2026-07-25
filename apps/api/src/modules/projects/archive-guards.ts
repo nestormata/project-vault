@@ -10,11 +10,24 @@ export const PROJECT_ARCHIVED_ERROR = {
   message: 'This project is archived and cannot be modified. Unarchive it first.',
 } as const
 
+// Story 5.6 AC-10.1: the "active rotation" set that blocks project/credential archival — kept in
+// sync with AC-2.6's idx_rotations_one_active_per_credential predicate by referencing this same
+// exported constant from both places, rather than two independently-maintained literal lists.
+// 'in_progress' is kept for historical-row compatibility during the AC-7 migration window (never
+// written by new code once this story ships). 'promoted' is new here: a promoted-but-unretired
+// rotation still has a staged value only retrievable via the credential's own routes (AC-8) —
+// archiving out from under it would destroy the only way to ever independently retrieve it again.
+export const BLOCKING_ROTATION_STATUSES = [
+  'in_progress',
+  'staged',
+  'promoted',
+  'stale_recovery',
+] as const
+
 /**
  * Returns the ids of rotations that block archival for a project.
- * Blocking statuses: 'in_progress' (active workflow) and 'stale_recovery' (unresolved; would be
- * orphaned by archival). 'break_glass_overlap' does NOT block — it is a self-expiring drain
- * window past the human-action point (ADR-4.4-03).
+ * Blocking statuses: BLOCKING_ROTATION_STATUSES above. 'break_glass_overlap' does NOT block — it
+ * is a self-expiring drain window past the human-action point (ADR-4.4-03).
  *
  * Story 5.1 has shipped and the `rotations` table now exists, so this queries it directly via a
  * typed Drizzle query (the former ADR-4.4-02 table-existence seam was removed per the CI guard in
@@ -25,10 +38,7 @@ export async function findBlockingRotationIds(tx: Tx, projectId: string): Promis
     .select({ id: rotations.id })
     .from(rotations)
     .where(
-      and(
-        eq(rotations.projectId, projectId),
-        inArray(rotations.status, ['in_progress', 'stale_recovery'])
-      )
+      and(eq(rotations.projectId, projectId), inArray(rotations.status, BLOCKING_ROTATION_STATUSES))
     )
   return rows.map((r) => r.id)
 }

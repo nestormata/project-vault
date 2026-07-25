@@ -195,7 +195,9 @@ export async function listCredentials(tx: Tx, params: CredentialListParams) {
               // though revealCurrentValue()/listVersionHistory() correctly roll back to the prior
               // version — the exact currentVersionNumber-disagreement failure mode the story's
               // own Pre-mortem Failure Mode #2 warns about, just at this call site instead.
-              isNull(credentialVersions.abandonedAt)
+              isNull(credentialVersions.abandonedAt),
+              // Story 5.6 AC-1.2: a staged (not yet promoted) version is never "current".
+              isNotNull(credentialVersions.promotedAt)
             )
           )
           .groupBy(credentialVersions.credentialId)
@@ -274,6 +276,9 @@ export async function createCredentialWithFirstVersion(
     schemaVersion: 2,
     fieldMeta,
     createdBy: input.userId,
+    // Story 5.6 AC-1.4: this path is not a staged rotation workflow — the first version is
+    // immediately "current" by design, unchanged from the caller's perspective.
+    promotedAt: new Date(),
   })
 
   return {
@@ -393,6 +398,10 @@ export type AddCredentialVersionResult = {
 // The current (highest non-purged/non-abandoned) version's number + value-envelope format. Shared
 // by getCredentialDetail (field metadata for the response) and addCredentialVersion (the "before"
 // side of the AC-9 audit delta), so the two never diverge on what "current version" means.
+// Story 5.6 AC-1.2: "current" now REQUIRES promotedAt IS NOT NULL (a staged, not-yet-promoted
+// version is never "current"), and orders by (promotedAt DESC, versionNumber DESC) rather than
+// versionNumber DESC alone — see Example 1c for why the promotedAt-first ordering matters even
+// though the WHERE clause alone rules out most ordering hazards today.
 export async function selectCurrentVersionMeta(
   tx: Tx,
   credentialId: string
@@ -408,10 +417,11 @@ export async function selectCurrentVersionMeta(
       and(
         eq(credentialVersions.credentialId, credentialId),
         isNull(credentialVersions.purgedAt),
-        isNull(credentialVersions.abandonedAt)
+        isNull(credentialVersions.abandonedAt),
+        isNotNull(credentialVersions.promotedAt)
       )
     )
-    .orderBy(desc(credentialVersions.versionNumber))
+    .orderBy(desc(credentialVersions.promotedAt), desc(credentialVersions.versionNumber))
     .limit(1)
   return row
 }
@@ -472,6 +482,9 @@ export async function addCredentialVersion(
       versionNumber: nextVersion,
       schemaVersion: 2,
       fieldMeta,
+      // Story 5.6 AC-1.4: multi-field edits are not a staged rotation workflow — immediately
+      // "current" by design, unchanged from the caller's perspective.
+      promotedAt: new Date(),
       createdBy: input.userId,
     })
 
@@ -516,10 +529,13 @@ export async function revealCurrentValue(
         // Story 5.3 AC-13/CR5: excludes a version abandoned by a stale-recovery `abandon` call
         // or superseded by break-glass (ADR-5.3-04) from ever being served as "current" —
         // always-true no-op for any credential that has never had a rotation/abandonment.
-        isNull(credentialVersions.abandonedAt)
+        isNull(credentialVersions.abandonedAt),
+        // Story 5.6 AC-1.2: a staged (not yet promoted) version is never "current" — this is the
+        // literal behavior inversion the story exists to deliver (Example 1b).
+        isNotNull(credentialVersions.promotedAt)
       )
     )
-    .orderBy(desc(credentialVersions.versionNumber))
+    .orderBy(desc(credentialVersions.promotedAt), desc(credentialVersions.versionNumber))
     .limit(1)
 
   if (!version?.encryptedValue) {
@@ -567,19 +583,23 @@ export async function listVersionHistory(
       createdAt: credentialVersions.createdAt,
       purgedAt: credentialVersions.purgedAt,
       abandonedAt: credentialVersions.abandonedAt,
+      promotedAt: credentialVersions.promotedAt,
       schemaVersion: credentialVersions.schemaVersion,
     })
     .from(credentialVersions)
     .where(eq(credentialVersions.credentialId, params.credentialId))
     .orderBy(desc(credentialVersions.versionNumber))
 
-  // Story 5.3 AC-14/CR5: "current" also excludes abandoned versions — can fall all the way back
-  // to the credential's original (pre-rotation) version if its only rotation was abandoned
-  // (the "smallest possible abandon case" edge case). Always-true no-op (identical to the
-  // pre-5.3 behavior) for any credential that has never had an abandonment.
-  const currentVersionNumber = rows.find(
-    (row) => row.purgedAt === null && row.abandonedAt === null
-  )?.versionNumber
+  // Story 5.3 AC-14/CR5 + Story 5.6 AC-1.2: "current" excludes abandoned/purged versions AND
+  // (new) requires promotedAt to be set, ranked by (promotedAt DESC, versionNumber DESC) — a
+  // staged (not yet promoted) version, even if it's the highest version number, is never
+  // "current". Computed in JS (not a second query) since `rows` is already fetched in full.
+  const currentVersionNumber = rows
+    .filter((row) => row.purgedAt === null && row.abandonedAt === null && row.promotedAt !== null)
+    .sort((a, b) => {
+      const byPromotedAt = (b.promotedAt as Date).getTime() - (a.promotedAt as Date).getTime()
+      return byPromotedAt !== 0 ? byPromotedAt : b.versionNumber - a.versionNumber
+    })[0]?.versionNumber
 
   return rows.map((row) => ({
     versionNumber: row.versionNumber,
