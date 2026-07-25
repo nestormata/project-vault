@@ -595,10 +595,13 @@ same operational discipline as backup custody.
 - `400 kms_key_not_found` (init only) — the `kmsKeyId` does not exist, or is currently disabled/
   pending deletion, in the configured AWS region.
 
-Credential rotation (IAM role session refresh, or an operator swapping env vars and restarting)
-between init and a later unseal is transparent by construction — the server never stores or
-depends on init-time credentials; each request resolves credentials fresh via the AWS SDK's
-standard chain.
+**Credential** rotation (IAM role session refresh, or an operator swapping env vars and
+restarting) between init and a later unseal is transparent by construction — the server never
+stores or depends on init-time credentials; each request resolves credentials fresh via the AWS
+SDK's standard chain. This is distinct from **data-key** rotation (re-wrapping the stored
+`kms_encrypted_dek` under a new KMS key): no such execution path exists in v1 — see the
+pre-existing `key_rotated_at` gap noted in the "Known v1 design gaps" list in the project
+README.
 
 ---
 

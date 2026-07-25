@@ -144,4 +144,32 @@ describe.sequential('Story 1.14: KMS error mapping', () => {
       await app.close()
     })
   })
+
+  // Story 1.14 AC-17: kms mode must not accidentally bypass the existing bootstrap-token gate —
+  // a regression guard confirming the 403 fires before any AWS KMS call is attempted.
+  describe('AC-17: bootstrap token enforcement is unaffected by kms mode', () => {
+    const BOOTSTRAP_TOKEN = 'a'.repeat(32)
+
+    beforeEach(async () => {
+      await resetVaultForTest()
+      process.env['VAULT_ALLOW_REMOTE_INIT'] = 'false'
+      process.env['VAULT_BOOTSTRAP_TOKEN'] = BOOTSTRAP_TOKEN
+    })
+
+    afterAll(() => {
+      process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
+      delete process.env['VAULT_BOOTSTRAP_TOKEN']
+    })
+
+    it('rejects kms init with no bootstrap token before any AWS KMS call is attempted', async () => {
+      const provider = throwingProvider('unreachable')
+      __setKmsProviderForTest(provider)
+
+      await expect(initVault({ kmsType: 'kms', kmsKeyId: KEY_ID }, {})).rejects.toMatchObject({
+        code: 'BOOTSTRAP_FORBIDDEN',
+        statusCode: 403,
+      })
+      expect(provider.generateDataKey).not.toHaveBeenCalled()
+    })
+  })
 })

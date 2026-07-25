@@ -119,7 +119,9 @@ A closer look at what's implemented in each area, current as of 2026-07-13:
 - Mutation testing (Stryker) tracked nightly
 
 Current limitations, disclosed up front rather than discovered later:
-- `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet.
+- `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet. This
+  also applies to KMS mode's wrapped data key — no code path re-wraps `kms_encrypted_dek` under a
+  new KMS key; only IAM credential rotation is transparent by construction (see runbook).
 - No live backup-job progress polling and no in-app "click to upgrade" trigger in the Platform Admin UI — both are deliberate scope boundaries; self-hosted in-place upgrades remain an out-of-band `docker compose up -d` operation.
 
 ---
