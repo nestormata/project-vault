@@ -26,13 +26,18 @@ describe('validateRotationCron', () => {
 })
 
 describe('nextCronOccurrence (Story 5.2 FR65)', () => {
-  it('computes the next occurrence relative to a given reference date, matching cron-parser directly', () => {
+  it('computes the next occurrence relative to a given reference date, matching cron-parser directly (pinned to UTC)', () => {
     const reference = new Date('2026-07-15T12:00:00.000Z')
-    const expected = CronExpressionParser.parse('0 0 1 * *', { currentDate: reference })
+    const expected = CronExpressionParser.parse('0 0 1 * *', { currentDate: reference, tz: 'UTC' })
       .next()
       .toDate()
     expect(nextCronOccurrence('0 0 1 * *', reference)).toEqual(expected)
     expect(expected.getTime()).toBeGreaterThan(reference.getTime())
+  })
+
+  it('is independent of the process local timezone (UTC pinned, not machine-local)', () => {
+    const reference = new Date('2026-07-15T12:00:00.000Z')
+    expect(nextCronOccurrence('0 0 1 * *', reference)).toEqual(new Date('2026-08-01T00:00:00.000Z'))
   })
 
   it('throws for an unparseable expression rather than silently returning a bogus date', () => {
