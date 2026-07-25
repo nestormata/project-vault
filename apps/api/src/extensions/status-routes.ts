@@ -1,6 +1,7 @@
 import { z } from 'zod/v4'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { FastifyApp } from '../lib/fastify-app.js'
+import { ApiErrorSchema } from '../lib/api-contracts.js'
 import { secureRoute } from '../lib/secure-route.js'
 import { getExtensionStatus } from './loader.js'
 
@@ -23,6 +24,15 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
     schema: {
       response: {
         200: ExtensionStatusResponseSchema,
+        // AC-5 / secure-route.ts: 401 (unauthenticated) and 403 (authenticated but not org-role
+        // 'admin' — including 'owner', see the Dev Notes comment below) are both real, tested
+        // outcomes for this route, not schema-less framework fallthrough — document them like
+        // every other secureRoute()-gated route in this codebase (e.g.
+        // modules/platform-admin/route-common.ts's PLATFORM_ADMIN_ERROR_RESPONSES) so the
+        // generated OpenAPI spec — and packages/api-contract-tests's AC-9 conformance suite —
+        // reflect the contract this route actually has.
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
       },
     },
     security: {
