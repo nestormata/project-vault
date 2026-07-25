@@ -18,6 +18,7 @@ COPY packages/shared/package.json ./packages/shared/
 COPY packages/db/package.json ./packages/db/
 COPY packages/crypto/package.json ./packages/crypto/
 COPY packages/agent/package.json ./packages/agent/
+COPY packages/extension-api/package.json ./packages/extension-api/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
@@ -29,6 +30,7 @@ COPY packages/shared ./packages/shared
 COPY packages/db ./packages/db
 COPY packages/crypto ./packages/crypto
 COPY packages/agent ./packages/agent
+COPY packages/extension-api ./packages/extension-api
 COPY packages/eslint-config ./packages/eslint-config
 
 # Split off from the final `builder` stage (Story 1.13 AC-D1) so the one-shot `migrate` service
@@ -42,11 +44,17 @@ RUN pnpm --filter @project-vault/shared build \
  && pnpm --filter @project-vault/crypto build \
  && pnpm --filter @project-vault/db build
 
-# Extends db-builder (already has shared+crypto+db built) with the two remaining packages
+# Extends db-builder (already has shared+crypto+db built) with the remaining packages
 # (Story 1.13 AC-D2) — same cumulative filesystem as the original single 5-package RUN, just
-# produced across two stages so `migrate` (targeting db-builder) never waits on these two.
+# produced across two stages so `migrate` (targeting db-builder) never waits on these.
+# extension-api has no workspace-internal dependencies (Story 14.1) and apps/api imports it
+# directly (Story 14.2) — must be built before @project-vault/api or its build fails with
+# TS2307 "Cannot find module '@project-vault/extension-api'" (verified empirically — this
+# package was previously missing from the Dockerfile entirely, only caught by CI, not local
+# `make ci`, since pnpm's local workspace symlinks resolve it without a dist build).
 FROM db-builder AS builder
 RUN pnpm --filter @project-vault/agent build \
+ && pnpm --filter @project-vault/extension-api build \
  && pnpm --filter @project-vault/api build
 
 # Bundle the api and its production deps into a self-contained directory. This runs in its
