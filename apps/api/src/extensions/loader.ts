@@ -100,7 +100,7 @@ async function runAuditFanout(
   let orgIds: string[]
   try {
     orgIds = await listOrgIds()
-  } catch (error) {
+  } catch {
     operationalLog(
       logger,
       'fatal',
@@ -108,14 +108,13 @@ async function runAuditFanout(
       'extension audit fanout: failed to enumerate organizations',
       { subReason: 'org_enumeration_failed' }
     )
-    void error
     return
   }
 
   for (const orgId of orgIds) {
     try {
       await auditWriter(orgId, eventType, payload)
-    } catch (error) {
+    } catch {
       operationalLog(
         logger,
         'fatal',
@@ -123,7 +122,6 @@ async function runAuditFanout(
         'extension audit fanout: per-org audit write failed',
         { orgId, subReason: 'audit_write_failed' }
       )
-      void error
     }
   }
 }
