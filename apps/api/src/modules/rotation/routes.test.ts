@@ -227,6 +227,19 @@ function upcomingRotationsUrl(projectId: string, suffix = '') {
 
 const HORIZON_90D_QUERY = '?horizon=90d'
 
+/** A "1st of the month" cron schedule (e.g. '0 0 1 * *') is calendar-fragile as a fixture for
+ * "definitely outside a 7-day horizon": during the last week of any month, the next 1st-of-month
+ * occurrence genuinely IS within 7 days, so a hardcoded schedule intermittently makes an
+ * assertion that's supposed to always be true become false depending on which real-world date
+ * the suite happens to run on — not a race, a deterministic calendar-boundary bug that surfaced
+ * the week of 2026-07-25 (Aug 1 fell inside the horizon). Compute a day/month pair ~10 days out
+ * from the real current UTC date instead, so the schedule's next occurrence is always safely
+ * beyond any horizon this file exercises (max 90d), regardless of what day the suite runs. */
+function cronForDaysFromNowUtc(daysFromNow: number): string {
+  const target = new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000)
+  return `0 0 ${target.getUTCDate()} ${target.getUTCMonth() + 1} *`
+}
+
 /** confirm/fail/retry are identical thin wrappers around the same checklist-item POST shape,
  *  differing only in the URL's action segment and each action's own default body. */
 function checklistActionViaApi(
@@ -2129,7 +2142,7 @@ describe.sequential('rotation checklist confirm/fail/retry/complete + upcoming r
       method: 'PATCH',
       url: `/api/v1/projects/${projectId}/credentials/${credential.id}`,
       headers: { cookie: cookieHeader(owner.cookies) },
-      payload: { rotationSchedule: '0 0 1 * *' },
+      payload: { rotationSchedule: cronForDaysFromNowUtc(15) },
     })
     expect(patchRes.statusCode).toBe(200)
 

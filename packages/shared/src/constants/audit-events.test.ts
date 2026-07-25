@@ -124,6 +124,11 @@ describe('AuditEvent', () => {
     expect(AuditEvent.STATUS_PAGE_DISABLED).toBe('status_page.disabled')
   })
 
+  it('exposes Story 14.2 extension load lifecycle audit event names', () => {
+    expect(AuditEvent.EXTENSION_LOADED).toBe('extension.loaded')
+    expect(AuditEvent.EXTENSION_LOAD_FAILED).toBe('extension.load_failed')
+  })
+
   it('derives AuditEventType from every current AuditEvent value (AC-J1/J3, single source of truth)', () => {
     for (const value of Object.values(AuditEvent)) {
       expect(assertValidAuditEventType(value)).toBe(value)

@@ -81,6 +81,51 @@ function documentedStatuses(operation: Operation['operation']): string[] {
   return Object.keys(operation.responses)
 }
 
+/** Narrowly detects the shared-GET-session staleness case — see `invokeForPositivePath`'s doc comment. */
+function isAccessTokenInvalid(body: unknown): boolean {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    'code' in body &&
+    (body as { code: unknown }).code === 'access_token_invalid'
+  )
+}
+
+/**
+ * Mutation methods get a *fresh* session per call: some operations under test are themselves
+ * session-revoking (e.g. `DELETE /api/v1/auth/sessions`), and reusing the one shared
+ * `orgA.cookies` jar across every enumerated operation would let one such call permanently break
+ * every later test in this same run. GET operations are read-only and reuse the shared session
+ * for speed.
+ *
+ * That reuse assumption has one hole: `DELETE /api/v1/auth/sessions` revokes every *other*
+ * session for the user, not just its own fresh one — so it invalidates the shared `orgA.cookies`
+ * jar as a side effect, and any GET enumerated after it ran would get 401 access_token_invalid
+ * regardless of its own route's correctness. This was latent (masked by 401 being a *documented*
+ * status for most of those routes, so the assertion below still passed on the "wrong" status)
+ * until story 14.2's new `GET /api/v1/admin/extensions/status` — which documented only 200 —
+ * happened to sort late enough in enumeration order to land after that mutation and surface it
+ * as a hard failure. Rather than giving every GET its own fresh session (which flips many other
+ * operations from a masking 401 to a real 200 and would newly expose whatever unrelated
+ * response-shape gaps that masking was hiding — out of scope here), self-heal narrowly: detect
+ * exactly this one failure mode and refresh the shared jar once, in place.
+ */
+async function invokeForPositivePath(
+  op: Operation
+): Promise<{ statusCode: number; body: unknown }> {
+  const cookies = op.method === 'get' ? orgA.cookies : await login(app, orgA)
+  const result = await invoke(op, { cookies })
+  const isStaleSharedGetSession =
+    op.method === 'get' &&
+    result.statusCode === 401 &&
+    isAccessTokenInvalid(result.body) &&
+    !documentedStatuses(op.operation).includes('401')
+  if (!isStaleSharedGetSession) return result
+
+  orgA.cookies = await login(app, orgA)
+  return invoke(op, { cookies: orgA.cookies })
+}
+
 function responseSchemaFor(
   operation: Operation['operation'],
   status: string
@@ -184,13 +229,7 @@ for (const op of operations) {
 
   describe(operationKey(op), () => {
     it('returns a documented status with a schema-conformant body (AC-9), and satisfies the independent FR97 pagination rule (D7, AC-11, AC-13)', async () => {
-      // Mutation methods get a *fresh* session per call: some operations under test are
-      // themselves session-revoking (e.g. `DELETE /api/v1/auth/sessions`), and reusing the one
-      // shared `orgA.cookies` jar across every enumerated operation would let one such call
-      // permanently break every later test in this same run. GET operations are read-only and
-      // safely reuse the shared session.
-      const cookies = op.method === 'get' ? orgA.cookies : await login(app, orgA)
-      const { statusCode, body } = await invoke(op, { cookies })
+      const { statusCode, body } = await invokeForPositivePath(op)
 
       if (hasNoDeclaredResponseSchema(op.operation)) {
         // See module doc note 3 — no real documented contract exists to check against; still
@@ -234,7 +273,10 @@ for (const op of operations) {
       op.path.startsWith(PLATFORM_ADMIN_PREFIX)
     ) {
       it('returns the documented 403 for a non-platform-operator session (AC-15)', async () => {
-        const { statusCode, body } = await invoke(op, { cookies: orgA.cookies })
+        // Fresh session per call — see the identical reasoning above this loop's main
+        // assertion: `orgA.cookies` can be revoked as a side effect of an unrelated
+        // session-revoking mutation enumerated earlier in this same run.
+        const { statusCode, body } = await invoke(op, { cookies: await login(app, orgA) })
         if (statusCode !== 403) return
         assertDocumentedAndSchemaValid(op, statusCode, body)
       })
