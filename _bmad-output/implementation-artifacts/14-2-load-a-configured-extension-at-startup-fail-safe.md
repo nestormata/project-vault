@@ -1,6 +1,6 @@
 # Story 14.2: Load a Configured Extension at Startup, Fail-Safe
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
