@@ -74,6 +74,26 @@ export const AdminRevokeSessionsResponseSchema = RevokeSessionsResponseSchema.ex
   userId: z.uuid(),
 }).meta({ id: 'AdminRevokeSessionsResponse' })
 
+// Story 14.4 AC-2a: deliberately NOT z.email() — the domain-lookup endpoint must not assume a
+// validated email shape; a malformed/no-`@` value is "no mapping" (fail-open to the password
+// field), not a 422. Server-side domain extraction (routes handler) treats any non-conforming
+// value as "no domain" rather than rejecting the request.
+export const DomainLookupRequestSchema = z
+  .object({
+    email: z.string().min(1).max(254),
+  })
+  .meta({ id: 'DomainLookupRequest' })
+
+// Story 14.4 AC-9a/AC-9b: never the org's id or name — only whether the domain maps to SSO, and
+// (if so) which provider. Structurally identical shape on hit vs. miss (providerName just absent
+// on a miss, never a different key set).
+export const DomainLookupResponseSchema = z
+  .object({
+    ssoRequired: z.boolean(),
+    providerName: z.string().optional(),
+  })
+  .meta({ id: 'DomainLookupResponse' })
+
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>
 export type LoginRequest = z.infer<typeof LoginRequestSchema>
 export type AuthSessionResponse = z.infer<typeof AuthSessionResponseSchema>
@@ -82,3 +102,5 @@ export type SessionSummary = z.infer<typeof SessionSummarySchema>
 export type SessionListResponse = z.infer<typeof SessionListResponseSchema>
 export type RevokeSessionsResponse = z.infer<typeof RevokeSessionsResponseSchema>
 export type AdminRevokeSessionsResponse = z.infer<typeof AdminRevokeSessionsResponseSchema>
+export type DomainLookupRequest = z.infer<typeof DomainLookupRequestSchema>
+export type DomainLookupResponse = z.infer<typeof DomainLookupResponseSchema>

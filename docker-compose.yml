@@ -73,6 +73,11 @@ services:
       MACHINE_JWT_SECRET: ${MACHINE_JWT_SECRET:-hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh}
       STATUS_PAGE_TOKEN_HMAC_SECRET: ${STATUS_PAGE_TOKEN_HMAC_SECRET:-iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii}
       ERASURE_EMAIL_HASH_SECRET: ${ERASURE_EMAIL_HASH_SECRET:-jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj}
+      # Story 14.3: signs the SSO login-state cookie; required in production (NODE_ENV=production
+      # above means this docker-compose stack hits that same strict validation locally). This was
+      # missing from this env list entirely until Story 14.4 discovered it blocked `make docker-up`
+      # outright for any local stack once Story 14.3 landed.
+      SSO_STATE_HMAC_SECRET: ${SSO_STATE_HMAC_SECRET:-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk}
       VAULT_KEY_DIR: /run/secrets
       # First-init protection: set in .env or shell. Generate: openssl rand -base64 32
       VAULT_BOOTSTRAP_TOKEN: ${VAULT_BOOTSTRAP_TOKEN:-}
