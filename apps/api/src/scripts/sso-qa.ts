@@ -27,10 +27,10 @@ import { getAdminDb } from '../lib/db.js'
 import { initVault, isSealed } from '../modules/vault/key-service.js'
 
 export const PROVIDER_NAME = 'test.mock-sso-extension'
-// NOSONAR(typescript:S2068) not a credential — a fixed, non-secret local-only vault passphrase for
-// this manual-QA script alone; the script never runs in production (see file header + the
+// Not a credential — a fixed, non-secret local-only vault passphrase for this manual-QA script
+// alone; the script never runs in production (see file header + the
 // mock-extension-not-in-production.test.ts guard), so there is nothing here for the rule to protect.
-const QA_PASSPHRASE = 'sso-qa-local-passphrase-not-for-production'
+const QA_PASSPHRASE = 'sso-qa-local-passphrase-not-for-production' // NOSONAR(typescript:S2068)
 
 export async function ensureUnsealed(): Promise<void> {
   if (!isSealed()) return
