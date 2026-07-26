@@ -377,4 +377,27 @@ here at story-completion time, which is itself the retro's finding #2 (a recurre
 **From `12-2-usability-trust-accessibility-fixes-adversarial-review.md`:**
 - AC-8's org-state gate has an unaddressed race condition.
 
+## Deferred from: code review of 1-14-vault-kms-unseal-mode (2026-07-25)
+
+*bmad-code-review adversarial pass against diff `680f8c6..91f1078` (PR #182). All items below are
+accepted trade-offs already documented elsewhere (story's own AC-7/Open Questions, or an existing
+codebase precedent) — not new regressions introduced by this diff.*
+
+- Deferred DB-level `CHECK` constraint for `kms_type='kms'` requiring non-null `kms_encrypted_dek`
+  — explicitly accepted trade-off in the story's own AC-7, mitigated by the app-level
+  `VAULT_CORRUPTED` guard.
+- `kmsKeyId` has minimal input validation (`z.string().min(1)` only, no ARN shape/length checks) —
+  low severity, AWS itself rejects malformed key IDs at call time.
+- `__setKmsProviderForTest` is exported unconditionally from the production module, no env gate —
+  mirrors the existing `__getRawBackupKeyForTest` precedent already established in this codebase.
+- `VaultUnsealRequestSchema`'s Zod refine was relaxed from "exactly one" to "at most one" field for
+  all modes, not scoped to `kms` only — per-branch checks in `deriveIkmForUnseal` now carry
+  required-field enforcement instead. Verified safe today (AC-10 negative test); theoretical risk
+  for a future mode that forgets its own guard.
+- No proactive custody-risk alert for a weak/overly-broad KMS key policy or a key entering
+  pending-deletion — explicitly out of v1 scope per the runbook's own disclosed limitation.
+- New test files (`vault-kms-errors.test.ts`, `vault-kms-lifecycle.test.ts`) hardcode a plaintext
+  test DB connection string rather than a shared constant — matches the existing convention already
+  used across this test suite.
+
 See `epic-12-retro-2026-07-24.md` findings #2 and #3 for full context.

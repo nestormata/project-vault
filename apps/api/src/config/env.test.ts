@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } fr
 const VAULT_APP_DATABASE_URL = 'postgresql://vault_app:secret@localhost:5432/project_vault'
 const SMTP_HOST_FIXTURE = 'smtp.example.com'
 const SMTP_FROM_FIXTURE = 'noreply@example.com'
+const VALID_KMS_ENDPOINT = 'http://localhost:4566'
 
 const BASE_ENV = {
   NODE_ENV: 'test',
@@ -1166,10 +1167,10 @@ describe('env', () => {
       process.env = {
         ...BASE_ENV,
         DATABASE_URL: VAULT_APP_DATABASE_URL,
-        VAULT_KMS_ENDPOINT: 'http://localhost:4566',
+        VAULT_KMS_ENDPOINT: VALID_KMS_ENDPOINT,
       }
       const { env } = await import('./env.js')
-      expect(env.VAULT_KMS_ENDPOINT).toBe('http://localhost:4566')
+      expect(env.VAULT_KMS_ENDPOINT).toBe(VALID_KMS_ENDPOINT)
       expect(exitSpy).not.toHaveBeenCalled()
     })
 
@@ -1181,6 +1182,41 @@ describe('env', () => {
       }
       await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
       expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('rejects a non-http(s) VAULT_KMS_ENDPOINT scheme', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_KMS_ENDPOINT: 'ftp://localhost:4566',
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    // Review finding (D3): VAULT_KMS_ENDPOINT is a LocalStack/test-only override — leaving it set
+    // in production would silently redirect all KMS traffic (including the wrapped vault data
+    // key) to an operator- or attacker-controlled endpoint.
+    const FULL_VALID_PRODUCTION_SECRETS = {
+      COOKIE_SECURE: 'true',
+      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+      INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+    }
+
+    it('rejects VAULT_KMS_ENDPOINT set in production', async () => {
+      process.env = productionEnv({
+        ...FULL_VALID_PRODUCTION_SECRETS,
+        VAULT_KMS_ENDPOINT: VALID_KMS_ENDPOINT,
+      })
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('allows VAULT_KMS_ENDPOINT unset in production', async () => {
+      process.env = productionEnv(FULL_VALID_PRODUCTION_SECRETS)
+      const { env } = await import('./env.js')
+      expect(env.VAULT_KMS_ENDPOINT).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
     })
 
     it('treats empty-string TOTP_REPLAY_HMAC_SECRET/MFA_PENDING_SESSION_HMAC_SECRET/INVITATION_TOKEN_HMAC_SECRET/RECOVERY_TOKEN_HMAC_SECRET/API_KEY_HMAC_SECRET/MACHINE_JWT_SECRET/STATUS_PAGE_TOKEN_HMAC_SECRET/ERASURE_EMAIL_HASH_SECRET as unset', async () => {

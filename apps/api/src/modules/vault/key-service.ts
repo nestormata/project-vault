@@ -42,6 +42,8 @@ let _platformAuditKey: Buffer | null = null
 let _onUnsealed: (() => Promise<void>) | null = null
 
 const SENTINEL_PLAINTEXT = 'project-vault-sentinel-v1'
+const VAULT_CORRUPTED_MESSAGE =
+  'vault_state data is corrupt or tampered — restore from backup or re-initialize'
 const MAX_KEY_FILE_BYTES = 4096 // no legitimate key file needs more than this
 const ENVELOPE_HALF_BYTES = 16
 
@@ -236,11 +238,13 @@ export function __setKmsProviderForTest(provider: KmsKeyProvider | null): void {
 }
 
 /** Story 1.14 AC-3/AC-4/AC-5: maps a KmsProviderError's provider-agnostic `kind` to the
- * init-specific AppError/status code. A non-KmsProviderError (should not happen — AwsKmsProvider
- * always wraps) is rethrown as-is rather than swallowed. */
+ * init-specific AppError/status code. Review finding (patch): a non-KmsProviderError (e.g. the
+ * KmsKeyProvider itself failing to construct) is treated as 'unreachable' rather than rethrown
+ * raw — keeps every KMS-path failure inside the documented KMS_* AppError contract and AC-18's
+ * no-leak guarantee, instead of surfacing an opaque generic 500. */
 function mapKmsErrorForInit(error: unknown): never {
-  if (!(error instanceof KmsProviderError)) throw error
-  switch (error.kind) {
+  const kind = error instanceof KmsProviderError ? error.kind : 'unreachable'
+  switch (kind) {
     case 'not_found':
       throw new AppError(
         'KMS_KEY_NOT_FOUND',
@@ -271,8 +275,8 @@ function mapKmsErrorForInit(error: unknown): never {
  * init, the key was simply never usable to begin with; at unseal, a previously-working key has
  * become unusable, which is the KMS-mode equivalent of losing a `file`-mode key file. */
 function mapKmsErrorForUnseal(error: unknown): never {
-  if (!(error instanceof KmsProviderError)) throw error
-  switch (error.kind) {
+  const kind = error instanceof KmsProviderError ? error.kind : 'unreachable'
+  switch (kind) {
     case 'not_found':
       throw new AppError(
         'KMS_KEY_UNAVAILABLE',
@@ -350,11 +354,7 @@ function parseVaultStateRow(state: {
     }
     return { sentinel, kdfParams }
   } catch {
-    throw new AppError(
-      'VAULT_CORRUPTED',
-      'vault_state data is corrupt or tampered — restore from backup or re-initialize',
-      503
-    )
+    throw new AppError('VAULT_CORRUPTED', VAULT_CORRUPTED_MESSAGE, 503)
   }
 }
 
@@ -391,11 +391,7 @@ async function deriveIkmForUnseal(
     // produces it — fail cleanly with the same VAULT_CORRUPTED class used for other tampered/
     // malformed vault_state shapes, rather than crashing deeper in the KMS provider call.
     if (!kmsEncryptedDek) {
-      throw new AppError(
-        'VAULT_CORRUPTED',
-        'vault_state data is corrupt or tampered — restore from backup or re-initialize',
-        503
-      )
+      throw new AppError('VAULT_CORRUPTED', VAULT_CORRUPTED_MESSAGE, 503)
     }
     // Extraneous legacy fields (body.passphrase/envelopeKeyPath/masterKeyPath) are never read
     // here — AC-10's "silently ignored, not an error" requirement is satisfied by construction.
@@ -404,6 +400,12 @@ async function deriveIkmForUnseal(
     } catch (error) {
       mapKmsErrorForUnseal(error)
     }
+  }
+  if (kmsType !== 'file') {
+    // Review finding (patch): an unrecognized/corrupt kms_type value must not silently fall
+    // through to the file-mode branch below and produce a misleading INVALID_KEY_FILE error —
+    // treat it as the same class of vault_state corruption as a malformed sentinel.
+    throw new AppError('VAULT_CORRUPTED', VAULT_CORRUPTED_MESSAGE, 503)
   }
   // file mode
   if (!body.masterKeyPath) {
@@ -472,6 +474,21 @@ export async function initVault(
   assertBootstrapAuthorized(headers)
 
   const db = getDb()
+
+  // Review finding (D1): check already-initialized BEFORE deriving the IKM — for kms mode,
+  // deriveIkmForInit makes a real, billed AWS GenerateDataKey call, so every repeat init against
+  // an already-initialized vault would otherwise burn a paid API call for no reason. This is a
+  // fast-path optimization only; onConflictDoNothing() below remains the atomic source of truth
+  // for the actual race (a concurrent first-time init can still slip past this check).
+  const existing = await db.select({ id: vaultState.id }).from(vaultState).limit(1)
+  if (existing.length > 0) {
+    throw new AppError(
+      'ALREADY_INITIALIZED',
+      'Vault is already initialized. Use POST /api/v1/vault/unseal to unseal.',
+      409
+    )
+  }
+
   const ikmResult = await deriveIkmForInit(body)
   const { ikm, kdfParams } = ikmResult
   const { primaryKey, auditKey, backupKey, platformAuditKey } = deriveAllKeysFromIkm(ikm)

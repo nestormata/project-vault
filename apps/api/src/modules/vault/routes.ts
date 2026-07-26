@@ -15,6 +15,24 @@ import {
 } from './schema.js'
 import { redactBodyForLog } from '../../plugins/redact-secrets.js'
 
+// Review finding (D2): KMS_PERMISSION_DENIED is a meaningful security signal (possible IAM
+// misconfiguration or credential compromise), not routine validation noise — log it at `error`
+// so it stands out in monitoring, same as every other AppError code logs at `warn` via the
+// existing interim operational-logging audit trail pattern (Story 9.1 D6/9.2 D6).
+function logVaultFailure(
+  req: FastifyRequest,
+  eventType: (typeof OperationalEvent)[keyof typeof OperationalEvent],
+  err: AppError,
+  message: string
+): void {
+  const fields = { eventType, error: err.code }
+  if (err.code === 'KMS_PERMISSION_DENIED') {
+    req.log.error(fields, message)
+  } else {
+    req.log.warn(fields, message)
+  }
+}
+
 export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
   fastify.route({
     method: 'POST',
@@ -56,10 +74,7 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(200).send(result)
       } catch (err) {
         if (err instanceof AppError) {
-          req.log.warn(
-            { eventType: OperationalEvent.VAULT_INIT_FAILED, error: err.code },
-            'Vault init failed'
-          )
+          logVaultFailure(req, OperationalEvent.VAULT_INIT_FAILED, err, 'Vault init failed')
           return reply
             .status(err.statusCode)
             .send({ error: err.code.toLowerCase(), message: err.message })
@@ -118,10 +133,7 @@ export async function vaultRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(200).send(result)
       } catch (err) {
         if (err instanceof AppError) {
-          req.log.warn(
-            { eventType: OperationalEvent.VAULT_UNSEAL_FAILED, error: err.code },
-            'Vault unseal failed'
-          )
+          logVaultFailure(req, OperationalEvent.VAULT_UNSEAL_FAILED, err, 'Vault unseal failed')
           return reply
             .status(err.statusCode)
             .send({ error: err.code.toLowerCase(), message: err.message })

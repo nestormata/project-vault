@@ -44,6 +44,7 @@ type ProductionEnv = {
   STATUS_PAGE_TOKEN_HMAC_SECRET?: string
   ERASURE_EMAIL_HASH_SECRET?: string
   LOG_LEVEL: string
+  VAULT_KMS_ENDPOINT?: string
 }
 
 function addEnvIssue(ctx: z.RefinementCtx, path: string, message: string): void {
@@ -372,6 +373,21 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateMachineJwtProductionSecret(env, ctx)
   validateStatusPageTokenProductionSecret(env, ctx)
   validateErasureEmailHashProductionSecret(env, ctx)
+  validateVaultKmsEndpointProductionSafety(env, ctx)
+}
+
+// Review finding (D3): VAULT_KMS_ENDPOINT is a LocalStack/test-only override — if left set in a
+// real production deployment, it would silently redirect all KMS traffic (including the wrapped
+// vault data key) to an operator- or attacker-controlled endpoint. A code comment alone doesn't
+// stop that; fail startup instead, mirroring this file's other FATAL production guards.
+function validateVaultKmsEndpointProductionSafety(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (env.VAULT_KMS_ENDPOINT) {
+    addEnvIssue(
+      ctx,
+      'VAULT_KMS_ENDPOINT',
+      'FATAL: VAULT_KMS_ENDPOINT must not be set in production — it is a LocalStack/test-only KMSClient endpoint override'
+    )
+  }
 }
 
 function validateDummyPasswordHash(
@@ -609,7 +625,11 @@ const envSchema = z
     // time (AC-1), not configured instance-wide.
     VAULT_KMS_ENDPOINT: z.preprocess(
       (v) => (v === '' ? undefined : v),
-      z.string().url('VAULT_KMS_ENDPOINT must be a valid URL').optional()
+      z
+        .string()
+        .url('VAULT_KMS_ENDPOINT must be a valid URL')
+        .refine((v) => /^https?:\/\//.test(v), 'VAULT_KMS_ENDPOINT must use http:// or https://')
+        .optional()
     ),
 
     // Story 14.2: optional, exact package identity of a founder-trusted extension package to
