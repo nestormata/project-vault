@@ -5,6 +5,9 @@ import { routeExists } from '$lib/test/route-exists.js'
 const loginMock = vi.hoisted(() => vi.fn())
 const getCurrentUserMock = vi.hoisted(() => vi.fn())
 const verifyMfaLoginMock = vi.hoisted(() => vi.fn())
+const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
+const ssoStartMock = vi.hoisted(() => vi.fn())
+const ssoCallbackMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 const pageMock = vi.hoisted(() => ({ url: new URL('http://localhost/login') }))
 
@@ -12,6 +15,9 @@ vi.mock('$lib/api/auth.js', () => ({
   login: loginMock,
   getCurrentUser: getCurrentUserMock,
   verifyMfaLogin: verifyMfaLoginMock,
+  lookupSsoDomain: lookupSsoDomainMock,
+  ssoStart: ssoStartMock,
+  ssoCallback: ssoCallbackMock,
 }))
 
 vi.mock('$app/navigation', () => ({
@@ -24,10 +30,16 @@ vi.mock('$app/state', () => ({
 
 import LoginPage from './+page.svelte'
 
+// Story 14.4: the login screen is now email-first/two-step — Step A (email + Continue) always
+// runs before the password field renders (AC-4), even for an email with no SSO mapping (the case
+// every test in this file exercises). Mirrors LoginForm.test.ts's own fillAndSubmitPassword helper.
 async function submitLogin() {
+  lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
   await fireEvent.input(screen.getByLabelText(/email/i), {
     target: { value: 'alex@example.com' },
   })
+  await fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+  await screen.findByLabelText(/^password$/i)
   await fireEvent.input(screen.getByLabelText(/^password$/i), {
     target: { value: 'super-secret-password' },
   })
@@ -39,6 +51,9 @@ describe('/login +page.svelte', () => {
     pageMock.url = new URL('http://localhost/login')
     loginMock.mockReset()
     getCurrentUserMock.mockReset()
+    lookupSsoDomainMock.mockReset()
+    ssoStartMock.mockReset()
+    ssoCallbackMock.mockReset()
     gotoMock.mockClear()
     loginMock.mockResolvedValue({ userId: 'u1', orgId: 'o1', expiresAt: '2026-01-01T00:00:00Z' })
     getCurrentUserMock.mockResolvedValue({ userId: 'u1' })
