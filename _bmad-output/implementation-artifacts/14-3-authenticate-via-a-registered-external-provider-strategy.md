@@ -1,6 +1,6 @@
 # Story 14.3: Authenticate via a Registered External Provider Strategy
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
