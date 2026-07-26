@@ -253,9 +253,7 @@ class AuthenticateTimeoutError extends Error {}
 
 async function invokeOnAuthenticateWithTimeout(
   strategy: {
-    onAuthenticate(
-      credential: string
-    ): Promise<{
+    onAuthenticate(credential: string): Promise<{
       externalSubject: string
       providerName: string
       email?: string
@@ -284,14 +282,23 @@ async function invokeOnAuthenticateWithTimeout(
 // AC-5/AC-7/AC-8: post-authentication identity resolution + session issuance
 // ---------------------------------------------------------------------------
 
+type LinkedIdentityLookup =
+  { kind: 'none' } | { kind: 'found'; orgId: string; userId: string } | { kind: 'ambiguous' }
+
 async function findLinkedIdentity(
   providerName: string,
   externalSubject: string
-): Promise<{ orgId: string; userId: string } | null> {
+): Promise<LinkedIdentityLookup> {
   // Cross-org point lookup via the admin connection — the org isn't known yet (that's exactly
   // what this query resolves), mirroring findInvitationByTokenHash()'s identical admin-bypass
   // precedent for a pre-auth, org-unknown lookup keyed by a unique index.
-  const [row] = await getAdminDb()
+  //
+  // The unique index on external_identities is (org_id, provider_name, external_subject) — it
+  // does NOT prevent the same (providerName, externalSubject) pair from being linked in two
+  // different orgs (e.g. two separate admin-linking calls). Fetch all matches rather than
+  // limit(1) so that case can be detected and rejected explicitly instead of silently picking
+  // an arbitrary org, mirroring the AC-8 multi-org-invitation ambiguity guard.
+  const rows = await getAdminDb()
     .select({ orgId: externalIdentities.orgId, userId: externalIdentities.userId })
     .from(externalIdentities)
     .where(
@@ -300,8 +307,11 @@ async function findLinkedIdentity(
         eq(externalIdentities.externalSubject, externalSubject)
       )
     )
-    .limit(1)
-  return row ?? null
+  if (rows.length === 0) return { kind: 'none' }
+  const distinctOrgs = new Set(rows.map((row) => row.orgId))
+  if (distinctOrgs.size > 1) return { kind: 'ambiguous' }
+  const [row] = rows as [{ orgId: string; userId: string }]
+  return { kind: 'found', orgId: row.orgId, userId: row.userId }
 }
 
 async function findCandidateInvitations(email: string): Promise<ProjectInvitation[]> {
@@ -328,15 +338,25 @@ async function issueSessionForUser(
   return createLoginSessionInTx(tx, { id: userId, identityTokenId }, orgId, meta)
 }
 
-async function findUserMfaEnrolledAt(orgId: string, userId: string): Promise<Date | null> {
+async function findUserMfaEnrolledAndMembership(
+  orgId: string,
+  userId: string
+): Promise<{ mfaEnrolledAt: Date | null; membershipStatus: string | null } | null> {
   const [row] = await withOrg(orgId, (tx) =>
     tx
-      .select({ mfaEnrolledAt: users.mfaEnrolledAt })
+      .select({
+        mfaEnrolledAt: users.mfaEnrolledAt,
+        membershipStatus: orgMemberships.status,
+      })
       .from(users)
+      .innerJoin(
+        orgMemberships,
+        and(eq(orgMemberships.userId, users.id), eq(orgMemberships.orgId, orgId))
+      )
       .where(eq(users.id, userId))
       .limit(1)
   )
-  return row?.mfaEnrolledAt ?? null
+  return row ?? null
 }
 
 async function handleLinkedSession(
@@ -346,11 +366,18 @@ async function handleLinkedSession(
   meta: RequestMeta
 ): Promise<unknown> {
   try {
+    // Mirror loginUser()'s activeMembership gate: a deactivated org member must not be able to
+    // retain access via a still-linked external identity just because SSO bypasses the password
+    // check. No membership row, or a non-'active' status, is treated the same as "not linked".
+    const membership = await findUserMfaEnrolledAndMembership(linked.orgId, linked.userId)
+    if (!membership || membership.membershipStatus !== 'active') {
+      return rejectAccountLinkRequired(reply, meta)
+    }
+
     // AC-5: SSO-authenticated login follows the IDENTICAL MFA-challenge branch loginUser()
     // already takes — no SSO-specific MFA bypass. Reusing createPendingMfaSession() (rather than
     // re-implementing the challenge logic) is what makes this inheritance real, not assumed.
-    const mfaEnrolledAt = await findUserMfaEnrolledAt(linked.orgId, linked.userId)
-    if (mfaEnrolledAt) {
+    if (membership.mfaEnrolledAt) {
       const challenge = await createPendingMfaSession(
         { userId: linked.userId, orgId: linked.orgId },
         meta
@@ -358,10 +385,8 @@ async function handleLinkedSession(
       return reply.send({ data: challenge })
     }
 
-    const result = await withOrg(linked.orgId, (tx) =>
-      issueSessionForUser(tx as Tx, linked.orgId, linked.userId, meta)
-    )
-    await withOrg(linked.orgId, async (tx) => {
+    const result = await withOrg(linked.orgId, async (tx) => {
+      const session = await issueSessionForUser(tx as Tx, linked.orgId, linked.userId, meta)
       const identityTokenId = await firstActorTokenIdForUser(tx as Tx, linked.userId)
       await writeHumanAuditEntry(tx as Tx, {
         orgId: linked.orgId,
@@ -370,12 +395,15 @@ async function handleLinkedSession(
         payload: {},
         meta,
       })
+      return session
     })
     return sendSsoSession(fastify, reply, result)
   } catch {
     // AC-6: issueSession fails AFTER state was already consumed — the caller gets a clear,
     // retryable error; the consumed state is never required again (a fresh /start mints a new
-    // one immediately).
+    // one immediately). Issuing the session and writing its audit entry in the SAME withOrg
+    // transaction (above) ensures this catch can't leave a committed-but-unaudited/orphaned
+    // session behind — either both commit, or neither does.
     return sendAppError(reply, new AppError('login_failed', 'Login failed, please try again', 503))
   }
 }
@@ -478,7 +506,13 @@ async function handleInvitationProvisioning(
 
     if (!outcome) {
       // AC-8 concurrency edge case: the atomic claim lost the race — the loser retries, never a
-      // duplicate users/external_identities row.
+      // duplicate users/external_identities row. This is a rejection on a security-relevant path
+      // (Task 8: SSO_LOGIN_REJECTED is mandatory on rejection paths, not just success paths).
+      await writePlatformSsoRejected({
+        reason: 'account_link_required',
+        subject: authResult.email,
+        meta,
+      })
       return sendAppError(
         reply,
         new AppError(
@@ -506,7 +540,26 @@ async function resolveSessionForAuthResult(
   meta: RequestMeta
 ): Promise<unknown> {
   const linked = await findLinkedIdentity(authResult.providerName, authResult.externalSubject)
-  if (linked) return handleLinkedSession(fastify, reply, linked, meta)
+  if (linked.kind === 'ambiguous') {
+    // The same (providerName, externalSubject) pair is linked in more than one org — mirrors
+    // AC-8's multi-org-invitation ambiguity guard: reject rather than silently picking one.
+    await writePlatformSsoRejected({
+      reason: 'account_link_required',
+      subject: authResult.email,
+      meta,
+    })
+    return sendAppError(
+      reply,
+      new AppError(
+        'ambiguous_identity_link',
+        'This identity is linked to more than one organization. Contact your organization admin.',
+        409
+      )
+    )
+  }
+  if (linked.kind === 'found') {
+    return handleLinkedSession(fastify, reply, { orgId: linked.orgId, userId: linked.userId }, meta)
+  }
 
   // AC-8 edge case: no email on the AuthResult — invitation-matching is skipped entirely.
   if (!authResult.email) return rejectAccountLinkRequired(reply, meta, authResult.email)
@@ -565,10 +618,12 @@ async function handleCallback(
   const entry = findAuthStrategy(providerName)
   if (!entry) return sendAppError(reply, unknownProviderError())
 
+  // AC-4: a missing cookie must pay the same DB round trip as expired/consumed/provider-mismatch/
+  // not-found so its response latency isn't measurably faster and doesn't become a timing oracle
+  // for "was a state cookie ever issued at all." hashState() of an empty string never matches a
+  // real stored hash, so this always resolves to the 'not_found' branch via the same query path.
   const rawState = readStateCookie(request)
-  if (!rawState) return rejectInvalidState(reply, meta)
-
-  const stateHash = hashState(rawState)
+  const stateHash = hashState(rawState ?? '')
   const outcome = await getDb().transaction((tx) => consumeState(tx as Tx, stateHash, providerName))
   if (!outcome.ok) return rejectInvalidState(reply, meta)
 
