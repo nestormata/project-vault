@@ -1,6 +1,6 @@
 # Story 2.10: Dependent System Location Links & Persistent Update Checkbox
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed 2026-07-26 — comprehensive developer guide for the credential_dependencies.link_url column and the persistent per-dependency "updated" checkbox that surfaces Story 5.6's rotation_checklist_items confirmation state outside the rotation modal. This story is a Product Surface Contract "both" story amending already-shipped Epic 2 (Story 2.4) and already-shipped Epic 5 (Story 5.6, once merged) code. -->
 
