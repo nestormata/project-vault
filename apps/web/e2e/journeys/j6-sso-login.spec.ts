@@ -1,5 +1,5 @@
 import postgres from 'postgres'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Browser, type BrowserContext, type APIResponse } from '@playwright/test'
 import { superuserDatabaseUrl } from '../fixtures/db.js'
 
 // J6: authenticate via a registered external provider strategy (Story 14.3, AC-12).
@@ -74,6 +74,32 @@ async function seedSsoFixtures(): Promise<void> {
   }
 }
 
+/** Drives `/sso/start` then `/sso/callback` for the given fixture credential, in a fresh context. */
+async function runSsoCallback(
+  browser: Browser,
+  credential: string
+): Promise<{ context: BrowserContext; callback: APIResponse }> {
+  const context = await browser.newContext()
+
+  const start = await context.request.post(`/api/v1/auth/sso/start/${PROVIDER}`)
+  expect(start.ok()).toBeTruthy()
+
+  const callback = await context.request.post(`/api/v1/auth/sso/callback/${PROVIDER}`, {
+    data: { credential },
+  })
+
+  return { context, callback }
+}
+
+/** Asserts the context ended up with a full session: access-token cookie set and `/auth/me` OK. */
+async function expectFullSession(context: BrowserContext): Promise<void> {
+  const cookies = await context.cookies()
+  expect(cookies.some((c) => c.name === ACCESS_TOKEN_COOKIE)).toBe(true)
+
+  const me = await context.request.get('/api/v1/auth/me')
+  expect(me.ok()).toBeTruthy()
+}
+
 test.describe('J6 — SSO login via a registered external provider strategy', () => {
   test.beforeAll(async () => {
     await seedSsoFixtures()
@@ -82,21 +108,10 @@ test.describe('J6 — SSO login via a registered external provider strategy', ()
   test('AC-5: linked-user fixture identity gets a full session (cookies set)', async ({
     browser,
   }) => {
-    const context = await browser.newContext()
-
-    const start = await context.request.post(`/api/v1/auth/sso/start/${PROVIDER}`)
-    expect(start.ok()).toBeTruthy()
-
-    const callback = await context.request.post(`/api/v1/auth/sso/callback/${PROVIDER}`, {
-      data: { credential: 'linked-user' },
-    })
+    const { context, callback } = await runSsoCallback(browser, 'linked-user')
     expect(callback.ok(), await callback.text()).toBeTruthy()
 
-    const cookies = await context.cookies()
-    expect(cookies.some((c) => c.name === ACCESS_TOKEN_COOKIE)).toBe(true)
-
-    const me = await context.request.get('/api/v1/auth/me')
-    expect(me.ok()).toBeTruthy()
+    await expectFullSession(context)
 
     await context.close()
   })
@@ -104,14 +119,7 @@ test.describe('J6 — SSO login via a registered external provider strategy', ()
   test('AC-7: unlinked-user fixture identity is rejected with account_link_required, no session', async ({
     browser,
   }) => {
-    const context = await browser.newContext()
-
-    const start = await context.request.post(`/api/v1/auth/sso/start/${PROVIDER}`)
-    expect(start.ok()).toBeTruthy()
-
-    const callback = await context.request.post(`/api/v1/auth/sso/callback/${PROVIDER}`, {
-      data: { credential: 'unlinked-user' },
-    })
+    const { context, callback } = await runSsoCallback(browser, 'unlinked-user')
     expect(callback.status()).toBe(403)
     const body = (await callback.json()) as { code: string }
     expect(body.code).toBe('account_link_required')
@@ -125,21 +133,10 @@ test.describe('J6 — SSO login via a registered external provider strategy', ()
   test('AC-8: invited-user fixture identity auto-provisions via a pending invitation and gets a session', async ({
     browser,
   }) => {
-    const context = await browser.newContext()
-
-    const start = await context.request.post(`/api/v1/auth/sso/start/${PROVIDER}`)
-    expect(start.ok()).toBeTruthy()
-
-    const callback = await context.request.post(`/api/v1/auth/sso/callback/${PROVIDER}`, {
-      data: { credential: 'invited-user' },
-    })
+    const { context, callback } = await runSsoCallback(browser, 'invited-user')
     expect(callback.ok(), await callback.text()).toBeTruthy()
 
-    const cookies = await context.cookies()
-    expect(cookies.some((c) => c.name === ACCESS_TOKEN_COOKIE)).toBe(true)
-
-    const me = await context.request.get('/api/v1/auth/me')
-    expect(me.ok()).toBeTruthy()
+    await expectFullSession(context)
 
     await context.close()
   })

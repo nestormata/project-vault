@@ -90,3 +90,34 @@ export function clearAuthCookies(reply: CookieReply): void {
   reply.clearCookie('access-token', { path: '/' })
   reply.clearCookie('refresh-token', { path: '/' })
 }
+
+/** Minimal shape `buildCookieTokens` needs from the fastify instance — just the jwt plugin's `sign`. */
+export type JwtSigner = {
+  jwt: {
+    sign: (
+      payload: Record<string, unknown>,
+      options: { jti: string; expiresIn: number }
+    ) => Promise<string> | string
+  }
+}
+
+type BuildableTokens = {
+  accessClaims: { sub: string; orgId: string; sessionVersion: number; jti: string }
+  accessMaxAgeSec: number
+}
+
+/** Signs the access-token JWT for a set of session tokens, returning them with `accessJwt` attached. */
+export async function buildCookieTokens<T extends BuildableTokens>(
+  fastify: JwtSigner,
+  tokens: T
+): Promise<T & { accessJwt: string }> {
+  const jwt = await fastify.jwt.sign(
+    {
+      sub: tokens.accessClaims.sub,
+      orgId: tokens.accessClaims.orgId,
+      sessionVersion: tokens.accessClaims.sessionVersion,
+    },
+    { jti: tokens.accessClaims.jti, expiresIn: tokens.accessMaxAgeSec }
+  )
+  return { ...tokens, accessJwt: jwt }
+}

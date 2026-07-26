@@ -28,22 +28,13 @@ import { claimInvitation } from '../invitations/lookup.js'
 import { findAuthStrategy } from './strategies.js'
 import { createPendingMfaSession } from './mfa-login.js'
 import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
-import { setAuthCookies, type CookieReply } from './tokens.js'
+import { buildCookieTokens, setAuthCookies, type CookieReply, type JwtSigner } from './tokens.js'
 
 const STATE_COOKIE_NAME = 'sso-state'
 const STATE_TTL_MS = 10 * 60 * 1000
 // AC-9 edge case (Pre-mortem finding): bounded wait around onAuthenticate() so a hung/slow/
 // unresponsive external IdP call can never tie up the request handler indefinitely.
 const AUTHENTICATE_TIMEOUT_MS = 10_000
-
-type JwtFastify = FastifyApp & {
-  jwt: {
-    sign: (
-      payload: Record<string, unknown>,
-      options: { jti: string; expiresIn: number }
-    ) => Promise<string> | string
-  }
-}
 
 function generateState(): string {
   return randomBytes(32).toString('base64url')
@@ -121,24 +112,15 @@ function unknownProviderError(): AppError {
   return new AppError('sso_provider_not_found', 'SSO provider is not configured', 404)
 }
 
-async function buildCookieTokens(fastify: FastifyApp, tokens: LoginResult['tokens']) {
-  const jwt = await (fastify as JwtFastify).jwt.sign(
-    {
-      sub: tokens.accessClaims.sub,
-      orgId: tokens.accessClaims.orgId,
-      sessionVersion: tokens.accessClaims.sessionVersion,
-    },
-    { jti: tokens.accessClaims.jti, expiresIn: tokens.accessMaxAgeSec }
-  )
-  return { ...tokens, accessJwt: jwt }
-}
-
 async function sendSsoSession(
   fastify: FastifyApp,
   reply: FastifyReply,
   result: LoginResult
 ): Promise<unknown> {
-  setAuthCookies(reply as unknown as CookieReply, await buildCookieTokens(fastify, result.tokens))
+  setAuthCookies(
+    reply as unknown as CookieReply,
+    await buildCookieTokens(fastify as unknown as JwtSigner, result.tokens)
+  )
   return reply.send({
     data: { userId: result.userId, orgId: result.orgId, expiresAt: result.expiresAt },
   })
