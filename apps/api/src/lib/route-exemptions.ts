@@ -187,6 +187,26 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/auth/sso/start/:providerName',
+    reason:
+      "Story 14.3 AC-3 — pre-auth SSO initiation. The caller has no session yet; SecureRoute's requireAuth:false public path is used (mirroring /login/register's own unauthenticated pattern), with its own independent rate limit. The handler mints and stores a server-side, hashed, single-use, 10-minute state token before ever redirecting.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, 'hashed-single-use-state-token'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/sso/callback/:providerName',
+    reason:
+      'Story 14.3 AC-4/AC-11 — pre-auth SSO callback. The caller has no session yet (that is exactly what this endpoint issues on success); the handler validates the server-stored, single-use state token before ever invoking the registered onAuthenticate() strategy, and is independently rate-limited from /start per the Red Team vs Blue Team elicitation finding.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      IP_RATE_LIMIT,
+      'hashed-single-use-state-token',
+      'bounded-onauthenticate-timeout',
+    ],
+    expiresAfterStory: null,
+  },
+  {
     route: 'GET /api/v1/openapi.json',
     reason:
       'Story 9.3 D5/AC-6 — public live OpenAPI spec endpoint; only registered at all when docsEnabled() is true (ENABLE_API_DOCS=true, or NODE_ENV is development/test), defaulting closed in production. Exposes route/schema metadata only, no tenant data, and must remain reachable while the vault is sealed for operator diagnostics (AC-16).',
@@ -1043,6 +1063,18 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'mutation',
     auditOmissionReason:
       "Machine-authenticated public route (D13) — org context is not resolvable until verifyMachineRequest() resolves the JWT, so the handler opens its own withOrg() transaction rather than SecureRoute's declarative one. A machine_cache.activated audit row (actorType: machine_user) is still written fail-closed via writeMachineAuditEntryOrFailClosed() inside that same transaction (AC-15), just not through the secureCtx.tx path this registry's opt-out check expects.",
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/auth/sso/start/:providerName': {
+    action: 'mutation',
+    auditOmissionReason:
+      'Story 14.3 AC-3 — pre-auth SSO state-mint route; no org/user context is resolvable yet. No audit row is written for this step by design (state minting alone is not a security-relevant event); the eventual SSO_LOGIN_SUCCEEDED/SSO_LOGIN_REJECTED events are written from the /callback route once an outcome is known.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/auth/sso/callback/:providerName': {
+    action: SECURITY_ACTION,
+    auditOmissionReason:
+      "Story 14.3 AC-4/AC-5/AC-7/AC-8/AC-9 — pre-auth SSO callback route; org context is not resolvable until state validation + identity/invitation lookup runs inside the handler's own transactions, so it does not use SecureRoute's declarative writeAuditEvent path. SSO_LOGIN_SUCCEEDED/SSO_LOGIN_REJECTED (platform-level or org-scoped, depending on whether an org was resolved) and EXTERNAL_IDENTITY_LINKED (AC-8) are all still written fail-closed-adjacent inside those transactions via writeHumanAuditEntry()/the platform_security_events writer.",
     reviewer: SECURITY_OWNER,
   },
 }

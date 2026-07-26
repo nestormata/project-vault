@@ -129,6 +129,12 @@ describe('AuditEvent', () => {
     expect(AuditEvent.EXTENSION_LOAD_FAILED).toBe('extension.load_failed')
   })
 
+  it('exposes Story 14.3 SSO/external-identity audit event names (Task 8)', () => {
+    expect(AuditEvent.EXTERNAL_IDENTITY_LINKED).toBe('external_identity.linked')
+    expect(AuditEvent.SSO_LOGIN_SUCCEEDED).toBe('sso_login.succeeded')
+    expect(AuditEvent.SSO_LOGIN_REJECTED).toBe('sso_login.rejected')
+  })
+
   it('derives AuditEventType from every current AuditEvent value (AC-J1/J3, single source of truth)', () => {
     for (const value of Object.values(AuditEvent)) {
       expect(assertValidAuditEventType(value)).toBe(value)

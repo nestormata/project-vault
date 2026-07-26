@@ -49,7 +49,10 @@ import { securityAlertActionsRoutes } from './modules/org/security-alert-actions
 import { organizationSettingsRoutes } from './modules/org/organization-settings-routes.js'
 import { erasureRoutes } from './modules/compliance/erasure-routes.js'
 import { extensionStatusRoutes } from './extensions/status-routes.js'
-import { loadExtension } from './extensions/loader.js'
+import { loadExtension, getExtensionStatus } from './extensions/loader.js'
+import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
+import { ssoRoutes } from './modules/auth/sso-routes.js'
+import { externalIdentityRoutes } from './modules/auth/external-identity-routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
 import { machineJwtPlugin } from './plugins/machine-jwt.js'
@@ -242,6 +245,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(vaultRoutes)
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
   await fastify.register(machineTokenExchangeRoutes, { prefix: '/api/v1/auth' })
+  // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
+  // auth at the same public prefix — see Dev Notes judgment call #6 on file/module placement.
+  await fastify.register(ssoRoutes, { prefix: '/api/v1/auth/sso' })
   /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
      literal prefix strings; a shared constant would make them invisible to that parser. */
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
@@ -278,6 +284,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // routes above even though the implementation file lives under extensions/ (conceptually part
   // of the extension subsystem, not modules/admin/'s "system config only" scope) — see Dev Notes.
   await fastify.register(extensionStatusRoutes, { prefix: ADMIN_PREFIX })
+  // Story 14.3 Task 7: OrgAdmin-initiated external-identity linking endpoint.
+  await fastify.register(externalIdentityRoutes, { prefix: ADMIN_PREFIX })
   // Story 9.4 AC-10: a distinct sibling module to platform-admin (audit-log read/verify vs.
   // instance administration) under its own '/api/v1/platform' prefix, not nested under
   // ADMIN_PREFIX.
@@ -296,6 +304,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // regress AC-3's "still starts" guarantee — but `await` (not fire-and-forget) so state is
   // fully resolved before createApp() returns to any caller (e.g. /health's first response).
   await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, { logger: fastify.log })
+
+  // Story 14.3 Task 3: after loadExtension() resolves, append a registered authStrategy hook
+  // (if any) to authStrategies — local-first invariant is preserved unconditionally either way.
+  wireExtensionAuthStrategy(getExtensionStatus())
 
   return fastify
 }

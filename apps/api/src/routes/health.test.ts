@@ -40,6 +40,13 @@ const { mockExtensionsHealth } = vi.hoisted(() => ({
 vi.mock('../extensions/loader.js', () => ({
   loadExtension: async () => undefined,
   getExtensionsHealthField: () => mockExtensionsHealth.value,
+  // Story 14.3 Task 3: createApp() now also calls getExtensionStatus() (via
+  // wireExtensionAuthStrategy()) after loadExtension() resolves — this route-level test mocks
+  // loader.js wholesale (see comment above), so it must supply this export too, distinct from
+  // getExtensionsHealthField's own health-endpoint-only shape. Always resolves to
+  // 'not_configured' here since this file only exercises /health's extensions_status field, never
+  // an actual registered auth strategy.
+  getExtensionStatus: () => ({ status: 'not_configured' as const }),
 }))
 
 beforeEach(() => {

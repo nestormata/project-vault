@@ -14,7 +14,20 @@
 # `make e2e` and nightly.yml's `e2e` job do).
 services:
   api:
+    build:
+      # Story 14.3 Task 10: only the e2e image is built with the mock external-IdP fixture
+      # bundled in (see apps/api/Dockerfile's INCLUDE_MOCK_SSO_EXTENSION ARG) — the base
+      # docker-compose.yml build never sets this, so every other build (local dev, production)
+      # stays exactly as before.
+      args:
+        INCLUDE_MOCK_SSO_EXTENSION: 'true'
     environment:
       VAULT_ALLOW_REMOTE_INIT: 'true'
       AUTH_RATE_LIMIT_MAX: '100000'
       AUTH_REGISTER_RATE_LIMIT_MAX: '1000'
+      # Story 14.3 Task 10: loads the in-process mock external-IdP extension (never a real
+      # network call) so sso-login.spec.ts can exercise start -> callback -> session-issuance
+      # end to end. Deliberately only set here, never in the base docker-compose.yml/.env.example
+      # (see fixtures/mock-sso-extension/README.md's "Production-safety" section) — same
+      # e2e-only-override precedent as the vars above.
+      VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-sso-extension'
