@@ -480,7 +480,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/promote': {
     action: 'mutation',
     auditEvent: 'rotation.promoted',
-    sameTransactionAuditService: 'writeRotationAuditEntry',
+    sameTransactionAuditService: 'writeRotationPromotedAudit',
   },
   'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/retire': {
     action: 'mutation',
