@@ -38,12 +38,20 @@ export function serializeDependency(row: typeof credentialDependencies.$inferSel
 
 /** Shared by archiveCredentialDependency's post-idempotency-check lookup and
  *  updateCredentialDependencyLink's pre-UPDATE read — both need the full current row for a
- *  dependency scoped to its parent credential, regardless of archive state. */
+ *  dependency scoped to its parent credential, regardless of archive state.
+ *
+ *  `forUpdate` row-locks the dependency (mirroring `db-helpers.ts`'s `lockCredentialInProject`
+ *  pattern) — required by updateCredentialDependencyLink's "before" read so that two concurrent
+ *  PATCHes on the same dependency can't both read the same pre-change `linkUrl` and each commit
+ *  an audit payload whose `previousLinkUrl` no longer matches what was actually live at commit
+ *  time (code review finding, 2-10). archiveCredentialDependency's lookup runs after its own
+ *  UPDATE already applied, so it never needs the lock. */
 async function findDependencyByIdInCredential(
   tx: Tx,
-  params: { dependencyId: string; credentialId: string }
+  params: { dependencyId: string; credentialId: string },
+  opts: { forUpdate?: boolean } = {}
 ): Promise<typeof credentialDependencies.$inferSelect | undefined> {
-  const [row] = await tx
+  const query = tx
     .select()
     .from(credentialDependencies)
     .where(
@@ -52,7 +60,7 @@ async function findDependencyByIdInCredential(
         eq(credentialDependencies.credentialId, params.credentialId)
       )
     )
-    .limit(1)
+  const [row] = await (opts.forUpdate ? query.for('update') : query).limit(1)
   return row
 }
 
@@ -236,10 +244,14 @@ export async function updateCredentialDependencyLink(
   // Security Audit Persona (Auditor) finding, Round 3: read the row's current linkUrl inside the
   // same transaction as the UPDATE so the audit payload can carry a before/after diff — a URL
   // field's history matters for forensic review in a way a single "new value" doesn't.
-  const before = await findDependencyByIdInCredential(tx, {
-    dependencyId: input.dependencyId,
-    credentialId: input.credentialId,
-  })
+  const before = await findDependencyByIdInCredential(
+    tx,
+    {
+      dependencyId: input.dependencyId,
+      credentialId: input.credentialId,
+    },
+    { forUpdate: true }
+  )
 
   // Example 3c: an archived (or truly missing) dependency is not editable — both resolve to the
   // same caller-visible `dependency_not_found`, no distinct code.

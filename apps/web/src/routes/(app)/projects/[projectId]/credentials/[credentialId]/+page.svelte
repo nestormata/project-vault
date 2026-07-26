@@ -704,7 +704,9 @@
         <ul class="mt-4 space-y-2">
           {#each dependencyItems as dependency (dependency.id)}
             {@const disabledReason = dependencyCheckboxDisabledReason(dependency)}
-            {@const isFailed = dependency.checklistStatus?.status === 'failed'}
+            {@const checklistItemStatus = dependency.checklistStatus?.status}
+            {@const isFailed =
+              checklistItemStatus === 'failed' || checklistItemStatus === 'max_retries_exceeded'}
             <li
               class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
             >
@@ -720,7 +722,7 @@
                     checked={dependency.checklistStatus?.status === 'confirmed' || isFailed}
                     disabled={!canReveal ||
                       Boolean(disabledReason) ||
-                      confirmingDependencyId === dependency.id ||
+                      Boolean(confirmingDependencyId) ||
                       dependency.checklistStatus?.status === 'confirmed'}
                     aria-disabled={Boolean(disabledReason)}
                     onchange={() => void onConfirmDependencyUpdate(dependency)}
@@ -750,7 +752,9 @@
                       `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${dependency.checklistStatus?.rotationId}`
                     )}
                   >
-                    Failed — resolve on rotation page
+                    {checklistItemStatus === 'max_retries_exceeded'
+                      ? 'Retry limit reached — resolve on rotation page'
+                      : 'Failed — resolve on rotation page'}
                   </a>
                 {/if}
               </div>

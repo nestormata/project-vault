@@ -1181,6 +1181,12 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
           dependencyId: result.dependency.id,
           systemName: result.dependency.systemName,
           systemType: result.dependency.systemType,
+          // Code review finding (2-10): the story's own pre-mortem states linkUrl is "included in
+          // the credential.dependency_updated/credential.dependency_added audit payload verbatim"
+          // — the initial implementation only wired this into the PATCH (dependency_updated)
+          // payload, not create. linkUrl is non-secret display metadata (same classification as
+          // systemName/systemType above), so no new audit-classification decision is needed here.
+          linkUrl: result.dependency.linkUrl,
         },
         request: req,
       })

@@ -328,6 +328,24 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     expect(tooLong.statusCode).toBe(422)
   }, 20_000)
 
+  // Code review finding (2-10): AC-3 requires trimming BEFORE length validation — a value that
+  // trims to well under 2048 chars must not be rejected just because surrounding whitespace
+  // pushes the raw (untrimmed) length over the limit.
+  it('POST trims before enforcing the linkUrl 2048-char limit, not after', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'link-url-trim')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+    const padded = `${' '.repeat(30)}https://example.com/short${' '.repeat(2048)}`
+    const res = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { systemName: 'padded-link', linkUrl: padded },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(res.json<{ data: { linkUrl: string } }>().data.linkUrl).toBe('https://example.com/short')
+  }, 20_000)
+
   it('GET list includes linkUrl additively', async () => {
     const projectId = await createCredentialTestProject(app, owner.cookies, 'link-list')
     const credential = await createCredentialViaApi(app, owner.cookies, projectId)

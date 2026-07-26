@@ -43,13 +43,13 @@ function isHttpUrl(value: string): boolean {
 // object shape + rawBody `in` checks (PATCH) are what distinguish "absent" from "explicit null".
 const linkUrlFieldSchema = z
   .string()
+  .trim()
   .max(2048)
   .nullable()
   .optional()
   .transform((val) => {
     if (val === undefined || val === null) return val
-    const trimmed = val.trim()
-    return trimmed === '' ? null : trimmed
+    return val === '' ? null : val
   })
 
 function linkUrlRefine(val: { linkUrl?: string | null }, ctx: z.RefinementCtx) {
