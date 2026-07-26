@@ -73,6 +73,25 @@ describe.sequential('Story 1.14: KMS unseal mode', () => {
     expect(row?.keyDerivationParams).toBeNull()
   })
 
+  // Story 1.14 AC-8: an extraneous, wrong-mode field on a kms init body must never be silently
+  // honored — verifies deriveIkmForInit's kms branch only reads kmsKeyId, never passphrase, by
+  // asserting the vault_state row shows no trace of the passphrase-mode key-derivation path.
+  it('AC-8: an extraneous passphrase field on a kms init body is ignored', async () => {
+    const app = await createApp({ logger: false, vaultGuardEnabled: true })
+    const res = await app.inject({
+      method: 'POST',
+      url: INIT_URL,
+      payload: { kmsType: 'kms', kmsKeyId: KEY_ID, passphrase: 'irrelevant-value-here' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ initialized: true, kmsType: 'kms' })
+    await app.close()
+
+    const [row] = await getDb().select().from(vaultState).limit(1)
+    expect(row?.kmsType).toBe('kms')
+    expect(row?.keyDerivationParams).toBeNull()
+  })
+
   it('AC-9: unseal with empty body succeeds for kms-mode vault', async () => {
     await initVault({ kmsType: 'kms', kmsKeyId: KEY_ID }, {})
     await restartSealed()
@@ -117,7 +136,10 @@ describe.sequential('Story 1.14: KMS unseal mode', () => {
     })
   })
 
-  it('AC-6: re-init against an already-initialized kms vault returns 409 and discards the fresh data key', async () => {
+  // Review finding (D1): initVault now checks already-initialized BEFORE deriving the IKM, so a
+  // repeat init against a kms-mode vault never burns a paid AWS GenerateDataKey call at all —
+  // updated from this test's original "discards the fresh data key" expectation (call count 1).
+  it('AC-6: re-init against an already-initialized kms vault returns 409 without calling KMS again', async () => {
     await initVault({ kmsType: 'kms', kmsKeyId: KEY_ID }, {})
     const provider = makeFakeKmsProvider()
     __setKmsProviderForTest(provider)
@@ -126,7 +148,7 @@ describe.sequential('Story 1.14: KMS unseal mode', () => {
       code: 'ALREADY_INITIALIZED',
       statusCode: 409,
     })
-    expect(provider.generateDataKey).toHaveBeenCalledTimes(1)
+    expect(provider.generateDataKey).not.toHaveBeenCalled()
   })
 
   it('AC-14: sentinel mismatch after successful KMS decrypt still returns 401 unseal_failed', async () => {

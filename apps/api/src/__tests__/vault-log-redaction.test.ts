@@ -36,4 +36,17 @@ describe('redactBodyForLog', () => {
     const result = redactBodyForLog({ passphrase }) as Record<string, unknown>
     expect(JSON.stringify(result)).not.toContain(passphrase)
   })
+
+  // Story 1.14 AC-18 positive example: the KMS key ARN is not a secret and must remain visible
+  // in the vault.init log line, unlike passphrase/masterKeyPath/envelopeKeyPath.
+  it('leaves kmsKeyId untouched for kms-mode init bodies', () => {
+    const result = redactBodyForLog({
+      kmsType: 'kms',
+      kmsKeyId: 'arn:aws:kms:us-east-1:123456789012:key/abcd-1234-efgh-5678-ijkl90mnopqr',
+    })
+    expect(result).toEqual({
+      kmsType: 'kms',
+      kmsKeyId: 'arn:aws:kms:us-east-1:123456789012:key/abcd-1234-efgh-5678-ijkl90mnopqr',
+    })
+  })
 })

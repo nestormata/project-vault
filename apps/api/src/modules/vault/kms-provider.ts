@@ -39,6 +39,12 @@ const NOT_FOUND_NAMES = new Set([
   'NotFoundException',
   'DisabledException',
   'KMSInvalidStateException',
+  // Review finding (patch): a malformed kmsKeyId or a corrupted stored ciphertext blob are
+  // permanent, not-usable-as-is failures — grouping them with 'not_found' gives the operator the
+  // correct "this key/ciphertext is bad, don't just retry" signal instead of the transient-retry
+  // signal 'unknown' currently maps to (503 kms_unreachable).
+  'ValidationException',
+  'InvalidCiphertextException',
 ])
 const PERMISSION_DENIED_NAMES = new Set([
   'AccessDeniedException',
@@ -122,6 +128,11 @@ export class AwsKmsProvider implements KmsKeyProvider {
     if (!plaintext || !ciphertextBlob) {
       throw new KmsProviderError('unknown', 'KMS generateDataKey returned an incomplete response')
     }
+    // Review finding (patch): KeySpec: 'AES_256' guarantees a 32-byte plaintext key — reject
+    // anything else rather than silently deriving vault keys from malformed key material.
+    if (plaintext.length !== 32) {
+      throw new KmsProviderError('unknown', 'KMS generateDataKey returned an unexpected key length')
+    }
     return {
       plaintext: Buffer.from(plaintext),
       ciphertextBlob: Buffer.from(ciphertextBlob).toString('base64'),
@@ -129,6 +140,11 @@ export class AwsKmsProvider implements KmsKeyProvider {
   }
 
   async decryptDataKey(ciphertextBlob: string): Promise<Buffer> {
+    // Review finding (patch): a stored ciphertext blob that isn't well-formed base64 must fail
+    // fast with a clear signal rather than have Buffer.from silently mis-decode it.
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertextBlob)) {
+      throw new KmsProviderError('not_found', 'stored KMS ciphertext blob is not valid base64')
+    }
     let result: DecryptCommandOutput
     try {
       result = (await this.client.send(
@@ -140,6 +156,12 @@ export class AwsKmsProvider implements KmsKeyProvider {
     const { Plaintext: plaintext } = result
     if (!plaintext) {
       throw new KmsProviderError('unknown', 'KMS decryptDataKey returned an incomplete response')
+    }
+    // Review finding (patch): the unwrapped key must be exactly 32 bytes (matching the AES_256
+    // data key generated at init) — reject anything else rather than silently re-deriving vault
+    // keys from corrupted/truncated key material.
+    if (plaintext.length !== 32) {
+      throw new KmsProviderError('unknown', 'KMS decryptDataKey returned an unexpected key length')
     }
     return Buffer.from(plaintext)
   }
