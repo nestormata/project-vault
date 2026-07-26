@@ -1,14 +1,21 @@
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { auditLogEntries, credentialVersions, credentials } from '@project-vault/db/schema'
-import { OperationalEvent } from '@project-vault/shared'
+import {
+  auditLogEntries,
+  credentialVersions,
+  credentials,
+  rotations,
+} from '@project-vault/db/schema'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyBaseLogger } from 'fastify'
 import { env } from '../config/env.js'
 import { operationalLog } from '../lib/logger.js'
+import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-credential-version.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
+import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 
 type WorkerLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 
@@ -78,20 +85,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     .limit(1)
   if (!lockedCandidate) return false
 
-  // Zero-overwrite then null: defense-in-depth/intent-signaling, not byte-level erasure
-  // under PostgreSQL MVCC (see AC-8 MVCC caveat) — true shredding is key destruction at
-  // master-key rotation (Epic 5+).
-  await tx
-    .update(credentialVersions)
-    .set({
-      encryptedValue: {
-        version: 1,
-        iv: '0'.repeat(24),
-        ciphertext: '0'.repeat(64),
-        tag: '0'.repeat(32),
-      },
-    })
-    .where(eq(credentialVersions.id, candidate.id))
+  await zeroOverwriteCredentialVersionValue(tx, candidate.id)
   await tx
     .update(credentialVersions)
     .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date() })
@@ -123,6 +117,41 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     keyVersion,
     hmac,
   })
+
+  // Review fix (5-6 code review, AC-9.1e/AC-9.3): the deferred break-glass `ROTATION_OLD_RETIRED`
+  // audit event belongs at the moment the old version's ciphertext is *actually* zeroed — this
+  // is that moment. It previously fired from rotation-break-glass-expire.ts's overlap-expiry
+  // UPDATE, which only clears `rotationLockedAt`/`breakGlassOverlapExpiresAt` (lifting the FR105
+  // exemption) — the version then still has to wait its turn in this job's ordinary
+  // retentionCount-gated purge cycle (same as any other non-current version), which can be a
+  // long or even indefinite delay depending on `retentionCount`. Firing the audit at overlap
+  // expiry therefore claimed "old retired" (cryptographically destroyed) for a value that, in
+  // the common case (default retentionCount=3, few historical versions), had not actually been
+  // destroyed yet and might not be for some time. Writing it here instead means the audit only
+  // ever describes a purge that has genuinely already happened in this same transaction.
+  const [breakGlassRotation] = await tx
+    .select({ id: rotations.id })
+    .from(rotations)
+    .where(
+      and(
+        eq(rotations.previousVersionId, candidate.id),
+        eq(rotations.status, 'break_glass_complete')
+      )
+    )
+    .limit(1)
+  if (breakGlassRotation) {
+    await writeSystemAuditRow(tx, {
+      orgId,
+      eventType: AuditEvent.ROTATION_OLD_RETIRED,
+      payload: {
+        rotationId: breakGlassRotation.id,
+        credentialVersionId: candidate.id,
+        credentialId: candidate.credentialId,
+        breakGlass: true,
+      },
+    })
+  }
+
   return true
 }
 

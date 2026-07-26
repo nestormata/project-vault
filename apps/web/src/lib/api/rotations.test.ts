@@ -8,10 +8,13 @@ import {
   confirmChecklistItem,
   failChecklistItem,
   getRotation,
+  getStagedValue,
   initiateRotation,
   listRotations,
   listUpcomingRotations,
+  promoteRotation,
   resumeRotation,
+  retireRotation,
   retryChecklistItem,
 } from './rotations.js'
 import { jsonResponse } from '$lib/test/json-response.js'
@@ -65,18 +68,16 @@ describe('rotation API helpers', () => {
   })
 
   it('initiateRotation surfaces 409 rotation_in_progress with rotationId', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(
-          {
-            code: 'rotation_in_progress',
-            message: 'A rotation is already in progress',
-            rotationId,
-          },
-          { status: 409 }
-        )
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          code: 'rotation_in_progress',
+          message: 'A rotation is already in progress',
+          rotationId,
+        },
+        { status: 409 }
       )
+    )
 
     await expect(
       initiateRotation(fetchFn, projectId, credentialId, { newValue: 'x' })
@@ -292,13 +293,11 @@ describe('rotation API helpers', () => {
   })
 
   it('completeRotation posts acknowledgedNoDependencies when provided', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse({
-          data: { ...sampleDetail, status: 'completed', completedAt: '2026-07-02T00:00:00.000Z' },
-        })
-      )
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { ...sampleDetail, status: 'completed', completedAt: '2026-07-02T00:00:00.000Z' },
+      })
+    )
 
     await completeRotation(fetchFn, projectId, credentialId, rotationId, {
       acknowledgedNoDependencies: true,
@@ -328,6 +327,119 @@ describe('rotation API helpers', () => {
     await expect(
       completeRotation(fetchFn, projectId, credentialId, rotationId, {})
     ).rejects.toMatchObject({ status: 422, code: 'checklist_incomplete' })
+  })
+
+  // Story 5.6 Task 6: promote/retire/staged-value client helpers.
+  it('promoteRotation posts the acknowledgement flags and returns the promoted rotation', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { ...sampleDetail, status: 'promoted' } }))
+
+    await promoteRotation(fetchFn, projectId, credentialId, rotationId, {
+      acknowledgeIncompleteChecklist: true,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/promote`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ acknowledgeIncompleteChecklist: true }),
+      })
+    )
+  })
+
+  it('promoteRotation surfaces 422 acknowledgement_required with pendingItems', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          code: 'acknowledgement_required',
+          message: '1 of 2 checklist items are not yet confirmed. Acknowledge to proceed anyway.',
+          pendingItems: [{ id: itemId, systemName: 'GitHub Actions', status: 'unconfirmed' }],
+          totalItemCount: 2,
+        },
+        { status: 422 }
+      )
+    )
+
+    await expect(
+      promoteRotation(fetchFn, projectId, credentialId, rotationId, {})
+    ).rejects.toMatchObject({ status: 422, code: 'acknowledgement_required' })
+  })
+
+  it('promoteRotation surfaces 409 rotation_not_promotable with currentStatus', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          {
+            code: 'rotation_not_promotable',
+            message: 'Already promoted.',
+            currentStatus: 'promoted',
+          },
+          { status: 409 }
+        )
+      )
+
+    await expect(
+      promoteRotation(fetchFn, projectId, credentialId, rotationId, {})
+    ).rejects.toMatchObject({ status: 409, code: 'rotation_not_promotable' })
+  })
+
+  it('retireRotation posts the acknowledgement flags and returns the retired rotation', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { ...sampleDetail, status: 'retired' } }))
+
+    await retireRotation(fetchFn, projectId, credentialId, rotationId, {
+      acknowledgedNoDependencies: true,
+    })
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/retire`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ acknowledgedNoDependencies: true }),
+      })
+    )
+  })
+
+  it('retireRotation surfaces 409 rotation_not_retirable with currentStatus', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { code: 'rotation_not_retirable', message: 'Not promoted yet.', currentStatus: 'staged' },
+          { status: 409 }
+        )
+      )
+
+    await expect(
+      retireRotation(fetchFn, projectId, credentialId, rotationId, {})
+    ).rejects.toMatchObject({ status: 409, code: 'rotation_not_retirable' })
+  })
+
+  it('getStagedValue fetches the staged value and version number', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { value: 'the-staged-value', versionNumber: 2 } }))
+
+    const result = await getStagedValue(fetchFn, projectId, credentialId, rotationId)
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/staged-value`,
+      expect.anything()
+    )
+    expect(result).toEqual({ value: 'the-staged-value', versionNumber: 2 })
+  })
+
+  it('getStagedValue surfaces 404 once the rotation is no longer staged', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ code: 'rotation_not_found' }, { status: 404 }))
+
+    await expect(
+      getStagedValue(fetchFn, projectId, credentialId, rotationId)
+    ).rejects.toMatchObject({ status: 404 })
   })
 
   it('breakGlassRotation posts newValue/reason and returns the created rotation', async () => {

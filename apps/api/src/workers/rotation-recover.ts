@@ -1,21 +1,21 @@
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import { rotationChecklistItems, rotations } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
-import { tryAcquireRotationScopedLock } from '../lib/rotation-locks.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { operationalLog, serializeLogError } from '../lib/logger.js'
-import {
-  dispatchDirectUserNotification,
-  enqueueSecurityAlertNotification,
-  sendNotificationJobs,
-  type NotificationQueueJob,
-} from '../notifications/dispatcher.js'
+import { sendNotificationJobs, type NotificationQueueJob } from '../notifications/dispatcher.js'
 import type { BossService } from '../lib/boss.js'
 import { rotationStaleDetectionsTotal } from '../modules/rotation/metrics.js'
 import type { WorkerLogger } from './expiry-alert-shared.js'
+import {
+  dispatchRotationAlertNotifications,
+  findRotationCandidates,
+  withRotationScopedLock,
+  type RotationAlertCandidate,
+} from './rotation-notify-shared.js'
 
 const EVENT_TYPE = 'rotation.stale_detected'
 const JOB_NAME = 'rotation/recover'
@@ -24,25 +24,12 @@ const JOB_NAME = 'rotation/recover'
 // are deliberately excluded and left untouched.
 const RESETTABLE_STATUSES = ['unconfirmed', 'failed', 'max_retries_exceeded'] as const
 
-type StaleRotationRow = { id: string; credentialId: string; initiatedBy: string | null }
+type StaleRotationRow = RotationAlertCandidate
 
 /** AC-9 step 1: org-wide (not credential-scoped), uses idx_rotations_status_initiated. */
 async function findStaleRotations(tx: Tx, orgId: string): Promise<StaleRotationRow[]> {
   const threshold = new Date(Date.now() - env.STALE_ROTATION_THRESHOLD_MINUTES * 60_000)
-  return tx
-    .select({
-      id: rotations.id,
-      credentialId: rotations.credentialId,
-      initiatedBy: rotations.initiatedBy,
-    })
-    .from(rotations)
-    .where(
-      and(
-        eq(rotations.orgId, orgId),
-        eq(rotations.status, 'in_progress'),
-        lt(rotations.initiatedAt, threshold)
-      )
-    )
+  return findRotationCandidates(tx, orgId, 'in_progress', threshold)
 }
 
 /** AC-9/AC-10, one transaction per candidate rotation. Returns the notification jobs to dispatch
@@ -55,10 +42,7 @@ async function recoverOneRotation(
   candidate: StaleRotationRow,
   logger?: WorkerLogger
 ): Promise<NotificationQueueJob[] | null> {
-  return runOrgScopedJob(orgId, JOB_NAME, async ({ tx }) => {
-    const locked = await tryAcquireRotationScopedLock(tx, orgId, candidate.id)
-    if (!locked) return null // silent skip — a human confirm/fail/retry/complete call is mid-flight
-
+  return withRotationScopedLock(orgId, JOB_NAME, candidate.id, async (tx) => {
     const [updated] = await tx
       .update(rotations)
       .set({
@@ -93,39 +77,17 @@ async function recoverOneRotation(
     })
     rotationStaleDetectionsTotal.inc()
 
-    const jobs: NotificationQueueJob[] = []
-    if (candidate.initiatedBy) {
-      const directJobs = await dispatchDirectUserNotification({
-        orgId,
-        userId: candidate.initiatedBy,
-        template: {
-          templateId: 'rotation.stale',
-          payload: { rotationId: candidate.id, credentialId: candidate.credentialId },
-          severity: 'warning',
-        },
-        tx,
-      })
-      jobs.push(...directJobs)
-    } else if (logger) {
-      // Story 5.5 AC-5: `initiatedBy` is nullable (`onDelete: 'set null'`) — the initiating
-      // user's account was deleted before this rotation went stale. Skip (never throw) the
-      // direct-user notification; the org-wide FR100-routed alert below still fires.
-      operationalLog(
-        logger,
-        'info',
-        OperationalEvent.ROTATION_STALE_DETECTED,
-        'Skipping direct-user stale-rotation notification — initiating user no longer exists',
-        { orgId, rotationId: candidate.id }
-      )
-    }
-    const routedJobs = await enqueueSecurityAlertNotification({
+    // Story 5.5 AC-5/Story 5.6: `initiatedBy` is nullable (`onDelete: 'set null'`) — handled by
+    // the shared dispatch helper (also used by rotation-stale-staged-alert.ts).
+    const jobs = await dispatchRotationAlertNotifications({
       orgId,
-      templateId: 'rotation.stale',
-      payload: { rotationId: candidate.id, credentialId: candidate.credentialId },
-      severity: 'warning',
+      candidate,
       tx,
+      templateId: 'rotation.stale',
+      severity: 'warning',
+      payload: { rotationId: candidate.id, credentialId: candidate.credentialId },
+      logger,
     })
-    jobs.push(...routedJobs)
 
     return jobs
   })

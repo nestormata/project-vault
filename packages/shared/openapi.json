@@ -1885,6 +1885,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -1963,6 +1966,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -2047,6 +2053,30 @@
         "type": "object",
         "properties": {
           "acknowledgedNoDependencies": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PromoteRotationBodyInput": {
+        "type": "object",
+        "properties": {
+          "acknowledgedNoDependencies": {
+            "type": "boolean"
+          },
+          "acknowledgeIncompleteChecklist": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RetireRotationBodyInput": {
+        "type": "object",
+        "properties": {
+          "acknowledgedNoDependencies": {
+            "type": "boolean"
+          },
+          "acknowledgeIncompleteChecklist": {
             "type": "boolean"
           }
         },
@@ -5509,6 +5539,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -5675,6 +5708,36 @@
           "credentialId"
         ]
       },
+      "PromotedRotationConflictResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "promoted_rotation_conflict"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "credentialId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "rotationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "credentialId",
+          "rotationId"
+        ]
+      },
       "RotationNotStaleResponseInput": {
         "type": "object",
         "properties": {
@@ -5691,6 +5754,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -5731,6 +5797,223 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/RotationDetailInput"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PromoteRotationResponseInput": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RotationDetailInput"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RetireRotationResponseInput": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RotationDetailInput"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RotationNotPromotableResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_not_promotable"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "staged",
+              "promoted",
+              "retired",
+              "completed",
+              "abandoned",
+              "stale_recovery",
+              "break_glass_complete"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "currentStatus"
+        ]
+      },
+      "RotationNotRetirableResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_not_retirable"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "staged",
+              "promoted",
+              "retired",
+              "completed",
+              "abandoned",
+              "stale_recovery",
+              "break_glass_complete"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "currentStatus"
+        ]
+      },
+      "RotationAcknowledgementRequiredResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "acknowledgement_required"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "pendingItems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "systemName": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "unconfirmed",
+                    "confirmed",
+                    "failed",
+                    "max_retries_exceeded"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "systemName",
+                "status"
+              ]
+            }
+          },
+          "totalItemCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "pendingItems",
+          "totalItemCount"
+        ]
+      },
+      "RotationWrongStateForLegacyCompleteResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_wrong_state_for_legacy_complete"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "staged",
+              "promoted",
+              "retired",
+              "completed",
+              "abandoned",
+              "stale_recovery",
+              "break_glass_complete"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "currentStatus"
+        ]
+      },
+      "RotationNotAbandonableAfterPromotionResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_not_abandonable_after_promotion"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "StagedValueResponseInput": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "versionNumber": {
+                "type": "integer",
+                "minimum": 0,
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "value",
+              "versionNumber"
+            ]
           }
         },
         "required": [
@@ -10545,6 +10828,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -10624,6 +10910,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -10708,6 +10997,30 @@
         "type": "object",
         "properties": {
           "acknowledgedNoDependencies": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PromoteRotationBody": {
+        "type": "object",
+        "properties": {
+          "acknowledgedNoDependencies": {
+            "type": "boolean"
+          },
+          "acknowledgeIncompleteChecklist": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RetireRotationBody": {
+        "type": "object",
+        "properties": {
+          "acknowledgedNoDependencies": {
+            "type": "boolean"
+          },
+          "acknowledgeIncompleteChecklist": {
             "type": "boolean"
           }
         },
@@ -14291,6 +14604,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -14464,6 +14780,37 @@
         ],
         "additionalProperties": false
       },
+      "PromotedRotationConflictResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "promoted_rotation_conflict"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "credentialId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "rotationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "credentialId",
+          "rotationId"
+        ],
+        "additionalProperties": false
+      },
       "RotationNotStaleResponse": {
         "type": "object",
         "properties": {
@@ -14480,6 +14827,9 @@
             "type": "string",
             "enum": [
               "in_progress",
+              "staged",
+              "promoted",
+              "retired",
               "completed",
               "abandoned",
               "stale_recovery",
@@ -14523,6 +14873,233 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/RotationDetail"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "PromoteRotationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RotationDetail"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "RetireRotationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RotationDetail"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "RotationNotPromotableResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_not_promotable"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "staged",
+              "promoted",
+              "retired",
+              "completed",
+              "abandoned",
+              "stale_recovery",
+              "break_glass_complete"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "currentStatus"
+        ],
+        "additionalProperties": false
+      },
+      "RotationNotRetirableResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_not_retirable"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "staged",
+              "promoted",
+              "retired",
+              "completed",
+              "abandoned",
+              "stale_recovery",
+              "break_glass_complete"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "currentStatus"
+        ],
+        "additionalProperties": false
+      },
+      "RotationAcknowledgementRequiredResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "acknowledgement_required"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "pendingItems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "systemName": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "unconfirmed",
+                    "confirmed",
+                    "failed",
+                    "max_retries_exceeded"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "systemName",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "totalItemCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "pendingItems",
+          "totalItemCount"
+        ],
+        "additionalProperties": false
+      },
+      "RotationWrongStateForLegacyCompleteResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_wrong_state_for_legacy_complete"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "staged",
+              "promoted",
+              "retired",
+              "completed",
+              "abandoned",
+              "stale_recovery",
+              "break_glass_complete"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "currentStatus"
+        ],
+        "additionalProperties": false
+      },
+      "RotationNotAbandonableAfterPromotionResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "rotation_not_abandonable_after_promotion"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "StagedValueResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string"
+              },
+              "versionNumber": {
+                "type": "integer",
+                "minimum": 0,
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "value",
+              "versionNumber"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -24448,7 +25025,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RotationLockContentionResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RotationLockContentionResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PromotedRotationConflictResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -24957,7 +25541,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConcurrentModificationResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConcurrentModificationResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RotationWrongStateForLegacyCompleteResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -24981,6 +25572,290 @@
                       "$ref": "#/components/schemas/ApiError"
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/credentials/{credentialId}/rotations/{rotationId}/promote": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "credentialId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "rotationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoteRotationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConcurrentModificationResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RotationNotPromotableResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RotationAcknowledgementRequiredResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/credentials/{credentialId}/rotations/{rotationId}/retire": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "credentialId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "rotationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetireRotationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConcurrentModificationResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RotationNotRetirableResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RotationAcknowledgementRequiredResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/credentials/{credentialId}/rotations/{rotationId}/staged-value": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "projectId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "credentialId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "rotationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedValueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -25161,7 +26036,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConcurrentModificationResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConcurrentModificationResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RotationNotAbandonableAfterPromotionResponse"
+                    }
+                  ]
                 }
               }
             }

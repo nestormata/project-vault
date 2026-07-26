@@ -21,7 +21,11 @@ import type { PageServerLoad } from './$types.js'
 // `break_glass_complete` rotation either. Treating it as "active" here has no server-side
 // backing and previously caused a permanent dead end: a credential that ever underwent a
 // break-glass rotation could never have another rotation initiated through this UI again.
-const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery'])
+// Story 5.6 AC-2.6: widened to match the backend's own widened "active" set — a staged or
+// promoted-but-unretired rotation is exactly as blocking of a new rotation as an in_progress one
+// was pre-5.6 (the API's partial unique index enforces this server-side regardless; this list
+// just keeps the "Rotate" CTA's client-side link-out logic in sync with that reality).
+const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'staged', 'promoted', 'stale_recovery'])
 
 // Shared "nothing loaded" shape for both the 404 (notFound) and 503 (vaultSealed) branches below
 // — only the trailing discriminant fields differ between the two callers.

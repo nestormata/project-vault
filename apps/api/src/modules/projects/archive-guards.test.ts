@@ -124,6 +124,33 @@ describe('archive-guards', () => {
       expect(blockingIds).toEqual([rotationId])
     })
 
+    it('(Story 5.6 AC-10.1) blocks on a staged rotation', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-staged' })
+      const rotationId = await insertTestRotation(project.id, 'staged')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
+
+      expect(blockingIds).toEqual([rotationId])
+    })
+
+    it('(Story 5.6 AC-10.1) blocks on a promoted (unretired) rotation', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-promoted' })
+      const rotationId = await insertTestRotation(project.id, 'promoted')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
+
+      expect(blockingIds).toEqual([rotationId])
+    })
+
+    it('(Story 5.6 AC-10.1) does not block on a retired rotation', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-retired' })
+      await insertTestRotation(project.id, 'retired')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
+
+      expect(blockingIds).toEqual([])
+    })
+
     it('does not block on completed, abandoned, or break_glass_complete rotations', async () => {
       const project = await insertTestProject(orgId, {
         userId,

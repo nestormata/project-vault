@@ -150,3 +150,49 @@ export const rotationsStaleRecoveryPendingTotal = new Gauge({
     this.set(Number(row?.count ?? 0))
   },
 })
+
+// Story 5.6 (AC-2/AC-4) — promote/retire attempt counters, following the exact
+// Counter-per-outcome pattern already established above.
+export const ROTATION_PROMOTIONS_TOTAL_METRIC_NAME = 'rotation_promotions_total'
+export const rotationPromotionsTotal = new Counter({
+  name: ROTATION_PROMOTIONS_TOTAL_METRIC_NAME,
+  help: 'Total number of rotation promote (staged -> promoted) attempts, labeled by outcome',
+  labelNames: ['outcome'],
+})
+
+export const ROTATION_RETIREMENTS_TOTAL_METRIC_NAME = 'rotation_retirements_total'
+export const rotationRetirementsTotal = new Counter({
+  name: ROTATION_RETIREMENTS_TOTAL_METRIC_NAME,
+  help: 'Total number of rotation retire (promoted -> retired) attempts, labeled by outcome',
+  labelNames: ['outcome'],
+})
+
+// Story 5.6 AC-4.5: analogous to rotationStaleDetectionsTotal above, for the new, wholly
+// separate 14-day stale-staged alert worker (rotation-stale-staged-alert.ts) — never
+// incremented by rotation-recover.ts, which has its own counter.
+export const ROTATION_STALE_STAGED_ALERTS_TOTAL_METRIC_NAME = 'rotation_stale_staged_alerts_total'
+export const rotationStaleStagedAlertsTotal = new Counter({
+  name: ROTATION_STALE_STAGED_ALERTS_TOTAL_METRIC_NAME,
+  help: 'Total number of rotations flagged by the 14-day stale-staged alert worker',
+})
+
+// Story 5.6 Task 4 (Pre-mortem finding, Example 7b) — passive dashboard visibility into the
+// "promoted but never retired" long tail, which FR22 deliberately allows to persist
+// indefinitely and which this story does not add any nag/alert for.
+export const ROTATIONS_PROMOTED_UNRETIRED_COUNT_METRIC_NAME = 'rotations_promoted_unretired_count'
+export const rotationsPromotedUnretiredCount = new Gauge({
+  name: ROTATIONS_PROMOTED_UNRETIRED_COUNT_METRIC_NAME,
+  help: 'Number of rotations rows currently promoted but not yet retired, labeled by org',
+  labelNames: ['orgId'],
+  async collect() {
+    const rows = await getAdminDb()
+      .select({ orgId: rotations.orgId, count: sql<number>`count(*)` })
+      .from(rotations)
+      .where(sql`${rotations.status} = 'promoted'`)
+      .groupBy(rotations.orgId)
+    this.reset()
+    for (const row of rows) {
+      this.set({ orgId: row.orgId }, Number(row.count))
+    }
+  },
+})

@@ -114,6 +114,23 @@ export const OperationalEvent = {
   ROTATION_ABANDON_CONCURRENT_MODIFICATION: 'rotation.abandon.concurrent_modification',
   ROTATION_ABANDON_AUDIT_FAILED: 'rotation.abandon.audit_failed',
 
+  // Story 5.6
+  ROTATION_PROMOTE_SUCCESS: 'rotation.promote.success',
+  ROTATION_PROMOTE_NOT_PROMOTABLE: 'rotation.promote.not_promotable',
+  ROTATION_PROMOTE_ACKNOWLEDGEMENT_REQUIRED: 'rotation.promote.acknowledgement_required',
+  ROTATION_PROMOTE_CONCURRENT_MODIFICATION: 'rotation.promote.concurrent_modification',
+  ROTATION_PROMOTE_AUDIT_FAILED: 'rotation.promote.audit_failed',
+  ROTATION_RETIRE_SUCCESS: 'rotation.retire.success',
+  ROTATION_RETIRE_NOT_RETIRABLE: 'rotation.retire.not_retirable',
+  ROTATION_RETIRE_ACKNOWLEDGEMENT_REQUIRED: 'rotation.retire.acknowledgement_required',
+  ROTATION_RETIRE_CONCURRENT_MODIFICATION: 'rotation.retire.concurrent_modification',
+  ROTATION_RETIRE_AUDIT_FAILED: 'rotation.retire.audit_failed',
+  ROTATION_LEGACY_COMPLETE_WRONG_STATE: 'rotation.legacy_complete.wrong_state',
+  ROTATION_STAGED_VALUE_REVEAL_SUCCESS: 'rotation.staged_value_reveal.success',
+  ROTATION_STAGED_VALUE_REVEAL_NOT_STAGED: 'rotation.staged_value_reveal.not_staged',
+  ROTATION_STALE_STAGED_ALERTED: 'rotation.stale_staged.alerted',
+  ROTATION_STALE_STAGED_ALERT_ROW_FAILED: 'rotation.stale_staged.alert_row_failed',
+
   // Operational monitoring expiry alerts (Story 6.1)
   MONITORING_EXPIRY_ALERT_ROW_FAILED: 'monitoring.expiry_alert_row_failed',
 

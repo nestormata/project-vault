@@ -401,3 +401,26 @@ codebase precedent) — not new regressions introduced by this diff.*
   used across this test suite.
 
 See `epic-12-retro-2026-07-24.md` findings #2 and #3 for full context.
+
+---
+
+## Deferred from: Story 5-6 code review (2026-07-25) — RESOLVED
+
+**Status: story 5-6 is implemented and committed on `feature/5-6-staged-primary-secondary-rotation-state-machine`.**
+The break-glass/promoted-rotation gap below (found in code review) has been decided and fixed;
+`pick-story`'s Path C resumes from C3 (`make ci`) onward.
+
+**The decision:** Nestor chose **hard-block** — break-glass now refuses to run when the credential
+already has a promoted-but-unretired rotation, rather than silently proceeding and letting the new
+break-glass version's later `promoted_at` displace the earlier promoted rotation's live value.
+
+**Fix:** `supersedeActiveRotation()` (`apps/api/src/modules/rotation/service.ts`) now includes
+`promoted` in its row-lock query; if the locked row is `promoted`, it throws
+`PromotedRotationConflictError` instead of abandoning it. `breakGlassRotation()` catches this and
+returns `{ status: 'promoted_rotation_conflict', rotationId }`. `routes.ts` maps this to a new
+409 `promoted_rotation_conflict` response (`PromotedRotationConflictResponseSchema` in
+`schema.ts`), leaving both rotations and the current value untouched. New regression test in
+`apps/api/src/modules/rotation/routes.test.ts` ("POST break-glass against a credential with a
+promoted-but-unretired rotation returns 409 promoted_rotation_conflict and does not create a new
+version") asserts the promoted rotation, credential-version count, and current value are all
+unchanged after the blocked call. Full rotation test suite (128 tests) passes.

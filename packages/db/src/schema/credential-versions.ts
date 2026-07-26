@@ -49,6 +49,12 @@ export const credentialVersions = pgTable(
     // listVersionHistory()'s 'current' computation (AC-13/AC-14), but NOT purged early — it
     // stays queryable in history."
     abandonedAt: timestamp('abandoned_at', { withTimezone: true }),
+    // Story 5.6 AC-1: nullable — non-null means this version has been promoted and is eligible
+    // to be "current". The current-version selection queries now require this to be non-null AND
+    // order by (promotedAt DESC, versionNumber DESC), inverting the pre-5.6 "highest version
+    // number wins unconditionally" behavior. NULL = staged, not yet promoted, not servable via
+    // the ordinary current-value routes (only via the staged-value route, AC-8).
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     // Story 13.1 AC-4 — discriminates the encrypted_value envelope's shape. 1 = legacy bare

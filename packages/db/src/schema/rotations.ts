@@ -49,13 +49,24 @@ export const rotations = pgTable(
     previousVersionId: uuid('previous_version_id')
       .notNull()
       .references(() => credentialVersions.id, { onDelete: 'restrict' }),
-    status: text('status').notNull().default('in_progress'),
+    // Story 5.6 AC-2.2: new rotations are inserted as 'staged' (was 'in_progress' pre-5.6).
+    status: text('status').notNull().default('staged'),
     // Optimistic-lock column (RS-E5a) — incremented on every state transition. Story 5.1
     // only ever writes 1 (at creation); Story 5.2 increments it on confirm/fail/retry/complete.
     version: integer('version').notNull().default(1),
     initiatedBy: uuid('initiated_by').references(() => users.id, { onDelete: 'set null' }),
     initiatedAt: timestamp('initiated_at', { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    // Story 5.6 AC-2.3: set when `staged -> promoted` (or migrated in-flight, AC-7). Distinct
+    // from credential_versions.promoted_at (AC-1) — same name, different table/meaning: this one
+    // marks the ROTATION's transition, that one marks which VERSION is "current".
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
+    // Story 5.6 AC-2.4: set when `promoted -> retired`.
+    retiredAt: timestamp('retired_at', { withTimezone: true }),
+    // Story 5.6 AC-4.3: set the first (and only) time the stale-staged alert worker fires for
+    // this rotation — guards against re-alerting on every scan cycle. Wholly separate from the
+    // existing stale_recovery mechanism (which transitions status; this only ever alerts).
+    staleStagedAlertedAt: timestamp('stale_staged_alerted_at', { withTimezone: true }),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -67,9 +78,14 @@ export const rotations = pgTable(
     // an application-level pre-check) is the durable backstop guaranteeing at most one active
     // rotation per credential, even under concurrent requests. 5.1's initiation endpoint maps the
     // resulting 23505 unique-violation to its existing 409 rotation_in_progress response.
+    // Story 5.6 AC-2.6: widened from ('in_progress', 'stale_recovery') to cover the new
+    // staged/promoted states — a promoted-but-unretired rotation still blocks a second
+    // concurrent rotation on the same credential (there would be no defined "old" version for
+    // the new rotation to retire). 'in_progress' is kept for historical-row compatibility during
+    // the AC-7 migration window (never written by new code after this story ships).
     oneActivePerCredential: uniqueIndex('idx_rotations_one_active_per_credential')
       .on(t.credentialId)
-      .where(sql`${t.status} IN ('in_progress', 'stale_recovery')`),
+      .where(sql`${t.status} IN ('in_progress', 'staged', 'promoted', 'stale_recovery')`),
     projectInitiatedIdx: index('idx_rotations_project_initiated').on(
       t.projectId,
       t.initiatedAt.desc()
@@ -87,9 +103,12 @@ export const rotations = pgTable(
       t.status,
       t.initiatedAt
     ),
+    // Story 5.6 AC-2.1: purely additive — 'staged'/'promoted'/'retired' added, all five original
+    // values keep their exact current meaning ('in_progress'/'completed' retained for
+    // historical-row compatibility only, never written by new code after this story ships).
     statusCheck: check(
       'rotations_status_check',
-      sql`${t.status} IN ('in_progress','completed','abandoned','stale_recovery','break_glass_complete')`
+      sql`${t.status} IN ('in_progress','staged','promoted','retired','completed','abandoned','stale_recovery','break_glass_complete')`
     ),
   })
 )

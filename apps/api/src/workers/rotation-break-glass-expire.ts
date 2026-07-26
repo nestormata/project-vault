@@ -58,6 +58,19 @@ async function expireOneVersion(orgId: string, candidate: ExpiredVersionRow): Pr
       payload: { credentialVersionId: candidate.id, credentialId: candidate.credentialId },
     })
     rotationBreakGlassOverlapExpirationsTotal.inc()
+
+    // Review fix (5-6 code review, AC-9.1e/AC-9.3): the deferred ROTATION_OLD_RETIRED audit
+    // event used to be written here, but this UPDATE only clears rotationLockedAt/
+    // breakGlassOverlapExpiresAt — it lifts the FR105 retention exemption, it does NOT
+    // cryptographically purge the ciphertext. The actual zero-then-null purge happens later,
+    // whenever prune-credential-versions.ts's own retentionCount-gated cycle next reaches this
+    // now-unlocked version — which, depending on retentionCount and how many other versions this
+    // credential has, can be well after this job runs, or (if the version stays inside the
+    // retention window) may not happen for a long time. Writing "old retired" here would
+    // therefore claim cryptographic destruction that had not actually occurred yet.
+    // prune-credential-versions.ts's purgeVersion() now writes ROTATION_OLD_RETIRED itself, at
+    // the moment it actually zeroes the ciphertext for a break-glass rotation's previous version
+    // — see that file for the deferred write.
   })
 }
 

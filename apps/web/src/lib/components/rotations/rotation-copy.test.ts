@@ -36,6 +36,19 @@ describe('rotation copy and status badges', () => {
     expect(rotationStatusBadgeClass('stale_recovery')).toContain('amber')
     expect(rotationStatusBadgeClass('break_glass_complete')).toContain('red')
   })
+
+  // Story 5.6 Task 6: the new staged/promoted/retired statuses must render with their own
+  // distinct badge classes, not silently fall through to the generic slate default — a
+  // status-label mapping that blanks/throws on an unrecognized enum value would be a silent
+  // regression for every rotation card on the dashboard.
+  it('Story 5.6: staged/promoted/retired get their own distinct badge classes, never crash or fall through unstyled', () => {
+    expect(rotationStatusBadgeClass('staged')).toContain('sky')
+    expect(rotationStatusBadgeClass('promoted')).toContain('amber')
+    expect(rotationStatusBadgeClass('retired')).toContain('emerald')
+    expect(rotationStatusLabel('staged')).toBe('staged')
+    expect(rotationStatusLabel('promoted')).toBe('promoted')
+    expect(rotationStatusLabel('retired')).toBe('retired')
+  })
 })
 
 // AC-20/AC-21: single shared error-mapping helper for the 503/mfa_required/429/generic branches
