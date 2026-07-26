@@ -13,6 +13,7 @@
  * apps/api/src/__tests__/mock-extension-not-in-production.test.ts.
  */
 import { randomUUID } from 'node:crypto'
+import { and, eq, isNull } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import {
   externalIdentities,
@@ -22,12 +23,16 @@ import {
   users,
 } from '@project-vault/db/schema'
 import { createApp } from '../app.js'
+import { getAdminDb } from '../lib/db.js'
 import { initVault, isSealed } from '../modules/vault/key-service.js'
 
-const PROVIDER_NAME = 'test.mock-sso-extension'
+export const PROVIDER_NAME = 'test.mock-sso-extension'
+// NOSONAR(typescript:S2068) not a credential — a fixed, non-secret local-only vault passphrase for
+// this manual-QA script alone; the script never runs in production (see file header + the
+// mock-extension-not-in-production.test.ts guard), so there is nothing here for the rule to protect.
 const QA_PASSPHRASE = 'sso-qa-local-passphrase-not-for-production'
 
-async function ensureUnsealed(): Promise<void> {
+export async function ensureUnsealed(): Promise<void> {
   if (!isSealed()) return
   try {
     await initVault({ kmsType: 'passphrase', passphrase: QA_PASSPHRASE }, {})
@@ -39,7 +44,7 @@ async function ensureUnsealed(): Promise<void> {
   }
 }
 
-async function seedFixtures() {
+export async function seedFixtures() {
   const orgId = randomUUID()
   const suffix = orgId.slice(0, 8)
   await getDb()
@@ -47,9 +52,13 @@ async function seedFixtures() {
     .values({ id: orgId, name: `sso-qa-${suffix}`, slug: `sso-qa-${suffix}` })
 
   // linked-user: pre-seed an external_identities row so the callback resolves a session (AC-5).
+  // The seeded email only needs to be human-readable — AC-5's lookup keys on
+  // (orgId, providerName, externalSubject), never on email — so it's suffixed per run to stay
+  // globally unique across repeat runs against the same persistent dev database (users.email has
+  // a unique constraint; a fixed literal here would fail on the second manual-QA run).
   const [linkedUser] = await getDb()
     .insert(users)
-    .values({ email: 'linked-user@example.test', passwordHash: 'x' })
+    .values({ email: `linked-user-${suffix}@example.test`, passwordHash: 'x' })
     .returning({ id: users.id })
   if (!linkedUser) throw new Error('sso-qa: failed to insert linked-user row')
   await withOrg(orgId, (tx) =>
@@ -74,6 +83,25 @@ async function seedFixtures() {
     .values({ email: `sso-qa-inviter-${suffix}@example.test`, passwordHash: 'x' })
     .returning({ id: users.id })
   if (!project || !inviter) throw new Error('sso-qa: failed to seed invitation prerequisites')
+
+  // Unlike the linked-user's email above, this one must stay the exact fixed literal the mock
+  // extension's onAuthenticate('invited-user') always returns (AC-8 matches by email). Revoke any
+  // still-pending invitation left over from a previous manual-QA run for this same email first —
+  // otherwise a second run leaves two pending invitations across two orgs, and AC-8's genuine
+  // multi-org-ambiguous-match guard rejects the demo instead of hitting the happy path again.
+  // getAdminDb() (not getDb()), matching sso-routes.ts's own findCandidateInvitations() precedent
+  // — this is a cross-org search/update with no org context yet, so per-org RLS would otherwise
+  // hide every row from a previous run's different org.
+  await getAdminDb()
+    .update(projectInvitations)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(projectInvitations.email, 'invited-user@example.test'),
+        isNull(projectInvitations.acceptedAt),
+        isNull(projectInvitations.revokedAt)
+      )
+    )
   await withOrg(orgId, (tx) =>
     tx.insert(projectInvitations).values({
       orgId,
@@ -89,7 +117,7 @@ async function seedFixtures() {
   return { orgId }
 }
 
-function printRunbook(baseUrl: string): void {
+export function printRunbook(baseUrl: string): void {
   const scenarios: Array<{ label: string; credential: string; expect: string }> = [
     {
       label: 'Linked user (AC-5) — expect a full session',
@@ -126,7 +154,7 @@ function printRunbook(baseUrl: string): void {
   process.stdout.write('Press Ctrl+C to stop the server.\n\n')
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   process.env['VAULT_EXTENSIONS_PACKAGE'] ??= '@project-vault/mock-sso-extension'
   await ensureUnsealed()
   await seedFixtures()
@@ -137,7 +165,15 @@ async function main(): Promise<void> {
   printRunbook(`http://127.0.0.1:${port}`)
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`sso-qa failed: ${error instanceof Error ? error.stack : String(error)}\n`)
-  process.exitCode = 1
-})
+// Guard mirrors guarded-migrate.ts's own convention: only run when executed directly (`tsx
+// sso-qa.ts`), never as a side effect of another module importing this file's exports (e.g. this
+// script's own test file) — without this, merely importing seedFixtures()/printRunbook() for unit
+// testing would boot a real server and seed the real configured database as an import side effect.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  try {
+    await main()
+  } catch (error: unknown) {
+    process.stderr.write(`sso-qa failed: ${error instanceof Error ? error.stack : String(error)}\n`)
+    process.exitCode = 1
+  }
+}

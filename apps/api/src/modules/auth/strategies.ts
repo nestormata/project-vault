@@ -43,7 +43,7 @@ export function findAuthStrategy(
 ): { providerName: string; strategy: AuthStrategy } | undefined {
   if (providerName === 'local') return undefined
   const entry = authStrategies.find((candidate) => candidate.providerName === providerName)
-  if (!entry || !entry.strategy) return undefined
+  if (!entry?.strategy) return undefined
   return { providerName: entry.providerName, strategy: entry.strategy }
 }
 

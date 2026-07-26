@@ -210,7 +210,7 @@ async function consumeState(
     .update(ssoLoginStates)
     .set({ consumedAt: new Date() })
     .where(eq(ssoLoginStates.id, (rows[0] as StateRow).id))
-  return outcome
+  return { ok: true }
 }
 
 function readStateCookie(request: FastifyRequest): string | undefined {
@@ -352,7 +352,7 @@ async function handleLinkedSession(
     // retain access via a still-linked external identity just because SSO bypasses the password
     // check. No membership row, or a non-'active' status, is treated the same as "not linked".
     const membership = await findUserMfaEnrolledAndMembership(linked.orgId, linked.userId)
-    if (!membership || membership.membershipStatus !== 'active') {
+    if (membership?.membershipStatus !== 'active') {
       return rejectAccountLinkRequired(reply, meta)
     }
 
