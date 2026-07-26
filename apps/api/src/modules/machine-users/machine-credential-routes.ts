@@ -7,7 +7,11 @@ import { enforceUserRateLimit, parseParams, parseQuery } from '../../lib/route-h
 import { secureRoute, SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 import { writeMachineAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { findCredentialByNameInProject, revealCurrentValue } from '../credentials/service.js'
-import { MANUAL_MACHINE_AUTH_SECURITY, verifyMachineRequest } from './machine-auth.js'
+import {
+  MACHINE_COMMON_ERROR_RESPONSES,
+  MANUAL_MACHINE_AUTH_SECURITY,
+  verifyMachineRequest,
+} from './machine-auth.js'
 import {
   AmbiguousCredentialNameErrorSchema,
   MachineCredentialParamsSchema,
@@ -77,13 +81,9 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
       response: {
         200: MachineCredentialValueResponseSchema,
         400: ApiErrorSchema,
-        401: ApiErrorSchema,
-        403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: AmbiguousCredentialNameErrorSchema,
-        422: ApiErrorSchema,
-        429: ApiErrorSchema,
-        503: ApiErrorSchema,
+        ...MACHINE_COMMON_ERROR_RESPONSES,
       },
     },
     security: MANUAL_MACHINE_AUTH_SECURITY,

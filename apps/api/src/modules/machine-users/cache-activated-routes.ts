@@ -1,12 +1,15 @@
 import { withOrg } from '@project-vault/db'
 import { AuditEvent } from '@project-vault/shared'
-import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { enforceUserRateLimit, parseBody } from '../../lib/route-helpers.js'
 import { secureRoute, SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 import { writeMachineAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { createOrgAdminNotificationEntries } from '../../notifications/dispatcher.js'
-import { MANUAL_MACHINE_AUTH_SECURITY, verifyMachineRequest } from './machine-auth.js'
+import {
+  MACHINE_COMMON_ERROR_RESPONSES,
+  MANUAL_MACHINE_AUTH_SECURITY,
+  verifyMachineRequest,
+} from './machine-auth.js'
 import {
   CacheActivatedBodySchema,
   CacheActivatedResponseSchema,
@@ -40,11 +43,7 @@ export async function cacheActivatedRoutes(fastify: FastifyApp): Promise<void> {
       body: CacheActivatedBodySchema,
       response: {
         202: CacheActivatedResponseSchema,
-        401: ApiErrorSchema,
-        403: ApiErrorSchema,
-        422: ApiErrorSchema,
-        429: ApiErrorSchema,
-        503: ApiErrorSchema,
+        ...MACHINE_COMMON_ERROR_RESPONSES,
       },
     },
     security: MANUAL_MACHINE_AUTH_SECURITY,

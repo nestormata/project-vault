@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
+import { createProjectViaApi } from '../fixtures/api.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
@@ -25,11 +26,11 @@ test.describe('J6 — per-field visibility and reveal', () => {
     await registerAndLoginViaApi(context, { email, password, orgName })
     await context.request.post('/api/v1/users/me/onboarding', { data: { completed: true } })
 
-    const projectRes = await context.request.post('/api/v1/projects', {
-      data: { name: uniqueProjectName('J6 Project'), slug: `j6-${Date.now()}` },
+    const project = await createProjectViaApi(context, {
+      name: uniqueProjectName('J6 Project'),
+      slug: `j6-${Date.now()}`,
     })
-    expect(projectRes.ok()).toBeTruthy()
-    const projectId = (await projectRes.json()).data.id as string
+    const projectId = project.id
 
     await page.goto(`/projects/${projectId}/credentials/new`)
     await page.getByLabel('Name', { exact: true }).fill('j6-db-login')
