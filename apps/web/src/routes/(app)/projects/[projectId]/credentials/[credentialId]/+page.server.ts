@@ -36,7 +36,7 @@ function emptyCredentialPageResult(projectId: string, credentialId: string, orgR
     orgRole,
     credential: null,
     versions: [],
-    dependencies: { items: [], hasDependencies: false },
+    dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
     rotations: [],
     rotationsPage: 1,
     rotationsHasMore: false,

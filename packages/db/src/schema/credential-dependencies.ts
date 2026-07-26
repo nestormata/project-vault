@@ -15,6 +15,9 @@ export const credentialDependencies = pgTable(
     systemName: text('system_name').notNull(),
     systemType: text('system_type').notNull().default('other'),
     notes: text('notes'),
+    // Story 2.10 AC-1 — optional deep-link to the dependent system's location (e.g. a CI
+    // pipeline's secrets settings page). Display-only; never fetched server-side (ADR-2.10-05).
+    linkUrl: text('link_url'),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     archivedBy: uuid('archived_by').references(() => users.id, { onDelete: 'set null' }),
@@ -38,6 +41,12 @@ export const credentialDependencies = pgTable(
     notesLenCheck: check(
       'credential_dependencies_notes_len_check',
       sql`${t.notes} IS NULL OR char_length(${t.notes}) <= 2048`
+    ),
+    // Story 2.10 AC-1: defense-in-depth length bound only — URL shape validation happens at the
+    // Zod schema layer (AC-3), not here (Postgres has no built-in URL type).
+    linkUrlLenCheck: check(
+      'credential_dependencies_link_url_len_check',
+      sql`${t.linkUrl} IS NULL OR char_length(${t.linkUrl}) <= 2048`
     ),
   })
 )

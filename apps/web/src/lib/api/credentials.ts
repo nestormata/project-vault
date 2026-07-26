@@ -115,9 +115,28 @@ export function listCredentialVersions(
   )
 }
 
+// Story 2.10 AC-5: the confirmation status of the credential's currently-`staged` rotation's
+// checklist item for a given dependency, if any — `status` mirrors rotation_checklist_items.status
+// verbatim (unconfirmed/confirmed/failed/max_retries_exceeded).
+export type DependencyChecklistStatus = {
+  rotationId: string
+  itemId: string
+  status: 'unconfirmed' | 'confirmed' | 'failed' | 'max_retries_exceeded'
+  confirmedBy: string | null
+  confirmedAt: string | null
+}
+
+export type CredentialDependencyWithChecklistStatus = CredentialDependency & {
+  checklistStatus: DependencyChecklistStatus | null
+}
+
 export type ListCredentialDependenciesResponse = {
-  items: CredentialDependency[]
+  items: CredentialDependencyWithChecklistStatus[]
   hasDependencies: boolean
+  // ADR-2.10-02: authoritative server-computed flag — never inferred client-side from whether
+  // any item has a non-null checklistStatus (that heuristic silently breaks when every active
+  // dependency was added after the current rotation was staged).
+  hasStagedRotation: boolean
 }
 
 export function listCredentialDependencies(
@@ -168,6 +187,7 @@ export type AddCredentialDependencyRequest = {
   systemName: string
   systemType?: SystemType
   notes?: string | null
+  linkUrl?: string | null
 }
 
 // AC-D1: the UI always sends `systemType` explicitly (the pre-selected default, not an omitted
@@ -184,6 +204,31 @@ export function addCredentialDependency(
     {
       method: 'POST',
       body: JSON.stringify(body),
+    }
+  )
+}
+
+export type UpdateCredentialDependencyLinkResponse = {
+  id: string
+  linkUrl: string | null
+  updatedAt: string
+}
+
+// AC-3.2: three-state PATCH — omit `linkUrl` to leave unchanged (never sent by this UI, which
+// always sends a concrete value or `null`), a string to set, or `null` to clear.
+export function updateCredentialDependencyLink(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  dependencyId: string,
+  linkUrl: string | null
+) {
+  return apiFetch<UpdateCredentialDependencyLinkResponse>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies/${dependencyId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ linkUrl }),
     }
   )
 }

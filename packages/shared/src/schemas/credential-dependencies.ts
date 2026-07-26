@@ -15,6 +15,7 @@ export const CredentialDependencySchema = z
     systemName: z.string(),
     systemType: SystemTypeSchema,
     notes: z.string().nullable(),
+    linkUrl: z.url().nullable(),
     createdBy: z.uuid().nullable(),
     archivedAt: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
