@@ -94,6 +94,12 @@ export const AuditEvent = {
   // single natural org for a boot-time event) via apps/api/src/extensions/loader.ts.
   EXTENSION_LOADED: 'extension.loaded',
   EXTENSION_LOAD_FAILED: 'extension.load_failed',
+  // Story 14.3 Task 8: SSO/external-identity linking audit events — SSO_LOGIN_REJECTED is written
+  // on every AC-4/AC-7/AC-9 rejection path (mandatory, per Security Audit Personas elicitation),
+  // never only on success.
+  EXTERNAL_IDENTITY_LINKED: 'external_identity.linked',
+  SSO_LOGIN_SUCCEEDED: 'sso_login.succeeded',
+  SSO_LOGIN_REJECTED: 'sso_login.rejected',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

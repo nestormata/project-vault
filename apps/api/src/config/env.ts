@@ -9,6 +9,7 @@ const DEV_API_KEY_HMAC_SECRET = 'g'.repeat(64)
 const DEV_MACHINE_JWT_SECRET = 'h'.repeat(64)
 const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
 const DEV_ERASURE_EMAIL_HASH_SECRET = 'j'.repeat(64)
+const DEV_SSO_STATE_HMAC_SECRET = 'k'.repeat(64)
 const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
@@ -43,6 +44,7 @@ type ProductionEnv = {
   MACHINE_JWT_SECRET?: string
   STATUS_PAGE_TOKEN_HMAC_SECRET?: string
   ERASURE_EMAIL_HASH_SECRET?: string
+  SSO_STATE_HMAC_SECRET?: string
   LOG_LEVEL: string
   VAULT_KMS_ENDPOINT?: string
 }
@@ -315,6 +317,42 @@ function validateErasureEmailHashProductionSecret(env: ProductionEnv, ctx: z.Ref
   }
 }
 
+// Story 14.3 AC-3/AC-4: same array-based comparison pattern as ERASURE_EMAIL_HASH_SECRET — a
+// 10th OR-chain would push cyclomatic complexity past the repo's eslint threshold.
+function ssoStateHmacSharesAnotherAuthSecret(env: ProductionEnv): boolean {
+  const otherSecrets = [
+    env.SESSION_SECRET,
+    env.REFRESH_TOKEN_HMAC_SECRET,
+    env.TOTP_REPLAY_HMAC_SECRET,
+    env.MFA_PENDING_SESSION_HMAC_SECRET,
+    env.INVITATION_TOKEN_HMAC_SECRET,
+    env.RECOVERY_TOKEN_HMAC_SECRET,
+    env.API_KEY_HMAC_SECRET,
+    env.MACHINE_JWT_SECRET,
+    env.STATUS_PAGE_TOKEN_HMAC_SECRET,
+    env.ERASURE_EMAIL_HASH_SECRET,
+  ]
+  return otherSecrets.includes(env.SSO_STATE_HMAC_SECRET)
+}
+
+function validateSsoStateProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
+  if (!env.SSO_STATE_HMAC_SECRET) {
+    addEnvIssue(ctx, 'SSO_STATE_HMAC_SECRET', 'SSO_STATE_HMAC_SECRET is required in production')
+  } else if (ssoStateHmacSharesAnotherAuthSecret(env)) {
+    addEnvIssue(
+      ctx,
+      'SSO_STATE_HMAC_SECRET',
+      'SSO_STATE_HMAC_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.SSO_STATE_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'SSO_STATE_HMAC_SECRET',
+      'SSO_STATE_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  }
+}
+
 // Story 9.1 AC-14/AC-15: backup is opt-in. "Enabled" means at least one of
 // STORAGE_PATH/S3_BUCKET/DATABASE_URL is configured — any one of them alone is enough to trigger
 // the fail-fast checks below, since all three are required together for a working setup.
@@ -373,6 +411,7 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateMachineJwtProductionSecret(env, ctx)
   validateStatusPageTokenProductionSecret(env, ctx)
   validateErasureEmailHashProductionSecret(env, ctx)
+  validateSsoStateProductionSecret(env, ctx)
   validateVaultKmsEndpointProductionSafety(env, ctx)
 }
 
@@ -525,6 +564,12 @@ const envSchema = z
     // reusing opaque-token.ts's shared generate/hash/compare primitives (mirrors
     // RECOVERY_TOKEN_HMAC_SECRET's exact shape).
     STATUS_PAGE_TOKEN_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
+    // Story 14.3 AC-3/AC-4: dedicated HMAC secret for sso_login_states.state_hash — never the
+    // raw state value, mirroring RECOVERY_TOKEN_HMAC_SECRET's exact shape/precedent.
+    SSO_STATE_HMAC_SECRET: z.preprocess(
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
@@ -792,6 +837,15 @@ const envSchema = z
   })
 
 type RawEnv = z.infer<typeof envSchema>
+type AuthEnvKey =
+  | 'MFA_PENDING_SESSION_HMAC_SECRET'
+  | 'INVITATION_TOKEN_HMAC_SECRET'
+  | 'RECOVERY_TOKEN_HMAC_SECRET'
+  | 'API_KEY_HMAC_SECRET'
+  | 'MACHINE_JWT_SECRET'
+  | 'STATUS_PAGE_TOKEN_HMAC_SECRET'
+  | 'ERASURE_EMAIL_HASH_SECRET'
+  | 'SSO_STATE_HMAC_SECRET'
 export type Env = Omit<
   RawEnv,
   | 'TOTP_REPLAY_HMAC_SECRET'
@@ -802,6 +856,7 @@ export type Env = Omit<
   | 'MACHINE_JWT_SECRET'
   | 'STATUS_PAGE_TOKEN_HMAC_SECRET'
   | 'ERASURE_EMAIL_HASH_SECRET'
+  | 'SSO_STATE_HMAC_SECRET'
 > & {
   TOTP_REPLAY_HMAC_SECRET: string
   MFA_PENDING_SESSION_HMAC_SECRET: string
@@ -811,6 +866,22 @@ export type Env = Omit<
   MACHINE_JWT_SECRET: string
   STATUS_PAGE_TOKEN_HMAC_SECRET: string
   ERASURE_EMAIL_HASH_SECRET: string
+  SSO_STATE_HMAC_SECRET: string
+}
+
+// Story 14.3: extracted so adding SSO_STATE_HMAC_SECRET's fallback didn't push loadEnv() past
+// the repo's eslint cyclomatic-complexity threshold — every dev-only-secret-fallback branch
+// above this function's introduction shared this exact "warn + assign default" shape.
+function applyDevSecretFallback<K extends AuthEnvKey>(
+  data: Partial<Record<AuthEnvKey, string | undefined>>,
+  key: K,
+  fallback: string
+): void {
+  if (data[key]) return
+  process.stderr.write(
+    `[env] ${key} unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n`
+  )
+  data[key] = fallback
 }
 
 function loadEnv(): Env {
@@ -828,48 +899,18 @@ function loadEnv(): Env {
     )
     data.TOTP_REPLAY_HMAC_SECRET = data.REFRESH_TOKEN_HMAC_SECRET
   }
-  if (!data.MFA_PENDING_SESSION_HMAC_SECRET) {
-    process.stderr.write(
-      '[env] MFA_PENDING_SESSION_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
-    )
-    data.MFA_PENDING_SESSION_HMAC_SECRET = DEV_MFA_PENDING_SESSION_HMAC_SECRET
-  }
-  if (!data.INVITATION_TOKEN_HMAC_SECRET) {
-    process.stderr.write(
-      '[env] INVITATION_TOKEN_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
-    )
-    data.INVITATION_TOKEN_HMAC_SECRET = DEV_INVITATION_TOKEN_HMAC_SECRET
-  }
-  if (!data.RECOVERY_TOKEN_HMAC_SECRET) {
-    process.stderr.write(
-      '[env] RECOVERY_TOKEN_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
-    )
-    data.RECOVERY_TOKEN_HMAC_SECRET = DEV_RECOVERY_TOKEN_HMAC_SECRET
-  }
-  if (!data.API_KEY_HMAC_SECRET) {
-    process.stderr.write(
-      '[env] API_KEY_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
-    )
-    data.API_KEY_HMAC_SECRET = DEV_API_KEY_HMAC_SECRET
-  }
-  if (!data.MACHINE_JWT_SECRET) {
-    process.stderr.write(
-      '[env] MACHINE_JWT_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
-    )
-    data.MACHINE_JWT_SECRET = DEV_MACHINE_JWT_SECRET
-  }
-  if (!data.STATUS_PAGE_TOKEN_HMAC_SECRET) {
-    process.stderr.write(
-      '[env] STATUS_PAGE_TOKEN_HMAC_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
-    )
-    data.STATUS_PAGE_TOKEN_HMAC_SECRET = DEV_STATUS_PAGE_TOKEN_HMAC_SECRET
-  }
-  if (!data.ERASURE_EMAIL_HASH_SECRET) {
-    process.stderr.write(
-      '[env] ERASURE_EMAIL_HASH_SECRET unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n'
-    )
-    data.ERASURE_EMAIL_HASH_SECRET = DEV_ERASURE_EMAIL_HASH_SECRET
-  }
+  applyDevSecretFallback(
+    data,
+    'MFA_PENDING_SESSION_HMAC_SECRET',
+    DEV_MFA_PENDING_SESSION_HMAC_SECRET
+  )
+  applyDevSecretFallback(data, 'INVITATION_TOKEN_HMAC_SECRET', DEV_INVITATION_TOKEN_HMAC_SECRET)
+  applyDevSecretFallback(data, 'RECOVERY_TOKEN_HMAC_SECRET', DEV_RECOVERY_TOKEN_HMAC_SECRET)
+  applyDevSecretFallback(data, 'API_KEY_HMAC_SECRET', DEV_API_KEY_HMAC_SECRET)
+  applyDevSecretFallback(data, 'MACHINE_JWT_SECRET', DEV_MACHINE_JWT_SECRET)
+  applyDevSecretFallback(data, 'STATUS_PAGE_TOKEN_HMAC_SECRET', DEV_STATUS_PAGE_TOKEN_HMAC_SECRET)
+  applyDevSecretFallback(data, 'ERASURE_EMAIL_HASH_SECRET', DEV_ERASURE_EMAIL_HASH_SECRET)
+  applyDevSecretFallback(data, 'SSO_STATE_HMAC_SECRET', DEV_SSO_STATE_HMAC_SECRET)
   return data as Env
 }
 

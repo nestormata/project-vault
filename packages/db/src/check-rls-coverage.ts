@@ -36,6 +36,11 @@ export const EXCLUDED_TABLES = new Set([
   'platform_audit_events',
   'platform_audit_maintenance_state',
   'platform_audit_pending_entries',
+  // Story 14.3 Task 2: sso_login_states has no org_id column — the caller is unauthenticated and
+  // no org is known yet at state-mint time (before onAuthenticate() ever runs). Single-use,
+  // 10-minute-TTL, hashed-value semantics (mirroring refresh_tokens/pending_mfa_sessions'
+  // pre-auth trust model) replace RLS for this table.
+  'sso_login_states',
 ])
 
 export class RlsCoverageGapError extends Error {

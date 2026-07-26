@@ -38,7 +38,13 @@ import {
   methodNotAllowedResponseSchema,
 } from './schema.js'
 import { normalizeEmail } from './normalize.js'
-import { clearAuthCookies, setAuthCookies, type CookieReply } from './tokens.js'
+import {
+  buildCookieTokens,
+  clearAuthCookies,
+  setAuthCookies,
+  type CookieReply,
+  type JwtSigner,
+} from './tokens.js'
 import {
   enrollMfa,
   getMfaStatus,
@@ -169,18 +175,6 @@ function metaFromRequest(req: FastifyRequest) {
   }
 }
 
-async function buildCookieTokens(fastify: FastifyApp, tokens: TokenMaterial) {
-  const jwt = await (fastify as JwtFastify).jwt.sign(
-    {
-      sub: tokens.accessClaims.sub,
-      orgId: tokens.accessClaims.orgId,
-      sessionVersion: tokens.accessClaims.sessionVersion,
-    },
-    { jti: tokens.accessClaims.jti, expiresIn: tokens.accessMaxAgeSec }
-  )
-  return { ...tokens, accessJwt: jwt }
-}
-
 function parseBody<T>(
   schema: z.ZodType<T>,
   req: FastifyRequest,
@@ -199,7 +193,10 @@ async function sendAuthSession(
   extraData: Record<string, unknown> = {}
 ) {
   clearAuthCookies(reply as unknown as CookieReply)
-  setAuthCookies(reply as unknown as CookieReply, await buildCookieTokens(fastify, result.tokens))
+  setAuthCookies(
+    reply as unknown as CookieReply,
+    await buildCookieTokens(fastify as unknown as JwtSigner, result.tokens)
+  )
   return reply.send({
     data: {
       userId: result.userId,
@@ -965,7 +962,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         )
         setAuthCookies(
           reply as unknown as CookieReply,
-          await buildCookieTokens(fastify, result.tokens)
+          await buildCookieTokens(fastify as unknown as JwtSigner, result.tokens)
         )
         return reply.send({ data: { expiresAt: result.expiresAt } })
       } catch (error) {
