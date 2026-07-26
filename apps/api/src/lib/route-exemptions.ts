@@ -406,6 +406,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.dependency_archived',
     sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
   },
+  'PATCH /api/v1/projects/:projectId/credentials/:credentialId/dependencies/:dependencyId': {
+    action: 'mutation',
+    auditEvent: 'credential.dependency_updated',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
   'PATCH /api/v1/projects/:projectId/credentials/:credentialId': {
     action: 'mutation',
     auditEvent: 'credential.lifecycle_updated',

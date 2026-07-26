@@ -11,7 +11,9 @@
     parseRevealedFields,
     revealCredentialValue,
     updateCredentialLifecycle,
+    type CredentialDependencyWithChecklistStatus,
   } from '$lib/api/credentials.js'
+  import { confirmChecklistItem } from '$lib/api/rotations.js'
   import { ApiClientError } from '$lib/api/client.js'
   import FieldSetEditor from '$lib/components/credentials/FieldSetEditor.svelte'
   import {
@@ -96,14 +98,21 @@
   // AC-D1: local list so a successful add/archive updates the UI immediately without a reload;
   // seeded once from the loader's data, same "state_referenced_locally" convention used elsewhere
   // on this page (see lifecycleExpiresAt above) and on the projects list page's tag inputs.
-  let dependencyItems = $state(data.dependencies.items)
+  let dependencyItems = $state<CredentialDependencyWithChecklistStatus[]>(data.dependencies.items)
   let depSystemName = $state('')
   let depSystemType = $state<SystemType>('other')
   let depNotes = $state('')
+  let depLinkUrl = $state('')
   let depSubmitting = $state(false)
   let depError = $state<string | null>(null)
   let depBanner = $state<string | null>(null)
   let archivingDependencyId = $state<string | null>(null)
+  // AC-5: authoritative server-computed flag — never inferred from whether any item has a
+  // non-null checklistStatus (ADR-2.10-02, see the story's "Challenge from Critical Perspective"
+  // finding for why the naive inference is wrong when every dependency post-dates staging).
+  const hasStagedRotation = $derived(data.dependencies.hasStagedRotation)
+  let confirmingDependencyId = $state<string | null>(null)
+  let checklistError = $state<string | null>(null)
 
   async function onAddDependency(): Promise<void> {
     if (depSubmitting || !data.credential) return
@@ -114,19 +123,25 @@
     depBanner = null
     try {
       const notes = depNotes.trim()
+      const linkUrl = depLinkUrl.trim()
       const created = await addCredentialDependency(fetch, data.projectId, data.credentialId, {
         systemName,
         systemType: depSystemType,
         ...(notes ? { notes } : {}),
+        ...(linkUrl ? { linkUrl } : {}),
       })
-      dependencyItems = [...dependencyItems, created]
+      dependencyItems = [...dependencyItems, { ...created, checklistStatus: null }]
       depSystemName = ''
       depSystemType = 'other'
       depNotes = ''
+      depLinkUrl = ''
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 410) {
         depBanner = ARCHIVED_PROJECT_BANNER
-      } else if (error instanceof ApiClientError && error.code === 'too_many_dependencies') {
+      } else if (
+        error instanceof ApiClientError &&
+        (error.code === 'too_many_dependencies' || error.code === 'invalid_link_url')
+      ) {
         depError = error.message
       } else {
         depError = error instanceof Error ? error.message : 'Could not add dependent system.'
@@ -152,6 +167,79 @@
     } finally {
       archivingDependencyId = null
     }
+  }
+
+  // AC-6.2/6.3: checking the box calls the EXISTING checklist confirm route unchanged — only the
+  // caller (this dependency-list surface) is new. Un-checking is not supported (confirm is a
+  // one-way pending/failed -> confirmed transition, matching the rotation detail page's own
+  // checklist UI — Story 5.2).
+  async function onConfirmDependencyUpdate(
+    dependency: CredentialDependencyWithChecklistStatus
+  ): Promise<void> {
+    if (!data.credential || confirmingDependencyId) return
+    const status = dependency.checklistStatus
+    if (!status || status.status === 'confirmed') return
+    confirmingDependencyId = dependency.id
+    checklistError = null
+    try {
+      const result = await confirmChecklistItem(
+        fetch,
+        data.projectId,
+        data.credentialId,
+        status.rotationId,
+        status.itemId
+      )
+      dependencyItems = dependencyItems.map((item) =>
+        item.id === dependency.id && item.checklistStatus
+          ? {
+              ...item,
+              checklistStatus: {
+                ...item.checklistStatus,
+                status: result.item.status,
+                confirmedBy: result.item.confirmedBy,
+                confirmedAt: result.item.confirmedAt,
+              },
+            }
+          : item
+      )
+    } catch (error) {
+      // Example 6b: a 409 already_confirmed (someone else confirmed it first, e.g. from the
+      // rotation detail page in another tab) is a success from Morgan's perspective — reconcile
+      // local state from the error body instead of surfacing an error toast.
+      if (error instanceof ApiClientError && error.code === 'already_confirmed') {
+        const body = error.body as {
+          confirmedBy?: string | null
+          confirmedAt?: string | null
+        } | null
+        dependencyItems = dependencyItems.map((item) =>
+          item.id === dependency.id && item.checklistStatus
+            ? {
+                ...item,
+                checklistStatus: {
+                  ...item.checklistStatus,
+                  status: 'confirmed',
+                  confirmedBy: body?.confirmedBy ?? item.checklistStatus.confirmedBy,
+                  confirmedAt: body?.confirmedAt ?? item.checklistStatus.confirmedAt,
+                },
+              }
+            : item
+        )
+      } else {
+        checklistError = error instanceof Error ? error.message : 'Could not confirm update.'
+      }
+    } finally {
+      confirmingDependencyId = null
+    }
+  }
+
+  function dependencyCheckboxDisabledReason(
+    dependency: CredentialDependencyWithChecklistStatus
+  ): string | null {
+    if (!hasStagedRotation) return 'No rotation in progress — nothing to confirm yet.'
+    if (!dependency.checklistStatus) {
+      return 'Added after this rotation started — not tracked by the current checklist.'
+    }
+    return null
   }
 
   onDestroy(() => {
@@ -610,12 +698,62 @@
       {#if dependencyItems.length === 0}
         <p class="mt-3 text-sm text-slate-600">No dependent systems recorded.</p>
       {:else}
+        {#if checklistError}
+          <p class="mt-3 text-sm text-red-700" role="alert">{checklistError}</p>
+        {/if}
         <ul class="mt-4 space-y-2">
           {#each dependencyItems as dependency (dependency.id)}
+            {@const disabledReason = dependencyCheckboxDisabledReason(dependency)}
+            {@const isFailed = dependency.checklistStatus?.status === 'failed'}
             <li
-              class="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-sm"
+              class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
             >
-              <span class="font-medium">{dependency.systemName} ({dependency.systemType})</span>
+              <div class="flex flex-wrap items-center gap-3">
+                <label
+                  class="flex items-center gap-2"
+                  for={`dependency-updated-${dependency.id}`}
+                  title={disabledReason ?? undefined}
+                >
+                  <input
+                    id={`dependency-updated-${dependency.id}`}
+                    type="checkbox"
+                    checked={dependency.checklistStatus?.status === 'confirmed' || isFailed}
+                    disabled={!canReveal ||
+                      Boolean(disabledReason) ||
+                      confirmingDependencyId === dependency.id ||
+                      dependency.checklistStatus?.status === 'confirmed'}
+                    aria-disabled={Boolean(disabledReason)}
+                    onchange={() => void onConfirmDependencyUpdate(dependency)}
+                  />
+                  <span class={isFailed ? 'font-medium text-amber-800' : undefined}>Updated</span>
+                </label>
+                <span class="font-medium">{dependency.systemName} ({dependency.systemType})</span>
+                {#if dependency.linkUrl}
+                  <!-- eslint-disable svelte/no-navigation-without-resolve -- AC-6.1: a
+                       user-supplied external location link (validated http(s) server-side), not
+                       a SvelteKit route resolve() can type-check. -->
+                  <a
+                    class="max-w-[16rem] truncate text-sm text-blue-700 underline"
+                    href={dependency.linkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={dependency.linkUrl}
+                  >
+                    {dependency.linkUrl}
+                  </a>
+                  <!-- eslint-enable svelte/no-navigation-without-resolve -->
+                {/if}
+                {#if isFailed}
+                  <a
+                    class="text-xs font-medium text-amber-800 underline"
+                    href={resolve(
+                      `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${dependency.checklistStatus?.rotationId}`
+                    )}
+                  >
+                    Failed — resolve on rotation page
+                  </a>
+                {/if}
+              </div>
               {#if canReveal}
                 <button
                   class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
@@ -677,6 +815,22 @@
                 id="dependency-notes"
                 class="w-full rounded-xl border border-slate-300 px-3 py-2"
                 bind:value={depNotes}></textarea>
+            </div>
+            <div class="space-y-1">
+              <label class="block text-sm font-medium text-slate-800" for="dependency-link-url">
+                Link (optional)
+              </label>
+              <input
+                id="dependency-link-url"
+                class="w-full rounded-xl border border-slate-300 px-3 py-2"
+                type="url"
+                placeholder="https://…"
+                bind:value={depLinkUrl}
+              />
+              <p class="text-xs text-slate-500">
+                This link is visible to everyone with view access to this credential and is stored
+                in plaintext audit logs — do not include passwords, tokens, or signed URLs here.
+              </p>
             </div>
             {#if depError}
               <p class="text-sm text-red-700" role="alert">{depError}</p>

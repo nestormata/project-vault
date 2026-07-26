@@ -53,6 +53,7 @@ export const OperationalEvent = {
   CREDENTIAL_RETENTION_DRY_RUN: 'credential.retention.dry_run',
   CREDENTIAL_DEPENDENCY_ADDED: 'credential.dependency.added',
   CREDENTIAL_DEPENDENCY_ARCHIVED: 'credential.dependency.archived',
+  CREDENTIAL_DEPENDENCY_UPDATED: 'credential.dependency.updated',
   CREDENTIAL_LIFECYCLE_UPDATED: 'credential.lifecycle.updated',
   CREDENTIAL_LIFECYCLE_INVALID_CRON: 'credential.lifecycle.invalid_cron',
   CREDENTIAL_IMPORT_PARSE_COMPLETED: 'credential.import.parse_completed',

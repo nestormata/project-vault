@@ -43,6 +43,7 @@ import {
   DependencyArchivedResponseSchema,
   DependencyListResponseSchema,
   DependencyParamsSchema,
+  DependencyPatchResponseSchema,
   DependencyResponseSchema,
   ListCredentialsQuerySchema,
   ListCredentialsResponseSchema,
@@ -52,6 +53,7 @@ import {
   ImportErrorResponseSchema,
   ImportPreviewResponseSchema,
   MAX_CREDENTIAL_LIST_OFFSET,
+  PatchDependencyBodySchema,
   ProjectScopeParamsSchema,
   TagArrayBodySchema,
   TagUpdateResponseSchema,
@@ -59,6 +61,7 @@ import {
   type AddVersionBody,
   type AddDependencyBody,
   type CreateCredentialBody,
+  type PatchDependencyBody,
   type TagArrayBody,
   type UpdateCredentialLifecycleBody,
   type ImportConfirmBody,
@@ -80,6 +83,7 @@ import {
   archiveCredentialDependency,
   listCredentialAccess,
   listCredentialDependencies,
+  updateCredentialDependencyLink,
   updateCredentialLifecycle,
 } from './dependencies-service.js'
 import {
@@ -98,6 +102,7 @@ type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
     | 'credential.tags_updated'
     | 'credential.dependency_added'
     | 'credential.dependency_archived'
+    | 'credential.dependency_updated'
     | 'credential.lifecycle_updated'
 }
 
@@ -1297,6 +1302,84 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
           'Credential dependency archived'
         )
       }
+
+      return { data: result.data }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'PATCH',
+    url: '/:projectId/credentials/:credentialId/dependencies/:dependencyId',
+    schema: {
+      response: {
+        200: DependencyPatchResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      rateLimit: {
+        max: 60,
+        timeWindowMs: 60_000,
+        key: 'PATCH /api/v1/projects/:projectId/credentials/:credentialId/dependencies/:dependencyId',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const params = parseParams(DependencyParamsSchema, req, reply)
+      if (!params) return reply
+      const rawBody =
+        req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {}
+      // AC-3: `{}` or a body with no `linkUrl` key → 422 no_fields_to_update (mirrors the
+      // credential-lifecycle PATCH's no-op-rejected precedent; this route only ever accepts one
+      // field, but the same "don't issue a no-op UPDATE" rule applies).
+      if (!('linkUrl' in rawBody)) {
+        return reply.status(422).send({
+          code: 'no_fields_to_update',
+          message: 'Provide linkUrl',
+        })
+      }
+      const secureCtx = ctx as SecureRouteContext
+      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+        return reply
+
+      const parsed = parseBody<PatchDependencyBody>(PatchDependencyBodySchema, req, reply)
+      if (!parsed.success) return reply
+
+      const result = await updateCredentialDependencyLink(secureCtx.tx, {
+        credentialId: params.credentialId,
+        projectId: params.projectId,
+        dependencyId: params.dependencyId,
+        linkUrl: parsed.data.linkUrl ?? null,
+      })
+      if (result.status === 'credential_not_found') {
+        return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      }
+      if (result.status === 'dependency_not_found') {
+        return reply.status(404).send(DEPENDENCY_NOT_FOUND)
+      }
+
+      await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'credential.dependency_updated',
+        resourceId: params.credentialId,
+        payload: result.auditPayload,
+        request: req,
+      })
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_DEPENDENCY_UPDATED,
+          orgId: secureCtx.auth.orgId,
+          credentialId: params.credentialId,
+          dependencyId: params.dependencyId,
+        },
+        'Credential dependency updated'
+      )
 
       return { data: result.data }
     },

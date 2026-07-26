@@ -27,6 +27,7 @@ export function validationError(
     const key = String(issue.path[0] ?? fallbackPath)
     details.set(key, [...(details.get(key) ?? []), issue.message])
     if (issue.message === 'invalid_cron') code = 'invalid_cron'
+    if (issue.message === 'invalid_link_url') code = 'invalid_link_url'
   }
   return {
     code,

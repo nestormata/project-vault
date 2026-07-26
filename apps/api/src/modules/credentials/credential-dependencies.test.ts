@@ -38,6 +38,7 @@ import {
 
 const TEST_PASSPHRASE = 'credential-deps-passphrase'
 const FUTURE_EXPIRY = '2026-12-31T23:59:59.000Z'
+const AWS_SSM_PARAMETERS_URL = 'https://console.aws.amazon.com/systems-manager/parameters'
 
 describe.sequential('credential dependencies and lifecycle routes', () => {
   let app: TestApp
@@ -257,6 +258,239 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
         .limit(1)
     )
     expect(row[0]?.archivedAt).toBeNull()
+  }, 20_000)
+
+  it('POST accepts an optional http(s) linkUrl, trims it, and rejects invalid schemes/shapes', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'link-url')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+    const withLink = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {
+        systemName: 'billing-worker-with-link (prod)',
+        linkUrl: '  https://github.com/org/billing-worker/settings  ',
+      },
+    })
+    expect(withLink.statusCode).toBe(201)
+    expect(withLink.json<{ data: { linkUrl: string } }>().data.linkUrl).toBe(
+      'https://github.com/org/billing-worker/settings'
+    )
+
+    const noLink = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { systemName: 'no-link-service' },
+    })
+    expect(noLink.statusCode).toBe(201)
+    expect(noLink.json<{ data: { linkUrl: string | null } }>().data.linkUrl).toBeNull()
+
+    const javascriptScheme = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { systemName: 'bad-scheme', linkUrl: 'javascript:alert(1)' },
+    })
+    expect(javascriptScheme.statusCode).toBe(422)
+    expect(javascriptScheme.json()).toMatchObject({ code: 'invalid_link_url' })
+
+    const relative = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { systemName: 'bad-shape', linkUrl: 'not-a-url' },
+    })
+    expect(relative.statusCode).toBe(422)
+    expect(relative.json()).toMatchObject({ code: 'invalid_link_url' })
+
+    const internalHost = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {
+        systemName: 'internal-vault',
+        linkUrl: 'https://vault.internal.corp:8443/secrets/billing',
+      },
+    })
+    expect(internalHost.statusCode).toBe(201)
+
+    const tooLong = await app.inject({
+      method: 'POST',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {
+        systemName: 'too-long',
+        linkUrl: `https://example.com/${'a'.repeat(2048)}`,
+      },
+    })
+    expect(tooLong.statusCode).toBe(422)
+  }, 20_000)
+
+  it('GET list includes linkUrl additively', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'link-list')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+    await addCredentialDependencyViaApi(app, owner.cookies, projectId, credential.id, {
+      systemName: 'listed-with-link',
+      linkUrl: 'https://example.com/deploy',
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: credentialDependenciesUrl(projectId, credential.id),
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ data: { items: { linkUrl: string | null }[] } }>().data.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ linkUrl: 'https://example.com/deploy' })])
+    )
+  }, 20_000)
+
+  it('PATCH dependency sets/clears linkUrl, rejects no-op and archived edits, and audits before/after', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'link-patch')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+    const created = await addCredentialDependencyViaApi(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      {
+        systemName: 'patchable-service',
+      }
+    )
+    const dependencyId = created.json<{ data: { id: string } }>().data.id
+    const patchUrl = `${credentialDependenciesUrl(projectId, credential.id)}/${dependencyId}`
+
+    const setLink = await app.inject({
+      method: 'PATCH',
+      url: patchUrl,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { linkUrl: AWS_SSM_PARAMETERS_URL },
+    })
+    expect(setLink.statusCode).toBe(200)
+    expect(setLink.json<{ data: { linkUrl: string } }>().data.linkUrl).toBe(AWS_SSM_PARAMETERS_URL)
+
+    const clearLink = await app.inject({
+      method: 'PATCH',
+      url: patchUrl,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { linkUrl: null },
+    })
+    expect(clearLink.statusCode).toBe(200)
+    expect(clearLink.json<{ data: { linkUrl: string | null } }>().data.linkUrl).toBeNull()
+
+    const empty = await app.inject({
+      method: 'PATCH',
+      url: patchUrl,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {},
+    })
+    expect(empty.statusCode).toBe(422)
+    expect(empty.json()).toMatchObject({ code: 'no_fields_to_update' })
+
+    const auditRows = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ payload: auditLogEntries.payload, resourceId: auditLogEntries.resourceId })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'credential.dependency_updated'))
+    )
+    const setRow = auditRows.find(
+      (row) =>
+        row.resourceId === credential.id &&
+        (row.payload as { linkUrl?: string }).linkUrl === AWS_SSM_PARAMETERS_URL
+    )
+    expect(setRow).toBeDefined()
+    expect((setRow?.payload as { previousLinkUrl?: string | null }).previousLinkUrl).toBeNull()
+    const clearRow = auditRows.find(
+      (row) =>
+        row.resourceId === credential.id && (row.payload as { linkUrl?: null }).linkUrl === null
+    )
+    expect(clearRow).toBeDefined()
+    expect((clearRow?.payload as { previousLinkUrl?: string | null }).previousLinkUrl).toBe(
+      AWS_SSM_PARAMETERS_URL
+    )
+
+    // Example 3c: PATCH on an already-archived dependency → dependency_not_found, not a distinct code.
+    await app.inject({
+      method: 'DELETE',
+      url: patchUrl,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    const patchArchived = await app.inject({
+      method: 'PATCH',
+      url: patchUrl,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { linkUrl: 'https://example.com/new' },
+    })
+    expect(patchArchived.statusCode).toBe(404)
+    expect(patchArchived.json()).toMatchObject({ code: 'dependency_not_found' })
+
+    // Cross-org / viewer / missing-dependency
+    const crossOrgPatch = await app.inject({
+      method: 'PATCH',
+      url: `${credentialDependenciesUrl(projectId, randomUUID())}/${randomUUID()}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { linkUrl: 'https://example.com/x' },
+    })
+    expect(crossOrgPatch.statusCode).toBe(404)
+
+    const viewer = await createDirectAuthenticatedUser(app, 'link-patch-viewer', 'viewer')
+    const created2 = await addCredentialDependencyViaApi(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      {
+        systemName: 'viewer-denied-target',
+      }
+    )
+    const dependency2Id = created2.json<{ data: { id: string } }>().data.id
+    const viewerDenied = await app.inject({
+      method: 'PATCH',
+      url: `${credentialDependenciesUrl(projectId, credential.id)}/${dependency2Id}`,
+      headers: { cookie: cookieHeader(viewer.cookies) },
+      payload: { linkUrl: 'https://example.com/x' },
+    })
+    expect(viewerDenied.statusCode).toBe(403)
+  }, 30_000)
+
+  it('rolls back PATCH dependency linkUrl when audit write fails', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'link-patch-rollback')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+    const created = await addCredentialDependencyViaApi(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      {
+        systemName: 'rollback-target',
+      }
+    )
+    const dependencyId = created.json<{ data: { id: string } }>().data.id
+
+    const patchSpy = vi
+      .spyOn(humanAudit, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error(FORCED_AUDIT_FAILURE))
+    try {
+      const fail = await app.inject({
+        method: 'PATCH',
+        url: `${credentialDependenciesUrl(projectId, credential.id)}/${dependencyId}`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { linkUrl: 'https://example.com/rollback' },
+      })
+      expectAuditWriteFailed(fail)
+    } finally {
+      patchSpy.mockRestore()
+    }
+
+    const row = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ linkUrl: credentialDependencies.linkUrl })
+        .from(credentialDependencies)
+        .where(eq(credentialDependencies.id, dependencyId))
+    )
+    expect(row[0]?.linkUrl).toBeNull()
   }, 20_000)
 
   it('PATCH lifecycle supports partial updates, clears fields, and validates cron', async () => {
@@ -518,6 +752,14 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
       name: 'Leak Test',
       value: SENTINEL_VALUE,
     })
+    const dependencyForPatch = await addCredentialDependencyViaApi(
+      app,
+      owner.cookies,
+      projectId,
+      credential.id,
+      { systemName: 'leak-check-dep' }
+    )
+    const dependencyForPatchId = dependencyForPatch.json<{ data: { id: string } }>().data.id
 
     const endpoints = [
       {
@@ -526,6 +768,11 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
         payload: { systemName: 'svc' },
       },
       { method: 'GET' as const, url: credentialDependenciesUrl(projectId, credential.id) },
+      {
+        method: 'PATCH' as const,
+        url: `${credentialDependenciesUrl(projectId, credential.id)}/${dependencyForPatchId}`,
+        payload: { linkUrl: 'https://example.com/leak-check' },
+      },
       {
         method: 'PATCH' as const,
         url: credentialLifecycleUrl(projectId, credential.id),
@@ -564,6 +811,11 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
         {
           method: 'DELETE',
           url: `${credentialDependenciesUrl(projectId, credentialId)}/${dependencyId}`,
+        },
+        {
+          method: 'PATCH',
+          url: `${credentialDependenciesUrl(projectId, credentialId)}/${dependencyId}`,
+          payload: { linkUrl: 'https://example.com/sealed' },
         },
         {
           method: 'PATCH',

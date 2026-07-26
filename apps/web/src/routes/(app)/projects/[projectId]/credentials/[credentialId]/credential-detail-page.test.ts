@@ -8,6 +8,7 @@ const addCredentialDependencyMock = vi.hoisted(() => vi.fn())
 const archiveCredentialDependencyMock = vi.hoisted(() => vi.fn())
 const revealCredentialValueMock = vi.hoisted(() => vi.fn())
 const addCredentialVersionMock = vi.hoisted(() => vi.fn())
+const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
@@ -23,6 +24,12 @@ vi.mock('$lib/api/credentials.js', async () => {
     addCredentialVersion: addCredentialVersionMock,
     parseRevealedFields: actual.parseRevealedFields,
   }
+})
+
+vi.mock('$lib/api/rotations.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('$lib/api/rotations.js')>('$lib/api/rotations.js')
+  return { ...actual, confirmChecklistItem: confirmChecklistItemMock }
 })
 
 import { ApiClientError } from '$lib/api/client.js'
@@ -56,7 +63,7 @@ function baseData(overrides: Record<string, unknown> = {}) {
     vaultSealed: false,
     notFound: false,
     credential: CREDENTIAL,
-    dependencies: { items: [] },
+    dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
     versions: [],
     rotations: [],
     activeRotationId: null,
@@ -389,6 +396,218 @@ describe('credential detail +page.svelte', () => {
     await fireEvent.click(screen.getByRole('button', { name: /^archive$/i }))
 
     expect(await screen.findByText(/this project is archived/i)).toBeTruthy()
+  })
+
+  it('renders a dependency link as a clickable, new-tab, noopener anchor', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                linkUrl: 'https://example.com/billing-worker',
+                checklistStatus: null,
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
+          },
+        }),
+      },
+    })
+    const link = screen.getByRole('link', { name: 'https://example.com/billing-worker' })
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  it('renders no link element when linkUrl is unset', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                linkUrl: null,
+                checklistStatus: null,
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
+          },
+        }),
+      },
+    })
+    expect(screen.queryByRole('link', { name: /billing-worker/i })).toBeNull()
+  })
+
+  it('Updated checkbox is disabled with "no rotation in progress" tooltip when hasStagedRotation is false', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                checklistStatus: null,
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
+          },
+        }),
+      },
+    })
+    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
+    expect(checkbox.disabled).toBe(true)
+    expect(checkbox.closest('label')?.getAttribute('title')).toMatch(/no rotation in progress/i)
+  })
+
+  it('Updated checkbox is disabled with "added after this rotation started" tooltip when checklistStatus is null but hasStagedRotation is true', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              { id: 'dep-1', systemName: 'delta', systemType: 'service', checklistStatus: null },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: true,
+          },
+        }),
+      },
+    })
+    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
+    expect(checkbox.disabled).toBe(true)
+    expect(checkbox.closest('label')?.getAttribute('title')).toMatch(
+      /added after this rotation started/i
+    )
+  })
+
+  it('clicking the Updated checkbox confirms the checklist item and flips it to checked', async () => {
+    confirmChecklistItemMock.mockResolvedValue({
+      item: { status: 'confirmed', confirmedBy: 'user-1', confirmedAt: '2026-07-26T00:00:00.000Z' },
+      rotationVersion: 2,
+    })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                checklistStatus: {
+                  rotationId: 'rot-1',
+                  itemId: 'item-1',
+                  status: 'unconfirmed',
+                  confirmedBy: null,
+                  confirmedAt: null,
+                },
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: true,
+          },
+        }),
+      },
+    })
+    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
+    expect(checkbox.disabled).toBe(false)
+    expect(checkbox.checked).toBe(false)
+
+    await fireEvent.click(checkbox)
+
+    expect(confirmChecklistItemMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId,
+      'rot-1',
+      'item-1'
+    )
+    await vi.waitFor(() => expect(checkbox.checked).toBe(true))
+  })
+
+  it('a 409 already_confirmed reconciles the checkbox to checked instead of showing an error', async () => {
+    confirmChecklistItemMock.mockRejectedValue(
+      new ApiClientError(
+        409,
+        {
+          code: 'already_confirmed',
+          confirmedBy: 'other-user',
+          confirmedAt: '2026-07-26T01:00:00.000Z',
+        },
+        'This checklist item is already confirmed.'
+      )
+    )
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                checklistStatus: {
+                  rotationId: 'rot-1',
+                  itemId: 'item-1',
+                  status: 'unconfirmed',
+                  confirmedBy: null,
+                  confirmedAt: null,
+                },
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: true,
+          },
+        }),
+      },
+    })
+    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
+
+    await fireEvent.click(checkbox)
+
+    await vi.waitFor(() => expect(checkbox.checked).toBe(true))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a viewer sees the Updated checkbox disabled even when the item is confirmable', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          orgRole: 'viewer',
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                checklistStatus: {
+                  rotationId: 'rot-1',
+                  itemId: 'item-1',
+                  status: 'unconfirmed',
+                  confirmedBy: null,
+                  confirmedAt: null,
+                },
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: true,
+          },
+        }),
+      },
+    })
+    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
+    expect(checkbox.disabled).toBe(true)
   })
 
   it('an active rotation shows a link to view it', () => {

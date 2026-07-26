@@ -1412,6 +1412,16 @@ Users can create projects, store and retrieve credentials with full version hist
 
 ---
 
+### Story 2.10: Dependent System Location Links & Persistent Update Checkbox
+
+> Added 2026-07-24 via `bmad-correct-course` (`sprint-change-proposal-2026-07-24.md`), amending Epic 2's shipped Story 2.4 dependency records and re-surfacing Epic 5's shipped checklist-confirmation state (Story 5.1/5.2) on a new surface. Not present in the original Epic 2 plan above — see `_bmad-output/implementation-artifacts/2-10-dependent-system-location-links-and-persistent-update-checkbox.md` for the full 10-AC story spec; this entry is a summary pointer, not the source of truth. Hard prerequisite: Story 5.6 (staged rotation state machine, merged).
+
+**FRs covered:** FR19 (amended), FR104 (amended) — no new FR.
+
+Adds one nullable `link_url` column to `credential_dependencies` (Story 2.4's table), settable at create (`POST .../dependencies`) or via a new narrowly-scoped `PATCH .../dependencies/:dependencyId` (linkUrl only — validated as an http(s) URL, `.strict()`, three-state absent/value/null semantics). `GET .../dependencies` gains the link additively plus a per-item `checklistStatus` (the confirmation state of the currently-`staged` rotation's checklist item for that dependency, reusing Story 5.1/5.2's `rotation_checklist_items` unchanged) and a top-level `hasStagedRotation` flag. The credential detail page's dependency list gets a clickable link per row and a persistent "Updated" checkbox that calls the EXISTING checklist confirm route (`POST .../rotations/:rotationId/checklist/:itemId/confirm`) from this new location — no new confirmation state, no new confirmation route. Adds zero new columns to `rotations`/`rotation_checklist_items`/`credential_versions`. Surface scope: both API and web UI.
+
+---
+
 ### Epic 3: Notification Infrastructure — Alert Delivery, Routing & In-App Inbox
 **🟢 Tier 0 — Required for all beta tiers** *(hard dependency: must ship in sprint immediately following Epic 1)*
 > 🔵 **Beta cuts (T2 recommended scope):** FR107 (in-product inbox) and FR100 (per-alert-type routing) are deferrable. Email + Slack delivery to org owner is sufficient to validate the alert story at beta. Inbox and routing are Tier 1 enhancements.

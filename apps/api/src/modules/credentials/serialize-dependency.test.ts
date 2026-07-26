@@ -11,6 +11,7 @@ function row(
     systemName: 'CI Pipeline',
     systemType: 'ci_pipeline',
     notes: null,
+    linkUrl: null,
     createdBy: 'user-1',
     archivedAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -34,6 +35,14 @@ describe('serializeDependency', () => {
   it('throws for a row with a systemType outside the enum (defensive DB-corruption guard)', () => {
     expect(() => serializeDependency(row({ systemType: 'not_a_real_type' }))).toThrow(
       /invalid credential dependency systemType/
+    )
+  })
+
+  // AC-1/AC-4: linkUrl is additive and passes through unchanged (null when unset).
+  it('passes linkUrl through unchanged, including null', () => {
+    expect(serializeDependency(row({ linkUrl: null })).linkUrl).toBeNull()
+    expect(serializeDependency(row({ linkUrl: 'https://example.com/deploy' })).linkUrl).toBe(
+      'https://example.com/deploy'
     )
   })
 })

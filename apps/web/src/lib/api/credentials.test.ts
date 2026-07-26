@@ -13,6 +13,7 @@ import {
   listCredentials,
   previewCredentialImport,
   revealCredentialValue,
+  updateCredentialDependencyLink,
   updateCredentialLifecycle,
 } from './credentials.js'
 import { jsonResponse } from '$lib/test/json-response.js'
@@ -214,7 +215,7 @@ describe('credential API helpers', () => {
     )
   })
 
-  it('listCredentialDependencies returns items and hasDependencies', async () => {
+  it('listCredentialDependencies returns items, hasDependencies, hasStagedRotation, linkUrl, and checklistStatus', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse({
         data: {
@@ -225,13 +226,22 @@ describe('credential API helpers', () => {
               systemName: 'billing-worker (production)',
               systemType: 'service',
               notes: null,
+              linkUrl: 'https://example.com/billing-worker',
               createdBy: null,
               archivedAt: null,
               createdAt: '2026-06-01T00:00:00.000Z',
               updatedAt: '2026-06-01T00:00:00.000Z',
+              checklistStatus: {
+                rotationId: 'r1',
+                itemId: 'ci1',
+                status: 'unconfirmed',
+                confirmedBy: null,
+                confirmedAt: null,
+              },
             },
           ],
           hasDependencies: true,
+          hasStagedRotation: true,
         },
       })
     )
@@ -243,7 +253,10 @@ describe('credential API helpers', () => {
       expect.objectContaining({ credentials: 'include' })
     )
     expect(result.hasDependencies).toBe(true)
+    expect(result.hasStagedRotation).toBe(true)
     expect(result.items[0]?.systemName).toBe('billing-worker (production)')
+    expect(result.items[0]?.linkUrl).toBe('https://example.com/billing-worker')
+    expect(result.items[0]?.checklistStatus).toMatchObject({ status: 'unconfirmed' })
   })
 
   // AC-L1: updateCredentialLifecycle always sends all three keys (full-overwrite from the UI's
@@ -381,6 +394,62 @@ describe('credential API helpers', () => {
       expect.objectContaining({ method: 'DELETE' })
     )
     expect(result.archivedAt).toBe('2026-07-01T00:00:00.000Z')
+  })
+
+  // AC-3: updateCredentialDependencyLink PATCHes .../dependencies/:dependencyId with linkUrl,
+  // and can send an explicit `null` to clear it.
+  it('updateCredentialDependencyLink PATCHes .../dependencies/:dependencyId and returns the update', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: 'd1',
+          linkUrl: 'https://example.com/new',
+          updatedAt: '2026-07-01T00:00:00.000Z',
+        },
+      })
+    )
+
+    const result = await updateCredentialDependencyLink(
+      fetchFn,
+      projectId,
+      credentialId,
+      'd1',
+      'https://example.com/new'
+    )
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies/d1`,
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ linkUrl: 'https://example.com/new' }),
+      })
+    )
+    expect(result.linkUrl).toBe('https://example.com/new')
+  })
+
+  it('updateCredentialDependencyLink can clear linkUrl by sending null', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { id: 'd1', linkUrl: null, updatedAt: '2026-07-01T00:00:00.000Z' },
+      })
+    )
+
+    const result = await updateCredentialDependencyLink(
+      fetchFn,
+      projectId,
+      credentialId,
+      'd1',
+      null
+    )
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies/d1`,
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ linkUrl: null }),
+      })
+    )
+    expect(result.linkUrl).toBeNull()
   })
 
   // AC-V1: addCredentialVersion POSTs the new value and returns the confirmed version number

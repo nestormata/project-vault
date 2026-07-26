@@ -5,6 +5,8 @@ import {
   credentialDependencies,
   credentials,
   orgMemberships,
+  rotationChecklistItems,
+  rotations,
   users,
 } from '@project-vault/db/schema'
 import type {
@@ -26,11 +28,32 @@ export function serializeDependency(row: typeof credentialDependencies.$inferSel
     systemName: row.systemName,
     systemType: systemType.data,
     notes: row.notes,
+    linkUrl: row.linkUrl,
     createdBy: row.createdBy,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
+}
+
+/** Shared by archiveCredentialDependency's post-idempotency-check lookup and
+ *  updateCredentialDependencyLink's pre-UPDATE read — both need the full current row for a
+ *  dependency scoped to its parent credential, regardless of archive state. */
+async function findDependencyByIdInCredential(
+  tx: Tx,
+  params: { dependencyId: string; credentialId: string }
+): Promise<typeof credentialDependencies.$inferSelect | undefined> {
+  const [row] = await tx
+    .select()
+    .from(credentialDependencies)
+    .where(
+      and(
+        eq(credentialDependencies.id, params.dependencyId),
+        eq(credentialDependencies.credentialId, params.credentialId)
+      )
+    )
+    .limit(1)
+  return row
 }
 
 async function hasActiveDependencies(tx: Tx, credentialId: string): Promise<boolean> {
@@ -85,12 +108,67 @@ export async function addCredentialDependency(
       systemName: input.body.systemName,
       systemType: input.body.systemType ?? 'other',
       notes: input.body.notes ?? null,
+      linkUrl: input.body.linkUrl ?? null,
       createdBy: input.userId,
     })
     .returning()
   if (!dependency) throw new Error('Dependency insert returned no row')
 
   return { status: 'created' as const, dependency: serializeDependency(dependency) }
+}
+
+export type DependencyChecklistStatus = {
+  rotationId: string
+  itemId: string
+  status: string
+  confirmedBy: string | null
+  confirmedAt: string | null
+}
+
+/** AC-5: finds the credential's currently-`staged` rotation (at most one, per the widened
+ *  idx_rotations_one_active_per_credential unique index — Story 5.6 AC-2.6) and, if found, the
+ *  checklist items belonging to it, keyed by dependencyId. Returns `hasStagedRotation: false` and
+ *  an empty map when no rotation is currently staged — this authoritative flag (not client-side
+ *  inference) is what AC-6's UI uses to distinguish "no rotation in progress" from "dependency
+ *  added after this rotation started" (ADR-2.10-02). */
+async function findStagedChecklistStatusByDependency(
+  tx: Tx,
+  credentialId: string
+): Promise<{ hasStagedRotation: boolean; byDependencyId: Map<string, DependencyChecklistStatus> }> {
+  const [stagedRotation] = await tx
+    .select({ id: rotations.id })
+    .from(rotations)
+    .where(and(eq(rotations.credentialId, credentialId), eq(rotations.status, 'staged')))
+    .limit(1)
+
+  if (!stagedRotation) return { hasStagedRotation: false, byDependencyId: new Map() }
+
+  const items = await tx
+    .select({
+      id: rotationChecklistItems.id,
+      dependencyId: rotationChecklistItems.dependencyId,
+      status: rotationChecklistItems.status,
+      confirmedBy: rotationChecklistItems.confirmedBy,
+      confirmedAt: rotationChecklistItems.confirmedAt,
+    })
+    .from(rotationChecklistItems)
+    .where(eq(rotationChecklistItems.rotationId, stagedRotation.id))
+
+  const byDependencyId = new Map<string, DependencyChecklistStatus>()
+  for (const item of items) {
+    // Story 5.1 AC-1: dependencyId is nullable (FK is 'set null' on delete) — a checklist item
+    // with no surviving dependencyId can never match a list row, so it's simply skipped here.
+    if (!item.dependencyId) continue
+    byDependencyId.set(item.dependencyId, {
+      rotationId: stagedRotation.id,
+      itemId: item.id,
+      status: item.status,
+      confirmedBy: item.confirmedBy,
+      confirmedAt: item.confirmedAt?.toISOString() ?? null,
+    })
+  }
+
+  return { hasStagedRotation: true, byDependencyId }
 }
 
 export async function listCredentialDependencies(
@@ -119,9 +197,84 @@ export async function listCredentialDependencies(
     .orderBy(desc(credentialDependencies.createdAt), desc(credentialDependencies.id))
 
   const hasDependencies = await hasActiveDependencies(tx, input.credentialId)
+  const { hasStagedRotation, byDependencyId } = await findStagedChecklistStatusByDependency(
+    tx,
+    input.credentialId
+  )
+
   return {
-    items: rows.map(serializeDependency),
+    items: rows.map((row) => ({
+      ...serializeDependency(row),
+      checklistStatus: byDependencyId.get(row.id) ?? null,
+    })),
     hasDependencies,
+    hasStagedRotation,
+  }
+}
+
+/** AC-3.2/3.4 — narrowly scoped to `linkUrl` only. Absent/value/null three-state semantics are
+ *  resolved by the caller (route handler) via the raw request body's `in` check; this function
+ *  always receives an already-decided `linkUrl` value to write. Example 3c: a 0-row UPDATE result
+ *  (archived-or-missing) is disambiguated by a follow-up existence check, mirroring the archive
+ *  route's own idempotency-guard pattern in reverse — an archived row and a truly-absent row both
+ *  return `dependency_not_found` (no caller-visible distinction, Story 2.4 AC-5 precedent). */
+export async function updateCredentialDependencyLink(
+  tx: Tx,
+  input: {
+    credentialId: string
+    projectId: string
+    dependencyId: string
+    linkUrl: string | null
+  }
+) {
+  const exists = await credentialExistsInProject(tx, {
+    credentialId: input.credentialId,
+    projectId: input.projectId,
+  })
+  if (!exists) return { status: 'credential_not_found' as const }
+
+  // Security Audit Persona (Auditor) finding, Round 3: read the row's current linkUrl inside the
+  // same transaction as the UPDATE so the audit payload can carry a before/after diff — a URL
+  // field's history matters for forensic review in a way a single "new value" doesn't.
+  const before = await findDependencyByIdInCredential(tx, {
+    dependencyId: input.dependencyId,
+    credentialId: input.credentialId,
+  })
+
+  // Example 3c: an archived (or truly missing) dependency is not editable — both resolve to the
+  // same caller-visible `dependency_not_found`, no distinct code.
+  if (!before || before.archivedAt !== null) return { status: 'dependency_not_found' as const }
+
+  const [updated] = await tx
+    .update(credentialDependencies)
+    .set({ linkUrl: input.linkUrl })
+    .where(
+      and(
+        eq(credentialDependencies.id, input.dependencyId),
+        eq(credentialDependencies.credentialId, input.credentialId),
+        isNull(credentialDependencies.archivedAt)
+      )
+    )
+    .returning({
+      id: credentialDependencies.id,
+      linkUrl: credentialDependencies.linkUrl,
+      updatedAt: credentialDependencies.updatedAt,
+    })
+
+  if (!updated) return { status: 'dependency_not_found' as const }
+
+  return {
+    status: 'updated' as const,
+    data: {
+      id: updated.id,
+      linkUrl: updated.linkUrl,
+      updatedAt: updated.updatedAt.toISOString(),
+    },
+    auditPayload: {
+      dependencyId: updated.id,
+      linkUrl: updated.linkUrl,
+      previousLinkUrl: before.linkUrl,
+    },
   }
 }
 
@@ -169,21 +322,10 @@ export async function archiveCredentialDependency(
     }
   }
 
-  const [existing] = await tx
-    .select({
-      id: credentialDependencies.id,
-      credentialId: credentialDependencies.credentialId,
-      systemName: credentialDependencies.systemName,
-      archivedAt: credentialDependencies.archivedAt,
-    })
-    .from(credentialDependencies)
-    .where(
-      and(
-        eq(credentialDependencies.id, input.dependencyId),
-        eq(credentialDependencies.credentialId, input.credentialId)
-      )
-    )
-    .limit(1)
+  const existing = await findDependencyByIdInCredential(tx, {
+    dependencyId: input.dependencyId,
+    credentialId: input.credentialId,
+  })
 
   if (!existing?.archivedAt) return { status: 'dependency_not_found' as const }
 

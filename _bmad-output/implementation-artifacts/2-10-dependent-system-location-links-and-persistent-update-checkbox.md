@@ -1,6 +1,6 @@
 # Story 2.10: Dependent System Location Links & Persistent Update Checkbox
 
-Status: ready-for-dev
+Status: review
 
 <!-- Ultimate context engine analysis completed 2026-07-26 — comprehensive developer guide for the credential_dependencies.link_url column and the persistent per-dependency "updated" checkbox that surfaces Story 5.6's rotation_checklist_items confirmation state outside the rotation modal. This story is a Product Surface Contract "both" story amending already-shipped Epic 2 (Story 2.4) and already-shipped Epic 5 (Story 5.6, once merged) code. -->
 
@@ -416,37 +416,37 @@ const [stagedRotation] = await tx
 
 ## Tasks / Subtasks
 
-- [ ] **Task 0 (BLOCKING): Confirm Story 5.6 has merged to `main`** (see prerequisite section) before creating a worktree or writing any code for this story.
-- [ ] **Task 1: Schema & migration (AC-1, AC-2)**
-  - [ ] Add `credential_dependencies.link_url text` (nullable) + length CHECK
-  - [ ] Re-verify next free migration number against `meta/_journal.json` (post-5.6-merge state)
-  - [ ] Write migration, confirm CHECK constraint is actually emitted by `drizzle-kit generate`
-  - [ ] `pnpm --filter @project-vault/db check-rls` (expect clean pass, no new gap)
-- [ ] **Task 2: `linkUrl` on create/list (AC-3 partial, AC-4)**
-  - [ ] Extend `POST …/dependencies` body schema + handler with optional `linkUrl` (URL + protocol-allowlist validation)
-  - [ ] Extend `CredentialDependencySchema` (`packages/shared/src/schemas/credentials.ts`) with `linkUrl`
-  - [ ] Update Story 2.4's existing list/create tests to assert the new field is present and additive (no regression)
-- [ ] **Task 3: New `PATCH …/dependencies/:dependencyId` route (AC-3)**
-  - [ ] Three-state absent/value/null body handling (mirror Story 2.4's credential-lifecycle PATCH pattern)
-  - [ ] New audit event `credential.dependency_updated` (`packages/shared/src/constants/audit-events.ts`)
-  - [ ] Route classification in `ROUTE_ACTION_CLASSIFICATIONS` / `route-exemptions.ts` (route-audit.test.ts gate)
-  - [ ] Tests: set/clear/no-op-rejected, invalid URL/scheme, cross-org/cross-project 404, sealed 503, audit payload + failure rollback, PATCH-on-archived-dependency → 404 (Example 3c)
-- [ ] **Task 4: Checklist-status join (AC-5)**
-  - [ ] Extend the list-dependencies query with the staged-rotation lookup + left-join onto `rotation_checklist_items`
-  - [ ] Extend `ListCredentialDependenciesResponse`/shared schema with per-item `checklistStatus` AND top-level `hasStagedRotation`
-  - [ ] Tests: happy path (mixed states), no-staged-rotation, dependency-added-after-staging, archived-dependency exclusion, confirm-succeeds-after-source-dependency-archived (all 6 examples in AC-5)
-- [ ] **Task 5: Web UI (AC-6)**
-  - [ ] Link display on each dependency row (`apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte`)
-  - [ ] Checkbox wired to the existing `confirmChecklistItem` API client function (`apps/web/src/lib/api/rotations.ts`) — no new client function for the confirm action
-  - [ ] Optimistic update + `409 already_confirmed` reconciliation (Example 6b)
-  - [ ] Disabled/greyed states + tooltips (no-staged-rotation vs. added-after-staging)
-  - [ ] Role-gated (read-only for `viewer`)
-  - [ ] Add `linkUrl` field to the add-dependency form (currently has systemName/systemType/notes inputs — extend with a `linkUrl` input, same `.strict()`-matching client-side validation)
-  - [ ] Add inline help text to the `linkUrl` input (add + edit forms) warning against embedding credentials/tokens in the link (Pre-mortem finding, see Dev Notes)
-- [ ] **Task 6: Documentation reconciliation**
-  - [ ] `prd.md` FR19/FR104 — minor amendment noting the optional link field (per sprint-change-proposal §2.2)
-  - [ ] `ux-design-specification.md` — add the dependency-list link+checkbox section from sprint-change-proposal §4.4 (not yet applied to that document per sprint-status.yaml's 2026-07-24 note)
-  - [ ] `epics.md` — Epic 2 gains the Story 2.10 entry (sprint-change-proposal §4.2 has the stub; reconcile against this story file's corrected/expanded ACs, same pattern Story 5.6 used for its own epics.md entry)
+- [x] **Task 0 (BLOCKING): Confirm Story 5.6 has merged to `main`** (see prerequisite section) before creating a worktree or writing any code for this story.
+- [x] **Task 1: Schema & migration (AC-1, AC-2)**
+  - [x] Add `credential_dependencies.link_url text` (nullable) + length CHECK
+  - [x] Re-verify next free migration number against `meta/_journal.json` (post-5.6-merge state) — confirmed `0051` free (0050 was 5.6's)
+  - [x] Write migration, confirm CHECK constraint is actually emitted (hand-written to match `drizzle-kit generate`'s expected shape — `drizzle-kit generate` itself could not run in this worktree due to a pre-existing broken snapshot chain in `packages/db/src/migrations/meta/*_snapshot.json`, unrelated to this story; see Dev Agent Record Debug Log)
+  - [x] `pnpm --filter @project-vault/db check-rls` (expect clean pass, no new gap) — confirmed clean
+- [x] **Task 2: `linkUrl` on create/list (AC-3 partial, AC-4)**
+  - [x] Extend `POST …/dependencies` body schema + handler with optional `linkUrl` (URL + protocol-allowlist validation)
+  - [x] Extend `CredentialDependencySchema` (`packages/shared/src/schemas/credential-dependencies.ts`) with `linkUrl`
+  - [x] Update Story 2.4's existing list/create tests to assert the new field is present and additive (no regression)
+- [x] **Task 3: New `PATCH …/dependencies/:dependencyId` route (AC-3)**
+  - [x] Three-state absent/value/null body handling (mirror Story 2.4's credential-lifecycle PATCH pattern)
+  - [x] New audit event `credential.dependency_updated` (`packages/shared/src/constants/audit-events.ts`)
+  - [x] Route classification in `route-exemptions.ts` (route-audit.test.ts gate)
+  - [x] Tests: set/clear/no-op-rejected, invalid URL/scheme, cross-org/cross-project 404, sealed 503, audit payload + failure rollback, PATCH-on-archived-dependency → 404 (Example 3c)
+- [x] **Task 4: Checklist-status join (AC-5)**
+  - [x] Extend the list-dependencies query with the staged-rotation lookup + left-join onto `rotation_checklist_items`
+  - [x] Extend `ListCredentialDependenciesResponse`/shared schema with per-item `checklistStatus` AND top-level `hasStagedRotation`
+  - [x] Tests: happy path (mixed states), no-staged-rotation, dependency-added-after-staging, archived-dependency exclusion, confirm-succeeds-after-source-dependency-archived (all 6 examples in AC-5)
+- [x] **Task 5: Web UI (AC-6)**
+  - [x] Link display on each dependency row (`apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte`)
+  - [x] Checkbox wired to the existing `confirmChecklistItem` API client function (`apps/web/src/lib/api/rotations.ts`) — no new client function for the confirm action
+  - [x] Optimistic update + `409 already_confirmed` reconciliation (Example 6b)
+  - [x] Disabled/greyed states + tooltips (no-staged-rotation vs. added-after-staging)
+  - [x] Role-gated (read-only for `viewer`)
+  - [x] Add `linkUrl` field to the add-dependency form (currently has systemName/systemType/notes inputs — extend with a `linkUrl` input, same `.strict()`-matching client-side validation)
+  - [x] Add inline help text to the `linkUrl` input (add form) warning against embedding credentials/tokens in the link (Pre-mortem finding, see Dev Notes). No separate edit form was built (Task list doesn't call for one — `PATCH .../dependencies/:dependencyId` is implemented API-side (AC-3) with a tested web client function (`updateCredentialDependencyLink`), but no UI affordance to edit an existing dependency's link wires it in this story; flagged in Change Log.
+- [x] **Task 6: Documentation reconciliation**
+  - [x] `prd.md` FR19/FR104 — minor amendment noting the optional link field (per sprint-change-proposal §2.2)
+  - [x] `ux-design-specification.md` — add the dependency-list link+checkbox section from sprint-change-proposal §4.4 (not yet applied to that document per sprint-status.yaml's 2026-07-24 note)
+  - [x] `epics.md` — Epic 2 gains the Story 2.10 entry (sprint-change-proposal §4.2 has the stub; reconciled against this story file's corrected/expanded ACs, same pattern Story 5.6 used for its own epics.md entry)
 
 ---
 
@@ -501,14 +501,49 @@ Claude Sonnet 5 (bmad-create-story)
 
 ### Debug Log References
 
+- `pnpm drizzle-kit generate` fails in this worktree with `Error: [...0031_snapshot.json, ...0032_snapshot.json] are pointing to a parent snapshot ... which is a collision` — a pre-existing broken/pruned local snapshot chain in `packages/db/src/migrations/meta/*_snapshot.json` (most snapshot files 0001-0030/0034-0050 are absent; 0031 and 0032 both point back to 0029's id instead of forming a proper chain). Unrelated to this story (confirmed via `git log` on the meta directory — this state predates the worktree's base commit). Worked around by hand-writing `0051_credential_dependency_link_url.sql` in the exact `ALTER TABLE ... ADD COLUMN` / `ADD CONSTRAINT ... CHECK` shape the story specifies, and appending the matching `_journal.json` entry by hand. Verified end-to-end: `make db-migrate` applied it cleanly against a running Postgres, and `make check-rls` passed with no new gap.
+- Local Postgres port conflict: the default 5432 was already bound by two other worktrees' `db` containers. Worked around per this repo's documented `DB_HOST_PORT` override (`AGENTS.md` "Docker port isolation") — created a `.env` with `DB_HOST_PORT=5439` in this worktree so `make db-up`/`db-migrate`/`check-rls` all picked it up automatically.
+
 ### Completion Notes List
 
 - Ultimate context engine analysis completed — comprehensive developer guide created, explicitly written to NOT be implementable until Story 5.6 (PR #220) merges to `main`, per direct instruction. Story is intentionally low-risk relative to 5.6: one nullable column, one new narrowly-scoped PATCH route, one read-query join reusing an entirely unmodified mutation route (checklist confirm) from a new UI surface.
 - 5-round advanced elicitation applied and integrated directly into the ACs/Dev Notes (Failure Mode Analysis, Pre-mortem Analysis, Security Audit Personas, Challenge from Critical Perspective, Architecture Decision Records) — see Change Log below for a per-round summary.
+- Implemented via strict TDD (tests written and run to a confirmed-red state before each corresponding implementation, then to green) across DB schema/migration, API service/routes, and web UI layers, per all 10 ACs.
+- **Deviation from the story's illustrative `checklistStatus.status` enum:** the story's prose examples use `'pending'` as one of the checklist item statuses, but `rotation_checklist_items.status`'s actual shipped enum (Story 5.1/5.2, `packages/db/src/schema/rotation-checklist-items.ts`) is `'unconfirmed' | 'confirmed' | 'failed' | 'max_retries_exceeded'` — there is no `'pending'` value in the real schema. Implemented against the real enum (verified by direct schema read before writing any code), not the story's illustrative prose; documented here so this isn't mistaken for a bug.
+- AC-3's `previousLinkUrl` audit-payload requirement is satisfied by reading the dependency row inside the same transaction as the UPDATE, before applying it (`updateCredentialDependencyLink` in `dependencies-service.ts`).
+- A jscpd clone (15 duplicated lines) was found between `updateCredentialDependencyLink`'s pre-UPDATE row lookup and `archiveCredentialDependency`'s post-idempotency-check lookup — both need the full current dependency row by id+credentialId. Extracted a shared `findDependencyByIdInCredential()` helper; `make jscpd` is clean (0 clones) after the refactor.
+- Web UI (Task 5): implemented the link display + checkbox + disabled/greyed states + role gate + 409-reconciliation + linkUrl input with help text, all wired into the existing dependency list on `+page.svelte`. Did **not** build a UI affordance to edit an *existing* dependency's link (the PATCH route and its web API client function `updateCredentialDependencyLink` both exist and are tested, but nothing in the page calls the client function) — Task 5's checklist does not list an edit-UI subtask, only "add `linkUrl` field to the add-dependency form", so this was treated as out of scope for this pass rather than silently expanded. Flagged as a gap for Nestor to confirm/schedule as follow-up if desired.
+- `openapi.json` regenerated via `pnpm generate-spec` to reflect the new `linkUrl`/PATCH route/`checklistStatus`/`hasStagedRotation` shapes (`make ci`'s spec-diff gate).
+- Documentation reconciliation (Task 6) applied: `prd.md` FR19/FR20/FR104 amended; `epics.md` gained a Story 2.10 summary-pointer entry (same pattern as 5.6's own entry) right before the Epic 3 header, since epics.md's Epic 2 section predates this story; `ux-design-specification.md` gained a "Story 2.10 addition" paragraph under its existing "Dependency recording as the primary rotation investment" section.
 
 ### File List
 
-(To be populated by `dev-story` at implementation time — not created by this story-creation pass.)
+**New files:**
+- `packages/db/src/migrations/0051_credential_dependency_link_url.sql`
+- `apps/api/src/modules/credentials/dependency-checklist-status.test.ts`
+
+**Modified files:**
+- `packages/db/src/schema/credential-dependencies.ts` (AC-1: `link_url` column + length CHECK)
+- `packages/db/src/migrations/meta/_journal.json` (AC-2: new `0051` entry)
+- `packages/shared/src/schemas/credential-dependencies.ts` (AC-4: `CredentialDependencySchema.linkUrl`)
+- `packages/shared/src/constants/audit-events.ts` (AC-3: `CREDENTIAL_DEPENDENCY_UPDATED`)
+- `packages/shared/src/constants/operational-event-types.ts` (AC-3: `CREDENTIAL_DEPENDENCY_UPDATED` operational log event)
+- `packages/shared/openapi.json` (regenerated)
+- `apps/api/src/modules/credentials/schema.ts` (AC-3/AC-4/AC-5: `linkUrl` validation, `PatchDependencyBodySchema`, `DependencyChecklistStatusSchema`, `DependencyWithChecklistStatusSchema`, extended `DependencyListResponseSchema`, `DependencyPatchResponseSchema`)
+- `apps/api/src/modules/credentials/dependencies-service.ts` (AC-3/AC-4/AC-5: `linkUrl` on create/serialize, `findStagedChecklistStatusByDependency`, `updateCredentialDependencyLink`, shared `findDependencyByIdInCredential` helper)
+- `apps/api/src/modules/credentials/routes.ts` (AC-3: new `PATCH .../dependencies/:dependencyId` route; POST body already threads `linkUrl` through unchanged)
+- `apps/api/src/modules/credentials/credential-dependencies.test.ts` (AC-1/AC-3/AC-4 tests: linkUrl create/list/PATCH, validation, archived-PATCH, audit rollback, sealed/cross-org/viewer coverage)
+- `apps/api/src/modules/credentials/serialize-dependency.test.ts` (linkUrl pass-through unit test)
+- `apps/api/src/lib/route-exemptions.ts` (route-audit classification for the new PATCH route)
+- `apps/api/src/lib/route-helpers.ts` (`invalid_link_url` custom-code mapping in `validationError`)
+- `apps/web/src/lib/api/credentials.ts` (AC-6: `linkUrl` on add-dependency request, `checklistStatus`/`hasStagedRotation` on list response, `updateCredentialDependencyLink` client function)
+- `apps/web/src/lib/api/credentials.test.ts` (client-function tests)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` (AC-6: link display, Updated checkbox, disabled/greyed states, 409 reconciliation, linkUrl form field + help text)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` (empty-result shape gains `hasStagedRotation: false`)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts` (8 new component tests: link rendering, disabled-state tooltips, confirm flow, 409 reconciliation, viewer read-only)
+- `_bmad-output/planning-artifacts/prd.md` (FR19/FR20/FR104 amendments, Task 6)
+- `_bmad-output/planning-artifacts/epics.md` (Story 2.10 entry, Task 6)
+- `_bmad-output/planning-artifacts/ux-design-specification.md` (dependency-list link+checkbox addition, Task 6)
 
 ## Change Log
 
@@ -520,3 +555,4 @@ Claude Sonnet 5 (bmad-create-story)
   - **Round 4 (Challenge from Critical Perspective):** found the draft's client-side "added after staging" inference heuristic silently breaks when every active dependency was added after the rotation was staged (all-null response is ambiguous) — replaced with an explicit server-computed `hasStagedRotation` top-level flag; this resolves what was Open Question #2 in the original draft.
   - **Round 5 (Architecture Decision Records):** recorded 5 formal ADRs (ADR-2.10-01 through 05) documenting the reuse-existing-confirm-route decision, the explicit-flag-over-inference decision (Round 4), the URL-parsing-primitive decision (Round 2), the narrowly-scoped-PATCH-route decision, and the never-fetch-server-side decision — giving a future amending story the same breadcrumb trail Story 5.6 established for its own ADRs.
   - Net effect: 2 genuine security/correctness gaps fixed (URL-validation bypass, silent heuristic failure), 1 audit-completeness gap fixed (previousLinkUrl), 2 undefined-behavior edge cases resolved (archived-dependency PATCH, archived-dependency-with-live-checklist-item), 1 data-exposure risk mitigated via UX copy, 5 ADRs recorded. No item was descoped; all findings were integrated as amendments to the ACs/Tasks/Dev Notes above, not left as unintegrated prose.
+- 2026-07-26: Implemented via `bmad-dev-story` (TDD, all 10 ACs / 6 tasks). Migration `0051_credential_dependency_link_url.sql` adds the nullable `link_url` column + length CHECK (hand-written after `drizzle-kit generate` failed on a pre-existing, unrelated broken snapshot chain in this worktree — see Debug Log). New narrowly-scoped `PATCH .../dependencies/:dependencyId` route (linkUrl-only, three-state absent/value/null, `previousLinkUrl` in the audit payload read inside the same transaction as the UPDATE). `GET .../dependencies` extended with per-item `checklistStatus` (joined against the credential's currently-`staged` rotation's `rotation_checklist_items`, real enum `unconfirmed/confirmed/failed/max_retries_exceeded` — the story's illustrative `'pending'` does not exist in the shipped schema) and a top-level `hasStagedRotation` flag (ADR-2.10-02). Web UI: link display (new-tab, `rel="noopener noreferrer"`) + a persistent "Updated" checkbox reusing the existing `confirmChecklistItem` client function unchanged, with disabled/greyed states for both "no staged rotation" and "added after this rotation started", role-gated to `member`+, and `409 already_confirmed` reconciled to a checked state rather than an error. A `linkUrl` input + mandatory help text (Pre-mortem finding) was added to the add-dependency form; no edit-UI for an *existing* dependency's link was built (Task 5's own subtask list doesn't call for one, even though the PATCH route and its tested web client function both exist) — flagged as a judgment call for Nestor. `make jscpd`/`lint`/`typecheck`/`check-rls`/`check-audit-actor-token-coverage` all clean; `openapi.json` regenerated. Full `apps/api` and `apps/web` targeted-module test runs green (315 + 1572 tests respectively); full unscoped `apps/api` suite run in the background for final regression confirmation — see the final Dev Agent Record note below for its tallied result once complete.

@@ -265,6 +265,16 @@ This dependency data then powers both the rotation checklist and the completenes
 pace, mid-rotation dependency discovery, confirmation before retirement — is downstream of this data
 investment and becomes significantly more valuable once the data is reliably complete.
 
+**Story 2.10 addition (2026-07-26):** the credential detail view's dependency list — not only the
+rotation modal — now surfaces this same investment directly. Each dependency row gains its optional
+location link (clickable, opens in a new tab) and an "Updated" checkbox reflecting that dependency's
+`rotation_checklist_item` status for the currently-staged rotation, if one exists; the checkbox is
+disabled/greyed with an explanatory tooltip when no rotation is staged, or when the dependency was
+added after the current rotation started. Checking it calls the exact same confirm action the rotation
+modal's checklist already uses — one piece of state, two surfaces — so an engineer working through a
+rotation from the credential page never has to open the rotation modal just to track their own
+progress.
+
 **5. Security behaviors made visibly useful**
 Security and usability are aligned in this product, not in tension. The behaviors that make the
 product more secure — keeping dependency lists current, completing rotation checklists, maintaining

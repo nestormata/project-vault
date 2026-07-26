@@ -19,6 +19,7 @@ export const AuditEvent = {
   CREDENTIAL_TAGS_UPDATED: 'credential.tags_updated',
   CREDENTIAL_DEPENDENCY_ADDED: 'credential.dependency_added',
   CREDENTIAL_DEPENDENCY_ARCHIVED: 'credential.dependency_archived',
+  CREDENTIAL_DEPENDENCY_UPDATED: 'credential.dependency_updated',
   CREDENTIAL_LIFECYCLE_UPDATED: 'credential.lifecycle_updated',
   CREDENTIAL_BULK_IMPORT_INITIATED: 'credential.bulk_import_initiated',
   CREDENTIAL_BULK_IMPORT_CONFIRMED: 'credential.bulk_import_confirmed',
