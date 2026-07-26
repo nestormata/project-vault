@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { getDb, withOrg } from '../index.js'
 import { withTestOrg } from '../test-helpers.js'
-import { sessions, orgMemberships, securityAlerts, auditLogEntries } from '../schema/index.js'
+import {
+  sessions,
+  orgMemberships,
+  securityAlerts,
+  auditLogEntries,
+  orgSsoDomains,
+} from '../schema/index.js'
 
 async function createTestUser(label: string): Promise<string> {
   const [user] = await getDb().execute(
@@ -130,6 +136,39 @@ describe('RLS cross-org isolation', () => {
         expect(orgARows[0]?.orgId).toBe(orgAId)
 
         const orgBRows = await withOrg(orgBId, (tx) => tx.select().from(auditLogEntries))
+        expect(orgBRows).toHaveLength(1)
+        expect(orgBRows[0]?.orgId).toBe(orgBId)
+      })
+    })
+  })
+
+  // Story 14.4 AC-5/Task 1.2: org_sso_domains is org-scoped like external_identities — a row in
+  // org A must be invisible via withOrg(orgB, ...), same RLS policy pattern as every other
+  // org-scoped table above. (The pre-auth domain-lookup route itself bypasses RLS entirely via
+  // getAdminDb() — see domain-lookup-routes.ts — but every other access path must stay isolated.)
+  it('isolates org_sso_domains rows by org', async () => {
+    await withTestOrg(async ({ orgId: orgAId }) => {
+      await withTestOrg(async ({ orgId: orgBId }) => {
+        await withOrg(orgAId, (tx) =>
+          tx.insert(orgSsoDomains).values({
+            orgId: orgAId,
+            domain: `org-a-${crypto.randomUUID()}.example`,
+            providerName: 'test.provider',
+          })
+        )
+        await withOrg(orgBId, (tx) =>
+          tx.insert(orgSsoDomains).values({
+            orgId: orgBId,
+            domain: `org-b-${crypto.randomUUID()}.example`,
+            providerName: 'test.provider',
+          })
+        )
+
+        const orgARows = await withOrg(orgAId, (tx) => tx.select().from(orgSsoDomains))
+        expect(orgARows).toHaveLength(1)
+        expect(orgARows[0]?.orgId).toBe(orgAId)
+
+        const orgBRows = await withOrg(orgBId, (tx) => tx.select().from(orgSsoDomains))
         expect(orgBRows).toHaveLength(1)
         expect(orgBRows[0]?.orgId).toBe(orgBId)
       })
