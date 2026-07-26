@@ -379,6 +379,13 @@
       "when": 1784774400000,
       "tag": "0053_org_sso_domains",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784860800000,
+      "tag": "0054_audit_revealed_fields",
+      "breakpoints": true
     }
   ]
 }

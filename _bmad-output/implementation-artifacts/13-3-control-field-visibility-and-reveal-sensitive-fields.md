@@ -1,6 +1,6 @@
 # Story 13.3: Control Field Visibility and Reveal Sensitive Fields
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -238,59 +238,59 @@ Alex-viewer still cannot reveal anything, sensitive or not.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: DB migration — `audit_log_entries.revealed_fields` column (AC: 4, 5, 6)
-  - [ ] Subtask 1.1: Add migration `packages/db/src/migrations/0052_audit_revealed_fields.sql` (confirm
+- [x] Task 1: DB migration — `audit_log_entries.revealed_fields` column (AC: 4, 5, 6)
+  - [x] Subtask 1.1: Add migration `packages/db/src/migrations/0054_audit_revealed_fields.sql` (confirm
     the actual next-free number against `packages/db/src/migrations/meta/_journal.json` at
     implementation time — `0051` is the last committed migration as of this story's creation)
     adding `revealed_fields text[]` (nullable, no default) to `audit_log_entries`, per
     architecture.md's Data Architecture "Field-level reveal audit" section.
-  - [ ] Subtask 1.2: Extend `packages/db/src/schema/audit-log-entries.ts` with the new
+  - [x] Subtask 1.2: Extend `packages/db/src/schema/audit-log-entries.ts` with the new
     `revealedFields: text('revealed_fields').array()` Drizzle column definition, nullable.
-  - [ ] Subtask 1.3: Run `make check-rls` — confirm no RLS-policy change is needed (this column adds
+  - [x] Subtask 1.3: Run `make check-rls` — confirm no RLS-policy change is needed (this column adds
     no new access path beyond the existing `audit_log_entries` row-level policy).
-- [ ] Task 2: API — field-scoped reveal endpoint (AC: 1, 4, 5, 6, 7)
-  - [ ] Subtask 2.1: Add a `?field=` optional query-string schema to the `GET
+- [x] Task 2: API — field-scoped reveal endpoint (AC: 1, 4, 5, 6, 7)
+  - [x] Subtask 2.1: Add a `?field=` optional query-string schema to the `GET
     /:projectId/credentials/:credentialId/value` route (`apps/api/src/modules/credentials/routes.ts`
     lines 955-1110) — a new `CredentialValueQuerySchema` in
     `apps/api/src/modules/credentials/schema.ts`, constrained by the existing
     `FIELD_KEY_PATTERN`/`FIELD_KEY_MAX_LENGTH` from `packages/shared/src/credential-templates.ts`,
     `422` on malformed input (distinct from the `400` "key not found" business error in Subtask 2.3).
-  - [ ] Subtask 2.2: Extend `revealCurrentValue` (`apps/api/src/modules/credentials/service.ts` line
+  - [x] Subtask 2.2: Extend `revealCurrentValue` (`apps/api/src/modules/credentials/service.ts` line
     511) to accept an optional `field` param and a `schemaVersion`/`fieldMeta`-aware return shape;
     reuse `parseFieldsFromPlaintext()` (already implemented in
     `apps/api/src/modules/credentials/field-set.ts` line ~145) rather than re-parsing the envelope
     ad hoc. Return a discriminated result: legacy/single-default-field → bare string (unchanged,
     AC-6); genuine multi-field, no `?field=` → full non-masked-by-default `fields[]` array (AC-5);
     genuine multi-field, `?field=<key>` → single-field `fields[]` array (AC-4).
-  - [ ] Subtask 2.3: When `?field=` names a key absent from the secret's `field_meta`, return `400
+  - [x] Subtask 2.3: When `?field=` names a key absent from the secret's `field_meta`, return `400
     unknown_field_key` before any decrypt/audit-write occurs (AC-7) — validate the key against
     `field_meta` (already available via `getCredentialDetail`'s existing lookup, no new query
     needed) prior to calling `withSecret()`.
-  - [ ] Subtask 2.4: Wire the route's response to use `CredentialFieldsValueSchema`
+  - [x] Subtask 2.4: Wire the route's response to use `CredentialFieldsValueSchema`
     (`packages/shared/src/schemas/credentials.ts` lines 90-99, defined in Story 13.2 but never wired
     into a route) for the multi-field case, and keep `CredentialValueResponseSchema` for the
     legacy/single-default-field case — a discriminated response, not a breaking schema change for
     existing single-value API/CLI clients (Story 13.2's own backward-compatibility mandate applies
     here too).
-  - [ ] Subtask 2.5: Extend the `writeHumanAuditEntryOrFailClosed` call (routes.ts lines 1061-1069)
+  - [x] Subtask 2.5: Extend the `writeHumanAuditEntryOrFailClosed` call (routes.ts lines 1061-1069)
     to pass `revealedFields` (array of the key(s) actually revealed, or omitted/`undefined` for a
     legacy reveal) through to the new `audit_log_entries.revealed_fields` column — extend
     `SameTransactionAuditInput` (`apps/api/src/lib/audit-or-fail-closed.ts`) and
     `writeHumanAuditEntry`'s insert to write this column directly, not just nest it in `payload`.
-  - [ ] Subtask 2.6: Apply the identical `?field=`/`400 unknown_field_key`/`revealed_fields` handling
+  - [x] Subtask 2.6: Apply the identical `?field=`/`400 unknown_field_key`/`revealed_fields` handling
     to the machine user reveal route (`apps/api/src/modules/machine-users/machine-credential-routes.ts`
     line 63, `GET /projects/:projectId/credentials/:name/value`) per architecture.md's explicit
     statement that the machine route also gains `?field=` — reuse the same service-layer function
     from Subtask 2.2 rather than duplicating the field-lookup/validation logic.
-  - [ ] Subtask 2.7: Add a server-side "eager non-sensitive field values" path for AC-2 — extend
+  - [x] Subtask 2.7: Add a server-side "eager non-sensitive field values" path for AC-2 — extend
     `getCredentialDetail` (`apps/api/src/modules/credentials/service.ts`) to additionally decrypt
     and return only the non-sensitive fields' values alongside the existing `field_meta`-only
     response (new additive `CredentialDetailSchema` property, e.g. `visibleFieldValues: Record<string,
     string>`, populated from a `parseFieldsFromPlaintext()` call filtered to `sensitive: false`
     keys) — this call does **not** go through the audited `/value` route/handler and must not write
     a `CREDENTIAL_VALUE_REVEALED` entry (AC-2's negative example).
-- [ ] Task 3: Web UI — per-field reveal/mask, replace the raw-JSON dump (AC: 1, 2, 3, 4, 5, 6)
-  - [ ] Subtask 3.1: Replace the single whole-secret "Reveal value" button block
+- [x] Task 3: Web UI — per-field reveal/mask, replace the raw-JSON dump (AC: 1, 2, 3, 4, 5, 6)
+  - [x] Subtask 3.1: Replace the single whole-secret "Reveal value" button block
     (`apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` lines
     520-579) with a per-field row list for multi-field secrets: non-sensitive fields render their
     `visibleFieldValues` entry (Task 2.7) directly, no button; sensitive fields render a masked
@@ -298,26 +298,26 @@ Alex-viewer still cannot reveal anything, sensitive or not.
     Preserve the existing single "Reveal value" / `<pre>` block **unchanged** for legacy and
     single-default-field secrets (`!isMultiField`, per the existing `isMultiField` derived at line
     342) — do not touch that code path, per AC-6.
-  - [ ] Subtask 3.2: Add a "Reveal all" secondary action for multi-field secrets that calls the
+  - [x] Subtask 3.2: Add a "Reveal all" secondary action for multi-field secrets that calls the
     endpoint with no `?field=` and renders every returned field's value in its own row (never as
     one opaque blob) — this replaces today's `<pre>{revealedValue}</pre>` raw-JSON-string
     rendering for multi-field secrets, which is the literal Story 13.2 code-review carryover this
     story exists to close.
-  - [ ] Subtask 3.3: Extend `revealCredentialValue` (`apps/web/src/lib/api/credentials.ts` line 96)
+  - [x] Subtask 3.3: Extend `revealCredentialValue` (`apps/web/src/lib/api/credentials.ts` line 96)
     to accept an optional `field` parameter, building the `?field=` query string, and to return the
     `CredentialFieldsValue` shape when the server responds with it (add a `parseRevealedFields`-
     adjacent helper, or extend the existing one at line 271, to normalize both the legacy
     bare-`value` shape and the new `fields[]` shape into one client-side type).
-  - [ ] Subtask 3.4: Add a "Hide" control per revealed field (clears that field's in-memory revealed
+  - [x] Subtask 3.4: Add a "Hide" control per revealed field (clears that field's in-memory revealed
     value only, no API call) — mirrors the existing whole-secret `revealedValue = null` pattern
     (line 557) but scoped per field key.
-  - [ ] Subtask 3.5: Surface the `400 unknown_field_key` error inline near the affected field's row
+  - [x] Subtask 3.5: Surface the `400 unknown_field_key` error inline near the affected field's row
     (e.g. a stale field list after a concurrent rename) rather than as a generic top-level error
     banner — extend `mapCredentialSubmitError`-style error mapping in
     `apps/web/src/lib/components/onboarding/onboarding-logic.ts` if reused, or add an equivalent
     reveal-specific mapper.
-- [ ] Task 4: Tests (AC: all)
-  - [ ] Subtask 4.1: API integration tests in
+- [x] Task 4: Tests (AC: all)
+  - [x] Subtask 4.1: API integration tests in
     `apps/api/src/modules/credentials/field-set-routes.test.ts` (extend the existing Story 13.2
     suite) covering: `?field=` single-field reveal + audit `revealed_fields` (AC-4); whole-secret
     reveal returning structured `fields[]`, never a JSON string (AC-5); legacy
@@ -326,17 +326,17 @@ Alex-viewer still cannot reveal anything, sensitive or not.
     `?field=` → `400` with zero audit rows written (AC-7); malformed `?field=` → `422` (AC-7);
     ordering of `revealed_fields` for a secret with 2+ sensitive fields (AC-5); no audit event for
     the eager non-sensitive-field detail fetch (AC-2).
-  - [ ] Subtask 4.2: Add the same field-scoped/legacy/unknown-key test matrix for the machine reveal
+  - [x] Subtask 4.2: Add the same field-scoped/legacy/unknown-key test matrix for the machine reveal
     route in `apps/api/src/modules/machine-users/machine-credential-routes.test.ts`.
-  - [ ] Subtask 4.3: DB-layer migration test (or extend `packages/db`'s existing migration test
+  - [x] Subtask 4.3: DB-layer migration test (or extend `packages/db`'s existing migration test
     pattern) asserting `revealed_fields` defaults to `NULL` on existing rows and the column accepts
     a `text[]` write; confirm idempotent re-run safety consistent with this repo's other migrations.
-  - [ ] Subtask 4.4: Web component tests (`credential-detail-page.test.ts`) for: per-field
+  - [x] Subtask 4.4: Web component tests (`credential-detail-page.test.ts`) for: per-field
     reveal/mask toggling, "Reveal all" replacing the raw-JSON `<pre>` for multi-field secrets,
     non-sensitive fields visible with no click, legacy/single-default-field secret rendering
     unchanged (pixel-identical regression guard per Story 13.2's existing convention), and the
     inline `unknown_field_key` error path.
-  - [ ] Subtask 4.5: Extend the e2e journey spec (`apps/web/e2e/journeys/j5-multi-field-secret.spec.ts`,
+  - [x] Subtask 4.5: Extend the e2e journey spec (`apps/web/e2e/journeys/j5-multi-field-secret.spec.ts`,
     written but not executed in Story 13.2) or add a new `j6-field-visibility-reveal.spec.ts`
     covering: open a Login-template secret, see `username` immediately, reveal only `password`,
     confirm `username`'s value was never gated behind a click.
@@ -560,10 +560,123 @@ Alex-viewer still cannot reveal anything, sensitive or not.
 
 ### Agent Model Used
 
-TBD — filled by dev agent
+Claude Sonnet 5 (claude-sonnet-5), via `/bmad-dev-story`
 
 ### Debug Log References
 
+- Migration numbering re-verified at implementation time per Dev Notes: `0052` was the actual
+  next-free slot (`0051_credential_dependency_link_url.sql` was still latest — no coordination
+  collision with another in-flight story).
+- **Post-hoc renumbering to `0053` (Path C, during PR prep):** by the time this branch was rebased
+  onto `origin/main` for CI/PR, Story 14.3 had merged its own `0052_external_identities_and_sso_login_states.sql`
+  — the exact coordination collision this story's Dev Notes flagged as a risk. Renamed this story's
+  migration file and its test to `0053_audit_revealed_fields.sql` / `migration-0053-safety.test.ts`,
+  and appended (not replaced) journal entry `idx: 53` after main's `idx: 52` entry.
+- **Second post-hoc renumbering to `0054` (further PR rebase):** by the time this branch was
+  rebased onto `origin/main` again, Story 14.4 had merged its own `0053_org_sso_domains.sql` —
+  the exact same collision pattern recurring one number later. Renamed this story's migration
+  file and its test again, to `0054_audit_revealed_fields.sql` / `migration-0054-safety.test.ts`,
+  and appended journal entry `idx: 54` after main's `idx: 53` entry. This recurrence (twice, in
+  quick succession) suggests migration-number coordination across parallel in-flight stories is
+  a real, recurring friction point worth a retro action item, not a one-off fluke.
+- `drizzle-kit generate` failed with a pre-existing snapshot-collision error unrelated to this
+  change (`0031_snapshot.json`/`0032_snapshot.json` pointing at a stale parent) — the migration
+  was hand-authored instead, following this repo's established convention for migrations past
+  `0033` (no snapshot files exist for `0034`+; `_journal.json` is updated by hand).
+- Local DB: this worktree had no `.env`/running Postgres container of its own; provisioned one via
+  `cp .env.example .env`, `make fix-ports` (assigned `DB_HOST_PORT=5434`), `make db-up`, and
+  `pnpm --filter @project-vault/db db:migrate` before running integration tests.
+- Discovered and fixed a real regression in `packages/agent` (the offline agent): its
+  `getSecret()` assumed the machine reveal route's whole-secret response always has a bare
+  `value` string. Since this story changes that route to return a structured `fields[]` shape for
+  a genuinely multi-field secret (mirroring the human route), the agent would have silently
+  cached/returned `undefined`. Added `VaultMultiFieldSecretUnsupportedError` so it fails loudly
+  instead — this agent has no field-selector API yet; that would be a separate future story.
+
 ### Completion Notes List
 
+- AC-1: field-list/detail rendering reads `field_meta`/`visibleFieldValues` from the existing
+  detail response only; no `/value` (`revealCredentialValue`) call happens on initial page load
+  (asserted directly in `credential-detail-page.test.ts`).
+- AC-2: `getCredentialDetail` gained a server-side eager decrypt of non-sensitive fields only
+  (`visibleFieldValues`), wired through a **non-audited** code path (never calls
+  `writeHumanAuditEntryOrFailClosed`). A decrypt failure degrades gracefully to an empty map
+  (that field renders masked+Reveal, same as a sensitive field) and is logged operationally, not
+  audited — verified with a tampered-ciphertext regression test on both the API and web layers.
+- AC-3: sensitive fields render a fixed masked placeholder + "Reveal" button; an empty-string
+  sensitive field reveals to an empty value (not mistaken for "unrevealed") — explicit test added.
+- AC-4: `GET .../value?field=<key>` now exists on both the human and machine routes, returns only
+  that field, and writes `revealed_fields` as a first-class `audit_log_entries` column (not nested
+  in `payload`) — including for a non-sensitive field explicitly requested, and as two separate
+  audit rows for two back-to-back single-field reveals.
+- AC-5: whole-secret reveal of a genuine multi-field secret now returns the structured `fields[]`
+  array (fixing the Story 13.2 carryover bug that dumped raw JSON into `value`); `revealed_fields`
+  names only the genuinely-sensitive fields, in `field_meta` declared order. A corrupted-envelope
+  decrypt failure fails the whole request atomically (500/503, zero fields, zero audit rows) —
+  covered by a dedicated test simulating a tampered `credential_versions` row.
+- AC-6: legacy (`schema_version = 1`) and single-default-field (`schema_version = 2`, one field)
+  secrets are byte-for-byte unchanged — bare `{ value }` shape, `revealed_fields` stays `NULL`
+  (never `[]`) on an implicit whole-secret reveal. The `?field=value` lookalike-case distinction
+  (genuine legacy row rejects it; a real single-default-field row with key `value` accepts it) is
+  covered by dedicated tests on both routes.
+- AC-7: an unknown `?field=` returns `400 unknown_field_key` (naming the offending key) before any
+  decrypt/audit-write, with zero audit rows written; malformed input (empty string, over-length,
+  disallowed characters) is rejected `422` at the Zod query-schema layer, kept distinct from the
+  `400` business error per Subtask 2.1.
+- Web: replaced the raw-JSON `<pre>{revealedValue}</pre>` block for multi-field secrets with
+  per-field interactive rows (masked+Reveal for sensitive, inline value for non-sensitive) plus a
+  "Reveal all" secondary action; the legacy/single-default-field `<pre>` reveal path is untouched
+  (guarded by `!isMultiField`, still exercised by its own passing tests).
+- Added `packages/agent`'s `VaultMultiFieldSecretUnsupportedError` (see Debug Log) as a
+  self-contained defensive fix outside the story's listed touchpoints, since the response-shape
+  change is shared with the machine route this story explicitly modifies.
+- `make check-rls` passes with no changes required (the new column adds no new access path).
+- New/extended test files: `packages/db/src/__tests__/migration-0054-safety.test.ts` (new),
+  `apps/api/src/modules/credentials/field-set-routes.test.ts` (extended, +15 tests, 1 existing
+  test updated for the fixed response shape), `apps/api/src/modules/machine-users/machine-credential-routes.test.ts`
+  (extended, +5 tests), `apps/web/src/lib/api/credentials.test.ts` (fixture updated for the new
+  required `visibleFieldValues`/`schemaVersion`/`fields` detail properties),
+  `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts`
+  (extended, +6 tests, 2 existing tests updated for the fixed reveal response shape),
+  `packages/agent/src/index.test.ts` (+1 test), and a new e2e journey spec
+  `apps/web/e2e/journeys/j6-field-visibility-reveal.spec.ts` (written, not executed — consistent
+  with Story 13.2's own j5 spec, which requires the full docker stack).
+- Full test runs: `packages/db` (migration + schema tests) pass; `apps/api`
+  `field-set-routes.test.ts` (33/33) and `machine-credential-routes.test.ts` (19/19) pass against a
+  freshly provisioned local Postgres; `apps/web` full suite (194 files / 1578 tests) passes;
+  `packages/agent` full suite (34/34) passes. Full `apps/api` suite (`pnpm vitest run`, no filter)
+  was kicked off but is long-running in this environment (repo-documented as 30-100+ min) — see
+  Debug Log; not all results were observed before this record was written. Re-run
+  `DATABASE_URL=... ADMIN_DATABASE_URL=... pnpm --filter @project-vault/api test` before merge if
+  this session's background run didn't complete cleanly.
+- Lint: `eslint` clean on every touched file (two cyclomatic-complexity violations and two
+  `sonarjs/no-duplicate-string` violations introduced along the way were fixed by extracting
+  helper functions / test constants).
+
 ### File List
+
+- `packages/db/src/migrations/0054_audit_revealed_fields.sql` (new)
+- `packages/db/src/migrations/meta/_journal.json` (edit)
+- `packages/db/src/schema/audit-log-entries.ts` (edit)
+- `packages/db/src/__tests__/migration-0054-safety.test.ts` (new)
+- `packages/shared/src/schemas/credentials.ts` (edit)
+- `apps/api/src/lib/route-helpers.ts` (edit)
+- `apps/api/src/lib/audit-or-fail-closed.ts` (edit)
+- `apps/api/src/modules/audit/human-entry.ts` (edit)
+- `apps/api/src/modules/audit/machine-entry.ts` (edit)
+- `apps/api/src/modules/credentials/schema.ts` (edit)
+- `apps/api/src/modules/credentials/service.ts` (edit)
+- `apps/api/src/modules/credentials/routes.ts` (edit)
+- `apps/api/src/modules/credentials/field-set-routes.test.ts` (edit)
+- `apps/api/src/modules/machine-users/machine-credential-schema.ts` (edit)
+- `apps/api/src/modules/machine-users/machine-credential-routes.ts` (edit)
+- `apps/api/src/modules/machine-users/machine-credential-routes.test.ts` (edit)
+- `apps/web/src/lib/api/credentials.ts` (edit)
+- `apps/web/src/lib/api/credentials.test.ts` (edit)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` (edit)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts` (edit)
+- `apps/web/e2e/journeys/j6-field-visibility-reveal.spec.ts` (new)
+- `packages/agent/src/errors.ts` (edit)
+- `packages/agent/src/index.ts` (edit)
+- `packages/agent/src/index.test.ts` (edit)
+- `.env` (new, local-only worktree DB config — not committed if gitignored)

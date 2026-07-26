@@ -1283,6 +1283,12 @@
               "$ref": "#/components/schemas/FieldMetaInput"
             }
           },
+          "visibleFieldValues": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "createdBy": {
             "nullable": true,
             "type": "string",
@@ -1314,6 +1320,7 @@
           "currentVersionNumber",
           "schemaVersion",
           "fields",
+          "visibleFieldValues",
           "createdBy",
           "createdAt",
           "updatedAt"
@@ -3995,6 +4002,18 @@
           }
         ]
       },
+      "CredentialValueQueryInput": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          }
+        },
+        "additionalProperties": false
+      },
       "CredentialParamsInput": {
         "type": "object",
         "properties": {
@@ -4203,6 +4222,24 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/CredentialValueInput"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CredentialValueOrFieldsResponseInput": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CredentialValueInput"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialFieldsValueInput"
+              }
+            ]
           }
         },
         "required": [
@@ -8388,33 +8425,78 @@
           "name"
         ]
       },
+      "MachineCredentialValueQueryInput": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          }
+        },
+        "additionalProperties": false
+      },
       "MachineCredentialValueResponseInput": {
         "type": "object",
         "properties": {
           "data": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "versionNumber": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991
+                  },
+                  "cacheable": {
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "versionNumber",
+                  "cacheable",
+                  "value"
+                ]
               },
-              "value": {
-                "type": "string"
-              },
-              "versionNumber": {
-                "type": "integer",
-                "minimum": 0,
-                "exclusiveMinimum": true,
-                "maximum": 9007199254740991
-              },
-              "cacheable": {
-                "type": "boolean"
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "versionNumber": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991
+                  },
+                  "cacheable": {
+                    "type": "boolean"
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/FieldInput"
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "versionNumber",
+                  "cacheable",
+                  "fields"
+                ]
               }
-            },
-            "required": [
-              "name",
-              "value",
-              "versionNumber",
-              "cacheable"
             ]
           }
         },
@@ -10421,6 +10503,12 @@
               "$ref": "#/components/schemas/FieldMeta"
             }
           },
+          "visibleFieldValues": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "createdBy": {
             "nullable": true,
             "type": "string",
@@ -10452,6 +10540,7 @@
           "currentVersionNumber",
           "schemaVersion",
           "fields",
+          "visibleFieldValues",
           "createdBy",
           "createdAt",
           "updatedAt"
@@ -13224,6 +13313,18 @@
           }
         ]
       },
+      "CredentialValueQuery": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          }
+        },
+        "additionalProperties": false
+      },
       "CredentialParams": {
         "type": "object",
         "properties": {
@@ -13425,6 +13526,25 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/CredentialValue"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "CredentialValueOrFieldsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CredentialValue"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialFieldsValue"
+              }
+            ]
           }
         },
         "required": [
@@ -17747,35 +17867,81 @@
         ],
         "additionalProperties": false
       },
+      "MachineCredentialValueQuery": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_.\\- ]{1,64}$"
+          }
+        },
+        "additionalProperties": false
+      },
       "MachineCredentialValueResponse": {
         "type": "object",
         "properties": {
           "data": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "versionNumber": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991
+                  },
+                  "cacheable": {
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "versionNumber",
+                  "cacheable",
+                  "value"
+                ],
+                "additionalProperties": false
               },
-              "value": {
-                "type": "string"
-              },
-              "versionNumber": {
-                "type": "integer",
-                "minimum": 0,
-                "exclusiveMinimum": true,
-                "maximum": 9007199254740991
-              },
-              "cacheable": {
-                "type": "boolean"
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "versionNumber": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991
+                  },
+                  "cacheable": {
+                    "type": "boolean"
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Field"
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "versionNumber",
+                  "cacheable",
+                  "fields"
+                ],
+                "additionalProperties": false
               }
-            },
-            "required": [
-              "name",
-              "value",
-              "versionNumber",
-              "cacheable"
-            ],
-            "additionalProperties": false
+            ]
           }
         },
         "required": [
@@ -24937,7 +25103,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CredentialValueResponse"
+                  "$ref": "#/components/schemas/CredentialValueOrFieldsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -32480,6 +32656,16 @@
               }
             }
           },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Default Response",
             "content": {
@@ -32516,6 +32702,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AmbiguousCredentialNameError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }

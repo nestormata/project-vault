@@ -47,7 +47,7 @@ export type SafeParseSchema<T> = {
 function parseRequestPart<T>(
   schema: SafeParseSchema<T>,
   value: unknown,
-  fallbackPath: 'body' | 'params',
+  fallbackPath: 'body' | 'params' | 'querystring',
   reply: FastifyReply
 ): { success: true; data: T } | { success: false } {
   const parsed = schema.safeParse(value)
@@ -72,6 +72,17 @@ export function parseParams<T>(
   reply: FastifyReply
 ): T | null {
   const result = parseRequestPart(schema, req.params, 'params', reply)
+  return result.success ? result.data : null
+}
+
+// Story 13.3 Subtask 2.1 — query-string counterpart to parseParams/parseBody; malformed input
+// (e.g. an empty or overlong `?field=`) is a 422 at this Zod layer, same convention as the others.
+export function parseQuery<T>(
+  schema: SafeParseSchema<T>,
+  req: FastifyRequest,
+  reply: FastifyReply
+): T | null {
+  const result = parseRequestPart(schema, req.query, 'querystring', reply)
   return result.success ? result.data : null
 }
 

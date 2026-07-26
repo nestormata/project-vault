@@ -22,6 +22,7 @@ const TEST_PASSPHRASE = 'field-set-routes-passphrase'
 const PASSWORD = 'correct-horse-battery-staple'
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
 const DB_HOST_VALUE = 'db.example.com'
+const LEGACY_VALUE = 'legacy-value'
 
 type Cookies = Record<string, string>
 
@@ -67,6 +68,33 @@ async function reveal(app: TestApp, cookies: Cookies, projectId: string, credent
     url: `/api/v1/projects/${projectId}/credentials/${credentialId}/value`,
     headers: { cookie: cookieHeader(cookies) },
   })
+}
+// Story 13.3 — field-scoped reveal.
+async function revealField(
+  app: TestApp,
+  cookies: Cookies,
+  projectId: string,
+  credentialId: string,
+  field: string
+) {
+  return app.inject({
+    method: 'GET',
+    url: `/api/v1/projects/${projectId}/credentials/${credentialId}/value?field=${encodeURIComponent(field)}`,
+    headers: { cookie: cookieHeader(cookies) },
+  })
+}
+async function revealAuditRows(orgId: string, credentialId: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select()
+      .from(auditLogEntries)
+      .where(
+        and(
+          eq(auditLogEntries.eventType, 'credential.value_revealed'),
+          eq(auditLogEntries.resourceId, credentialId)
+        )
+      )
+  )
 }
 async function listVersions(
   app: TestApp,
@@ -344,12 +372,14 @@ describe.sequential('credential field-set routes (Story 13.2)', () => {
     })
     expect(res.statusCode).toBe(201)
 
-    // reveal the current (multi-field) version — returns the full JSON envelope
-    const revealed = (await reveal(app, owner.cookies, projectId, id)).json<{
-      data: { value: string }
-    }>().data
-    const fields = JSON.parse(revealed.value) as Array<{ key: string; value: string }>
-    const byKey = new Map(fields.map((f) => [f.key, f.value]))
+    // Story 13.3 AC-5 — reveal the current (multi-field) version: returns the structured
+    // `fields[]` array, never a JSON string masquerading as `value` (the Story 13.2 carryover bug
+    // this story fixes).
+    const revealedRes = await reveal(app, owner.cookies, projectId, id)
+    const revealed = revealedRes.json<{ data: { fields: Array<{ key: string; value: string }> } }>()
+      .data
+    expect(revealedRes.json<{ data: { value?: string } }>().data.value).toBeUndefined()
+    const byKey = new Map(revealed.fields.map((f) => [f.key, f.value]))
     expect(byKey.get('host')).toBe(DB_HOST_VALUE)
     expect(byKey.get('username')).toBe('svc')
     expect(byKey.get('password')).toBe('new-pw')
@@ -538,5 +568,316 @@ describe.sequential('credential field-set routes (Story 13.2)', () => {
       data: { value: string }
     }>().data
     expect(revealed.value).toBe('sk_live_abc123')
+  })
+})
+
+type FieldsValueBody = {
+  data: {
+    fields: Array<{ key: string; value: string; sensitive: boolean }>
+    schemaVersion: number
+    versionNumber: number
+  }
+}
+
+describe.sequential('credential field-scoped reveal routes (Story 13.3)', () => {
+  beforeAll(async () => {
+    ;({ app, owner } = await bootstrapCredentialRouteOwners(
+      createApp,
+      initVault,
+      TEST_PASSPHRASE,
+      PASSWORD,
+      'field-reveal'
+    ))
+  })
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  it('AC-4: ?field=password on a login secret returns only that field, revealed_fields=[password]', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'field-reveal-single')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+
+    const res = await revealField(app, owner.cookies, projectId, id, 'password')
+    expect(res.statusCode).toBe(200)
+    const body = res.json<FieldsValueBody>()
+    expect(body.data.fields).toEqual([{ key: 'password', value: 's3cret', sensitive: true }])
+
+    const [audit] = await revealAuditRows(owner.orgId, id)
+    expect(audit?.revealedFields).toEqual(['password'])
+  })
+
+  it('AC-4 negative: ?field=username (non-sensitive) still writes revealed_fields=[username]', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'field-reveal-nonsens')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+
+    const res = await revealField(app, owner.cookies, projectId, id, 'username')
+    expect(res.statusCode).toBe(200)
+    const body = res.json<FieldsValueBody>()
+    expect(body.data.fields).toEqual([{ key: 'username', value: 'alice', sensitive: false }])
+
+    const [audit] = await revealAuditRows(owner.orgId, id)
+    expect(audit?.revealedFields).toEqual(['username'])
+  })
+
+  it('AC-4: two back-to-back field reveals produce two separate single-element audit entries', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'field-reveal-twice')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+
+    expect((await revealField(app, owner.cookies, projectId, id, 'username')).statusCode).toBe(200)
+    expect((await revealField(app, owner.cookies, projectId, id, 'password')).statusCode).toBe(200)
+
+    const audits = await revealAuditRows(owner.orgId, id)
+    expect(audits).toHaveLength(2)
+    expect(audits.map((a) => a.revealedFields).sort()).toEqual([['password'], ['username']])
+  })
+
+  it('AC-5: whole-secret reveal (no ?field=) returns every field, revealed_fields names only sensitive ones', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'whole-secret-reveal')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'DB',
+      template: 'db_connection',
+      fields: [
+        { key: 'host', value: DB_HOST_VALUE, sensitive: false },
+        { key: 'port', value: '5432', sensitive: false },
+        { key: 'database', value: 'app', sensitive: false },
+        { key: 'username', value: 'svc', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+
+    const res = await reveal(app, owner.cookies, projectId, id)
+    expect(res.statusCode).toBe(200)
+    const body = res.json<FieldsValueBody>()
+    expect(body.data.fields).toHaveLength(5)
+    const byKey = new Map(body.data.fields.map((f) => [f.key, f.value]))
+    expect(byKey.get('host')).toBe(DB_HOST_VALUE)
+    expect(byKey.get('password')).toBe('s3cret')
+
+    const [audit] = await revealAuditRows(owner.orgId, id)
+    expect(audit?.revealedFields).toEqual(['password'])
+  })
+
+  it('AC-5 negative: two sensitive fields — revealed_fields order matches field_meta declared order', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'two-sensitive-order')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Custom',
+      template: 'custom',
+      fields: [
+        { key: 'password', value: 'pw', sensitive: true },
+        { key: 'recovery_code', value: 'rc', sensitive: true },
+      ],
+    })
+
+    const res = await reveal(app, owner.cookies, projectId, id)
+    const [audit] = await revealAuditRows(owner.orgId, id)
+    expect(audit?.revealedFields).toEqual(['password', 'recovery_code'])
+    expect(res.json<FieldsValueBody>().data.fields.map((f) => f.key)).toEqual([
+      'password',
+      'recovery_code',
+    ])
+  })
+
+  it('AC-5 Failure Mode: a corrupted envelope on a multi-field secret fails atomically — no audit row, no fields', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'corrupted-envelope')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+    // tamper the stored ciphertext so it decrypts to invalid JSON (simulates a corrupted row)
+    const corrupted = await encryptValue('not-json-at-all{{{')
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(credentialVersions)
+        .set({ encryptedValue: corrupted })
+        .where(
+          and(eq(credentialVersions.credentialId, id), eq(credentialVersions.versionNumber, 1))
+        )
+    )
+
+    const res = await reveal(app, owner.cookies, projectId, id)
+    expect(res.statusCode).toBeGreaterThanOrEqual(500)
+
+    const audits = await revealAuditRows(owner.orgId, id)
+    expect(audits).toHaveLength(0)
+  })
+
+  it('AC-6: legacy schema_version=1 reveal writes revealed_fields = NULL, not []', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'legacy-revealed-null')
+    const id = await makeLegacyCredential(app, owner.cookies, projectId, LEGACY_VALUE)
+
+    const res = await reveal(app, owner.cookies, projectId, id)
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ data: { value: string } }>().data.value).toBe(LEGACY_VALUE)
+
+    const [audit] = await revealAuditRows(owner.orgId, id)
+    expect(audit?.revealedFields).toBeNull()
+  })
+
+  it('AC-6 negative: ?field=value on a genuine legacy row is rejected 400 unknown_field_key (lookalike case)', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'legacy-field-guess')
+    const id = await makeLegacyCredential(app, owner.cookies, projectId, LEGACY_VALUE)
+
+    const res = await revealField(app, owner.cookies, projectId, id, 'value')
+    expect(res.statusCode).toBe(400)
+    expect(res.json<{ code: string }>().code).toBe('unknown_field_key')
+
+    const audits = await revealAuditRows(owner.orgId, id)
+    expect(audits).toHaveLength(0)
+  })
+
+  it('AC-6 (lookalike contrast): ?field=value on a real single-default-field v2 row IS accepted', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'default-field-guess')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'No template',
+      value: 'default-field-value',
+    })
+
+    // AC-6: a single-default-field v2 row still collapses to the bare-string shape (matching
+    // legacy backward compatibility) even under an explicit `?field=` — only a genuinely
+    // multi-field secret gets the structured `fields[]` shape (AC-5/AC-6's last edge case).
+    const res = await revealField(app, owner.cookies, projectId, id, 'value')
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ data: { value: string } }>().data.value).toBe('default-field-value')
+
+    const [audit] = await revealAuditRows(owner.orgId, id)
+    expect(audit?.revealedFields).toEqual(['value'])
+  })
+
+  it('AC-7: unknown ?field= on a real login secret is rejected 400, zero audit rows', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'unknown-field-key')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+
+    const res = await revealField(app, owner.cookies, projectId, id, 'totp_secret')
+    expect(res.statusCode).toBe(400)
+    const body = res.json<{ code: string; message: string }>()
+    expect(body.code).toBe('unknown_field_key')
+    expect(body.message).toContain('totp_secret')
+
+    const audits = await revealAuditRows(owner.orgId, id)
+    expect(audits).toHaveLength(0)
+  })
+
+  it('AC-7 negative: malformed ?field= (empty string) is rejected 422, distinct from the 400 business error', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'malformed-field-key')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [{ key: 'username', value: 'alice', sensitive: false }],
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${id}/value?field=`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(res.statusCode).toBe(422)
+  })
+
+  it('AC-3: revealing an empty-string sensitive field returns an empty value, not an error', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'empty-sensitive-field')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: '', sensitive: true },
+      ],
+    })
+
+    const res = await revealField(app, owner.cookies, projectId, id, 'password')
+    expect(res.statusCode).toBe(200)
+    const body = res.json<FieldsValueBody>()
+    expect(body.data.fields).toEqual([{ key: 'password', value: '', sensitive: true }])
+  })
+
+  it('AC-2: detail response eagerly includes non-sensitive field values with no reveal audit entry', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'eager-nonsensitive')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+
+    const detail = (await getDetail(app, owner.cookies, projectId, id)).json<{
+      data: { visibleFieldValues: Record<string, string> }
+    }>().data
+    expect(detail.visibleFieldValues).toEqual({ username: 'alice' })
+    // never leaks the sensitive field's value via the eager path
+    expect(Object.keys(detail.visibleFieldValues)).not.toContain('password')
+
+    const audits = await revealAuditRows(owner.orgId, id)
+    expect(audits).toHaveLength(0)
+  })
+
+  it('AC-2 negative: a legacy secret has no non-sensitive fields — visibleFieldValues is empty', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'eager-legacy')
+    const id = await makeLegacyCredential(app, owner.cookies, projectId, LEGACY_VALUE)
+
+    const detail = (await getDetail(app, owner.cookies, projectId, id)).json<{
+      data: { visibleFieldValues: Record<string, string> }
+    }>().data
+    expect(detail.visibleFieldValues).toEqual({})
+  })
+
+  it('AC-2 Failure Mode: a corrupted envelope degrades to an empty visibleFieldValues map, not a 500', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'eager-corrupted')
+    const id = await createFieldSet(app, owner.cookies, projectId, {
+      name: 'Login',
+      template: 'login',
+      fields: [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ],
+    })
+    const corrupted = await encryptValue('not-json-at-all{{{')
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(credentialVersions)
+        .set({ encryptedValue: corrupted })
+        .where(
+          and(eq(credentialVersions.credentialId, id), eq(credentialVersions.versionNumber, 1))
+        )
+    )
+
+    const res = await getDetail(app, owner.cookies, projectId, id)
+    expect(res.statusCode).toBe(200)
+    const detail = res.json<{ data: { visibleFieldValues: Record<string, string> } }>().data
+    expect(detail.visibleFieldValues).toEqual({})
   })
 })

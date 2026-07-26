@@ -20,6 +20,9 @@ export type MachineAuditFields = {
   /** Story 7.2 D5 — the machine actor's identity lives in the payload, not a new indexed column. */
   machineUserId: string
   keyId: string
+  // Story 13.3 — see HumanAuditFields.revealedFields; same first-class column, populated for the
+  // machine reveal route's own `?field=` support.
+  revealedFields?: string[]
   meta?: RequestMeta
 }
 
@@ -70,6 +73,7 @@ export async function writeMachineAuditEntry(tx: Tx, fields: MachineAuditFields)
     hmac,
     ipAddress: fields.meta?.ipAddress ?? null,
     userAgent: fields.meta?.userAgent ?? null,
+    revealedFields: fields.revealedFields ?? null,
   })
 }
 

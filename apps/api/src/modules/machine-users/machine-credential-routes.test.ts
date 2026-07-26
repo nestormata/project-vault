@@ -27,6 +27,7 @@ const FORCED_AUDIT_FAILURE = 'forced machine audit failure'
 // and the Story 8-6 AC-7 successful-lookups-don't-count-against-the-failed-limiter test below.
 const DATABASE_URL_CREDENTIAL_NAME = 'DATABASE_URL'
 const DATABASE_URL_CREDENTIAL_VALUE = 'postgres://v1'
+const VALUE_REVEALED_EVENT_TYPE = 'credential.value_revealed'
 
 function machineUsersUrl(projectId: string): string {
   return `/api/v1/projects/${projectId}/machine-users`
@@ -87,6 +88,24 @@ async function createCredentialViaApi(
     url: `/api/v1/projects/${projectId}/credentials`,
     headers: { cookie: cookieHeader(cookies) },
     payload: { name, value },
+  })
+  expect(res.statusCode).toBe(201)
+  return res.json<{ data: { id: string } }>().data.id
+}
+
+// Story 13.3 — a genuine multi-field credential, for the machine route's own `?field=` support.
+async function createFieldSetCredentialViaApi(
+  app: TestApp,
+  cookies: Record<string, string>,
+  projectId: string,
+  name: string,
+  fields: Array<{ key: string; value: string; sensitive: boolean }>
+): Promise<string> {
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/v1/projects/${projectId}/credentials`,
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { name, template: 'login', fields },
   })
   expect(res.statusCode).toBe(201)
   return res.json<{ data: { id: string } }>().data.id
@@ -364,7 +383,7 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
         tx
           .select()
           .from(auditLogEntries)
-          .where(eq(auditLogEntries.eventType, 'credential.value_revealed'))
+          .where(eq(auditLogEntries.eventType, VALUE_REVEALED_EVENT_TYPE))
       )
       const row = rows.find(
         (r) => (r.payload as Record<string, unknown>)?.['machineUserId'] === machineUserId
@@ -483,5 +502,138 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
         delete process.env['RATE_LIMIT_TEST_BYPASS']
       }
     }, 30_000)
+  })
+
+  describe('Story 13.3: field-scoped reveal (?field=)', () => {
+    it('AC-4: ?field=password returns only that field, revealed_fields=[password]', async () => {
+      const owner = await registerOwner(app, 'field-single')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'machine-field-single')
+      const credId = await createFieldSetCredentialViaApi(app, owner.cookies, projectId, 'LOGIN', [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 's3cret', sensitive: true },
+      ])
+      const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `${machineCredentialValueUrl(projectId, 'LOGIN')}?field=password`,
+        headers: { authorization: `Bearer ${jwt}` },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(
+        res.json<{ data: { fields: Array<{ key: string; value: string }> } }>().data.fields
+      ).toEqual([{ key: 'password', value: 's3cret', sensitive: true }])
+
+      const [audit] = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(auditLogEntries)
+          .where(
+            and(
+              eq(auditLogEntries.eventType, VALUE_REVEALED_EVENT_TYPE),
+              eq(auditLogEntries.resourceId, credId)
+            )
+          )
+      )
+      expect(audit?.revealedFields).toEqual(['password'])
+    })
+
+    it('AC-5: whole-secret reveal (no ?field=) returns the structured fields[] array', async () => {
+      const owner = await registerOwner(app, 'field-whole')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'machine-field-whole')
+      await createFieldSetCredentialViaApi(app, owner.cookies, projectId, 'LOGIN2', [
+        { key: 'username', value: 'bob', sensitive: false },
+        { key: 'password', value: 'topsecret', sensitive: true },
+      ])
+      const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: machineCredentialValueUrl(projectId, 'LOGIN2'),
+        headers: { authorization: `Bearer ${jwt}` },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{ data: { fields: Array<{ key: string; value: string }> } }>().data
+      const byKey = new Map(body.fields.map((f) => [f.key, f.value]))
+      expect(byKey.get('username')).toBe('bob')
+      expect(byKey.get('password')).toBe('topsecret')
+    })
+
+    it('AC-7: unknown ?field= is rejected 400 unknown_field_key, zero audit rows', async () => {
+      const owner = await registerOwner(app, 'field-unknown')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'machine-field-unknown')
+      const credId = await createFieldSetCredentialViaApi(app, owner.cookies, projectId, 'LOGIN3', [
+        { key: 'username', value: 'carol', sensitive: false },
+        { key: 'password', value: 'pw', sensitive: true },
+      ])
+      const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `${machineCredentialValueUrl(projectId, 'LOGIN3')}?field=totp_secret`,
+        headers: { authorization: `Bearer ${jwt}` },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({ code: 'unknown_field_key' })
+
+      const audits = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(auditLogEntries)
+          .where(
+            and(
+              eq(auditLogEntries.eventType, VALUE_REVEALED_EVENT_TYPE),
+              eq(auditLogEntries.resourceId, credId)
+            )
+          )
+      )
+      expect(audits).toHaveLength(0)
+    })
+
+    it('AC-7 negative: malformed ?field= (empty) is rejected 422', async () => {
+      const owner = await registerOwner(app, 'field-malformed')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'machine-field-malformed')
+      await createCredentialViaApi(app, owner.cookies, projectId, 'MALFORMED', 'v')
+      const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `${machineCredentialValueUrl(projectId, 'MALFORMED')}?field=`,
+        headers: { authorization: `Bearer ${jwt}` },
+      })
+      expect(res.statusCode).toBe(422)
+    })
+
+    it('AC-6: legacy schema_version=1 reveal via ?field= is rejected 400 (no field_meta to match)', async () => {
+      const owner = await registerOwner(app, 'field-legacy')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'machine-field-legacy')
+      const credId = await createCredentialViaApi(app, owner.cookies, projectId, 'LEGACY2', 'seed')
+      const legacyCiphertext = await encryptValue('legacy-bare-value')
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(credentialVersions)
+          .set({ schemaVersion: 1, fieldMeta: null, encryptedValue: legacyCiphertext })
+          .where(
+            and(
+              eq(credentialVersions.credentialId, credId),
+              eq(credentialVersions.versionNumber, 1)
+            )
+          )
+      )
+      const { key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `${machineCredentialValueUrl(projectId, 'LEGACY2')}?field=value`,
+        headers: { authorization: `Bearer ${jwt}` },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({ code: 'unknown_field_key' })
+    })
   })
 })

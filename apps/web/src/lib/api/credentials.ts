@@ -1,6 +1,7 @@
 import type {
   CredentialDependency,
   CredentialDetail,
+  CredentialFieldsValue,
   CredentialSummary,
   CredentialTemplate,
   CredentialValue,
@@ -93,15 +94,30 @@ export function getCredential(fetchFn: typeof fetch, projectId: string, credenti
   )
 }
 
+// Story 13.3 AC-4/AC-5 — an optional `field` scopes the reveal to a single field key
+// (`GET .../value?field=<key>`); omitted, the whole-secret path is used. The server returns the
+// existing bare `{ value }` shape for a legacy/single-default-field secret either way (AC-6), or
+// the structured `{ fields: [...] }` shape for a genuinely multi-field secret — use
+// `isFieldsValue` to discriminate the result.
 export function revealCredentialValue(
   fetchFn: typeof fetch,
   projectId: string,
-  credentialId: string
+  credentialId: string,
+  options: { field?: string } = {}
 ) {
-  return apiFetch<CredentialValue>(
+  const query = options.field ? `?field=${encodeURIComponent(options.field)}` : ''
+  return apiFetch<CredentialValue | CredentialFieldsValue>(
     fetchFn,
-    `/api/v1/projects/${projectId}/credentials/${credentialId}/value`
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/value${query}`
   )
+}
+
+/** Discriminates `revealCredentialValue`'s union result — `true` for the structured multi-field
+ *  shape, `false` for the legacy/single-default-field bare-`value` shape. */
+export function isFieldsValue(
+  result: CredentialValue | CredentialFieldsValue
+): result is CredentialFieldsValue {
+  return 'fields' in result
 }
 
 export function listCredentialVersions(
@@ -263,28 +279,26 @@ export type AddCredentialVersionResponse = {
 }
 
 /**
- * Reconstructs the current field values from a reveal response so the edit form can round-trip
- * every field (AC-4). A legacy/single-default-field secret's reveal returns the bare value; a
- * multi-field secret's reveal returns the JSON field envelope. `fieldMeta` (from the detail
- * response) supplies key order and sensitivity.
+ * Reconstructs the current field values from a whole-secret reveal response so the edit form can
+ * round-trip every field (AC-4 of Story 13.2). A legacy/single-default-field secret's reveal
+ * returns the bare `{ value }` shape; a genuinely multi-field secret's reveal returns the
+ * structured `{ fields: [...] }` shape (Story 13.3 AC-5 — no more JSON-string parsing of a
+ * `value` field). `fieldMeta` (from the detail response) supplies key order and sensitivity.
  */
-export function parseRevealedFields(fieldMeta: FieldMeta[], revealedValue: string): Field[] {
-  if (fieldMeta.length === 1 && fieldMeta[0]?.key === DEFAULT_FIELD_KEY) {
-    const only = fieldMeta[0]
-    return [{ key: only.key, value: revealedValue, sensitive: only.sensitive }]
-  }
-  try {
-    const parsed = JSON.parse(revealedValue) as Array<{ key: string; value?: string }>
-    const valueByKey = new Map(parsed.map((f) => [f.key, f.value ?? '']))
+export function parseRevealedFields(
+  fieldMeta: FieldMeta[],
+  revealed: CredentialValue | CredentialFieldsValue
+): Field[] {
+  if (isFieldsValue(revealed)) {
+    const valueByKey = new Map(revealed.fields.map((f) => [f.key, f.value]))
     return fieldMeta.map((m) => ({
       key: m.key,
       value: valueByKey.get(m.key) ?? '',
       sensitive: m.sensitive,
     }))
-  } catch {
-    // Fall back to a single field if the envelope is unexpectedly not JSON.
-    return fieldMeta.map((m) => ({ key: m.key, value: '', sensitive: m.sensitive }))
   }
+  const only = fieldMeta[0] ?? { key: DEFAULT_FIELD_KEY, sensitive: true }
+  return [{ key: only.key, value: revealed.value, sensitive: only.sensitive }]
 }
 
 export function addCredentialVersion(

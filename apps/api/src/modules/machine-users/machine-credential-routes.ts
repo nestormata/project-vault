@@ -3,7 +3,7 @@ import { withOrg } from '@project-vault/db'
 import { AuditEvent } from '@project-vault/shared'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
-import { enforceUserRateLimit, parseParams } from '../../lib/route-helpers.js'
+import { enforceUserRateLimit, parseParams, parseQuery } from '../../lib/route-helpers.js'
 import { secureRoute, SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 import { writeMachineAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { findCredentialByNameInProject, revealCurrentValue } from '../credentials/service.js'
@@ -11,6 +11,7 @@ import { MANUAL_MACHINE_AUTH_SECURITY, verifyMachineRequest } from './machine-au
 import {
   AmbiguousCredentialNameErrorSchema,
   MachineCredentialParamsSchema,
+  MachineCredentialValueQuerySchema,
   MachineCredentialValueResponseSchema,
 } from './machine-credential-schema.js'
 
@@ -64,10 +65,12 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
     schema: {
       response: {
         200: MachineCredentialValueResponseSchema,
+        400: ApiErrorSchema,
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: AmbiguousCredentialNameErrorSchema,
+        422: ApiErrorSchema,
         429: ApiErrorSchema,
         503: ApiErrorSchema,
       },
@@ -79,6 +82,9 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
 
       const params = parseParams(MachineCredentialParamsSchema, req, reply)
       if (!params) return reply
+      // Story 13.3 Subtask 2.6 — mirrors the human route's `?field=` support.
+      const query = parseQuery(MachineCredentialValueQuerySchema, req, reply)
+      if (!query) return reply
       const name = decodeURIComponent(params.name)
 
       if (!enforceOverallRateLimit(verified.keyId, reply)) return reply
@@ -117,10 +123,19 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
           const result = await revealCurrentValue(tx, {
             credentialId: credential.id,
             projectId: params.projectId,
+            field: query.field,
           })
           if (result.status === 'not_found') {
             if (!enforceFailedLookupRateLimit(verified.keyId, reply)) return reply
             return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+          }
+          // Story 13.3 AC-7 — a well-formed `?field=` naming a key absent from this secret;
+          // rejected before any decrypt/audit-write, no audit entry written.
+          if (result.status === 'unknown_field') {
+            return reply.status(400).send({
+              code: 'unknown_field_key',
+              message: `Unknown field key: '${result.key}'`,
+            })
           }
 
           await writeMachineAuditEntryOrFailClosed(tx, {
@@ -131,8 +146,21 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
             machineUserId: verified.machineUserId,
             keyId: verified.keyId,
             payload: { versionNumber: result.versionNumber, name },
+            // Story 13.3 — first-class column, not nested in payload (see human route).
+            revealedFields: result.revealedFields,
             request: req,
           })
+
+          if (result.kind === 'fields') {
+            return {
+              data: {
+                name,
+                fields: result.fields,
+                versionNumber: result.versionNumber,
+                cacheable: credential.cacheable,
+              },
+            }
+          }
 
           return {
             data: {

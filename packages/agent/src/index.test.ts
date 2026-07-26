@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createVaultAgent, VaultCacheDecryptionError, VaultCacheExpiredError } from './index.js'
+import {
+  createVaultAgent,
+  VaultCacheDecryptionError,
+  VaultCacheExpiredError,
+  VaultMultiFieldSecretUnsupportedError,
+} from './index.js'
 import { readCacheFile, writeCacheFile, type CacheFile } from './cache-store.js'
 
 const BASE_URL = 'https://vault.example.test'
@@ -60,6 +65,41 @@ describe('createVaultAgent().getSecret (AC-10)', () => {
 
     expect(value).toBe('postgres://v1')
     expect(fetchMock).toHaveBeenCalledWith(TOKEN_URL, expect.objectContaining({ method: 'POST' }))
+  })
+
+  // Story 13.3 — the machine reveal route now returns a structured `fields[]` shape (no `value`)
+  // for a genuinely multi-field secret when queried with no `?field=`; this agent's getSecret()
+  // has no field selector, so it must fail loudly rather than caching/returning `undefined`.
+  it('throws VaultMultiFieldSecretUnsupportedError when the response has fields[] instead of value', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === TOKEN_URL) return jsonResponse(200, { data: { accessToken: FIRST_ACCESS_TOKEN } })
+      if (url === credentialUrl('LOGIN')) {
+        return jsonResponse(200, {
+          data: {
+            name: 'LOGIN',
+            fields: [
+              { key: 'username', value: 'alice', sensitive: false },
+              { key: 'password', value: 'pw', sensitive: true },
+            ],
+            versionNumber: 1,
+            cacheable: true,
+          },
+        })
+      }
+      throw new Error(`unexpected url ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const agent = createVaultAgent({
+      apiKey: API_KEY,
+      baseUrl: BASE_URL,
+      projectId: PROJECT_ID,
+      cachePath,
+    })
+
+    await expect(agent.getSecret('LOGIN')).rejects.toBeInstanceOf(
+      VaultMultiFieldSecretUnsupportedError
+    )
   })
 
   it('opportunistically writes a cache entry after a successful live fetch', async () => {
