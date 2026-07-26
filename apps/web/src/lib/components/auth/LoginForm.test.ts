@@ -81,7 +81,7 @@ describe('LoginForm', () => {
       expect(button.disabled).toBe(true)
 
       resolveLookup({ ssoRequired: false })
-      await waitFor(() => expect(screen.getByLabelText(/^password$/i)).toBeTruthy())
+      expect(await screen.findByLabelText(/^password$/i)).toBeTruthy()
     })
 
     it('ignores a re-entrant Continue click while a lookup is already pending (AC-11)', async () => {
@@ -100,7 +100,7 @@ describe('LoginForm', () => {
       await fireEvent.click(button)
       expect(lookupSsoDomainMock).toHaveBeenCalledTimes(1)
       resolveLookup({ ssoRequired: false })
-      await waitFor(() => expect(screen.getByLabelText(/^password$/i)).toBeTruthy())
+      expect(await screen.findByLabelText(/^password$/i)).toBeTruthy()
     })
   })
 
@@ -335,7 +335,8 @@ describe('LoginForm', () => {
       render(LoginForm, { props: {} })
       await fillEmailAndContinue('alex@example.com')
 
-      await screen.findByLabelText(/^password$/i)
+      expect(await screen.findByLabelText(/^password$/i)).toBeTruthy()
+      expect(screen.queryByLabelText(/sso credential/i)).toBeNull()
     })
   })
 
