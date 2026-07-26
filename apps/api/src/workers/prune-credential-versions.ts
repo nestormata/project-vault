@@ -10,6 +10,7 @@ import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyBaseLogger } from 'fastify'
 import { env } from '../config/env.js'
 import { operationalLog } from '../lib/logger.js'
+import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-credential-version.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
@@ -84,20 +85,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     .limit(1)
   if (!lockedCandidate) return false
 
-  // Zero-overwrite then null: defense-in-depth/intent-signaling, not byte-level erasure
-  // under PostgreSQL MVCC (see AC-8 MVCC caveat) — true shredding is key destruction at
-  // master-key rotation (Epic 5+).
-  await tx
-    .update(credentialVersions)
-    .set({
-      encryptedValue: {
-        version: 1,
-        iv: '0'.repeat(24),
-        ciphertext: '0'.repeat(64),
-        tag: '0'.repeat(32),
-      },
-    })
-    .where(eq(credentialVersions.id, candidate.id))
+  await zeroOverwriteCredentialVersionValue(tx, candidate.id)
   await tx
     .update(credentialVersions)
     .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date() })

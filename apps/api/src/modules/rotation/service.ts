@@ -13,6 +13,7 @@ import { withSecret } from '@project-vault/crypto'
 import { nextCronOccurrence } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
+import { zeroOverwriteCredentialVersionValue } from '../../lib/zero-overwrite-credential-version.js'
 import {
   awaitCredentialScopedLockRelease,
   tryAcquireCredentialScopedLock,
@@ -1310,20 +1311,10 @@ export async function retireRotation(
   const updatedRotation = transition.rotation
 
   const oldVersionId = updatedRotation.previousVersionId
-  // Zero-overwrite then null: defense-in-depth/intent-signaling, matching
-  // prune-credential-versions.ts's purgeVersion exactly. Both steps re-check `purgedAt IS NULL`
+  // Matches prune-credential-versions.ts's purgeVersion exactly (see
+  // zeroOverwriteCredentialVersionValue's doc comment). Both steps re-check `purgedAt IS NULL`
   // so a concurrent double-purge attempt (AC-5.3/AC-5.4) is a safe no-op, not an error.
-  await tx
-    .update(credentialVersions)
-    .set({
-      encryptedValue: {
-        version: 1,
-        iv: '0'.repeat(24),
-        ciphertext: '0'.repeat(64),
-        tag: '0'.repeat(32),
-      },
-    })
-    .where(and(eq(credentialVersions.id, oldVersionId), isNull(credentialVersions.purgedAt)))
+  await zeroOverwriteCredentialVersionValue(tx, oldVersionId, isNull(credentialVersions.purgedAt))
   await tx
     .update(credentialVersions)
     .set({ encryptedValue: null, keyVersion: null, purgedAt: new Date(), rotationLockedAt: null })
