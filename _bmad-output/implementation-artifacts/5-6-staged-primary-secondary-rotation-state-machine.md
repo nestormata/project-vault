@@ -1,6 +1,6 @@
 # Story 5.6: Staged Primary/Secondary Rotation State Machine
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
