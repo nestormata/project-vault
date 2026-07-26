@@ -38,6 +38,7 @@ import {
   InvalidItemStatusResponseSchema,
   ListRotationsQuerySchema,
   MaxRetriesExceededResponseSchema,
+  PromotedRotationConflictResponseSchema,
   PromoteRotationBodySchema,
   PromoteRotationResponseSchema,
   ResumeRotationBodySchema,
@@ -888,7 +889,10 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: RotationLockContentionResponseSchema,
+        409: z.union([
+          RotationLockContentionResponseSchema,
+          PromotedRotationConflictResponseSchema,
+        ]),
         422: ApiErrorSchema,
       },
     },
@@ -931,6 +935,25 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
           code: 'rotation_lock_contention' as const,
           message: 'Another rotation operation is in progress for this credential. Retry.',
           credentialId: params.credentialId,
+        })
+      }
+      if (result.status === 'promoted_rotation_conflict') {
+        rotationBreakGlassTotal.inc({ outcome: 'conflict' })
+        req.log.info(
+          {
+            eventType: OperationalEvent.ROTATION_BREAK_GLASS_LOCK_CONTENTION,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+            rotationId: result.rotationId,
+          },
+          'Break-glass rejected — a promoted-but-unretired rotation already exists'
+        )
+        return reply.status(409).send({
+          code: 'promoted_rotation_conflict' as const,
+          message:
+            'This credential has a promoted-but-unretired rotation. Promote/retire or abandon it before using break-glass.',
+          credentialId: params.credentialId,
+          rotationId: result.rotationId,
         })
       }
       if (!isCredentialFound(result)) {

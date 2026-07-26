@@ -2675,6 +2675,60 @@ describe.sequential(
       ).toBe(true)
     }, 20_000)
 
+    // Story 5.6 follow-up: break-glass must NOT auto-abandon a promoted-but-unretired rotation
+    // (that would silently displace the credential's already-live value) — it hard-blocks with a
+    // 409 instead, leaving both rotations and the current value untouched.
+    it('POST break-glass against a credential with a promoted-but-unretired rotation returns 409 promoted_rotation_conflict and does not create a new version', async () => {
+      const { projectId, credentialId, rotationId } = await createInitiatedRotationFixture(
+        app,
+        owner.cookies,
+        'bg-promoted-conflict'
+      )
+      const promoteRes = await promoteRotationViaApi(
+        app,
+        owner.cookies,
+        { projectId, credentialId, rotationId },
+        { acknowledgedNoDependencies: true }
+      )
+      expect(promoteRes.statusCode).toBe(200)
+
+      const beforeVersions = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(credentialVersions)
+          .where(eq(credentialVersions.credentialId, credentialId))
+      )
+
+      const breakGlass = await breakGlassViaApi(app, owner.cookies, projectId, credentialId, {
+        newValue: 'should-not-be-written',
+        reason: 'promoted conflict test',
+      })
+      expect(breakGlass.statusCode).toBe(409)
+      expect(breakGlass.json()).toMatchObject({ code: 'promoted_rotation_conflict', rotationId })
+
+      const promotedRotation = await withOrg(owner.orgId, (tx) =>
+        tx.select().from(rotations).where(eq(rotations.id, rotationId))
+      )
+      expect(promotedRotation[0]?.status).toBe('promoted')
+
+      const afterVersions = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(credentialVersions)
+          .where(eq(credentialVersions.credentialId, credentialId))
+      )
+      expect(afterVersions).toHaveLength(beforeVersions.length)
+
+      const valueRes = await app.inject({
+        method: 'GET',
+        url: credentialValueUrl(projectId, credentialId),
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(valueRes.json<{ data: { value: string } }>().data.value).not.toBe(
+        'should-not-be-written'
+      )
+    })
+
     // ---------------------------------------------------------------------------------------
     // AC-6: concurrency
     // ---------------------------------------------------------------------------------------

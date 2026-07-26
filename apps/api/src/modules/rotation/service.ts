@@ -1548,6 +1548,7 @@ type DependentSystemRow = { id: string; systemName: string }
 export type BreakGlassResult =
   | { status: 'lock_contention' }
   | { status: 'credential_not_found' }
+  | { status: 'promoted_rotation_conflict'; rotationId: string }
   | {
       status: 'ok'
       rotation: RotationRow
@@ -1574,26 +1575,32 @@ async function activeDependentSystems(tx: Tx, orgId: string, credentialId: strin
     )
 }
 
+/** Thrown by {@link supersedeActiveRotation} when the credential already has a
+ *  promoted-but-unretired rotation — see that function's doc comment. Caught by
+ *  {@link breakGlassRotation} and mapped to a 409 `promoted_rotation_conflict` rather than
+ *  letting break-glass proceed and silently displace the live value. */
+class PromotedRotationConflictError extends Error {
+  constructor(public readonly rotationId: string) {
+    super(`credential has a promoted-but-unretired rotation ${rotationId}`)
+  }
+}
+
 /** AC-5/CR6, widened by Story 5.6: if an existing rotation is `in_progress`, `staged`, or
  *  `stale_recovery` for this credential, abandon it (identical mechanics to the manual `abandon`
  *  endpoint, AC-12) before break-glass inserts its own rotation row. `staged` is included because
  *  its new version is, like `in_progress`'s, not yet "current" — abandoning it is exactly as safe
- *  as abandoning an in_progress rotation was pre-5.6. Deliberately does NOT include `promoted`:
- *  a promoted-but-unretired rotation's new version IS the current, live value — abandoning it
- *  here would un-serve a value dependent systems may already be using, which is never safe to do
- *  automatically. This is a known, flagged gap (not silently resolved): if a `promoted` rotation
- *  is active when break-glass fires, this function leaves it untouched and break-glass still
- *  proceeds, meaning a promoted-but-unretired rotation's old version can end up coexisting with a
- *  break-glass rotation's own old version — a three-version-in-flight edge case AC-2.6's
- *  unique-index widening was designed to prevent for the ORDINARY initiate path, but which this
- *  function does not fully close for the break-glass path. Flagged for Nestor's review rather
- *  than guessing at an auto-resolution that could itself be unsafe.
- *  `FOR UPDATE NOWAIT` (not a blocking read) is deliberate — see AC-5/AC-6: a concurrent 5.2
- *  confirm/fail/retry/complete call holds a *rotation*-scoped advisory lock, a different key
- *  domain break-glass's *credential*-scoped lock never serializes against, so a blocking row-lock
- *  read here could silently stall break-glass behind an unrelated in-flight human action —
- *  defeating its "act in seconds" premise. Returns the superseded rotation's id, or null if there
- *  was nothing active to supersede. Throws (for the caller to map to 409
+ *  as abandoning an in_progress rotation was pre-5.6. A `promoted`-but-unretired rotation is
+ *  handled differently: its new version IS the current, live value, so silently abandoning it
+ *  here would un-serve a value dependent systems may already be using. Rather than proceeding
+ *  around it (the pre-hardening behavior, which let break-glass's own later `promoted_at` win and
+ *  silently orphan the earlier promoted rotation), this hard-blocks by throwing
+ *  {@link PromotedRotationConflictError} — the caller must promote/retire/abandon the existing
+ *  rotation first. `FOR UPDATE NOWAIT` (not a blocking read) is deliberate — see AC-5/AC-6: a
+ *  concurrent 5.2 confirm/fail/retry/complete call holds a *rotation*-scoped advisory lock, a
+ *  different key domain break-glass's *credential*-scoped lock never serializes against, so a
+ *  blocking row-lock read here could silently stall break-glass behind an unrelated in-flight
+ *  human action — defeating its "act in seconds" premise. Returns the superseded rotation's id,
+ *  or null if there was nothing active to supersede. Throws (for the caller to map to 409
  *  rotation_lock_contention) if the NOWAIT lock acquisition fails. */
 async function supersedeActiveRotation(
   tx: Tx,
@@ -1603,6 +1610,7 @@ async function supersedeActiveRotation(
     .select({
       id: rotations.id,
       version: rotations.version,
+      status: rotations.status,
       newVersionId: rotations.newVersionId,
       previousVersionId: rotations.previousVersionId,
     })
@@ -1610,12 +1618,13 @@ async function supersedeActiveRotation(
     .where(
       and(
         eq(rotations.credentialId, params.credentialId),
-        inArray(rotations.status, ['in_progress', 'staged', 'stale_recovery'])
+        inArray(rotations.status, ['in_progress', 'staged', 'stale_recovery', 'promoted'])
       )
     )
     .for('update', { noWait: true })
     .limit(1)
   if (!active) return null
+  if (active.status === 'promoted') throw new PromotedRotationConflictError(active.id)
 
   await tx
     .update(rotations)
@@ -1805,6 +1814,9 @@ export async function breakGlassRotation(
     })
   } catch (error) {
     if (isLockNotAvailable(error)) return { status: 'lock_contention' }
+    if (error instanceof PromotedRotationConflictError) {
+      return { status: 'promoted_rotation_conflict', rotationId: error.rotationId }
+    }
     throw error
   }
 

@@ -217,6 +217,19 @@ export const RotationLockContentionResponseSchema = z
   })
   .meta({ id: 'RotationLockContentionResponse' })
 
+// Story 5.6 follow-up: break-glass called while the credential already has a promoted-but-
+// unretired rotation. Hard-blocked rather than auto-abandoned — the promoted rotation's new
+// version is already the live/current value, so silently displacing it is never safe to do
+// automatically. The caller must promote/retire (or abandon) that rotation first.
+export const PromotedRotationConflictResponseSchema = z
+  .object({
+    code: z.literal('promoted_rotation_conflict'),
+    message: z.string(),
+    credentialId: z.uuid(),
+    rotationId: z.uuid(),
+  })
+  .meta({ id: 'PromotedRotationConflictResponse' })
+
 // Story 5.3 AC-17: resume/abandon called against a rotation whose status isn't stale_recovery.
 export const RotationNotStaleResponseSchema = z
   .object({
