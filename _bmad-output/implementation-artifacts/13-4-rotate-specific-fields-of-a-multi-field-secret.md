@@ -1,6 +1,6 @@
 # Story 13.4: Rotate Specific Fields of a Multi-Field Secret
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
