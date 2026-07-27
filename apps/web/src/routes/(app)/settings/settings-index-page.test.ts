@@ -12,4 +12,12 @@ describe('/settings +page.svelte', () => {
     expect(link).toBeTruthy()
     expect(link?.getAttribute('href')).toBe('/settings/language')
   })
+
+  it('lists an Extensions entry after Audit & Compliance (Story 14.5 Task 5)', () => {
+    render(SettingsIndexPage)
+
+    const link = screen.getByText('Extensions').closest('a')
+    expect(link).toBeTruthy()
+    expect(link?.getAttribute('href')).toBe('/settings/extensions')
+  })
 })

@@ -76,5 +76,19 @@
         <span class="text-gray-400">→</span>
       </a>
     </li>
+    <li>
+      <a
+        href={resolve('/settings/extensions')}
+        class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+      >
+        <div>
+          <p class="font-medium text-gray-900">Extensions</p>
+          <p class="text-sm text-gray-500">
+            Whether a configured extension is loaded, not configured, or failed to load
+          </p>
+        </div>
+        <span class="text-gray-400">→</span>
+      </a>
+    </li>
   </ul>
 </div>
