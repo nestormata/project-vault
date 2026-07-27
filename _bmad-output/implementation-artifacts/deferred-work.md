@@ -33,7 +33,15 @@ Retro commitments **D1–D2, P1–P5** implemented 2026-06-30:
 | P4 | Story 4.1 stub + FR57 journey AC | ✅ Stub |
 | P5 | Mandatory adversarial review in code-review step-02 | ✅ Done |
 
-### Open (Epic 1 retro)
+### Open (Epic 1 retro, completion-round-2, 2026-07-26)
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| A1r-doc | P5's "mandatory adversarial review for auth/crypto/RLS/deployment" commitment has no literal text in `.claude/skills/bmad-code-review/`'s `SKILL.md`/`workflow.md`/`steps/*.md` | Tech Writer | Low priority — practice has held 100% in every security-critical story since (1.13, 1.14, 1.15, all of Epics 4/5/13/14); doc-only gap, not a process failure. Close opportunistically during a future `bmad-code-review` skill-authoring pass. |
+
+See `epic-1-retro-2026-07-26.md` for full detail.
+
+### Open (Epic 1 retro, original 2026-06-30)
 
 | ID | Item | Owner | Target |
 |----|------|-------|--------|
@@ -87,8 +95,8 @@ Epic 2 is `done` (Stories 2.0–2.8). Items below are **not** blockers for Epic 
 | Machine-user management (create/list machine users, issue/list/revoke API keys, rotation, dormancy alerts) | 7.1/7.2 | API-only — no dedicated web story exists anywhere in `epics.md` (Epic 7, 8, or 9); both 7.1's and 7.2's Product Surface Contract sections flagged this as "a genuine planning gap" and said it should be escalated, but neither was turned into a tracked entry until the Epic 7 retro | **Resolved — shipped as `8-6-epic-7-completion-machine-user-web-ui-and-hardening`** (done 2026-07-07); retroactive adversarial review shipped as `8-8-story-8-6-retroactive-adversarial-review` (done 2026-07-08); `epic-7` flipped to `done` 2026-07-09 |
 | Audit/compliance management (audit log search/filter/export/forwarding/retention config, point-in-time access-report UI, dormant-user alert admin actions, erasure-request review→confirm→execute flow) | 8.1/8.2/8.3/8.4 | API-only — no dedicated web story exists anywhere in `epics.md`; all four stories' Product Surface Contract sections flagged this identically and each deferred resolution to "Epic 8 sprint planning/retrospective," but it sat untracked through all four stories until the Epic 8 retro | **Resolved — shipped as `8-7-epic-8-completion-audit-compliance-web-ui-and-technical-debt`** (done 2026-07-08); `epic-8` flipped to `done` 2026-07-09 |
 | Platform operations admin UI (backup/restore admin screen, system settings SMTP/policy/schedule UI, version-upgrade trigger/API-docs browser within app shell, Platform Operator Audit Log distinct from per-org log per PJ9, resource-usage dashboard with threshold indicators) | 9.1/9.2/9.3/9.4/9.6 | API-only — all five stories' Product Surface Contract sections flagged this identically and each deferred resolution to "Epic 9 sprint planning/retrospective" (same 4-times-recurrent pattern as Epics 5/6/7/8 — see `epic-9-retro-2026-07-08.md` Finding 1, [REPEAT 4x]); no deferred-work.md row existed until the Epic 9 retro | **Resolved — shipped as `9-7-epic-9-completion-platform-operations-web-ui`** |
-| Extension status admin page (`(app)/admin/extensions/` — surfaces `GET /api/v1/admin/extensions/status`'s loaded/not-loaded manifest state) | 14.2 | API-only — `GET /api/v1/admin/extensions/status` and `GET /health`'s `extensions_status` field are real, callable, and correctly return an honest `null`/`"not_configured"` empty state (not a fabricated success), but no story in the current sprint backlog (14.0-14.4, or any other tracked epic) builds the page; 14.2's own Product Surface Contract flagged this explicitly as a blocking note for `epic-14` before it may reach `done` | **Open — must be scheduled** (either appended to Epic 14 or as an Epic 12-style admin-UI story) before `epic-14` may move to `done` per G2; until then, an OrgAdmin can only check extension status via `curl`/`httpie` or `GET /health` |
-| SSO login button / email-first routing UI (surfaces `POST /api/v1/auth/sso/start/:providerName` and `.../callback/:providerName` to an actual login screen) | 14.3 | API-only — 14.3 makes the external-auth flow backend-callable (by a hand-built extension's own frontend or direct API calls) but ships no UI; 14.3's own Product Surface Contract flags this explicitly, naming `14-4-route-login-to-sso-by-email-domain` (currently `backlog`) as the story that owns the actual login-screen routing UI | **Open — tracked, not silent.** `14-4` already exists in `sprint-status.yaml` as the intended follow-up (per 14.3's own PSC note) — no new story needed, just don't let `epic-14` move to `done` until `14-4` (or an equivalent UI story) lands, per 14.3's own G2 flag |
+| Extension status admin page (`(app)/admin/extensions/` — surfaces `GET /api/v1/admin/extensions/status`'s loaded/not-loaded manifest state) | 14.2 | API-only — `GET /api/v1/admin/extensions/status` and `GET /health`'s `extensions_status` field are real, callable, and correctly return an honest `null`/`"not_configured"` empty state (not a fabricated success), but no story in the current sprint backlog (14.0-14.4, or any other tracked epic) builds the page; 14.2's own Product Surface Contract flagged this explicitly as a blocking note for `epic-14` before it may reach `done` | **Resolved 2026-07-26 (Epic 14 first retro):** scheduled as `14-5-extension-status-admin-page` (backlog, `sprint-status.yaml`) rather than left open indefinitely — `epic-14` held `in-progress` until it lands, NOT flipped to `done` this retro. See `epic-14-retro-2026-07-26.md`. |
+| SSO login button / email-first routing UI (surfaces `POST /api/v1/auth/sso/start/:providerName` and `.../callback/:providerName` to an actual login screen) | 14.3 | API-only — 14.3 makes the external-auth flow backend-callable (by a hand-built extension's own frontend or direct API calls) but ships no UI; 14.3's own Product Surface Contract flags this explicitly, naming `14-4-route-login-to-sso-by-email-domain` (currently `backlog`) as the story that owns the actual login-screen routing UI | **Resolved — `14-4` shipped and closed this 2026-07-26**, confirmed via live Chrome verification per its own story record. |
 
 ### Shell placeholders (future epics — tracked, not silent)
 
@@ -227,6 +235,16 @@ Epic 4 (`epic-4`) stories 4.1–4.4 are `done` in sprint-status. The retro below
 | P4-3 | Decide whether 4.1 and 4.4 get a retroactive adversarial review | Open — process decision, not code; see retro Team Agreements |
 
 Full detail + verification notes: `_bmad-output/implementation-artifacts/epic-4-retro-2026-07-02.md` (see Addendum).
+
+---
+
+## Deferred from: Epic 5 retrospective, completion round 3 (2026-07-26)
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| A5r-doc | P5-1's "list the generic error schema last in `z.union([...])`" house rule (from the 2026-07-05 retro) has no lint/CI enforcement; `apps/api/src/modules/org/routes.ts:214` still lists `ApiErrorSchema` first | Dev | Low priority — verified not currently exploitable (`ActiveRotationsErrorSchema` shares no required fields with `ApiErrorSchema`, so Zod's union correctly falls through). Consider a lightweight `check-error-schema-union-order.ts` CI guard opportunistically, same family as this project's other `check-*` scripts. |
+
+See `epic-5-retro-2026-07-26.md` for full detail.
 
 ---
 
