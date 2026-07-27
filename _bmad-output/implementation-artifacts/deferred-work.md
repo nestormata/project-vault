@@ -33,7 +33,15 @@ Retro commitments **D1–D2, P1–P5** implemented 2026-06-30:
 | P4 | Story 4.1 stub + FR57 journey AC | ✅ Stub |
 | P5 | Mandatory adversarial review in code-review step-02 | ✅ Done |
 
-### Open (Epic 1 retro)
+### Open (Epic 1 retro, completion-round-2, 2026-07-26)
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| A1r-doc | P5's "mandatory adversarial review for auth/crypto/RLS/deployment" commitment has no literal text in `.claude/skills/bmad-code-review/`'s `SKILL.md`/`workflow.md`/`steps/*.md` | Tech Writer | Low priority — practice has held 100% in every security-critical story since (1.13, 1.14, 1.15, all of Epics 4/5/13/14); doc-only gap, not a process failure. Close opportunistically during a future `bmad-code-review` skill-authoring pass. |
+
+See `epic-1-retro-2026-07-26.md` for full detail.
+
+### Open (Epic 1 retro, original 2026-06-30)
 
 | ID | Item | Owner | Target |
 |----|------|-------|--------|
