@@ -271,25 +271,39 @@ async function resolveRegistrationOrg(
   tx: Tx,
   invitation: ProjectInvitation | undefined,
   orgName: string | undefined
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; name: string; defaultLocale: string }> {
   if (invitation) {
     // Re-set org context for this fresh transaction — the pre-transaction lookup above
     // ran its own withOrg() scans and doesn't carry context into this connection.
     await tx.execute(sql`SELECT set_config('app.current_org_id', ${invitation.orgId}, true)`)
     const [orgRow] = await tx
-      .select({ id: organizations.id, name: organizations.name })
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        defaultLocale: organizations.defaultLocale,
+      })
       .from(organizations)
       .where(eq(organizations.id, invitation.orgId))
       .limit(1)
     if (!orgRow) throw new AppError('invitation_not_found', 'Invitation not found', 404)
     return orgRow
   }
+  // Story 15.2 AC 2 edge: self-signup always creates a brand-new org, whose default_locale is
+  // always the column's own 'en' default at creation time (no PATCH could have run yet against
+  // an org that didn't exist until this call) — read it back explicitly from the freshly-inserted
+  // row rather than hardcoding 'en' a second time, so the two branches never drift.
   const allocated = await allocateOrganizationSlug(tx, slugify(orgName as string))
-  await tx
+  const [updated] = await tx
     .update(organizations)
     .set({ name: (orgName as string).trim() })
     .where(eq(organizations.id, allocated.id))
-  return { id: allocated.id, name: (orgName as string).trim() }
+    .returning({
+      id: organizations.id,
+      name: organizations.name,
+      defaultLocale: organizations.defaultLocale,
+    })
+  if (!updated) throw new Error('resolveRegistrationOrg: org update returned no row')
+  return updated
 }
 
 async function insertRegistrationMemberships(
@@ -379,7 +393,7 @@ async function resolveIsFirstUser(tx: Tx): Promise<boolean> {
 
 async function insertUserRow(
   tx: Tx,
-  fields: { email: string; passwordHash: string; isPlatformOperator: boolean }
+  fields: { email: string; passwordHash: string; isPlatformOperator: boolean; locale: string }
 ): Promise<{ id: string; email: string }> {
   const inserted = await tx
     .insert(users)
@@ -387,6 +401,7 @@ async function insertUserRow(
       email: fields.email,
       passwordHash: fields.passwordHash,
       isPlatformOperator: fields.isPlatformOperator,
+      locale: fields.locale,
     })
     .returning({ id: users.id, email: users.email })
   const user = inserted[0]
@@ -409,7 +424,7 @@ async function insertUserRow(
  */
 export async function insertUserWithPlatformOperatorBootstrap(
   tx: Tx,
-  fields: { email: string; passwordHash: string },
+  fields: { email: string; passwordHash: string; locale: string },
   isFirstUser: boolean
 ): Promise<{ id: string; email: string }> {
   if (!isFirstUser) return insertUserRow(tx, { ...fields, isPlatformOperator: false })
@@ -454,9 +469,12 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
       // Story 9.1 D1/AC-1: detect + bootstrap the first-ever user as the platform operator
       // BEFORE the insert, inside this same transaction.
       const isFirstUser = await resolveIsFirstUser(tx as Tx)
+      // Story 15.2 AC 2: seed this brand-new user's locale from the resolved org's
+      // default_locale (either the invited org's current value, or a freshly-created org's own
+      // 'en' default for self-signup) — never from client input.
       const user = await insertUserWithPlatformOperatorBootstrap(
         tx as Tx,
-        { email, passwordHash },
+        { email, passwordHash, locale: org.defaultLocale },
         isFirstUser
       )
 

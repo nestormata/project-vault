@@ -98,10 +98,18 @@ describe('Story 9.1 D1/AC-1: platform operator bootstrap', () => {
     // depends on, without requiring the whole shared test database to genuinely have zero rows.
     const [resultA, resultB] = await Promise.all([
       getDb().transaction((tx) =>
-        insertUserWithPlatformOperatorBootstrap(tx as never, { email: emailA, passwordHash }, true)
+        insertUserWithPlatformOperatorBootstrap(
+          tx as never,
+          { email: emailA, passwordHash, locale: 'en' },
+          true
+        )
       ),
       getDb().transaction((tx) =>
-        insertUserWithPlatformOperatorBootstrap(tx as never, { email: emailB, passwordHash }, true)
+        insertUserWithPlatformOperatorBootstrap(
+          tx as never,
+          { email: emailB, passwordHash, locale: 'en' },
+          true
+        )
       ),
     ])
 

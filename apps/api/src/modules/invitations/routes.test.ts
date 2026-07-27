@@ -118,6 +118,39 @@ function registerWithToken(
   return app.inject({ method: 'POST', url: '/api/v1/auth/register', payload: body })
 }
 
+/** Story 15.2 AC 1 test helper: sets an org's default_locale via the real admin-only PATCH route. */
+async function setOrgDefaultLocale(
+  app: TestApp,
+  cookies: Record<string, string>,
+  orgId: string,
+  defaultLocale: string
+): Promise<void> {
+  const res = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/organizations/${orgId}/default-locale-settings`,
+    headers: { cookie: cookieHeader(cookies) },
+    payload: { defaultLocale },
+  })
+  if (res.statusCode !== 200) {
+    throw new Error(`setOrgDefaultLocale failed: ${res.statusCode} ${JSON.stringify(res.json())}`)
+  }
+}
+
+async function localeOfUser(orgId: string, userId: string): Promise<string | undefined> {
+  const [row] = await withOrg(orgId, (tx) =>
+    tx.select({ locale: users.locale }).from(users).where(eq(users.id, userId))
+  )
+  return row?.locale
+}
+
+async function userIdByEmail(orgId: string, email: string): Promise<string> {
+  const [row] = await withOrg(orgId, (tx) =>
+    tx.select({ id: users.id }).from(users).where(eq(users.email, email))
+  )
+  if (!row) throw new Error(`expected user row for ${email}`)
+  return row.id
+}
+
 async function insertRawInvitation(input: {
   orgId: string
   projectId: string
@@ -485,6 +518,32 @@ describe.sequential('project invitation routes', () => {
       await expectInvitationAccepted(owner.orgId, invitationId)
     })
 
+    it("Story 15.2 AC3: an existing user's own locale is untouched by accepting an invitation into an org with a different default_locale", async () => {
+      const owner = await registerOwner(app, 'accept-locale')
+      const projectId = await createProject(app, owner.cookies, 'accept-locale')
+      const inviteeEmail = uniqueEmail('accept-locale-invitee')
+      const invitee = await registerAndLoginViaApi(app, {
+        email: inviteeEmail,
+        password: PASSWORD,
+        orgName: `Accept Locale Org ${randomUUID()}`,
+      })
+      // Morgan's own locale was never customized — still the column's own 'en' default.
+      const morganId = await userIdByEmail(invitee.orgId, inviteeEmail)
+      expect(await localeOfUser(invitee.orgId, morganId)).toBe('en')
+
+      await setOrgDefaultLocale(app, owner.cookies, owner.orgId, 'es')
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
+        email: inviteeEmail,
+        role: MEMBER_ROLE,
+      })
+
+      const res = await acceptInvitation(app, token, invitee.cookies)
+      expect(res.statusCode).toBe(200)
+
+      // The accept flow never inserts a new users row and must never write users.locale.
+      expect(await localeOfUser(invitee.orgId, morganId)).toBe('en')
+    })
+
     it('cannot be consumed twice — a second accept returns 409, not a duplicate membership', async () => {
       const owner = await registerOwner(app, 'accept-twice')
       const projectId = await createProject(app, owner.cookies, 'accept-twice')
@@ -679,6 +738,97 @@ describe.sequential('project invitation routes', () => {
         password: PASSWORD,
       })
       expect(res.statusCode).toBe(422)
+    })
+
+    it('Story 15.2 AC2: a brand-new invited user inherits the org default_locale at registration', async () => {
+      const owner = await registerOwner(app, 'register-locale')
+      const projectId = await createProject(app, owner.cookies, 'register-locale')
+      await setOrgDefaultLocale(app, owner.cookies, owner.orgId, 'es')
+
+      const inviteeEmail = uniqueEmail('register-locale-invitee')
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
+        email: inviteeEmail,
+        role: MEMBER_ROLE,
+      })
+
+      const res = await registerWithToken(app, {
+        email: inviteeEmail,
+        password: PASSWORD,
+        invitationToken: token,
+      })
+      expect(res.statusCode).toBe(201)
+
+      const newUserId = await userIdByEmail(owner.orgId, inviteeEmail)
+      expect(await localeOfUser(owner.orgId, newUserId)).toBe('es')
+    })
+
+    it('Story 15.2 AC2 edge: an org that never configured a default_locale seeds a new invited user with en (unchanged pre-15.2 behavior)', async () => {
+      const owner = await registerOwner(app, 'register-locale-default')
+      const projectId = await createProject(app, owner.cookies, 'register-locale-default')
+      const inviteeEmail = uniqueEmail('register-locale-default-invitee')
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
+        email: inviteeEmail,
+        role: MEMBER_ROLE,
+      })
+
+      const res = await registerWithToken(app, {
+        email: inviteeEmail,
+        password: PASSWORD,
+        invitationToken: token,
+      })
+      expect(res.statusCode).toBe(201)
+
+      const newUserId = await userIdByEmail(owner.orgId, inviteeEmail)
+      expect(await localeOfUser(owner.orgId, newUserId)).toBe('en')
+    })
+
+    it("Story 15.2 AC2 edge: self-signup (brand-new org, no invitation token) always gets en, never reads another org's default_locale", async () => {
+      // A prior org in this same test run already has its default_locale set to 'es' — this
+      // regression-guards against the self-signup branch accidentally reading *some other* org's
+      // default instead of its own freshly-created org's (always-'en'-at-creation-time) row.
+      const otherOrgOwner = await registerOwner(app, 'register-self-signup-other-org')
+      await setOrgDefaultLocale(app, otherOrgOwner.cookies, otherOrgOwner.orgId, 'es')
+
+      const selfSignupEmail = uniqueEmail('register-self-signup')
+      const res = await registerWithToken(app, {
+        email: selfSignupEmail,
+        password: PASSWORD,
+        orgName: `Self Signup Org ${randomUUID()}`,
+      })
+      expect(res.statusCode).toBe(201)
+      const body = res.json<{ data: { orgId: string } }>()
+
+      const newUserId = await userIdByEmail(body.data.orgId, selfSignupEmail)
+      expect(await localeOfUser(body.data.orgId, newUserId)).toBe('en')
+    })
+
+    it("Story 15.2 AC4: a later org-default change never retroactively changes an already-registered user's own locale, including the admin who changes it", async () => {
+      const owner = await registerOwner(app, 'register-locale-no-retro')
+      const projectId = await createProject(app, owner.cookies, 'register-locale-no-retro')
+      await setOrgDefaultLocale(app, owner.cookies, owner.orgId, 'es')
+
+      const inviteeEmail = uniqueEmail('register-locale-no-retro-invitee')
+      const { token } = await inviteAndTokenize(app, owner, projectId, {
+        email: inviteeEmail,
+        role: MEMBER_ROLE,
+      })
+      const res = await registerWithToken(app, {
+        email: inviteeEmail,
+        password: PASSWORD,
+        invitationToken: token,
+      })
+      expect(res.statusCode).toBe(201)
+      const newUserId = await userIdByEmail(owner.orgId, inviteeEmail)
+      expect(await localeOfUser(owner.orgId, newUserId)).toBe('es')
+
+      // Riley (the OrgAdmin) was themselves seeded with 'en' at their own registration (self-signup
+      // owner path) and has never personally changed it. Changing the org's future default again
+      // must not retroactively touch Riley's own already-seeded value either.
+      expect(await localeOfUser(owner.orgId, owner.userId)).toBe('en')
+      await setOrgDefaultLocale(app, owner.cookies, owner.orgId, 'en')
+
+      expect(await localeOfUser(owner.orgId, newUserId)).toBe('es')
+      expect(await localeOfUser(owner.orgId, owner.userId)).toBe('en')
     })
   })
 })
