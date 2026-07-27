@@ -276,6 +276,46 @@ type LoadRotationTargetResult =
   | { status: 'project_archived' }
   | { status: 'ok'; previousVersion: PreviousVersionRow & { id: string; versionNumber: number } }
 
+// Story 13.4 — shared by both call sites that need to lock "the current version to supersede"
+// (normal initiation below, and break-glass's createBreakGlassVersion further down): same FOR
+// UPDATE query, ordering, and not-found guard, previously duplicated inline at each site (flagged
+// as a code clone). Always excludes abandonedAt: without it, a staged-then-abandoned rotation
+// (Story 5.6 AC-2.5 — abandon does not purge, it only sets abandonedAt) can still have the highest
+// versionNumber and would be selected as "the version to supersede". Pre-13.4 this only skewed
+// versionNumber/the same-value flag (cosmetic); since this story's field-scoped rotation carries
+// this row's DECRYPTED CONTENT into the new version's non-targeted fields
+// (buildFieldScopedSnapshot), picking an abandoned version would silently resurrect secret
+// material that was deliberately never promoted.
+async function lockCurrentNonPurgedVersion(
+  tx: Tx,
+  credentialId: string,
+  notFoundMessage: string
+): Promise<PreviousVersionRow & { id: string; versionNumber: number }> {
+  const [row] = await tx
+    .select({
+      id: credentialVersions.id,
+      versionNumber: credentialVersions.versionNumber,
+      encryptedValue: credentialVersions.encryptedValue,
+      schemaVersion: credentialVersions.schemaVersion,
+      fieldMeta: credentialVersions.fieldMeta,
+    })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.credentialId, credentialId),
+        isNull(credentialVersions.purgedAt),
+        isNull(credentialVersions.abandonedAt)
+      )
+    )
+    .orderBy(desc(credentialVersions.versionNumber))
+    .for('update')
+    .limit(1)
+  if (!row) {
+    throw new Error(notFoundMessage)
+  }
+  return row
+}
+
 // Story 13.4 — extracted purely to keep initiateRotation()'s transaction callback under this
 // project's complexity ceiling; behavior unchanged from the pre-13.4 inline version. Locks the
 // project row (Story 5.5 AC-1's TOCTOU-closing `FOR UPDATE`), the credential row, and the
@@ -308,39 +348,11 @@ async function loadRotationTargetForUpdate(
   })
   if (!credential) return { status: 'credential_not_found' }
 
-  const [previousVersion] = await trx
-    .select({
-      id: credentialVersions.id,
-      versionNumber: credentialVersions.versionNumber,
-      encryptedValue: credentialVersions.encryptedValue,
-      schemaVersion: credentialVersions.schemaVersion,
-      fieldMeta: credentialVersions.fieldMeta,
-    })
-    .from(credentialVersions)
-    .where(
-      and(
-        eq(credentialVersions.credentialId, input.credentialId),
-        isNull(credentialVersions.purgedAt),
-        // Code review (13.4): without excluding abandoned versions here, a staged-then-abandoned
-        // rotation (Story 5.6 AC-2.5 — abandon does not purge, it only sets abandonedAt) can still
-        // have the highest versionNumber and would be selected as "the version to supersede".
-        // Pre-13.4 this only skewed versionNumber/the same-value flag (cosmetic); since this
-        // story's field-scoped rotation carries this row's DECRYPTED CONTENT into the new
-        // version's non-targeted fields (buildFieldScopedSnapshot), picking an abandoned version
-        // would silently resurrect secret material that was deliberately never promoted. Every
-        // other "current version" resolver in this file/module already excludes abandonedAt
-        // (e.g. line ~1926 below) — this query was the one gap.
-        isNull(credentialVersions.abandonedAt)
-      )
-    )
-    .orderBy(desc(credentialVersions.versionNumber))
-    .for('update')
-    .limit(1)
-  if (!previousVersion) {
-    throw new Error(
-      `initiateRotation: credential ${input.credentialId} has no non-purged version to supersede`
-    )
-  }
+  const previousVersion = await lockCurrentNonPurgedVersion(
+    trx,
+    input.credentialId,
+    `initiateRotation: credential ${input.credentialId} has no non-purged version to supersede`
+  )
   return { status: 'ok', previousVersion }
 }
 
@@ -1926,24 +1938,11 @@ async function createBreakGlassVersion(
   // Excludes abandonedAt too (CR5) — critical when supersedeActiveRotation just abandoned the
   // previously "highest" version above: this correctly resolves back to whatever was current
   // before either rotation started, not the just-abandoned half-finished value (AC-5).
-  const [previousVersion] = await tx
-    .select({ id: credentialVersions.id, versionNumber: credentialVersions.versionNumber })
-    .from(credentialVersions)
-    .where(
-      and(
-        eq(credentialVersions.credentialId, input.credentialId),
-        isNull(credentialVersions.purgedAt),
-        isNull(credentialVersions.abandonedAt)
-      )
-    )
-    .orderBy(desc(credentialVersions.versionNumber))
-    .for('update')
-    .limit(1)
-  if (!previousVersion) {
-    throw new Error(
-      `breakGlassRotation: credential ${input.credentialId} has no non-purged/non-abandoned version to supersede`
-    )
-  }
+  const previousVersion = await lockCurrentNonPurgedVersion(
+    tx,
+    input.credentialId,
+    `breakGlassRotation: credential ${input.credentialId} has no non-purged/non-abandoned version to supersede`
+  )
 
   // Anti-pattern guard (Dev Notes): version numbers stay strictly monotonic regardless of
   // abandonment — MUST be MAX(version_number)+1 across ALL rows (including abandoned ones), NOT
