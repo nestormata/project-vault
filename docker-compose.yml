@@ -133,6 +133,13 @@ services:
     environment:
       NODE_ENV: production
       API_BASE_URL: http://api:3000
+      # @sveltejs/adapter-node requires this for its CSRF same-origin check on POST form actions
+      # (e.g. Story 15.1's Settings > Language page) — without it, adapter-node can't tell the
+      # externally-hit host (WEB_HOST_PORT, browser-facing) apart from its own internal port
+      # (always 3000 in-container), and rejects every form action with a 403. Must match the host
+      # port the browser actually hits, same convention as the api service's CORS_ALLOWED_ORIGINS
+      # above — make fix-ports/docker-ports.sh can bump WEB_HOST_PORT so this can't be hardcoded.
+      ORIGIN: http://localhost:${WEB_HOST_PORT:-5173}
     ports:
       - "${WEB_HOST_PORT:-5173}:3000"
     depends_on:
