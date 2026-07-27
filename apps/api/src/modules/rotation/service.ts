@@ -320,7 +320,17 @@ async function loadRotationTargetForUpdate(
     .where(
       and(
         eq(credentialVersions.credentialId, input.credentialId),
-        isNull(credentialVersions.purgedAt)
+        isNull(credentialVersions.purgedAt),
+        // Code review (13.4): without excluding abandoned versions here, a staged-then-abandoned
+        // rotation (Story 5.6 AC-2.5 — abandon does not purge, it only sets abandonedAt) can still
+        // have the highest versionNumber and would be selected as "the version to supersede".
+        // Pre-13.4 this only skewed versionNumber/the same-value flag (cosmetic); since this
+        // story's field-scoped rotation carries this row's DECRYPTED CONTENT into the new
+        // version's non-targeted fields (buildFieldScopedSnapshot), picking an abandoned version
+        // would silently resurrect secret material that was deliberately never promoted. Every
+        // other "current version" resolver in this file/module already excludes abandonedAt
+        // (e.g. line ~1926 below) — this query was the one gap.
+        isNull(credentialVersions.abandonedAt)
       )
     )
     .orderBy(desc(credentialVersions.versionNumber))

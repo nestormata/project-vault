@@ -24,6 +24,12 @@
   let rotationMode = $state<'whole' | 'specific'>('whole')
   let selectedFields = $state<string[]>([])
 
+  // Code review (13.4): the request schema has one `newValue`, not a per-field value map (Dev
+  // Agent Record's documented judgment call). Selecting 2+ fields silently applies the identical
+  // value to every one of them — e.g. checking `username` + `password` sets both to the new
+  // password. Surface that plainly before submit rather than letting it happen silently.
+  const multipleFieldsSelected = $derived(rotationMode === 'specific' && selectedFields.length > 1)
+
   let newValue = $state('')
   let notes = $state('')
   let submitting = $state(false)
@@ -222,6 +228,12 @@
             </ul>
             {#if fieldSelectionError}
               <p class="text-sm text-red-700">{fieldSelectionError}</p>
+            {/if}
+            {#if multipleFieldsSelected}
+              <p class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
+                The same new value below will be applied to all selected fields — they will end up
+                identical. If that's not what you want, rotate one field at a time.
+              </p>
             {/if}
           {/if}
         </div>
