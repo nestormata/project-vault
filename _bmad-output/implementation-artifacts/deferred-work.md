@@ -238,6 +238,16 @@ Full detail + verification notes: `_bmad-output/implementation-artifacts/epic-4-
 
 ---
 
+## Deferred from: Epic 5 retrospective, completion round 3 (2026-07-26)
+
+| ID | Item | Owner | Target |
+|----|------|-------|--------|
+| A5r-doc | P5-1's "list the generic error schema last in `z.union([...])`" house rule (from the 2026-07-05 retro) has no lint/CI enforcement; `apps/api/src/modules/org/routes.ts:214` still lists `ApiErrorSchema` first | Dev | Low priority — verified not currently exploitable (`ActiveRotationsErrorSchema` shares no required fields with `ApiErrorSchema`, so Zod's union correctly falls through). Consider a lightweight `check-error-schema-union-order.ts` CI guard opportunistically, same family as this project's other `check-*` scripts. |
+
+See `epic-5-retro-2026-07-26.md` for full detail.
+
+---
+
 ## Deferred from: Epic 6 retrospective (2026-07-06)
 
 Epic 6 (`epic-6`) stories 6.1-6.3 are `done`, but the epic itself stays `in-progress` in
