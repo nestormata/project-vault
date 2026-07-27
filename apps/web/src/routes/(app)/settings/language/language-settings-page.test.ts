@@ -21,7 +21,7 @@ describe('/settings/language +page.svelte (AC 1)', () => {
     expect(screen.getByText('English')).toBeTruthy()
     expect(screen.getByText('Español')).toBeTruthy()
     // Only the current option shows the "current selection" label.
-    expect(screen.getAllByText('Current selection').length).toBe(1)
+    expect(screen.getAllByText('Current selection')).toHaveLength(1)
   })
 
   it('renders correctly with a single compiled locale (AC 1 edge — never hardcoded to "at least 2")', () => {

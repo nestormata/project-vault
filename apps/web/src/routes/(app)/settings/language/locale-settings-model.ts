@@ -35,7 +35,7 @@ export function resolveDisplayedLocale(value: string): SupportedLocale {
 export function localeToApplyFromActionResult(
   result: { type: string; data?: unknown } | null | undefined
 ): SupportedLocale | null {
-  if (!result || result.type !== 'success') return null
+  if (result?.type !== 'success') return null
   const data = result.data as { locale?: unknown } | undefined
   return isSupportedLocale(data?.locale) ? data.locale : null
 }
