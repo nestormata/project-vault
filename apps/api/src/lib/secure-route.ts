@@ -56,6 +56,10 @@ export type SecureRouteRegistrationOptions = {
   method: HttpMethod
   url: string
   schema?: FastifySchema
+  // Story 14.4 AC-9: matches routes.ts's raw fastify.route() `bodyLimit: 4096` convention for
+  // public, unauthenticated request-body-accepting routes — forwarded straight through to
+  // fastify's own route registration (fastify's global default otherwise applies).
+  bodyLimit?: number
   security?: {
     requireAuth?: boolean
     requireOrgScope?: boolean
@@ -544,6 +548,7 @@ export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrat
     method: options.method,
     url: options.url,
     schema: options.schema,
+    ...(options.bodyLimit !== undefined ? { bodyLimit: options.bodyLimit } : {}),
     attachValidation: Boolean(options.schema?.body),
     preHandler,
     handler: (request: FastifyRequest, reply: FastifyReply) =>

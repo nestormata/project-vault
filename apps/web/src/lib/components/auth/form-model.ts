@@ -1,5 +1,7 @@
 import type {
   AuthSessionResponse,
+  DomainLookupRequest,
+  DomainLookupResponse,
   LoginRequest,
   MfaLoginChallenge,
   RegisterRequest,
@@ -40,4 +42,19 @@ export function buildMfaLoginRequest(fields: VerifyMfaLoginRequest): VerifyMfaLo
 
 export function clearMfaLoginFields(_fields: VerifyMfaLoginRequest): VerifyMfaLoginRequest {
   return { mfaToken: '', totp: '' }
+}
+
+// Story 14.4 Task 3.2/AC-2a: the client sends the raw email exactly as typed — the server (not
+// this helper) is the source of truth for domain extraction/validation (Task 2.2), so this never
+// attempts to pre-validate or extract a domain client-side.
+export function buildDomainLookupRequest(email: string): DomainLookupRequest {
+  return { email }
+}
+
+// Story 14.4 AC-1: a single, named predicate for "the lookup says this email routes to SSO" —
+// used both to decide which step to render and to guard the out-of-order-response race (AC-8).
+export function isSsoRequired(
+  response: DomainLookupResponse
+): response is { ssoRequired: true; providerName: string } {
+  return response.ssoRequired === true && typeof response.providerName === 'string'
 }

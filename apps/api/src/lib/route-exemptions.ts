@@ -195,6 +195,14 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/auth/sso/domain-lookup',
+    reason:
+      "Story 14.4 AC-1/AC-2/AC-3 — pre-auth email-domain-to-SSO-provider lookup. The caller has no session yet (this is exactly what lets the login screen decide whether to show a password field or an SSO step); the handler uses getAdminDb() (the same pre-auth exception Story 14.3 established for external_identities/project_invitations lookups) and never returns the matched org's id or name (AC-9a), only { ssoRequired, providerName? }.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, 'body-size-limit', 'no-org-identifying-response-data'],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/auth/sso/callback/:providerName',
     reason:
       'Story 14.3 AC-4/AC-11 — pre-auth SSO callback. The caller has no session yet (that is exactly what this endpoint issues on success); the handler validates the server-stored, single-use state token before ever invoking the registered onAuthenticate() strategy, and is independently rate-limited from /start per the Red Team vs Blue Team elicitation finding.',
@@ -1075,6 +1083,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditOmissionReason:
       "Story 14.3 AC-4/AC-5/AC-7/AC-8/AC-9 — pre-auth SSO callback route; org context is not resolvable until state validation + identity/invitation lookup runs inside the handler's own transactions, so it does not use SecureRoute's declarative writeAuditEvent path. SSO_LOGIN_SUCCEEDED/SSO_LOGIN_REJECTED (platform-level or org-scoped, depending on whether an org was resolved) and EXTERNAL_IDENTITY_LINKED (AC-8) are all still written fail-closed-adjacent inside those transactions via writeHumanAuditEntry()/the platform_security_events writer.",
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/auth/sso/domain-lookup': {
+    action: 'read',
+    auditOmissionReason:
+      "Story 14.4 AC-6 — a domain-lookup response carries no security-relevant outcome (it doesn't reveal user existence, only whether a domain has SSO configured, which is organization-level and not secret), matching /sso/start's existing no-audit-row-by-design precedent. No org/user context is resolvable pre-auth either.",
     reviewer: SECURITY_OWNER,
   },
 }

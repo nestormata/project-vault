@@ -52,6 +52,7 @@ import { extensionStatusRoutes } from './extensions/status-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
+import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
 import { externalIdentityRoutes } from './modules/auth/external-identity-routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
@@ -248,6 +249,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
   // auth at the same public prefix — see Dev Notes judgment call #6 on file/module placement.
   await fastify.register(ssoRoutes, { prefix: '/api/v1/auth/sso' })
+  // Story 14.4: domain-lookup is also public/pre-auth (the caller has no session yet) — mounted
+  // at the same prefix as start/callback, in its own module (Dev Notes Project Structure Notes).
+  await fastify.register(domainLookupRoutes, { prefix: '/api/v1/auth/sso' })
   /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
      literal prefix strings; a shared constant would make them invisible to that parser. */
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })

@@ -308,6 +308,33 @@
           "userId"
         ]
       },
+      "DomainLookupRequestInput": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 254
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "DomainLookupResponseInput": {
+        "type": "object",
+        "properties": {
+          "ssoRequired": {
+            "type": "boolean"
+          },
+          "providerName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ssoRequired"
+        ]
+      },
       "UpcomingRotationInput": {
         "type": "object",
         "properties": {
@@ -9385,6 +9412,35 @@
         "required": [
           "revokedCount",
           "userId"
+        ],
+        "additionalProperties": false
+      },
+      "DomainLookupRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 254
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "DomainLookupResponse": {
+        "type": "object",
+        "properties": {
+          "ssoRequired": {
+            "type": "boolean"
+          },
+          "providerName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ssoRequired"
         ],
         "additionalProperties": false
       },
@@ -21373,6 +21429,42 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sso/domain-lookup": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DomainLookupRequestInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainLookupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }

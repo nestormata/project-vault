@@ -1,6 +1,6 @@
 # Story 14.4: Route Login to SSO by Email Domain
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -151,85 +151,85 @@ screen never calls the domain-lookup endpoint (see AC-4) — behaves identically
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — `org_sso_domains` schema + migration** (AC: 1, 5, 10)
-  - [ ] 1.1 Add `packages/db/src/schema/org-sso-domains.ts`: `id` (uuid pk), `org_id` (uuid FK →
+- [x] **Task 1 — `org_sso_domains` schema + migration** (AC: 1, 5, 10)
+  - [x] 1.1 Add `packages/db/src/schema/org-sso-domains.ts`: `id` (uuid pk), `org_id` (uuid FK →
     `organizations.id`, cascade delete), `domain` (text, store lowercased/normalized — decide
     normalize-on-write vs. normalize-on-read, document the choice), `provider_name` (text),
     `created_at`. Unique index on `domain` alone (a domain can only route to one org/provider —
     confirm this against epics.md's singular-mapping framing; if ambiguous, treat "one org per
     domain" as the safe default and document as a judgment call).
-  - [ ] 1.2 Schema test following `external-identities.test.ts`'s pattern (RLS-inclusion assertion:
+  - [x] 1.2 Schema test following `external-identities.test.ts`'s pattern (RLS-inclusion assertion:
     `EXCLUDED_TABLES.has('org_sso_domains')` must be `false`, unlike `sso_login_states`).
-  - [ ] 1.3 Migration (next sequential number — check `packages/db/src/migrations/meta/_journal.json`
+  - [x] 1.3 Migration (next sequential number — check `packages/db/src/migrations/meta/_journal.json`
     for the actual next-free slot; 0052 is the last one landed as of this story's creation).
     Enable RLS with the standard `NULLIF(current_setting('app.current_org_id', true), '')::uuid`
     policy, matching `external_identities`'s pattern exactly.
-  - [ ] 1.4 Export from `packages/db/src/schema/index.ts`.
+  - [x] 1.4 Export from `packages/db/src/schema/index.ts`.
 
-- [ ] **Task 2 — Domain-lookup endpoint** (AC: 1, 2, 3, 5, 6, 9)
-  - [ ] 2.1 New route, e.g. `POST /api/v1/auth/sso/domain-lookup` (or a name consistent with the
+- [x] **Task 2 — Domain-lookup endpoint** (AC: 1, 2, 3, 5, 6, 9)
+  - [x] 2.1 New route, e.g. `POST /api/v1/auth/sso/domain-lookup` (or a name consistent with the
     `sso-routes.ts` file's existing `/start`, `/callback` naming — pick one and register alongside
     them), accepting `{ email: string }`, returning `{ ssoRequired: boolean, providerName?: string }`.
     Never a 4xx/5xx for a malformed/no-mapping case — always 200 with `ssoRequired: false` unless
     the request body itself fails schema validation.
-  - [ ] 2.2 Extract the domain from the email server-side (after `@`, lowercased) — do not trust a
+  - [x] 2.2 Extract the domain from the email server-side (after `@`, lowercased) — do not trust a
     client-supplied domain field, only the email.
-  - [ ] 2.3 Query `org_sso_domains` via `getAdminDb()` (pre-auth exception, AC-5) by exact
+  - [x] 2.3 Query `org_sso_domains` via `getAdminDb()` (pre-auth exception, AC-5) by exact
     normalized domain match.
-  - [ ] 2.4 Cross-check the matched row's `provider_name` against the live `authStrategies` list
+  - [x] 2.4 Cross-check the matched row's `provider_name` against the live `authStrategies` list
     (`findAuthStrategy()` from `strategies.ts`) — if not currently registered, respond
     `{ ssoRequired: false }` (AC-1b fail-open).
-  - [ ] 2.5 Wrap the DB call in a try/catch; any error resolves to `{ ssoRequired: false }`, never
+  - [x] 2.5 Wrap the DB call in a try/catch; any error resolves to `{ ssoRequired: false }`, never
     a 500 (AC-3b).
-  - [ ] 2.6 Register the route with `requireAuth: false`, `writeAuditEvent: false`,
+  - [x] 2.6 Register the route with `requireAuth: false`, `writeAuditEvent: false`,
     `bodyLimit: 4096` (matching `/login`'s convention), and a rate-limit config matching
     `/sso/start`'s (`{ max: 20, timeWindowMs: 15 * 60 * 1000 }` or reuse that exact constant if
     extracted).
-  - [ ] 2.6a Response body is exactly `{ ssoRequired: boolean, providerName?: string }` — never the
+  - [x] 2.6a Response body is exactly `{ ssoRequired: boolean, providerName?: string }` — never the
     org id/name (AC-9a). Structurally identical shape on hit vs. miss (AC-9b).
-  - [ ] 2.7 Add the new route to `apps/api/src/lib/route-exemptions.ts` (`PUBLIC_ROUTE_EXEMPTIONS`
+  - [x] 2.7 Add the new route to `apps/api/src/lib/route-exemptions.ts` (`PUBLIC_ROUTE_EXEMPTIONS`
     + `ROUTE_ACTION_CLASSIFICATIONS`) — `route-audit.test.ts` will fail otherwise, per Story 14.3's
     own precedent.
-  - [ ] 2.8 OpenAPI schema for the new route; regenerate `openapi.json`.
+  - [x] 2.8 OpenAPI schema for the new route; regenerate `openapi.json`.
 
-- [ ] **Task 3 — Two-step web login form** (AC: 1, 2, 3, 4, 7, 8)
-  - [ ] 3.1 Restructure `LoginForm.svelte` (or extract a new `EmailStep`/`SsoStep` sub-component —
+- [x] **Task 3 — Two-step web login form** (AC: 1, 2, 3, 4, 7, 8)
+  - [x] 3.1 Restructure `LoginForm.svelte` (or extract a new `EmailStep`/`SsoStep` sub-component —
     implementation-time judgment call) into: Step A (email only + Continue), Step B (either the
     existing password field, unchanged, OR a new SSO credential-exchange step).
-  - [ ] 3.2 On Continue, call the new domain-lookup endpoint via a new `apps/web/src/lib/api/auth.ts`
+  - [x] 3.2 On Continue, call the new domain-lookup endpoint via a new `apps/web/src/lib/api/auth.ts`
     function (e.g. `lookupSsoDomain(fetch, email)`), matching this file's existing
     `apiFetch`/error-handling conventions.
-  - [ ] 3.3 Any non-2xx, thrown, or network-level failure from that call must resolve to showing
+  - [x] 3.3 Any non-2xx, thrown, or network-level failure from that call must resolve to showing
     the password field (AC-3, AC-3a) — never block the user or show a raw error for this step.
-  - [ ] 3.4 Guard against the out-of-order-response race (AC-8): key the async lookup to the email
+  - [x] 3.4 Guard against the out-of-order-response race (AC-8): key the async lookup to the email
     value at call time, and ignore/discard the response if the current input has since changed.
-  - [ ] 3.5 If `ssoRequired`, render an SSO step that: calls `POST /sso/start/:providerName`, then
+  - [x] 3.5 If `ssoRequired`, render an SSO step that: calls `POST /sso/start/:providerName`, then
     collects whatever credential the flow needs and calls `POST /sso/callback/:providerName`,
     reusing the exact request/response contract Story 14.3's backend already ships (see Dev Notes —
     no hosted external-IdP-redirect page exists yet; a generic credential-input UI is the pragmatic,
     buildable-today choice, not a design regression).
-  - [ ] 3.6 On SSO success, follow the same post-login navigation as local login (`getCurrentUser()`
+  - [x] 3.6 On SSO success, follow the same post-login navigation as local login (`getCurrentUser()`
     + `goto(nextPath)` — reuse `LoginForm`'s existing `nextPath` prop, do not invent a second
     redirect mechanism).
-  - [ ] 3.7 Provide a "use a different email" / back affordance from the SSO step to Step A (so a
+  - [x] 3.7 Provide a "use a different email" / back affordance from the SSO step to Step A (so a
     user who fat-fingered their email isn't stuck).
-  - [ ] 3.8 Update `apps/web/src/routes/(auth)/login/+page.svelte` only if the top-level page
+  - [x] 3.8 Update `apps/web/src/routes/(auth)/login/+page.svelte` only if the top-level page
     contract changes (props/messages) — the page itself likely needs no changes beyond what
     `LoginForm` already receives.
-  - [ ] 3.9 Disable the "Continue" button (and the SSO step's own submit control) while its
+  - [x] 3.9 Disable the "Continue" button (and the SSO step's own submit control) while its
     request is in flight, matching `LoginForm`'s existing `isSubmitting` guard pattern — prevents
     double-fired domain-lookup or `/sso/start` calls on a double-click/rapid re-submit (AC-11).
 
-- [ ] **Task 4 — Tests** (AC: all)
-  - [ ] 4.1 API: `org_sso_domains` schema test, RLS isolation test, domain-lookup route unit tests
+- [x] **Task 4 — Tests** (AC: all)
+  - [x] 4.1 API: `org_sso_domains` schema test, RLS isolation test, domain-lookup route unit tests
     covering every AC-1/1a/1b/1c/2/2a/3a/3b sub-case, rate-limit test.
-  - [ ] 4.2 Web: `LoginForm.test.ts` extended (or a new component test file) covering the two-step
+  - [x] 4.2 Web: `LoginForm.test.ts` extended (or a new component test file) covering the two-step
     flow, fail-open paths (3, 3a), the out-of-order race (8), and SSO-step happy path.
-  - [ ] 4.3 e2e: extend or add to `apps/web/e2e/journeys/j6-sso-login.spec.ts` (or a new journey
+  - [x] 4.3 e2e: extend or add to `apps/web/e2e/journeys/j6-sso-login.spec.ts` (or a new journey
     file) to drive the actual login screen end-to-end using the mock SSO extension fixture
     (`test.mock-sso-extension`), seeding an `org_sso_domains` row for a fixture domain — this closes
     the gap that j6's own header comment explicitly left open ("Story 14.4 owns that").
-  - [ ] 4.4 Manually verify in a running Docker stack via Chrome: type an SSO-mapped email → SSO
+  - [x] 4.4 Manually verify in a running Docker stack via Chrome: type an SSO-mapped email → SSO
     step appears, no password field; type a non-mapped email → password field renders; simulate a
     lookup failure (e.g. stop the DB briefly or use dev tools to block the request) → password
     field still renders.
@@ -359,8 +359,110 @@ surface (`findAuthStrategy()`) read-only; it does not add a redirect/hosted-UI h
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via the `bmad-dev-story` workflow.
+
 ### Debug Log References
+
+- API integration suite (`domain-lookup-routes.test.ts`, `sso-routes.test.ts`, `route-audit.test.ts`,
+  `secure-route.test.ts`): 52/52 passed against a real Postgres instance (`make docker-up`, port
+  5433).
+- DB package: `org-sso-domains.test.ts` (2/2), `rls-isolation.test.ts` including the new
+  `org_sso_domains` cross-org test (8/8 total in that file).
+- `check-rls-coverage.ts` / `migration-compatibility-check.ts`: both pass against the real DB with
+  migration 0053 applied.
+- Web component suite: `LoginForm.test.ts` + `form-model.test.ts`: 23/23 passed.
+- `pnpm turbo typecheck`: 18/18 tasks passed across all packages (also regenerated
+  `packages/shared/openapi.json` via the `api:generate-spec` task dependency).
+- Playwright e2e: `j6-sso-login.spec.ts` (6/6, including two new UI-driven Story 14.4 tests) plus
+  regression runs of `j1`, `j2`, `j3` (9/9) confirming the two-step `LoginForm`/`LoginPage` change
+  didn't break existing local-login/MFA journeys.
+- Live Chrome verification against the real `make docker-up`/e2e-overlay stack: Step A (email-only),
+  SSO-mapped path (SSO step renders, no password field, completes to `/dashboard` with a real
+  session), no-mapping path (password field renders, local login succeeds), and a simulated
+  network-level domain-lookup failure (via a temporary `window.fetch` patch in devtools, not
+  committed code) falling open to the password field.
 
 ### Completion Notes List
 
+1. **Migration tooling gap (pre-existing, worked around).** `drizzle-kit generate` fails in this
+   repo — the migrations directory's snapshot chain (`packages/db/src/migrations/meta/*.json`) is
+   sparse (many indices have no corresponding snapshot file), so `drizzle-kit generate` cannot
+   build a consistent diff. This predates this story (confirmed against main's existing
+   `0034`–`0052` migrations, which are also hand-written without snapshot updates). Migration 0053
+   was hand-written following `0052`'s exact SQL pattern (RLS policy, FK, unique index) and
+   `_journal.json` was updated manually with the next sequential `idx`. `make docker-migrate`,
+   `check-rls`, and `check-migration-compatibility` all pass against the real migration.
+2. **`docker-compose.yml` was missing `SSO_STATE_HMAC_SECRET` entirely.** Discovered while bringing
+   up a local stack to verify this story's UI: Story 14.3 added the env var but never wired it into
+   `docker-compose.yml`'s `api` service, so `make docker-up`/`make e2e` failed outright for anyone
+   on a fresh checkout (`NODE_ENV=production` triggers strict validation requiring it). Fixed by
+   adding the same `${VAR:-<placeholder>}` wiring every other HMAC secret already uses in that file
+   — a one-line, low-risk fix in a file this story was already touching for docker-based
+   verification, not a scope-creep rewrite.
+3. **`secureRoute()` gained a `bodyLimit` passthrough option.** No existing `secureRoute()` call
+   site needed `bodyLimit` before (the public `/login`/`/register` routes bypass `secureRoute`
+   entirely and call `fastify.route()` directly with `bodyLimit: 4096`). AC-9 requires the same
+   4096-byte limit on this new public route, and re-implementing `/login`'s raw-`fastify.route()`
+   pattern here would have duplicated `secureRoute()`'s auth/rate-limit/audit wiring. Added an
+   optional `bodyLimit?: number` field to `SecureRouteRegistrationOptions`, forwarded straight
+   through to fastify's own route registration — a small, additive change to shared
+   infrastructure, not a behavior change for any existing route (option is `undefined` everywhere
+   else).
+4. **No hosted external-IdP-redirect mechanism — SSO step is a generic credential-input UI, per the
+   story's own Dev Notes.** `LoginForm.svelte`'s SSO step is a single "SSO credential" text field
+   that calls `POST /sso/start/:providerName` then `POST /sso/callback/:providerName` with the
+   typed value — reusing Story 14.3's existing contract exactly, not inventing a new one. A future
+   OIDC/SAML extension needing a true hosted-IdP redirect would need a new Extension API hook (e.g.
+   an `authorizationUrl` capability); flagged here per the story's instruction, not silently built.
+5. **Pre-existing e2e fixture gap fixed in `j6-sso-login.spec.ts`.** While extending this file for
+   Task 4.3, discovered `seedSsoFixtures()` never inserted an `org_memberships` row for the
+   `linked-user` fixture identity — `handleLinkedSession()` (Story 14.3's `sso-routes.ts`) rejects
+   with `account_link_required` unless the linked user also has an `active` membership row, not
+   just an `external_identities` link. This made the pre-existing "AC-5: linked-user...gets a full
+   session" test (unmodified by this story) fail consistently, independent of anything this story
+   changed. Fixed by seeding the missing `org_memberships` row in the same `beforeAll`.
+6. **Out-of-order response race (AC-8) uses a separate `pendingLookupEmail` tracker, not a single
+   `isSubmitting` boolean.** AC-11 (double-submit guard) and AC-8 (stale-response guard) pull in
+   different directions for Step A specifically: AC-11 wants an exact re-submit of the *same*
+   pending email blocked, while AC-8's "user changes their mind" scenario implies a *new* email
+   should be submittable even while an older lookup for a different email is still in flight.
+   `pendingLookupEmail` (keyed to the in-flight email value, not a plain boolean) satisfies both
+   without them conflicting.
+7. **Domain-uniqueness assumption.** Per Task 1.1, treated "one org per domain" (unique index on
+   `domain` alone) as the safe default, per epics.md's singular-mapping framing. Documented as a
+   judgment call in `org-sso-domains.ts`'s schema comment and the migration's own header comment,
+   alongside the public-email-domain operational hazard the story's Dev Notes flagged.
+8. **TDD note.** API-side work (schema, migration, route) followed strict red-green: tests were
+   written and confirmed failing (missing export, then missing route) before implementation. The
+   web-side `LoginForm.svelte` rewrite was substantial enough that the component and its test suite
+   were developed together rather than in strict red-first order for every single sub-case; the
+   full test suite was still run to green before considering the web side complete, and the
+   component was independently verified live in Chrome (see Debug Log References).
+
 ### File List
+
+**New:**
+- `packages/db/src/schema/org-sso-domains.ts`
+- `packages/db/src/schema/org-sso-domains.test.ts`
+- `packages/db/src/migrations/0053_org_sso_domains.sql`
+- `apps/api/src/modules/auth/domain-lookup-routes.ts`
+- `apps/api/src/modules/auth/domain-lookup-routes.test.ts`
+
+**Modified:**
+- `packages/db/src/schema/index.ts` (export `org-sso-domains`)
+- `packages/db/src/migrations/meta/_journal.json` (register migration 0053)
+- `packages/db/src/__tests__/rls-isolation.test.ts` (new `org_sso_domains` cross-org isolation test)
+- `packages/shared/src/schemas/auth.ts` (`DomainLookupRequestSchema`/`DomainLookupResponseSchema`)
+- `packages/shared/openapi.json` (regenerated — new route)
+- `apps/api/src/app.ts` (register `domainLookupRoutes`)
+- `apps/api/src/lib/secure-route.ts` (`bodyLimit` passthrough option)
+- `apps/api/src/lib/route-exemptions.ts` (new public-route + action-classification entries)
+- `apps/web/src/lib/api/auth.ts` (`lookupSsoDomain`/`ssoStart`/`ssoCallback` client functions)
+- `apps/web/src/lib/components/auth/form-model.ts` (`buildDomainLookupRequest`/`isSsoRequired`)
+- `apps/web/src/lib/components/auth/LoginForm.svelte` (two-step email-first flow)
+- `apps/web/src/lib/components/auth/LoginForm.test.ts` (rewritten for the two-step flow)
+- `apps/web/e2e/pages/LoginPage.ts` (two-step-aware helpers)
+- `apps/web/e2e/journeys/j6-sso-login.spec.ts` (extended with UI-driven tests; fixed pre-existing
+  membership-seeding gap)
+- `docker-compose.yml` (wired missing `SSO_STATE_HMAC_SECRET`, discovered while verifying this
+  story's UI in a local stack)

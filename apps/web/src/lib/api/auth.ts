@@ -21,6 +21,29 @@ export type LoginRequest = {
   password: string
 }
 
+// Story 14.4 AC-1/AC-2/AC-9: request/response shapes for the pre-auth email-domain-to-SSO
+// lookup. Deliberately never carries an org id/name (AC-9a) — only whether the domain maps to a
+// currently-registered SSO strategy, and (if so) which provider.
+export type DomainLookupRequest = {
+  email: string
+}
+
+export type DomainLookupResponse = {
+  ssoRequired: boolean
+  providerName?: string
+}
+
+// Story 14.4 Task 3.5: reuses Story 14.3's existing start/callback contract — no hosted
+// external-IdP-redirect mechanism exists yet (see LoginForm.svelte's Dev Notes), so the SSO step
+// collects a credential in-page and exchanges it via these two calls.
+export type SsoStartResponse = {
+  state: string
+}
+
+export type SsoCallbackRequest = {
+  credential: string
+}
+
 export type AuthSessionResponse = {
   userId: string
   orgId: string
@@ -98,6 +121,38 @@ export function login(fetchFn: typeof fetch, request: LoginRequest) {
 
 export function verifyMfaLogin(fetchFn: typeof fetch, request: VerifyMfaLoginRequest) {
   return apiFetch<AuthSessionResponse>(fetchFn, '/api/v1/auth/mfa/verify-login', jsonPost(request))
+}
+
+// Story 14.4 AC-1/AC-2/AC-3/AC-3a: the caller (LoginForm.svelte) is responsible for treating any
+// thrown error from this call (non-2xx, parse failure, or a network-level failure) as "no
+// mapping" and falling open to the password field — this function itself does not swallow
+// errors, so a caller that forgets the catch would fail loudly rather than silently.
+export function lookupSsoDomain(fetchFn: typeof fetch, email: string) {
+  return apiFetch<DomainLookupResponse>(
+    fetchFn,
+    '/api/v1/auth/sso/domain-lookup',
+    jsonPost({ email } satisfies DomainLookupRequest)
+  )
+}
+
+export function ssoStart(fetchFn: typeof fetch, providerName: string) {
+  return apiFetch<SsoStartResponse>(
+    fetchFn,
+    `/api/v1/auth/sso/start/${encodeURIComponent(providerName)}`,
+    jsonPost()
+  )
+}
+
+export function ssoCallback(
+  fetchFn: typeof fetch,
+  providerName: string,
+  request: SsoCallbackRequest
+) {
+  return apiFetch<AuthSessionResponse | MfaLoginChallenge>(
+    fetchFn,
+    `/api/v1/auth/sso/callback/${encodeURIComponent(providerName)}`,
+    jsonPost(request)
+  )
 }
 
 export function enrollMfa(fetchFn: typeof fetch) {
