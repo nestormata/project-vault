@@ -70,6 +70,9 @@ export const OperationalEvent = {
   ROTATION_INITIATE_SAME_VALUE_WARNING: 'rotation.initiate.same_value_warning',
   // Story 5.5 AC-1: rejected — project archived concurrently with (or before) this initiation.
   ROTATION_INITIATE_PROJECT_ARCHIVED: 'rotation.initiate.project_archived',
+  // Story 13.4 AC-3: rejected — targetFields named a key that doesn't exist on the credential's
+  // current field_meta.
+  ROTATION_INITIATE_UNKNOWN_FIELD_KEY: 'rotation.initiate.unknown_field_key',
 
   // Rotation checklist confirm/fail/retry/complete (Story 5.2)
   ROTATION_CHECKLIST_CONFIRM_SUCCESS: 'rotation.checklist.confirm.success',

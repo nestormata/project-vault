@@ -11,16 +11,48 @@
 
   let { data } = $props()
 
+  // Story 13.4 AC-1: a field selector only makes sense when the credential has 2+ fields —
+  // a legacy/single-field credential renders exactly today's single-textarea form, unchanged
+  // (AC-7). `data.fieldMeta` is null while the vault is sealed / access is denied — treated the
+  // same as "no selector" since the form isn't rendered in that branch anyway.
+  const fieldMeta = $derived(data.fieldMeta ?? [])
+  const showFieldSelector = $derived(fieldMeta.length > 1)
+
+  // Default mode is whole-secret — byte-identical to pre-13.4 behavior unless the user
+  // explicitly opts into field-scoping (Dev Notes judgment call: the safer default preserves
+  // existing behavior rather than forcing an explicit choice).
+  let rotationMode = $state<'whole' | 'specific'>('whole')
+  let selectedFields = $state<string[]>([])
+
+  // Code review (13.4): the request schema has one `newValue`, not a per-field value map (Dev
+  // Agent Record's documented judgment call). Selecting 2+ fields silently applies the identical
+  // value to every one of them — e.g. checking `username` + `password` sets both to the new
+  // password. Surface that plainly before submit rather than letting it happen silently.
+  const multipleFieldsSelected = $derived(rotationMode === 'specific' && selectedFields.length > 1)
+
   let newValue = $state('')
   let notes = $state('')
   let submitting = $state(false)
   let valueError = $state<string | null>(null)
+  let fieldSelectionError = $state<string | null>(null)
   let errorMessage = $state<string | null>(null)
   let conflictRotationId = $state<string | null>(null)
 
+  // Task 6 (Dev Notes pre-mortem elicitation) — pre-empts AC-6's 409 by disabling the field
+  // selector and submit button whenever the loader already found an active rotation, instead of
+  // only surfacing the conflict after a failed POST.
+  const rotationActive = $derived(Boolean(data.activeRotationId))
+
+  function toggleField(key: string) {
+    selectedFields = selectedFields.includes(key)
+      ? selectedFields.filter((k) => k !== key)
+      : [...selectedFields, key]
+  }
+
   async function submitForm() {
-    if (submitting) return
+    if (submitting || rotationActive) return
     valueError = null
+    fieldSelectionError = null
     errorMessage = null
     conflictRotationId = null
 
@@ -29,11 +61,18 @@
       return
     }
 
+    const targetFields = showFieldSelector && rotationMode === 'specific' ? selectedFields : []
+    if (showFieldSelector && rotationMode === 'specific' && targetFields.length === 0) {
+      fieldSelectionError = 'Select at least one field to rotate, or choose "Rotate whole secret".'
+      return
+    }
+
     submitting = true
     try {
       const rotation = await initiateRotation(fetch, data.projectId, data.credentialId, {
         newValue,
         notes: notes.trim() ? notes.trim() : undefined,
+        ...(targetFields.length > 0 ? { targetFields } : {}),
       })
       await goto(
         resolve(
@@ -46,6 +85,10 @@
           const body = error.body as RotationInProgressErrorBody
           conflictRotationId = body.rotationId
           errorMessage = 'A rotation is already in progress for this credential.'
+        } else if (error.status === 400 && error.code === 'unknown_field_key') {
+          // Story 13.4 AC-3 — the targeted field no longer exists on the credential (e.g. renamed
+          // by another user since the form loaded).
+          errorMessage = error.message
         } else if (error.status === 422) {
           errorMessage = error.message
         } else if (error.status === 403 && error.code !== 'mfa_required') {
@@ -94,6 +137,23 @@
       backLabel="Back to credential"
     />
   {:else}
+    {#if rotationActive}
+      <p
+        class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+        role="alert"
+      >
+        A rotation is already in progress for this credential.
+        <a
+          class="ml-1 font-medium underline"
+          href={resolve(
+            `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${data.activeRotationId}`
+          )}
+        >
+          View active rotation
+        </a>
+      </p>
+    {/if}
+
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold text-slate-950">Dependent systems</h2>
       {#if data.dependencies.hasDependencies}
@@ -122,12 +182,70 @@
         void submitForm()
       }}
     >
+      {#if showFieldSelector}
+        <div class="space-y-3">
+          <p class="block font-medium text-slate-900">Fields to rotate</p>
+          <div class="flex gap-4 text-sm">
+            <label class="flex items-center gap-2">
+              <input
+                type="radio"
+                name="rotation-mode"
+                value="whole"
+                checked={rotationMode === 'whole'}
+                disabled={rotationActive}
+                onchange={() => (rotationMode = 'whole')}
+              />
+              Rotate whole secret
+            </label>
+            <label class="flex items-center gap-2">
+              <input
+                type="radio"
+                name="rotation-mode"
+                value="specific"
+                checked={rotationMode === 'specific'}
+                disabled={rotationActive}
+                onchange={() => (rotationMode = 'specific')}
+              />
+              Specific fields
+            </label>
+          </div>
+          {#if rotationMode === 'specific'}
+            <ul class="space-y-1">
+              {#each fieldMeta as field (field.key)}
+                <li>
+                  <label class="flex items-center gap-2 text-sm text-slate-800">
+                    <input
+                      type="checkbox"
+                      aria-label={field.key}
+                      checked={selectedFields.includes(field.key)}
+                      disabled={rotationActive}
+                      onchange={() => toggleField(field.key)}
+                    />
+                    {field.key}
+                  </label>
+                </li>
+              {/each}
+            </ul>
+            {#if fieldSelectionError}
+              <p class="text-sm text-red-700">{fieldSelectionError}</p>
+            {/if}
+            {#if multipleFieldsSelected}
+              <p class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
+                The same new value below will be applied to all selected fields — they will end up
+                identical. If that's not what you want, rotate one field at a time.
+              </p>
+            {/if}
+          {/if}
+        </div>
+      {/if}
+
       <div class="space-y-2">
         <label class="block font-medium text-slate-900" for="rotation-new-value">New value</label>
         <textarea
           id="rotation-new-value"
           class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
           bind:value={newValue}
+          disabled={rotationActive}
           autocomplete="off"></textarea>
         {#if valueError}
           <p class="text-sm text-red-700">{valueError}</p>
@@ -166,7 +284,7 @@
         <button
           class="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
           type="submit"
-          disabled={submitting}
+          disabled={submitting || rotationActive}
         >
           {submitting ? 'Starting…' : 'Start rotation'}
         </button>

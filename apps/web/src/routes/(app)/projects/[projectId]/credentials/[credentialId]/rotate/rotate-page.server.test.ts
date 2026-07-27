@@ -3,9 +3,11 @@ import { isRedirect } from '@sveltejs/kit'
 
 const listCredentialDependenciesMock = vi.hoisted(() => vi.fn())
 const listRotationsMock = vi.hoisted(() => vi.fn())
+const getCredentialMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/credentials.js', () => ({
   listCredentialDependencies: listCredentialDependenciesMock,
+  getCredential: getCredentialMock,
 }))
 
 vi.mock('$lib/api/rotations.js', () => ({
@@ -31,13 +33,19 @@ describe('/rotate +page.server.ts', () => {
   beforeEach(() => {
     listCredentialDependenciesMock.mockReset()
     listRotationsMock.mockReset()
+    getCredentialMock.mockReset()
+    getCredentialMock.mockResolvedValue({
+      id: credentialId,
+      fields: [{ key: 'value', sensitive: true }],
+    })
   })
 
-  it('AC-6: member/viewer never triggers the dependencies or rotations fetch', async () => {
+  it('AC-6: member/viewer never triggers the dependencies, rotations, or credential fetch', async () => {
     const result = await load(makeEvent('member'))
 
     expect(listCredentialDependenciesMock).not.toHaveBeenCalled()
     expect(listRotationsMock).not.toHaveBeenCalled()
+    expect(getCredentialMock).not.toHaveBeenCalled()
     expect(result.canManage).toBe(false)
   })
 
@@ -58,6 +66,53 @@ describe('/rotate +page.server.ts', () => {
 
     expect(result.canManage).toBe(true)
     expect(result.dependencies?.hasDependencies).toBe(true)
+  })
+
+  // Story 13.4 Task 6 — the loader also fetches the credential detail for field_meta, alongside
+  // the existing dependency/rotation-history fetches.
+  it('Story 13.4 AC-1: fetches field_meta and exposes it for the field selector', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'completed' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listCredentialDependenciesMock.mockResolvedValueOnce({ items: [], hasDependencies: false })
+    getCredentialMock.mockResolvedValueOnce({
+      id: credentialId,
+      fields: [
+        { key: 'username', sensitive: false },
+        { key: 'password', sensitive: true },
+      ],
+    })
+
+    const result = await load(makeEvent('admin'))
+
+    expect(result.canManage).toBe(true)
+    expect(result.fieldMeta).toEqual([
+      { key: 'username', sensitive: false },
+      { key: 'password', sensitive: true },
+    ])
+  })
+
+  // Story 13.4 Task 6 — a staged/promoted rotation doesn't redirect away from /rotate (unlike
+  // in_progress/stale_recovery) but must surface an activeRotationId so the form can render a
+  // pre-emptive banner and disable submission before a 409 (Dev Notes pre-mortem elicitation).
+  it('Story 13.4: exposes activeRotationId for a staged rotation without redirecting away', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [{ id: rotationId, status: 'staged' }],
+      page: 1,
+      limit: 1,
+      total: 1,
+      hasMore: false,
+    })
+    listCredentialDependenciesMock.mockResolvedValueOnce({ items: [], hasDependencies: false })
+
+    const result = await load(makeEvent('admin'))
+
+    expect(result.canManage).toBe(true)
+    expect(result.activeRotationId).toBe(rotationId)
   })
 
   it('redirects to the active rotation detail page instead of rendering the form', async () => {

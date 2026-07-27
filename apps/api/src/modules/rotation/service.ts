@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentialDependencies,
@@ -10,7 +10,7 @@ import {
   rotations,
 } from '@project-vault/db/schema'
 import { withSecret } from '@project-vault/crypto'
-import { nextCronOccurrence } from '@project-vault/shared'
+import { nextCronOccurrence, normalizeFieldKey } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
 import { zeroOverwriteCredentialVersionValue } from '../../lib/zero-overwrite-credential-version.js'
@@ -27,7 +27,12 @@ import {
   isUniqueViolation,
   lockCredentialInProject,
 } from '../credentials/db-helpers.js'
-import { unwrapRevealValue } from '../credentials/field-set.js'
+import {
+  fieldMetaForResponse,
+  parseFieldsFromPlaintext,
+  serializeFieldEnvelope,
+  unwrapRevealValue,
+} from '../credentials/field-set.js'
 import type {
   BreakGlassRotationBody,
   CompleteRotationBody,
@@ -55,9 +60,12 @@ type RotationRow = typeof rotations.$inferSelect
 // from apps/api, so that one stays a hand-kept-in-sync literal — flagged there).
 export const ACTIVE_ROTATION_STATUSES = ['in_progress', 'staged', 'promoted', 'stale_recovery']
 
-type InitiateRotationResult =
+export type InitiateRotationResult =
   | { status: 'credential_not_found' }
   | { status: 'project_archived' }
+  // Story 13.4 AC-3: a targetFields entry that doesn't exist on the credential's current
+  // field_meta. Returned before any write.
+  | { status: 'unknown_field_key'; field: string }
   | {
       status: 'initiated'
       rotation: RotationRow
@@ -90,6 +98,264 @@ async function findInProgressRotationId(tx: Tx, credentialId: string): Promise<s
   return row?.id ?? null
 }
 
+// Story 13.4 AC-3 — extracted purely to keep initiateRotation()'s transaction callback under
+// this project's complexity ceiling. Normalizes targetFields and validates every key exists
+// against the credential's CURRENT field_meta (passed in from inside the same locked
+// transaction, never a stale client-side snapshot). `normalized: undefined` means whole-secret
+// rotation (targetFields was absent).
+type TargetFieldsValidation =
+  { ok: true; normalized: string[] | undefined } | { ok: false; field: string }
+
+function validateTargetFields(
+  targetFields: string[] | undefined,
+  schemaVersion: number,
+  fieldMeta: unknown
+): TargetFieldsValidation {
+  if (!targetFields) return { ok: true, normalized: undefined }
+  const normalized = targetFields.map((key) => normalizeFieldKey(key))
+  const declaredKeys = fieldMetaForResponse(schemaVersion, fieldMeta).map((f) =>
+    normalizeFieldKey(f.key)
+  )
+  const missing = normalized.find((key) => !declaredKeys.includes(key))
+  if (missing !== undefined) return { ok: false, field: missing }
+  return { ok: true, normalized }
+}
+
+// Story 13.4 AC-5/AC-8 — extracted for the same complexity-ceiling reason as
+// validateTargetFields above. Builds the new version's full field-set snapshot (targeted
+// field(s) substituted, every other field carried over unchanged from the SAME decrypted read),
+// and reports whether the targeted field(s) already held `newValue` (for the sameValueAsPrevious
+// warning). A decrypt failure upstream of this call (in withSecret) already aborts the whole
+// trx.transaction() atomically — this function only ever runs against an already-decrypted
+// plaintext.
+function buildFieldScopedSnapshot(
+  previousSchemaVersion: number,
+  previousPlaintext: string,
+  normalizedTargetFields: string[],
+  newValue: string
+): { fields: ReturnType<typeof parseFieldsFromPlaintext>; sameValueAsPrevious: boolean } {
+  const previousFields = parseFieldsFromPlaintext(previousSchemaVersion, previousPlaintext)
+  const targetSet = new Set(normalizedTargetFields)
+  const nextFields = previousFields.map((f) =>
+    targetSet.has(normalizeFieldKey(f.key)) ? { ...f, value: newValue } : f
+  )
+  const sameValueAsPrevious = normalizedTargetFields.every((key) => {
+    const match = previousFields.find((f) => normalizeFieldKey(f.key) === key)
+    return match !== undefined && constantTimeEqual(match.value, newValue)
+  })
+  return { fields: nextFields, sameValueAsPrevious }
+}
+
+type PreviousVersionRow = {
+  encryptedValue: unknown
+  schemaVersion: number
+  fieldMeta: unknown
+}
+
+// Story 13.4 — extracted for the same complexity-ceiling reason as the two helpers above: decrypts
+// the previous version (when present) and computes whether the rotation's newValue is identical
+// to what's already stored — field-scoped compares only the targeted field(s) (AC-5), whole-secret
+// compares the single unwrapped value (unchanged, pre-13.4 behavior). Returns the decrypted
+// plaintext too, so the caller building the new version's snapshot doesn't decrypt twice.
+async function computeSameValueAsPrevious(
+  previousVersion: PreviousVersionRow,
+  normalizedTargetFields: string[] | undefined,
+  newValue: string
+): Promise<{ sameValueAsPrevious: boolean; previousPlaintext: string | undefined }> {
+  if (!previousVersion.encryptedValue) {
+    return { sameValueAsPrevious: false, previousPlaintext: undefined }
+  }
+  const previousPlaintext = await withSecret(
+    previousVersion.encryptedValue as Parameters<typeof withSecret>[0],
+    (plaintext) => Promise.resolve(plaintext.toString('utf8'))
+  )
+  if (normalizedTargetFields) {
+    // AC-5/AC-8: a decrypt failure above already aborted the whole trx.transaction() atomically —
+    // this only ever runs against an already-decrypted plaintext.
+    const { sameValueAsPrevious } = buildFieldScopedSnapshot(
+      previousVersion.schemaVersion,
+      previousPlaintext,
+      normalizedTargetFields,
+      newValue
+    )
+    return { sameValueAsPrevious, previousPlaintext }
+  }
+  // Story 13.2 — a single-value secret is now stored as a schema_version = 2 field envelope;
+  // unwrap it back to the bare value before the same-value comparison (legacy schema_version = 1
+  // rows return the bare string unchanged).
+  const previousValue = unwrapRevealValue(previousVersion.schemaVersion, previousPlaintext)
+  return { sameValueAsPrevious: constantTimeEqual(previousValue, newValue), previousPlaintext }
+}
+
+// Story 13.4 AC-5 (Dev Notes — "Promote vs. retire: where the field-set snapshot lands"): field
+// substitution happens HERE, at initiation, not at promote/retire — the new version already
+// contains a full field-set snapshot (FR12) the moment it's created. Whole-secret rotation
+// (normalizedTargetFields undefined) keeps today's existing single-value replacement behavior,
+// byte-identical, per AC-7. Extracted for the same complexity-ceiling reason as the helpers above.
+async function buildNewVersionInsertFields(
+  previousVersion: PreviousVersionRow,
+  previousPlaintext: string | undefined,
+  normalizedTargetFields: string[] | undefined,
+  newValue: string
+): Promise<{
+  encryptedValue: Awaited<ReturnType<typeof encryptValue>>
+  schemaVersion?: number
+  fieldMeta?: unknown
+}> {
+  if (!normalizedTargetFields) {
+    return { encryptedValue: await encryptValue(newValue) }
+  }
+  const snapshot = buildFieldScopedSnapshot(
+    previousVersion.schemaVersion,
+    previousPlaintext ?? '',
+    normalizedTargetFields,
+    newValue
+  )
+  return {
+    encryptedValue: await encryptValue(serializeFieldEnvelope({ fields: snapshot.fields })),
+    schemaVersion: 2,
+    // Field structure (keys/sensitivity/template) never changes on rotation — carried over
+    // unchanged, materialized in case the previous version was legacy (schemaVersion < 2) and had
+    // no real field_meta row to copy.
+    fieldMeta: fieldMetaForResponse(previousVersion.schemaVersion, previousVersion.fieldMeta),
+  }
+}
+
+// Story 13.4 — extracted purely to keep initiateRotation()'s transaction callback under this
+// project's complexity ceiling. Builds the new credential_versions insert values, including the
+// two optional (undefined-when-whole-secret) schemaVersion/fieldMeta overrides from
+// buildNewVersionInsertFields().
+function newVersionInsertValues(
+  input: { orgId: string; credentialId: string; userId: string },
+  previousVersion: { versionNumber: number },
+  keyVersion: number,
+  newVersionFields: {
+    encryptedValue: Awaited<ReturnType<typeof encryptValue>>
+    schemaVersion?: number
+    fieldMeta?: unknown
+  }
+) {
+  return {
+    orgId: input.orgId,
+    credentialId: input.credentialId,
+    encryptedValue: newVersionFields.encryptedValue,
+    keyVersion,
+    versionNumber: previousVersion.versionNumber + 1,
+    createdBy: input.userId,
+    ...(newVersionFields.schemaVersion !== undefined
+      ? { schemaVersion: newVersionFields.schemaVersion }
+      : {}),
+    ...(newVersionFields.fieldMeta !== undefined ? { fieldMeta: newVersionFields.fieldMeta } : {}),
+  }
+}
+
+// Story 13.4 AC-4 — extracted for the same complexity-ceiling reason as the helper above. When
+// this is a field-scoped rotation, the checklist snapshot only includes whole-credential
+// dependencies (field_key IS NULL) plus dependencies scoped to a targeted field. Whole-secret
+// rotation (normalizedTargetFields undefined) keeps today's existing unfiltered query, unchanged.
+function dependencyChecklistFilter(
+  orgId: string,
+  credentialId: string,
+  normalizedTargetFields: string[] | undefined
+) {
+  return and(
+    eq(credentialDependencies.orgId, orgId),
+    eq(credentialDependencies.credentialId, credentialId),
+    isNull(credentialDependencies.archivedAt),
+    normalizedTargetFields
+      ? or(
+          isNull(credentialDependencies.fieldKey),
+          inArray(credentialDependencies.fieldKey, normalizedTargetFields)
+        )
+      : undefined
+  )
+}
+
+type LoadRotationTargetResult =
+  | { status: 'credential_not_found' }
+  | { status: 'project_archived' }
+  | { status: 'ok'; previousVersion: PreviousVersionRow & { id: string; versionNumber: number } }
+
+// Story 13.4 — shared by both call sites that need to lock "the current version to supersede"
+// (normal initiation below, and break-glass's createBreakGlassVersion further down): same FOR
+// UPDATE query, ordering, and not-found guard, previously duplicated inline at each site (flagged
+// as a code clone). Always excludes abandonedAt: without it, a staged-then-abandoned rotation
+// (Story 5.6 AC-2.5 — abandon does not purge, it only sets abandonedAt) can still have the highest
+// versionNumber and would be selected as "the version to supersede". Pre-13.4 this only skewed
+// versionNumber/the same-value flag (cosmetic); since this story's field-scoped rotation carries
+// this row's DECRYPTED CONTENT into the new version's non-targeted fields
+// (buildFieldScopedSnapshot), picking an abandoned version would silently resurrect secret
+// material that was deliberately never promoted.
+async function lockCurrentNonPurgedVersion(
+  tx: Tx,
+  credentialId: string,
+  notFoundMessage: string
+): Promise<PreviousVersionRow & { id: string; versionNumber: number }> {
+  const [row] = await tx
+    .select({
+      id: credentialVersions.id,
+      versionNumber: credentialVersions.versionNumber,
+      encryptedValue: credentialVersions.encryptedValue,
+      schemaVersion: credentialVersions.schemaVersion,
+      fieldMeta: credentialVersions.fieldMeta,
+    })
+    .from(credentialVersions)
+    .where(
+      and(
+        eq(credentialVersions.credentialId, credentialId),
+        isNull(credentialVersions.purgedAt),
+        isNull(credentialVersions.abandonedAt)
+      )
+    )
+    .orderBy(desc(credentialVersions.versionNumber))
+    .for('update')
+    .limit(1)
+  if (!row) {
+    throw new Error(notFoundMessage)
+  }
+  return row
+}
+
+// Story 13.4 — extracted purely to keep initiateRotation()'s transaction callback under this
+// project's complexity ceiling; behavior unchanged from the pre-13.4 inline version. Locks the
+// project row (Story 5.5 AC-1's TOCTOU-closing `FOR UPDATE`), the credential row, and the
+// current non-purged version row, in that order, inside the same transaction the caller already
+// holds — every lock this function takes is released only when the outer transaction commits or
+// rolls back.
+async function loadRotationTargetForUpdate(
+  trx: Tx,
+  input: { orgId: string; projectId: string; credentialId: string }
+): Promise<LoadRotationTargetResult> {
+  // Story 5.5 AC-1: closes the TOCTOU race between Story 4.4's project archive/unarchive
+  // handlers (which lock the project row `FOR UPDATE` for their whole transaction, checking
+  // `archivedAt` immediately after acquiring it) and rotation initiation. Taking the SAME
+  // `FOR UPDATE` lock on the identical row here — before any checklist/version writes —
+  // guarantees the two operations serialize: whichever transaction acquires the lock first
+  // commits, and the other sees its result (either an archived project, or a newly-created
+  // blocking rotation) once it proceeds. Never both succeed.
+  const [projectRow] = await trx
+    .select({ archivedAt: projects.archivedAt })
+    .from(projects)
+    .where(eq(projects.id, input.projectId))
+    .for('update')
+    .limit(1)
+  if (!projectRow) return { status: 'credential_not_found' }
+  if (projectRow.archivedAt !== null) return { status: 'project_archived' }
+
+  const credential = await lockCredentialInProject(trx, {
+    credentialId: input.credentialId,
+    projectId: input.projectId,
+  })
+  if (!credential) return { status: 'credential_not_found' }
+
+  const previousVersion = await lockCurrentNonPurgedVersion(
+    trx,
+    input.credentialId,
+    `initiateRotation: credential ${input.credentialId} has no non-purged version to supersede`
+  )
+  return { status: 'ok', previousVersion }
+}
+
 /**
  * AC-4/AC-5: acquires the non-blocking transaction-scoped advisory lock, then performs the
  * credential lookup, new-version insert, retention-lock UPDATE, checklist snapshot, and
@@ -118,76 +384,39 @@ export async function initiateRotation(
 
   try {
     return await tx.transaction(async (trx) => {
-      // Story 5.5 AC-1: closes the TOCTOU race between Story 4.4's project archive/unarchive
-      // handlers (which lock the project row `FOR UPDATE` for their whole transaction, checking
-      // `archivedAt` immediately after acquiring it) and rotation initiation. Taking the SAME
-      // `FOR UPDATE` lock on the identical row here — before any checklist/version writes —
-      // guarantees the two operations serialize: whichever transaction acquires the lock first
-      // commits, and the other sees its result (either an archived project, or a newly-created
-      // blocking rotation) once it proceeds. Never both succeed.
-      const [projectRow] = await trx
-        .select({ archivedAt: projects.archivedAt })
-        .from(projects)
-        .where(eq(projects.id, input.projectId))
-        .for('update')
-        .limit(1)
-      if (!projectRow) return { status: 'credential_not_found' as const }
-      if (projectRow.archivedAt !== null) return { status: 'project_archived' as const }
+      const loaded = await loadRotationTargetForUpdate(trx, input)
+      if (loaded.status !== 'ok') return loaded
+      const { previousVersion } = loaded
 
-      const credential = await lockCredentialInProject(trx, {
-        credentialId: input.credentialId,
-        projectId: input.projectId,
-      })
-      if (!credential) return { status: 'credential_not_found' as const }
-
-      const [previousVersion] = await trx
-        .select({
-          id: credentialVersions.id,
-          versionNumber: credentialVersions.versionNumber,
-          encryptedValue: credentialVersions.encryptedValue,
-          schemaVersion: credentialVersions.schemaVersion,
-        })
-        .from(credentialVersions)
-        .where(
-          and(
-            eq(credentialVersions.credentialId, input.credentialId),
-            isNull(credentialVersions.purgedAt)
-          )
-        )
-        .orderBy(desc(credentialVersions.versionNumber))
-        .for('update')
-        .limit(1)
-      if (!previousVersion) {
-        throw new Error(
-          `initiateRotation: credential ${input.credentialId} has no non-purged version to supersede`
-        )
+      // Story 13.4 AC-2/AC-3: validation happens before any write, against the credential's
+      // CURRENT field_meta (loaded above inside this same locked transaction).
+      const validation = validateTargetFields(
+        input.body.targetFields,
+        previousVersion.schemaVersion,
+        previousVersion.fieldMeta
+      )
+      if (!validation.ok) {
+        return { status: 'unknown_field_key' as const, field: validation.field }
       }
+      const normalizedTargetFields = validation.normalized
 
-      let sameValueAsPrevious = false
-      if (previousVersion.encryptedValue) {
-        const previousPlaintext = await withSecret(previousVersion.encryptedValue, (plaintext) =>
-          Promise.resolve(plaintext.toString('utf8'))
-        )
-        // Story 13.2 — a single-value secret is now stored as a schema_version = 2 field envelope;
-        // unwrap it back to the bare value before the same-value comparison (legacy schema_version
-        // = 1 rows return the bare string unchanged). Whole-value rotation still targets a
-        // single-value secret; field-scoped rotation is Story 13.5.
-        const previousValue = unwrapRevealValue(previousVersion.schemaVersion, previousPlaintext)
-        sameValueAsPrevious = constantTimeEqual(previousValue, input.body.newValue)
-      }
+      const { sameValueAsPrevious, previousPlaintext } = await computeSameValueAsPrevious(
+        previousVersion,
+        normalizedTargetFields,
+        input.body.newValue
+      )
 
       const keyVersion = await currentKeyVersion(trx)
-      const encryptedValue = await encryptValue(input.body.newValue)
+      const newVersionFields = await buildNewVersionInsertFields(
+        previousVersion,
+        previousPlaintext,
+        normalizedTargetFields,
+        input.body.newValue
+      )
+
       const [newVersion] = await trx
         .insert(credentialVersions)
-        .values({
-          orgId: input.orgId,
-          credentialId: input.credentialId,
-          encryptedValue,
-          keyVersion,
-          versionNumber: previousVersion.versionNumber + 1,
-          createdBy: input.userId,
-        })
+        .values(newVersionInsertValues(input, previousVersion, keyVersion, newVersionFields))
         .returning()
       if (!newVersion)
         throw new Error('initiateRotation: new credential version insert returned no row')
@@ -197,16 +426,14 @@ export async function initiateRotation(
         .set({ rotationLockedAt: new Date() })
         .where(eq(credentialVersions.id, previousVersion.id))
 
+      // Story 13.4 AC-4: when this is a field-scoped rotation, the checklist snapshot only
+      // includes whole-credential dependencies (field_key IS NULL) plus dependencies scoped to a
+      // targeted field. Whole-secret rotation (normalizedTargetFields undefined) keeps today's
+      // existing unfiltered query, unchanged.
       const dependencyRows = await trx
         .select({ id: credentialDependencies.id, systemName: credentialDependencies.systemName })
         .from(credentialDependencies)
-        .where(
-          and(
-            eq(credentialDependencies.orgId, input.orgId),
-            eq(credentialDependencies.credentialId, input.credentialId),
-            isNull(credentialDependencies.archivedAt)
-          )
-        )
+        .where(dependencyChecklistFilter(input.orgId, input.credentialId, normalizedTargetFields))
 
       const [rotation] = await trx
         .insert(rotations)
@@ -218,6 +445,7 @@ export async function initiateRotation(
           previousVersionId: previousVersion.id,
           initiatedBy: input.userId,
           notes: input.body.notes ?? null,
+          targetFields: normalizedTargetFields ?? null,
         })
         .returning()
       if (!rotation) throw new Error('initiateRotation: rotation insert returned no row')
@@ -296,6 +524,9 @@ export function serializeRotationDetail(
     initiatedAt: rotation.initiatedAt.toISOString(),
     completedAt: rotation.completedAt?.toISOString() ?? null,
     notes: rotation.notes,
+    // Story 13.4 AC-2/AC-7: always present (array when field-scoped, null for whole-secret) —
+    // never omitted, so clients don't need a second undefined/absent branch.
+    targetFields: rotation.targetFields ?? null,
     ...(extra.sameValueAsPrevious !== undefined
       ? { sameValueAsPrevious: extra.sameValueAsPrevious }
       : {}),
@@ -1707,24 +1938,11 @@ async function createBreakGlassVersion(
   // Excludes abandonedAt too (CR5) — critical when supersedeActiveRotation just abandoned the
   // previously "highest" version above: this correctly resolves back to whatever was current
   // before either rotation started, not the just-abandoned half-finished value (AC-5).
-  const [previousVersion] = await tx
-    .select({ id: credentialVersions.id, versionNumber: credentialVersions.versionNumber })
-    .from(credentialVersions)
-    .where(
-      and(
-        eq(credentialVersions.credentialId, input.credentialId),
-        isNull(credentialVersions.purgedAt),
-        isNull(credentialVersions.abandonedAt)
-      )
-    )
-    .orderBy(desc(credentialVersions.versionNumber))
-    .for('update')
-    .limit(1)
-  if (!previousVersion) {
-    throw new Error(
-      `breakGlassRotation: credential ${input.credentialId} has no non-purged/non-abandoned version to supersede`
-    )
-  }
+  const previousVersion = await lockCurrentNonPurgedVersion(
+    tx,
+    input.credentialId,
+    `breakGlassRotation: credential ${input.credentialId} has no non-purged/non-abandoned version to supersede`
+  )
 
   // Anti-pattern guard (Dev Notes): version numbers stay strictly monotonic regardless of
   // abandonment — MUST be MAX(version_number)+1 across ALL rows (including abandoned ones), NOT

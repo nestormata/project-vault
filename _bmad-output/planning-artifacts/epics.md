@@ -2480,7 +2480,8 @@ Third-party community extensions (FR116) are explicitly out of scope — this ep
 Users can store real-world credentials that need more than one field (username+password, database connection strings) using built-in templates, with per-field masking and field-scoped rotation — instead of splitting them across multiple awkwardly-named single-value secrets. Fully self-contained within existing credential management; independent of Epic 14, 15, and 16.
 
 **FRs covered:** FR10 (amended), FR111, FR112, FR12 (amended), FR96 (amended), FR18 (amended)
-> ⚠️ **Data model prerequisites, not optional:** `credential_versions.schema_version` (the format discriminator), the `credentials.current_version_id` backfill migration for pre-existing credentials, field-key uniqueness enforcement, and `credential_dependencies.field_key` (for field-scoped rotation checklist filtering) are all part of this epic's acceptance criteria — added after an architecture review found the original design had gaps in exactly these spots. See architecture.md Data Architecture for the full design.
+> ⚠️ **Data model prerequisites, not optional:** `credential_versions.schema_version` (the format discriminator), the `credentials.current_version_id` backfill migration for pre-existing credentials, and field-key uniqueness enforcement are all part of this epic's acceptance criteria — added after an architecture review found the original design had gaps in exactly these spots. See architecture.md Data Architecture for the full design.
+> **Correction (Story 13.4, 2026-07-26):** `credential_dependencies.field_key` (for field-scoped rotation checklist filtering) was NOT satisfied by Stories 13.1/13.2/13.3 as this preamble previously claimed — confirmed absent from the shipped schema by direct read at Story 13.4's drafting time. Story 13.4 adds it, along with the new `rotations.target_fields` column.
 > ⚠️ **Backward compatibility is mandatory, not best-effort:** every pre-existing single-value secret must continue to work with zero migration of its stored ciphertext — only new writes use the field-set format. Any story that touches the read/write path for `credential_versions` must include an explicit test against a legacy (`schema_version = 1`) row.
 
 #### Story 13.1: Backfill `current_version_id` for Existing Credentials
@@ -2591,11 +2592,13 @@ Users can store real-world credentials that need more than one field (username+p
 
 #### Story 13.4: Rotate Specific Fields of a Multi-Field Secret
 
+**Status: done** (2026-07-26). See `_bmad-output/implementation-artifacts/13-4-rotate-specific-fields-of-a-multi-field-secret.md` for the full, current story spec — the ACs below are kept only as a historical/discoverability pointer and are NOT authoritative; they describe the old "checklist confirmed → single completion transaction" model, which Story 5.6 (`5-6-staged-primary-secondary-rotation-state-machine`, done) superseded with a `staged → promoted → retired` state machine before Story 13.4 was implemented. The implemented story rewrote every AC below to fire at **promote** time against 5.6's shipped model instead (see the story file's "Correction notice" and Dev Notes → "Promote vs. retire: where the field-set snapshot lands").
+
 **As a** user who needs to rotate just the password of a multi-field secret without touching its username,
 **I want** to select which field(s) a rotation targets,
 **So that** I don't have to treat an unrelated field as changed when only one credential component actually rotated.
 
-**Acceptance Criteria:**
+**Acceptance Criteria (historical — see the linked story file for the shipped ACs):**
 
 **Given** a user initiates a rotation on a multi-field secret,
 **When** they reach the rotation initiation screen,

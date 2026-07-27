@@ -73,6 +73,11 @@ export const RotationDetailSchema = z
     completedAt: z.iso.datetime().nullable(),
     notes: z.string().nullable(),
     sameValueAsPrevious: z.boolean().optional(),
+    // Story 13.4 AC-2/AC-7: the normalized array of field keys this rotation targets, or `null`
+    // for a whole-secret rotation (including every legacy rotation) — always present (never
+    // omitted) so clients can distinguish "field-scoped" from "whole-secret" without a second
+    // optional/undefined branch.
+    targetFields: z.array(z.string()).nullable(),
     checklistItems: z.array(RotationChecklistItemSchema),
     previousVersionOverlap: RotationPreviousVersionOverlapSchema.optional(),
     // Story 5.5 AC-4 code-review fix: present (true) only on a break-glass response that was

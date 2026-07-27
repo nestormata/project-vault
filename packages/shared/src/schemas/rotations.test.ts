@@ -96,6 +96,7 @@ describe('rotation response schemas', () => {
       initiatedAt: INITIATED_AT,
       completedAt: null,
       notes: null,
+      targetFields: null,
       checklistItems: [],
     })
     expect(parsed).toMatchObject({ status: 'in_progress', checklistItems: [] })
@@ -113,6 +114,7 @@ describe('rotation response schemas', () => {
       completedAt: null,
       notes: null,
       sameValueAsPrevious: true,
+      targetFields: null,
       checklistItems: [],
     })
     expect(parsed.sameValueAsPrevious).toBe(true)
@@ -129,6 +131,7 @@ describe('rotation response schemas', () => {
       initiatedAt: INITIATED_AT,
       completedAt: null,
       notes: 'incident INC-4471',
+      targetFields: null,
       checklistItems: [],
       previousVersionOverlap: {
         versionNumber: 4,

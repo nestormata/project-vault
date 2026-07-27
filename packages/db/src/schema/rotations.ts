@@ -68,6 +68,13 @@ export const rotations = pgTable(
     // existing stale_recovery mechanism (which transitions status; this only ever alerts).
     staleStagedAlertedAt: timestamp('stale_staged_alerted_at', { withTimezone: true }),
     notes: text('notes'),
+    // Story 13.4: nullable, purely additive. NULL = whole-secret rotation (every row created
+    // before this story, and every rotation that doesn't target specific fields, reads this
+    // way — the correct semantic, no backfill needed). When set, holds the normalized
+    // (normalizeFieldKey()) field keys this rotation targets; the new credential_versions row
+    // still contains a FULL field-set snapshot (FR12), just with only these keys' values
+    // actually changed and every other key carried over unchanged from the previous version.
+    targetFields: text('target_fields').array(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

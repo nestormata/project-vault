@@ -11,6 +11,9 @@ import { apiFetch } from './client.js'
 export type InitiateRotationRequest = {
   newValue: string
   notes?: string | null
+  // Story 13.4 AC-1/AC-2: optional field-scoping — omitted means whole-secret rotation,
+  // byte-identical to pre-13.4 behavior (AC-7).
+  targetFields?: string[]
 }
 
 export type ListRotationsQuery = {

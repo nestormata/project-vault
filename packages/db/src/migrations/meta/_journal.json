@@ -386,6 +386,13 @@
       "when": 1784860800000,
       "tag": "0054_audit_revealed_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1784947200000,
+      "tag": "0055_rotation_target_fields_and_dependency_field_key",
+      "breakpoints": true
     }
   ]
 }
