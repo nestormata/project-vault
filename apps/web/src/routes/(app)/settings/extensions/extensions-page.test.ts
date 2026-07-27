@@ -67,6 +67,30 @@ describe('/settings/extensions +page.svelte', () => {
     expect(screen.getByText(/no capabilities declared/i)).toBeTruthy()
   })
 
+  it('code review: duplicate capability entries render without crashing (each_key_duplicate)', () => {
+    // status-routes.ts's ExtensionStatusResponseSchema validates enum membership only, not
+    // array uniqueness — a malformed manifest can declare the same capability twice. A
+    // value-keyed {#each} throws a Svelte each_key_duplicate runtime error in that case,
+    // crashing the whole page for the admin viewing it. Confirmed via manual repro before the
+    // fix (index-keyed {#each}) was applied.
+    expect(() =>
+      render(ExtensionsPage, {
+        props: {
+          data: {
+            allowed: true,
+            orgRole: 'admin',
+            mfaRequired: false,
+            manifest: { ...SAMPLE_MANIFEST, capabilities: ['auth-provider', 'auth-provider'] },
+            healthStatus: 'loaded',
+            errorMessage: null,
+          },
+        },
+      })
+    ).not.toThrow()
+
+    expect(screen.getAllByText('auth-provider')).toHaveLength(2)
+  })
+
   it('AC-3: not-configured state renders an honest, non-alarming empty state', () => {
     render(ExtensionsPage, {
       props: {

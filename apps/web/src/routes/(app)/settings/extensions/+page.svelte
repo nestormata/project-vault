@@ -57,7 +57,13 @@
           <p class="text-sm text-slate-500">No capabilities declared</p>
         {:else}
           <div class="flex flex-wrap gap-2">
-            {#each data.manifest.capabilities as capability (capability)}
+            <!-- Keyed by index, not value: the API's capabilities schema
+                 (apps/api/src/extensions/status-routes.ts) only validates enum membership, not
+                 array uniqueness, so a malformed manifest could declare the same capability
+                 twice — a value-keyed {#each} would crash the whole page with a Svelte
+                 each_key_duplicate error in that case (confirmed via a manual repro during code
+                 review). Index keys tolerate duplicates without changing the rendered output. -->
+            {#each data.manifest.capabilities as capability, index (index)}
               <span
                 class="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
               >
