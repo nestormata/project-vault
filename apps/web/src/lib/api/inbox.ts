@@ -4,6 +4,9 @@ export type UserMeResponse = {
   userId: string
   orgId: string
   orgRole: 'owner' | 'admin' | 'member' | 'viewer'
+  // Story 15.1 AC 7 — the user's persisted display-language preference, source of truth for
+  // restoring the selection across sessions/devices.
+  locale: 'en' | 'es'
   notifications: { unreadCount: number }
 }
 

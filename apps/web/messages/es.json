@@ -1,0 +1,15 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "settings_nav_language_title": "Idioma",
+  "settings_nav_language_description": "Elige tu idioma de visualización preferido",
+  "settings_language_page_title": "Idioma",
+  "settings_language_page_heading": "Idioma de visualización",
+  "settings_language_page_description": "Elige el idioma en el que se muestra la interfaz de Project Vault para ti.",
+  "settings_language_current_label": "Selección actual",
+  "settings_language_coverage_note": "Con el tiempo se traducirá más contenido de la aplicación. Algunas pantallas pueden seguir apareciendo en inglés mientras se amplía la cobertura de traducción.",
+  "settings_language_locale_en": "English",
+  "settings_language_locale_es": "Español",
+  "settings_language_save_error": "No se pudo guardar tu preferencia de idioma. Inténtalo de nuevo.",
+  "credential_expiry_notification": "La credencial '{credentialName}' vence en {days} días"
+}
+

@@ -34,6 +34,10 @@ export const MFA_ENROLLMENT_EXEMPT_ROUTES = [
   'GET /api/v1/users/me/notification-preferences',
   'PUT /api/v1/users/me/notification-preferences',
   'PATCH /api/v1/users/me/notification-preferences',
+  // Story 15.1 — same rationale as the notification-preferences routes above: a personal display-
+  // language preference, allowed for every org role (owner/admin/member/viewer), not a security-
+  // sensitive setting. Owner/admin grace-period accounts should not be locked out of it.
+  'PATCH /api/v1/users/me/locale',
   // Invite creation enforces a *stricter* MFA gate than requireMfaEnrollment() — it calls
   // requireMfaEnrollmentStrict() manually inside the handler so grace-period owner/admins are
   // still blocked (D2, Story 4.1). This exemption registry only recognizes the standard gate,

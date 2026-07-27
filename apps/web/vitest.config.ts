@@ -2,6 +2,7 @@ import { coverageConfigDefaults, mergeConfig } from 'vitest/config'
 import { baseVitestConfig } from '@project-vault/tsconfig/vitest.base'
 import { defineConfig } from 'vite'
 import { sveltekit } from '@sveltejs/kit/vite'
+import { paraglideVitePlugin } from '@inlang/paraglide-js'
 
 // Story 10.3: complete-source coverage instrumentation. `src/**/*.{ts,svelte}` is the canonical
 // eligible-source pattern (see the story's "Canonical eligible-source contract"). We extend
@@ -11,7 +12,15 @@ import { sveltekit } from '@sveltejs/kit/vite'
 export default mergeConfig(
   baseVitestConfig,
   defineConfig({
-    plugins: [sveltekit()],
+    plugins: [
+      paraglideVitePlugin({
+        project: './project.inlang',
+        outdir: './src/lib/paraglide',
+        strategy: ['cookie', 'baseLocale'],
+        emitTsDeclarations: true,
+      }),
+      sveltekit(),
+    ],
     resolve: {
       conditions: ['browser'],
     },

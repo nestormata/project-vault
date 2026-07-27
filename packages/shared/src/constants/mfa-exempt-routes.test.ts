@@ -27,6 +27,7 @@ describe('MFA_ENROLLMENT_EXEMPT_ROUTES', () => {
       'GET /api/v1/users/me/notification-preferences',
       'PUT /api/v1/users/me/notification-preferences',
       'PATCH /api/v1/users/me/notification-preferences',
+      'PATCH /api/v1/users/me/locale',
       'POST /api/v1/projects/:projectId/invitations',
       'GET /api/v1/projects/:projectId/invitations',
       'DELETE /api/v1/projects/:projectId/invitations/:id',

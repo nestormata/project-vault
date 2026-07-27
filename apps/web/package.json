@@ -42,6 +42,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@inlang/paraglide-js": "^2.22.0",
     "@project-vault/shared": "workspace:*"
   }
 }
