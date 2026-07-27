@@ -8,6 +8,7 @@
     addCredentialDependency,
     addCredentialVersion,
     archiveCredentialDependency,
+    isFieldsValue,
     parseRevealedFields,
     revealCredentialValue,
     updateCredentialLifecycle,
@@ -46,6 +47,16 @@
   let revealVersion = $state<number | null>(null)
   let revealing = $state(false)
   let revealError = $state<string | null>(null)
+
+  // Story 13.3 — per-field reveal/mask state for a genuinely multi-field secret. `revealedFields`
+  // holds explicitly-revealed sensitive field values (and any non-sensitive field whose eager
+  // decrypt degraded — AC-2 Failure Mode). "Hide" clears a key client-side only, no API call,
+  // mirroring the existing whole-secret `revealedValue = null` convention.
+  let revealedFields = $state<Record<string, string>>({})
+  let revealingField = $state<string | null>(null)
+  let fieldRevealError = $state<Record<string, string>>({})
+  let revealAllLoading = $state(false)
+  let revealAllError = $state<string | null>(null)
 
   // AC-L1: local override applied after a successful lifecycle save so the read-only summary
   // grid above updates without a full page reload; null means "show data.credential's value".
@@ -245,8 +256,70 @@
   onDestroy(() => {
     revealedValue = null
     revealVersion = null
+    revealedFields = {}
     if (copyStatusTimeout) clearTimeout(copyStatusTimeout)
   })
+
+  // Story 13.3 AC-4 — reveal exactly one field. `GET .../value?field=<key>` is called; only that
+  // field's value comes back and only that field is written to `revealedFields`.
+  async function revealSingleField(key: string): Promise<void> {
+    if (revealingField || !canReveal || !data.credential) return
+    revealingField = key
+    fieldRevealError = { ...fieldRevealError, [key]: '' }
+    try {
+      const result = await revealCredentialValue(fetch, data.projectId, data.credentialId, {
+        field: key,
+      })
+      const value = isFieldsValue(result) ? (result.fields[0]?.value ?? '') : result.value
+      revealedFields = { ...revealedFields, [key]: value }
+    } catch (error) {
+      // AC-7/Subtask 3.5 — surface `unknown_field_key` inline near the affected row (e.g. a stale
+      // field list after a concurrent rename) rather than as a generic top-level banner.
+      if (error instanceof ApiClientError && error.code === 'unknown_field_key') {
+        fieldRevealError = {
+          ...fieldRevealError,
+          [key]: 'This field no longer exists on this secret — refresh the page.',
+        }
+      } else {
+        fieldRevealError = {
+          ...fieldRevealError,
+          [key]: error instanceof Error ? error.message : 'Could not reveal this field.',
+        }
+      }
+    } finally {
+      revealingField = null
+    }
+  }
+
+  // Story 13.3 Subtask 3.4 — clears the field's in-memory revealed value only; no API call, same
+  // convention as the existing whole-secret `revealedValue = null` "Hide".
+  function hideField(key: string): void {
+    const next = { ...revealedFields }
+    delete next[key]
+    revealedFields = next
+  }
+
+  // Story 13.3 AC-5/Subtask 3.2 — whole-secret reveal for a multi-field secret: every returned
+  // field is rendered in its own row (never as one opaque blob, replacing the old raw-JSON dump).
+  async function revealAllFields(): Promise<void> {
+    if (revealAllLoading || !canReveal || !data.credential) return
+    revealAllLoading = true
+    revealAllError = null
+    try {
+      const result = await revealCredentialValue(fetch, data.projectId, data.credentialId)
+      if (isFieldsValue(result)) {
+        const updates: Record<string, string> = {}
+        for (const field of result.fields) {
+          if (field.sensitive) updates[field.key] = field.value
+        }
+        revealedFields = { ...revealedFields, ...updates }
+      }
+    } catch (error) {
+      revealAllError = error instanceof Error ? error.message : 'Could not reveal all fields.'
+    } finally {
+      revealAllLoading = false
+    }
+  }
 
   async function revealValue() {
     if (revealing || !canReveal || !data.credential) return
@@ -342,6 +415,12 @@
   const isMultiField = $derived(
     fieldMeta.length > 1 || (fieldMeta[0]?.key ?? DEFAULT_FIELD_KEY) !== DEFAULT_FIELD_KEY
   )
+  // Story 13.3 AC-2 — eagerly-decrypted non-sensitive field values from the detail response.
+  // Empty for a legacy secret, a secret with no non-sensitive fields, or a degraded eager decrypt
+  // (that field then falls back to the masked+Reveal treatment below, same as a sensitive field).
+  const visibleFieldValues = $derived<Record<string, string>>(
+    data.credential?.visibleFieldValues ?? {}
+  )
 
   let editingFieldSet = $state(false)
   let editFields = $state<FieldDraft[]>([])
@@ -358,7 +437,7 @@
     fieldSetFormError = null
     try {
       const revealed = await revealCredentialValue(fetch, data.projectId, data.credentialId)
-      editFields = parseRevealedFields(fieldMeta, revealed.value).map((f) => ({ ...f }))
+      editFields = parseRevealedFields(fieldMeta, revealed).map((f) => ({ ...f }))
       fieldSetErrors = {}
       editingFieldSet = true
     } catch (error) {
@@ -520,61 +599,124 @@
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold text-slate-950">Secret value</h2>
       {#if isMultiField && !editingFieldSet}
+        <!-- Story 13.3 AC-1/2/3 — per-field interactive rows: non-sensitive fields show their
+             value inline (from the eager `visibleFieldValues`, no click); sensitive fields show a
+             masked placeholder plus their own "Reveal" button. Visible to anyone who can view the
+             secret at all (viewer role) — only the Reveal/Reveal-all buttons themselves are
+             gated by canReveal (member+), same as the legacy path below. -->
         <ul class="mt-3 space-y-1" data-testid="field-list">
           {#each fieldMeta as meta (meta.key)}
-            <li class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+            {@const eagerValue = !meta.sensitive ? visibleFieldValues[meta.key] : undefined}
+            {@const revealedFieldValue = revealedFields[meta.key]}
+            <li
+              class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"
+              data-testid={`field-row-${meta.key}`}
+            >
               <span class="font-medium text-slate-900">{meta.key}</span>
-              <span class="text-slate-500">{meta.sensitive ? 'Masked' : 'Text'}</span>
+              <div class="flex items-center gap-2">
+                {#if eagerValue !== undefined}
+                  <span class="font-mono text-slate-700" data-testid={`field-value-${meta.key}`}
+                    >{eagerValue}</span
+                  >
+                {:else if revealedFieldValue !== undefined}
+                  <span class="font-mono text-slate-700" data-testid={`field-value-${meta.key}`}
+                    >{revealedFieldValue}</span
+                  >
+                  {#if canReveal}
+                    <button
+                      class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium"
+                      type="button"
+                      onclick={() => hideField(meta.key)}
+                    >
+                      Hide
+                    </button>
+                  {/if}
+                {:else}
+                  <span class="text-slate-400" data-testid={`field-masked-${meta.key}`}
+                    >••••••••</span
+                  >
+                  {#if canReveal}
+                    <button
+                      class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium disabled:opacity-60"
+                      type="button"
+                      disabled={revealingField === meta.key}
+                      onclick={() => void revealSingleField(meta.key)}
+                    >
+                      {revealingField === meta.key ? 'Revealing…' : 'Reveal'}
+                    </button>
+                  {/if}
+                {/if}
+              </div>
             </li>
+            {#if fieldRevealError[meta.key]}
+              <p class="text-sm text-red-700" role="alert">{fieldRevealError[meta.key]}</p>
+            {/if}
           {/each}
         </ul>
-      {/if}
-      {#if canReveal}
-        {#if revealedValue === null}
+        {#if canReveal}
           <button
-            class="mt-4 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+            class="mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium disabled:opacity-60"
             type="button"
-            disabled={revealing}
-            onclick={() => void revealValue()}
+            disabled={revealAllLoading}
+            onclick={() => void revealAllFields()}
           >
-            {revealing ? 'Revealing…' : 'Reveal value'}
+            {revealAllLoading ? 'Revealing all…' : 'Reveal all'}
           </button>
-        {:else}
-          <pre
-            class="mt-4 overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-white">{revealedValue}</pre>
-          <div class="mt-3 flex gap-3">
-            <button
-              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
-              type="button"
-              onclick={() => void copyValue()}
-            >
-              Copy
-            </button>
-            <button
-              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
-              type="button"
-              onclick={() => {
-                revealedValue = null
-                revealVersion = null
-              }}
-            >
-              Hide
-            </button>
-          </div>
-          {#if copyStatus}
-            <p
-              class={`mt-2 text-sm ${copyStatus.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
-              role="status"
-            >
-              {copyStatus.message}
-            </p>
-          {/if}
-          {#if revealVersion !== null}
-            <p class="mt-2 text-sm text-slate-600">Version {revealVersion}</p>
+          {#if revealAllError}
+            <p class="mt-2 text-sm text-red-700" role="alert">{revealAllError}</p>
           {/if}
         {/if}
-        {#if revealError}
-          <p class="mt-3 text-sm text-red-700" role="alert">{revealError}</p>
+      {/if}
+      {#if canReveal}
+        {#if !isMultiField}
+          <!-- AC-6: legacy/single-default-field secret — byte-for-byte unchanged single reveal
+               button + <pre> block. -->
+          {#if revealedValue === null}
+            <button
+              class="mt-4 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+              type="button"
+              disabled={revealing}
+              onclick={() => void revealValue()}
+            >
+              {revealing ? 'Revealing…' : 'Reveal value'}
+            </button>
+          {:else}
+            <pre
+              class="mt-4 overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-white">{revealedValue}</pre>
+            <div class="mt-3 flex gap-3">
+              <button
+                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+                type="button"
+                onclick={() => void copyValue()}
+              >
+                Copy
+              </button>
+              <button
+                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
+                type="button"
+                onclick={() => {
+                  revealedValue = null
+                  revealVersion = null
+                }}
+              >
+                Hide
+              </button>
+            </div>
+            {#if copyStatus}
+              <p
+                class={`mt-2 text-sm ${copyStatus.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
+                role="status"
+              >
+                {copyStatus.message}
+              </p>
+            {/if}
+            {#if revealVersion !== null}
+              <p class="mt-2 text-sm text-slate-600">Version {revealVersion}</p>
+            {/if}
+          {/if}
+          {#if revealError}
+            <p class="mt-3 text-sm text-red-700" role="alert">{revealError}</p>
+          {/if}
         {/if}
 
         <div class="mt-6 border-t border-slate-200 pt-6">

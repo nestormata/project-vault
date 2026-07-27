@@ -31,6 +31,7 @@ describe('credential response schemas', () => {
         currentVersionNumber: 1,
         schemaVersion: 2,
         fields: [{ key: 'value', sensitive: true }],
+        visibleFieldValues: {},
         createdBy: USER_ID,
         createdAt: CREATED_AT,
         updatedAt: CREATED_AT,

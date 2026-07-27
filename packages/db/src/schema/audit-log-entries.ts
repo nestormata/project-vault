@@ -22,6 +22,11 @@ export const auditLogEntries = pgTable(
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
     payload: jsonb('payload').notNull().default({}),
+    // Story 13.3 — field-level reveal audit (FR96/FR112): which field key(s) were revealed by a
+    // CREDENTIAL_VALUE_REVEALED event, as a first-class queryable/indexable column — separate from
+    // `payload`'s per-event-type shape. Nullable: NULL for a legacy/non-reveal event; populated only
+    // on a completed reveal.
+    revealedFields: text('revealed_fields').array(),
     keyVersion: integer('key_version').notNull(),
     hmac: text('hmac').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

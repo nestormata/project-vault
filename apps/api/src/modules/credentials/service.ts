@@ -6,8 +6,8 @@ import {
   projects,
   credentialDependencies,
 } from '@project-vault/db/schema'
-import { withSecret } from '@project-vault/crypto'
-import type { FieldMeta } from '@project-vault/shared'
+import { withSecret, type EncryptedValue } from '@project-vault/crypto'
+import type { Field, FieldMeta } from '@project-vault/shared'
 import { dedupeTags, normalizeTag, tagDelta } from '../../lib/tags.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
 import {
@@ -22,6 +22,7 @@ import {
   computeFieldDelta,
   fieldMetaForResponse,
   isFieldSetBody,
+  parseFieldsFromPlaintext,
   resolveFieldSet,
   serializeFieldEnvelope,
   unwrapRevealValue,
@@ -39,17 +40,34 @@ export class VersionConflictError extends Error {
   }
 }
 
-type RevealCurrentValueResult =
+// Story 13.3 — revealCurrentValue's discriminated result. `kind: 'value'` is the byte-for-byte
+// unchanged legacy/single-default-field shape (AC-6); `kind: 'fields'` is the new structured
+// multi-field shape (AC-4/AC-5). `revealedFields`, when present, is what the caller must persist
+// to the new `audit_log_entries.revealed_fields` column — set whenever an explicit `?field=` was
+// requested (even for a single-field collapse) or for a whole-secret multi-field reveal (the
+// sensitive fields actually included); omitted for an implicit whole-secret legacy/single-
+// default-field reveal, matching AC-6's "revealed_fields stays NULL" requirement.
+export type RevealCurrentValueResult =
   | {
       status: 'found'
+      kind: 'value'
       value: string
       versionNumber: number
-      // Story 5.5 AC-3: true when a higher-numbered, non-purged version exists but was excluded
-      // because it was abandoned (stale-recovery abandon or break-glass supersession) — the
-      // caller (routes.ts) uses this to emit the AC-3 structured log/metric.
       abandonedVersionExcluded: boolean
+      revealedFields?: string[]
+    }
+  | {
+      status: 'found'
+      kind: 'fields'
+      fields: Field[]
+      schemaVersion: number
+      versionNumber: number
+      abandonedVersionExcluded: boolean
+      revealedFields: string[]
     }
   | { status: 'not_found'; reason: 'not_found' | 'all_versions_purged' }
+  // AC-7 — a well-formed `?field=` naming a key absent from this secret's field_meta.
+  | { status: 'unknown_field'; key: string }
 
 type CredentialListParams = {
   orgId: string
@@ -76,7 +94,11 @@ const DEFAULT_FIELD_INFO: CredentialFieldInfo = {
 export function serializeCredentialDetail(
   credential: typeof credentials.$inferSelect,
   currentVersionNumber: number,
-  fieldInfo: CredentialFieldInfo = DEFAULT_FIELD_INFO
+  fieldInfo: CredentialFieldInfo = DEFAULT_FIELD_INFO,
+  // Story 13.3 AC-2 — eagerly-decrypted non-sensitive field values, keyed by field key. Empty
+  // object for a legacy secret, a secret with no non-sensitive fields, or a degraded eager-decrypt
+  // (see `eagerNonSensitiveFieldValues`).
+  visibleFieldValues: Record<string, string> = {}
 ) {
   return {
     id: credential.id,
@@ -92,6 +114,7 @@ export function serializeCredentialDetail(
     currentVersionNumber,
     schemaVersion: fieldInfo.schemaVersion,
     fields: fieldInfo.fields,
+    visibleFieldValues,
     createdBy: credential.createdBy,
     createdAt: credential.createdAt.toISOString(),
     updatedAt: credential.updatedAt.toISOString(),
@@ -281,15 +304,63 @@ export async function createCredentialWithFirstVersion(
     promotedAt: new Date(),
   })
 
+  // Story 13.3 AC-2 — the plaintext fields are already in hand at create time (no extra decrypt
+  // needed); build the eager non-sensitive-values map directly from them.
+  const visibleFieldValues: Record<string, string> = {}
+  for (const field of resolved.fields) {
+    if (!field.sensitive) visibleFieldValues[field.key] = field.value
+  }
+
   return {
     credential,
-    detail: serializeCredentialDetail(credential, 1, { schemaVersion: 2, fields: fieldMeta }),
+    detail: serializeCredentialDetail(
+      credential,
+      1,
+      { schemaVersion: 2, fields: fieldMeta },
+      visibleFieldValues
+    ),
+  }
+}
+
+/**
+ * Story 13.3 AC-2 — eagerly decrypts values for `sensitive: false` fields only, alongside the
+ * existing field_meta-only detail response. This does NOT go through the audited `/value` route
+ * (Dev Notes: "eager non-sensitive fetch is not an audited reveal") and must never write a
+ * CREDENTIAL_VALUE_REVEALED entry.
+ *
+ * Failure Mode Analysis (AC-2 negative example): if the decrypt/parse throws (e.g. a corrupted
+ * envelope), the whole detail view must still render — this returns an empty map so every
+ * non-sensitive field falls back to a masked placeholder + its own "Reveal" button, and reports
+ * the failure via `onDecryptFailure` for an operational (not audit) log, rather than 500ing the
+ * entire detail response over one bad secret.
+ */
+async function eagerNonSensitiveFieldValues(params: {
+  schemaVersion: number
+  fieldMeta: FieldMeta[]
+  encryptedValue: EncryptedValue | null | undefined
+  onDecryptFailure?: (error: unknown) => void
+}): Promise<Record<string, string>> {
+  const nonSensitiveKeys = new Set(params.fieldMeta.filter((f) => !f.sensitive).map((f) => f.key))
+  if (nonSensitiveKeys.size === 0 || !params.encryptedValue) return {}
+
+  try {
+    const plaintext = await withSecret(params.encryptedValue, async (buf) => buf.toString('utf8'))
+    const fields = parseFieldsFromPlaintext(params.schemaVersion, plaintext)
+    const values: Record<string, string> = {}
+    for (const field of fields) {
+      if (nonSensitiveKeys.has(field.key)) values[field.key] = field.value
+    }
+    return values
+  } catch (error) {
+    params.onDecryptFailure?.(error)
+    return {}
   }
 }
 
 export async function getCredentialDetail(
   tx: Tx,
-  params: { credentialId: string; projectId: string }
+  params: { credentialId: string; projectId: string },
+  options: { onEagerDecryptFailure?: (error: unknown) => void } = {}
 ) {
   const credential = await findCredentialInProject(tx, params)
   if (!credential) return null
@@ -301,10 +372,21 @@ export async function getCredentialDetail(
 
   const currentVersionNumber = Number(versionRow?.versionNumber ?? 1)
   const schemaVersion = versionRow?.schemaVersion ?? 1
-  return serializeCredentialDetail(credential, currentVersionNumber, {
+  const fieldMeta = fieldMetaForResponse(schemaVersion, versionRow?.fieldMeta)
+
+  const visibleFieldValues = await eagerNonSensitiveFieldValues({
     schemaVersion,
-    fields: fieldMetaForResponse(schemaVersion, versionRow?.fieldMeta),
+    fieldMeta,
+    encryptedValue: versionRow?.encryptedValue,
+    onDecryptFailure: options.onEagerDecryptFailure,
   })
+
+  return serializeCredentialDetail(
+    credential,
+    currentVersionNumber,
+    { schemaVersion, fields: fieldMeta },
+    visibleFieldValues
+  )
 }
 
 export async function findCredentialInProject(
@@ -405,12 +487,22 @@ export type AddCredentialVersionResult = {
 export async function selectCurrentVersionMeta(
   tx: Tx,
   credentialId: string
-): Promise<{ versionNumber: number; schemaVersion: number; fieldMeta: unknown } | undefined> {
+): Promise<
+  | {
+      versionNumber: number
+      schemaVersion: number
+      fieldMeta: unknown
+      // Story 13.3 AC-2 — needed by getCredentialDetail's eager non-sensitive-value decrypt.
+      encryptedValue: EncryptedValue | null
+    }
+  | undefined
+> {
   const [row] = await tx
     .select({
       versionNumber: credentialVersions.versionNumber,
       schemaVersion: credentialVersions.schemaVersion,
       fieldMeta: credentialVersions.fieldMeta,
+      encryptedValue: credentialVersions.encryptedValue,
     })
     .from(credentialVersions)
     .where(
@@ -508,9 +600,27 @@ export async function addCredentialVersion(
   }
 }
 
+/**
+ * Story 13.3 Subtask 2.3/AC-7 — validates a requested `?field=` against the REAL field_meta
+ * before any decrypt/audit-write occurs. A genuine schema_version = 1 legacy row has no
+ * field_meta at all, so ANY `?field=` name is rejected (AC-6's lookalike-case distinction); a
+ * schema_version >= 2 row (single- or multi-field) is validated against its actual declared keys.
+ * Returns `undefined` when the field is absent or valid; the offending key when invalid.
+ */
+function invalidRequestedField(
+  field: string | undefined,
+  schemaVersion: number,
+  fieldMeta: unknown
+): string | undefined {
+  if (field === undefined) return undefined
+  if (schemaVersion < 2) return field
+  const declaredKeys = fieldMetaForResponse(schemaVersion, fieldMeta).map((f) => f.key)
+  return declaredKeys.includes(field) ? undefined : field
+}
+
 export async function revealCurrentValue(
   tx: Tx,
-  params: { credentialId: string; projectId: string }
+  params: { credentialId: string; projectId: string; field?: string }
 ): Promise<RevealCurrentValueResult> {
   const credential = await findCredentialInProject(tx, params)
   if (!credential) return { status: 'not_found', reason: 'not_found' }
@@ -520,6 +630,7 @@ export async function revealCurrentValue(
       versionNumber: credentialVersions.versionNumber,
       encryptedValue: credentialVersions.encryptedValue,
       schemaVersion: credentialVersions.schemaVersion,
+      fieldMeta: credentialVersions.fieldMeta,
     })
     .from(credentialVersions)
     .where(
@@ -559,14 +670,68 @@ export async function revealCurrentValue(
     .limit(1)
   const abandonedVersionExcluded = Boolean(higherAbandonedVersion)
 
+  const invalidField = invalidRequestedField(params.field, version.schemaVersion, version.fieldMeta)
+  if (invalidField !== undefined) {
+    return { status: 'unknown_field', key: invalidField }
+  }
+
   // reveal path: Buffer->string permitted here (the one sanctioned conversion site)
   const plaintext = await withSecret(version.encryptedValue, async (buf) => buf.toString('utf8'))
   // Story 13.2 AC-7 — legacy (schema_version = 1) rows decrypt to a bare string; a
   // single-default-field v2 row unwraps to its bare value (backward compatible); a genuine
   // multi-field v2 row returns the full JSON field envelope. The stored ciphertext is never
-  // re-parsed or re-encrypted.
-  const value = unwrapRevealValue(version.schemaVersion, plaintext)
-  return { status: 'found', value, versionNumber: version.versionNumber, abandonedVersionExcluded }
+  // re-parsed or re-encrypted. Story 13.3 — parsing via parseFieldsFromPlaintext (rather than a
+  // third parallel envelope parser) determines whether this is genuinely multi-field.
+  const fields = parseFieldsFromPlaintext(version.schemaVersion, plaintext)
+  const isGenuineMultiField = version.schemaVersion >= 2 && fields.length > 1
+
+  if (!isGenuineMultiField) {
+    // Legacy or single-default-field v2 — AC-6: byte-for-byte unchanged bare-string shape. When
+    // an explicit `?field=` was requested (and validated above), the caller still needs to know
+    // which key to attribute the audit entry to (AC-4's "endpoint was called" boundary) — but an
+    // *implicit* whole-secret reveal of a legacy/single-default-field secret leaves
+    // `revealedFields` unset, so the caller writes `NULL` (AC-6), not `[]`.
+    const value = unwrapRevealValue(version.schemaVersion, plaintext)
+    return {
+      status: 'found',
+      kind: 'value',
+      value,
+      versionNumber: version.versionNumber,
+      abandonedVersionExcluded,
+      ...(params.field !== undefined ? { revealedFields: [params.field] } : {}),
+    }
+  }
+
+  if (params.field !== undefined) {
+    // Already validated against field_meta above; a mismatch here would mean field_meta and the
+    // decrypted envelope disagree — treat defensively as unknown rather than trusting either.
+    const match = fields.find((f) => f.key === params.field)
+    if (!match) return { status: 'unknown_field', key: params.field }
+    return {
+      status: 'found',
+      kind: 'fields',
+      fields: [match],
+      schemaVersion: version.schemaVersion,
+      versionNumber: version.versionNumber,
+      abandonedVersionExcluded,
+      // AC-4 negative example: the audited-reveal-action boundary is "this endpoint was called",
+      // not "the field happened to be sensitive" — recorded regardless of `match.sensitive`.
+      revealedFields: [match.key],
+    }
+  }
+
+  // AC-5 — whole-secret reveal of a genuine multi-field secret: every field's value is returned,
+  // but `revealedFields` names only the genuinely-sensitive ones actually included, in field_meta
+  // declared order (not alphabetical/insertion-of-request order).
+  return {
+    status: 'found',
+    kind: 'fields',
+    fields,
+    schemaVersion: version.schemaVersion,
+    versionNumber: version.versionNumber,
+    abandonedVersionExcluded,
+    revealedFields: fields.filter((f) => f.sensitive).map((f) => f.key),
+  }
 }
 
 export async function listVersionHistory(

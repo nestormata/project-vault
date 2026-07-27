@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { rotationCopy } from '$lib/components/rotations/rotation-copy.js'
 
@@ -23,6 +23,7 @@ vi.mock('$lib/api/credentials.js', async () => {
     revealCredentialValue: revealCredentialValueMock,
     addCredentialVersion: addCredentialVersionMock,
     parseRevealedFields: actual.parseRevealedFields,
+    isFieldsValue: actual.isFieldsValue,
   }
 })
 
@@ -682,12 +683,16 @@ describe('credential detail +page.svelte', () => {
   })
 
   it('AC-4/AC-8: editing reveals current values, then saves the full field set', async () => {
+    // Story 13.3 AC-5 — whole-secret reveal now returns the structured `fields[]` shape, not a
+    // JSON-string-in-`value` envelope (the Story 13.2 carryover bug this story fixes).
     revealCredentialValueMock.mockResolvedValue({
-      value: JSON.stringify([
+      fields: [
         { key: 'host', value: 'db.example.com', sensitive: false },
         { key: 'password', value: 'old-pw', sensitive: true },
-      ]),
+      ],
+      schemaVersion: 2,
       versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
     })
     addCredentialVersionMock.mockResolvedValue({ credentialId, versionNumber: 4 })
 
@@ -722,11 +727,13 @@ describe('credential detail +page.svelte', () => {
 
   it('AC-3: a 409 field_key_conflict on save shows an inline error on the colliding field', async () => {
     revealCredentialValueMock.mockResolvedValue({
-      value: JSON.stringify([
+      fields: [
         { key: 'host', value: 'h', sensitive: false },
         { key: 'password', value: 'p', sensitive: true },
-      ]),
+      ],
+      schemaVersion: 2,
       versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
     })
     addCredentialVersionMock.mockRejectedValue(
       new ApiClientError(
@@ -744,5 +751,118 @@ describe('credential detail +page.svelte', () => {
     await fireEvent.click(screen.getByRole('button', { name: /save fields/i }))
 
     await vi.waitFor(() => expect(screen.getAllByText(/already exists/i).length).toBeGreaterThan(0))
+  })
+
+  // -------- Story 13.3: per-field reveal/mask, Reveal all --------
+
+  const MULTI_FIELD_CREDENTIAL_WITH_VISIBLE = {
+    ...MULTI_FIELD_CREDENTIAL,
+    visibleFieldValues: { host: 'db.example.com' },
+  }
+
+  it('AC-1/AC-2: a non-sensitive field shows its value with no reveal click; never calls the value endpoint on load', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE }) },
+    })
+    expect(screen.getByTestId('field-value-host').textContent).toBe('db.example.com')
+    expect(screen.getByTestId('field-masked-password').textContent).toBe('••••••••')
+    expect(revealCredentialValueMock).not.toHaveBeenCalled()
+  })
+
+  it('AC-3/AC-4: reveals only the clicked sensitive field via GET .../value?field=<key>', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      fields: [{ key: 'password', value: 's3cret-pw', sensitive: true }],
+      schemaVersion: 2,
+      versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE }) },
+    })
+
+    const passwordRow = screen.getByTestId('field-row-password')
+    const { getByRole } = within(passwordRow)
+    await fireEvent.click(getByRole('button', { name: /^reveal$/i }))
+
+    expect(revealCredentialValueMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId,
+      { field: 'password' }
+    )
+    expect((await screen.findByTestId('field-value-password')).textContent).toBe('s3cret-pw')
+    // the already-visible non-sensitive field was never re-fetched
+    expect(revealCredentialValueMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('Subtask 3.4: Hide clears the revealed field client-side, no API call', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      fields: [{ key: 'password', value: 's3cret-pw', sensitive: true }],
+      schemaVersion: 2,
+      versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE }) },
+    })
+    await fireEvent.click(
+      within(screen.getByTestId('field-row-password')).getByRole('button', { name: /^reveal$/i })
+    )
+    await screen.findByTestId('field-value-password')
+
+    await fireEvent.click(
+      within(screen.getByTestId('field-row-password')).getByRole('button', { name: /^hide$/i })
+    )
+
+    expect(screen.queryByTestId('field-value-password')).toBeNull()
+    expect(screen.getByTestId('field-masked-password')).toBeTruthy()
+    expect(revealCredentialValueMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('Subtask 3.2/AC-5: "Reveal all" renders every field in its own row, never a raw JSON blob', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      fields: [
+        { key: 'host', value: 'db.example.com', sensitive: false },
+        { key: 'password', value: 's3cret-pw', sensitive: true },
+      ],
+      schemaVersion: 2,
+      versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
+    })
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL }) },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reveal all/i }))
+
+    expect((await screen.findByTestId('field-value-password')).textContent).toBe('s3cret-pw')
+    expect(screen.queryByText(/^\[.*\]$/)).toBeNull()
+    expect(revealCredentialValueMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId
+    )
+  })
+
+  it('AC-7/Subtask 3.5: an unknown_field_key error surfaces inline near the affected row', async () => {
+    revealCredentialValueMock.mockRejectedValue(
+      new ApiClientError(400, { code: 'unknown_field_key' }, "Unknown field key: 'password'")
+    )
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE }) },
+    })
+
+    await fireEvent.click(
+      within(screen.getByTestId('field-row-password')).getByRole('button', { name: /^reveal$/i })
+    )
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/no longer exists/i)
+  })
+
+  it('AC-7: a legacy secret is unaffected by field-scoped reveal chrome (pixel-identical regression guard)', () => {
+    render(CredentialDetailPage, { props: { data: baseData() } })
+    expect(screen.queryByTestId('field-list')).toBeNull()
+    expect(screen.queryByRole('button', { name: /reveal all/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
   })
 })

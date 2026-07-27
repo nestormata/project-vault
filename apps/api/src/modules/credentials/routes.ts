@@ -7,7 +7,7 @@ import {
 import type { Tx } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
-import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
+import { parseBody, parseParams, parseQuery, validationError } from '../../lib/route-helpers.js'
 import {
   buildPaginationMeta,
   PAGE_OUT_OF_RANGE_ERROR,
@@ -38,7 +38,8 @@ import {
   CredentialDetailResponseSchema,
   CredentialLifecycleResponseSchema,
   CredentialParamsSchema,
-  CredentialValueResponseSchema,
+  CredentialValueOrFieldsResponseSchema,
+  CredentialValueQuerySchema,
   CredentialVersionListResponseSchema,
   DependencyArchivedResponseSchema,
   DependencyListResponseSchema,
@@ -224,6 +225,35 @@ const INSUFFICIENT_PROJECT_ROLE = {
   message: 'Your role in this project does not permit revealing credential values',
 } as const
 const CREDENTIAL_REVEAL_FAILED_MESSAGE = 'Credential value reveal failed'
+
+// Story 13.3 AC-7 — extracted so the /value handler's own branching stays under the repo's
+// complexity ceiling; the 400 body only ever echoes back a key the requester supplied.
+function unknownFieldKeyResponse(key: string) {
+  return { code: 'unknown_field_key' as const, message: `Unknown field key: '${key}'` }
+}
+
+// Story 13.3 AC-4/AC-5/AC-6 — shapes the /value route's success body from revealCurrentValue's
+// discriminated result; extracted for the same complexity-ceiling reason as the helper above.
+function serializeRevealResult(revealed: {
+  kind: 'value' | 'fields'
+  value?: string
+  fields?: unknown
+  schemaVersion?: number
+  versionNumber: number
+}) {
+  const retrievedAt = new Date().toISOString()
+  if (revealed.kind === 'fields') {
+    return {
+      data: {
+        fields: revealed.fields,
+        schemaVersion: revealed.schemaVersion,
+        versionNumber: revealed.versionNumber,
+        retrievedAt,
+      },
+    }
+  }
+  return { data: { value: revealed.value, versionNumber: revealed.versionNumber, retrievedAt } }
+}
 const CREDENTIAL_SUBRESOURCE_READ_ERRORS = {
   401: ApiErrorSchema,
   404: ApiErrorSchema,
@@ -854,7 +884,22 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
     security: { minimumRole: 'viewer', writeAuditEvent: false },
     handler: async (ctx, req, reply) =>
       withCredentialParams(ctx, req, reply, async (secureCtx, params) => {
-        const detail = await getCredentialDetail(secureCtx.tx, params)
+        const detail = await getCredentialDetail(secureCtx.tx, params, {
+          // Story 13.3 AC-2 Failure Mode Analysis — a corrupted-envelope eager decrypt must not
+          // 500 the whole detail view; log it operationally (never audited — no reveal occurred).
+          onEagerDecryptFailure: (error) => {
+            req.log.warn(
+              {
+                eventType: OperationalEvent.CREDENTIAL_REVEAL_FAILURE,
+                orgId: secureCtx.auth.orgId,
+                credentialId: params.credentialId,
+                reason: 'eager_visible_field_decrypt_failed',
+                error: error instanceof Error ? error.message : String(error),
+              },
+              'Eager non-sensitive field decrypt failed on detail fetch — falling back to masked'
+            )
+          },
+        })
         return detail ? { data: detail } : null
       }),
   })
@@ -957,7 +1002,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
     url: '/:projectId/credentials/:credentialId/value',
     schema: {
       response: {
-        200: CredentialValueResponseSchema,
+        200: CredentialValueOrFieldsResponseSchema,
+        400: ApiErrorSchema,
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
@@ -976,6 +1022,10 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
     handler: async (ctx, req, reply) => {
       const params = parseParams(CredentialParamsSchema, req, reply)
       if (!params) return reply
+      // Story 13.3 Subtask 2.1 — optional `?field=`; malformed input is a 422 here (Zod layer),
+      // distinct from the `400 unknown_field_key` business error below.
+      const query = parseQuery(CredentialValueQuerySchema, req, reply)
+      if (!query) return reply
       const secureCtx = ctx as SecureRouteContext
       if (
         await rejectIfProjectNotVisible(
@@ -1014,7 +1064,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
 
       let revealed: Awaited<ReturnType<typeof revealCurrentValue>>
       try {
-        revealed = await revealCurrentValue(secureCtx.tx, params)
+        revealed = await revealCurrentValue(secureCtx.tx, { ...params, field: query.field })
       } catch (error) {
         req.log.warn(
           {
@@ -1041,6 +1091,21 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(404).send(CREDENTIAL_NOT_FOUND)
       }
 
+      // Story 13.3 AC-7 — a well-formed `?field=` naming a key absent from this secret. Rejected
+      // before any decrypt/audit-write; no audit entry is written for a rejected reveal request.
+      if (revealed.status === 'unknown_field') {
+        req.log.warn(
+          {
+            eventType: OperationalEvent.CREDENTIAL_REVEAL_FAILURE,
+            orgId: secureCtx.auth.orgId,
+            credentialId: params.credentialId,
+            reason: 'unknown_field_key',
+          },
+          CREDENTIAL_REVEAL_FAILED_MESSAGE
+        )
+        return reply.status(400).send(unknownFieldKeyResponse(revealed.key))
+      }
+
       // Story 5.5 AC-3: revealCurrentValue() excluding an abandoned version to serve an earlier
       // one is Story 5.3's own self-described "single highest-risk change" — this is the
       // production visibility a regression in that filter would otherwise lack.
@@ -1065,6 +1130,9 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
           eventType: 'credential.value_revealed',
           resourceId: params.credentialId,
           payload: { versionNumber: revealed.versionNumber },
+          // Story 13.3 AC-4/AC-5/AC-6 — a first-class column, not nested in `payload`. Unset for
+          // an implicit whole-secret legacy/single-default-field reveal (column stays NULL).
+          revealedFields: revealed.revealedFields,
           request: req,
         })
       } catch (error) {
@@ -1099,13 +1167,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         'Credential value revealed'
       )
 
-      return {
-        data: {
-          value: revealed.value,
-          versionNumber: revealed.versionNumber,
-          retrievedAt: new Date().toISOString(),
-        },
-      }
+      return serializeRevealResult(revealed)
     },
   })
 

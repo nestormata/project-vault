@@ -18,6 +18,11 @@ export type HumanAuditFields = {
   resourceId?: string
   resourceType?: string
   payload: Record<string, unknown>
+  // Story 13.3 — which field key(s) a CREDENTIAL_VALUE_REVEALED event actually revealed, as a
+  // first-class `audit_log_entries.revealed_fields` column, separate from `payload`'s per-event
+  // shape. Undefined/omitted for any non-reveal event or a legacy whole-secret reveal (column
+  // stays NULL, never `[]`).
+  revealedFields?: string[]
   meta?: RequestMeta
 }
 
@@ -56,5 +61,6 @@ export async function writeHumanAuditEntry(tx: Tx, fields: HumanAuditFields): Pr
     hmac,
     ipAddress: fields.meta?.ipAddress ?? null,
     userAgent: fields.meta?.userAgent ?? null,
+    revealedFields: fields.revealedFields ?? null,
   })
 }

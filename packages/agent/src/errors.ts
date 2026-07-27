@@ -72,3 +72,21 @@ export class VaultCacheExpiredError extends VaultAgentError {
     this.name = 'VaultCacheExpiredError'
   }
 }
+
+/**
+ * Story 13.3 — this agent's `getSecret()` returns a single `Promise<string>`; it has no way to
+ * select a field, so it always fetches the machine reveal route with no `?field=`. For a
+ * genuinely multi-field secret that route now returns the structured `fields[]` shape (AC-5) —
+ * this agent has no defined behavior for that yet (a future story would need to add field
+ * selection to this package's public API). Thrown instead of silently caching/returning
+ * `undefined` as if it were the secret's value.
+ */
+export class VaultMultiFieldSecretUnsupportedError extends VaultAgentError {
+  constructor(name: string) {
+    super(
+      'multi_field_secret_unsupported',
+      `"${name}" is a multi-field secret; this agent version can only fetch single-value secrets.`
+    )
+    this.name = 'VaultMultiFieldSecretUnsupportedError'
+  }
+}

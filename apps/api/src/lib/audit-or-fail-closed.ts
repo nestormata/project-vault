@@ -72,6 +72,8 @@ export type SameTransactionAuditInput = {
   resourceId?: string
   resourceType: string
   payload: Record<string, unknown>
+  // Story 13.3 — see HumanAuditFields.revealedFields.
+  revealedFields?: string[]
   request: FastifyRequest
 }
 
@@ -93,6 +95,7 @@ export async function writeHumanAuditEntryOrFailClosed(
       resourceId: input.resourceId,
       resourceType: input.resourceType,
       payload: input.payload,
+      revealedFields: input.revealedFields,
       meta: {
         ipAddress: input.request.ip,
         userAgent:
@@ -112,6 +115,8 @@ export type MachineAuditInput = {
   payload: Record<string, unknown>
   machineUserId: string
   keyId: string
+  // Story 13.3 — see HumanAuditFields.revealedFields.
+  revealedFields?: string[]
   request: FastifyRequest
 }
 
@@ -132,6 +137,7 @@ export async function writeMachineAuditEntryOrFailClosed(
       payload: input.payload,
       machineUserId: input.machineUserId,
       keyId: input.keyId,
+      revealedFields: input.revealedFields,
       meta: {
         ipAddress: input.request.ip,
         userAgent:

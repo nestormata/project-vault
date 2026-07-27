@@ -1,20 +1,38 @@
 import { z } from 'zod/v4'
+import { FIELD_KEY_MAX_LENGTH, FIELD_KEY_PATTERN, FieldSchema } from '@project-vault/shared'
 
 export const MachineCredentialParamsSchema = z
   .object({ projectId: z.uuid(), name: z.string().min(1) })
   .meta({ id: 'MachineCredentialParams' })
 
-// AC-6: `cacheable` is present on EVERY successful response, not just non-cacheable ones — the
-// offline agent's non-cacheable-exclusion logic (AC-14) depends on this being part of the
-// baseline schema.
+// Story 13.3 — mirrors CredentialValueQuerySchema (human route) for the machine reveal route's
+// own `?field=` support (architecture.md's explicit statement this route gains it too).
+export const MachineCredentialValueQuerySchema = z
+  .object({
+    field: z.string().trim().min(1).max(FIELD_KEY_MAX_LENGTH).regex(FIELD_KEY_PATTERN).optional(),
+  })
+  .strict()
+  .meta({ id: 'MachineCredentialValueQuery' })
+export type MachineCredentialValueQuery = z.infer<typeof MachineCredentialValueQuerySchema>
+
+const machineCredentialValueDataBase = {
+  name: z.string(),
+  versionNumber: z.number().int().positive(),
+  // AC-6: `cacheable` is present on EVERY successful response, not just non-cacheable ones — the
+  // offline agent's non-cacheable-exclusion logic (AC-14) depends on this being part of the
+  // baseline schema.
+  cacheable: z.boolean(),
+}
+
+// Story 13.3 — discriminated response, mirroring the human `/value` route: legacy/single-
+// default-field secrets keep the existing bare `{ value }` shape; a genuinely multi-field secret
+// returns the structured `{ fields: [...] }` shape instead.
 export const MachineCredentialValueResponseSchema = z
   .object({
-    data: z.object({
-      name: z.string(),
-      value: z.string(),
-      versionNumber: z.number().int().positive(),
-      cacheable: z.boolean(),
-    }),
+    data: z.union([
+      z.object({ ...machineCredentialValueDataBase, value: z.string() }),
+      z.object({ ...machineCredentialValueDataBase, fields: z.array(FieldSchema) }),
+    ]),
   })
   .meta({ id: 'MachineCredentialValueResponse' })
 

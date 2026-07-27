@@ -81,6 +81,13 @@ export const CredentialDetailSchema = z
     // Story 13.2 — plaintext field metadata for the current version (keys/sensitivity/template),
     // never values. For a legacy schema_version=1 secret this is a single unnamed default field.
     fields: z.array(FieldMetaSchema),
+    // Story 13.3 AC-2 — eagerly-decrypted values for NON-sensitive fields only, keyed by field
+    // key. Populated server-side from a decrypt limited to `sensitive: false` keys; never
+    // includes a sensitive field's value. Not an audited reveal (see Dev Notes) — masking/
+    // existence determination still comes from `fields` (field_meta) alone; this is additive
+    // data alongside it. Empty object (not omitted) when there are no non-sensitive fields, or
+    // when the eager decrypt failed (graceful degradation — that field renders masked instead).
+    visibleFieldValues: z.record(z.string(), z.string()),
     createdBy: z.uuid().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),

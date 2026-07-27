@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { withOrg } from '@project-vault/db'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
+import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import type { MachineJwtVerifiedClaims } from '../../plugins/machine-jwt.js'
 import { extractBearerToken } from './bearer-token.js'
 import { isMachineKeyLive } from './key-validity.js'
@@ -32,6 +33,19 @@ export const MANUAL_MACHINE_AUTH_SECURITY = {
   requireAuth: false,
   writeAuditEvent: false,
   rateLimit: false,
+} as const
+
+/**
+ * Shared response-schema error entries common to every manually machine-JWT-authenticated route
+ * (auth failure, malformed input, rate limit, fail-closed audit write) — spread into each route's
+ * own `response` schema alongside its route-specific success/error codes.
+ */
+export const MACHINE_COMMON_ERROR_RESPONSES = {
+  401: ApiErrorSchema,
+  403: ApiErrorSchema,
+  422: ApiErrorSchema,
+  429: ApiErrorSchema,
+  503: ApiErrorSchema,
 } as const
 
 type MachineJwtVerifyFastify = {

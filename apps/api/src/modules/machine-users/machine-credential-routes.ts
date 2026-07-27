@@ -3,14 +3,19 @@ import { withOrg } from '@project-vault/db'
 import { AuditEvent } from '@project-vault/shared'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
-import { enforceUserRateLimit, parseParams } from '../../lib/route-helpers.js'
+import { enforceUserRateLimit, parseParams, parseQuery } from '../../lib/route-helpers.js'
 import { secureRoute, SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 import { writeMachineAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { findCredentialByNameInProject, revealCurrentValue } from '../credentials/service.js'
-import { MANUAL_MACHINE_AUTH_SECURITY, verifyMachineRequest } from './machine-auth.js'
+import {
+  MACHINE_COMMON_ERROR_RESPONSES,
+  MANUAL_MACHINE_AUTH_SECURITY,
+  verifyMachineRequest,
+} from './machine-auth.js'
 import {
   AmbiguousCredentialNameErrorSchema,
   MachineCredentialParamsSchema,
+  MachineCredentialValueQuerySchema,
   MachineCredentialValueResponseSchema,
 } from './machine-credential-schema.js'
 
@@ -57,6 +62,17 @@ function enforceFailedLookupRateLimit(keyId: string, reply: FastifyReply): boole
   })
 }
 
+// Shared by every "failed lookup" branch (unknown credential name, ambiguous name, unknown field
+// key) — all of them count against the tighter anti-enumeration budget, not just the overall one.
+function replyAsFailedLookup(
+  keyId: string,
+  reply: FastifyReply,
+  send: () => FastifyReply
+): FastifyReply {
+  if (!enforceFailedLookupRateLimit(keyId, reply)) return reply
+  return send()
+}
+
 export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
@@ -64,12 +80,10 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
     schema: {
       response: {
         200: MachineCredentialValueResponseSchema,
-        401: ApiErrorSchema,
-        403: ApiErrorSchema,
+        400: ApiErrorSchema,
         404: ApiErrorSchema,
         409: AmbiguousCredentialNameErrorSchema,
-        429: ApiErrorSchema,
-        503: ApiErrorSchema,
+        ...MACHINE_COMMON_ERROR_RESPONSES,
       },
     },
     security: MANUAL_MACHINE_AUTH_SECURITY,
@@ -77,11 +91,19 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
       const verified = await verifyMachineRequest(req, reply)
       if (!verified) return reply
 
+      // Rate limiting runs ahead of request-body/query validation (mirrors the human route,
+      // where `security.rateLimit` is enforced as a preHandler before the handler body ever
+      // runs parseParams/parseQuery) — otherwise a malformed `?field=` (422) or malformed
+      // `:name` param (400) would consume zero rate-limit budget, letting a holder of a valid
+      // machine JWT spam arbitrarily many rejected requests for free.
+      if (!enforceOverallRateLimit(verified.keyId, reply)) return reply
+
       const params = parseParams(MachineCredentialParamsSchema, req, reply)
       if (!params) return reply
+      // Story 13.3 Subtask 2.6 — mirrors the human route's `?field=` support.
+      const query = parseQuery(MachineCredentialValueQuerySchema, req, reply)
+      if (!query) return reply
       const name = decodeURIComponent(params.name)
-
-      if (!enforceOverallRateLimit(verified.keyId, reply)) return reply
 
       // AC-7: a valid machine JWT reused against a project it isn't scoped to. 403 (not 404) —
       // the caller already holds a valid, scoped credential; the project's existence isn't the
@@ -98,17 +120,19 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
           })
 
           if (matches.length === 0) {
-            if (!enforceFailedLookupRateLimit(verified.keyId, reply)) return reply
-            return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+            return replyAsFailedLookup(verified.keyId, reply, () =>
+              reply.status(404).send(CREDENTIAL_NOT_FOUND)
+            )
           }
           if (matches.length > 1) {
-            if (!enforceFailedLookupRateLimit(verified.keyId, reply)) return reply
-            return reply.status(409).send({
-              code: 'ambiguous_credential_name' as const,
-              message:
-                'Multiple credentials share this name in this project; machine-user retrieval requires unique names',
-              matchCount: matches.length,
-            })
+            return replyAsFailedLookup(verified.keyId, reply, () =>
+              reply.status(409).send({
+                code: 'ambiguous_credential_name' as const,
+                message:
+                  'Multiple credentials share this name in this project; machine-user retrieval requires unique names',
+                matchCount: matches.length,
+              })
+            )
           }
 
           const credential = matches[0]
@@ -117,10 +141,25 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
           const result = await revealCurrentValue(tx, {
             credentialId: credential.id,
             projectId: params.projectId,
+            field: query.field,
           })
           if (result.status === 'not_found') {
-            if (!enforceFailedLookupRateLimit(verified.keyId, reply)) return reply
-            return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+            return replyAsFailedLookup(verified.keyId, reply, () =>
+              reply.status(404).send(CREDENTIAL_NOT_FOUND)
+            )
+          }
+          // Story 13.3 AC-7 — a well-formed `?field=` naming a key absent from this secret;
+          // rejected before any decrypt/audit-write, no audit entry written. Consumes the same
+          // tighter failed-lookup budget as a not-found/ambiguous credential name lookup —
+          // otherwise a caller who already knows a valid credential name could enumerate its
+          // field keys at the full overall budget instead of the anti-enumeration one.
+          if (result.status === 'unknown_field') {
+            return replyAsFailedLookup(verified.keyId, reply, () =>
+              reply.status(400).send({
+                code: 'unknown_field_key',
+                message: `Unknown field key: '${result.key}'`,
+              })
+            )
           }
 
           await writeMachineAuditEntryOrFailClosed(tx, {
@@ -131,8 +170,21 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
             machineUserId: verified.machineUserId,
             keyId: verified.keyId,
             payload: { versionNumber: result.versionNumber, name },
+            // Story 13.3 — first-class column, not nested in payload (see human route).
+            revealedFields: result.revealedFields,
             request: req,
           })
+
+          if (result.kind === 'fields') {
+            return {
+              data: {
+                name,
+                fields: result.fields,
+                versionNumber: result.versionNumber,
+                cacheable: credential.cacheable,
+              },
+            }
+          }
 
           return {
             data: {

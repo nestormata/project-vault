@@ -19,6 +19,7 @@ import {
 import {
   VaultAgentError,
   VaultCacheExpiredError,
+  VaultMultiFieldSecretUnsupportedError,
   VaultUnreachableError,
   VaultUnreachableNonCacheableError,
 } from './errors.js'
@@ -28,6 +29,7 @@ export {
   VaultCacheDecryptionError,
   VaultCacheCorruptedError,
   VaultCacheExpiredError,
+  VaultMultiFieldSecretUnsupportedError,
   VaultUnreachableError,
   VaultUnreachableNonCacheableError,
 } from './errors.js'
@@ -112,8 +114,14 @@ export function createVaultAgent(config: VaultAgentConfig): VaultAgent {
         `Vault request failed with HTTP ${res.status}`
       )
     }
-    const body = (await res.json()) as CredentialValueBody
-    return body.data
+    const body = (await res.json()) as CredentialValueBody | { data: { value?: unknown } }
+    // Story 13.3 — the machine route now returns a structured `fields[]` shape (no `value`) for a
+    // genuinely multi-field secret when queried with no `?field=` (this agent has no field
+    // selector). Fail loudly rather than caching/returning `undefined` as if it were the value.
+    if (typeof body.data.value !== 'string') {
+      throw new VaultMultiFieldSecretUnsupportedError(name)
+    }
+    return body.data as CredentialValueBody['data']
   }
 
   /** AC-15 — fire-and-forget; never thrown to the caller of getSecret(), logged at debug only. */

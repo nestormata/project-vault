@@ -2,10 +2,13 @@ import {
   CredentialAccessEntrySchema,
   CredentialDependencySchema,
   CredentialDetailSchema,
+  CredentialFieldsValueSchema,
   CredentialSummarySchema,
   CredentialTemplateSchema,
   CredentialValueSchema,
   CredentialVersionSummarySchema,
+  FIELD_KEY_MAX_LENGTH,
+  FIELD_KEY_PATTERN,
   FieldArraySchema,
   ImportActionSchema,
   SystemTypeSchema,
@@ -112,6 +115,18 @@ export const AddVersionBodySchema = z
   .union([AddVersionFieldSetBodySchema, AddVersionLegacyBodySchema])
   .meta({ id: 'AddVersionBody' })
 
+// Story 13.3 AC-1/AC-4/AC-7 — optional field-scoped reveal query. Malformed input (empty string,
+// too long, disallowed characters) is a `422` at this Zod-validation layer, distinct from the
+// `400 unknown_field_key` business error used when a well-formed key simply doesn't exist on the
+// secret (Subtask 2.1/2.3).
+export const CredentialValueQuerySchema = z
+  .object({
+    field: z.string().trim().min(1).max(FIELD_KEY_MAX_LENGTH).regex(FIELD_KEY_PATTERN).optional(),
+  })
+  .strict()
+  .meta({ id: 'CredentialValueQuery' })
+export type CredentialValueQuery = z.infer<typeof CredentialValueQuerySchema>
+
 export const CredentialParamsSchema = z
   .object({ projectId: z.uuid(), credentialId: z.uuid() })
   .meta({ id: 'CredentialParams' })
@@ -188,6 +203,13 @@ export const CredentialDetailResponseSchema = z
 export const CredentialValueResponseSchema = z
   .object({ data: CredentialValueSchema })
   .meta({ id: 'CredentialValueResponse' })
+// Story 13.3 AC-4/AC-5/AC-6 — discriminated response: legacy/single-default-field secrets keep
+// the existing bare `{ value }` shape (AC-6, byte-for-byte unchanged); a genuinely multi-field
+// secret returns the structured `{ fields: [...] }` shape instead (AC-5), never a JSON string
+// masquerading as `value`.
+export const CredentialValueOrFieldsResponseSchema = z
+  .object({ data: z.union([CredentialValueSchema, CredentialFieldsValueSchema]) })
+  .meta({ id: 'CredentialValueOrFieldsResponse' })
 export const CredentialVersionListResponseSchema = z
   .object({
     data: z.object({ items: z.array(CredentialVersionSummarySchema) }),
