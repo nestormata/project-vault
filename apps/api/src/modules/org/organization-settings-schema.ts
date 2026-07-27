@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { SUPPORTED_LOCALES } from '@project-vault/shared'
 
 export const OrgSettingsParamsSchema = z.object({ orgId: z.uuid() })
 
@@ -45,3 +46,22 @@ export const UserDormancySettingsResponseSchema = z
     }),
   })
   .meta({ id: 'UserDormancySettingsResponse' })
+
+// Story 15.2 AC 1 — third setting in this file, mirrors the two dormancy schemas above exactly
+// (`.strict()` so an attempted extra field, e.g. a stray `orgId`, is a hard 422 rather than a
+// silent no-op — same body-tampering defense as Story 15.1 AC 8's personal-locale endpoint).
+// Reuses SUPPORTED_LOCALES from @project-vault/shared, the same source of truth already consumed
+// by users.locale's own PATCH /api/v1/users/me/locale endpoint — do not redefine a second enum.
+export const OrgDefaultLocaleSettingsBodySchema = z
+  .object({ defaultLocale: z.enum(SUPPORTED_LOCALES) })
+  .strict()
+  .meta({ id: 'OrgDefaultLocaleSettingsBody' })
+
+export const OrgDefaultLocaleSettingsResponseSchema = z
+  .object({
+    data: z.object({
+      orgId: z.uuid(),
+      defaultLocale: z.string(),
+    }),
+  })
+  .meta({ id: 'OrgDefaultLocaleSettingsResponse' })
