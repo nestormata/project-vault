@@ -133,8 +133,12 @@ function validateTargetFields(
 
 // Story 13.5 AC-7 — normalizes `fieldValues`' keys via the same `normalizeFieldKey()` used for
 // `targetFields`, so a raw key of `"Password"` correctly matches a `targetFields` entry of
-// `"password"`. Plain-object JSON semantics already resolve any raw-key collision (last one
-// wins) before this ever runs — nothing further to dedupe here.
+// `"password"`. JSON.parse only dedupes fully-identical literal keys (`"password"` repeated
+// twice) — two DISTINCT raw keys that merely differ in case/whitespace (`"Password"` and
+// `"password "`) both survive parsing as separate object entries. Silently letting the
+// later-iterated one win would hide an ambiguous request behind an unintended write, contradicting
+// this story's exact-match/fail-loudly design (Dev Notes) — see
+// `findDuplicateNormalizedFieldValueKey()`, which callers must run before trusting this map.
 function normalizeFieldValues(
   fieldValues: Record<string, string> | undefined
 ): Map<string, string> | undefined {
@@ -144,6 +148,26 @@ function normalizeFieldValues(
     normalized.set(normalizeFieldKey(key), value)
   }
   return normalized
+}
+
+// Story 13.5 AC-7 — detects two distinct raw `fieldValues` keys that normalize to the same key
+// (e.g. `{"Password": "a", "password ": "b"}`). This is NOT the same case as a client sending a
+// single canonical entry: which raw key "wins" depends on `Object.entries()` iteration order,
+// which is an implementation detail no caller should be able to rely on. Returns the colliding
+// normalized key, or undefined when there is no collision.
+function findDuplicateNormalizedFieldValueKey(
+  fieldValues: Record<string, string>
+): string | undefined {
+  const firstRawKeyByNormalized = new Map<string, string>()
+  for (const key of Object.keys(fieldValues)) {
+    const normalizedKey = normalizeFieldKey(key)
+    const firstRawKey = firstRawKeyByNormalized.get(normalizedKey)
+    if (firstRawKey !== undefined && firstRawKey !== key) {
+      return normalizedKey
+    }
+    firstRawKeyByNormalized.set(normalizedKey, key)
+  }
+  return undefined
 }
 
 type FieldValuesValidation = { ok: true } | { ok: false; missing: string[]; extra: string[] }
@@ -474,6 +498,19 @@ async function resolveInitiateRotationPreflight(
     return { ok: false, result: { status: 'unknown_field_key', field: validation.field } }
   }
   const normalizedTargetFields = validation.normalized
+
+  if (body.fieldValues) {
+    const duplicateKey = findDuplicateNormalizedFieldValueKey(body.fieldValues)
+    if (duplicateKey !== undefined) {
+      // Ambiguous request shape (see findDuplicateNormalizedFieldValueKey) — reuse the existing
+      // field_values_target_mismatch contract rather than inventing a new error code; the
+      // colliding key surfaces in `extra` since the request supplied more than one value for it.
+      return {
+        ok: false,
+        result: { status: 'field_values_target_mismatch', missing: [], extra: [duplicateKey] },
+      }
+    }
+  }
 
   const normalizedFieldValues = normalizeFieldValues(body.fieldValues)
   const fieldValuesValidation = validateFieldValues(normalizedFieldValues, normalizedTargetFields)

@@ -313,6 +313,27 @@ describe.sequential('rotation same-value confirmation + per-field fieldValues (S
     expect(res.statusCode).toBe(201)
   })
 
+  // AC-7 edge: two raw fieldValues keys collide after normalization — must fail loudly rather
+  // than silently pick a winner (regression coverage for the code-review fix to
+  // normalizeFieldValues()/findDuplicateNormalizedFieldValueKey()).
+  it('AC-7: two fieldValues keys colliding after normalization are rejected, not silently merged', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'ac7-key-collision')
+    const credential = await createMultiFieldCredential(app, owner.cookies, projectId)
+
+    const res = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
+      targetFields: ['password'],
+      newValue: 'x',
+      fieldValues: { Password: 'value-a', 'password ': 'value-b' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toMatchObject({
+      code: 'field_values_target_mismatch',
+      missing: [],
+      extra: ['password'],
+    })
+    expect(await rotationRowCount(credential.id)).toBe(0)
+  })
+
   // AC-7 interaction with AC-1: same-value detection compares per-field fieldValues
   it('AC-7/AC-1 interaction: fieldValues matching the current value blocks with same_value_confirmation_required', async () => {
     const projectId = await createCredentialTestProject(app, owner.cookies, 'ac7-ac1-interaction')
