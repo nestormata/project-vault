@@ -86,3 +86,11 @@ export function proxyApiRequest({ path, ...options }: ApiProxyOptions) {
 export function proxyReadyRequest(options: ProxyOptions) {
   return proxyRequest({ ...options, pathname: '/ready' })
 }
+
+// The API's liveness endpoint is `/health`, but that literal path is already an app page route
+// ((app)/health, the cross-project monitored-services dashboard) — a server-side `fetch('/health')`
+// resolves against this app's own routes and can never reach the API. Proxied here under a
+// distinct path so `fetchHealth()` (apps/web/src/lib/api/platform.ts) has a real route to call.
+export function proxyHealthRequest(options: ProxyOptions) {
+  return proxyRequest({ ...options, pathname: '/health' })
+}

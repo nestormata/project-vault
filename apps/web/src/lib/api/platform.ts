@@ -179,6 +179,9 @@ export type PlatformAuditVerifyResult = {
 export type HealthResponse = {
   status: 'ok' | 'error'
   version: string
+  // Story 14.5 Task 1: passthrough field — the backend has returned this since Story 14.2's
+  // health.ts, this type was simply never updated to declare it.
+  extensions_status?: 'not_configured' | 'loaded' | 'load_failed'
 }
 
 export type PlatformAuditFilters = {
@@ -206,7 +209,11 @@ export async function fetchReady(fetchFn: typeof fetch): Promise<ReadyResponse> 
 
 export async function fetchHealth(fetchFn: typeof fetch): Promise<HealthResponse | null> {
   try {
-    const response = await fetchFn('/health', { credentials: 'include' })
+    // The API's liveness endpoint is `/health`, but that literal path is already this app's own
+    // (app)/health page route (monitored-services dashboard) — a relative fetch to `/health`
+    // resolves against this app's own routes, not the API. Proxied at `/api/health`
+    // (apps/web/src/routes/api/health/+server.ts) instead, which has no such collision.
+    const response = await fetchFn('/api/health', { credentials: 'include' })
     if (!response.ok) return null
     const body = (await response.json().catch(() => null)) as HealthResponse | null
     return body

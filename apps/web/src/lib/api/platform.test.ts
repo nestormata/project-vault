@@ -30,6 +30,25 @@ describe('fetchHealth', () => {
     expect(await fetchHealth(fetchFn)).toEqual({ status: 'ok', version: '1.2.3' })
   })
 
+  // Story 14.5 Task 1: HealthResponse type gained `extensions_status` (a passthrough field the
+  // backend has returned since Story 14.2) — this asserts fetchHealth() preserves it untouched.
+  it('passes the extensions_status field through untouched (Story 14.5 Task 1)', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ status: 'ok', version: '1.2.3', extensions_status: 'loaded' })
+      )
+    const health = await fetchHealth(fetchFn)
+    expect(health).toEqual({
+      status: 'ok',
+      version: '1.2.3',
+      extensions_status: 'loaded',
+    })
+    // Type-level assertion: HealthResponse must declare `extensions_status` (not just pass it
+    // through untyped) — this line fails to typecheck against the pre-Task-1 HealthResponse type.
+    expect(health?.extensions_status).toBe('loaded')
+  })
+
   it('returns null when the response is not ok', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ status: 'error' }, { status: 503 }))
     expect(await fetchHealth(fetchFn)).toBeNull()

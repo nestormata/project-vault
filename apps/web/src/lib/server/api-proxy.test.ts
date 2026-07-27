@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { proxyApiRequest, proxyReadyRequest } from './api-proxy.js'
+import { proxyApiRequest, proxyHealthRequest, proxyReadyRequest } from './api-proxy.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
 describe('server API proxy', () => {
@@ -82,6 +82,28 @@ describe('server API proxy', () => {
       status: 'unavailable',
       reason: 'api_unreachable',
       message: 'Project Vault API is unavailable.',
+    })
+  })
+
+  it('proxies /api/health to the API origin, not this app own /health page route', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ status: 'ok', version: '0.0.1', extensions_status: 'not_configured' })
+      )
+
+    const response = await proxyHealthRequest({
+      fetchFn,
+      request: new Request('http://web.local/api/health'),
+      apiBaseUrl: 'http://api.local:3000',
+    })
+
+    const forwarded = fetchFn.mock.calls[0]?.[0] as Request
+    expect(forwarded.url).toBe('http://api.local:3000/health')
+    await expect(response.json()).resolves.toEqual({
+      status: 'ok',
+      version: '0.0.1',
+      extensions_status: 'not_configured',
     })
   })
 })
