@@ -104,6 +104,11 @@ services:
       # BACKUP_STORAGE_PATH's own backup_data volume below).
       BACKUP_S3_STAGING_PATH: ${BACKUP_S3_STAGING_PATH:-}
       BACKUP_S3_STAGING_MAX_BYTES: ${BACKUP_S3_STAGING_MAX_BYTES:-}
+      # Extension loading (Story 14.2) — opt-in, unset (the default here) means zero extension
+      # code loads (AC-1). Was never wired through to this service at all until Story 14.5's live
+      # verification found it, meaning self-hosted docker deployments had no way to actually use
+      # this feature. Set in .env to a resolvable package name.
+      VAULT_EXTENSIONS_PACKAGE: ${VAULT_EXTENSIONS_PACKAGE:-}
     volumes:
       - ./dev-secrets:/run/secrets:ro
       - backup_data:/var/backups/vault
