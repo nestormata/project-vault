@@ -1,6 +1,6 @@
 # Story 13.5: Rotation Same-Value Confirmation, Dependency Field-Key Scoping, and Per-Field Rotation Values
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
