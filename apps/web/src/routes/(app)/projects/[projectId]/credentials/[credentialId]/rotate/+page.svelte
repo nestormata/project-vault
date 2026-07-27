@@ -3,7 +3,11 @@
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import { initiateRotation } from '$lib/api/rotations.js'
-  import type { RotationInProgressErrorBody } from '$lib/api/rotations.js'
+  import type {
+    InitiateRotationRequest,
+    RotationInProgressErrorBody,
+    SameValueConfirmationRequiredErrorBody,
+  } from '$lib/api/rotations.js'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import BreakGlassPanel from '$lib/components/rotations/BreakGlassPanel.svelte'
@@ -24,11 +28,12 @@
   let rotationMode = $state<'whole' | 'specific'>('whole')
   let selectedFields = $state<string[]>([])
 
-  // Code review (13.4): the request schema has one `newValue`, not a per-field value map (Dev
-  // Agent Record's documented judgment call). Selecting 2+ fields silently applies the identical
-  // value to every one of them — e.g. checking `username` + `password` sets both to the new
-  // password. Surface that plainly before submit rather than letting it happen silently.
-  const multipleFieldsSelected = $derived(rotationMode === 'specific' && selectedFields.length > 1)
+  // Story 13.5 AC-8: once 2+ fields are checked, one labeled value input replaces the single
+  // shared textarea — this map holds each field's own typed value, keyed by field KEY (not
+  // checkbox index), so unchecking/rechecking fields never misattributes a value typed for one
+  // field to a different field after a selection-order change.
+  let fieldValues = $state<Record<string, string>>({})
+  const multiFieldValueMode = $derived(rotationMode === 'specific' && selectedFields.length >= 2)
 
   let newValue = $state('')
   let notes = $state('')
@@ -38,42 +43,80 @@
   let errorMessage = $state<string | null>(null)
   let conflictRotationId = $state<string | null>(null)
 
+  // Story 13.5 AC-3: set when the server rejects a request with 409
+  // same_value_confirmation_required — `field` is the affected field key, or null for a
+  // whole-secret rotation. Non-null shows the inline Confirm/Cancel prompt instead of the
+  // generic error banner. `pendingConfirmBody` is the exact request that was rejected — Confirm
+  // resubmits it verbatim plus confirmSameValue: true.
+  let sameValueConfirmField = $state<string | null>(null)
+  let showSameValueConfirm = $state(false)
+  let pendingConfirmBody = $state<InitiateRotationRequest | null>(null)
+
   // Task 6 (Dev Notes pre-mortem elicitation) — pre-empts AC-6's 409 by disabling the field
   // selector and submit button whenever the loader already found an active rotation, instead of
   // only surfacing the conflict after a failed POST.
   const rotationActive = $derived(Boolean(data.activeRotationId))
 
   function toggleField(key: string) {
-    selectedFields = selectedFields.includes(key)
-      ? selectedFields.filter((k) => k !== key)
-      : [...selectedFields, key]
-  }
+    const previousSelection = selectedFields
+    const nextSelection = previousSelection.includes(key)
+      ? previousSelection.filter((k) => k !== key)
+      : [...previousSelection, key]
 
-  async function submitForm() {
-    if (submitting || rotationActive) return
-    valueError = null
-    fieldSelectionError = null
-    errorMessage = null
-    conflictRotationId = null
-
-    if (!newValue.trim()) {
-      valueError = 'New value cannot be empty'
-      return
+    // Story 13.5 AC-8 (edge — unchecking a field back down to 1): moving from 2+ fields down to
+    // exactly 1 reverts to the single textarea, preloaded with whatever was already typed for
+    // the remaining field — no data loss on selection change.
+    if (previousSelection.length >= 2 && nextSelection.length === 1) {
+      newValue = fieldValues[nextSelection[0]] ?? newValue
+    }
+    // Moving from 0/1 field into 2+: seed the multi-value map from the single textarea's current
+    // value for whichever field it represented, so that value isn't lost.
+    if (previousSelection.length === 1 && nextSelection.length >= 2) {
+      fieldValues = { ...fieldValues, [previousSelection[0]]: newValue }
     }
 
+    selectedFields = nextSelection
+  }
+
+  function buildRequestBody(): InitiateRotationRequest | null {
     const targetFields = showFieldSelector && rotationMode === 'specific' ? selectedFields : []
     if (showFieldSelector && rotationMode === 'specific' && targetFields.length === 0) {
       fieldSelectionError = 'Select at least one field to rotate, or choose "Rotate whole secret".'
-      return
+      return null
     }
 
+    if (targetFields.length >= 2) {
+      const missing = targetFields.find((key) => !(fieldValues[key] ?? '').trim())
+      if (missing) {
+        valueError = `Enter a new value for '${missing}'`
+        return null
+      }
+      return {
+        // AC-8: newValue is set to the first field's value purely to satisfy the schema's
+        // required-field constraint — never read server-side once fieldValues covers every
+        // targeted field (AC-7).
+        newValue: fieldValues[targetFields[0]] ?? '',
+        notes: notes.trim() ? notes.trim() : undefined,
+        targetFields,
+        fieldValues: Object.fromEntries(targetFields.map((key) => [key, fieldValues[key] ?? ''])),
+      }
+    }
+
+    if (!newValue.trim()) {
+      valueError = 'New value cannot be empty'
+      return null
+    }
+    return {
+      newValue,
+      notes: notes.trim() ? notes.trim() : undefined,
+      ...(targetFields.length > 0 ? { targetFields } : {}),
+    }
+  }
+
+  async function sendRotation(body: InitiateRotationRequest) {
     submitting = true
     try {
-      const rotation = await initiateRotation(fetch, data.projectId, data.credentialId, {
-        newValue,
-        notes: notes.trim() ? notes.trim() : undefined,
-        ...(targetFields.length > 0 ? { targetFields } : {}),
-      })
+      const rotation = await initiateRotation(fetch, data.projectId, data.credentialId, body)
       await goto(
         resolve(
           `/projects/${data.projectId}/credentials/${data.credentialId}/rotations/${rotation.id}`
@@ -81,13 +124,21 @@
       )
     } catch (error) {
       if (error instanceof ApiClientError) {
-        if (error.status === 409 && error.code === 'rotation_in_progress') {
-          const body = error.body as RotationInProgressErrorBody
-          conflictRotationId = body.rotationId
+        if (error.status === 409 && error.code === 'same_value_confirmation_required') {
+          // Story 13.5 AC-3: show the inline Confirm/Cancel prompt instead of a generic error.
+          const confirmBody = error.body as SameValueConfirmationRequiredErrorBody
+          sameValueConfirmField = confirmBody.field
+          showSameValueConfirm = true
+          pendingConfirmBody = body
+        } else if (error.status === 409 && error.code === 'rotation_in_progress') {
+          const body409 = error.body as RotationInProgressErrorBody
+          conflictRotationId = body409.rotationId
           errorMessage = 'A rotation is already in progress for this credential.'
         } else if (error.status === 400 && error.code === 'unknown_field_key') {
           // Story 13.4 AC-3 — the targeted field no longer exists on the credential (e.g. renamed
           // by another user since the form loaded).
+          errorMessage = error.message
+        } else if (error.status === 400 && error.code === 'field_values_target_mismatch') {
           errorMessage = error.message
         } else if (error.status === 422) {
           errorMessage = error.message
@@ -109,6 +160,38 @@
     } finally {
       submitting = false
     }
+  }
+
+  async function submitForm() {
+    if (submitting || rotationActive) return
+    valueError = null
+    fieldSelectionError = null
+    errorMessage = null
+    conflictRotationId = null
+    showSameValueConfirm = false
+    sameValueConfirmField = null
+    pendingConfirmBody = null
+
+    const body = buildRequestBody()
+    if (!body) return
+    await sendRotation(body)
+  }
+
+  // Story 13.5 AC-3: Confirm resubmits the exact same request body plus confirmSameValue: true.
+  async function confirmSameValueRotation() {
+    if (!pendingConfirmBody || submitting) return
+    const body = { ...pendingConfirmBody, confirmSameValue: true }
+    showSameValueConfirm = false
+    sameValueConfirmField = null
+    await sendRotation(body)
+  }
+
+  // Story 13.5 AC-3: Cancel dismisses the prompt and returns focus to the value input(s) with
+  // the user's entered value(s) still populated — no data loss, no page reload.
+  function cancelSameValueConfirmation() {
+    showSameValueConfirm = false
+    sameValueConfirmField = null
+    pendingConfirmBody = null
   }
 </script>
 
@@ -229,28 +312,50 @@
             {#if fieldSelectionError}
               <p class="text-sm text-red-700">{fieldSelectionError}</p>
             {/if}
-            {#if multipleFieldsSelected}
-              <p class="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
-                The same new value below will be applied to all selected fields — they will end up
-                identical. If that's not what you want, rotate one field at a time.
-              </p>
-            {/if}
           {/if}
         </div>
       {/if}
 
-      <div class="space-y-2">
-        <label class="block font-medium text-slate-900" for="rotation-new-value">New value</label>
-        <textarea
-          id="rotation-new-value"
-          class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
-          bind:value={newValue}
-          disabled={rotationActive}
-          autocomplete="off"></textarea>
-        {#if valueError}
-          <p class="text-sm text-red-700">{valueError}</p>
-        {/if}
-      </div>
+      {#if multiFieldValueMode}
+        <!-- Story 13.5 AC-8: one labeled value input per selected field, replacing the single
+             shared textarea once 2+ fields are checked. -->
+        <div class="space-y-4">
+          {#each selectedFields as fieldKey (fieldKey)}
+            <div class="space-y-2">
+              <label class="block font-medium text-slate-900" for={`rotation-value-${fieldKey}`}>
+                {fieldKey}
+              </label>
+              <textarea
+                id={`rotation-value-${fieldKey}`}
+                class="min-h-16 w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
+                value={fieldValues[fieldKey] ?? ''}
+                oninput={(event) =>
+                  (fieldValues = {
+                    ...fieldValues,
+                    [fieldKey]: (event.currentTarget as HTMLTextAreaElement).value,
+                  })}
+                disabled={rotationActive}
+                autocomplete="off"></textarea>
+            </div>
+          {/each}
+          {#if valueError}
+            <p class="text-sm text-red-700">{valueError}</p>
+          {/if}
+        </div>
+      {:else}
+        <div class="space-y-2">
+          <label class="block font-medium text-slate-900" for="rotation-new-value">New value</label>
+          <textarea
+            id="rotation-new-value"
+            class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
+            bind:value={newValue}
+            disabled={rotationActive}
+            autocomplete="off"></textarea>
+          {#if valueError}
+            <p class="text-sm text-red-700">{valueError}</p>
+          {/if}
+        </div>
+      {/if}
 
       <div class="space-y-2">
         <label class="block font-medium text-slate-900" for="rotation-notes">Notes</label>
@@ -259,6 +364,41 @@
           class="min-h-20 w-full rounded-xl border border-slate-300 px-3 py-3"
           bind:value={notes}></textarea>
       </div>
+
+      {#if showSameValueConfirm}
+        <!-- Story 13.5 AC-3: an inline confirm/cancel prompt, not a generic error banner. -->
+        <div
+          class="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+          role="alert"
+        >
+          <p>
+            The new value for
+            {#if sameValueConfirmField}
+              <code class="font-mono">{sameValueConfirmField}</code>
+            {:else}
+              the secret
+            {/if}
+            is identical to its current value. Rotate anyway?
+          </p>
+          <div class="flex gap-3">
+            <button
+              type="button"
+              class="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              disabled={submitting}
+              onclick={() => void confirmSameValueRotation()}
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800"
+              onclick={cancelSameValueConfirmation}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      {/if}
 
       {#if errorMessage}
         <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">

@@ -33,6 +33,7 @@ import {
   ConcurrentModificationResponseSchema,
   FailChecklistItemBodySchema,
   FailChecklistItemResponseSchema,
+  FieldValuesTargetMismatchResponseSchema,
   InitiateRotationBodySchema,
   InitiateRotationResponseSchema,
   InvalidItemStatusResponseSchema,
@@ -61,6 +62,7 @@ import {
   RotationNotStaleResponseSchema,
   RotationParamsSchema,
   RotationWrongStateForLegacyCompleteResponseSchema,
+  SameValueConfirmationRequiredResponseSchema,
   StagedValueResponseSchema,
   UnknownFieldKeyResponseSchema,
   UpcomingRotationsQuerySchema,
@@ -198,6 +200,64 @@ function sendUnknownFieldKeyResponse(
   return reply.status(400).send(unknownFieldKeyResponse(field))
 }
 
+// Story 13.5 AC-1 — extracted for the same complexity-ceiling reason as
+// sendUnknownFieldKeyResponse above: rejected before any write, no rotations/credential_versions/
+// checklist rows exist for this attempt.
+function sendSameValueConfirmationRequiredResponse(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  orgId: string,
+  credentialId: string,
+  field: string | null
+) {
+  rotationInitiationsTotal.inc({ outcome: 'same_value_confirmation_required' })
+  req.log.info(
+    {
+      eventType: OperationalEvent.ROTATION_INITIATE_SAME_VALUE_CONFIRMATION_REQUIRED,
+      orgId,
+      credentialId,
+      field,
+    },
+    'Rotation initiation rejected — same-value rotation requires confirmation'
+  )
+  return reply.status(409).send({
+    code: 'same_value_confirmation_required' as const,
+    message: field
+      ? `The new value for '${field}' is identical to its current value. Resubmit with confirmSameValue: true to proceed.`
+      : 'The new value is identical to its current value. Resubmit with confirmSameValue: true to proceed.',
+    field,
+  })
+}
+
+// Story 13.5 AC-7 — extracted for the same complexity-ceiling reason as the helpers above:
+// rejected before any write.
+function sendFieldValuesTargetMismatchResponse(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  orgId: string,
+  credentialId: string,
+  missing: string[],
+  extra: string[]
+) {
+  rotationInitiationsTotal.inc({ outcome: 'field_values_target_mismatch' })
+  req.log.info(
+    {
+      eventType: OperationalEvent.ROTATION_INITIATE_FIELD_VALUES_TARGET_MISMATCH,
+      orgId,
+      credentialId,
+      missing,
+      extra,
+    },
+    'Rotation initiation rejected — fieldValues key set does not match targetFields'
+  )
+  return reply.status(400).send({
+    code: 'field_values_target_mismatch' as const,
+    message: 'fieldValues keys must exactly match targetFields keys.',
+    missing,
+    extra,
+  })
+}
+
 // Story 13.4 — folds every non-'initiated' branch of initiateRotation()'s result into a single
 // dispatch, extracted so the route handler itself only has one `if (outcome)` decision point
 // instead of one per status (keeps the handler under this project's complexity ceiling).
@@ -225,6 +285,25 @@ function resolveInitiateRotationEarlyExit(
   }
   if (result.status === 'unknown_field_key') {
     return sendUnknownFieldKeyResponse(reply, req, orgId, params.credentialId, result.field)
+  }
+  if (result.status === 'same_value_confirmation_required') {
+    return sendSameValueConfirmationRequiredResponse(
+      reply,
+      req,
+      orgId,
+      params.credentialId,
+      result.field
+    )
+  }
+  if (result.status === 'field_values_target_mismatch') {
+    return sendFieldValuesTargetMismatchResponse(
+      reply,
+      req,
+      orgId,
+      params.credentialId,
+      result.missing,
+      result.extra
+    )
   }
   if (result.status === 'credential_not_found') {
     return reply.status(404).send(CREDENTIAL_NOT_FOUND)
@@ -805,6 +884,24 @@ const CONFIRM_LOCK_OUTCOME_METRIC: Partial<
   item_not_found: 'invalid_state',
 }
 
+// Extracted from the initiate-rotation handler purely to keep its own complexity under this
+// project's lint threshold — behavior unchanged. Story 13.5 AC-2: `sameValueConfirmed` is
+// present (and only ever `true`) when this rotation was a same-value rotation explicitly
+// confirmed via `confirmSameValue: true` — omitted entirely otherwise, so the payload shape is
+// unchanged for the overwhelming majority (non-same-value) case.
+function buildRotationInitiatedAuditPayload(
+  params: { projectId: string; credentialId: string },
+  result: Extract<InitiateRotationResult, { status: 'initiated' }>
+): Record<string, unknown> {
+  return {
+    credentialId: params.credentialId,
+    projectId: params.projectId,
+    targetFields: result.rotation.targetFields ?? null,
+    checklistItemCount: result.checklistItems.length,
+    ...(result.sameValueConfirmed ? { sameValueConfirmed: true as const } : {}),
+  }
+}
+
 export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
@@ -813,11 +910,13 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: InitiateRotationResponseSchema,
         // Story 13.4 AC-3: a targetFields entry that doesn't exist on the credential's field_meta.
-        400: UnknownFieldKeyResponseSchema,
+        // Story 13.5 AC-7: fieldValues' key set didn't exactly match targetFields'.
+        400: z.union([UnknownFieldKeyResponseSchema, FieldValuesTargetMismatchResponseSchema]),
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: RotationConflictResponseSchema,
+        // Story 13.5 AC-1: a same-value rotation without confirmSameValue: true.
+        409: z.union([RotationConflictResponseSchema, SameValueConfirmationRequiredResponseSchema]),
         410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
@@ -885,12 +984,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         await writeRotationAuditEntry(secureCtx.tx, secureCtx.auth, req, {
           eventType: AuditEvent.ROTATION_INITIATED,
           resourceId: result.rotation.id,
-          payload: {
-            credentialId: params.credentialId,
-            projectId: params.projectId,
-            targetFields: result.rotation.targetFields ?? null,
-            checklistItemCount: result.checklistItems.length,
-          },
+          payload: buildRotationInitiatedAuditPayload(params, result),
         })
       } catch (error) {
         rotationInitiationsTotal.inc({ outcome: 'audit_failed' })

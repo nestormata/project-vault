@@ -620,12 +620,13 @@ describe.sequential('rotation routes', () => {
     expect(res.json<{ data: { checklistItems: unknown[] } }>().data.checklistItems).toEqual([])
   })
 
-  it('POST flags sameValueAsPrevious when newValue matches the current version', async () => {
+  it('POST flags sameValueAsPrevious when newValue matches the current version (Story 13.5: requires confirmSameValue)', async () => {
     const projectId = await createCredentialTestProject(app, owner.cookies, 'rotate-same-value')
     const credential = await createCredentialViaApi(app, owner.cookies, projectId)
 
     const res = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
       newValue: SENTINEL_VALUE,
+      confirmSameValue: true,
     })
     expect(res.statusCode).toBe(201)
     expect(res.json<{ data: { sameValueAsPrevious?: boolean } }>().data.sameValueAsPrevious).toBe(

@@ -851,4 +851,105 @@ describe.sequential('credential dependencies and lifecycle routes', () => {
     await initVaultForTest(initVault, TEST_PASSPHRASE)
     app = await createApp({ logger: false, vaultGuardEnabled: true })
   }, 20_000)
+
+  // Story 13.5 AC-5: dependency creation accepts an optional fieldKey, validated against the
+  // credential's current declared field set.
+  describe('AC-5: dependency creation fieldKey', () => {
+    async function createMultiFieldCredential(projectId: string, name = `multi-${randomUUID()}`) {
+      return createCredentialViaApi(app, owner.cookies, projectId, {
+        name,
+        fields: [
+          { key: 'username', value: 'svc-1', sensitive: false },
+          { key: 'password', value: 'old-pw', sensitive: true },
+        ],
+      } as unknown as { name: string; value: string; [key: string]: unknown })
+    }
+
+    it('happy path: a recognized fieldKey is stored, normalized, and appears in the response', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'ac5-happy')
+      const credential = await createMultiFieldCredential(projectId)
+
+      const res = await addCredentialDependencyViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        {
+          systemName: 'Backup Script',
+          fieldKey: 'Password ',
+        }
+      )
+      expect(res.statusCode).toBe(201)
+      expect(res.json<{ data: { fieldKey: string | null } }>().data.fieldKey).toBe('password')
+
+      const row = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ fieldKey: credentialDependencies.fieldKey })
+          .from(credentialDependencies)
+          .where(eq(credentialDependencies.credentialId, credential.id))
+      )
+      expect(row[0]?.fieldKey).toBe('password')
+    })
+
+    it('edge: an unrecognized fieldKey is rejected with 400 unknown_field_key, no row created', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'ac5-unknown')
+      const credential = await createMultiFieldCredential(projectId)
+
+      const res = await addCredentialDependencyViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        {
+          systemName: 'Ghost System',
+          fieldKey: 'ssh_key',
+        }
+      )
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({ code: 'unknown_field_key', field: 'ssh_key' })
+
+      const rows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ id: credentialDependencies.id })
+          .from(credentialDependencies)
+          .where(eq(credentialDependencies.credentialId, credential.id))
+      )
+      expect(rows).toHaveLength(0)
+    })
+
+    it('edge: a legacy/single-field credential accepts its synthetic default field key', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'ac5-legacy')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+
+      const res = await addCredentialDependencyViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        {
+          systemName: 'Legacy Consumer',
+          fieldKey: 'value',
+        }
+      )
+      expect(res.statusCode).toBe(201)
+      expect(res.json<{ data: { fieldKey: string | null } }>().data.fieldKey).toBe('value')
+    })
+
+    it('edge: an omitted fieldKey defaults to null, unchanged from pre-Story-13.5 behavior', async () => {
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'ac5-omitted')
+      const credential = await createMultiFieldCredential(projectId)
+
+      const res = await addCredentialDependencyViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credential.id,
+        {
+          systemName: 'CI Pipeline',
+        }
+      )
+      expect(res.statusCode).toBe(201)
+      expect(res.json<{ data: { fieldKey: string | null } }>().data.fieldKey).toBeNull()
+    })
+  })
 })

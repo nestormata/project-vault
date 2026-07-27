@@ -37,6 +37,17 @@ export const InitiateRotationBodySchema = z
     // would be an ambiguous "target nothing" request, never a valid whole-secret signal (that's
     // what omitting the field entirely means).
     targetFields: z.array(z.string().trim().min(1).max(64)).min(1).optional(),
+    // Story 13.5 AC-2: when a same-value rotation was rejected under AC-1's
+    // same_value_confirmation_required gate, the caller resubmits the identical body plus this
+    // flag to proceed. Ignored (not an error) when the request is not actually same-value.
+    confirmSameValue: z.boolean().optional(),
+    // Story 13.5 AC-7: optional per-field override for a field-scoped rotation. When present,
+    // its normalized key set must exactly match the normalized targetFields set — validated in
+    // initiateRotation(), not here, since it needs normalizeFieldKey() applied consistently to
+    // both sides of the comparison. `newValue` above stays required (schema-level, for backward
+    // compatibility with clients that never send fieldValues) but is ignored for any field
+    // present in fieldValues once this is provided.
+    fieldValues: z.record(z.string(), z.string().min(1).max(65536)).optional(),
   })
   .strict()
   .meta({ id: 'InitiateRotationBody' })
@@ -85,6 +96,30 @@ export const UnknownFieldKeyResponseSchema = z
     field: z.string(),
   })
   .meta({ id: 'UnknownFieldKeyResponse' })
+
+// Story 13.5 AC-1: a same-value rotation request rejected before any write because it lacks
+// `confirmSameValue: true`. `field` is the targeted field key, or null for a whole-secret
+// rotation — same dedicated-schema pattern as UnknownFieldKeyResponseSchema above so the `field`
+// property survives response serialization.
+export const SameValueConfirmationRequiredResponseSchema = z
+  .object({
+    code: z.literal('same_value_confirmation_required'),
+    message: z.string(),
+    field: z.string().nullable(),
+  })
+  .meta({ id: 'SameValueConfirmationRequiredResponse' })
+
+// Story 13.5 AC-7: fieldValues' normalized key set didn't exactly match targetFields' normalized
+// key set. missing = targeted fields with no fieldValues entry; extra = fieldValues entries not
+// targeted.
+export const FieldValuesTargetMismatchResponseSchema = z
+  .object({
+    code: z.literal('field_values_target_mismatch'),
+    message: z.string(),
+    missing: z.array(z.string()),
+    extra: z.array(z.string()),
+  })
+  .meta({ id: 'FieldValuesTargetMismatchResponse' })
 
 export const RotationDetailResponseSchema = z
   .object({ data: RotationDetailSchema })

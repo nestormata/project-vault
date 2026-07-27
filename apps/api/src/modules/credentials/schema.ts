@@ -164,6 +164,12 @@ export const AddDependencyBodySchema = z
     systemType: SystemTypeSchema.optional(),
     notes: z.string().trim().max(2048).nullable().optional(),
     linkUrl: linkUrlFieldSchema,
+    // Story 13.5 AC-5: optional field scope at creation time — same length bounds as
+    // InitiateRotationBodySchema.targetFields's entries. Normalized via normalizeFieldKey() and
+    // validated against the credential's current declared field keys in
+    // addCredentialDependency(); omitted means whole-credential (field_key: NULL), unchanged
+    // default. Dependency field-key EDITING (PATCH) is out of scope — see the story's Dev Notes.
+    fieldKey: z.string().trim().min(1).max(64).optional(),
   })
   .strict()
   .superRefine(linkUrlRefine)
@@ -242,6 +248,18 @@ export const AddVersionResponseSchema = z
 export const DependencyResponseSchema = z
   .object({ data: CredentialDependencySchema })
   .meta({ id: 'DependencyResponse' })
+
+// Story 13.5 AC-5 — a `fieldKey` that doesn't exist on the credential's current declared field
+// keys. Dedicated schema (not the generic ApiErrorSchema) so `field` survives response
+// serialization — same pattern as rotation's UnknownFieldKeyResponseSchema, distinct meta id to
+// avoid an OpenAPI component-id collision with that module's own schema of the same shape.
+export const DependencyUnknownFieldKeyResponseSchema = z
+  .object({
+    code: z.literal('unknown_field_key'),
+    message: z.string(),
+    field: z.string(),
+  })
+  .meta({ id: 'DependencyUnknownFieldKeyResponse' })
 
 // AC-5: the confirmation status of the credential's currently-`staged` rotation's checklist item
 // for a given dependency, if any. `status` mirrors rotation_checklist_items.status verbatim

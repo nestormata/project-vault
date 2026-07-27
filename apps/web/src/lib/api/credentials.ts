@@ -204,6 +204,8 @@ export type AddCredentialDependencyRequest = {
   systemType?: SystemType
   notes?: string | null
   linkUrl?: string | null
+  // Story 13.5 AC-5: optional field scope at creation time — omitted means whole-credential.
+  fieldKey?: string
 }
 
 // AC-D1: the UI always sends `systemType` explicitly (the pre-selected default, not an omitted

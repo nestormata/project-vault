@@ -1571,6 +1571,10 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "fieldKey": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -1583,7 +1587,8 @@
           "createdBy",
           "archivedAt",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "fieldKey"
         ]
       },
       "CredentialAccessEntryInput": {
@@ -4164,6 +4169,11 @@
             "nullable": true,
             "type": "string",
             "maxLength": 2048
+          },
+          "fieldKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "required": [
@@ -4393,6 +4403,28 @@
           "data"
         ]
       },
+      "DependencyUnknownFieldKeyResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "unknown_field_key"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field"
+        ]
+      },
       "DependencyChecklistStatusInput": {
         "type": "object",
         "properties": {
@@ -4493,6 +4525,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
           },
+          "fieldKey": {
+            "nullable": true,
+            "type": "string"
+          },
           "checklistStatus": {
             "nullable": true,
             "allOf": [
@@ -4513,6 +4549,7 @@
           "archivedAt",
           "createdAt",
           "updatedAt",
+          "fieldKey",
           "checklistStatus"
         ]
       },
@@ -5378,6 +5415,17 @@
               "minLength": 1,
               "maxLength": 64
             }
+          },
+          "confirmSameValue": {
+            "type": "boolean"
+          },
+          "fieldValues": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            }
           }
         },
         "required": [
@@ -5508,6 +5556,61 @@
           "code",
           "message",
           "field"
+        ]
+      },
+      "SameValueConfirmationRequiredResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "same_value_confirmation_required"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "field": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field"
+        ]
+      },
+      "FieldValuesTargetMismatchResponseInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "field_values_target_mismatch"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extra": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "missing",
+          "extra"
         ]
       },
       "RotationDetailResponseInput": {
@@ -10874,6 +10977,10 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "fieldKey": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -10886,7 +10993,8 @@
           "createdBy",
           "archivedAt",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "fieldKey"
         ],
         "additionalProperties": false
       },
@@ -13557,7 +13665,12 @@
             "type": "string",
             "maxLength": 2048
           },
-          "linkUrl": {}
+          "linkUrl": {},
+          "fieldKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
         },
         "required": [
           "systemName",
@@ -13786,6 +13899,29 @@
         ],
         "additionalProperties": false
       },
+      "DependencyUnknownFieldKeyResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "unknown_field_key"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field"
+        ],
+        "additionalProperties": false
+      },
       "DependencyChecklistStatus": {
         "type": "object",
         "properties": {
@@ -13887,6 +14023,10 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
           },
+          "fieldKey": {
+            "nullable": true,
+            "type": "string"
+          },
           "checklistStatus": {
             "nullable": true,
             "allOf": [
@@ -13907,6 +14047,7 @@
           "archivedAt",
           "createdAt",
           "updatedAt",
+          "fieldKey",
           "checklistStatus"
         ],
         "additionalProperties": false
@@ -14791,6 +14932,17 @@
               "minLength": 1,
               "maxLength": 64
             }
+          },
+          "confirmSameValue": {
+            "type": "boolean"
+          },
+          "fieldValues": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            }
           }
         },
         "required": [
@@ -14929,6 +15081,63 @@
           "code",
           "message",
           "field"
+        ],
+        "additionalProperties": false
+      },
+      "SameValueConfirmationRequiredResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "same_value_confirmation_required"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "field": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field"
+        ],
+        "additionalProperties": false
+      },
+      "FieldValuesTargetMismatchResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "field_values_target_mismatch"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extra": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "missing",
+          "extra"
         ],
         "additionalProperties": false
       },
@@ -25351,6 +25560,16 @@
               }
             }
           },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyUnknownFieldKeyResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Default Response",
             "content": {
@@ -25758,7 +25977,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnknownFieldKeyResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UnknownFieldKeyResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FieldValuesTargetMismatchResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -25798,7 +26024,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RotationConflictResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RotationConflictResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SameValueConfirmationRequiredResponse"
+                    }
+                  ]
                 }
               }
             }

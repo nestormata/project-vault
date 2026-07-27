@@ -20,6 +20,10 @@ export const CredentialDependencySchema = z
     archivedAt: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
+    // Story 13.5 AC-5/AC-6: the field this dependency is scoped to, or null for
+    // whole-credential (unchanged default). Set only at creation time — see the story's Dev
+    // Notes for why editing fieldKey after creation is out of scope.
+    fieldKey: z.string().nullable(),
   })
   .meta({ id: 'CredentialDependency' })
 

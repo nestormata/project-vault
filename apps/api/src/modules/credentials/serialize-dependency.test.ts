@@ -16,6 +16,7 @@ function row(
     archivedAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    fieldKey: null,
     ...overrides,
   } as typeof credentialDependencies.$inferSelect
 }
@@ -44,5 +45,11 @@ describe('serializeDependency', () => {
     expect(serializeDependency(row({ linkUrl: 'https://example.com/deploy' })).linkUrl).toBe(
       'https://example.com/deploy'
     )
+  })
+
+  // Story 13.5 AC-5/AC-6: fieldKey is additive and passes through unchanged (null when unset).
+  it('passes fieldKey through unchanged, including null', () => {
+    expect(serializeDependency(row({ fieldKey: null })).fieldKey).toBeNull()
+    expect(serializeDependency(row({ fieldKey: 'password' })).fieldKey).toBe('password')
   })
 })

@@ -195,4 +195,153 @@ describe('/rotate +page.svelte (Story 13.4)', () => {
       expect(radio.disabled).toBe(true)
     }
   })
+
+  // Story 13.5 AC-3: a 409 same_value_confirmation_required shows an inline confirm/cancel
+  // prompt instead of the generic error banner; Confirm resubmits with confirmSameValue: true.
+  describe('Story 13.5 AC-3: same-value confirmation prompt', () => {
+    it('shows the confirm/cancel prompt naming the field, and Confirm resubmits with confirmSameValue: true', async () => {
+      initiateRotationMock
+        .mockRejectedValueOnce(
+          new ApiClientError(
+            409,
+            {
+              code: 'same_value_confirmation_required',
+              field: 'password',
+              message: "The new value for 'password' is identical to its current value.",
+            },
+            "The new value for 'password' is identical to its current value."
+          )
+        )
+        .mockResolvedValueOnce({ id: 'rot-1' })
+
+      render(RotatePage, {
+        props: {
+          data: data({
+            fieldMeta: [
+              { key: 'username', sensitive: false },
+              { key: 'password', sensitive: true },
+            ],
+          }),
+        },
+      })
+
+      await fireEvent.click(screen.getByText(/specific fields/i))
+      await fireEvent.click(screen.getByLabelText('password', { selector: 'input' }))
+      await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'old-pw' } })
+      await fireEvent.click(screen.getByRole('button', { name: /start rotation/i }))
+
+      await vi.waitFor(() =>
+        expect(screen.getByRole('alert').textContent).toMatch(/identical to its current value/i)
+      )
+      expect(screen.getByRole('alert').textContent).toContain('password')
+
+      await fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }))
+
+      await vi.waitFor(() =>
+        expect(initiateRotationMock).toHaveBeenLastCalledWith(
+          expect.anything(),
+          projectId,
+          credentialId,
+          expect.objectContaining({
+            newValue: 'old-pw',
+            targetFields: ['password'],
+            confirmSameValue: true,
+          })
+        )
+      )
+      await vi.waitFor(() =>
+        expect(gotoMock).toHaveBeenCalledWith(expect.stringContaining('/rotations/rot-1'))
+      )
+    })
+
+    it('Cancel dismisses the prompt and preserves the entered value, no resubmit', async () => {
+      initiateRotationMock.mockRejectedValueOnce(
+        new ApiClientError(
+          409,
+          { code: 'same_value_confirmation_required', field: null, message: 'identical' },
+          'identical'
+        )
+      )
+
+      render(RotatePage, { props: { data: data() } })
+
+      await fireEvent.input(screen.getByLabelText('New value'), { target: { value: 'same' } })
+      await fireEvent.click(screen.getByRole('button', { name: /start rotation/i }))
+
+      await vi.waitFor(() =>
+        expect(screen.getByRole('alert').textContent).toMatch(/identical to its current value/i)
+      )
+      expect(screen.getByRole('alert').textContent).toMatch(/the secret/i)
+
+      await fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect((screen.getByLabelText('New value') as HTMLTextAreaElement).value).toBe('same')
+      expect(initiateRotationMock).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // Story 13.5 AC-8: once 2+ fields are checked, one labeled value input per field replaces the
+  // single shared textarea; values persist across selection changes; submit sends fieldValues.
+  describe('Story 13.5 AC-8: per-field value inputs', () => {
+    function multiFieldData() {
+      return data({
+        fieldMeta: [
+          { key: 'username', sensitive: false },
+          { key: 'password', sensitive: true },
+        ],
+      })
+    }
+
+    it('renders one labeled input per field once 2+ fields are checked, and submits fieldValues', async () => {
+      initiateRotationMock.mockResolvedValue({ id: 'rot-1' })
+      render(RotatePage, { props: { data: multiFieldData() } })
+
+      await fireEvent.click(screen.getByText(/specific fields/i))
+      await fireEvent.click(screen.getByLabelText('username', { selector: 'input' }))
+      await fireEvent.click(screen.getByLabelText('password', { selector: 'input' }))
+
+      expect(screen.getByLabelText('username', { selector: 'textarea' })).toBeTruthy()
+      expect(screen.getByLabelText('password', { selector: 'textarea' })).toBeTruthy()
+      expect(screen.queryByLabelText('New value')).toBeNull()
+
+      await fireEvent.input(screen.getByLabelText('username', { selector: 'textarea' }), {
+        target: { value: 'svc-2' },
+      })
+      await fireEvent.input(screen.getByLabelText('password', { selector: 'textarea' }), {
+        target: { value: 'new-pw' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /start rotation/i }))
+
+      await vi.waitFor(() =>
+        expect(initiateRotationMock).toHaveBeenCalledWith(
+          expect.anything(),
+          projectId,
+          credentialId,
+          expect.objectContaining({
+            targetFields: ['username', 'password'],
+            fieldValues: { username: 'svc-2', password: 'new-pw' },
+          })
+        )
+      )
+    })
+
+    it('reverts to the single textarea when unchecking back down to 1 field, preserving the typed value', async () => {
+      render(RotatePage, { props: { data: multiFieldData() } })
+
+      await fireEvent.click(screen.getByText(/specific fields/i))
+      await fireEvent.click(screen.getByLabelText('username', { selector: 'input' }))
+      await fireEvent.click(screen.getByLabelText('password', { selector: 'input' }))
+
+      await fireEvent.input(screen.getByLabelText('password', { selector: 'textarea' }), {
+        target: { value: 'kept-value' },
+      })
+
+      // Uncheck username, dropping back to a single targeted field (password).
+      await fireEvent.click(screen.getByLabelText('username', { selector: 'input' }))
+
+      expect(screen.queryByLabelText('password', { selector: 'textarea' })).toBeNull()
+      expect((screen.getByLabelText('New value') as HTMLTextAreaElement).value).toBe('kept-value')
+    })
+  })
 })

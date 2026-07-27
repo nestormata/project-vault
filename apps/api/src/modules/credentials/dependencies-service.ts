@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { SystemTypeSchema } from '@project-vault/shared'
+import { normalizeFieldKey, SystemTypeSchema } from '@project-vault/shared'
 import {
   credentialDependencies,
   credentials,
@@ -16,6 +16,8 @@ import type {
 } from './schema.js'
 import { MAX_ACTIVE_DEPENDENCIES } from './schema.js'
 import { credentialExistsInProject, lockCredentialInProject } from './db-helpers.js'
+import { fieldMetaForResponse } from './field-set.js'
+import { selectCurrentVersionMeta } from './service.js'
 
 export function serializeDependency(row: typeof credentialDependencies.$inferSelect) {
   const systemType = SystemTypeSchema.safeParse(row.systemType)
@@ -33,6 +35,8 @@ export function serializeDependency(row: typeof credentialDependencies.$inferSel
     archivedAt: row.archivedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    // Story 13.5 AC-5/AC-6
+    fieldKey: row.fieldKey,
   }
 }
 
@@ -78,6 +82,43 @@ async function hasActiveDependencies(tx: Tx, credentialId: string): Promise<bool
   return Boolean(row)
 }
 
+// Story 13.5 AC-5 — reuses the same normalizeFieldKey()/fieldMetaForResponse() helpers
+// validateTargetFields() in rotation/service.ts already uses, loaded via the credential's
+// current version's field_meta (the same source rotation's own validation reads). Legacy/
+// single-field credentials validate uniformly against their synthetic DEFAULT_FIELD_KEY — see
+// the story's Dev Notes for why this is intentional, not a bug.
+async function validateDependencyFieldKey(
+  tx: Tx,
+  credentialId: string,
+  rawFieldKey: string
+): Promise<{ ok: true; normalized: string } | { ok: false }> {
+  const normalized = normalizeFieldKey(rawFieldKey)
+  const currentVersion = await selectCurrentVersionMeta(tx, credentialId)
+  const declaredKeys = fieldMetaForResponse(
+    currentVersion?.schemaVersion ?? 1,
+    currentVersion?.fieldMeta
+  ).map((f) => normalizeFieldKey(f.key))
+  if (!declaredKeys.includes(normalized)) return { ok: false }
+  return { ok: true, normalized }
+}
+
+// Story 13.5 AC-5 — extracted purely to keep addCredentialDependency's own complexity under this
+// project's lint threshold; validated before any write, same as rotation's unknown_field_key gate.
+async function resolveDependencyFieldKey(
+  tx: Tx,
+  credentialId: string,
+  rawFieldKey: string | undefined
+): Promise<
+  { status: 'ok'; fieldKey: string | null } | { status: 'unknown_field_key'; field: string }
+> {
+  if (rawFieldKey === undefined) return { status: 'ok', fieldKey: null }
+  const validation = await validateDependencyFieldKey(tx, credentialId, rawFieldKey)
+  if (!validation.ok) {
+    return { status: 'unknown_field_key', field: normalizeFieldKey(rawFieldKey) }
+  }
+  return { status: 'ok', fieldKey: validation.normalized }
+}
+
 export async function addCredentialDependency(
   tx: Tx,
   input: {
@@ -93,6 +134,16 @@ export async function addCredentialDependency(
     projectId: input.projectId,
   })
   if (!locked) return { status: 'not_found' as const }
+
+  const fieldKeyResolution = await resolveDependencyFieldKey(
+    tx,
+    input.credentialId,
+    input.body.fieldKey
+  )
+  if (fieldKeyResolution.status === 'unknown_field_key') {
+    return { status: 'unknown_field_key' as const, field: fieldKeyResolution.field }
+  }
+  const normalizedFieldKey = fieldKeyResolution.fieldKey
 
   const countResult = await tx
     .select({ count: sql<number>`count(*)` })
@@ -118,6 +169,7 @@ export async function addCredentialDependency(
       notes: input.body.notes ?? null,
       linkUrl: input.body.linkUrl ?? null,
       createdBy: input.userId,
+      fieldKey: normalizedFieldKey,
     })
     .returning()
   if (!dependency) throw new Error('Dependency insert returned no row')
