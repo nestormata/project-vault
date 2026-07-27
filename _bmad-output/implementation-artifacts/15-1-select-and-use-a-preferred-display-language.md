@@ -1,6 +1,6 @@
 # Story 15.1: Select and Use a Preferred Display Language
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
