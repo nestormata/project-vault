@@ -443,3 +443,17 @@ returns `{ status: 'promoted_rotation_conflict', rotationId }`. `routes.ts` maps
 promoted-but-unretired rotation returns 409 promoted_rotation_conflict and does not create a new
 version") asserts the promoted rotation, credential-version count, and current value are all
 unchanged after the blocked call. Full rotation test suite (128 tests) passes.
+
+---
+
+## Deferred from: Epic 13 retrospective (2026-07-27)
+
+**TD13-1 — `credentials.current_version_id` has no `ON DELETE` clause (Medium).** Migration
+`0049_credentials_current_version_id_backfill.sql` adds
+`current_version_id uuid REFERENCES credential_versions(id)` with no `ON DELETE` behavior
+(`packages/db/src/schema/credentials.ts` confirms no `.onDelete(...)`). Accepted as-is in `13-1`'s
+own code review as "inert today since nothing hard-deletes credentials/versions yet" — correct
+today, but nothing else was tracking a trigger to revisit it. **Trigger to revisit:** any future
+hard-delete path for `credentials`/`credential_versions`.
+
+See `epic-13-retro-2026-07-27.md` finding #4 for full context.
