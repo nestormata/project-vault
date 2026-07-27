@@ -31,6 +31,12 @@ export const InitiateRotationBodySchema = z
   .object({
     newValue: z.string().min(1).max(65536),
     notes: optionalTrimmedNotes(1024),
+    // Story 13.4 AC-1/AC-2: optional field-scoping. Omitted (or absent entirely) means
+    // whole-secret rotation, byte-identical to pre-13.4 behavior (AC-7) — the same convention
+    // as CredentialValueQuerySchema's optional `field`. Non-empty when present: an empty array
+    // would be an ambiguous "target nothing" request, never a valid whole-secret signal (that's
+    // what omitting the field entirely means).
+    targetFields: z.array(z.string().trim().min(1).max(64)).min(1).optional(),
   })
   .strict()
   .meta({ id: 'InitiateRotationBody' })
@@ -66,6 +72,19 @@ export const ListRotationsQuerySchema = z
 export const InitiateRotationResponseSchema = z
   .object({ data: RotationDetailSchema })
   .meta({ id: 'InitiateRotationResponse' })
+
+// Story 13.4 AC-3 — a `targetFields` entry that doesn't exist on the credential's current
+// field_meta. Reuses the same `unknown_field_key` code the existing `GET .../value?field=`
+// route already returns (apps/api/src/modules/credentials/routes.ts:232), but as a dedicated
+// schema (not the generic ApiErrorSchema) so the `field` property survives response
+// serialization — same pattern as RotationConflictResponseSchema's `rotationId`.
+export const UnknownFieldKeyResponseSchema = z
+  .object({
+    code: z.literal('unknown_field_key'),
+    message: z.string(),
+    field: z.string(),
+  })
+  .meta({ id: 'UnknownFieldKeyResponse' })
 
 export const RotationDetailResponseSchema = z
   .object({ data: RotationDetailSchema })

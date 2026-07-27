@@ -1,6 +1,6 @@
 # Story 13.4: Rotate Specific Fields of a Multi-Field Secret
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -140,47 +140,47 @@ so that I don't have to treat an unrelated field as changed when only one creden
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Schema & migration** (AC: #2, #4)
-  - [ ] Add `rotations.target_fields text[]` (nullable) to `packages/db/src/schema/rotations.ts`
-  - [ ] Add `credential_dependencies.field_key text` (nullable) to `packages/db/src/schema/credential-dependencies.ts`
-  - [ ] Confirm the next free migration number against `packages/db/src/migrations/meta/_journal.json` **immediately before writing** — as of this story's drafting, the last registered migration is `0054_audit_revealed_fields`, so the next free number is `0055`, but this must be re-verified at implementation time per this project's recurring migration-numbering-race risk (flagged the same way in 13.1/13.2/5.6)
-  - [ ] Write migration `00XX_rotation_target_fields_and_dependency_field_key.sql` — purely additive (two nullable columns, no backfill needed: existing rows correctly default to `NULL` = "applies to whole credential / whole secret", which is the correct semantic for every pre-existing row)
-  - [ ] Run `make check-rls` — both tables are already org-scoped, new columns should be a clean pass, confirm rather than assume
-  - [ ] Add a migration safety/compatibility test following `packages/db/src/__tests__/migration-00XX-*.test.ts` conventions (13.1's `migration-0049-current-version-id-backfill.test.ts` / 5.6's `migration-0050-*.test.ts` as the templates) — this migration is low-risk (purely additive, nullable, no backfill) but still needs a basic apply/idempotency test per this project's standard
+- [x] **Task 1: Schema & migration** (AC: #2, #4)
+  - [x] Add `rotations.target_fields text[]` (nullable) to `packages/db/src/schema/rotations.ts`
+  - [x] Add `credential_dependencies.field_key text` (nullable) to `packages/db/src/schema/credential-dependencies.ts`
+  - [x] Confirm the next free migration number against `packages/db/src/migrations/meta/_journal.json` **immediately before writing** — as of this story's drafting, the last registered migration is `0054_audit_revealed_fields`, so the next free number is `0055`, but this must be re-verified at implementation time per this project's recurring migration-numbering-race risk (flagged the same way in 13.1/13.2/5.6)
+  - [x] Write migration `00XX_rotation_target_fields_and_dependency_field_key.sql` — purely additive (two nullable columns, no backfill needed: existing rows correctly default to `NULL` = "applies to whole credential / whole secret", which is the correct semantic for every pre-existing row)
+  - [x] Run `make check-rls` — both tables are already org-scoped, new columns should be a clean pass, confirm rather than assume
+  - [x] Add a migration safety/compatibility test following `packages/db/src/__tests__/migration-00XX-*.test.ts` conventions (13.1's `migration-0049-current-version-id-backfill.test.ts` / 5.6's `migration-0050-*.test.ts` as the templates) — this migration is low-risk (purely additive, nullable, no backfill) but still needs a basic apply/idempotency test per this project's standard
 
-- [ ] **Task 2: Field-key validation and `target_fields` write on initiation** (AC: #1, #2, #3, #7)
-  - [ ] Extend `InitiateRotationBodySchema` (`apps/api/src/modules/rotation/schema.ts`) with optional `targetFields: z.array(z.string()).min(1).optional()`
-  - [ ] In `initiateRotation()` (`apps/api/src/modules/rotation/service.ts:103`), when `targetFields` is present: normalize each key via `normalizeFieldKey()`, load the credential's current `field_meta` inside the existing locked transaction (alongside the existing `previousVersion` load), and validate every normalized key exists — reject with `400 unknown_field_key` before any write on the first miss
-  - [ ] Write `rotations.target_fields` on insert (normalized array, or `NULL` if absent)
-  - [ ] Write a failing test first (TDD red-green) for each of AC-2's/AC-3's example cases before implementing
+- [x] **Task 2: Field-key validation and `target_fields` write on initiation** (AC: #1, #2, #3, #7)
+  - [x] Extend `InitiateRotationBodySchema` (`apps/api/src/modules/rotation/schema.ts`) with optional `targetFields: z.array(z.string()).min(1).optional()`
+  - [x] In `initiateRotation()` (`apps/api/src/modules/rotation/service.ts:103`), when `targetFields` is present: normalize each key via `normalizeFieldKey()`, load the credential's current `field_meta` inside the existing locked transaction (alongside the existing `previousVersion` load), and validate every normalized key exists — reject with `400 unknown_field_key` before any write on the first miss
+  - [x] Write `rotations.target_fields` on insert (normalized array, or `NULL` if absent)
+  - [x] Write a failing test first (TDD red-green) for each of AC-2's/AC-3's example cases before implementing
 
-- [ ] **Task 3: Field-set snapshot construction for a field-scoped rotation** (AC: #5, #8, #9)
-  - [ ] In `initiateRotation()`'s new-version-insert step, when `target_fields` is set: build the new version's field set by starting from the previous version's decrypted field set (reuse existing decrypt/field-set-read helpers from `apps/api/src/modules/credentials/field-set.ts` / `service.ts` — do not duplicate decryption logic) and substituting only the targeted field(s) with the new value(s); when `target_fields` is `NULL`, preserve today's existing whole-value-replacement behavior unchanged
-  - [ ] Ensure a decrypt failure on any carried-over field propagates as an abort of the whole initiation transaction — no partial writes (AC-8); write the failing test first with a deliberately corrupted non-targeted field's envelope
-  - [ ] Extend the existing rotation-initiation audit write to include `target_fields` (keys only) on the audit entry (AC-9)
-  - [ ] Confirm (write a test proving) `promoteRotation()`/`retireRotation()` require zero changes — they operate on `credential_versions.promoted_at`/`rotationLockedAt` only, never field contents, per Story 5.6 AC-1's existing design
-  - [ ] Write a test proving "select all N fields" and "rotate whole secret" produce different `target_fields` wire values (materialized list vs. `NULL`) per the Dev Notes ADR on why these must not be collapsed
+- [x] **Task 3: Field-set snapshot construction for a field-scoped rotation** (AC: #5, #8, #9)
+  - [x] In `initiateRotation()`'s new-version-insert step, when `target_fields` is set: build the new version's field set by starting from the previous version's decrypted field set (reuse existing decrypt/field-set-read helpers from `apps/api/src/modules/credentials/field-set.ts` / `service.ts` — do not duplicate decryption logic) and substituting only the targeted field(s) with the new value(s); when `target_fields` is `NULL`, preserve today's existing whole-value-replacement behavior unchanged
+  - [x] Ensure a decrypt failure on any carried-over field propagates as an abort of the whole initiation transaction — no partial writes (AC-8); write the failing test first with a deliberately corrupted non-targeted field's envelope
+  - [x] Extend the existing rotation-initiation audit write to include `target_fields` (keys only) on the audit entry (AC-9)
+  - [x] Confirm (write a test proving) `promoteRotation()`/`retireRotation()` require zero changes — they operate on `credential_versions.promoted_at`/`rotationLockedAt` only, never field contents, per Story 5.6 AC-1's existing design
+  - [x] Write a test proving "select all N fields" and "rotate whole secret" produce different `target_fields` wire values (materialized list vs. `NULL`) per the Dev Notes ADR on why these must not be collapsed
 
-- [ ] **Task 4: Checklist filtering by `field_key`** (AC: #4)
-  - [ ] Extend the `dependencyRows` query in `initiateRotation()` (`apps/api/src/modules/rotation/service.ts:200-209`) to add `AND (field_key IS NULL OR field_key = ANY(target_fields))` when `target_fields IS NOT NULL`
-  - [ ] Decide and implement whether `credential_dependencies` creation (`addCredentialDependency`, `apps/api/src/modules/credentials/routes.ts`) gains an optional `fieldKey` input, or whether this story only adds the column with all new/existing dependencies defaulting to `NULL` until a follow-up story exposes field-scoping in the dependency-management UI — **recommended default: add the column and the filter now (this story), defer the dependency-creation UI/API surface for picking a `field_key` to a follow-up** (there is no in-scope UI story for it here and epics.md doesn't specify one either), and document this explicitly as a judgment call in Dev Notes rather than silently expanding scope
-  - [ ] Write a failing test first reproducing AC-4's happy-path and whole-secret examples
+- [x] **Task 4: Checklist filtering by `field_key`** (AC: #4)
+  - [x] Extend the `dependencyRows` query in `initiateRotation()` (`apps/api/src/modules/rotation/service.ts:200-209`) to add `AND (field_key IS NULL OR field_key = ANY(target_fields))` when `target_fields IS NOT NULL`
+  - [x] Decide and implement whether `credential_dependencies` creation (`addCredentialDependency`, `apps/api/src/modules/credentials/routes.ts`) gains an optional `fieldKey` input, or whether this story only adds the column with all new/existing dependencies defaulting to `NULL` until a follow-up story exposes field-scoping in the dependency-management UI — **recommended default: add the column and the filter now (this story), defer the dependency-creation UI/API surface for picking a `field_key` to a follow-up** (there is no in-scope UI story for it here and epics.md doesn't specify one either), and document this explicitly as a judgment call in Dev Notes rather than silently expanding scope
+  - [x] Write a failing test first reproducing AC-4's happy-path and whole-secret examples
 
-- [ ] **Task 5: Active-rotation conflict reuse** (AC: #6)
-  - [ ] Confirm (via a targeted integration test, not just inspection) that the existing `ACTIVE_ROTATION_STATUSES`/`findInProgressRotationId()`/unique-index conflict path already produces the correct `409 rotation_in_progress` for disjoint-field-set concurrent attempts with zero code changes — this AC is expected to require test coverage only, not new production code, since the credential-level (not field-level) lock already covers this case
-  - [ ] Write the disjoint-field-set and promoted-unretired-blocks-again test cases explicitly (AC-6 examples)
+- [x] **Task 5: Active-rotation conflict reuse** (AC: #6)
+  - [x] Confirm (via a targeted integration test, not just inspection) that the existing `ACTIVE_ROTATION_STATUSES`/`findInProgressRotationId()`/unique-index conflict path already produces the correct `409 rotation_in_progress` for disjoint-field-set concurrent attempts with zero code changes — this AC is expected to require test coverage only, not new production code, since the credential-level (not field-level) lock already covers this case
+  - [x] Write the disjoint-field-set and promoted-unretired-blocks-again test cases explicitly (AC-6 examples)
 
-- [ ] **Task 6: Web UI — field selector on the rotation-initiation form** (AC: #1, #7)
-  - [ ] Extend `.../[credentialId]/rotate/+page.server.ts`'s loader to also fetch the credential detail (`getCredential()`, `apps/web/src/lib/api/credentials.ts:90`) for `field_meta`, alongside the existing dependency/rotation-history fetches
-  - [ ] Extend `.../[credentialId]/rotate/+page.svelte`: when `field_meta.length > 1`, render a checkbox list (field key labels) above the value textarea plus a "Rotate whole secret" radio/toggle that reverts to today's single-textarea behavior; when `field_meta.length <= 1` (legacy or single-field), render exactly today's form, unchanged
-  - [ ] Wire the selected field keys into `initiateRotation()`'s (`apps/web/src/lib/api/rotations.ts`) request body as `targetFields`
-  - [ ] Surface the new `400 unknown_field_key` error shape with a clear inline message (reuse `mapRotationMutationError` / the existing `errorMessage` handling pattern already in `+page.svelte`)
-  - [ ] Add an active-rotation banner to the `/rotate` form (fetched via the existing rotation-status loader data) that disables the field selector and submit button *before* the user can even attempt a submit that would 409 — pre-empting AC-6's conflict rather than only surfacing it after a failed POST; reuses the existing "rotation in progress" messaging pattern already shown elsewhere in the credential detail UI (Story 5.6 Task 6), not a new component
-  - [ ] Verify in Chrome against the running app (per this project's UI-verification convention): create a multi-field credential, rotate one field, confirm the checklist and staged/promote flow behave per AC-4/AC-5; also verify the active-rotation banner appears and blocks a second attempt in the UI (not just at the API layer)
+- [x] **Task 6: Web UI — field selector on the rotation-initiation form** (AC: #1, #7)
+  - [x] Extend `.../[credentialId]/rotate/+page.server.ts`'s loader to also fetch the credential detail (`getCredential()`, `apps/web/src/lib/api/credentials.ts:90`) for `field_meta`, alongside the existing dependency/rotation-history fetches
+  - [x] Extend `.../[credentialId]/rotate/+page.svelte`: when `field_meta.length > 1`, render a checkbox list (field key labels) above the value textarea plus a "Rotate whole secret" radio/toggle that reverts to today's single-textarea behavior; when `field_meta.length <= 1` (legacy or single-field), render exactly today's form, unchanged
+  - [x] Wire the selected field keys into `initiateRotation()`'s (`apps/web/src/lib/api/rotations.ts`) request body as `targetFields`
+  - [x] Surface the new `400 unknown_field_key` error shape with a clear inline message (reuse `mapRotationMutationError` / the existing `errorMessage` handling pattern already in `+page.svelte`)
+  - [x] Add an active-rotation banner to the `/rotate` form (fetched via the existing rotation-status loader data) that disables the field selector and submit button *before* the user can even attempt a submit that would 409 — pre-empting AC-6's conflict rather than only surfacing it after a failed POST; reuses the existing "rotation in progress" messaging pattern already shown elsewhere in the credential detail UI (Story 5.6 Task 6), not a new component
+  - [x] Verify in Chrome against the running app (per this project's UI-verification convention): create a multi-field credential, rotate one field, confirm the checklist and staged/promote flow behave per AC-4/AC-5; also verify the active-rotation banner appears and blocks a second attempt in the UI (not just at the API layer)
 
-- [ ] **Task 7: Documentation reconciliation**
-  - [ ] Amend `_bmad-output/planning-artifacts/epics.md`'s Story 13.4 section to match this story's corrected ACs (the literal old-model text is stale after Story 5.6 shipped) — follow Story 5.6 Task 8's precedent of updating epics.md as part of the story that supersedes it
-  - [ ] Amend `_bmad-output/planning-artifacts/epics.md` line 2483's "data model prerequisites" callout to stop claiming `credential_dependencies.field_key` was already added by an earlier story — it is added by this one
+- [x] **Task 7: Documentation reconciliation**
+  - [x] Amend `_bmad-output/planning-artifacts/epics.md`'s Story 13.4 section to match this story's corrected ACs (the literal old-model text is stale after Story 5.6 shipped) — follow Story 5.6 Task 8's precedent of updating epics.md as part of the story that supersedes it
+  - [x] Amend `_bmad-output/planning-artifacts/epics.md` line 2483's "data model prerequisites" callout to stop claiming `credential_dependencies.field_key` was already added by an earlier story — it is added by this one
 
 ## Dev Notes
 
@@ -229,8 +229,53 @@ so that I don't have to treat an unrelated field as changed when only one creden
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via bmad-dev-story workflow.
+
 ### Debug Log References
+
+- Migration number re-verified at implementation time: `packages/db/src/migrations/meta/_journal.json` still ended at `0054_audit_revealed_fields` — `0055` confirmed free, no race.
+- Multi-file `vitest run` invocations against apps/api's integration suite intermittently hit a pre-existing environment flake (registration returns `500` when 2+ heavy Fastify-app-bootstrapping test files run back-to-back outside `make test`'s env orchestration). Confirmed via A/B (`git stash`) that this reproduces identically on unmodified pre-story code — not a regression introduced by this story. Every touched/new test file passes 100% when run individually or via `make test`'s properly-scoped invocation.
+- `.env`'s `DATABASE_URL`/`ADMIN_DATABASE_URL` in this worktree pointed at the default port 5432 while `DB_HOST_PORT` had been bumped to 5433 by `make fix-ports` — updated both to the vault_app/postgres roles on the actual bumped port so ad hoc `vitest run` invocations (outside `make test`, which sets these itself) connect correctly.
+- Chrome UI verification required bringing up the full docker stack (`make docker-up`) and initializing the vault with a bootstrap token (none was set in `.env` — generated one, wrote it to `.env`, restarted the `api` container). Live-verified: field selector renders/toggles correctly, a field-scoped rotation (`targetFields: ["password"]`) produces a staged version with `username` carried over unchanged and `password` updated (`[{"key":"username","value":"svc-1",...},{"key":"password","value":"new-pw",...}]`), promote flips current visibility, and the active-rotation banner on `/rotate` correctly disables the form and links to the in-progress rotation. Docker stack torn down (`docker compose down`) after verification.
 
 ### Completion Notes List
 
+- **AC-1** (field selector or whole-secret choice): Implemented in `apps/web/.../rotate/+page.svelte` — a "Rotate whole secret" / "Specific fields" mode toggle (default: whole secret, preserving pre-13.4 behavior) that reveals a checkbox per field key only when `fieldMeta.length > 1`. Legacy/single-field credentials render exactly today's form. Live-verified in Chrome.
+- **AC-2** (`rotations.target_fields` write, normalized): `validateTargetFields()`/service.ts's `initiateRotation()` normalizes every key via the shared `normalizeFieldKey()` and stores the array, or `NULL` for whole-secret. Covered by `rotation-target-fields.test.ts` AC-2 case and `migration-0055-rotation-target-fields.test.ts`.
+- **AC-3** (unknown field key rejected atomically): `400 unknown_field_key` returned before any write, reusing the exact error code from the reveal route. All-or-nothing on multi-key requests. Covered by dedicated tests including the "partial validity is still a full rejection" case.
+- **AC-4** (checklist filtered by `field_key`): `dependencyChecklistFilter()` adds `field_key IS NULL OR field_key = ANY(target_fields)` only when field-scoped; whole-secret rotation keeps the unfiltered query. Judgment call (Task 4): dependency-creation UI/API for setting `field_key` is explicitly out of scope for this story — the column and filter exist, but every dependency still defaults to `field_key = NULL` until a follow-up story exposes it in the UI/API. Documented in Dev Notes and unchanged from the story's own pre-stated judgment call.
+- **AC-5** (full field-set snapshot at initiation): `buildNewVersionInsertFields()`/`buildFieldScopedSnapshot()` build the complete field set (targeted field(s) replaced, others carried over) at initiation time, matching the Dev Notes ADR. Live-verified in Chrome (staged-value reveal showed the exact expected snapshot).
+- **AC-6** (existing conflict/lock reused): Zero changes needed to the lock/conflict path itself — `ACTIVE_ROTATION_STATUSES`/`findInProgressRotationId()`/the partial unique index already cover field-scoped rotations. Verified via dedicated disjoint-field-set and promoted-unretired-blocks-again integration tests.
+- **AC-7** (legacy/whole-secret unchanged): Whole-secret rotation's `encryptValue(newValue)` path is untouched; `targetFields` is optional and omission produces a byte-identical response to pre-13.4 behavior except the new `targetFields: null` field.
+- **AC-8** (decrypt failure on a carried-over field aborts atomically): The field-substitution build happens inside the same `trx.transaction()` as the existing decrypt call — any decrypt failure (or, as tested, a corrupted-JSON envelope on the current version, exercised via `parseFieldsFromPlaintext`'s throw) propagates naturally and rolls back the whole transaction. Covered by a dedicated test that tampers a credential's stored ciphertext to invalid JSON, attempts a field-scoped rotation, and asserts a `5xx` with zero new `rotations`/`credential_versions` rows.
+- **AC-9** (audit records `targetFields` keys, never values): `writeRotationAuditEntry`'s payload now includes `targetFields: result.rotation.targetFields ?? null`. Covered by a dedicated test asserting the audit payload contains the key array and never the new plaintext value.
+- **Judgment call — same `newValue` applies to every targeted field.** The story's `InitiateRotationBodySchema` extension (Task 2) only adds `targetFields: string[]`, not a per-field value map, and every AC/example in the story targets exactly one field. When a user selects multiple fields, all selected fields receive the identical `newValue`. This is the only interpretation consistent with the schema as specified; documented here since the story text doesn't explicitly rule on the multi-field-different-values case.
+- **Refactor note**: `initiateRotation()`'s transaction callback and the initiate-rotation route handler were both decomposed into several small helper functions (`loadRotationTargetForUpdate`, `validateTargetFields`, `computeSameValueAsPrevious`, `buildNewVersionInsertFields`, `dependencyChecklistFilter`, `newVersionInsertValues` in service.ts; `resolveInitiateRotationEarlyExit`/`sendUnknownFieldKeyResponse` in routes.ts) purely to stay under this project's cyclomatic/cognitive complexity lint thresholds after adding the field-scoped branches — behavior is unchanged, confirmed by the full rotation/credentials test suites passing before and after the refactor.
+- Full regression: `apps/web` full suite (195 files / 1597 tests) green; `packages/db` full suite (52 files / 237 tests) green with `DATABASE_URL`/`ADMIN_DATABASE_URL` set; `apps/api`'s rotation and credentials test files (routes.test.ts 85/85, rotation-promote-retire.test.ts 10/10, rotation-target-fields.test.ts 12/12, field-set-routes.test.ts 33/33, credential-dependencies.test.ts) all pass individually — some combinations hit the pre-existing multi-file environment flake noted above. `pnpm turbo lint typecheck` clean (0 errors) across api/web/shared/db.
+
 ### File List
+
+**New files:**
+- `packages/db/src/migrations/0055_rotation_target_fields_and_dependency_field_key.sql`
+- `packages/db/src/__tests__/migration-0055-safety.test.ts`
+- `packages/db/src/__tests__/migration-0055-rotation-target-fields.test.ts`
+- `apps/api/src/modules/rotation/rotation-target-fields.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/rotate-page.svelte.test.ts`
+
+**Modified files:**
+- `packages/db/src/schema/rotations.ts`
+- `packages/db/src/schema/credential-dependencies.ts`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/shared/src/schemas/rotations.ts`
+- `packages/shared/src/constants/operational-event-types.ts`
+- `packages/shared/openapi.json` (regenerated by `generate-spec`)
+- `apps/api/src/modules/rotation/schema.ts`
+- `apps/api/src/modules/rotation/service.ts`
+- `apps/api/src/modules/rotation/routes.ts`
+- `apps/web/src/lib/api/rotations.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.server.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/rotate-page.server.test.ts`
+- `_bmad-output/planning-artifacts/epics.md`
+- `_bmad-output/implementation-artifacts/13-4-rotate-specific-fields-of-a-multi-field-secret.md` (this file)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`

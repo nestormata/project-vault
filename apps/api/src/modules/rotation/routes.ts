@@ -62,6 +62,7 @@ import {
   RotationParamsSchema,
   RotationWrongStateForLegacyCompleteResponseSchema,
   StagedValueResponseSchema,
+  UnknownFieldKeyResponseSchema,
   UpcomingRotationsQuerySchema,
   UpcomingRotationsResponseSchema,
   type AbandonRotationBody,
@@ -75,7 +76,7 @@ import {
   type RetireRotationBody,
   type RotationParams,
 } from './schema.js'
-import type { CompleteRotationResult } from './service.js'
+import type { CompleteRotationResult, InitiateRotationResult } from './service.js'
 import {
   RotationConflictError,
   abandonRotation,
@@ -165,6 +166,70 @@ function isCredentialFound<T extends { status: string }>(
   result: T
 ): result is Exclude<T, { status: 'credential_not_found' }> {
   return result.status !== 'credential_not_found'
+}
+
+// Story 13.4 AC-3 — reuses the exact `unknown_field_key` code the existing `GET .../value?field=`
+// route already returns (apps/api/src/modules/credentials/routes.ts:232), for consistency rather
+// than inventing a second error vocabulary for the same failure shape.
+function unknownFieldKeyResponse(field: string) {
+  return { code: 'unknown_field_key' as const, message: `Unknown field key: '${field}'`, field }
+}
+
+// Extracted from the initiate-rotation handler purely to keep that function's complexity under
+// this project's lint threshold — behavior is unchanged: rejected before any write (AC-3), no
+// rotations/credential_versions/checklist rows exist for this attempt.
+function sendUnknownFieldKeyResponse(
+  reply: FastifyReply,
+  req: FastifyRequest,
+  orgId: string,
+  credentialId: string,
+  field: string
+) {
+  rotationInitiationsTotal.inc({ outcome: 'unknown_field_key' })
+  req.log.info(
+    {
+      eventType: OperationalEvent.ROTATION_INITIATE_UNKNOWN_FIELD_KEY,
+      orgId,
+      credentialId,
+      field,
+    },
+    'Rotation initiation rejected — unknown target field key'
+  )
+  return reply.status(400).send(unknownFieldKeyResponse(field))
+}
+
+// Story 13.4 — folds every non-'initiated' branch of initiateRotation()'s result into a single
+// dispatch, extracted so the route handler itself only has one `if (outcome)` decision point
+// instead of one per status (keeps the handler under this project's complexity ceiling).
+// Returns the reply to send, or `undefined` when `result.status === 'initiated'` (the caller
+// still narrows via `isCredentialFound`/an explicit status check afterward for type safety).
+function resolveInitiateRotationEarlyExit(
+  result: InitiateRotationResult,
+  reply: FastifyReply,
+  req: FastifyRequest,
+  orgId: string,
+  params: { projectId: string; credentialId: string }
+): FastifyReply | undefined {
+  if (result.status === 'project_archived') {
+    rotationInitiationsTotal.inc({ outcome: 'project_archived' })
+    req.log.info(
+      {
+        eventType: OperationalEvent.ROTATION_INITIATE_PROJECT_ARCHIVED,
+        orgId,
+        credentialId: params.credentialId,
+        projectId: params.projectId,
+      },
+      'Rotation initiation rejected — project is archived'
+    )
+    return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
+  }
+  if (result.status === 'unknown_field_key') {
+    return sendUnknownFieldKeyResponse(reply, req, orgId, params.credentialId, result.field)
+  }
+  if (result.status === 'credential_not_found') {
+    return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+  }
+  return undefined
 }
 
 /** Every audit write in this file shares orgId/actorUserId (from secureCtx.auth), resourceType
@@ -747,6 +812,8 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         201: InitiateRotationResponseSchema,
+        // Story 13.4 AC-3: a targetFields entry that doesn't exist on the credential's field_meta.
+        400: UnknownFieldKeyResponseSchema,
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
@@ -800,22 +867,18 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         throw error
       }
 
-      if (result.status === 'project_archived') {
-        rotationInitiationsTotal.inc({ outcome: 'project_archived' })
-        req.log.info(
-          {
-            eventType: OperationalEvent.ROTATION_INITIATE_PROJECT_ARCHIVED,
-            orgId: secureCtx.auth.orgId,
-            credentialId: params.credentialId,
-            projectId: params.projectId,
-          },
-          'Rotation initiation rejected — project is archived'
-        )
-        return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
-      }
-
-      if (!isCredentialFound(result)) {
-        return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      const earlyExit = resolveInitiateRotationEarlyExit(
+        result,
+        reply,
+        req,
+        secureCtx.auth.orgId,
+        params
+      )
+      if (earlyExit) return earlyExit
+      // resolveInitiateRotationEarlyExit already handled every non-'initiated' status above —
+      // this is purely a type-narrowing assertion for the compiler, never a runtime branch.
+      if (result.status !== 'initiated') {
+        throw new Error('initiateRotation: unexpected unhandled result status')
       }
 
       try {
@@ -825,6 +888,7 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
           payload: {
             credentialId: params.credentialId,
             projectId: params.projectId,
+            targetFields: result.rotation.targetFields ?? null,
             checklistItemCount: result.checklistItems.length,
           },
         })
