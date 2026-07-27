@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { jsonResponse } from '$lib/test/json-response.js'
 import {
   updateMachineKeyDormancyThreshold,
+  updateOrgDefaultLocale,
   updateUserDormancyThreshold,
 } from './organization-settings.js'
 
@@ -40,5 +41,24 @@ describe('updateUserDormancyThreshold (AC-I1)', () => {
       })
     )
     expect(result.userDormancyThresholdDays).toBe(60)
+  })
+})
+
+// Story 15.2 AC 1 — third setting on this same page, same "no GET readback" (set-only) shape as
+// the two dormancy thresholds above.
+describe('updateOrgDefaultLocale (Story 15.2 AC 1)', () => {
+  it('PATCHes the org-scoped default-locale-settings endpoint', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { orgId: 'org-1', defaultLocale: 'es' } }))
+    const result = await updateOrgDefaultLocale(fetchFn, 'org-1', 'es')
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/organizations/org-1/default-locale-settings',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ defaultLocale: 'es' }),
+      })
+    )
+    expect(result.defaultLocale).toBe('es')
   })
 })

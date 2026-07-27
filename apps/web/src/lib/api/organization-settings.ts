@@ -1,3 +1,4 @@
+import type { SupportedLocale } from '@project-vault/shared'
 import { apiFetch } from './client.js'
 
 export type DormancyThresholdDays = 30 | 60 | 90 | 180
@@ -42,5 +43,26 @@ export function updateUserDormancyThreshold(
     fetchFn,
     `/api/v1/organizations/${orgId}/user-dormancy-settings`,
     { method: 'PATCH', body: JSON.stringify({ userDormancyThresholdDays }) }
+  )
+}
+
+export type OrgDefaultLocaleSettingsResponse = {
+  orgId: string
+  defaultLocale: string
+}
+
+// Story 15.2 AC 1 — third setting in this file, same "no GET readback, set-a-new-value-only"
+// shape as the two dormancy thresholds above (see this story's Dev Notes ADR "no GET readback
+// for the org default" — deliberate, not an oversight): the web UI can set a new org default
+// display-language for future invitees but cannot display the org's current one.
+export function updateOrgDefaultLocale(
+  fetchFn: typeof fetch,
+  orgId: string,
+  defaultLocale: SupportedLocale
+) {
+  return apiFetch<OrgDefaultLocaleSettingsResponse>(
+    fetchFn,
+    `/api/v1/organizations/${orgId}/default-locale-settings`,
+    { method: 'PATCH', body: JSON.stringify({ defaultLocale }) }
   )
 }

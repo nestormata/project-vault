@@ -14,6 +14,8 @@ import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed
 import {
   MachineKeySettingsBodySchema,
   MachineKeySettingsResponseSchema,
+  OrgDefaultLocaleSettingsBodySchema,
+  OrgDefaultLocaleSettingsResponseSchema,
   OrgSettingsParamsSchema,
   UserDormancySettingsBodySchema,
   UserDormancySettingsResponseSchema,
@@ -62,6 +64,59 @@ async function updateOrgDormancyColumn<
   }
 
   return { secureCtx, updated: updated as { id: string } & Record<K, number> }
+}
+
+/**
+ * Story 15.2 AC 1/6 — Task 2.4's explicit decision (post-elicitation Pre-Mortem Analysis, see the
+ * story's Dev Notes): do NOT widen `updateOrgDormancyColumn<K>`'s `Record<K, number>` constraint
+ * to `number | string` to accommodate this new string-typed column. That helper is already relied
+ * on by two `done` stories' routes; a small parallel handler here, following the identical shape,
+ * avoids any regression risk to those routes for the sake of saving a few lines on this third
+ * route. Unlike `updateOrgDormancyColumn`, this handler also reads the row's previous value
+ * before updating — the audit payload (AC 6) reports both `previousDefaultLocale` and
+ * `newDefaultLocale`, whereas the two dormancy routes' audit payloads only report the new value.
+ */
+async function updateOrgDefaultLocaleColumn(
+  ctx: SecureRouteContext | PublicRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<{
+  secureCtx: SecureRouteContext
+  previousDefaultLocale: string
+  updated: { id: string; defaultLocale: string }
+} | null> {
+  const params = parseParams(OrgSettingsParamsSchema, req, reply)
+  if (!params) return null
+  const parsed = parseBody(OrgDefaultLocaleSettingsBodySchema, req, reply)
+  if (!parsed.success) return null
+  const secureCtx = ctx as SecureRouteContext
+
+  if (params.orgId !== secureCtx.auth.orgId) {
+    reply.status(404).send(ORG_NOT_FOUND)
+    return null
+  }
+
+  const [before] = await secureCtx.tx
+    .select({ defaultLocale: organizations.defaultLocale })
+    .from(organizations)
+    .where(eq(organizations.id, params.orgId))
+  if (!before) {
+    reply.status(404).send(ORG_NOT_FOUND)
+    return null
+  }
+  const previousDefaultLocale = before.defaultLocale
+
+  const [updated] = await secureCtx.tx
+    .update(organizations)
+    .set({ defaultLocale: parsed.data.defaultLocale })
+    .where(eq(organizations.id, params.orgId))
+    .returning({ id: organizations.id, defaultLocale: organizations.defaultLocale })
+  if (!updated) {
+    reply.status(404).send(ORG_NOT_FOUND)
+    return null
+  }
+
+  return { secureCtx, previousDefaultLocale, updated }
 }
 
 /**
@@ -178,6 +233,63 @@ export async function organizationSettingsRoutes(fastify: FastifyApp): Promise<v
         data: {
           orgId: updated.id,
           userDormancyThresholdDays: updated.userDormancyThresholdDays,
+        },
+      }
+    },
+  })
+
+  // Story 15.2 AC 1/5/6/7 — third registration in this shared file, mirroring the two dormancy
+  // handlers above (rate limit, minimumRole, requireMfa, and the inline fail-closed audit-write
+  // convention route-audit.test.ts's assertAuditedActionOptOutsAreJustified check requires). No
+  // GET readback route is added — see the story's Dev Notes ADR "no GET readback for the org
+  // default": this page's two existing settings already establish set-only as the deliberate
+  // precedent.
+  secureRoute(fastify, {
+    method: 'PATCH',
+    url: '/:orgId/default-locale-settings',
+    schema: {
+      body: OrgDefaultLocaleSettingsBodySchema,
+      response: {
+        200: OrgDefaultLocaleSettingsResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'PATCH /api/v1/organizations/:orgId/default-locale-settings',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const result = await updateOrgDefaultLocaleColumn(ctx, req, reply)
+      if (!result) return reply
+      const { secureCtx, previousDefaultLocale, updated } = result
+
+      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+        resourceType: 'organization',
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'organization.default_locale_updated',
+        resourceId: updated.id,
+        payload: {
+          previousDefaultLocale,
+          newDefaultLocale: updated.defaultLocale,
+        },
+        request: req,
+      })
+
+      return {
+        data: {
+          orgId: updated.id,
+          defaultLocale: updated.defaultLocale,
         },
       }
     },

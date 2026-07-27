@@ -5,6 +5,7 @@ const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const gotoMock = vi.hoisted(() => vi.fn())
 const updateUserDormancyThresholdMock = vi.hoisted(() => vi.fn())
 const updateMachineKeyDormancyThresholdMock = vi.hoisted(() => vi.fn())
+const updateOrgDefaultLocaleMock = vi.hoisted(() => vi.fn())
 const pseudonymizeUserMock = vi.hoisted(() => vi.fn())
 const createErasureRequestMock = vi.hoisted(() => vi.fn())
 const changeProjectRoleMock = vi.hoisted(() => vi.fn())
@@ -20,6 +21,7 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$lib/api/organization-settings.js', () => ({
   updateUserDormancyThreshold: updateUserDormancyThresholdMock,
   updateMachineKeyDormancyThreshold: updateMachineKeyDormancyThresholdMock,
+  updateOrgDefaultLocale: updateOrgDefaultLocaleMock,
 }))
 
 vi.mock('$lib/api/compliance.js', () => ({
@@ -42,6 +44,7 @@ beforeEach(() => {
   gotoMock.mockReset()
   updateUserDormancyThresholdMock.mockReset()
   updateMachineKeyDormancyThresholdMock.mockReset()
+  updateOrgDefaultLocaleMock.mockReset()
   pseudonymizeUserMock.mockReset()
   createErasureRequestMock.mockReset()
   changeProjectRoleMock.mockReset()
@@ -193,6 +196,57 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
         target: { value: '60' },
       })
       await fireEvent.click(screen.getByRole('button', { name: /save user dormancy threshold/i }))
+      expect((await screen.findByRole('alert')).textContent).toMatch(expected)
+    })
+  })
+
+  describe('Story 15.2 AC 1: default language for new users', () => {
+    it('renders all supported locale options and saves the selected default via updateOrgDefaultLocale', async () => {
+      updateOrgDefaultLocaleMock.mockResolvedValue({ orgId: 'org-1', defaultLocale: 'es' })
+
+      render(UsersPage, { props: { data: baseData() } })
+
+      const select = screen.getByLabelText(/default language for new users/i) as HTMLSelectElement
+      expect(within(select).getByRole('option', { name: /english/i })).toBeTruthy()
+      expect(within(select).getByRole('option', { name: /español/i })).toBeTruthy()
+
+      await fireEvent.change(select, { target: { value: 'es' } })
+      await fireEvent.click(screen.getByRole('button', { name: /save default language/i }))
+
+      expect(updateOrgDefaultLocaleMock).toHaveBeenCalledWith(expect.anything(), 'org-1', 'es')
+      expect(await screen.findByText(/default language updated to español/i)).toBeTruthy()
+    })
+
+    it('blocks duplicate submission while a save is pending', async () => {
+      let resolveSave!: (value: { orgId: string; defaultLocale: string }) => void
+      updateOrgDefaultLocaleMock.mockReturnValue(
+        new Promise((resolve) => {
+          resolveSave = resolve
+        })
+      )
+      render(UsersPage, { props: { data: baseData() } })
+      await fireEvent.change(screen.getByLabelText(/default language for new users/i), {
+        target: { value: 'es' },
+      })
+      const save = screen.getByRole('button', { name: /save default language/i })
+      await fireEvent.click(save)
+      await fireEvent.click(save)
+      expect(updateOrgDefaultLocaleMock).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: /saving/i })).toBeTruthy()
+      resolveSave({ orgId: 'org-1', defaultLocale: 'es' })
+      await screen.findByText(/default language updated/i)
+    })
+
+    it.each([
+      [new ApiClientError(400, { message: 'Invalid locale' }, 'Invalid locale'), /invalid locale/i],
+      [new Error('unknown'), /failed to update default language/i],
+    ])('maps default-locale failures to an error message', async (failure, expected) => {
+      updateOrgDefaultLocaleMock.mockRejectedValue(failure)
+      render(UsersPage, { props: { data: baseData() } })
+      await fireEvent.change(screen.getByLabelText(/default language for new users/i), {
+        target: { value: 'es' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /save default language/i }))
       expect((await screen.findByRole('alert')).textContent).toMatch(expected)
     })
   })
