@@ -114,6 +114,9 @@
   let depSystemType = $state<SystemType>('other')
   let depNotes = $state('')
   let depLinkUrl = $state('')
+  // Story 13.5 AC-6: '' means "Whole credential" (omitted fieldKey), matching the rotation
+  // field-selector's own field_meta.length > 1 gating convention (Story 13.4).
+  let depFieldKey = $state('')
   let depSubmitting = $state(false)
   let depError = $state<string | null>(null)
   let depBanner = $state<string | null>(null)
@@ -140,18 +143,22 @@
         systemType: depSystemType,
         ...(notes ? { notes } : {}),
         ...(linkUrl ? { linkUrl } : {}),
+        ...(depFieldKey ? { fieldKey: depFieldKey } : {}),
       })
       dependencyItems = [...dependencyItems, { ...created, checklistStatus: null }]
       depSystemName = ''
       depSystemType = 'other'
       depNotes = ''
       depLinkUrl = ''
+      depFieldKey = ''
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 410) {
         depBanner = ARCHIVED_PROJECT_BANNER
       } else if (
         error instanceof ApiClientError &&
-        (error.code === 'too_many_dependencies' || error.code === 'invalid_link_url')
+        (error.code === 'too_many_dependencies' ||
+          error.code === 'invalid_link_url' ||
+          error.code === 'unknown_field_key')
       ) {
         depError = error.message
       } else {
@@ -872,6 +879,15 @@
                   <span class={isFailed ? 'font-medium text-amber-800' : undefined}>Updated</span>
                 </label>
                 <span class="font-medium">{dependency.systemName} ({dependency.systemType})</span>
+                {#if dependency.fieldKey}
+                  <!-- Story 13.5 AC-6: scope badge, so Morgan-member can see at a glance which
+                       rotations will include this dependency. -->
+                  <span
+                    class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
+                  >
+                    Scoped to: {dependency.fieldKey}
+                  </span>
+                {/if}
                 {#if dependency.linkUrl}
                   <!-- eslint-disable svelte/no-navigation-without-resolve -- AC-6.1: a
                        user-supplied external location link (validated http(s) server-side), not
@@ -962,6 +978,26 @@
                 class="w-full rounded-xl border border-slate-300 px-3 py-2"
                 bind:value={depNotes}></textarea>
             </div>
+            {#if fieldMeta.length > 1}
+              <!-- Story 13.5 AC-6: only rendered for multi-field credentials — hidden entirely
+                   for single-field/legacy credentials (matches the rotation field-selector's own
+                   field_meta.length > 1 gating convention, Story 13.4). -->
+              <div class="space-y-1">
+                <label class="block text-sm font-medium text-slate-800" for="dependency-field-key">
+                  Scope to field
+                </label>
+                <select
+                  id="dependency-field-key"
+                  class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+                  bind:value={depFieldKey}
+                >
+                  <option value="">Whole credential</option>
+                  {#each fieldMeta as field (field.key)}
+                    <option value={field.key}>{field.key}</option>
+                  {/each}
+                </select>
+              </div>
+            {/if}
             <div class="space-y-1">
               <label class="block text-sm font-medium text-slate-800" for="dependency-link-url">
                 Link (optional)

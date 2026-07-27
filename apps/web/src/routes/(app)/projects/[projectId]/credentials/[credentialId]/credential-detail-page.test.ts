@@ -365,6 +365,86 @@ describe('credential detail +page.svelte', () => {
     expect(await screen.findByText(/this project is archived/i)).toBeTruthy()
   })
 
+  // Story 13.5 AC-6: field-scope selector for multi-field credentials + scope badge.
+  describe('Story 13.5 AC-6: dependency field-scope selector and badge', () => {
+    const MULTI_FIELD_FOR_DEPS = {
+      ...CREDENTIAL,
+      schemaVersion: 2,
+      fields: [
+        { key: 'host', sensitive: false, template: 'db_connection' },
+        { key: 'password', sensitive: true, template: 'db_connection' },
+      ],
+    }
+
+    it('renders the scope dropdown for a multi-field credential and wires fieldKey into the request', async () => {
+      addCredentialDependencyMock.mockResolvedValue({
+        id: 'dep-1',
+        systemName: 'backup-script',
+        systemType: 'service',
+        notes: null,
+        fieldKey: 'password',
+      })
+      render(CredentialDetailPage, {
+        props: { data: baseData({ credential: MULTI_FIELD_FOR_DEPS }) },
+      })
+
+      const select = screen.getByLabelText(/scope to field/i) as HTMLSelectElement
+      expect(select).toBeTruthy()
+
+      await fireEvent.input(screen.getByLabelText(/system name/i), {
+        target: { value: 'backup-script' },
+      })
+      await fireEvent.change(select, { target: { value: 'password' } })
+      await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+
+      await vi.waitFor(() =>
+        expect(addCredentialDependencyMock).toHaveBeenCalledWith(
+          expect.anything(),
+          projectId,
+          credentialId,
+          expect.objectContaining({ fieldKey: 'password' })
+        )
+      )
+    })
+
+    it('does not render the scope dropdown for a legacy/single-field credential', () => {
+      render(CredentialDetailPage, { props: { data: baseData() } })
+      expect(screen.queryByLabelText(/scope to field/i)).toBeNull()
+    })
+
+    it('shows a "Scoped to" badge for a dependency with a non-null fieldKey, and no badge otherwise', () => {
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            dependencies: {
+              items: [
+                {
+                  id: 'dep-1',
+                  systemName: 'backup-script',
+                  systemType: 'service',
+                  fieldKey: 'password',
+                  checklistStatus: null,
+                },
+                {
+                  id: 'dep-2',
+                  systemName: 'ci-pipeline',
+                  systemType: 'ci_pipeline',
+                  fieldKey: null,
+                  checklistStatus: null,
+                },
+              ],
+              hasDependencies: true,
+              hasStagedRotation: false,
+            },
+          }),
+        },
+      })
+
+      expect(screen.getByText('Scoped to: password')).toBeTruthy()
+      expect(screen.queryByText(/Scoped to: ci-pipeline/)).toBeNull()
+    })
+  })
+
   it('archives a dependency and it is removed from the list', async () => {
     archiveCredentialDependencyMock.mockResolvedValue(undefined)
     render(CredentialDetailPage, {

@@ -14,6 +14,11 @@ export type InitiateRotationRequest = {
   // Story 13.4 AC-1/AC-2: optional field-scoping — omitted means whole-secret rotation,
   // byte-identical to pre-13.4 behavior (AC-7).
   targetFields?: string[]
+  // Story 13.5 AC-2: resubmits a rejected same-value request with explicit confirmation.
+  confirmSameValue?: boolean
+  // Story 13.5 AC-7: optional per-field override — when present, its key set must exactly match
+  // targetFields' (normalized). Supersedes newValue for every field it names.
+  fieldValues?: Record<string, string>
 }
 
 export type ListRotationsQuery = {
@@ -154,6 +159,22 @@ export type RotationLockContentionErrorBody = {
   code: 'rotation_lock_contention'
   message: string
   credentialId: string
+}
+
+// Story 13.5 AC-1: a same-value rotation rejected because it lacks confirmSameValue: true.
+// `field` is the targeted field key, or null for a whole-secret rotation.
+export type SameValueConfirmationRequiredErrorBody = {
+  code: 'same_value_confirmation_required'
+  message: string
+  field: string | null
+}
+
+// Story 13.5 AC-7: fieldValues' key set didn't exactly match targetFields'.
+export type FieldValuesTargetMismatchErrorBody = {
+  code: 'field_values_target_mismatch'
+  message: string
+  missing: string[]
+  extra: string[]
 }
 
 function buildQuery(params: Record<string, string | number | undefined>): string {

@@ -46,6 +46,7 @@ import {
   DependencyParamsSchema,
   DependencyPatchResponseSchema,
   DependencyResponseSchema,
+  DependencyUnknownFieldKeyResponseSchema,
   ListCredentialsQuerySchema,
   ListCredentialsResponseSchema,
   ListDependenciesQuerySchema,
@@ -1194,6 +1195,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         201: DependencyResponseSchema,
+        // Story 13.5 AC-5: an unrecognized fieldKey.
+        400: DependencyUnknownFieldKeyResponseSchema,
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
@@ -1227,6 +1230,13 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         body: parsed.data,
       })
       if (result.status === 'not_found') return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+      if (result.status === 'unknown_field_key') {
+        return reply.status(400).send({
+          code: 'unknown_field_key' as const,
+          message: `Unknown field key: '${result.field}'`,
+          field: result.field,
+        })
+      }
       if (result.status === 'too_many') {
         return reply.status(422).send({
           code: 'too_many_dependencies',
@@ -1249,6 +1259,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
           // payload, not create. linkUrl is non-secret display metadata (same classification as
           // systemName/systemType above), so no new audit-classification decision is needed here.
           linkUrl: result.dependency.linkUrl,
+          // Story 13.5 AC-5: non-secret display metadata, same classification as linkUrl above.
+          fieldKey: result.dependency.fieldKey,
         },
         request: req,
       })

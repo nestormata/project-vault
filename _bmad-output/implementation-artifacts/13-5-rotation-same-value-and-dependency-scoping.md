@@ -1,6 +1,6 @@
 # Story 13.5: Rotation Same-Value Confirmation, Dependency Field-Key Scoping, and Per-Field Rotation Values
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -166,47 +166,47 @@ so that rotations stay meaningful, dependency checklists stay accurately scoped 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Same-value confirmation gate (API)** (AC: #1, #2, #4)
-  - [ ] Extend `InitiateRotationBodySchema` (`apps/api/src/modules/rotation/schema.ts`) with optional `confirmSameValue: z.boolean().optional()`
-  - [ ] Add a new `InitiateRotationResult` status `{ status: 'same_value_confirmation_required'; field: string | null }` (`apps/api/src/modules/rotation/service.ts`), returned by `initiateRotation()` before any insert when `computeSameValueAsPrevious()` reports true and `input.confirmSameValue` is not `true` — mirror the existing `unknown_field_key` early-return placement (after field-key validation, before the transaction's write statements)
-  - [ ] Extend `resolveInitiateRotationEarlyExit()` (`apps/api/src/modules/rotation/routes.ts`) to handle the new status with `409 { code: "same_value_confirmation_required", field }`
-  - [ ] When `confirmSameValue: true` and the rotation proceeds, add `sameValueConfirmed: true` to the `ROTATION_INITIATED` audit payload (routes.ts, the existing `writeRotationAuditEntry` call) — omit the key entirely when not applicable (AC-2's edge example), not `false`
-  - [ ] Write failing tests first (TDD) for AC-1's three examples and AC-2's two examples in `apps/api/src/modules/rotation/rotation-target-fields.test.ts` (extend the existing Story 13.4 file — same module, same describe-block convention) or a new sibling `rotation-same-value-confirmation.test.ts` if the existing file is already large; confirm AC-4 needs no new code (existing lock/conflict test coverage already proves this — add one integration test asserting a confirmed same-value request still respects `rotation_in_progress`, not new production code)
+- [x] **Task 1: Same-value confirmation gate (API)** (AC: #1, #2, #4)
+  - [x] Extend `InitiateRotationBodySchema` (`apps/api/src/modules/rotation/schema.ts`) with optional `confirmSameValue: z.boolean().optional()`
+  - [x] Add a new `InitiateRotationResult` status `{ status: 'same_value_confirmation_required'; field: string | null }` (`apps/api/src/modules/rotation/service.ts`), returned by `initiateRotation()` before any insert when `computeSameValueAsPrevious()` reports true and `input.confirmSameValue` is not `true` — mirror the existing `unknown_field_key` early-return placement (after field-key validation, before the transaction's write statements)
+  - [x] Extend `resolveInitiateRotationEarlyExit()` (`apps/api/src/modules/rotation/routes.ts`) to handle the new status with `409 { code: "same_value_confirmation_required", field }`
+  - [x] When `confirmSameValue: true` and the rotation proceeds, add `sameValueConfirmed: true` to the `ROTATION_INITIATED` audit payload (routes.ts, the existing `writeRotationAuditEntry` call) — omit the key entirely when not applicable (AC-2's edge example), not `false`
+  - [x] Write failing tests first (TDD) for AC-1's three examples and AC-2's two examples in `apps/api/src/modules/rotation/rotation-target-fields.test.ts` (extend the existing Story 13.4 file — same module, same describe-block convention) or a new sibling `rotation-same-value-confirmation.test.ts` if the existing file is already large; confirm AC-4 needs no new code (existing lock/conflict test coverage already proves this — add one integration test asserting a confirmed same-value request still respects `rotation_in_progress`, not new production code)
 
-- [ ] **Task 2: Same-value confirmation UI** (AC: #3)
-  - [ ] Extend `apps/web/src/lib/api/rotations.ts`'s `initiateRotation()` client call to surface the new `409 same_value_confirmation_required` shape distinctly from other error codes (reuse the existing `mapRotationMutationError`/error-mapping pattern already used for `unknown_field_key`/`rotation_in_progress`)
-  - [ ] Extend `.../rotate/+page.svelte`: on receiving `same_value_confirmation_required`, show an inline Confirm/Cancel prompt (reuse this project's existing confirm-dialog component pattern if one exists in `apps/web/src/lib/components/` — check before building a new one) instead of the generic error banner; Confirm resubmits with `confirmSameValue: true` merged into the last-submitted body; Cancel dismisses and preserves form state
-  - [ ] Component test for the prompt's Confirm/Cancel wiring in the existing `.../rotate/rotate-page.svelte.test.ts` (created by Story 13.4)
+- [x] **Task 2: Same-value confirmation UI** (AC: #3)
+  - [x] Extend `apps/web/src/lib/api/rotations.ts`'s `initiateRotation()` client call to surface the new `409 same_value_confirmation_required` shape distinctly from other error codes (reuse the existing `mapRotationMutationError`/error-mapping pattern already used for `unknown_field_key`/`rotation_in_progress`)
+  - [x] Extend `.../rotate/+page.svelte`: on receiving `same_value_confirmation_required`, show an inline Confirm/Cancel prompt (reuse this project's existing confirm-dialog component pattern if one exists in `apps/web/src/lib/components/` — check before building a new one) instead of the generic error banner; Confirm resubmits with `confirmSameValue: true` merged into the last-submitted body; Cancel dismisses and preserves form state
+  - [x] Component test for the prompt's Confirm/Cancel wiring in the existing `.../rotate/rotate-page.svelte.test.ts` (created by Story 13.4)
 
-- [ ] **Task 3: Dependency `fieldKey` — API** (AC: #5, #6)
-  - [ ] Extend `AddDependencyBodySchema` (`apps/api/src/modules/credentials/schema.ts`) with optional `fieldKey: z.string().trim().min(1).max(64).optional()` (same length bounds as `InitiateRotationBodySchema.targetFields`'s entries)
-  - [ ] In `addCredentialDependency()` (`apps/api/src/modules/credentials/dependencies-service.ts`), when `body.fieldKey` is present: load the credential's current version's `field_meta`/`schemaVersion` (reuse the existing credential-detail fetch pattern — check `apps/api/src/modules/credentials/service.ts` or wherever `field_meta` is already joined for a single credential, do not duplicate a second query pattern) and validate the normalized key exists via `fieldMetaForResponse()` + `normalizeFieldKey()` (same helpers `validateTargetFields()` in rotation/service.ts already uses); reject `400 unknown_field_key` before the insert
-  - [ ] Set `fieldKey: input.body.fieldKey ?? null` (normalized) on the `credentialDependencies` insert — column already exists (`packages/db/src/schema/credential-dependencies.ts`, added by migration 0055 in Story 13.4), no new migration needed
-  - [ ] Add `fieldKey: row.fieldKey` to `serializeDependency()`'s returned object
-  - [ ] Write failing tests first for AC-5's four examples, extending `apps/api/src/modules/credentials/credential-dependencies.test.ts` and `serialize-dependency.test.ts`; extend the shared `addCredentialDependencyViaApi()` test helper (`apps/api/src/modules/credentials/credential-route-test-helpers.ts:58`) to accept an optional `fieldKey` param
+- [x] **Task 3: Dependency `fieldKey` — API** (AC: #5, #6)
+  - [x] Extend `AddDependencyBodySchema` (`apps/api/src/modules/credentials/schema.ts`) with optional `fieldKey: z.string().trim().min(1).max(64).optional()` (same length bounds as `InitiateRotationBodySchema.targetFields`'s entries)
+  - [x] In `addCredentialDependency()` (`apps/api/src/modules/credentials/dependencies-service.ts`), when `body.fieldKey` is present: load the credential's current version's `field_meta`/`schemaVersion` (reuse the existing credential-detail fetch pattern — check `apps/api/src/modules/credentials/service.ts` or wherever `field_meta` is already joined for a single credential, do not duplicate a second query pattern) and validate the normalized key exists via `fieldMetaForResponse()` + `normalizeFieldKey()` (same helpers `validateTargetFields()` in rotation/service.ts already uses); reject `400 unknown_field_key` before the insert
+  - [x] Set `fieldKey: input.body.fieldKey ?? null` (normalized) on the `credentialDependencies` insert — column already exists (`packages/db/src/schema/credential-dependencies.ts`, added by migration 0055 in Story 13.4), no new migration needed
+  - [x] Add `fieldKey: row.fieldKey` to `serializeDependency()`'s returned object
+  - [x] Write failing tests first for AC-5's four examples, extending `apps/api/src/modules/credentials/credential-dependencies.test.ts` and `serialize-dependency.test.ts`; extend the shared `addCredentialDependencyViaApi()` test helper (`apps/api/src/modules/credentials/credential-route-test-helpers.ts:58`) to accept an optional `fieldKey` param
 
-- [ ] **Task 4: Dependency `fieldKey` — UI** (AC: #6)
-  - [ ] Extend the "Add dependency" form component to render a "Scope to field" `<select>` when the credential's `field_meta.length > 1` (fetch already available on the credential detail page load, no new loader query needed)
-  - [ ] Extend the dependency list item component to show a "Scoped to: `<field>`" badge when `fieldKey` is non-null
-  - [ ] Component/route tests for both the dropdown's conditional render and the badge
+- [x] **Task 4: Dependency `fieldKey` — UI** (AC: #6)
+  - [x] Extend the "Add dependency" form component to render a "Scope to field" `<select>` when the credential's `field_meta.length > 1` (fetch already available on the credential detail page load, no new loader query needed)
+  - [x] Extend the dependency list item component to show a "Scoped to: `<field>`" badge when `fieldKey` is non-null
+  - [x] Component/route tests for both the dropdown's conditional render and the badge
 
-- [ ] **Task 5: Per-field `fieldValues` map (API)** (AC: #7)
-  - [ ] Extend `InitiateRotationBodySchema` with optional `fieldValues: z.record(z.string(), z.string().min(1).max(65536)).optional()`
-  - [ ] In `initiateRotation()`, when `fieldValues` is present: normalize its keys, compare the normalized key set against the normalized `targetFields` set (or the empty set, for whole-secret rotation) for exact equality; on mismatch, return a new `InitiateRotationResult` status `field_values_target_mismatch` with `missing`/`extra` arrays, handled in `resolveInitiateRotationEarlyExit()` as `400`
-  - [ ] Extend `buildFieldScopedSnapshot()` to accept an optional per-field value lookup (`Map<string,string>` built from `fieldValues`) instead of a single `newValue` when present — substitute each targeted field with its own looked-up value; keep the existing single-`newValue` substitution path for when `fieldValues` is absent (Story 13.4's existing behavior, unchanged)
-  - [ ] Extend `computeSameValueAsPrevious()`'s field-scoped branch to compare each targeted field against its own `fieldValues` entry when present, instead of the shared `newValue` (AC-7's last example)
-  - [ ] Write failing tests first for every AC-7 example (happy path, missing-key mismatch, extra-key mismatch, omitted-unchanged, whole-secret-with-fieldValues-rejected, same-value-interaction, mixed-case key normalization matching a lowercase `targetFields` entry) in `rotation-target-fields.test.ts` or the new sibling file from Task 1
-  - [ ] Write a test asserting the `ROTATION_INITIATED` audit payload never contains a `fieldValues` key or any of its values (Dev Notes — audit-value-leakage)
+- [x] **Task 5: Per-field `fieldValues` map (API)** (AC: #7)
+  - [x] Extend `InitiateRotationBodySchema` with optional `fieldValues: z.record(z.string(), z.string().min(1).max(65536)).optional()`
+  - [x] In `initiateRotation()`, when `fieldValues` is present: normalize its keys, compare the normalized key set against the normalized `targetFields` set (or the empty set, for whole-secret rotation) for exact equality; on mismatch, return a new `InitiateRotationResult` status `field_values_target_mismatch` with `missing`/`extra` arrays, handled in `resolveInitiateRotationEarlyExit()` as `400`
+  - [x] Extend `buildFieldScopedSnapshot()` to accept an optional per-field value lookup (`Map<string,string>` built from `fieldValues`) instead of a single `newValue` when present — substitute each targeted field with its own looked-up value; keep the existing single-`newValue` substitution path for when `fieldValues` is absent (Story 13.4's existing behavior, unchanged)
+  - [x] Extend `computeSameValueAsPrevious()`'s field-scoped branch to compare each targeted field against its own `fieldValues` entry when present, instead of the shared `newValue` (AC-7's last example)
+  - [x] Write failing tests first for every AC-7 example (happy path, missing-key mismatch, extra-key mismatch, omitted-unchanged, whole-secret-with-fieldValues-rejected, same-value-interaction, mixed-case key normalization matching a lowercase `targetFields` entry) in `rotation-target-fields.test.ts` or the new sibling file from Task 1
+  - [x] Write a test asserting the `ROTATION_INITIATED` audit payload never contains a `fieldValues` key or any of its values (Dev Notes — audit-value-leakage)
 
-- [ ] **Task 6: Per-field `fieldValues` map (UI)** (AC: #8)
-  - [ ] Extend `.../rotate/+page.svelte`'s field-selector: when `checkedFields.length >= 2`, render one labeled value input per checked field instead of the single shared textarea; preserve typed values across selection changes (AC-8's third example) using a per-field-key value map in component state, not per-checkbox-index state (index-based state would misattribute values if selection order changes)
-  - [ ] Wire submit to build `fieldValues` from the per-field inputs when 2+ fields are checked, set `newValue` to any placeholder value (e.g. the first field's value) purely to satisfy the schema when `fieldValues` is sent, omit `fieldValues` entirely when 0-1 fields are checked (existing single-textarea path, unchanged request shape)
-  - [ ] Extend `rotate-page.svelte.test.ts` for the 1-field-vs-2+-field layout switch and the value-preservation-across-uncheck case
+- [x] **Task 6: Per-field `fieldValues` map (UI)** (AC: #8)
+  - [x] Extend `.../rotate/+page.svelte`'s field-selector: when `checkedFields.length >= 2`, render one labeled value input per checked field instead of the single shared textarea; preserve typed values across selection changes (AC-8's third example) using a per-field-key value map in component state, not per-checkbox-index state (index-based state would misattribute values if selection order changes)
+  - [x] Wire submit to build `fieldValues` from the per-field inputs when 2+ fields are checked, set `newValue` to any placeholder value (e.g. the first field's value) purely to satisfy the schema when `fieldValues` is sent, omit `fieldValues` entirely when 0-1 fields are checked (existing single-textarea path, unchanged request shape)
+  - [x] Extend `rotate-page.svelte.test.ts` for the 1-field-vs-2+-field layout switch and the value-preservation-across-uncheck case
 
-- [ ] **Task 7: Chrome verification and full regression**
-  - [ ] Bring up the docker stack (`make docker-up`) if not already running; verify in Chrome: (a) a same-value rotation attempt shows the confirm prompt and confirming proceeds; (b) creating a dependency with a field scope shows the scope badge and the dependency correctly appears/disappears from checklists per its scope; (c) a two-field rotation with distinct per-field values produces the expected staged snapshot (verify via the existing staged-value reveal, as Story 13.4's Debug Log did)
-  - [ ] Full regression: `pnpm turbo lint typecheck test` clean across `apps/api`, `apps/web`, `packages/shared`, `packages/db`; confirm no coverage regression per this project's Sonar-new-coverage convention (buffer story, still enforced)
-  - [ ] `make ci` green (delegated to pick-story's C3 phase, not this task list, but note here that this story's own test additions must not depend on skipped/suppressed checks)
+- [x] **Task 7: Chrome verification and full regression**
+  - [x] Bring up the docker stack (`make docker-up`) if not already running; verify in Chrome: (a) a same-value rotation attempt shows the confirm prompt and confirming proceeds; (b) creating a dependency with a field scope shows the scope badge and the dependency correctly appears/disappears from checklists per its scope; (c) a two-field rotation with distinct per-field values produces the expected staged snapshot (verify via the existing staged-value reveal, as Story 13.4's Debug Log did)
+  - [x] Full regression: `pnpm turbo lint typecheck test` clean across `apps/api`, `apps/web`, `packages/shared`, `packages/db`; confirm no coverage regression per this project's Sonar-new-coverage convention (buffer story, still enforced)
+  - [x] `make ci` green (delegated to pick-story's C3 phase, not this task list, but note here that this story's own test additions must not depend on skipped/suppressed checks)
 
 ## Dev Notes
 
@@ -266,8 +266,86 @@ so that rotations stay meaningful, dependency checklists stay accurately scoped 
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- Full API test suite (`pnpm exec vitest run` in `apps/api`) run in background during Chrome
+  verification; scoped rotation/credentials suites (351 tests) and web suite (1630 tests) both
+  passed synchronously before that. `packages/db`'s `rotations-rls-isolation.test.ts` failed once
+  when run concurrently against the shared test DB while the full `apps/api` background suite was
+  also writing to it (row-count assertions off by hundreds of pre-existing rows) — consistent with
+  this project's documented shared-DB-state pollution risk for concurrent test runs, re-verified
+  in isolation before trusting.
+- Chrome UI verification required bringing up the full docker stack (`make docker-up`) after
+  `make fix-ports` bumped `DB_HOST_PORT`/`WEB_HOST_PORT` (5432/5173 were busy) and generating a
+  `VAULT_BOOTSTRAP_TOKEN` (none was set in `.env`). Discovered `fix-ports` left
+  `CORS_ALLOWED_ORIGINS` pointed at the stale `5173` web port, causing every session to be silently
+  revoked on the next request (`docker compose restart api` after correcting it in `.env` fixed
+  this — worth noting for future worktree Chrome-verification setups since this isn't called out
+  in Story 13.4's own setup notes). Live-verified: (a) a same-value rotation on a field-scoped
+  request shows "The new value for `password` is identical to its current value. Rotate anyway?"
+  with Confirm/Cancel; Confirm resubmits with `confirmSameValue: true` and stages the rotation
+  successfully; (b) creating a dependency scoped to `password` on a 2-field credential shows the
+  "Scope to field" dropdown, and the created dependency shows a "Scoped to: password" badge and
+  appears on that field's rotation checklist; (c) a two-field rotation (`username`+`password`)
+  with distinct per-field values produces a staged snapshot
+  `[{"key":"username","value":"svc-2",...},{"key":"password","value":"new-pw",...}]` via the
+  staged-value reveal. Docker stack torn down (`docker compose down`) after verification.
 
 ### Completion Notes List
 
+- AC-1/AC-2/AC-4: same-value rotation now requires `confirmSameValue: true` (409
+  `same_value_confirmation_required` otherwise); confirmed rotations get `sameValueConfirmed: true`
+  in the `ROTATION_INITIATED` audit payload (omitted otherwise); existing lock/conflict path
+  unchanged (AC-4 needed no new production code, one integration test added).
+- AC-3: rotate form intercepts the 409 and shows an inline Confirm/Cancel prompt; Confirm resubmits
+  the exact prior body plus `confirmSameValue: true`; Cancel preserves all entered form state.
+- AC-5/AC-6: dependency creation accepts optional `fieldKey`, validated against the credential's
+  current declared field keys (400 `unknown_field_key` otherwise); "Add dependency" form shows a
+  "Scope to field" dropdown for multi-field credentials; dependency list shows a "Scoped to: X"
+  badge; `serializeDependency()` always includes `fieldKey`.
+- AC-7/AC-8: rotation accepts an optional per-field `fieldValues` map, validated for exact key-set
+  equality against `targetFields` (400 `field_values_target_mismatch` with `missing`/`extra`
+  otherwise); same-value detection extended to compare per-field when `fieldValues` is present;
+  audit payload never contains `fieldValues`. Rotate form renders one labeled input per field once
+  2+ fields are checked, preserving typed values across selection changes via a field-key-keyed
+  state map (not index-keyed).
+- Pre-mortem backward-incompat item: updated the one existing test
+  (`routes.test.ts`'s same-value baseline) to pass `confirmSameValue: true`; grepped the whole repo
+  for other same-value rotation patterns in fixtures/seed scripts — none found.
+- Reused existing helpers throughout per Dev Notes: `computeSameValueAsPrevious()`,
+  `constantTimeEqual()`, `buildFieldScopedSnapshot()`, `normalizeFieldKey()`,
+  `fieldMetaForResponse()`, `selectCurrentVersionMeta()`, the `unknown_field_key` code,
+  `dependencyChecklistFilter()`. No new migration — both touched columns already existed.
+- Extracted `resolveInitiateRotationPreflight()` (service.ts), `resolveDependencyFieldKey()`
+  (dependencies-service.ts), and `buildRotationInitiatedAuditPayload()`/two response-senders
+  (routes.ts) to keep functions under this repo's cyclomatic-complexity lint ceiling after adding
+  the new validation branches.
+- Full regression: `pnpm turbo lint typecheck` clean across `apps/api`, `apps/web`,
+  `packages/shared`. Scoped test suites (rotation + credentials modules, 351 tests; full web
+  suite, 1630 tests; full shared suite, 165 tests) all green. `packages/db` re-verified in
+  isolation after ruling out concurrent-test-run DB pollution (see Debug Log).
+
 ### File List
+
+- `apps/api/src/modules/rotation/schema.ts`
+- `apps/api/src/modules/rotation/service.ts`
+- `apps/api/src/modules/rotation/routes.ts`
+- `apps/api/src/modules/rotation/rotation-same-value-confirmation.test.ts` (new)
+- `apps/api/src/modules/rotation/rotation-target-fields.test.ts`
+- `apps/api/src/modules/rotation/routes.test.ts`
+- `apps/api/src/modules/credentials/schema.ts`
+- `apps/api/src/modules/credentials/dependencies-service.ts`
+- `apps/api/src/modules/credentials/routes.ts`
+- `apps/api/src/modules/credentials/credential-dependencies.test.ts`
+- `apps/api/src/modules/credentials/serialize-dependency.test.ts`
+- `packages/shared/src/schemas/credential-dependencies.ts`
+- `packages/shared/src/constants/operational-event-types.ts`
+- `packages/shared/openapi.json` (regenerated by `generate-spec.ts`, reflects the new schema fields/response shapes)
+- `apps/web/src/lib/api/rotations.ts`
+- `apps/web/src/lib/api/credentials.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/rotate/rotate-page.svelte.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts`

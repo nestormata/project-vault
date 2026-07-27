@@ -73,6 +73,11 @@ export const OperationalEvent = {
   // Story 13.4 AC-3: rejected — targetFields named a key that doesn't exist on the credential's
   // current field_meta.
   ROTATION_INITIATE_UNKNOWN_FIELD_KEY: 'rotation.initiate.unknown_field_key',
+  // Story 13.5 AC-1: rejected — same-value rotation without confirmSameValue: true.
+  ROTATION_INITIATE_SAME_VALUE_CONFIRMATION_REQUIRED:
+    'rotation.initiate.same_value_confirmation_required',
+  // Story 13.5 AC-7: rejected — fieldValues' key set didn't exactly match targetFields'.
+  ROTATION_INITIATE_FIELD_VALUES_TARGET_MISMATCH: 'rotation.initiate.field_values_target_mismatch',
 
   // Rotation checklist confirm/fail/retry/complete (Story 5.2)
   ROTATION_CHECKLIST_CONFIRM_SUCCESS: 'rotation.checklist.confirm.success',

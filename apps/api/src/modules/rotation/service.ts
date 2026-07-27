@@ -66,11 +66,21 @@ export type InitiateRotationResult =
   // Story 13.4 AC-3: a targetFields entry that doesn't exist on the credential's current
   // field_meta. Returned before any write.
   | { status: 'unknown_field_key'; field: string }
+  // Story 13.5 AC-1: a same-value rotation without `confirmSameValue: true`. `field` is the
+  // targeted field key, or null for a whole-secret rotation. Returned before any write.
+  | { status: 'same_value_confirmation_required'; field: string | null }
+  // Story 13.5 AC-7: fieldValues' normalized key set didn't exactly match targetFields'
+  // normalized key set. Returned before any write.
+  | { status: 'field_values_target_mismatch'; missing: string[]; extra: string[] }
   | {
       status: 'initiated'
       rotation: RotationRow
       checklistItems: ChecklistItemRow[]
       sameValueAsPrevious: boolean
+      // Story 13.5 AC-2: true only when the confirmation gate was actually consulted and
+      // satisfied (sameValueAsPrevious was true AND confirmSameValue: true was sent) — never
+      // present/true for an ordinary (non-same-value) rotation.
+      sameValueConfirmed: boolean
     }
 
 /** Fixed-length digest comparison so a length difference between the two secrets never leaks
@@ -121,6 +131,40 @@ function validateTargetFields(
   return { ok: true, normalized }
 }
 
+// Story 13.5 AC-7 — normalizes `fieldValues`' keys via the same `normalizeFieldKey()` used for
+// `targetFields`, so a raw key of `"Password"` correctly matches a `targetFields` entry of
+// `"password"`. Plain-object JSON semantics already resolve any raw-key collision (last one
+// wins) before this ever runs — nothing further to dedupe here.
+function normalizeFieldValues(
+  fieldValues: Record<string, string> | undefined
+): Map<string, string> | undefined {
+  if (!fieldValues) return undefined
+  const normalized = new Map<string, string>()
+  for (const [key, value] of Object.entries(fieldValues)) {
+    normalized.set(normalizeFieldKey(key), value)
+  }
+  return normalized
+}
+
+type FieldValuesValidation = { ok: true } | { ok: false; missing: string[]; extra: string[] }
+
+// Story 13.5 AC-7 — `fieldValues`' normalized key set must be EXACTLY equal to the normalized
+// `targetFields` set (whole-secret rotation has an empty target-fields set, so any `fieldValues`
+// there is entirely "extra"). Exact-match, not subset/superset-tolerant — see the story's Dev
+// Notes for why (fail loudly on request-shape ambiguity rather than guess intent).
+function validateFieldValues(
+  normalizedFieldValues: Map<string, string> | undefined,
+  normalizedTargetFields: string[] | undefined
+): FieldValuesValidation {
+  if (!normalizedFieldValues) return { ok: true }
+  const targetSet = new Set(normalizedTargetFields ?? [])
+  const valueKeys = new Set(normalizedFieldValues.keys())
+  const missing = [...targetSet].filter((key) => !valueKeys.has(key))
+  const extra = [...valueKeys].filter((key) => !targetSet.has(key))
+  if (missing.length > 0 || extra.length > 0) return { ok: false, missing, extra }
+  return { ok: true }
+}
+
 // Story 13.4 AC-5/AC-8 — extracted for the same complexity-ceiling reason as
 // validateTargetFields above. Builds the new version's full field-set snapshot (targeted
 // field(s) substituted, every other field carried over unchanged from the SAME decrypted read),
@@ -128,22 +172,51 @@ function validateTargetFields(
 // warning). A decrypt failure upstream of this call (in withSecret) already aborts the whole
 // trx.transaction() atomically — this function only ever runs against an already-decrypted
 // plaintext.
+// Story 13.5 AC-7: `fieldValues`, when present, supplies each targeted field's own value instead
+// of the shared `newValue` — `newValue` remains the fallback for any targeted field NOT present
+// in `fieldValues` (in practice this only happens when `fieldValues` is entirely absent, since
+// AC-7's exact-match validation already rejects a partial `fieldValues` before this ever runs).
+function valueForField(
+  key: string,
+  newValue: string,
+  fieldValues: Map<string, string> | undefined
+) {
+  return fieldValues?.get(key) ?? newValue
+}
+
 function buildFieldScopedSnapshot(
   previousSchemaVersion: number,
   previousPlaintext: string,
   normalizedTargetFields: string[],
-  newValue: string
-): { fields: ReturnType<typeof parseFieldsFromPlaintext>; sameValueAsPrevious: boolean } {
+  newValue: string,
+  fieldValues?: Map<string, string>
+): {
+  fields: ReturnType<typeof parseFieldsFromPlaintext>
+  sameValueAsPrevious: boolean
+  // Story 13.5 AC-1's third example: a multi-field request can be "same-value" for only SOME of
+  // its targeted fields (e.g. distinct fieldValues per field) — the first targeted field (in
+  // targetFields order) whose new value matches its current one, for the 409's `field` property.
+  // Any match blocks the whole request (AC-1's all-or-nothing convention), not just every field
+  // matching.
+  sameValueField: string | null
+} {
   const previousFields = parseFieldsFromPlaintext(previousSchemaVersion, previousPlaintext)
   const targetSet = new Set(normalizedTargetFields)
-  const nextFields = previousFields.map((f) =>
-    targetSet.has(normalizeFieldKey(f.key)) ? { ...f, value: newValue } : f
-  )
-  const sameValueAsPrevious = normalizedTargetFields.every((key) => {
-    const match = previousFields.find((f) => normalizeFieldKey(f.key) === key)
-    return match !== undefined && constantTimeEqual(match.value, newValue)
+  const nextFields = previousFields.map((f) => {
+    const normalizedKey = normalizeFieldKey(f.key)
+    return targetSet.has(normalizedKey)
+      ? { ...f, value: valueForField(normalizedKey, newValue, fieldValues) }
+      : f
   })
-  return { fields: nextFields, sameValueAsPrevious }
+  const sameValueField =
+    normalizedTargetFields.find((key) => {
+      const match = previousFields.find((f) => normalizeFieldKey(f.key) === key)
+      return (
+        match !== undefined &&
+        constantTimeEqual(match.value, valueForField(key, newValue, fieldValues))
+      )
+    }) ?? null
+  return { fields: nextFields, sameValueAsPrevious: sameValueField !== null, sameValueField }
 }
 
 type PreviousVersionRow = {
@@ -160,10 +233,15 @@ type PreviousVersionRow = {
 async function computeSameValueAsPrevious(
   previousVersion: PreviousVersionRow,
   normalizedTargetFields: string[] | undefined,
-  newValue: string
-): Promise<{ sameValueAsPrevious: boolean; previousPlaintext: string | undefined }> {
+  newValue: string,
+  fieldValues?: Map<string, string>
+): Promise<{
+  sameValueAsPrevious: boolean
+  sameValueField: string | null
+  previousPlaintext: string | undefined
+}> {
   if (!previousVersion.encryptedValue) {
-    return { sameValueAsPrevious: false, previousPlaintext: undefined }
+    return { sameValueAsPrevious: false, sameValueField: null, previousPlaintext: undefined }
   }
   const previousPlaintext = await withSecret(
     previousVersion.encryptedValue as Parameters<typeof withSecret>[0],
@@ -172,19 +250,28 @@ async function computeSameValueAsPrevious(
   if (normalizedTargetFields) {
     // AC-5/AC-8: a decrypt failure above already aborted the whole trx.transaction() atomically —
     // this only ever runs against an already-decrypted plaintext.
-    const { sameValueAsPrevious } = buildFieldScopedSnapshot(
+    // Story 13.5 AC-7 (interaction with AC-1): compares each targeted field against its own
+    // `fieldValues` entry when present, instead of the shared `newValue`.
+    const { sameValueAsPrevious, sameValueField } = buildFieldScopedSnapshot(
       previousVersion.schemaVersion,
       previousPlaintext,
       normalizedTargetFields,
-      newValue
+      newValue,
+      fieldValues
     )
-    return { sameValueAsPrevious, previousPlaintext }
+    return { sameValueAsPrevious, sameValueField, previousPlaintext }
   }
   // Story 13.2 — a single-value secret is now stored as a schema_version = 2 field envelope;
   // unwrap it back to the bare value before the same-value comparison (legacy schema_version = 1
   // rows return the bare string unchanged).
   const previousValue = unwrapRevealValue(previousVersion.schemaVersion, previousPlaintext)
-  return { sameValueAsPrevious: constantTimeEqual(previousValue, newValue), previousPlaintext }
+  const sameValueAsPrevious = constantTimeEqual(previousValue, newValue)
+  return {
+    sameValueAsPrevious,
+    // Story 13.5 AC-1: whole-secret rotation has no field concept — `field: null`.
+    sameValueField: null,
+    previousPlaintext,
+  }
 }
 
 // Story 13.4 AC-5 (Dev Notes — "Promote vs. retire: where the field-set snapshot lands"): field
@@ -196,7 +283,8 @@ async function buildNewVersionInsertFields(
   previousVersion: PreviousVersionRow,
   previousPlaintext: string | undefined,
   normalizedTargetFields: string[] | undefined,
-  newValue: string
+  newValue: string,
+  fieldValues?: Map<string, string>
 ): Promise<{
   encryptedValue: Awaited<ReturnType<typeof encryptValue>>
   schemaVersion?: number
@@ -209,7 +297,8 @@ async function buildNewVersionInsertFields(
     previousVersion.schemaVersion,
     previousPlaintext ?? '',
     normalizedTargetFields,
-    newValue
+    newValue,
+    fieldValues
   )
   return {
     encryptedValue: await encryptValue(serializeFieldEnvelope({ fields: snapshot.fields })),
@@ -356,6 +445,74 @@ async function loadRotationTargetForUpdate(
   return { status: 'ok', previousVersion }
 }
 
+type InitiateRotationPreflightResult =
+  | { ok: false; result: InitiateRotationResult }
+  | {
+      ok: true
+      normalizedTargetFields: string[] | undefined
+      normalizedFieldValues: Map<string, string> | undefined
+      previousPlaintext: string | undefined
+      sameValueAsPrevious: boolean
+      sameValueConfirmed: boolean
+    }
+
+// Story 13.5 — extracted purely to keep initiateRotation()'s transaction callback under this
+// project's complexity ceiling: validates targetFields (Story 13.4 AC-2/AC-3, unchanged) and
+// fieldValues (AC-7), then resolves the same-value confirmation gate (AC-1/AC-2). All three
+// checks run before any write, against the credential's CURRENT field_meta/value (loaded by the
+// caller inside the same locked transaction).
+async function resolveInitiateRotationPreflight(
+  previousVersion: PreviousVersionRow,
+  body: InitiateRotationBody
+): Promise<InitiateRotationPreflightResult> {
+  const validation = validateTargetFields(
+    body.targetFields,
+    previousVersion.schemaVersion,
+    previousVersion.fieldMeta
+  )
+  if (!validation.ok) {
+    return { ok: false, result: { status: 'unknown_field_key', field: validation.field } }
+  }
+  const normalizedTargetFields = validation.normalized
+
+  const normalizedFieldValues = normalizeFieldValues(body.fieldValues)
+  const fieldValuesValidation = validateFieldValues(normalizedFieldValues, normalizedTargetFields)
+  if (!fieldValuesValidation.ok) {
+    return {
+      ok: false,
+      result: {
+        status: 'field_values_target_mismatch',
+        missing: fieldValuesValidation.missing,
+        extra: fieldValuesValidation.extra,
+      },
+    }
+  }
+
+  const { sameValueAsPrevious, sameValueField, previousPlaintext } =
+    await computeSameValueAsPrevious(
+      previousVersion,
+      normalizedTargetFields,
+      body.newValue,
+      normalizedFieldValues
+    )
+
+  if (sameValueAsPrevious && body.confirmSameValue !== true) {
+    return {
+      ok: false,
+      result: { status: 'same_value_confirmation_required', field: sameValueField },
+    }
+  }
+
+  return {
+    ok: true,
+    normalizedTargetFields,
+    normalizedFieldValues,
+    previousPlaintext,
+    sameValueAsPrevious,
+    sameValueConfirmed: sameValueAsPrevious && body.confirmSameValue === true,
+  }
+}
+
 /**
  * AC-4/AC-5: acquires the non-blocking transaction-scoped advisory lock, then performs the
  * credential lookup, new-version insert, retention-lock UPDATE, checklist snapshot, and
@@ -388,30 +545,23 @@ export async function initiateRotation(
       if (loaded.status !== 'ok') return loaded
       const { previousVersion } = loaded
 
-      // Story 13.4 AC-2/AC-3: validation happens before any write, against the credential's
-      // CURRENT field_meta (loaded above inside this same locked transaction).
-      const validation = validateTargetFields(
-        input.body.targetFields,
-        previousVersion.schemaVersion,
-        previousVersion.fieldMeta
-      )
-      if (!validation.ok) {
-        return { status: 'unknown_field_key' as const, field: validation.field }
-      }
-      const normalizedTargetFields = validation.normalized
-
-      const { sameValueAsPrevious, previousPlaintext } = await computeSameValueAsPrevious(
-        previousVersion,
+      const preflight = await resolveInitiateRotationPreflight(previousVersion, input.body)
+      if (!preflight.ok) return preflight.result
+      const {
         normalizedTargetFields,
-        input.body.newValue
-      )
+        normalizedFieldValues,
+        previousPlaintext,
+        sameValueAsPrevious,
+        sameValueConfirmed,
+      } = preflight
 
       const keyVersion = await currentKeyVersion(trx)
       const newVersionFields = await buildNewVersionInsertFields(
         previousVersion,
         previousPlaintext,
         normalizedTargetFields,
-        input.body.newValue
+        input.body.newValue,
+        normalizedFieldValues
       )
 
       const [newVersion] = await trx
@@ -465,7 +615,13 @@ export async function initiateRotation(
               )
               .returning()
 
-      return { status: 'initiated' as const, rotation, checklistItems, sameValueAsPrevious }
+      return {
+        status: 'initiated' as const,
+        rotation,
+        checklistItems,
+        sameValueAsPrevious,
+        sameValueConfirmed,
+      }
     })
   } catch (error) {
     if (isUniqueViolation(error)) {
