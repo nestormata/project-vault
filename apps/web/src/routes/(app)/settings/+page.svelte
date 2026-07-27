@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import { m } from '$lib/paraglide/messages.js'
 </script>
 
 <svelte:head>
@@ -45,6 +46,18 @@
           <p class="text-sm text-gray-500">
             Multi-factor authentication enrollment and recovery codes
           </p>
+        </div>
+        <span class="text-gray-400">→</span>
+      </a>
+    </li>
+    <li>
+      <a
+        href={resolve('/settings/language')}
+        class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+      >
+        <div>
+          <p class="font-medium text-gray-900">{m.settings_nav_language_title()}</p>
+          <p class="text-sm text-gray-500">{m.settings_nav_language_description()}</p>
         </div>
         <span class="text-gray-400">→</span>
       </a>

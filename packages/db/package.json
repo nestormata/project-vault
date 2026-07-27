@@ -29,6 +29,10 @@
     "./migration-safety": {
       "types": "./dist/lib/migration-safety.d.ts",
       "default": "./dist/lib/migration-safety.js"
+    },
+    "./supported-locales": {
+      "types": "./dist/supported-locales.d.ts",
+      "default": "./dist/supported-locales.js"
     }
   },
   "scripts": {

@@ -113,3 +113,43 @@ describe('AUDIT_EXPORT_MAX_RANGE_DAYS', () => {
     expect(AUDIT_EXPORT_MAX_RANGE_DAYS).toBe(400)
   })
 })
+
+// Story 15.1 AC 5 — audit exports stay locale-invariant (English text, ISO 8601 dates)
+// regardless of the requesting/actor user's `users.locale` value. buildExportCsv()'s row shape
+// (ExportCsvRow / the row param above) has no locale field at all and never reads one, so this
+// is a structural regression test: byte-identical output for two "requests" that differ only in
+// an out-of-band locale value that is never passed into the function in the first place.
+describe('buildExportCsv locale-invariance (AC 5)', () => {
+  it('produces byte-identical output regardless of any out-of-band user locale', () => {
+    const localeInvarianceTimestamp = '2026-07-09T09:11:02.000Z'
+    const rows = [
+      {
+        createdAt: localeInvarianceTimestamp,
+        actorDisplayName: 'Alice Chen',
+        eventType: 'credential.value_revealed',
+        resourceId: 'c3d4',
+        resourceType: 'credential',
+        orgId: 'e5f6',
+        projectId: 'proj1',
+        ipAddress: SAMPLE_IP,
+      },
+    ]
+    const summary = {
+      rowsChecked: 1,
+      passed: 1,
+      failedCount: 0,
+      verifiedAt: '2026-07-09T09:12:00.000Z',
+    }
+
+    // buildExportCsv's signature has no locale parameter to pass — this simulates "a user with
+    // locale es" and "a user with locale en" triggering the same export by simply calling the
+    // function twice with identical row/summary input (there is no locale input to vary).
+    const csvForEsUser = buildExportCsv(rows, summary)
+    const csvForEnUser = buildExportCsv(rows, summary)
+
+    expect(csvForEsUser).toBe(csvForEnUser)
+    // Dates stay ISO 8601 and text stays English/untranslated regardless of locale.
+    expect(csvForEsUser).toContain(localeInvarianceTimestamp)
+    expect(csvForEsUser).not.toMatch(/[áéíóúñ¿¡]/i)
+  })
+})

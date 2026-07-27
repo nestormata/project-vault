@@ -142,7 +142,53 @@ describe('hooks.server handle', () => {
     const response = await handle({ event, resolve: resolveMock } as never)
 
     expect(event.locals.user).toEqual({ id: 'u2', orgRole: 'member' })
-    expect(resolveMock).toHaveBeenCalledWith(event)
+    // Story 15.1: resolve is now always called with a transformPageChunk option (substitutes
+    // %paraglide.lang% in app.html), so this asserts the event only, not exact-args equality.
+    expect(resolveMock).toHaveBeenCalledWith(
+      event,
+      expect.objectContaining({ transformPageChunk: expect.any(Function) })
+    )
     expect(await response.text()).toBe('ok')
+  })
+
+  // Story 15.1 AC 7 edge — a tampered/garbage PARAGLIDE_LOCALE cookie must never crash SSR; it
+  // falls back to the base locale ('en') via Paraglide's own strategy chain
+  // (['cookie', 'baseLocale']), not a hand-rolled guard.
+  it('falls back to en in %paraglide.lang% substitution when the locale cookie is garbage', async () => {
+    const event = makeEvent('/pricing', 'PARAGLIDE_LOCALE=not-a-real-locale')
+    const echoResolve = vi.fn(
+      async (
+        _ev: unknown,
+        opts?: {
+          transformPageChunk?: (c: { html: string }) => string | Promise<string | undefined>
+        }
+      ) =>
+        new Response(
+          await opts?.transformPageChunk?.({ html: '<html lang="%paraglide.lang%">' })
+        ) as Response
+    )
+
+    const response = await handle({ event, resolve: echoResolve } as never)
+
+    expect(await response.text()).toBe('<html lang="en">')
+  })
+
+  it('substitutes %paraglide.lang% with a valid, explicitly-selected locale cookie', async () => {
+    const event = makeEvent('/pricing', 'PARAGLIDE_LOCALE=es')
+    const echoResolve = vi.fn(
+      async (
+        _ev: unknown,
+        opts?: {
+          transformPageChunk?: (c: { html: string }) => string | Promise<string | undefined>
+        }
+      ) =>
+        new Response(
+          await opts?.transformPageChunk?.({ html: '<html lang="%paraglide.lang%">' })
+        ) as Response
+    )
+
+    const response = await handle({ event, resolve: echoResolve } as never)
+
+    expect(await response.text()).toBe('<html lang="es">')
   })
 })

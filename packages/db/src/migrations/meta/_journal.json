@@ -393,6 +393,13 @@
       "when": 1784947200000,
       "tag": "0055_rotation_target_fields_and_dependency_field_key",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784959800000,
+      "tag": "0056_users_locale_preference",
+      "breakpoints": true
     }
   ]
 }

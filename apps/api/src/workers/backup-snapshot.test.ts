@@ -15,7 +15,7 @@ const { initVault } = await import('../modules/vault/key-service.js')
 const { resetVaultForTest } = await import('../__tests__/helpers/vault-test-cleanup.js')
 const { getDb } = await import('@project-vault/db')
 const { backupRuns, adminAlerts } = await import('@project-vault/db/schema')
-const { eq } = await import('drizzle-orm')
+const { eq, desc } = await import('drizzle-orm')
 const { runBackupSnapshotJob } = await import('./backup-snapshot.js')
 const { backupStorageFor } = await import('../modules/backup/storage.js')
 
@@ -62,10 +62,19 @@ describe.sequential('Story 9.1: backup-snapshot worker', () => {
     })
 
     expect(logger.error).not.toHaveBeenCalled()
+    // Pre-existing bug (unrelated to Story 15.1): this shared dev DB accumulates a 'schedule'
+    // -triggered row every time this file runs (this test's own success, then AC-13's failure a
+    // few lines down), and with no ORDER BY/LIMIT the un-filtered query below could pick an
+    // arbitrary historical row instead of the one this run just created — restore-lock.test.ts
+    // and backup.routes.test.ts already document this exact landmine (see their
+    // insertRunningBackupRow comments) but only this query itself was never fixed. `ORDER BY
+    // startedAt DESC LIMIT 1` makes "latest" actually mean latest.
     const [latest] = await getDb()
       .select()
       .from(backupRuns)
       .where(eq(backupRuns.triggeredBy, 'schedule'))
+      .orderBy(desc(backupRuns.startedAt))
+      .limit(1)
     expect(latest?.status).toBe('succeeded')
   })
 

@@ -670,6 +670,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditOmissionReason: 'User partially updates own notification preferences.',
     reviewer: SECURITY_OWNER,
   },
+  // Story 15.1 AC 9 — locale changes ARE audited (unlike the notification-preferences PATCHes
+  // above), inline via writeHumanAuditEntryOrFailClosed in the route itself.
+  'PATCH /api/v1/users/me/locale': {
+    action: 'mutation',
+    auditEvent: 'user.locale_updated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   'GET /api/v1/org/notification-routing': {
     action: 'read',
     auditOmissionReason: 'Admin reads org routing config; no secret values.',
