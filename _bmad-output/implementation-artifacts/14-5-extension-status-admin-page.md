@@ -1,6 +1,6 @@
 # Story 14.5: Extension Status Admin Page
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
