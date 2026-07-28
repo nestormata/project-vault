@@ -1,6 +1,6 @@
 # Story 14.6: Org SSO Domains Admin UI + Write API
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
