@@ -46,6 +46,15 @@ export const ThemeSelectionResponseSchema = z.object({
   themeName: z.string().nullable(),
 })
 
+// AC-2's unknown-theme-name rejection — a live-business-rule 400, distinct from the 422
+// z.object({ themeName: z.string().max(100).nullable() }) schema-validation failure, following
+// this codebase's established 422-for-schema/400-for-business-rule split (e.g.
+// credentials/routes.ts's `400 unknown_field_key`).
+export const UnknownThemeErrorSchema = z.object({
+  code: z.literal('unknown_theme'),
+  message: z.string(),
+})
+
 export type ThemeListResponse = z.infer<typeof ThemeListResponseSchema>
 export type ThemeSelectionBody = z.infer<typeof ThemeSelectionBodySchema>
 export type ThemeSelectionResponse = z.infer<typeof ThemeSelectionResponseSchema>

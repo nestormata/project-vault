@@ -6,11 +6,13 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { parseBody } from '../../lib/route-helpers.js'
+import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { getCompiledThemes } from './service.js'
 import {
   ThemeListResponseSchema,
   ThemeSelectionBodySchema,
   ThemeSelectionResponseSchema,
+  UnknownThemeErrorSchema,
 } from './schema.js'
 
 // Story 16.2 AC-1/AC-3: the base theme is never part of 16.1's compiled-themes list (it never
@@ -46,6 +48,7 @@ export async function themeSelectionRoutes(fastify: FastifyApp): Promise<void> {
     schema: {
       response: {
         200: ThemeListResponseSchema,
+        401: ApiErrorSchema,
       },
     },
     security: {
@@ -80,6 +83,11 @@ export async function themeSelectionRoutes(fastify: FastifyApp): Promise<void> {
       body: ThemeSelectionBodySchema,
       response: {
         200: ThemeSelectionResponseSchema,
+        400: UnknownThemeErrorSchema,
+        401: ApiErrorSchema,
+        422: ApiErrorSchema,
+        429: ApiErrorSchema,
+        503: ApiErrorSchema,
       },
     },
     security: {
