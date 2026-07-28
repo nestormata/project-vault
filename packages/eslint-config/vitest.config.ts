@@ -17,11 +17,12 @@ export default defineConfig({
         functions: 80,
         statements: 80,
       },
-      // Only no-error-schema-first-in-union.js has tests today. no-bare-decrypt.js and
-      // no-bare-drizzle.js predate this package's test infrastructure and are out of scope for
-      // this change — scoping coverage here avoids claiming untested pre-existing files are
-      // covered, rather than lowering the repo's 80% threshold for the whole package.
-      include: ['rules/no-error-schema-first-in-union.js'],
+      // Only no-error-schema-first-in-union.js and no-contiguous-allowed-roles.js have tests
+      // today. no-bare-decrypt.js and no-bare-drizzle.js predate this package's test
+      // infrastructure and are out of scope for this change — scoping coverage here avoids
+      // claiming untested pre-existing files are covered, rather than lowering the repo's 80%
+      // threshold for the whole package.
+      include: ['rules/no-error-schema-first-in-union.js', 'rules/no-contiguous-allowed-roles.js'],
     },
   },
 })

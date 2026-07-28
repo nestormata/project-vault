@@ -8,6 +8,7 @@ import prettierConfig from 'eslint-config-prettier'
 import { noBaredrizzle } from './rules/no-bare-drizzle.js'
 import { noBareDecrypt } from './rules/no-bare-decrypt.js'
 import { noErrorSchemaFirstInUnion } from './rules/no-error-schema-first-in-union.js'
+import { noContiguousAllowedRoles } from './rules/no-contiguous-allowed-roles.js'
 
 // Use the strict config rules from the plugin's legacy config set
 // (flat/strict would require project-level type info which we skip for Story 1.1)
@@ -127,6 +128,9 @@ export const apiEnforcement = [
       'no-error-schema-first-in-union': {
         rules: { 'no-error-schema-first-in-union': noErrorSchemaFirstInUnion },
       },
+      'no-contiguous-allowed-roles': {
+        rules: { 'no-contiguous-allowed-roles': noContiguousAllowedRoles },
+      },
     },
     rules: {
       'no-bare-drizzle/no-bare-call': 'error',
@@ -137,6 +141,10 @@ export const apiEnforcement = [
       // response serializer matches z.union([...]) members in array order, so the generic
       // ApiErrorSchema must always be last.
       'no-error-schema-first-in-union/no-error-schema-first-in-union': 'error',
+      // no-contiguous-allowed-roles is deliberately NOT enabled here (see the scoped block below)
+      // — the plugin is registered once, in this broad block, so the narrower override further
+      // down can turn the rule on for specific files without re-registering the plugin (ESLint
+      // flat config errors on duplicate plugin registration for overlapping file globs).
     },
   },
   // Exception: vault key-service bootstrap is the sole permitted caller of bootstrapDecrypt
@@ -150,6 +158,32 @@ export const apiEnforcement = [
         'error',
         { blockedNames: ['decrypt'], allowNames: ['bootstrapDecrypt'] },
       ],
+    },
+  },
+  // Story 14.8 (Epic 14 retro Finding 3): default to minimumRole for "this role or higher" RBAC
+  // gates; allowedRoles is reserved for a documented non-contiguous exception. See
+  // architecture.md's "RBAC Role-Gate Convention" (Enforcement Guidelines).
+  //
+  // Scoped rollout, not repo-wide: this story (14.8) audited and retrofitted
+  // apps/api/src/modules/org/routes.ts, and verified the two known legitimate non-contiguous
+  // exceptions (extensions/status-routes.ts, auth/external-identity-routes.ts) are clean. A
+  // repo-wide dry run (Subtask 5.5) found ~14 pre-existing contiguous-allowedRoles-without-comment
+  // sites in OTHER files (admin/routes.ts, credentials/routes.ts, notifications/routes.ts,
+  // security-alert-actions-routes.ts, theming/routes.ts, users/routes.ts) that predate this
+  // convention and are out of this story's scope to convert or annotate (see Dev Notes: ~140+
+  // other minimumRole/allowedRoles sites are explicitly out of scope). Enabling 'error' repo-wide
+  // today would break `make ci` on code this story must not touch. Flagged as a candidate for
+  // deferred-work.md: a follow-up story should review those sites and either add the required
+  // exception comment or convert to minimumRole, then widen this rule's `files` glob to
+  // `src/**/*.ts` to match the other apiEnforcement rules.
+  {
+    files: [
+      'src/modules/org/routes.ts',
+      'src/extensions/status-routes.ts',
+      'src/modules/auth/external-identity-routes.ts',
+    ],
+    rules: {
+      'no-contiguous-allowed-roles/no-contiguous-allowed-roles': 'error',
     },
   },
 ]
