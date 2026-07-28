@@ -460,7 +460,6 @@ hard-delete path for `credentials`/`credential_versions`.
 See `epic-13-retro-2026-07-27.md` finding #4 for full context.
 
 ---
-
 ## Deferred from: code review of 14-8-document-rbac-role-gate-convention (2026-07-28)
 
 **TD14-8-1 — `no-contiguous-allowed-roles` ESLint rule scoped to 3 files, not repo-wide (Medium).**
@@ -477,3 +476,25 @@ repo-wide.
 
 See story `14-8-document-rbac-role-gate-convention.md`'s own Completion Notes / code review for the
 full site list and rationale.
+
+---
+
+## Deferred from: code review of 14-9-extension-api-publish-readiness (2026-07-28)
+
+**Stale `epic-14: done` rollup vs. its own newly-added children (Low).** `sprint-status.yaml`'s
+`epic-14: done` entry predates 14-7/14-8/14-9 (all added by the same third epic-14 retro that
+produced this story) and remains `done` while 14-7/14-8 sit at `backlog` and 14-9 (this diff) sits
+at `review`. `check-story-status-sync.ts` only compares a story's own `Status:` header against its
+own `sprint-status.yaml` entry — there is no check for an epic marked `done` with non-`done`
+children, so this passes CI silently. Pre-existing, not introduced by 14-9. **Trigger to
+revisit:** next epic-14 retro/rollup pass, or when a `check-epic-rollup-sync.ts`-style guard is
+considered.
+
+**No CI/lint guard enforces the `packages/extension-api`-is-the-only-package-with-an-explicit-
+`license`-field convention (Low).** 14-9 adds the field by hand and documents at length why no
+sibling package should get one "to fix" the perceived inconsistency, but nothing prevents a future
+contributor from adding `license` fields elsewhere or removing this one, contrary to the
+documented intent. Candidate for bundling into 14-8 (document RBAC role-gate convention) or a
+similar small convention-documentation story if this drifts in practice. See
+`14-9-extension-api-publish-readiness.md` Review Findings for full context.
+
