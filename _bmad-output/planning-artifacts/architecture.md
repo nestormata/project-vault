@@ -1091,7 +1091,7 @@ and makes real anomalies harder to spot.
 | Is the permitted set "this rank or higher"? | Yes → use this | No — see next column |
 | Is the permitted set non-contiguous (excludes a higher rank while allowing a lower one)? | N/A — not expressible | Yes → use this, with a required inline comment |
 | Does the set change if a new role is inserted into the hierarchy? | No — automatically correct | Yes — must be manually revisited |
-| Ordering requirement | None (single value) | Descending rank order, enforced by lint |
+| Ordering requirement | None (single value) | Descending rank order (human-review convention; the `no-contiguous-allowed-roles` lint rule enforces the missing-comment case, not element order itself — `Array.prototype.includes` is order-independent) |
 
 **Worked examples:**
 - `minimumRole`: `apps/api/src/modules/org/routes.ts`'s `GET /users` route (and its sibling

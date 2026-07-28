@@ -474,8 +474,44 @@ not modify. **Trigger to revisit:** a follow-up story to add explanatory comment
 `minimumRole`) each of the ~14 pre-existing sites, then widen the lint rule's `files` glob to
 repo-wide.
 
+**Additional gaps found by a subsequent adversarial code review (2026-07-28, bmad-code-review
+Edge Case Hunter/Blind Hunter passes) that any repo-wide-widening follow-up must also account for,
+none of which are exploitable today since they only matter once the glob is widened beyond the
+current 3 files:**
+- The rule's AST visitor only recognizes a bare `security: {...}` object literal or `const
+  security = {...}`; it does not unwrap a `satisfies`/`as`-annotated array
+  (`allowedRoles: [...] satisfies OrgRole[]`) or a factory-constant `security` object referenced by
+  a different identifier (e.g. `notifications/routes.ts`'s `const USER_PREFS_SECURITY = {...}`
+  pattern, then `security: USER_PREFS_SECURITY` at call sites) — both shapes already exist in
+  `apps/api/src/modules/notifications/routes.ts` and would silently keep passing even after the
+  glob is widened.
+- Single-element `allowedRoles` arrays are unconditionally exempted (to avoid false-flagging real
+  exceptions like `status-routes.ts`'s `['admin']`), but this also exempts a genuinely
+  contiguous-from-top single-role array like `org/routes.ts` line 699's `allowedRoles: ['owner']`
+  (fully expressible as `minimumRole: 'owner'`) — a deliberate conservative trade-off (favors false
+  negatives over false positives), not a bug, but worth re-examining once real-world exception
+  patterns are better catalogued.
+- `hasExplanatoryComment` only checks that *some* comment token precedes the `allowedRoles`
+  Property node, not that the comment is actually about `allowedRoles` — a trailing comment on a
+  preceding sibling property could incorrectly satisfy the check if `allowedRoles` isn't the first
+  key in the object. Not triggered by any current site (in every touched file `allowedRoles` is the
+  first key), but a latent gap worth hardening in the same follow-up.
+
 See story `14-8-document-rbac-role-gate-convention.md`'s own Completion Notes / code review for the
 full site list and rationale.
+
+**TD14-8-2 — `secure-route.integration.test.ts`'s vault-unseal test fails on repeat `make ci` runs
+in a worktree that has previously called `zeroKeys()` (Medium).** During 14-8's `make ci` run, "rolls
+back handler writes when audit HMAC key material is unavailable" failed with `Vault unseal failed:
+credentials do not match stored vault configuration` on its cleanup step's re-unseal
+(`unsealVault({ passphrase: TEST_PASSPHRASE })`). Confirmed pre-existing and unrelated to 14-8's own
+diff via `git stash` A/B — the identical failure reproduced byte-for-byte against unmodified code in
+the same worktree. The story's own Completion Notes said this would be "flagged as a candidate for
+`deferred-work.md`" but no entry was actually added at the time (caught by this session's own code
+review of 14-8 while auditing whether the story's stated follow-ups were carried out) — recorded here
+now. **Trigger to revisit:** investigate why this specific worktree's `vault_state` stops accepting
+`TEST_PASSPHRASE` on re-unseal after a prior `zeroKeys()` call, in `apps/api/src/modules/vault/key-service.ts`;
+independent of any epic-14/RBAC work.
 
 ---
 
