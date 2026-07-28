@@ -24,6 +24,15 @@ export class ApiClientError extends Error {
   }
 }
 
+/**
+ * Shared by every `+page.server.ts` load function that gates on MFA enrollment (extensions,
+ * sso-domains, external-identities, ...): a 403 with `code: 'mfa_required'` gets its own distinct
+ * page state, since retrying alone won't help — never lumped into the generic fetch-error branch.
+ */
+export function isMfaRequiredError(reason: unknown): boolean {
+  return reason instanceof ApiClientError && reason.status === 403 && reason.code === 'mfa_required'
+}
+
 export async function parseApiEnvelope<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T
 

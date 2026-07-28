@@ -1,6 +1,6 @@
 import { z } from 'zod/v4'
-import { and, eq } from 'drizzle-orm'
-import { externalIdentities, orgMemberships } from '@project-vault/db/schema'
+import { and, desc, eq } from 'drizzle-orm'
+import { externalIdentities, orgMemberships, users } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
@@ -14,6 +14,10 @@ const LinkExternalIdentityBodySchema = z.object({
   externalSubject: z.string().min(1),
 })
 
+const ExternalIdentityParamsSchema = z.object({ id: z.string().uuid() })
+
+const NOT_FOUND = { code: 'not_found', message: 'External identity not found' } as const
+
 /**
  * Story 14.3 AC-10: explicit OrgAdmin-initiated linking action. Uses `secureRoute()` with
  * `allowedRoles: ['admin']` (not `['owner', 'admin']`, per Story 14.2's reused RBAC judgment
@@ -21,6 +25,39 @@ const LinkExternalIdentityBodySchema = z.object({
  * string convention.
  */
 export async function externalIdentityRoutes(fastify: FastifyApp): Promise<void> {
+  // Story 14.7 AC-1: list, org-scoped via secureCtx.tx's RLS-scoped transaction — never
+  // getAdminDb(). AC-4: allowedRoles: ['admin'] (not minimumRole) — matches this file's existing
+  // POST route (see AC-4's Judgment Call in the story: owner is deliberately excluded here,
+  // unlike 14-6's minimumRole convention, for internal file-level consistency). AC-5: requireMfa
+  // applies to the read-only list too — account-linkage metadata is sensitive.
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/external-identities',
+    security: {
+      allowedRoles: ['admin'],
+      requireMfa: true,
+      writeAuditEvent: false, // AC-6: list route writes no audit event (read of one's own org).
+      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'GET /api/v1/admin/external-identities' },
+    },
+    handler: async (ctx) => {
+      const secureCtx = ctx as SecureRouteContext
+      const rows = await secureCtx.tx
+        .select({
+          id: externalIdentities.id,
+          userId: externalIdentities.userId,
+          email: users.email,
+          providerName: externalIdentities.providerName,
+          externalSubject: externalIdentities.externalSubject,
+          createdAt: externalIdentities.createdAt,
+        })
+        .from(externalIdentities)
+        .innerJoin(users, eq(users.id, externalIdentities.userId))
+        .where(eq(externalIdentities.orgId, secureCtx.auth.orgId))
+        .orderBy(desc(externalIdentities.createdAt))
+      return { data: rows }
+    },
+  })
+
   secureRoute(fastify, {
     method: 'POST',
     url: '/external-identities',
@@ -86,6 +123,56 @@ export async function externalIdentityRoutes(fastify: FastifyApp): Promise<void>
         }
         throw error
       }
+    },
+  })
+
+  // Story 14.7 AC-3: hard-delete, org-scoped WHERE clause is the delete-race analog to the
+  // create path's unique-index-violation handling (AC-7) — the first request to commit wins
+  // (200), the second finds zero matching rows (404), never a crash or duplicate audit entry.
+  secureRoute(fastify, {
+    method: 'DELETE',
+    url: '/external-identities/:id',
+    schema: { params: ExternalIdentityParamsSchema },
+    security: {
+      allowedRoles: ['admin'],
+      requireMfa: true,
+      writeAuditEvent: false, // Audit is written manually below, inside the same tx.
+      rateLimit: { max: 20, timeWindowMs: 60_000, key: 'DELETE /api/v1/admin/external-identities' },
+    },
+    handler: async (ctx, req, reply) => {
+      const secureCtx = ctx as SecureRouteContext
+      const { id } = req.params as z.infer<typeof ExternalIdentityParamsSchema>
+
+      const [row] = await secureCtx.tx
+        .delete(externalIdentities)
+        .where(
+          and(eq(externalIdentities.id, id), eq(externalIdentities.orgId, secureCtx.auth.orgId))
+        )
+        .returning({
+          id: externalIdentities.id,
+          userId: externalIdentities.userId,
+          providerName: externalIdentities.providerName,
+          externalSubject: externalIdentities.externalSubject,
+        })
+
+      // AC-3 edge: cross-org/nonexistent :id -> 404, never 403 (do not confirm the row's
+      // existence in another org).
+      if (!row) return reply.status(404).send(NOT_FOUND)
+
+      await writeHumanAuditEntry(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        actorTokenId: await firstActorTokenIdForUser(secureCtx.tx, secureCtx.auth.userId),
+        eventType: AuditEvent.EXTERNAL_IDENTITY_UNLINKED,
+        resourceId: row.id,
+        resourceType: 'external_identity',
+        payload: {
+          providerName: row.providerName,
+          externalSubject: row.externalSubject,
+          unlinkedUserId: row.userId,
+        },
+      })
+
+      return { data: row }
     },
   })
 }
