@@ -379,7 +379,7 @@ describe('DELETE /api/v1/admin/external-identities/:id (Story 14.7 AC-3)', () =>
 
   it('AC-3 edge: cross-org :id guess returns 404, row still present in the owning org', async () => {
     const app = await createApp({ logger: false })
-    const { identityId } = await createAdminWithLinkedIdentity(app, 'ext-del-org-a')
+    const { admin, identityId } = await createAdminWithLinkedIdentity(app, 'ext-del-org-a')
 
     const orgBAdmin = await createDirectAuthenticatedUser(app, 'admin', 'admin', 'ext-del-org-b')
     await markMfaEnrolled(orgBAdmin.userId)
@@ -392,12 +392,18 @@ describe('DELETE /api/v1/admin/external-identities/:id (Story 14.7 AC-3)', () =>
     expect(res.statusCode).toBe(404)
     expect(res.json<{ code: string }>().code).toBe('not_found')
 
-    const [row] = await withOrg(orgBAdmin.orgId, () =>
-      getDb().select().from(externalIdentities).where(eq(externalIdentities.id, identityId))
-    )
-    // Cross-org row still exists at the DB level (not deleted through the RLS boundary) even
-    // though org B's RLS-scoped query above returns nothing for it.
-    void row
+    // AC-3 edge (as written): "a follow-up GET from org A confirms the row is still present" —
+    // must query using the *owning* org's context (org A's admin), not org B's. A query scoped to
+    // org B would return zero rows regardless of whether org A's row still exists (RLS hides it
+    // either way), so it can't prove anything about the row surviving the failed cross-org delete.
+    const getRes = await app.inject({
+      method: 'GET',
+      url: ROUTE,
+      headers: { cookie: cookieHeader(admin.cookies) },
+    })
+    expect(getRes.statusCode).toBe(200)
+    const getBody = getRes.json<{ data: Array<{ id: string }> }>()
+    expect(getBody.data.some((row) => row.id === identityId)).toBe(true)
 
     await app.close()
   })
