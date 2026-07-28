@@ -126,4 +126,10 @@ describe('OperationalEvent', () => {
       'extension.load_double_invocation_ignored'
     )
   })
+
+  it('exposes the Story 16.1 theme-reload event types (AC-2, AC-7 fanout)', () => {
+    expect(OperationalEvent.THEME_DIRECTORY_UNREADABLE).toBe('theme.directory_unreadable')
+    expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')
+    expect(OperationalEvent.THEME_AUDIT_FANOUT_ROW_FAILED).toBe('theme.audit_fanout_row_failed')
+  })
 })

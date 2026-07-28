@@ -557,6 +557,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Org dashboard read is org-scoped and returns aggregate counts and expiry metadata only.',
     reviewer: SECURITY_OWNER,
   },
+  // Story 16.1 AC-7/AC-8: written directly here (not via SecureRoute's generic writeAuditEvent)
+  // since the audit payload needs the handler's own computed reload result — see routes.ts.
+  'POST /api/v1/admin/themes/reload': {
+    action: 'mutation',
+    auditEvent: 'theme.reloaded',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
   'POST /api/v1/admin/notifications/test': {
     action: 'mutation',
     auditOmissionReason:

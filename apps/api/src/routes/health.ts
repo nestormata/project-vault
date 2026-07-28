@@ -8,13 +8,19 @@ import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { getVaultStatus } from '../modules/vault/key-service.js'
 import { getExtensionsHealthField } from '../extensions/loader.js'
+import { getThemesHealthField } from '../modules/theming/service.js'
 
 // Story 14.2 AC-1/2/3/6: additive field, always present, never causes /health to deviate from
 // its existing unconditional-200 liveness contract — extension state is informational only.
+// Story 16.1 AC-9: themesLoaded/themesFailed are simple counts only (never filenames/reasons —
+// this is a public, unauthenticated endpoint) so a fresh boot before the startup reload pass
+// completes still reports a well-formed 0/0 shape, never null/undefined.
 const HealthResponseSchema = z.object({
   status: z.literal('ok'),
   version: z.string(),
   extensions_status: z.enum(['not_configured', 'loaded', 'load_failed']),
+  themesLoaded: z.number().int().nonnegative(),
+  themesFailed: z.number().int().nonnegative(),
 })
 
 const ReadyResponseSchema = z.object({
@@ -86,10 +92,13 @@ export async function healthRoutes(
       },
     },
     handler: async (_req: FastifyRequest, reply: FastifyReply) => {
+      const themesHealth = getThemesHealthField()
       return reply.send({
         status: 'ok',
         version: pkg.version,
         extensions_status: getExtensionsHealthField(),
+        themesLoaded: themesHealth.themesLoaded,
+        themesFailed: themesHealth.themesFailed,
       })
     },
   })

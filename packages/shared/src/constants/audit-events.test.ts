@@ -135,6 +135,10 @@ describe('AuditEvent', () => {
     expect(AuditEvent.SSO_LOGIN_REJECTED).toBe('sso_login.rejected')
   })
 
+  it('exposes Story 16.1 AC-8 theme-reload audit event name', () => {
+    expect(AuditEvent.THEME_RELOADED).toBe('theme.reloaded')
+  })
+
   it('derives AuditEventType from every current AuditEvent value (AC-J1/J3, single source of truth)', () => {
     for (const value of Object.values(AuditEvent)) {
       expect(assertValidAuditEventType(value)).toBe(value)
