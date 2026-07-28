@@ -100,6 +100,9 @@ export const AuditEvent = {
   EXTERNAL_IDENTITY_LINKED: 'external_identity.linked',
   SSO_LOGIN_SUCCEEDED: 'sso_login.succeeded',
   SSO_LOGIN_REJECTED: 'sso_login.rejected',
+  // Story 16.1 AC-7/AC-8: written on every successful reload of VAULT_THEMES_DIR (per-org
+  // fanout at boot, single-org write on the authenticated POST /admin/themes/reload endpoint).
+  THEME_RELOADED: 'theme.reloaded',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

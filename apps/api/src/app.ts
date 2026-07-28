@@ -50,6 +50,8 @@ import { organizationSettingsRoutes } from './modules/org/organization-settings-
 import { erasureRoutes } from './modules/compliance/erasure-routes.js'
 import { extensionStatusRoutes } from './extensions/status-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
+import { themingRoutes } from './modules/theming/routes.js'
+import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
 import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
@@ -290,6 +292,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(extensionStatusRoutes, { prefix: ADMIN_PREFIX })
   // Story 14.3 Task 7: OrgAdmin-initiated external-identity linking endpoint.
   await fastify.register(externalIdentityRoutes, { prefix: ADMIN_PREFIX })
+  // Story 16.1: flat module (not nested under modules/admin/), matching the existing
+  // backup/admin sibling convention — see architecture.md's file-structure tree.
+  await fastify.register(themingRoutes, { prefix: ADMIN_PREFIX })
   // Story 9.4 AC-10: a distinct sibling module to platform-admin (audit-log read/verify vs.
   // instance administration) under its own '/api/v1/platform' prefix, not nested under
   // ADMIN_PREFIX.
@@ -308,6 +313,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // regress AC-3's "still starts" guarantee — but `await` (not fire-and-forget) so state is
   // fully resolved before createApp() returns to any caller (e.g. /health's first response).
   await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, { logger: fastify.log })
+
+  // Story 16.1 AC-1/Task 5: startup automatic reload pass for VAULT_THEMES_DIR — identical code
+  // path to the manual POST /admin/themes/reload endpoint, just invoked here so a fresh
+  // container picks up already-mounted themes without requiring a manual trigger. `await`, not
+  // fire-and-forget, matching loadExtension()'s own convention immediately above; never throws.
+  await reloadThemesWithFanout(env.VAULT_THEMES_DIR, { logger: fastify.log })
 
   // Story 14.3 Task 3: after loadExtension() resolves, append a registered authStrategy hook
   // (if any) to authStrategies — local-first invariant is preserved unconditionally either way.

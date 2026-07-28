@@ -221,6 +221,17 @@ export const OperationalEvent = {
   // resolved (loaded or load_failed) is ignored rather than re-run — warn-logged so a
   // regression that double-invokes the loader is still visible in monitoring.
   EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED: 'extension.load_double_invocation_ignored',
+
+  // Story 16.1: theming reload (apps/api/src/modules/theming/service.ts). AC-2's "directory
+  // present but unreadable" operational-log distinction — never fired for the (silent, expected)
+  // "directory absent" case.
+  THEME_DIRECTORY_UNREADABLE: 'theme.directory_unreadable',
+  // Dev Notes "Operational logging": info-level summary line on every reload (loaded/failed
+  // counts + failed filenames), independent of the audit trail.
+  THEME_RELOAD_SUMMARY: 'theme.reload_summary',
+  // AC-7 edge case: mirrors EXTENSION_AUDIT_FANOUT_ROW_FAILED for the startup auto-reload pass's
+  // per-org audit write failures (log-and-continue, never blocks boot).
+  THEME_AUDIT_FANOUT_ROW_FAILED: 'theme.audit_fanout_row_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

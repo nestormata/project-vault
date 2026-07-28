@@ -49,9 +49,23 @@ vi.mock('../extensions/loader.js', () => ({
   getExtensionStatus: () => ({ status: 'not_configured' as const }),
 }))
 
+// Story 16.1 AC-9: /health's themesLoaded/themesFailed come from the theming service's
+// module-level state. Mocked here (same rationale as loader.js above) so this route-level test
+// controls both counts directly; service.test.ts covers the reload logic itself.
+const { mockThemesHealth } = vi.hoisted(() => ({
+  mockThemesHealth: { themesLoaded: 0, themesFailed: 0 },
+}))
+
+vi.mock('../modules/theming/service.js', () => ({
+  reloadThemesWithFanout: async () => ({ loaded: [], failed: [] }),
+  getThemesHealthField: () => mockThemesHealth,
+}))
+
 beforeEach(() => {
   mockVaultStatus.value = 'unsealed'
   mockExtensionsHealth.value = 'not_configured'
+  mockThemesHealth.themesLoaded = 0
+  mockThemesHealth.themesFailed = 0
 })
 
 describe('GET /health', () => {
@@ -96,6 +110,47 @@ describe('GET /health', () => {
         await app.close()
       }
     )
+  })
+
+  describe('Story 16.1 AC-9: themesLoaded/themesFailed', () => {
+    it('defaults to 0/0 before any reload has run', async () => {
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ themesLoaded: number; themesFailed: number }>()
+      expect(body.themesLoaded).toBe(0)
+      expect(body.themesFailed).toBe(0)
+      await app.close()
+    })
+
+    it('reports the current loaded/failed counts', async () => {
+      mockThemesHealth.themesLoaded = 2
+      mockThemesHealth.themesFailed = 1
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ themesLoaded: number; themesFailed: number }>()
+      expect(body.themesLoaded).toBe(2)
+      expect(body.themesFailed).toBe(1)
+      await app.close()
+    })
+
+    it('never exposes filenames or failure reasons — counts only', async () => {
+      mockThemesHealth.themesLoaded = 2
+      mockThemesHealth.themesFailed = 1
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+      const body = response.json<Record<string, unknown>>()
+
+      expect(JSON.stringify(body)).not.toContain('"file"')
+      expect(JSON.stringify(body)).not.toContain('"reason"')
+      await app.close()
+    })
   })
 })
 

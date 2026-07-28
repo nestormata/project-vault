@@ -693,6 +693,13 @@ const envSchema = z
       z.string().min(1).optional()
     ),
 
+    // Story 16.1 AC-1/AC-2: directory of admin-installed custom theme definition files, inside
+    // the persistent Docker Compose volume (never the application image, so themes survive image
+    // upgrades). Absent directory (including the untouched default path on a fresh install) is
+    // zero behavior change, not an error — same "absent = zero behavior change" convention as
+    // VAULT_EXTENSIONS_PACKAGE above.
+    VAULT_THEMES_DIR: z.string().min(1).default('/data/themes'),
+
     // Story 10-1: the global /register+/login IP rate limiter (auth/routes.ts) defaults to 60
     // req/min, which a single serial E2E run's ~7-9 real registrations/logins from one
     // container/CI-runner IP can trip (flagged as a known risk in that story's Dev Notes, since
