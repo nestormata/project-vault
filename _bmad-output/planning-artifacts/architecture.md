@@ -476,6 +476,28 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 - **`capabilities: string[]` in the manifest is informational/audit-only in this phase — not an enforced authorization boundary.** Nothing currently stops an extension from calling `registerAuthStrategy()` regardless of what it declared in `capabilities`. This is a deliberate, stated deferral (not an accidental gap): meaningful enforcement requires the same trust infrastructure being built for community-extension sandboxing, and enforcing it early against a single origin-locked, fully-trusted extension adds cost without adding real security. Declared `capabilities` are recorded in the `EXTENSION_LOADED` audit event for visibility.
 - **`packages/extension-api` version-skew CI guard:** a script (same pattern as this repo's existing `check-story-status-sync.ts`/`check-psc-tbd-tracking.ts` guards) fails CI if any file under `packages/extension-api/src/**` changes without a corresponding `package.json` version bump in the same commit — prevents the private extension repo silently building against stale published types.
 
+#### Publish Readiness
+
+**Current decision (Story 14.9): `packages/extension-api` stays `private: true` and workspace-internal for now.** No npm publish pipeline, CI publish job, or registry configuration exists or is being built. The package continues to be consumed only via in-monorepo `workspace:*` references (`apps/api`, and any future in-repo extension package).
+
+**License field rationale:** `packages/extension-api/package.json` carries an explicit `"license": "AGPL-3.0-or-later"` field, inherited from the repo root (set by Story 14.0). `packages/extension-api` inherits the repo's AGPLv3 license; a private extension package importing it as a workspace dependency does not trigger AGPLv3's network-copyleft obligations because it isn't redistributing this package, only consuming its types/contracts in-process. This makes `packages/extension-api` the only workspace package with an explicit `license` field — every sibling package (`packages/shared`, `packages/crypto`, `packages/db`, `packages/agent`, etc.) omits it and inherits silently from the root; this is a deliberate one-off given this package's cross-license-boundary consumption story, not an inconsistency to "fix" by removing it or adding it everywhere.
+
+**Consumption path for the founder's private SaaS extension:** no npm/GitHub Packages registry publish is being built now. The founder's own private SaaS extension package, when it is built, will consume `@project-vault/extension-api` via a `workspace:*` reference if it lives in this same monorepo, or via a private Git-dependency/tarball reference if it lives in a separate repository.
+
+**Trigger to revisit registry publishing:** registry publishing (npm private registry or GitHub Packages) is the trigger to revisit only if/when a *third-party* extension author (not the founder's own SaaS package) needs to install this package from outside the monorepo entirely — which `epics.md` explicitly scopes out of Epic 14 (FR116, "Community extensions — out of Epic 14 scope"). Until that trigger fires, do not build any publish tooling, CI job, or registry configuration.
+
+**What would need to change to become publish-ready later:** (1) drop `private: true`; (2) add a real `exports` map matching `packages/agent`'s pattern (the one existing non-private workspace package) instead of the current single-entry map; (3) wire an npm/GitHub Packages publish step in CI.
+
+**Decision record — options considered:**
+
+| Option | Description | Trade-off | Chosen? |
+|---|---|---|---|
+| A. Stay private, in-repo only (this story) | Keep `private: true`, add explicit `license` field, document consumption path and future trigger | Zero risk, zero new surface, matches Story 14.1's "no publish pipeline" scope boundary; defers real publish-readiness work to whenever it's actually needed | ✅ Yes |
+| B. Make publish-ready now (drop `private`, add `exports` map, wire CI publish job) | Would fully resolve the question in one story | Pure speculative work today — no consumer needs external distribution yet (the founder's SaaS extension can consume via `workspace:*` or a private Git/tarball reference); directly contradicts Story 14.1's explicit scope boundary against standing up a publish pipeline | ❌ No — scope creep |
+| C. Dual-license (e.g. AGPLv3 + a separate permissive grant for the types-only surface) | Would preempt any future FUD about AGPLv3 applying to closed-source consumers | Real legal complexity (a second license grant needs actual legal review, not an engineering judgment call) for a problem that doesn't exist yet — no external consumer today | ❌ No — premature, revisit only if/when Option B's trigger fires |
+
+**Legal caveat:** Setting an explicit AGPLv3 license field on a package that a closed-source SaaS extension imports can read as alarming out of context, even though in-repo `workspace:*` consumption without redistribution does not itself trigger AGPLv3's network-copyleft obligations. This documents the current engineering rationale, not a legal opinion — flag Option C (or a scoped exception grant) for actual legal review at the same time registry-publish (Option B's trigger, above) is revisited, rather than assuming the current rationale still holds once the package has real external consumers.
+
 ### Frontend Architecture
 
 **Framework:** SvelteKit 2 + Svelte 5 (runes-first)

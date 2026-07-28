@@ -1,6 +1,6 @@
 # Story 14.9: Extension API Publish-Readiness Decision
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -82,28 +82,28 @@ so that whoever builds the first external-consuming extension package doesn't ha
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Confirm current state (AC: #1, #2, #5)
-  - [ ] Read `packages/extension-api/package.json` in full; confirm `private: true`, no `license` field, matches expectations in AC-1/AC-2's "Given" clauses
-  - [ ] `grep -n "Extension / Hook Architecture" _bmad-output/planning-artifacts/architecture.md` to locate the correct insertion point
-  - [ ] `grep -rn "extension-api" _bmad-output/implementation-artifacts/deferred-work.md` to confirm no stale row exists (per AC-5)
-  - [ ] Confirm `packages/extension-api/README.md` does not already exist (per AC-4)
-- [ ] Task 2: Add the explicit `license` field (AC: #2)
-  - [ ] Add `"license": "AGPL-3.0-or-later"` to `packages/extension-api/package.json`, placed immediately after `"private": true` (groups the two visibility/licensing metadata fields together, rather than after `"version"` — the current key order is `name, version, private, type, main, ...`, so licensing metadata reads more coherently next to the `private` flag it's directly explained by)
-  - [ ] Run `grep -L '"license"' packages/*/package.json` to confirm this makes `packages/extension-api` the sole workspace package with an explicit field, and note this in the PR description
-- [ ] Task 3: Write the `architecture.md` Publish Readiness section (AC: #1, #2, #3)
-  - [ ] Add a new `#### Publish Readiness` subsection immediately under the Extension / Hook Architecture section (or the closest structural equivalent if the doc has been reorganized since — see AC-1 edge case)
-  - [ ] Cover, in this order: (a) current `private: true` decision and rationale, (b) the AGPLv3 license-field rationale for a package consumed by a closed-source private extension, (c) the workspace-vs-external-repo consumption path for the founder's own SaaS extension, (d) the concrete trigger condition for revisiting external/registry publishing (third-party extension authors, explicitly out of Epic 14 scope per FR116)
-  - [ ] Include the three-option decision record from Dev Notes (stay private / go publish-ready now / dual-license split) so the rejected alternatives and their trade-offs are preserved, not just the chosen option
-  - [ ] Add the legal-caveat note from Dev Notes verbatim (AGPLv3-on-a-closed-source-consumed-package can read as alarming out of context even though the in-repo consumption is not itself a copyleft trigger) so a future publish-readiness pass doesn't skip a real license review
-  - [ ] Cross-reference `packages/agent`'s non-private, multi-entry `exports` map as the structural pattern to follow *if and when* publish-readiness is revisited (per Story 14.1 Dev Notes precedent) — do not implement any `exports` map changes now, this is documentation only
-- [ ] Task 4: Create the package-level breadcrumb (AC: #4)
-  - [ ] Add `packages/extension-api/README.md` per AC-4 — license/publishing note only, linking to the `architecture.md` section from Task 3
-- [ ] Task 5: Reconcile `deferred-work.md` (AC: #5)
-  - [ ] If no row exists yet (expected, per this story's research), no action needed — do not add a new "open" row for a question this story is actively resolving in the same commit
-  - [ ] If a row was added by a concurrent session (race condition — see `feedback-nested-background-agents.md`-style concurrent-session precedent from other stories in this project), update it to `✅ Resolved` pointing at this story and the new `architecture.md` section, per AC-5
-- [ ] Task 6: Verify no runtime/behavioral surface was touched (AC: all)
-  - [ ] `git diff --stat` should show only `packages/extension-api/package.json`, `packages/extension-api/README.md`, `_bmad-output/planning-artifacts/architecture.md`, and optionally `_bmad-output/implementation-artifacts/deferred-work.md` — no `apps/api`, `apps/web`, or `packages/extension-api/src/**` changes
-  - [ ] Run `pnpm --filter @project-vault/extension-api typecheck` and `pnpm --filter @project-vault/extension-api test` to confirm the `package.json` edit didn't break the existing package (a `license` field addition is inert but verify the build/test pipeline still resolves the manifest correctly)
+- [x] Task 1: Confirm current state (AC: #1, #2, #5)
+  - [x] Read `packages/extension-api/package.json` in full; confirm `private: true`, no `license` field, matches expectations in AC-1/AC-2's "Given" clauses
+  - [x] `grep -n "Extension / Hook Architecture" _bmad-output/planning-artifacts/architecture.md` to locate the correct insertion point (no exact-title heading exists; used the closest structural equivalent — the "Extension API package (Phase 2 — FR113/FR114)" bullet block under `### API & Communication Patterns`, per AC-1's edge case)
+  - [x] `grep -rn "extension-api" _bmad-output/implementation-artifacts/deferred-work.md` to confirm no stale row exists (per AC-5) — confirmed empty match, no row exists
+  - [x] Confirm `packages/extension-api/README.md` does not already exist (per AC-4) — confirmed absent
+- [x] Task 2: Add the explicit `license` field (AC: #2)
+  - [x] Add `"license": "AGPL-3.0-or-later"` to `packages/extension-api/package.json`, placed immediately after `"private": true`
+  - [x] Run `grep -L '"license"' packages/*/package.json` to confirm this makes `packages/extension-api` the sole workspace package with an explicit field — confirmed: every other workspace package (`crypto`, `db`, `agent`, `shared`, `vault-action`, `api-contract-tests`, `tsconfig`, `eslint-config`) omits it; `packages/extension-api` is the only one with an explicit `license` field (note for PR description)
+- [x] Task 3: Write the `architecture.md` Publish Readiness section (AC: #1, #2, #3)
+  - [x] Added a new `#### Publish Readiness` subsection immediately after the "Extension API package (Phase 2 — FR113/FR114)" bullets, before `### Frontend Architecture` (closest structural equivalent per AC-1 edge case)
+  - [x] Covers, in order: (a) current `private: true` decision and rationale, (b) the AGPLv3 license-field rationale for a package consumed by a closed-source private extension, (c) the workspace-vs-external-repo consumption path for the founder's own SaaS extension, (d) the concrete trigger condition for revisiting external/registry publishing (third-party extension authors, explicitly out of Epic 14 scope per FR116)
+  - [x] Includes the three-option decision record from Dev Notes (stay private / go publish-ready now / dual-license split) verbatim
+  - [x] Added the legal-caveat note from Dev Notes verbatim
+  - [x] Cross-references `packages/agent`'s non-private `exports` map as the structural pattern to follow if publish-readiness is revisited — documentation only, no `exports` map changes made
+- [x] Task 4: Create the package-level breadcrumb (AC: #4)
+  - [x] Added `packages/extension-api/README.md` — license/publishing note only (5 lines), linking to the `architecture.md` Publish Readiness subsection from Task 3
+- [x] Task 5: Reconcile `deferred-work.md` (AC: #5)
+  - [x] Re-confirmed via `grep -rn "extension-api" _bmad-output/implementation-artifacts/deferred-work.md` immediately before completing this story: still no row exists — no action needed, no new "open" row added for a question this story resolves in the same commit
+- [x] Task 6: Verify no runtime/behavioral surface was touched (AC: all)
+  - [x] `git diff --stat` / `git status --porcelain` shows only `packages/extension-api/package.json` (modified), `packages/extension-api/README.md` (new), `_bmad-output/planning-artifacts/architecture.md` (modified) — no `apps/api`, `apps/web`, or `packages/extension-api/src/**` changes; `deferred-work.md` untouched (no row to reconcile)
+  - [x] `pnpm --filter @project-vault/extension-api typecheck` — passes clean
+  - [x] `pnpm --filter @project-vault/extension-api test` — 7 test files, 24 tests passed, coverage unchanged
 
 ## Dev Notes
 
@@ -142,8 +142,33 @@ so that whoever builds the first external-consuming extension package doesn't ha
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
+
+- `grep -n "Extension / Hook Architecture" _bmad-output/planning-artifacts/architecture.md` → no match; used the "Extension API package (Phase 2 — FR113/FR114)" bullet block (line 473, under `### API & Communication Patterns`) as the closest structural equivalent, per AC-1's edge case.
+- `grep -rn "extension-api" _bmad-output/implementation-artifacts/deferred-work.md` → no match, both at story start and re-confirmed before completion; no reconciliation needed for AC-5.
+- `grep -L '"license"' packages/*/package.json` (before edit) → all 9 workspace packages including `extension-api`; after edit, `extension-api` is the sole package with an explicit `license` field.
+- `pnpm --filter @project-vault/extension-api typecheck` → clean (exit 0).
+- `pnpm --filter @project-vault/extension-api test` → 7 files / 24 tests passed, coverage 93.75% stmts (unchanged from baseline — no source files touched).
 
 ### Completion Notes List
 
+- Documentation/manifest-only story, exactly as scoped: no application code, route, migration, or UI touched. `git diff --stat` confirms only `packages/extension-api/package.json` and `_bmad-output/planning-artifacts/architecture.md` modified, plus one new file `packages/extension-api/README.md`.
+- AC-1: `package.json`'s `private: true` confirmed unchanged (not flipped); new `#### Publish Readiness` subsection added to `architecture.md` stating the package stays private/workspace-internal, the founder's SaaS extension consumes it via `workspace:*`, and the concrete checklist for future publish-readiness (drop `private`, add real `exports` map matching `packages/agent`, wire CI publish step).
+- AC-2: Added `"license": "AGPL-3.0-or-later"` to `packages/extension-api/package.json` immediately after `"private": true`. Confirmed via `grep -L`/`grep -rn` across `packages/*/package.json` that this makes `packages/extension-api` the only workspace package with an explicit `license` field (flagging for PR description per AC-2's edge case) — AGPLv3-inheritance/no-copyleft-trigger rationale documented in the new `architecture.md` subsection.
+- AC-3: `architecture.md` Publish Readiness subsection states explicitly: no npm/GitHub Packages registry publish is being built now; consumption is via `workspace:*` (same monorepo) or private Git/tarball reference (separate repo); registry publishing is the trigger to revisit only if/when a third-party extension author needs external install, per FR116 (out of Epic 14 scope). No publish tooling/CI job/registry config was built.
+- AC-4: Created `packages/extension-api/README.md` with a 5-line "License & Publishing" section only, linking to the `architecture.md` Publish Readiness subsection — no general usage/API docs added, per AC-4's edge case.
+- AC-5: Confirmed both at story start and again before completion that no `deferred-work.md` row exists for `extension-api` — no reconciliation action needed; no row was added by a concurrent session.
+- Regression check (Task 6): `pnpm --filter @project-vault/extension-api typecheck` and `pnpm --filter @project-vault/extension-api test` both pass clean after the `package.json` edit — no existing behavior broken.
+- No new automated tests were written, per this story's own Dev Notes ("Testing standard for this story: no new automated tests are required or meaningful") — Task 6's typecheck/test re-run is a regression check on the existing suite, not new coverage.
+
 ### File List
+
+- `packages/extension-api/package.json` (modified — added `"license": "AGPL-3.0-or-later"`)
+- `packages/extension-api/README.md` (new — License & Publishing breadcrumb)
+- `_bmad-output/planning-artifacts/architecture.md` (modified — added `#### Publish Readiness` subsection under API & Communication Patterns)
+
+## Change Log
+
+- 2026-07-28: Story implemented end-to-end (Tasks 1-6, AC-1 through AC-5) via `bmad-dev-story`. `packages/extension-api/package.json` gets explicit `license` field; `architecture.md` gets new Publish Readiness subsection; `packages/extension-api/README.md` created; `deferred-work.md` confirmed to need no reconciliation. Status: ready-for-dev → review.
