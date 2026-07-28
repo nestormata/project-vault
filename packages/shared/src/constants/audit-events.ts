@@ -100,6 +100,9 @@ export const AuditEvent = {
   EXTERNAL_IDENTITY_LINKED: 'external_identity.linked',
   SSO_LOGIN_SUCCEEDED: 'sso_login.succeeded',
   SSO_LOGIN_REJECTED: 'sso_login.rejected',
+  // Story 14.7 AC-3/AC-6: written on the new DELETE /api/v1/admin/external-identities/:id unlink
+  // route, alongside the trio above.
+  EXTERNAL_IDENTITY_UNLINKED: 'external_identity.unlinked',
   // Story 16.1 AC-7/AC-8: written on every successful reload of VAULT_THEMES_DIR (per-org
   // fanout at boot, single-org write on the authenticated POST /admin/themes/reload endpoint).
   THEME_RELOADED: 'theme.reloaded',

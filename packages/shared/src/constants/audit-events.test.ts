@@ -135,6 +135,10 @@ describe('AuditEvent', () => {
     expect(AuditEvent.SSO_LOGIN_REJECTED).toBe('sso_login.rejected')
   })
 
+  it('exposes Story 14.7 external-identity unlink audit event name (Task 1)', () => {
+    expect(AuditEvent.EXTERNAL_IDENTITY_UNLINKED).toBe('external_identity.unlinked')
+  })
+
   it('exposes Story 16.1 AC-8 theme-reload audit event name', () => {
     expect(AuditEvent.THEME_RELOADED).toBe('theme.reloaded')
   })

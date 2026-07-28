@@ -13,6 +13,11 @@ describe('/settings +page.svelte', () => {
     ],
     ['Extensions', '/settings/extensions', 'after Audit & Compliance (Story 14.5 Task 5)'],
     ['SSO Domains', '/settings/sso-domains', 'after Extensions (Story 14.6 Task 7)'],
+    [
+      'External Identities',
+      '/settings/external-identities',
+      'after SSO Domains (Story 14.7 Task 7)',
+    ],
   ])('lists a %s entry %s', (label, href) => {
     render(SettingsIndexPage)
 

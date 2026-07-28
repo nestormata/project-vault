@@ -104,5 +104,20 @@
         <span class="text-gray-400">→</span>
       </a>
     </li>
+    <li>
+      <a
+        href={resolve('/settings/external-identities')}
+        class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+      >
+        <div>
+          <p class="font-medium text-gray-900">External Identities</p>
+          <p class="text-sm text-gray-500">
+            Which org members have a linked identity for SSO sign-in, link a new one, or unlink a
+            stale one
+          </p>
+        </div>
+        <span class="text-gray-400">→</span>
+      </a>
+    </li>
   </ul>
 </div>
