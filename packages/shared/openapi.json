@@ -22317,10 +22317,10 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
+                      "$ref": "#/components/schemas/ActiveRotationsError"
                     },
                     {
-                      "$ref": "#/components/schemas/ActiveRotationsError"
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -24329,13 +24329,13 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "$ref": "#/components/schemas/ActiveRotationsError"
                     },
                     {
                       "$ref": "#/components/schemas/ActiveMachineUserKeysError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -29935,9 +29935,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "code": {
@@ -29955,6 +29952,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -30089,9 +30089,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -30106,6 +30103,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -30220,9 +30220,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -30237,6 +30234,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -30400,9 +30400,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -30417,6 +30414,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -30672,9 +30672,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -30689,6 +30686,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -30815,9 +30815,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -30832,6 +30829,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -30921,9 +30921,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -30938,6 +30935,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -31133,9 +31133,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -31150,6 +31147,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -31504,9 +31504,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -31521,6 +31518,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }
@@ -31650,9 +31650,6 @@
                 "schema": {
                   "anyOf": [
                     {
-                      "$ref": "#/components/schemas/ApiError"
-                    },
-                    {
                       "type": "object",
                       "properties": {
                         "status": {
@@ -31667,6 +31664,9 @@
                         "message"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
                     }
                   ]
                 }

@@ -315,7 +315,7 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         // backup_decrypt_failed — the latter is not itself an authn failure, but the story's
         // literal AC text specifies 401 for it too, matching Story 1.5's "no oracle" unseal-error
         // discipline (never distinguish "wrong key" from "corrupted ciphertext" in the response).
-        401: z.union([ApiErrorSchema, BackupDecryptFailedErrorSchema]),
+        401: z.union([BackupDecryptFailedErrorSchema, ApiErrorSchema]),
         403: ApiErrorSchema,
         404: BackupNotFoundErrorSchema,
         // Story 9.6 D1/AC-2/AC-3: the restore lock was already held (by another restore) or a
@@ -334,7 +334,7 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         // through this route's compiled 503 serializer; omitting it here caused a silent
         // serialization failure (opaque 500) the one time the vault is sealed AND this status
         // code has a declared schema (code review finding, this story).
-        503: z.union([ApiErrorSchema, VaultSealedResponseSchema]),
+        503: z.union([VaultSealedResponseSchema, ApiErrorSchema]),
       },
     },
     security: {
@@ -480,7 +480,7 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
         // Story 9.4 AC-7: platform-audit write failure. VaultSealedResponseSchema included for
         // the same reason as the restore route above (vaultGuard's own sealed-vault body must
         // still satisfy this route's compiled 503 serializer).
-        503: z.union([ApiErrorSchema, VaultSealedResponseSchema]),
+        503: z.union([VaultSealedResponseSchema, ApiErrorSchema]),
       },
     },
     security: {

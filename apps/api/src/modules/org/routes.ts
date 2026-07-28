@@ -211,7 +211,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        409: z.union([ApiErrorSchema, ActiveRotationsErrorSchema]),
+        409: z.union([ActiveRotationsErrorSchema, ApiErrorSchema]),
       },
     },
     security: {
