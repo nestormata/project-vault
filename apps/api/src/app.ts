@@ -55,6 +55,7 @@ import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
 import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
+import { orgSsoDomainsRoutes } from './modules/auth/org-sso-domains-routes.js'
 import { externalIdentityRoutes } from './modules/auth/external-identity-routes.js'
 import { vaultGuardPlugin } from './plugins/vault-guard.js'
 import { jwtPlugin } from './plugins/jwt.js'
@@ -257,6 +258,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
      literal prefix strings; a shared constant would make them invisible to that parser. */
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
+  // Story 14.6: authenticated, org-scoped SSO-domain admin CRUD — a separate, stricter-validation
+  // sibling to the pre-auth domainLookupRoutes above (see Dev Notes scope boundaries).
+  await fastify.register(orgSsoDomainsRoutes, { prefix: '/api/v1/org' })
   await fastify.register(auditRoutes, { prefix: '/api/v1/org' })
   await fastify.register(erasureRoutes, { prefix: '/api/v1/org' })
   await fastify.register(projectRoutes, { prefix: '/api/v1/projects' })

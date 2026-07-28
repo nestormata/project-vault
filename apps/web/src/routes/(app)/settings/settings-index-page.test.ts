@@ -20,4 +20,12 @@ describe('/settings +page.svelte', () => {
     expect(link).toBeTruthy()
     expect(link?.getAttribute('href')).toBe('/settings/extensions')
   })
+
+  it('lists an SSO Domains entry after Extensions (Story 14.6 Task 7)', () => {
+    render(SettingsIndexPage)
+
+    const link = screen.getByText('SSO Domains').closest('a')
+    expect(link).toBeTruthy()
+    expect(link?.getAttribute('href')).toBe('/settings/sso-domains')
+  })
 })

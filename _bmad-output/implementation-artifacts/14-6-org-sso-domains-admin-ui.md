@@ -1,6 +1,6 @@
 # Story 14.6: Org SSO Domains Admin UI + Write API
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -108,51 +108,51 @@ so that I don't have to ask an operator to hand-run SQL every time we onboard a 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Shared request/response schemas (AC: 1, 2, 3, 4)
-  - [ ] Add `CreateOrgSsoDomainRequestSchema`, `UpdateOrgSsoDomainRequestSchema`, `OrgSsoDomainResponseSchema`, `OrgSsoDomainListResponseSchema`, `OrgSsoDomainParamsSchema` to `packages/shared/src/schemas/auth.ts`, co-located with the existing `DomainLookupRequestSchema`/`DomainLookupResponseSchema` (same feature area), following that file's `.meta({ id: '...' })` + paired `z.infer` type-export convention.
-  - [ ] Domain field: `z.string().min(1).max(253)` plus a `.refine()` for the strict hostname-label format (no `@`, no leading/trailing `.` post-normalization, no whitespace, no wildcard `*`) — write this as a small named helper (e.g. `isValidDomainLabel()`) reusable by both the schema refine and the service-layer normalization, not duplicated logic. Normalization (lowercase + strip one trailing FQDN dot) must run **before** this refine and before the blocklist check (AC-2).
-  - [ ] Add a shared error-code constant export (e.g. `ORG_SSO_DOMAIN_ERROR_CODES`) covering `invalid_domain_format`, `public_domain_blocked`, `provider_not_registered`, `provider_check_unavailable`, `domain_already_mapped` — imported by both the API route layer (Task 3) and the web client's error-branch logic (Task 6), so the literal strings live in exactly one place (AC-2/AC-3's error-code contract).
+- [x] Task 1: Shared request/response schemas (AC: 1, 2, 3, 4)
+  - [x] Add `CreateOrgSsoDomainRequestSchema`, `UpdateOrgSsoDomainRequestSchema`, `OrgSsoDomainResponseSchema`, `OrgSsoDomainListResponseSchema`, `OrgSsoDomainParamsSchema` to `packages/shared/src/schemas/auth.ts`, co-located with the existing `DomainLookupRequestSchema`/`DomainLookupResponseSchema` (same feature area), following that file's `.meta({ id: '...' })` + paired `z.infer` type-export convention.
+  - [x] Domain field: `z.string().min(1).max(253)` plus a `.refine()` for the strict hostname-label format (no `@`, no leading/trailing `.` post-normalization, no whitespace, no wildcard `*`) — write this as a small named helper (e.g. `isValidDomainLabel()`) reusable by both the schema refine and the service-layer normalization, not duplicated logic. Normalization (lowercase + strip one trailing FQDN dot) must run **before** this refine and before the blocklist check (AC-2).
+  - [x] Add a shared error-code constant export (e.g. `ORG_SSO_DOMAIN_ERROR_CODES`) covering `invalid_domain_format`, `public_domain_blocked`, `provider_not_registered`, `provider_check_unavailable`, `domain_already_mapped` — imported by both the API route layer (Task 3) and the web client's error-branch logic (Task 6), so the literal strings live in exactly one place (AC-2/AC-3's error-code contract).
 
-- [ ] Task 2: Service-layer helper — validation, public-domain blocklist, CRUD (AC: 1, 2, 3, 4, 8, 10, 11)
-  - [ ] New `apps/api/src/modules/auth/org-sso-domains-service.ts` (sibling to `domain-lookup-routes.ts`, keeps `routes.ts`-equivalent thin per AC-12): `listOrgSsoDomains(tx, orgId)`, `createOrgSsoDomain(tx, orgId, {domain, providerName})`, `updateOrgSsoDomain(tx, orgId, id, {domain?, providerName?})`, `deleteOrgSsoDomain(tx, orgId, id)`.
-  - [ ] Public-domain blocklist as a `const PUBLIC_EMAIL_DOMAINS = new Set([...])` (see AC-2 list) with a code comment noting it is a best-effort, non-exhaustive guard against the operational hazard `org-sso-domains.ts`'s schema comment flagged — not a claimed-complete security control.
-  - [ ] Provider-registration check via `findAuthStrategy()` (reuse from `./strategies.js`, same import `domain-lookup-routes.ts` already uses) — wrap the call in `try/catch`: a thrown error (extension runtime unavailable) maps to `provider_check_unavailable`/`503`, distinct from a clean "not found" result mapping to `provider_not_registered`/`422` (AC-2 failure-mode requirement — do not conflate the two).
-  - [ ] Catch Postgres unique-violation errors (grep this codebase's existing constraint-violation handling convention first) and translate to a typed "conflict" result (`domain_already_mapped`) the route layer turns into `409` — never let a raw DB error reach the client (AC-2/AC-8).
-  - [ ] All queries scoped through the caller's `secureCtx.tx` (RLS-scoped) — no `getAdminDb()` anywhere in this file.
+- [x] Task 2: Service-layer helper — validation, public-domain blocklist, CRUD (AC: 1, 2, 3, 4, 8, 10, 11)
+  - [x] New `apps/api/src/modules/auth/org-sso-domains-service.ts` (sibling to `domain-lookup-routes.ts`, keeps `routes.ts`-equivalent thin per AC-12): `listOrgSsoDomains(tx, orgId)`, `createOrgSsoDomain(tx, orgId, {domain, providerName})`, `updateOrgSsoDomain(tx, orgId, id, {domain?, providerName?})`, `deleteOrgSsoDomain(tx, orgId, id)`.
+  - [x] Public-domain blocklist as a `const PUBLIC_EMAIL_DOMAINS = new Set([...])` (see AC-2 list) with a code comment noting it is a best-effort, non-exhaustive guard against the operational hazard `org-sso-domains.ts`'s schema comment flagged — not a claimed-complete security control.
+  - [x] Provider-registration check via `findAuthStrategy()` (reuse from `./strategies.js`, same import `domain-lookup-routes.ts` already uses) — wrap the call in `try/catch`: a thrown error (extension runtime unavailable) maps to `provider_check_unavailable`/`503`, distinct from a clean "not found" result mapping to `provider_not_registered`/`422` (AC-2 failure-mode requirement — do not conflate the two).
+  - [x] Catch Postgres unique-violation errors (grep this codebase's existing constraint-violation handling convention first) and translate to a typed "conflict" result (`domain_already_mapped`) the route layer turns into `409` — never let a raw DB error reach the client (AC-2/AC-8).
+  - [x] All queries scoped through the caller's `secureCtx.tx` (RLS-scoped) — no `getAdminDb()` anywhere in this file.
 
-- [ ] Task 3: API routes (AC: 1, 2, 3, 4, 5, 6, 7, 9, 12)
-  - [ ] New `apps/api/src/modules/auth/org-sso-domains-routes.ts`: `GET /api/v1/org/sso-domains`, `POST /api/v1/org/sso-domains`, `PATCH /api/v1/org/sso-domains/:id`, `DELETE /api/v1/org/sso-domains/:id`, each a thin `secureRoute()` call delegating to Task 2's service functions — mirror `organization-settings-routes.ts`'s and `org/routes.ts`'s thin-handler shape exactly.
-  - [ ] `security: { minimumRole: 'admin', requireMfa: true, writeAuditEvent: false, rateLimit: {...} }` per AC-5/AC-6/AC-9 (list route: `writeAuditEvent` can stay default/omitted since it's non-mutating — confirm `secureRoute`'s default only auto-audits mutating methods).
-  - [ ] Inline `writeHumanAuditEntryOrFailClosed(secureCtx.tx, {...})` calls on create/update/delete, event types per AC-7 (verify exact naming convention against existing calls before finalizing).
-  - [ ] Register in `apps/api/src/app.ts` alongside `domainLookupRoutes`.
-  - [ ] Add all four routes to `route-exemptions.ts`'s `ROUTE_ACTION_CLASSIFICATIONS` (list: `action: 'read'` + `auditOmissionReason`; create/update/delete: `action: 'mutation'` or `'security-action'` — given the SSO-hijack operational hazard this table's schema comment already documents, lean `'security-action'` for create/update, consistent with how this codebase classifies other security-config mutations; confirm against an existing `'security-action'` example during implementation).
-  - [ ] Regenerate `packages/shared/openapi.json` (`api:generate-spec` task).
+- [x] Task 3: API routes (AC: 1, 2, 3, 4, 5, 6, 7, 9, 12)
+  - [x] New `apps/api/src/modules/auth/org-sso-domains-routes.ts`: `GET /api/v1/org/sso-domains`, `POST /api/v1/org/sso-domains`, `PATCH /api/v1/org/sso-domains/:id`, `DELETE /api/v1/org/sso-domains/:id`, each a thin `secureRoute()` call delegating to Task 2's service functions — mirror `organization-settings-routes.ts`'s and `org/routes.ts`'s thin-handler shape exactly.
+  - [x] `security: { minimumRole: 'admin', requireMfa: true, writeAuditEvent: false, rateLimit: {...} }` per AC-5/AC-6/AC-9 (list route: `writeAuditEvent` can stay default/omitted since it's non-mutating — confirm `secureRoute`'s default only auto-audits mutating methods).
+  - [x] Inline `writeHumanAuditEntryOrFailClosed(secureCtx.tx, {...})` calls on create/update/delete, event types per AC-7 (verify exact naming convention against existing calls before finalizing).
+  - [x] Register in `apps/api/src/app.ts` alongside `domainLookupRoutes`.
+  - [x] Add all four routes to `route-exemptions.ts`'s `ROUTE_ACTION_CLASSIFICATIONS` (list: `action: 'read'` + `auditOmissionReason`; create/update/delete: `action: 'mutation'` or `'security-action'` — given the SSO-hijack operational hazard this table's schema comment already documents, lean `'security-action'` for create/update, consistent with how this codebase classifies other security-config mutations; confirm against an existing `'security-action'` example during implementation).
+  - [x] Regenerate `packages/shared/openapi.json` (`api:generate-spec` task).
 
-- [ ] Task 4: Web API client (AC: 1, 2, 3, 4)
-  - [ ] New `apps/web/src/lib/api/org-sso-domains.ts` (+ `.test.ts`): `listOrgSsoDomains(fetchFn)`, `createOrgSsoDomain(fetchFn, {domain, providerName})`, `updateOrgSsoDomain(fetchFn, id, {domain?, providerName?})`, `deleteOrgSsoDomain(fetchFn, id)` — thin `apiFetch<T>()` wrappers, matching `org-users.ts`'s pattern exactly (see `removeOrgUser()` precedent).
+- [x] Task 4: Web API client (AC: 1, 2, 3, 4)
+  - [x] New `apps/web/src/lib/api/org-sso-domains.ts` (+ `.test.ts`): `listOrgSsoDomains(fetchFn)`, `createOrgSsoDomain(fetchFn, {domain, providerName})`, `updateOrgSsoDomain(fetchFn, id, {domain?, providerName?})`, `deleteOrgSsoDomain(fetchFn, id)` — thin `apiFetch<T>()` wrappers, matching `org-users.ts`'s pattern exactly (see `removeOrgUser()` precedent).
 
-- [ ] Task 5: `+page.server.ts` for `/settings/sso-domains` (AC: 1, 5, 6)
-  - [ ] `requireUser(locals)` first, then branch on `orgRole`: `admin`/`owner` → call `listOrgSsoDomains()`, return `{ allowed: true, domains }`; else → `{ allowed: false, orgRole }` with **no** list call (AC-5 least-privilege, mirror `/settings/extensions`'s Task 3 pattern).
-  - [ ] Handle `listOrgSsoDomains()` throwing (network/API failure) with an honest `errorMessage`, mirroring `/settings/audit`'s and `/settings/extensions`'s catch-and-degrade pattern — page must not crash to a raw SvelteKit error page.
-  - [ ] Detect `ApiClientError` with `status === 403 && code === 'mfa_required'` and surface a distinct "Enable multi-factor authentication to manage SSO domains" message (per AC-6), linking to `/settings/security`, matching `/settings/extensions`'s equivalent case.
+- [x] Task 5: `+page.server.ts` for `/settings/sso-domains` (AC: 1, 5, 6)
+  - [x] `requireUser(locals)` first, then branch on `orgRole`: `admin`/`owner` → call `listOrgSsoDomains()`, return `{ allowed: true, domains }`; else → `{ allowed: false, orgRole }` with **no** list call (AC-5 least-privilege, mirror `/settings/extensions`'s Task 3 pattern).
+  - [x] Handle `listOrgSsoDomains()` throwing (network/API failure) with an honest `errorMessage`, mirroring `/settings/audit`'s and `/settings/extensions`'s catch-and-degrade pattern — page must not crash to a raw SvelteKit error page.
+  - [x] Detect `ApiClientError` with `status === 403 && code === 'mfa_required'` and surface a distinct "Enable multi-factor authentication to manage SSO domains" message (per AC-6), linking to `/settings/security`, matching `/settings/extensions`'s equivalent case.
 
-- [ ] Task 6: `+page.svelte` for `/settings/sso-domains` (AC: 1, 2, 3, 4, 5, 8)
-  - [ ] Table of existing mappings (domain, provider, created date) + empty state (AC-1) + permission-denied state (AC-5) + MFA-required state (AC-6) + fetch-error state, following `/settings/extensions`'s multi-state conditional-rendering pattern and `/settings/users`'s table-with-row-actions structure.
-  - [ ] "Add domain" form (domain text input + provider `<select>` populated from... **note:** there is currently no authenticated "list registered auth strategies" endpoint exposed to the web app — check whether one exists (`/settings/extensions`'s status endpoint returns only the *currently-loaded* single extension's manifest, not a full strategies list) before assuming a `<select>`; if none exists, a plain text input for `providerName` with inline validation-error display from the `422` response is an acceptable, honest fallback for this story — do not invent a new "list strategies" endpoint as unscoped extra work; document whichever choice is made as a judgment call.
-  - [ ] Edit control per row (inline form or modal, implementation-time judgment call — follow existing `/settings/users` row-action patterns for consistency) and Remove button with `confirm()` dialog, matching `onRemoveOrgUser`'s exact pattern (`busyKey` disables the row's buttons mid-request, `invalidateAll()` on success, typed `ApiClientError` code-based error branches).
-  - [ ] Client-side domain-format hint text (not a substitute for the server-side check) to reduce round-trips for obviously malformed input.
+- [x] Task 6: `+page.svelte` for `/settings/sso-domains` (AC: 1, 2, 3, 4, 5, 8)
+  - [x] Table of existing mappings (domain, provider, created date) + empty state (AC-1) + permission-denied state (AC-5) + MFA-required state (AC-6) + fetch-error state, following `/settings/extensions`'s multi-state conditional-rendering pattern and `/settings/users`'s table-with-row-actions structure.
+  - [x] "Add domain" form (domain text input + provider `<select>` populated from... **note:** there is currently no authenticated "list registered auth strategies" endpoint exposed to the web app — check whether one exists (`/settings/extensions`'s status endpoint returns only the *currently-loaded* single extension's manifest, not a full strategies list) before assuming a `<select>`; if none exists, a plain text input for `providerName` with inline validation-error display from the `422` response is an acceptable, honest fallback for this story — do not invent a new "list strategies" endpoint as unscoped extra work; document whichever choice is made as a judgment call.
+  - [x] Edit control per row (inline form or modal, implementation-time judgment call — follow existing `/settings/users` row-action patterns for consistency) and Remove button with `confirm()` dialog, matching `onRemoveOrgUser`'s exact pattern (`busyKey` disables the row's buttons mid-request, `invalidateAll()` on success, typed `ApiClientError` code-based error branches).
+  - [x] Client-side domain-format hint text (not a substitute for the server-side check) to reduce round-trips for obviously malformed input.
 
-- [ ] Task 7: Settings index nav entry (AC: none directly — G3 navigation-truth requirement)
-  - [ ] Add an **SSO Domains** `<li>` row to `apps/web/src/routes/(app)/settings/+page.svelte`, same markup shape as the existing rows, placed after Extensions (newest-addition-last convention 14-5 established).
-  - [ ] Extend `settings-index-page.test.ts` with an assertion the new link/row renders and resolves to the correct href.
+- [x] Task 7: Settings index nav entry (AC: none directly — G3 navigation-truth requirement)
+  - [x] Add an **SSO Domains** `<li>` row to `apps/web/src/routes/(app)/settings/+page.svelte`, same markup shape as the existing rows, placed after Extensions (newest-addition-last convention 14-5 established).
+  - [x] Extend `settings-index-page.test.ts` with an assertion the new link/row renders and resolves to the correct href.
 
-- [ ] Task 8: Tests (AC: all)
-  - [ ] API: schema validation tests (domain format, trailing-FQDN-dot normalization, blocklist, provider-registration, each with its exact error `code` asserted) for create/update; a dedicated `findAuthStrategy()`-throws test asserting `503 { code: 'provider_check_unavailable' }` distinct from the `422 { code: 'provider_not_registered' }` not-found case; RBAC tests for `admin`/`owner` (allowed) vs. `member`/`viewer` (blocked) per AC-5's judgment call; MFA-required test; RLS cross-org isolation test for the new write paths (AC-1 edge case); global-uniqueness `409 { code: 'domain_already_mapped' }` test with no cross-org disclosure (AC-2/AC-3 edge cases); concurrent-create race test (AC-8); audit fail-closed test (AC-7) asserting the written payload's shape; rate-limit test.
-  - [ ] Web: `org-sso-domains.test.ts` (client module); `sso-domains-page.server.test.ts` (load-function RBAC/error branches, mirroring `extensions-page.server.test.ts`'s structure); `sso-domains-page.test.ts` (component render states: list, empty, permission-denied, MFA-required, fetch-error, plus create/edit/remove interaction tests with mocked API calls).
-  - [ ] `route-audit.test.ts` must pass with the four new routes correctly classified (AC-12) — run it explicitly, don't just rely on the full suite catching it.
-  - [ ] `check-rls-coverage.test.ts` must still pass with `org_sso_domains` un-excluded (AC-11).
-  - [ ] Full regression: `make ci` (or `pnpm turbo typecheck lint test` across `apps/api`, `apps/web`, `packages/db`, `packages/shared`) green.
-  - [ ] Live-browser verification against a real `make docker-up` stack (this project's UI-story convention — see memory: verify UI in Chrome, don't rely on test suites alone): create a mapping, confirm it appears; attempt a public-domain mapping and confirm the specific error renders; edit a mapping; remove a mapping with the confirm dialog; verify the permission-denied state as a non-admin role; verify the MFA-required state if reachable in the dev stack.
+- [x] Task 8: Tests (AC: all)
+  - [x] API: schema validation tests (domain format, trailing-FQDN-dot normalization, blocklist, provider-registration, each with its exact error `code` asserted) for create/update; a dedicated `findAuthStrategy()`-throws test asserting `503 { code: 'provider_check_unavailable' }` distinct from the `422 { code: 'provider_not_registered' }` not-found case; RBAC tests for `admin`/`owner` (allowed) vs. `member`/`viewer` (blocked) per AC-5's judgment call; MFA-required test; RLS cross-org isolation test for the new write paths (AC-1 edge case); global-uniqueness `409 { code: 'domain_already_mapped' }` test with no cross-org disclosure (AC-2/AC-3 edge cases); concurrent-create race test (AC-8); audit fail-closed test (AC-7) asserting the written payload's shape; rate-limit test.
+  - [x] Web: `org-sso-domains.test.ts` (client module); `sso-domains-page.server.test.ts` (load-function RBAC/error branches, mirroring `extensions-page.server.test.ts`'s structure); `sso-domains-page.test.ts` (component render states: list, empty, permission-denied, MFA-required, fetch-error, plus create/edit/remove interaction tests with mocked API calls).
+  - [x] `route-audit.test.ts` must pass with the four new routes correctly classified (AC-12) — run it explicitly, don't just rely on the full suite catching it.
+  - [x] `check-rls-coverage.test.ts` must still pass with `org_sso_domains` un-excluded (AC-11).
+  - [x] Full regression: `make ci` (or `pnpm turbo typecheck lint test` across `apps/api`, `apps/web`, `packages/db`, `packages/shared`) green.
+  - [x] Live-browser verification against a real `make docker-up` stack (this project's UI-story convention — see memory: verify UI in Chrome, don't rely on test suites alone): create a mapping, confirm it appears; attempt a public-domain mapping and confirm the specific error renders; edit a mapping; remove a mapping with the confirm dialog; verify the permission-denied state as a non-admin role; verify the MFA-required state if reachable in the dev stack.
 
 ## Dev Notes
 
@@ -262,18 +262,55 @@ d949172 feat(org): configure organization default locale for new users (15-2) (#
 
 ### Agent Model Used
 
-Claude Sonnet 5 (claude-sonnet-5), via `bmad-create-story`.
+Claude Sonnet 5 (claude-sonnet-5), via `bmad-create-story`; implemented via `bmad-dev-story`.
 
 ### Debug Log References
+
+- `apps/api/src/modules/auth/org-sso-domains-routes.test.ts` — 27 integration tests, all AC-1 through AC-9 covered against a real Postgres instance (RBAC, MFA, validation, blocklist, provider-registration/-unavailable, conflict, concurrency, audit + fail-closed, rate limit).
+- `packages/db/src/__tests__/rls-isolation.test.ts` — added a dedicated write-path (UPDATE/DELETE) cross-org isolation test alongside the pre-existing read-only `org_sso_domains` test (AC-1 edge case).
+- `route-audit.test.ts` and `check-rls-coverage.test.ts` both pass with zero new exceptions/exclusions (AC-11/AC-12).
+- Live-browser verification performed against local `pnpm dev` servers (API on :3000, web on :5173, Postgres via `make db-up`/`db-migrate`, vault initialized via `POST /vault/init`, `@project-vault/mock-sso-extension` loaded via `VAULT_EXTENSIONS_PACKAGE`): create, public-domain-blocked inline error, edit, remove-with-confirm, empty state, and non-admin permission-denied state were all exercised end-to-end in Chrome and rendered correctly.
 
 ### Completion Notes List
 
 - Story created via `my-epic-retro` → `bmad-create-story` for backlog entry `14-6-org-sso-domains-admin-ui`, scheduled by the Epic 14 closure retrospective (`epic-14-retro-2026-07-27.md`, Finding 2) to close an untracked capability gap of the same shape 14-2→14-5 closed.
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Implemented via strict TDD red-green (AGENTS.md): every new file's tests were written first, confirmed failing for the expected reason (missing export/module/schema field), then implemented to green.
+- **Judgment call 1 (RBAC) resolved as documented**: `minimumRole: 'admin'` (rank-based, admits `owner`) used for all four routes, per the story's own Dev Notes reasoning (org-settings-mutation pattern, not 14-5's narrower exact-match). Flagging for review per the story's own instruction, but not treated as an open question — it is a one-line change (`minimumRole` → `allowedRoles: ['admin']`) if review disagrees.
+- **Judgment call 2 (provider input) resolved as documented**: free-text `providerName` input with inline server-validated error display — no authenticated "list registered strategies" endpoint exists, and building one was explicitly out of scope. Confirmed during implementation: `/settings/extensions`'s status endpoint only returns the single currently-loaded extension's manifest, not a list.
+- Audit `eventType` strings (`org_sso_domain.created`/`.updated`/`.deleted`) follow the live `resource.past_tense_verb` convention confirmed against `organization-settings-routes.ts` and `org/routes.ts`.
+- `route-exemptions.ts` classification: create/update/delete are `security-action` (domain-hijack operational hazard, consistent with `security_alert.dismissed`/`org.user_deactivated` precedents); list is `read` with an `auditOmissionReason` (reading one's own org's own config).
+- One implementation-time schema fix beyond the story's explicit scope: `OrgSsoDomainParamsSchema` and the DELETE response needed to avoid `.meta({ id })` / `.pick()` respectively — `@fastify/swagger`'s OpenAPI `$ref` resolver could not resolve either shape (confirmed against `OrgUserParamsSchema`'s existing no-`.meta()` convention for params schemas; added a small dedicated `OrgSsoDomainDeletedResponseSchema` instead of `.pick()`). No behavior change, purely spec-generation compatibility.
+- No new migration was needed (AC-10 confirmed) and `org_sso_domains` was confirmed already absent from `check-rls-coverage.ts`'s `EXCLUDED_TABLES` (AC-11).
 
 ### File List
+
+**New files:**
+- `apps/api/src/modules/auth/org-sso-domains-service.ts`
+- `apps/api/src/modules/auth/org-sso-domains-routes.ts`
+- `apps/api/src/modules/auth/org-sso-domains-routes.test.ts`
+- `apps/web/src/lib/api/org-sso-domains.ts`
+- `apps/web/src/lib/api/org-sso-domains.test.ts`
+- `apps/web/src/routes/(app)/settings/sso-domains/+page.server.ts`
+- `apps/web/src/routes/(app)/settings/sso-domains/+page.svelte`
+- `apps/web/src/routes/(app)/settings/sso-domains/sso-domains-page.server.test.ts`
+- `apps/web/src/routes/(app)/settings/sso-domains/sso-domains-page.test.ts`
+
+**Modified files:**
+- `packages/shared/src/schemas/auth.ts` — new `CreateOrgSsoDomainRequestSchema`/`UpdateOrgSsoDomainRequestSchema`/`OrgSsoDomainParamsSchema`/`OrgSsoDomainResponseSchema`/`OrgSsoDomainListResponseSchema`/`OrgSsoDomainDeletedResponseSchema`, `ORG_SSO_DOMAIN_ERROR_CODES`, `normalizeSsoDomain()`, `isValidDomainLabel()`
+- `packages/shared/src/schemas/auth.test.ts` — new schema/helper tests
+- `packages/shared/openapi.json` — regenerated (`pnpm generate-spec`)
+- `apps/api/src/lib/route-helpers.ts` — `validationError()` maps the `invalid_domain_format` refine message to its contract code
+- `apps/api/src/app.ts` — registers `orgSsoDomainsRoutes` at `/api/v1/org`
+- `apps/api/src/lib/route-exemptions.ts` — four new `ROUTE_ACTION_CLASSIFICATIONS` entries
+- `packages/db/src/__tests__/rls-isolation.test.ts` — added the AC-1 write-path cross-org isolation test
+- `apps/web/src/routes/(app)/settings/+page.svelte` — new SSO Domains nav row
+- `apps/web/src/routes/(app)/settings/settings-index-page.test.ts` — asserts the new nav row/href
+
+No migration file (AC-10 — no schema change needed). No changes to `domain-lookup-routes.ts`, `strategies.ts`, or `org-sso-domains.ts`.
 
 ## Change Log
 
 - 2026-07-27: Story created via `bmad-create-story`, status set to `ready-for-dev`.
 - 2026-07-27: 5-round advanced elicitation applied (Security Audit Personas, Red Team vs Blue Team, Failure Mode Analysis, Pre-mortem Analysis, Architecture Decision Records). Integrated: (1) trailing-FQDN-dot normalization before format/blocklist checks, closing a blocklist-bypass gap; (2) a machine-readable error-code contract (`invalid_domain_format`/`public_domain_blocked`/`provider_not_registered`/`provider_check_unavailable`/`domain_already_mapped`) backing the web client's typed error branches, which previously had no codes to bind to; (3) explicit `provider_check_unavailable`/`503` handling for `findAuthStrategy()` throwing, distinct from a clean not-registered result, closing a failure-mode gap where a transient extension-runtime outage would have been misreported as admin input error; (4) explicit audit-payload field requirements. Pre-mortem Analysis and ADR passes surfaced no additional changes — existing rate-limit/concurrency handling already sufficient.
+- 2026-07-27: Implemented via `bmad-dev-story` (strict TDD red-green): all 8 tasks complete, all 12 ACs satisfied. New authenticated `secureRoute`-based CRUD (`GET/POST/PATCH/DELETE /api/v1/org/sso-domains`), sibling service layer, shared schemas/error-code contract, web API client, `+page.server.ts`/`+page.svelte` for `/settings/sso-domains`, settings-index nav entry. 27 new API integration tests + 1 new RLS write-path isolation test + 19 new web tests, all green; `route-audit.test.ts`/`check-rls-coverage.test.ts` pass with zero new exceptions. Live-browser-verified in Chrome. Status set to `review`.

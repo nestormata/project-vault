@@ -10,6 +10,8 @@ import {
   orgSsoDomains,
 } from '../schema/index.js'
 
+const TEST_SSO_PROVIDER = 'test.provider'
+
 async function createTestUser(label: string): Promise<string> {
   const [user] = await getDb().execute(
     sql`INSERT INTO users (email, password_hash) VALUES (${`rls-${label}-${crypto.randomUUID()}@example.com`}, 'x') RETURNING id`
@@ -153,14 +155,14 @@ describe('RLS cross-org isolation', () => {
           tx.insert(orgSsoDomains).values({
             orgId: orgAId,
             domain: `org-a-${crypto.randomUUID()}.example`,
-            providerName: 'test.provider',
+            providerName: TEST_SSO_PROVIDER,
           })
         )
         await withOrg(orgBId, (tx) =>
           tx.insert(orgSsoDomains).values({
             orgId: orgBId,
             domain: `org-b-${crypto.randomUUID()}.example`,
-            providerName: 'test.provider',
+            providerName: TEST_SSO_PROVIDER,
           })
         )
 
@@ -171,6 +173,59 @@ describe('RLS cross-org isolation', () => {
         const orgBRows = await withOrg(orgBId, (tx) => tx.select().from(orgSsoDomains))
         expect(orgBRows).toHaveLength(1)
         expect(orgBRows[0]?.orgId).toBe(orgBId)
+      })
+    })
+  })
+
+  // Story 14.6 AC-1 edge case: the read-only test above (Story 14.4) already proves SELECT
+  // isolation via getAdminDb()-free access paths; this adds the write-path proof the new admin
+  // CRUD routes rely on — an UPDATE/DELETE issued under org B's RLS context must affect zero rows
+  // of org A's mapping, even when org B supplies org A's real row id (the exact cross-org :id
+  // guess shape org-sso-domains-routes.ts's PATCH/DELETE handlers guard against at the app layer;
+  // this proves the guarantee also holds at the database/RLS layer itself, structurally, not just
+  // because the route happens to filter by orgId).
+  it('write-path isolation: org B cannot UPDATE or DELETE org A rows, even by guessing the real id', async () => {
+    await withTestOrg(async ({ orgId: orgAId }) => {
+      await withTestOrg(async ({ orgId: orgBId }) => {
+        const [orgARow] = await withOrg(orgAId, (tx) =>
+          tx
+            .insert(orgSsoDomains)
+            .values({
+              orgId: orgAId,
+              domain: `write-iso-a-${crypto.randomUUID()}.example`,
+              providerName: TEST_SSO_PROVIDER,
+            })
+            .returning()
+        )
+        if (!orgARow) throw new Error('expected org A row to be inserted')
+        const orgARowId = orgARow.id
+
+        const updateResult = await withOrg(orgBId, (tx) =>
+          tx
+            .update(orgSsoDomains)
+            .set({ providerName: 'hijacked.provider' })
+            .where(sql`${orgSsoDomains.id} = ${orgARowId}`)
+            .returning()
+        )
+        expect(updateResult).toHaveLength(0)
+
+        const deleteResult = await withOrg(orgBId, (tx) =>
+          tx
+            .delete(orgSsoDomains)
+            .where(sql`${orgSsoDomains.id} = ${orgARowId}`)
+            .returning()
+        )
+        expect(deleteResult).toHaveLength(0)
+
+        // The row is untouched: still present, still under org A, provider unchanged.
+        const stillThere = await withOrg(orgAId, (tx) =>
+          tx
+            .select()
+            .from(orgSsoDomains)
+            .where(sql`${orgSsoDomains.id} = ${orgARowId}`)
+        )
+        expect(stillThere).toHaveLength(1)
+        expect(stillThere[0]?.providerName).toBe(TEST_SSO_PROVIDER)
       })
     })
   })
