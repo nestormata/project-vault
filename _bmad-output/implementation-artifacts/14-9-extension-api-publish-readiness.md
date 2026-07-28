@@ -1,6 +1,6 @@
 # Story 14.9: Extension API Publish-Readiness Decision
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -104,6 +104,17 @@ so that whoever builds the first external-consuming extension package doesn't ha
   - [x] `git diff --stat` / `git status --porcelain` shows only `packages/extension-api/package.json` (modified), `packages/extension-api/README.md` (new), `_bmad-output/planning-artifacts/architecture.md` (modified) — no `apps/api`, `apps/web`, or `packages/extension-api/src/**` changes; `deferred-work.md` untouched (no row to reconcile)
   - [x] `pnpm --filter @project-vault/extension-api typecheck` — passes clean
   - [x] `pnpm --filter @project-vault/extension-api test` — 7 test files, 24 tests passed, coverage unchanged
+
+### Review Findings
+
+Reviewed via `bmad-code-review` (Blind Hunter, Edge Case Hunter, Acceptance Auditor) against `git diff daf2b27..HEAD`. Acceptance Auditor found zero AC violations — all 5 ACs (AC-1 through AC-5) fully satisfied, Product Surface Contract compliant (`Surface scope: none` confirmed, zero `apps/api`/`apps/web` touches). Findings below are documentation-accuracy/legal-reasoning issues in the new `architecture.md` Publish Readiness subsection and `README.md`, not AC violations.
+
+- [x] [Review][Patch] Legal rationale over-generalized beyond the workspace:* case; AGPLv3 §13 (network-use clause) and non-types-only runtime code (`register-extension.ts`, `semver`-based negotiation) never addressed — fixed by broadening the "Legal caveat" paragraph in `architecture.md` to explicitly scope the "no redistribution" argument to in-monorepo `workspace:*` consumption only, and flag the separate-repo/tarball path, AGPLv3 §13, and the package's real runtime code as open questions for the already-called-for legal review. [`_bmad-output/planning-artifacts/architecture.md:499-501`]
+- [x] [Review][Patch] "inherits silently from the root" overstated real npm/pnpm license-inheritance semantics (no such propagation exists, no per-package `LICENSE` files) — fixed by rewording to state sibling packages are covered by the root `LICENSE`/AGPLv3 posture by convention only, not by any tooling-level inheritance. [`_bmad-output/planning-artifacts/architecture.md:483`]
+- [x] [Review][Patch] Decision table's Option A "Zero risk" label read as inconsistent with the Legal caveat two paragraphs later — fixed by qualifying it as "zero *new build/distribution* risk" and cross-referencing the caveat. [`_bmad-output/planning-artifacts/architecture.md:495`]
+- [x] [Review][Patch] `README.md`'s cross-reference ("under API & Communication Patterns → Extension API package") implied a heading hierarchy that doesn't exist (`Extension API package` is a bold bullet, not a heading; `Publish Readiness` is its sibling, not its child) — fixed by rewording to reference the actual `#### Publish Readiness` heading and its real position. [`packages/extension-api/README.md:7-9`]
+- [x] [Review][Defer] `sprint-status.yaml`'s `epic-14: done` rollup is stale relative to its own newly-added child stories (14-7/14-8 `backlog`, 14-9 `review`) — deferred, pre-existing rollup-tracking gap not introduced by this diff (predates this story; `check-story-status-sync.ts` only checks a story's own file vs. its own sprint-status entry, not epic-vs-children rollup consistency). [`_bmad-output/implementation-artifacts/sprint-status.yaml:236`]
+- [x] [Review][Defer] No CI/lint guard prevents a future contributor from "fixing" the perceived license-field inconsistency (removing it from `extension-api`, or adding it everywhere else) contrary to this story's stated intent — deferred as a speculative enforcement mechanism out of scope for this documentation-only story; candidate for a future story alongside 14-8's RBAC-convention documentation effort if this drifts in practice.
 
 ## Dev Notes
 
