@@ -19148,12 +19148,24 @@
                         "loaded",
                         "load_failed"
                       ]
+                    },
+                    "themesLoaded": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "themesFailed": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
                     "status",
                     "version",
-                    "extensions_status"
+                    "extensions_status",
+                    "themesLoaded",
+                    "themesFailed"
                   ],
                   "additionalProperties": false
                 }
@@ -31258,6 +31270,54 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/themes/reload": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "loaded": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "loaded",
+                    "failed"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         }
       }
