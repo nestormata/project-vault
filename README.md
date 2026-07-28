@@ -61,13 +61,23 @@ Key differentiators:
 
 ## Capabilities
 
-A closer look at what's implemented in each area, current as of 2026-07-13:
+A closer look at what's implemented in each area, current as of 2026-07-28:
 
 ### Authentication & Security
 - Docker deployment with health/readiness endpoints
 - Password + TOTP MFA authentication, JWT sessions with idle timeout and revocation
 - Structured operational logging and metrics
 - Vault unsealing via master password, envelope encryption (split-key default), or external KMS (AWS KMS)
+- Self-hosted, org-configured SSO: email-domain-based login routing to a registered external identity
+  provider, with an admin UI (`/settings/sso-domains`) for managing domain-to-provider mappings
+
+### Extension Architecture & Pluggable Authentication
+- AGPLv3-licensed core with a signed contributor agreement (CLA) for external contributions
+- Versioned `@project-vault/extension-api` package for building extensions against a stable API surface
+- Fail-safe extension loading at startup (a broken or misconfigured extension never blocks boot),
+  with an admin status/audit page (`/settings/extensions`)
+- Pluggable external authentication strategies — extensions can register a login provider that
+  end users authenticate against via the standard login flow
 
 ### Secrets & Credential Management
 - Project-scoped credential CRUD with immutable version history
@@ -144,7 +154,7 @@ Current limitations, disclosed up front rather than discovered later:
 
 Project Vault is **free and open source** under the AGPL-3.0 license. The core — secrets storage, versioning, RBAC, audit logs, encryption at rest, plugin interface, manual rotation, and monitoring — will always be open.
 
-A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise SSO, and compliance reporting. Self-hosted deployments remain free.
+A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise/managed SSO, and compliance reporting — distinct from the self-hosted, org-configured SSO already available today (see Capabilities above). Self-hosted deployments remain free.
 
 ---
 
@@ -152,7 +162,7 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 | Version | Target | Status |
 |---|---|---|
-| **Current** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades | Shipped |
+| **Current** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades, extension architecture, pluggable/self-hosted SSO | Shipped |
 | **Next** | Webhooks, project wiki | Planned |
 | **Later** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Planned |
 

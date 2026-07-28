@@ -547,7 +547,7 @@ Docker Compose `stop_grace_period: 30s` required (default 10s insufficient for a
 - **Extension load failure does not crash core:** a failed import or failed capability negotiation is caught at the call site in `apps/api/src/extensions/loader.ts`, logged at `pino.fatal`-equivalent severity, and surfaced as `extensions_status: "load_failed"` on the existing `GET /health` readiness payload (FR81) — the API process still starts and serves all core functionality. Deliberate divergence from a hard boot-crash: a self-hosted admin's extension misconfiguration must not take down their vault.
 - **No community-extension install pathway yet:** `loader.ts` resolves `VAULT_EXTENSIONS_PACKAGE` by exact package identity only (the founder's designated private package name, pinned) — no admin-facing "install an extension from anywhere" flow exists. Sandboxing is a prerequisite for safely loading arbitrary third-party code and doesn't exist yet; FR116 stays deferred at the loader level, not just the UI/approval-flow level, closing the interim window where a community extension could otherwise run with the same in-process trust as the founder's own code.
 - The self-hosted Docker image build never includes or requires `VAULT_EXTENSIONS_PACKAGE` to resolve. The private SaaS deployment (Growth-phase, founder-controlled infrastructure only) is a separate build/deploy target that layers the extension package on top — out of scope for the OSS Docker Compose artifact.
-- **`GET /api/v1/admin/extensions/status`** (OrgAdmin only) — returns the currently loaded extension's manifest (`name`, `apiVersion`, `capabilities`, `loadedAt`) or `null` if none is loaded/failed. Backs the `(app)/admin/extensions/` status view already in the project structure; found missing during validation — the admin UI page had no route to read from.
+- **`GET /api/v1/admin/extensions/status`** (OrgAdmin only) — returns the currently loaded extension's manifest (`name`, `apiVersion`, `capabilities`, `loadedAt`) or `null` if none is loaded/failed. Backs the `(app)/settings/extensions/` status view (corrected 2026-07-28 — the page ships under `(app)/settings/`, not `(app)/admin/`; the API route path itself is unaffected).
 
 ### Decision Impact Analysis
 
@@ -1041,9 +1041,9 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 | Backup & Restore | `modules/backup/` | `(app)/admin/backup/` | `workers/backup-snapshot.ts` |
 | Org Health (Buyer View) | `modules/org-health/` | `(app)/org-health/` | `workers/org-health-snapshot.ts` |
 | Compliance Reporting | `modules/compliance/` | `(app)/admin/compliance/` | — |
-| Extension & Plugin Architecture (Phase 2, FR113-116) | `packages/extension-api/`, `apps/api/src/extensions/loader.ts`, `modules/auth/strategies.ts` | `(app)/admin/extensions/` (status/audit view only — no install UI yet, see Infrastructure & Deployment) | — |
+| Extension & Plugin Architecture (Phase 2, FR113-116) | `packages/extension-api/`, `apps/api/src/extensions/loader.ts`, `modules/auth/strategies.ts` | `(app)/settings/extensions/` (status/audit view only — no install UI yet, see Infrastructure & Deployment; corrected 2026-07-28 — the `(app)/admin/` group is not used by this codebase's actual routing convention, confirmed independently by 14-2/14-5/14-6's own Dev Notes) | — |
 | Internationalization & Localization (Phase 2, FR117-119) | — (no backend module; locale preference stored on `users`/`organizations`) | `apps/web/messages/{locale}.json`, `(app)/settings/language/` | — |
-| Theming (Phase 2, FR120-121) | `apps/api/src/modules/theming/` (reload endpoint) | `apps/web/src/lib/theme/`, `(app)/admin/themes/` | — |
+| Theming (Phase 2, FR120-121) | `apps/api/src/modules/theming/` (reload endpoint) | `apps/web/src/lib/theme/`, `(app)/admin/themes/` (unconfirmed — see 16-1/16-2 for the story-level source of truth once shipped) | — |
 
 ### Canonical Schema Entity Names (complete)
 
@@ -1300,7 +1300,7 @@ project-vault/
 │           │       │   ├── users/
 │           │       │   ├── backup/
 │           │       │   ├── compliance/          # SOC2/ISO reporting (OrgAdmin only)
-│           │       │   ├── extensions/          # Phase 2 — status/audit view only, no install UI (loader is origin-locked)
+│           │       │   ├── extensions/          # STALE — actually shipped at (app)/settings/extensions/, not here (corrected 2026-07-28; see 14-2/14-5/14-6 Dev Notes)
 │           │       │   ├── themes/              # Phase 2 — reload trigger + active theme selection
 │           │       │   └── settings/
 │           │       └── settings/                # Phase 2: language preference lives here (FR117)
