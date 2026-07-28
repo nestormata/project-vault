@@ -28,6 +28,10 @@ export function validationError(
     details.set(key, [...(details.get(key) ?? []), issue.message])
     if (issue.message === 'invalid_cron') code = 'invalid_cron'
     if (issue.message === 'invalid_link_url') code = 'invalid_link_url'
+    // Story 14.6 AC-2(b): the org-sso-domains schema's domain-format refine sets this exact
+    // message so a malformed domain surfaces the contract's invalid_domain_format code, not the
+    // generic validation_error fallback.
+    if (issue.message === 'invalid_domain_format') code = 'invalid_domain_format'
   }
   return {
     code,

@@ -90,5 +90,19 @@
         <span class="text-gray-400">→</span>
       </a>
     </li>
+    <li>
+      <a
+        href={resolve('/settings/sso-domains')}
+        class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+      >
+        <div>
+          <p class="font-medium text-gray-900">SSO Domains</p>
+          <p class="text-sm text-gray-500">
+            Which email domains route into which SSO provider for this organization
+          </p>
+        </div>
+        <span class="text-gray-400">→</span>
+      </a>
+    </li>
   </ul>
 </div>

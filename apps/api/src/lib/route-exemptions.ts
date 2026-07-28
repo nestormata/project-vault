@@ -1110,6 +1110,37 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       "Story 14.4 AC-6 — a domain-lookup response carries no security-relevant outcome (it doesn't reveal user existence, only whether a domain has SSO configured, which is organization-level and not secret), matching /sso/start's existing no-audit-row-by-design precedent. No org/user context is resolvable pre-auth either.",
     reviewer: SECURITY_OWNER,
   },
+  // Story 14.6 AC-7/AC-12: authenticated, org-scoped SSO-domain admin CRUD — a separate,
+  // stricter-validation sibling to the pre-auth domain-lookup route above. The list route omits
+  // audit (reading one's own org's own config is not a security-relevant action); create/update
+  // are classified security-action given the domain-hijack operational hazard org-sso-domains.ts's
+  // schema comment documents (a bad mapping can silently break local login org-wide for a shared
+  // public domain); delete is classified security-action for the same reason, consistent with
+  // this table's other admin-mutation classification.
+  'GET /api/v1/org/sso-domains': {
+    action: 'read',
+    auditOmissionReason:
+      "Read of the org's own SSO domain configuration by its own admin; no secret values exposed.",
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/org/sso-domains': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org_sso_domain.created',
+    // Delegates through org-sso-domains-routes.ts's own writeSsoDomainAuditEntry(req, tx, ...)
+    // helper (shared by create/update/delete, extracted to remove jscpd duplication) — same
+    // req/tx-forwarding convention as credentials/routes.ts's writeCredentialAuditOrFailClosed.
+    sameTransactionAuditService: 'writeSsoDomainAuditEntry',
+  },
+  'PATCH /api/v1/org/sso-domains/:id': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org_sso_domain.updated',
+    sameTransactionAuditService: 'writeSsoDomainAuditEntry',
+  },
+  'DELETE /api/v1/org/sso-domains/:id': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org_sso_domain.deleted',
+    sameTransactionAuditService: 'writeSsoDomainAuditEntry',
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
