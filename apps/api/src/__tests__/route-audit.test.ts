@@ -504,7 +504,9 @@ describe('route audit', () => {
     ).replace(/\s+/g, ' ')
 
     expect(source).toContain("url: '/users/:userId/sessions'")
-    expect(source).toMatch(/allowedRoles:\s*\['admin', 'owner'\]/)
+    // Story 14.8: allowedRoles reordered to descending rank order (owner, admin) per
+    // architecture.md's RBAC role-gate convention — same two roles authorized, order only.
+    expect(source).toMatch(/allowedRoles:\s*\['owner', 'admin'\]/)
     expect(source).toMatch(/requireMfa:\s*true/)
   })
 

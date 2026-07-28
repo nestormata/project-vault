@@ -94,6 +94,9 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
+      // Story 14.8: kept as allowedRoles (not converted to minimumRole) — already
+      // descending-rank-order-compliant, out of this story's ordering-only retrofit scope. See
+      // architecture.md's RBAC Role-Gate Convention (ADR-14.8-01).
       allowedRoles: ['owner', 'admin'],
       writeAuditEvent: false,
     },
@@ -119,6 +122,9 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       response: { 401: ApiErrorSchema, 403: ApiErrorSchema, 404: ApiErrorSchema },
     },
     security: {
+      // Story 14.8: kept as allowedRoles (not converted to minimumRole) — already
+      // descending-rank-order-compliant, out of this story's ordering-only retrofit scope. See
+      // architecture.md's RBAC Role-Gate Convention (ADR-14.8-01).
       allowedRoles: ['owner', 'admin'],
       requireMfa: true, // route-audit.test.ts AC-5b/5c: every owner/admin route requires MFA.
       rateLimit: { max: 60, key: 'POST /org/security-alerts/:securityAlertId/dismiss' },
@@ -163,7 +169,10 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      allowedRoles: ['admin', 'owner'],
+      // ADR-14.8-01: allowedRoles listed in descending rank order (owner, admin) per
+      // architecture.md's Enforcement Guidelines RBAC role-gate convention — ordering only,
+      // no change to which roles are authorized (see secure-route.ts's hasSufficientRole()).
+      allowedRoles: ['owner', 'admin'],
       requireMfa: true,
       rateLimit: { max: 20, key: 'DELETE /org/users/:userId/sessions' },
       writeAuditEvent: false, // Session service writes the specific audit row through secureCtx.tx.
@@ -215,7 +224,9 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      allowedRoles: ['admin', 'owner'],
+      // Story 14.8: allowedRoles reordered to descending rank order (ordering only, no behavior
+      // change). See architecture.md's RBAC Role-Gate Convention (ADR-14.8-01).
+      allowedRoles: ['owner', 'admin'],
       requireMfa: true,
       writeAuditEvent: false, // Audit row written inline below, in the same secureCtx.tx.
       rateLimit: { max: 20, key: 'POST /org/users/:userId/deactivate' },
@@ -338,7 +349,9 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      allowedRoles: ['admin', 'owner'],
+      // Story 14.8: allowedRoles reordered to descending rank order (ordering only, no behavior
+      // change). See architecture.md's RBAC Role-Gate Convention (ADR-14.8-01).
+      allowedRoles: ['owner', 'admin'],
       requireMfa: true,
       writeAuditEvent: false, // Audit row written inline below, in the same secureCtx.tx.
       rateLimit: { max: 20, key: 'POST /org/users/:userId/recovery/send-link' },

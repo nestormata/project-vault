@@ -1015,6 +1015,7 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 - **Use `withSecret(encryptedValue, async (plaintext: Buffer) => { ... })` for ALL secret decryption** — bare `decrypt()` returning a string is forbidden; plaintext must never escape the callback; `withSecret()` zeros the buffer in `finally`; converting `plaintext` to a JS string inside the callback forfeits zeroing for that copy — document at call site
 - **Validate health check endpoint URLs at registration time** — reject RFC1918 private ranges (10/8, 172.16/12, 192.168/16), loopback (127/8), link-local (169.254/16), IPv6 equivalents, and cloud metadata addresses (169.254.169.254); re-validate resolved IP at check time (DNS rebinding); never store health check response body — only `{ statusCode, latencyMs, checkedAt, isHealthy }`
 - **Store web session JWTs in `httpOnly; Secure; SameSite=Strict` cookies only** — never Authorization header for browser sessions, never localStorage
+- **Default to `minimumRole: '<role>'` for any "this role or any higher rank" RBAC gate** — reserve `allowedRoles` only for a genuinely non-contiguous set. See "RBAC Role-Gate Convention" below for the full decision matrix and worked examples.
 
 **Anti-Patterns (explicitly forbidden):**
 - Bare `db.select()` / `db.insert()` outside `withOrg()` / `withOrgReadScope()` / `withAdminAccess()`
@@ -1044,6 +1045,83 @@ export async function withTestOrg<T>(fn: (ctx: { orgId: string; tx: Tx }) => Pro
 - **`{@html}` with any content** — `svelte/no-at-html-tags` is a CI error; exceptions require explicit disable comment with justification
 - **Enforcing MFA at the route handler level** — MFA role check (`OrgAdmin`/`Owner` require `mfa_enrolled_at IS NOT NULL`) belongs in auth middleware, not individual route handlers; check once, enforce everywhere
 - **Missing RLS policy in new table migrations** — every migration that creates a new mutable table (with `org_id`) must include the `CREATE POLICY` statement in the **same migration file**; a table deployed without RLS is immediately accessible cross-org. Enforcement: `packages/db/scripts/check-rls-coverage.ts` — reads all Drizzle schema files, collects `org_id` tables, queries `information_schema.policies`, fails CI if any `org_id` table has no RLS policy. Runs as the `db#check-rls` Turborepo task, required before `db#migrate`. Exceptions (`sessions`, `refresh_tokens`) must be explicitly listed in the script's allow-list.
+- **A contiguous-from-the-top `allowedRoles` array with no explanatory comment** (e.g. `allowedRoles: ['owner', 'admin']` where a plain "admin or higher" gate was intended) — express it as `minimumRole: 'admin'` instead; see "RBAC Role-Gate Convention" below. Enforced by the `no-contiguous-allowed-roles` ESLint rule (`packages/eslint-config/rules/no-contiguous-allowed-roles.js`).
+
+#### RBAC Role-Gate Convention (`minimumRole` vs. `allowedRoles`)
+
+Story 14.8 (epic-14 retro Finding 3): the choice between `secureRoute()`'s two RBAC mechanisms
+was independently re-derived three times in this epic alone (14-2, 14-5, 14-6), each honestly
+flagged as a judgment call in its own story's Dev Notes but never promoted to a documented
+convention — and `apps/api/src/modules/org/routes.ts` itself accumulated inconsistent
+`allowedRoles` ordering as a result. This section is the single source of truth going forward.
+
+`secureRoute`'s role hierarchy (`apps/api/src/lib/secure-route.ts` `roleRank()`) is:
+
+```
+owner (3) > admin (2) > member (1) > viewer (0)
+```
+
+**Default to `minimumRole: '<role>'`** for any "this role or any higher rank" gate — the
+overwhelming majority of authorization checks in this codebase (e.g. "admin or owner may do X"
+is `minimumRole: 'admin'`, not `allowedRoles: ['admin', 'owner']`). `minimumRole` is
+self-documenting (one value, not an enumerable set to keep in sync with the hierarchy) and
+structurally immune to the ordering inconsistency this story fixes — there is nothing to order.
+
+**Reserve `allowedRoles` for a genuinely non-contiguous set** — i.e. only when the permitted set
+is *not* expressible as "rank ≥ N" (an explicit hierarchy exception). The concrete precedent
+already in this codebase: `apps/api/src/extensions/status-routes.ts` deliberately uses
+`allowedRoles: ['admin']` to *exclude* `owner` from viewing extension status, even though `owner`
+outranks `admin` — a real, documented business rule that `minimumRole` cannot express. Any new
+`allowedRoles` usage must carry an inline comment explaining which rank is being
+excluded/included non-contiguously and why (matching `status-routes.ts`'s existing comment as the
+reference example) — an `allowedRoles` array that turns out to be contiguous-from-the-top (e.g.
+`['owner', 'admin']`, `['owner', 'admin', 'member', 'viewer']`) with no such comment is a
+convention violation and should be `minimumRole` instead.
+
+**When `allowedRoles` is the right choice, list roles in descending rank order** (`owner`,
+`admin`, `member`, `viewer` — whichever subset applies, in that relative order) purely for human
+scanability and diff-review consistency. `Array.prototype.includes` does not care about order —
+this is a readability rule, not a functional one — but a mixed-order codebase reads as unreviewed
+and makes real anomalies harder to spot.
+
+**Decision matrix:**
+
+| Question | `minimumRole: '<role>'` | `allowedRoles: [...]` |
+|---|---|---|
+| Is the permitted set "this rank or higher"? | Yes → use this | No — see next column |
+| Is the permitted set non-contiguous (excludes a higher rank while allowing a lower one)? | N/A — not expressible | Yes → use this, with a required inline comment |
+| Does the set change if a new role is inserted into the hierarchy? | No — automatically correct | Yes — must be manually revisited |
+| Ordering requirement | None (single value) | Descending rank order, enforced by lint |
+
+**Worked examples:**
+- `minimumRole`: `apps/api/src/modules/org/routes.ts`'s `GET /users` route (and its sibling
+  admin routes `DELETE /users/:userId`, `PUT /users/:userId/projects/:projectId/role`) uses
+  `minimumRole: 'admin'` — "admin or owner" is exactly "rank ≥ 2," so there is nothing to
+  enumerate or keep ordered.
+- `allowedRoles` (legitimate exception): `apps/api/src/extensions/status-routes.ts`'s
+  `GET /extensions/status` route uses `allowedRoles: ['admin']` with an inline comment explaining
+  that `owner` is deliberately excluded — a real non-contiguous business rule, not an ordering
+  bug.
+
+**Alternatives considered and rejected:**
+- *(a) Always require `allowedRoles`, never `minimumRole`* — rejected because it forces every
+  "N-or-higher" gate to enumerate and hand-maintain a set against the hierarchy, which is exactly
+  the drift this story exists to fix, just moved to every call site instead of one.
+- *(b) Always require `minimumRole`, ban `allowedRoles` entirely* — rejected because
+  `status-routes.ts`'s owner-exclusion is a real, currently-shipping business rule with no
+  `minimumRole`-expressible equivalent; banning `allowedRoles` would force a workaround (e.g. a
+  post-hoc `if (role === 'owner') deny`) that's strictly worse than the mechanism this codebase
+  already has.
+- *(c) The chosen rule* (default to `minimumRole`, `allowedRoles` only for documented
+  non-contiguous exceptions) — keeps the common case self-documenting while preserving an
+  explicit, comment-required escape hatch for the genuine exception case.
+
+**Why not a standalone ADR file:** this codebase's existing ADR convention is inline
+`// ADR-<epic>.<story>-<seq>:` comments at the decision site (see `ADR-6.2-04`, `ADR-4.4-05`,
+etc. throughout `apps/api/src`), not standalone ADR documents — no standalone ADR files exist
+anywhere in this repo. This convention follows that pattern: the `org/routes.ts` retrofit tags
+one representative site with `// ADR-14.8-01: ...` pointing back to this section, rather than
+introducing a new documentation format.
 
 ## Project Structure & Boundaries
 

@@ -460,6 +460,24 @@ hard-delete path for `credentials`/`credential_versions`.
 See `epic-13-retro-2026-07-27.md` finding #4 for full context.
 
 ---
+## Deferred from: code review of 14-8-document-rbac-role-gate-convention (2026-07-28)
+
+**TD14-8-1 — `no-contiguous-allowed-roles` ESLint rule scoped to 3 files, not repo-wide (Medium).**
+The new rule (`packages/eslint-config/rules/no-contiguous-allowed-roles.js`, AC-7) is wired in
+`packages/eslint-config/index.js` with its `files` glob limited to `apps/api/src/modules/org/routes.ts`
+plus the two legitimate-exception files (`extensions/status-routes.ts`,
+`auth/external-identity-routes.ts`). A repo-wide dry run at implementation time found ~14
+pre-existing `allowedRoles` sites elsewhere (outside `org/routes.ts`) that are already contiguous
+with no explanatory comment — real violations of the new AC-1 convention, but out of `14-8`'s own
+scope (AC-5) to touch. Widening the rule's glob today would fail `make ci` on code this story must
+not modify. **Trigger to revisit:** a follow-up story to add explanatory comments to (or convert to
+`minimumRole`) each of the ~14 pre-existing sites, then widen the lint rule's `files` glob to
+repo-wide.
+
+See story `14-8-document-rbac-role-gate-convention.md`'s own Completion Notes / code review for the
+full site list and rationale.
+
+---
 
 ## Deferred from: code review of 14-9-extension-api-publish-readiness (2026-07-28)
 
@@ -479,3 +497,4 @@ contributor from adding `license` fields elsewhere or removing this one, contrar
 documented intent. Candidate for bundling into 14-8 (document RBAC role-gate convention) or a
 similar small convention-documentation story if this drifts in practice. See
 `14-9-extension-api-publish-readiness.md` Review Findings for full context.
+
