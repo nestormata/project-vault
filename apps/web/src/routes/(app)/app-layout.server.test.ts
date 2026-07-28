@@ -4,6 +4,7 @@ import { isRedirect } from '@sveltejs/kit'
 const getOnboardingStatusMock = vi.hoisted(() => vi.fn())
 const listProjectsMock = vi.hoisted(() => vi.fn())
 const getUsersMeMock = vi.hoisted(() => vi.fn())
+const getThemesMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/onboarding.js', () => ({
   getOnboardingStatus: getOnboardingStatusMock,
@@ -14,8 +15,13 @@ vi.mock('$lib/api/projects.js', () => ({
 vi.mock('$lib/api/inbox.js', () => ({
   getUsersMe: getUsersMeMock,
 }))
+vi.mock('$lib/api/themes.js', () => ({
+  getThemes: getThemesMock,
+}))
 
 import { load } from './+layout.server.js'
+
+const noCustomThemes = { themes: [{ name: 'base', label: 'Default', css: null }], selected: null }
 
 function makeEvent(user: unknown) {
   return { fetch: vi.fn(), locals: { user } } as unknown as Parameters<typeof load>[0]
@@ -28,6 +34,8 @@ describe('/(app) +layout.server.ts', () => {
     getOnboardingStatusMock.mockReset()
     listProjectsMock.mockReset()
     getUsersMeMock.mockReset()
+    getThemesMock.mockReset()
+    getThemesMock.mockResolvedValue(noCustomThemes)
   })
 
   it('redirects to /login when there is no authenticated user', async () => {
@@ -116,5 +124,81 @@ describe('/(app) +layout.server.ts', () => {
 
     const viewerResult = await load(makeEvent({ ...baseUser, orgRole: 'viewer' }))
     expect(viewerResult.importRouteLive).toBe(false)
+  })
+
+  describe('theme resolution (Story 16.2 AC-2/AC-3/AC-6)', () => {
+    it('AC-2: resolves appliedTheme to the caller selection when it is currently available', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue({
+        themes: [
+          { name: 'base', label: 'Default', css: null },
+          { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+        ],
+        selected: 'acme-brand',
+      })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBe('acme-brand')
+      expect(result.orphanedNotice).toBe(false)
+      expect(result.orphanedThemeName).toBeNull()
+      expect(result.themeCss).toBe('[data-theme="acme-brand"] {}')
+    })
+
+    it('AC-2: resolves appliedTheme to null (base) when nothing is selected', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue(noCustomThemes)
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBeNull()
+      expect(result.orphanedNotice).toBe(false)
+    })
+
+    it('AC-3: falls back to base and flags orphanedNotice when the selected theme is no longer compiled', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue({
+        themes: [{ name: 'base', label: 'Default', css: null }],
+        selected: 'removed-theme',
+      })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBeNull()
+      expect(result.orphanedNotice).toBe(true)
+      expect(result.orphanedThemeName).toBe('removed-theme')
+    })
+
+    it('AC-3 edge: a re-installed same-named theme is simply re-applied on the next load (no stale orphan flag)', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue({
+        themes: [
+          { name: 'base', label: 'Default', css: null },
+          { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+        ],
+        selected: 'acme-brand',
+      })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBe('acme-brand')
+      expect(result.orphanedNotice).toBe(false)
+    })
+
+    it('fails open to the base theme (never crashes the layout load) when the themes fetch fails', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockRejectedValue(new Error('boom'))
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBeNull()
+      expect(result.orphanedNotice).toBe(false)
+      expect(result.themeCss).toBe('')
+    })
   })
 })

@@ -1,0 +1,22 @@
+import { apiFetch } from './client.js'
+
+export type ThemeListItem = { name: string; label: string; css: string | null }
+export type ThemeListResponse = { themes: ThemeListItem[]; selected: string | null }
+export type ThemeSelectionResponse = { themeName: string | null }
+
+/** Story 16.2 AC-1 — every currently available theme (base + successfully-compiled custom
+ * themes) plus the caller's own raw stored selection (which may reference a theme no longer in
+ * the list — an "orphaned" selection, see AC-3). */
+export function getThemes(fetchFn: typeof fetch) {
+  return apiFetch<ThemeListResponse>(fetchFn, '/api/v1/themes')
+}
+
+/** Story 16.2 AC-2 — self-service theme selection; the endpoint takes no userId, it operates
+ * exclusively on the authenticated session's own user row. `themeName: null` clears back to the
+ * base theme. */
+export function patchThemeSelection(fetchFn: typeof fetch, themeName: string | null) {
+  return apiFetch<ThemeSelectionResponse>(fetchFn, '/api/v1/themes/selection', {
+    method: 'PATCH',
+    body: JSON.stringify({ themeName }),
+  })
+}

@@ -1,0 +1,13 @@
+-- Story 16.2 AC-8: additive-only schema change (first of Epic 16, flagged in advance by 16.1's
+-- own Dev Notes). Nullable column, no default-value backfill needed: NULL already means "base
+-- theme," the correct pre-migration behavior for every existing user row (nobody had a theme
+-- selection concept before this story shipped).
+--
+-- `users` carries no `org_id` column (confirmed via direct read of packages/db/src/schema/users.ts
+-- — it is a global identity table, same reasoning already used for why theme *files* need no RLS
+-- policy), so this migration requires no RLS policy work.
+--
+-- Rollback safety: `ALTER TABLE users DROP COLUMN selected_theme_name` is safe and lossless from
+-- every angle except the acceptable, cosmetic-only loss of users' saved theme preferences (no
+-- CHECK constraint, no foreign key referencing this column).
+ALTER TABLE users ADD COLUMN selected_theme_name TEXT NULL;

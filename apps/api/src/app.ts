@@ -51,6 +51,7 @@ import { erasureRoutes } from './modules/compliance/erasure-routes.js'
 import { extensionStatusRoutes } from './extensions/status-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
 import { themingRoutes } from './modules/theming/routes.js'
+import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
 import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
@@ -309,6 +310,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(cacheActivatedRoutes, { prefix: '/api/v1/machine' })
   await fastify.register(securityAlertActionsRoutes, { prefix: '/api/v1/security-alerts' })
   await fastify.register(organizationSettingsRoutes, { prefix: '/api/v1/organizations' })
+  // Story 16.2: personal, per-user theme selection — deliberately mounted at plain '/api/v1'
+  // (not ADMIN_PREFIX like 16.1's reload endpoint above), since any authenticated org member may
+  // call these, not just OrgAdmins. Kept in its own file (selection-routes.ts) rather than
+  // themingRoutes above so route-audit.test.ts's per-file prefix resolution stays correct for
+  // both route families.
+  await fastify.register(themeSelectionRoutes, { prefix: '/api/v1' })
 
   // Story 14.2 Task 7: after every core route is registered, so the local-first invariant is
   // trivially satisfied even though this story doesn't yet wire registerAuthStrategy() (that's

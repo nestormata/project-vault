@@ -203,4 +203,95 @@ describe('/(app) +layout.svelte', () => {
     expect(screen.queryByText('protected app content')).toBeNull()
     expect(invalidateAllMock).not.toHaveBeenCalled()
   })
+
+  describe('theme application (Story 16.2 AC-2/AC-3)', () => {
+    beforeEach(() => {
+      sessionStorage.clear()
+    })
+
+    function baseData(overrides: Record<string, unknown> = {}) {
+      return {
+        user: onboardingTestUser,
+        onboardingCompleted: true,
+        projects: [],
+        importRouteLive: false,
+        unreadCount: 0,
+        appliedTheme: null,
+        orphanedNotice: false,
+        orphanedThemeName: null,
+        themeCss: '',
+        ...overrides,
+      }
+    }
+
+    it('AC-2: renders the applied theme as a data-theme attribute (no FOUC — set directly, not after mount)', () => {
+      const { container } = render(Layout, {
+        props: { data: baseData({ appliedTheme: 'acme-brand' }), children: childrenSnippet() },
+      })
+
+      expect(container.querySelector('[data-theme="acme-brand"]')).toBeTruthy()
+    })
+
+    it('AC-2 edge: omits data-theme entirely for the base theme (never data-theme="base")', () => {
+      const { container } = render(Layout, {
+        props: { data: baseData({ appliedTheme: null }), children: childrenSnippet() },
+      })
+
+      expect(container.querySelector('[data-theme]')).toBeNull()
+    })
+
+    it('AC-2: renders the compiled theme CSS inline (never via {@html}, via a real <style> element)', () => {
+      const { container } = render(Layout, {
+        props: {
+          data: baseData({ themeCss: '[data-theme="acme-brand"] { --radius-md: 4px; }' }),
+          children: childrenSnippet(),
+        },
+      })
+
+      const styleEl = container.querySelector('style')
+      expect(styleEl?.textContent).toContain('--radius-md: 4px')
+    })
+
+    it('AC-3: shows a dismissible orphaned-theme notice exactly once, and dismissing it hides it', async () => {
+      render(Layout, {
+        props: {
+          data: baseData({ orphanedNotice: true, orphanedThemeName: 'acme-brand' }),
+          children: childrenSnippet(),
+        },
+      })
+
+      expect(screen.getByText(/no longer available/i)).toBeTruthy()
+
+      await fireEvent.click(screen.getByRole('button', { name: /dismiss/i }))
+
+      expect(screen.queryByText(/no longer available/i)).toBeNull()
+      expect(sessionStorage.getItem('dismissedOrphanedTheme')).toBe('acme-brand')
+    })
+
+    it('AC-3: does not re-show the notice for the same orphaned theme already dismissed this session', () => {
+      sessionStorage.setItem('dismissedOrphanedTheme', 'acme-brand')
+
+      render(Layout, {
+        props: {
+          data: baseData({ orphanedNotice: true, orphanedThemeName: 'acme-brand' }),
+          children: childrenSnippet(),
+        },
+      })
+
+      expect(screen.queryByText(/no longer available/i)).toBeNull()
+    })
+
+    it('AC-3: re-shows the notice for a newly, differently orphaned theme even if another was already dismissed', () => {
+      sessionStorage.setItem('dismissedOrphanedTheme', 'acme-brand')
+
+      render(Layout, {
+        props: {
+          data: baseData({ orphanedNotice: true, orphanedThemeName: 'second-theme' }),
+          children: childrenSnippet(),
+        },
+      })
+
+      expect(screen.getByText(/no longer available/i)).toBeTruthy()
+    })
+  })
 })

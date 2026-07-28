@@ -407,6 +407,13 @@
       "when": 1785046200000,
       "tag": "0057_organizations_default_locale",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1785132600000,
+      "tag": "0058_users_selected_theme_name",
+      "breakpoints": true
     }
   ]
 }

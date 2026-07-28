@@ -64,6 +64,18 @@
     </li>
     <li>
       <a
+        href={resolve('/settings/themes')}
+        class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+      >
+        <div>
+          <p class="font-medium text-gray-900">Themes</p>
+          <p class="text-sm text-gray-500">Choose which installed theme is active for your view</p>
+        </div>
+        <span class="text-gray-400">→</span>
+      </a>
+    </li>
+    <li>
+      <a
         href={resolve('/settings/audit')}
         class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
       >
