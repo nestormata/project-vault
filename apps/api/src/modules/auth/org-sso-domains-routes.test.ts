@@ -13,6 +13,8 @@ import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-
 import { createDirectAuthenticatedUser } from '../../__tests__/helpers/org-role-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { __resetAuthStrategiesForTests, registerAuthStrategy } from './strategies.js'
+import { ssoErrorMessage } from './org-sso-domains-routes.js'
+import { runDomainWrite } from './org-sso-domains-service.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 type TestApp = Awaited<ReturnType<typeof createApp>>
@@ -543,7 +545,7 @@ describe('org-sso-domains-routes (Story 14.6)', () => {
     expect(res.statusCode).toBe(200)
 
     const after = await withOrg(owner.orgId, (tx) => tx.select().from(auditLogEntries))
-    expect(after.length).toBe(before.length)
+    expect(after).toHaveLength(before.length)
   })
 
   // ---------------------------------------------------------------------------------------------
@@ -569,4 +571,30 @@ describe('org-sso-domains-routes (Story 14.6)', () => {
       delete process.env['RATE_LIMIT_TEST_BYPASS']
     }
   }, 30_000)
+})
+
+describe('ssoErrorMessage', () => {
+  it('maps every known error code to its specific message, including the two branches unreachable via the live route flow', () => {
+    // invalid_domain_format never reaches the handler in practice (the schema layer's .refine()
+    // already rejects a malformed domain before the route runs) — pinned directly here instead.
+    expect(ssoErrorMessage('invalid_domain_format')).toBe('Domain is not a valid hostname')
+    expect(ssoErrorMessage('public_domain_blocked')).toMatch(/shared public email providers/)
+    expect(ssoErrorMessage('provider_not_registered')).toBe(
+      'This provider is not currently registered'
+    )
+    expect(ssoErrorMessage('provider_check_unavailable')).toMatch(/try again shortly/)
+    expect(ssoErrorMessage('domain_already_mapped')).toBe(
+      'This domain is already mapped to an organization'
+    )
+    // The default fallback is likewise unreachable given result.code's closed union type — still
+    // worth proving it degrades to a safe generic message rather than throwing.
+    expect(ssoErrorMessage('some_future_unmapped_code')).toBe('Request failed')
+  })
+})
+
+describe('runDomainWrite', () => {
+  it('rethrows a non-unique-violation error instead of swallowing it as a 409', async () => {
+    const boom = new Error('connection reset')
+    await expect(runDomainWrite(() => Promise.reject(boom))).rejects.toThrow('connection reset')
+  })
 })

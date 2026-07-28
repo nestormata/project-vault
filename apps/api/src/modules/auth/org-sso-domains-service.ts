@@ -3,6 +3,7 @@ import type { Tx } from '@project-vault/db'
 import { orgSsoDomains } from '@project-vault/db/schema'
 import { normalizeSsoDomain, ORG_SSO_DOMAIN_ERROR_CODES } from '@project-vault/shared'
 import { findAuthStrategy } from './strategies.js'
+import { isUniqueViolation } from '../credentials/db-helpers.js'
 
 /**
  * Story 14.4's schema-file comment flagged this exact operational hazard as unguarded: nothing
@@ -50,14 +51,6 @@ export type OrgSsoDomainWriteResult =
   | OrgSsoDomainValidationFailure
   | { ok: false; status: 409; code: 'domain_already_mapped' }
 
-/** Local convention (mirrors modules/credentials/db-helpers.ts's isUniqueViolation) — never let a
- * raw Postgres unique-constraint error reach the client. */
-function isUniqueViolation(error: unknown): boolean {
-  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
-  if (!cause || typeof cause !== 'object') return false
-  return (cause as { code?: string }).code === '23505'
-}
-
 /**
  * AC-2(c)/(d)/(e): the public-domain blocklist and provider-registration checks, shared by
  * create and update. Domain normalization/format checks already happened at the schema layer
@@ -95,16 +88,40 @@ export async function validateOrgSsoDomainInput(input: {
   return { ok: true }
 }
 
+/** Column selection shared by every read/write path below — kept in one place so the row shape can't drift. */
+const ORG_SSO_DOMAIN_COLUMNS = {
+  id: orgSsoDomains.id,
+  domain: orgSsoDomains.domain,
+  providerName: orgSsoDomains.providerName,
+  createdAt: orgSsoDomains.createdAt,
+}
+
+/**
+ * AC-2/AC-3: runs an insert/update write, translating a Postgres unique-violation into the shared
+ * 409 result; anything else rethrows. Returning `row: undefined` (no matching write) is a valid,
+ * non-error outcome — callers decide what that means (create treats it as unexpected; update
+ * treats it as a 404 cross-org/missing-id guess) rather than this helper guessing for them.
+ * Exported for direct unit coverage of the non-unique-violation rethrow path, which is otherwise
+ * only reachable by forcing a genuine non-constraint DB failure through the live route flow.
+ */
+export async function runDomainWrite(
+  op: () => Promise<OrgSsoDomainRow | undefined>
+): Promise<
+  | { ok: true; row: OrgSsoDomainRow | undefined }
+  | { ok: false; status: 409; code: 'domain_already_mapped' }
+> {
+  try {
+    return { ok: true, row: await op() }
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return { ok: false, status: 409, code: 'domain_already_mapped' }
+    }
+    throw error
+  }
+}
+
 export async function listOrgSsoDomains(tx: Tx, orgId: string): Promise<OrgSsoDomainRow[]> {
-  return tx
-    .select({
-      id: orgSsoDomains.id,
-      domain: orgSsoDomains.domain,
-      providerName: orgSsoDomains.providerName,
-      createdAt: orgSsoDomains.createdAt,
-    })
-    .from(orgSsoDomains)
-    .where(eq(orgSsoDomains.orgId, orgId))
+  return tx.select(ORG_SSO_DOMAIN_COLUMNS).from(orgSsoDomains).where(eq(orgSsoDomains.orgId, orgId))
 }
 
 export async function createOrgSsoDomain(
@@ -115,24 +132,16 @@ export async function createOrgSsoDomain(
   const validation = await validateOrgSsoDomainInput(input)
   if (!validation.ok) return validation
 
-  try {
+  const result = await runDomainWrite(async () => {
     const [row] = await tx
       .insert(orgSsoDomains)
       .values({ orgId, domain: input.domain, providerName: input.providerName })
-      .returning({
-        id: orgSsoDomains.id,
-        domain: orgSsoDomains.domain,
-        providerName: orgSsoDomains.providerName,
-        createdAt: orgSsoDomains.createdAt,
-      })
-    if (!row) throw new Error('org_sso_domains insert returned no row')
-    return { ok: true, row }
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      return { ok: false, status: 409, code: 'domain_already_mapped' }
-    }
-    throw error
-  }
+      .returning(ORG_SSO_DOMAIN_COLUMNS)
+    return row
+  })
+  if (!result.ok) return result
+  if (!result.row) throw new Error('org_sso_domains insert returned no row')
+  return { ok: true, row: result.row }
 }
 
 export async function updateOrgSsoDomain(
@@ -144,7 +153,7 @@ export async function updateOrgSsoDomain(
   const validation = await validateOrgSsoDomainInput(input)
   if (!validation.ok) return validation
 
-  try {
+  const result = await runDomainWrite(async () => {
     const [row] = await tx
       .update(orgSsoDomains)
       .set({
@@ -152,20 +161,12 @@ export async function updateOrgSsoDomain(
         ...(input.providerName !== undefined ? { providerName: input.providerName } : {}),
       })
       .where(and(eq(orgSsoDomains.id, id), eq(orgSsoDomains.orgId, orgId)))
-      .returning({
-        id: orgSsoDomains.id,
-        domain: orgSsoDomains.domain,
-        providerName: orgSsoDomains.providerName,
-        createdAt: orgSsoDomains.createdAt,
-      })
-    if (!row) return { ok: false, status: 404 }
-    return { ok: true, row }
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      return { ok: false, status: 409, code: 'domain_already_mapped' }
-    }
-    throw error
-  }
+      .returning(ORG_SSO_DOMAIN_COLUMNS)
+    return row
+  })
+  if (!result.ok) return result
+  if (!result.row) return { ok: false, status: 404 }
+  return { ok: true, row: result.row }
 }
 
 export async function deleteOrgSsoDomain(
@@ -176,11 +177,6 @@ export async function deleteOrgSsoDomain(
   const [row] = await tx
     .delete(orgSsoDomains)
     .where(and(eq(orgSsoDomains.id, id), eq(orgSsoDomains.orgId, orgId)))
-    .returning({
-      id: orgSsoDomains.id,
-      domain: orgSsoDomains.domain,
-      providerName: orgSsoDomains.providerName,
-      createdAt: orgSsoDomains.createdAt,
-    })
+    .returning(ORG_SSO_DOMAIN_COLUMNS)
   return row ?? null
 }

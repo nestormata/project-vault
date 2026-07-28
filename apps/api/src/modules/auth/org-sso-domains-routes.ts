@@ -6,6 +6,8 @@ import {
   OrgSsoDomainResponseSchema,
   UpdateOrgSsoDomainRequestSchema,
 } from '@project-vault/shared'
+import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { Tx } from '@project-vault/db'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
@@ -31,6 +33,31 @@ function serializeRow(row: OrgSsoDomainRow) {
     providerName: row.providerName,
     createdAt: row.createdAt.toISOString(),
   }
+}
+
+/**
+ * AC-7: fail-closed audit write shared by create/update/delete — same shape, only the event type
+ * and payload vary. Mirrors credentials/routes.ts's writeCredentialAuditOrFailClosed(req, tx,
+ * input) convention — the literal `secureCtx.tx` argument at each call site is required by
+ * route-audit.test.ts's static same-transaction-delegation scan (see route-exemptions.ts).
+ */
+async function writeSsoDomainAuditEntry(
+  req: FastifyRequest,
+  tx: Tx,
+  orgId: string,
+  actorUserId: string,
+  eventType: 'org_sso_domain.created' | 'org_sso_domain.updated' | 'org_sso_domain.deleted',
+  row: Pick<OrgSsoDomainRow, 'id' | 'domain' | 'providerName'>
+): Promise<void> {
+  await writeHumanAuditEntryOrFailClosed(tx, {
+    resourceType: 'org_sso_domain',
+    orgId,
+    actorUserId,
+    eventType,
+    resourceId: row.id,
+    payload: { id: row.id, domain: row.domain, providerName: row.providerName },
+    request: req,
+  })
 }
 
 /**
@@ -93,26 +120,16 @@ export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
 
       const result = await createOrgSsoDomain(secureCtx.tx, secureCtx.auth.orgId, parsed.data)
-      if (!result.ok) {
-        return reply.status(result.status).send({
-          code: result.code,
-          message: ssoErrorMessage(result.code),
-        })
-      }
+      if (!result.ok) return sendSsoErrorReply(reply, result)
 
-      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
-        resourceType: 'org_sso_domain',
-        orgId: secureCtx.auth.orgId,
-        actorUserId: secureCtx.auth.userId,
-        eventType: 'org_sso_domain.created',
-        resourceId: result.row.id,
-        payload: {
-          id: result.row.id,
-          domain: result.row.domain,
-          providerName: result.row.providerName,
-        },
-        request: req,
-      })
+      await writeSsoDomainAuditEntry(
+        req,
+        secureCtx.tx,
+        secureCtx.auth.orgId,
+        secureCtx.auth.userId,
+        'org_sso_domain.created',
+        result.row
+      )
 
       return reply.status(201).send(serializeRow(result.row))
     },
@@ -156,25 +173,17 @@ export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
       )
       if (!result.ok) {
         if (result.status === 404) return reply.status(404).send(DOMAIN_NOT_FOUND)
-        return reply.status(result.status).send({
-          code: result.code,
-          message: ssoErrorMessage(result.code),
-        })
+        return sendSsoErrorReply(reply, result)
       }
 
-      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
-        resourceType: 'org_sso_domain',
-        orgId: secureCtx.auth.orgId,
-        actorUserId: secureCtx.auth.userId,
-        eventType: 'org_sso_domain.updated',
-        resourceId: result.row.id,
-        payload: {
-          id: result.row.id,
-          domain: result.row.domain,
-          providerName: result.row.providerName,
-        },
-        request: req,
-      })
+      await writeSsoDomainAuditEntry(
+        req,
+        secureCtx.tx,
+        secureCtx.auth.orgId,
+        secureCtx.auth.userId,
+        'org_sso_domain.updated',
+        result.row
+      )
 
       return reply.status(200).send(serializeRow(result.row))
     },
@@ -207,22 +216,35 @@ export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
       const row = await deleteOrgSsoDomain(secureCtx.tx, secureCtx.auth.orgId, params.id)
       if (!row) return reply.status(404).send(DOMAIN_NOT_FOUND)
 
-      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
-        resourceType: 'org_sso_domain',
-        orgId: secureCtx.auth.orgId,
-        actorUserId: secureCtx.auth.userId,
-        eventType: 'org_sso_domain.deleted',
-        resourceId: row.id,
-        payload: { id: row.id, domain: row.domain, providerName: row.providerName },
-        request: req,
-      })
+      await writeSsoDomainAuditEntry(
+        req,
+        secureCtx.tx,
+        secureCtx.auth.orgId,
+        secureCtx.auth.userId,
+        'org_sso_domain.deleted',
+        row
+      )
 
       return reply.status(200).send({ id: row.id })
     },
   })
 }
 
-function ssoErrorMessage(code: string): string {
+/** Shared by create/update's validation-failure branch — keeps the status/code/message reply shape in one place. */
+function sendSsoErrorReply(
+  reply: FastifyReply,
+  result: { status: number; code: string }
+): FastifyReply {
+  return reply
+    .status(result.status)
+    .send({ code: result.code, message: ssoErrorMessage(result.code) })
+}
+
+/** Exported for direct unit coverage — 'invalid_domain_format' and the default fallback are not
+ * reachable through the live route flow (the schema layer already rejects a malformed domain
+ * before the handler runs, and `result.code`'s type is a closed union), but the mapping itself is
+ * still worth pinning directly rather than leaving unreachable-in-practice branches unverified. */
+export function ssoErrorMessage(code: string): string {
   switch (code) {
     case 'invalid_domain_format':
       return 'Domain is not a valid hostname'

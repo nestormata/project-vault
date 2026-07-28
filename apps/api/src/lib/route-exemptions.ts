@@ -1126,17 +1126,20 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/org/sso-domains': {
     action: SECURITY_ACTION,
     auditEvent: 'org_sso_domain.created',
-    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+    // Delegates through org-sso-domains-routes.ts's own writeSsoDomainAuditEntry(req, tx, ...)
+    // helper (shared by create/update/delete, extracted to remove jscpd duplication) — same
+    // req/tx-forwarding convention as credentials/routes.ts's writeCredentialAuditOrFailClosed.
+    sameTransactionAuditService: 'writeSsoDomainAuditEntry',
   },
   'PATCH /api/v1/org/sso-domains/:id': {
     action: SECURITY_ACTION,
     auditEvent: 'org_sso_domain.updated',
-    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+    sameTransactionAuditService: 'writeSsoDomainAuditEntry',
   },
   'DELETE /api/v1/org/sso-domains/:id': {
     action: SECURITY_ACTION,
     auditEvent: 'org_sso_domain.deleted',
-    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+    sameTransactionAuditService: 'writeSsoDomainAuditEntry',
   },
 }
 
