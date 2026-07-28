@@ -1,6 +1,6 @@
 # Story 16.1: Install and Compile a Custom Theme
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
