@@ -16,6 +16,16 @@ ruleTester.run('no-contiguous-allowed-roles', noContiguousAllowedRoles, {
       // Explanatory comment: kept as allowedRoles deliberately, not a lint violation.
       allowedRoles: ['owner', 'admin'],
     }`,
+    // Real production shape: `security` as a nested object *property* (e.g. inside a
+    // `secureRoute(fastify, { ..., security: {...} })` call), not a `const security = {...}`
+    // declaration. This is how every `security` object in org/routes.ts is actually written —
+    // the `VariableDeclarator` shape above only covers the test-friendly form.
+    `secureRoute(fastify, {
+      security: {
+        // Explanatory comment: kept as allowedRoles deliberately, not a lint violation.
+        allowedRoles: ['owner', 'admin'],
+      },
+    })`,
     // Genuinely non-contiguous (excludes a higher rank, includes a lower one) — allowed,
     // no comment required since order can't be "wrong" when the set itself is the exception.
     `const security = { allowedRoles: ['admin', 'viewer'] }`,
@@ -50,6 +60,19 @@ ruleTester.run('no-contiguous-allowed-roles', noContiguousAllowedRoles, {
         {
           message:
             "allowedRoles: ['owner', 'admin', 'member', 'viewer'] is contiguous from the top of the role hierarchy (expressible as minimumRole: 'viewer') with no explanatory comment — use minimumRole instead, or add a comment explaining the non-contiguous exception.",
+        },
+      ],
+    },
+    {
+      // Same production shape as the valid case above (`security` as a nested object property,
+      // matching org/routes.ts's actual `secureRoute(fastify, { security: {...} })` usage), but
+      // with no explanatory comment — must still be flagged via the `Property`-grandparent branch
+      // of `isSecurityObjectProperty`, not just the `VariableDeclarator` branch exercised elsewhere.
+      code: `secureRoute(fastify, { security: { allowedRoles: ['owner', 'admin'] } })`,
+      errors: [
+        {
+          message:
+            "allowedRoles: ['owner', 'admin'] is contiguous from the top of the role hierarchy (expressible as minimumRole: 'admin') with no explanatory comment — use minimumRole instead, or add a comment explaining the non-contiguous exception.",
         },
       ],
     },
