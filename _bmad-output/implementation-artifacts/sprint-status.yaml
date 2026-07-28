@@ -258,6 +258,6 @@ development_status:
   17-1-share-a-credential-with-an-organization-member: backlog
   17-2-share-a-credential-with-an-external-recipient-via-secure-link: backlog # hardened per 4-round advanced elicitation (sprint-change-proposal-2026-07-24.md §7): sharer step-up re-auth required; reveal gated behind an explicit human click past a consent screen (never on first GET, so link-unfurling/prefetch crawlers can't burn a single-use token); Cache-Control: no-store; admin notification on both creation and first view; share auto-expires if its field is renamed/removed.
   17-3-share-history-expiry-enforcement-and-rotation-recommended-nudge: backlog # extended per advanced elicitation: promoting a rotation (Story 5-6) on a credential/field marks its outstanding shares `superseded` and clears the rotation-recommended nudge, closing the loop between Epic 17 and Story 5-6.
-  16-1-install-and-compile-a-custom-theme: ready-for-dev
+  16-1-install-and-compile-a-custom-theme: in-progress
   16-2-select-an-active-theme: backlog
   epic-16-retrospective: optional
