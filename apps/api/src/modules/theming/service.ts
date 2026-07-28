@@ -90,6 +90,18 @@ const COLOR_GRAMMAR =
   /^#[0-9a-fA-F]{3,8}$|^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$|^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
 // AC-4: strict numeric+unit pattern — rejects calc(), custom units, and any embedded expression.
 const LENGTH_GRAMMAR = /^-?\d+(\.\d+)?(px|rem|em|%)$/
+// AC-5/AC-4 crossover (found via adversarial code review): asset URLs are compiled into
+// `--asset-x: url("<rawValue>");` by direct string interpolation, exactly like a `color` token's
+// raw value would be if it weren't grammar-checked. Without an equivalent character-safety check
+// here, a URL like `https://cdn.example/logo.svg") } input[type=password]{background:url("https://evil`
+// is a syntactically valid URL (the WHATWG URL parser percent-encodes unsafe characters when
+// resolving the hostname for the SSRF check, but the *raw, unencoded* string is what gets
+// interpolated into the compiled CSS) that breaks out of the `url("...")` string and the
+// declaration block — the exact CSS-injection/exfiltration technique AC-4 exists to prevent,
+// just via the asset path instead of a color/length/enum token. Reject (never encode) any value
+// containing a character that could terminate the CSS string or block, consistent with AC-4's
+// "reject, don't sanitize" philosophy.
+const ASSET_URL_UNSAFE_CHARS = /["'\\\s<>{}]/
 
 let state: { themes: CompiledTheme[]; loadedCount: number; failedCount: number } = {
   themes: [],
@@ -180,6 +192,16 @@ async function validateAssets(
     // AC-5 Dev Notes judgment call: HTTPS-only, for defense-in-depth consistency with the rest of
     // this codebase's outbound-URL conventions, even though the server never fetches it.
     if (!rawValue.startsWith('https://')) return { reason: `asset '${key}': must use https://` }
+    if (ASSET_URL_UNSAFE_CHARS.test(rawValue)) {
+      return { reason: `asset '${key}': URL contains unsafe characters` }
+    }
+    // Validated for well-formedness only — the raw string (not this parsed object) is what gets
+    // interpolated into the compiled CSS below.
+    try {
+      void new URL(rawValue)
+    } catch {
+      return { reason: `asset '${key}': not a valid URL` }
+    }
     try {
       await resolveAndValidatePublicAddresses(rawValue, dnsLookup)
     } catch {
