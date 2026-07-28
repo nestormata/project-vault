@@ -1,6 +1,6 @@
 # Story 14.8: Document RBAC Role-Gate Convention
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -436,6 +436,29 @@ Claude Sonnet 5 (claude-sonnet-5)
     actually responsible for (`route-audit.test.ts`, `org/user-management.routes.test.ts`,
     `org/user-dormancy-settings-routes.test.ts`, and all other `org/*.test.ts` files) passed clean
     both in the full run and in isolation.
+### Code Review (2026-07-28, bmad-code-review, run retroactively after this branch was already
+merged to `main` via PR #243 — sprint-status.yaml/Status had drifted out of sync, never actually
+flipped to `done`; caught by this session's own audit)
+
+3-layer adversarial pass (Blind Hunter / Edge Case Hunter / Acceptance Auditor) against commits
+`aa00fe9^..56b3d0d`. Two concrete, unambiguous gaps found and fixed directly (both documentation,
+zero behavior change, no test impact):
+- `architecture.md`'s Decision Matrix overstated that `allowedRoles`'s descending-rank ordering is
+  "enforced by lint" — the `no-contiguous-allowed-roles` rule only enforces the missing-comment
+  case (contiguous-from-top with no explanation), not element order itself
+  (`Array.prototype.includes` is order-independent). Corrected the matrix row.
+- Completion Notes promised the `secure-route.integration.test.ts` vault-unseal pre-existing
+  failure would be "flagged as a candidate for `deferred-work.md`," but no entry was ever actually
+  added. Added `TD14-8-2`.
+Also folded several real-but-narrow lint-rule limitations (found by the Edge Case Hunter: `satisfies`-typed
+arrays and factory-constant `security` objects both silently bypass the rule; a genuinely
+contiguous single-element array like line 699's `allowedRoles: ['owner']` is unconditionally
+exempted; `hasExplanatoryComment` doesn't verify the comment is actually about `allowedRoles`) into
+`TD14-8-1` as caveats the future repo-wide-widening follow-up story must account for — none are
+exploitable today since they only matter once the rule's `files` glob is widened past the current
+3 files. No Critical/High findings. See `deferred-work.md`'s `TD14-8-1`/`TD14-8-2` entries for full
+detail.
+
 - **AC-7**: Added `packages/eslint-config/rules/no-contiguous-allowed-roles.js` (AST rule on
   `Property` nodes named `allowedRoles` whose parent object is a `security` object, mirroring
   `no-error-schema-first-in-union.js`'s structure/style) and
