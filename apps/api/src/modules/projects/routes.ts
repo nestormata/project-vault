@@ -927,9 +927,9 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: z.union([
-          ApiErrorSchema,
           ActiveRotationsErrorSchema,
           ActiveMachineUserKeysErrorSchema,
+          ApiErrorSchema,
         ]),
         422: ApiErrorSchema,
       },

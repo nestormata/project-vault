@@ -119,6 +119,7 @@ ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap fi
 	pnpm check-search-index
 	pnpm check-migration-compatibility
 	pnpm check-story-status-sync
+	pnpm check-story-references
 	pnpm check-psc-tbd-tracking
 	pnpm check-extension-api-version-skew
 	pnpm check-alert-pending-epic3

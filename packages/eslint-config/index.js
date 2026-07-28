@@ -7,6 +7,7 @@ import svelte from 'eslint-plugin-svelte'
 import prettierConfig from 'eslint-config-prettier'
 import { noBaredrizzle } from './rules/no-bare-drizzle.js'
 import { noBareDecrypt } from './rules/no-bare-decrypt.js'
+import { noErrorSchemaFirstInUnion } from './rules/no-error-schema-first-in-union.js'
 
 // Use the strict config rules from the plugin's legacy config set
 // (flat/strict would require project-level type info which we skip for Story 1.1)
@@ -123,12 +124,19 @@ export const apiEnforcement = [
       'no-bare-decrypt': {
         rules: { 'no-bare-call': noBareDecrypt },
       },
+      'no-error-schema-first-in-union': {
+        rules: { 'no-error-schema-first-in-union': noErrorSchemaFirstInUnion },
+      },
     },
     rules: {
       'no-bare-drizzle/no-bare-call': 'error',
       // no-bare-decrypt: block both decrypt and bootstrapDecrypt everywhere in the API
       // (bootstrapDecrypt is the re-exported alias; same security constraint applies)
       'no-bare-decrypt/no-bare-call': ['error', { blockedNames: ['decrypt', 'bootstrapDecrypt'] }],
+      // P5-1 (Epic 5 retro, reaffirmed unenforced in Epic 5 round-3 and Epic 14 round-2): Fastify's
+      // response serializer matches z.union([...]) members in array order, so the generic
+      // ApiErrorSchema must always be last.
+      'no-error-schema-first-in-union/no-error-schema-first-in-union': 'error',
     },
   },
   // Exception: vault key-service bootstrap is the sole permitted caller of bootstrapDecrypt

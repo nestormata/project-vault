@@ -290,7 +290,7 @@ export async function platformAuditRoutes(fastify: FastifyApp): Promise<void> {
         422: ApiErrorSchema,
         // AC-20: VaultSealedResponseSchema included — vaultGuard's own onRequest hook sends its
         // `{status, message}` body through this route's compiled 503 serializer.
-        503: z.union([ApiErrorSchema, VaultSealedResponseSchema]),
+        503: z.union([VaultSealedResponseSchema, ApiErrorSchema]),
       },
     },
     security: {
@@ -317,7 +317,7 @@ export async function platformAuditRoutes(fastify: FastifyApp): Promise<void> {
         ...defaultErrorResponses,
         409: ApiErrorSchema,
         422: ApiErrorSchema,
-        503: z.union([ApiErrorSchema, VaultSealedResponseSchema]),
+        503: z.union([VaultSealedResponseSchema, ApiErrorSchema]),
       },
     },
     security: {

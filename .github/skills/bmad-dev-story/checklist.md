@@ -54,6 +54,7 @@ validation-rules:
 - [ ] **Change Log Updated:** Change Log includes clear summary of what changed and why
 - [ ] **Review Follow-ups:** All review follow-up tasks (marked [AI-Review]) completed and corresponding review items marked resolved (if applicable)
 - [ ] **Story Structure Compliance:** Only permitted sections of story file were modified
+- [ ] **Deferred-Work Tracking:** Every item explicitly descoped, rejected, deferred, or left as an accepted trade-off during this story — including a limitation phrased as a forward reference to a future story (e.g. "Story X.Y", "handled in a later story") — has a corresponding row in `_bmad-output/implementation-artifacts/deferred-work.md` before Status moves to "review". A forward reference to a story number that does not exist yet in `sprint-status.yaml` does NOT satisfy this item on its own — it must resolve to a real backlog entry, or be logged in `deferred-work.md` instead. (Added after Epic 12's retro found 10 such items never made it into `deferred-work.md`, and Epic 13's retro found a phantom "Story 13.5" reference that survived an earlier, narrower version of this same check — `check-story-references.ts`, run in `make ci`, catches the forward-reference case mechanically as a second line of defense.)
 
 ## 🔚 Final Status Verification
 
