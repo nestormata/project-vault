@@ -22,7 +22,7 @@ export const VaultSealedResponseSchema = z.object({ status: z.string(), message:
 export const PLATFORM_ADMIN_ERROR_RESPONSES = {
   401: ApiErrorSchema,
   403: ApiErrorSchema,
-  503: z.union([ApiErrorSchema, VaultSealedResponseSchema]),
+  503: z.union([VaultSealedResponseSchema, ApiErrorSchema]),
 }
 
 export function sendPlatformAuditWriteFailure(error: unknown, reply: FastifyReply): boolean {
