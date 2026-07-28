@@ -1,6 +1,6 @@
 # Story 14.9: Extension API Publish-Readiness Decision
 
-Status: done
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
