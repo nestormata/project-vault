@@ -9,9 +9,11 @@ import { ThemeReloadResponseSchema } from './schema.js'
 
 /**
  * Story 16.1 AC-1/AC-7: OrgAdmin-only, MFA-required, rate-limited manual reload trigger — closely
- * mirrors modules/admin/routes.ts's POST /notifications/test wiring (same allowedRoles/requireMfa
+ * mirrors modules/admin/routes.ts's POST /notifications/test wiring (same minimumRole/requireMfa
  * shape, same { max: 10 } rate-limit precedent given this endpoint also does real filesystem +
- * validation work per call).
+ * validation work per call). Uses `minimumRole: 'admin'` per Story 14-8's documented RBAC
+ * convention (originally shipped as `allowedRoles: ['owner','admin']`, fixed during the epic-16
+ * retro — see epic-16-retro-2026-07-28.md Finding 5).
  *
  * `writeAuditEvent: false` + a direct `writeHumanAuditEntryOrFailClosed(secureCtx.tx, ...)` call
  * (rather than SecureRoute's generic `writeAuditEvent: <AuditConfig>` mechanism) because the audit
@@ -32,7 +34,7 @@ export async function themingRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      allowedRoles: ['owner', 'admin'],
+      minimumRole: 'admin',
       requireMfa: true,
       rateLimit: { max: 10, key: 'POST /admin/themes/reload' },
       writeAuditEvent: false,
