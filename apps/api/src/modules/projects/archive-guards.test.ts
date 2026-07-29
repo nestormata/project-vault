@@ -210,6 +210,39 @@ describe('archive-guards', () => {
     })
   }
 
+  /** Story 17.2 AC-20: same as insertTestShare above, but recipient_type = 'external' — closes
+   *  17.1's test-coverage gap (it only ever exercised member shares against this guard). */
+  async function insertTestExternalShare(projectId: string, status: string): Promise<string> {
+    return withOrg(orgId, async (tx) => {
+      const [credential] = await tx
+        .insert(credentials)
+        .values({
+          orgId,
+          projectId,
+          name: `share-guard-external-cred-${randomUUID()}`,
+          createdBy: userId,
+        })
+        .returning({ id: credentials.id })
+      if (!credential) throw new Error('expected external-share-guard credential to be inserted')
+
+      const [share] = await tx
+        .insert(credentialShares)
+        .values({
+          orgId,
+          credentialId: credential.id,
+          sharedBy: userId,
+          recipientType: 'external',
+          recipientEmail: 'priya@vendor.example',
+          tokenHash: `test-hash-${randomUUID()}`,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          status,
+        })
+        .returning({ id: credentialShares.id })
+      if (!share) throw new Error('expected external credential share to be inserted')
+      return share.id
+    })
+  }
+
   describe('findBlockingShareIds (Story 17.1 AC-19)', () => {
     it('returns [] for a project with no shares', async () => {
       const project = await insertTestProject(orgId, { userId, slug: 'share-guard-none' })
@@ -238,6 +271,18 @@ describe('archive-guards', () => {
       const blockingIds = await withOrg(orgId, (tx) => findBlockingShareIds(tx, project.id))
 
       expect(blockingIds).toEqual([])
+    })
+
+    // Story 17.2 AC-20: 17.1 only ever tested this guard against member (recipient_type='user')
+    // shares — this closes that gap by confirming the same generalized-by-status query (already
+    // filters only on status/credentialId, never recipient_type) blocks on an external share too.
+    it('(Story 17.2 AC-20) blocks on an active external share', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'share-guard-external' })
+      const shareId = await insertTestExternalShare(project.id, 'active')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingShareIds(tx, project.id))
+
+      expect(blockingIds).toEqual([shareId])
     })
 
     it('only returns shares belonging to the given project', async () => {

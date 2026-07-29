@@ -84,7 +84,9 @@ async function loadCredentialFieldMeta(
   return version ?? null
 }
 
-async function validateFieldKey(
+// Exported (Story 17.2 AC-4) so the external-share path reuses this exact validation rather than
+// re-deriving it — same auto-expire-on-field-removal-or-rename semantics for both recipient types.
+export async function validateFieldKey(
   tx: Tx,
   credentialId: string,
   fieldKey: string | undefined
@@ -423,8 +425,13 @@ export async function revealShare(
 }
 
 /** AC-14: the atomic conditional claim for a single-use share — never a read-then-branch-then-
- *  write sequence. Two concurrent reveal requests for the same share cannot both succeed. */
-async function claimSingleUseView(tx: Tx, shareId: string): Promise<CredentialShareRow | null> {
+ *  write sequence. Two concurrent reveal requests for the same share cannot both succeed.
+ *  Exported (Story 17.2 AC-13) so the external reveal path reuses this exact function rather than
+ *  writing a parallel "external claim" — it is already fully generic over `recipient_type`. */
+export async function claimSingleUseView(
+  tx: Tx,
+  shareId: string
+): Promise<CredentialShareRow | null> {
   const [updated] = await tx
     .update(credentialShares)
     .set({

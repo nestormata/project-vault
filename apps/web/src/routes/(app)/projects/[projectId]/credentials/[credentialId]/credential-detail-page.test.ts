@@ -10,6 +10,7 @@ const revealCredentialValueMock = vi.hoisted(() => vi.fn())
 const addCredentialVersionMock = vi.hoisted(() => vi.fn())
 const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
 const createCredentialShareMock = vi.hoisted(() => vi.fn())
+const createExternalCredentialShareMock = vi.hoisted(() => vi.fn())
 const revokeCredentialShareMock = vi.hoisted(() => vi.fn())
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 
@@ -17,6 +18,7 @@ vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
 
 vi.mock('$lib/api/credential-shares.js', () => ({
   createCredentialShare: createCredentialShareMock,
+  createExternalCredentialShare: createExternalCredentialShareMock,
   revokeCredentialShare: revokeCredentialShareMock,
 }))
 
@@ -991,6 +993,61 @@ describe('credential detail +page.svelte', () => {
         expect.objectContaining({ recipientUserId: 'recipient-1', singleUse: true })
       )
       expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
+    })
+
+    it('Story 17.2 AC-21: toggling to "External (email)" swaps the recipient input, requires step-up, and posts to the external-share endpoint', async () => {
+      createExternalCredentialShareMock.mockResolvedValue({
+        id: 'share-ext-1',
+        credentialId,
+        fieldKey: null,
+        sharedBy: 'sharer-1',
+        recipientType: 'external',
+        recipientUserId: null,
+        recipientEmail: 'priya@vendor.example',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-28T01:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-external-token',
+      })
+      render(CredentialDetailPage, { props: { data: baseData() } })
+
+      await fireEvent.click(screen.getByRole('button', { name: /external \(email\)/i }))
+
+      await fireEvent.input(screen.getByLabelText(/recipient email/i), {
+        target: { value: 'priya@vendor.example' },
+      })
+      await fireEvent.input(screen.getByLabelText(/confirm your password/i), {
+        target: { value: 'sharer-password' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      expect(createExternalCredentialShareMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        expect.objectContaining({
+          recipientEmail: 'priya@vendor.example',
+          password: 'sharer-password',
+        })
+      )
+      expect(await screen.findByText(/raw-external-token/)).toBeTruthy()
+      // AC-21: the copy-once link points at the public /external-shares/ route, not /shares/.
+      expect(screen.getByText(/external-shares\/raw-external-token/)).toBeTruthy()
+    })
+
+    it('Story 17.2 AC-21: the singleUse toggle is hidden (always-on) for external shares', async () => {
+      render(CredentialDetailPage, { props: { data: baseData() } })
+
+      expect(screen.getByLabelText(/single view only/i)).toBeTruthy()
+
+      await fireEvent.click(screen.getByRole('button', { name: /external \(email\)/i }))
+
+      expect(screen.queryByLabelText(/^single view only$/i)).toBeNull()
+      expect(screen.getByText(/single view only \(always on for external shares\)/i)).toBeTruthy()
     })
 
     it('revokes an active share and updates its status in place', async () => {

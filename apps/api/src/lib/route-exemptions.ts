@@ -516,6 +516,29 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.share_viewed',
     sameTransactionAuditService: 'writeShareAuditEntry',
   },
+  // Story 17.2 AC-1/AC-3: external-share creation is security-action, same as 17.1's member
+  // creation route — runs inside secureCtx.tx (an authenticated, project-scoped request) and
+  // delegates its audit write the same way.
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/external-shares': {
+    action: SECURITY_ACTION,
+    auditEvent: 'credential.share_created',
+    sameTransactionAuditService: 'writeShareAuditEntry',
+  },
+  // Story 17.2 AC-7/AC-8: these two routes are `requireAuth: false` (no SecureRouteContext/tx at
+  // all — the same shape as GET /api/v1/status-pages/:token) so they cannot delegate an audit
+  // write through `secureCtx.tx` the way every other classified route does.
+  'GET /api/v1/external-shares/access/:token': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      'AC-9/AC-22: the metadata-only GET never returns the secret value, never transitions share status beyond lazy expiry, and never increments view_count or the reveal-attempt counter — an unfurling crawler fetching this repeatedly is expected, harmless traffic and is deliberately not itself audited as a view.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/external-shares/access/:token/reveal': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      "AC-11: this route IS audited (writeSystemAuditEntryOrFailClosed, actorType: 'system', since there is no authenticated actor to attribute a human/machine audit row to for an unauthenticated external recipient) — but requireAuth:false means there is no secureCtx.tx to delegate through, so it cannot use the sameTransactionAuditService pattern this scanner checks for. The audit write runs in its own withOrg-scoped transaction inside external-access-routes.ts and re-throws on failure (fails closed) rather than silently returning 200 with an unaudited reveal.",
+    reviewer: SECURITY_OWNER,
+  },
   'GET /api/v1/projects/:projectId/rotations/upcoming': {
     action: 'read',
     auditOmissionReason:

@@ -7,7 +7,9 @@ export type CredentialShareSummary = {
   credentialId: string
   fieldKey: string | null
   sharedBy: string
+  recipientType: 'user' | 'external'
   recipientUserId: string | null
+  recipientEmail: string | null
   singleUse: boolean
   createdAt: string
   expiresAt: string
@@ -92,6 +94,54 @@ export function getShareMetadata(fetchFn: typeof fetch, token: string) {
 
 export function revealCredentialShare(fetchFn: typeof fetch, token: string) {
   return apiFetch<ShareRevealResult>(fetchFn, `/api/v1/shares/access/${token}/reveal`, {
+    method: 'POST',
+  })
+}
+
+// Story 17.2 AC-1/AC-3/AC-5: external-recipient share creation — recipientEmail replaces
+// recipientUserId, singleUse is never sent (hard-coded server-side), and a step-up factor
+// (password xor totpCode) is required.
+export type CreateExternalCredentialShareRequest = {
+  recipientEmail: string
+  fieldKey?: string
+  expiresAt: string
+  password?: string
+  totpCode?: string
+}
+
+function externalShareUrl(projectId: string, credentialId: string): string {
+  return `/api/v1/projects/${projectId}/credentials/${credentialId}/external-shares`
+}
+
+export function createExternalCredentialShare(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  body: CreateExternalCredentialShareRequest
+) {
+  return apiFetch<CreatedCredentialShare>(fetchFn, externalShareUrl(projectId, credentialId), {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+// Story 17.2 AC-9: metadata for the public, unauthenticated consent page — no sharedByEmail (the
+// external API never returns it), a display name instead.
+export type ExternalShareMetadata = {
+  credentialId: string
+  credentialName: string
+  sharedByDisplayName: string
+  fieldKey: string | null
+  expiresAt: string
+  status: CredentialShareStatus
+}
+
+export function getExternalShareMetadata(fetchFn: typeof fetch, token: string) {
+  return apiFetch<ExternalShareMetadata>(fetchFn, `/api/v1/external-shares/access/${token}`)
+}
+
+export function revealExternalCredentialShare(fetchFn: typeof fetch, token: string) {
+  return apiFetch<ShareRevealResult>(fetchFn, `/api/v1/external-shares/access/${token}/reveal`, {
     method: 'POST',
   })
 }
