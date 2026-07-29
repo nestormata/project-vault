@@ -34,6 +34,11 @@ export const NOTIFICATION_ALERT_TYPES = [
   'audit_storage.critical',
   // Story 9.2 AC-19/AC-20: master-key custody risk — delivered to every org owner (D7).
   'key_custody_risk',
+  // Story 17.2 AC-12: external recipients have no in-app account to notify, so admins are
+  // notified instead — once at share creation, once at the recipient's first successful reveal
+  // (never again for a single-use share).
+  'credential.external_share_created',
+  'credential.external_share_viewed',
 ] as const
 
 export type NotificationAlertType = (typeof NOTIFICATION_ALERT_TYPES)[number]

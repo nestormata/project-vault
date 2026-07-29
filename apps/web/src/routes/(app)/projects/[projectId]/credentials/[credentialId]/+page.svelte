@@ -17,6 +17,7 @@
   import { confirmChecklistItem } from '$lib/api/rotations.js'
   import {
     createCredentialShare,
+    createExternalCredentialShare,
     revokeCredentialShare,
     type CredentialShareSummary,
   } from '$lib/api/credential-shares.js'
@@ -137,38 +138,86 @@
   // section above uses — updated in place on create/revoke so the Shares tab reflects a mutation
   // immediately without a full reload.
   let shareItems = $state<CredentialShareSummary[]>(data.shares ?? [])
+  // Story 17.2 AC-21: recipient-type toggle — swaps the org-member typeahead for a plain email
+  // input, and surfaces the tighter 1h default/72h cap plus the step-up prompt when 'external'.
+  let shareRecipientType = $state<'user' | 'external'>('user')
   let shareRecipientUserId = $state('')
+  let shareRecipientEmail = $state('')
   let shareFieldKey = $state('')
   let shareExpiresInHours = $state(24)
   let shareSingleUse = $state(true)
+  // Story 17.2 AC-3: step-up re-authentication, required before an external share can be
+  // created. Cleared after every attempt — never retained beyond the single submit.
+  let shareStepUpPassword = $state('')
+  let shareStepUpTotp = $state('')
   let shareSubmitting = $state(false)
   let shareError = $state<string | null>(null)
   // Story 17.1 AC-11: the raw token is shown exactly once, right after creation (copy-once
   // affordance) — never persisted, never re-fetchable once this local state is cleared/replaced.
   let lastCreatedShareToken = $state<string | null>(null)
+  let lastCreatedShareIsExternal = $state(false)
   let revokingShareId = $state<string | null>(null)
+
+  const EXTERNAL_SHARE_DEFAULT_HOURS = 1
+  const EXTERNAL_SHARE_MAX_HOURS = 72
+  const MEMBER_SHARE_MAX_HOURS = 168
 
   const fieldMetaKeys = $derived((data.credential?.fields ?? []).map((field) => field.key))
   const shareableOrgMembers = $derived(data.orgMembers ?? [])
 
+  // Story 17.2 AC-21: switching recipient type resets the expiry field to that type's own
+  // reasoned default (1h external / 24h member) rather than carrying over a value that may now
+  // exceed the newly-selected type's cap (72h external / 168h member).
+  function onRecipientTypeChange(type: 'user' | 'external'): void {
+    shareRecipientType = type
+    shareExpiresInHours = type === 'external' ? EXTERNAL_SHARE_DEFAULT_HOURS : 24
+    shareStepUpPassword = ''
+    shareStepUpTotp = ''
+  }
+
   async function onCreateShare(): Promise<void> {
-    if (shareSubmitting || !data.credential || !shareRecipientUserId) return
+    if (shareSubmitting || !data.credential) return
+    if (shareRecipientType === 'user' && !shareRecipientUserId) return
+    if (shareRecipientType === 'external' && !shareRecipientEmail) return
     shareSubmitting = true
     shareError = null
     lastCreatedShareToken = null
     try {
       const expiresAt = new Date(Date.now() + shareExpiresInHours * 60 * 60 * 1000).toISOString()
-      const created = await createCredentialShare(fetch, data.projectId, data.credentialId, {
-        recipientUserId: shareRecipientUserId,
-        ...(shareFieldKey ? { fieldKey: shareFieldKey } : {}),
-        expiresAt,
-        singleUse: shareSingleUse,
-      })
-      const { token, ...summary } = created
-      shareItems = [summary, ...shareItems]
-      lastCreatedShareToken = token
-      shareRecipientUserId = ''
+      if (shareRecipientType === 'external') {
+        const created = await createExternalCredentialShare(
+          fetch,
+          data.projectId,
+          data.credentialId,
+          {
+            recipientEmail: shareRecipientEmail,
+            ...(shareFieldKey ? { fieldKey: shareFieldKey } : {}),
+            expiresAt,
+            ...(shareStepUpPassword ? { password: shareStepUpPassword } : {}),
+            ...(shareStepUpTotp ? { totpCode: shareStepUpTotp } : {}),
+          }
+        )
+        const { token, ...summary } = created
+        shareItems = [summary, ...shareItems]
+        lastCreatedShareToken = token
+        lastCreatedShareIsExternal = true
+        shareRecipientEmail = ''
+      } else {
+        const created = await createCredentialShare(fetch, data.projectId, data.credentialId, {
+          recipientUserId: shareRecipientUserId,
+          ...(shareFieldKey ? { fieldKey: shareFieldKey } : {}),
+          expiresAt,
+          singleUse: shareSingleUse,
+        })
+        const { token, ...summary } = created
+        shareItems = [summary, ...shareItems]
+        lastCreatedShareToken = token
+        lastCreatedShareIsExternal = false
+        shareRecipientUserId = ''
+      }
       shareFieldKey = ''
+      shareStepUpPassword = ''
+      shareStepUpTotp = ''
     } catch (error) {
       shareError = error instanceof Error ? error.message : 'Could not create share.'
     } finally {
@@ -1172,25 +1221,73 @@
             Share link created — copy it now, it will not be shown again.
           </p>
           <code class="mt-2 block break-all rounded-lg bg-white px-3 py-2 text-xs text-slate-900">
-            {resolve(`/shares/${lastCreatedShareToken}`)}
+            {lastCreatedShareIsExternal
+              ? resolve(`/external-shares/${lastCreatedShareToken}`)
+              : resolve(`/shares/${lastCreatedShareToken}`)}
           </code>
+          {#if lastCreatedShareIsExternal}
+            <p class="mt-2 text-xs text-amber-900">
+              No in-app notification is sent to the recipient — send them this link yourself. Org
+              admins have been notified a new external share was created.
+            </p>
+          {/if}
         </div>
       {/if}
 
       {#if data.orgRole !== 'viewer'}
+        <!-- Story 17.2 AC-21: recipient-type toggle — org member (17.1) or external email. -->
+        <div
+          class="mt-4 flex gap-2 text-sm font-medium text-slate-700"
+          role="radiogroup"
+          aria-label="Share with"
+        >
+          <button
+            type="button"
+            class="rounded-full px-3 py-1 {shareRecipientType === 'user'
+              ? 'bg-slate-950 text-white'
+              : 'bg-slate-100 text-slate-700'}"
+            aria-pressed={shareRecipientType === 'user'}
+            onclick={() => onRecipientTypeChange('user')}
+          >
+            Org member
+          </button>
+          <button
+            type="button"
+            class="rounded-full px-3 py-1 {shareRecipientType === 'external'
+              ? 'bg-slate-950 text-white'
+              : 'bg-slate-100 text-slate-700'}"
+            aria-pressed={shareRecipientType === 'external'}
+            onclick={() => onRecipientTypeChange('external')}
+          >
+            External (email)
+          </button>
+        </div>
+
         <div class="mt-4 grid gap-3 sm:grid-cols-2">
-          <label class="text-sm font-medium text-slate-700">
-            Recipient
-            <select
-              class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              bind:value={shareRecipientUserId}
-            >
-              <option value="">Select an org member…</option>
-              {#each shareableOrgMembers as member (member.userId)}
-                <option value={member.userId}>{member.displayName || member.email}</option>
-              {/each}
-            </select>
-          </label>
+          {#if shareRecipientType === 'user'}
+            <label class="text-sm font-medium text-slate-700">
+              Recipient
+              <select
+                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                bind:value={shareRecipientUserId}
+              >
+                <option value="">Select an org member…</option>
+                {#each shareableOrgMembers as member (member.userId)}
+                  <option value={member.userId}>{member.displayName || member.email}</option>
+                {/each}
+              </select>
+            </label>
+          {:else}
+            <label class="text-sm font-medium text-slate-700">
+              Recipient email
+              <input
+                type="email"
+                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                placeholder="vendor@example.com"
+                bind:value={shareRecipientEmail}
+              />
+            </label>
+          {/if}
 
           {#if fieldMetaKeys.length > 1}
             <label class="text-sm font-medium text-slate-700">
@@ -1212,22 +1309,58 @@
             <input
               type="number"
               min="1"
-              max="168"
+              max={shareRecipientType === 'external'
+                ? EXTERNAL_SHARE_MAX_HOURS
+                : MEMBER_SHARE_MAX_HOURS}
               class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
               bind:value={shareExpiresInHours}
             />
           </label>
 
-          <label class="mt-6 flex items-center gap-2 text-sm font-medium text-slate-700">
-            <input type="checkbox" bind:checked={shareSingleUse} />
-            Single view only
-          </label>
+          {#if shareRecipientType === 'user'}
+            <label class="mt-6 flex items-center gap-2 text-sm font-medium text-slate-700">
+              <input type="checkbox" bind:checked={shareSingleUse} />
+              Single view only
+            </label>
+          {:else}
+            <!-- Story 17.2 AC-5: singleUse is hard-coded true server-side for external shares —
+                 the toggle is never shown/editable for this recipient type. -->
+            <p class="mt-6 text-sm text-slate-500">
+              Single view only (always on for external shares)
+            </p>
+          {/if}
         </div>
+
+        {#if shareRecipientType === 'external'}
+          <!-- Story 17.2 AC-3: step-up re-authentication, required before creating an external
+               share — password or a fresh TOTP code, whichever factor the sharer has. -->
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <label class="text-sm font-medium text-slate-700">
+              Confirm your password
+              <input
+                type="password"
+                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                bind:value={shareStepUpPassword}
+                autocomplete="current-password"
+              />
+            </label>
+            <label class="text-sm font-medium text-slate-700">
+              or a fresh authenticator code
+              <input
+                type="text"
+                inputmode="numeric"
+                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                bind:value={shareStepUpTotp}
+              />
+            </label>
+          </div>
+        {/if}
 
         <button
           type="button"
           class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-          disabled={shareSubmitting || !shareRecipientUserId}
+          disabled={shareSubmitting ||
+            (shareRecipientType === 'user' ? !shareRecipientUserId : !shareRecipientEmail)}
           onclick={onCreateShare}
         >
           {shareSubmitting ? 'Creating…' : 'Create share link'}
@@ -1245,6 +1378,16 @@
             >
               <span class="font-medium text-slate-950">
                 {share.fieldKey ?? 'Whole credential'}
+              </span>
+              <span class="text-slate-600">
+                {#if share.recipientType === 'external'}
+                  {share.recipientEmail} (external)
+                {:else}
+                  {shareableOrgMembers.find((m) => m.userId === share.recipientUserId)
+                    ?.displayName ??
+                    shareableOrgMembers.find((m) => m.userId === share.recipientUserId)?.email ??
+                    'org member'}
+                {/if}
               </span>
               <span class="text-slate-600">created {formatDateTime(share.createdAt)}</span>
               <span class="text-slate-600">expires {formatDateTime(share.expiresAt)}</span>

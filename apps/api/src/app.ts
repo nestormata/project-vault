@@ -28,6 +28,7 @@ import { credentialRoutes } from './modules/credentials/routes.js'
 import { rotationRoutes } from './modules/rotation/routes.js'
 import { credentialSharesRoutes } from './modules/credential-shares/routes.js'
 import { credentialShareAccessRoutes } from './modules/credential-shares/access-routes.js'
+import { externalCredentialShareAccessRoutes } from './modules/credential-shares/external-access-routes.js'
 import { monitoringRoutes } from './modules/monitoring/routes.js'
 import { healthDashboardRoutes } from './modules/monitoring/health-dashboard-routes.js'
 import { statusPageRoutes } from './modules/monitoring/status-page-routes.js'
@@ -273,6 +274,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(rotationRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(credentialSharesRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(credentialShareAccessRoutes, { prefix: '/api/v1/shares' })
+  await fastify.register(externalCredentialShareAccessRoutes, {
+    prefix: '/api/v1/external-shares',
+  })
   await fastify.register(monitoringRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(statusPageRoutes, { prefix: '/api/v1/projects' })
   /* eslint-enable sonarjs/no-duplicate-string */

@@ -34,6 +34,34 @@ export function hashShareToken(rawToken: string): string {
     .digest('hex')
 }
 
+/** Shared by the member-share and external-share creation paths (Story 17.2 AC-13's "reuse, don't
+ *  re-derive" convention) so token generation/hashing is expressed in exactly one place. */
+export function generateAndHashShareToken(): { rawToken: string; tokenHash: string } {
+  const rawToken = generateShareToken()
+  return { rawToken, tokenHash: hashShareToken(rawToken) }
+}
+
+/** The insert-column base every `credential_shares` row shares regardless of recipient type —
+ *  factored out so each creation path only spells out its own `recipientType`/`recipientUserId`/
+ *  `recipientEmail`/`singleUse` fields on top of it. Takes the caller's own creation-input object
+ *  directly (both `CreateShareInput` and `CreateExternalShareInput` share this field shape) rather
+ *  than a re-keyed copy of it, so the call site has nothing left to duplicate. */
+export function baseShareInsertValues(
+  input: { orgId: string; credentialId: string; sharedByUserId: string; expiresAt: Date },
+  fieldKey: string | null,
+  tokenHash: string
+) {
+  return {
+    orgId: input.orgId,
+    credentialId: input.credentialId,
+    fieldKey,
+    sharedBy: input.sharedByUserId,
+    tokenHash,
+    expiresAt: input.expiresAt,
+    status: 'active' as const,
+  }
+}
+
 function constantTimeHexEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'hex')
   const bufB = Buffer.from(b, 'hex')
@@ -84,7 +112,9 @@ async function loadCredentialFieldMeta(
   return version ?? null
 }
 
-async function validateFieldKey(
+// Exported (Story 17.2 AC-4) so the external-share path reuses this exact validation rather than
+// re-deriving it — same auto-expire-on-field-removal-or-rename semantics for both recipient types.
+export async function validateFieldKey(
   tx: Tx,
   credentialId: string,
   fieldKey: string | undefined
@@ -99,6 +129,33 @@ async function validateFieldKey(
   const normalized = normalizeFieldKey(fieldKey)
   if (!declaredKeys.includes(normalized)) return { ok: false, field: fieldKey }
   return { ok: true, normalized }
+}
+
+export type ShareFieldAndExpiryValidation =
+  | { status: 'unknown_field_key'; field: string }
+  | { status: 'expires_at_invalid'; reason: 'past' | 'too_far_in_future' }
+  | { status: 'ok'; normalizedField: string | null }
+
+/** Shared by both share-creation paths (Story 17.2 AC-4/AC-13): unknown-field-key and expiry-
+ *  window validation, parameterized only by the caller's own max-TTL constant. The result's
+ *  `status` variants line up 1:1 with `CreateShareResult`/`CreateExternalShareResult` so a caller
+ *  can return a non-'ok' result directly without re-mapping it. */
+export async function validateShareFieldAndExpiry(
+  tx: Tx,
+  credentialId: string,
+  fieldKey: string | undefined,
+  expiresAt: Date,
+  maxTtlMs: number
+): Promise<ShareFieldAndExpiryValidation> {
+  const fieldValidation = await validateFieldKey(tx, credentialId, fieldKey)
+  if (!fieldValidation.ok) return { status: 'unknown_field_key', field: fieldValidation.field }
+
+  const now = Date.now()
+  if (expiresAt.getTime() <= now) return { status: 'expires_at_invalid', reason: 'past' }
+  if (expiresAt.getTime() > now + maxTtlMs) {
+    return { status: 'expires_at_invalid', reason: 'too_far_in_future' }
+  }
+  return { status: 'ok', normalizedField: fieldValidation.normalized }
 }
 
 async function findActiveOrgMembership(
@@ -134,32 +191,25 @@ export async function createCredentialShare(
   if (!membership) return { status: 'recipient_not_found' }
   if (membership.status !== 'active') return { status: 'recipient_inactive' }
 
-  const fieldValidation = await validateFieldKey(tx, input.credentialId, input.fieldKey)
-  if (!fieldValidation.ok) return { status: 'unknown_field_key', field: fieldValidation.field }
+  const validation = await validateShareFieldAndExpiry(
+    tx,
+    input.credentialId,
+    input.fieldKey,
+    input.expiresAt,
+    SHARE_MAX_TTL_MS
+  )
+  if (validation.status !== 'ok') return validation
 
-  const now = Date.now()
-  if (input.expiresAt.getTime() <= now) return { status: 'expires_at_invalid', reason: 'past' }
-  if (input.expiresAt.getTime() > now + SHARE_MAX_TTL_MS) {
-    return { status: 'expires_at_invalid', reason: 'too_far_in_future' }
-  }
-
-  const rawToken = generateShareToken()
-  const tokenHash = hashShareToken(rawToken)
+  const { rawToken, tokenHash } = generateAndHashShareToken()
 
   const [share] = await tx
     .insert(credentialShares)
     .values({
-      orgId: input.orgId,
-      credentialId: input.credentialId,
-      fieldKey: fieldValidation.normalized,
-      sharedBy: input.sharedByUserId,
+      ...baseShareInsertValues(input, validation.normalizedField, tokenHash),
       recipientType: 'user',
       recipientUserId: input.recipientUserId,
       recipientEmail: null,
-      tokenHash,
       singleUse: input.singleUse,
-      expiresAt: input.expiresAt,
-      status: 'active',
     })
     .returning()
   if (!share) throw new Error('createCredentialShare: insert returned no row')
@@ -266,6 +316,39 @@ export type FindShareByTokenResult =
   | { status: 'session_mismatch' }
   | { status: 'ok'; metadata: ShareMetadata }
 
+/** The credential-share-plus-credential-plus-sharer join, factored out so both the session-bound
+ *  (17.1) and unauthenticated external (17.2) lookups share the exact same column set rather than
+ *  each re-declaring it. Exported so `external-service.ts` can reuse it. */
+export function shareWithCredentialAndSharerQuery(tx: Tx) {
+  return tx
+    .select({
+      share: credentialShares,
+      credentialName: credentials.name,
+      credentialProjectId: credentials.projectId,
+      sharedByEmail: users.email,
+    })
+    .from(credentialShares)
+    .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
+    .leftJoin(users, eq(credentialShares.sharedBy, users.id))
+}
+
+/** Same lazy active->expired transition both the session-bound and external metadata lookups
+ *  apply — without it, an already-expired share still reads back as 'active', and the consent
+ *  page would show a live Reveal button for a share the reveal-step would immediately reject.
+ *  Exported so `external-service.ts` reuses this exact transition rather than re-deriving it. */
+export async function lazilyExpireShareIfDue(
+  tx: Tx,
+  share: CredentialShareRow
+): Promise<CredentialShareRow> {
+  if (share.status !== 'active' || share.expiresAt.getTime() > Date.now()) return share
+  const [updated] = await tx
+    .update(credentialShares)
+    .set({ status: 'expired' })
+    .where(and(eq(credentialShares.id, share.id), eq(credentialShares.status, 'active')))
+    .returning()
+  return updated ?? share
+}
+
 /** AC-7: token+session-identity check. A token that doesn't hash-match any row is a 404 (the
  *  share's existence is hidden the same as any not-found resource); a token that matches a row
  *  but whose `recipient_user_id` differs from the caller's session is a 403 (AC-7's deliberate
@@ -276,16 +359,7 @@ export async function findShareByToken(
   params: { orgId: string; rawToken: string; sessionUserId: string }
 ): Promise<FindShareByTokenResult> {
   const tokenHash = hashShareToken(params.rawToken)
-  const [row] = await tx
-    .select({
-      share: credentialShares,
-      credentialName: credentials.name,
-      credentialProjectId: credentials.projectId,
-      sharedByEmail: users.email,
-    })
-    .from(credentialShares)
-    .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
-    .leftJoin(users, eq(credentialShares.sharedBy, users.id))
+  const [row] = await shareWithCredentialAndSharerQuery(tx)
     .where(and(eq(credentialShares.orgId, params.orgId), eq(credentialShares.tokenHash, tokenHash)))
     .limit(1)
   if (!row) return { status: 'not_found' }
@@ -294,18 +368,7 @@ export async function findShareByToken(
   if (!constantTimeHexEqual(row.share.tokenHash, tokenHash)) return { status: 'not_found' }
   if (row.share.recipientUserId !== params.sessionUserId) return { status: 'session_mismatch' }
 
-  // Same lazy active->expired transition `precheckShareClaimable` applies at reveal time — without
-  // it, an already-expired share still reads back as 'active' here, and the consent page would
-  // show a live Reveal button for a share the reveal-step would immediately reject.
-  let share = row.share
-  if (share.status === 'active' && share.expiresAt.getTime() <= Date.now()) {
-    const [updated] = await tx
-      .update(credentialShares)
-      .set({ status: 'expired' })
-      .where(and(eq(credentialShares.id, share.id), eq(credentialShares.status, 'active')))
-      .returning()
-    share = updated ?? share
-  }
+  const share = await lazilyExpireShareIfDue(tx, row.share)
 
   return {
     status: 'ok',
@@ -423,8 +486,13 @@ export async function revealShare(
 }
 
 /** AC-14: the atomic conditional claim for a single-use share — never a read-then-branch-then-
- *  write sequence. Two concurrent reveal requests for the same share cannot both succeed. */
-async function claimSingleUseView(tx: Tx, shareId: string): Promise<CredentialShareRow | null> {
+ *  write sequence. Two concurrent reveal requests for the same share cannot both succeed.
+ *  Exported (Story 17.2 AC-13) so the external reveal path reuses this exact function rather than
+ *  writing a parallel "external claim" — it is already fully generic over `recipient_type`. */
+export async function claimSingleUseView(
+  tx: Tx,
+  shareId: string
+): Promise<CredentialShareRow | null> {
   const [updated] = await tx
     .update(credentialShares)
     .set({

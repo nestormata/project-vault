@@ -55,6 +55,14 @@ export const credentialShares = pgTable(
     firstViewedAt: timestamp('first_viewed_at', { withTimezone: true }),
     viewCount: integer('view_count').notNull().default(0),
     status: text('status').notNull().default('active'),
+    // Story 17.2 AC-22: per-token reveal-attempt cap for the external/unauthenticated path — a
+    // claim-attempt that resolves to this row but loses (not a hash-mismatch) increments this;
+    // exceeding EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS auto-revokes the share. Additive column, same
+    // reconciliation precedent as 17.1's own `single_use` column (see that story's Dev Agent
+    // Record) — the story's "no new migration" Dev Notes text predates AC-22, which was added by
+    // a later advanced-elicitation pass and genuinely needs persisted, cross-request state.
+    // Unused (always 0) for `recipient_type = 'user'` rows.
+    revealAttemptCount: integer('reveal_attempt_count').notNull().default(0),
   },
   (t) => ({
     // AC-19: defense-in-depth against an implementation ever colliding two live tokens.

@@ -1,10 +1,10 @@
-import type { FastifyReply } from 'fastify'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeShareAuditEntry } from './audit.js'
+import { noReferrerHeaders, shareRevealFailureBody } from './reveal-response.js'
 import {
   ShareAccessParamsSchema,
   ShareMetadataResponseSchema,
@@ -13,11 +13,6 @@ import {
 import { findShareByToken, revealShare } from './service.js'
 
 const SHARE_TOKEN_NOT_FOUND = { code: 'share_not_found', message: 'Share not found' } as const
-
-function noReferrerHeaders(reply: FastifyReply): void {
-  // AC-17: token-bearing pages never leak the URL (which carries the raw token) via Referer.
-  reply.header('Referrer-Policy', 'no-referrer')
-}
 
 /**
  * AC-7/AC-8: the recipient-facing access routes, registered under their own prefix (not project-
@@ -125,17 +120,12 @@ export async function credentialShareAccessRoutes(fastify: FastifyApp): Promise<
           message: 'You are no longer eligible to view this share.',
         })
       }
-      if (result.status === 'revoked') {
-        return reply.status(410).send({ code: 'share_revoked', message: 'This share was revoked.' })
-      }
-      if (result.status === 'expired') {
-        return reply.status(410).send({ code: 'share_expired', message: 'This share has expired.' })
-      }
-      if (result.status === 'already_viewed') {
-        return reply.status(410).send({
-          code: 'share_already_viewed',
-          message: 'This share has already been viewed.',
-        })
+      if (
+        result.status === 'revoked' ||
+        result.status === 'expired' ||
+        result.status === 'already_viewed'
+      ) {
+        return reply.status(410).send(shareRevealFailureBody(result.status))
       }
 
       const viewedAt = result.share.firstViewedAt ?? new Date()
