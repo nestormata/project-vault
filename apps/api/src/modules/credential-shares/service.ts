@@ -338,7 +338,7 @@ async function precheckShareClaimable(
 ): Promise<RevealShareResult | undefined> {
   // AC-16: re-check recipient org-membership/active-status at reveal time, not just at creation.
   const membership = await findActiveOrgMembership(tx, params.orgId, params.sessionUserId)
-  if (!membership || membership.status !== 'active') return { status: 'recipient_ineligible' }
+  if (membership?.status !== 'active') return { status: 'recipient_ineligible' }
 
   if (share.status === 'revoked') return { status: 'revoked' }
   if (share.status === 'expired' || share.status === 'superseded') return { status: 'expired' }
