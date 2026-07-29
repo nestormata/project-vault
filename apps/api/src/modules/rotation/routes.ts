@@ -18,6 +18,8 @@ import {
 import { env } from '../../config/env.js'
 import { PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
 import { effectiveProjectRole } from '../projects/project-access.js'
+import { supersedeOutstandingSharesForRotation } from '../credential-shares/service.js'
+import { writeShareAuditEntry } from '../credential-shares/audit.js'
 import {
   AbandonRotationBodySchema,
   AbandonRotationResponseSchema,
@@ -354,6 +356,39 @@ function writeRotationPromotedAudit(
       ...extraPayload,
     },
   })
+}
+
+/** Story 17.3 AC-12/AC-13: called from the promote handler, inside the SAME transaction as
+ *  `promoteRotation()`/`writeRotationPromotedAudit()` (`secureCtx.tx`) — if the supersession
+ *  update or any of its per-share audit writes fails, the whole promote rolls back, exactly like
+ *  every other rotation mutation in this codebase. Each superseded share gets its OWN
+ *  `CREDENTIAL_SHARE_SUPERSEDED` audit entry (not one aggregate entry for the whole batch),
+ *  written via `writeShareAuditEntry` (the human-actor variant — the actor is the human who
+ *  clicked Promote, unlike AC-5's expiry sweep, which has no human actor). */
+async function supersedeOutstandingSharesAndAudit(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  params: { credentialId: string; projectId: string },
+  rotation: { id: string; targetFields: string[] | null }
+): Promise<void> {
+  const superseded = await supersedeOutstandingSharesForRotation(secureCtx.tx, {
+    orgId: secureCtx.auth.orgId,
+    credentialId: params.credentialId,
+    targetFields: rotation.targetFields,
+    rotationId: rotation.id,
+  })
+  for (const share of superseded) {
+    await writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+      eventType: AuditEvent.CREDENTIAL_SHARE_SUPERSEDED,
+      resourceId: share.id,
+      payload: {
+        credentialId: params.credentialId,
+        fieldKey: share.fieldKey,
+        rotationId: rotation.id,
+        recipientType: share.recipientType,
+      },
+    })
+  }
 }
 
 /** Shared by resume and abandon: identical params schema and empty-body validation. */
@@ -1814,6 +1849,13 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       try {
+        // Story 17.3 AC-12/AC-13: automatic supersession of outstanding shares, in the same
+        // transaction as the promote itself — runs BEFORE the ROTATION_PROMOTED audit write so
+        // both are covered by the same try/catch's roll-back-on-failure semantics.
+        await supersedeOutstandingSharesAndAudit(secureCtx, req, params, {
+          id: result.rotation.id,
+          targetFields: result.rotation.targetFields ?? null,
+        })
         await writeRotationPromotedAudit(
           secureCtx.tx,
           secureCtx.auth,

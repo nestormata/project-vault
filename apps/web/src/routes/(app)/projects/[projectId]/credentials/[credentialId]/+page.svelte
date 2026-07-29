@@ -18,8 +18,10 @@
   import {
     createCredentialShare,
     createExternalCredentialShare,
+    dismissRotationRecommendedNudge,
     revokeCredentialShare,
     type CredentialShareSummary,
+    type RotationRecommendedBucket,
   } from '$lib/api/credential-shares.js'
   import { ApiClientError } from '$lib/api/client.js'
   import FieldSetEditor from '$lib/components/credentials/FieldSetEditor.svelte'
@@ -157,6 +159,62 @@
   let lastCreatedShareToken = $state<string | null>(null)
   let lastCreatedShareIsExternal = $state(false)
   let revokingShareId = $state<string | null>(null)
+
+  // Story 17.3 AC-11/AC-16: local list, same convention as `shareItems` above — updated in place
+  // on dismiss so the badge disappears immediately without a full reload.
+  let nudgeBuckets = $state<RotationRecommendedBucket[]>(data.rotationRecommendedNudges ?? [])
+  let dismissingBucketKey = $state<string | null>(null)
+  let dismissReason = $state('')
+  let dismissError = $state<string | null>(null)
+  const activeNudgeBuckets = $derived(nudgeBuckets.filter((bucket) => bucket.active))
+
+  function bucketKey(fieldKey: string | null): string {
+    return fieldKey ?? '__whole_credential__'
+  }
+
+  // Story 17.3 AC-2: builds the Shares-tab pagination query string — appended onto a resolve()
+  // call inline at each href (same "resolve() a literal route path with the query string
+  // appended" convention the rotations "Show more" link above uses; the eslint
+  // svelte/no-navigation-without-resolve rule requires the resolve() call to appear directly in
+  // the href expression, not behind a helper function).
+  function sharesPageQuery(targetPage: number): string {
+    const params = new URLSearchParams()
+    if (data.sharesStatus) params.set('sharesStatus', data.sharesStatus)
+    params.set('sharesPage', String(targetPage))
+    return params.toString()
+  }
+
+  function nudgeBadgeLabel(bucket: RotationRecommendedBucket): string {
+    const shareAge = bucket.mostRecentShareAt
+      ? Math.max(
+          0,
+          Math.floor((Date.now() - new Date(bucket.mostRecentShareAt).getTime()) / 86_400_000)
+        )
+      : 0
+    const agoText = shareAge === 1 ? '1 day ago' : `${shareAge} days ago`
+    return bucket.fieldKey
+      ? `Field \`${bucket.fieldKey}\` shared ${agoText} — rotation recommended`
+      : `Shared ${agoText} — rotation recommended`
+  }
+
+  async function onDismissNudge(fieldKey: string | null): Promise<void> {
+    if (!dismissReason.trim() || !data.credential) return
+    dismissError = null
+    try {
+      await dismissRotationRecommendedNudge(fetch, data.projectId, data.credentialId, {
+        ...(fieldKey ? { fieldKey } : {}),
+        reason: dismissReason,
+      })
+      nudgeBuckets = nudgeBuckets.map((bucket) =>
+        bucket.fieldKey === fieldKey ? { ...bucket, active: false } : bucket
+      )
+      dismissingBucketKey = null
+      dismissReason = ''
+    } catch (error) {
+      dismissError =
+        error instanceof ApiClientError ? error.message : 'Failed to dismiss the nudge.'
+    }
+  }
 
   const EXTERNAL_SHARE_DEFAULT_HOURS = 1
   const EXTERNAL_SHARE_MAX_HOURS = 72
@@ -635,6 +693,72 @@
       {#if data.credential.description}
         <p class="mt-2 text-slate-600">{data.credential.description}</p>
       {/if}
+
+      <!-- Story 17.3 AC-16: a credential that has never been shared shows no badge at all — the
+           badge's mere presence is itself the signal (matches this codebase's existing convention
+           of omitting rather than graying out inapplicable UI). -->
+      {#if activeNudgeBuckets.length > 0}
+        <div class="mt-4 space-y-2">
+          {#each activeNudgeBuckets as bucket (bucketKey(bucket.fieldKey))}
+            <div
+              class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm"
+            >
+              <span class="font-medium text-amber-900">{nudgeBadgeLabel(bucket)}</span>
+              <div class="flex items-center gap-3">
+                <a
+                  class="font-medium text-amber-900 underline"
+                  href={resolve(
+                    `/projects/${data.projectId}/credentials/${data.credentialId}/rotate`
+                  )}
+                >
+                  Rotate now
+                </a>
+                {#if dismissingBucketKey === bucketKey(bucket.fieldKey)}
+                  <input
+                    type="text"
+                    class="rounded-lg border border-amber-300 px-2 py-1 text-xs"
+                    placeholder="Reason for dismissing (required)"
+                    bind:value={dismissReason}
+                  />
+                  <button
+                    type="button"
+                    class="text-xs font-semibold text-amber-900 underline disabled:opacity-50"
+                    disabled={!dismissReason.trim()}
+                    onclick={() => onDismissNudge(bucket.fieldKey)}
+                  >
+                    Confirm dismiss
+                  </button>
+                  <button
+                    type="button"
+                    class="text-xs text-amber-700 underline"
+                    onclick={() => {
+                      dismissingBucketKey = null
+                      dismissReason = ''
+                    }}
+                  >
+                    Cancel
+                  </button>
+                {:else}
+                  <button
+                    type="button"
+                    class="text-xs font-semibold text-amber-900 underline"
+                    onclick={() => {
+                      dismissingBucketKey = bucketKey(bucket.fieldKey)
+                      dismissReason = ''
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+          {#if dismissError}
+            <p class="text-sm text-red-700">{dismissError}</p>
+          {/if}
+        </div>
+      {/if}
+
       <dl class="mt-5 grid gap-3 sm:grid-cols-2">
         <div class="rounded-2xl bg-slate-50 p-4">
           <dt class="text-sm text-slate-500">Tags</dt>
@@ -1367,17 +1491,46 @@
         </button>
       {/if}
 
-      <h3 class="mt-6 font-semibold text-slate-950">Outstanding and past shares</h3>
+      <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <h3 class="font-semibold text-slate-950">Outstanding and past shares</h3>
+        <!-- Story 17.3 AC-1: status filter, driven by the sharesStatus URL query param so the
+             filter survives a reload/shared link, same convention as the rotations `page` param. -->
+        <label class="text-sm text-slate-600">
+          Filter by status
+          <select
+            class="ml-2 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+            value={data.sharesStatus ?? ''}
+            onchange={(e) => {
+              const value = (e.target as HTMLSelectElement).value
+              const url = new URL(window.location.href)
+              if (value) url.searchParams.set('sharesStatus', value)
+              else url.searchParams.delete('sharesStatus')
+              url.searchParams.delete('sharesPage')
+              window.location.href = url.toString()
+            }}
+          >
+            <option value="">All</option>
+            <option value="active">Active</option>
+            <option value="viewed">Viewed</option>
+            <option value="revoked">Revoked</option>
+            <option value="expired">Expired</option>
+            <option value="superseded">Superseded</option>
+          </select>
+        </label>
+      </div>
       {#if shareItems.length === 0}
         <p class="mt-3 text-sm text-slate-600">No shares yet for this credential.</p>
       {:else}
-        <ul class="mt-4 space-y-2">
+        <p class="mt-2 text-xs text-slate-500">
+          Showing {shareItems.length} of {data.sharesTotal ?? shareItems.length}
+        </p>
+        <ul class="mt-2 space-y-2">
           {#each shareItems as share (share.id)}
             <li
               class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
             >
               <span class="font-medium text-slate-950">
-                {share.fieldKey ?? 'Whole credential'}
+                Field: {share.fieldKey ?? 'Whole credential'}
               </span>
               <span class="text-slate-600">
                 {#if share.recipientType === 'external'}
@@ -1414,6 +1567,30 @@
             </li>
           {/each}
         </ul>
+        <!-- Story 17.3 AC-2: pagination controls — Prev/Next, driven by the sharesPage URL query
+             param, so a page reload/shared link preserves position. -->
+        <div class="mt-3 flex items-center gap-3">
+          {#if (data.sharesPage ?? 1) > 1}
+            <a
+              class="text-sm font-medium text-slate-700 underline"
+              href={resolve(
+                `/projects/${data.projectId}/credentials/${data.credentialId}?${sharesPageQuery((data.sharesPage ?? 1) - 1)}`
+              )}
+            >
+              Previous
+            </a>
+          {/if}
+          {#if (data.sharesPage ?? 1) * 25 < (data.sharesTotal ?? 0)}
+            <a
+              class="text-sm font-medium text-slate-700 underline"
+              href={resolve(
+                `/projects/${data.projectId}/credentials/${data.credentialId}?${sharesPageQuery((data.sharesPage ?? 1) + 1)}`
+              )}
+            >
+              Next
+            </a>
+          {/if}
+        </div>
       {/if}
     </section>
 

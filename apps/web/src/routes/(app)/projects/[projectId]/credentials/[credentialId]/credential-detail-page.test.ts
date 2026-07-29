@@ -12,6 +12,7 @@ const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
 const createCredentialShareMock = vi.hoisted(() => vi.fn())
 const createExternalCredentialShareMock = vi.hoisted(() => vi.fn())
 const revokeCredentialShareMock = vi.hoisted(() => vi.fn())
+const dismissRotationRecommendedNudgeMock = vi.hoisted(() => vi.fn())
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
@@ -20,6 +21,7 @@ vi.mock('$lib/api/credential-shares.js', () => ({
   createCredentialShare: createCredentialShareMock,
   createExternalCredentialShare: createExternalCredentialShareMock,
   revokeCredentialShare: revokeCredentialShareMock,
+  dismissRotationRecommendedNudge: dismissRotationRecommendedNudgeMock,
 }))
 
 vi.mock('$lib/api/credentials.js', async () => {
@@ -1088,7 +1090,13 @@ describe('credential detail +page.svelte', () => {
         },
       })
 
-      await fireEvent.click(screen.getByRole('button', { name: /revoke/i }))
+      const revokeButton = screen.getByRole('button', { name: /revoke/i })
+      // Story 17.3 AC-1 added a status-filter <select> with a "Revoked" option — capture the
+      // share's own list item BEFORE the click (while the Revoke button still uniquely
+      // identifies it) so the post-click assertion can scope its query and not collide with
+      // that unrelated "Revoked" option text.
+      const shareListItem = revokeButton.closest('li') as HTMLElement
+      await fireEvent.click(revokeButton)
 
       expect(revokeCredentialShareMock).toHaveBeenCalledWith(
         expect.anything(),
@@ -1096,8 +1104,80 @@ describe('credential detail +page.svelte', () => {
         credentialId,
         'share-1'
       )
-      expect(await screen.findByText(/revoked/i)).toBeTruthy()
+      expect(await within(shareListItem).findByText(/revoked/i)).toBeTruthy()
       expect(screen.queryByRole('button', { name: /revoke/i })).toBeNull()
+    })
+  })
+
+  // Story 17.3 AC-16: rotation-recommended nudge badge on the credential detail header.
+  describe('rotation-recommended nudge', () => {
+    it('AC-16: shows no badge at all for a credential with no active nudge bucket', () => {
+      render(CredentialDetailPage, {
+        props: { data: baseData({ rotationRecommendedNudges: [] }) },
+      })
+      expect(screen.queryByText(/rotation recommended/i)).toBeNull()
+    })
+
+    it('AC-16: shows the badge for an active bucket, with a Rotate link and a Dismiss action', () => {
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            rotationRecommendedNudges: [
+              {
+                fieldKey: null,
+                active: true,
+                mostRecentShareAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+                mostRecentSharedWith: 'riley@example.com',
+              },
+            ],
+          }),
+        },
+      })
+      expect(screen.getByText(/shared 3 days ago — rotation recommended/i)).toBeTruthy()
+      expect(screen.getByRole('link', { name: /rotate now/i })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /^dismiss$/i })).toBeTruthy()
+    })
+
+    it('AC-15: dismissing requires a non-empty reason and clears the badge on success', async () => {
+      dismissRotationRecommendedNudgeMock.mockResolvedValue({
+        fieldKey: null,
+        dismissedAt: new Date().toISOString(),
+      })
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            rotationRecommendedNudges: [
+              {
+                fieldKey: null,
+                active: true,
+                mostRecentShareAt: new Date().toISOString(),
+                mostRecentSharedWith: null,
+              },
+            ],
+          }),
+        },
+      })
+
+      await fireEvent.click(screen.getByRole('button', { name: /^dismiss$/i }))
+      const confirmButton = screen.getByRole('button', { name: /confirm dismiss/i })
+      expect(confirmButton.hasAttribute('disabled')).toBe(true)
+
+      await fireEvent.input(screen.getByPlaceholderText(/reason for dismissing/i), {
+        target: { value: 'Rotated out of band' },
+      })
+      expect(confirmButton.hasAttribute('disabled')).toBe(false)
+
+      await fireEvent.click(confirmButton)
+
+      expect(dismissRotationRecommendedNudgeMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        { reason: 'Rotated out of band' }
+      )
+      await vi.waitFor(() => {
+        expect(screen.queryByText(/rotation recommended/i)).toBeNull()
+      })
     })
   })
 })

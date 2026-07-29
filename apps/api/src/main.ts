@@ -23,6 +23,7 @@ import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
 import { runBreakGlassOverlapExpiryJob } from './workers/rotation-break-glass-expire.js'
 import { runStaleRotationRecoveryJob } from './workers/rotation-recover.js'
 import { runStaleStagedAlertJob } from './workers/rotation-stale-staged-alert.js'
+import { runCredentialShareExpireJob } from './workers/credential-share-expire.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
 import { runPaymentExpiryAlertJob } from './workers/payment-expiry-alert.js'
 import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
@@ -80,6 +81,11 @@ const ROTATION_RECOVER_JOB = 'rotation/recover'
 // once-a-day pattern) — a 14-day-default threshold has no need for the crash-recovery job's
 // every-15-minutes cadence.
 const ROTATION_STALE_STAGED_ALERT_JOB = 'rotation/stale-staged-alert'
+// Story 17.3 AC-7: hourly, materially more frequent than the rotation jobs above — share
+// `expiresAt` windows in this epic are measured in hours (17.1 default 24h/cap 7d, 17.2 default
+// 1h/cap 72h), so an hourly sweep is the appropriate cadence for keeping Share History accurate
+// (see credential-share-expire.ts's own doc comment and the story's Dev Agent Record).
+const CREDENTIAL_SHARE_EXPIRE_JOB = 'credential-shares/expire'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
@@ -167,6 +173,7 @@ async function main(): Promise<void> {
       [ROTATION_BREAK_GLASS_EXPIRE_JOB]: { cron: '* * * * *' },
       [ROTATION_RECOVER_JOB]: { cron: '*/15 * * * *' },
       [ROTATION_STALE_STAGED_ALERT_JOB]: { cron: '0 8 * * *' },
+      [CREDENTIAL_SHARE_EXPIRE_JOB]: { cron: '0 * * * *' },
       'import/cleanup-expired': { cron: '*/5 * * * *' },
       'payment/expiry-alert': { cron: '0 8 * * *' },
       'cert/expiry-alert': { cron: '0 8 * * *' },
@@ -243,6 +250,10 @@ async function main(): Promise<void> {
       [ROTATION_STALE_STAGED_ALERT_JOB]: (job) =>
         withJobLogging(fastify.log, ROTATION_STALE_STAGED_ALERT_JOB, job.id ?? 'unknown', () =>
           runStaleStagedAlertJob(boss, fastify.log)
+        ),
+      [CREDENTIAL_SHARE_EXPIRE_JOB]: (job) =>
+        withJobLogging(fastify.log, CREDENTIAL_SHARE_EXPIRE_JOB, job.id ?? 'unknown', () =>
+          runCredentialShareExpireJob(fastify.log)
         ),
       'import/cleanup-expired': (job) =>
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>

@@ -4,7 +4,7 @@ import {
   listCredentialVersions,
 } from '$lib/api/credentials.js'
 import { listRotations } from '$lib/api/rotations.js'
-import { listCredentialShares } from '$lib/api/credential-shares.js'
+import { listCredentialShares, listRotationRecommendedNudges } from '$lib/api/credential-shares.js'
 import { listOrgUsers } from '$lib/api/org-users.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -45,6 +45,9 @@ function emptyCredentialPageResult(projectId: string, credentialId: string, orgR
     activeRotationId: null,
     // Story 17.1 AC-11: Shares tab data — empty on any load failure, same as every other section.
     shares: [],
+    sharesTotal: 0,
+    // Story 17.3 AC-11: rotation-recommended nudge state — empty on any load failure too.
+    rotationRecommendedNudges: [],
     orgMembers: [],
   }
 }
@@ -78,23 +81,55 @@ function handleCredentialLoadError(
   throw error
 }
 
+const SHARES_PAGE_SIZE = 25
+
+function parsePositiveIntParam(url: URL, key: string): number {
+  const raw = Number(url.searchParams.get(key) ?? '1')
+  return Number.isFinite(raw) && raw > 0 ? raw : 1
+}
+
+// Story 17.3 AC-1/AC-2: Shares tab status filter + pagination, driven by URL query params so
+// filter/page state survives a reload/shared link, same convention as the rotations `page` param.
+// Extracted purely to keep `load`'s own cyclomatic complexity under this repo's eslint threshold.
+function parseSharesQuery(url: URL): { status: string | undefined; page: number } {
+  return {
+    status: url.searchParams.get('sharesStatus') ?? undefined,
+    page: parsePositiveIntParam(url, 'sharesPage'),
+  }
+}
+
 export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
-  const requestedPage = Number(url.searchParams.get('page') ?? '1')
-  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1
+  const page = parsePositiveIntParam(url, 'page')
+  const sharesQuery = parseSharesQuery(url)
+  const sharesStatus = sharesQuery.status
+  const sharesPage = sharesQuery.page
 
   try {
-    const [credential, versions, dependencies, mostRecentRotation, rotations, shares, orgMembers] =
-      await Promise.all([
-        getCredential(fetch, params.projectId, params.credentialId),
-        listCredentialVersions(fetch, params.projectId, params.credentialId),
-        listCredentialDependencies(fetch, params.projectId, params.credentialId),
-        listRotations(fetch, params.projectId, params.credentialId, { limit: 1 }),
-        listRotations(fetch, params.projectId, params.credentialId, { page, limit: 10 }),
-        listCredentialShares(fetch, params.projectId, params.credentialId),
-        listOrgUsers(fetch),
-      ])
+    const [
+      credential,
+      versions,
+      dependencies,
+      mostRecentRotation,
+      rotations,
+      shares,
+      rotationRecommendedNudges,
+      orgMembers,
+    ] = await Promise.all([
+      getCredential(fetch, params.projectId, params.credentialId),
+      listCredentialVersions(fetch, params.projectId, params.credentialId),
+      listCredentialDependencies(fetch, params.projectId, params.credentialId),
+      listRotations(fetch, params.projectId, params.credentialId, { limit: 1 }),
+      listRotations(fetch, params.projectId, params.credentialId, { page, limit: 10 }),
+      listCredentialShares(fetch, params.projectId, params.credentialId, {
+        status: sharesStatus as never,
+        limit: SHARES_PAGE_SIZE,
+        offset: (sharesPage - 1) * SHARES_PAGE_SIZE,
+      }),
+      listRotationRecommendedNudges(fetch, params.projectId, params.credentialId),
+      listOrgUsers(fetch),
+    ])
     const latest = mostRecentRotation.items[0] ?? null
     const activeRotationId =
       latest && ACTIVE_ROTATION_STATUSES.has(latest.status) ? latest.id : null
@@ -111,6 +146,10 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
       rotationsHasMore: rotations.hasMore,
       activeRotationId,
       shares: shares.items,
+      sharesTotal: shares.total,
+      sharesPage,
+      sharesStatus: sharesStatus ?? null,
+      rotationRecommendedNudges: rotationRecommendedNudges.items,
       // Recipient typeahead is scoped to active org members other than the current sharer
       // (self-share is rejected server-side anyway, but excluding it here keeps the picker
       // honest — same for a deactivated member, since AC-2 would reject that too).

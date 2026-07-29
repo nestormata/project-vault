@@ -65,3 +65,15 @@ export async function apiFetch<T>(
 
   return parseApiEnvelope<T>(response)
 }
+
+/** Shared by every API module building a query string from optional filter/pagination params
+ *  (rotations, credential-shares, ...) — omits keys whose value is `undefined` rather than
+ *  serializing the literal string `"undefined"`. */
+export function buildQuery(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) search.set(key, String(value))
+  }
+  const serialized = search.toString()
+  return serialized ? `?${serialized}` : ''
+}

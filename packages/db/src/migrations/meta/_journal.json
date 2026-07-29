@@ -435,6 +435,13 @@
       "when": 1785305500000,
       "tag": "0061_credential_shares_reveal_attempt_count",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1785391900000,
+      "tag": "0062_credential_share_nudge_dismissals",
+      "breakpoints": true
     }
   ]
 }

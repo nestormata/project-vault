@@ -1,4 +1,4 @@
-import { apiFetch } from './client.js'
+import { apiFetch, buildQuery } from './client.js'
 
 export type CredentialShareStatus = 'active' | 'viewed' | 'revoked' | 'expired' | 'superseded'
 
@@ -50,13 +50,26 @@ function shareUrl(projectId: string, credentialId: string, suffix = ''): string 
   return `/api/v1/projects/${projectId}/credentials/${credentialId}/shares${suffix}`
 }
 
-// Story 17.1 AC-11: shares the current user created for a credential.
+// Story 17.3 AC-1/AC-2: optional status filter + limit/offset pagination on top of 17.1's
+// existing scoping — additive query params, and the response now also carries `total`.
+export type ListCredentialSharesQuery = {
+  status?: CredentialShareStatus
+  limit?: number
+  offset?: number
+}
+
+// Story 17.1 AC-11: shares the current user created for a credential. Story 17.3 AC-1/AC-2:
+// optional status filter + limit/offset pagination, `total` alongside `items`.
 export function listCredentialShares(
   fetchFn: typeof fetch,
   projectId: string,
-  credentialId: string
+  credentialId: string,
+  query: ListCredentialSharesQuery = {}
 ) {
-  return apiFetch<{ items: CredentialShareSummary[] }>(fetchFn, shareUrl(projectId, credentialId))
+  return apiFetch<{ items: CredentialShareSummary[]; total: number }>(
+    fetchFn,
+    `${shareUrl(projectId, credentialId)}${buildQuery(query)}`
+  )
 }
 
 // Story 17.1 AC-1/AC-4: creates a share; the returned `token` is shown to the sharer exactly once.
@@ -144,4 +157,46 @@ export function revealExternalCredentialShare(fetchFn: typeof fetch, token: stri
   return apiFetch<ShareRevealResult>(fetchFn, `/api/v1/external-shares/access/${token}/reveal`, {
     method: 'POST',
   })
+}
+
+// Story 17.3 AC-11/AC-15/FR125: the "shared — rotation recommended" nudge, computed per
+// (credentialId, fieldKey) bucket.
+export type RotationRecommendedBucket = {
+  fieldKey: string | null
+  active: boolean
+  mostRecentShareAt: string | null
+  mostRecentSharedWith: string | null
+}
+
+function nudgeUrl(projectId: string, credentialId: string, suffix = ''): string {
+  return `/api/v1/projects/${projectId}/credentials/${credentialId}/nudge${suffix}`
+}
+
+export function listRotationRecommendedNudges(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string
+) {
+  return apiFetch<{ items: RotationRecommendedBucket[] }>(
+    fetchFn,
+    nudgeUrl(projectId, credentialId)
+  )
+}
+
+export type DismissNudgeRequest = {
+  fieldKey?: string
+  reason: string
+}
+
+export function dismissRotationRecommendedNudge(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string,
+  body: DismissNudgeRequest
+) {
+  return apiFetch<{ fieldKey: string | null; dismissedAt: string }>(
+    fetchFn,
+    nudgeUrl(projectId, credentialId, '/dismiss'),
+    { method: 'POST', body: JSON.stringify(body) }
+  )
 }

@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { auditLogEntries, credentialVersions, rotations } from '@project-vault/db/schema'
+import {
+  auditLogEntries,
+  credentialShares,
+  credentialVersions,
+  rotations,
+} from '@project-vault/db/schema'
 import {
   bootstrapCredentialRouteOwners,
   createCredentialTestProject,
@@ -370,5 +375,53 @@ describe.sequential('rotation promote/retire/staged-value routes (Story 5.6)', (
       headers: { cookie: cookieHeader(owner.cookies) },
     })
     expect(archiveAfterRetireRes.statusCode).toBe(200)
+  })
+
+  it('Story 17.3 AC-12/AC-13/AC-14: promoting a whole-secret rotation automatically supersedes outstanding shares and audits each one', async () => {
+    const label = 'promote-supersede'
+    const { addUserToOrg } = createMembershipTestHelpers({
+      emailPrefix: label,
+      orgNamePrefix: 'PromoteSupersede',
+    })
+    const recipient = await addUserToOrg(app, owner.orgId, label, { orgRole: 'member' })
+    const ids = await initiateAndGetIds(app, owner.cookies, label)
+
+    const createShare = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${ids.projectId}/credentials/${ids.credentialId}/shares`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {
+        recipientUserId: recipient.userId,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        singleUse: false,
+      },
+    })
+    expect(createShare.statusCode).toBe(201)
+    const shareId = createShare.json<{ data: { id: string } }>().data.id
+
+    const promoteRes = await promoteViaApi(app, owner.cookies, ids, {
+      acknowledgedNoDependencies: true,
+    })
+    expect(promoteRes.statusCode).toBe(200)
+
+    const shareRow = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select()
+        .from(credentialShares)
+        .where(eq(credentialShares.id, shareId))
+        .then((rows) => rows[0])
+    )
+    expect(shareRow?.status).toBe('superseded')
+    expect(shareRow?.supersededAt).not.toBeNull()
+
+    const supersededAudit = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ resourceId: auditLogEntries.resourceId, payload: auditLogEntries.payload })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'credential.share_superseded'))
+    )
+    const matching = supersededAudit.find((row) => row.resourceId === shareId)
+    expect(matching).toBeDefined()
+    expect((matching?.payload as { rotationId?: string }).rotationId).toBe(ids.rotationId)
   })
 })

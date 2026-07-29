@@ -505,6 +505,20 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.share_revoked',
     sameTransactionAuditService: 'writeShareAuditEntry',
   },
+  // Story 17.3 AC-11: computed, read-only nudge state — never exposes a credential value.
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/nudge': {
+    action: 'read',
+    auditOmissionReason: 'Rotation-recommended nudge state is metadata only; no secret values.',
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 17.3 AC-15: dismissal is a security-relevant action (FR125's own threat model — see the
+  // story's Security Audit Personas elicitation: an unaudited/unauthenticated dismissal would let
+  // a share go undetected) — audited the same way share creation/revocation are.
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/nudge/dismiss': {
+    action: SECURITY_ACTION,
+    auditEvent: 'credential.share_nudge_dismissed',
+    sameTransactionAuditService: 'writeShareAuditEntry',
+  },
   'GET /api/v1/shares/access/:token': {
     action: SENSITIVE_READ,
     auditOmissionReason:

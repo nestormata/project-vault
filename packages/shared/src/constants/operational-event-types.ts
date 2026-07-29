@@ -114,6 +114,10 @@ export const OperationalEvent = {
   // and skipped so the rest of the same job run (other orgs/rotations) still gets processed.
   ROTATION_STALE_DETECTION_ROW_FAILED: 'rotation.stale.detection_row_failed',
   ROTATION_BREAK_GLASS_EXPIRE_ROW_FAILED: 'rotation.break_glass.expire_row_failed',
+  // Story 17.3 AC-7: the credential-share expiry-sweep worker's per-candidate/per-org failure
+  // log, mirroring ROTATION_STALE_DETECTION_ROW_FAILED's "log and skip, never abort the rest of
+  // the run" contract.
+  CREDENTIAL_SHARE_EXPIRE_SWEEP_ROW_FAILED: 'credential_share.expire_sweep.row_failed',
   ROTATION_RESUME_SUCCESS: 'rotation.resume.success',
   ROTATION_RESUME_NOT_STALE: 'rotation.resume.not_stale',
   ROTATION_RESUME_CONCURRENT_MODIFICATION: 'rotation.resume.concurrent_modification',

@@ -5,6 +5,7 @@ const listCredentialVersionsMock = vi.hoisted(() => vi.fn())
 const listCredentialDependenciesMock = vi.hoisted(() => vi.fn())
 const listRotationsMock = vi.hoisted(() => vi.fn())
 const listCredentialSharesMock = vi.hoisted(() => vi.fn())
+const listRotationRecommendedNudgesMock = vi.hoisted(() => vi.fn())
 const listOrgUsersMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/credentials.js', () => ({
@@ -21,6 +22,7 @@ vi.mock('$lib/api/rotations.js', () => ({
 // mocks (which model the rotation/dependency responses only) aren't exercised by unrelated calls.
 vi.mock('$lib/api/credential-shares.js', () => ({
   listCredentialShares: listCredentialSharesMock,
+  listRotationRecommendedNudges: listRotationRecommendedNudgesMock,
 }))
 
 vi.mock('$lib/api/org-users.js', () => ({
@@ -56,12 +58,59 @@ describe('credential detail +page.server.ts rotation section', () => {
     listCredentialDependenciesMock.mockReset()
     listRotationsMock.mockReset()
     listCredentialSharesMock.mockReset()
+    listRotationRecommendedNudgesMock.mockReset()
     listOrgUsersMock.mockReset()
     getCredentialMock.mockResolvedValue({ id: credentialId, name: 'Stripe Secret Key' })
     listCredentialVersionsMock.mockResolvedValue({ items: [] })
     listCredentialDependenciesMock.mockResolvedValue({ items: [], hasDependencies: false })
-    listCredentialSharesMock.mockResolvedValue({ items: [] })
+    listCredentialSharesMock.mockResolvedValue({ items: [], total: 0 })
+    listRotationRecommendedNudgesMock.mockResolvedValue({ items: [] })
     listOrgUsersMock.mockResolvedValue([])
+  })
+
+  // Story 17.3 AC-11: +page.server.ts's load calls listRotationRecommendedNudges alongside the
+  // existing Shares tab data call, and returns the result verbatim.
+  it('Story 17.3 AC-11: returns rotationRecommendedNudges from listRotationRecommendedNudges', async () => {
+    listRotationsMock.mockResolvedValueOnce({
+      items: [],
+      page: 1,
+      limit: 1,
+      total: 0,
+      hasMore: false,
+    })
+    listRotationsMock.mockResolvedValueOnce({
+      items: [],
+      page: 1,
+      limit: 10,
+      total: 0,
+      hasMore: false,
+    })
+    listRotationRecommendedNudgesMock.mockResolvedValueOnce({
+      items: [
+        {
+          fieldKey: null,
+          active: true,
+          mostRecentShareAt: '2026-07-26T00:00:00.000Z',
+          mostRecentSharedWith: 'morgan@example.com',
+        },
+      ],
+    })
+
+    const result = await load(makeEvent())
+
+    expect(listRotationRecommendedNudgesMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId
+    )
+    expect('rotationRecommendedNudges' in result && result.rotationRecommendedNudges).toEqual([
+      {
+        fieldKey: null,
+        active: true,
+        mostRecentShareAt: '2026-07-26T00:00:00.000Z',
+        mostRecentSharedWith: 'morgan@example.com',
+      },
+    ])
   })
 
   // AC-D1: +page.server.ts's load calls listCredentialDependencies alongside the existing

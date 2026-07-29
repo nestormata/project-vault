@@ -21,6 +21,14 @@ export const MAX_PENDING_EXTERNAL_SHARES_PER_FIELD = 5
 // Record; defense-in-depth on top of the token's own 256-bit entropy.
 export const EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS = 5
 
+// Story 17.3 AC-2: mirrors the limit/offset (not page-based) convention the AC explicitly asks
+// for — default 25, clamp (never reject) an over-large limit to 100, matching this codebase's
+// existing "clamp, don't 400, on an over-large but otherwise well-formed limit" convention
+// (`parsePagination` in apps/api/src/lib/pagination.ts does the identical `Math.min` clamp for
+// its own page/limit shape).
+export const DEFAULT_SHARE_LIST_LIMIT = 25
+export const MAX_SHARE_LIST_LIMIT = 100
+
 export const CredentialShareParamsSchema = z.object({
   projectId: z.uuid(),
   credentialId: z.uuid(),
@@ -118,8 +126,22 @@ export const CreateCredentialShareResponseSchema = z.object({
   }),
 })
 
+// Story 17.3 AC-1/AC-2: optional status filter + limit/offset pagination on the existing list
+// route. `status` invalid-enum-value -> 422 (zod's own enum validation). `limit`/`offset` are
+// deliberately unbounded-above at this schema layer — the route handler clamps an over-large
+// `limit` down to `MAX_SHARE_LIST_LIMIT` rather than rejecting it (this codebase's existing
+// "clamp, don't 400, on an over-large but otherwise well-formed limit" convention, matching
+// `parsePagination`'s identical `Math.min` clamp for its own page/limit shape) — a `.max()` here
+// would 422 instead of clamp, the wrong behavior per AC-2's edge case.
+export const ListCredentialSharesQuerySchema = z.object({
+  status: CredentialShareStatusSchema.optional(),
+  limit: z.coerce.number().int().min(1).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+})
+export type ListCredentialSharesQuery = z.infer<typeof ListCredentialSharesQuerySchema>
+
 export const ListCredentialSharesResponseSchema = z.object({
-  data: z.object({ items: z.array(CredentialShareSummarySchema) }),
+  data: z.object({ items: z.array(CredentialShareSummarySchema), total: z.number().int() }),
 })
 
 export const RevokeCredentialShareResponseSchema = z.object({
@@ -153,6 +175,41 @@ export const ShareRevealResponseSchema = z.object({
 // Story 17.2: identical response shape to the authenticated reveal — the external recipient
 // receives the same { credentialId, fieldKey, value, viewedAt } envelope.
 export const ExternalShareRevealResponseSchema = ShareRevealResponseSchema
+
+// Story 17.3 AC-11/Task 5.1: a small, dedicated `GET .../nudge` route rather than folding into
+// the existing credential-detail response — documented as the dev agent's choice (see Dev Agent
+// Record): keeps this module's own contract self-contained and avoids widening the credentials
+// module's response schema for a feature that belongs to credential-shares.
+export const RotationRecommendedBucketSchema = z.object({
+  fieldKey: z.string().nullable(),
+  active: z.boolean(),
+  mostRecentShareAt: z.iso.datetime().nullable(),
+  mostRecentSharedWith: z.string().nullable(),
+})
+
+export const ListNudgeResponseSchema = z.object({
+  data: z.object({ items: z.array(RotationRecommendedBucketSchema) }),
+})
+
+// Story 17.3 AC-15: `reason` is required and non-empty after trimming — `.trim().min(1)` rejects
+// an empty or whitespace-only reason with a 422 at this schema layer (the service layer's own
+// `dismissRotationRecommendedNudge` re-checks this too, so a future non-HTTP caller gets the same
+// guarantee without depending on this schema).
+export const DismissNudgeBodySchema = z
+  .object({
+    fieldKey: z.string().trim().min(1).max(64).optional(),
+    reason: z.string().trim().min(1).max(2000),
+  })
+  .strict()
+
+export const DismissNudgeResponseSchema = z.object({
+  data: z.object({
+    fieldKey: z.string().nullable(),
+    dismissedAt: z.iso.datetime(),
+  }),
+})
+
+export type DismissNudgeBody = z.infer<typeof DismissNudgeBodySchema>
 
 export type CreateCredentialShareBody = z.infer<typeof CreateCredentialShareBodySchema>
 export type CredentialShareParams = z.infer<typeof CredentialShareParamsSchema>

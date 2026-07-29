@@ -6,7 +6,7 @@ import type {
   RotationStatus,
   UpcomingRotation,
 } from '@project-vault/shared'
-import { apiFetch } from './client.js'
+import { apiFetch, buildQuery } from './client.js'
 
 export type InitiateRotationRequest = {
   newValue: string
@@ -175,15 +175,6 @@ export type FieldValuesTargetMismatchErrorBody = {
   message: string
   missing: string[]
   extra: string[]
-}
-
-function buildQuery(params: Record<string, string | number | undefined>): string {
-  const search = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) search.set(key, String(value))
-  }
-  const serialized = search.toString()
-  return serialized ? `?${serialized}` : ''
 }
 
 export function initiateRotation(
