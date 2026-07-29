@@ -48,3 +48,36 @@ describe('/settings/themes +page.server.ts load (Story 16.2 AC-1)', () => {
     expect(result.errorMessage).toBe('Failed to load themes, try again.')
   })
 })
+
+// Story 16.3 AC-1 — the reload section needs its own independent role gate: this page has no
+// overall role gate (every authenticated member can view/select), but `canReload` mirrors
+// `sso-domains`'s `canManageSsoDomains(orgRole)` shape (admin/owner, not an exclusion list).
+describe('/settings/themes +page.server.ts load — canReload gate (Story 16.3 AC-1)', () => {
+  beforeEach(() => {
+    getThemesMock.mockResolvedValue({ themes: [], selected: null })
+  })
+
+  it('canReload is true for orgRole "admin"', async () => {
+    const result = await load(makeEvent({ orgRole: 'admin' }))
+    expect(result.orgRole).toBe('admin')
+    expect(result.canReload).toBe(true)
+  })
+
+  it('canReload is true for orgRole "owner"', async () => {
+    const result = await load(makeEvent({ orgRole: 'owner' }))
+    expect(result.orgRole).toBe('owner')
+    expect(result.canReload).toBe(true)
+  })
+
+  it('canReload is false for orgRole "member"', async () => {
+    const result = await load(makeEvent({ orgRole: 'member' }))
+    expect(result.orgRole).toBe('member')
+    expect(result.canReload).toBe(false)
+  })
+
+  it('canReload is false for orgRole "viewer"', async () => {
+    const result = await load(makeEvent({ orgRole: 'viewer' }))
+    expect(result.orgRole).toBe('viewer')
+    expect(result.canReload).toBe(false)
+  })
+})

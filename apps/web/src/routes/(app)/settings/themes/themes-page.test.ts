@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
+import { ApiClientError } from '$lib/api/client.js'
 
 const patchThemeSelectionMock = vi.hoisted(() => vi.fn())
+const triggerThemeReloadMock = vi.hoisted(() => vi.fn())
 const setAppliedThemeMock = vi.hoisted(() => vi.fn())
+const invalidateAllMock = vi.hoisted(() => vi.fn())
 
-vi.mock('$lib/api/themes.js', () => ({ patchThemeSelection: patchThemeSelectionMock }))
+vi.mock('$lib/api/themes.js', () => ({
+  patchThemeSelection: patchThemeSelectionMock,
+  triggerThemeReload: triggerThemeReloadMock,
+}))
 vi.mock('$lib/state/theme.svelte.js', () => ({ setAppliedTheme: setAppliedThemeMock }))
+vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
 
 import ThemesPage from './+page.svelte'
 
@@ -13,7 +20,9 @@ afterEach(() => cleanup())
 
 beforeEach(() => {
   patchThemeSelectionMock.mockReset()
+  triggerThemeReloadMock.mockReset()
   setAppliedThemeMock.mockReset()
+  invalidateAllMock.mockReset()
 })
 
 function baseData(overrides: Record<string, unknown> = {}) {
@@ -24,6 +33,8 @@ function baseData(overrides: Record<string, unknown> = {}) {
     ],
     selected: null,
     errorMessage: null,
+    orgRole: 'member',
+    canReload: false,
     ...overrides,
   }
 }
@@ -101,5 +112,137 @@ describe('/settings/themes +page.svelte selection (Story 16.2 AC-2)', () => {
 
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(setAppliedThemeMock).not.toHaveBeenCalled()
+  })
+})
+
+// Story 16.3 — "Reload themes" admin UI section
+describe('/settings/themes +page.svelte reload section — visibility (Story 16.3 AC-1)', () => {
+  it('AC-1: renders no reload section, button, or heading for a member/viewer (canReload false)', () => {
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'viewer', canReload: false }) } })
+
+    expect(screen.queryByRole('button', { name: /reload themes/i })).toBeNull()
+    expect(screen.queryByText(/reload themes/i)).toBeNull()
+  })
+
+  it('AC-1: renders the reload section and button for an admin/owner (canReload true)', () => {
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    expect(screen.getByRole('button', { name: /reload themes/i })).toBeTruthy()
+  })
+})
+
+describe('/settings/themes +page.svelte reload section — happy path (Story 16.3 AC-2)', () => {
+  it('AC-2: shows "Reloaded N theme(s)." and refetches the page data on a 200 with no failures', async () => {
+    triggerThemeReloadMock.mockResolvedValue({ loaded: ['acme-brand', 'other'], failed: [] })
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
+
+    expect(await screen.findByText('Reloaded 2 theme(s).')).toBeTruthy()
+    expect(triggerThemeReloadMock).toHaveBeenCalledWith(expect.any(Function))
+    await vi.waitFor(() => expect(invalidateAllMock).toHaveBeenCalled())
+  })
+
+  it('AC-2 edge: "Reloaded 0 themes." (N=0) is a valid success state, not an error', async () => {
+    triggerThemeReloadMock.mockResolvedValue({ loaded: [], failed: [] })
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
+
+    const status = await screen.findByRole('status')
+    expect(status.textContent).toContain('Reloaded 0 theme(s).')
+  })
+})
+
+describe('/settings/themes +page.svelte reload section — partial failure (Story 16.3 AC-3)', () => {
+  it('AC-3: reports loaded/failed counts and lists each failed file with its reason as a warning, not an error', async () => {
+    triggerThemeReloadMock.mockResolvedValue({
+      loaded: ['acme-brand'],
+      failed: [{ file: 'broken.css', reason: 'invalid CSS syntax' }],
+    })
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
+
+    const status = await screen.findByRole('status')
+    expect(status.textContent).toContain('Reloaded 1 theme(s).')
+    expect(status.textContent).toContain('1 failed')
+    expect(status.textContent).toContain('broken.css')
+    expect(status.textContent).toContain('invalid CSS syntax')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('/settings/themes +page.svelte reload section — MFA required (Story 16.3 AC-4)', () => {
+  it('AC-4: a 403 mfa_required response replaces the button with an inline MFA-required notice', async () => {
+    triggerThemeReloadMock.mockRejectedValue(
+      new ApiClientError(403, { code: 'mfa_required' }, 'MFA required')
+    )
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
+
+    expect(await screen.findByText(/mfa required to reload themes/i)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /reload themes/i })).toBeNull()
+  })
+})
+
+describe('/settings/themes +page.svelte reload section — rate limit (Story 16.3 AC-5)', () => {
+  it('AC-5: a 429 response shows an error banner instructing the admin to wait, and does not retry automatically', async () => {
+    triggerThemeReloadMock.mockRejectedValue(new ApiClientError(429, null, 'Too many requests'))
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(triggerThemeReloadMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('/settings/themes +page.svelte reload section — pending state (Story 16.3 AC-6)', () => {
+  it('AC-6: disables the button and shows a pending label while the request is in flight', async () => {
+    let resolveReload!: (value: { loaded: string[]; failed: never[] }) => void
+    triggerThemeReloadMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReload = resolve
+      })
+    )
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    const button = screen.getByRole('button', { name: /reload themes/i })
+    await fireEvent.click(button)
+
+    expect(button).toHaveProperty('disabled', true)
+    expect(button.textContent).toMatch(/reloading/i)
+
+    resolveReload({ loaded: [], failed: [] })
+    await vi.waitFor(() => expect(button).toHaveProperty('disabled', false))
+  })
+})
+
+describe('/settings/themes +page.svelte reload section — audit write failure (Story 16.3 AC-7)', () => {
+  it('AC-7: a 503 audit_write_failed response shows a generic "Reload failed" error banner', async () => {
+    triggerThemeReloadMock.mockRejectedValue(
+      new ApiClientError(503, { code: 'audit_write_failed' }, 'Audit write failed')
+    )
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/reload failed/i)
+  })
+})
+
+describe('/settings/themes +page.svelte reload section — insufficient role defense-in-depth (Story 16.3 AC-8)', () => {
+  it('AC-8: a 403 insufficient_role response (stale session) shows a generic error banner, not an unhandled exception', async () => {
+    triggerThemeReloadMock.mockRejectedValue(
+      new ApiClientError(403, { code: 'insufficient_role' }, 'Insufficient role')
+    )
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'admin', canReload: true }) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
   })
 })

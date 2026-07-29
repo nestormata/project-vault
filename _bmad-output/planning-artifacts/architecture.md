@@ -1145,7 +1145,7 @@ introducing a new documentation format.
 | Compliance Reporting | `modules/compliance/` | `(app)/admin/compliance/` | — |
 | Extension & Plugin Architecture (Phase 2, FR113-116) | `packages/extension-api/`, `apps/api/src/extensions/loader.ts`, `modules/auth/strategies.ts` | `(app)/settings/extensions/` (status/audit view only — no install UI yet, see Infrastructure & Deployment; corrected 2026-07-28 — the `(app)/admin/` group is not used by this codebase's actual routing convention, confirmed independently by 14-2/14-5/14-6's own Dev Notes) | — |
 | Internationalization & Localization (Phase 2, FR117-119) | — (no backend module; locale preference stored on `users`/`organizations`) | `apps/web/messages/{locale}.json`, `(app)/settings/language/` | — |
-| Theming (Phase 2, FR120-121) | `apps/api/src/modules/theming/` (reload endpoint) | `apps/web/src/lib/theme/`, `(app)/admin/themes/` (unconfirmed — see 16-1/16-2 for the story-level source of truth once shipped) | — |
+| Theming (Phase 2, FR120-121) | `apps/api/src/modules/theming/` (reload endpoint) | `apps/web/src/lib/theme/`, `(app)/settings/themes/` (selection UI shipped in 16-2, reload UI shipped in 16-3 — corrected 2026-07-28, this codebase has no `(app)/admin/` route group) | — |
 
 ### Canonical Schema Entity Names (complete)
 
