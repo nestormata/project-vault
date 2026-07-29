@@ -378,20 +378,36 @@ describe('POST /api/v1/auth/sso/domain-lookup (Story 14.4)', () => {
       const app = await createApp({ logger: false })
       await seedAcmeBrandTheme()
 
-      const res = await app.inject({
-        method: 'POST',
-        url: DOMAIN_LOOKUP_URL,
-        payload: { email: `alex@${domain}` },
-      })
+      // Actually exercise the race, not just the happy path: fire the domain-lookup request and
+      // a concurrent 16.1-style reload (wiping `acme-brand` from the compiled set) at the same
+      // time via `Promise.all`, rather than only asserting the pre-reload happy-path shape. A
+      // buggy implementation that read `getCompiledThemes()` more than once per request, or
+      // split `name`/`css` resolution across two separate reads, could return a response with
+      // `theme.name` present but no matching (or a differently-sourced) `css` depending on
+      // exactly when the reload lands relative to each read. Whichever operation happens to win
+      // the race, the response must land on exactly one of the two valid shapes — theme fully
+      // present with matching `name`/`css` (the pre-reload snapshot), or `theme` fully absent
+      // (the post-reload snapshot) — never a partial/mismatched pairing.
+      const [res] = await Promise.all([
+        app.inject({
+          method: 'POST',
+          url: DOMAIN_LOOKUP_URL,
+          payload: { email: `alex@${domain}` },
+        }),
+        reloadThemes('/fixture/themes', fixtureDeps({})),
+      ])
 
-      // getCompiledThemes() is read once per request from a single in-memory snapshot — a
-      // concurrent reload started after this request's read cannot retroactively change what
-      // was already sent. The response must be self-consistent: theme.css always corresponds to
-      // theme.name (both-or-neither), never a mismatched pairing.
       expect(res.statusCode).toBe(200)
-      const body = res.json() as { theme?: { name: string; css: string } }
-      expect(body.theme?.name).toBe(ACME_BRAND)
-      expect(body.theme?.css).toContain(ACME_BRAND)
+      const body = res.json() as { ssoRequired: boolean; theme?: { name: string; css: string } }
+      expect(body.ssoRequired).toBe(true)
+      if ('theme' in body) {
+        // Won the race: resolved before the reload landed — must be the full, matching pair.
+        expect(body.theme?.name).toBe(ACME_BRAND)
+        expect(body.theme?.css).toContain(ACME_BRAND)
+      }
+      // Either way, a bare `name` with no `css` (or vice versa) would fail the shape assertion
+      // above / the `'theme' in body` check — the both-or-neither invariant holds under real
+      // concurrent execution, not just in the single-threaded happy path.
       await app.close()
     })
   })
