@@ -91,7 +91,12 @@ describe.sequential('computeRotationRecommendedNudges', () => {
         const credentialId = await seedWorkerCredential(orgId, projectId, 'NudgeNeverShared')
 
         const buckets = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         expect(buckets).toHaveLength(0)
       })
@@ -109,21 +114,36 @@ describe.sequential('computeRotationRecommendedNudges', () => {
 
         await seedShare(orgId, credentialId, userId, { createdAt: daysAgo(10) })
         const afterShare = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         expect(afterShare).toHaveLength(1)
         expect(afterShare[0]?.active).toBe(true)
 
         await seedDismissal(orgId, credentialId, userId, null, daysAgo(5))
         const afterDismissal = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         expect(afterDismissal[0]?.active).toBe(false)
 
         const recentShareCreatedAt = daysAgo(2)
         await seedShare(orgId, credentialId, userId, { createdAt: recentShareCreatedAt })
         const afterReshare = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         expect(afterReshare[0]?.active).toBe(true)
         expect(afterReshare[0]?.mostRecentShareAt).toBe(recentShareCreatedAt.toISOString())
@@ -144,7 +164,12 @@ describe.sequential('computeRotationRecommendedNudges', () => {
 
         await seedShare(orgId, credentialId, userId, { status: 'revoked' })
         const revokedResult = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         expect(revokedResult[0]?.active).toBe(true)
 
@@ -152,7 +177,12 @@ describe.sequential('computeRotationRecommendedNudges', () => {
 
         await seedShare(orgId, credentialId, userId, { status: 'expired' })
         const expiredResult = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         expect(expiredResult[0]?.active).toBe(true)
 
@@ -172,7 +202,12 @@ describe.sequential('computeRotationRecommendedNudges', () => {
 
         await seedShare(orgId, credentialId, userId, { status: 'superseded' })
         const result = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         expect(result[0]?.active).toBe(false)
 
@@ -198,7 +233,12 @@ describe.sequential('computeRotationRecommendedNudges', () => {
         await seedDismissal(orgId, credentialId, userId, 'api_key', daysAgo(1))
 
         const buckets = await withOrg(orgId, (tx) =>
-          computeRotationRecommendedNudges(tx, { orgId, credentialId })
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: userId,
+            viewerIsAdmin: true,
+          })
         )
         const apiKeyBucket = buckets.find((b) => b.fieldKey === 'api_key')
         const webhookBucket = buckets.find((b) => b.fieldKey === 'webhook_secret')
@@ -209,6 +249,59 @@ describe.sequential('computeRotationRecommendedNudges', () => {
       })
     } finally {
       await deleteTestUser(userId)
+    }
+  })
+
+  it('bugfix: a non-admin viewer who is not the sharer sees active/mostRecentShareAt but not mostRecentSharedWith', async () => {
+    const RECIPIENT_EMAIL = 'recipient@example.com'
+    const sharerId = await createTestUser('nudge-recipient-redact-sharer')
+    const viewerId = await createTestUser('nudge-recipient-redact-viewer')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const projectId = await seedWorkerProject(orgId, 'NudgeRecipientRedact')
+        const credentialId = await seedWorkerCredential(orgId, projectId, 'NudgeRecipientRedact')
+
+        await seedShare(orgId, credentialId, sharerId, {
+          recipientEmail: RECIPIENT_EMAIL,
+        })
+
+        const asSharer = await withOrg(orgId, (tx) =>
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: sharerId,
+            viewerIsAdmin: false,
+          })
+        )
+        expect(asSharer[0]?.mostRecentSharedWith).toBe(RECIPIENT_EMAIL)
+
+        const asAdmin = await withOrg(orgId, (tx) =>
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: viewerId,
+            viewerIsAdmin: true,
+          })
+        )
+        expect(asAdmin[0]?.mostRecentSharedWith).toBe(RECIPIENT_EMAIL)
+
+        const asOtherMember = await withOrg(orgId, (tx) =>
+          computeRotationRecommendedNudges(tx, {
+            orgId,
+            credentialId,
+            viewerUserId: viewerId,
+            viewerIsAdmin: false,
+          })
+        )
+        expect(asOtherMember[0]?.active).toBe(true)
+        expect(asOtherMember[0]?.mostRecentShareAt).not.toBeNull()
+        expect(asOtherMember[0]?.mostRecentSharedWith).toBeNull()
+
+        await cleanup(orgId, sharerId)
+      })
+    } finally {
+      await deleteTestUser(sharerId)
+      await deleteTestUser(viewerId)
     }
   })
 })

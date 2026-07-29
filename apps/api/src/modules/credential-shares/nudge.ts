@@ -24,6 +24,7 @@ type ShareRow = {
   createdAt: Date
   recipientEmail: string | null
   recipientUserEmail: string | null
+  sharedBy: string
 }
 
 type DismissalRow = { fieldKey: string | null; dismissedAt: Date }
@@ -60,7 +61,8 @@ function groupSharesByBucket(shareRows: ShareRow[]): Map<string, ShareRow[]> {
 function buildBucket(
   key: string,
   rows: ShareRow[],
-  lastDismissedAt: Date | null
+  lastDismissedAt: Date | null,
+  viewer: { userId: string; isAdmin: boolean }
 ): RotationRecommendedBucket {
   const fieldKey = key === WHOLE_CREDENTIAL_BUCKET_KEY ? null : key
   const mostRecent = rows.reduce((latest, row) =>
@@ -71,11 +73,21 @@ function buildBucket(
       row.status !== 'superseded' &&
       (!lastDismissedAt || row.createdAt.getTime() > lastDismissedAt.getTime())
   )
+  // Bugfix (post-implementation review): unlike `GET .../shares`, this route has no
+  // `sharedByUserId` scoping — every project member can see every bucket's `active`/
+  // `mostRecentShareAt` (the security nudge itself is a credential-wide signal everyone with
+  // reveal access should see). But `mostRecentSharedWith` is recipient-identifying information
+  // (an email address) that the sibling list endpoint deliberately withholds from a non-admin
+  // caller who isn't the sharer — redact it here the same way, rather than handing out who a
+  // teammate shared a secret with to any member who merely asks for the nudge state.
+  const canSeeRecipient = viewer.isAdmin || mostRecent.sharedBy === viewer.userId
   return {
     fieldKey,
     active,
     mostRecentShareAt: mostRecent.createdAt.toISOString(),
-    mostRecentSharedWith: mostRecent.recipientEmail ?? mostRecent.recipientUserEmail ?? null,
+    mostRecentSharedWith: canSeeRecipient
+      ? (mostRecent.recipientEmail ?? mostRecent.recipientUserEmail ?? null)
+      : null,
   }
 }
 
@@ -93,7 +105,7 @@ function buildBucket(
  */
 export async function computeRotationRecommendedNudges(
   tx: Tx,
-  params: { orgId: string; credentialId: string }
+  params: { orgId: string; credentialId: string; viewerUserId: string; viewerIsAdmin: boolean }
 ): Promise<RotationRecommendedBucket[]> {
   const shareRows = await tx
     .select({
@@ -102,6 +114,7 @@ export async function computeRotationRecommendedNudges(
       createdAt: credentialShares.createdAt,
       recipientEmail: credentialShares.recipientEmail,
       recipientUserEmail: users.email,
+      sharedBy: credentialShares.sharedBy,
     })
     .from(credentialShares)
     .leftJoin(users, eq(credentialShares.recipientUserId, users.id))
@@ -130,9 +143,10 @@ export async function computeRotationRecommendedNudges(
   const lastDismissalByBucket = latestDismissalByBucket(dismissalRows)
   const sharesByBucket = groupSharesByBucket(shareRows)
 
+  const viewer = { userId: params.viewerUserId, isAdmin: params.viewerIsAdmin }
   const buckets: RotationRecommendedBucket[] = []
   for (const [key, rows] of sharesByBucket) {
-    buckets.push(buildBucket(key, rows, lastDismissalByBucket.get(key) ?? null))
+    buckets.push(buildBucket(key, rows, lastDismissalByBucket.get(key) ?? null, viewer))
   }
   return buckets
 }

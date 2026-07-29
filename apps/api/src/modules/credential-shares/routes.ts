@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, parseQuery } from '../../lib/route-helpers.js'
@@ -676,6 +676,8 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       const items = await computeRotationRecommendedNudges(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         credentialId: params.credentialId,
+        viewerUserId: secureCtx.auth.userId,
+        viewerIsAdmin: roleRank(secureCtx.auth.orgRole) >= roleRank('admin'),
       })
       return { data: { items } }
     }),
@@ -706,7 +708,12 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       const parsed = parseBody<DismissNudgeBody>(DismissNudgeBodySchema, req, reply)
       if (!parsed.success) return reply
 
-      const fieldKey = parsed.data.fieldKey ?? null
+      // Bugfix (post-implementation review): `credential_shares.fieldKey` is always stored via
+      // `normalizeFieldKey` (trim + NFC + lowercase, see `validateFieldKey`). A dismissal must be
+      // normalized identically, or a differently-cased/whitespaced `fieldKey` silently lands in a
+      // bucket with zero matching shares and the dismissal appears to succeed (200) while never
+      // actually clearing the intended nudge (AC-11/AC-15's bucket keys must match exactly).
+      const fieldKey = parsed.data.fieldKey ? normalizeFieldKey(parsed.data.fieldKey) : null
       const result = await dismissRotationRecommendedNudge(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         credentialId: params.credentialId,
