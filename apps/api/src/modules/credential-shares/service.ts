@@ -167,9 +167,13 @@ export async function createCredentialShare(
   return { status: 'ok', share, token: rawToken }
 }
 
-export async function listSharesCreatedByUser(
+/** AC-5 grants org admins/owners the right to revoke any share on a credential, not just their
+ *  own — `sharedByUserId` omitted lists every share for the credential (for an admin/owner
+ *  caller); a non-admin caller must always pass their own id, scoping the list to shares they
+ *  created. */
+export async function listSharesForCredential(
   tx: Tx,
-  params: { orgId: string; credentialId: string; sharedByUserId: string }
+  params: { orgId: string; credentialId: string; sharedByUserId?: string }
 ): Promise<CredentialShareRow[]> {
   return tx
     .select()
@@ -178,7 +182,7 @@ export async function listSharesCreatedByUser(
       and(
         eq(credentialShares.orgId, params.orgId),
         eq(credentialShares.credentialId, params.credentialId),
-        eq(credentialShares.sharedBy, params.sharedByUserId)
+        params.sharedByUserId ? eq(credentialShares.sharedBy, params.sharedByUserId) : undefined
       )
     )
     .orderBy(desc(credentialShares.createdAt))
@@ -289,10 +293,24 @@ export async function findShareByToken(
   // with a constant-time compare before trusting it (same posture as invitationTokensMatch()).
   if (!constantTimeHexEqual(row.share.tokenHash, tokenHash)) return { status: 'not_found' }
   if (row.share.recipientUserId !== params.sessionUserId) return { status: 'session_mismatch' }
+
+  // Same lazy active->expired transition `precheckShareClaimable` applies at reveal time — without
+  // it, an already-expired share still reads back as 'active' here, and the consent page would
+  // show a live Reveal button for a share the reveal-step would immediately reject.
+  let share = row.share
+  if (share.status === 'active' && share.expiresAt.getTime() <= Date.now()) {
+    const [updated] = await tx
+      .update(credentialShares)
+      .set({ status: 'expired' })
+      .where(and(eq(credentialShares.id, share.id), eq(credentialShares.status, 'active')))
+      .returning()
+    share = updated ?? share
+  }
+
   return {
     status: 'ok',
     metadata: {
-      share: row.share,
+      share,
       credentialName: row.credentialName,
       credentialProjectId: row.credentialProjectId,
       sharedByEmail: row.sharedByEmail,
@@ -371,6 +389,17 @@ export async function revealShare(
   const blocked = await precheckShareClaimable(tx, params, share)
   if (blocked) return blocked
 
+  const revealed = await revealCurrentValue(tx, {
+    credentialId: share.credentialId,
+    projectId: credentialProjectId,
+    field: share.fieldKey ?? undefined,
+  })
+  // AC-3: the field was renamed/removed since the share was created (or the credential/version
+  // is otherwise gone) — treat as expired rather than a 500 or a silent null reveal. Checked
+  // BEFORE the atomic claim below: a single-use share must not be burned (nor a multi-view
+  // share's view_count incremented) by a reveal attempt that never actually reveals anything.
+  if (revealed.status !== 'found') return { status: 'expired' }
+
   // AC-4: singleUse: false remains viewable (re-incrementing view_count) until expiry — only a
   // singleUse: true share ever transitions to the terminal 'viewed' status.
   const claimed = share.singleUse
@@ -383,15 +412,6 @@ export async function revealShare(
       shareId: share.id,
     })
   }
-
-  const revealed = await revealCurrentValue(tx, {
-    credentialId: share.credentialId,
-    projectId: credentialProjectId,
-    field: share.fieldKey ?? undefined,
-  })
-  // AC-3: the field was renamed/removed since the share was created (or the credential/version
-  // is otherwise gone) — treat as expired rather than a 500 or a silent null reveal.
-  if (revealed.status !== 'found') return { status: 'expired' }
 
   // A whole-credential share (fieldKey null) of a genuinely multi-field secret gets the full
   // field envelope (same shape the ordinary reveal endpoint returns for that case) serialized as

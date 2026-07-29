@@ -12,8 +12,13 @@ export type ShareAccessPageData = {
   error: 'not_found' | 'session_mismatch' | null
 }
 
-export const load: PageServerLoad = async ({ params, fetch, locals }) => {
+export const load: PageServerLoad = async ({ params, fetch, locals, setHeaders }) => {
   requireUser(locals)
+
+  // AC-17: this page's own URL carries the raw bearer token — the document response itself
+  // (not just its internal API calls, already covered by access-routes.ts) must not leak it via
+  // Referer on any outbound navigation/sub-resource request from this page.
+  setHeaders({ 'Referrer-Policy': 'no-referrer' })
 
   try {
     const metadata = await getShareMetadata(fetch, params.token)

@@ -27,7 +27,8 @@ import {
 } from './schema.js'
 import {
   createCredentialShare,
-  listSharesCreatedByUser,
+  findShareInScope,
+  listSharesForCredential,
   revokeShare,
   type CredentialShareRow,
 } from './service.js'
@@ -255,10 +256,14 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       const exists = await credentialExistsInProject(secureCtx.tx, params)
       if (!exists) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
 
-      const shares = await listSharesCreatedByUser(secureCtx.tx, {
+      // AC-5: org admins/owners can revoke any share on the credential, so they can also list
+      // every share on it (not just their own) — otherwise there is no way to discover a
+      // shareId to exercise that right.
+      const isAdmin = roleRank(secureCtx.auth.orgRole) >= roleRank('admin')
+      const shares = await listSharesForCredential(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         credentialId: params.credentialId,
-        sharedByUserId: secureCtx.auth.userId,
+        sharedByUserId: isAdmin ? undefined : secureCtx.auth.userId,
       })
       return { data: { items: shares.map(serializeShare) } }
     },
@@ -296,16 +301,18 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       }
 
       // AC-5: the sharer, or any org admin/owner (reusing the existing
-      // admin-can-manage-project-scoped-resources convention).
-      const existing = await revokeShare(secureCtx.tx, {
+      // admin-can-manage-project-scoped-resources convention). Authorization MUST be checked
+      // before any mutation — the route runs inside a transaction that commits on any
+      // non-throwing return, so a mutation followed by a 403 would still persist.
+      const target = await findShareInScope(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         credentialId: params.credentialId,
         shareId: params.shareId,
       })
-      if (existing.status === 'not_found') return reply.status(404).send(SHARE_NOT_FOUND)
+      if (!target) return reply.status(404).send(SHARE_NOT_FOUND)
 
       if (
-        existing.share.sharedBy !== secureCtx.auth.userId &&
+        target.sharedBy !== secureCtx.auth.userId &&
         roleRank(secureCtx.auth.orgRole) < roleRank('admin')
       ) {
         return reply.status(403).send({
@@ -313,6 +320,13 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
           message: 'Only the sharer or an org admin can revoke this share.',
         })
       }
+
+      const existing = await revokeShare(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        credentialId: params.credentialId,
+        shareId: params.shareId,
+      })
+      if (existing.status === 'not_found') return reply.status(404).send(SHARE_NOT_FOUND)
 
       if (!existing.alreadyTerminal) {
         try {

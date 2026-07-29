@@ -20,6 +20,7 @@ function makeEvent() {
     params: { token },
     fetch: vi.fn(),
     locals: { user: { userId: 'recipient-1', orgRole: 'member' } },
+    setHeaders: vi.fn(),
   } as unknown as Parameters<typeof load>[0]
 }
 
@@ -71,5 +72,23 @@ describe('/shares/[token] +page.server.ts', () => {
     getShareMetadataMock.mockRejectedValue(new Error('boom'))
 
     await expect(load(makeEvent())).rejects.toThrow('boom')
+  })
+
+  it('AC-17: sets Referrer-Policy: no-referrer on the page response itself, since the URL carries the raw token', async () => {
+    getShareMetadataMock.mockResolvedValue({
+      credentialId: 'cred-1',
+      credentialName: 'Stripe Secret Key',
+      sharedBy: 'sharer-1',
+      sharedByEmail: 'morgan@example.com',
+      fieldKey: null,
+      expiresAt: '2026-08-01T00:00:00.000Z',
+      singleUse: true,
+      status: 'active',
+    })
+    const event = makeEvent()
+
+    await load(event)
+
+    expect(event.setHeaders).toHaveBeenCalledWith({ 'Referrer-Policy': 'no-referrer' })
   })
 })

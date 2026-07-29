@@ -1,6 +1,6 @@
 # Story 17.1: Share a Credential with an Organization Member
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -218,6 +218,14 @@ Claude Sonnet 5 (claude-sonnet-5), via `/bmad-dev-story`.
 - `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` (Shares tab UI)
 - `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.server.test.ts`
 - `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts`
+
+### Review Findings
+
+- [x] [Review][Patch] Admins have no way to discover another user's active share to exercise AC-5's admin-revoke right — resolved as a patch: `listSharesForCredential` now omits the `sharedByUserId` filter for org admin/owner callers, so the `GET` list route returns every share on the credential (not just the caller's own) when the caller is an admin/owner. Covered by a new test asserting an admin can list and revoke a share they didn't create.
+- [x] [Review][Patch] Revoke mutates share state before the authorization check runs [apps/api/src/modules/credential-shares/routes.ts:300-315] — fixed: the handler now reads the share via `findShareInScope` and performs the sharer/admin authorization check *before* calling `revokeShare()`, so an unauthorized caller's request never mutates the DB. Regression test asserts the share stays `active` after a denied revoke attempt.
+- [x] [Review][Patch] Reveal burns the single-use claim (and inflates `view_count` on multi-view shares) before checking the shared field still exists [apps/api/src/modules/credential-shares/service.ts:358-403] — fixed: `revealShare()` now calls `revealCurrentValue` (which performs the field-existence check) *before* the atomic single-use/multi-view claim, so a missing field never consumes the claim or increments `view_count`, and the reveal-step's audit-skip-on-non-ok-status behavior no longer masks a real consumption. Regression test asserts the share stays `active`, `view_count` stays `0`, and no `CREDENTIAL_SHARE_VIEWED` audit entry is written when the field is gone.
+- [x] [Review][Patch] AC-17's Referrer-Policy header is set on the API responses but not on the web page document itself [apps/web/src/routes/(app)/shares/[token]/+page.server.ts, +page.svelte] — fixed: `+page.server.ts`'s `load` now calls `setHeaders({ 'Referrer-Policy': 'no-referrer' })` on the document response itself. Regression test asserts the header call.
+- [x] [Review][Patch] Share metadata GET never lazily expires the share [apps/api/src/modules/credential-shares/service.ts:270-300 (`findShareByToken`)] — fixed: `findShareByToken` now applies the same lazy `active` → `expired` transition `precheckShareClaimable` already applies at reveal time. Regression test asserts the metadata GET reports `expired` for a past-due share.
 
 ## Change Log
 
