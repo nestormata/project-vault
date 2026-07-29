@@ -1,6 +1,6 @@
 # Story 17.3: Share History, Expiry Enforcement & Rotation-Recommended Nudge
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
