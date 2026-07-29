@@ -18,6 +18,10 @@ jobs:
   drift-check:
     name: Check Post-Merge Status Drift
     runs-on: ubuntu-latest
+    # Fires on every push to main (not nightly), so an unbounded default (GitHub's 360-minute
+    # ceiling) could tie up a runner for hours on a hang (e.g. a pnpm install network stall).
+    # Matches ci.yml's quality-gates job, which has the same checkout+setup+install+script shape.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
