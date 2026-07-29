@@ -568,6 +568,7 @@ Every story must satisfy **all** of the following before it is considered comple
 | Epic 13: Structured Multi-Field Secrets | 🟠 Phase 2 | Independent of Epic 14; no urgency driving it ahead |
 | Epic 15: Localization | 🟠 Phase 2 | Independent; lowest risk |
 | Epic 16: Custom Theming | 🟠 Phase 2 | Independent; lowest risk |
+| Epic 17: Secret Sharing & Exposure Tracking | 🟠 Phase 2 | Depends on Epic 13's field_key model for field-scoped sharing; independent of Epic 14/15/16. Recommended build order: 14 → 13 → 17 → 15 → 16 |
 
 **Recommended beta target:** Epics 1–6 with within-epic cuts (see notes per epic) ≈ 55 FRs.
 **Post-beta v1 GA:** Epics 7–9 complete the full feature set.
@@ -2757,3 +2758,21 @@ Administrators can brand a self-hosted instance with a custom theme without touc
 **Given** a user has a custom theme selected,
 **When** an admin removes that theme's file from `VAULT_THEMES_DIR` and reloads,
 **Then** the user's next page load falls back to the base theme silently, plus a one-time, dismissible in-app notice ("your selected theme is no longer available, showing the default") — never a broken or unstyled UI, never a hard error blocking product access.
+
+---
+
+### Epic 17: Secret Sharing & Exposure Tracking
+**🟠 Phase 2**
+
+Users can temporarily share a credential's value — in full or by field — with an org member or an external recipient via an expiring, tokenized link, with full share history and a rotation-recommended nudge afterward. Depends on Epic 13's `field_key` model for field-scoped sharing; independent of Epic 14/15/16.
+
+**FRs covered:** FR122, FR123, FR124, FR125
+> ⚠️ **Security-critical, not optional hardening:** this epic introduces the product's first unauthenticated-access-to-secret-material pathway (external tokenized share links, Story 17.2). A dedicated design-level security review of the token model was required before story creation began, same rigor as Epic 14's SSO work — see `_bmad-output/planning-artifacts/epic-17-external-share-token-security-review-2026-07-27.md`. That review's findings F1–F4 (Referrer-Policy/no third-party resources on the consent+reveal pages, an atomic advisory-lock-guarded single-use claim, an org-level cap on concurrent pending external shares per credential/field, and timing-safe token lookup) were required as explicit, testable ACs on Story 17.2; F5–F6 (token/step-up-factor redaction from structured logs, auto-revoke on sharer deactivation) were carried forward as lower-urgency ACs on the same story.
+
+This entry was added retroactively by `epic-17-retro-2026-07-29.md` (Finding 1) — `sprint-change-proposal-2026-07-24.md` §4.2 specified this section's text verbatim for insertion at epic registration time, but it was never actually applied, the same class of gap as an undelivered doc-sync commitment. Rather than reconstruct full Given/When/Then acceptance-criteria text for all three stories after the fact (risking a transcription that doesn't byte-for-byte match what actually shipped), this entry intentionally stops at epic-level scope, FR coverage, and the security-review pointer; full, authoritative acceptance criteria for each story live in their own story files:
+
+- Story 17.1 — Share a Credential with an Organization Member: `_bmad-output/implementation-artifacts/17-1-share-a-credential-with-an-organization-member.md`
+- Story 17.2 — Share a Credential with an External Recipient via Secure Link: `_bmad-output/implementation-artifacts/17-2-share-a-credential-with-an-external-recipient-via-secure-link.md`
+- Story 17.3 — Share History, Expiry Enforcement, and Rotation-Recommended Nudge: `_bmad-output/implementation-artifacts/17-3-share-history-expiry-enforcement-and-rotation-recommended-nudge.md`
+
+All three stories are `done` (`sprint-status.yaml`); `epic-17` rolled up to `done` 2026-07-29.

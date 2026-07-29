@@ -1169,7 +1169,18 @@ Alpha success criterion: 5–10 real engineering teams load a real project and r
 
 ---
 
-> **Final count: 95 FRs across 12 capability areas** at initial PRD publication; see edit history for: (a) 11 FRs (FR99–FR105, FR107–FR110) back-ported 2026-07-23 from epics.md, where they were added during epic/story work but never written back to this PRD — a pre-existing drift between this document and epics.md, now reconciled; **FR106 has no corresponding requirement in epics.md and is intentionally left unassigned** — origin of the gap is undocumented, left as-is rather than inventing a requirement to fill it; (b) 11 new Phase 2 FRs (FR111, FR112, FR113–FR121) for Extension/Hook Architecture, multi-field secrets, i18n, and theming. All 9 user journeys fully covered (5 v1 MVP + 4 Phase 2). All MVP scope items represented. All domain, project-type, and scoping requirements traceable to at least one FR.
+### Secret Sharing & Exposure Tracking
+
+- **FR122:** Users can temporarily share a credential's value — in full or by field — with another organization member via an expiring, tokenized link, gated by the recipient's own authenticated session
+- **FR123:** Users can temporarily share a credential's value — in full or by field — with an external (non-member) recipient via an expiring, tokenized link, requiring sharer step-up re-authentication to create and admin notification on both creation and first view
+- **FR124:** The system records a full, audited history of every share (creation, view, revocation, expiry, supersession) without ever logging the secret value or the share token itself
+- **FR125:** The system surfaces a rotation-recommended nudge on a credential/field with an outstanding share, clearing automatically when the rotation is promoted (closing the loop with Story 5.6's staged rotation model)
+
+> Added 2026-07-29 by `epic-17-retro-2026-07-29.md` (Finding 1) — `sprint-change-proposal-2026-07-24.md` §4.1 proposed this FR group (as FR122–FR125, next available after FR121) alongside Epic 17, but the PRD was never actually amended at registration time; back-ported here now that all three Epic 17 stories have shipped `done`. See `epics.md`'s Epic 17 entry (added the same session) and `_bmad-output/planning-artifacts/epic-17-external-share-token-security-review-2026-07-27.md` for the full design/security detail behind these FRs.
+
+---
+
+> **Final count: 99 FRs across 13 capability areas** at initial PRD publication; see edit history for: (a) 11 FRs (FR99–FR105, FR107–FR110) back-ported 2026-07-23 from epics.md, where they were added during epic/story work but never written back to this PRD — a pre-existing drift between this document and epics.md, now reconciled; **FR106 has no corresponding requirement in epics.md and is intentionally left unassigned** — origin of the gap is undocumented, left as-is rather than inventing a requirement to fill it; (b) 11 new Phase 2 FRs (FR111, FR112, FR113–FR121) for Extension/Hook Architecture, multi-field secrets, i18n, and theming. All 9 user journeys fully covered (5 v1 MVP + 4 Phase 2). All MVP scope items represented. All domain, project-type, and scoping requirements traceable to at least one FR.
 
 ---
 
