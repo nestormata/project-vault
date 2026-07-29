@@ -65,9 +65,13 @@ function buildBucket(
   viewer: { userId: string; isAdmin: boolean }
 ): RotationRecommendedBucket {
   const fieldKey = key === WHOLE_CREDENTIAL_BUCKET_KEY ? null : key
-  const mostRecent = rows.reduce(
+  // `groupSharesByBucket` only ever creates a bucket entry alongside its first row, so `rows` is
+  // never empty here — the explicit check just satisfies noUncheckedIndexedAccess/strict typing.
+  const [first, ...rest] = rows
+  if (!first) throw new Error(`buildBucket called with an empty rows array for bucket "${key}"`)
+  const mostRecent = rest.reduce(
     (latest, row) => (row.createdAt.getTime() > latest.createdAt.getTime() ? row : latest),
-    rows[0]
+    first
   )
   const active = rows.some(
     (row) =>
