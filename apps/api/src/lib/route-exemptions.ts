@@ -536,7 +536,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/external-shares/access/:token/reveal': {
     action: SENSITIVE_READ,
     auditOmissionReason:
-      "AC-11: this route IS audited (writeSystemAuditEntryOrFailClosed, actorType: 'system', since there is no authenticated actor to attribute a human/machine audit row to for an unauthenticated external recipient) — but requireAuth:false means there is no secureCtx.tx to delegate through, so it cannot use the sameTransactionAuditService pattern this scanner checks for. The audit write runs in its own withOrg-scoped transaction inside external-access-routes.ts and re-throws on failure (fails closed) rather than silently returning 200 with an unaudited reveal.",
+      "AC-11: this route IS audited (writeSystemAuditEntryOrFailClosed, actorType: 'system', since there is no authenticated actor to attribute a human/machine audit row to for an unauthenticated external recipient) — but requireAuth:false means there is no secureCtx.tx to delegate through, so it cannot use the sameTransactionAuditService pattern this scanner checks for. The audit write runs inside external-service.ts's revealExternalShare, in the SAME withOrg-scoped transaction as the atomic single-use claim (not a separate later transaction) — an audit-write failure rolls back the claim too, rather than burning the recipient's one-time access without ever returning the value.",
     reviewer: SECURITY_OWNER,
   },
   'GET /api/v1/projects/:projectId/rotations/upcoming': {

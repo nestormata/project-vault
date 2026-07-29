@@ -1,7 +1,9 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import { credentials, credentialShares, users } from '@project-vault/db/schema'
+import { AuditEvent } from '@project-vault/shared'
 import { getAdminDb } from '../../lib/db.js'
+import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import { revealCurrentValue } from '../credentials/service.js'
 import {
@@ -332,6 +334,30 @@ export async function revealExternalShare(rawToken: string): Promise<RevealExter
 
     const claimed = await claimSingleUseView(tx, share.id)
     if (!claimed) return resolveLostExternalClaim(tx, share)
+
+    // AC-11: the CREDENTIAL_SHARE_VIEWED audit write happens INSIDE this same `withOrg`
+    // transaction as the atomic claim above — not in a separate transaction opened later by the
+    // route handler. Unlike 17.1's session-bound reveal (which shares `secureCtx.tx` across the
+    // claim and its audit write), this route has `requireAuth: false` and therefore no
+    // `SecureRouteContext`/`tx` of its own to hand the route a transaction to audit into; if the
+    // audit write happened in a *separate*, later transaction (as a first pass of this code did),
+    // an audit-write failure could no longer roll back the already-committed single-use claim —
+    // burning the recipient's one-time access with no value ever returned and no way to retry.
+    // Writing the audit entry here, before this transaction commits, preserves true fail-closed
+    // semantics: an audit failure rolls back the claim atomically, so the share remains `active`
+    // and the recipient can retry once the underlying audit-write problem is resolved.
+    await writeSystemAuditEntryOrFailClosed(tx, {
+      orgId: row.orgId,
+      eventType: AuditEvent.CREDENTIAL_SHARE_VIEWED,
+      resourceId: claimed.id,
+      resourceType: 'credential_share',
+      payload: {
+        credentialId: claimed.credentialId,
+        fieldKey: share.fieldKey,
+        viewCount: claimed.viewCount,
+        recipientType: 'external',
+      },
+    })
 
     const value = revealed.kind === 'value' ? revealed.value : JSON.stringify(revealed.fields)
     return { status: 'ok', share: claimed, value, fieldKey: share.fieldKey }

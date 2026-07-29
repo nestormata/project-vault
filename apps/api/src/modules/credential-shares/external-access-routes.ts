@@ -1,11 +1,9 @@
 import type { FastifyReply } from 'fastify'
 import { withOrg } from '@project-vault/db'
-import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute } from '../../lib/secure-route.js'
-import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import {
   createOrgAdminNotificationEntries,
   dispatchPendingJobs,
@@ -30,33 +28,6 @@ function noReferrerHeaders(reply: FastifyReply): void {
 }
 
 type BossFastify = FastifyApp & { boss?: BossService }
-
-/** AC-11: writes CREDENTIAL_SHARE_VIEWED for the external path, in its own `withOrg`-scoped
- *  transaction (the reveal itself already committed — this route has no authenticated
- *  `SecureRouteContext`/`tx` to share, unlike 17.1's session-bound reveal route). No authenticated
- *  actor exists for this request, so this uses `writeSystemAuditEntryOrFailClosed` (`actorType:
- *  'system'`, `actorTokenId` always null) — the first real caller of that previously-unused
- *  helper in this codebase, and the correct fit: there is no human or machine actor identity to
- *  attribute an anonymous external recipient's reveal to. */
-async function auditExternalView(
-  orgId: string,
-  input: { shareId: string; credentialId: string; fieldKey: string | null; viewCount: number }
-): Promise<void> {
-  await withOrg(orgId, (tx) =>
-    writeSystemAuditEntryOrFailClosed(tx, {
-      orgId,
-      eventType: AuditEvent.CREDENTIAL_SHARE_VIEWED,
-      resourceId: input.shareId,
-      resourceType: 'credential_share',
-      payload: {
-        credentialId: input.credentialId,
-        fieldKey: input.fieldKey,
-        viewCount: input.viewCount,
-        recipientType: 'external',
-      },
-    })
-  )
-}
 
 /** AC-12: admin notification on first successful view (never again — AC-5 hard-codes singleUse). */
 async function notifyAdminsOfView(
@@ -169,28 +140,12 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
         })
       }
 
+      // AC-11: the CREDENTIAL_SHARE_VIEWED audit write already happened inside
+      // `revealExternalShare`'s own transaction, atomically with the claim — see external-service.ts.
+      // If it had failed, `revealExternalShare` itself would have thrown (rolling back the claim
+      // too) and this line would never be reached, so there is nothing left to audit here.
       const { share, value, fieldKey } = result
       const viewedAt = share.firstViewedAt ?? new Date()
-
-      try {
-        await auditExternalView(share.orgId, {
-          shareId: share.id,
-          credentialId: share.credentialId,
-          fieldKey: share.fieldKey,
-          viewCount: share.viewCount,
-        })
-      } catch (error) {
-        // AC-11 is a hard requirement (full audit trail) — unlike notification dispatch below,
-        // an audit-write failure here must not silently succeed. There is no surrounding
-        // SecureRoute transaction to roll back (the reveal itself already committed via its own
-        // withOrg scope), so this re-throws to surface a 500 rather than returning 200 with an
-        // unaudited reveal.
-        req.log.error(
-          { eventType: 'credential_share.audit_failed', shareId: share.id },
-          'External credential share view audit write failed'
-        )
-        throw error
-      }
 
       // AC-12/AC-18: best-effort — a notification-dispatch failure never blocks the reveal the
       // recipient already received.
