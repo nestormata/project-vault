@@ -30,7 +30,40 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # db:migrate runs from source via tsx, but imports built output (dist/) from its
+      # workspace deps, so those need building first — mirrors fly-reset.yml.
+      - name: Build shared/crypto/db packages
+        run: pnpm --filter @project-vault/shared --filter @project-vault/crypto --filter @project-vault/db build
+
       - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
       # db rarely changes (stock postgres:16-alpine image, no Dockerfile) — deploy it
       # too so a first-time bootstrap or a fly.db.toml edit still lands, but it's
@@ -39,6 +72,20 @@ jobs:
         run: flyctl deploy -c fly.db.toml -a project-vault-demo-db --ha=false --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # Runs BEFORE deploying api so the new api code never boots against a schema it
+      # doesn't recognize yet (this story's root cause: 16-4's migration merged, api
+      # redeployed with code assuming the new column, but nothing had applied it to the
+      # live demo DB — fly-reset.yml's nightly cron was the only thing that ever ran
+      # migrations). Purely additive/backward-compatible migrations are safe to apply
+      # while the OLD api version is still serving traffic against the DB; a genuinely
+      # destructive migration is refused by guarded-migrate.ts (see scripts/fly-migrate.sh)
+      # and fails this step — and the deploy — loudly instead of running unattended.
+      - name: Run pending migrations
+        run: ./scripts/fly-migrate.sh
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
 
       - name: Deploy api
         run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only
