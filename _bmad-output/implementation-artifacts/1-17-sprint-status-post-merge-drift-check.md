@@ -1,6 +1,6 @@
 # Story 1.17: Sprint-Status Post-Merge Drift Check
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
