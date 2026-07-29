@@ -4,6 +4,8 @@ import {
   listCredentialVersions,
 } from '$lib/api/credentials.js'
 import { listRotations } from '$lib/api/rotations.js'
+import { listCredentialShares } from '$lib/api/credential-shares.js'
+import { listOrgUsers } from '$lib/api/org-users.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
@@ -41,6 +43,9 @@ function emptyCredentialPageResult(projectId: string, credentialId: string, orgR
     rotationsPage: 1,
     rotationsHasMore: false,
     activeRotationId: null,
+    // Story 17.1 AC-11: Shares tab data — empty on any load failure, same as every other section.
+    shares: [],
+    orgMembers: [],
   }
 }
 
@@ -74,18 +79,22 @@ function handleCredentialLoadError(
 }
 
 export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
-  const orgRole = requireUser(locals).orgRole
+  const user = requireUser(locals)
+  const orgRole = user.orgRole
   const requestedPage = Number(url.searchParams.get('page') ?? '1')
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1
 
   try {
-    const [credential, versions, dependencies, mostRecentRotation, rotations] = await Promise.all([
-      getCredential(fetch, params.projectId, params.credentialId),
-      listCredentialVersions(fetch, params.projectId, params.credentialId),
-      listCredentialDependencies(fetch, params.projectId, params.credentialId),
-      listRotations(fetch, params.projectId, params.credentialId, { limit: 1 }),
-      listRotations(fetch, params.projectId, params.credentialId, { page, limit: 10 }),
-    ])
+    const [credential, versions, dependencies, mostRecentRotation, rotations, shares, orgMembers] =
+      await Promise.all([
+        getCredential(fetch, params.projectId, params.credentialId),
+        listCredentialVersions(fetch, params.projectId, params.credentialId),
+        listCredentialDependencies(fetch, params.projectId, params.credentialId),
+        listRotations(fetch, params.projectId, params.credentialId, { limit: 1 }),
+        listRotations(fetch, params.projectId, params.credentialId, { page, limit: 10 }),
+        listCredentialShares(fetch, params.projectId, params.credentialId),
+        listOrgUsers(fetch),
+      ])
     const latest = mostRecentRotation.items[0] ?? null
     const activeRotationId =
       latest && ACTIVE_ROTATION_STATUSES.has(latest.status) ? latest.id : null
@@ -101,6 +110,13 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
       rotationsPage: rotations.page,
       rotationsHasMore: rotations.hasMore,
       activeRotationId,
+      shares: shares.items,
+      // Recipient typeahead is scoped to active org members other than the current sharer
+      // (self-share is rejected server-side anyway, but excluding it here keeps the picker
+      // honest — same for a deactivated member, since AC-2 would reject that too).
+      orgMembers: orgMembers.filter(
+        (member) => member.userId !== user.userId && member.status === 'active'
+      ),
     }
   } catch (error) {
     return handleCredentialLoadError(error, params.projectId, params.credentialId, orgRole)

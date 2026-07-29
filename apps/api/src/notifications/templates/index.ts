@@ -7,6 +7,7 @@ import {
   renderSecurityMfaRecoveryUsed,
 } from './security-mfa-recovery.js'
 import { renderProjectInvitationCreated } from './project-invitation-created.js'
+import { renderCredentialShareCreated } from './credential-share-created.js'
 import {
   renderAccountRecoveryLinkCreated,
   renderAccountRecoveryLinkSent,
@@ -74,6 +75,16 @@ const EMAIL_RENDERERS: Record<string, (payload: Record<string, unknown>) => Emai
   },
   'auth.recovery_link_sent': (payload) => {
     const { subject, text, html } = renderAccountRecoveryLinkSent(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: text.slice(0, 500),
+    }
+  },
+  'credential.share_created': (payload) => {
+    const { subject, text, html } = renderCredentialShareCreated(payload)
     return {
       subject,
       text,

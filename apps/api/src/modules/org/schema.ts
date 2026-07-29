@@ -22,6 +22,8 @@ export const OrgUserDeactivatedResponseSchema = z
       userId: z.uuid(),
       revokedSessionCount: z.number().int().nonnegative(),
       revokedInvitationCount: z.number().int().nonnegative(),
+      // Story 17.1 AC-15: count of credential_shares auto-revoked by this deactivation.
+      revokedShareCount: z.number().int().nonnegative(),
     }),
   })
   .meta({ id: 'OrgUserDeactivatedResponse' })

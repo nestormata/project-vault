@@ -111,6 +111,11 @@ export const AuditEvent = {
   // account the one that made this change?). Same fail-closed convention as THEME_RELOADED
   // (writeHumanAuditEntryOrFailClosed inside the same transaction as the persisted selection).
   THEME_SELECTED: 'theme.selected',
+  // Story 17.1 AC-9/FR124: written for every share creation, every successful reveal-step view
+  // (not just the first), and every revocation — same fail-closed convention as the events above.
+  CREDENTIAL_SHARE_CREATED: 'credential.share_created',
+  CREDENTIAL_SHARE_VIEWED: 'credential.share_viewed',
+  CREDENTIAL_SHARE_REVOKED: 'credential.share_revoked',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

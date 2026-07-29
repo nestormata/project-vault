@@ -9,9 +9,16 @@ const archiveCredentialDependencyMock = vi.hoisted(() => vi.fn())
 const revealCredentialValueMock = vi.hoisted(() => vi.fn())
 const addCredentialVersionMock = vi.hoisted(() => vi.fn())
 const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
+const createCredentialShareMock = vi.hoisted(() => vi.fn())
+const revokeCredentialShareMock = vi.hoisted(() => vi.fn())
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
+
+vi.mock('$lib/api/credential-shares.js', () => ({
+  createCredentialShare: createCredentialShareMock,
+  revokeCredentialShare: revokeCredentialShareMock,
+}))
 
 vi.mock('$lib/api/credentials.js', async () => {
   const actual =
@@ -68,6 +75,8 @@ function baseData(overrides: Record<string, unknown> = {}) {
     versions: [],
     rotations: [],
     activeRotationId: null,
+    shares: [],
+    orgMembers: [{ userId: 'recipient-1', email: 'riley@example.com', displayName: 'Riley' }],
     ...overrides,
   }
 }
@@ -944,5 +953,94 @@ describe('credential detail +page.svelte', () => {
     expect(screen.queryByTestId('field-list')).toBeNull()
     expect(screen.queryByRole('button', { name: /reveal all/i })).toBeNull()
     expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
+  })
+
+  describe('Story 17.1: Shares tab', () => {
+    it('shows an honest empty state when there are no shares', () => {
+      render(CredentialDetailPage, { props: { data: baseData() } })
+      expect(screen.getByText(/no shares yet for this credential/i)).toBeTruthy()
+    })
+
+    it('creates a share and shows the one-time token banner', async () => {
+      createCredentialShareMock.mockResolvedValue({
+        id: 'share-1',
+        credentialId,
+        fieldKey: null,
+        sharedBy: 'sharer-1',
+        recipientUserId: 'recipient-1',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-29T00:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-one-time-token',
+      })
+      render(CredentialDetailPage, { props: { data: baseData() } })
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      expect(createCredentialShareMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        expect.objectContaining({ recipientUserId: 'recipient-1', singleUse: true })
+      )
+      expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
+    })
+
+    it('revokes an active share and updates its status in place', async () => {
+      revokeCredentialShareMock.mockResolvedValue({
+        id: 'share-1',
+        credentialId,
+        fieldKey: null,
+        sharedBy: 'sharer-1',
+        recipientUserId: 'recipient-1',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-29T00:00:00.000Z',
+        revokedAt: '2026-07-28T01:00:00.000Z',
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'revoked',
+      })
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            shares: [
+              {
+                id: 'share-1',
+                credentialId,
+                fieldKey: null,
+                sharedBy: 'sharer-1',
+                recipientUserId: 'recipient-1',
+                singleUse: true,
+                createdAt: '2026-07-28T00:00:00.000Z',
+                expiresAt: '2026-07-29T00:00:00.000Z',
+                revokedAt: null,
+                firstViewedAt: null,
+                viewCount: 0,
+                status: 'active',
+              },
+            ],
+          }),
+        },
+      })
+
+      await fireEvent.click(screen.getByRole('button', { name: /revoke/i }))
+
+      expect(revokeCredentialShareMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        'share-1'
+      )
+      expect(await screen.findByText(/revoked/i)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /revoke/i })).toBeNull()
+    })
   })
 })

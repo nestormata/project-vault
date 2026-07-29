@@ -4,6 +4,8 @@ const getCredentialMock = vi.hoisted(() => vi.fn())
 const listCredentialVersionsMock = vi.hoisted(() => vi.fn())
 const listCredentialDependenciesMock = vi.hoisted(() => vi.fn())
 const listRotationsMock = vi.hoisted(() => vi.fn())
+const listCredentialSharesMock = vi.hoisted(() => vi.fn())
+const listOrgUsersMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/credentials.js', () => ({
   getCredential: getCredentialMock,
@@ -15,8 +17,18 @@ vi.mock('$lib/api/rotations.js', () => ({
   listRotations: listRotationsMock,
 }))
 
+// Story 17.1 AC-11: the Shares tab's own load calls — mocked here so this file's fetch-shaped
+// mocks (which model the rotation/dependency responses only) aren't exercised by unrelated calls.
+vi.mock('$lib/api/credential-shares.js', () => ({
+  listCredentialShares: listCredentialSharesMock,
+}))
+
+vi.mock('$lib/api/org-users.js', () => ({
+  listOrgUsers: listOrgUsersMock,
+}))
+
 vi.mock('$lib/server/require-user.js', () => ({
-  requireUser: () => ({ orgRole: 'admin' }),
+  requireUser: () => ({ orgRole: 'admin', userId: 'admin-user-id' }),
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
@@ -43,9 +55,13 @@ describe('credential detail +page.server.ts rotation section', () => {
     listCredentialVersionsMock.mockReset()
     listCredentialDependenciesMock.mockReset()
     listRotationsMock.mockReset()
+    listCredentialSharesMock.mockReset()
+    listOrgUsersMock.mockReset()
     getCredentialMock.mockResolvedValue({ id: credentialId, name: 'Stripe Secret Key' })
     listCredentialVersionsMock.mockResolvedValue({ items: [] })
     listCredentialDependenciesMock.mockResolvedValue({ items: [], hasDependencies: false })
+    listCredentialSharesMock.mockResolvedValue({ items: [] })
+    listOrgUsersMock.mockResolvedValue([])
   })
 
   // AC-D1: +page.server.ts's load calls listCredentialDependencies alongside the existing

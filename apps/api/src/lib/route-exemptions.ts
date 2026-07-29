@@ -488,6 +488,34 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'rotation.completed',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 17.1 AC-13: share creation/revocation are security-action; the metadata-GET and
+  // reveal-step are sensitive-read (they touch a secret value / its access grant respectively).
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/shares': {
+    action: SECURITY_ACTION,
+    auditEvent: 'credential.share_created',
+    sameTransactionAuditService: 'writeShareAuditEntry',
+  },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/shares': {
+    action: 'read',
+    auditOmissionReason: 'Share list metadata does not expose credential values.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/shares/:shareId/revoke': {
+    action: SECURITY_ACTION,
+    auditEvent: 'credential.share_revoked',
+    sameTransactionAuditService: 'writeShareAuditEntry',
+  },
+  'GET /api/v1/shares/access/:token': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      'AC-8/AC-9: the metadata-only GET never returns the secret value and is not itself audited as a view — only the reveal-step POST is.',
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/shares/access/:token/reveal': {
+    action: SENSITIVE_READ,
+    auditEvent: 'credential.share_viewed',
+    sameTransactionAuditService: 'writeShareAuditEntry',
+  },
   'GET /api/v1/projects/:projectId/rotations/upcoming': {
     action: 'read',
     auditOmissionReason:

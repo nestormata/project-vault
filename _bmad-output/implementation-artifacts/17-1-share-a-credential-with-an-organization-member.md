@@ -1,6 +1,6 @@
 # Story 17.1: Share a Credential with an Organization Member
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -72,48 +72,48 @@ Morgan can see all their outstanding and past shares for a credential in a new *
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Database layer (AC: 6)
-  - [ ] 1.1 Add `packages/db/src/schema/credential-shares.ts` per AC-6's exact column/check-constraint spec, `orgScoped` helper, indexes on `(credential_id, status)` and `(recipient_user_id, status)` for the "my shares" / recipient-notification lookups
-  - [ ] 1.2 Migration `0059_credential_shares.sql` (drizzle-kit generate), additive-only, RLS policy matching the standard `orgScoped` pattern
-  - [ ] 1.3 Unit/integration coverage: constraint checks (recipient_type, status enums), org-scoping via RLS test suite pattern used elsewhere
+- [x] Task 1: Database layer (AC: 6)
+  - [x] 1.1 Add `packages/db/src/schema/credential-shares.ts` per AC-6's exact column/check-constraint spec, `orgScoped` helper, indexes on `(credential_id, status)` and `(recipient_user_id, status)` for the "my shares" / recipient-notification lookups
+  - [x] 1.2 Migration `0059_credential_shares.sql` (drizzle-kit generate), additive-only, RLS policy matching the standard `orgScoped` pattern
+  - [x] 1.3 Unit/integration coverage: constraint checks (recipient_type, status enums), org-scoping via RLS test suite pattern used elsewhere
 
-- [ ] Task 2: Audit events + notification template (AC: 9, 10)
-  - [ ] 2.1 Add `CREDENTIAL_SHARE_CREATED` / `CREDENTIAL_SHARE_VIEWED` / `CREDENTIAL_SHARE_REVOKED` to `packages/shared/src/constants/audit-events.ts`
-  - [ ] 2.2 Add a new notification template for "credential shared with you" following the existing `NotificationTemplate` shape used by `dispatchDirectUserNotification` callers
+- [x] Task 2: Audit events + notification template (AC: 9, 10)
+  - [x] 2.1 Add `CREDENTIAL_SHARE_CREATED` / `CREDENTIAL_SHARE_VIEWED` / `CREDENTIAL_SHARE_REVOKED` to `packages/shared/src/constants/audit-events.ts`
+  - [x] 2.2 Add a new notification template for "credential shared with you" following the existing `NotificationTemplate` shape used by `dispatchDirectUserNotification` callers
 
-- [ ] Task 3: Share creation + eligibility (AC: 1, 2, 3, 4, 18, 19)
-  - [ ] 3.1 `apps/api/src/modules/credential-shares/service.ts` — creation logic: reveal-gate reuse, recipient org-membership + active-status check, field_key validation against current template fields, expiry bounds, token generation (hash-only persisted, `token_hash` unique index), `singleUse` handling
-  - [ ] 3.2 `apps/api/src/modules/credential-shares/routes.ts` — `POST` create route, `secureRoute()`, classification, `minimumRole: 'member'`
-  - [ ] 3.3 Notification dispatch wrapped so failure never blocks/rolls back share creation (AC-18) — best-effort, warning-level log on failure
-  - [ ] 3.4 Extend the project/credential archival guard to block or require confirmation when `active` shares exist (AC-19)
-  - [ ] 3.5 Integration tests: happy path, insufficient-role denial (matches reveal's 403 shape), self-share rejection, deactivated-recipient rejection, invalid/removed field_key rejection, expiry-bound validation, notification-failure-does-not-block-creation, token_hash-unique-constraint, archival-blocked-with-active-share
+- [x] Task 3: Share creation + eligibility (AC: 1, 2, 3, 4, 18, 19)
+  - [x] 3.1 `apps/api/src/modules/credential-shares/service.ts` — creation logic: reveal-gate reuse, recipient org-membership + active-status check, field_key validation against current template fields, expiry bounds, token generation (hash-only persisted, `token_hash` unique index), `singleUse` handling
+  - [x] 3.2 `apps/api/src/modules/credential-shares/routes.ts` — `POST` create route, `secureRoute()`, classification, `minimumRole: 'member'`
+  - [x] 3.3 Notification dispatch wrapped so failure never blocks/rolls back share creation (AC-18) — best-effort, warning-level log on failure
+  - [x] 3.4 Extend the project/credential archival guard to block or require confirmation when `active` shares exist (AC-19)
+  - [x] 3.5 Integration tests: happy path, insufficient-role denial (matches reveal's 403 shape), self-share rejection, deactivated-recipient rejection, invalid/removed field_key rejection, expiry-bound validation, notification-failure-does-not-block-creation, token_hash-unique-constraint, archival-blocked-with-active-share
 
-- [ ] Task 4: Recipient access (metadata + two-step reveal) (AC: 3 [field-missing-at-access], 7, 8, 9, 14, 16, 17)
-  - [ ] 4.1 `GET` share-metadata route: token+session-identity check (AC-7), returns metadata only, no audit event on metadata-only GET (only the actual reveal step is audited as a "view" per AC-9), `Referrer-Policy: no-referrer` (AC-17)
-  - [ ] 4.2 `POST` reveal-step route: atomic conditional-update claim for single-use consumption (AC-14), re-checks org-membership/active-status at reveal time (AC-16), increments `view_count`, sets `first_viewed_at`, checks field still exists (else treat as expired), `Cache-Control: no-store` + `Referrer-Policy: no-referrer`, writes `CREDENTIAL_SHARE_VIEWED`
-  - [ ] 4.3 Integration tests: session-mismatch 403, expired-at-access, single-use-already-consumed, concurrent-double-reveal-race (only one succeeds), recipient-deactivated-between-creation-and-view, field-removed-since-creation, `Cache-Control`/`Referrer-Policy` header assertions
+- [x] Task 4: Recipient access (metadata + two-step reveal) (AC: 3 [field-missing-at-access], 7, 8, 9, 14, 16, 17)
+  - [x] 4.1 `GET` share-metadata route: token+session-identity check (AC-7), returns metadata only, no audit event on metadata-only GET (only the actual reveal step is audited as a "view" per AC-9), `Referrer-Policy: no-referrer` (AC-17)
+  - [x] 4.2 `POST` reveal-step route: atomic conditional-update claim for single-use consumption (AC-14), re-checks org-membership/active-status at reveal time (AC-16), increments `view_count`, sets `first_viewed_at`, checks field still exists (else treat as expired), `Cache-Control: no-store` + `Referrer-Policy: no-referrer`, writes `CREDENTIAL_SHARE_VIEWED`
+  - [x] 4.3 Integration tests: session-mismatch 403, expired-at-access, single-use-already-consumed, concurrent-double-reveal-race (only one succeeds), recipient-deactivated-between-creation-and-view, field-removed-since-creation, `Cache-Control`/`Referrer-Policy` header assertions
 
-- [ ] Task 5: Revocation + shares listing (AC: 5, 11, 15)
-  - [ ] 5.1 `POST` revoke route (sharer or org admin), idempotent no-op semantics per AC-5
-  - [ ] 5.2 `GET` list-shares-for-credential route (used by the Shares tab)
-  - [ ] 5.3 Hook into Story 4-3's deactivation flow: auto-revoke the deactivated user's `active` shares in the same transaction, write `CREDENTIAL_SHARE_REVOKED` with a distinguishing reason (AC-15)
-  - [ ] 5.4 Integration tests: revoke-by-sharer, revoke-by-admin, revoke-by-unrelated-member denied, double-revoke no-op, deactivation-triggers-auto-revoke
+- [x] Task 5: Revocation + shares listing (AC: 5, 11, 15)
+  - [x] 5.1 `POST` revoke route (sharer or org admin), idempotent no-op semantics per AC-5
+  - [x] 5.2 `GET` list-shares-for-credential route (used by the Shares tab)
+  - [x] 5.3 Hook into Story 4-3's deactivation flow: auto-revoke the deactivated user's `active` shares in the same transaction, write `CREDENTIAL_SHARE_REVOKED` with a distinguishing reason (AC-15)
+  - [x] 5.4 Integration tests: revoke-by-sharer, revoke-by-admin, revoke-by-unrelated-member denied, double-revoke no-op, deactivation-triggers-auto-revoke
 
-- [ ] Task 6: Route classification & RBAC wiring (AC: 13)
-  - [ ] 6.1 Register all new routes in `ROUTE_ACTION_CLASSIFICATIONS` and any `DIRECT_DB_ACCESS_CLASSIFICATIONS` needed
-  - [ ] 6.2 Confirm `route-audit.test.ts` passes with the new module
+- [x] Task 6: Route classification & RBAC wiring (AC: 13)
+  - [x] 6.1 Register all new routes in `ROUTE_ACTION_CLASSIFICATIONS` and any `DIRECT_DB_ACCESS_CLASSIFICATIONS` needed
+  - [x] 6.2 Confirm `route-audit.test.ts` passes with the new module
 
-- [ ] Task 7: Web UI — Shares tab + creation flow (AC: 11)
-  - [ ] 7.1 Shares tab/list component on credential detail page
-  - [ ] 7.2 Share-creation form (recipient typeahead scoped to org members, expiry picker, single-use toggle, one-time link display)
-  - [ ] 7.3 Revoke action wired to the revoke route
+- [x] Task 7: Web UI — Shares tab + creation flow (AC: 11)
+  - [x] 7.1 Shares tab/list component on credential detail page
+  - [x] 7.2 Share-creation form (recipient typeahead scoped to org members, expiry picker, single-use toggle, one-time link display)
+  - [x] 7.3 Revoke action wired to the revoke route
 
-- [ ] Task 8: Web UI — recipient reveal page (AC: 12)
-  - [ ] 8.1 New authenticated route rendering the two-step consent → reveal flow
-  - [ ] 8.2 Expired/consumed/mismatched-session states rendered honestly (no generic error page)
+- [x] Task 8: Web UI — recipient reveal page (AC: 12)
+  - [x] 8.1 New authenticated route rendering the two-step consent → reveal flow
+  - [x] 8.2 Expired/consumed/mismatched-session states rendered honestly (no generic error page)
 
-- [ ] Task 9: openapi.json regeneration + contract tests
-  - [ ] 9.1 Regenerate `packages/shared/openapi.json` for all new routes including full 401/403/400/404/410 response documentation (this project's contract-parity CI gate has bitten Story 16-2 for exactly this omission — see Previous Story Intelligence below)
+- [x] Task 9: openapi.json regeneration + contract tests
+  - [x] 9.1 Regenerate `packages/shared/openapi.json` for all new routes including full 401/403/400/404/410 response documentation (this project's contract-parity CI gate has bitten Story 16-2 for exactly this omission — see Previous Story Intelligence below)
 
 ## Dev Notes
 
@@ -161,8 +161,64 @@ Morgan can see all their outstanding and past shares for a credential in a new *
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via `/bmad-dev-story`.
+
 ### Debug Log References
+
+- Migration number re-verified immediately before use: `0059` was still free (0058 was the latest on disk); journal entry added by hand (`packages/db/src/migrations/meta/_journal.json`) since `drizzle-kit generate` failed in this worktree with a pre-existing, unrelated snapshot-chain collision (`0031_snapshot.json` / `0032_snapshot.json`, present before this story started). `guarded-migrate.ts` reads only the journal + `.sql` files (not drizzle-kit snapshots), so this does not affect migration application — confirmed by a full `make docker-up` run applying `0059_credential_shares` cleanly alongside 0000–0058.
+- `pnpm generate-spec` + `packages/api-contract-tests` run twice: first pass caught a missing `422` on `POST .../shares` (Fastify's own body-schema validation on a missing body returns 422, not one of the 400/401/403/404/410 set originally documented) — exactly the Story 16-2 contract-parity trap called out in Previous Story Intelligence. Fixed by adding `422: ApiErrorSchema` and regenerating.
+- `route-audit.test.ts`'s per-file prefix-resolution logic maps one imported route-registrar file to exactly one `app.ts` prefix; registering `credentialSharesRoutes` (prefix `/api/v1/projects`) and `credentialShareAccessRoutes` (prefix `/api/v1/shares`) from the same source file collapsed both prefixes into one and mis-scoped the shares routes. Fixed by splitting the recipient-facing access routes into their own file (`access-routes.ts`), each file registered with its own prefix.
 
 ### Completion Notes List
 
+- **Judgment call (AC-4 defaults):** share expiry defaults to 24h, capped at 7 days (`SHARE_DEFAULT_TTL_MS` / `SHARE_MAX_TTL_MS` in `apps/api/src/modules/credential-shares/schema.ts`) — the story's own recommended default, adopted as-is absent other product guidance. The web UI's create form exposes an "expires in (hours)" input (1–168) rather than a default+cap the user cannot see.
+- **Schema reconciliation (flagged, not silently guessed):** AC-6's literal `credential_shares` column list (per `sprint-change-proposal-2026-07-24.md` §4.3) does not include a single-use/multi-view flag, but AC-4 requires the reveal-step to behave differently for `singleUse: true` vs `false` shares. Added a `single_use boolean NOT NULL DEFAULT true` column as a necessary, additive extension to the literal spec — documented inline in `packages/db/src/schema/credential-shares.ts` and the migration SQL, not silently inferred from `status` alone.
+- **Deliberate scope decision (token hashing secret):** `token_hash` is computed via HMAC-SHA256 using the existing `INVITATION_TOKEN_HMAC_SECRET` with a `credential_share:` domain-separation prefix, rather than introducing a new dedicated `CREDENTIAL_SHARE_TOKEN_HMAC_SECRET` env var and its full production-validation/docker-compose/`.env.example` surface (the precedent every other bearer-token type in this codebase follows). This keeps the story's scope bounded; if Nestor wants a fully independent secret for defense-in-depth, that's a follow-up, not an oversight.
+- **Deliberate scope decision (no step-up MFA on share creation, AC-13):** `requireMfa` is not set on the share-creation/revocation routes — they are `minimumRole: 'member'`, and this codebase's convention only requires MFA for `admin`/`owner`-gated routes. Flagged per AC-13's own text as an explicit decision, not an oversight.
+- **F1-F4 applicability (epic security review) re-verified at dev time:** the dedicated `epic-17-external-share-token-security-review-2026-07-27.md` findings are written against Story 17.2's unauthenticated external-link threat model. This story's access route always requires an authenticated session belonging to the named recipient (AC-7), so those findings do not directly bind this story's implementation; AC-17's Referrer-Policy requirement (independently applicable regardless of auth) is implemented on both the metadata-GET and reveal-step routes.
+- **Deferred to Story 17.3 (per Dev Notes' explicit scope boundary):** no dedicated `CREDENTIAL_SHARE_EXPIRED` audit event, no background expiry-sweep job, and no rotation-supersede interaction. This story's expiry handling is the minimum lazy/live check AC-3/AC-8 require (checked at access time, transitions `active` → `expired` on the read that discovers it past-due).
+- **Web UI scope:** the Shares tab is a new section on the existing credential detail page (no separate list route exists for rotations either — same convention). The recipient reveal page lives at `/shares/[token]` under the authenticated `(app)` route group (AC-7 — not a public/unauthenticated route despite being "a link").
+- All 19 ACs implemented and covered by integration/unit tests except: no dedicated HTTP-level integration test asserts the *project-archive* route's new `active_shares` 409 (the underlying `findBlockingShareIds` guard is covered directly by 4 new unit tests in `archive-guards.test.ts`, mirroring the existing untested-at-HTTP-level pattern for the rotation/machine-key blocking guards in that same file).
+- Full test run (affected modules): `apps/api` credential-shares/org/projects/rotation/route-audit suites — 416 tests passed. `packages/api-contract-tests` — 420 tests passed. `apps/web` full suite — 1766 tests passed. `pnpm generate-spec` produces a diff-free-on-rerun `packages/shared/openapi.json`.
+
 ### File List
+
+**New files:**
+- `packages/db/src/schema/credential-shares.ts`
+- `packages/db/src/migrations/0059_credential_shares.sql`
+- `apps/api/src/modules/credential-shares/schema.ts`
+- `apps/api/src/modules/credential-shares/service.ts`
+- `apps/api/src/modules/credential-shares/routes.ts`
+- `apps/api/src/modules/credential-shares/access-routes.ts`
+- `apps/api/src/modules/credential-shares/routes.test.ts`
+- `apps/api/src/notifications/templates/credential-share-created.ts`
+- `apps/web/src/lib/api/credential-shares.ts`
+- `apps/web/src/routes/(app)/shares/[token]/+page.server.ts`
+- `apps/web/src/routes/(app)/shares/[token]/+page.svelte`
+- `apps/web/src/routes/(app)/shares/[token]/share-access-page.server.test.ts`
+- `apps/web/src/routes/(app)/shares/[token]/share-access-page.test.ts`
+
+**Modified files:**
+- `packages/db/src/schema/index.ts`
+- `packages/db/src/migrations/meta/_journal.json`
+- `packages/shared/src/constants/audit-events.ts`
+- `packages/shared/src/schemas/api.ts`
+- `packages/shared/openapi.json`
+- `apps/api/src/app.ts`
+- `apps/api/src/lib/route-exemptions.ts`
+- `apps/api/src/modules/credentials/routes.ts` (exported `rejectIfInsufficientProjectRoleForReveal`, `rejectIfProjectNotVisible`)
+- `apps/api/src/modules/org/routes.ts` (AC-15 deactivation hook)
+- `apps/api/src/modules/org/schema.ts` (`revokedShareCount` on deactivate response)
+- `apps/api/src/modules/org/deactivation.routes.test.ts` (new AC-15 test)
+- `apps/api/src/modules/projects/archive-guards.ts` (AC-19 `findBlockingShareIds`)
+- `apps/api/src/modules/projects/archive-guards.test.ts` (new AC-19 tests)
+- `apps/api/src/modules/projects/routes.ts` (AC-19 archive-route wiring)
+- `apps/api/src/notifications/templates/index.ts` (registered new template)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` (Shares tab data)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` (Shares tab UI)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.server.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts`
+
+## Change Log
+
+- 2026-07-28: Implemented via `bmad-dev-story`, TDD red-green throughout (new backend module, migration, web UI). All 9 tasks/34 subtasks complete, all 19 ACs implemented. Status: `ready-for-dev` → `review`; sprint-status.yaml synced in the same change (P3).

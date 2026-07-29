@@ -60,3 +60,12 @@ export const ActiveMachineUserKeysErrorSchema = z
     machineUserIds: z.array(z.uuid()),
   })
   .meta({ id: 'ActiveMachineUserKeysError' })
+
+// Story 17.1 AC-19 — archive-guard block shape for active credential shares, same `{ error, ... }`
+// field-naming precedent as the two block-response schemas above.
+export const ActiveSharesErrorSchema = z
+  .object({
+    error: z.literal('active_shares'),
+    shareIds: z.array(z.uuid()),
+  })
+  .meta({ id: 'ActiveSharesError' })

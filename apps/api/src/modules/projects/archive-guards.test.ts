@@ -5,6 +5,7 @@ import { insertTestProject } from '@project-vault/db/test-helpers'
 import {
   apiKeys,
   credentials,
+  credentialShares,
   credentialVersions,
   machineUsers,
   projects,
@@ -19,6 +20,7 @@ import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js
 import { bootProjectRouteTestApp } from './project-route-test-bootstrap.js'
 import {
   findBlockingRotationIds,
+  findBlockingShareIds,
   hasActiveMachineUserKeys,
   isProjectArchived,
 } from './archive-guards.js'
@@ -171,6 +173,79 @@ describe('archive-guards', () => {
       await insertTestRotation(projectA.id, 'in_progress')
 
       const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, projectB.id))
+
+      expect(blockingIds).toEqual([])
+    })
+  })
+
+  /** Story 17.1 AC-19: inserts a credential + credential_shares row scoped to `projectId`. */
+  async function insertTestShare(projectId: string, status: string): Promise<string> {
+    return withOrg(orgId, async (tx) => {
+      const [credential] = await tx
+        .insert(credentials)
+        .values({
+          orgId,
+          projectId,
+          name: `share-guard-cred-${randomUUID()}`,
+          createdBy: userId,
+        })
+        .returning({ id: credentials.id })
+      if (!credential) throw new Error('expected credential to be inserted')
+
+      const [share] = await tx
+        .insert(credentialShares)
+        .values({
+          orgId,
+          credentialId: credential.id,
+          sharedBy: userId,
+          recipientType: 'user',
+          recipientUserId: userId,
+          tokenHash: `test-hash-${randomUUID()}`,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          status,
+        })
+        .returning({ id: credentialShares.id })
+      if (!share) throw new Error('expected credential share to be inserted')
+      return share.id
+    })
+  }
+
+  describe('findBlockingShareIds (Story 17.1 AC-19)', () => {
+    it('returns [] for a project with no shares', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'share-guard-none' })
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingShareIds(tx, project.id))
+
+      expect(blockingIds).toEqual([])
+    })
+
+    it('blocks on an active share', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'share-guard-active' })
+      const shareId = await insertTestShare(project.id, 'active')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingShareIds(tx, project.id))
+
+      expect(blockingIds).toEqual([shareId])
+    })
+
+    it('does not block on revoked, expired, viewed, or superseded shares', async () => {
+      const project = await insertTestProject(orgId, { userId, slug: 'share-guard-terminal' })
+      await insertTestShare(project.id, 'revoked')
+      await insertTestShare(project.id, 'expired')
+      await insertTestShare(project.id, 'viewed')
+      await insertTestShare(project.id, 'superseded')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingShareIds(tx, project.id))
+
+      expect(blockingIds).toEqual([])
+    })
+
+    it('only returns shares belonging to the given project', async () => {
+      const projectA = await insertTestProject(orgId, { userId, slug: 'share-guard-scope-a' })
+      const projectB = await insertTestProject(orgId, { userId, slug: 'share-guard-scope-b' })
+      await insertTestShare(projectA.id, 'active')
+
+      const blockingIds = await withOrg(orgId, (tx) => findBlockingShareIds(tx, projectB.id))
 
       expect(blockingIds).toEqual([])
     })

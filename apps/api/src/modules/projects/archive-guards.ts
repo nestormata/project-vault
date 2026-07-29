@@ -1,7 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import type { Tx } from '@project-vault/db'
-import { projects, rotations } from '@project-vault/db/schema'
+import { credentials, credentialShares, projects, rotations } from '@project-vault/db/schema'
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 
 /** Standard 410 body every write guard on an archived project MUST return (ADR-4.4-01). */
@@ -40,6 +40,22 @@ export async function findBlockingRotationIds(tx: Tx, projectId: string): Promis
     .where(
       and(eq(rotations.projectId, projectId), inArray(rotations.status, BLOCKING_ROTATION_STATUSES))
     )
+  return rows.map((r) => r.id)
+}
+
+/**
+ * Story 17.1 AC-19 — extends the archival-dependency guard the epic's own Round 3 finding already
+ * generalized to cover "staged rotations and active shares" as a class: returns the ids of
+ * `active` credential_shares for any credential in this project, blocking project archival the
+ * same way an in-progress rotation does. Joins through `credentials` (credential_shares has no
+ * direct projectId column) — scoped to the project, not the whole org.
+ */
+export async function findBlockingShareIds(tx: Tx, projectId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ id: credentialShares.id })
+    .from(credentialShares)
+    .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
+    .where(and(eq(credentials.projectId, projectId), eq(credentialShares.status, 'active')))
   return rows.map((r) => r.id)
 }
 

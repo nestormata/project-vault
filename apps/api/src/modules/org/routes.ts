@@ -13,6 +13,7 @@ import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { sendAdminRecoveryLink } from '../auth/recovery.js'
 import { checkActiveRotationsForUser, revokePendingInvitationsSentBy } from './deactivation.js'
+import { autoRevokeSharesForDeactivatedUser } from '../credential-shares/service.js'
 import { dismissSecurityAlert, listSecurityAlerts } from './security-alerts.js'
 import { listOrgUsers, removeUserFromOrgMemberships } from './user-management.js'
 import { pseudonymizeUser } from './pseudonymize.js'
@@ -321,17 +322,48 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           .send({ error: 'active_rotations', rotationIds: rotationCheck.rotationIds })
       }
 
+      // Story 17.1 AC-15: a deactivated user's outstanding `active` credential shares are
+      // revoked in this same transaction — mirrors the epic's own security-review finding F6
+      // (applied to Story 17.2's external shares); the same reasoning applies to this story's
+      // member-to-member shares.
+      const revokedShares = await autoRevokeSharesForDeactivatedUser(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        userId: params.userId,
+      })
+      for (const share of revokedShares) {
+        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+          resourceType: 'credential_share',
+          orgId: secureCtx.auth.orgId,
+          actorUserId: secureCtx.auth.userId,
+          eventType: AuditEvent.CREDENTIAL_SHARE_REVOKED,
+          resourceId: share.id,
+          payload: { credentialId: share.credentialId, reason: 'sharer_deactivated' },
+          request: req,
+        })
+      }
+
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
         resourceType: 'org_membership',
         orgId: secureCtx.auth.orgId,
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.ORG_USER_DEACTIVATED,
         resourceId: params.userId,
-        payload: { revokedSessionCount, revokedInvitationCount },
+        payload: {
+          revokedSessionCount,
+          revokedInvitationCount,
+          revokedShareCount: revokedShares.length,
+        },
         request: req,
       })
 
-      return { data: { userId: params.userId, revokedSessionCount, revokedInvitationCount } }
+      return {
+        data: {
+          userId: params.userId,
+          revokedSessionCount,
+          revokedInvitationCount,
+          revokedShareCount: revokedShares.length,
+        },
+      }
     },
   })
 

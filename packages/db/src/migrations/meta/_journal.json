@@ -414,6 +414,13 @@
       "when": 1785132600000,
       "tag": "0058_users_selected_theme_name",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1785219000000,
+      "tag": "0059_credential_shares",
+      "breakpoints": true
     }
   ]
 }
