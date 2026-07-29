@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createCredentialShare,
   createExternalCredentialShare,
+  dismissRotationRecommendedNudge,
   getExternalShareMetadata,
   getShareMetadata,
   listCredentialShares,
+  listRotationRecommendedNudges,
   revealCredentialShare,
   revealExternalCredentialShare,
   revokeCredentialShare,
@@ -166,5 +168,53 @@ describe('credential-shares API wrapper (Story 17.1)', () => {
     expect(url).toBe(`/api/v1/external-shares/access/${token}/reveal`)
     expect(init.method).toBe('POST')
     expect(result).toEqual(revealResult)
+  })
+
+  it('listCredentialShares appends status/limit/offset query params and returns total (Story 17.3 AC-1/AC-2)', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { items: [sampleShare], total: 41 } }))
+    const result = await listCredentialShares(fetchFn, projectId, credentialId, {
+      status: 'revoked',
+      limit: 25,
+      offset: 25,
+    })
+    const [url] = fetchFn.mock.calls[0] ?? []
+    expect(url).toBe(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/shares?status=revoked&limit=25&offset=25`
+    )
+    expect(result).toEqual({ items: [sampleShare], total: 41 })
+  })
+
+  it('listRotationRecommendedNudges calls GET .../nudge (Story 17.3 AC-11)', async () => {
+    const bucket = {
+      fieldKey: null,
+      active: true,
+      mostRecentShareAt: '2026-01-01T00:00:00.000Z',
+      mostRecentSharedWith: 'morgan@example.com',
+    }
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { items: [bucket] } }))
+    const result = await listRotationRecommendedNudges(fetchFn, projectId, credentialId)
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/nudge`,
+      expect.anything()
+    )
+    expect(result).toEqual({ items: [bucket] })
+  })
+
+  it('dismissRotationRecommendedNudge POSTs to .../nudge/dismiss (Story 17.3 AC-15)', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { fieldKey: null, dismissedAt: '2026-01-01T00:00:00.000Z' },
+      })
+    )
+    const result = await dismissRotationRecommendedNudge(fetchFn, projectId, credentialId, {
+      reason: 'Rotated out of band',
+    })
+    const [url, init] = fetchFn.mock.calls[0] ?? []
+    expect(url).toBe(`/api/v1/projects/${projectId}/credentials/${credentialId}/nudge/dismiss`)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ reason: 'Rotated out of band' })
+    expect(result.dismissedAt).toBe('2026-01-01T00:00:00.000Z')
   })
 })

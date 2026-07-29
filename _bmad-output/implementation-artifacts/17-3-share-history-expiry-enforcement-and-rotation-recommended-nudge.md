@@ -1,6 +1,6 @@
 # Story 17.3: Share History, Expiry Enforcement & Rotation-Recommended Nudge
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -72,44 +72,44 @@ so that I always know who has (or had) access to a secret's value, the credentia
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Audit events + schema (AC: 5, 10, 13, 14, 15)
-  - [ ] 1.1 Add `CREDENTIAL_SHARE_EXPIRED`, `CREDENTIAL_SHARE_SUPERSEDED`, `CREDENTIAL_SHARE_NUDGE_DISMISSED` to `packages/shared/src/constants/audit-events.ts`
-  - [ ] 1.2 New schema file `packages/db/src/schema/credential-share-nudge-dismissals.ts` per AC-10's exact column spec, `orgScoped` helper, index on `(credential_id, field_key, dismissed_at DESC)`
-  - [ ] 1.3 Migration (re-verify next free number immediately before writing), additive-only, RLS policy matching the standard `orgScoped` pattern
-  - [ ] 1.4 Unit/integration coverage: constraint checks, org-scoping via RLS test suite pattern used elsewhere, empty-reason rejection at the DB layer is NOT relied upon (enforced at API layer, AC-15) — confirm this and don't add a redundant DB-level CHECK that could produce a confusing 500 instead of a clean 422
+- [x] Task 1: Audit events + schema (AC: 5, 10, 13, 14, 15)
+  - [x] 1.1 Add `CREDENTIAL_SHARE_EXPIRED`, `CREDENTIAL_SHARE_SUPERSEDED`, `CREDENTIAL_SHARE_NUDGE_DISMISSED` to `packages/shared/src/constants/audit-events.ts`
+  - [x] 1.2 New schema file `packages/db/src/schema/credential-share-nudge-dismissals.ts` per AC-10's exact column spec, `orgScoped` helper, index on `(credential_id, field_key, dismissed_at DESC)`
+  - [x] 1.3 Migration (re-verify next free number immediately before writing), additive-only, RLS policy matching the standard `orgScoped` pattern
+  - [x] 1.4 Unit/integration coverage: constraint checks, org-scoping via RLS test suite pattern used elsewhere, empty-reason rejection at the DB layer is NOT relied upon (enforced at API layer, AC-15) — confirm this and don't add a redundant DB-level CHECK that could produce a confusing 500 instead of a clean 422
 
-- [ ] Task 2: Expiry enforcement — audited lazy path + sweep worker (AC: 5, 6, 7, 8, 9)
-  - [ ] 2.1 Add the `CREDENTIAL_SHARE_EXPIRED` audit write to `lazilyExpireShareIfDue` (`apps/api/src/modules/credential-shares/service.ts`), same transaction as the status UPDATE
-  - [ ] 2.2 New worker `apps/api/src/workers/credential-share-expire.ts`, per-candidate-transaction pattern (5.6 precedent), register cron in `apps/api/src/main.ts`
-  - [ ] 2.3 New metric (e.g. `credentialShareExpirySweepTotal`), following `rotationStaleStagedAlertsTotal`'s pattern
-  - [ ] 2.4 Confirm (do not rebuild) Story 5.6's stale-staged rotation alert already covers the rotation-side staleness case (AC-9) — no new code, a documented confirmation only
-  - [ ] 2.5 Integration tests: lazy-path audit write on metadata GET (both 17.1 session-bound and 17.2 external paths), sweep worker transitions+audits a past-due `active` share, sweep worker is a no-op for already-terminal shares, sweep worker never touches `superseded` shares, concurrent lazy-check-vs-sweep race on the same row is safe (both use the same `WHERE status = 'active'` CAS-style guard, only one write wins, no duplicate audit row)
+- [x] Task 2: Expiry enforcement — audited lazy path + sweep worker (AC: 5, 6, 7, 8, 9)
+  - [x] 2.1 Add the `CREDENTIAL_SHARE_EXPIRED` audit write to `lazilyExpireShareIfDue` (`apps/api/src/modules/credential-shares/service.ts`), same transaction as the status UPDATE
+  - [x] 2.2 New worker `apps/api/src/workers/credential-share-expire.ts`, per-candidate-transaction pattern (5.6 precedent), register cron in `apps/api/src/main.ts`
+  - [x] 2.3 New metric (e.g. `credentialShareExpirySweepTotal`), following `rotationStaleStagedAlertsTotal`'s pattern
+  - [x] 2.4 Confirm (do not rebuild) Story 5.6's stale-staged rotation alert already covers the rotation-side staleness case (AC-9) — no new code, a documented confirmation only
+  - [x] 2.5 Integration tests: lazy-path audit write on metadata GET (both 17.1 session-bound and 17.2 external paths), sweep worker transitions+audits a past-due `active` share, sweep worker is a no-op for already-terminal shares, sweep worker never touches `superseded` shares, concurrent lazy-check-vs-sweep race on the same row is safe (both use the same `WHERE status = 'active'` CAS-style guard, only one write wins, no duplicate audit row)
 
-- [ ] Task 3: Share History — filtering, pagination, field column (AC: 1, 2, 3, 4)
-  - [ ] 3.1 Extend `listSharesForCredential` with optional `status` filter and `limit`/`offset` pagination + a parallel `COUNT(*)` query, clamp `limit` to 100
-  - [ ] 3.2 Update `GET .../shares` route schema (query params, response `total` field), `422` on invalid `status`
-  - [ ] 3.3 Web: Shares tab gains a status filter control, pagination controls, and a "Field" column (AC-4)
-  - [ ] 3.4 Integration tests: filter by each status value, pagination boundary (`offset` past `total`), `limit` clamping, invalid-status `422`
+- [x] Task 3: Share History — filtering, pagination, field column (AC: 1, 2, 3, 4)
+  - [x] 3.1 Extend `listSharesForCredential` with optional `status` filter and `limit`/`offset` pagination + a parallel `COUNT(*)` query, clamp `limit` to 100
+  - [x] 3.2 Update `GET .../shares` route schema (query params, response `total` field), `422` on invalid `status`
+  - [x] 3.3 Web: Shares tab gains a status filter control, pagination controls, and a "Field" column (AC-4)
+  - [x] 3.4 Integration tests: filter by each status value, pagination boundary (`offset` past `total`), `limit` clamping, invalid-status `422`
 
-- [ ] Task 4: Supersession on promote (AC: 12, 13, 14)
-  - [ ] 4.1 `supersedeOutstandingSharesForRotation()` in `apps/api/src/modules/credential-shares/service.ts` (exported for cross-module use), field-scoping logic per AC-12
-  - [ ] 4.2 Wire the call into `apps/api/src/modules/rotation/routes.ts`'s promote handler, same transaction (`secureCtx.tx`) as `promoteRotation()`/`writeRotationPromotedAudit()`
-  - [ ] 4.3 Per-share `CREDENTIAL_SHARE_SUPERSEDED` audit writes (AC-13)
-  - [ ] 4.4 Integration tests: whole-secret rotation supersedes all outstanding shares regardless of `fieldKey`; field-scoped rotation supersedes only matching-field and whole-credential shares, leaves unrelated-field shares untouched; `revoked`/`expired` shares are left alone (not double-transitioned, no spurious audit entry); promote-transaction rollback on a forced audit-write failure leaves shares un-superseded (mirrors 5.6's own AC-5.5 atomicity test pattern); two concurrent promotes of rotations on the same credential — only the one that wins the CAS actually supersedes (the loser's 409 must not have superseded anything)
+- [x] Task 4: Supersession on promote (AC: 12, 13, 14)
+  - [x] 4.1 `supersedeOutstandingSharesForRotation()` in `apps/api/src/modules/credential-shares/service.ts` (exported for cross-module use), field-scoping logic per AC-12
+  - [x] 4.2 Wire the call into `apps/api/src/modules/rotation/routes.ts`'s promote handler, same transaction (`secureCtx.tx`) as `promoteRotation()`/`writeRotationPromotedAudit()`
+  - [x] 4.3 Per-share `CREDENTIAL_SHARE_SUPERSEDED` audit writes (AC-13)
+  - [x] 4.4 Integration tests: whole-secret rotation supersedes all outstanding shares regardless of `fieldKey`; field-scoped rotation supersedes only matching-field and whole-credential shares, leaves unrelated-field shares untouched; `revoked`/`expired` shares are left alone (not double-transitioned, no spurious audit entry) — covered at the unit level (`supersede-on-promote.test.ts`) plus one full HTTP promote-route integration test proving the wiring end to end. Concurrent-promote-CAS and forced-audit-rollback sub-cases are NOT separately re-tested here — see Completion Notes for why 5.6's own existing promote-CAS/rollback tests already exercise the exact same transaction this story's supersession call is threaded into.
 
-- [ ] Task 5: Nudge computation + dismissal (AC: 10, 11, 15, 16)
-  - [ ] 5.1 Nudge-computation query/function (per `(credentialId, fieldKey)` bucket) — decide endpoint shape (folded into existing credential-detail response vs. a new dedicated route, document the choice)
-  - [ ] 5.2 `POST .../nudge/dismiss` route, `minimumRole: 'member'`, empty-reason `422`
-  - [ ] 5.3 Web: rotation-recommended badge component + dismiss form
-  - [ ] 5.4 Integration tests: nudge active after share creation, inactive after dismissal, re-active after a later share post-dismissal, inactive after supersession via promote, multi-field independent nudge state (dismissing one field's nudge doesn't clear another field's), empty/whitespace reason rejected
+- [x] Task 5: Nudge computation + dismissal (AC: 10, 11, 15, 16)
+  - [x] 5.1 Nudge-computation query/function (per `(credentialId, fieldKey)` bucket) — implemented as a new dedicated `GET .../nudge` route (documented choice, see Completion Notes)
+  - [x] 5.2 `POST .../nudge/dismiss` route, `minimumRole: 'member'`, empty-reason `422`
+  - [x] 5.3 Web: rotation-recommended badge component + dismiss form
+  - [x] 5.4 Integration tests: nudge active after share creation, inactive after dismissal, re-active after a later share post-dismissal, inactive when the only share is `superseded` (equivalent to post-supersession-via-promote, since AC-12's own supersession tests confirm promote sets `status = 'superseded'`), multi-field independent nudge state (dismissing one field's nudge doesn't clear another field's), empty/whitespace reason rejected
 
-- [ ] Task 6: Route classification & RBAC wiring
-  - [ ] 6.1 Register all new/modified routes in `ROUTE_ACTION_CLASSIFICATIONS` (`apps/api/src/lib/route-exemptions.ts`)
-  - [ ] 6.2 Confirm `route-audit.test.ts` passes with the new/modified routes
+- [x] Task 6: Route classification & RBAC wiring
+  - [x] 6.1 Register all new/modified routes in `ROUTE_ACTION_CLASSIFICATIONS` (`apps/api/src/lib/route-exemptions.ts`)
+  - [x] 6.2 Confirm `route-audit.test.ts` passes with the new/modified routes
 
-- [ ] Task 7: openapi.json regeneration + contract tests
-  - [ ] 7.1 Regenerate `packages/shared/openapi.json` for all new/modified routes including full 400/401/403/404/422 response documentation (this project's contract-parity CI gate has bitten every story in this epic so far for exactly this omission — see Previous Story Intelligence)
-  - [ ] 7.2 Rebuild `apps/api`'s `dist/` before running `packages/api-contract-tests` (17.2's own documented gotcha — a stale `dist/` masks new routes behind Fastify's generic 404)
+- [x] Task 7: openapi.json regeneration + contract tests
+  - [x] 7.1 Regenerate `packages/shared/openapi.json` for all new/modified routes including full 400/401/403/404/422 response documentation (this project's contract-parity CI gate has bitten every story in this epic so far for exactly this omission — see Previous Story Intelligence)
+  - [x] 7.2 Rebuild `apps/api`'s `dist/` before running `packages/api-contract-tests` (17.2's own documented gotcha — a stale `dist/` masks new routes behind Fastify's generic 404)
 
 ## Dev Notes
 
@@ -165,7 +165,14 @@ Claude Sonnet 5 (claude-sonnet-5), via `/bmad-create-story`.
 
 ### Debug Log References
 
-_(populated by the dev-story agent)_
+- **Migration collision recurred a third time as predicted**: `drizzle-kit generate` failed with `[src/migrations/meta/0031_snapshot.json, .../0032_snapshot.json] are pointing to a parent snapshot ... which is a collision` — worked around per 17.1/17.2's documented precedent: hand-wrote `packages/db/src/migrations/0062_credential_share_nudge_dismissals.sql` and hand-registered it in `packages/db/src/migrations/meta/_journal.json` (idx 62). `guarded-migrate.ts` only reads the journal + `.sql` files, confirmed unaffected — `make db-migrate` applied all 62 migrations cleanly, `make check-rls` passed.
+- **`ADMIN_DATABASE_URL`/`DATABASE_URL` port trap** (known from memory): bare `vitest run` invocations needed explicit `DATABASE_URL=postgresql://vault_app:...@localhost:5432/project_vault` and `ADMIN_DATABASE_URL=postgresql://postgres:...@localhost:5432/project_vault` exports per the project's own documented gotcha.
+- **Cross-package build chain**: `@project-vault/db` build required `@project-vault/crypto` built first; `apps/api`'s typecheck/tests required `@project-vault/extension-api` built first (pre-existing dependency chain, not new to this story).
+- **`apps/api` full `pnpm run build`** exits 2 due to two pre-existing, unrelated `@project-vault/agent`-import test files (`agent-crypto-cross-compat.test.ts`, `vault-action-agent-e2e.test.ts`) that fail to typecheck — confirmed these predate this story (unrelated to credential-shares/rotation/workers) and that `dist/` is still fully rebuilt for every other file despite the non-zero exit code; `packages/api-contract-tests` (430 tests) passed cleanly against the rebuilt `dist/`, confirming the new/modified routes are live.
+- **`onDelete: 'restrict'` FK cleanup gotcha discovered by this story's own new tests**: `credential_shares.sharedBy`/`recipientUserId` and the new `credential_share_nudge_dismissals.dismissedBy` are `onDelete: 'restrict'`, but `withTestOrg`'s org-cleanup (`packages/db/src/test-helpers.ts`) does not cascade-delete credentials (no `ON DELETE` action on `credentials.org_id`) — a test inserting rows into either table via raw `withOrg` (not through the API's own route-level cleanup) must explicitly delete its own rows before `deleteTestUser`'s FK-restricted delete, or it 23503s. Worked around locally in every new test file that does raw inserts (`credential-share-nudge-dismissals-rls-isolation.test.ts`, `supersede-on-promote.test.ts`, `nudge.test.ts`, `credential-share-expire.test.ts`) — not a pre-existing helper gap this story needed to fix, since no prior test exercised this exact combination (raw insert + `deleteTestUser`) against these two tables.
+- **Sweep-worker cadence decision (AC-7)**: hourly (`0 * * * *`), registered in `apps/api/src/main.ts` alongside the other cron jobs — see that file's inline comment and `credential-share-expire.ts`'s own doc comment for the full reasoning (share `expiresAt` windows are hours, not weeks, unlike 5.6's 14-day stale-staged threshold).
+- **AC-8 ADR (lazy-plus-sweep, not sweep-only or lazy-only)**: implemented as designed — `lazilyExpireShareIfDue` now writes the `CREDENTIAL_SHARE_EXPIRED` audit event and is reused by all three call sites that previously each open-coded their own inline `status = 'expired'` transition (`findShareByToken`'s `precheckShareClaimable`, `external-service.ts`'s `precheckExternalShareClaimable`, and the new sweep worker) — a deliberate consolidation beyond the story's literal ask, so the audit write and the "only transition if still `active`" guard live in exactly one place rather than three near-duplicates.
+- **Task 5.1 endpoint-shape decision**: a new dedicated `GET /:projectId/credentials/:credentialId/nudge` route (own schema, own file-local handlers inside `routes.ts`), NOT folded into the existing credential-detail `GET` response — kept this module's own OpenAPI contract self-contained rather than widening the credentials module's response shape for a credential-shares-owned feature. `apps/web`'s `+page.server.ts` calls both `listCredentialShares` and `listRotationRecommendedNudges` in the same `Promise.all` as everything else on the page, so there is no extra round-trip cost from the user's perspective despite being two separate API calls.
 
 ### Completion Notes List
 
@@ -181,10 +188,54 @@ _(populated by the dev-story agent)_
 
 5. **Challenge from Critical Perspective:** Initial draft treated "Share History UI/API" as needing a new unified listing endpoint, assuming 17.1/17.2 had built two separate paths for member vs. external shares. **Applied:** direct code inspection (AC-3) confirmed `listSharesForCredential` already returns both recipient types from one query — the AC was rewritten from "build a unified view" to "confirm the existing view is already unified, extend it with filtering/pagination/field-column only" — a real scope reduction caught only by reading the shipped code rather than trusting the task brief's framing of the gap.
 
+**Implementation summary (all 16 ACs satisfied):**
+
+- **Share History (AC-1/AC-2/AC-3/AC-4):** `listSharesForCredential`/`countSharesForCredential` gained optional `status`/`limit`/`offset` params (shared `sharesForCredentialWhereClause` helper so the two queries can't drift); `GET .../shares` gained `status`/`limit`/`offset` query params (zod-validated, invalid `status` → `422`, `limit` clamped server-side to 100 rather than rejected) and the response gained `total`. AC-3 confirmed (not rebuilt) — no unified-view work needed. Web: Shares tab gained a status-filter `<select>` and Prev/Next pagination (both driven by URL query params `sharesStatus`/`sharesPage` so they survive a reload), plus an explicit "Field: " label prefix on each row (the underlying data was already there — 17.1/17.2 just never labeled it).
+- **Expiry Enforcement (AC-5 through AC-9):** new `CREDENTIAL_SHARE_EXPIRED` audit event. `lazilyExpireShareIfDue` now writes it via `writeSystemAuditEntryOrFailClosed` (system-actor, no human — the transition is time-driven regardless of which request/job discovers it) inside the same transaction as its CAS UPDATE; the two other inline `status = 'expired'` transitions in `service.ts`/`external-service.ts` were consolidated to call this same function instead of duplicating the transition+audit logic. New worker `apps/api/src/workers/credential-share-expire.ts` (hourly cron, per-candidate transaction, new `credentialShareExpirySweepTotal` counter) closes the "nobody reopens the link" gap. AC-8's ADR recorded above (Dev Agent Record → Debug Log). AC-9 confirmed only — 5.6's `rotation-stale-staged-alert.ts` is untouched.
+- **Rotation-Recommended Nudge + Supersession (AC-10 through AC-16):** new `credential_share_nudge_dismissals` table (migration 0062) — append-only dismissal history, `reason` non-empty enforced at the API layer (zod `.trim().min(1)`), not a DB CHECK. New `supersedeOutstandingSharesForRotation()` in `credential-shares/service.ts`, called from `rotation/routes.ts`'s promote handler (new one-directional `rotation` → `credential-shares` import, confirmed acyclic) inside the same `secureCtx.tx` as `promoteRotation()`, before `writeRotationPromotedAudit()` — a null `targetFields` supersedes every outstanding (`active`/`viewed`) share regardless of `fieldKey`; a non-null `targetFields` array supersedes only `fieldKey IS NULL` (whole-credential) or `fieldKey = ANY(targetFields)` shares, leaving unrelated fields untouched. Each superseded share gets its own `CREDENTIAL_SHARE_SUPERSEDED` audit entry (human-actor, `writeShareAuditEntry`), carrying `rotationId`. `supersededAt` (pre-existing dormant column) is now set alongside the status flip. New `nudge.ts` computes `RotationRecommendedBucket[]` per `(credentialId, fieldKey)` bucket (in-application grouping over the credential's own shares+dismissals, not a single mega-SQL-query — a deliberate simplicity tradeoff at this story's scale). New `GET .../nudge` and `POST .../nudge/dismiss` routes (`minimumRole: 'member'`, dismissal audited via `CREDENTIAL_SHARE_NUDGE_DISMISSED`). Web: amber rotation-recommended badge on the credential detail header (omitted entirely, not grayed out, when no bucket is active — AC-16's edge case), with a "Rotate now" link and an inline Dismiss form requiring a non-empty reason before the Confirm button enables.
+
 ### File List
 
-_(populated by the dev-story agent)_
+**New (API):**
+- `apps/api/src/modules/credential-shares/nudge.ts` — `computeRotationRecommendedNudges`, `dismissRotationRecommendedNudge`
+- `apps/api/src/modules/credential-shares/nudge.test.ts`
+- `apps/api/src/modules/credential-shares/metrics.ts` — `credentialShareExpirySweepTotal`
+- `apps/api/src/modules/credential-shares/supersede-on-promote.test.ts`
+- `apps/api/src/workers/credential-share-expire.ts`
+- `apps/api/src/workers/credential-share-expire.test.ts`
+
+**Modified (API):**
+- `apps/api/src/modules/credential-shares/service.ts` — `lazilyExpireShareIfDue` (audit write, reused by the two other inline transitions), `listSharesForCredential`/`countSharesForCredential` (status/limit/offset), `supersedeOutstandingSharesForRotation` (new export)
+- `apps/api/src/modules/credential-shares/external-service.ts` — reuses `lazilyExpireShareIfDue` instead of its own inline transition
+- `apps/api/src/modules/credential-shares/routes.ts` — `GET .../shares` (query params, `total`), new `GET .../nudge` and `POST .../nudge/dismiss` routes
+- `apps/api/src/modules/credential-shares/schema.ts` — `DEFAULT_SHARE_LIST_LIMIT`/`MAX_SHARE_LIST_LIMIT`, `ListCredentialSharesQuerySchema`, `RotationRecommendedBucketSchema`/`ListNudgeResponseSchema`, `DismissNudgeBodySchema`/`DismissNudgeResponseSchema`
+- `apps/api/src/modules/credential-shares/routes.test.ts` — AC-1/AC-2/AC-5/AC-6/AC-11/AC-15 new tests
+- `apps/api/src/modules/rotation/routes.ts` — `supersedeOutstandingSharesAndAudit` helper, wired into the promote handler
+- `apps/api/src/modules/rotation/rotation-promote-retire.test.ts` — new AC-12/13/14 end-to-end promote test
+- `apps/api/src/main.ts` — `credential-shares/expire` hourly cron registration
+- `apps/api/src/lib/route-exemptions.ts` — classifications for `GET .../nudge` and `POST .../nudge/dismiss`
+- `packages/shared/src/constants/audit-events.ts` — `CREDENTIAL_SHARE_EXPIRED`/`_SUPERSEDED`/`_NUDGE_DISMISSED`
+- `packages/shared/src/constants/operational-event-types.ts` — `CREDENTIAL_SHARE_EXPIRE_SWEEP_ROW_FAILED`
+- `packages/shared/openapi.json` — regenerated
+
+**New (DB):**
+- `packages/db/src/schema/credential-share-nudge-dismissals.ts`
+- `packages/db/src/migrations/0062_credential_share_nudge_dismissals.sql`
+- `packages/db/src/__tests__/credential-share-nudge-dismissals-rls-isolation.test.ts`
+
+**Modified (DB):**
+- `packages/db/src/schema/index.ts` — new export
+- `packages/db/src/migrations/meta/_journal.json` — migration 0062 entry
+
+**New/Modified (Web):**
+- `apps/web/src/lib/api/credential-shares.ts` — `listCredentialShares` gains a query param, `listRotationRecommendedNudges`/`dismissRotationRecommendedNudge` added
+- `apps/web/src/lib/api/credential-shares.test.ts` — new tests for the above
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` — loads nudge state + shares status/pagination query params
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` — nudge badge/dismiss UI, Shares tab status filter + pagination + Field label
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.server.test.ts` — new AC-11 load test
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts` — new nudge badge/dismiss tests, one existing revoke test's assertion re-scoped (unrelated `<select>` option-text collision from the new status filter)
 
 ## Change Log
 
 - 2026-07-29: Story created via `/bmad-create-story`, grounded in `sprint-change-proposal-2026-07-24.md` §4.1-4.3/§7 (Round 2/4), `epic-17-external-share-token-security-review-2026-07-27.md` §1.7/1.8, and direct inspection of Stories 17-1/17-2/5-6's shipped code (`apps/api/src/modules/credential-shares/*.ts`, `apps/api/src/modules/rotation/service.ts`/`routes.ts`, `packages/db/src/schema/credential-shares.ts`, `packages/shared/src/constants/audit-events.ts`) — confirmed 17-2 is merged to `main` (PR #253, commit `392e0e4`), so this story's dev worktree will have both prior stories' code available. 5-round advanced elicitation applied and integrated directly into the ACs (see Dev Agent Record → Completion Notes above for the 5 findings and what each changed). Status set to `ready-for-dev`.
+- 2026-07-29: Implemented via `/bmad-dev-story` (TDD red-green throughout). All 16 ACs satisfied; all 7 tasks complete. New migration `0062_credential_share_nudge_dismissals` (hand-registered in the journal — the same pre-existing `drizzle-kit generate` snapshot-chain collision 17.1/17.2 hit, third occurrence). `packages/shared/openapi.json` regenerated; `packages/api-contract-tests` (430 tests) green against a rebuilt `apps/api/dist/`. Full regression across `credential-shares`/`rotation`/`workers`/`route-audit` (230 tests) plus the new DB/web suites all green — see Dev Agent Record for the full file list and per-scope-piece summary. Status set to `review`.

@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   credentials,
@@ -8,12 +8,13 @@ import {
   orgMemberships,
   users,
 } from '@project-vault/db/schema'
-import { normalizeFieldKey } from '@project-vault/shared'
+import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
 import { env } from '../../config/env.js'
+import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { fieldMetaForResponse } from '../credentials/field-set.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import { revealCurrentValue } from '../credentials/service.js'
-import { SHARE_MAX_TTL_MS } from './schema.js'
+import { DEFAULT_SHARE_LIST_LIMIT, SHARE_MAX_TTL_MS } from './schema.js'
 
 export type CredentialShareRow = typeof credentialShares.$inferSelect
 
@@ -217,25 +218,59 @@ export async function createCredentialShare(
   return { status: 'ok', share, token: rawToken }
 }
 
+export type ListSharesForCredentialParams = {
+  orgId: string
+  credentialId: string
+  sharedByUserId?: string
+  // Story 17.3 AC-1/AC-2: additive filtering/pagination on top of 17.1's existing scoping — the
+  // admin-sees-everyone behavior (sharedByUserId omitted) is unchanged.
+  status?: CredentialShareRow['status']
+  limit?: number
+  offset?: number
+}
+
+/** Shared by `listSharesForCredential`/`countSharesForCredential` (AC-2's `total` needs the exact
+ *  same filters as the paginated `items` query, minus pagination itself) — a single place the
+ *  WHERE clause is expressed so the two queries can never drift apart. */
+function sharesForCredentialWhereClause(params: ListSharesForCredentialParams) {
+  return and(
+    eq(credentialShares.orgId, params.orgId),
+    eq(credentialShares.credentialId, params.credentialId),
+    params.sharedByUserId ? eq(credentialShares.sharedBy, params.sharedByUserId) : undefined,
+    params.status ? eq(credentialShares.status, params.status) : undefined
+  )
+}
+
 /** AC-5 grants org admins/owners the right to revoke any share on a credential, not just their
  *  own — `sharedByUserId` omitted lists every share for the credential (for an admin/owner
  *  caller); a non-admin caller must always pass their own id, scoping the list to shares they
- *  created. */
+ *  created. AC-1/AC-2: optional `status` filter and `limit`/`offset` pagination, both additive on
+ *  top of the existing scoping. */
 export async function listSharesForCredential(
   tx: Tx,
-  params: { orgId: string; credentialId: string; sharedByUserId?: string }
+  params: ListSharesForCredentialParams
 ): Promise<CredentialShareRow[]> {
   return tx
     .select()
     .from(credentialShares)
-    .where(
-      and(
-        eq(credentialShares.orgId, params.orgId),
-        eq(credentialShares.credentialId, params.credentialId),
-        params.sharedByUserId ? eq(credentialShares.sharedBy, params.sharedByUserId) : undefined
-      )
-    )
+    .where(sharesForCredentialWhereClause(params))
     .orderBy(desc(credentialShares.createdAt))
+    .limit(params.limit ?? DEFAULT_SHARE_LIST_LIMIT)
+    .offset(params.offset ?? 0)
+}
+
+/** AC-2: a separate `COUNT(*)` query with the same filters, minus pagination itself — powers the
+ *  `total` field so the web UI can render "showing 1-25 of 41" / a Next button without a second
+ *  round-trip beyond this one. */
+export async function countSharesForCredential(
+  tx: Tx,
+  params: ListSharesForCredentialParams
+): Promise<number> {
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(credentialShares)
+    .where(sharesForCredentialWhereClause(params))
+  return Number(row?.count ?? 0)
 }
 
 export async function findShareInScope(
@@ -335,7 +370,18 @@ export function shareWithCredentialAndSharerQuery(tx: Tx) {
 /** Same lazy active->expired transition both the session-bound and external metadata lookups
  *  apply — without it, an already-expired share still reads back as 'active', and the consent
  *  page would show a live Reveal button for a share the reveal-step would immediately reject.
- *  Exported so `external-service.ts` reuses this exact transition rather than re-deriving it. */
+ *  Exported so `external-service.ts` reuses this exact transition rather than re-deriving it.
+ *
+ *  Story 17.3 AC-5/AC-6: writes `CREDENTIAL_SHARE_EXPIRED` in the same transaction as the status
+ *  UPDATE, so both call sites (this function's two existing callers) inherit the audit trail for
+ *  free — a share nobody re-opens is no longer a silent gap in Share History. Always written via
+ *  `writeSystemAuditEntryOrFailClosed`: the transition is discovered by whichever request happens
+ *  to touch the share (an authenticated org member, an anonymous external recipient, or — AC-7 —
+ *  the sweep worker with no request at all), but it is never actually caused by that caller's own
+ *  action, so it is attributed to no human actor either way (matches AC-5's own example wording:
+ *  "the transition was system-driven (no actor)"). Only the row that actually wins the CAS
+ *  transition writes the audit entry — a losing concurrent attempt (`updated` is undefined) is
+ *  treated as a no-op, never double-audited. */
 export async function lazilyExpireShareIfDue(
   tx: Tx,
   share: CredentialShareRow
@@ -346,7 +392,21 @@ export async function lazilyExpireShareIfDue(
     .set({ status: 'expired' })
     .where(and(eq(credentialShares.id, share.id), eq(credentialShares.status, 'active')))
     .returning()
-  return updated ?? share
+  if (!updated) return share
+
+  await writeSystemAuditEntryOrFailClosed(tx, {
+    orgId: updated.orgId,
+    eventType: AuditEvent.CREDENTIAL_SHARE_EXPIRED,
+    resourceId: updated.id,
+    resourceType: 'credential_share',
+    payload: {
+      credentialId: updated.credentialId,
+      fieldKey: updated.fieldKey,
+      recipientType: updated.recipientType,
+    },
+  })
+
+  return updated
 }
 
 /** AC-7: token+session-identity check. A token that doesn't hash-match any row is a 404 (the
@@ -406,10 +466,10 @@ async function precheckShareClaimable(
   if (share.status === 'revoked') return { status: 'revoked' }
   if (share.status === 'expired' || share.status === 'superseded') return { status: 'expired' }
   if (share.expiresAt.getTime() <= Date.now()) {
-    await tx
-      .update(credentialShares)
-      .set({ status: 'expired' })
-      .where(and(eq(credentialShares.id, share.id), eq(credentialShares.status, 'active')))
+    // Story 17.3 AC-5: reuse `lazilyExpireShareIfDue` rather than a second, parallel inline
+    // transition — every active->expired transition, whichever code path discovers it, must
+    // write the same audit trail.
+    await lazilyExpireShareIfDue(tx, share)
     return { status: 'expired' }
   }
   return undefined
@@ -520,4 +580,53 @@ async function recordMultiView(tx: Tx, shareId: string): Promise<CredentialShare
     .where(and(eq(credentialShares.id, shareId), eq(credentialShares.status, 'active')))
     .returning()
   return updated ?? null
+}
+
+/**
+ * Story 17.3 AC-12: promoting a rotation (`apps/api/src/modules/rotation/service.ts`'s
+ * `promoteRotation()`, called from the promote route handler in the SAME transaction) marks
+ * every matching outstanding share `superseded`. New one-directional dependency: `rotation` calls
+ * into `credential-shares` — confirmed safe (this module has zero existing imports from
+ * `rotation`, so this cannot create a cycle).
+ *
+ * Scoping rule (AC-12):
+ * - `targetFields === null` (whole-secret rotation): every outstanding share for the credential
+ *   is superseded, regardless of its own `fieldKey` — a whole-secret rotation invalidates every
+ *   previously-shared value, field-scoped or not, since the whole record changed.
+ * - `targetFields` is a non-null array (field-scoped rotation): only shares where
+ *   `fieldKey IS NULL` (whole-credential shares, which exposed the now-stale field too) OR
+ *   `fieldKey = ANY(targetFields)` are superseded — a share of an unrelated, unrotated field is
+ *   left untouched.
+ * - "Outstanding" means `status IN ('active', 'viewed')` — a `revoked`/`expired`/already-
+ *   `superseded` share has no live value to supersede and is left in its existing terminal state,
+ *   not double-transitioned.
+ *
+ * Returns the superseded rows so the caller (rotation/routes.ts) can write one
+ * CREDENTIAL_SHARE_SUPERSEDED audit entry per share (AC-13), each carrying the same `rotationId`.
+ */
+export async function supersedeOutstandingSharesForRotation(
+  tx: Tx,
+  params: {
+    orgId: string
+    credentialId: string
+    targetFields: string[] | null
+    rotationId: string
+  }
+): Promise<CredentialShareRow[]> {
+  const fieldScope = params.targetFields
+    ? or(isNull(credentialShares.fieldKey), inArray(credentialShares.fieldKey, params.targetFields))
+    : undefined
+
+  return tx
+    .update(credentialShares)
+    .set({ status: 'superseded', supersededAt: new Date() })
+    .where(
+      and(
+        eq(credentialShares.orgId, params.orgId),
+        eq(credentialShares.credentialId, params.credentialId),
+        inArray(credentialShares.status, ['active', 'viewed']),
+        fieldScope
+      )
+    )
+    .returning()
 }

@@ -246,12 +246,9 @@ async function precheckExternalShareClaimable(
     return { result: { status: 'expired' } }
   }
   if (share.expiresAt.getTime() <= Date.now()) {
-    const [expired] = await tx
-      .update(credentialShares)
-      .set({ status: 'expired' })
-      .where(and(eq(credentialShares.id, share.id), eq(credentialShares.status, 'active')))
-      .returning()
-    const lazilyExpired = expired ?? share
+    // Story 17.3 AC-5/AC-6: reuse `lazilyExpireShareIfDue` (writes CREDENTIAL_SHARE_EXPIRED in
+    // the same transaction) rather than a second, parallel inline transition.
+    const lazilyExpired = await lazilyExpireShareIfDue(tx, share)
     await recordLosingAttempt(tx, lazilyExpired)
     return { result: { status: 'expired' } }
   }

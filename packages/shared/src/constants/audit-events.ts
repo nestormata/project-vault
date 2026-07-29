@@ -116,6 +116,12 @@ export const AuditEvent = {
   CREDENTIAL_SHARE_CREATED: 'credential.share_created',
   CREDENTIAL_SHARE_VIEWED: 'credential.share_viewed',
   CREDENTIAL_SHARE_REVOKED: 'credential.share_revoked',
+  // Story 17.3 AC-5/AC-13/AC-15: expiry (system-driven, no human actor — written via
+  // writeSystemAuditEntryOrFailClosed by both the lazy-expiry check and the sweep worker),
+  // supersession-on-promote (human-actor, one entry per superseded share), and nudge dismissal.
+  CREDENTIAL_SHARE_EXPIRED: 'credential.share_expired',
+  CREDENTIAL_SHARE_SUPERSEDED: 'credential.share_superseded',
+  CREDENTIAL_SHARE_NUDGE_DISMISSED: 'credential.share_nudge_dismissed',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

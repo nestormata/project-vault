@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
-import { parseBody, parseParams } from '../../lib/route-helpers.js'
+import { parseBody, parseParams, parseQuery } from '../../lib/route-helpers.js'
 import { roleRank, secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeShareAuditEntry } from './audit.js'
 import type { BossService } from '../../lib/boss.js'
@@ -24,12 +24,20 @@ import {
   CreateExternalCredentialShareResponseSchema,
   CredentialShareParamsSchema,
   CredentialShareRevokeParamsSchema,
+  DEFAULT_SHARE_LIST_LIMIT,
+  DismissNudgeBodySchema,
+  DismissNudgeResponseSchema,
+  ListCredentialSharesQuerySchema,
   ListCredentialSharesResponseSchema,
+  ListNudgeResponseSchema,
+  MAX_SHARE_LIST_LIMIT,
   RevokeCredentialShareResponseSchema,
   type CreateCredentialShareBody,
   type CreateExternalCredentialShareBody,
+  type DismissNudgeBody,
 } from './schema.js'
 import {
+  countSharesForCredential,
   createCredentialShare,
   findShareInScope,
   listSharesForCredential,
@@ -40,6 +48,7 @@ import {
   createExternalCredentialShare,
   type CreateExternalShareResult,
 } from './external-service.js'
+import { computeRotationRecommendedNudges, dismissRotationRecommendedNudge } from './nudge.js'
 import { verifyStepUp } from './step-up.js'
 
 const CREDENTIAL_NOT_FOUND = {
@@ -224,6 +233,60 @@ function warnShareNotificationDispatchFailed(
     { eventType: 'credential_share.notification_failed', shareId, err: error },
     `${contextLabel} notification dispatch failed — share was still created`
   )
+}
+
+/** Shared by the list/nudge/dismiss routes below (none of which mutate a share the way create/
+ *  revoke do): resolves project visibility, then confirms the credential itself exists in that
+ *  project. Returns `true` (having already sent the reply) when the caller must stop. */
+async function rejectIfCredentialNotVisible(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  params: { projectId: string; credentialId: string }
+): Promise<boolean> {
+  if (await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, PROJECT_NOT_FOUND)) {
+    return true
+  }
+  const exists = await credentialExistsInProject(secureCtx.tx, params)
+  if (!exists) {
+    reply.status(404).send(CREDENTIAL_NOT_FOUND)
+    return true
+  }
+  return false
+}
+
+type VisibleCredentialLoad = {
+  params: { projectId: string; credentialId: string }
+  secureCtx: SecureRouteContext
+}
+
+/** Shared by the GET .../shares, GET .../nudge, and POST .../nudge/dismiss handlers: the common
+ *  params-parse + visibility-check prologue every one of them starts with. Returns `null` (having
+ *  already sent the reply) when the caller must stop. */
+async function loadVisibleCredentialParams(
+  ctx: unknown,
+  req: FastifyRequest,
+  reply: FastifyReply
+): Promise<VisibleCredentialLoad | null> {
+  const params = parseParams(CredentialShareParamsSchema, req, reply)
+  if (!params) return null
+  const secureCtx = ctx as SecureRouteContext
+  if (await rejectIfCredentialNotVisible(secureCtx, req, reply, params)) return null
+  return { params, secureCtx }
+}
+
+/** Wraps a route handler so `loadVisibleCredentialParams`'s own "parse, check, bail" prologue is
+ *  written exactly once instead of being repeated verbatim at every one of this module's 3
+ *  visibility-gated GET/POST handlers (jscpd's 0%-duplication gate treats that repeated prologue
+ *  as a clone once factored only as far as a shared function still called inline 3 times). */
+function withVisibleCredential(
+  fn: (req: FastifyRequest, reply: FastifyReply, loaded: VisibleCredentialLoad) => Promise<unknown>
+) {
+  return async (ctx: unknown, req: FastifyRequest, reply: FastifyReply) => {
+    const loaded = await loadVisibleCredentialParams(ctx, req, reply)
+    if (!loaded) return reply
+    return fn(req, reply, loaded)
+  }
 }
 
 /** Shared by both share-creation routes: the 201 response finalization — serialize the share plus
@@ -477,33 +540,40 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         200: ListCredentialSharesResponseSchema,
         401: ApiErrorSchema,
         404: ApiErrorSchema,
+        422: ApiErrorSchema,
       },
     },
     security: { minimumRole: 'member', writeAuditEvent: false },
-    handler: async (ctx, req, reply) => {
-      const params = parseParams(CredentialShareParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtx = ctx as SecureRouteContext
-
-      if (
-        await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, PROJECT_NOT_FOUND)
-      ) {
-        return reply
-      }
-      const exists = await credentialExistsInProject(secureCtx.tx, params)
-      if (!exists) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+    handler: withVisibleCredential(async (req, reply, { params, secureCtx }) => {
+      // AC-1: an invalid `status` value is a 422, not a silent empty result or a 500 from an
+      // unconstrained SQL IN — zod's own enum validation rejects it before this handler ever
+      // touches the DB.
+      const query = parseQuery(ListCredentialSharesQuerySchema, req, reply)
+      if (!query) return reply
 
       // AC-5: org admins/owners can revoke any share on the credential, so they can also list
       // every share on it (not just their own) — otherwise there is no way to discover a
-      // shareId to exercise that right.
+      // shareId to exercise that right. AC-1/AC-2: status filter + pagination are additive on
+      // top of this existing member-vs-admin scoping.
       const isAdmin = roleRank(secureCtx.auth.orgRole) >= roleRank('admin')
-      const shares = await listSharesForCredential(secureCtx.tx, {
+      // AC-2 edge case: an over-large `limit` is clamped to MAX_SHARE_LIST_LIMIT server-side,
+      // never rejected — same convention as `parsePagination`'s own Math.min clamp.
+      const limit = Math.min(query.limit ?? DEFAULT_SHARE_LIST_LIMIT, MAX_SHARE_LIST_LIMIT)
+      const offset = query.offset ?? 0
+      const listParams = {
         orgId: secureCtx.auth.orgId,
         credentialId: params.credentialId,
         sharedByUserId: isAdmin ? undefined : secureCtx.auth.userId,
-      })
-      return { data: { items: shares.map(serializeShare) } }
-    },
+        status: query.status,
+        limit,
+        offset,
+      }
+      const [shares, total] = await Promise.all([
+        listSharesForCredential(secureCtx.tx, listParams),
+        countSharesForCredential(secureCtx.tx, listParams),
+      ])
+      return { data: { items: shares.map(serializeShare), total } }
+    }),
   })
 
   secureRoute(fastify, {
@@ -587,5 +657,94 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
 
       return { data: serializeShare(existing.share) }
     },
+  })
+
+  // Story 17.3 AC-11: a small, dedicated GET route (documented Task 5.1 choice — see Dev Agent
+  // Record) rather than folding into the existing credential-detail response.
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/credentials/:credentialId/nudge',
+    schema: {
+      response: {
+        200: ListNudgeResponseSchema,
+        401: ApiErrorSchema,
+        404: ApiErrorSchema,
+      },
+    },
+    security: { minimumRole: 'member', writeAuditEvent: false },
+    handler: withVisibleCredential(async (_req, _reply, { params, secureCtx }) => {
+      const items = await computeRotationRecommendedNudges(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        credentialId: params.credentialId,
+      })
+      return { data: { items } }
+    }),
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/nudge/dismiss',
+    schema: {
+      response: {
+        200: DismissNudgeResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'member',
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 30,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/credentials/:credentialId/nudge/dismiss',
+      },
+    },
+    handler: withVisibleCredential(async (req, reply, { params, secureCtx }) => {
+      const parsed = parseBody<DismissNudgeBody>(DismissNudgeBodySchema, req, reply)
+      if (!parsed.success) return reply
+
+      const fieldKey = parsed.data.fieldKey ?? null
+      const result = await dismissRotationRecommendedNudge(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        credentialId: params.credentialId,
+        fieldKey,
+        dismissedBy: secureCtx.auth.userId,
+        reason: parsed.data.reason,
+      })
+      // AC-15: an empty/whitespace-only reason is a 422 — the zod schema above already trims and
+      // requires min-length-1, so this branch is unreachable via this route today, but the
+      // service-layer guard is kept authoritative rather than trusted-by-construction, matching
+      // this module's other double-checked invariants (e.g. `validateShareFieldAndExpiry`).
+      if (result.status === 'empty_reason') {
+        return reply.status(422).send({
+          code: 'empty_reason',
+          message: 'reason must not be empty.',
+        })
+      }
+
+      try {
+        await writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+          eventType: AuditEvent.CREDENTIAL_SHARE_NUDGE_DISMISSED,
+          resourceId: params.credentialId,
+          payload: {
+            credentialId: params.credentialId,
+            projectId: params.projectId,
+            fieldKey,
+            reason: parsed.data.reason.trim(),
+          },
+        })
+      } catch (error) {
+        req.log.error(
+          { eventType: AUDIT_FAILED_EVENT_TYPE, credentialId: params.credentialId },
+          'Credential share nudge dismissal audit write failed — transaction will roll back'
+        )
+        throw error
+      }
+
+      return { data: { fieldKey, dismissedAt: result.dismissedAt.toISOString() } }
+    }),
   })
 }

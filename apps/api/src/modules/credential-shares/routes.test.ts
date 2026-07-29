@@ -20,10 +20,15 @@ const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const TEST_PASSPHRASE = 'credential-shares-routes-passphrase'
+const CREDENTIAL_SHARE_EXPIRED_EVENT = 'credential.share_expired'
 const { addUserToOrg, registerOwner, addProjectMember } = createMembershipTestHelpers({
   emailPrefix: 'share-route',
   orgNamePrefix: 'Share Route Org',
 })
+
+function nudgeUrl(projectId: string, credentialId: string, suffix = '') {
+  return `/api/v1/projects/${projectId}/credentials/${credentialId}/nudge${suffix}`
+}
 
 function sharesUrl(projectId: string, credentialId: string, suffix = '') {
   return `/api/v1/projects/${projectId}/credentials/${credentialId}/shares${suffix}`
@@ -538,6 +543,82 @@ describe('credential-shares routes', () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.json<{ data: { status: string } }>().data.status).toBe('expired')
+
+    // Story 17.3 AC-6: the lazy expiry transition writes a CREDENTIAL_SHARE_EXPIRED audit entry
+    // in the same transaction as the status UPDATE — not a silent flip.
+    const audit = await withOrg(sharer.orgId, (tx) =>
+      tx
+        .select()
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, CREDENTIAL_SHARE_EXPIRED_EVENT))
+    )
+    expect(audit.some((a) => a.resourceId === shareId)).toBe(true)
+  })
+
+  it('AC-5: a share still active-but-not-yet-expired is left untouched by the lazy check (no expired transition, no audit entry)', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('metadata-not-due')
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+    const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
+
+    const response = await app.inject({
+      method: 'GET',
+      url: accessUrl(token),
+      headers: { cookie: cookieHeader(recipient.cookies) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json<{ data: { status: string } }>().data.status).toBe('active')
+
+    const audit = await withOrg(sharer.orgId, (tx) =>
+      tx
+        .select()
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, CREDENTIAL_SHARE_EXPIRED_EVENT))
+    )
+    expect(audit.some((a) => a.resourceId === shareId)).toBe(false)
+  })
+
+  it('AC-5: a share that is already revoked when its expiresAt passes does not get a spurious expired transition or audit entry', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture(
+      'metadata-revoked-then-due'
+    )
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+    const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
+
+    await app.inject({
+      method: 'POST',
+      url: sharesUrl(projectId, credentialId, `/${shareId}/revoke`),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    await withOrg(sharer.orgId, (tx) =>
+      tx
+        .update(credentialShares)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(credentialShares.id, shareId))
+    )
+
+    const response = await app.inject({
+      method: 'GET',
+      url: accessUrl(token),
+      headers: { cookie: cookieHeader(recipient.cookies) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json<{ data: { status: string } }>().data.status).toBe('revoked')
+
+    const audit = await withOrg(sharer.orgId, (tx) =>
+      tx
+        .select()
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, CREDENTIAL_SHARE_EXPIRED_EVENT))
+    )
+    expect(audit.some((a) => a.resourceId === shareId)).toBe(false)
   })
 
   it('AC-11: lists shares the current user created for a credential', async () => {
@@ -557,5 +638,149 @@ describe('credential-shares routes', () => {
     const body = response.json<{ data: { items: { recipientUserId: string }[] } }>()
     expect(body.data.items.length).toBeGreaterThanOrEqual(1)
     expect(body.data.items[0]?.recipientUserId).toBe(recipient.userId)
+  })
+
+  it('AC-1: filters the list by status, and rejects an invalid status with 422', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('status-filter')
+    const active = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+    const activeId = active.json<{ data: { id: string } }>().data.id
+    const revoke = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+    const revokeId = revoke.json<{ data: { id: string } }>().data.id
+    await app.inject({
+      method: 'POST',
+      url: sharesUrl(projectId, credentialId, `/${revokeId}/revoke`),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+
+    const filtered = await app.inject({
+      method: 'GET',
+      url: sharesUrl(projectId, credentialId, '?status=revoked'),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    expect(filtered.statusCode).toBe(200)
+    const filteredBody = filtered.json<{ data: { items: { id: string; status: string }[] } }>()
+    expect(filteredBody.data.items.every((item) => item.status === 'revoked')).toBe(true)
+    expect(filteredBody.data.items.some((item) => item.id === revokeId)).toBe(true)
+    expect(filteredBody.data.items.some((item) => item.id === activeId)).toBe(false)
+
+    const invalid = await app.inject({
+      method: 'GET',
+      url: sharesUrl(projectId, credentialId, '?status=bogus'),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    expect(invalid.statusCode).toBe(422)
+  })
+
+  it('AC-2: paginates with limit/offset and a total count, clamping an over-large limit rather than rejecting it', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('pagination')
+    for (let i = 0; i < 3; i += 1) {
+      await createShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientUserId: recipient.userId,
+        expiresAt: futureIso(),
+      })
+    }
+
+    const page1 = await app.inject({
+      method: 'GET',
+      url: sharesUrl(projectId, credentialId, '?limit=2&offset=0'),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    expect(page1.statusCode).toBe(200)
+    const page1Body = page1.json<{ data: { items: unknown[]; total: number } }>()
+    expect(page1Body.data.items).toHaveLength(2)
+    expect(page1Body.data.total).toBeGreaterThanOrEqual(3)
+
+    const page2 = await app.inject({
+      method: 'GET',
+      url: sharesUrl(projectId, credentialId, '?limit=2&offset=2'),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    expect(page2.statusCode).toBe(200)
+    const page2Body = page2.json<{ data: { items: unknown[]; total: number } }>()
+    expect(page2Body.data.items.length).toBeGreaterThanOrEqual(1)
+
+    // Edge case: limit=500 is clamped to 100 server-side, not rejected with a 400/422.
+    const clamped = await app.inject({
+      method: 'GET',
+      url: sharesUrl(projectId, credentialId, '?limit=500'),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    expect(clamped.statusCode).toBe(200)
+  })
+
+  it('AC-11: GET nudge returns an active bucket after a share is created, and no buckets for a never-shared credential', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('nudge-list')
+
+    const emptyRes = await app.inject({
+      method: 'GET',
+      url: nudgeUrl(projectId, credentialId),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    expect(emptyRes.statusCode).toBe(200)
+    expect(emptyRes.json<{ data: { items: unknown[] } }>().data.items).toHaveLength(0)
+
+    await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+
+    const afterShareRes = await app.inject({
+      method: 'GET',
+      url: nudgeUrl(projectId, credentialId),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    expect(afterShareRes.statusCode).toBe(200)
+    const body = afterShareRes.json<{
+      data: { items: { fieldKey: string | null; active: boolean }[] }
+    }>()
+    expect(body.data.items).toHaveLength(1)
+    expect(body.data.items[0]?.fieldKey).toBeNull()
+    expect(body.data.items[0]?.active).toBe(true)
+  })
+
+  it('AC-15: dismissing the nudge requires a non-empty reason, records the dismissal, writes an audit entry, and clears the nudge', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('nudge-dismiss')
+    await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+
+    const emptyReasonRes = await app.inject({
+      method: 'POST',
+      url: nudgeUrl(projectId, credentialId, '/dismiss'),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+      payload: { reason: '   ' },
+    })
+    expect(emptyReasonRes.statusCode).toBe(422)
+
+    const dismissRes = await app.inject({
+      method: 'POST',
+      url: nudgeUrl(projectId, credentialId, '/dismiss'),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+      payload: { reason: 'Rotated out of band' },
+    })
+    expect(dismissRes.statusCode).toBe(200)
+
+    const nudgeAfterDismiss = await app.inject({
+      method: 'GET',
+      url: nudgeUrl(projectId, credentialId),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+    })
+    const body = nudgeAfterDismiss.json<{ data: { items: { active: boolean }[] } }>()
+    expect(body.data.items[0]?.active).toBe(false)
+
+    const audit = await withOrg(sharer.orgId, (tx) =>
+      tx
+        .select()
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'credential.share_nudge_dismissed'))
+    )
+    expect(audit.length).toBeGreaterThanOrEqual(1)
   })
 })
