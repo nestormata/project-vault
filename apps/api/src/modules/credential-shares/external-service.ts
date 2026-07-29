@@ -241,21 +241,33 @@ async function recordLosingAttempt(tx: Tx, share: CredentialShareRow): Promise<C
  *  eslint threshold. Returns a terminal RevealExternalShareResult (recording the AC-22 losing
  *  attempt as it does) when the share isn't claimable, or `undefined`/the possibly-lazily-expired
  *  share when the caller should proceed to the field check + atomic claim. */
+/** Maps a share's terminal DB `status` to the terminal reveal-failure reason surfaced to the
+ *  caller — shared by `precheckExternalShareClaimable` (checked up front) and
+ *  `resolveLostExternalClaim` (re-checked after losing the atomic claim), so the two can never
+ *  drift out of sync on which statuses collapse to which reason (this codebase doesn't surface
+ *  `superseded` as distinct from `expired` to the recipient). Returns `undefined` for `active`
+ *  (not yet terminal) and `viewed` is handled by callers directly since its wording differs
+ *  ("already_viewed") from the fallback default used when a lost-claim race lands on `viewed`. */
+export function terminalRevealStatusFor(
+  status: CredentialShareRow['status']
+): 'revoked' | 'expired' | undefined {
+  if (status === 'revoked') return 'revoked'
+  if (status === 'expired' || status === 'superseded') return 'expired'
+  return undefined
+}
+
 async function precheckExternalShareClaimable(
   tx: Tx,
   share: CredentialShareRow
 ): Promise<{ result: RevealExternalShareResult } | { share: CredentialShareRow }> {
-  if (share.status === 'revoked') {
+  const terminal = terminalRevealStatusFor(share.status)
+  if (terminal) {
     await recordLosingAttempt(tx, share)
-    return { result: { status: 'revoked' } }
+    return { result: { status: terminal } }
   }
   if (share.status === 'viewed') {
     await recordLosingAttempt(tx, share)
     return { result: { status: 'already_viewed' } }
-  }
-  if (share.status === 'expired' || share.status === 'superseded') {
-    await recordLosingAttempt(tx, share)
-    return { result: { status: 'expired' } }
   }
   if (share.expiresAt.getTime() <= Date.now()) {
     // Story 17.3 AC-5/AC-6: reuse `lazilyExpireShareIfDue` (writes CREDENTIAL_SHARE_EXPIRED in
@@ -281,10 +293,8 @@ async function resolveLostExternalClaim(
     .limit(1)
   const lost = reread ?? share
   await recordLosingAttempt(tx, lost)
-  if (lost.status === 'revoked') return { status: 'revoked' }
-  // Matches `precheckExternalShareClaimable`'s own 'expired'/'superseded' -> 'expired' mapping —
-  // this codebase doesn't surface 'superseded' as a distinct terminal reason to the recipient.
-  if (lost.status === 'expired' || lost.status === 'superseded') return { status: 'expired' }
+  const terminal = terminalRevealStatusFor(lost.status)
+  if (terminal) return { status: terminal }
   return { status: 'already_viewed' }
 }
 
