@@ -27,6 +27,7 @@
     "check-story-references": "tsx scripts/check-story-references.ts",
     "check-psc-tbd-tracking": "tsx scripts/check-psc-tbd-tracking.ts",
     "check-sprint-status-rollup": "tsx scripts/check-sprint-status-rollup.ts",
+    "check-post-merge-status-drift": "tsx scripts/check-post-merge-status-drift.ts",
     "check-extension-api-version-skew": "tsx scripts/check-extension-api-version-skew.ts",
     "docker:smoke": "bash scripts/docker-smoke.sh",
     "prepare": "husky"
