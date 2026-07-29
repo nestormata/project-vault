@@ -1,10 +1,10 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyReply } from 'fastify'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
 import { roleRank, secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
-import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
+import { writeShareAuditEntry } from './audit.js'
 import type { BossService } from '../../lib/boss.js'
 import {
   rejectIfInsufficientProjectRoleForReveal,
@@ -13,7 +13,7 @@ import {
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import {
   dispatchDirectUserNotification,
-  sendNotificationJobs,
+  dispatchPendingJobs,
   type NotificationQueueJob,
 } from '../../notifications/dispatcher.js'
 import {
@@ -56,21 +56,6 @@ function serializeShare(share: CredentialShareRow) {
   }
 }
 
-function writeShareAuditEntry(
-  tx: SecureRouteContext['tx'],
-  auth: SecureRouteContext['auth'],
-  req: FastifyRequest,
-  input: { eventType: string; resourceId: string; payload: Record<string, unknown> }
-): Promise<void> {
-  return writeHumanAuditEntryOrFailClosed(tx, {
-    orgId: auth.orgId,
-    actorUserId: auth.userId,
-    resourceType: 'credential_share',
-    request: req,
-    ...input,
-  })
-}
-
 function createShareErrorResponse(
   reply: FastifyReply,
   result: Exclude<Awaited<ReturnType<typeof createCredentialShare>>, { status: 'ok' }>
@@ -111,22 +96,13 @@ function createShareErrorResponse(
 
 type BossFastify = FastifyApp & { boss?: BossService }
 
-/** Post-commit, best-effort notification dispatch — identical pattern to
- *  apps/api/src/modules/rotation/routes.ts's sendPendingRotationNotifications. A missed
- *  boss.send() is safe: the notification_queue row is already durable and the catch-up cron will
- *  pick it up (AC-18: never blocks/rolls back the share that was just successfully created). */
+/** AC-18: never blocks/rolls back the share that was just successfully created. */
 async function sendPendingShareNotifications(
   fastify: FastifyApp,
   request: { log: { warn: (payload: unknown, msg: string) => void } },
   jobs: NotificationQueueJob[]
 ): Promise<void> {
-  const boss = (fastify as BossFastify).boss
-  if (!boss || jobs.length === 0) return
-  try {
-    await sendNotificationJobs(boss, jobs)
-  } catch (error) {
-    request.log.warn({ err: error }, 'credential share notification dispatch failed')
-  }
+  await dispatchPendingJobs((fastify as BossFastify).boss, request, jobs, 'credential share')
 }
 
 export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {

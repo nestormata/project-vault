@@ -4,7 +4,7 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
-import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
+import { writeShareAuditEntry } from './audit.js'
 import {
   ShareAccessParamsSchema,
   ShareMetadataResponseSchema,
@@ -17,25 +17,6 @@ const SHARE_TOKEN_NOT_FOUND = { code: 'share_not_found', message: 'Share not fou
 function noReferrerHeaders(reply: FastifyReply): void {
   // AC-17: token-bearing pages never leak the URL (which carries the raw token) via Referer.
   reply.header('Referrer-Policy', 'no-referrer')
-}
-
-/** Same audit-write shape as routes.ts's writeShareAuditEntry — kept as a separate local copy
- *  (rather than a cross-file import) so route-audit.test.ts's per-file
- *  sameTransactionAuditService(...secureCtx.tx...) literal-source check resolves against THIS
- *  file's own text, matching how every other module's routes.ts helpers are self-contained. */
-function writeShareAuditEntry(
-  tx: SecureRouteContext['tx'],
-  auth: SecureRouteContext['auth'],
-  req: Parameters<typeof writeHumanAuditEntryOrFailClosed>[1]['request'],
-  input: { eventType: string; resourceId: string; payload: Record<string, unknown> }
-): Promise<void> {
-  return writeHumanAuditEntryOrFailClosed(tx, {
-    orgId: auth.orgId,
-    actorUserId: auth.userId,
-    resourceType: 'credential_share',
-    request: req,
-    ...input,
-  })
 }
 
 /**
