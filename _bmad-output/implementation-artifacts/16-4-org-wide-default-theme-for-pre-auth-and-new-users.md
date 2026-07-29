@@ -411,3 +411,4 @@ Claude Sonnet 5 (claude-sonnet-5) — story authored via bmad-create-story, 2026
 ### Change Log
 
 - 2026-07-29: Implemented Story 16.4 (Tasks 1–8) — org-wide default theme: DB column + migration, `PATCH /:orgId/default-theme-settings`, `GET /themes` `orgDefaultThemeName` extension, authenticated three-tier resolution, admin settings-page section, pre-auth `domain-lookup` theme extension, reactive login-screen branding. All ACs (1–10) covered by new/extended automated tests; `openapi.json` regenerated. Status → review.
+

@@ -407,7 +407,7 @@ describe('credential-shares routes', () => {
     expect(secondRevoke.json<{ data: { status: string } }>().data.status).toBe('revoked')
   })
 
-  it('AC-5: revoke by an unrelated member (not sharer, not admin) is denied', async () => {
+  it('AC-5: revoke by an unrelated member (not sharer, not admin) is denied and does not mutate the share', async () => {
     const { sharer, recipient, projectId, credentialId } = await createFixture('revoke-denied')
     const bystander = await addUserToOrg(app, sharer.orgId, 'revoke-denied-bystander', {
       orgRole: 'member',
@@ -429,6 +429,115 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(403)
+
+    // Regression: the revoke handler must check authorization BEFORE mutating the share — an
+    // earlier version of this route ran the state transition first and only rejected the
+    // *response*, leaving the share revoked in the DB despite the 403.
+    const [row] = await withOrg(sharer.orgId, (tx) =>
+      tx.select().from(credentialShares).where(eq(credentialShares.id, shareId))
+    )
+    expect(row?.status).toBe('active')
+  })
+
+  it('AC-5: an org admin who did not create the share can list and revoke it', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('admin-revoke')
+    const admin = await addUserToOrg(app, sharer.orgId, 'admin-revoke-admin', {
+      orgRole: 'admin',
+    })
+    await addProjectMember(sharer.orgId, projectId, admin.userId, 'admin')
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+    const { id: shareId } = create.json<{ data: { id: string } }>().data
+
+    const list = await app.inject({
+      method: 'GET',
+      url: sharesUrl(projectId, credentialId),
+      headers: { cookie: cookieHeader(admin.cookies) },
+    })
+    expect(list.statusCode).toBe(200)
+    expect(
+      list.json<{ data: { items: { id: string }[] } }>().data.items.some((s) => s.id === shareId)
+    ).toBe(true)
+
+    const revoke = await app.inject({
+      method: 'POST',
+      url: sharesUrl(projectId, credentialId, `/${shareId}/revoke`),
+      headers: { cookie: cookieHeader(admin.cookies) },
+    })
+    expect(revoke.statusCode).toBe(200)
+    expect(revoke.json<{ data: { status: string } }>().data.status).toBe('revoked')
+  })
+
+  it('AC-3/AC-9: reveal on a share whose field no longer exists is expired without burning the claim or the audit trail', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('field-gone')
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+      singleUse: true,
+    })
+    const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
+
+    // Simulate the field having been renamed/removed from the credential's template since the
+    // share was created (AC-3) by pointing the share at a field key that can never resolve.
+    await withOrg(sharer.orgId, (tx) =>
+      tx
+        .update(credentialShares)
+        .set({ fieldKey: 'field-removed-since-creation' })
+        .where(eq(credentialShares.id, shareId))
+    )
+
+    const response = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      headers: { cookie: cookieHeader(recipient.cookies) },
+    })
+
+    expect(response.statusCode).toBe(410)
+    expect(response.json<{ code: string }>().code).toBe('share_expired')
+
+    // Regression: this must not consume the single-use claim — the share stays 'active' (not
+    // 'viewed'), and no CREDENTIAL_SHARE_VIEWED audit entry is written for a reveal that never
+    // actually revealed anything.
+    const [row] = await withOrg(sharer.orgId, (tx) =>
+      tx.select().from(credentialShares).where(eq(credentialShares.id, shareId))
+    )
+    expect(row?.status).toBe('active')
+    expect(row?.viewCount).toBe(0)
+
+    const audit = await withOrg(sharer.orgId, (tx) =>
+      tx
+        .select()
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'credential.share_viewed'))
+    )
+    expect(audit.some((a) => a.resourceId === shareId)).toBe(false)
+  })
+
+  it('AC-17: metadata GET lazily expires a past-due share instead of showing it as active', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('metadata-expired')
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      expiresAt: futureIso(),
+    })
+    const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
+
+    await withOrg(sharer.orgId, (tx) =>
+      tx
+        .update(credentialShares)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(credentialShares.id, shareId))
+    )
+
+    const response = await app.inject({
+      method: 'GET',
+      url: accessUrl(token),
+      headers: { cookie: cookieHeader(recipient.cookies) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json<{ data: { status: string } }>().data.status).toBe('expired')
   })
 
   it('AC-11: lists shares the current user created for a credential', async () => {
