@@ -17,6 +17,12 @@ import {
 } from './notification-settings-model.js'
 import type { Actions, PageServerLoad } from './$types.js'
 
+function describeTestNotificationError(error: unknown): string {
+  if (error instanceof ApiClientError) return `ApiClientError status=${error.status}`
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
 export const load: PageServerLoad = async ({ fetch, locals }) => {
   const isAdmin = locals.user ? isAdminRole(locals.user.orgRole) : false
   const canSendTest = locals.user ? canSendTestNotification(locals.user) : false
@@ -93,12 +99,7 @@ export const actions: Actions = {
       // but log the real cause server-side — this action exists specifically to
       // diagnose SMTP/Slack delivery problems, so silently discarding the actual
       // error here would defeat its purpose when something is genuinely broken.
-      const errorDetail =
-        error instanceof ApiClientError
-          ? `ApiClientError status=${error.status}`
-          : error instanceof Error
-            ? error.message
-            : String(error)
+      const errorDetail = describeTestNotificationError(error)
       process.stderr.write(
         `${JSON.stringify({
           eventType: 'web.send_test_notification_failed',

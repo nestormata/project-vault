@@ -307,7 +307,7 @@ export async function updateCredentialDependencyLink(
 
   // Example 3c: an archived (or truly missing) dependency is not editable — both resolve to the
   // same caller-visible `dependency_not_found`, no distinct code.
-  if (!before || before.archivedAt !== null) return { status: 'dependency_not_found' as const }
+  if (before?.archivedAt !== null) return { status: 'dependency_not_found' as const }
 
   const [updated] = await tx
     .update(credentialDependencies)

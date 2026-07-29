@@ -108,36 +108,30 @@ describe('archive-guards', () => {
       expect(blockingIds).toEqual([])
     })
 
-    it('blocks on an in_progress rotation', async () => {
-      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-progress' })
-      const rotationId = await insertTestRotation(project.id, 'in_progress')
-
-      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
-
-      expect(blockingIds).toEqual([rotationId])
-    })
-
-    it('blocks on a stale_recovery rotation', async () => {
-      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-stale' })
-      const rotationId = await insertTestRotation(project.id, 'stale_recovery')
-
-      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
-
-      expect(blockingIds).toEqual([rotationId])
-    })
-
-    it('(Story 5.6 AC-10.1) blocks on a staged rotation', async () => {
-      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-staged' })
-      const rotationId = await insertTestRotation(project.id, 'staged')
-
-      const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
-
-      expect(blockingIds).toEqual([rotationId])
-    })
-
-    it('(Story 5.6 AC-10.1) blocks on a promoted (unretired) rotation', async () => {
-      const project = await insertTestProject(orgId, { userId, slug: 'rotation-guard-promoted' })
-      const rotationId = await insertTestRotation(project.id, 'promoted')
+    it.each([
+      {
+        status: 'in_progress' as const,
+        slug: 'rotation-guard-progress',
+        label: 'an in_progress rotation',
+      },
+      {
+        status: 'stale_recovery' as const,
+        slug: 'rotation-guard-stale',
+        label: 'a stale_recovery rotation',
+      },
+      {
+        status: 'staged' as const,
+        slug: 'rotation-guard-staged',
+        label: '(Story 5.6 AC-10.1) a staged rotation',
+      },
+      {
+        status: 'promoted' as const,
+        slug: 'rotation-guard-promoted',
+        label: '(Story 5.6 AC-10.1) a promoted (unretired) rotation',
+      },
+    ])('blocks on $label', async ({ status, slug }) => {
+      const project = await insertTestProject(orgId, { userId, slug })
+      const rotationId = await insertTestRotation(project.id, status)
 
       const blockingIds = await withOrg(orgId, (tx) => findBlockingRotationIds(tx, project.id))
 

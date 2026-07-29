@@ -331,7 +331,7 @@ describe('project credential routes', () => {
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /Reveal value/i }))
-    await waitFor(() => expect(screen.getByText('sk_live_super_secret')).toBeTruthy())
+    expect(await screen.findByText('sk_live_super_secret')).toBeTruthy()
 
     expect(localStorage.setItem).not.toHaveBeenCalled()
     expect(sessionStorage.setItem).not.toHaveBeenCalled()

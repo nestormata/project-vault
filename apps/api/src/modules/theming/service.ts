@@ -86,8 +86,17 @@ const defaultAuditWriter: AuditWriterFn = (orgId, eventType, payload) =>
 // AC-4: constrained color grammar — hex or a tightly-bounded rgb()/rgba()/hsl()/hsla() function
 // form. No `url(`, no `;`, no `}`, no nesting — the exact breakout characters architecture.md
 // names are structurally impossible to match this pattern.
-const COLOR_GRAMMAR =
-  /^#[0-9a-fA-F]{3,8}$|^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$|^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
+const HEX_COLOR_GRAMMAR = /^#[0-9a-fA-F]{3,8}$/
+const RGB_COLOR_GRAMMAR =
+  /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
+const HSL_COLOR_GRAMMAR =
+  /^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
+
+function isValidColorGrammar(value: string): boolean {
+  return (
+    HEX_COLOR_GRAMMAR.test(value) || RGB_COLOR_GRAMMAR.test(value) || HSL_COLOR_GRAMMAR.test(value)
+  )
+}
 // AC-4: strict numeric+unit pattern — rejects calc(), custom units, and any embedded expression.
 const LENGTH_GRAMMAR = /^-?\d+(\.\d+)?(px|rem|em|%)$/
 // AC-5/AC-4 crossover (found via adversarial code review): asset URLs are compiled into
@@ -168,7 +177,7 @@ function validateAndCompileTokens(
     const def = THEME_TOKEN_REGISTRY[key]
     if (!def) return { reason: `unregistered token \`${key}\`` }
     if (typeof rawValue !== 'string') return { reason: `token \`${key}\`: invalid value` }
-    if (def.type === 'color' && !COLOR_GRAMMAR.test(rawValue)) {
+    if (def.type === 'color' && !isValidColorGrammar(rawValue)) {
       return { reason: `token \`${key}\`: invalid color value` }
     }
     if (def.type === 'length' && !LENGTH_GRAMMAR.test(rawValue)) {
@@ -198,7 +207,7 @@ async function validateAssets(
     // Validated for well-formedness only — the raw string (not this parsed object) is what gets
     // interpolated into the compiled CSS below.
     try {
-      void new URL(rawValue)
+      new URL(rawValue)
     } catch {
       return { reason: `asset '${key}': not a valid URL` }
     }
@@ -223,10 +232,13 @@ function isAliasLimitError(error: unknown): boolean {
 async function parseThemeContent(
   content: string,
   ext: string
-): Promise<unknown | { reason: string }> {
+): Promise<{ value: unknown } | { reason: string }> {
   try {
-    if (ext === '.json') return JSON.parse(content)
-    return YAML.parse(content, { maxAliasCount: MAX_YAML_ALIAS_COUNT })
+    const value =
+      ext === '.json'
+        ? JSON.parse(content)
+        : YAML.parse(content, { maxAliasCount: MAX_YAML_ALIAS_COUNT })
+    return { value }
   } catch (error) {
     if (isAliasLimitError(error)) return { reason: 'YAML alias expansion exceeds safe limit' }
     return { reason: 'not valid JSON/YAML' }
@@ -259,10 +271,10 @@ async function processThemeFile(
   }
 
   const ext = extname(filePath).toLowerCase()
-  const parsed = await parseThemeContent(content, ext)
-  if (isReasonResult(parsed)) return parsed
+  const parseResult = await parseThemeContent(content, ext)
+  if (isReasonResult(parseResult)) return parseResult
 
-  const schemaResult = validateThemeSchema(parsed)
+  const schemaResult = validateThemeSchema(parseResult.value)
   if (isReasonResult(schemaResult)) return schemaResult
 
   const tokenResult = validateAndCompileTokens(schemaResult.tokens)
@@ -462,17 +474,17 @@ export async function reloadThemesWithFanout(
 ): Promise<ThemeReloadResult> {
   const logger = deps.logger ?? silentLogger
   const { result, directoryFound } = await reloadThemesCore(themesDir, deps)
-  if (!directoryFound) return result
-
-  await runThemeAuditFanout(
-    {
-      loadedCount: result.loaded.length,
-      failedCount: result.failed.length,
-      failedFiles: result.failed.map((f) => f.file),
-    },
-    deps.listOrgIds ?? fetchAllOrgIds,
-    deps.auditWriter ?? defaultAuditWriter,
-    logger
-  )
+  if (directoryFound) {
+    await runThemeAuditFanout(
+      {
+        loadedCount: result.loaded.length,
+        failedCount: result.failed.length,
+        failedFiles: result.failed.map((f) => f.file),
+      },
+      deps.listOrgIds ?? fetchAllOrgIds,
+      deps.auditWriter ?? defaultAuditWriter,
+      logger
+    )
+  }
   return result
 }

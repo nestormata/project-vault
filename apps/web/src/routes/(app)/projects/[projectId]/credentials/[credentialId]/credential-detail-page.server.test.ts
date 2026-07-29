@@ -182,79 +182,27 @@ describe('credential detail +page.server.ts rotation section', () => {
     expect(result.rotations).toHaveLength(1)
   })
 
-  it('reports an active rotation id when the most recent rotation is in_progress', async () => {
+  it.each([
+    {
+      status: 'in_progress',
+      label: 'reports an active rotation id when the most recent rotation is in_progress',
+    },
+    { status: 'stale_recovery', label: 'treats stale_recovery as an active rotation status' },
+    { status: 'staged', label: 'Story 5.6: treats staged as an active rotation status' },
+    {
+      status: 'promoted',
+      label: 'Story 5.6: treats promoted (unretired) as an active rotation status',
+    },
+  ])('$label', async ({ status }) => {
     listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'in_progress' }],
+      items: [{ id: rotationId, status }],
       page: 1,
       limit: 1,
       total: 1,
       hasMore: false,
     })
     listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'in_progress' }],
-      page: 1,
-      limit: 10,
-      total: 1,
-      hasMore: false,
-    })
-
-    const result = await load(makeEvent())
-
-    expect(result.activeRotationId).toBe(rotationId)
-  })
-
-  it('treats stale_recovery as an active rotation status', async () => {
-    listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'stale_recovery' }],
-      page: 1,
-      limit: 1,
-      total: 1,
-      hasMore: false,
-    })
-    listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'stale_recovery' }],
-      page: 1,
-      limit: 10,
-      total: 1,
-      hasMore: false,
-    })
-
-    const result = await load(makeEvent())
-
-    expect(result.activeRotationId).toBe(rotationId)
-  })
-
-  it('Story 5.6: treats staged as an active rotation status', async () => {
-    listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'staged' }],
-      page: 1,
-      limit: 1,
-      total: 1,
-      hasMore: false,
-    })
-    listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'staged' }],
-      page: 1,
-      limit: 10,
-      total: 1,
-      hasMore: false,
-    })
-
-    const result = await load(makeEvent())
-
-    expect(result.activeRotationId).toBe(rotationId)
-  })
-
-  it('Story 5.6: treats promoted (unretired) as an active rotation status', async () => {
-    listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'promoted' }],
-      page: 1,
-      limit: 1,
-      total: 1,
-      hasMore: false,
-    })
-    listRotationsMock.mockResolvedValueOnce({
-      items: [{ id: rotationId, status: 'promoted' }],
+      items: [{ id: rotationId, status }],
       page: 1,
       limit: 10,
       total: 1,
