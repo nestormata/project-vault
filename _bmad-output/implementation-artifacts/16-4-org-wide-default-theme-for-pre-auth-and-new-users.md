@@ -1,6 +1,6 @@
 # Story 16.4: Org-Wide Default Theme for Pre-Auth and New Users
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
