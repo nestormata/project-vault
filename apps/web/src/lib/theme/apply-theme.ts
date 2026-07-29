@@ -29,6 +29,30 @@ export function resolveAppliedTheme(
   return availableThemeNames.includes(selectedThemeName) ? selectedThemeName : null
 }
 
+/**
+ * Story 16.4 AC-2/AC-6 — three-tier resolution: personal selection (if non-null AND currently
+ * valid) wins unconditionally over the org default; else the org default (if non-null AND
+ * currently valid) applies; else the base theme (`null`). Each tier is independently re-checked
+ * against `availableThemeNames` for orphaning — a personal selection that's orphaned never falls
+ * through to an *invalid* org default, it falls through to a *valid* org default or base, exactly
+ * like `resolveAppliedTheme` already does for the personal-only case. Deliberately a small, pure
+ * function distinct from (not built by chaining) `resolveAppliedTheme` twice ad hoc, so this
+ * three-tier rule itself stays independently unit-testable.
+ */
+export function resolveAppliedThemeWithOrgDefault(
+  selectedThemeName: string | null,
+  orgDefaultThemeName: string | null,
+  availableThemeNames: readonly string[]
+): string | null {
+  if (selectedThemeName !== null && availableThemeNames.includes(selectedThemeName)) {
+    return selectedThemeName
+  }
+  if (orgDefaultThemeName !== null && availableThemeNames.includes(orgDefaultThemeName)) {
+    return orgDefaultThemeName
+  }
+  return null
+}
+
 /** AC-3: true exactly when the user has a non-null stored selection that is no longer available. */
 export function isOrphaned(
   selectedThemeName: string | null,

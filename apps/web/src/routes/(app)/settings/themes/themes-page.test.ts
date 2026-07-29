@@ -6,10 +6,14 @@ const patchThemeSelectionMock = vi.hoisted(() => vi.fn())
 const triggerThemeReloadMock = vi.hoisted(() => vi.fn())
 const setAppliedThemeMock = vi.hoisted(() => vi.fn())
 const invalidateAllMock = vi.hoisted(() => vi.fn())
+const updateOrgDefaultThemeMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/themes.js', () => ({
   patchThemeSelection: patchThemeSelectionMock,
   triggerThemeReload: triggerThemeReloadMock,
+}))
+vi.mock('$lib/api/organization-settings.js', () => ({
+  updateOrgDefaultTheme: updateOrgDefaultThemeMock,
 }))
 vi.mock('$lib/state/theme.svelte.js', () => ({ setAppliedTheme: setAppliedThemeMock }))
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
@@ -23,6 +27,7 @@ beforeEach(() => {
   triggerThemeReloadMock.mockReset()
   setAppliedThemeMock.mockReset()
   invalidateAllMock.mockReset()
+  updateOrgDefaultThemeMock.mockReset()
 })
 
 function baseData(overrides: Record<string, unknown> = {}) {
@@ -34,7 +39,9 @@ function baseData(overrides: Record<string, unknown> = {}) {
     selected: null,
     errorMessage: null,
     orgRole: 'member',
+    orgId: 'org-1',
     canReload: false,
+    orgDefaultThemeName: null,
     ...overrides,
   }
 }
@@ -244,5 +251,98 @@ describe('/settings/themes +page.svelte reload section — insufficient role def
     await fireEvent.click(screen.getByRole('button', { name: /reload themes/i }))
 
     expect(await screen.findByRole('alert')).toBeTruthy()
+  })
+})
+
+// Story 16.4 Task 5 — "Default theme for this organization" admin/owner-only section
+describe('/settings/themes +page.svelte org default theme section — visibility (Story 16.4 AC-1)', () => {
+  it('hides the section for a member/viewer (canReload false)', () => {
+    render(ThemesPage, { props: { data: baseData({ orgRole: 'member', canReload: false }) } })
+
+    expect(screen.queryByText(/default theme for this organization/i)).toBeNull()
+  })
+
+  it('shows the section, pre-selected to the current org default, for an admin/owner', () => {
+    render(ThemesPage, {
+      props: {
+        data: baseData({ orgRole: 'admin', canReload: true, orgDefaultThemeName: 'acme-brand' }),
+      },
+    })
+
+    const select = screen.getByRole('combobox', {
+      name: /default theme for this organization/i,
+    }) as HTMLSelectElement
+    expect(select.value).toBe('acme-brand')
+  })
+
+  it('pre-selects "None (base theme)" when no org default is configured', () => {
+    render(ThemesPage, {
+      props: { data: baseData({ orgRole: 'admin', canReload: true, orgDefaultThemeName: null }) },
+    })
+
+    const select = screen.getByRole('combobox', {
+      name: /default theme for this organization/i,
+    }) as HTMLSelectElement
+    expect(select.value).toBe('')
+  })
+})
+
+describe('/settings/themes +page.svelte org default theme section — save (Story 16.4 AC-1)', () => {
+  it('saves immediately on change and shows a success confirmation', async () => {
+    updateOrgDefaultThemeMock.mockResolvedValue({ orgId: 'org-1', defaultThemeName: 'acme-brand' })
+    render(ThemesPage, {
+      props: { data: baseData({ orgRole: 'admin', canReload: true, orgDefaultThemeName: null }) },
+    })
+
+    const select = screen.getByRole('combobox', { name: /default theme for this organization/i })
+    await fireEvent.change(select, { target: { value: 'acme-brand' } })
+
+    expect(updateOrgDefaultThemeMock).toHaveBeenCalledWith(
+      expect.any(Function),
+      'org-1',
+      'acme-brand'
+    )
+    expect(await screen.findByRole('status')).toBeTruthy()
+  })
+
+  it('selecting "None (base theme)" clears the org default back to null', async () => {
+    updateOrgDefaultThemeMock.mockResolvedValue({ orgId: 'org-1', defaultThemeName: null })
+    render(ThemesPage, {
+      props: {
+        data: baseData({ orgRole: 'admin', canReload: true, orgDefaultThemeName: 'acme-brand' }),
+      },
+    })
+
+    const select = screen.getByRole('combobox', { name: /default theme for this organization/i })
+    await fireEvent.change(select, { target: { value: '' } })
+
+    expect(updateOrgDefaultThemeMock).toHaveBeenCalledWith(expect.any(Function), 'org-1', null)
+  })
+
+  it('shows a generic error banner when the save fails', async () => {
+    updateOrgDefaultThemeMock.mockRejectedValue(new Error('boom'))
+    render(ThemesPage, {
+      props: { data: baseData({ orgRole: 'admin', canReload: true, orgDefaultThemeName: null }) },
+    })
+
+    const select = screen.getByRole('combobox', { name: /default theme for this organization/i })
+    await fireEvent.change(select, { target: { value: 'acme-brand' } })
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+  })
+
+  it('AC-1 edge: an unknown_theme 400 (stale client list) shows a dedicated defensive message', async () => {
+    updateOrgDefaultThemeMock.mockRejectedValue(
+      new ApiClientError(400, { code: 'unknown_theme' }, "unknown theme 'acme-brand'")
+    )
+    render(ThemesPage, {
+      props: { data: baseData({ orgRole: 'admin', canReload: true, orgDefaultThemeName: null }) },
+    })
+
+    const select = screen.getByRole('combobox', { name: /default theme for this organization/i })
+    await fireEvent.change(select, { target: { value: 'acme-brand' } })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/no longer available/i)
   })
 })

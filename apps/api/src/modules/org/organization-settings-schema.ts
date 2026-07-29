@@ -65,3 +65,23 @@ export const OrgDefaultLocaleSettingsResponseSchema = z
     }),
   })
   .meta({ id: 'OrgDefaultLocaleSettingsResponse' })
+
+// Story 16.4 AC-1 — fourth setting in this file. Unlike OrgDefaultLocaleSettingsBodySchema's
+// fixed z.enum(SUPPORTED_LOCALES), a theme's valid-name set is dynamic/filesystem-defined (no
+// fixed enum exists), so this schema only bounds the *shape* (`max(100)`, nullable) — the actual
+// live-list-membership check against `getCompiledThemes()` happens in the route handler, mirroring
+// `PATCH /themes/selection`'s `ThemeSelectionBodySchema` exactly. `.strict()` for the same
+// body-tampering defense as every sibling schema above.
+export const OrgDefaultThemeSettingsBodySchema = z
+  .object({ themeName: z.string().max(100).nullable() })
+  .strict()
+  .meta({ id: 'OrgDefaultThemeSettingsBody' })
+
+export const OrgDefaultThemeSettingsResponseSchema = z
+  .object({
+    data: z.object({
+      orgId: z.uuid(),
+      defaultThemeName: z.string().nullable(),
+    }),
+  })
+  .meta({ id: 'OrgDefaultThemeSettingsResponse' })

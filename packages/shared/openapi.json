@@ -352,6 +352,22 @@
           },
           "providerName": {
             "type": "string"
+          },
+          "theme": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "css": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "css"
+            ]
           }
         },
         "required": [
@@ -9073,6 +9089,46 @@
           "data"
         ]
       },
+      "OrgDefaultThemeSettingsBodyInput": {
+        "type": "object",
+        "properties": {
+          "themeName": {
+            "nullable": true,
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "themeName"
+        ],
+        "additionalProperties": false
+      },
+      "OrgDefaultThemeSettingsResponseInput": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "orgId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "defaultThemeName": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "orgId",
+              "defaultThemeName"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ErasureRequestParamsInput": {
         "type": "object",
         "properties": {
@@ -9876,6 +9932,23 @@
           },
           "providerName": {
             "type": "string"
+          },
+          "theme": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "css": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "css"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -18855,6 +18928,48 @@
             "required": [
               "orgId",
               "defaultLocale"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "OrgDefaultThemeSettingsBody": {
+        "type": "object",
+        "properties": {
+          "themeName": {
+            "nullable": true,
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "themeName"
+        ],
+        "additionalProperties": false
+      },
+      "OrgDefaultThemeSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "orgId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "defaultThemeName": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "orgId",
+              "defaultThemeName"
             ],
             "additionalProperties": false
           }
@@ -34996,6 +35111,128 @@
         }
       }
     },
+    "/api/v1/organizations/{orgId}/default-theme-settings": {
+      "patch": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgDefaultThemeSettingsBodyInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgDefaultThemeSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "unknown_theme"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/themes": {
       "get": {
         "responses": {
@@ -35033,11 +35270,16 @@
                     "selected": {
                       "nullable": true,
                       "type": "string"
+                    },
+                    "orgDefaultThemeName": {
+                      "nullable": true,
+                      "type": "string"
                     }
                   },
                   "required": [
                     "themes",
-                    "selected"
+                    "selected",
+                    "orgDefaultThemeName"
                   ],
                   "additionalProperties": false
                 }

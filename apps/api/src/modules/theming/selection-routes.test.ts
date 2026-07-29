@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { describe, expect, it, vi } from 'vitest'
 import { getDb, withOrg } from '@project-vault/db'
-import { auditLogEntries, users } from '@project-vault/db/schema'
+import { auditLogEntries, organizations, users } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -111,6 +111,7 @@ describe.sequential('GET /api/v1/themes (Story 16.2 AC-1/AC-5/AC-10)', () => {
         { name: ACME_BRAND, label: ACME_BRAND },
       ],
       selected: null,
+      orgDefaultThemeName: null,
     })
   })
 
@@ -124,7 +125,45 @@ describe.sequential('GET /api/v1/themes (Story 16.2 AC-1/AC-5/AC-10)', () => {
     expect(res.json()).toEqual({
       themes: [{ name: 'base', label: 'Default', css: null }],
       selected: null,
+      orgDefaultThemeName: null,
     })
+  })
+
+  it("Story 16.4 AC-2: includes the caller org's own orgDefaultThemeName when configured", async () => {
+    await __resetThemeStateForTests()
+    await seedAcmeBrandTheme()
+    const owner = await registerOwner(suite.app, 'org-default')
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(organizations)
+        .set({ defaultThemeName: ACME_BRAND })
+        .where(eq(organizations.id, owner.orgId))
+    )
+
+    const res = await getThemes(suite.app, owner.cookies)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ orgDefaultThemeName: ACME_BRAND })
+  })
+
+  it('Story 16.4 AC-4: cross-tenant isolation — each org only ever sees its own orgDefaultThemeName', async () => {
+    await __resetThemeStateForTests()
+    await seedAcmeBrandTheme()
+    const ownerA = await registerOwner(suite.app, 'org-default-a')
+    const ownerB = await registerOwner(suite.app, 'org-default-b')
+    await withOrg(ownerA.orgId, (tx) =>
+      tx
+        .update(organizations)
+        .set({ defaultThemeName: ACME_BRAND })
+        .where(eq(organizations.id, ownerA.orgId))
+    )
+    // ownerB's org is left with no default configured (null).
+
+    const resA = await getThemes(suite.app, ownerA.cookies)
+    const resB = await getThemes(suite.app, ownerB.cookies)
+
+    expect(resA.json()).toMatchObject({ orgDefaultThemeName: ACME_BRAND })
+    expect(resB.json()).toMatchObject({ orgDefaultThemeName: null })
   })
 
   it('AC-5: a viewer-role (lowest rank) caller succeeds', async () => {

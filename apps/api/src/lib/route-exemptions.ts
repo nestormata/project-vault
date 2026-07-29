@@ -1129,6 +1129,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'organization.default_locale_updated',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  'PATCH /api/v1/organizations/:orgId/default-theme-settings': {
+    action: 'mutation',
+    auditEvent: 'organization.default_theme_updated',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   'POST /api/v1/machine/cache-activated': {
     action: 'mutation',
     auditOmissionReason:

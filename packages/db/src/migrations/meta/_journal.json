@@ -421,6 +421,13 @@
       "when": 1785219000000,
       "tag": "0059_credential_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1785305400000,
+      "tag": "0060_organizations_default_theme_name",
+      "breakpoints": true
     }
   ]
 }

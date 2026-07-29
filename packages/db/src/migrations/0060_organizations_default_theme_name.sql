@@ -1,0 +1,16 @@
+-- Story 16.4: org-wide default/fallback theme, layered underneath Story 16.2's per-user
+-- selection. Purely additive and nullable — every existing org row implicitly gets NULL (no
+-- backfill statement needed), meaning "no org default configured," which is exactly today's
+-- pre-migration behavior for every org (AC-9's "zero behavior change on deploy" edge case).
+--
+-- Deliberately NO CHECK constraint, unlike the adjacent `default_locale` column (migration 0057)
+-- whose valid-value set is a small, fixed enum (SUPPORTED_LOCALES). A theme's valid-name set is
+-- dynamic and filesystem-defined (VAULT_THEMES_DIR, reloadable at runtime via Story 16.1) — there
+-- is no fixed enum to encode in a CHECK constraint, so validation lives entirely in the route
+-- handler against the live `getCompiledThemes()` list, exactly as `users.selected_theme_name`
+-- (migration 0058) already works for the per-user column.
+--
+-- Rollback safety: nullable, no CHECK, no foreign key — `ALTER TABLE organizations DROP COLUMN
+-- default_theme_name` is safe and lossless except for the acceptable, cosmetic-only loss of each
+-- org's saved default-theme preference (no data corruption, no orphaned references elsewhere).
+ALTER TABLE "organizations" ADD COLUMN "default_theme_name" text NULL;

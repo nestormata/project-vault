@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDb, withOrg } from '@project-vault/db'
@@ -7,6 +8,7 @@ import {
   initVaultForTest,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { registerAuthStrategy, __resetAuthStrategiesForTests } from './strategies.js'
+import { __resetThemeStateForTests, reloadThemes } from '../theming/service.js'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
@@ -35,6 +37,49 @@ async function seedDomainMapping(orgId: string, domain: string, providerName: st
   await withOrg(orgId, (tx) => tx.insert(orgSsoDomains).values({ orgId, domain, providerName }))
 }
 
+const ACME_BRAND = 'acme-brand'
+
+function fixtureDeps(files: Record<string, { content: string }>) {
+  const readdir = vi.fn(async () => Object.keys(files))
+  const stat = vi.fn(async (filePath: string) => {
+    const name = filePath.split('/').pop() as string
+    const fixture = files[name]
+    if (!fixture) throw new Error('ENOENT')
+    return { size: Buffer.byteLength(fixture.content, 'utf-8') }
+  })
+  const readFileBounded = vi.fn(async (filePath: string) => {
+    const name = filePath.split('/').pop() as string
+    const fixture = files[name]
+    if (!fixture) throw new Error('ENOENT')
+    return fixture.content
+  })
+  return { readdir, stat, readFileBounded }
+}
+
+/** Story 16.4 Task 6.3 fixture — same strategy `selection-routes.test.ts` uses to seed the
+ * module-level compiled-themes state with a single real, successfully-compiled theme. */
+// Story 16.4 Task 6.3 fixture: must be called AFTER createApp() in each test — the app's own
+// startup runs an automatic themes-directory reload pass (app.ts) that resets the module-level
+// compiled-themes state (to empty, since no themes directory is configured in tests) as a side
+// effect of boot. Seeding before creating the app would be silently wiped by that boot pass.
+async function seedAcmeBrandTheme(): Promise<void> {
+  await reloadThemes(
+    '/fixture/themes',
+    fixtureDeps({
+      'acme-brand.json': {
+        content: JSON.stringify({ name: ACME_BRAND, tokens: { radiusMd: '4px' } }),
+      },
+    })
+  )
+}
+
+async function setOrgDefaultTheme(orgId: string, themeName: string | null) {
+  await getDb()
+    .update(organizations)
+    .set({ defaultThemeName: themeName })
+    .where(eq(organizations.id, orgId))
+}
+
 describe('POST /api/v1/auth/sso/domain-lookup (Story 14.4)', () => {
   beforeAll(async () => {
     const { resetVaultForTest } = await import('../../__tests__/helpers/vault-test-cleanup.js')
@@ -45,6 +90,7 @@ describe('POST /api/v1/auth/sso/domain-lookup (Story 14.4)', () => {
 
   beforeEach(() => {
     __resetAuthStrategiesForTests()
+    __resetThemeStateForTests()
   })
 
   it('AC-1: resolves ssoRequired + providerName for a domain mapped to a registered strategy', async () => {
@@ -207,6 +253,147 @@ describe('POST /api/v1/auth/sso/domain-lookup (Story 14.4)', () => {
     expect(body['orgId']).toBeUndefined()
     expect(body['orgName']).toBeUndefined()
     await app.close()
+  })
+
+  describe('Story 16.4 AC-3/AC-4/AC-6/AC-8: pre-auth theme resolution', () => {
+    it('SSO-domain-mapped org with a valid default theme → theme populated alongside ssoRequired', async () => {
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({ externalSubject: 'x', providerName: PROVIDER }),
+      })
+      const orgId = await createTestOrg('theme-hit')
+      const domain = `theme-hit-${orgId.slice(0, 8)}.com`
+      await seedDomainMapping(orgId, domain, PROVIDER)
+      await setOrgDefaultTheme(orgId, ACME_BRAND)
+      const app = await createApp({ logger: false })
+      await seedAcmeBrandTheme()
+
+      const res = await app.inject({
+        method: 'POST',
+        url: DOMAIN_LOOKUP_URL,
+        payload: { email: `newhire@${domain}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as { ssoRequired: boolean; theme?: { name: string; css: string } }
+      expect(body.ssoRequired).toBe(true)
+      expect(body.theme).toBeDefined()
+      expect(body.theme?.name).toBe(ACME_BRAND)
+      expect(typeof body.theme?.css).toBe('string')
+      await app.close()
+    })
+
+    it('mapped org with no default theme configured → theme absent, response shape unchanged', async () => {
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({ externalSubject: 'x', providerName: PROVIDER }),
+      })
+      const orgId = await createTestOrg('theme-none')
+      const domain = `theme-none-${orgId.slice(0, 8)}.com`
+      await seedDomainMapping(orgId, domain, PROVIDER)
+      const app = await createApp({ logger: false })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: DOMAIN_LOOKUP_URL,
+        payload: { email: `alex@${domain}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as Record<string, unknown>
+      expect(body['ssoRequired']).toBe(true)
+      expect('theme' in body).toBe(false)
+      await app.close()
+    })
+
+    it('mapped org with an orphaned default theme (Both-or-neither invariant) → theme absent, never a bare stale name', async () => {
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({ externalSubject: 'x', providerName: PROVIDER }),
+      })
+      const orgId = await createTestOrg('theme-orphan')
+      const domain = `theme-orphan-${orgId.slice(0, 8)}.com`
+      await seedDomainMapping(orgId, domain, PROVIDER)
+      await setOrgDefaultTheme(orgId, 'old-brand-not-compiled')
+      const app = await createApp({ logger: false })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: DOMAIN_LOOKUP_URL,
+        payload: { email: `alex@${domain}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as Record<string, unknown>
+      expect('theme' in body).toBe(false)
+      await app.close()
+    })
+
+    it('unmapped domain → unchanged NO_SSO shape, no theme key at all (regression)', async () => {
+      const app = await createApp({ logger: false })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: DOMAIN_LOOKUP_URL,
+        payload: { email: `nobody@theme-unmapped-${randomUUID()}.example` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ ssoRequired: false })
+      await app.close()
+    })
+
+    it('a DB error during the theme-join specifically still fails open to the pre-existing miss shape', async () => {
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({ externalSubject: 'x', providerName: PROVIDER }),
+      })
+      const orgId = await createTestOrg('theme-db-error')
+      const domain = `theme-db-error-${orgId.slice(0, 8)}.com`
+      await seedDomainMapping(orgId, domain, PROVIDER)
+      await setOrgDefaultTheme(orgId, ACME_BRAND)
+      const app = await createApp({ logger: false })
+      await seedAcmeBrandTheme()
+      const dbModule = await import('../../lib/db.js')
+      const spy = vi.spyOn(dbModule, 'getAdminDb').mockImplementationOnce(() => {
+        throw new Error('simulated transient DB error during theme join')
+      })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: DOMAIN_LOOKUP_URL,
+        payload: { email: `alex@${domain}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ ssoRequired: false })
+      spy.mockRestore()
+      await app.close()
+    })
+
+    it('reload-race regression (Pre-Mortem #2): a response is never internally inconsistent regardless of a concurrent reload', async () => {
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({ externalSubject: 'x', providerName: PROVIDER }),
+      })
+      const orgId = await createTestOrg('theme-reload-race')
+      const domain = `theme-reload-race-${orgId.slice(0, 8)}.com`
+      await seedDomainMapping(orgId, domain, PROVIDER)
+      await setOrgDefaultTheme(orgId, ACME_BRAND)
+      const app = await createApp({ logger: false })
+      await seedAcmeBrandTheme()
+
+      const res = await app.inject({
+        method: 'POST',
+        url: DOMAIN_LOOKUP_URL,
+        payload: { email: `alex@${domain}` },
+      })
+
+      // getCompiledThemes() is read once per request from a single in-memory snapshot — a
+      // concurrent reload started after this request's read cannot retroactively change what
+      // was already sent. The response must be self-consistent: theme.css always corresponds to
+      // theme.name (both-or-neither), never a mismatched pairing.
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as { theme?: { name: string; css: string } }
+      expect(body.theme?.name).toBe(ACME_BRAND)
+      expect(body.theme?.css).toContain(ACME_BRAND)
+      await app.close()
+    })
   })
 
   it('rate-limits repeated calls beyond the configured max', async () => {

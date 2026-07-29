@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { getCurrentUser, login, lookupSsoDomain, ssoCallback, ssoStart } from '$lib/api/auth.js'
+  import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
   import {
     buildDomainLookupRequest,
     buildLoginRequest,
@@ -61,6 +62,11 @@
     try {
       const result = await lookupSsoDomain(fetch, buildDomainLookupRequest(requestEmail).email)
       if (email !== requestEmail) return
+      // Story 16.4 AC-3: apply (or clear) the resolved org theme BEFORE flipping `step`, so the
+      // branding is already in place the moment Step B (password/SSO) renders — never a visible
+      // flash of base-theme-then-branded. `theme` is absent/null on every miss/orphan/error path
+      // (AC-3's both-or-neither invariant), which this always-call resets back to the base theme.
+      setPreAuthTheme(result.theme?.name ?? null, result.theme?.css ?? null)
       if (isSsoRequired(result)) {
         ssoProviderName = result.providerName
         step = 'sso'
@@ -70,8 +76,12 @@
     } catch {
       // AC-3/AC-3a: any failure (server error response, thrown ApiClientError, or a network-level
       // failure of the fetch call itself) falls open to the password field — never a hung or
-      // broken login screen.
-      if (email === requestEmail) step = 'password'
+      // broken login screen. Story 16.4: also falls open to the base theme (never a stale
+      // previously-resolved theme lingering after a failed lookup for a different email).
+      if (email === requestEmail) {
+        setPreAuthTheme(null, null)
+        step = 'password'
+      }
     } finally {
       // Only clear the flag if a newer request (for a different email) hasn't already taken over
       // tracking it — otherwise a stale response's finally could re-enable Continue for an email

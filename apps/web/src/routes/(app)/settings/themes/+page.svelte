@@ -3,6 +3,7 @@
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError, isMfaRequiredError } from '$lib/api/client.js'
   import { patchThemeSelection, triggerThemeReload } from '$lib/api/themes.js'
+  import { updateOrgDefaultTheme } from '$lib/api/organization-settings.js'
   import { setAppliedTheme } from '$lib/state/theme.svelte.js'
   import type { ThemesPageData } from './+page.server.js'
 
@@ -56,6 +57,39 @@
       }
     } finally {
       reloading = false
+    }
+  }
+
+  // Story 16.4 Task 5.3 — "Default theme for this organization" admin/owner-only section.
+  // Immediate-save-on-change (like this page's own personal-selection list above), not 16.3's
+  // explicit-button pattern — this is a settings *change*, not a triggered *action*. Unlike the
+  // personal-selection list, this section's `orgDefault` is pre-selected on load (Task 5.1's Dev
+  // Notes: a GET already exists for a different reason, so, unlike locale/dormancy, there is no
+  // reason to withhold the current value).
+  let orgDefault = $state(data.orgDefaultThemeName)
+  let orgDefaultSaving = $state(false)
+  let orgDefaultMessage = $state<string | null>(null)
+  let orgDefaultError = $state<string | null>(null)
+
+  async function selectOrgDefaultTheme(themeName: string | null) {
+    if (orgDefaultSaving) return
+    orgDefaultSaving = true
+    orgDefaultMessage = null
+    orgDefaultError = null
+    try {
+      const result = await updateOrgDefaultTheme(fetch, data.orgId, themeName)
+      orgDefault = result.defaultThemeName
+      orgDefaultMessage = 'Saved.'
+    } catch (err) {
+      // AC-1 edge — defensive: a stale client-side themes list could still submit a name the
+      // server no longer recognizes (a reload ran elsewhere since this page loaded).
+      if (err instanceof ApiClientError && err.status === 400) {
+        orgDefaultError = 'That theme is no longer available — try reloading the page.'
+      } else {
+        orgDefaultError = 'Failed to save the organization default theme, try again.'
+      }
+    } finally {
+      orgDefaultSaving = false
     }
   }
 
@@ -167,6 +201,47 @@
           {reloading ? 'Reloading…' : 'Reload themes'}
         </button>
       {/if}
+    </div>
+
+    <div class="mt-8 rounded-lg border border-gray-200 bg-white px-6 py-4">
+      <h2 class="text-lg font-semibold text-gray-900">Default theme for this organization</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        Members who haven't chosen their own theme, and the login screen for a resolvable email
+        domain, will see this theme.
+      </p>
+
+      {#if orgDefaultMessage}
+        <p
+          class="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+          role="status"
+        >
+          {orgDefaultMessage}
+        </p>
+      {/if}
+      {#if orgDefaultError}
+        <p
+          class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+          role="alert"
+        >
+          {orgDefaultError}
+        </p>
+      {/if}
+
+      <select
+        class="mt-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+        aria-label="Default theme for this organization"
+        disabled={orgDefaultSaving}
+        value={orgDefault ?? ''}
+        onchange={(event) => {
+          const value = event.currentTarget.value
+          void selectOrgDefaultTheme(value === '' ? null : value)
+        }}
+      >
+        <option value="">None (base theme)</option>
+        {#each data.themes.filter((theme) => theme.name !== 'base') as theme (theme.name)}
+          <option value={theme.name}>{theme.label}</option>
+        {/each}
+      </select>
     </div>
   {/if}
 </div>

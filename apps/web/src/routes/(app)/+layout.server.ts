@@ -3,7 +3,7 @@ import { getOnboardingStatus } from '$lib/api/onboarding.js'
 import { listProjects } from '$lib/api/projects.js'
 import { getUsersMe } from '$lib/api/inbox.js'
 import { getThemes } from '$lib/api/themes.js'
-import { isOrphaned, resolveAppliedTheme } from '$lib/theme/apply-theme.js'
+import { isOrphaned, resolveAppliedThemeWithOrgDefault } from '$lib/theme/apply-theme.js'
 import type { LayoutServerLoad } from './$types.js'
 
 type ThemeLoadResult = {
@@ -29,9 +29,17 @@ async function resolveThemeLoad(fetchFn: typeof fetch): Promise<ThemeLoadResult>
   try {
     const themesResponse = await getThemes(fetchFn)
     const availableThemeNames = themesResponse.themes.map((theme) => theme.name)
+    // Story 16.4 AC-2's own edge case: the orphaned-selection *notice* is still keyed off the
+    // personal selection alone (a member never chose the org default themselves, so a notice
+    // about a setting they don't control would be noise — see the story's Dev Notes) — only the
+    // *applied theme* resolution itself (below) additionally falls through to the org default.
     const orphanedNotice = isOrphaned(themesResponse.selected, availableThemeNames)
     return {
-      appliedTheme: resolveAppliedTheme(themesResponse.selected, availableThemeNames),
+      appliedTheme: resolveAppliedThemeWithOrgDefault(
+        themesResponse.selected,
+        themesResponse.orgDefaultThemeName,
+        availableThemeNames
+      ),
       orphanedNotice,
       orphanedThemeName: orphanedNotice ? themesResponse.selected : null,
       themeCss: themesResponse.themes
