@@ -104,6 +104,9 @@ jobs:
       - name: Check story status sync (retro P6-1/P7-1/P8-1)
         run: pnpm check-story-status-sync
 
+      - name: Check sprint-status epic rollup keys match their stories (retro epic-1/6/14/15/16, story 1-16)
+        run: pnpm check-sprint-status-rollup
+
       - name: Check story references resolve to real backlog entries (retro A12-3)
         run: pnpm check-story-references
 
