@@ -9,6 +9,7 @@ const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const ssoStartMock = vi.hoisted(() => vi.fn())
 const ssoCallbackMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/auth.js', () => ({
   login: loginMock,
@@ -21,6 +22,10 @@ vi.mock('$lib/api/auth.js', () => ({
 
 vi.mock('$app/navigation', () => ({
   goto: gotoMock,
+}))
+
+vi.mock('$lib/state/theme.svelte.js', () => ({
+  setPreAuthTheme: setPreAuthThemeMock,
 }))
 
 import LoginForm from './LoginForm.svelte'
@@ -47,6 +52,7 @@ describe('LoginForm', () => {
     ssoStartMock.mockReset()
     ssoCallbackMock.mockReset()
     gotoMock.mockClear()
+    setPreAuthThemeMock.mockReset()
   })
   afterEach(() => cleanup())
 
@@ -370,6 +376,87 @@ describe('LoginForm', () => {
       // The stale response must never have applied — the user is still on Step A (or wherever it
       // left off), never silently dropped into the SSO step for an email they changed away from.
       expect(screen.queryByLabelText(/sso credential/i)).toBeNull()
+    })
+  })
+
+  describe('Story 16.4 AC-3: pre-auth org-default theme application', () => {
+    it('applies the resolved theme (name + css) reactively when the domain-lookup response carries one', async () => {
+      lookupSsoDomainMock.mockResolvedValue({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+      render(LoginForm, { props: {} })
+
+      await fillEmailAndContinue('newhire@acme.com')
+
+      expect(setPreAuthThemeMock).toHaveBeenCalledWith('acme-brand', '[data-theme="acme-brand"] {}')
+    })
+
+    it('applies the theme before Step B (password) renders, not after', async () => {
+      let resolveLookup: (value: unknown) => void = () => {}
+      lookupSsoDomainMock.mockReturnValue(
+        new Promise((resolve) => {
+          resolveLookup = resolve
+        })
+      )
+      render(LoginForm, { props: {} })
+      await fireEvent.input(screen.getByLabelText(/email/i), {
+        target: { value: 'newhire@acme.com' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+      expect(setPreAuthThemeMock).not.toHaveBeenCalled()
+      expect(screen.queryByLabelText(/^password$/i)).toBeNull()
+
+      resolveLookup({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+      await screen.findByLabelText(/^password$/i)
+
+      expect(setPreAuthThemeMock).toHaveBeenCalledWith('acme-brand', '[data-theme="acme-brand"] {}')
+    })
+
+    it('clears to the base theme (null, null) when the response carries no theme', async () => {
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+      render(LoginForm, { props: {} })
+
+      await fillEmailAndContinue('alex@no-branding.example')
+
+      expect(setPreAuthThemeMock).toHaveBeenCalledWith(null, null)
+    })
+
+    it('clears to the base theme on a fail-open path (rejected lookup)', async () => {
+      lookupSsoDomainMock.mockRejectedValue(new TypeError('Failed to fetch'))
+      render(LoginForm, { props: {} })
+
+      await fillEmailAndContinue('alex@example.com')
+      await screen.findByLabelText(/^password$/i)
+
+      expect(setPreAuthThemeMock).toHaveBeenCalledWith(null, null)
+    })
+
+    it('applies a resolved theme for an SSO-mapped domain before the SSO credential step renders', async () => {
+      let resolveLookup: (value: unknown) => void = () => {}
+      lookupSsoDomainMock.mockReturnValue(
+        new Promise((resolve) => {
+          resolveLookup = resolve
+        })
+      )
+      render(LoginForm, { props: {} })
+      await fireEvent.input(screen.getByLabelText(/email/i), {
+        target: { value: 'newhire@acme.com' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+      resolveLookup({
+        ssoRequired: true,
+        providerName: 'test.mock-sso-extension',
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+      await screen.findByLabelText(/sso credential/i)
+
+      expect(setPreAuthThemeMock).toHaveBeenCalledWith('acme-brand', '[data-theme="acme-brand"] {}')
     })
   })
 })

@@ -33,6 +33,11 @@ export const ThemeListResponseSchema = z.object({
   // `themes` (an "orphaned" selection, AC-3's second edge case). The client is responsible for
   // rendering that distinction, not this endpoint.
   selected: z.string().nullable(),
+  // Story 16.4 AC-2/AC-4: the caller's own org's raw stored `default_theme_name` — scoped by
+  // `secureCtx.auth.orgId` (the authenticated session), never client-suppliable. May reference a
+  // theme name no longer in `themes` (an "orphaned" org default) — the client resolves that the
+  // same way it already resolves an orphaned personal selection.
+  orgDefaultThemeName: z.string().nullable(),
 })
 
 // Story 16.2 AC-2's Zod-hardening edge case: `themeName` is bounded to `max(100)` *before* the

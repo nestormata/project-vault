@@ -21,7 +21,11 @@ vi.mock('$lib/api/themes.js', () => ({
 
 import { load } from './+layout.server.js'
 
-const noCustomThemes = { themes: [{ name: 'base', label: 'Default', css: null }], selected: null }
+const noCustomThemes = {
+  themes: [{ name: 'base', label: 'Default', css: null }],
+  selected: null,
+  orgDefaultThemeName: null,
+}
 
 function makeEvent(user: unknown) {
   return { fetch: vi.fn(), locals: { user } } as unknown as Parameters<typeof load>[0]
@@ -136,6 +140,7 @@ describe('/(app) +layout.server.ts', () => {
           { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
         ],
         selected: 'acme-brand',
+        orgDefaultThemeName: null,
       })
 
       const result = await load(makeEvent(baseUser))
@@ -163,6 +168,7 @@ describe('/(app) +layout.server.ts', () => {
       getThemesMock.mockResolvedValue({
         themes: [{ name: 'base', label: 'Default', css: null }],
         selected: 'removed-theme',
+        orgDefaultThemeName: null,
       })
 
       const result = await load(makeEvent(baseUser))
@@ -181,11 +187,76 @@ describe('/(app) +layout.server.ts', () => {
           { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
         ],
         selected: 'acme-brand',
+        orgDefaultThemeName: null,
       })
 
       const result = await load(makeEvent(baseUser))
 
       expect(result.appliedTheme).toBe('acme-brand')
+      expect(result.orphanedNotice).toBe(false)
+    })
+
+    it('Story 16.4 AC-2: org default applies when the caller has no personal selection', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue({
+        themes: [
+          { name: 'base', label: 'Default', css: null },
+          { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+        ],
+        selected: null,
+        orgDefaultThemeName: 'acme-brand',
+      })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBe('acme-brand')
+      // AC-2's own edge case: the orphaned-selection notice stays keyed off the personal
+      // selection alone — a member never chose the org default, so no notice about it.
+      expect(result.orphanedNotice).toBe(false)
+    })
+
+    it('Story 16.4 AC-2: personal selection always wins over the org default', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue({
+        themes: [
+          { name: 'base', label: 'Default', css: null },
+          { name: 'morgan-dark', label: 'morgan-dark', css: '[data-theme="morgan-dark"] {}' },
+          { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+        ],
+        selected: 'morgan-dark',
+        orgDefaultThemeName: 'acme-brand',
+      })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBe('morgan-dark')
+    })
+
+    it('Story 16.4 AC-2 edge: an orphaned org default falls back to base for a caller with no personal selection', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue({
+        themes: [{ name: 'base', label: 'Default', css: null }],
+        selected: null,
+        orgDefaultThemeName: 'old-brand',
+      })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBeNull()
+      expect(result.orphanedNotice).toBe(false)
+    })
+
+    it('Story 16.4 AC-2 regression: an org that never set a default behaves exactly as before this story', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getThemesMock.mockResolvedValue(noCustomThemes)
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.appliedTheme).toBeNull()
       expect(result.orphanedNotice).toBe(false)
     })
 

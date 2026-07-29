@@ -91,6 +91,17 @@ export const DomainLookupResponseSchema = z
   .object({
     ssoRequired: z.boolean(),
     providerName: z.string().optional(),
+    // Story 16.4 AC-3: present only on a successful resolution of a currently-valid org default
+    // theme for a domain that maps to an org via `org_sso_domains` — `null`/absent on every other
+    // path (no mapping, no/orphaned org default, DB error). Both-or-neither invariant (Red Team,
+    // Round 2): `name` and `css` are never independently present.
+    theme: z
+      .object({
+        name: z.string(),
+        css: z.string(),
+      })
+      .nullable()
+      .optional(),
   })
   .meta({ id: 'DomainLookupResponse' })
 

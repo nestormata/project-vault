@@ -1,7 +1,13 @@
 import { apiFetch } from './client.js'
 
 export type ThemeListItem = { name: string; label: string; css: string | null }
-export type ThemeListResponse = { themes: ThemeListItem[]; selected: string | null }
+export type ThemeListResponse = {
+  themes: ThemeListItem[]
+  selected: string | null
+  // Story 16.4 AC-2/AC-4 — the caller's own org's raw stored default-theme setting, scoped
+  // server-side by the authenticated session's orgId.
+  orgDefaultThemeName: string | null
+}
 export type ThemeSelectionResponse = { themeName: string | null }
 export type ThemeReloadResponse = {
   loaded: string[]

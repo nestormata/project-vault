@@ -31,6 +31,10 @@ export type DomainLookupRequest = {
 export type DomainLookupResponse = {
   ssoRequired: boolean
   providerName?: string
+  // Story 16.4 AC-3 — present only on a successful resolution of a currently-valid org default
+  // theme for the looked-up domain; `null`/absent on every other path (no mapping, no/orphaned
+  // org default, DB error). Both-or-neither: `name` and `css` are never independently present.
+  theme?: { name: string; css: string } | null
 }
 
 // Story 14.4 Task 3.5: reuses Story 14.3's existing start/callback contract — no hosted

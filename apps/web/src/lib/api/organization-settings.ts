@@ -66,3 +66,26 @@ export function updateOrgDefaultLocale(
     { method: 'PATCH', body: JSON.stringify({ defaultLocale }) }
   )
 }
+
+export type OrgDefaultThemeSettingsResponse = {
+  orgId: string
+  defaultThemeName: string | null
+}
+
+// Story 16.4 AC-1 — fourth setting in this file, mirroring `updateOrgDefaultLocale`'s shape.
+// Unlike the three settings above, this setting's *current* value is already visible via
+// `GET /api/v1/themes`'s `orgDefaultThemeName` field (Task 3) — so, unlike locale/dormancy, the
+// Themes settings page (Task 5) may pre-select the current value on load rather than following
+// this file's "no GET readback" precedent, which exists here only because no GET endpoint for
+// those other settings exists at all.
+export function updateOrgDefaultTheme(
+  fetchFn: typeof fetch,
+  orgId: string,
+  themeName: string | null
+) {
+  return apiFetch<OrgDefaultThemeSettingsResponse>(
+    fetchFn,
+    `/api/v1/organizations/${orgId}/default-theme-settings`,
+    { method: 'PATCH', body: JSON.stringify({ themeName }) }
+  )
+}

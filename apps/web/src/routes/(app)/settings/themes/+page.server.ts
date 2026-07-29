@@ -9,7 +9,11 @@ export type ThemesPageData = {
   selected: string | null
   errorMessage: string | null
   orgRole: string
+  orgId: string
   canReload: boolean
+  // Story 16.4 Task 5.2 — the org's current default-theme setting, already available from
+  // `getThemes()`'s `orgDefaultThemeName` field (Task 3), so no new fetch is needed here.
+  orgDefaultThemeName: string | null
 }
 
 // Story 16.3 AC-1 Dev Notes — the reload endpoint is `minimumRole: 'admin'`, which does not follow
@@ -37,9 +41,19 @@ export const load: PageServerLoad = async ({ fetch, locals }): Promise<ThemesPag
       selected: response.selected,
       errorMessage: null,
       orgRole,
+      orgId: user.orgId,
       canReload,
+      orgDefaultThemeName: response.orgDefaultThemeName,
     }
   } catch {
-    return { themes: [], selected: null, errorMessage: GENERIC_FETCH_ERROR, orgRole, canReload }
+    return {
+      themes: [],
+      selected: null,
+      errorMessage: GENERIC_FETCH_ERROR,
+      orgRole,
+      orgId: user.orgId,
+      canReload,
+      orgDefaultThemeName: null,
+    }
   }
 }

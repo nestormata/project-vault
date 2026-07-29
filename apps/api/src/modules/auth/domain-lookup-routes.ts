@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { orgSsoDomains } from '@project-vault/db/schema'
+import { organizations, orgSsoDomains } from '@project-vault/db/schema'
 import { DomainLookupRequestSchema, DomainLookupResponseSchema } from '@project-vault/shared'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { FastifyApp } from '../../lib/fastify-app.js'
@@ -8,8 +8,11 @@ import { secureRoute } from '../../lib/secure-route.js'
 import { validationError } from '../../lib/route-helpers.js'
 import { getAdminDb } from '../../lib/db.js'
 import { findAuthStrategy } from './strategies.js'
+import { getCompiledThemes } from '../theming/service.js'
 
 const NO_SSO = { ssoRequired: false as const }
+
+type DomainLookupThemeRow = { providerName: string; defaultThemeName: string | null }
 
 /**
  * Story 14.4 AC-2/AC-2a: extracts the lowercased label after the first `@`. Deliberately does
@@ -28,13 +31,32 @@ export function extractDomain(email: string): string | null {
   return domain.length > 0 ? domain : null
 }
 
-async function lookupDomain(domain: string): Promise<{ providerName: string } | null> {
+// Story 16.4 Task 6.2: joins organizations.defaultThemeName onto the same domain-mapping row this
+// handler already reads — no second query, no second pre-auth lookup call (AC-3).
+async function lookupDomain(domain: string): Promise<DomainLookupThemeRow | null> {
   const rows = await getAdminDb()
-    .select({ providerName: orgSsoDomains.providerName })
+    .select({
+      providerName: orgSsoDomains.providerName,
+      defaultThemeName: organizations.defaultThemeName,
+    })
     .from(orgSsoDomains)
+    .innerJoin(organizations, eq(orgSsoDomains.orgId, organizations.id))
     .where(eq(orgSsoDomains.domain, domain))
     .limit(1)
   return rows[0] ?? null
+}
+
+// Story 16.4 Task 6.2 — resolves `theme` from the already-fetched row: `getCompiledThemes()` is
+// read exactly once (a single in-memory snapshot), so a concurrent 16.1 reload can never produce
+// an internally-inconsistent response (Pre-Mortem scenario #2 — "reload race" regression). Both-
+// or-neither: returns the full `{ name, css }` pair for a currently-valid theme, or `null` — never
+// a bare `name` with no matching `css`.
+function resolveDomainLookupTheme(
+  defaultThemeName: string | null
+): { name: string; css: string } | null {
+  if (defaultThemeName === null) return null
+  const compiled = getCompiledThemes().find((theme) => theme.name === defaultThemeName)
+  return compiled ? { name: compiled.name, css: compiled.css } : null
 }
 
 async function handleDomainLookup(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
@@ -51,15 +73,27 @@ async function handleDomainLookup(request: FastifyRequest, reply: FastifyReply):
     const row = await lookupDomain(domain)
     if (!row) return reply.status(200).send(NO_SSO)
 
+    // Story 16.4 Task 6.2: theme resolution is independent of SSO-strategy resolution — both are
+    // read from the same row/join, but a domain mapped to an org with no currently-registered
+    // strategy can still carry a resolvable theme (and vice versa). The `theme` key is omitted
+    // entirely (not sent as an explicit `null`) when there is nothing to resolve, keeping the
+    // existing miss-response shape (AC-9a) byte-identical for the no-org-default case.
+    const theme = resolveDomainLookupTheme(row.defaultThemeName)
+    const themeField = theme ? { theme } : {}
+
     // AC-1b: fail open if the stored provider isn't currently registered (extension failed to
     // load / was unloaded since the mapping was created).
     const strategy = findAuthStrategy(row.providerName)
-    if (!strategy) return reply.status(200).send(NO_SSO)
+    if (!strategy) return reply.status(200).send({ ...NO_SSO, ...themeField })
 
-    return reply.status(200).send({ ssoRequired: true, providerName: strategy.providerName })
+    return reply
+      .status(200)
+      .send({ ssoRequired: true, providerName: strategy.providerName, ...themeField })
   } catch {
     // AC-3/AC-3b: any DB error (transient or otherwise) resolves to the same "no mapping"
-    // response — never an unhandled 500. Structurally identical to the miss path (AC-9b).
+    // response — never an unhandled 500. Structurally identical to the miss path (AC-9b). This
+    // also covers a DB error occurring specifically during the theme-join (Task 6.3) — the whole
+    // lookup fails open together, never a partial-success/partial-failure response.
     return reply.status(200).send(NO_SSO)
   }
 }

@@ -4,6 +4,7 @@ import {
   isOrphaned,
   readDismissedOrphanedTheme,
   resolveAppliedTheme,
+  resolveAppliedThemeWithOrgDefault,
   shouldShowOrphanedNotice,
   writeDismissedOrphanedTheme,
 } from './apply-theme.js'
@@ -19,6 +20,38 @@ describe('resolveAppliedTheme (AC-2/AC-3)', () => {
 
   it('AC-3: falls back to null (base) when the selected theme is no longer available (orphaned)', () => {
     expect(resolveAppliedTheme('removed-theme', ['acme-brand'])).toBeNull()
+  })
+})
+
+describe('resolveAppliedThemeWithOrgDefault (Story 16.4 AC-2/AC-6)', () => {
+  it('personal selection wins over the org default when both are currently valid', () => {
+    expect(
+      resolveAppliedThemeWithOrgDefault('morgan-dark', 'acme-brand', ['morgan-dark', 'acme-brand'])
+    ).toBe('morgan-dark')
+  })
+
+  it('org default applies when personal selection is null', () => {
+    expect(resolveAppliedThemeWithOrgDefault(null, 'acme-brand', ['acme-brand'])).toBe('acme-brand')
+  })
+
+  it('org default itself orphaned falls back to base (null)', () => {
+    expect(resolveAppliedThemeWithOrgDefault(null, 'old-brand', ['acme-brand'])).toBeNull()
+  })
+
+  it('neither personal selection nor org default set falls back to base (regression, zero behavior change)', () => {
+    expect(resolveAppliedThemeWithOrgDefault(null, null, ['acme-brand'])).toBeNull()
+  })
+
+  it('a personal selection that is orphaned falls through to a currently-valid org default, not straight to base', () => {
+    expect(resolveAppliedThemeWithOrgDefault('removed-theme', 'acme-brand', ['acme-brand'])).toBe(
+      'acme-brand'
+    )
+  })
+
+  it('a personal selection that is orphaned and an org default that is also orphaned falls back to base', () => {
+    expect(
+      resolveAppliedThemeWithOrgDefault('removed-theme', 'also-removed', ['acme-brand'])
+    ).toBeNull()
   })
 })
 

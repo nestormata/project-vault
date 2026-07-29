@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { users } from '@project-vault/db/schema'
+import { organizations, users } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
@@ -63,6 +63,13 @@ export async function themeSelectionRoutes(fastify: FastifyApp): Promise<void> {
         .from(users)
         .where(eq(users.id, secureCtx.auth.userId))
 
+      // Story 16.4 AC-2/AC-4: scoped strictly by the authenticated session's own orgId — never a
+      // client-suppliable org id — so a caller can only ever see their own org's default.
+      const [orgRow] = await secureCtx.tx
+        .select({ defaultThemeName: organizations.defaultThemeName })
+        .from(organizations)
+        .where(eq(organizations.id, secureCtx.auth.orgId))
+
       const themes = [
         BASE_THEME,
         ...getCompiledThemes().map((theme) => ({
@@ -72,7 +79,11 @@ export async function themeSelectionRoutes(fastify: FastifyApp): Promise<void> {
         })),
       ]
 
-      return { themes, selected: row?.selectedThemeName ?? null }
+      return {
+        themes,
+        selected: row?.selectedThemeName ?? null,
+        orgDefaultThemeName: orgRow?.defaultThemeName ?? null,
+      }
     },
   })
 

@@ -23,6 +23,16 @@ export const organizations = pgTable(
     // *seeds* a brand-new user's users.locale at registration time (migration 0057) — it never
     // overrides an already-registered user's own locale.
     defaultLocale: text('default_locale').notNull().default('en'),
+    // Story 16.4: org-wide default/fallback theme, layered underneath Story 16.2's per-user
+    // `users.selectedThemeName` override. Deliberately nullable with NO `.notNull()` and NO
+    // `check(...)` — unlike `defaultLocale` above (a fixed, CHECK-constrained enum), a theme's
+    // valid-name set is dynamic and filesystem-defined (VAULT_THEMES_DIR, reloadable via Story
+    // 16.1), so there is no fixed enum a CHECK constraint could encode. Validation lives entirely
+    // in the route handler against the live `getCompiledThemes()` list (see
+    // `apps/api/src/modules/org/organization-settings-routes.ts`), exactly as
+    // `PATCH /themes/selection` already validates `users.selectedThemeName`. This is a deliberate
+    // omission, not an oversight — do not add a CHECK constraint here.
+    defaultThemeName: text('default_theme_name'),
   },
   (t) => ({
     dormancyThresholdCheck: check(
