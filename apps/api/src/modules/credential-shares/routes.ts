@@ -416,7 +416,6 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        410: ApiErrorSchema,
         422: ApiErrorSchema,
         429: ApiErrorSchema,
       },
@@ -442,6 +441,15 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         reply
       )
       if (!parsed.success) return reply
+      // AC-5: external shares are always single-use — the body may omit `singleUse` or pass
+      // `true`, but an explicit `false` is a distinct, documented 400 rather than the generic
+      // `.strict()` 422 an unrecognized field would produce.
+      if (parsed.data.singleUse === false) {
+        return reply.status(400).send({
+          code: 'external_share_must_be_single_use',
+          message: 'External shares must be single-use; singleUse: false is not supported.',
+        })
+      }
       const secureCtx = ctx as SecureRouteContext
 
       // AC-2: identical eligibility gate as member-share creation and normal reveal — no looser

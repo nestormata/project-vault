@@ -274,11 +274,13 @@
         shareRecipientUserId = ''
       }
       shareFieldKey = ''
-      shareStepUpPassword = ''
-      shareStepUpTotp = ''
     } catch (error) {
       shareError = error instanceof Error ? error.message : 'Could not create share.'
     } finally {
+      // Cleared after every attempt, success or failure — never retained beyond the single
+      // submit, including when step-up itself is what failed.
+      shareStepUpPassword = ''
+      shareStepUpTotp = ''
       shareSubmitting = false
     }
   }

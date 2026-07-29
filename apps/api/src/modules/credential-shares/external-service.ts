@@ -87,7 +87,15 @@ export async function createExternalCredentialShare(
   if (validation.status !== 'ok') return validation
 
   // AC-16: cap check + insert in the same transaction as the caller's own — avoids a TOCTOU gap
-  // on the cap itself (two concurrent creations at the boundary can't both slip past the count).
+  // on the cap itself. A same-transaction COUNT+INSERT alone is NOT sufficient under Postgres'
+  // default READ COMMITTED isolation (two concurrent transactions can both read the same count
+  // and both insert), so this also takes a credential+field-scoped advisory lock first — same
+  // precedent as rotation-locks.ts's `tryAcquireCredentialScopedLock` — to serialize concurrent
+  // creations for the same (credentialId, fieldKey) bucket.
+  const lockFieldSuffix = validation.normalizedField ?? ''
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended('external-share-cap:' || ${input.credentialId} || ':' || ${lockFieldSuffix}, 0))`
+  )
   const fieldCondition = validation.normalizedField
     ? eq(credentialShares.fieldKey, validation.normalizedField)
     : sql`${credentialShares.fieldKey} IS NULL`
@@ -101,8 +109,12 @@ export async function createExternalCredentialShare(
         fieldCondition,
         // AC-16: "status IN ('active','pending')" — this schema's real initial-status value is
         // 'active' (there is no literal 'pending' status; see Dev Notes' status-enum note), so
-        // the not-yet-resolved bucket this cap counts is exactly `status = 'active'`.
-        inArray(credentialShares.status, ['active'])
+        // the not-yet-resolved bucket this cap counts is exactly `status = 'active'`. Also
+        // excludes rows that are already past their `expiresAt` but haven't been lazily swept to
+        // `expired` yet — AC-16 explicitly says "letting one expire immediately frees a slot",
+        // which only holds if a not-yet-swept-but-time-expired row doesn't still count.
+        inArray(credentialShares.status, ['active']),
+        sql`${credentialShares.expiresAt} > now()`
       )
     )
   const pendingCount = Number(countRows[0]?.count ?? 0)
@@ -270,7 +282,9 @@ async function resolveLostExternalClaim(
   const lost = reread ?? share
   await recordLosingAttempt(tx, lost)
   if (lost.status === 'revoked') return { status: 'revoked' }
-  if (lost.status === 'expired') return { status: 'expired' }
+  // Matches `precheckExternalShareClaimable`'s own 'expired'/'superseded' -> 'expired' mapping —
+  // this codebase doesn't surface 'superseded' as a distinct terminal reason to the recipient.
+  if (lost.status === 'expired' || lost.status === 'superseded') return { status: 'expired' }
   return { status: 'already_viewed' }
 }
 

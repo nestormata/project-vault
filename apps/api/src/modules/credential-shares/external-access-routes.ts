@@ -54,7 +54,11 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
     method: 'GET',
     url: '/access/:token',
     schema: {
-      response: { 200: ExternalShareMetadataResponseSchema, 404: ApiErrorSchema },
+      response: {
+        200: ExternalShareMetadataResponseSchema,
+        404: ApiErrorSchema,
+        429: ApiErrorSchema,
+      },
     },
     security: {
       requireAuth: false,
@@ -100,6 +104,7 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
         200: ExternalShareRevealResponseSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
+        429: ApiErrorSchema,
       },
     },
     security: {

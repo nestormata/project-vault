@@ -10,7 +10,7 @@ import type { PageServerLoad } from './$types.js'
 export type ExternalShareAccessPageData = {
   token: string
   metadata: ExternalShareMetadata | null
-  error: 'not_found' | null
+  error: 'not_found' | 'unavailable' | null
 }
 
 export const load: PageServerLoad = async ({ params, fetch, setHeaders }) => {
@@ -28,6 +28,16 @@ export const load: PageServerLoad = async ({ params, fetch, setHeaders }) => {
         token: params.token,
         metadata: null,
         error: 'not_found',
+      } satisfies ExternalShareAccessPageData
+    }
+    // Any other API failure (429 from the GET route's own rate limit, or a 5xx) still gets an
+    // honest, distinctly-rendered state on this unauthenticated page rather than falling through
+    // to SvelteKit's generic error page — this page has no session to recover into.
+    if (error instanceof ApiClientError) {
+      return {
+        token: params.token,
+        metadata: null,
+        error: 'unavailable',
       } satisfies ExternalShareAccessPageData
     }
     throw error

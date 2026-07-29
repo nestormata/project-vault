@@ -70,6 +70,28 @@ describe('/external-shares/[token] +page.server.ts', () => {
     expect(result.error).toBe('not_found')
   })
 
+  it('a 429 (rate-limited) from the metadata fetch renders an honest unavailable state instead of the generic error page', async () => {
+    getExternalShareMetadataMock.mockRejectedValue(
+      new ApiClientError(429, null, 'too many requests')
+    )
+    const { event } = makeEvent()
+
+    const result = await load(event)
+
+    expect(result.metadata).toBeNull()
+    expect(result.error).toBe('unavailable')
+  })
+
+  it('a 5xx from the metadata fetch renders an honest unavailable state instead of the generic error page', async () => {
+    getExternalShareMetadataMock.mockRejectedValue(new ApiClientError(503, null, 'unavailable'))
+    const { event } = makeEvent()
+
+    const result = await load(event)
+
+    expect(result.metadata).toBeNull()
+    expect(result.error).toBe('unavailable')
+  })
+
   it('rethrows an unexpected error', async () => {
     getExternalShareMetadataMock.mockRejectedValue(new Error('boom'))
     const { event } = makeEvent()
