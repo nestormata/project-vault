@@ -346,6 +346,64 @@ describe.sequential('account deactivation routes', () => {
       })
       expect(auditRows).toHaveLength(1)
     })
+
+    it("Story 17.1 AC-15: auto-revokes the deactivated user's outstanding active credential shares", async () => {
+      const owner = await registerOwner(app, 'share-owner')
+      const sharer = await addUserToOrg(app, owner.orgId, 'share-sharer')
+      const recipient = await addUserToOrg(app, owner.orgId, 'share-recipient')
+
+      const projectId = await createProject(app, sharer.cookies, 'share-deactivation')
+      const credential = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials`,
+        headers: { cookie: cookieHeader(sharer.cookies) },
+        payload: { name: 'Deactivation Test Key', value: 'sentinel-value' },
+      })
+      expect(credential.statusCode).toBe(201)
+      const credentialId = credential.json<{ data: { id: string } }>().data.id
+
+      const share = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${credentialId}/shares`,
+        headers: { cookie: cookieHeader(sharer.cookies) },
+        payload: {
+          recipientUserId: recipient.userId,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      })
+      expect(share.statusCode).toBe(201)
+      const shareId = share.json<{ data: { id: string; status: string } }>().data.id
+
+      const res = await deactivate(app, owner.cookies, sharer.userId)
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ data: { revokedShareCount: 1 } })
+
+      const [shareRow] = await withOrg(owner.orgId, async (tx) => {
+        const { credentialShares } = await import('@project-vault/db/schema')
+        return tx
+          .select({ status: credentialShares.status })
+          .from(credentialShares)
+          .where(eq(credentialShares.id, shareId))
+      })
+      expect(shareRow?.status).toBe('revoked')
+
+      const auditRows = await withOrg(owner.orgId, async (tx) => {
+        const { auditLogEntries } = await import('@project-vault/db/schema')
+        return tx
+          .select({ payload: auditLogEntries.payload })
+          .from(auditLogEntries)
+          .where(
+            and(
+              eq(auditLogEntries.orgId, owner.orgId),
+              eq(auditLogEntries.eventType, 'credential.share_revoked'),
+              eq(auditLogEntries.resourceId, shareId)
+            )
+          )
+      })
+      expect(auditRows).toHaveLength(1)
+      expect(auditRows[0]?.payload).toMatchObject({ reason: 'sharer_deactivated' })
+    })
   })
 
   describe('POST /api/v1/org/users/:userId/recovery/send-link', () => {

@@ -265,7 +265,7 @@ const CREDENTIAL_SUBRESOURCE_READ_ERRORS = {
  * Story 4.5 AC-V4/AC-V10: shared visibility gate. Returns true when the reply was already sent
  * (404 + structured visibility_denied log), so callers can `if (await reject...) return reply`.
  */
-async function rejectIfProjectNotVisible(
+export async function rejectIfProjectNotVisible(
   secureCtx: SecureRouteContext,
   req: FastifyRequest,
   reply: FastifyReply,
@@ -282,8 +282,10 @@ async function rejectIfProjectNotVisible(
   return true
 }
 
-/** Story 4.5 AC-P2/AC-P3: value reveal + version create require effective role >= member. */
-async function rejectIfInsufficientProjectRoleForReveal(
+/** Story 4.5 AC-P2/AC-P3: value reveal + version create require effective role >= member.
+ *  Exported for Story 17.1's share-creation eligibility gate (AC-1) — reused verbatim rather than
+ *  duplicated, so share-creation eligibility can never drift out of sync with reveal's rules. */
+export async function rejectIfInsufficientProjectRoleForReveal(
   secureCtx: SecureRouteContext,
   req: FastifyRequest,
   reply: FastifyReply,

@@ -205,6 +205,23 @@ export async function sendNotificationJobs(
   }
 }
 
+/** Post-commit, best-effort notification dispatch shared across route modules (e.g.
+ *  credential-shares) — a missed boss.send() is safe: the notification_queue row is already
+ *  durable and the notification catch-up cron will pick it up. */
+export async function dispatchPendingJobs(
+  boss: BossService | undefined,
+  request: { log: { warn: (payload: unknown, msg: string) => void } },
+  jobs: NotificationQueueJob[],
+  label: string
+): Promise<void> {
+  if (!boss || jobs.length === 0) return
+  try {
+    await sendNotificationJobs(boss, jobs)
+  } catch (error) {
+    request.log.warn({ err: error }, `${label} notification dispatch failed`)
+  }
+}
+
 type DispatchOptions = CreateEntriesOptions & {
   boss: BossService
 }

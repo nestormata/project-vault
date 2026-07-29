@@ -64,6 +64,17 @@ describe('notification templates', () => {
     expect(rendered.inboxBody.length).toBeLessThanOrEqual(500)
   })
 
+  it('dispatches credential.share_created through the email renderer with inbox fields derived', () => {
+    const rendered = renderEmailTemplate('credential.share_created', {
+      shareId: 'share-1',
+      credentialId: 'cred-1',
+      sharedByUserId: 'user-1',
+      fieldKey: 'api_key',
+    })
+    expect(rendered.inboxTitle).toContain('A credential was shared with you')
+    expect(rendered.inboxBody.length).toBeLessThanOrEqual(500)
+  })
+
   it('dispatches auth.recovery_link_created and auth.recovery_link_sent through the email renderer', () => {
     const created = renderEmailTemplate('auth.recovery_link_created', {
       recoveryUrl: 'https://vault.example.com/recover',

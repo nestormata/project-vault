@@ -1,7 +1,11 @@
 import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod/v4'
-import { ActiveMachineUserKeysErrorSchema, AuditEvent } from '@project-vault/shared'
+import {
+  ActiveMachineUserKeysErrorSchema,
+  ActiveSharesErrorSchema,
+  AuditEvent,
+} from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
@@ -49,6 +53,7 @@ import {
 import { requireProjectVisible } from './project-access.js'
 import {
   findBlockingRotationIds,
+  findBlockingShareIds,
   PROJECT_ARCHIVED_ERROR,
   rejectIfProjectArchived,
 } from './archive-guards.js'
@@ -929,6 +934,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         409: z.union([
           ActiveRotationsErrorSchema,
           ActiveMachineUserKeysErrorSchema,
+          ActiveSharesErrorSchema,
           ApiErrorSchema,
         ]),
         422: ApiErrorSchema,
@@ -973,6 +979,18 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         return reply
           .status(409)
           .send({ error: 'active_rotations', rotationIds: blockingRotationIds })
+      }
+
+      // Story 17.1 AC-19: the epic's Round 3 finding generalized the archival guard to cover
+      // "staged rotations and active shares" as a class — this closes that class's share half.
+      const blockingShareIds = await findBlockingShareIds(secureCtx.tx, params.projectId)
+      if (blockingShareIds.length > 0) {
+        logArchiveDenied(req, {
+          projectId: params.projectId,
+          callerId: secureCtx.auth.userId,
+          reason: 'active_shares',
+        })
+        return reply.status(409).send({ error: 'active_shares', shareIds: blockingShareIds })
       }
 
       // Story 7.2 D12: activeMachineUserKeysQuery() is the same query hasActiveMachineUserKeys()
