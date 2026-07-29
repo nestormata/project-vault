@@ -1,16 +1,19 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
-import { credentials, credentialShares, users } from '@project-vault/db/schema'
+import { credentials, credentialShares } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { getAdminDb } from '../../lib/db.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import { revealCurrentValue } from '../credentials/service.js'
 import {
+  baseShareInsertValues,
   claimSingleUseView,
-  generateShareToken,
+  generateAndHashShareToken,
   hashShareToken,
-  validateFieldKey,
+  lazilyExpireShareIfDue,
+  shareWithCredentialAndSharerQuery,
+  validateShareFieldAndExpiry,
   type CredentialShareRow,
 } from './service.js'
 import {
@@ -74,19 +77,19 @@ export async function createExternalCredentialShare(
   })
   if (!exists) return { status: 'credential_not_found' }
 
-  const fieldValidation = await validateFieldKey(tx, input.credentialId, input.fieldKey)
-  if (!fieldValidation.ok) return { status: 'unknown_field_key', field: fieldValidation.field }
-
-  const now = Date.now()
-  if (input.expiresAt.getTime() <= now) return { status: 'expires_at_invalid', reason: 'past' }
-  if (input.expiresAt.getTime() > now + EXTERNAL_SHARE_MAX_TTL_MS) {
-    return { status: 'expires_at_invalid', reason: 'too_far_in_future' }
-  }
+  const validation = await validateShareFieldAndExpiry(
+    tx,
+    input.credentialId,
+    input.fieldKey,
+    input.expiresAt,
+    EXTERNAL_SHARE_MAX_TTL_MS
+  )
+  if (validation.status !== 'ok') return validation
 
   // AC-16: cap check + insert in the same transaction as the caller's own — avoids a TOCTOU gap
   // on the cap itself (two concurrent creations at the boundary can't both slip past the count).
-  const fieldCondition = fieldValidation.normalized
-    ? eq(credentialShares.fieldKey, fieldValidation.normalized)
+  const fieldCondition = validation.normalizedField
+    ? eq(credentialShares.fieldKey, validation.normalizedField)
     : sql`${credentialShares.fieldKey} IS NULL`
   const countRows = await tx
     .select({ count: sql<number>`count(*)::int` })
@@ -105,23 +108,16 @@ export async function createExternalCredentialShare(
   const pendingCount = Number(countRows[0]?.count ?? 0)
   if (pendingCount >= MAX_PENDING_EXTERNAL_SHARES_PER_FIELD) return { status: 'cap_exceeded' }
 
-  const rawToken = generateShareToken()
-  const tokenHash = hashShareToken(rawToken)
+  const { rawToken, tokenHash } = generateAndHashShareToken()
 
   const [share] = await tx
     .insert(credentialShares)
     .values({
-      orgId: input.orgId,
-      credentialId: input.credentialId,
-      fieldKey: fieldValidation.normalized,
-      sharedBy: input.sharedByUserId,
+      ...baseShareInsertValues(input, validation.normalizedField, tokenHash),
       recipientType: 'external',
       recipientUserId: null,
       recipientEmail: input.recipientEmail.trim().toLowerCase(),
-      tokenHash,
       singleUse: true,
-      expiresAt: input.expiresAt,
-      status: 'active',
     })
     .returning()
   if (!share) throw new Error('createExternalCredentialShare: insert returned no row')
@@ -163,29 +159,12 @@ export async function findExternalShareByTokenHash(
   if (!row || row.recipientType !== 'external') return { status: 'not_found' }
 
   return withOrg(row.orgId, async (tx) => {
-    const [joined] = await tx
-      .select({
-        share: credentialShares,
-        credentialName: credentials.name,
-        credentialProjectId: credentials.projectId,
-        sharedByEmail: users.email,
-      })
-      .from(credentialShares)
-      .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
-      .leftJoin(users, eq(credentialShares.sharedBy, users.id))
+    const [joined] = await shareWithCredentialAndSharerQuery(tx)
       .where(eq(credentialShares.id, row.id))
       .limit(1)
     if (!joined) return { status: 'not_found' }
 
-    let share = joined.share
-    if (share.status === 'active' && share.expiresAt.getTime() <= Date.now()) {
-      const [updated] = await tx
-        .update(credentialShares)
-        .set({ status: 'expired' })
-        .where(and(eq(credentialShares.id, share.id), eq(credentialShares.status, 'active')))
-        .returning()
-      share = updated ?? share
-    }
+    const share = await lazilyExpireShareIfDue(tx, joined.share)
 
     return {
       status: 'ok',

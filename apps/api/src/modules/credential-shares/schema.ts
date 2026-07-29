@@ -105,15 +105,6 @@ export const ExternalShareMetadataResponseSchema = z.object({
   }),
 })
 
-export const ExternalShareRevealResponseSchema = z.object({
-  data: z.object({
-    credentialId: z.uuid(),
-    fieldKey: z.string().nullable(),
-    value: z.string(),
-    viewedAt: z.iso.datetime(),
-  }),
-})
-
 export type CreateExternalCredentialShareBody = z.infer<
   typeof CreateExternalCredentialShareBodySchema
 >
@@ -158,6 +149,10 @@ export const ShareRevealResponseSchema = z.object({
     viewedAt: z.iso.datetime(),
   }),
 })
+
+// Story 17.2: identical response shape to the authenticated reveal — the external recipient
+// receives the same { credentialId, fieldKey, value, viewedAt } envelope.
+export const ExternalShareRevealResponseSchema = ShareRevealResponseSchema
 
 export type CreateCredentialShareBody = z.infer<typeof CreateCredentialShareBodySchema>
 export type CredentialShareParams = z.infer<typeof CredentialShareParamsSchema>

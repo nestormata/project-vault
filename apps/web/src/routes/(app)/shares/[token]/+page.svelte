@@ -1,40 +1,35 @@
 <script lang="ts">
   import { revealCredentialShare } from '$lib/api/credential-shares.js'
   import { ApiClientError } from '$lib/api/client.js'
+  import { mapShareRevealError } from '$lib/api/credential-share-reveal-error.js'
+  import SharedCredentialSummary from '$lib/components/credential-shares/SharedCredentialSummary.svelte'
+  import RevealedShareValue from '$lib/components/credential-shares/RevealedShareValue.svelte'
+  import { createShareRevealState } from '$lib/components/credential-shares/reveal-state.svelte.js'
 
   let { data } = $props()
 
   // Story 17.1 AC-8: reveal is two-step, never on first request — this only fires on explicit
   // user action (button click), and reuses the existing masked-value/reveal-button visual
-  // pattern's spirit (no bespoke second reveal component).
-  let revealing = $state(false)
-  let revealedValue = $state<string | null>(null)
-  let revealError = $state<
-    'expired' | 'already_viewed' | 'revoked' | 'ineligible' | 'other' | null
-  >(null)
+  // pattern's spirit (no bespoke second reveal component). 'ineligible' (403) is the one reveal
+  // reason unique to this session-bound page — 17.2's external page never sees it.
+  const reveal = createShareRevealState<
+    'expired' | 'already_viewed' | 'revoked' | 'ineligible' | 'other'
+  >()
 
   async function onReveal(): Promise<void> {
-    if (revealing || !data.metadata) return
-    revealing = true
-    revealError = null
+    if (reveal.revealing || !data.metadata) return
+    reveal.revealing = true
+    reveal.revealError = null
     try {
       const result = await revealCredentialShare(fetch, data.token)
-      revealedValue = result.value
+      reveal.revealedValue = result.value
     } catch (error) {
-      if (error instanceof ApiClientError && error.status === 410) {
-        revealError =
-          error.code === 'share_already_viewed'
-            ? 'already_viewed'
-            : error.code === 'share_revoked'
-              ? 'revoked'
-              : 'expired'
-      } else if (error instanceof ApiClientError && error.status === 403) {
-        revealError = 'ineligible'
-      } else {
-        revealError = 'other'
-      }
+      reveal.revealError =
+        error instanceof ApiClientError && error.status === 403
+          ? 'ineligible'
+          : mapShareRevealError(error)
     } finally {
-      revealing = false
+      reveal.revealing = false
     }
   }
 </script>
@@ -57,47 +52,39 @@
     </p>
   {:else if data.metadata}
     <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <p class="text-sm text-slate-700">
-        <strong>{data.metadata.sharedByEmail ?? 'A teammate'}</strong> shared
-        <strong>{data.metadata.credentialName}</strong>{data.metadata.fieldKey
-          ? ` (field: ${data.metadata.fieldKey})`
-          : ''} with you.
-      </p>
-      <p class="mt-2 text-xs text-slate-500">
-        Expires {new Date(data.metadata.expiresAt).toLocaleString()} ·
-        {data.metadata.singleUse ? 'single view only' : 'viewable until expiry'}
-      </p>
+      <SharedCredentialSummary
+        sharedByLabel={data.metadata.sharedByEmail ?? 'A teammate'}
+        credentialName={data.metadata.credentialName}
+        fieldKey={data.metadata.fieldKey}
+        expiresAt={data.metadata.expiresAt}
+        expiryNote={data.metadata.singleUse ? 'single view only' : 'viewable until expiry'}
+      />
 
       {#if data.metadata.status !== 'active'}
         <p class="mt-4 text-sm text-red-700">
           This share is no longer active ({data.metadata.status}).
         </p>
-      {:else if revealedValue !== null}
-        <div class="mt-4">
-          <p class="mb-1 text-sm font-medium text-slate-700">Value</p>
-          <code class="block break-all rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900">
-            {revealedValue}
-          </code>
-        </div>
-      {:else if revealError === 'already_viewed'}
+      {:else if reveal.revealedValue !== null}
+        <RevealedShareValue value={reveal.revealedValue} />
+      {:else if reveal.revealError === 'already_viewed'}
         <p class="mt-4 text-sm text-red-700">This share has already been viewed.</p>
-      {:else if revealError === 'revoked'}
+      {:else if reveal.revealError === 'revoked'}
         <p class="mt-4 text-sm text-red-700">This share has been revoked.</p>
-      {:else if revealError === 'expired'}
+      {:else if reveal.revealError === 'expired'}
         <p class="mt-4 text-sm text-red-700">This share has expired.</p>
-      {:else if revealError === 'ineligible'}
+      {:else if reveal.revealError === 'ineligible'}
         <p class="mt-4 text-sm text-red-700">You are no longer eligible to view this share.</p>
       {:else}
-        {#if revealError === 'other'}
+        {#if reveal.revealError === 'other'}
           <p class="mt-4 text-sm text-red-700">Could not reveal this share. Try again.</p>
         {/if}
         <button
           type="button"
           class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-          disabled={revealing}
+          disabled={reveal.revealing}
           onclick={onReveal}
         >
-          {revealing ? 'Revealing…' : 'Reveal'}
+          {reveal.revealing ? 'Revealing…' : 'Reveal'}
         </button>
       {/if}
     </div>

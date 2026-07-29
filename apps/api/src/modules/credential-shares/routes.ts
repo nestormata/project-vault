@@ -1,4 +1,4 @@
-import type { FastifyReply } from 'fastify'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -148,6 +148,104 @@ async function sendPendingShareNotifications(
   await dispatchPendingJobs((fastify as BossFastify).boss, request, jobs, 'credential share')
 }
 
+/** Shared by both share-creation routes (member and external): resolves project visibility, then
+ *  AC-1/AC-2's identical eligibility gate ("share-creation reuses reveal's exact permission check
+ *  — never a second, parallel check that could drift out of sync with reveal's rules"). Returns
+ *  `true` (having already sent the reply) when the caller must stop. */
+async function rejectIfShareCreationUnauthorized(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string,
+  credentialId: string
+): Promise<boolean> {
+  if (await rejectIfProjectNotVisible(secureCtx, req, reply, projectId, PROJECT_NOT_FOUND)) {
+    return true
+  }
+  return rejectIfInsufficientProjectRoleForReveal(
+    secureCtx,
+    req,
+    reply,
+    projectId,
+    credentialId,
+    'reveal'
+  )
+}
+
+/** Shared by both share-creation routes: logs an audit-write failure with a route-specific label
+ *  and rethrows, so the enclosing transaction rolls back the same way in both places. */
+function logShareAuditFailureAndRethrow(
+  req: FastifyRequest,
+  credentialId: string,
+  contextLabel: string,
+  error: unknown
+): never {
+  req.log.error(
+    { eventType: AUDIT_FAILED_EVENT_TYPE, credentialId },
+    `${contextLabel} audit write failed — transaction will roll back`
+  )
+  throw error
+}
+
+/** Shared by both share-creation routes: writes the CREDENTIAL_SHARE_CREATED audit entry (common
+ *  fields plus a route-specific `extraPayload`), logging and rethrowing on failure so the
+ *  enclosing transaction rolls back in exactly the same way in both places. */
+async function writeShareCreationAuditEntry(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  params: { credentialId: string; projectId: string },
+  share: CredentialShareRow,
+  extraPayload: Record<string, unknown>,
+  contextLabel: string
+): Promise<void> {
+  try {
+    await writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+      eventType: AuditEvent.CREDENTIAL_SHARE_CREATED,
+      resourceId: share.id,
+      payload: {
+        credentialId: params.credentialId,
+        projectId: params.projectId,
+        ...extraPayload,
+        fieldKey: share.fieldKey,
+        singleUse: share.singleUse,
+        expiresAt: share.expiresAt.toISOString(),
+      },
+    })
+  } catch (error) {
+    logShareAuditFailureAndRethrow(req, params.credentialId, contextLabel, error)
+  }
+}
+
+/** Shared by both share-creation routes: a best-effort notification dispatch failure never blocks
+ *  or rolls back the share that was already created. */
+function warnShareNotificationDispatchFailed(
+  req: { log: { warn: (payload: unknown, msg: string) => void } },
+  shareId: string,
+  contextLabel: string,
+  error: unknown
+): void {
+  req.log.warn(
+    { eventType: 'credential_share.notification_failed', shareId, err: error },
+    `${contextLabel} notification dispatch failed — share was still created`
+  )
+}
+
+/** Shared by both share-creation routes: the 201 response finalization — serialize the share plus
+ *  its one-time token, then flush any best-effort notification jobs. */
+async function finalizeShareCreationResponse(
+  fastify: FastifyApp,
+  req: { log: { warn: (payload: unknown, msg: string) => void } },
+  reply: FastifyReply,
+  share: CredentialShareRow,
+  token: string,
+  jobs: NotificationQueueJob[]
+) {
+  reply.status(201)
+  const response = { data: { ...serializeShare(share), token } }
+  await sendPendingShareNotifications(fastify, req, jobs)
+  return response
+}
+
 export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
@@ -183,22 +281,15 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      if (
-        await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, PROJECT_NOT_FOUND)
-      ) {
-        return reply
-      }
-
       // AC-1: share-creation eligibility reuses reveal's exact permission gate — never a second,
       // parallel check that could drift out of sync with reveal's rules.
       if (
-        await rejectIfInsufficientProjectRoleForReveal(
+        await rejectIfShareCreationUnauthorized(
           secureCtx,
           req,
           reply,
           params.projectId,
-          params.credentialId,
-          'reveal'
+          params.credentialId
         )
       ) {
         return reply
@@ -216,26 +307,14 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       })
       if (result.status !== 'ok') return createShareErrorResponse(reply, result)
 
-      try {
-        await writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
-          eventType: AuditEvent.CREDENTIAL_SHARE_CREATED,
-          resourceId: result.share.id,
-          payload: {
-            credentialId: params.credentialId,
-            projectId: params.projectId,
-            recipientUserId: parsed.data.recipientUserId,
-            fieldKey: result.share.fieldKey,
-            singleUse: result.share.singleUse,
-            expiresAt: result.share.expiresAt.toISOString(),
-          },
-        })
-      } catch (error) {
-        req.log.error(
-          { eventType: AUDIT_FAILED_EVENT_TYPE, credentialId: params.credentialId },
-          'Credential share audit write failed — transaction will roll back'
-        )
-        throw error
-      }
+      await writeShareCreationAuditEntry(
+        secureCtx,
+        req,
+        params,
+        result.share,
+        { recipientUserId: parsed.data.recipientUserId },
+        'Credential share'
+      )
 
       // AC-18: best-effort — a notification-dispatch failure never blocks or rolls back share
       // creation. The one-time link display to the sharer is the guaranteed fallback.
@@ -257,20 +336,10 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
           tx: secureCtx.tx,
         })
       } catch (error) {
-        req.log.warn(
-          {
-            eventType: 'credential_share.notification_failed',
-            shareId: result.share.id,
-            err: error,
-          },
-          'Credential share notification dispatch failed — share was still created'
-        )
+        warnShareNotificationDispatchFailed(req, result.share.id, 'Credential share', error)
       }
 
-      reply.status(201)
-      const response = { data: { ...serializeShare(result.share), token: result.token } }
-      await sendPendingShareNotifications(fastify, req, jobs)
-      return response
+      return finalizeShareCreationResponse(fastify, req, reply, result.share, result.token, jobs)
     },
   })
 
@@ -312,22 +381,15 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
 
-      if (
-        await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, PROJECT_NOT_FOUND)
-      ) {
-        return reply
-      }
-
       // AC-2: identical eligibility gate as member-share creation and normal reveal — no looser
       // check for the external path.
       if (
-        await rejectIfInsufficientProjectRoleForReveal(
+        await rejectIfShareCreationUnauthorized(
           secureCtx,
           req,
           reply,
           params.projectId,
-          params.credentialId,
-          'reveal'
+          params.credentialId
         )
       ) {
         return reply
@@ -361,27 +423,14 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       })
       if (result.status !== 'ok') return createExternalShareErrorResponse(reply, result)
 
-      try {
-        await writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
-          eventType: AuditEvent.CREDENTIAL_SHARE_CREATED,
-          resourceId: result.share.id,
-          payload: {
-            credentialId: params.credentialId,
-            projectId: params.projectId,
-            recipientType: 'external',
-            recipientEmail: result.share.recipientEmail,
-            fieldKey: result.share.fieldKey,
-            singleUse: result.share.singleUse,
-            expiresAt: result.share.expiresAt.toISOString(),
-          },
-        })
-      } catch (error) {
-        req.log.error(
-          { eventType: AUDIT_FAILED_EVENT_TYPE, credentialId: params.credentialId },
-          'External credential share audit write failed — transaction will roll back'
-        )
-        throw error
-      }
+      await writeShareCreationAuditEntry(
+        secureCtx,
+        req,
+        params,
+        result.share,
+        { recipientType: 'external', recipientEmail: result.share.recipientEmail },
+        'External credential share'
+      )
 
       // AC-12/AC-18: admin notification on creation (external recipients have no in-app account
       // to notify) — best-effort, never blocks or rolls back share creation.
@@ -403,20 +452,15 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
           tx: secureCtx.tx,
         })
       } catch (error) {
-        req.log.warn(
-          {
-            eventType: 'credential_share.notification_failed',
-            shareId: result.share.id,
-            err: error,
-          },
-          'External credential share notification dispatch failed — share was still created'
+        warnShareNotificationDispatchFailed(
+          req,
+          result.share.id,
+          'External credential share',
+          error
         )
       }
 
-      reply.status(201)
-      const response = { data: { ...serializeShare(result.share), token: result.token } }
-      await sendPendingShareNotifications(fastify, req, jobs)
-      return response
+      return finalizeShareCreationResponse(fastify, req, reply, result.share, result.token, jobs)
     },
   })
 

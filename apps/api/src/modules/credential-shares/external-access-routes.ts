@@ -1,4 +1,3 @@
-import type { FastifyReply } from 'fastify'
 import { withOrg } from '@project-vault/db'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -10,6 +9,7 @@ import {
   type NotificationQueueJob,
 } from '../../notifications/dispatcher.js'
 import type { BossService } from '../../lib/boss.js'
+import { noReferrerHeaders, shareRevealFailureBody } from './reveal-response.js'
 import {
   ExternalShareAccessParamsSchema,
   ExternalShareMetadataResponseSchema,
@@ -21,11 +21,6 @@ import { findExternalShareByTokenHash, revealExternalShare } from './external-se
 // distinguishing "the hash matched a row that turned out to be expired" from "the hash matched
 // nothing at all" via response shape or status code.
 const SHARE_NOT_FOUND = { code: 'share_not_found', message: 'Share not found' } as const
-
-function noReferrerHeaders(reply: FastifyReply): void {
-  // AC-10: token-bearing pages never leak the URL (which carries the raw token) via Referer.
-  reply.header('Referrer-Policy', 'no-referrer')
-}
 
 type BossFastify = FastifyApp & { boss?: BossService }
 
@@ -127,17 +122,12 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
       const result = await revealExternalShare(params.token)
 
       if (result.status === 'not_found') return reply.status(404).send(SHARE_NOT_FOUND)
-      if (result.status === 'revoked') {
-        return reply.status(410).send({ code: 'share_revoked', message: 'This share was revoked.' })
-      }
-      if (result.status === 'expired') {
-        return reply.status(410).send({ code: 'share_expired', message: 'This share has expired.' })
-      }
-      if (result.status === 'already_viewed') {
-        return reply.status(410).send({
-          code: 'share_already_viewed',
-          message: 'This share has already been viewed.',
-        })
+      if (
+        result.status === 'revoked' ||
+        result.status === 'expired' ||
+        result.status === 'already_viewed'
+      ) {
+        return reply.status(410).send(shareRevealFailureBody(result.status))
       }
 
       // AC-11: the CREDENTIAL_SHARE_VIEWED audit write already happened inside
