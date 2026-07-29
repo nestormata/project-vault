@@ -156,7 +156,7 @@ export async function findExternalShareByTokenHash(
 ): Promise<FindExternalShareResult> {
   const tokenHash = hashShareToken(rawToken)
   const row = await adminLookupByTokenHash(tokenHash)
-  if (!row || row.recipientType !== 'external') return { status: 'not_found' }
+  if (row?.recipientType !== 'external') return { status: 'not_found' }
 
   return withOrg(row.orgId, async (tx) => {
     const [joined] = await shareWithCredentialAndSharerQuery(tx)
@@ -280,7 +280,7 @@ async function resolveLostExternalClaim(
 export async function revealExternalShare(rawToken: string): Promise<RevealExternalShareResult> {
   const tokenHash = hashShareToken(rawToken)
   const row = await adminLookupByTokenHash(tokenHash)
-  if (!row || row.recipientType !== 'external') return { status: 'not_found' }
+  if (row?.recipientType !== 'external') return { status: 'not_found' }
 
   return withOrg(row.orgId, async (tx) => {
     const [current] = await tx

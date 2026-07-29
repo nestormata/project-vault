@@ -187,32 +187,28 @@ function logShareAuditFailureAndRethrow(
   throw error
 }
 
-/** Shared by both share-creation routes: writes the CREDENTIAL_SHARE_CREATED audit entry (common
- *  fields plus a route-specific `extraPayload`), logging and rethrowing on failure so the
- *  enclosing transaction rolls back in exactly the same way in both places. */
-async function writeShareCreationAuditEntry(
-  secureCtx: SecureRouteContext,
-  req: FastifyRequest,
+/** Shared by both share-creation routes: shapes the CREDENTIAL_SHARE_CREATED audit payload
+ *  (common fields plus a route-specific `extraPayload`). Deliberately does NOT itself call
+ *  `writeShareAuditEntry` — `route-audit.test.ts`'s `assertAuditedActionOptOutsAreJustified` scans
+ *  each route's own registration source for a literal `writeShareAuditEntry(secureCtx.tx, ...)`
+ *  call to confirm the audit write is threaded through the request's own transaction, so that call
+ *  must stay inline in each route handler rather than moving behind a shared wrapper. */
+function buildShareCreationAuditPayload(
   params: { credentialId: string; projectId: string },
   share: CredentialShareRow,
-  extraPayload: Record<string, unknown>,
-  contextLabel: string
-): Promise<void> {
-  try {
-    await writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
-      eventType: AuditEvent.CREDENTIAL_SHARE_CREATED,
-      resourceId: share.id,
-      payload: {
-        credentialId: params.credentialId,
-        projectId: params.projectId,
-        ...extraPayload,
-        fieldKey: share.fieldKey,
-        singleUse: share.singleUse,
-        expiresAt: share.expiresAt.toISOString(),
-      },
-    })
-  } catch (error) {
-    logShareAuditFailureAndRethrow(req, params.credentialId, contextLabel, error)
+  extraPayload: Record<string, unknown>
+): { eventType: string; resourceId: string; payload: Record<string, unknown> } {
+  return {
+    eventType: AuditEvent.CREDENTIAL_SHARE_CREATED,
+    resourceId: share.id,
+    payload: {
+      credentialId: params.credentialId,
+      projectId: params.projectId,
+      ...extraPayload,
+      fieldKey: share.fieldKey,
+      singleUse: share.singleUse,
+      expiresAt: share.expiresAt.toISOString(),
+    },
   }
 }
 
@@ -307,14 +303,18 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       })
       if (result.status !== 'ok') return createShareErrorResponse(reply, result)
 
-      await writeShareCreationAuditEntry(
-        secureCtx,
-        req,
-        params,
-        result.share,
-        { recipientUserId: parsed.data.recipientUserId },
-        'Credential share'
-      )
+      try {
+        await writeShareAuditEntry(
+          secureCtx.tx,
+          secureCtx.auth,
+          req,
+          buildShareCreationAuditPayload(params, result.share, {
+            recipientUserId: parsed.data.recipientUserId,
+          })
+        )
+      } catch (error) {
+        logShareAuditFailureAndRethrow(req, params.credentialId, 'Credential share', error)
+      }
 
       // AC-18: best-effort — a notification-dispatch failure never blocks or rolls back share
       // creation. The one-time link display to the sharer is the guaranteed fallback.
@@ -423,14 +423,19 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       })
       if (result.status !== 'ok') return createExternalShareErrorResponse(reply, result)
 
-      await writeShareCreationAuditEntry(
-        secureCtx,
-        req,
-        params,
-        result.share,
-        { recipientType: 'external', recipientEmail: result.share.recipientEmail },
-        'External credential share'
-      )
+      try {
+        await writeShareAuditEntry(
+          secureCtx.tx,
+          secureCtx.auth,
+          req,
+          buildShareCreationAuditPayload(params, result.share, {
+            recipientType: 'external',
+            recipientEmail: result.share.recipientEmail,
+          })
+        )
+      } catch (error) {
+        logShareAuditFailureAndRethrow(req, params.credentialId, 'External credential share', error)
+      }
 
       // AC-12/AC-18: admin notification on creation (external recipients have no in-app account
       // to notify) — best-effort, never blocks or rolls back share creation.
