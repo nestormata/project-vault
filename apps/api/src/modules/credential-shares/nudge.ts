@@ -65,8 +65,9 @@ function buildBucket(
   viewer: { userId: string; isAdmin: boolean }
 ): RotationRecommendedBucket {
   const fieldKey = key === WHOLE_CREDENTIAL_BUCKET_KEY ? null : key
-  const mostRecent = rows.reduce((latest, row) =>
-    row.createdAt.getTime() > latest.createdAt.getTime() ? row : latest
+  const mostRecent = rows.reduce(
+    (latest, row) => (row.createdAt.getTime() > latest.createdAt.getTime() ? row : latest),
+    rows[0]
   )
   const active = rows.some(
     (row) =>

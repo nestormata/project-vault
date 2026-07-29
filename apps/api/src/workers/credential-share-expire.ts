@@ -55,7 +55,7 @@ async function expireOneShare(
     // this candidate scan and this transaction opening) — nothing for this worker to do; AC-5's
     // guard ("the transition only applies to shares still active at the moment expiry is
     // discovered") applies here exactly as it does to the lazy-check path.
-    if (!row || row.status !== 'active') return false
+    if (row?.status !== 'active') return false
     const updated = await lazilyExpireShareIfDue(tx, row)
     // `lazilyExpireShareIfDue` returns the pre-transition `share` object unchanged (status still
     // reads 'active') when it loses the CAS race — only a `status === 'expired'` result here

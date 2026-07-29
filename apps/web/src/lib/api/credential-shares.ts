@@ -1,4 +1,4 @@
-import { apiFetch } from './client.js'
+import { apiFetch, buildQuery } from './client.js'
 
 export type CredentialShareStatus = 'active' | 'viewed' | 'revoked' | 'expired' | 'superseded'
 
@@ -48,15 +48,6 @@ export type ShareRevealResult = {
 
 function shareUrl(projectId: string, credentialId: string, suffix = ''): string {
   return `/api/v1/projects/${projectId}/credentials/${credentialId}/shares${suffix}`
-}
-
-function buildQuery(params: Record<string, string | number | undefined>): string {
-  const search = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) search.set(key, String(value))
-  }
-  const serialized = search.toString()
-  return serialized ? `?${serialized}` : ''
 }
 
 // Story 17.3 AC-1/AC-2: optional status filter + limit/offset pagination on top of 17.1's
