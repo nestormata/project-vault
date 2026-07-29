@@ -1,6 +1,6 @@
 # Story 16.3: Admin UI Trigger for Theme Reload
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -86,46 +86,46 @@ only `requireMfa` check is the POST itself).
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add a `triggerThemeReload` API client wrapper (AC: #2, #3, #5, #7, #8)
-  - [ ] Subtask 1.1: In `apps/web/src/lib/api/themes.ts`, add `ThemeReloadResponse` type
+- [x] Task 1: Add a `triggerThemeReload` API client wrapper (AC: #2, #3, #5, #7, #8)
+  - [x] Subtask 1.1: In `apps/web/src/lib/api/themes.ts`, add `ThemeReloadResponse` type
     (`{ loaded: string[]; failed: { file: string; reason: string }[] }`) and
     `triggerThemeReload(fetchFn: typeof fetch)` calling
     `apiFetch<ThemeReloadResponse>(fetchFn, '/api/v1/admin/themes/reload', { method: 'POST' })`,
     mirroring `apps/web/src/lib/api/platform.ts`'s `triggerBackup(fetchFn)` exactly.
-  - [ ] Subtask 1.2: Unit test the wrapper's request shape (method, path, no body) alongside the
+  - [x] Subtask 1.2: Unit test the wrapper's request shape (method, path, no body) alongside the
     existing `getThemes`/`patchThemeSelection` tests.
-- [ ] Task 2: Extend `(app)/settings/themes/+page.server.ts` with the role gate (AC: #1)
-  - [ ] Subtask 2.1: Extend `ThemesPageData` (or introduce a sibling type) to also carry `orgRole:
+- [x] Task 2: Extend `(app)/settings/themes/+page.server.ts` with the role gate (AC: #1)
+  - [x] Subtask 2.1: Extend `ThemesPageData` (or introduce a sibling type) to also carry `orgRole:
     string` and `canReload: boolean` (`orgRole === 'admin' || orgRole === 'owner'`, following
     `sso-domains`'s `canManageSsoDomains(orgRole)` naming/shape convention). Do **not** add an
     `mfaRequired` field here — unlike `sso-domains`, there is no side-effect-free request this load
     function can make to learn MFA-enrollment status ahead of time for this endpoint (its only
     `requireMfa` check is the reload POST itself), so that detection happens reactively in the
     client on click (Task 3), not at load time.
-  - [ ] Subtask 2.2: Server-side test coverage for `canReload` true/false by role, mirroring
+  - [x] Subtask 2.2: Server-side test coverage for `canReload` true/false by role, mirroring
     `sso-domains`'s `+page.server.test.ts` patterns.
-- [ ] Task 3: Add the "Reload themes" section to `(app)/settings/themes/+page.svelte` (AC: #1-#8)
-  - [ ] Subtask 3.1: Render the section only when `data.canReload` is true.
-  - [ ] Subtask 3.2: Wire a button (plain button or a confirm-step component like
+- [x] Task 3: Add the "Reload themes" section to `(app)/settings/themes/+page.svelte` (AC: #1-#8)
+  - [x] Subtask 3.1: Render the section only when `data.canReload` is true.
+  - [x] Subtask 3.2: Wire a button (plain button or a confirm-step component like
     `ConfirmDeleteButton` used on `(app)/platform/backups` — non-destructive action, so a plain
     button is defensible; use judgment and note the choice in Dev Notes) to call
     `triggerThemeReload`, using `triggerMessage`/`triggerError` `$state` banners styled after the
     `(app)/platform/backups` page's pattern. Track a `reloading` `$state` boolean: disable the
     button and show a pending label while the request is in flight (AC-6).
-  - [ ] Subtask 3.3: On success, call `invalidateAll()` (or the page's existing re-fetch mechanism)
+  - [x] Subtask 3.3: On success, call `invalidateAll()` (or the page's existing re-fetch mechanism)
     so the theme-selection list reflects newly loaded themes without a manual refresh.
-  - [ ] Subtask 3.4: Handle `ApiClientError` branches: `403` where `isMfaRequiredError(err.code)` is
+  - [x] Subtask 3.4: Handle `ApiClientError` branches: `403` where `isMfaRequiredError(err.code)` is
     true → replace the button with the MFA-required notice (AC-4); `403 insufficient_role` (AC-8),
     `429` (AC-5), and `503 audit_write_failed` (AC-7) → generic/specific error banners per their ACs,
     following the `(app)/platform/backups` page's `err.status`/`err.code` branching pattern.
-- [ ] Task 4: Component/integration tests for the new UI (AC: #1-#8)
-  - [ ] Subtask 4.1: Extend `themes-page.test.ts` / `themes-page.server.test.ts` (or add new sibling
+- [x] Task 4: Component/integration tests for the new UI (AC: #1-#8)
+  - [x] Subtask 4.1: Extend `themes-page.test.ts` / `themes-page.server.test.ts` (or add new sibling
     test files) covering: section hidden for member/viewer; button visible for admin/owner; pending
     state during an in-flight request; MFA-required notice rendering after a `403 mfa_required`
     response; success banner with `N=0` and `N>0`; partial-failure banner listing failed
     files/reasons; `429` and `503` error banners; list refresh after success.
-- [ ] Task 5: Fix stale architecture.md docs row (AC: #10)
-  - [ ] Subtask 5.1: Update the Theming row in architecture.md's Requirements-to-Structure table
+- [x] Task 5: Fix stale architecture.md docs row (AC: #10)
+  - [x] Subtask 5.1: Update the Theming row in architecture.md's Requirements-to-Structure table
     (currently `(app)/admin/themes/ (unconfirmed — see 16-1/16-2...)`) to read
     `(app)/settings/themes/`, removing the "unconfirmed" qualifier now that both the selection UI
     (16.2) and the reload UI (this story) are shipped there.
@@ -217,10 +217,78 @@ only `requireMfa` check is the POST itself).
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- TDD red-green followed per task: added failing tests for `triggerThemeReload` (2 failed as
+  `TypeError: triggerThemeReload is not a function`), the `+page.server.ts` `canReload` gate (4
+  failed on `undefined` vs expected role/boolean), and the `+page.svelte` reload section (9 failed
+  on missing "Reload themes" button/text) — each confirmed failing for the expected reason before
+  implementation, then went green after the corresponding Task 1-3 code was added.
+- Full suite: `pnpm install` was required first (worktree had no `node_modules`); after that,
+  `apps/web` vitest run: 216 test files / 1771 tests passed. `tsc --noEmit` clean. `eslint` on all
+  changed files: no errors. `prettier --check` flagged 2 files, fixed with `--write`, re-verified
+  green.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created
+- Task 1: Added `ThemeReloadResponse` type and `triggerThemeReload(fetchFn)` to
+  `apps/web/src/lib/api/themes.ts`, mirroring `platform.ts`'s `triggerBackup(fetchFn)` exactly (bare
+  POST, no body). Unit tests in new `apps/web/src/lib/api/themes.test.ts` cover request shape (path,
+  method, no body) plus the happy-path and partial-failure response shapes; also backfilled missing
+  coverage for the pre-existing `getThemes`/`patchThemeSelection` wrappers in the same file since no
+  `themes.test.ts` previously existed.
+- Task 2: Extended `ThemesPageData` with `orgRole: string` and `canReload: boolean`
+  (`canReloadThemes(orgRole)` helper: `orgRole === 'admin' || orgRole === 'owner'`, mirroring
+  `sso-domains`'s `canManageSsoDomains` naming/shape). Deliberately did not add an `mfaRequired`
+  field per Dev Notes — this page's load function has no side-effect-free request to learn
+  MFA-enrollment status ahead of time for this endpoint. `requireUser(locals)` now captures its
+  return value to read `orgRole`. Server test coverage added for all four org roles.
+- Task 3: Added a "Reload themes" section to `+page.svelte`, rendered only when `data.canReload` is
+  true. **Judgment call (per Dev Notes):** used a plain `<button>` rather than
+  `ConfirmDeleteButton` — a theme reload is non-destructive (re-reads files from disk, doesn't
+  delete or mutate stored data), so a two-step confirm adds friction without a corresponding safety
+  need, unlike the backups page's actually-destructive actions. `reloading`/`reloadMessage`/
+  `reloadError`/`reloadMfaRequired` are local `$state`, following the `(app)/platform/backups`
+  page's `triggerMessage`/`triggerError` banner pattern. `isMfaRequiredError()` (imported from
+  `$lib/api/client.js`) detects the 403 `mfa_required` response reactively from the click itself and
+  swaps the button for an inline notice (AC-4) — no load-time MFA precheck was added, per the Dev
+  Notes' explicit instruction not to reintroduce one. `429` (AC-5), `503 audit_write_failed` (AC-7),
+  and `403` (AC-8 defense-in-depth, in case a stale/downgraded session's role slips past the
+  client-side AC-1 gate) each get their own error-banner branch. On success, `invalidateAll()` is
+  called so the theme-selection list re-fetches without a manual page refresh (AC-2/AC-3).
+- Task 4: Extended `themes-page.test.ts` with 9 new tests covering AC-1 through AC-8 (visibility,
+  happy path incl. N=0, partial-failure banner listing failed files/reasons, MFA-required notice,
+  429/503/403 error banners, pending/disabled state during an in-flight request). Extended
+  `themes-page.server.test.ts` with 4 new tests covering `canReload` true/false across all four org
+  roles.
+- Task 5: Fixed the stale Theming row in `_bmad-output/planning-artifacts/architecture.md`'s
+  Requirements-to-Structure table — was `(app)/admin/themes/ (unconfirmed...)`, now
+  `(app)/settings/themes/` with the "unconfirmed" qualifier removed, per AC-10 and 16.2's own
+  precedent of fixing this same row.
+- No changes made to `apps/api/src/modules/theming/routes.ts` or any other backend file (AC-9).
 
 ### File List
+
+- `apps/web/src/lib/api/themes.ts` (modified — added `ThemeReloadResponse` type,
+  `triggerThemeReload`)
+- `apps/web/src/lib/api/themes.test.ts` (new — unit tests for `getThemes`, `patchThemeSelection`,
+  `triggerThemeReload`)
+- `apps/web/src/routes/(app)/settings/themes/+page.server.ts` (modified — `orgRole`, `canReload`,
+  `canReloadThemes` helper)
+- `apps/web/src/routes/(app)/settings/themes/+page.svelte` (modified — "Reload themes" section,
+  button, banners)
+- `apps/web/src/routes/(app)/settings/themes/themes-page.server.test.ts` (modified — `canReload`
+  gate tests)
+- `apps/web/src/routes/(app)/settings/themes/themes-page.test.ts` (modified — reload section tests,
+  AC-1 through AC-8)
+- `_bmad-output/planning-artifacts/architecture.md` (modified — fixed stale Theming
+  Requirements-to-Structure row per AC-10)
+
+## Change Log
+
+- 2026-07-28: Story implemented — frontend-only "Reload themes" admin UI section added to
+  `(app)/settings/themes/`, consuming the existing `POST /api/v1/admin/themes/reload` endpoint from
+  Story 16.1. All 10 ACs satisfied via TDD red-green. Status set to `review`.
