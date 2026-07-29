@@ -18,6 +18,7 @@ describe('/settings +page.svelte', () => {
       '/settings/external-identities',
       'after SSO Domains (Story 14.7 Task 7)',
     ],
+    ['Themes', '/settings/themes', 'before Audit & Compliance (Story 16.2 Task 7.2)'],
   ])('lists a %s entry %s', (label, href) => {
     render(SettingsIndexPage)
 

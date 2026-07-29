@@ -684,6 +684,21 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'user.locale_updated',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 16.2 AC-1/AC-5/AC-10: personal theme-list read; reveals only theme names/labels/compiled
+  // CSS (already CSS-injection-hardened by 16.1) plus the caller's own selection — no secrets.
+  'GET /api/v1/themes': {
+    action: 'read',
+    auditOmissionReason:
+      "Personal theme-list read scoped to the caller; reveals only theme names/labels/compiled CSS and the caller's own selection, no secrets.",
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 16.2 AC-4 — selection changes ARE audited, inline via writeHumanAuditEntryOrFailClosed
+  // in the route itself (same pattern as PATCH /api/v1/users/me/locale above).
+  'PATCH /api/v1/themes/selection': {
+    action: 'mutation',
+    auditEvent: 'theme.selected',
+    sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
   'GET /api/v1/org/notification-routing': {
     action: 'read',
     auditOmissionReason: 'Admin reads org routing config; no secret values.',

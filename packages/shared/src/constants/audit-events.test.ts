@@ -143,6 +143,10 @@ describe('AuditEvent', () => {
     expect(AuditEvent.THEME_RELOADED).toBe('theme.reloaded')
   })
 
+  it('exposes Story 16.2 AC-4 theme-selection audit event name', () => {
+    expect(AuditEvent.THEME_SELECTED).toBe('theme.selected')
+  })
+
   it('derives AuditEventType from every current AuditEvent value (AC-J1/J3, single source of truth)', () => {
     for (const value of Object.values(AuditEvent)) {
       expect(assertValidAuditEventType(value)).toBe(value)

@@ -21,6 +21,15 @@ export const users = pgTable(
     // new column) by Story 15.2, which will seed this same column's initial value from an
     // org-level default at invite-acceptance time.
     locale: text('locale').notNull().default('en'),
+    // Story 16.2 AC-8: user's personal active-theme preference. NULL means "base theme" (the
+    // default for every user, including every pre-existing row — additive migration, no backfill
+    // needed). Deliberately NOT validated against the live compiled-themes set at the schema
+    // level (unlike `locale`'s CHECK constraint against a small fixed enum) — the set of valid
+    // theme names is dynamic (filesystem-driven, changes on every admin reload), so that
+    // validation happens at request time in the API route, not here. An "orphaned" value (a
+    // theme that was selected but later removed/failed reload) is an expected, handled state
+    // (see Story 16.2 AC-3), not a data-integrity violation.
+    selectedThemeName: text('selected_theme_name'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

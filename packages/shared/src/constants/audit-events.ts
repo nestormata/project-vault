@@ -106,6 +106,11 @@ export const AuditEvent = {
   // Story 16.1 AC-7/AC-8: written on every successful reload of VAULT_THEMES_DIR (per-org
   // fanout at boot, single-org write on the authenticated POST /admin/themes/reload endpoint).
   THEME_RELOADED: 'theme.reloaded',
+  // Story 16.2 AC-4: written on every successful PATCH /api/v1/themes/selection — a personal
+  // preference change, but still a real, forensically-relevant action (was this user's own
+  // account the one that made this change?). Same fail-closed convention as THEME_RELOADED
+  // (writeHumanAuditEntryOrFailClosed inside the same transaction as the persisted selection).
+  THEME_SELECTED: 'theme.selected',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union
