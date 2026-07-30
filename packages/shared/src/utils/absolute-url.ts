@@ -13,22 +13,39 @@
  * this fail loudly (uncaught in dev/tests, or surfaced as a real error) instead of rendering a
  * link that looks legitimate but doesn't resolve anywhere.
  */
-export function buildAbsoluteUrl(origin: string, path: string): string {
+/**
+ * Validates that `origin` is a well-formed, non-empty http(s) origin and returns its normalized
+ * form (via `URL#origin`, which discards any path/query/hash the caller mistakenly included).
+ * Throws a plain `Error` otherwise.
+ *
+ * This is the single source of truth for "is this origin trustworthy enough to build a link
+ * from" — shared by `buildAbsoluteUrl` below and by each SvelteKit route's load-time guard, so
+ * the two can never drift out of sync (previously each route reimplemented this check with a
+ * strictly weaker regex that could accept values `buildAbsoluteUrl` would still reject later).
+ */
+export function assertTrustedOrigin(origin: string): string {
   if (!origin || typeof origin !== 'string') {
-    throw new Error(`buildAbsoluteUrl: origin must be a non-empty string, got: ${String(origin)}`)
+    throw new Error(
+      `assertTrustedOrigin: origin must be a non-empty string, got: ${String(origin)}`
+    )
   }
 
   let parsedOrigin: URL
   try {
     parsedOrigin = new URL(origin)
   } catch {
-    throw new Error(`buildAbsoluteUrl: origin is not a valid absolute URL: ${origin}`)
+    throw new Error(`assertTrustedOrigin: origin is not a valid absolute URL: ${origin}`)
   }
 
   if (parsedOrigin.protocol !== 'http:' && parsedOrigin.protocol !== 'https:') {
-    throw new Error(`buildAbsoluteUrl: origin must use http or https, got: ${origin}`)
+    throw new Error(`assertTrustedOrigin: origin must use http or https, got: ${origin}`)
   }
 
+  return parsedOrigin.origin
+}
+
+export function buildAbsoluteUrl(origin: string, path: string): string {
+  const trustedOrigin = assertTrustedOrigin(origin)
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
-  return `${parsedOrigin.origin}${normalizedPath}`
+  return `${trustedOrigin}${normalizedPath}`
 }

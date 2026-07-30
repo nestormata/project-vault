@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAbsoluteUrl } from './absolute-url.js'
+import { assertTrustedOrigin, buildAbsoluteUrl } from './absolute-url.js'
 
 const TRUSTED_ORIGIN = 'https://vault.example.com'
 const SHARE_PATH = '/shares/tok123'
@@ -35,7 +35,26 @@ describe('buildAbsoluteUrl', () => {
     [null as unknown as string, SHARE_PATH],
     ['not-a-url', SHARE_PATH],
     ['ftp://vault.example.com', SHARE_PATH],
+    // A scheme-only value (no host) satisfies a naive `/^https?:\/\//` prefix check but is not a
+    // valid URL — regression guard so a load-time guard reimplementing that check can never be
+    // weaker than what this function actually requires (see `assertTrustedOrigin`).
+    ['https://', SHARE_PATH],
   ])('throws instead of building a broken link when origin is %p', (origin, path) => {
     expect(() => buildAbsoluteUrl(origin, path)).toThrow()
   })
+})
+
+describe('assertTrustedOrigin', () => {
+  // This is the single validation both `buildAbsoluteUrl` and every route's load-time origin
+  // guard delegate to, so they can't drift out of sync with each other.
+  it('returns the normalized origin for a well-formed http(s) origin', () => {
+    expect(assertTrustedOrigin(TRUSTED_ORIGIN)).toBe(TRUSTED_ORIGIN)
+  })
+
+  it.each(['', undefined as unknown as string, null as unknown as string, 'not-a-url', 'https://'])(
+    'throws for an untrustworthy origin: %p',
+    (origin) => {
+      expect(() => assertTrustedOrigin(origin)).toThrow()
+    }
+  )
 })

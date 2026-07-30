@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit'
+import { assertTrustedOrigin } from '@project-vault/shared'
 import {
   getCredential,
   listCredentialDependencies,
@@ -36,12 +37,17 @@ const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'staged', 'promoted', '
 // environments without needing an env var kept in sync. `url.origin` on a real SvelteKit request
 // is always a well-formed http(s) origin; the guard below exists so a broken request context fails
 // the load loudly (500) instead of the page ever rendering a "https://undefined/shares/..." link.
+//
+// Delegates the actual validation to `assertTrustedOrigin` (shared with `buildAbsoluteUrl` itself)
+// so this load-time guard can never be weaker than the check that runs at render time — a
+// dedicated regex here previously accepted scheme-only values like "https://" that `buildAbsoluteUrl`
+// would still reject downstream, turning a clean 500 into an uncaught client-side render error.
 function resolveTrustedOrigin(url: URL): string {
-  const origin = url.origin
-  if (!origin || origin === 'null' || !/^https?:\/\//.test(origin)) {
+  try {
+    return assertTrustedOrigin(url.origin)
+  } catch {
     throw error(500, 'Unable to resolve a trusted origin for this request')
   }
-  return origin
 }
 
 // Shared "nothing loaded" shape for both the 404 (notFound) and 503 (vaultSealed) branches below

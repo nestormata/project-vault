@@ -1,9 +1,21 @@
-import type { StatusPageConfig } from '@project-vault/shared'
+import { error } from '@sveltejs/kit'
+import { assertTrustedOrigin, type StatusPageConfig } from '@project-vault/shared'
 import { listProjectMembers } from '$lib/api/org-users.js'
 import { listServiceEndpoints, type ServiceEndpoint } from '$lib/api/service-endpoints.js'
 import { getStatusPageConfig } from '$lib/api/status-page.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
+
+// Story 18.2 AC-5: mirrors the credential-detail load's guard so this route fails loudly (500) at
+// load/SSR time on a broken request context instead of only surfacing the problem later, inside
+// the `$derived` in +page.svelte, when the user clicks Enable/Regenerate.
+function resolveTrustedOrigin(url: URL): string {
+  try {
+    return assertTrustedOrigin(url.origin)
+  } catch {
+    throw error(500, 'Unable to resolve a trusted origin for this request')
+  }
+}
 
 // Story 6.3 ADR-6.3-07 (Task 9): gate the section in the UI on the SAME project-owner-or-org-owner
 // condition as the backend — not project-owner alone. An org owner who isn't a project member
@@ -40,7 +52,7 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
     // `window.location.origin` client-side (breaking under SSR/no-JS and duplicating the
     // credential-share link's own origin-resolution logic). Centralized on the same
     // request-origin convention as the credential detail page.
-    origin: url.origin,
+    origin: resolveTrustedOrigin(url),
     canManage,
     config,
     serviceEndpoints,
