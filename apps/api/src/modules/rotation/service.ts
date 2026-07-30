@@ -123,10 +123,10 @@ function validateTargetFields(
 ): TargetFieldsValidation {
   if (!targetFields) return { ok: true, normalized: undefined }
   const normalized = targetFields.map((key) => normalizeFieldKey(key))
-  const declaredKeys = fieldMetaForResponse(schemaVersion, fieldMeta).map((f) =>
-    normalizeFieldKey(f.key)
+  const declaredKeys = new Set(
+    fieldMetaForResponse(schemaVersion, fieldMeta).map((f) => normalizeFieldKey(f.key))
   )
-  const missing = normalized.find((key) => !declaredKeys.includes(key))
+  const missing = normalized.find((key) => !declaredKeys.has(key))
   if (missing !== undefined) return { ok: false, field: missing }
   return { ok: true, normalized }
 }

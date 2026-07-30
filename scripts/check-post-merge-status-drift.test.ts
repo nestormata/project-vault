@@ -228,18 +228,14 @@ describe('scanPostMergeStatusDrift', () => {
 
 describe('scanPostMergeStatusDrift against the real repository', () => {
   // Task 3.3: this check may legitimately need to tolerate the real repo's actual current state
-  // rather than asserting [] unconditionally — investigated at story-1-17 implementation time
-  // (2026-07-29) and confirmed genuine: PR #253 (`Merge pull request #253 from
-  // nestormata/feature/17-2-share-a-credential-with-an-external-recipient-via-secure-link`) is
-  // already merged to main, but both sprint-status.yaml's development_status entry AND
-  // 17-2's own story file `Status:` header still read "review" — the exact 14.8-class drift this
-  // story exists to catch, caught on its own first real run. Flagged in the 1-17 completion
-  // report as a manual follow-up (flip 17-2 to "done" once its review is actually complete). Do
-  // NOT weaken this assertion to `[]` to make the finding disappear — update it only once the
-  // underlying drift is genuinely resolved, or if a future investigation shows this entry is
-  // itself wrong.
-  it('reports the currently-known real drift (17-2, PR #253) rather than silently passing', () => {
+  // rather than asserting [] unconditionally. The 17-2/PR #253 drift this comment used to pin
+  // (sprint-status.yaml + the story file's Status header both stuck on "review" after merge) was
+  // investigated and reconciled 2026-07-29 — both now read "done". Asserting `[]` here is not
+  // weakening the check: it reflects the real repo's actual current (drift-free) state, same as
+  // the 1-17 story's own guidance to update this test once the underlying drift is genuinely
+  // resolved.
+  it('reports no drift against the real repository (17-2/PR #253 reconciled)', () => {
     const drifts = scanPostMergeStatusDrift(process.cwd())
-    expect(drifts.some((d) => d.storyKey.startsWith('17-2-') && d.prNumber === 253)).toBe(true)
+    expect(drifts).toEqual([])
   })
 })

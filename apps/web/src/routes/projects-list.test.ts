@@ -147,9 +147,7 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
     await fireEvent.input(input, { target: { value: manyTags } })
     await fireEvent.click(screen.getByRole('button', { name: /Save/i }))
 
-    await waitFor(() =>
-      expect(screen.getByText('A project may have at most 20 tags.')).toBeTruthy()
-    )
+    expect(await screen.findByText('A project may have at most 20 tags.')).toBeTruthy()
     expect(input.value).toBe(manyTags)
     expect(screen.getByText('payments')).toBeTruthy()
     expect(invalidateAllMock).not.toHaveBeenCalled()
@@ -175,9 +173,7 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
     await fireEvent.input(input, { target: { value: 'a'.repeat(60) } })
     await fireEvent.click(screen.getByRole('button', { name: /Save/i }))
 
-    await waitFor(() =>
-      expect(screen.getByText('Each tag may be at most 50 characters.')).toBeTruthy()
-    )
+    expect(await screen.findByText('Each tag may be at most 50 characters.')).toBeTruthy()
   })
 
   it('AC-P4: an unrecognized validation detail falls back to the raw detail text', async () => {
@@ -200,7 +196,7 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
     await fireEvent.input(input, { target: { value: 'emoji-tag' } })
     await fireEvent.click(screen.getByRole('button', { name: /Save/i }))
 
-    await waitFor(() => expect(screen.getByText('Tags must not contain emoji')).toBeTruthy())
+    expect(await screen.findByText('Tags must not contain emoji')).toBeTruthy()
   })
 
   it('AC-P4: a non-ApiClientError failure shows the generic tags-save error', async () => {
@@ -213,7 +209,7 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
     await fireEvent.input(input, { target: { value: 'ops' } })
     await fireEvent.click(screen.getByRole('button', { name: /Save/i }))
 
-    await waitFor(() => expect(screen.getByText('Failed to save tags.')).toBeTruthy())
+    expect(await screen.findByText('Failed to save tags.')).toBeTruthy()
   })
 
   it('renders empty, populated, description, and role-sensitive project states', () => {

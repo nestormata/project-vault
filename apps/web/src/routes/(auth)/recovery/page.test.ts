@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
+import { render, screen, fireEvent, cleanup } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 
 const requestRecoveryMock = vi.hoisted(() => vi.fn())
@@ -62,7 +62,7 @@ describe('/recovery +page.svelte', () => {
     expect(button.textContent).toMatch(/sending/i)
 
     resolveRequest({ message: 'sent' })
-    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
+    expect(await screen.findByRole('status')).toBeTruthy()
   })
 
   it('ignores re-entrant submit attempts while a request is already pending', async () => {
@@ -83,7 +83,7 @@ describe('/recovery +page.svelte', () => {
 
     expect(requestRecoveryMock).toHaveBeenCalledTimes(1)
     resolveRequest({ message: 'sent' })
-    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
+    expect(await screen.findByRole('status')).toBeTruthy()
   })
 
   it('links back to /login, a real route', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
+import { render, screen, fireEvent, cleanup } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
 import type { AuthUser } from '$lib/api/auth.js'
 
@@ -186,6 +186,6 @@ describe('MfaEnrollmentPanel', () => {
 
     expect(enrollMfaMock).toHaveBeenCalledTimes(1)
     resolveEnroll(enrollResponse)
-    await waitFor(() => expect(screen.getByLabelText(/authenticator code/i)).toBeTruthy())
+    expect(await screen.findByLabelText(/authenticator code/i)).toBeTruthy()
   })
 })

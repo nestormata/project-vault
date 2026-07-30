@@ -5,6 +5,7 @@ import {
   ActiveMachineUserKeysErrorSchema,
   ActiveSharesErrorSchema,
   AuditEvent,
+  type ProjectRole,
 } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -254,10 +255,7 @@ async function resolveTransferTargets(
   return { ok: true, targetMembership, currentOwner }
 }
 
-function serializeProjectDetail(
-  project: typeof projects.$inferSelect,
-  role: 'owner' | 'admin' | 'member' | 'viewer'
-) {
+function serializeProjectDetail(project: typeof projects.$inferSelect, role: ProjectRole) {
   return {
     ...project,
     role,
@@ -422,7 +420,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           name: row.name,
           slug: row.slug,
           description: row.description,
-          role: (row.role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer',
+          role: (row.role ?? secureCtx.auth.orgRole) as ProjectRole,
           credentialCount: stats.credentialCount,
           expiringCount: stats.expiringCount,
           tags: row.tags,
@@ -512,10 +510,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
 
       return {
         data: {
-          ...serializeProjectDetail(
-            project,
-            (role ?? secureCtx.auth.orgRole) as 'owner' | 'admin' | 'member' | 'viewer'
-          ),
+          ...serializeProjectDetail(project, (role ?? secureCtx.auth.orgRole) as ProjectRole),
           tags: project.tags,
           memberCount,
         },

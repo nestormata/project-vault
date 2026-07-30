@@ -125,7 +125,7 @@ describe('reloadThemes — AC-2 absent/unreadable directory', () => {
     })
     expect(absentResult).toEqual(unreadableResult)
     expect(absentFatalCalls).toBe(0)
-    expect(silentLogger.fatal.mock.calls.length).toBe(1)
+    expect(silentLogger.fatal.mock.calls).toHaveLength(1)
   })
 })
 
