@@ -453,9 +453,12 @@
   }
 
   async function refetchDependencies(): Promise<void> {
-    // Skip a tick in-flight with a confirm — the confirm's own response already reconciles local
-    // state (including a 409 already_confirmed), and overwriting mid-request risks clobbering it.
-    if (!data.credential || confirmingDependencyId) return
+    // Skip a tick while any dependency-mutating request is in flight (confirm, archive, or add)
+    // — that request's own response already reconciles local state (including a 409
+    // already_confirmed for confirm), and a stale poll response landing after it completes but
+    // reflecting pre-mutation server state would silently clobber/resurrect the mutated row until
+    // the next tick corrects it.
+    if (!data.credential || confirmingDependencyId || archivingDependencyId || depSubmitting) return
     try {
       const result = await listCredentialDependencies(fetch, data.projectId, data.credentialId)
       dependencyItems = result.items
