@@ -190,7 +190,10 @@
       {/if}
 
       {#if reloadMfaRequired}
-        <p class="mt-4 text-sm text-amber-700">MFA required to reload themes.</p>
+        <p class="mt-4 text-sm text-amber-700">
+          MFA required to reload themes.
+          <a class="ml-1 underline" href={resolve('/settings/security')}>Enable MFA</a>
+        </p>
       {:else}
         <button
           type="button"

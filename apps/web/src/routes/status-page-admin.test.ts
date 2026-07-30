@@ -127,6 +127,21 @@ describe('/projects/:projectId/status-page', () => {
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
   })
 
+  // Story 18.1 AC-2: an MFA-required failure must render a real link to /settings/security,
+  // not just plain text telling the user to go enroll.
+  it('renders an "Enable MFA" link (not just text) when enabling fails with mfa_required', async () => {
+    enableStatusPageMock.mockRejectedValue(
+      new ApiClientError(403, { code: 'mfa_required', message: 'MFA required' }, 'MFA required')
+    )
+    render(StatusPageAdminPage, {
+      props: { data: pageData({ config: { enabled: false, token: null, services: [] } }) },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /enable public status page/i }))
+    const link = await screen.findByRole('link', { name: /enable mfa/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
+  })
+
   it('regenerates once while busy and replaces the one-time URL', async () => {
     let resolveRegenerate!: (value: { token: string }) => void
     regenerateStatusPageTokenMock.mockReturnValue(

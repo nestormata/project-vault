@@ -12,7 +12,7 @@ import {
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { findProjectInOrg } from '../credentials/service.js'
-import { apiKeys, machineUsers } from '@project-vault/db/schema'
+import { apiKeys, machineUsers, projects } from '@project-vault/db/schema'
 import type { Tx } from '@project-vault/db'
 import { generateApiKey, hashApiKey } from './tokens.js'
 import { activeMachineUserKeysQuery } from './archival-check.js'
@@ -95,10 +95,23 @@ async function lockAndRejectIfRevoked(
   return oldKey
 }
 
+// Story 18.1 AC-4: resolves the project's real name for the scope-boundary block below. Falls
+// back to the raw id if the project row is somehow unreachable (no FK path currently allows an
+// orphaned projectId, so this is a defensive fallback, not a documented state).
+async function projectNameById(tx: Tx, projectId: string): Promise<string> {
+  const [row] = await tx
+    .select({ name: projects.name })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+  return row?.name ?? projectId
+}
+
 // UX-DR11: the scope-boundary block shown on creation (before any key exists) and detail views.
-function scopeBoundaryFor(row: Pick<MachineUserRow, 'projectId' | 'name'>) {
+async function scopeBoundaryFor(row: Pick<MachineUserRow, 'projectId' | 'name'>, tx: Tx) {
+  const projectName = await projectNameById(tx, row.projectId)
   return {
-    canAccess: [`credentials in project ${row.projectId} (${row.name}'s assigned project)`],
+    canAccess: [`credentials in project "${projectName}" (${row.name}'s assigned project)`],
     cannotAccess: ['other projects', 'org settings', 'audit logs'],
   }
 }
@@ -116,8 +129,8 @@ function machineUserSummaryFields(row: MachineUserRow): MachineUserSummary {
   }
 }
 
-function toMachineUserDetail(row: MachineUserRow): MachineUserDetail {
-  return { ...machineUserSummaryFields(row), scopeBoundary: scopeBoundaryFor(row) }
+async function toMachineUserDetail(row: MachineUserRow, tx: Tx): Promise<MachineUserDetail> {
+  return { ...machineUserSummaryFields(row), scopeBoundary: await scopeBoundaryFor(row, tx) }
 }
 
 function toMachineUserSummary(row: MachineUserRow): MachineUserSummary {
@@ -253,7 +266,7 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       })
 
       reply.status(201)
-      return { data: toMachineUserDetail(newMachineUser) }
+      return { data: await toMachineUserDetail(newMachineUser, secureCtx.tx) }
     },
   })
 
@@ -328,7 +341,7 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       const row = await findMachineUserById(secureCtx.tx, params.machineUserId)
       if (!row) return reply.status(404).send(MACHINE_USER_NOT_FOUND)
 
-      return { data: toMachineUserDetail(row) }
+      return { data: await toMachineUserDetail(row, secureCtx.tx) }
     },
   })
 

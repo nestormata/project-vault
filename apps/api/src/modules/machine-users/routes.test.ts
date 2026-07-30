@@ -197,6 +197,9 @@ describe.sequential('machine-user routes (7.1)', () => {
       expect(body.data.scopeBoundary.cannotAccess).toEqual(
         expect.arrayContaining(['other projects', 'org settings', 'audit logs'])
       )
+      // Story 18.1 AC-4/AC-6: the scope boundary reads the project's real name, never the raw UUID.
+      expect(body.data.scopeBoundary.canAccess[0]).toContain('Project create-happy')
+      expect(body.data.scopeBoundary.canAccess[0]).not.toContain(projectId)
 
       const auditRows = await auditRowsFor(owner.orgId, 'machine_user.created')
       expect(auditRows.some((row) => row.resourceId === body.data.id)).toBe(true)
@@ -374,7 +377,11 @@ describe.sequential('machine-user routes (7.1)', () => {
         headers: { cookie: cookieHeader(owner.cookies) },
       })
       expect(res.statusCode).toBe(200)
-      expect(res.json<MachineUserDetailBody>().data.scopeBoundary).toBeDefined()
+      const detailBody = res.json<MachineUserDetailBody>()
+      expect(detailBody.data.scopeBoundary).toBeDefined()
+      // Story 18.1 AC-4/AC-6: the scope boundary reads the project's real name, never the raw UUID.
+      expect(detailBody.data.scopeBoundary.canAccess[0]).toContain('Project detail-happy')
+      expect(detailBody.data.scopeBoundary.canAccess[0]).not.toContain(projectId)
 
       const otherOwner = await registerOwner(app, 'detail-other-owner')
       const crossOrg = await app.inject({

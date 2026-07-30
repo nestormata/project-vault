@@ -266,6 +266,33 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
     await waitFor(() => expect(invalidateAllMock).toHaveBeenCalledTimes(1))
   })
 
+  // Story 18.1 AC-3/AC-7/AC-8: hover/focus affordance + accessible label, asserted on the
+  // computed class list rather than left to manual eyeballing.
+  it('AC-3/AC-7: archive control has cursor-pointer + hover/focus-visible cue and a paired label', () => {
+    render(ProjectsListPage, {
+      props: { data: baseData([makeProject({ role: 'owner' })]) },
+    })
+    const archive = screen.getByRole('button', { name: /archive project/i })
+    expect(archive.className).toContain('cursor-pointer')
+    expect(archive.className).toMatch(/hover:text-\S+/)
+    expect(archive.className).toMatch(/focus-visible:text-\S+/)
+    // title= must not be the only way to convey purpose — the button text stays visible.
+    expect(archive.getAttribute('title')).toBeTruthy()
+    expect(archive.textContent?.trim()).toMatch(/archive project/i)
+  })
+
+  it('AC-3/AC-7: unarchive control has cursor-pointer + hover/focus-visible cue and a paired label', () => {
+    render(ProjectsListPage, {
+      props: { data: baseData([makeProject({ role: 'owner', isArchived: true })]) },
+    })
+    const unarchive = screen.getByRole('button', { name: /unarchive/i })
+    expect(unarchive.className).toContain('cursor-pointer')
+    expect(unarchive.className).toMatch(/hover:text-\S+/)
+    expect(unarchive.className).toMatch(/focus-visible:text-\S+/)
+    expect(unarchive.getAttribute('title')).toBeTruthy()
+    expect(unarchive.textContent?.trim()).toMatch(/unarchive/i)
+  })
+
   it('cancels archiving without mutation', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(ProjectsListPage, {

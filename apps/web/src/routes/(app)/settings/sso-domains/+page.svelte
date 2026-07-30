@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation'
+  import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import SettingsGateNotice from '$lib/components/settings/SettingsGateNotice.svelte'
   import { ORG_SSO_DOMAIN_ERROR_CODES } from '@project-vault/shared'
@@ -127,14 +128,14 @@
     <SettingsGateNotice
       variant="denied"
       message="You need the Admin role to manage SSO domains."
-      href="/settings"
+      href={resolve('/settings')}
       linkText="← Back to Settings"
     />
   {:else if data.mfaRequired}
     <SettingsGateNotice
       variant="mfa"
       message="Enable multi-factor authentication to manage SSO domains."
-      href="/settings/security"
+      href={resolve('/settings/security')}
       linkText="Go to Security →"
     />
   {:else if data.errorMessage}

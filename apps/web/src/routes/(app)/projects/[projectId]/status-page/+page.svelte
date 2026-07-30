@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
+  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
   import {
     disableStatusPage,
@@ -153,11 +154,10 @@
       </p>
     </div>
   {:else}
-    {#if errorMessage}
-      <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-        {errorMessage}
-      </p>
-    {/if}
+    <MfaAwareErrorAlert
+      message={errorMessage}
+      class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+    />
 
     {#if !enabled}
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

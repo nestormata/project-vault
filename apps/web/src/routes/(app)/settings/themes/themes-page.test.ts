@@ -191,6 +191,9 @@ describe('/settings/themes +page.svelte reload section — MFA required (Story 1
 
     expect(await screen.findByText(/mfa required to reload themes/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /reload themes/i })).toBeNull()
+    // Story 18.1 AC-2: the MFA-required notice must include a real link, not just text.
+    const link = await screen.findByRole('link', { name: /enable mfa/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
   })
 })
 

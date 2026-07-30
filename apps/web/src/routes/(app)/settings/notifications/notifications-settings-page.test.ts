@@ -126,6 +126,9 @@ describe('/settings/notifications +page.svelte', () => {
 
     expect(screen.getByText(/enroll in mfa to unlock/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /send test notification/i })).toBeNull()
+    // Story 18.1 AC-2: the MFA-enrollment hint must be a real link, not just text.
+    const link = screen.getByRole('link', { name: /enable mfa/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
   })
 
   it('an admin who can send a test sees the send button', () => {

@@ -1,6 +1,6 @@
 # Story 18.1: Fix Internal Navigation Links and Hover Affordances
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -38,15 +38,15 @@ Riley-member sees an MFA warning banner and clicks straight through to the enrol
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Fix raw `href="/settings/security"` strings (AC: 1)
-  - [ ] Update `external-identities/+page.svelte` and `sso-domains/+page.svelte` to use `resolve('/settings/security')`
-- [ ] Task 2: Ensure MFA enrollment warnings are always links (AC: 2)
-  - [ ] Audit all MFA-related banners/warnings for plain-text "Enroll at /settings/security" copy; convert to `resolve()`-based links
-- [ ] Task 3: Archive/unarchive hover affordance (AC: 3)
-  - [ ] Inspect current button markup/CSS on the projects list; add/confirm `cursor-pointer` and hover style
-- [ ] Task 4: Fix Machine User scope boundary UUID (AC: 4, 5, 6)
-  - [ ] Update `scopeBoundaryFor` to join/resolve project name
-  - [ ] Update/add tests in the machine-users module and the web detail page test
+- [x] Task 1: Fix raw `href="/settings/security"` strings (AC: 1)
+  - [x] Update `external-identities/+page.svelte` and `sso-domains/+page.svelte` to use `resolve('/settings/security')`
+- [x] Task 2: Ensure MFA enrollment warnings are always links (AC: 2)
+  - [x] Audit all MFA-related banners/warnings for plain-text "Enroll at /settings/security" copy; convert to `resolve()`-based links
+- [x] Task 3: Archive/unarchive hover affordance (AC: 3, 7, 8)
+  - [x] Inspect current button markup/CSS on the projects list; add/confirm `cursor-pointer` and hover style
+- [x] Task 4: Fix Machine User scope boundary UUID (AC: 4, 5, 6)
+  - [x] Update `scopeBoundaryFor` to join/resolve project name
+  - [x] Update/add tests in the machine-users module and the web detail page test
 
 ## Dev Notes
 
@@ -78,8 +78,91 @@ Riley-member sees an MFA warning banner and clicks straight through to the enrol
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via the `bmad-dev-story` workflow.
+
 ### Debug Log References
+
+- API integration tests for AC-4/AC-6 require a running Postgres: `make db-up`, then
+  `pnpm --filter @project-vault/shared build && pnpm --filter @project-vault/db build` (the
+  worktree had no prebuilt `dist/` for either package), then `make db-migrate`. The `vault_app`
+  role password is `dev-only-change-in-prod` (set by migration `0001_rls_and_triggers.sql`) —
+  the `.env.example` placeholder password does not match it locally.
+- `apps/api/src/modules/machine-users/routes.test.ts` — 22/22 passed after the fix.
+- `apps/web` full suite — 221 files / 1837 tests passed.
+- `apps/api` `typecheck` and `apps/web` `lint` both clean (0 errors) after the change; had to add
+  two `eslint-disable-next-line svelte/no-navigation-without-resolve` comments in
+  `SettingsGateNotice.svelte` since its `<a href>` now receives an already-resolved value from the
+  caller instead of calling `resolve()` itself.
+- `svelte-check` in this repo has ~180 pre-existing false-positive `resolve()` arity errors across
+  unrelated files (confirmed by grepping for `SettingsGateNotice` in its output — zero hits); it is
+  not wired into any `make`/`pnpm` script, so it was used only as a manual sanity check, not a gate.
 
 ### Completion Notes List
 
+- **AC-1**: `SettingsGateNotice.svelte`'s `href` prop contract changed from "route id, resolved
+  internally" to "already-resolved value, passed in by the caller" — this matches the literal-anchor
+  convention (`settings/+page.svelte`) and avoids a double-`resolve()` call. Both call sites
+  (`external-identities/+page.svelte`, `sso-domains/+page.svelte`) updated for both their `denied`
+  (`/settings`) and `mfa` (`/settings/security`) variants, since the component's new type contract
+  applies to all callers, not just the `/settings/security` ones named in the AC.
+- **AC-2 audit** (every MFA-related banner/nudge/toast/inline-error found, with disposition):
+  - `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte` — plain-text error
+    message containing "MFA" → **fixed**: swapped the raw `<p role="alert">` for
+    `<MfaAwareErrorAlert>` (reuse, no new component).
+  - `apps/web/src/routes/(app)/settings/notifications/+page.svelte` — static "Enroll in MFA to
+    unlock…" hint, no error object → **fixed**: reused `<MfaAwareErrorAlert>` with a static message
+    string (its `message.includes('MFA')` check still fires).
+  - `apps/web/src/routes/(app)/settings/themes/+page.svelte` — `reloadMfaRequired` boolean flag
+    (not a message string) → **fixed**: added an inline `<a href={resolve('/settings/security')}>`
+    link directly, matching the pattern already used in the rotate/rotations pages, since there's
+    no message string here to route through `MfaAwareErrorAlert`.
+  - `apps/web/src/routes/(app)/settings/extensions/+page.svelte` — **already compliant**: renders a
+    real `<a href={resolve('/settings/security')}>` link.
+  - `apps/web/src/routes/(app)/platform/audit/+page.svelte`,
+    `platform/settings/+page.svelte`, `platform/settings/orgs/+page.svelte`,
+    `projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte`,
+    `projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte`,
+    `projects/[projectId]/members/+page.svelte` — **already compliant**: all already render either
+    `<MfaAwareErrorAlert>` or an inline `resolve('/settings/security')` link.
+  - `apps/(auth)/recovery/[token]/+page.svelte` — mentions "MFA" in error copy, but this is the
+    unauthenticated account-recovery flow where MFA re-enrollment happens inline on the same page
+    (a checkbox + QR code), not a nudge pointing at `/settings/security` → **N/A**, out of scope.
+- **AC-3/AC-7/AC-8**: `projects/+page.svelte`'s archive/unarchive `<button>`s gained explicit
+  `cursor-pointer`, a `hover:text-*` color-change affordance, the identical cue mirrored on
+  `focus-visible:text-*` for keyboard users, and a `title=` attribute — paired with the
+  already-visible "Archive project"/"Unarchive" button text, so `title` is never the sole means of
+  conveying purpose. Coverage is a component-test assertion on `button.className` /
+  `getAttribute('title')`, not a Playwright visual test (per AC-8's explicit scope).
+- **AC-4/AC-5/AC-6**: `scopeBoundaryFor` in `apps/api/src/modules/machine-users/routes.ts` now
+  resolves the project's real `name` (new `projectNameById` helper, a `projects` table lookup) into
+  the `canAccess` string instead of the raw `projectId` UUID; falls back to the id itself if the
+  project row is ever unreachable (no FK path currently allows an orphaned `projectId`, so this is a
+  defensive fallback, not a documented state — per the AC's own guidance, not elevated to a formal
+  AC). `toMachineUserDetail`/`scopeBoundaryFor` became `async` and both call sites (`POST
+  .../machine-users`, `GET /machine-users/:id`) now `await` them. The web detail page
+  (`.../machine-users/[machineUserId]/+page.svelte`) needed no change — confirmed pure pass-through.
+- **AC-9**: no route, redirect, or link target changed anywhere in this story — only how existing
+  links/strings are constructed or rendered.
+
 ### File List
+
+- `apps/api/src/modules/machine-users/routes.ts`
+- `apps/api/src/modules/machine-users/routes.test.ts`
+- `apps/web/src/lib/components/settings/SettingsGateNotice.svelte`
+- `apps/web/src/routes/(app)/settings/external-identities/+page.svelte`
+- `apps/web/src/routes/(app)/settings/sso-domains/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte`
+- `apps/web/src/routes/status-page-admin.test.ts`
+- `apps/web/src/routes/(app)/settings/notifications/+page.svelte`
+- `apps/web/src/routes/(app)/settings/notifications/notifications-settings-page.test.ts`
+- `apps/web/src/routes/(app)/settings/themes/+page.svelte`
+- `apps/web/src/routes/(app)/settings/themes/themes-page.test.ts`
+- `apps/web/src/routes/(app)/projects/+page.svelte`
+- `apps/web/src/routes/projects-list.test.ts`
+
+## Change Log
+
+- 2026-07-29: Implemented all 4 tasks / 9 ACs via `bmad-dev-story` (TDD red-green per file). API
+  integration suite (`apps/api/src/modules/machine-users`) 22/22 passing; full `apps/web` suite 221
+  files / 1837 tests passing; `apps/api` typecheck and `apps/web` lint both clean. Status:
+  ready-for-dev → review.

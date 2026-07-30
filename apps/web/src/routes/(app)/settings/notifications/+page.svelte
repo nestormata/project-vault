@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
+  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import { getEventTypeLabel } from '$lib/utils/event-type-labels.js'
   import type { ActionData, PageData } from './$types.js'
 
@@ -155,9 +156,10 @@
             </button>
           </form>
         {:else}
-          <p class="text-sm text-gray-500">
-            Enroll in MFA to unlock the test notification action for your admin account.
-          </p>
+          <MfaAwareErrorAlert
+            message="Enroll in MFA to unlock the test notification action for your admin account."
+            class="text-sm text-gray-500"
+          />
         {/if}
 
         {#if form?.testResult}
