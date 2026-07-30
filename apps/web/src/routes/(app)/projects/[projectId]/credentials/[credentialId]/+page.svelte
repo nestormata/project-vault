@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import type { FieldMeta, SystemType } from '@project-vault/shared'
@@ -9,6 +9,7 @@
     addCredentialVersion,
     archiveCredentialDependency,
     isFieldsValue,
+    listCredentialDependencies,
     parseRevealedFields,
     revealCredentialValue,
     updateCredentialLifecycle,
@@ -132,9 +133,15 @@
   // AC-5: authoritative server-computed flag — never inferred from whether any item has a
   // non-null checklistStatus (ADR-2.10-02, see the story's "Challenge from Critical Perspective"
   // finding for why the naive inference is wrong when every dependency post-dates staging).
-  const hasStagedRotation = $derived(data.dependencies.hasStagedRotation)
+  // Story 18.7: promoted to local $state (same "state_referenced_locally" convention as
+  // `dependencyItems` above) so the background poll below can update it in place without a full
+  // page reload.
+  let hasStagedRotation = $state(data.dependencies.hasStagedRotation)
   let confirmingDependencyId = $state<string | null>(null)
   let checklistError = $state<string | null>(null)
+  // Story 18.7 AC-5: "Add dependent system" starts collapsed behind a native <details>/<summary>
+  // disclosure — simple client-side UI state, not persisted across reloads (AC-6).
+  let dependencyFormOpen = $state(false)
 
   // Story 17.1 AC-11: local list, same "state_referenced_locally" convention the dependency
   // section above uses — updated in place on create/revoke so the Shares tab reflects a mutation
@@ -421,17 +428,78 @@
     }
   }
 
-  function dependencyCheckboxDisabledReason(
+  // Story 18.7 AC-1/2/3: this checkbox is Story 2.10's rotation-checklist "Updated" confirmation
+  // control, not a permanently-dead one — it's real, functional state, just only meaningful while
+  // (a) a rotation is currently staged AND (b) this specific dependency is tracked by that
+  // rotation's checklist (a dependency added after staging has no checklist entry to confirm).
+  // Both conditions gate on genuine state, so per AC-4's decision rule ("favor conditional-hide
+  // if it gates on any real state") an inapplicable checkbox is hidden entirely rather than shown
+  // permanently disabled with an unreadable tooltip.
+  function isDependencyCheckboxRelevant(
     dependency: CredentialDependencyWithChecklistStatus
-  ): string | null {
-    if (!hasStagedRotation) return 'No rotation in progress — nothing to confirm yet.'
-    if (!dependency.checklistStatus) {
-      return 'Added after this rotation started — not tracked by the current checklist.'
-    }
-    return null
+  ): boolean {
+    return hasStagedRotation && dependency.checklistStatus !== null
   }
 
+  // Story 18.7 AC-3: keeps the checkbox's relevance reactive to the credential's rotation state
+  // while the page stays open — mirrors the rotation detail page's own visibility-aware 15s poll
+  // (apps/web/.../rotations/[rotationId]/+page.svelte) so a user already on this page sees the
+  // control appear/disappear without a reload as a rotation starts, finishes, or is retired.
+  let dependencyPollTimer: ReturnType<typeof setInterval> | undefined
+
+  function clearDependencyPoll() {
+    if (dependencyPollTimer) clearInterval(dependencyPollTimer)
+    dependencyPollTimer = undefined
+  }
+
+  async function refetchDependencies(): Promise<void> {
+    // Skip a tick in-flight with a confirm — the confirm's own response already reconciles local
+    // state (including a 409 already_confirmed), and overwriting mid-request risks clobbering it.
+    if (!data.credential || confirmingDependencyId) return
+    try {
+      const result = await listCredentialDependencies(fetch, data.projectId, data.credentialId)
+      dependencyItems = result.items
+      hasStagedRotation = result.hasStagedRotation
+    } catch {
+      // Best-effort background refresh: a failed poll just leaves the last-known state in place
+      // and is retried on the next tick, matching the rotation detail page's own poll convention
+      // — surfacing an error here would be noisier than useful for this background nicety.
+    }
+  }
+
+  function scheduleDependencyPoll() {
+    clearDependencyPoll()
+    if (!data.credential || dependencyItems.length === 0) return
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    dependencyPollTimer = setInterval(() => {
+      void refetchDependencies()
+    }, 15000)
+  }
+
+  function handleDependencyVisibilityChange() {
+    if (typeof document === 'undefined') return
+    if (document.visibilityState === 'hidden') clearDependencyPoll()
+    else scheduleDependencyPoll()
+  }
+
+  $effect(() => {
+    // Re-evaluated whenever the dependency list count changes (e.g. the first dependency is
+    // added, or the last one is archived), so polling starts/stops accordingly.
+    dependencyItems.length
+    scheduleDependencyPoll()
+  })
+
+  onMount(() => {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleDependencyVisibilityChange)
+    }
+  })
+
   onDestroy(() => {
+    clearDependencyPoll()
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleDependencyVisibilityChange)
+    }
     revealedValue = null
     revealVersion = null
     revealedFields = {}
@@ -1089,7 +1157,6 @@
         {/if}
         <ul class="mt-4 space-y-2">
           {#each dependencyItems as dependency (dependency.id)}
-            {@const disabledReason = dependencyCheckboxDisabledReason(dependency)}
             {@const checklistItemStatus = dependency.checklistStatus?.status}
             {@const isFailed =
               checklistItemStatus === 'failed' || checklistItemStatus === 'max_retries_exceeded'}
@@ -1097,24 +1164,27 @@
               class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
             >
               <div class="flex flex-wrap items-center gap-3">
-                <label
-                  class="flex items-center gap-2"
-                  for={`dependency-updated-${dependency.id}`}
-                  title={disabledReason ?? undefined}
-                >
-                  <input
-                    id={`dependency-updated-${dependency.id}`}
-                    type="checkbox"
-                    checked={dependency.checklistStatus?.status === 'confirmed' || isFailed}
-                    disabled={!canReveal ||
-                      Boolean(disabledReason) ||
-                      Boolean(confirmingDependencyId) ||
-                      dependency.checklistStatus?.status === 'confirmed'}
-                    aria-disabled={Boolean(disabledReason)}
-                    onchange={() => void onConfirmDependencyUpdate(dependency)}
-                  />
-                  <span class={isFailed ? 'font-medium text-amber-800' : undefined}>Updated</span>
-                </label>
+                {#if isDependencyCheckboxRelevant(dependency)}
+                  <!-- Story 18.7 AC-2/3: only rendered while there's a staged rotation this
+                       dependency is actually tracked by — same conditional-render convention as
+                       the "Scoped to"/link/failed badges below, so its appearance/disappearance
+                       reads as ordinary row context rather than a jarring surprise control. -->
+                  <label
+                    class="flex items-center gap-2"
+                    for={`dependency-updated-${dependency.id}`}
+                  >
+                    <input
+                      id={`dependency-updated-${dependency.id}`}
+                      type="checkbox"
+                      checked={dependency.checklistStatus?.status === 'confirmed' || isFailed}
+                      disabled={!canReveal ||
+                        Boolean(confirmingDependencyId) ||
+                        dependency.checklistStatus?.status === 'confirmed'}
+                      onchange={() => void onConfirmDependencyUpdate(dependency)}
+                    />
+                    <span class={isFailed ? 'font-medium text-amber-800' : undefined}>Updated</span>
+                  </label>
+                {/if}
                 <span class="font-medium">{dependency.systemName} ({dependency.systemType})</span>
                 {#if dependency.fieldKey}
                   <!-- Story 13.5 AC-6: scope badge, so Morgan-member can see at a glance which
@@ -1169,8 +1239,15 @@
       {/if}
 
       {#if canReveal}
-        <div class="mt-6 border-t border-slate-200 pt-6">
-          <h3 class="font-semibold text-slate-950">Add dependent system</h3>
+        <!-- Story 18.7 AC-5/6: collapsed by default behind a native <details>/<summary>
+             disclosure — built-in keyboard operability (Enter/Space on the summary) and expanded
+             state exposed to assistive tech for free, no bespoke bind:+ARIA needed. Open/closed
+             state is plain client-side UI state (`dependencyFormOpen`, bound via `bind:open`) and
+             intentionally does not persist across reloads (AC-6). -->
+        <details class="mt-6 border-t border-slate-200 pt-6" bind:open={dependencyFormOpen}>
+          <summary class="cursor-pointer font-semibold text-slate-950">
+            Add dependent system
+          </summary>
           <form
             class="mt-3 space-y-3"
             onsubmit={(event) => {
@@ -1265,7 +1342,7 @@
               {depSubmitting ? 'Adding…' : 'Add dependent system'}
             </button>
           </form>
-        </div>
+        </details>
       {/if}
     </section>
 

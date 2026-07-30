@@ -1,6 +1,6 @@
 # Story 18.7: Dependent Systems List and Form UX Cleanup
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -37,10 +37,10 @@ Morgan-member opens a credential's detail page. The Dependent Systems list shows
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Investigate the disabled checkbox's actual purpose (AC: 1)
-- [ ] Task 2: Apply the correct fix — remove or conditionally hide (AC: 2, 3)
-- [ ] Task 3: Collapse "Add dependent system" form by default (AC: 4, 5, 6)
-- [ ] Task 4: Tests (AC: 7)
+- [x] Task 1: Investigate the disabled checkbox's actual purpose (AC: 1)
+- [x] Task 2: Apply the correct fix — remove or conditionally hide (AC: 2, 3, 4)
+- [x] Task 3: Collapse "Add dependent system" form by default (AC: 5, 6, 7)
+- [x] Task 4: Tests (AC: 8)
 
 ## Dev Notes
 
@@ -62,8 +62,34 @@ Morgan-member opens a credential's detail page. The Dependent Systems list shows
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5), via `bmad-dev-story`.
+
 ### Debug Log References
+
+- Confirmed via jsdom scratch test (not committed) that `@testing-library/dom`'s `getByRole('button', ...)` in this repo's environment does NOT map a `<summary>` element to role "button" (dom-accessibility-api/aria-query version in use has no such mapping here), so the new disclosure's `<summary>Add dependent system</summary>` does not collide with the existing submit `<button>Add dependent system</button>` in `getByRole('button', { name: /^add dependent system$/i })` queries — no test rewrite of that assertion form was needed.
+- Confirmed via the same scratch check that jsdom natively toggles `HTMLDetailsElement.open` on a real click of its `<summary>` child, so `bind:open` + `fireEvent.click` is a reliable way to test the disclosure without simulating browser CSS.
 
 ### Completion Notes List
 
+**AC-1/AC-4 investigation finding:** The checkbox is confirmed to be Story 2.10's rotation-checklist "Updated" confirmation control (`onConfirmDependencyUpdate` → `confirmChecklistItem`, the same route Story 2.10 shipped), not dead code. `dependencyCheckboxDisabledReason` (removed) had exactly two disable branches, both gating on real, documented state — no third/undocumented reason was found, so AC-4's "third possibility" branch does not apply:
+1. `!hasStagedRotation` → "No rotation in progress — nothing to confirm yet." (no active/staged rotation at all)
+2. `!dependency.checklistStatus` → "Added after this rotation started — not tracked by the current checklist." (a staged rotation exists, but this specific dependency was added after it was staged, so the rotation's checklist has no entry for it to confirm)
+
+**Decision (documented per AC-4's instruction to record the call explicitly):** both branches gate on genuine, real state (not a permanently-dead control), so per AC-3/AC-4's guidance ("favor conditional-hide if it gates on any real state") **both** are treated the same way — hidden entirely rather than shown disabled — not just the first ("no rotation in progress") branch AC-3's prose leads with. Treating only branch 1 as "AC-3's case" and leaving branch 2 as a permanently-titled disabled checkbox would have reintroduced the exact "disabled control with no explanation" complaint the story exists to fix, just narrowed to fewer rows. The other disable conditions on this checkbox (`!canReveal` viewer-permission gate, `confirmingDependencyId` in-flight guard, already-`confirmed` state) are unrelated to AC-1's rotation-state investigation and are left as visible-but-disabled, since each carries real information (a confirmed checkmark, or a transient in-flight state) rather than being a dead/unexplained control — out of scope for this story per AC-1's framing.
+
+**AC-3 reactivity:** `hasStagedRotation` and `dependencyItems` were promoted from a page-load-only `$derived`/one-time `$state` seed to a locally-polled `$state`, mirroring the existing rotation-detail page's (`.../rotations/[rotationId]/+page.svelte`) visibility-aware 15s `setInterval` + `clearInterval` poll pattern verbatim (same interval, same `document.visibilitychange` pause/resume, same silent-catch-and-retry-next-tick error handling) — reuses the already-existing lightweight `listCredentialDependencies` client function (no new endpoint) rather than the heavier `invalidateAll()` used elsewhere on this page for full-page refresh. Poll is skipped mid-tick while a confirm request is in flight (`confirmingDependencyId`) to avoid clobbering that request's own optimistic/409-reconciled update, and starts/stops via a `$effect` keyed on `dependencyItems.length` so it doesn't run when there are no dependencies to show checkboxes for.
+
+**AC-5 disclosure:** Implemented with a native `<details bind:open={dependencyFormOpen}>` / `<summary>Add dependent system</summary>` wrapping the unchanged form — no bespoke ARIA needed, per the story's stated preference. `dependencyFormOpen` is plain `$state(false)`, not persisted (AC-6). No existing collapsed-by-default disclosure component was found elsewhere in the app to reuse (checked; none exists), so this introduces the first such pattern using the simplest available native primitive.
+
+**AC-7 (unchanged form behavior):** No field, validation, or submission logic was touched — only the wrapping element changed from `<div><h3>...</h3><form>...` to `<details><summary>...</summary><form>...`.
+
+**Tests (AC-8):** `credential-detail-page.test.ts` — replaced the two now-inapplicable "checkbox is disabled with tooltip" tests with "checkbox is hidden" tests for both disable branches; added two reactivity tests using `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync(15000)` against a `listCredentialDependencies` mock, asserting the checkbox appears/disappears without any reload or re-render prop change; added a new `describe` block for the disclosure (`collapsed by default` / `expands on summary activation`); updated the 4 existing add-flow tests (dependency add, `too_many_dependencies`, 410-archived, multi-field scope dropdown) to click the summary open first, since they now interact with form fields inside the disclosure. Full `apps/web` suite (221 files / 1898 tests) green; `pnpm typecheck` and `pnpm lint` clean (project-wide, no new errors or warnings introduced).
+
 ### File List
+
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts`
+
+## Change Log
+
+- 2026-07-30: `in-progress` → `review` via `bmad-dev-story`, TDD red-green. Investigated and confirmed the "Updated" checkbox is Story 2.10's functional rotation-checklist confirmation control, not dead code (AC-1); changed both of its disable branches (no staged rotation; dependency added after staging) to conditional-hide rather than shown-disabled (AC-2/3/4), reactive via a 15s visibility-aware poll mirroring the rotation detail page's existing pattern so the checkbox appears/disappears live without a reload (AC-3); collapsed the "Add dependent system" form behind a native `<details>`/`<summary>` disclosure, closed by default, not persisted across reloads (AC-5/6); form fields/validation/submission left unchanged (AC-7). New/updated component tests cover both hide branches, the live appear/disappear transition, and the disclosure's collapsed-by-default/expand-on-activate behavior (AC-8). Full `apps/web` suite (1898 tests) green; `pnpm typecheck`/`pnpm lint` clean.
