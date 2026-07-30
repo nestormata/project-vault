@@ -45,7 +45,9 @@ export function scanSprintStatusRollup(rootDir = process.cwd()): RollupDrift[] {
     if (status === 'done') continue
 
     const epicNum = epicMatch[1]
-    const childKeys = [...statuses.keys()].filter((k) => new RegExp(`^${epicNum}-\\d+-`).test(k))
+    const childKeys = [...statuses.keys()].filter((k) =>
+      new RegExp(String.raw`^${epicNum}-\d+-`).test(k)
+    )
     if (childKeys.length === 0) continue // nothing to roll up yet — not drift, just not started
 
     const retroKey = `epic-${epicNum}-retrospective`
@@ -55,7 +57,8 @@ export function scanSprintStatusRollup(rootDir = process.cwd()): RollupDrift[] {
     const retroDone = retroStatus === 'done'
 
     if (allChildrenDone && retroDone) {
-      drifts.push({ epicKey: key, epicStatus: status, childKeys: childKeys.sort() })
+      const sortedChildKeys = [...childKeys].sort((a, b) => a.localeCompare(b))
+      drifts.push({ epicKey: key, epicStatus: status, childKeys: sortedChildKeys })
     }
   }
 

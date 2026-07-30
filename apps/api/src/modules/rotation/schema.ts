@@ -3,8 +3,6 @@ import {
   ConfirmChecklistItemBodySchema,
   FailChecklistItemBodySchema,
   optionalTrimmedNotes,
-  PromoteRotationBodySchema,
-  RetireRotationBodySchema,
   RetryChecklistItemBodySchema,
   RotationChecklistItemSchema,
   RotationChecklistItemStatusSchema,
@@ -21,11 +19,10 @@ export {
   CompleteRotationBodySchema,
   ConfirmChecklistItemBodySchema,
   FailChecklistItemBodySchema,
-  PromoteRotationBodySchema,
-  RetireRotationBodySchema,
   RetryChecklistItemBodySchema,
   UpcomingRotationsQuerySchema,
 }
+export { PromoteRotationBodySchema, RetireRotationBodySchema } from '@project-vault/shared'
 
 export const InitiateRotationBodySchema = z
   .object({
