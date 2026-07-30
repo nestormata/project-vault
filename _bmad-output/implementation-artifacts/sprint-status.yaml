@@ -1,3 +1,5 @@
+# last_updated: 2026-07-30 (18-5-surface-active-rotation-status-in-list-and-dashboard-views:
+# ready-for-dev -> in-progress via pick-story)
 # last_updated: 2026-07-30 (16-6-anonymous-pre-auth-org-branding-resolution: backlog ->
 # ready-for-dev via bmad-create-story. Scope needed design work before implementation per the
 # story's own scope note (candidate approaches captured in 16-4's Dev Notes "Alternative B") —
@@ -381,7 +383,7 @@ development_status:
   18-2-absolute-urls-for-shared-and-generated-links: done
   18-3-sitewide-contextual-help-text-for-forms-and-sections: ready-for-dev
   18-4-fix-intermittent-double-click-toggle-button-failures: ready-for-dev
-  18-5-surface-active-rotation-status-in-list-and-dashboard-views: ready-for-dev
+  18-5-surface-active-rotation-status-in-list-and-dashboard-views: in-progress
   18-6-email-delivery-for-credential-shares-and-demo-smtp-config: ready-for-dev
   18-7-dependent-systems-list-and-form-ux-cleanup: ready-for-dev
   18-8-public-status-page-reorder-ui: ready-for-dev
