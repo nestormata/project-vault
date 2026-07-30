@@ -497,8 +497,20 @@ describe('SSO routes (Story 14.3)', () => {
         }),
       ])
 
+      // The loser's exact status is inherently timing-dependent: findCandidateInvitations (the
+      // pre-transaction lookup) and claimInvitation (the atomic in-transaction guard) aren't the
+      // same query, so if the winner's transaction commits before the loser's own pre-check runs,
+      // the loser sees zero candidate invitations (403 account_link_required) instead of losing
+      // the atomic claim (409 invitation_already_claimed). Both are safe, correct rejections of
+      // the loser — asserting one specific code here just makes the test flaky under scheduling
+      // pressure (e.g. CI) without catching any real bug. The invariant that actually matters is
+      // exactly one winner and exactly one identity row, both asserted below.
       const statuses = [resA.statusCode, resB.statusCode].sort()
-      expect(statuses).toEqual([200, 409])
+      const winners = statuses.filter((status) => status === 200)
+      const losers = statuses.filter((status) => status !== 200)
+      expect(winners).toEqual([200])
+      expect(losers).toHaveLength(1)
+      expect([403, 409]).toContain(losers[0])
 
       const linkedRows = await withOrg(orgId, (tx) =>
         tx.select().from(externalIdentities).where(eq(externalIdentities.providerName, PROVIDER))

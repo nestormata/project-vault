@@ -289,7 +289,8 @@
               {#if project.isArchived}
                 <button
                   type="button"
-                  class="text-sm font-medium text-slate-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                  class="cursor-pointer text-sm font-medium text-slate-700 underline hover:text-slate-950 focus-visible:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                  title="Unarchive this project"
                   disabled={busyProjectId === project.id}
                   onclick={() => onUnarchive(project)}
                 >
@@ -298,7 +299,8 @@
               {:else}
                 <button
                   type="button"
-                  class="text-sm font-medium text-amber-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                  class="cursor-pointer text-sm font-medium text-amber-700 underline hover:text-amber-900 focus-visible:text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
+                  title="Archive this project"
                   disabled={busyProjectId === project.id}
                   onclick={() => onArchive(project)}
                 >

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
-  import SettingsGateNotice from '$lib/components/settings/SettingsGateNotice.svelte'
+  import SettingsFormGate from '$lib/components/settings/SettingsFormGate.svelte'
   import { ORG_SSO_DOMAIN_ERROR_CODES } from '@project-vault/shared'
   import {
     createOrgSsoDomain,
@@ -122,29 +122,14 @@
     password.
   </p>
 
-  {#if !data.allowed}
-    <!-- AC-5: minimumRole 'admin' includes 'owner' — see Dev Notes judgment call. -->
-    <SettingsGateNotice
-      variant="denied"
-      message="You need the Admin role to manage SSO domains."
-      href="/settings"
-      linkText="← Back to Settings"
-    />
-  {:else if data.mfaRequired}
-    <SettingsGateNotice
-      variant="mfa"
-      message="Enable multi-factor authentication to manage SSO domains."
-      href="/settings/security"
-      linkText="Go to Security →"
-    />
-  {:else if data.errorMessage}
-    <p
-      class="mt-8 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-      role="alert"
-    >
-      {data.errorMessage}
-    </p>
-  {:else}
+  <!-- AC-5: minimumRole 'admin' includes 'owner' — see Dev Notes judgment call. -->
+  <SettingsFormGate
+    allowed={data.allowed}
+    mfaRequired={data.mfaRequired}
+    errorMessage={data.errorMessage}
+    deniedMessage="You need the Admin role to manage SSO domains."
+    mfaMessage="Enable multi-factor authentication to manage SSO domains."
+  >
     <form
       class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
       onsubmit={onCreate}
@@ -291,5 +276,5 @@
         </table>
       {/if}
     </div>
-  {/if}
+  </SettingsFormGate>
 </div>

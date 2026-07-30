@@ -11,6 +11,7 @@
     "packages/agent/src/cache-crypto.ts",
     "apps/api/src/modules/audit/machine-entry.ts",
     "apps/api/src/workers/user-dormancy-check.ts",
+    "apps/web/src/lib/components/settings/SettingsFormGate.svelte",
     "**/node_modules/**",
     "**/dist/**",
     "**/build/**",
