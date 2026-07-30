@@ -87,7 +87,15 @@ export async function createExternalCredentialShare(
   if (validation.status !== 'ok') return validation
 
   // AC-16: cap check + insert in the same transaction as the caller's own — avoids a TOCTOU gap
-  // on the cap itself (two concurrent creations at the boundary can't both slip past the count).
+  // on the cap itself. A same-transaction COUNT+INSERT alone is NOT sufficient under Postgres'
+  // default READ COMMITTED isolation (two concurrent transactions can both read the same count
+  // and both insert), so this also takes a credential+field-scoped advisory lock first — same
+  // precedent as rotation-locks.ts's `tryAcquireCredentialScopedLock` — to serialize concurrent
+  // creations for the same (credentialId, fieldKey) bucket.
+  const lockFieldSuffix = validation.normalizedField ?? ''
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended('external-share-cap:' || ${input.credentialId} || ':' || ${lockFieldSuffix}, 0))`
+  )
   const fieldCondition = validation.normalizedField
     ? eq(credentialShares.fieldKey, validation.normalizedField)
     : sql`${credentialShares.fieldKey} IS NULL`
@@ -101,8 +109,12 @@ export async function createExternalCredentialShare(
         fieldCondition,
         // AC-16: "status IN ('active','pending')" — this schema's real initial-status value is
         // 'active' (there is no literal 'pending' status; see Dev Notes' status-enum note), so
-        // the not-yet-resolved bucket this cap counts is exactly `status = 'active'`.
-        inArray(credentialShares.status, ['active'])
+        // the not-yet-resolved bucket this cap counts is exactly `status = 'active'`. Also
+        // excludes rows that are already past their `expiresAt` but haven't been lazily swept to
+        // `expired` yet — AC-16 explicitly says "letting one expire immediately frees a slot",
+        // which only holds if a not-yet-swept-but-time-expired row doesn't still count.
+        inArray(credentialShares.status, ['active']),
+        sql`${credentialShares.expiresAt} > now()`
       )
     )
   const pendingCount = Number(countRows[0]?.count ?? 0)
@@ -229,21 +241,33 @@ async function recordLosingAttempt(tx: Tx, share: CredentialShareRow): Promise<C
  *  eslint threshold. Returns a terminal RevealExternalShareResult (recording the AC-22 losing
  *  attempt as it does) when the share isn't claimable, or `undefined`/the possibly-lazily-expired
  *  share when the caller should proceed to the field check + atomic claim. */
+/** Maps a share's terminal DB `status` to the terminal reveal-failure reason surfaced to the
+ *  caller — shared by `precheckExternalShareClaimable` (checked up front) and
+ *  `resolveLostExternalClaim` (re-checked after losing the atomic claim), so the two can never
+ *  drift out of sync on which statuses collapse to which reason (this codebase doesn't surface
+ *  `superseded` as distinct from `expired` to the recipient). Returns `undefined` for `active`
+ *  (not yet terminal) and `viewed` is handled by callers directly since its wording differs
+ *  ("already_viewed") from the fallback default used when a lost-claim race lands on `viewed`. */
+export function terminalRevealStatusFor(
+  status: CredentialShareRow['status']
+): 'revoked' | 'expired' | undefined {
+  if (status === 'revoked') return 'revoked'
+  if (status === 'expired' || status === 'superseded') return 'expired'
+  return undefined
+}
+
 async function precheckExternalShareClaimable(
   tx: Tx,
   share: CredentialShareRow
 ): Promise<{ result: RevealExternalShareResult } | { share: CredentialShareRow }> {
-  if (share.status === 'revoked') {
+  const terminal = terminalRevealStatusFor(share.status)
+  if (terminal) {
     await recordLosingAttempt(tx, share)
-    return { result: { status: 'revoked' } }
+    return { result: { status: terminal } }
   }
   if (share.status === 'viewed') {
     await recordLosingAttempt(tx, share)
     return { result: { status: 'already_viewed' } }
-  }
-  if (share.status === 'expired' || share.status === 'superseded') {
-    await recordLosingAttempt(tx, share)
-    return { result: { status: 'expired' } }
   }
   if (share.expiresAt.getTime() <= Date.now()) {
     // Story 17.3 AC-5/AC-6: reuse `lazilyExpireShareIfDue` (writes CREDENTIAL_SHARE_EXPIRED in
@@ -269,8 +293,8 @@ async function resolveLostExternalClaim(
     .limit(1)
   const lost = reread ?? share
   await recordLosingAttempt(tx, lost)
-  if (lost.status === 'revoked') return { status: 'revoked' }
-  if (lost.status === 'expired') return { status: 'expired' }
+  const terminal = terminalRevealStatusFor(lost.status)
+  if (terminal) return { status: terminal }
   return { status: 'already_viewed' }
 }
 

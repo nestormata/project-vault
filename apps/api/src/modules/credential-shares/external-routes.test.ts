@@ -204,7 +204,7 @@ describe('external credential-shares routes', () => {
     expect(response.json<{ code: string }>().code).toBe('expires_at_invalid')
   })
 
-  it('AC-5: rejects singleUse: false with 400 external_share_must_be_single_use-shaped validation error', async () => {
+  it('AC-5: rejects singleUse: false with a dedicated 400 external_share_must_be_single_use', async () => {
     const { sharer, projectId, credentialId } = await createFixture('single-use-false')
 
     const response = await app.inject({
@@ -219,10 +219,27 @@ describe('external credential-shares routes', () => {
       },
     })
 
-    // strict() zod schema rejects the unknown/disallowed `singleUse` key outright (422: schema
-    // validation failure, this codebase's convention — distinct from the 400s the service layer
-    // returns for business-rule rejections).
-    expect(response.statusCode).toBe(422)
+    expect(response.statusCode).toBe(400)
+    expect(response.json<{ code: string }>().code).toBe('external_share_must_be_single_use')
+  })
+
+  it('AC-5: accepts an explicit singleUse: true (still hard-coded true server-side)', async () => {
+    const { sharer, projectId, credentialId } = await createFixture('single-use-true')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: externalSharesUrl(projectId, credentialId),
+      headers: { cookie: cookieHeader(sharer.cookies) },
+      payload: {
+        recipientEmail: DEFAULT_RECIPIENT_EMAIL,
+        expiresAt: futureIso(),
+        password: MEMBERSHIP_TEST_LOGIN_SECRET,
+        singleUse: true,
+      },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json<{ data: { singleUse: boolean } }>().data.singleUse).toBe(true)
   })
 
   it('AC-16: the 6th concurrent-pending external share for the same credential/field is rejected 429', async () => {
@@ -241,6 +258,37 @@ describe('external credential-shares routes', () => {
 
     expect(sixth.statusCode).toBe(429)
     expect(sixth.json<{ code: string }>().code).toBe('external_share_cap_exceeded')
+  })
+
+  it("AC-16: a share past its expiresAt but not yet lazily swept doesn't count toward the cap", async () => {
+    const { sharer, projectId, credentialId } = await createFixture('cap-lazy-expire')
+
+    for (let i = 0; i < 4; i += 1) {
+      const response = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientEmail: `vendor-${i}@example.com`,
+      })
+      expect(response.statusCode).toBe(201)
+    }
+    const fifth = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientEmail: 'vendor-4@example.com',
+    })
+    expect(fifth.statusCode).toBe(201)
+    const fifthShareId = fifth.json<{ data: { id: string } }>().data.id
+
+    // Backdate the 5th share's expiresAt into the past without touching its `status` — still
+    // `active` in the DB, simulating the never-read (never lazily-expired) case AC-16 describes.
+    await withOrg(sharer.orgId, (tx) =>
+      tx
+        .update(credentialShares)
+        .set({ expiresAt: new Date(Date.now() - 60_000) })
+        .where(eq(credentialShares.id, fifthShareId))
+    )
+
+    const sixth = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientEmail: 'vendor-6@example.com',
+    })
+
+    expect(sixth.statusCode).toBe(201)
   })
 
   it('AC-9: the metadata GET is provably inert — repeated fetches never burn the token, and reveal still succeeds', async () => {

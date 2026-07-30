@@ -44,6 +44,10 @@
     <p class="text-sm text-slate-700">
       This link is invalid, has expired, or has already been used.
     </p>
+  {:else if data.error === 'unavailable'}
+    <p class="text-sm text-slate-700">
+      This link couldn't be checked right now. Please try again in a moment.
+    </p>
   {:else if data.metadata}
     <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <SharedCredentialSummary

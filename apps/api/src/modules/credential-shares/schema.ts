@@ -73,17 +73,19 @@ export const CredentialShareSummarySchema = z.object({
 })
 
 // Story 17.2 AC-1/AC-3/AC-5: the external-recipient sibling of CreateCredentialShareBodySchema.
-// `recipientEmail` replaces `recipientUserId`; `singleUse` is deliberately absent from the body
-// shape entirely — hard-coded true server-side (AC-5) rather than accepted-and-validated, so a
-// caller cannot even express `singleUse: false` via a typo'd extra field slipping past `.strict()`
-// the way an optional-with-default field could. The step-up factor (`password` xor `totpCode`) is
-// part of this same body (AC-3) — validated for shape here, verified for correctness by the
-// step-up helper, never persisted.
+// `recipientEmail` replaces `recipientUserId`. `singleUse` is accepted (AC-5: caller may omit it
+// or pass `true`) but never trusted as-is — the route rejects an explicit `false` with a
+// dedicated 400 `external_share_must_be_single_use` rather than the generic `.strict()` 422 a
+// caller would get for an unrecognized field, and `createExternalCredentialShare` still
+// hard-codes `singleUse: true` on the insert regardless of what was validated here. The step-up
+// factor (`password` xor `totpCode`) is part of this same body (AC-3) — validated for shape here,
+// verified for correctness by the step-up helper, never persisted.
 export const CreateExternalCredentialShareBodySchema = z
   .object({
     recipientEmail: z.email().trim().max(320),
     fieldKey: z.string().trim().min(1).max(64).optional(),
     expiresAt: z.iso.datetime({ offset: true }),
+    singleUse: z.boolean().optional(),
     password: z.string().min(1).max(512).optional(),
     totpCode: z.string().trim().min(1).max(16).optional(),
   })

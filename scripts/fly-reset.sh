@@ -24,6 +24,10 @@
 #                         fly-setup.sh — required by POST /api/v1/vault/init
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./fly-proxy-lib.sh
+source "${SCRIPT_DIR}/fly-proxy-lib.sh"
+
 DB_APP="${FLY_DB_APP:-project-vault-demo-db}"
 API_APP="${FLY_API_APP:-project-vault-demo-api}"
 WEB_APP="${FLY_WEB_APP:-project-vault-demo-web}"
@@ -41,17 +45,7 @@ for bin in flyctl pnpm jq psql curl; do
   command -v "$bin" >/dev/null 2>&1 || { echo "missing required binary: $bin" >&2; exit 1; }
 done
 
-echo "== Opening WireGuard proxy to ${DB_APP}.internal:5432 =="
-flyctl proxy "${PROXY_PORT}:5432" -a "$DB_APP" &
-PROXY_PID=$!
-cleanup() { kill "$PROXY_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-
-for ((i = 1; i <= 30; i++)); do
-  pg_isready -h localhost -p "$PROXY_PORT" -U postgres >/dev/null 2>&1 && break
-  sleep 1
-  [[ $i -eq 30 ]] && { echo "flyctl proxy never became reachable" >&2; exit 1; }
-done
+open_fly_db_proxy "$DB_APP" "$PROXY_PORT"
 
 SUPERUSER_URL="postgresql://postgres:${ADMIN_PG_PASSWORD}@localhost:${PROXY_PORT}/project_vault"
 APP_URL="postgresql://vault_app:${VAULT_APP_PASSWORD}@localhost:${PROXY_PORT}/project_vault"
