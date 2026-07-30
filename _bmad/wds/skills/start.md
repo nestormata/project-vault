@@ -1,86 +1,99 @@
 # /start — Session Resume Skill
 
 **Invocation:** `/start` (also called automatically from agent activation files)
-**Works for:** any agent (saga, freya, mimir, idun)
+**Works for:** any agent (saga, freya, mimir)
 
 ---
 
 ## Purpose
 
-Detects whether a previous session was saved for the active agent and offers to resume it. If no state file exists, proceeds silently with the normal activation sequence.
+Loads project state and session context. Always reads the project index first — this gives the agent a complete picture of what exists before doing anything else.
 
 ---
 
 ## Behavior When Invoked
 
-### 1. Detect Active Agent
+### 1. Load Project Index
 
-Identify which agent is currently active. Look for `_bmad/_state/[agent].md` in the current project repo.
+**Always read `progress/project-index.md` first**, regardless of whether a session state exists.
 
-### 2. Load State
+If found: parse Phase Status and Artifacts sections. Hold this as project context — it informs everything below.
+If not found: proceed silently. The index will be built on first wrap.
 
-**Primary: local file**
+### 2. Detect Session State
 
-Check for `_bmad/_state/[agent].md` in the project root. This is the authoritative source.
+Read `~/.claude/wds/tools/memory/SKILL.md` and follow the `load` operation for the current agent_id.
 
-**Optional: Agent Space enhancement**
-
-If Agent Space is configured, also call `session-start` — but only as an enhancement, never a requirement:
-
-```bash
-curl -X POST "{BASE_URL}/functions/v1/session-start" \
-  -H "Authorization: Bearer {API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent_id": "[agent]",
-    "project": "[repo-folder-name]",
-    "model_target": "claude"
-  }'
-```
-
-If the call succeeds and `presence.last_status_report` is present, use it as the state source only if it is more recent than the local file (e.g., previous session was on a different machine). If the call fails for any reason, continue silently with the local file.
-
-The response may also contain:
-- `session_id` — register as active session ID if present
-- `instructions` — skill chain overrides. Load any levels present.
-- `files` — cached design-process folder. Display file count if any.
-- `messages` — unread messages. Show if any.
-
-**Fallback chain:** local `_bmad/_state/[agent].md` → Agent Space presence → fresh start
+**Fallback chain:** state found → show resume prompt → fresh start
 
 ### 3. If State Found
 
-Display the previous session summary clearly:
+Parse the state file for:
+- Context section
+- Next section — extract MODEL prefix if present
+- Plan / Milestones section
+
+**Display:**
 
 ```
 ⏸ Previous session found ([date from Wrapped field])
 
-Where I left off: [content from "Where I Left Off" section]
-Next action: [content from "Next Action" section]
+Project:  [N artifacts — current phase from project index, or "no index yet"]
+Left off: [content from Context section]
+Next:     [Next — strip MODEL prefix, show as plain task]
+Model:    [Sonnet | Opus — from MODEL prefix, or inferred]
+
+[If milestones present:]
+── Session Plan ──────────────────────────────
+[DONE] Milestone 1 — description
+[CURRENT] Milestone 2 — description (~N sessions)
+[ ] Milestone 3 — description (~N sessions)
+──────────────────────────────────────────────
 
 Resume where we left off, or start fresh?
 ```
 
 Wait for the user's response.
 
+**Model inference (if no MODEL prefix in Next):**
+- Any code, build, deploy, implement → Opus
+- High-stakes work (production, financial, compliance) → Opus
+- Long or complex multi-step tasks → Opus
+- Moderate complexity: strategy, spec, dialog, UX, config, analysis → Sonnet
+- Simple, low-stakes, short → Haiku
+- Default to lightest model that fits.
+
 **If resume:**
-- Read the full state file, including the Context and Open Questions sections
-- Jump straight to the Next Action — no scanning, no re-introduction, no status report
-- Treat the context as already established — don't re-explain what was already known
+- Read the full state file
+- Jump straight to the Next Action — no scanning, no re-introduction
+- Treat context as already established
 
 **If fresh:**
-- Proceed with the normal activation sequence for this agent
-- Do not delete the state file (the user may want to refer back to it)
+- Proceed with the normal activation sequence
+- Do not delete the state file
 
-### 4. If Nothing Found
+### 4. If No State Found
 
-No local file, no Agent Space record — proceed with the normal activation sequence. Do not mention /start or the absence of a state file.
+Proceed with the normal activation sequence.
+
+If the user describes a multi-session task at the start of a fresh session, offer to map milestones:
+
+```
+This looks like multi-session work. Want me to map it into milestones first?
+(Adds ~2 min upfront, saves context thrashing later.)
+```
+
+If yes: produce milestone plan before starting work.
+If no: proceed directly.
+
+If work appears single-session: proceed directly without asking.
+
+Do not mention /start or the absence of a state file.
 
 ---
 
 ## Notes
 
-- The state file is written by `/wrap`. If no `/wrap` was run at the end of the previous session, there will be no file to find.
-- The state file lives at `_bmad/_state/[agent].md` relative to the project root.
-- Agent Space is optional — local file works without it.
-- On resume, prioritize getting back to work quickly. The user already knows the context — they don't need a recap beyond what's shown in the summary.
+- Always read `progress/project-index.md` — never skip it. It is the project's memory.
+- The state file lives at `progress/[agent].md` relative to the project root.
+- On resume, get back to work quickly. The user knows the context.

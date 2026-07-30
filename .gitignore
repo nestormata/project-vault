@@ -69,3 +69,7 @@ dev-secrets/*
 design/brand-source/
 /project-vault-logo.png
 /project-vault-icon.png
+.bmad-loop/runs/
+.bmad-loop/cache/
+.bmad-loop/policy.toml
+_bmad/config.user.yaml
