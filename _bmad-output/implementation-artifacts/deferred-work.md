@@ -534,3 +534,79 @@ documented intent. Candidate for bundling into 14-8 (document RBAC role-gate con
 similar small convention-documentation story if this drifts in practice. See
 `14-9-extension-api-publish-readiness.md` Review Findings for full context.
 
+---
+
+## Deferred from: Epic 17 retrospective (2026-07-29)
+
+Epic 17 ("Secret Sharing & Exposure Tracking", stories 17-1/17-2/17-3, all `done`) shipped three
+rounds of `bmad-code-review` deferred findings that were correctly recorded inline in each story
+file's own Review Findings section but — unlike Epic 12's and Epic 13's precedent — were never
+backfilled here. Epic 16's own retro (`epic-16-retro-2026-07-28.md`, Key Takeaway 3) had just named
+this exact failure mode ("self-flagged deferrals... are exactly as likely to go untracked as any
+other kind of finding") one epic before this one recurred it — backfilled now rather than left as a
+second silent drop.
+
+**TD17-1 — `sharedByDisplayName`'s email-local-part heuristic can read as a real name under
+`firstname.lastname@` conventions (Low).** Satisfies AC-9's literal wording (the sharer's actual
+address is never disclosed to the external recipient) but weakens its practical anonymity intent.
+No better source of a display name exists without a schema change (a dedicated display-name
+column), judged out of scope for the review that found it. **Trigger to revisit:** if a dedicated
+sharer-display-name column/setting is ever added for another reason. See `17-2-share-a-credential-
+with-an-external-recipient-via-secure-link.md` Review Findings.
+
+**TD17-2 — External share reveal-attempt cap / single-use claim can be exhausted or burned by an
+automated first-touch of the link (Low).** E.g. an email "safe link" scanner prefetching the reveal
+POST, not just the consent GET — inherent to any single-use link delivered over email, not specific
+to this story's implementation. No larger confirm-step redesign was judged in scope. **Trigger to
+revisit:** if link-prefetch burning is reported as a real-world support issue. See `17-2-...md`
+Review Findings.
+
+**TD17-3 — `recordLosingAttempt` increments `revealAttemptCount` without upper bound against an
+already-terminal (revoked/expired/viewed) share (Low).** Bounded today only by the 30/min per-IP
+rate limit; low-severity write amplification. **Trigger to revisit:** if per-IP rate limiting is
+ever loosened or removed. See `17-2-...md` Review Findings.
+
+**TD17-4 — `precheckExternalShareClaimable`'s lazy-expire branch can pass a stale pre-race share
+object into `recordLosingAttempt` under a concurrent status transition (Low).** Self-correcting in
+practice — `resolveLostExternalClaim`'s own re-read is the final source of truth for the claim path
+— a code-smell rather than an observed functional bug. **Trigger to revisit:** opportunistic cleanup
+alongside any other `external-service.ts` touch. See `17-2-...md` Review Findings.
+
+**TD17-5 — `listSharesForCredential` pagination has no tiebreaker column alongside `createdAt DESC`
+(Medium).** Shares created within the same millisecond can duplicate or skip a row across
+`limit`/`offset` pages — a narrow window. **Trigger to revisit:** if pagination correctness under
+high-concurrency share creation is ever reported as an issue, or opportunistically alongside any
+other `service.ts` pagination touch. See `17-3-share-history-expiry-enforcement-and-rotation-
+recommended-nudge.md` Review Findings.
+
+**TD17-6 — Rotation-recommended nudge's `mostRecentShareAt`/`mostRecentSharedWith` can display a
+stale, superseded share's date while a different, older share actually drives `active` (Medium,
+cosmetic/display-only).** `nudge.ts` computes both fields from the single most-recent share row
+regardless of status, while `active` itself correctly ignores `superseded` rows. **Trigger to
+revisit:** opportunistic cleanup alongside any other `nudge.ts` touch. See `17-3-...md` Review
+Findings.
+
+**TD17-7 — `lazilyExpireShareIfDue`'s CAS-loser path returns the stale pre-transition share object
+instead of re-reading the row (Medium, self-corrects on next read).** A request that loses the
+lazy-vs-sweep race can report `status: 'active'` for one response after another transaction already
+committed `expired` — no security bypass, self-corrects on the next read. **Trigger to revisit:**
+opportunistic cleanup alongside any other `service.ts` touch. See `17-3-...md` Review Findings.
+
+**TD17-8 — Web Shares tab has no in-UI recovery from a stale/out-of-range page bookmark (Medium,
+UX-only).** Renders "No shares yet" even when `total > 0` if `sharesPage` points past the last page
+(stale bookmark, or shares filtered/revoked under an open tab), with no Previous control visible to
+get back. **Trigger to revisit:** next time the Shares tab pagination UI is touched. See
+`17-3-...md` Review Findings.
+
+**TD17-9 — Web Shares tab hardcodes page size `25` instead of importing the server's
+`SHARES_PAGE_SIZE` constant, and the nudge-dismiss Confirm button has no double-submit guard (Low).**
+Two small, independent cosmetic/robustness gaps in the same component. **Trigger to revisit:** next
+time the Shares tab or its dismiss form is touched. See `17-3-...md` Review Findings.
+
+**TD17-10 — AC-8's lazy-plus-sweep ADR is documented in the Dev Agent Record's Debug Log References
+but not in the Dev Notes section the AC's own text asks for (Low, documentation-placement only, no
+functional defect).** See `17-3-...md` Review Findings and Dev Notes.
+
+See `epic-17-retro-2026-07-29.md` Gap & Risk Audit for full context, including the recurrence note
+against Epic 16's Key Takeaway 3.
+

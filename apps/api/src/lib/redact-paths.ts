@@ -21,6 +21,12 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   // credentials for pg_dump/pg_restore — never logged, alongside the existing password/
   // passphrase redaction above.
   'backupDatabaseUrl',
+  // Epic 17 retro (2026-07-29) Finding: story 17-2's step-up body carries `totpCode` (not `totp`,
+  // the pre-existing field name), so it fell outside this registry despite AC-18 requiring it be
+  // redacted by name — no live leak found (no request-logging call currently dumps req.body
+  // wholesale on the step-up path), but the durable safeguard was missing. Added here rather than
+  // left as a one-off inline redaction so any future logging change is covered automatically.
+  'totpCode',
 ] as const
 
 const requestHeaderRedactPaths = HEADER_SENSITIVE_LOG_FIELDS.map((field) => `req.headers.${field}`)
