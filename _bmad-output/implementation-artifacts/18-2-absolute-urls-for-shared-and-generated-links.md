@@ -1,6 +1,6 @@
 # Story 18.2: Absolute URLs for Shared and Generated Links
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
