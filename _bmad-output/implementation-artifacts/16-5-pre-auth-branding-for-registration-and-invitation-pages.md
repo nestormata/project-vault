@@ -1,6 +1,6 @@
 # Story 16.5: Pre-Auth Branding for Registration and Invitation Pages
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
