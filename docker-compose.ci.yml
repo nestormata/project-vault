@@ -1,0 +1,31 @@
+# Overlay for `make ci` (see Makefile's `ci` target + Dockerfile.ci + AGENTS.md "CI runs in
+# Docker"). Applied on top of docker-compose.yml via `-f docker-compose.yml -f docker-compose.ci.yml`
+# so the `ci` service joins the same Compose project/network as `db` — reachable by its service
+# name `db` on the internal Docker network, never through a host-published port. That's the whole
+# point: Compose already namespaces containers/volumes/networks per-worktree (by directory name),
+# so a container-to-container connection is isolated "for free," with none of the host-port
+# collision risk `make test`/`make ci` had when they ran directly on the bare host and connected
+# via `localhost:$DB_HOST_PORT` — a value only actually distinct across worktrees if someone
+# remembered to run `make fix-ports` first, and one `rm .env` away from silently reverting to the
+# same default every worktree starts with.
+services:
+  ci:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+    environment:
+      NODE_ENV: test
+      # Container-internal host/port for `db` — always correct regardless of whatever (if
+      # anything) is published to the actual machine, so no per-worktree port math is needed
+      # here at all. See Makefile's DB_CONN_HOST for how this overrides the bare-host default.
+      DB_CONN_HOST: db
+      DB_HOST_PORT: "5432"
+    volumes:
+      # .git is excluded from the image (.dockerignore) — bind-mounted read-only here instead so
+      # git-history-dependent checks (openapi.json drift, story-status sync) see the real repo
+      # without requiring an image rebuild on every commit.
+      - ./.git:/app/.git:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    working_dir: /app

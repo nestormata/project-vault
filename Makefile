@@ -7,23 +7,42 @@ SHELL := /usr/bin/env bash
 # Pass ARGS to bootstrap targets, e.g. make bootstrap ARGS="--start-api --init-vault"
 
 # --- Host ports (multiple worktrees / standalone test stacks) --------------
-# Read from .env so `make test`/`make db-migrate`/etc. talk to the same host
-# port docker-compose.yml actually published (which may have been bumped by
+# Read from .env so `make db-migrate`/etc. talk to the same host port
+# docker-compose.yml actually published (which may have been bumped by
 # `make fix-ports` to dodge a conflict). Override on the command line, e.g.
-# `make test DB_HOST_PORT=5433`. See AGENTS.md "Docker port isolation".
-DB_HOST_PORT  := $(shell grep -m1 '^DB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)
-DB_HOST_PORT  := $(if $(DB_HOST_PORT),$(DB_HOST_PORT),5432)
+# `make db-migrate DB_HOST_PORT=5433`. See AGENTS.md "Docker port isolation".
+#
+# Fallback chain (first one already set wins): env var (e.g. docker-compose.ci.yml sets
+# DB_HOST_PORT=5432 for the `ci` service — that's Postgres's fixed *in-container* port, unrelated
+# to whatever the host publishes) -> .env -> a value derived from this worktree's own absolute
+# path. The derived fallback matters because it's what a *missing* .env falls back to — a fresh
+# worktree, or one whose .env was deleted/regenerated, used to silently revert to the literal 5432
+# every worktree starts with, which is exactly the collision this whole scheme exists to prevent.
+# scripts/docker-ports.sh derives the same value the same way, so the two never disagree.
+ifeq ($(strip $(DB_HOST_PORT)),)
+DB_HOST_PORT := $(shell grep -m1 '^DB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)
+endif
+ifeq ($(strip $(DB_HOST_PORT)),)
+DB_HOST_PORT := $(shell echo $$(( 20000 + $$(printf '%s' "$(CURDIR)" | cksum | cut -d' ' -f1) % 10000 )) )
+endif
+
+# --- DB connection host ---------------------------------------------------
+# localhost by default (bare-host `make test`/`make db-migrate`/etc. against a docker-up'd or
+# bootstrapped stack). docker-compose.ci.yml overrides this to `db` for the `ci` service, so the
+# exact same targets below resolve to the container-internal Compose network instead — see
+# Makefile's `ci`/`ci-inner` targets and AGENTS.md "CI runs in Docker".
+DB_CONN_HOST ?= localhost
 
 # --- DB connection strings -----------------------------------------------
 # postgres = superuser, only used to run migrations (creates the vault_app
 # role, RLS policies, and triggers). vault_app = the app role; using the
 # superuser anywhere else bypasses RLS entirely and silently invalidates
 # the isolation tests. See .env.example and docs/operator-quickstart.md.
-DB_URL_SUPERUSER ?= postgresql://postgres:password@localhost:$(DB_HOST_PORT)/project_vault
-DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@localhost:$(DB_HOST_PORT)/project_vault
+DB_URL_SUPERUSER ?= postgresql://postgres:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
+DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues \
-        db-up db-down db-migrate check-rls test test-repeat stryker ci \
+        db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner \
         bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-prod docker-prod-down \
         e2e \
@@ -110,7 +129,11 @@ test-repeat: ## Run the test suite N times back-to-back, stopping at the first f
 stryker: ## Run Stryker mutation testing (matches nightly CI)
 	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run
 
-ci: ## Full local quality gates (needs Postgres: make db-up or make bootstrap first)
+ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; see AGENTS.md "CI runs in Docker")
+	$(MAKE) fix-ports
+	docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm --build ci make ci-inner
+
+ci-inner: ## The actual CI steps — only meant to run inside the `ci` container (make ci), not directly
 	pnpm turbo typecheck
 	pnpm turbo lint
 	$(MAKE) db-migrate

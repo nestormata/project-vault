@@ -1,0 +1,49 @@
+# Full-monorepo image for `make ci` (see docker-compose.ci.yml + AGENTS.md "CI runs in Docker").
+# Unlike apps/api/Dockerfile and apps/web/Dockerfile (which each build one deployable app), this
+# image installs every workspace package's devDependencies so the whole `make ci` gate — typecheck,
+# lint, tests, jscpd, generated-spec drift — can run in one container, on the Docker network, talking
+# to the `db` service by its internal service name (`db:5432`) instead of a host-published port.
+# That's what actually fixes cross-worktree DB contention: container/volume/network names are
+# already isolated per-worktree (Compose namespaces them by the worktree's directory name), so
+# running CI *inside* that same isolated network sidesteps host ports entirely for this path.
+#
+# `.git` is excluded here (see .dockerignore) and bind-mounted read-only at runtime instead
+# (docker-compose.ci.yml) — the git-history-dependent checks (openapi.json drift, story-status
+# sync) need real repo metadata, and bind-mounting it avoids having to rebuild this image on every
+# commit just to keep `.git` current.
+FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+
+RUN npm install -g pnpm@11.9.0 --ignore-scripts
+# g++/make/python3: argon2 (packages/crypto) native rebuild, same as apps/api/Dockerfile.
+# git: story-status/openapi-drift checks shell out to git against the bind-mounted .git.
+# bash: the root Makefile sets `SHELL := /usr/bin/env bash`; Alpine's base image only ships `sh`.
+RUN apk add --no-cache g++ make python3 git postgresql16-client bash
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY packages/agent/package.json ./packages/agent/
+COPY packages/api-contract-tests/package.json ./packages/api-contract-tests/
+COPY packages/crypto/package.json ./packages/crypto/
+COPY packages/db/package.json ./packages/db/
+COPY packages/eslint-config/package.json ./packages/eslint-config/
+COPY packages/extension-api/package.json ./packages/extension-api/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/tsconfig/package.json ./packages/tsconfig/
+COPY packages/vault-action/package.json ./packages/vault-action/
+COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
+
+RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm rebuild argon2 esbuild
+
+# .git is bind-mounted at runtime (docker-compose.ci.yml), owned by the host user — git's
+# "dubious ownership" safety check (CVE-2022-24765 mitigation) otherwise refuses to operate on a
+# repo owned by a different UID than the process running git, and fails in a confusing way (falls
+# back to `--no-index` usage help instead of a clear ownership error, for every git-based check).
+RUN git config --global --add safe.directory /app
+
+COPY . .
+
+CMD ["make", "ci-inner"]
