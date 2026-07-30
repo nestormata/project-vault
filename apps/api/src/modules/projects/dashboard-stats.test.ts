@@ -661,6 +661,46 @@ describe.sequential('dashboard stats', () => {
       )
     }, 60_000)
 
+    it('code-review regression: a scheduled credential whose latest rotation is break_glass_complete appears exactly once (as "active"), never duplicated as "Overdue"/"Scheduled"', async () => {
+      const owner = await registerOwner(app, 'dash-bg-dedupe')
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'dash-bg-dedupe')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Break Glass Scheduled Credential',
+        value: 'v1',
+      })
+      // Backdate + attach an hourly schedule so, absent the dedupe fix, this credential would
+      // ALSO qualify as 'overdue' via computeUpcomingRotations (which only excludes
+      // ACTIVE_ROTATION_STATUSES — break_glass_complete is deliberately not in that set).
+      await backdateCredentialCreatedAt(owner.orgId, credential.id, FAR_PAST_DATE)
+      await setRotationScheduleViaApi(app, owner.cookies, projectId, credential.id, HOURLY_CRON)
+
+      const initiate = await app.inject({
+        method: 'POST',
+        url: `${PROJECTS_URL}/${projectId}/credentials/${credential.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const rotationId = initiate.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(rotations)
+          .set({ status: 'break_glass_complete' })
+          .where(eq(rotations.id, rotationId))
+      )
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `${PROJECTS_URL}/${projectId}/dashboard`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      const body = response.json<{
+        data: { upcomingRotations: { credentialId: string; status: string }[] }
+      }>()
+      const entries = body.data.upcomingRotations.filter((r) => r.credentialId === credential.id)
+      expect(entries).toHaveLength(1)
+      expect(entries[0]?.status).toBe('active')
+    }, 60_000)
+
     it('AC-3: a terminal (retired) rotation never appears as an active dashboard entry', async () => {
       const owner = await registerOwner(app, 'dash-active-terminal')
       const projectId = await createCredentialTestProject(app, owner.cookies, 'dash-terminal')

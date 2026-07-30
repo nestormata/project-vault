@@ -271,7 +271,16 @@ export async function getProjectDashboardData(
       activeRotation: badge,
     }))
 
+  // Code-review fix (Story 18.5): computeUpcomingRotations only excludes credentials whose latest
+  // rotation is in ACTIVE_ROTATION_STATUSES, which deliberately omits 'break_glass_complete' (it
+  // doesn't block a new rotation the way an in-flight one does — see that constant's comment).
+  // BADGE_ROTATION_STATUSES, used to build activeRotationItems above, DOES include
+  // 'break_glass_complete'. Without this filter, a scheduled credential whose latest rotation is
+  // 'break_glass_complete' would appear twice — once as an 'active' entry and once as a
+  // pending/overdue 'scheduled' entry — duplicating its credentialId in upcomingRotations and
+  // breaking the dashboard's keyed `{#each ... (rotation.credentialId)}` list.
   const scheduledItems = upcomingRotationResults
+    .filter((result) => !activeRotationByCredential.has(result.credentialId))
     .slice(0, PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT)
     .map(serializeUpcomingRotation)
 

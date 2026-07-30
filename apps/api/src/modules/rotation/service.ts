@@ -76,6 +76,11 @@ export const BADGE_ROTATION_STATUSES = [
 export type BadgeRotationStatus = (typeof BADGE_ROTATION_STATUSES)[number]
 export type ActiveRotationBadge = { rotationId: string; status: BadgeRotationStatus }
 
+// Code-review fix (Story 18.5): mirrors MAX_ROTATION_HISTORY_ROWS_PER_QUERY's rationale below —
+// without a LIMIT this batch query does an unbounded per-request read across every historical
+// rotation row for the given credentials on every credential-list/dashboard load.
+const MAX_ROTATION_BADGE_ROWS_PER_QUERY = 5000
+
 /** Batch "latest rotation per credential, if badge-worthy" lookup for N credentials in a single
  *  query — no N+1 (AC-4). Mirrors fetchRotationSummaryByCredential's "first row per credentialId,
  *  ordered createdAt DESC, is the latest rotation" trick, but additionally carries the rotation id
@@ -99,7 +104,10 @@ export async function getActiveRotationBadgesByCredential(
     })
     .from(rotations)
     .where(inArray(rotations.credentialId, credentialIds))
-    .orderBy(rotations.credentialId, desc(rotations.createdAt))
+    // Secondary `id DESC` tiebreaker (code-review fix) makes "first row per credentialId" wins
+    // deterministic when two rotations share an identical createdAt timestamp.
+    .orderBy(rotations.credentialId, desc(rotations.createdAt), desc(rotations.id))
+    .limit(MAX_ROTATION_BADGE_ROWS_PER_QUERY)
 
   const seen = new Set<string>()
   for (const row of rows) {
