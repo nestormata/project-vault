@@ -14,8 +14,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 ENV_FILE=".env"
+freshly_created=0
 if [[ ! -f "$ENV_FILE" && -f .env.example ]]; then
   cp .env.example "$ENV_FILE"
+  freshly_created=1
   echo "==> created .env from .env.example"
 fi
 
@@ -53,13 +55,64 @@ next_free_port() {
   echo "$port"
 }
 
+# Deterministic per-worktree default: a hash of this worktree's own absolute path, offset into a
+# private range per key so DB/API/WEB never collide with each other for the same worktree. This
+# replaces a fixed literal (5432/3000/5173 — identical for every worktree until someone manually
+# ran `fix`) as the *starting point*, so a fresh checkout, or a worktree whose .env was deleted or
+# regenerated from .env.example, lands on an already-isolated port instead of the one every other
+# worktree also defaults to. Genuine collisions (two worktrees hashing to the same value, or an
+# unrelated process squatting the derived port) are still caught and bumped below, same as before.
+# Must match the Makefile's own DB_HOST_PORT derivation exactly (same base, same `cksum` formula).
+derive_port() {
+  local base="$1" seed
+  seed="$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)"
+  echo $((base + seed % 10000))
+}
+
+base_for_key() {
+  case "$1" in
+    DB_HOST_PORT) echo 20000 ;;
+    API_HOST_PORT) echo 30000 ;;
+    WEB_HOST_PORT) echo 40000 ;;
+  esac
+}
+
+shared_default_for_key() {
+  case "$1" in
+    DB_HOST_PORT) echo 5432 ;;
+    API_HOST_PORT) echo 3000 ;;
+    WEB_HOST_PORT) echo 5173 ;;
+  esac
+}
+
+if [[ "$freshly_created" -eq 1 ]]; then
+  # Stamp deterministic ports immediately instead of leaving the literal 5432/3000/5173 copied
+  # from .env.example in place — otherwise a fresh worktree only gets isolated once someone
+  # remembers to run `fix`, and until then it's sitting at the exact default every other worktree
+  # also starts with.
+  for key in DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT; do
+    set_env_value "$key" "$(derive_port "$(base_for_key "$key")")"
+  done
+  echo "==> assigned this worktree's own deterministic DB/API/WEB ports"
+fi
+
 conflicts=0
 for key in DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT; do
-  default=5432
-  [[ "$key" == "API_HOST_PORT" ]] && default=3000
-  [[ "$key" == "WEB_HOST_PORT" ]] && default=5173
+  derived="$(derive_port "$(base_for_key "$key")")"
+  shared_default="$(shared_default_for_key "$key")"
 
-  current="$(env_value "$key" "$default")"
+  current="$(env_value "$key" "$derived")"
+
+  if [[ "$MODE" == "fix" && "$current" == "$shared_default" ]]; then
+    # Still at the un-isolated shared default — either a stale .env from before this worktree-
+    # local derivation existed, or one freshly copied from .env.example. Migrate it to this
+    # worktree's own deterministic port even if it isn't busy *right now* — the goal is that two
+    # worktrees never share a default in the first place, not just that today's snapshot is free.
+    set_env_value "$key" "$derived"
+    echo "ISOLATED ${key}=${current} -> ${derived} (was the shared, non-isolated default)"
+    current="$derived"
+  fi
+
   if port_is_free "$current"; then
     echo "OK    ${key}=${current}"
     continue
