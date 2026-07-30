@@ -399,7 +399,7 @@ development_status:
   18-4-fix-intermittent-double-click-toggle-button-failures: ready-for-dev
   18-5-surface-active-rotation-status-in-list-and-dashboard-views: done
   18-6-email-delivery-for-credential-shares-and-demo-smtp-config: ready-for-dev
-  18-7-dependent-systems-list-and-form-ux-cleanup: ready-for-dev
+  18-7-dependent-systems-list-and-form-ux-cleanup: in-progress # ready-for-dev -> in-progress 2026-07-30
   18-8-public-status-page-reorder-ui: ready-for-dev
   18-9-fix-sso-domain-validation-false-rejection: ready-for-dev
   18-10-screen-transition-loading-indicator: ready-for-dev
