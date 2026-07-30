@@ -1,9 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
+const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/auth.js', () => ({
   lookupSsoDomain: lookupSsoDomainMock,
+}))
+
+vi.mock('$lib/state/theme.svelte.js', () => ({
+  writePreAuthThemeCache: writePreAuthThemeCacheMock,
 }))
 
 import { buildRegisterRequest, getPostRegisterPath, resolvePreAuthTheme } from './form-model.js'
@@ -42,6 +47,7 @@ describe('getPostRegisterPath', () => {
 describe('resolvePreAuthTheme', () => {
   beforeEach(() => {
     lookupSsoDomainMock.mockReset()
+    writePreAuthThemeCacheMock.mockReset()
   })
 
   it('returns the resolved theme name/css on a successful lookup that carries a theme', async () => {
@@ -73,5 +79,36 @@ describe('resolvePreAuthTheme', () => {
       name: null,
       css: null,
     })
+  })
+
+  // Story 16.6 AC-1/AC-3 Task 2.3: write-through cache call from the one shared resolver.
+  it('writes the resolved theme to the cache on a successful hit', async () => {
+    lookupSsoDomainMock.mockResolvedValue({
+      ssoRequired: false,
+      theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+    })
+
+    await resolvePreAuthTheme(fetch, 'alex@acme.com')
+
+    expect(writePreAuthThemeCacheMock).toHaveBeenCalledWith(
+      'acme-brand',
+      '[data-theme="acme-brand"] {}'
+    )
+  })
+
+  it('does not write to the cache on a miss', async () => {
+    lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+
+    await resolvePreAuthTheme(fetch, 'jordan@startupinc.example')
+
+    expect(writePreAuthThemeCacheMock).not.toHaveBeenCalled()
+  })
+
+  it('does not write to the cache when the lookup call rejects', async () => {
+    lookupSsoDomainMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    await resolvePreAuthTheme(fetch, 'jordan@acme.com')
+
+    expect(writePreAuthThemeCacheMock).not.toHaveBeenCalled()
   })
 })

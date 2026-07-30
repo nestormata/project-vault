@@ -1,7 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import AuthBrandHeader from '$lib/components/shell/AuthBrandHeader.svelte'
   import Footer from '$lib/components/shell/Footer.svelte'
-  import { getPreAuthThemeCss, getPreAuthThemeName } from '$lib/state/theme.svelte.js'
+  import {
+    getPreAuthThemeCss,
+    getPreAuthThemeName,
+    seedPreAuthThemeFromCache,
+  } from '$lib/state/theme.svelte.js'
 
   let { children } = $props()
 
@@ -10,6 +15,13 @@
   // layout to seed an initial value from, unlike the `(app)` layout's SSR-resolved `appliedTheme`.
   const preAuthThemeName = $derived(getPreAuthThemeName())
   const preAuthThemeCss = $derived(getPreAuthThemeCss())
+
+  // Story 16.6 AC-2/AC-9 Task 3.1: seed optimistically from the cache once per full navigation
+  // into this layout, before any page-level domain-lookup would otherwise fire. No-op if a
+  // page-level resolution already completed (race guard lives in seedPreAuthThemeFromCache).
+  onMount(() => {
+    seedPreAuthThemeFromCache()
+  })
 </script>
 
 {#if preAuthThemeCss}

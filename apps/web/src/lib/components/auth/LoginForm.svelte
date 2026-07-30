@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { getCurrentUser, login, lookupSsoDomain, ssoCallback, ssoStart } from '$lib/api/auth.js'
-  import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
+  import { setPreAuthTheme, writePreAuthThemeCache } from '$lib/state/theme.svelte.js'
   import {
     buildDomainLookupRequest,
     buildLoginRequest,
@@ -75,6 +75,14 @@
       // volume per submission (a real behavior change, not a pure refactor).
       const theme = normalizePreAuthTheme(result)
       setPreAuthTheme(theme.name, theme.css)
+      // Story 16.6 AC-1/AC-3: this call site bypasses `resolvePreAuthTheme()` (see the comment
+      // above), so it must call the cache write-through directly rather than relying on that
+      // helper's own write — confirmed missing and fixed during this story's own Chrome
+      // verification pass (Task 2.2's original review incorrectly reported no bypass existed).
+      // Same AC-3 guard as `resolvePreAuthTheme()`: only a non-null hit is ever persisted.
+      if (theme.name !== null && theme.css !== null) {
+        writePreAuthThemeCache(theme.name, theme.css)
+      }
       if (isSsoRequired(result)) {
         ssoProviderName = result.providerName
         step = 'sso'

@@ -10,6 +10,7 @@ const ssoStartMock = vi.hoisted(() => vi.fn())
 const ssoCallbackMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
+const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/auth.js', () => ({
   login: loginMock,
@@ -26,6 +27,7 @@ vi.mock('$app/navigation', () => ({
 
 vi.mock('$lib/state/theme.svelte.js', () => ({
   setPreAuthTheme: setPreAuthThemeMock,
+  writePreAuthThemeCache: writePreAuthThemeCacheMock,
 }))
 
 import LoginForm from './LoginForm.svelte'
@@ -53,6 +55,7 @@ describe('LoginForm', () => {
     ssoCallbackMock.mockReset()
     gotoMock.mockClear()
     setPreAuthThemeMock.mockReset()
+    writePreAuthThemeCacheMock.mockReset()
   })
   afterEach(() => cleanup())
 
@@ -390,6 +393,30 @@ describe('LoginForm', () => {
       await fillEmailAndContinue('newhire@acme.com')
 
       expect(setPreAuthThemeMock).toHaveBeenCalledWith('acme-brand', '[data-theme="acme-brand"] {}')
+    })
+
+    it('Story 16.6 AC-1: writes a successful resolution through to the localStorage cache — LoginForm bypasses resolvePreAuthTheme() (needs the raw ssoRequired/providerName fields), so it must call the cache write directly rather than relying on that helper', async () => {
+      lookupSsoDomainMock.mockResolvedValue({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+      render(LoginForm, { props: {} })
+
+      await fillEmailAndContinue('newhire@acme.com')
+
+      expect(writePreAuthThemeCacheMock).toHaveBeenCalledWith(
+        'acme-brand',
+        '[data-theme="acme-brand"] {}'
+      )
+    })
+
+    it('Story 16.6 AC-3: does not write to the cache on a miss (no theme in the response)', async () => {
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+      render(LoginForm, { props: {} })
+
+      await fillEmailAndContinue('alex@no-branding.example')
+
+      expect(writePreAuthThemeCacheMock).not.toHaveBeenCalled()
     })
 
     it('applies the theme before Step B (password) renders, not after', async () => {

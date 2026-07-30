@@ -8,6 +8,7 @@ const getCurrentUserMock = vi.hoisted(() => vi.fn())
 const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
+const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 const pageMock = vi.hoisted(() => ({
   url: new URL('http://localhost/invitations/accept?token=tok-1'),
 }))
@@ -24,6 +25,7 @@ vi.mock('$lib/api/auth.js', () => ({
 
 vi.mock('$lib/state/theme.svelte.js', () => ({
   setPreAuthTheme: setPreAuthThemeMock,
+  writePreAuthThemeCache: writePreAuthThemeCacheMock,
 }))
 
 vi.mock('$app/navigation', () => ({

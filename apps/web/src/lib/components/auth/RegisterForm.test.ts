@@ -5,6 +5,7 @@ const registerMock = vi.hoisted(() => vi.fn())
 const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
+const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/auth.js', () => ({
   register: registerMock,
@@ -17,6 +18,7 @@ vi.mock('$app/navigation', () => ({
 
 vi.mock('$lib/state/theme.svelte.js', () => ({
   setPreAuthTheme: setPreAuthThemeMock,
+  writePreAuthThemeCache: writePreAuthThemeCacheMock,
 }))
 
 import RegisterForm from './RegisterForm.svelte'
