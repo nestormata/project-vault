@@ -131,7 +131,8 @@ stryker: ## Run Stryker mutation testing (matches nightly CI)
 
 ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; see AGENTS.md "CI runs in Docker")
 	$(MAKE) fix-ports
-	docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm --build ci make ci-inner
+	GIT_COMMON_DIR=$$(git rev-parse --path-format=absolute --git-common-dir) \
+		docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm --build ci make ci-inner
 
 ci-inner: ## The actual CI steps — only meant to run inside the `ci` container (make ci), not directly
 	pnpm turbo typecheck

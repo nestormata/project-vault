@@ -24,7 +24,18 @@ services:
       # .git is excluded from the image (.dockerignore) — bind-mounted read-only here instead so
       # git-history-dependent checks (openapi.json drift, story-status sync) see the real repo
       # without requiring an image rebuild on every commit.
+      #
+      # In a git worktree (see AGENTS.md "Docker port isolation" — worktrees live under
+      # .claude/worktrees/), ./.git is a plain *file* containing `gitdir: <absolute host path
+      # under the main repo's .git/worktrees/...>`, not a directory. Bind-mounting only that file
+      # leaves the absolute path it points to missing inside the container, so git fails with
+      # "not a git repository: (null)". Mounting the resolved common git dir (GIT_COMMON_DIR, set
+      # by the `ci` Makefile target via `git rev-parse --git-common-dir`) at the *same* absolute
+      # path inside the container makes that pointer resolve correctly. For a non-worktree
+      # checkout this is the repo's own .git dir, already covered by the mount above — the second
+      # mount is then just a harmless duplicate at an unused path.
       - ./.git:/app/.git:ro
+      - ${GIT_COMMON_DIR}:${GIT_COMMON_DIR}:ro
     depends_on:
       db:
         condition: service_healthy
