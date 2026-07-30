@@ -1,6 +1,6 @@
 # Story 18.5: Surface Active Rotation Status in List and Dashboard Views
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

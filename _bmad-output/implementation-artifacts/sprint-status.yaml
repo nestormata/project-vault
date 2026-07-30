@@ -1,4 +1,10 @@
 # last_updated: 2026-07-30 (18-5-surface-active-rotation-status-in-list-and-dashboard-views:
+# review -> done via pick-story. Code review found+fixed a critical duplicate-dashboard-entry bug
+# (break_glass_complete rotations double-counted) and a high-severity unbounded-query issue;
+# verified end-to-end in Chrome (credential list badge, dashboard panel, badge link to rotation
+# detail); make ci passed after two unrelated fixes — a pre-existing test fixture gap and a
+# worktree/docker-compose .git-mount bug affecting all worktree-based `make ci` runs.)
+# last_updated: 2026-07-30 (18-5-surface-active-rotation-status-in-list-and-dashboard-views:
 # ready-for-dev -> in-progress via pick-story)
 # last_updated: 2026-07-30 (18-5-surface-active-rotation-status-in-list-and-dashboard-views:
 # in-progress -> review via bmad-dev-story. Implemented AC-1..AC-8: new batch
@@ -391,7 +397,7 @@ development_status:
   18-2-absolute-urls-for-shared-and-generated-links: done
   18-3-sitewide-contextual-help-text-for-forms-and-sections: ready-for-dev
   18-4-fix-intermittent-double-click-toggle-button-failures: ready-for-dev
-  18-5-surface-active-rotation-status-in-list-and-dashboard-views: review
+  18-5-surface-active-rotation-status-in-list-and-dashboard-views: done
   18-6-email-delivery-for-credential-shares-and-demo-smtp-config: ready-for-dev
   18-7-dependent-systems-list-and-form-ux-cleanup: ready-for-dev
   18-8-public-status-page-reorder-ui: ready-for-dev
