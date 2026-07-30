@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import { buildAbsoluteUrl } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
@@ -27,9 +28,7 @@
   )
 
   const publicUrl = $derived(
-    freshToken && typeof window !== 'undefined'
-      ? `${window.location.origin}/status/${freshToken}`
-      : null
+    freshToken ? buildAbsoluteUrl(data.origin, `/status/${freshToken}`) : null
   )
 
   function isSelected(serviceId: string): boolean {

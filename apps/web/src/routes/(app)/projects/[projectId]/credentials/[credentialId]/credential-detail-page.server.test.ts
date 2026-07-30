@@ -362,4 +362,68 @@ describe('credential detail +page.server.ts rotation section', () => {
 
     await expect(load(makeEvent())).rejects.toThrow('boom')
   })
+
+  // Story 18.2 AC-2: the credential share link is built client-side from the request's own
+  // resolved origin (not the server-only WEB_BASE_URL env var), so it naturally matches whatever
+  // domain the user is actually on. This load must hand that origin down as page data.
+  describe('Story 18.2: trusted origin for the share link', () => {
+    it('AC-2: returns the request URL origin as data.origin on the happy path', async () => {
+      listRotationsMock.mockResolvedValueOnce({
+        items: [],
+        page: 1,
+        limit: 1,
+        total: 0,
+        hasMore: false,
+      })
+      listRotationsMock.mockResolvedValueOnce({
+        items: [],
+        page: 1,
+        limit: 10,
+        total: 0,
+        hasMore: false,
+      })
+
+      const result = await load(
+        makeEvent(`https://vault.example.com/projects/${projectId}/credentials/${credentialId}`)
+      )
+
+      expect(result.origin).toBe('https://vault.example.com')
+    })
+
+    it('AC-2: still returns data.origin on the notFound (404) branch', async () => {
+      getCredentialMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
+
+      const result = await load(makeEvent())
+
+      expect(result.notFound).toBe(true)
+      expect(result.origin).toBe('https://vault.example.com')
+    })
+
+    it('AC-2: still returns data.origin on the vaultSealed (503) branch', async () => {
+      getCredentialMock.mockRejectedValueOnce(
+        new ApiClientError(
+          503,
+          { status: 'sealed', message: 'Vault not initialized' },
+          'Vault not initialized'
+        )
+      )
+
+      const result = await load(makeEvent())
+
+      expect(result.vaultSealed).toBe(true)
+      expect(result.origin).toBe('https://vault.example.com')
+    })
+
+    // AC-5: a broken/untrusted request origin must fail the load loudly (500) rather than let the
+    // page render a "https://undefined/shares/..."-shaped link.
+    it('AC-5: fails loudly (throws) instead of returning page data when the request has no usable origin', async () => {
+      const event = makeEvent()
+      // Simulate a request context where the origin couldn't be resolved (e.g. a malformed Host
+      // header) — SvelteKit's own URL always has *some* origin in practice, but the loader must
+      // still defend this path rather than trust it blindly.
+      Object.defineProperty(event.url, 'origin', { value: '', configurable: true })
+
+      await expect(load(event)).rejects.toThrow()
+    })
+  })
 })

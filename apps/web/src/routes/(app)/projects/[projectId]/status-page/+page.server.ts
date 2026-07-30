@@ -9,7 +9,7 @@ import type { PageServerLoad } from './$types.js'
 // condition as the backend — not project-owner alone. An org owner who isn't a project member
 // still passes every backend authorization check, so the UI must check both axes too, or they
 // would be unable to find this section. Server-side enforcement remains authoritative regardless.
-export const load: PageServerLoad = async ({ params, fetch, locals }) => {
+export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
   const user = requireUser(locals)
   const isOrgOwner = user.orgRole === 'owner'
 
@@ -36,6 +36,11 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
 
   return {
     projectId: params.projectId,
+    // Story 18.2 AC-4: the public status-page link previously derived its origin ad hoc from
+    // `window.location.origin` client-side (breaking under SSR/no-JS and duplicating the
+    // credential-share link's own origin-resolution logic). Centralized on the same
+    // request-origin convention as the credential detail page.
+    origin: url.origin,
     canManage,
     config,
     serviceEndpoints,

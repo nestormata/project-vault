@@ -21,11 +21,15 @@ import { load } from './+page.server.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-function makeEvent(user: { orgRole: string; userId: string }) {
+function makeEvent(
+  user: { orgRole: string; userId: string },
+  url = `https://vault.example.com/projects/${projectId}/status-page`
+) {
   return {
     params: { projectId },
     fetch: vi.fn(),
     locals: { user },
+    url: new URL(url),
   } as unknown as Parameters<typeof load>[0]
 }
 
@@ -46,6 +50,19 @@ describe('project status-page +page.server.ts', () => {
     expect(result.canManage).toBe(true)
     expect(result.config).toEqual({ enabled: true })
     expect(result.serviceEndpoints).toEqual([{ id: 'e1' }])
+  })
+
+  // Story 18.2 AC-2/AC-4: the public status-page link is now built from the request's own
+  // resolved origin (centralized helper), replacing the previous ad hoc window.location.origin
+  // read in the client component.
+  it('Story 18.2: returns the request URL origin as data.origin', async () => {
+    listProjectMembersMock.mockResolvedValue([])
+    getStatusPageConfigMock.mockResolvedValue({ enabled: true })
+    listServiceEndpointsMock.mockResolvedValue([])
+
+    const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+    expect(result.origin).toBe('https://vault.example.com')
   })
 
   it('a project-owner member (non org-owner) can manage', async () => {

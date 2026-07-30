@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit'
 import {
   getCredential,
   listCredentialDependencies,
@@ -29,13 +30,33 @@ import type { PageServerLoad } from './$types.js'
 // just keeps the "Rotate" CTA's client-side link-out logic in sync with that reality).
 const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'staged', 'promoted', 'stale_recovery'])
 
+// Story 18.2 AC-2/AC-5: the share link is built client-side (after the POST response, on a page
+// the user is already viewing), so it derives its origin from this load's own request rather than
+// the server-only `WEB_BASE_URL` env var — that keeps it correct on custom domains/preview
+// environments without needing an env var kept in sync. `url.origin` on a real SvelteKit request
+// is always a well-formed http(s) origin; the guard below exists so a broken request context fails
+// the load loudly (500) instead of the page ever rendering a "https://undefined/shares/..." link.
+function resolveTrustedOrigin(url: URL): string {
+  const origin = url.origin
+  if (!origin || origin === 'null' || !/^https?:\/\//.test(origin)) {
+    throw error(500, 'Unable to resolve a trusted origin for this request')
+  }
+  return origin
+}
+
 // Shared "nothing loaded" shape for both the 404 (notFound) and 503 (vaultSealed) branches below
 // — only the trailing discriminant fields differ between the two callers.
-function emptyCredentialPageResult(projectId: string, credentialId: string, orgRole: string) {
+function emptyCredentialPageResult(
+  projectId: string,
+  credentialId: string,
+  orgRole: string,
+  origin: string
+) {
   return {
     projectId,
     credentialId,
     orgRole,
+    origin,
     credential: null,
     versions: [],
     dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
@@ -56,29 +77,30 @@ function emptyCredentialPageResult(projectId: string, credentialId: string, orgR
 // this project's lint threshold — behavior is unchanged: 404 -> notFound, 503 -> vaultSealed
 // (AC-1), anything else rethrows.
 function handleCredentialLoadError(
-  error: unknown,
+  loadError: unknown,
   projectId: string,
   credentialId: string,
-  orgRole: string
+  orgRole: string,
+  origin: string
 ) {
-  if (!(error instanceof ApiClientError)) throw error
-  if (error.status === 404) {
+  if (!(loadError instanceof ApiClientError)) throw loadError
+  if (loadError.status === 404) {
     return {
-      ...emptyCredentialPageResult(projectId, credentialId, orgRole),
+      ...emptyCredentialPageResult(projectId, credentialId, orgRole, origin),
       notFound: true as const,
     }
   }
   // AC-1/AC-D1: every call in `load`'s Promise.all is vault-guarded (getCredential,
   // listCredentialVersions, listCredentialDependencies, listRotations x2) — a sealed vault 503s
   // all five, so a 503 from any single one means none of them could have succeeded (D1).
-  if (error.status === 503) {
+  if (loadError.status === 503) {
     return {
-      ...emptyCredentialPageResult(projectId, credentialId, orgRole),
+      ...emptyCredentialPageResult(projectId, credentialId, orgRole, origin),
       notFound: false as const,
       vaultSealed: true as const,
     }
   }
-  throw error
+  throw loadError
 }
 
 const SHARES_PAGE_SIZE = 25
@@ -101,6 +123,7 @@ function parseSharesQuery(url: URL): { status: string | undefined; page: number 
 export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
+  const origin = resolveTrustedOrigin(url)
   const page = parsePositiveIntParam(url, 'page')
   const sharesQuery = parseSharesQuery(url)
   const sharesStatus = sharesQuery.status
@@ -138,6 +161,7 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
       projectId: params.projectId,
       credentialId: params.credentialId,
       orgRole,
+      origin,
       credential,
       versions: versions.items,
       dependencies,
@@ -157,7 +181,13 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
         (member) => member.userId !== user.userId && member.status === 'active'
       ),
     }
-  } catch (error) {
-    return handleCredentialLoadError(error, params.projectId, params.credentialId, orgRole)
+  } catch (loadError) {
+    return handleCredentialLoadError(
+      loadError,
+      params.projectId,
+      params.credentialId,
+      orgRole,
+      origin
+    )
   }
 }

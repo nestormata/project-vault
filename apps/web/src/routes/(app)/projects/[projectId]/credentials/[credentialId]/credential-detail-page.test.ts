@@ -72,6 +72,7 @@ function baseData(overrides: Record<string, unknown> = {}) {
     projectId,
     credentialId,
     orgRole: 'member',
+    origin: 'https://vault.example.com',
     vaultSealed: false,
     notFound: false,
     credential: CREDENTIAL,
@@ -997,6 +998,70 @@ describe('credential detail +page.svelte', () => {
       expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
     })
 
+    // Story 18.2 AC-1/AC-2/AC-7: the rendered share link is a full absolute URL (scheme + host +
+    // path) built from data.origin, matching the deployment's configured base URL — not a bare
+    // relative path — while the token/path portion is unchanged from prior behavior.
+    it('Story 18.2: renders the internal share link as an absolute URL using data.origin', async () => {
+      createCredentialShareMock.mockResolvedValue({
+        id: 'share-1',
+        credentialId,
+        fieldKey: null,
+        sharedBy: 'sharer-1',
+        recipientUserId: 'recipient-1',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-29T00:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-one-time-token',
+      })
+      render(CredentialDetailPage, {
+        props: { data: baseData({ origin: 'https://vault.example.com' }) },
+      })
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      const link = await screen.findByText('https://vault.example.com/shares/raw-one-time-token')
+      expect(link).toBeTruthy()
+    })
+
+    // AC-5: if origin resolution ever produced an empty/malformed value, the page must not
+    // silently render a broken "https://undefined/shares/..." link — it must fail loudly instead.
+    // The +page.server.ts load already guards this (see credential-detail-page.server.test.ts's
+    // "fails loudly" case); this proves the client-side render path enforces the same contract
+    // via the shared buildAbsoluteUrl helper, in case data.origin is ever empty for any reason.
+    it('Story 18.2 AC-5: throws instead of rendering a broken link when data.origin is empty', async () => {
+      createCredentialShareMock.mockResolvedValue({
+        id: 'share-1',
+        credentialId,
+        fieldKey: null,
+        sharedBy: 'sharer-1',
+        recipientUserId: 'recipient-1',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-29T00:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-one-time-token',
+      })
+      render(CredentialDetailPage, { props: { data: baseData({ origin: '' }) } })
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+
+      await expect(
+        fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+      ).rejects.toThrow()
+    })
+
     it('Story 17.2 AC-21: toggling to "External (email)" swaps the recipient input, requires step-up, and posts to the external-share endpoint', async () => {
       createExternalCredentialShareMock.mockResolvedValue({
         id: 'share-ext-1',
@@ -1038,7 +1103,10 @@ describe('credential detail +page.svelte', () => {
       )
       expect(await screen.findByText(/raw-external-token/)).toBeTruthy()
       // AC-21: the copy-once link points at the public /external-shares/ route, not /shares/.
-      expect(screen.getByText(/external-shares\/raw-external-token/)).toBeTruthy()
+      // Story 18.2 AC-1/AC-7: and it's a full absolute URL, not a bare relative path.
+      expect(
+        screen.getByText('https://vault.example.com/external-shares/raw-external-token')
+      ).toBeTruthy()
     })
 
     it('Story 17.2 AC-21: the singleUse toggle is hidden (always-on) for external shares', async () => {
