@@ -3,6 +3,7 @@
   import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
   import { canImportCredentials } from '$lib/credentials/permissions.js'
   import DataTable from '$lib/components/tables/DataTable.svelte'
+  import RotationBadge from '$lib/components/rotations/RotationBadge.svelte'
   import type { CredentialStatus } from '@project-vault/shared'
 
   let { data } = $props()
@@ -161,7 +162,7 @@
         </p>
       </div>
     {:else}
-      <DataTable columns={['Name', 'Status', 'Tags', 'Expires', 'Deps']}>
+      <DataTable columns={['Name', 'Status', 'Rotation', 'Tags', 'Expires', 'Deps']}>
         {#each data.credentials.items as credential (credential.id)}
           <tr class="border-b border-slate-100 last:border-b-0">
             <td class="px-4 py-3">
@@ -178,6 +179,19 @@
               >
                 {credential.status}
               </span>
+            </td>
+            <td class="px-4 py-3">
+              <!-- Story 18.5 AC-1/AC-6: badge for a credential whose current rotation is
+                   badge-worthy (non-terminal); links to the same rotation detail page pattern
+                   used by the credential detail page's "View active rotation" link. -->
+              {#if credential.activeRotation}
+                <RotationBadge
+                  status={credential.activeRotation.status}
+                  href={`/projects/${data.projectId}/credentials/${credential.id}/rotations/${credential.activeRotation.rotationId}`}
+                />
+              {:else}
+                —
+              {/if}
             </td>
             <td class="px-4 py-3 text-slate-600">
               {credential.tags.length > 0 ? credential.tags.join(', ') : '—'}

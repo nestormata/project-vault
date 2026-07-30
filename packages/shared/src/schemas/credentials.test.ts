@@ -53,6 +53,7 @@ describe('credential response schemas', () => {
       hasDependencies: false,
       createdAt: CREATED_AT,
       updatedAt: CREATED_AT,
+      activeRotation: null,
     })
 
     expect(parsed).toMatchObject({ name: CREDENTIAL_NAME, status: 'expiring' })

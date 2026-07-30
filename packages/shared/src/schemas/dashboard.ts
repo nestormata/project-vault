@@ -1,11 +1,21 @@
 import { z } from 'zod/v4'
+import { ActiveRotationBadgeSchema } from './rotations.js'
 
 export const UpcomingRotationSchema = z
   .object({
     credentialId: z.uuid(),
     credentialName: z.string(),
-    scheduledAt: z.iso.datetime(),
-    status: z.enum(['pending', 'overdue']),
+    // Story 18.5 AC-2: optional — an 'active' entry (see below) has no cron-derived due date, so
+    // there is nothing meaningful to put here.
+    scheduledAt: z.iso.datetime().optional(),
+    // Story 18.5 AC-2/AC-3: 'active' is additive — a credential whose current rotation is in a
+    // badge-worthy (non-terminal) state, surfaced instead of being silently excluded (the
+    // pre-existing 'pending'/'overdue' computation, computeUpcomingRotations, still excludes
+    // active-rotation credentials from ITS OWN result set unchanged; the project dashboard merges
+    // these in separately — see getProjectDashboardData).
+    status: z.enum(['pending', 'overdue', 'active']),
+    // Present only when status === 'active'.
+    activeRotation: ActiveRotationBadgeSchema.optional(),
   })
   .meta({ id: 'UpcomingRotation' })
 

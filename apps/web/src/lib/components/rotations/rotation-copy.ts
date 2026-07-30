@@ -65,6 +65,26 @@ export function rotationStatusBadgeClass(status: RotationStatus): string {
   }
 }
 
+// Story 18.5 AC-7: the credential-list/dashboard "rotation in progress" badge's text — collapsing
+// staged/in_progress/promoted into one label is acceptable per the AC, but stale_recovery and
+// break_glass_complete (both security-adjacent) get their own distinct wording rather than being
+// folded into the same generic phrase, so the badge never relies on color alone to distinguish
+// itself from the plain Overdue/Scheduled badges (nor stale_recovery from break_glass_complete).
+// The precise underlying status is exposed separately via a title/tooltip by the caller.
+export function rotationBadgeLabel(status: RotationStatus): string {
+  switch (status) {
+    case 'stale_recovery':
+      return 'Rotation needs attention'
+    case 'break_glass_complete':
+      return 'Break-glass rotation'
+    case 'staged':
+    case 'in_progress':
+    case 'promoted':
+    default:
+      return 'Rotation in progress'
+  }
+}
+
 export interface MapRotationMutationErrorOptions {
   // Rendered as "Enable MFA to {actionLabel}." (D4) — matches the members-page precedent's
   // `errorMessage.includes('MFA')` link-out convention (AC-21) verbatim. Omitted for call sites

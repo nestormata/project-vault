@@ -5,6 +5,7 @@ import {
   checklistItemStatusBadgeClass,
   checklistItemStatusLabel,
   mapRotationMutationError,
+  rotationBadgeLabel,
   rotationCopy,
   rotationStatusBadgeClass,
   rotationStatusLabel,
@@ -48,6 +49,35 @@ describe('rotation copy and status badges', () => {
     expect(rotationStatusLabel('staged')).toBe('staged')
     expect(rotationStatusLabel('promoted')).toBe('promoted')
     expect(rotationStatusLabel('retired')).toBe('retired')
+  })
+})
+
+// Story 18.5 AC-7: the credential-list/dashboard "rotation in progress" badge's label text —
+// collapses staged/in_progress/promoted into one label, but gives stale_recovery and
+// break_glass_complete their OWN distinct text (never the same wording as Overdue/Scheduled, and
+// never collapsed together with each other) so the badge never relies on color alone.
+describe('rotationBadgeLabel (Story 18.5 AC-7)', () => {
+  it('collapses staged/in_progress/promoted into a single "Rotation in progress" label', () => {
+    expect(rotationBadgeLabel('staged')).toBe('Rotation in progress')
+    expect(rotationBadgeLabel('in_progress')).toBe('Rotation in progress')
+    expect(rotationBadgeLabel('promoted')).toBe('Rotation in progress')
+  })
+
+  it('gives stale_recovery and break_glass_complete their own distinct labels', () => {
+    expect(rotationBadgeLabel('stale_recovery')).toBe('Rotation needs attention')
+    expect(rotationBadgeLabel('break_glass_complete')).toBe('Break-glass rotation')
+  })
+
+  it('every badge label is distinct from the plain "Overdue"/"Scheduled" wording', () => {
+    const labels = [
+      rotationBadgeLabel('staged'),
+      rotationBadgeLabel('in_progress'),
+      rotationBadgeLabel('promoted'),
+      rotationBadgeLabel('stale_recovery'),
+      rotationBadgeLabel('break_glass_complete'),
+    ]
+    expect(labels).not.toContain('Overdue')
+    expect(labels).not.toContain('Scheduled')
   })
 })
 

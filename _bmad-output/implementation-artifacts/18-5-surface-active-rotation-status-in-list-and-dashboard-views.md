@@ -1,6 +1,6 @@
 # Story 18.5: Surface Active Rotation Status in List and Dashboard Views
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -37,10 +37,10 @@ Morgan-member opens the credential list for a project and sees a "Rotation in pr
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Define "active" rotation states precisely (AC: 3)
-- [ ] Task 2: Extend credential-list load function + badge UI (AC: 1, 4, 5)
-- [ ] Task 3: Extend dashboard upcoming-rotations badge logic (AC: 2, 5)
-- [ ] Task 4: Tests (AC: 6)
+- [x] Task 1: Define "active" rotation states precisely (AC: 3)
+- [x] Task 2: Extend credential-list load function + badge UI (AC: 1, 4, 5)
+- [x] Task 3: Extend dashboard upcoming-rotations badge logic (AC: 2, 5)
+- [x] Task 4: Tests (AC: 6)
 
 ## Dev Notes
 
@@ -65,8 +65,47 @@ Morgan-member opens the credential list for a project and sees a "Rotation in pr
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- Focused TDD runs (RED then GREEN) per module:
+  - `apps/api/src/modules/credentials/routes.test.ts` (Story 18.5 describe block) — 5 new tests
+  - `apps/api/src/modules/projects/dashboard-stats.test.ts` (Story 18.5 describe block) — 3 new tests
+  - `apps/web/src/lib/components/rotations/rotation-copy.test.ts` (rotationBadgeLabel) — 3 new tests
+  - `apps/web/src/lib/components/rotations/RotationBadge.test.ts` (new component) — 3 tests
+  - `apps/web/src/routes/(app)/projects/[projectId]/credentials/credentials-list-page.test.ts` — 3 new tests
+  - `apps/web/src/routes/(app)/dashboard/dashboard-page.test.ts` — 3 new tests
+- Full regression: `apps/api` full vitest suite (all modules) and `apps/web` full vitest suite (222 files / 1906 tests) both green after implementation. `pnpm turbo typecheck` clean across all 12 packages.
 
 ### Completion Notes List
 
+- **AC-3 (state definition):** Added `BADGE_ROTATION_STATUSES` (`apps/api/src/modules/rotation/service.ts`) = `staged`/`in_progress`/`promoted`/`stale_recovery`/`break_glass_complete`, deliberately distinct from the pre-existing `ACTIVE_ROTATION_STATUSES` (concurrency-lock purpose only, does not include `break_glass_complete`). Mirrored in shared package as `RotationBadgeStatusSchema`/`ActiveRotationBadgeSchema` (`packages/shared/src/schemas/rotations.ts`) so both the credential-list and dashboard surfaces share one typed contract. `retired`/`completed`/`abandoned` are never badge-worthy.
+- **AC-1/AC-4/AC-5/AC-8 (credential list):** New batch query `getActiveRotationBadgesByCredential(tx, credentialIds)` (rotation/service.ts) — one query for N credentials, ordered `credentialId, createdAt DESC`, first row per credential wins (so a terminal latest rotation never falls back to an older active one). Wired into `listCredentials` (credentials/service.ts), scoped to only the current page's `credentialIds` (no N+1, no full-table scan). Tenant-scoped via RLS on `tx` alone, matching the sibling `fetchRotationSummaryByCredential` query's existing pattern (no separate explicit `orgId` filter needed) — proven safe by a new cross-org test. `CredentialSummarySchema` gained `activeRotation: ActiveRotationBadgeSchema.nullable()`.
+- **AC-2 (dashboard):** `computeUpcomingRotations` was deliberately left untouched — it's a shared, previously-tested Story 5.2 AC-14 contract (still excludes active-rotation credentials from its own result) consumed by the standalone `GET rotations/upcoming` endpoint too. Instead, `getProjectDashboardData` (dashboard-stats.ts) separately fetches all of the project's credential id/name pairs, computes their active-rotation badges, and merges those in as `status: 'active'` entries alongside the existing pending/overdue entries (active items prioritized, capped at the existing 20-item limit). `UpcomingRotationSchema` gained `status: 'active'` and an optional `activeRotation` field; `scheduledAt` became optional (an active entry has no cron-derived due date).
+- **AC-6/AC-7 (UI):** New shared `RotationBadge.svelte` component (reuses `rotationStatusBadgeClass` for per-status color, adds a new `rotationBadgeLabel()` text mapping — collapses staged/in_progress/promoted into "Rotation in progress", but gives `stale_recovery`("Rotation needs attention") and `break_glass_complete` ("Break-glass rotation") their own distinct wording so no two badges rely on color alone). Title attribute exposes the precise raw status. Used identically in the credential list's new "Rotation" column and the dashboard's upcoming-rotations list, linking to the existing `/projects/:id/credentials/:id/rotations/:rotationId` route (same pattern as the credential detail page's `activeRotationId` link).
+- No new dependencies introduced. No migrations needed (no schema changes to `rotations`/`credentials` tables — pure read-query + response-shape additions).
+
 ### File List
+
+- `packages/shared/src/schemas/rotations.ts`
+- `packages/shared/src/schemas/credentials.ts`
+- `packages/shared/src/schemas/dashboard.ts`
+- `packages/shared/openapi.json`
+- `apps/api/src/modules/rotation/service.ts`
+- `apps/api/src/modules/credentials/service.ts`
+- `apps/api/src/modules/credentials/routes.test.ts`
+- `apps/api/src/modules/projects/dashboard-stats.ts`
+- `apps/api/src/modules/projects/dashboard-stats.test.ts`
+- `apps/web/src/lib/components/rotations/RotationBadge.svelte`
+- `apps/web/src/lib/components/rotations/RotationBadge.test.ts`
+- `apps/web/src/lib/components/rotations/rotation-copy.ts`
+- `apps/web/src/lib/components/rotations/rotation-copy.test.ts`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/+page.svelte`
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/credentials-list-page.test.ts`
+- `apps/web/src/routes/(app)/dashboard/+page.svelte`
+- `apps/web/src/routes/(app)/dashboard/dashboard-page.test.ts`
+
+## Change Log
+
+- 2026-07-30: Implemented Story 18.5 end-to-end (API batch rotation-badge query, dashboard merge, web badge UI) following strict TDD; all new and existing tests green; status set to `review`.

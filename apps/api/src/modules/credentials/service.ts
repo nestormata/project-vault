@@ -33,6 +33,10 @@ import type {
   ListCredentialsQuery,
   TagArrayBody,
 } from './schema.js'
+// Story 18.5 AC-4: reuses the rotation module's batch "latest rotation per credential, if
+// badge-worthy" lookup — a genuinely new query (no prior "batch active-rotation-status" helper
+// existed), kept in the rotation module since it queries the `rotations` table.
+import { getActiveRotationBadgesByCredential } from '../rotation/service.js'
 
 export class VersionConflictError extends Error {
   constructor() {
@@ -243,12 +247,16 @@ export async function listCredentials(tx: Tx, params: CredentialListParams) {
           )
   const hasDependenciesByCredential = new Set(activeDepRows.map((row) => row.credentialId))
 
+  // Story 18.5 AC-4/AC-8: scoped to just this page's credentialIds, not the unpaginated set.
+  const activeRotationByCredential = await getActiveRotationBadgesByCredential(tx, credentialIds)
+
   return {
     total: Number(total),
     items: rows.map((row) => ({
       ...row,
       currentVersionNumber: currentVersionByCredential.get(row.id) ?? 1,
       hasDependencies: hasDependenciesByCredential.has(row.id),
+      activeRotation: activeRotationByCredential.get(row.id) ?? null,
       expiresAt: row.expiresAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
