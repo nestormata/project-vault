@@ -92,9 +92,10 @@ export async function resolvePreAuthTheme(
     resolution = { name: null, css: null }
   }
 
-  // Story 16.6 AC-1/AC-3 Task 2.1: write-through cache from the one shared resolver — covers all
-  // three existing call sites (LoginForm, RegisterForm, invitations/accept). A miss must never
-  // write (AC-3): the existing cached entry, if any, is left untouched.
+  // Story 16.6 AC-1/AC-3 Task 2.1: write-through cache from this shared resolver — covers
+  // RegisterForm/invitations/accept (LoginForm bypasses this helper and writes independently,
+  // see LoginForm.svelte). A miss must never write (AC-3): the existing cached entry, if any, is
+  // left untouched.
   if (resolution.name !== null && resolution.css !== null) {
     writePreAuthThemeCache(resolution.name, resolution.css)
   }
