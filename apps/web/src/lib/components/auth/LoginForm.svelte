@@ -8,6 +8,7 @@
     clearLoginFields,
     isMfaChallenge,
     isSsoRequired,
+    normalizePreAuthTheme,
   } from './form-model.js'
   import MfaLoginForm from './MfaLoginForm.svelte'
 
@@ -66,7 +67,14 @@
       // branding is already in place the moment Step B (password/SSO) renders — never a visible
       // flash of base-theme-then-branded. `theme` is absent/null on every miss/orphan/error path
       // (AC-3's both-or-neither invariant), which this always-call resets back to the base theme.
-      setPreAuthTheme(result.theme?.name ?? null, result.theme?.css ?? null)
+      // Story 16.5 Task 0.2: the theme-shape normalization is now shared with `RegisterForm`'s
+      // and `invitations/accept`'s own resolvers via `normalizePreAuthTheme` — this still calls
+      // `lookupSsoDomain()` directly (rather than the sibling `resolvePreAuthTheme` helper) since
+      // it also needs the raw response's `ssoRequired`/`providerName` fields to pick the next
+      // step, and a second lookup call just to reuse that helper would double this form's request
+      // volume per submission (a real behavior change, not a pure refactor).
+      const theme = normalizePreAuthTheme(result)
+      setPreAuthTheme(theme.name, theme.css)
       if (isSsoRequired(result)) {
         ssoProviderName = result.providerName
         step = 'sso'

@@ -2,14 +2,21 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 
 const registerMock = vi.hoisted(() => vi.fn())
+const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/auth.js', () => ({
   register: registerMock,
+  lookupSsoDomain: lookupSsoDomainMock,
 }))
 
 vi.mock('$app/navigation', () => ({
   goto: gotoMock,
+}))
+
+vi.mock('$lib/state/theme.svelte.js', () => ({
+  setPreAuthTheme: setPreAuthThemeMock,
 }))
 
 import RegisterForm from './RegisterForm.svelte'
@@ -17,7 +24,10 @@ import RegisterForm from './RegisterForm.svelte'
 describe('RegisterForm', () => {
   beforeEach(() => {
     registerMock.mockReset()
+    lookupSsoDomainMock.mockReset()
+    lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
     gotoMock.mockClear()
+    setPreAuthThemeMock.mockReset()
   })
   afterEach(() => cleanup())
 
@@ -127,5 +137,185 @@ describe('RegisterForm', () => {
     await fireEvent.click(screen.getByRole('button', { name: /create account/i }))
 
     expect((await screen.findByRole('alert')).textContent).toMatch(/registration failed/i)
+  })
+
+  // Story 16.5 AC-1: RegisterForm resolves org branding for a free-typed email (self-registration).
+  describe('pre-auth theme resolution — free-typed email (AC-1)', () => {
+    it('applies the resolved theme when the email field is blurred', async () => {
+      lookupSsoDomainMock.mockResolvedValue({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+
+      render(RegisterForm)
+      const emailInput = screen.getByLabelText(/email/i)
+      await fireEvent.input(emailInput, { target: { value: 'jordan@acme.com' } })
+      await fireEvent.blur(emailInput)
+
+      await waitFor(() =>
+        expect(lookupSsoDomainMock).toHaveBeenCalledWith(fetch, 'jordan@acme.com')
+      )
+      await waitFor(() =>
+        expect(setPreAuthThemeMock).toHaveBeenCalledWith(
+          'acme-brand',
+          '[data-theme="acme-brand"] {}'
+        )
+      )
+    })
+
+    it('does not fire a lookup when an obviously-invalid email is blurred', async () => {
+      render(RegisterForm)
+      const emailInput = screen.getByLabelText(/email/i)
+      await fireEvent.input(emailInput, { target: { value: 'not-an-email' } })
+      await fireEvent.blur(emailInput)
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(lookupSsoDomainMock).not.toHaveBeenCalled()
+    })
+
+    it('falls open to the base theme when the domain has no org-theme mapping', async () => {
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+
+      render(RegisterForm)
+      const emailInput = screen.getByLabelText(/email/i)
+      await fireEvent.input(emailInput, { target: { value: 'jordan@startupinc.example' } })
+      await fireEvent.blur(emailInput)
+
+      await waitFor(() => expect(setPreAuthThemeMock).toHaveBeenCalledWith(null, null))
+    })
+
+    it('falls open to the base theme when the lookup call rejects (network/server error)', async () => {
+      lookupSsoDomainMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      render(RegisterForm)
+      const emailInput = screen.getByLabelText(/email/i)
+      await fireEvent.input(emailInput, { target: { value: 'jordan@acme.com' } })
+      await fireEvent.blur(emailInput)
+
+      await waitFor(() => expect(setPreAuthThemeMock).toHaveBeenCalledWith(null, null))
+    })
+
+    it('discards a stale, out-of-order response for an email the user has since changed away from', async () => {
+      let resolveFirst: (value: unknown) => void = () => {}
+      lookupSsoDomainMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+
+      render(RegisterForm)
+      const emailInput = screen.getByLabelText(/email/i)
+
+      // First (slow) lookup kicks off for jordan@acme.com...
+      await fireEvent.input(emailInput, { target: { value: 'jordan@acme.com' } })
+      await fireEvent.blur(emailInput)
+
+      // ...user changes their mind before it resolves, and the second (fast) lookup wins.
+      lookupSsoDomainMock.mockResolvedValueOnce({ ssoRequired: false })
+      await fireEvent.input(emailInput, { target: { value: 'jordan@other.example' } })
+      await fireEvent.blur(emailInput)
+
+      await waitFor(() => expect(setPreAuthThemeMock).toHaveBeenCalledWith(null, null))
+      setPreAuthThemeMock.mockClear()
+
+      // The stale first response resolves late, for an email the field no longer holds — must
+      // never be applied.
+      resolveFirst({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(setPreAuthThemeMock).not.toHaveBeenCalled()
+    })
+
+    it('never fires a lookup on input alone, only on blur', async () => {
+      render(RegisterForm)
+      const emailInput = screen.getByLabelText(/email/i)
+      await fireEvent.input(emailInput, { target: { value: 'jordan@acme.com' } })
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(lookupSsoDomainMock).not.toHaveBeenCalled()
+    })
+
+    it('does not block or delay registration submission while a theme lookup is still in flight (Pre-Mortem #4)', async () => {
+      let resolveLookup: (value: unknown) => void = () => {}
+      lookupSsoDomainMock.mockReturnValue(
+        new Promise((resolve) => {
+          resolveLookup = resolve
+        })
+      )
+      registerMock.mockResolvedValue({
+        userId: 'u1',
+        orgId: 'o1',
+        email: 'jordan@acme.com',
+        orgName: 'Jordans Org',
+        role: 'owner',
+      })
+
+      render(RegisterForm)
+      const emailInput = screen.getByLabelText(/email/i)
+      await fireEvent.input(emailInput, { target: { value: 'jordan@acme.com' } })
+      await fireEvent.blur(emailInput)
+
+      const submitButton = screen.getByRole('button', {
+        name: /create account/i,
+      }) as HTMLButtonElement
+      expect(submitButton.disabled).toBe(false)
+
+      await fireEvent.input(screen.getByLabelText(/organization name/i), {
+        target: { value: 'Jordans Org' },
+      })
+      await fireEvent.input(screen.getByLabelText(/^password$/i), {
+        target: { value: 'super-secret-password' },
+      })
+      await fireEvent.click(submitButton)
+
+      await waitFor(() => expect(registerMock).toHaveBeenCalled())
+      await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login?reason=registered'))
+
+      // Clean up the still-pending lookup promise so it doesn't leak into other tests.
+      resolveLookup({ ssoRequired: false })
+    })
+  })
+
+  // Story 16.5 AC-2: RegisterForm resolves org branding for a pre-filled, read-only invitation email.
+  describe('pre-auth theme resolution — pre-filled invitation email (AC-2)', () => {
+    it('fires the lookup once on mount using prefillEmail, without waiting for a blur', async () => {
+      lookupSsoDomainMock.mockResolvedValue({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+
+      render(RegisterForm, {
+        props: { invitationToken: 'tok-1', prefillEmail: 'alex@acme.com' },
+      })
+
+      await waitFor(() => expect(lookupSsoDomainMock).toHaveBeenCalledWith(fetch, 'alex@acme.com'))
+      await waitFor(() =>
+        expect(setPreAuthThemeMock).toHaveBeenCalledWith(
+          'acme-brand',
+          '[data-theme="acme-brand"] {}'
+        )
+      )
+    })
+
+    it('falls open to the base theme when the invitation email has no org-theme mapping', async () => {
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+
+      render(RegisterForm, {
+        props: { invitationToken: 'tok-1', prefillEmail: 'alex@startupinc.example' },
+      })
+
+      await waitFor(() => expect(setPreAuthThemeMock).toHaveBeenCalledWith(null, null))
+    })
+
+    it('does not fire a mount-time lookup for the non-invitation (empty prefill) path', async () => {
+      render(RegisterForm)
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(lookupSsoDomainMock).not.toHaveBeenCalled()
+    })
   })
 })
