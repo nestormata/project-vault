@@ -1,7 +1,14 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { register } from '$lib/api/auth.js'
-  import { buildRegisterRequest, clearRegisterFields, getPostRegisterPath } from './form-model.js'
+  import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
+  import {
+    buildRegisterRequest,
+    clearRegisterFields,
+    getPostRegisterPath,
+    resolvePreAuthTheme,
+  } from './form-model.js'
 
   let { invitationToken, prefillEmail = '' }: { invitationToken?: string; prefillEmail?: string } =
     $props()
@@ -10,6 +17,40 @@
   let password = $state('')
   let orgName = $state('')
   let errorMessage = $state(null)
+  let emailInputEl: HTMLInputElement | undefined = $state()
+
+  // Story 16.5 AC-1/AC-2/AC-8: tracks which email a background theme lookup is currently in
+  // flight for, mirroring `LoginForm`'s `pendingLookupEmail` race guard — but, unlike
+  // `LoginForm`'s Step-A "Continue" button, this state is purely cosmetic bookkeeping and must
+  // NEVER gate, disable, or delay the "Create account" submit button or `submitForm()` itself
+  // (Pre-Mortem #4): registration must succeed identically whether a theme lookup is still in
+  // flight, has failed, or was never triggered at all.
+  let pendingThemeLookupEmail = $state<string | null>(null)
+
+  // Story 16.5 Task 1.2: resolves and applies org branding for `candidateEmail`, discarding the
+  // response if the current `email` has since changed away from it (out-of-order race guard,
+  // identical in shape to `LoginForm`'s `submitEmailStep()` guard). Gated on basic HTML5 email
+  // validity (via the input element's own `checkValidity()`) so an obviously-invalid or empty
+  // string never spends a lookup call.
+  async function applyThemeForEmail(candidateEmail: string) {
+    if (!candidateEmail) return
+    if (emailInputEl && !emailInputEl.checkValidity()) return
+    pendingThemeLookupEmail = candidateEmail
+    const theme = await resolvePreAuthTheme(fetch, candidateEmail)
+    if (email === candidateEmail) {
+      setPreAuthTheme(theme.name, theme.css)
+    }
+    if (pendingThemeLookupEmail === candidateEmail) pendingThemeLookupEmail = null
+  }
+
+  // Story 16.5 AC-2/Task 1.4: the invitation flow's email is pre-filled and read-only, so it will
+  // never receive a blur event from the user — resolve its branding once on mount instead. Does
+  // not fire for the non-invitation path (no `invitationToken`, nothing to resolve yet).
+  onMount(() => {
+    if (invitationToken && prefillEmail) {
+      void applyThemeForEmail(prefillEmail)
+    }
+  })
 
   function clearFields() {
     const cleared = clearRegisterFields({ email, password, orgName })
@@ -51,8 +92,10 @@
       id="register-email"
       type="email"
       bind:value={email}
+      bind:this={emailInputEl}
       readonly={Boolean(invitationToken)}
       required
+      onblur={() => void applyThemeForEmail(email)}
     />
   </div>
   {#if !invitationToken}

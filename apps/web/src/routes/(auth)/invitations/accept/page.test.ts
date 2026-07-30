@@ -5,7 +5,9 @@ import { ApiClientError } from '$lib/api/client.js'
 const peekInvitationMock = vi.hoisted(() => vi.fn())
 const acceptInvitationMock = vi.hoisted(() => vi.fn())
 const getCurrentUserMock = vi.hoisted(() => vi.fn())
+const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 const pageMock = vi.hoisted(() => ({
   url: new URL('http://localhost/invitations/accept?token=tok-1'),
 }))
@@ -17,6 +19,11 @@ vi.mock('$lib/api/invitations.js', () => ({
 
 vi.mock('$lib/api/auth.js', () => ({
   getCurrentUser: getCurrentUserMock,
+  lookupSsoDomain: lookupSsoDomainMock,
+}))
+
+vi.mock('$lib/state/theme.svelte.js', () => ({
+  setPreAuthTheme: setPreAuthThemeMock,
 }))
 
 vi.mock('$app/navigation', () => ({
@@ -34,7 +41,10 @@ describe('/invitations/accept +page.svelte', () => {
     peekInvitationMock.mockReset()
     acceptInvitationMock.mockReset()
     getCurrentUserMock.mockReset()
+    lookupSsoDomainMock.mockReset()
+    lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
     gotoMock.mockClear()
+    setPreAuthThemeMock.mockReset()
     pageMock.url = new URL('http://localhost/invitations/accept?token=tok-1')
   })
   afterEach(() => cleanup())
@@ -138,5 +148,117 @@ describe('/invitations/accept +page.svelte', () => {
     expect(
       screen.getByText(/we couldn't accept this invitation\. please try again\./i)
     ).toBeTruthy()
+  })
+
+  // Story 16.5 AC-3: resolve org branding as soon as the invitation peek returns an email,
+  // fire-and-forget, before either redirect branch.
+  describe('pre-auth theme resolution (AC-3)', () => {
+    it('applies the resolved theme before/alongside the redirect to /register (no account yet)', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'alex@acme.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: false,
+      })
+      lookupSsoDomainMock.mockResolvedValue({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+
+      render(InvitationsAcceptPage)
+
+      await waitFor(() => expect(lookupSsoDomainMock).toHaveBeenCalledWith(fetch, 'alex@acme.com'))
+      await waitFor(() =>
+        expect(setPreAuthThemeMock).toHaveBeenCalledWith(
+          'acme-brand',
+          '[data-theme="acme-brand"] {}'
+        )
+      )
+      await waitFor(() =>
+        expect(gotoMock).toHaveBeenCalledWith(
+          '/register?invitationToken=tok-1&email=alex%40acme.com'
+        )
+      )
+    })
+
+    it('applies the resolved theme before redirecting to /login (account exists, not authenticated)', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'existing@acme.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: true,
+      })
+      getCurrentUserMock.mockRejectedValue(new ApiClientError(401, null, 'unauthorized'))
+      lookupSsoDomainMock.mockResolvedValue({
+        ssoRequired: false,
+        theme: { name: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
+      })
+
+      render(InvitationsAcceptPage)
+
+      await waitFor(() =>
+        expect(lookupSsoDomainMock).toHaveBeenCalledWith(fetch, 'existing@acme.com')
+      )
+      await waitFor(() =>
+        expect(setPreAuthThemeMock).toHaveBeenCalledWith(
+          'acme-brand',
+          '[data-theme="acme-brand"] {}'
+        )
+      )
+      await waitFor(() =>
+        expect(gotoMock).toHaveBeenCalledWith('/login?next=%2Finvitations%2Faccept%3Ftoken%3Dtok-1')
+      )
+    })
+
+    it('redirect proceeds normally, base theme, when the theme lookup itself fails', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'alex@acme.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: false,
+      })
+      lookupSsoDomainMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      render(InvitationsAcceptPage)
+
+      await waitFor(() =>
+        expect(gotoMock).toHaveBeenCalledWith(
+          '/register?invitationToken=tok-1&email=alex%40acme.com'
+        )
+      )
+      // AC-3's stated fail-open equivalence: either setPreAuthTheme(null, null) is called, or it
+      // is never called at all — both leave the rune at its base-theme default. Assert the
+      // concrete behavior this implementation chooses (an explicit reset), rather than asserting
+      // "not called" and being coupled to the other, equally-valid alternative.
+      await waitFor(() => expect(setPreAuthThemeMock).toHaveBeenCalledWith(null, null))
+    })
+
+    it('never attempts a theme lookup when peekInvitation itself fails (invalid token)', async () => {
+      peekInvitationMock.mockRejectedValue(new ApiClientError(404, { message: 'nf' }, 'nf'))
+
+      render(InvitationsAcceptPage)
+
+      await screen.findByText(/invitation not available/i)
+      expect(lookupSsoDomainMock).not.toHaveBeenCalled()
+    })
+
+    it('never delays the redirect: a slow/never-resolving theme lookup does not block goto() (Pre-Mortem #1)', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'alex@acme.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: false,
+      })
+      // Never resolves within this test's lifetime.
+      lookupSsoDomainMock.mockReturnValue(new Promise(() => {}))
+
+      render(InvitationsAcceptPage)
+
+      await waitFor(() =>
+        expect(gotoMock).toHaveBeenCalledWith(
+          '/register?invitationToken=tok-1&email=alex%40acme.com'
+        )
+      )
+    })
   })
 })

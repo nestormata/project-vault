@@ -6,6 +6,8 @@
   import { getCurrentUser } from '$lib/api/auth.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { acceptInvitation, peekInvitation, type InvitationPeek } from '$lib/api/invitations.js'
+  import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
+  import { resolvePreAuthTheme } from '$lib/components/auth/form-model.js'
 
   let status = $state<'loading' | 'invalid' | 'error'>('loading')
   let invalidReason = $state('')
@@ -29,6 +31,16 @@
           : 'Something went wrong loading this invitation.'
       return
     }
+
+    // Story 16.5 AC-3/Task 2.2/Pre-Mortem #1: fire-and-forget, best-effort branding lookup for the
+    // now-known invitation email — deliberately NOT awaited before either goto() branch below, so
+    // a slow, hung, or failing lookup can never delay or break this function's own accept/redirect
+    // flow. `resolvePreAuthTheme` already fails open internally (never rejects), and the trailing
+    // `.catch()` is an extra, deliberately redundant safety net so nothing here can ever throw
+    // into this function's own control flow.
+    void resolvePreAuthTheme(fetch, peek.email)
+      .then((theme) => setPreAuthTheme(theme.name, theme.css))
+      .catch(() => {})
 
     if (!peek.accountExists) {
       const params = new URLSearchParams({ invitationToken: token, email: peek.email })
