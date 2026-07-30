@@ -1,4 +1,5 @@
 import { lookupSsoDomain } from '$lib/api/auth.js'
+import { writePreAuthThemeCache } from '$lib/state/theme.svelte.js'
 import type {
   AuthSessionResponse,
   DomainLookupRequest,
@@ -84,9 +85,19 @@ export async function resolvePreAuthTheme(
   fetchFn: typeof fetch,
   candidateEmail: string
 ): Promise<PreAuthThemeResolution> {
+  let resolution: PreAuthThemeResolution
   try {
-    return normalizePreAuthTheme(await lookupSsoDomain(fetchFn, candidateEmail))
+    resolution = normalizePreAuthTheme(await lookupSsoDomain(fetchFn, candidateEmail))
   } catch {
-    return { name: null, css: null }
+    resolution = { name: null, css: null }
   }
+
+  // Story 16.6 AC-1/AC-3 Task 2.1: write-through cache from the one shared resolver — covers all
+  // three existing call sites (LoginForm, RegisterForm, invitations/accept). A miss must never
+  // write (AC-3): the existing cached entry, if any, is left untouched.
+  if (resolution.name !== null && resolution.css !== null) {
+    writePreAuthThemeCache(resolution.name, resolution.css)
+  }
+
+  return resolution
 }

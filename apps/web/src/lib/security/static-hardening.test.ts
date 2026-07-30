@@ -30,9 +30,22 @@ function sourceFiles(dir: string): string[] {
 // directory's own narrow, documented carve-out above.
 const SESSION_STORAGE_ALLOWLIST = ['lib/theme/apply-theme.ts', 'routes/(app)/+layout.svelte']
 
+// Story 16.6 AC-1/AC-2: the pre-auth theme cache is the first (and, by design, only) use of
+// `localStorage` anywhere in `apps/web` — a single, versioned key (`pv:preAuthTheme:v1`) holding a
+// non-sensitive, org-admin-chosen theme name/CSS pair, never token/MFA/vault material. Same narrow,
+// reviewed carve-out convention as the `sessionStorage` allowlist above, rather than weakening this
+// gate's blanket regex for everyone.
+const LOCAL_STORAGE_ALLOWLIST = ['lib/state/theme.svelte.ts']
+
 function stripAllowlistedSessionStorageUsage(file: string, content: string): string {
   return SESSION_STORAGE_ALLOWLIST.some((allowed) => file.endsWith(allowed))
     ? content.replaceAll(/\bsessionStorage\b/g, '')
+    : content
+}
+
+function stripAllowlistedLocalStorageUsage(file: string, content: string): string {
+  return LOCAL_STORAGE_ALLOWLIST.some((allowed) => file.endsWith(allowed))
+    ? content.replaceAll(/\blocalStorage\b/g, '')
     : content
 }
 
@@ -44,12 +57,29 @@ describe('static frontend hardening', () => {
 
   it('does not use browser storage APIs for token, MFA, or vault material', () => {
     const content = sourceFiles(sourceRoot)
-      .map((file) => stripAllowlistedSessionStorageUsage(file, readFileSync(file, 'utf-8')))
+      .map((file) => {
+        const raw = readFileSync(file, 'utf-8')
+        const withoutSession = stripAllowlistedSessionStorageUsage(file, raw)
+        return stripAllowlistedLocalStorageUsage(file, withoutSession)
+      })
       .join('\n')
 
     expect(content).not.toMatch(/\blocalStorage\b/)
     expect(content).not.toMatch(/\bsessionStorage\b/)
     expect(content).not.toMatch(/\bindexedDB\b/)
+  })
+
+  it('Story 16.6 AC-1/AC-2: the only localStorage key ever referenced is the documented, non-sensitive pre-auth theme cache key', () => {
+    const allowlistedContent = sourceFiles(sourceRoot)
+      .filter((file) => LOCAL_STORAGE_ALLOWLIST.some((allowed) => file.endsWith(allowed)))
+      .map((file) => readFileSync(file, 'utf-8'))
+      .join('\n')
+
+    expect(allowlistedContent).toMatch(/\blocalStorage\b/)
+    expect(allowlistedContent).toContain("'pv:preAuthTheme:v1'")
+    expect(allowlistedContent).not.toMatch(
+      /localStorage\.(getItem|setItem|removeItem)\(\s*(?!PRE_AUTH_THEME_CACHE_KEY)['"]/
+    )
   })
 
   it('Story 16.2 AC-3: the only sessionStorage key ever referenced is the documented, non-sensitive orphaned-theme dismissal key', () => {
