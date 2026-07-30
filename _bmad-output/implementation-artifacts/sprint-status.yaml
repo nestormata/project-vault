@@ -1,3 +1,17 @@
+# last_updated: 2026-07-30 (18-7-dependent-systems-list-and-form-ux-cleanup: in-progress -> review
+# via bmad-dev-story, TDD red-green. AC-1 investigation confirmed the "Updated" checkbox next to
+# each dependent-system row is Story 2.10's functional rotation-checklist confirmation control
+# (not dead code) — its two disable branches (no staged rotation; dependency added after the
+# rotation staged) both gate on real state, so both were changed to conditional-hide rather than
+# shown-permanently-disabled (AC-2/3/4), made reactive via a 15s visibility-aware poll reusing the
+# rotation-detail page's existing poll pattern + the existing listCredentialDependencies client fn,
+# so the checkbox appears/disappears live without a reload as a rotation starts/ends (AC-3). "Add
+# dependent system" form collapsed by default behind a native <details>/<summary> disclosure,
+# state not persisted across reloads, form fields/validation/submission unchanged (AC-5/6/7). New
+# tests cover both hide branches, the live appear/disappear transition, and the disclosure's
+# collapsed-by-default/expand-on-activate behavior (AC-8) — full apps/web suite (1898 tests) green,
+# typecheck/lint clean. Sets up the structural foundation Story 18-3 rebases onto. See the story's
+# own file for full detail.)
 # last_updated: 2026-07-30 (18-5-surface-active-rotation-status-in-list-and-dashboard-views:
 # review -> done via pick-story. Code review found+fixed a critical duplicate-dashboard-entry bug
 # (break_glass_complete rotations double-counted) and a high-severity unbounded-query issue;
@@ -399,7 +413,7 @@ development_status:
   18-4-fix-intermittent-double-click-toggle-button-failures: ready-for-dev
   18-5-surface-active-rotation-status-in-list-and-dashboard-views: done
   18-6-email-delivery-for-credential-shares-and-demo-smtp-config: ready-for-dev
-  18-7-dependent-systems-list-and-form-ux-cleanup: ready-for-dev
+  18-7-dependent-systems-list-and-form-ux-cleanup: done # review -> done 2026-07-30 via pick-story. Code review found+fixed one high-severity finding (poll race could resurrect/drop dependent-system rows during a concurrent archive/add while the AC-3 background poll's guard didn't cover those in-flight mutations, only the confirm flow). Verified end-to-end in Chrome: dependent-systems checkbox hidden with no active rotation, appears live via the poll once a rotation starts (no reload), functional (checked it, rotation checklist showed 1/1 confirmed), and hides again once the rotation was promoted+retired; "Add dependent system" disclosure collapsed by default and expands on click. Local `make ci` was blocked partway through by an unrelated pre-existing infra bug (worktree .git-mount issue in docker-compose.ci.yml, same one 18-5 hit and fixed) — by the time this story rebased onto main the fix was already merged from 18-5's branch, so this story's own no-op duplicate of that fix dropped cleanly during rebase; relying on remote CI for the final gate per explicit instruction rather than re-running the long local suite. Prior: in-progress -> review 2026-07-30 via bmad-dev-story, TDD red-green. Investigation (AC-1) confirmed the "Updated" checkbox next to each dependent-system row is Story 2.10's functional rotation-checklist confirmation control (not dead code) — its two disable branches (no staged rotation; dependency added after the rotation staged) both gate on real state, so both were changed to conditional-hide rather than shown-permanently-disabled (AC-2/3/4), reactive via a 15s visibility-aware poll reusing the existing rotation-detail-page poll pattern + the existing listCredentialDependencies client fn, so the checkbox appears/disappears live without a page reload as a rotation starts/ends (AC-3). "Add dependent system" form collapsed by default behind a native <details>/<summary> disclosure (no bespoke ARIA), state not persisted across reloads, form fields/validation/submission unchanged (AC-5/6/7). New/updated component tests cover both hide branches, the live appear/disappear transition (fake-timer poll), and the disclosure's collapsed-by-default/expand-on-activate behavior (AC-8) — full apps/web suite (221 files/1898 tests) green, pnpm typecheck/lint clean. Only apps/web/.../credentials/[credentialId]/+page.svelte + its test file touched. Sets up the structural foundation Story 18-3 will rebase onto (both edit this same "Dependent systems" region — see this story's Project Structure Notes). Prior: ready-for-dev -> in-progress 2026-07-30
   18-8-public-status-page-reorder-ui: ready-for-dev
   18-9-fix-sso-domain-validation-false-rejection: ready-for-dev
   18-10-screen-transition-loading-indicator: ready-for-dev

@@ -9,6 +9,7 @@ const archiveCredentialDependencyMock = vi.hoisted(() => vi.fn())
 const revealCredentialValueMock = vi.hoisted(() => vi.fn())
 const addCredentialVersionMock = vi.hoisted(() => vi.fn())
 const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
+const listCredentialDependenciesMock = vi.hoisted(() => vi.fn())
 const createCredentialShareMock = vi.hoisted(() => vi.fn())
 const createExternalCredentialShareMock = vi.hoisted(() => vi.fn())
 const revokeCredentialShareMock = vi.hoisted(() => vi.fn())
@@ -35,6 +36,7 @@ vi.mock('$lib/api/credentials.js', async () => {
     addCredentialVersion: addCredentialVersionMock,
     parseRevealedFields: actual.parseRevealedFields,
     isFieldsValue: actual.isFieldsValue,
+    listCredentialDependencies: listCredentialDependenciesMock,
   }
 })
 
@@ -340,6 +342,32 @@ describe('credential detail +page.svelte', () => {
     expect(screen.getByText('Version 2')).toBeTruthy()
   })
 
+  // Story 18.7 AC-5/6/8: the add-form is collapsed by default behind a native
+  // <details>/<summary> disclosure, so it doesn't clutter the page until Morgan needs it.
+  describe('Story 18.7: "Add dependent system" disclosure', () => {
+    function getDependencyFormDetails(): HTMLDetailsElement {
+      const summary = screen.getByText(/^add dependent system$/i, { selector: 'summary' })
+      const details = summary.closest('details')
+      if (!details) throw new Error('expected a <details> ancestor for the add-form summary')
+      return details
+    }
+
+    it('is collapsed by default', () => {
+      render(CredentialDetailPage, { props: { data: baseData() } })
+      expect(getDependencyFormDetails().open).toBe(false)
+    })
+
+    it('expands to show the form fields when the summary is activated', async () => {
+      render(CredentialDetailPage, { props: { data: baseData() } })
+      const details = getDependencyFormDetails()
+
+      await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
+
+      expect(details.open).toBe(true)
+      expect(screen.getByLabelText(/system name/i)).toBeTruthy()
+    })
+  })
+
   it('adds a dependent system and it appears in the list immediately', async () => {
     addCredentialDependencyMock.mockResolvedValue({
       id: 'dep-1',
@@ -348,6 +376,7 @@ describe('credential detail +page.svelte', () => {
       notes: null,
     })
     render(CredentialDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
 
     await fireEvent.input(screen.getByLabelText(/system name/i), {
       target: { value: 'billing-worker' },
@@ -362,6 +391,7 @@ describe('credential detail +page.svelte', () => {
       new ApiClientError(422, { code: 'too_many_dependencies' }, 'Too many dependent systems')
     )
     render(CredentialDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
 
     await fireEvent.input(screen.getByLabelText(/system name/i), { target: { value: 'x' } })
     await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
@@ -372,6 +402,7 @@ describe('credential detail +page.svelte', () => {
   it('add dependency: 410 shows the archived-project banner', async () => {
     addCredentialDependencyMock.mockRejectedValue(new ApiClientError(410, {}, 'gone'))
     render(CredentialDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
 
     await fireEvent.input(screen.getByLabelText(/system name/i), { target: { value: 'x' } })
     await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
@@ -401,6 +432,7 @@ describe('credential detail +page.svelte', () => {
       render(CredentialDetailPage, {
         props: { data: baseData({ credential: MULTI_FIELD_FOR_DEPS }) },
       })
+      await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
 
       const select = screen.getByLabelText(/scope to field/i) as HTMLSelectElement
       expect(select).toBeTruthy()
@@ -541,7 +573,11 @@ describe('credential detail +page.svelte', () => {
     expect(screen.queryByRole('link', { name: /billing-worker/i })).toBeNull()
   })
 
-  it('Updated checkbox is disabled with "no rotation in progress" tooltip when hasStagedRotation is false', () => {
+  // Story 18.7 AC-2/3: the "Updated" checkbox reuses Story 2.10's rotation-checklist
+  // confirmation control — it is only ever meaningful during an active (staged) rotation for a
+  // dependency the checklist actually tracks. Outside that context it has nothing to do, so it
+  // is hidden entirely rather than shown permanently disabled with an unreadable tooltip.
+  it('Updated checkbox is hidden (not shown-disabled) when there is no staged rotation', () => {
     render(CredentialDetailPage, {
       props: {
         data: baseData({
@@ -560,12 +596,11 @@ describe('credential detail +page.svelte', () => {
         }),
       },
     })
-    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
-    expect(checkbox.disabled).toBe(true)
-    expect(checkbox.closest('label')?.getAttribute('title')).toMatch(/no rotation in progress/i)
+    expect(screen.getByText(/billing-worker \(service\)/)).toBeTruthy()
+    expect(screen.queryByLabelText('Updated')).toBeNull()
   })
 
-  it('Updated checkbox is disabled with "added after this rotation started" tooltip when checklistStatus is null but hasStagedRotation is true', () => {
+  it('Updated checkbox is hidden when the dependency was added after the staged rotation started (no checklist entry)', () => {
     render(CredentialDetailPage, {
       props: {
         data: baseData({
@@ -579,11 +614,99 @@ describe('credential detail +page.svelte', () => {
         }),
       },
     })
-    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
-    expect(checkbox.disabled).toBe(true)
-    expect(checkbox.closest('label')?.getAttribute('title')).toMatch(
-      /added after this rotation started/i
+    expect(screen.getByText(/delta \(service\)/)).toBeTruthy()
+    expect(screen.queryByLabelText('Updated')).toBeNull()
+  })
+
+  it('reactivity: the checkbox appears without a reload once a poll observes a newly-staged rotation', async () => {
+    vi.useFakeTimers()
+    listCredentialDependenciesMock.mockResolvedValue({
+      items: [
+        {
+          id: 'dep-1',
+          systemName: 'billing-worker',
+          systemType: 'service',
+          checklistStatus: {
+            rotationId: 'rot-1',
+            itemId: 'item-1',
+            status: 'unconfirmed',
+            confirmedBy: null,
+            confirmedAt: null,
+          },
+        },
+      ],
+      hasDependencies: true,
+      hasStagedRotation: true,
+    })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                checklistStatus: null,
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
+          },
+        }),
+      },
+    })
+    expect(screen.queryByLabelText('Updated')).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(15000)
+
+    expect(listCredentialDependenciesMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId
     )
+    const checkbox = screen.getByLabelText('Updated') as HTMLInputElement
+    expect(checkbox.disabled).toBe(false)
+  })
+
+  it('reactivity: the checkbox disappears without a reload once a poll observes the rotation ending', async () => {
+    vi.useFakeTimers()
+    listCredentialDependenciesMock.mockResolvedValue({
+      items: [
+        { id: 'dep-1', systemName: 'billing-worker', systemType: 'service', checklistStatus: null },
+      ],
+      hasDependencies: true,
+      hasStagedRotation: false,
+    })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          dependencies: {
+            items: [
+              {
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+                checklistStatus: {
+                  rotationId: 'rot-1',
+                  itemId: 'item-1',
+                  status: 'unconfirmed',
+                  confirmedBy: null,
+                  confirmedAt: null,
+                },
+              },
+            ],
+            hasDependencies: true,
+            hasStagedRotation: true,
+          },
+        }),
+      },
+    })
+    expect(screen.getByLabelText('Updated')).toBeTruthy()
+
+    await vi.advanceTimersByTimeAsync(15000)
+
+    expect(screen.queryByLabelText('Updated')).toBeNull()
   })
 
   it('clicking the Updated checkbox confirms the checklist item and flips it to checked', async () => {
