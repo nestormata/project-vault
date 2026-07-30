@@ -131,6 +131,7 @@
             class="min-h-11 min-w-11 rounded-xl border border-slate-300 px-3 text-sm"
             type="button"
             aria-label={revealValue ? 'Hide value' : 'Show value'}
+            aria-pressed={revealValue}
             onclick={() => {
               revealValue = !revealValue
             }}

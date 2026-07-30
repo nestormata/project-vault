@@ -72,17 +72,32 @@
     }
   }
 
-  function toggleShowArchived(): void {
-    const params = new URLSearchParams(page.url.searchParams)
-    if (data.includeArchived) {
-      params.delete('includeArchived')
-    } else {
-      params.set('includeArchived', 'true')
+  // Story 18.4 AC-1: this button had no re-entrancy guard at all — unlike every sibling action on
+  // this page (onArchive/onUnarchive/onSaveTags below all check a busy flag before doing
+  // anything) — even though it reads `data.includeArchived` to decide its next target, and `data`
+  // only reflects the new state once `goto(..., { invalidateAll: true })` actually resolves. A
+  // second click fired before that resolution read the same stale value instead of the button's
+  // own just-issued intent, so rapid clicks didn't accumulate as alternating toggles. `togglingArchived`
+  // closes that gap the same way every other action handler on this page already does.
+  let togglingArchived = $state(false)
+
+  async function toggleShowArchived(): Promise<void> {
+    if (togglingArchived) return
+    togglingArchived = true
+    try {
+      const params = new URLSearchParams(page.url.searchParams)
+      if (data.includeArchived) {
+        params.delete('includeArchived')
+      } else {
+        params.set('includeArchived', 'true')
+      }
+      const query = params.toString()
+      // Dynamic query string toggle on the current route — not a literal resolve() can type-check.
+      // eslint-disable-next-line svelte/no-navigation-without-resolve
+      await goto(query ? `?${query}` : '?', { invalidateAll: true })
+    } finally {
+      togglingArchived = false
     }
-    const query = params.toString()
-    // Dynamic query string toggle on the current route — not a literal resolve() can type-check.
-    // eslint-disable-next-line svelte/no-navigation-without-resolve
-    void goto(query ? `?${query}` : '?', { invalidateAll: true })
   }
 
   async function onArchive(project: { id: string; name: string }): Promise<void> {
@@ -164,8 +179,10 @@
       </a>
       <button
         type="button"
-        class="text-sm font-medium text-slate-600 underline"
-        onclick={toggleShowArchived}
+        class="text-sm font-medium text-slate-600 underline disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={togglingArchived}
+        aria-pressed={data.includeArchived}
+        onclick={() => void toggleShowArchived()}
       >
         {data.includeArchived ? 'Hide archived' : 'Show archived'}
       </button>

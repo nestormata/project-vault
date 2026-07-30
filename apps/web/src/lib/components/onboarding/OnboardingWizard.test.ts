@@ -127,6 +127,23 @@ describe('OnboardingWizard', () => {
     expect((screen.getByLabelText('Credential value') as HTMLInputElement).type).toBe('text')
   })
 
+  // Story 18.4 AC-6: this is the story's own named "show password" example — the audit found it
+  // has no click-race bug (it's a plain synchronous boolean flip, never an optimistic-before-await
+  // state), but it was still missing an aria-pressed/equivalent state attribute for assistive
+  // technology, which AC-6 explicitly calls out.
+  it('AC-6: exposes aria-pressed reflecting the reveal state', async () => {
+    renderWizard()
+    await goToCredentialStep(screen, fireEvent)
+
+    const showButton = screen.getByRole('button', { name: 'Show value' })
+    expect(showButton.getAttribute('aria-pressed')).toBe('false')
+
+    await fireEvent.click(showButton)
+    expect(screen.getByRole('button', { name: 'Hide value' }).getAttribute('aria-pressed')).toBe(
+      'true'
+    )
+  })
+
   describe('AC-5/6/7: escape hatch', () => {
     it('AC-5: renders a visible close control on step 1', () => {
       renderWizard()
