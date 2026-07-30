@@ -3,7 +3,7 @@
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import type { FieldMeta, SystemType } from '@project-vault/shared'
-  import { DEFAULT_FIELD_KEY } from '@project-vault/shared'
+  import { buildAbsoluteUrl, DEFAULT_FIELD_KEY } from '@project-vault/shared'
   import {
     addCredentialDependency,
     addCredentialVersion,
@@ -1347,9 +1347,12 @@
             Share link created — copy it now, it will not be shown again.
           </p>
           <code class="mt-2 block break-all rounded-lg bg-white px-3 py-2 text-xs text-slate-900">
-            {lastCreatedShareIsExternal
-              ? resolve(`/external-shares/${lastCreatedShareToken}`)
-              : resolve(`/shares/${lastCreatedShareToken}`)}
+            {buildAbsoluteUrl(
+              data.origin,
+              lastCreatedShareIsExternal
+                ? `/external-shares/${lastCreatedShareToken}`
+                : `/shares/${lastCreatedShareToken}`
+            )}
           </code>
           {#if lastCreatedShareIsExternal}
             <p class="mt-2 text-xs text-amber-900">

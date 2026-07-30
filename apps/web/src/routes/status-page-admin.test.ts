@@ -49,6 +49,7 @@ const endpoints = [
 function pageData(overrides: Record<string, unknown> = {}) {
   return {
     projectId,
+    origin: 'https://vault.example.com',
     canManage: true,
     config: { enabled: true, token: null, services: [] },
     serviceEndpoints: endpoints,
@@ -101,10 +102,13 @@ describe('/projects/:projectId/status-page', () => {
     expect((enable as HTMLButtonElement).disabled).toBe(true)
 
     resolveEnable({ token: 'one-time-token' })
-    expect(await screen.findByText(`${window.location.origin}/status/one-time-token`)).toBeTruthy()
+    // Story 18.2 AC-1/AC-2/AC-7: absolute URL built from data.origin (the request's resolved
+    // origin), not an ad hoc window.location.origin read — proves it isn't just happening to
+    // match jsdom's default location.
+    expect(await screen.findByText('https://vault.example.com/status/one-time-token')).toBeTruthy()
     await fireEvent.click(screen.getByRole('button', { name: /^copy$/i }))
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      `${window.location.origin}/status/one-time-token`
+      'https://vault.example.com/status/one-time-token'
     )
     expect(screen.getByRole('button', { name: /copied/i })).toBeTruthy()
   })
@@ -156,7 +160,7 @@ describe('/projects/:projectId/status-page', () => {
     await fireEvent.click(regenerate)
     expect(regenerateStatusPageTokenMock).toHaveBeenCalledTimes(1)
     resolveRegenerate({ token: 'replacement' })
-    expect(await screen.findByText(`${window.location.origin}/status/replacement`)).toBeTruthy()
+    expect(await screen.findByText('https://vault.example.com/status/replacement')).toBeTruthy()
   })
 
   it.each([

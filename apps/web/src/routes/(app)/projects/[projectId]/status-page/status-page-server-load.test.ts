@@ -21,11 +21,15 @@ import { load } from './+page.server.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-function makeEvent(user: { orgRole: string; userId: string }) {
+function makeEvent(
+  user: { orgRole: string; userId: string },
+  url = `https://vault.example.com/projects/${projectId}/status-page`
+) {
   return {
     params: { projectId },
     fetch: vi.fn(),
     locals: { user },
+    url: new URL(url),
   } as unknown as Parameters<typeof load>[0]
 }
 
@@ -46,6 +50,36 @@ describe('project status-page +page.server.ts', () => {
     expect(result.canManage).toBe(true)
     expect(result.config).toEqual({ enabled: true })
     expect(result.serviceEndpoints).toEqual([{ id: 'e1' }])
+  })
+
+  // Story 18.2 AC-2/AC-4: the public status-page link is now built from the request's own
+  // resolved origin (centralized helper), replacing the previous ad hoc window.location.origin
+  // read in the client component.
+  it('Story 18.2: returns the request URL origin as data.origin', async () => {
+    listProjectMembersMock.mockResolvedValue([])
+    getStatusPageConfigMock.mockResolvedValue({ enabled: true })
+    listServiceEndpointsMock.mockResolvedValue([])
+
+    const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+    expect(result.origin).toBe('https://vault.example.com')
+  })
+
+  // Story 18.2 AC-5: mirrors the credential-detail load's guard — a broken/untrusted request
+  // origin must fail the load loudly (500) rather than let the page render a
+  // "https://undefined/status/..."-shaped public link.
+  it('Story 18.2 AC-5: fails loudly (throws) instead of returning page data when the request has no usable origin', async () => {
+    listProjectMembersMock.mockResolvedValue([])
+    getStatusPageConfigMock.mockResolvedValue({ enabled: true })
+    listServiceEndpointsMock.mockResolvedValue([])
+
+    const event = makeEvent({ orgRole: 'owner', userId: 'u-org-owner' })
+    // Simulate a request context where the origin couldn't be resolved (e.g. a malformed Host
+    // header) — SvelteKit's own URL always has *some* origin in practice, but the loader must
+    // still defend this path rather than trust it blindly.
+    Object.defineProperty(event.url, 'origin', { value: '', configurable: true })
+
+    await expect(load(event)).rejects.toThrow()
   })
 
   it('a project-owner member (non org-owner) can manage', async () => {

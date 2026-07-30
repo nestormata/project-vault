@@ -1,6 +1,6 @@
 # Story 18.2: Absolute URLs for Shared and Generated Links
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -37,10 +37,10 @@ Morgan-member shares a credential field with a colleague and copies the generate
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add shared absolute-URL builder helper (AC: 3)
-- [ ] Task 2: Update credential share link display/copy to use it (AC: 1, 2)
-- [ ] Task 3: Audit and fix other relative-link-shown-as-shareable spots (AC: 4)
-- [ ] Task 4: Tests (AC: 5)
+- [x] Task 1: Add shared absolute-URL builder helper (AC: 3)
+- [x] Task 2: Update credential share link display/copy to use it (AC: 1, 2)
+- [x] Task 3: Audit and fix other relative-link-shown-as-shareable spots (AC: 4)
+- [x] Task 4: Tests (AC: 5)
 
 ## Dev Notes
 
@@ -64,8 +64,44 @@ Morgan-member shares a credential field with a colleague and copies the generate
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- `packages/shared`: `npx vitest run` — 20 files / 192 tests passed.
+- `apps/web`: `npx vitest run` (full suite) — 221 files / 1862 tests passed.
+- `apps/web`: `npx tsc --noEmit -p .` — clean.
+- `apps/web` and `packages/shared`: `npx eslint` on all changed files — clean (0 errors/warnings).
 
 ### Completion Notes List
 
+- **AC-3 (Task 1):** Added `buildAbsoluteUrl(origin, path)` in `packages/shared/src/utils/absolute-url.ts` (exported from the package index), framework-agnostic so it's reusable from `apps/api` later. Validates the origin is a well-formed `http`/`https` URL and throws otherwise (backs AC-5); normalizes a missing leading slash on the path and a trailing slash on the origin. TDD red-green: `absolute-url.test.ts` written first (failed on missing module), then implemented to green.
+- **AC-1/AC-2 (Task 2):** Credential detail page's share-link `<code>` block (`+page.svelte`) now renders `buildAbsoluteUrl(data.origin, ...)` instead of the previous `resolve(...)` relative path. `data.origin` is supplied by `+page.server.ts`'s `load` via a new `resolveTrustedOrigin(url)` helper using the request's own `url.origin` (per Dev Notes: client-side-generated link on a page the user is already viewing, so it naturally matches custom domains/preview environments — `WEB_BASE_URL` stays reserved for genuinely server-only contexts like emails, unchanged). `origin` is threaded through both the success path and the existing 404/503 empty-result branches so it's always present.
+- **AC-4 (Task 3) — audit of other "copy link for outside use" spots:**
+  - **Public status page** (`apps/web/.../status-page/+page.svelte`) — **fixed**. Was already absolute but built ad hoc via `window.location.origin` (client-only, breaks under SSR/no-JS, duplicated the same logic this story centralizes). Now uses the same `data.origin` (added to that route's `+page.server.ts` load) + `buildAbsoluteUrl`.
+  - **Invitation accept link** — **not applicable**. Generated and emailed entirely server-side (`apps/api/src/modules/invitations/routes.ts:126`, `WEB_BASE_URL` + `stripTrailingSlashes`, already absolute); the web app has no UI that displays or lets a user copy this link — it's only ever consumed by the recipient clicking the emailed link.
+  - **Recovery link** (`apps/api/src/modules/auth/recovery.ts`, `platform-admin/service.ts`) — **not applicable**, same reasoning as invitations: server-only, emailed, already absolute via `WEB_BASE_URL`.
+  - **Revealed secret value "Copy" button** and **machine-user credential value copy** — **not applicable**: these copy the secret's raw value, not a link intended for use outside the app.
+  - **`/shares/[token]` and `/external-shares/[token]` landing pages** — **not applicable**: these are the pages a recipient opens after clicking the link; they don't themselves display/copy a link.
+- **AC-5:** `buildAbsoluteUrl` throws on an empty/undefined/malformed/non-http(s) origin instead of silently interpolating it into a link (unit-tested). Additionally, `+page.server.ts`'s `resolveTrustedOrigin` guards the credential-detail load itself, failing the load (HTTP 500) rather than ever handing a broken origin down to the page — covered by a server-load test that forces an empty `url.origin`.
+- **AC-6:** No "copy" affordance exists next to the credential-share link (it's copy-manually via triple-click/select, same as before) — unchanged by this story. The public status page's existing "Copy"/"Copied!" button and toast-equivalent feedback are unchanged; only the URL value it copies became centrally built (still verified end-to-end in `status-page-admin.test.ts`).
+- **AC-7:** New/updated tests assert the rendered credential-share and status-page links are full absolute URLs (`https://vault.example.com/...`) matching a fixed, non-jsdom-default origin (proving it isn't just accidentally matching jsdom's default `location`), with the token/path portion unchanged from prior behavior.
+- **AC-8:** No route, token-generation, or share-semantics changes — display/link-construction only, confirmed by the untouched API layer and unchanged share-creation call sites.
+
 ### File List
+
+- `packages/shared/src/utils/absolute-url.ts` (new)
+- `packages/shared/src/utils/absolute-url.test.ts` (new)
+- `packages/shared/src/index.ts` (export the new helper)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.server.ts` (add trusted `origin` to page data, both success and error branches)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte` (use `buildAbsoluteUrl(data.origin, ...)` for the share link instead of `resolve(...)`)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.server.test.ts` (origin propagation + fail-loud tests)
+- `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts` (absolute-URL assertions + AC-5 render-time throw test)
+- `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.server.ts` (add `origin` to page data)
+- `apps/web/src/routes/(app)/projects/[projectId]/status-page/+page.svelte` (centralize `publicUrl` via `buildAbsoluteUrl(data.origin, ...)` instead of ad hoc `window.location.origin`)
+- `apps/web/src/routes/(app)/projects/[projectId]/status-page/status-page-server-load.test.ts` (origin propagation test)
+- `apps/web/src/routes/status-page-admin.test.ts` (updated assertions to a fixed origin instead of `window.location.origin`)
+
+## Change Log
+
+- 2026-07-30: Implemented all 4 tasks / 8 ACs via bmad-dev-story, TDD red-green throughout. Full `apps/web` suite (221 files/1862 tests) and `packages/shared` suite (20 files/192 tests) green; `apps/web` typecheck and eslint on all changed files clean. Status: ready-for-dev → review.
