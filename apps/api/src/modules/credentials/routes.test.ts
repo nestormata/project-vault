@@ -8,6 +8,7 @@ import {
   credentials,
   credentialVersions,
   projectMemberships,
+  rotations,
 } from '@project-vault/db/schema'
 import {
   assertRoutesFailClosedWhileSealed,
@@ -967,6 +968,174 @@ describe.sequential('credential routes', () => {
     })
     expect(unauthenticated.statusCode).toBe(401)
   }, 60_000)
+
+  // Story 18.5 AC-1/AC-3/AC-4/AC-5/AC-8: the credential list's batch active-rotation-status badge.
+  describe('GET credentials list active rotation badge (Story 18.5)', () => {
+    it('AC-1/AC-3: reports activeRotation for a staged rotation and null for a credential with no rotation history', async () => {
+      const projectId = await createTestProject(app, owner.cookies, 'rotation-badge-staged')
+      const withRotation = await createTestCredential(app, owner.cookies, projectId, {
+        name: 'Has Staged Rotation',
+        value: 'v1',
+      })
+      const withoutRotation = await createTestCredential(app, owner.cookies, projectId, {
+        name: 'No Rotation At All',
+        value: 'v1',
+      })
+
+      const initiate = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${withRotation.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      expect(initiate.statusCode).toBe(201)
+      const rotationId = initiate.json<{ data: { id: string } }>().data.id
+
+      const res = await listCredentials(app, owner.cookies, projectId)
+      const body = res.json<{
+        data: {
+          items: { id: string; activeRotation: { rotationId: string; status: string } | null }[]
+        }
+      }>()
+      const withRotationItem = body.data.items.find((i) => i.id === withRotation.id)
+      const withoutRotationItem = body.data.items.find((i) => i.id === withoutRotation.id)
+
+      expect(withRotationItem?.activeRotation).toEqual({ rotationId, status: 'staged' })
+      expect(withoutRotationItem?.activeRotation).toBeNull()
+    }, 60_000)
+
+    it('AC-3: stale_recovery and break_glass_complete are both badge-worthy (active)', async () => {
+      const projectId = await createTestProject(app, owner.cookies, 'rotation-badge-security')
+      const staleCred = await createTestCredential(app, owner.cookies, projectId, {
+        name: 'Stale Recovery Credential',
+        value: 'v1',
+      })
+      const breakGlassCred = await createTestCredential(app, owner.cookies, projectId, {
+        name: 'Break Glass Credential',
+        value: 'v1',
+      })
+
+      const staleInitiate = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${staleCred.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const staleRotationId = staleInitiate.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(rotations)
+          .set({ status: 'stale_recovery' })
+          .where(eq(rotations.id, staleRotationId))
+      )
+
+      const bgInitiate = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${breakGlassCred.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const bgRotationId = bgInitiate.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(rotations)
+          .set({ status: 'break_glass_complete' })
+          .where(eq(rotations.id, bgRotationId))
+      )
+
+      const res = await listCredentials(app, owner.cookies, projectId)
+      const body = res.json<{
+        data: {
+          items: { id: string; activeRotation: { rotationId: string; status: string } | null }[]
+        }
+      }>()
+
+      expect(body.data.items.find((i) => i.id === staleCred.id)?.activeRotation).toEqual({
+        rotationId: staleRotationId,
+        status: 'stale_recovery',
+      })
+      expect(body.data.items.find((i) => i.id === breakGlassCred.id)?.activeRotation).toEqual({
+        rotationId: bgRotationId,
+        status: 'break_glass_complete',
+      })
+    }, 60_000)
+
+    it('AC-3: terminal statuses (retired/completed/abandoned) never get a badge', async () => {
+      const projectId = await createTestProject(app, owner.cookies, 'rotation-badge-terminal')
+      const credential = await createTestCredential(app, owner.cookies, projectId, {
+        name: 'Retired Rotation Credential',
+        value: 'v1',
+      })
+      const initiate = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${credential.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const rotationId = initiate.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx.update(rotations).set({ status: 'retired' }).where(eq(rotations.id, rotationId))
+      )
+
+      const res = await listCredentials(app, owner.cookies, projectId)
+      const body = res.json<{
+        data: { items: { id: string; activeRotation: unknown }[] }
+      }>()
+      expect(body.data.items.find((i) => i.id === credential.id)?.activeRotation).toBeNull()
+    }, 60_000)
+
+    it('AC-5: only the latest rotation counts — an older active rotation never leaks a badge once superseded by a terminal one', async () => {
+      const projectId = await createTestProject(app, owner.cookies, 'rotation-badge-latest')
+      const credential = await createTestCredential(app, owner.cookies, projectId, {
+        name: 'Multi Rotation Credential',
+        value: 'v1',
+      })
+
+      // First rotation: initiate then retire it via promote+retire so it becomes terminal.
+      const first = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${credential.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const firstRotationId = first.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx.update(rotations).set({ status: 'retired' }).where(eq(rotations.id, firstRotationId))
+      )
+
+      const res = await listCredentials(app, owner.cookies, projectId)
+      const body = res.json<{
+        data: { items: { id: string; activeRotation: unknown }[] }
+      }>()
+      // Latest (only, here) rotation is terminal -> no badge, even though it WAS active earlier.
+      expect(body.data.items.find((i) => i.id === credential.id)?.activeRotation).toBeNull()
+    }, 60_000)
+
+    it('AC-8: a different org’s active rotation never leaks into this org’s credential list (RLS)', async () => {
+      const otherProjectId = await createTestProject(app, other.cookies, 'rotation-badge-other-org')
+      const otherCredential = await createTestCredential(app, other.cookies, otherProjectId, {
+        name: 'Other Org Rotating Credential',
+        value: 'v1',
+      })
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${otherProjectId}/credentials/${otherCredential.id}/rotations`,
+        headers: { cookie: cookieHeader(other.cookies) },
+        payload: { newValue: 'v2' },
+      })
+
+      const ownerProjectId = await createTestProject(app, owner.cookies, 'rotation-badge-own-org')
+      await createTestCredential(app, owner.cookies, ownerProjectId, {
+        name: 'Own Org Credential',
+        value: 'v1',
+      })
+
+      const res = await listCredentials(app, owner.cookies, ownerProjectId)
+      expect(res.statusCode).toBe(200)
+      const body = JSON.stringify(res.json())
+      expect(body).not.toContain(otherCredential.id)
+    }, 60_000)
+  })
 
   it('PUT credential tags replaces, clears, de-dupes, and writes audit delta', async () => {
     const projectId = await createTestProjectDirect(

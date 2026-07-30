@@ -6,6 +6,7 @@ import {
   FIELD_VALUE_MAX_LENGTH,
   MAX_FIELDS_PER_SECRET,
 } from '../credential-templates.js'
+import { ActiveRotationBadgeSchema } from './rotations.js'
 
 // Story 13.2 — structured multi-field secrets.
 export const CredentialTemplateSchema = z
@@ -145,6 +146,11 @@ export const CredentialSummarySchema = z
     hasDependencies: z.boolean(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
+    // Story 18.5 AC-1/AC-3/AC-5: the credential's current/most-recent rotation, only when that
+    // rotation is in a badge-worthy (non-terminal) state — `null` for no rotation history at all
+    // OR a latest rotation that's already terminal (retired/completed/abandoned), even if an
+    // older historical rotation was once active.
+    activeRotation: ActiveRotationBadgeSchema.nullable(),
   })
   .meta({ id: 'CredentialSummary' })
 

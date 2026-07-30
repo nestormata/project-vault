@@ -1,5 +1,13 @@
 # last_updated: 2026-07-30 (18-5-surface-active-rotation-status-in-list-and-dashboard-views:
 # ready-for-dev -> in-progress via pick-story)
+# last_updated: 2026-07-30 (18-5-surface-active-rotation-status-in-list-and-dashboard-views:
+# in-progress -> review via bmad-dev-story. Implemented AC-1..AC-8: new batch
+# getActiveRotationBadgesByCredential query (rotation/service.ts) wired into the credential list's
+# listCredentials (AC-1/AC-4/AC-5/AC-8, cross-tenant leak test passes), a separate merge step in
+# getProjectDashboardData for the dashboard's upcoming-rotations 'active' entries (AC-2, leaves
+# the shared computeUpcomingRotations/Story 5.2 AC-14 contract untouched), and a new shared
+# RotationBadge.svelte component (AC-6/AC-7) used identically by both surfaces. All new + existing
+# tests green (apps/api full suite, apps/web full suite 1906 tests, turbo typecheck clean).
 # last_updated: 2026-07-30 (16-6-anonymous-pre-auth-org-branding-resolution: backlog ->
 # ready-for-dev via bmad-create-story. Scope needed design work before implementation per the
 # story's own scope note (candidate approaches captured in 16-4's Dev Notes "Alternative B") —
@@ -383,7 +391,7 @@ development_status:
   18-2-absolute-urls-for-shared-and-generated-links: done
   18-3-sitewide-contextual-help-text-for-forms-and-sections: ready-for-dev
   18-4-fix-intermittent-double-click-toggle-button-failures: ready-for-dev
-  18-5-surface-active-rotation-status-in-list-and-dashboard-views: in-progress
+  18-5-surface-active-rotation-status-in-list-and-dashboard-views: review
   18-6-email-delivery-for-credential-shares-and-demo-smtp-config: ready-for-dev
   18-7-dependent-systems-list-and-form-ux-cleanup: ready-for-dev
   18-8-public-status-page-reorder-ui: ready-for-dev

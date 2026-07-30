@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { credentials, securityAlerts, serviceEndpoints } from '@project-vault/db/schema'
+import { credentials, rotations, securityAlerts, serviceEndpoints } from '@project-vault/db/schema'
 import { insertTestProject } from '@project-vault/db/test-helpers'
 import {
   bootstrapRouteIntegrationTest,
@@ -562,6 +562,136 @@ describe.sequential('dashboard stats', () => {
       expect(results.map((r) => r.credentialId)).not.toContain(credential.id)
     })
   }, 60_000)
+
+  // Story 18.5 AC-2/AC-3/AC-5: the project dashboard's "Upcoming rotations" section merges in
+  // active-rotation credentials (which computeUpcomingRotations itself still excludes, per the
+  // Story 5.2 AC-14 test directly above — unchanged) with a distinct 'active' status.
+  describe('project dashboard upcoming-rotations active badge (Story 18.5)', () => {
+    it('AC-2: a credential with a staged rotation appears in upcomingRotations with status "active" and an activeRotation badge', async () => {
+      const owner = await registerOwner(app, 'dash-active-badge')
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'dash-active')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Actively Rotating Credential',
+        value: 'v1',
+      })
+      const initiate = await app.inject({
+        method: 'POST',
+        url: `${PROJECTS_URL}/${projectId}/credentials/${credential.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      expect(initiate.statusCode).toBe(201)
+      const rotationId = initiate.json<{ data: { id: string } }>().data.id
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `${PROJECTS_URL}/${projectId}/dashboard`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{
+        data: {
+          upcomingRotations: {
+            credentialId: string
+            status: string
+            activeRotation?: { rotationId: string; status: string }
+          }[]
+        }
+      }>()
+      const item = body.data.upcomingRotations.find((r) => r.credentialId === credential.id)
+      expect(item).toMatchObject({
+        status: 'active',
+        activeRotation: { rotationId, status: 'staged' },
+      })
+    }, 60_000)
+
+    it('AC-3: stale_recovery and break_glass_complete rotations both surface as active dashboard entries', async () => {
+      const owner = await registerOwner(app, 'dash-active-security')
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'dash-active-sec')
+      const staleCred = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Stale Recovery Dashboard Credential',
+        value: 'v1',
+      })
+      const bgCred = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Break Glass Dashboard Credential',
+        value: 'v1',
+      })
+
+      const staleInitiate = await app.inject({
+        method: 'POST',
+        url: `${PROJECTS_URL}/${projectId}/credentials/${staleCred.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const staleRotationId = staleInitiate.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(rotations)
+          .set({ status: 'stale_recovery' })
+          .where(eq(rotations.id, staleRotationId))
+      )
+
+      const bgInitiate = await app.inject({
+        method: 'POST',
+        url: `${PROJECTS_URL}/${projectId}/credentials/${bgCred.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const bgRotationId = bgInitiate.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(rotations)
+          .set({ status: 'break_glass_complete' })
+          .where(eq(rotations.id, bgRotationId))
+      )
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `${PROJECTS_URL}/${projectId}/dashboard`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      const body = response.json<{
+        data: { upcomingRotations: { credentialId: string; status: string }[] }
+      }>()
+      expect(body.data.upcomingRotations.find((r) => r.credentialId === staleCred.id)?.status).toBe(
+        'active'
+      )
+      expect(body.data.upcomingRotations.find((r) => r.credentialId === bgCred.id)?.status).toBe(
+        'active'
+      )
+    }, 60_000)
+
+    it('AC-3: a terminal (retired) rotation never appears as an active dashboard entry', async () => {
+      const owner = await registerOwner(app, 'dash-active-terminal')
+      const projectId = await createCredentialTestProject(app, owner.cookies, 'dash-terminal')
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: 'Retired Dashboard Credential',
+        value: 'v1',
+      })
+      const initiate = await app.inject({
+        method: 'POST',
+        url: `${PROJECTS_URL}/${projectId}/credentials/${credential.id}/rotations`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { newValue: 'v2' },
+      })
+      const rotationId = initiate.json<{ data: { id: string } }>().data.id
+      await withOrg(owner.orgId, (tx) =>
+        tx.update(rotations).set({ status: 'retired' }).where(eq(rotations.id, rotationId))
+      )
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `${PROJECTS_URL}/${projectId}/dashboard`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+      })
+      const body = response.json<{
+        data: { upcomingRotations: { credentialId: string }[] }
+      }>()
+      expect(
+        body.data.upcomingRotations.find((r) => r.credentialId === credential.id)
+      ).toBeUndefined()
+    }, 60_000)
+  })
 
   describe('org dashboard project-membership scoping (AC-V6)', () => {
     const { addUserToOrg, addProjectMember } = createMembershipTestHelpers({

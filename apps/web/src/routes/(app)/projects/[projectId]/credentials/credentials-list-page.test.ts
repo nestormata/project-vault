@@ -23,6 +23,7 @@ const CREDENTIAL = {
   tags: ['payments', 'prod'],
   expiresAt: '2026-08-01T00:00:00.000Z',
   hasDependencies: true,
+  activeRotation: null,
 }
 
 describe('project credentials list +page.svelte', () => {
@@ -103,5 +104,69 @@ describe('project credentials list +page.svelte', () => {
 
     expect(screen.getByText('expiring')).toBeTruthy()
     expect(screen.getByText('expired')).toBeTruthy()
+  })
+
+  // Story 18.5 AC-1/AC-6/AC-7
+  describe('active rotation badge (Story 18.5)', () => {
+    it('AC-1: renders a "Rotation in progress" badge for a credential with an active rotation', () => {
+      render(CredentialsListPage, {
+        props: {
+          data: baseData({
+            credentials: {
+              items: [
+                {
+                  ...CREDENTIAL,
+                  activeRotation: { rotationId: 'rot-1', status: 'staged' },
+                },
+              ],
+              total: 1,
+              page: 1,
+              limit: 20,
+              hasNext: false,
+            },
+          }),
+        },
+      })
+
+      expect(screen.getByText(/rotation in progress/i)).toBeTruthy()
+    })
+
+    it('AC-6: the badge links to the rotation detail page using the same route pattern as the credential detail page', () => {
+      render(CredentialsListPage, {
+        props: {
+          data: baseData({
+            credentials: {
+              items: [
+                {
+                  ...CREDENTIAL,
+                  activeRotation: { rotationId: 'rot-1', status: 'staged' },
+                },
+              ],
+              total: 1,
+              page: 1,
+              limit: 20,
+              hasNext: false,
+            },
+          }),
+        },
+      })
+
+      const link = screen.getByRole('link', { name: /rotation in progress/i })
+      expect(link.getAttribute('href')).toBe(
+        `/projects/${projectId}/credentials/${CREDENTIAL.id}/rotations/rot-1`
+      )
+    })
+
+    it('renders no badge for a credential with no active rotation', () => {
+      render(CredentialsListPage, {
+        props: {
+          data: baseData({
+            credentials: { items: [CREDENTIAL], total: 1, page: 1, limit: 20, hasNext: false },
+          }),
+        },
+      })
+
+      expect(screen.queryByText(/rotation in progress/i)).toBeNull()
+    })
   })
 })

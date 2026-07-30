@@ -10,7 +10,12 @@ import {
 import type { OrgDashboard, ProjectDashboard } from '@project-vault/shared'
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { roleRank } from '../../lib/secure-route.js'
-import { computeUpcomingRotations, serializeUpcomingRotation } from '../rotation/service.js'
+import {
+  computeUpcomingRotations,
+  getActiveRotationBadgesByCredential,
+  serializeUpcomingRotation,
+  type ActiveRotationBadge,
+} from '../rotation/service.js'
 import { getRecentAccessEventsForProject } from './recent-access-events.js'
 
 export { computeUpcomingRotations }
@@ -189,6 +194,27 @@ function suggestedActionsFor(
 // filterable list (no query-param horizon here, unlike GET .../rotations/upcoming).
 const PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS = 30
 
+// Story 18.5 AC-2: bounded (mirrors rotation/service.ts's MAX_SCHEDULED_CREDENTIALS_PER_QUERY
+// safety-valve pattern) — an operational cap on this deterministic (ordered) scan, not a
+// correctness requirement.
+const MAX_PROJECT_CREDENTIALS_FOR_ROTATION_BADGE = 1000
+
+/** Story 18.5 AC-2/AC-3: id+name for every credential in the project — deliberately unfiltered by
+ *  rotationSchedule (unlike fetchCredentialsWithSchedule in rotation/service.ts), since a
+ *  credential can have an in-flight active rotation whether or not it has a configured schedule,
+ *  and the dashboard's "Upcoming rotations" section must surface it either way (AC-2). */
+async function fetchProjectCredentialIdentifiers(
+  tx: Tx,
+  projectId: string
+): Promise<{ id: string; name: string }[]> {
+  return tx
+    .select({ id: credentials.id, name: credentials.name })
+    .from(credentials)
+    .where(eq(credentials.projectId, projectId))
+    .orderBy(asc(credentials.id))
+    .limit(MAX_PROJECT_CREDENTIALS_FOR_ROTATION_BADGE)
+}
+
 // Code-review fix: match the org dashboard's 20-item cap on projectsWithOverdueRotations.items
 // (below) — this list was previously returned unbounded, an inconsistent and unnecessary
 // payload-size/pagination gap versus the adjacent org-dashboard slice.
@@ -208,6 +234,7 @@ export async function getProjectDashboardData(
     serviceHealthByProject,
     upcomingRotationResults,
     recentAccessEvents,
+    projectCredentialRows,
   ] = await Promise.all([
     getBatchedProjectCredentialStats(tx, [projectId]),
     getUnresolvedSecurityAlertCount(tx),
@@ -217,14 +244,45 @@ export async function getProjectDashboardData(
       horizonDays: PROJECT_DASHBOARD_ROTATION_HORIZON_DAYS,
     }),
     getRecentAccessEventsForProject(tx, projectId, PROJECT_DASHBOARD_RECENT_ACCESS_EVENTS_LIMIT),
+    fetchProjectCredentialIdentifiers(tx, projectId),
   ])
+
+  // Story 18.5 AC-2/AC-3/AC-5: computeUpcomingRotations (above) still excludes any credential with
+  // an active rotation from ITS OWN result set unchanged (Story 5.2 AC-14, proven by the test
+  // directly above this file's "computeUpcomingRotations excludes..." case) — active-rotation
+  // credentials are merged in here, separately, as their own 'active'-status entries so the
+  // project dashboard surfaces them instead of silently dropping them.
+  const activeRotationByCredential = await getActiveRotationBadgesByCredential(
+    tx,
+    projectCredentialRows.map((row) => row.id)
+  )
+  const activeRotationItems = projectCredentialRows
+    .map((row) => ({ row, badge: activeRotationByCredential.get(row.id) }))
+    .filter(
+      (
+        entry
+      ): entry is { row: (typeof projectCredentialRows)[number]; badge: ActiveRotationBadge } =>
+        entry.badge !== undefined
+    )
+    .map(({ row, badge }) => ({
+      credentialId: row.id,
+      credentialName: row.name,
+      status: 'active' as const,
+      activeRotation: badge,
+    }))
+
+  const scheduledItems = upcomingRotationResults
+    .slice(0, PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT)
+    .map(serializeUpcomingRotation)
+
   return buildProjectDashboard(
     lookupProjectStats(statsByProject, projectId),
     unresolvedAlertCount,
     lookupServiceHealthStats(serviceHealthByProject, projectId),
-    upcomingRotationResults
-      .slice(0, PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT)
-      .map(serializeUpcomingRotation),
+    [...activeRotationItems, ...scheduledItems].slice(
+      0,
+      PROJECT_DASHBOARD_UPCOMING_ROTATIONS_LIMIT
+    ),
     recentAccessEvents
   )
 }

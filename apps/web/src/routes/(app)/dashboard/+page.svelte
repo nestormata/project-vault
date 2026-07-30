@@ -9,6 +9,7 @@
   import { formatDateTime } from '$lib/datetime.js'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
+  import RotationBadge from '$lib/components/rotations/RotationBadge.svelte'
 
   let { data } = $props()
 
@@ -138,19 +139,31 @@
                 >
                   {rotation.credentialName}
                 </a>
-                <span class="text-slate-600">{formatDate(rotation.scheduledAt)}</span>
-                {#if rotation.status === 'overdue'}
-                  <span
-                    class="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800"
-                  >
-                    Overdue
-                  </span>
+                {#if rotation.status === 'active' && rotation.activeRotation}
+                  <!-- Story 18.5 AC-2/AC-6/AC-7: a credential whose current rotation is
+                       badge-worthy (non-terminal) — reuses the same rotation-detail link pattern
+                       as the credential list and credential detail page's activeRotationId link. -->
+                  <RotationBadge
+                    status={rotation.activeRotation.status}
+                    href={`/projects/${data.selectedProject.id}/credentials/${rotation.credentialId}/rotations/${rotation.activeRotation.rotationId}`}
+                  />
                 {:else}
-                  <span
-                    class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
-                  >
-                    Scheduled
-                  </span>
+                  {#if rotation.scheduledAt}
+                    <span class="text-slate-600">{formatDate(rotation.scheduledAt)}</span>
+                  {/if}
+                  {#if rotation.status === 'overdue'}
+                    <span
+                      class="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800"
+                    >
+                      Overdue
+                    </span>
+                  {:else}
+                    <span
+                      class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+                    >
+                      Scheduled
+                    </span>
+                  {/if}
                 {/if}
               </li>
             {/each}

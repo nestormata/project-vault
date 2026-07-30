@@ -60,6 +60,61 @@ type RotationRow = typeof rotations.$inferSelect
 // from apps/api, so that one stays a hand-kept-in-sync literal — flagged there).
 export const ACTIVE_ROTATION_STATUSES = ['in_progress', 'staged', 'promoted', 'stale_recovery']
 
+// Story 18.5 AC-3: the "badge-worthy" subset surfaced by the credential-list and dashboard
+// "rotation in progress" indicators — deliberately distinct from ACTIVE_ROTATION_STATUSES above
+// (which exists purely for the one-active-rotation-per-credential concurrency lock). This set
+// additionally includes 'break_glass_complete', which is NOT in ACTIVE_ROTATION_STATUSES (a
+// completed break-glass rotation doesn't block a new rotation the way an in-flight one does) but
+// IS a security-adjacent state that must never silently disappear from view without a badge.
+export const BADGE_ROTATION_STATUSES = [
+  'staged',
+  'in_progress',
+  'promoted',
+  'stale_recovery',
+  'break_glass_complete',
+] as const
+export type BadgeRotationStatus = (typeof BADGE_ROTATION_STATUSES)[number]
+export type ActiveRotationBadge = { rotationId: string; status: BadgeRotationStatus }
+
+/** Batch "latest rotation per credential, if badge-worthy" lookup for N credentials in a single
+ *  query — no N+1 (AC-4). Mirrors fetchRotationSummaryByCredential's "first row per credentialId,
+ *  ordered createdAt DESC, is the latest rotation" trick, but additionally carries the rotation id
+ *  and only reports credentials whose LATEST rotation is in BADGE_ROTATION_STATUSES: if the latest
+ *  rotation for a credential is terminal (retired/completed/abandoned), no badge is returned even
+ *  if an older historical rotation was once active (AC-5) — never fall back to an older row.
+ *  Tenant-scoped via RLS on `tx` alone, same pattern as fetchRotationSummaryByCredential (no
+ *  explicit orgId filter needed/added — this file's sibling batch query for this exact table). */
+export async function getActiveRotationBadgesByCredential(
+  tx: Tx,
+  credentialIds: string[]
+): Promise<Map<string, ActiveRotationBadge>> {
+  const result = new Map<string, ActiveRotationBadge>()
+  if (credentialIds.length === 0) return result
+
+  const rows = await tx
+    .select({
+      credentialId: rotations.credentialId,
+      rotationId: rotations.id,
+      status: rotations.status,
+    })
+    .from(rotations)
+    .where(inArray(rotations.credentialId, credentialIds))
+    .orderBy(rotations.credentialId, desc(rotations.createdAt))
+
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (seen.has(row.credentialId)) continue
+    seen.add(row.credentialId)
+    if ((BADGE_ROTATION_STATUSES as readonly string[]).includes(row.status)) {
+      result.set(row.credentialId, {
+        rotationId: row.rotationId,
+        status: row.status as BadgeRotationStatus,
+      })
+    }
+  }
+  return result
+}
+
 export type InitiateRotationResult =
   | { status: 'credential_not_found' }
   | { status: 'project_archived' }

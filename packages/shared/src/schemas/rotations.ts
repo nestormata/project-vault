@@ -155,6 +155,30 @@ export const UpcomingRotationsQuerySchema = z
   .strict()
   .meta({ id: 'UpcomingRotationsQuery' })
 
+// Story 18.5 AC-3: the "badge-worthy" subset of RotationStatusSchema surfaced by the credential
+// list and dashboard "in progress" indicators — distinct from the API's ACTIVE_ROTATION_STATUSES
+// (concurrency-lock/one-active-rotation-per-credential purposes, rotation/service.ts). Both
+// `stale_recovery` and `break_glass_complete` are included here even though `break_glass_complete`
+// is NOT in ACTIVE_ROTATION_STATUSES: a completed break-glass rotation is a security-adjacent
+// state that must never silently disappear from view without an explicit badge.
+export const RotationBadgeStatusSchema = z.enum([
+  'staged',
+  'in_progress',
+  'promoted',
+  'stale_recovery',
+  'break_glass_complete',
+])
+
+export const ActiveRotationBadgeSchema = z
+  .object({
+    rotationId: z.uuid(),
+    status: RotationBadgeStatusSchema,
+  })
+  .meta({ id: 'ActiveRotationBadge' })
+
+export type RotationBadgeStatus = z.infer<typeof RotationBadgeStatusSchema>
+export type ActiveRotationBadge = z.infer<typeof ActiveRotationBadgeSchema>
+
 export type ConfirmChecklistItemBody = z.infer<typeof ConfirmChecklistItemBodySchema>
 export type FailChecklistItemBody = z.infer<typeof FailChecklistItemBodySchema>
 export type RetryChecklistItemBody = z.infer<typeof RetryChecklistItemBodySchema>
