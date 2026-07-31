@@ -227,6 +227,88 @@ describe('/projects/:projectId/status-page', () => {
     })
   })
 
+  it('reorders selected services with keyboard-operable controls and persists the new order', async () => {
+    updateStatusPageServicesMock.mockResolvedValue({
+      services: [
+        { serviceId: 'endpoint-2', displayName: 'Web', sortOrder: 0 },
+        { serviceId: 'endpoint-1', displayName: 'API', sortOrder: 1 },
+      ],
+    })
+    render(StatusPageAdminPage, {
+      props: {
+        data: pageData({
+          config: {
+            enabled: true,
+            token: null,
+            services: [
+              { serviceId: 'endpoint-1', displayName: 'API', sortOrder: 0 },
+              { serviceId: 'endpoint-2', displayName: 'Web', sortOrder: 1 },
+            ],
+          },
+        }),
+      },
+    })
+
+    const orderList = () => screen.getByRole('list', { name: /public service order/i })
+    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('API')
+    await fireEvent.click(screen.getByRole('button', { name: /move web up/i }))
+
+    expect(updateStatusPageServicesMock).toHaveBeenLastCalledWith(expect.anything(), projectId, {
+      services: [
+        { serviceId: 'endpoint-2', displayName: 'Web' },
+        { serviceId: 'endpoint-1', displayName: 'API' },
+      ],
+    })
+    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('Web')
+  })
+
+  it('reverts an optimistic reorder when persistence fails and surfaces the error', async () => {
+    let rejectReorder!: (reason?: unknown) => void
+    updateStatusPageServicesMock.mockReturnValue(
+      new Promise((_, reject) => {
+        rejectReorder = reject
+      })
+    )
+    render(StatusPageAdminPage, {
+      props: {
+        data: pageData({
+          config: {
+            enabled: true,
+            token: null,
+            services: [
+              { serviceId: 'endpoint-1', displayName: 'API', sortOrder: 0 },
+              { serviceId: 'endpoint-2', displayName: 'Web', sortOrder: 1 },
+            ],
+          },
+        }),
+      },
+    })
+
+    const orderList = () => screen.getByRole('list', { name: /public service order/i })
+    await fireEvent.click(screen.getByRole('button', { name: /move web up/i }))
+    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('Web')
+
+    rejectReorder(new Error('reorder failed'))
+    expect((await screen.findByRole('alert')).textContent).toMatch(/reorder failed/i)
+    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('API')
+  })
+
+  it('does not render reorder controls when one or fewer services are selected', () => {
+    render(StatusPageAdminPage, {
+      props: {
+        data: pageData({
+          config: {
+            enabled: true,
+            token: null,
+            services: [{ serviceId: 'endpoint-1', displayName: 'API', sortOrder: 0 }],
+          },
+        }),
+      },
+    })
+
+    expect(screen.queryByRole('button', { name: /move .* (up|down)/i })).toBeNull()
+  })
+
   it.each([
     [
       new ApiClientError(403, { code: 'mfa_required', message: 'MFA required' }, 'MFA required'),
