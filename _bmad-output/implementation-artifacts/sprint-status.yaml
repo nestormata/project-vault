@@ -417,6 +417,7 @@ development_status:
   18-8-public-status-page-reorder-ui: ready-for-dev
   18-9-fix-sso-domain-validation-false-rejection: ready-for-dev
   # updated: 18-10 -> in-progress 2026-07-30 via pick-story
-  18-10-screen-transition-loading-indicator: in-progress
+  # last_updated: 2026-07-30 (18-10-screen-transition-loading-indicator: in-progress -> review via bmad-dev-story. Implemented the global 180ms-delayed, accessible, reduced-motion-safe navigation progress bar in the root layout with focused cancellation/error tests.)
+  18-10-screen-transition-loading-indicator: review
   18-11-pre-login-and-registration-language-selection: ready-for-dev
   18-12-fix-dashboard-not-showing-certificates-alerts-and-domains: ready-for-dev
