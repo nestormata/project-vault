@@ -1,10 +1,10 @@
 <script lang="ts">
   import { navigating } from '$app/stores'
-  import { onDestroy } from 'svelte'
 
   const SHOW_DELAY_MS = 180
   let visible = $state(false)
   let revealTimer: ReturnType<typeof setTimeout> | null = null
+  let trackedNavigation: unknown = null
 
   function cancelReveal() {
     if (revealTimer !== null) {
@@ -13,22 +13,34 @@
     }
   }
 
-  $effect(() => {
-    if ($navigating) {
-      if (!visible && revealTimer === null) {
-        revealTimer = setTimeout(() => {
-          revealTimer = null
-          visible = true
-        }, SHOW_DELAY_MS)
+  function handleNavigation(navigation: unknown) {
+    if (navigation) {
+      if (navigation !== trackedNavigation) {
+        trackedNavigation = navigation
+        cancelReveal()
+
+        if (!visible) {
+          revealTimer = setTimeout(() => {
+            revealTimer = null
+            visible = true
+          }, SHOW_DELAY_MS)
+        }
       }
       return
     }
 
+    trackedNavigation = null
     cancelReveal()
     visible = false
-  })
+  }
 
-  onDestroy(cancelReveal)
+  $effect(() => {
+    const unsubscribe = navigating.subscribe(handleNavigation)
+    return () => {
+      unsubscribe()
+      cancelReveal()
+    }
+  })
 </script>
 
 {#if visible}
@@ -48,7 +60,7 @@
   .navigation-progress {
     position: fixed;
     inset: 0 0 auto;
-    z-index: 50;
+    z-index: 70;
     height: 3px;
     pointer-events: none;
   }

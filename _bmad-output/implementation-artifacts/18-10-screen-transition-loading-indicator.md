@@ -1,6 +1,6 @@
 # Story 18.10: Screen-Transition Loading Indicator
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -42,6 +42,11 @@ Riley-member clicks a nav link to a page whose data takes a moment to load. A vi
 - [x] Task 1: Build global nav-loading indicator component driven by `navigating` store (AC: 1, 2, 3, 4)
 - [x] Task 2: Wire into root layout (AC: 5)
 - [x] Task 3: Tests (AC: 6, 7)
+
+### Review Findings
+
+- [x] [Review][Patch] Restart the delayed reveal after a cancellation is immediately replaced by another navigation [apps/web/src/lib/components/NavigationProgressBar.svelte:16-43] — fixed by subscribing directly to every `navigating` store emission and adding regression coverage.
+- [x] [Review][Patch] Keep the global indicator above the existing onboarding modal stack [apps/web/src/lib/components/NavigationProgressBar.svelte:60-66] — fixed by raising the progress bar z-index to 70.
 
 ## Dev Notes
 

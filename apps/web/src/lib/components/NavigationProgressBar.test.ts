@@ -83,6 +83,28 @@ describe('NavigationProgressBar', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
+  it('restarts the reveal delay when a cancelled navigation is immediately replaced', async () => {
+    render(NavigationProgressBar as Component)
+
+    await setNavigation(pendingNavigation)
+    vi.advanceTimersByTime(100)
+    navigatingStore.set(null)
+    navigatingStore.set({ from: { route: {} }, to: { params: {}, route: {} } })
+    await tick()
+
+    vi.advanceTimersByTime(79)
+    await tick()
+    expect(screen.queryByRole('status')).toBeNull()
+
+    vi.advanceTimersByTime(1)
+    await tick()
+    expect(screen.queryByRole('status')).toBeNull()
+
+    vi.advanceTimersByTime(100)
+    await tick()
+    expect(screen.getByRole('status', { name: /loading page/i })).toBeTruthy()
+  })
+
   it('clears a visible indicator when the navigation store reports cancellation or an errored route', async () => {
     render(NavigationProgressBar as Component)
 
