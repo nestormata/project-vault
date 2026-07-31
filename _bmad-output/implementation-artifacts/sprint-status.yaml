@@ -428,7 +428,7 @@ development_status:
 
   # Epic 19: Epic 18 Follow-through — Dashboard, Auth Localization & Form Guidance
   epic-19: in-progress # registered 2026-07-31 via Epic 18 retro routing.
-  19-1-dashboard-selector-all-accessible-projects: review # in-progress -> review 2026-07-31 via pick-story; TDD implementation, targeted web checks, adversarial review, and Playwright J7 passed; no remote push.
+19-1-dashboard-selector-all-accessible-projects: done # review -> done 2026-07-31 after local merge; TDD implementation, targeted web checks, adversarial review, and Playwright J7 passed; no remote push.
   19-2-localize-pre-auth-shell-and-mfa-copy: backlog # Epic 18 retro Finding 1 — close the remaining English login/register shell and MFA copy; also closes the repeated untracked-deferral instance.
   19-3-contextual-help-for-all-input-fields: backlog # Epic 18 retro Finding 3 — audit every user-facing form control against the new G5 rule and add localized accessible explanations for missing fields.
   19-4-dependent-system-inline-validation: backlog # Existing Story 2.9 review deferral surfaced by the Epic 19 review-deferral guard — add an inline error for programmatic empty dependent-system submissions.

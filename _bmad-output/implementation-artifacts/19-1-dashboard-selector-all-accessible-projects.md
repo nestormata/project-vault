@@ -1,6 +1,6 @@
 # Story 19.1: Dashboard Selector Includes Every Accessible Project
 
-Status: review
+Status: done
 Surface scope: web
 
 ## Story
@@ -255,3 +255,5 @@ Codex
   targeted-test, and Playwright requirements.
 - 2026-07-31: Implemented and reviewed complete dashboard project pagination with TDD, localized
   G5 guidance, and Playwright validation; status moved to review.
+- 2026-07-31: Closed as done after local merge; focused tests, targeted review, and Playwright J7
+  both passed with no Critical/High findings. No remote push performed.
