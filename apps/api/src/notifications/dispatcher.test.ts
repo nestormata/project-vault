@@ -538,7 +538,15 @@ describe('notification preferences defaults', () => {
         expect(emailPrefs).toHaveLength(NOTIFICATION_ALERT_TYPES.length)
         expect(inboxPrefs).toHaveLength(NOTIFICATION_ALERT_TYPES.length)
         expect(prefs.every((p) => p.frequency === DEFAULT_NOTIFICATION_FREQUENCY)).toBe(true)
-        expect(prefs.every((p) => p.minSeverity === DEFAULT_NOTIFICATION_MIN_SEVERITY)).toBe(true)
+        expect(
+          prefs.every(
+            (p) =>
+              p.minSeverity ===
+              (p.alertType === CREDENTIAL_SHARE_TEMPLATE
+                ? 'info'
+                : DEFAULT_NOTIFICATION_MIN_SEVERITY)
+          )
+        ).toBe(true)
       })
     } finally {
       await deleteTestUser(userId)
