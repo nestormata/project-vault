@@ -60,37 +60,24 @@ describe('/external-shares/[token] +page.server.ts', () => {
     expect(getExternalShareMetadataMock).toHaveBeenCalledWith(expect.anything(), token)
   })
 
-  it('a not-found/expired/revoked/malformed token renders the same honest not_found state (AC-17: no distinguishing response shape)', async () => {
-    getExternalShareMetadataMock.mockRejectedValue(new ApiClientError(404, null, 'not found'))
-    const { event } = makeEvent()
+  it.each([
+    [404, 'not_found'],
+    [429, 'unavailable'],
+    [503, 'unavailable'],
+  ])(
+    'maps API status %i to the honest external-share state %s without exposing token state',
+    async (status, expectedError) => {
+      getExternalShareMetadataMock.mockRejectedValue(
+        new ApiClientError(status, null, `status ${status}`)
+      )
+      const { event } = makeEvent()
 
-    const result = await load(event)
+      const result = await load(event)
 
-    expect(result.metadata).toBeNull()
-    expect(result.error).toBe('not_found')
-  })
-
-  it('a 429 (rate-limited) from the metadata fetch renders an honest unavailable state instead of the generic error page', async () => {
-    getExternalShareMetadataMock.mockRejectedValue(
-      new ApiClientError(429, null, 'too many requests')
-    )
-    const { event } = makeEvent()
-
-    const result = await load(event)
-
-    expect(result.metadata).toBeNull()
-    expect(result.error).toBe('unavailable')
-  })
-
-  it('a 5xx from the metadata fetch renders an honest unavailable state instead of the generic error page', async () => {
-    getExternalShareMetadataMock.mockRejectedValue(new ApiClientError(503, null, 'unavailable'))
-    const { event } = makeEvent()
-
-    const result = await load(event)
-
-    expect(result.metadata).toBeNull()
-    expect(result.error).toBe('unavailable')
-  })
+      expect(result.metadata).toBeNull()
+      expect(result.error).toBe(expectedError)
+    }
+  )
 
   it('rethrows an unexpected error', async () => {
     getExternalShareMetadataMock.mockRejectedValue(new Error('boom'))

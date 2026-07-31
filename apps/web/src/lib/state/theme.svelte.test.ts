@@ -62,12 +62,21 @@ describe('pre-auth theme cache (Story 16.6)', () => {
     })
 
     it.each([
+      ['data', '.x { background: url("data:image/png;base64,AAA="); }'],
+      ['https', ".x { background: url('https://cdn.example.com/a.png'); }"],
+    ])('allows a quoted %s url() reference', (_label, css) => {
+      expect(isSafeCachedThemeCss(css)).toBe(true)
+    })
+
+    it.each([
       ['expression(', '.x { width: expression(alert(1)); }'],
       ['@import', '@import url(evil.css);'],
       ['javascript:', '.x { background: url(javascript:alert(1)); }'],
       ['<script', '<script>alert(1)</script>'],
       ['behavior:', '.x { behavior: url(evil.htc); }'],
       ['non-data/https url()', '.x { background: url(http://evil.example.com/a.png); }'],
+      ['empty url()', '.x { background: url(); }'],
+      ['unterminated url()', '.x { background: url(https://cdn.example.com/a.png; }'],
     ])('rejects CSS containing %s', (_label, css) => {
       expect(isSafeCachedThemeCss(css)).toBe(false)
     })

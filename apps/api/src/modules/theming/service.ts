@@ -87,10 +87,9 @@ const defaultAuditWriter: AuditWriterFn = (orgId, eventType, payload) =>
 // form. No `url(`, no `;`, no `}`, no nesting — the exact breakout characters architecture.md
 // names are structurally impossible to match this pattern.
 const HEX_COLOR_GRAMMAR = /^#[0-9a-fA-F]{3,8}$/
-const RGB_COLOR_GRAMMAR =
-  /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
+const RGB_COLOR_GRAMMAR = /^rgba?\(\s*\d{1,3}(?:\s*,\s*\d{1,3}){2}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/
 const HSL_COLOR_GRAMMAR =
-  /^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
+  /^hsla?\(\s*\d{1,3}(?:\s*,\s*\d{1,3}%){2}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/
 
 function isValidColorGrammar(value: string): boolean {
   return (
