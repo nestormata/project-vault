@@ -49,6 +49,9 @@ pnpm-debug.log*
 
 # Local assistant artifacts
 .claude/
+.codex/
+.playwright-mcp/
+.worktrees/
 prompts.md
 
 # TypeScript
