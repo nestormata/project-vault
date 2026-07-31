@@ -43,5 +43,6 @@
   "form_help_dependency_link": "Add a non-sensitive URL that helps teammates find this system. Do not include passwords, tokens, or signed URLs.",
   "form_help_sso_domain": "Enter the domain after the @ in your organization's email addresses. Example: if an address is alex@acme.com, enter acme.com—not the @ or the full email address.",
   "form_help_sso_provider_name": "Enter the exact registered provider extension name. Example for local testing: test.mock-sso-extension. This is not a display name like Okta; the extension must be installed and enabled on the server.",
-  "form_help_machine_user_role": "This role controls what this machine identity can do with project credentials. Choose Viewer for read-only access or Member for read and write access."
+  "form_help_machine_user_role": "This role controls what this machine identity can do with project credentials. Choose Viewer for read-only access or Member for read and write access.",
+  "form_help_dashboard_project": "Choose the project whose monitoring data you want to view."
 }

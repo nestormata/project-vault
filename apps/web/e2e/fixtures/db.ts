@@ -1,4 +1,5 @@
 import postgres from 'postgres'
+import { randomUUID } from 'node:crypto'
 
 // AC-I3/AC-J2-1: `global-setup.ts` needs a superuser DB connection to reset the schema between
 // runs, and AC-J2-1 needs a way to read the raw invitation token that `POST /:projectId/
@@ -62,4 +63,45 @@ export function extractTokenFromAcceptUrl(acceptUrl: string): string {
   const token = url.searchParams.get('token')
   if (!token) throw new Error(`acceptUrl had no token param: ${acceptUrl}`)
   return token
+}
+
+/**
+ * Creates a large deterministic project set for pagination journeys without spending the real
+ * project-creation rate limit. The browser still performs the authenticated GET/list/dashboard
+ * journey; this helper is setup-only and inserts the same project and membership records the API
+ * would create, using the disposable E2E database's superuser connection.
+ */
+export async function createProjectsViaDb(input: {
+  orgId: string
+  userId: string
+  count: number
+  namePrefix: string
+}): Promise<Array<{ id: string; name: string }>> {
+  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
+  const projects = Array.from({ length: input.count }, (_, index) => ({
+    id: randomUUID(),
+    name: `${input.namePrefix} ${String(index + 1).padStart(3, '0')}`,
+    slug: `${input.namePrefix.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index + 1}`,
+    // The endpoint sorts newest first, so project 001 is guaranteed to be on page 2.
+    createdAt: new Date(Date.now() - (input.count - index) * 1_000),
+  }))
+
+  try {
+    await sql.begin(async (transaction) => {
+      for (const project of projects) {
+        await transaction`
+          insert into projects (id, org_id, name, slug, description, tags, created_by, created_at, updated_at)
+          values (${project.id}, ${input.orgId}, ${project.name}, ${project.slug}, null, '[]'::jsonb, ${input.userId}, ${project.createdAt}, ${project.createdAt})
+        `
+        await transaction`
+          insert into project_memberships (org_id, project_id, user_id, role)
+          values (${input.orgId}, ${project.id}, ${input.userId}, 'owner')
+        `
+      }
+    })
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+
+  return projects.map(({ id, name }) => ({ id, name }))
 }

@@ -2,7 +2,7 @@ import { ApiClientError } from '$lib/api/client.js'
 import { listCertificates } from '$lib/api/certificates.js'
 import { getOrgDashboard } from '$lib/api/dashboard.js'
 import { listDomains } from '$lib/api/domains.js'
-import { getProjectDashboard, listProjects } from '$lib/api/projects.js'
+import { getProjectDashboard, listAllProjects } from '$lib/api/projects.js'
 import type { PageServerLoad } from './$types.js'
 
 function isApi404(error: unknown): boolean {
@@ -11,7 +11,7 @@ function isApi404(error: unknown): boolean {
 
 async function loadProjects(fetch: typeof globalThis.fetch) {
   try {
-    return { projects: await listProjects(fetch), vaultSealed: false as const }
+    return { projects: await listAllProjects(fetch), vaultSealed: false as const }
   } catch (error) {
     if (error instanceof ApiClientError && error.status === 503) {
       return {

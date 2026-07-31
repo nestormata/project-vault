@@ -7,6 +7,7 @@ const listCertificatesMock = vi.hoisted(() => vi.fn())
 const listDomainsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/projects.js', () => ({
+  listAllProjects: listProjectsMock,
   listProjects: listProjectsMock,
   getProjectDashboard: getProjectDashboardMock,
 }))
@@ -116,6 +117,25 @@ describe('/dashboard +page.server.ts', () => {
       count: 1,
     })
     await expect(result.monitoringAssets.domains).resolves.toEqual({ status: 'ready', count: 1 })
+  })
+
+  it('selects an accessible project returned on a later pagination page', async () => {
+    const laterProjectId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    listProjectsMock.mockResolvedValue({
+      items: [
+        { id: projectId, name: 'Payments', description: null },
+        { id: laterProjectId, name: 'Inventory', description: null },
+      ],
+      total: 101,
+      page: 1,
+      limit: 100,
+      hasNext: false,
+    })
+
+    const result = await load(makeEvent({ projectId: laterProjectId }))
+
+    expect(result.selectedProject?.id).toBe(laterProjectId)
+    expect(getProjectDashboardMock).toHaveBeenCalledWith(expect.anything(), laterProjectId)
   })
 
   it('falls back to the first accessible project when the URL selection is invalid', async () => {

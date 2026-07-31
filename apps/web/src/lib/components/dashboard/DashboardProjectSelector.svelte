@@ -1,5 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import { m } from '$lib/paraglide/messages.js'
 
   type DashboardProject = {
     id: string
@@ -28,6 +30,7 @@
       <select
         id="dashboard-project"
         name="projectId"
+        aria-describedby="dashboard-project-help"
         class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
         value={selectedProject.id}
       >
@@ -35,6 +38,7 @@
           <option value={project.id}>{project.name}</option>
         {/each}
       </select>
+      <FormHelpText id="dashboard-project-help" text={m.form_help_dashboard_project()} />
     </div>
     <button
       type="submit"

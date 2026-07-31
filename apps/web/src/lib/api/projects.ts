@@ -27,6 +27,23 @@ export type UpdateProjectResponse = {
   updatedAt: string
 }
 
+export type ProjectListPage = {
+  items: ProjectSummary[]
+  total: number
+  page: number
+  limit: number
+  hasNext: boolean
+}
+
+type ListProjectsOptions = {
+  includeArchived?: boolean
+  page?: number
+  limit?: number
+}
+
+const PROJECT_LIST_PAGE_SIZE = 100
+const MAX_PROJECT_LIST_PAGES = 1_000
+
 function jsonMutation(method: 'POST' | 'PATCH', body: unknown): RequestInit {
   return { method, body: JSON.stringify(body) }
 }
@@ -45,9 +62,90 @@ export function createProject(fetchFn: typeof fetch, body: CreateProjectRequest)
   return apiFetch<ProjectDetail>(fetchFn, '/api/v1/projects', jsonMutation('POST', body))
 }
 
-export function listProjects(fetchFn: typeof fetch, options: { includeArchived?: boolean } = {}) {
-  const query = options.includeArchived ? '?includeArchived=true' : ''
-  return apiFetch<{ items: ProjectSummary[]; total: number }>(fetchFn, `/api/v1/projects${query}`)
+export function listProjects(fetchFn: typeof fetch, options: ListProjectsOptions = {}) {
+  const params = new URLSearchParams()
+  if (options.includeArchived) params.set('includeArchived', 'true')
+  if (options.page !== undefined) params.set('page', String(options.page))
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  const query = params.toString() ? `?${params.toString()}` : ''
+  return apiFetch<ProjectListPage>(fetchFn, `/api/v1/projects${query}`)
+}
+
+function invalidProjectPagination(reason: string): Error {
+  return new Error(`Invalid project pagination response: ${reason}`)
+}
+
+function validateProjectPageMetadata(response: ProjectListPage, page: number): void {
+  const valid =
+    Array.isArray(response.items) &&
+    Number.isInteger(response.total) &&
+    response.total >= 0 &&
+    response.page === page &&
+    response.limit === PROJECT_LIST_PAGE_SIZE &&
+    typeof response.hasNext === 'boolean'
+  if (!valid) throw invalidProjectPagination(`page ${page} has inconsistent metadata`)
+}
+
+function appendProjectItems(
+  items: ProjectSummary[],
+  seenProjectIds: Set<string>,
+  pageItems: ProjectSummary[],
+  page: number
+): void {
+  for (const item of pageItems) {
+    if (typeof item?.id !== 'string' || seenProjectIds.has(item.id)) {
+      throw invalidProjectPagination(`page ${page} contains a duplicate or invalid project ID`)
+    }
+    seenProjectIds.add(item.id)
+    items.push(item)
+  }
+}
+
+function validatePageProgress(
+  response: ProjectListPage,
+  itemsLoaded: number,
+  total: number,
+  page: number
+): void {
+  if (itemsLoaded > total) {
+    throw invalidProjectPagination(`page ${page} contains more items than total`)
+  }
+  if (response.hasNext && response.items.length === 0) {
+    throw invalidProjectPagination(`page ${page} made no progress`)
+  }
+  if (response.hasNext && itemsLoaded >= total) {
+    throw invalidProjectPagination(`page ${page} claims another page after total is complete`)
+  }
+}
+
+export async function listAllProjects(fetchFn: typeof fetch): Promise<ProjectListPage> {
+  const items: ProjectSummary[] = []
+  const seenProjectIds = new Set<string>()
+  let page = 1
+  let total: number | undefined
+
+  while (page <= MAX_PROJECT_LIST_PAGES) {
+    const response = await listProjects(fetchFn, { page, limit: PROJECT_LIST_PAGE_SIZE })
+    validateProjectPageMetadata(response, page)
+
+    if (total === undefined) total = response.total
+    if (response.total !== total) {
+      throw invalidProjectPagination(`page ${page} changed total`)
+    }
+
+    appendProjectItems(items, seenProjectIds, response.items, page)
+    validatePageProgress(response, items.length, total, page)
+    if (!response.hasNext) {
+      if (items.length !== total) {
+        throw invalidProjectPagination(`page ${page} ended before total items were loaded`)
+      }
+      return { items, total, page: 1, limit: PROJECT_LIST_PAGE_SIZE, hasNext: false }
+    }
+
+    page += 1
+  }
+
+  throw invalidProjectPagination(`exceeded the ${MAX_PROJECT_LIST_PAGES}-page safety bound`)
 }
 
 export function archiveProject(
