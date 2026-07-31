@@ -1,6 +1,6 @@
 # Story 18.12: Fix Dashboard Not Showing Certificates, Alerts, and Domains
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -39,11 +39,11 @@ Riley-member, who has configured certificates, domains, and has active alerts ac
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Wire "Certificates and domains" card to real data (AC: 1a, 3)
-- [ ] Task 2: Resolve duplicate/dead "Alerts" card (AC: 1a, 2)
-- [ ] Task 3: Fix single-first-project dashboard scoping (AC: 1b)
-- [ ] Task 4: Verify/apply honest-empty-state fallback (AC: 4)
-- [ ] Task 5: Tests (AC: 5)
+- [x] Task 1: Wire "Certificates and domains" card to real data (AC: 1a, 3)
+- [x] Task 2: Resolve duplicate/dead "Alerts" card (AC: 1a, 2)
+- [x] Task 3: Fix single-first-project dashboard scoping (AC: 1b)
+- [x] Task 4: Verify/apply honest-empty-state fallback (AC: 4)
+- [x] Task 5: Tests (AC: 5)
 
 ## Dev Notes
 
@@ -70,8 +70,36 @@ Riley-member, who has configured certificates, domains, and has active alerts ac
 
 ### Agent Model Used
 
+GPT-5 Codex
+
 ### Debug Log References
+
+- Red phase: new dashboard tests failed against the hardcoded cards, first-project selection, and whole-request failure handling.
+- Green phase: focused dashboard tests passed after wiring project-scoped monitoring queries and `Promise.allSettled` handling.
+- Broader validation: apps/web Vitest 222 files / 1931 tests passed; web typecheck and targeted ESLint passed.
 
 ### Completion Notes List
 
+- Chose the explicit project-selector path, consistent with ADR-2.1-08's project-list cross-project model; no org-wide aggregate was introduced.
+- Dashboard defaults to the first currently accessible project, accepts `?projectId=` for another accessible project, and preserves selection through the URL only.
+- Certificate and domain counts reuse the existing web clients for the monitoring list endpoints; the visible project list and API project gates preserve tenant/project membership boundaries.
+- Removed the duplicate placeholder Alerts card. The existing dashboard Alerts summary is the single source of truth, with an unavailable state when its dashboard query fails.
+- Certificate/domain loading skeletons, honest zero-data copy, and independent unavailable states are covered by tests; no audit, auth, rate-limit, migration, or deployment surface changed.
+
 ### File List
+
+- apps/web/src/lib/components/dashboard/DashboardPlaceholderGrid.svelte
+- apps/web/src/lib/components/dashboard/DashboardPlaceholderGrid.test.ts
+- apps/web/src/routes/(app)/dashboard/+page.server.ts
+- apps/web/src/routes/(app)/dashboard/+page.svelte
+- apps/web/src/routes/(app)/dashboard/dashboard-page.server.test.ts
+- apps/web/src/routes/dashboard.test.ts
+
+### Change Log
+
+- 2026-07-31: Implemented Story 18.12 dashboard monitoring counts, explicit project selection, duplicate-alert removal, loading/empty/error states, and independent failure handling; status moved to review.
+
+### Review Findings
+
+- [x] [Review][Patch] Stream monitoring-card loading states during dashboard data fetches [apps/web/src/routes/(app)/dashboard/+page.server.ts:88] — fixed by streaming independent certificate/domain state promises and rendering pending skeletons in `DashboardPlaceholderGrid`.
+- [ ] [Review][Patch] Project selector only exposes the first paginated project page [apps/web/src/routes/(app)/dashboard/+page.server.ts:14] — the dashboard can select among the default first 20 accessible projects, but users with later accessible projects need project-list pagination or an all-projects loader; left unfixed because this review was authorized to apply Critical/High fixes only.

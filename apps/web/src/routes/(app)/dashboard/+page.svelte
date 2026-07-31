@@ -1,7 +1,9 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
   import CrossProjectEmptyState from '$lib/components/dashboard/CrossProjectEmptyState.svelte'
+  import DashboardProjectHeading from '$lib/components/dashboard/DashboardProjectHeading.svelte'
   import DashboardPlaceholderGrid from '$lib/components/dashboard/DashboardPlaceholderGrid.svelte'
+  import DashboardProjectSelector from '$lib/components/dashboard/DashboardProjectSelector.svelte'
   import {
     recentAccessEventLabels,
     suggestedActionLabels,
@@ -80,17 +82,12 @@
   {#if data.selectedProject && data.dashboard}
     <div class="space-y-6">
       <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Project dashboard
-        </p>
-        <h1 class="mt-2 text-3xl font-bold text-slate-950">
-          <a class="hover:underline" href={resolve(`/projects/${data.selectedProject.id}`)}>
-            {data.selectedProject.name}
-          </a>
-        </h1>
-        {#if data.selectedProject.description}
-          <p class="mt-2 text-slate-600">{data.selectedProject.description}</p>
-        {/if}
+        <DashboardProjectSelector projects={data.projects} selectedProject={data.selectedProject} />
+        <DashboardProjectHeading
+          project={data.selectedProject}
+          linked={true}
+          showDescription={true}
+        />
         <dl class="mt-5 grid gap-3 sm:grid-cols-3">
           <div class="rounded-2xl bg-slate-50 p-4">
             <dt class="text-sm text-slate-500">Credentials</dt>
@@ -211,6 +208,8 @@
           data.dashboard.monitoredServiceHealth.degraded +
           data.dashboard.monitoredServiceHealth.down >
           0}
+        certificates={data.monitoringAssets?.certificates}
+        domains={data.monitoringAssets?.domains}
       />
 
       {#if data.dashboard.suggestedActions.length > 0}
@@ -253,6 +252,27 @@
           </ul>
         </section>
       {/if}
+    </div>
+  {:else if data.selectedProject}
+    <div class="space-y-6">
+      <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <DashboardProjectSelector projects={data.projects} selectedProject={data.selectedProject} />
+        <DashboardProjectHeading project={data.selectedProject} />
+        <p class="mt-4 text-sm text-amber-700" role="status">
+          Dashboard summary is unavailable right now. Monitoring counts below may still be
+          available.
+        </p>
+        <div class="mt-5 rounded-2xl bg-amber-50 p-4">
+          <dt class="text-sm text-amber-800">Alerts</dt>
+          <dd class="mt-1 text-sm font-semibold text-amber-900">Unavailable right now.</dd>
+        </div>
+      </section>
+      <DashboardPlaceholderGrid
+        hasCredentials={true}
+        hasServices={true}
+        certificates={data.monitoringAssets?.certificates}
+        domains={data.monitoringAssets?.domains}
+      />
     </div>
   {:else}
     <div class="space-y-6">
