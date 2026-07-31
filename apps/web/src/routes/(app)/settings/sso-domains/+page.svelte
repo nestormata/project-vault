@@ -158,10 +158,12 @@
             type="text"
             class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
             placeholder="e.g. test.mock-sso-extension"
+            aria-describedby="new-provider-help"
             bind:value={newProvider}
             required
           />
         </label>
+        <FormHelpText id="new-provider-help" text={m.form_help_sso_provider_name()} />
         <button
           type="submit"
           class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
@@ -171,8 +173,7 @@
         </button>
       </div>
       <p class="mt-2 text-xs text-slate-500">
-        Must be a bare domain (no @, no wildcard, no whitespace) — not on our list of shared public
-        email providers.
+        Use a bare organization domain. Domains such as gmail.com and yahoo.com cannot be mapped.
       </p>
       {#if createError}
         <p class="mt-2 text-sm text-red-700" role="alert">{createError}</p>

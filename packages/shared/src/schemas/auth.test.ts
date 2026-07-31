@@ -147,6 +147,42 @@ describe('org sso domain schemas (Story 14.6)', () => {
     expect(CreateOrgSsoDomainRequestSchema.safeParse({ domain: 'acme.com' }).success).toBe(false)
   })
 
+  it.each(['profesional.co.cr', 'example.co.uk', 'example.com.br'])(
+    'accepts a legitimate multi-label domain: %s',
+    (domain) => {
+      const parsed = CreateOrgSsoDomainRequestSchema.safeParse({
+        domain,
+        providerName: TEST_PROVIDER,
+      })
+
+      expect(parsed.success).toBe(true)
+      if (parsed.success) expect(parsed.data.domain).toBe(domain)
+    }
+  )
+
+  it('keeps the domain edge-case contract explicit', () => {
+    expect(
+      CreateOrgSsoDomainRequestSchema.safeParse({
+        domain: 'intranet',
+        providerName: TEST_PROVIDER,
+      }).success
+    ).toBe(true)
+
+    const trailingDot = CreateOrgSsoDomainRequestSchema.safeParse({
+      domain: 'Example.Co.Uk.',
+      providerName: TEST_PROVIDER,
+    })
+    expect(trailingDot.success).toBe(true)
+    if (trailingDot.success) expect(trailingDot.data.domain).toBe('example.co.uk')
+
+    expect(
+      CreateOrgSsoDomainRequestSchema.safeParse({
+        domain: 'invalid domain',
+        providerName: TEST_PROVIDER,
+      }).success
+    ).toBe(false)
+  })
+
   it('UpdateOrgSsoDomainRequestSchema allows either field independently', () => {
     expect(UpdateOrgSsoDomainRequestSchema.safeParse({ domain: 'acme.com' }).success).toBe(true)
     expect(UpdateOrgSsoDomainRequestSchema.safeParse({ providerName: TEST_PROVIDER }).success).toBe(

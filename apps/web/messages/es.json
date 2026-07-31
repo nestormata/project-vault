@@ -18,6 +18,7 @@
   "form_help_dependency_system_type": "Elige el tipo de sistema externo que usa esta credencial.",
   "form_help_dependency_scope": "Elige un campo específico de la credencial cuando este sistema use solo ese campo; de lo contrario, se aplica a toda la credencial.",
   "form_help_dependency_link": "Agrega una URL no sensible que ayude al equipo a encontrar este sistema. No incluyas contraseñas, tokens ni URL firmadas.",
-  "form_help_sso_domain": "Ingresa el dominio que usa tu equipo en sus direcciones de correo, como acme.com. Las personas de este dominio se dirigirán al proveedor SSO seleccionado.",
+  "form_help_sso_domain": "Ingresa el dominio que aparece después de @ en los correos de tu organización. Ejemplo: si una dirección es alex@acme.com, ingresa acme.com, no @ ni el correo completo.",
+  "form_help_sso_provider_name": "Ingresa el nombre exacto de la extensión de proveedor registrada. Ejemplo para pruebas locales: test.mock-sso-extension. No es un nombre visible como Okta; la extensión debe estar instalada y habilitada en el servidor.",
   "form_help_machine_user_role": "Este rol controla lo que esta identidad de máquina puede hacer con las credenciales del proyecto. Elige Lector para acceso de solo lectura o Miembro para acceso de lectura y escritura."
 }
