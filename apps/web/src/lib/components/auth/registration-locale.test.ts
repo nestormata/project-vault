@@ -5,22 +5,31 @@ import {
 } from './registration-locale.js'
 
 describe('registration locale handoff', () => {
-  afterEach(() => sessionStorage.clear())
+  afterEach(() => globalThis.sessionStorage?.clear())
 
   it('marks the completed registration for the next authenticated login', () => {
-    markRegistrationLocalePending()
+    markRegistrationLocalePending('u1', 'es')
 
-    expect(consumeRegistrationLocalePending()).toBe(true)
-    expect(consumeRegistrationLocalePending()).toBe(false)
+    expect(consumeRegistrationLocalePending('u1')).toBe('es')
+    expect(consumeRegistrationLocalePending('u1')).toBeNull()
+  })
+
+  it('does not apply a registration handoff to a different authenticated user', () => {
+    markRegistrationLocalePending('u1', 'es')
+
+    expect(consumeRegistrationLocalePending('u2')).toBeNull()
+    expect(consumeRegistrationLocalePending('u1')).toBe('es')
   })
 
   it('does nothing when browser session storage is unavailable', () => {
     const original = globalThis.sessionStorage
     Object.defineProperty(globalThis, 'sessionStorage', { value: undefined, configurable: true })
 
-    expect(() => markRegistrationLocalePending()).not.toThrow()
-    expect(consumeRegistrationLocalePending()).toBe(false)
-
-    Object.defineProperty(globalThis, 'sessionStorage', { value: original, configurable: true })
+    try {
+      expect(() => markRegistrationLocalePending('u1', 'es')).not.toThrow()
+      expect(consumeRegistrationLocalePending('u1')).toBe('es')
+    } finally {
+      Object.defineProperty(globalThis, 'sessionStorage', { value: original, configurable: true })
+    }
   })
 })

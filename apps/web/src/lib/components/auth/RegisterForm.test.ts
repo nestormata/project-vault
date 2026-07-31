@@ -7,6 +7,7 @@ const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const getLocaleMock = vi.hoisted(() => vi.fn(() => 'es'))
 const markRegistrationLocalePendingMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/auth.js', () => ({
@@ -26,6 +27,7 @@ vi.mock('$lib/state/theme.svelte.js', () => ({
 vi.mock('$lib/paraglide/runtime.js', () => ({
   experimentalStaticLocale: 'en',
   setLocale: setLocaleMock,
+  getLocale: getLocaleMock,
 }))
 vi.mock('./registration-locale.js', () => ({
   markRegistrationLocalePending: markRegistrationLocalePendingMock,
@@ -41,6 +43,7 @@ describe('RegisterForm', () => {
     gotoMock.mockClear()
     setPreAuthThemeMock.mockReset()
     setLocaleMock.mockClear()
+    getLocaleMock.mockReturnValue('es')
     markRegistrationLocalePendingMock.mockReset()
   })
   afterEach(() => cleanup())
@@ -99,7 +102,7 @@ describe('RegisterForm', () => {
       })
     )
     await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login?reason=registered'))
-    expect(markRegistrationLocalePendingMock).toHaveBeenCalledTimes(1)
+    expect(markRegistrationLocalePendingMock).toHaveBeenCalledWith('u1', 'es')
   })
 
   it('hides the org-name field and readonly-locks email when an invitationToken is supplied, redirecting into the project', async () => {

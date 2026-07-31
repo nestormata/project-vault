@@ -46,10 +46,11 @@
   }
 
   async function completeSession() {
-    await getCurrentUser(fetch)
-    if (consumeRegistrationLocalePending()) {
+    const user = await getCurrentUser(fetch)
+    const pendingLocale = consumeRegistrationLocalePending(user.userId)
+    if (pendingLocale) {
       try {
-        await patchUserLocale(fetch, getLocale())
+        await patchUserLocale(fetch, pendingLocale)
       } catch (error) {
         // Registration succeeded and the authenticated session is usable even if this optional
         // preference handoff is unavailable. The user can retry from Settings later.
@@ -229,7 +230,7 @@
         {statusMessage}
       </p>
     {/if}
-    <MfaLoginForm {mfaToken} onExpired={restartLogin} />
+    <MfaLoginForm {mfaToken} onExpired={restartLogin} onAuthenticated={completeSession} />
     <button
       class="text-sm font-medium text-slate-700 underline"
       type="button"

@@ -14,7 +14,7 @@ const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const getLocaleMock = vi.hoisted(() => vi.fn(() => 'es'))
 const patchUserLocaleMock = vi.hoisted(() => vi.fn())
-const consumeRegistrationLocalePendingMock = vi.hoisted(() => vi.fn(() => false))
+const consumeRegistrationLocalePendingMock = vi.hoisted(() => vi.fn(() => null))
 
 vi.mock('$lib/api/auth.js', () => ({
   login: loginMock,
@@ -75,7 +75,7 @@ describe('LoginForm', () => {
     getLocaleMock.mockReturnValue('es')
     patchUserLocaleMock.mockReset()
     consumeRegistrationLocalePendingMock.mockReset()
-    consumeRegistrationLocalePendingMock.mockReturnValue(false)
+    consumeRegistrationLocalePendingMock.mockReturnValue(null)
   })
   afterEach(() => cleanup())
 
@@ -102,7 +102,7 @@ describe('LoginForm', () => {
   })
 
   it('persists the selected registration locale after the first authenticated login', async () => {
-    consumeRegistrationLocalePendingMock.mockReturnValue(true)
+    consumeRegistrationLocalePendingMock.mockReturnValue('es')
     patchUserLocaleMock.mockResolvedValue({ locale: 'es' })
     lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
     loginMock.mockResolvedValue({ userId: 'u1', orgId: 'o1', expiresAt: '2026-01-01T00:00:00Z' })
@@ -112,12 +112,13 @@ describe('LoginForm', () => {
     await fillAndSubmitPassword()
 
     await waitFor(() => expect(patchUserLocaleMock).toHaveBeenCalledWith(fetch, 'es'))
+    expect(consumeRegistrationLocalePendingMock).toHaveBeenCalledWith('u1')
     expect(gotoMock).toHaveBeenCalledWith('/dashboard')
   })
 
   it('does not block login or navigation when registration locale persistence fails', async () => {
     const persistError = new Error('locale API unavailable')
-    consumeRegistrationLocalePendingMock.mockReturnValue(true)
+    consumeRegistrationLocalePendingMock.mockReturnValue('es')
     patchUserLocaleMock.mockRejectedValue(persistError)
     loginMock.mockResolvedValue({ userId: 'u1', orgId: 'o1', expiresAt: '2026-01-01T00:00:00Z' })
     getCurrentUserMock.mockResolvedValue({ userId: 'u1' })

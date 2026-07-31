@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { register } from '$lib/api/auth.js'
+  import { getLocale } from '$lib/paraglide/runtime.js'
   import { m } from '$lib/paraglide/messages.js'
   import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
   import PreAuthLanguageSwitcher from './PreAuthLanguageSwitcher.svelte'
@@ -69,7 +70,7 @@
         fetch,
         buildRegisterRequest({ email, password, orgName, invitationToken })
       )
-      markRegistrationLocalePending()
+      markRegistrationLocalePending(result.userId, getLocale())
       clearFields()
       // getPostRegisterPath() returns either a static route or a server-issued project id —
       // not a literal resolve() can type-check at compile time.

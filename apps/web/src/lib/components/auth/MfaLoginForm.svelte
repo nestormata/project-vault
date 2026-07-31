@@ -4,7 +4,15 @@
   import { getCurrentUser, verifyMfaLogin } from '$lib/api/auth.js'
   import { buildMfaLoginRequest, clearMfaLoginFields } from './form-model.js'
 
-  let { mfaToken, onExpired } = $props()
+  let {
+    mfaToken,
+    onExpired,
+    onAuthenticated,
+  }: {
+    mfaToken: string
+    onExpired?: () => void
+    onAuthenticated?: () => Promise<void>
+  } = $props()
   let totp = $state('')
   let errorMessage = $state(null)
   let isSubmitting = $state(false)
@@ -21,6 +29,10 @@
     errorMessage = null
     try {
       await verifyMfaLogin(fetch, buildMfaLoginRequest({ mfaToken, totp }))
+      if (onAuthenticated) {
+        await onAuthenticated()
+        return
+      }
       await getCurrentUser(fetch)
       clearFields(true)
       await goto(resolve('/dashboard'))

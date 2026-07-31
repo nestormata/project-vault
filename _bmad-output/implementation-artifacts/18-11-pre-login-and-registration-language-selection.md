@@ -1,6 +1,6 @@
 # Story 18.11: Pre-Login and Registration Language Selection
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -112,3 +112,11 @@ Codex (GPT-5)
 
 - 2026-07-31: Implemented pre-auth language switching and deferred post-registration locale persistence with strict TDD red-green validation.
 - 2026-07-31: Added localized pre-auth form copy and revalidated focused auth tests, typecheck, and lint.
+
+### Review Findings
+
+- [x] [Review][Patch] MFA verification bypassed the post-registration locale handoff [apps/web/src/lib/components/auth/MfaLoginForm.svelte:31-38] — fixed by routing authenticated MFA completion through the shared session-completion callback.
+- [x] [Review][Patch] The pending handoff marker was not bound to the newly registered user [apps/web/src/lib/components/auth/registration-locale.ts:1-49] — fixed by storing the registration user ID and selected locale and consuming only for that user.
+- [x] [Review][Patch] The new sessionStorage use failed the existing frontend hardening guard [apps/web/src/lib/security/static-hardening.test.ts:24-105] — fixed by adding a narrow reviewed allowlist entry and key assertion for the non-sensitive handoff.
+- [ ] [Review][Patch] The surrounding login/register page shell and MFA copy remain English after switching locale [apps/web/src/routes/(auth)/login/+page.svelte:18-40; apps/web/src/routes/(auth)/register/+page.svelte:10-28; apps/web/src/lib/components/auth/MfaLoginForm.svelte:68-90] — deferred because this review was authorized to fix only Critical/High findings.
+- [ ] [Review][Patch] AC-2's required two-page before/after navigation reproduction is documented but not independently evidenced in this worktree [18-11-pre-login-and-registration-language-selection.md:49-51] — deferred to the parent session's browser validation per instruction.

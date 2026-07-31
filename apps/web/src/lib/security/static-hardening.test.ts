@@ -21,14 +21,16 @@ function sourceFiles(dir: string): string[] {
 }
 
 // Story 16.2 AC-3: the orphaned-theme dismissal notice is a transient, non-sensitive UI
-// preference (which theme name the user last dismissed a "no longer available" banner for) — not
-// token/MFA/vault material, the exact category this test's own name and the rest of the codebase
-// scan for. The story's own AC text specifies the mechanism concretely: a single sessionStorage
-// key holding a theme *name* (never a credential/session artifact). Rather than weakening this
-// gate's blanket regex for everyone, only these specific, reviewed files may reference
-// `sessionStorage`, and only for that one documented key (asserted below) — mirrors the `paraglide`
-// directory's own narrow, documented carve-out above.
-const SESSION_STORAGE_ALLOWLIST = ['lib/theme/apply-theme.ts', 'routes/(app)/+layout.svelte']
+// preference (which theme name the user last dismissed a "no longer available" banner for) and
+// the pre-auth registration handoff (a user id plus locale, never a credential/session artifact)
+// — not token/MFA/vault material, the exact category this test's own name and the rest of the
+// codebase scan for. Rather than weakening this gate's blanket regex for everyone, only these
+// specific, reviewed files may reference `sessionStorage`, and only for their documented keys.
+const SESSION_STORAGE_ALLOWLIST = [
+  'lib/theme/apply-theme.ts',
+  'routes/(app)/+layout.svelte',
+  'lib/components/auth/registration-locale.ts',
+]
 
 // Story 16.6 AC-1/AC-2: the pre-auth theme cache is the first (and, by design, only) use of
 // `localStorage` anywhere in `apps/web` — a single, versioned key (`pv:preAuthTheme:v1`) holding a
@@ -90,13 +92,13 @@ describe('static frontend hardening', () => {
 
     expect(allowlistedContent).toMatch(/\bsessionStorage\b/)
     // Every direct `sessionStorage.<method>('key', ...)` call in these files must reference the
-    // single documented key literal — never a dynamic/derived key or any other name. (The actual
-    // getItem/setItem calls live in apps/web/src/lib/theme/apply-theme.ts, which takes a generic
-    // `Storage`-typed parameter rather than referencing the global directly — this assertion still
-    // holds since that file's own doc comment names the same literal key.)
+    // documented key literals — never an unrelated storage key. (The actual getItem/setItem calls
+    // for the theme live in apps/web/src/lib/theme/apply-theme.ts, which takes a generic
+    // `Storage`-typed parameter rather than referencing the global directly.)
     expect(allowlistedContent).toContain("'dismissedOrphanedTheme'")
+    expect(allowlistedContent).toContain("'project-vault.registration-locale-pending'")
     expect(allowlistedContent).not.toMatch(
-      /sessionStorage\.(getItem|setItem|removeItem)\(\s*['"](?!dismissedOrphanedTheme)/
+      /sessionStorage\.(getItem|setItem|removeItem)\(\s*['"](?!dismissedOrphanedTheme|project-vault\.registration-locale-pending)/
     )
   })
 
