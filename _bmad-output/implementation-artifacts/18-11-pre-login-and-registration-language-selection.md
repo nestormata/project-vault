@@ -1,6 +1,6 @@
 # Story 18.11: Pre-Login and Registration Language Selection
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

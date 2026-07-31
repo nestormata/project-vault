@@ -1,4 +1,4 @@
-# last_updated: 2026-07-31 (18-11-pre-login-and-registration-language-selection: review -> in-progress after bmad-code-review fixed High findings; non-High UI/browser follow-ups remain)
+# last_updated: 2026-07-31 (18-11-pre-login-and-registration-language-selection: review -> done after High findings were fixed, Chrome validation completed, and focused checks passed; surrounding shell/MFA English copy remains documented as deferred)
 # last_updated: 2026-07-30 (18-8-public-status-page-reorder-ui: review -> done after TDD implementation, code review, focused checks, and Chrome validation)
 # last_updated: 2026-07-30 (18-7-dependent-systems-list-and-form-ux-cleanup: in-progress -> review
 # via bmad-dev-story, TDD red-green. AC-1 investigation confirmed the "Updated" checkbox next to
@@ -421,5 +421,5 @@ development_status:
   # updated: 18-10 -> in-progress 2026-07-30 via pick-story
   # last_updated: 2026-07-30 (18-10-screen-transition-loading-indicator: review -> done via bmad-code-review. Blind Hunter, Edge Case Hunter, and Acceptance Auditor review found two medium edge-case findings; both fixed with focused regression coverage. No Critical/High findings remain.)
   18-10-screen-transition-loading-indicator: done
-  18-11-pre-login-and-registration-language-selection: review
+  18-11-pre-login-and-registration-language-selection: done
   18-12-fix-dashboard-not-showing-certificates-alerts-and-domains: ready-for-dev
