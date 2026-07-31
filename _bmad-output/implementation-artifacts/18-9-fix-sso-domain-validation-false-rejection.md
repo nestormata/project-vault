@@ -66,12 +66,13 @@ Codex (GPT-5)
 
 - AC-1/AC-2 investigation: `DOMAIN_LABEL_PATTERN` accepts arbitrary dot-separated ASCII labels; `normalizeSsoDomain` lowercases and removes one trailing dot; `PUBLIC_EMAIL_DOMAINS` contains only the documented consumer-provider domains and does not contain `profesional.co.cr`.
 - Reproduced the authenticated POST path with the exact payload `{ domain: 'profesional.co.cr', providerName: 'test.mock-sso-extension' }` against the isolated PostgreSQL stack. Result: HTTP `201`, stored/returned domain `profesional.co.cr`; no rejection code was emitted. The focused route suite passed `30/30` before any production change.
-- AC-3 remains blocked: no confirmed rejection point exists for the exact reported input, so no speculative production fix was applied.
+- AC-3 closure branch: no confirmed rejection point exists for the exact reported input, so no speculative production fix was applied.
 - Closure decision: the exact rejection was not reproducible, so no validator or PSL change was warranted. Per the follow-up product direction, the shipped remediation makes both fields self-explanatory and turns `provider_not_registered` into actionable setup guidance.
 
 ### Completion Notes List
 
 - Added regression coverage for `profesional.co.cr`, `example.co.uk`, `example.com.br`, single-label input, trailing-dot normalization, mixed-case normalization, and malformed input. Shared schema suite passed `15/15` and full shared suite passed `204/204`.
+- Normalization output was unchanged (`lowercase` plus one trailing-dot removal), so stored `org_sso_domains` values do not change shape and no migration/backfill is needed; the existing route test verifies the normalized value is persisted and returned.
 - Focused SSO web tests passed `20/20` after rerunning with network access for the Paraglide plugin; shared typecheck passed.
 - Story is ready for review: the investigation branch is complete, and the inconclusive-reproduction path is closed with explicit UX and error guidance rather than a speculative validator change.
 - Added localized English/Spanish guidance for the domain and provider fields, including email-domain and registered-extension examples, with `aria-describedby` wiring for both inputs.

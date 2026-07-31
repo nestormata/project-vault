@@ -246,7 +246,7 @@ describe('org-sso-domains-routes (Story 14.6)', () => {
 
   it('Story 18.9 AC-1: creates a multi-label ccTLD domain through the authenticated HTTP path', async () => {
     const owner = await registerOwner(app, 'multi-label-profesional')
-    const domain = `profesional-${randomUUID().slice(0, 8)}.co.cr`
+    const domain = 'profesional.co.cr'
 
     try {
       const res = await app.inject({
