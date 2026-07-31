@@ -340,6 +340,69 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
       expect(res.json()).toMatchObject({ code: 'invalid_service_reference' })
     })
 
+    it('rejects a non-owner project member even though the route security floor is member', async () => {
+      const owner = await registerOwner(app, 'put-member-forbidden')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'sp-put-member-forbidden')
+      const svc = await insertEndpoint(owner.orgId, projectId, 'svc-member-forbidden')
+      await enableStatusPage(app, owner.cookies, projectId)
+      const member = await addUserToOrg(app, owner.orgId, 'put-member-forbidden-user')
+      await addProjectMember(owner.orgId, projectId, member.userId, 'admin')
+
+      const res = await putStatusPage(app, member.cookies, projectId, [
+        { serviceId: svc, displayName: 'Not allowed' },
+      ])
+
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'insufficient_role' })
+    })
+
+    it('rejects a project A owner from reordering project B services in the same org', async () => {
+      const orgOwner = await registerOwner(app, 'put-cross-project-org-owner')
+      const ownerA = await addUserToOrg(app, orgOwner.orgId, 'put-cross-project-owner-a')
+      const ownerB = await addUserToOrg(app, orgOwner.orgId, 'put-cross-project-owner-b')
+      const projectA = await createProjectViaApi(app, ownerA.cookies, 'sp-put-project-a')
+      const projectB = await createProjectViaApi(app, ownerB.cookies, 'sp-put-project-b')
+      const svcB = await insertEndpoint(orgOwner.orgId, projectB, 'svc-project-b')
+      await enableStatusPage(app, ownerB.cookies, projectB)
+
+      const res = await putStatusPage(app, ownerA.cookies, projectB, [
+        { serviceId: svcB, displayName: 'Cross-project write' },
+      ])
+
+      expect(projectA).not.toBe(projectB)
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toMatchObject({ code: 'insufficient_role' })
+    })
+
+    it('accepts last-write-wins when a stale reorder follows an intervening service add', async () => {
+      const owner = await registerOwner(app, 'put-stale-add')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'sp-put-stale-add')
+      const svcA = await insertEndpoint(owner.orgId, projectId, 'svc-stale-a')
+      const svcB = await insertEndpoint(owner.orgId, projectId, 'svc-stale-b')
+      const staleDisplayName = 'A reordered'
+      await enableStatusPage(app, owner.cookies, projectId)
+      await putStatusPage(app, owner.cookies, projectId, [{ serviceId: svcA, displayName: 'A' }])
+
+      // The stale reorder was fetched before this intervening add, so the existing full-replace
+      // contract intentionally lets the later commit win and removes the newly added service.
+      await putStatusPage(app, owner.cookies, projectId, [
+        { serviceId: svcA, displayName: 'A' },
+        { serviceId: svcB, displayName: 'B' },
+      ])
+      const staleReorder = await putStatusPage(app, owner.cookies, projectId, [
+        { serviceId: svcA, displayName: staleDisplayName },
+      ])
+
+      expect(staleReorder.statusCode).toBe(200)
+      expect(staleReorder.json()).toMatchObject({
+        data: { services: [{ serviceId: svcA, displayName: staleDisplayName, sortOrder: 0 }] },
+      })
+      const config = await getStatusPage(app, owner.cookies, projectId)
+      expect(config.json()).toMatchObject({
+        data: { services: [{ serviceId: svcA, displayName: staleDisplayName, sortOrder: 0 }] },
+      })
+    })
+
     it('rejects a duplicate serviceId in the same request with 422', async () => {
       const owner = await registerOwner(app, 'put-duplicate')
       const projectId = await createProjectViaApi(app, owner.cookies, 'sp-put-duplicate')

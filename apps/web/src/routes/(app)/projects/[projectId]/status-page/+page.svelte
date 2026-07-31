@@ -20,12 +20,12 @@
   let copied = $state(false)
 
   type SelectedService = { serviceId: string; displayName: string }
-  let selected = $state<SelectedService[]>(
-    (data.config.services ?? []).map((s) => ({
-      serviceId: s.serviceId,
-      displayName: s.displayName,
-    }))
-  )
+  const initialSelected = (data.config.services ?? []).map((s) => ({
+    serviceId: s.serviceId,
+    displayName: s.displayName,
+  }))
+  let selected = $state<SelectedService[]>(initialSelected)
+  let persistedSelected = $state<SelectedService[]>(initialSelected)
 
   const publicUrl = $derived(
     freshToken ? buildAbsoluteUrl(data.origin, `/status/${freshToken}`) : null
@@ -45,6 +45,14 @@
 
   function setDisplayName(serviceId: string, displayName: string) {
     selected = selected.map((s) => (s.serviceId === serviceId ? { ...s, displayName } : s))
+  }
+
+  function serviceLabel(serviceId: string, displayName: string): string {
+    return data.serviceEndpoints.find((service) => service.id === serviceId)?.name ?? displayName
+  }
+
+  function copyServices(services: SelectedService[]): SelectedService[] {
+    return services.map((service) => ({ ...service }))
   }
 
   function mfaErrorMessage(error: unknown): string | null {
@@ -98,6 +106,7 @@
       enabled = false
       freshToken = null
       selected = []
+      persistedSelected = []
     } catch (error) {
       errorMessage = error instanceof Error ? error.message : 'Failed to disable the status page.'
     } finally {
@@ -115,10 +124,41 @@
         serviceId: s.serviceId,
         displayName: s.displayName,
       }))
+      persistedSelected = copyServices(selected)
     } catch (error) {
       errorMessage =
         mfaErrorMessage(error) ??
         (error instanceof Error ? error.message : 'Failed to save services.')
+    } finally {
+      isBusy = false
+    }
+  }
+
+  async function moveService(index: number, direction: -1 | 1) {
+    if (isBusy || selected.length <= 1) return
+    const nextIndex = index + direction
+    if (nextIndex < 0 || nextIndex >= selected.length) return
+
+    const reordered = [...selected]
+    const [moved] = reordered.splice(index, 1)
+    if (!moved) return
+    reordered.splice(nextIndex, 0, moved)
+    selected = reordered
+    isBusy = true
+    errorMessage = null
+
+    try {
+      const result = await updateStatusPageServices(fetch, data.projectId, { services: reordered })
+      selected = result.services.map((s) => ({
+        serviceId: s.serviceId,
+        displayName: s.displayName,
+      }))
+      persistedSelected = copyServices(selected)
+    } catch (error) {
+      selected = copyServices(persistedSelected)
+      errorMessage =
+        mfaErrorMessage(error) ??
+        (error instanceof Error ? error.message : 'Failed to reorder services.')
     } finally {
       isBusy = false
     }
@@ -220,6 +260,46 @@
 
       <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 class="text-xl font-semibold text-slate-950">Services shown on the public page</h2>
+        {#if selected.length > 0}
+          <div class="space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <div>
+              <h3 class="font-semibold text-slate-950">Public service order</h3>
+              <p class="text-sm text-slate-600">
+                Use the keyboard-operable move buttons to choose the order visitors see.
+              </p>
+            </div>
+            <ol aria-label="Public service order" class="space-y-2">
+              {#each selected as service, index (service.serviceId)}
+                {@const label = serviceLabel(service.serviceId, service.displayName)}
+                <li class="flex items-center justify-between gap-3 rounded-lg bg-white p-3">
+                  <span class="min-w-0 truncate text-sm font-medium text-slate-800">{label}</span>
+                  {#if selected.length > 1}
+                    <span class="flex shrink-0 gap-1">
+                      <button
+                        class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        type="button"
+                        aria-label={`Move ${label} up`}
+                        disabled={isBusy || index === 0}
+                        onclick={() => moveService(index, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        type="button"
+                        aria-label={`Move ${label} down`}
+                        disabled={isBusy || index === selected.length - 1}
+                        onclick={() => moveService(index, 1)}
+                      >
+                        ↓
+                      </button>
+                    </span>
+                  {/if}
+                </li>
+              {/each}
+            </ol>
+          </div>
+        {/if}
         {#if data.serviceEndpoints.length === 0}
           <p class="text-slate-600">
             No monitored service endpoints exist for this project yet —
