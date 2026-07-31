@@ -1,7 +1,12 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { getCurrentUser, login, lookupSsoDomain, ssoCallback, ssoStart } from '$lib/api/auth.js'
+  import { patchUserLocale } from '$lib/api/locale.js'
+  import { m } from '$lib/paraglide/messages.js'
+  import { getLocale } from '$lib/paraglide/runtime.js'
   import { setPreAuthTheme, writePreAuthThemeCache } from '$lib/state/theme.svelte.js'
+  import PreAuthLanguageSwitcher from './PreAuthLanguageSwitcher.svelte'
+  import { consumeRegistrationLocalePending } from './registration-locale.js'
   import {
     buildDomainLookupRequest,
     buildLoginRequest,
@@ -42,6 +47,15 @@
 
   async function completeSession() {
     await getCurrentUser(fetch)
+    if (consumeRegistrationLocalePending()) {
+      try {
+        await patchUserLocale(fetch, getLocale())
+      } catch (error) {
+        // Registration succeeded and the authenticated session is usable even if this optional
+        // preference handoff is unavailable. The user can retry from Settings later.
+        console.error('[auth.registration_locale_persistence_failed]', error)
+      }
+    }
     clearFields()
     // nextPath is a caller-supplied, same-origin-only redirect target (see safeNextPath() in
     // the login page) — not a static route resolve() can type-check at compile time.
@@ -116,7 +130,7 @@
       password = ''
       if (isMfaChallenge(result)) {
         mfaToken = result.mfaToken
-        statusMessage = 'MFA verification is required to finish signing in.'
+        statusMessage = m.auth_login_mfa_required()
         return
       }
       await completeSession()
@@ -127,10 +141,10 @@
         error &&
         'code' in error &&
         error.code === 'invalid_credentials'
-          ? 'Check your email and password, then try again.'
+          ? m.auth_login_invalid_credentials()
           : error instanceof Error
             ? error.message
-            : 'Sign in failed.'
+            : m.auth_login_failed()
     } finally {
       isSubmitting = false
     }
@@ -149,13 +163,13 @@
       ssoCredential = ''
       if (isMfaChallenge(result)) {
         mfaToken = result.mfaToken
-        statusMessage = 'MFA verification is required to finish signing in.'
+        statusMessage = m.auth_login_mfa_required()
         return
       }
       await completeSession()
     } catch (error) {
       ssoCredential = ''
-      errorMessage = error instanceof Error ? error.message : 'SSO sign-in failed.'
+      errorMessage = error instanceof Error ? error.message : m.auth_login_failed()
     } finally {
       isSubmitting = false
     }
@@ -174,13 +188,17 @@
 
   function restartLogin() {
     mfaToken = null
-    statusMessage = 'Your login step expired. Please sign in again.'
+    statusMessage = m.auth_login_expired()
   }
 </script>
 
+<div class="mb-5">
+  <PreAuthLanguageSwitcher />
+</div>
+
 {#snippet emailField()}
   <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="login-email">Email</label>
+    <label class="block font-medium text-slate-900" for="login-email">{m.auth_login_email()}</label>
     <input
       class="w-full rounded-xl border border-slate-300 px-3 py-2"
       id="login-email"
@@ -217,7 +235,7 @@
       type="button"
       onclick={() => (mfaToken = null)}
     >
-      Use a different password
+      {m.auth_login_use_different_password()}
     </button>
   </div>
 {:else if step === 'email'}
@@ -239,7 +257,7 @@
       type="submit"
       disabled={pendingLookupEmail === email}
     >
-      {pendingLookupEmail === email ? 'Checking...' : 'Continue'}
+      {pendingLookupEmail === email ? m.auth_login_checking() : m.auth_login_continue()}
     </button>
   </form>
 {:else if step === 'sso'}
@@ -251,10 +269,12 @@
     }}
   >
     <p class="text-sm text-slate-600">
-      {email} signs in with your organization's SSO provider.
+      {m.auth_login_sso_description({ email })}
     </p>
     <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="sso-credential">SSO credential</label>
+      <label class="block font-medium text-slate-900" for="sso-credential"
+        >{m.auth_login_sso_credential()}</label
+      >
       <input
         class="w-full rounded-xl border border-slate-300 px-3 py-2"
         id="sso-credential"
@@ -269,14 +289,14 @@
       type="submit"
       disabled={isSubmitting}
     >
-      {isSubmitting ? 'Signing in...' : 'Continue with SSO'}
+      {isSubmitting ? m.auth_login_signing_sso() : m.auth_login_continue_sso()}
     </button>
     <button
       class="text-sm font-medium text-slate-700 underline"
       type="button"
       onclick={useADifferentEmail}
     >
-      Use a different email
+      {m.auth_login_use_different_email()}
     </button>
   </form>
 {:else}
@@ -289,7 +309,9 @@
   >
     {@render emailField()}
     <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="login-password">Password</label>
+      <label class="block font-medium text-slate-900" for="login-password"
+        >{m.auth_login_password()}</label
+      >
       <input
         class="w-full rounded-xl border border-slate-300 px-3 py-2"
         id="login-password"
@@ -305,7 +327,7 @@
       type="submit"
       disabled={isSubmitting}
     >
-      {isSubmitting ? 'Signing in...' : 'Sign in'}
+      {isSubmitting ? m.auth_login_signing_in() : m.auth_login_sign_in()}
     </button>
   </form>
 {/if}

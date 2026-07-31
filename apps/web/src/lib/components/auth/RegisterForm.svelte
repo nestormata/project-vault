@@ -2,7 +2,10 @@
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { register } from '$lib/api/auth.js'
+  import { m } from '$lib/paraglide/messages.js'
   import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
+  import PreAuthLanguageSwitcher from './PreAuthLanguageSwitcher.svelte'
+  import { markRegistrationLocalePending } from './registration-locale.js'
   import {
     buildRegisterRequest,
     clearRegisterFields,
@@ -66,17 +69,22 @@
         fetch,
         buildRegisterRequest({ email, password, orgName, invitationToken })
       )
+      markRegistrationLocalePending()
       clearFields()
       // getPostRegisterPath() returns either a static route or a server-issued project id —
       // not a literal resolve() can type-check at compile time.
       // eslint-disable-next-line svelte/no-navigation-without-resolve
       await goto(getPostRegisterPath(result.invitedProject))
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : 'Registration failed.'
+      errorMessage = error instanceof Error ? error.message : m.auth_register_failed()
       password = ''
     }
   }
 </script>
+
+<div class="mb-5">
+  <PreAuthLanguageSwitcher />
+</div>
 
 <form
   class="space-y-5"
@@ -86,7 +94,9 @@
   }}
 >
   <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="register-email">Email</label>
+    <label class="block font-medium text-slate-900" for="register-email"
+      >{m.auth_register_email()}</label
+    >
     <input
       class="w-full rounded-xl border border-slate-300 px-3 py-2"
       id="register-email"
@@ -100,7 +110,9 @@
   </div>
   {#if !invitationToken}
     <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="register-org">Organization name</label>
+      <label class="block font-medium text-slate-900" for="register-org"
+        >{m.auth_register_organization()}</label
+      >
       <input
         class="w-full rounded-xl border border-slate-300 px-3 py-2"
         id="register-org"
@@ -112,7 +124,9 @@
     </div>
   {/if}
   <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="register-password">Password</label>
+    <label class="block font-medium text-slate-900" for="register-password"
+      >{m.auth_register_password()}</label
+    >
     <input
       class="w-full rounded-xl border border-slate-300 px-3 py-2"
       id="register-password"
@@ -122,7 +136,7 @@
       minlength="12"
       required
     />
-    <p class="text-sm text-slate-600">Use at least 12 characters.</p>
+    <p class="text-sm text-slate-600">{m.auth_register_password_hint()}</p>
   </div>
   {#if errorMessage}
     <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
@@ -131,6 +145,6 @@
   {/if}
   <button
     class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700"
-    type="submit">Create account</button
+    type="submit">{m.auth_register_create_account()}</button
   >
 </form>
