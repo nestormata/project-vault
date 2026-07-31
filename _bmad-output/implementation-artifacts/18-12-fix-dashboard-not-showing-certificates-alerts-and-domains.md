@@ -102,4 +102,4 @@ GPT-5 Codex
 ### Review Findings
 
 - [x] [Review][Patch] Stream monitoring-card loading states during dashboard data fetches [apps/web/src/routes/(app)/dashboard/+page.server.ts:88] — fixed by streaming independent certificate/domain state promises and rendering pending skeletons in `DashboardPlaceholderGrid`.
-- [ ] [Review][Patch] Project selector only exposes the first paginated project page [apps/web/src/routes/(app)/dashboard/+page.server.ts:14] — the dashboard can select among the default first 20 accessible projects, but users with later accessible projects need project-list pagination or an all-projects loader; left unfixed because this review was authorized to apply Critical/High fixes only.
+- [ ] [Review][Patch] Project selector only exposes the first paginated project page [apps/web/src/routes/(app)/dashboard/+page.server.ts:14] — the dashboard can select among the default first 20 accessible projects, but users with later accessible projects need project-list pagination or an all-projects loader; left unfixed because this review was authorized to apply Critical/High fixes only. Follow-up: `19-1-dashboard-selector-all-accessible-projects`

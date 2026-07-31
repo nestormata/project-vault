@@ -151,6 +151,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-story-references
 	pnpm check-psc-tbd-tracking
 	pnpm check-public-safety -- --base main --strict
+	pnpm check-story-review-deferrals
 	pnpm check-extension-api-version-skew
 	pnpm check-alert-pending-epic3
 	$(MAKE) test

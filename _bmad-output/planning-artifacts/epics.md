@@ -2776,3 +2776,14 @@ This entry was added retroactively by `epic-17-retro-2026-07-29.md` (Finding 1) 
 - Story 17.3 — Share History, Expiry Enforcement, and Rotation-Recommended Nudge: `_bmad-output/implementation-artifacts/17-3-share-history-expiry-enforcement-and-rotation-recommended-nudge.md`
 
 All three stories are `done` (`sprint-status.yaml`); `epic-17` rolled up to `done` 2026-07-29.
+
+### Epic 19: Epic 18 Follow-through — Dashboard, Auth Localization & Form Guidance
+**Phase 2**
+
+Follow-up work from the Epic 18 retrospective: make dashboard project selection complete for all
+accessible projects, finish localization of the pre-auth shell and MFA flow, and bring every
+user-facing input control into compliance with the new contextual-help rule. The epic also carries
+the mechanical review-deferral follow-up guard now wired into `make ci`.
+
+The first guard scan also surfaced one older unchecked review deferral from Story 2.9; it is tracked
+as `19-4-dependent-system-inline-validation` rather than excluded from enforcement.
