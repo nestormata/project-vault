@@ -3,6 +3,7 @@
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import AuditDateRangeInputs from '$lib/components/audit/AuditDateRangeInputs.svelte'
   import AuditPaginationControls from '$lib/components/audit/AuditPaginationControls.svelte'
   import PlatformBreadcrumb from '$lib/components/platform/PlatformBreadcrumb.svelte'
@@ -201,7 +202,9 @@
           type="text"
           class="rounded-lg border border-slate-300 px-2 py-1"
           value={data.filters?.actionType ?? ''}
+          aria-describedby="platform-audit-action-help"
         />
+        <FormHelpText id="platform-audit-action-help" kind="text" />
       </label>
       <label class="flex flex-col text-sm text-slate-700" for="filter-operatorId">
         Operator ID
@@ -211,7 +214,9 @@
           type="text"
           class="rounded-lg border border-slate-300 px-2 py-1"
           value={data.filters?.operatorId ?? ''}
+          aria-describedby="platform-audit-operator-help"
         />
+        <FormHelpText id="platform-audit-operator-help" kind="text" />
       </label>
       <label class="flex flex-col text-sm text-slate-700" for="filter-targetOrgId">
         Target org ID
@@ -221,7 +226,9 @@
           type="text"
           class="rounded-lg border border-slate-300 px-2 py-1"
           value={data.filters?.targetOrgId ?? ''}
+          aria-describedby="platform-audit-org-help"
         />
+        <FormHelpText id="platform-audit-org-help" kind="text" />
       </label>
       <label class="flex flex-col text-sm text-slate-700" for="filter-targetUserId">
         Target user ID
@@ -231,7 +238,9 @@
           type="text"
           class="rounded-lg border border-slate-300 px-2 py-1"
           value={data.filters?.targetUserId ?? ''}
+          aria-describedby="platform-audit-user-help"
         />
+        <FormHelpText id="platform-audit-user-help" kind="text" />
       </label>
       <AuditDateRangeInputs
         fromValue={activeFilters.from ?? ''}
@@ -311,7 +320,9 @@
           bind:value={verifyFrom}
           placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
           class="rounded-lg border border-slate-300 px-2 py-1"
+          aria-describedby="platform-audit-verify-from-help"
         />
+        <FormHelpText id="platform-audit-verify-from-help" kind="date" />
       </label>
       <label class="flex flex-col text-sm text-slate-700" for="verify-to">
         To
@@ -321,7 +332,9 @@
           bind:value={verifyTo}
           placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
           class="rounded-lg border border-slate-300 px-2 py-1"
+          aria-describedby="platform-audit-verify-to-help"
         />
+        <FormHelpText id="platform-audit-verify-to-help" kind="date" />
       </label>
       <button
         type="submit"
@@ -419,7 +432,9 @@
             class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
             rows="2"
             bind:value={activateReason}
-            placeholder="Reason for activating maintenance mode"></textarea>
+            placeholder="Reason for activating maintenance mode"
+            aria-describedby="maintenance-reason-help"></textarea>
+          <FormHelpText id="maintenance-reason-help" kind="text" />
         </label>
         <div>
           <ConfirmDeleteButton

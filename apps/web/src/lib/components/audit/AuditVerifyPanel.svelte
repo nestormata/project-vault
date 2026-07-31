@@ -5,6 +5,7 @@
   import { verifyAuditRange, type AuditVerifyResult } from '$lib/api/audit.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { toIsoRangeStart, toIsoRangeEnd } from '$lib/audit/date-range.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let from = $state('')
   let to = $state('')
@@ -50,6 +51,7 @@
         type="date"
         class="rounded-lg border border-slate-300 px-2 py-1"
         bind:value={from}
+        aria-describedby="audit-verify-date-help"
       />
     </label>
     <label class="flex flex-col text-sm text-slate-700" for="verify-to">
@@ -59,8 +61,10 @@
         type="date"
         class="rounded-lg border border-slate-300 px-2 py-1"
         bind:value={to}
+        aria-describedby="audit-verify-date-help"
       />
     </label>
+    <FormHelpText id="audit-verify-date-help" kind="date" />
     <button
       type="button"
       class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"

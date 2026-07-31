@@ -6,6 +6,7 @@
   import DormancyThresholdOptions from '$lib/components/DormancyThresholdOptions.svelte'
   import RoleSelectOptions from '$lib/components/RoleSelectOptions.svelte'
   import TypedConfirmInput from '$lib/components/forms/TypedConfirmInput.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import ProjectsListCell from '$lib/components/tables/ProjectsListCell.svelte'
   import {
     changeProjectRole,
@@ -360,9 +361,11 @@
           id="dormancy-threshold-select"
           class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
           bind:value={dormancyThresholdChoice}
+          aria-describedby="machine-dormancy-threshold-help"
         >
           <DormancyThresholdOptions />
         </select>
+        <FormHelpText id="machine-dormancy-threshold-help" kind="select" />
         <button
           class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           type="button"
@@ -399,9 +402,11 @@
           id="user-dormancy-threshold-select"
           class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
           bind:value={userDormancyThresholdChoice}
+          aria-describedby="user-dormancy-threshold-help"
         >
           <DormancyThresholdOptions />
         </select>
+        <FormHelpText id="user-dormancy-threshold-help" kind="select" />
         <button
           class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           type="button"
@@ -434,12 +439,14 @@
           id="default-locale-select"
           class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
           bind:value={defaultLocaleChoice}
+          aria-describedby="default-locale-help"
         >
           <option value="">Choose a new default…</option>
           {#each SUPPORTED_LOCALES as locale (locale)}
             <option value={locale}>{SUPPORTED_LOCALE_DISPLAY_NAMES[locale]}</option>
           {/each}
         </select>
+        <FormHelpText id="default-locale-help" kind="select" />
         <button
           class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           type="button"
@@ -506,6 +513,7 @@
                         <select
                           class="rounded-lg border border-slate-300 px-2 py-1 text-xs"
                           aria-label={`Role for ${user.email} in ${project.projectName}`}
+                          aria-describedby={`user-project-role-help-${user.userId}-${project.projectId}`}
                           value={project.role}
                           disabled={busyKey === `${user.userId}:${project.projectId}`}
                           onchange={(event) =>
@@ -518,6 +526,10 @@
                         >
                           <RoleSelectOptions />
                         </select>
+                        <FormHelpText
+                          id={`user-project-role-help-${user.userId}-${project.projectId}`}
+                          kind="select"
+                        />
                       {/if}
                     </li>
                   {/each}
@@ -660,7 +672,9 @@
                           id={`erasure-reason-${user.userId}`}
                           class="rounded border border-slate-300 px-2 py-1"
                           maxlength="2000"
-                          bind:value={erasureReason}></textarea>
+                          bind:value={erasureReason}
+                          aria-describedby={`erasure-reason-help-${user.userId}`}></textarea>
+                        <FormHelpText id={`erasure-reason-help-${user.userId}`} kind="text" />
                       </label>
                       <label
                         class="mt-2 flex flex-col gap-1"
@@ -673,7 +687,9 @@
                           class="rounded border border-slate-300 px-2 py-1"
                           maxlength="500"
                           bind:value={erasureRequestedBy}
+                          aria-describedby={`erasure-requested-by-help-${user.userId}`}
                         />
+                        <FormHelpText id={`erasure-requested-by-help-${user.userId}`} kind="text" />
                       </label>
                       <div class="mt-2 flex gap-2">
                         <button

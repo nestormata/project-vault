@@ -4,6 +4,7 @@
   import { ApiClientError, isMfaRequiredError } from '$lib/api/client.js'
   import { patchThemeSelection, triggerThemeReload } from '$lib/api/themes.js'
   import { updateOrgDefaultTheme } from '$lib/api/organization-settings.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { setAppliedTheme } from '$lib/state/theme.svelte.js'
   import type { ThemesPageData } from './+page.server.js'
 
@@ -149,15 +150,23 @@
               checked={selected === theme.name || (selected === null && theme.name === 'base')}
               disabled={saving !== null}
               onchange={() => selectTheme(theme.name === 'base' ? null : theme.name)}
+              aria-describedby="theme-selection-help"
             />
             <span class="font-medium text-gray-900">{theme.label}</span>
           </label>
         </li>
       {/each}
+      <FormHelpText id="theme-selection-help" kind="radio" />
       {#if orphanedSelection}
         <li class="flex items-center justify-between px-6 py-4">
           <label class="flex items-center gap-3 text-gray-400">
-            <input type="radio" name="theme" checked disabled />
+            <input
+              type="radio"
+              name="theme"
+              checked
+              disabled
+              aria-describedby="theme-selection-help"
+            />
             <span class="font-medium">{orphanedSelection} (currently unavailable)</span>
           </label>
         </li>
@@ -235,6 +244,7 @@
         aria-label="Default theme for this organization"
         disabled={orgDefaultSaving}
         value={orgDefault ?? ''}
+        aria-describedby="org-default-theme-help"
         onchange={(event) => {
           const value = event.currentTarget.value
           void selectOrgDefaultTheme(value === '' ? null : value)
@@ -245,6 +255,7 @@
           <option value={theme.name}>{theme.label}</option>
         {/each}
       </select>
+      <FormHelpText id="org-default-theme-help" kind="select" />
     </div>
   {/if}
 </div>

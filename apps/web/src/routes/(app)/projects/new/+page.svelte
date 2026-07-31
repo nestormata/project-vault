@@ -3,6 +3,7 @@
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { createProject, suggestProjectSlug } from '$lib/api/projects.js'
 
   const SLUG_PATTERN = '^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$'
@@ -90,7 +91,9 @@
         maxlength="128"
         required
         oninput={(event) => updateName(event.currentTarget.value)}
+        aria-describedby="project-name-help"
       />
+      <FormHelpText id="project-name-help" kind="text" />
       {#if fieldErrors.name}
         <p class="text-sm text-red-700">{fieldErrors.name[0]}</p>
       {/if}
@@ -108,7 +111,9 @@
         pattern={SLUG_PATTERN}
         required
         oninput={(event) => updateSlug(event.currentTarget.value)}
+        aria-describedby="project-slug-help"
       />
+      <FormHelpText id="project-slug-help" kind="text" />
       <p class="text-sm text-slate-600">Use 3-50 lowercase letters, numbers, and hyphens.</p>
       {#if slugError}
         <p class="text-sm text-red-700" role="alert">{slugError}</p>
@@ -123,7 +128,9 @@
         class="min-h-28 w-full rounded-xl border border-slate-300 px-3 py-3"
         id="project-description"
         bind:value={description}
-        maxlength="512"></textarea>
+        maxlength="512"
+        aria-describedby="project-description-help"></textarea>
+      <FormHelpText id="project-description-help" kind="text" />
       {#if fieldErrors.description}
         <p class="text-sm text-red-700">{fieldErrors.description[0]}</p>
       {/if}

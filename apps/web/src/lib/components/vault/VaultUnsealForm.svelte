@@ -1,5 +1,6 @@
 <script>
   import { buildVaultUnsealRequest, clearVaultUnsealFields } from './form-model.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { onSubmit } = $props()
   let mode = $state('passphrase')
@@ -46,18 +47,37 @@
   <fieldset class="space-y-3">
     <legend class="font-medium text-slate-900">Unseal material</legend>
     <label class="flex items-center gap-2">
-      <input type="radio" name="unsealMode" value="passphrase" bind:group={mode} />
+      <input
+        type="radio"
+        name="unsealMode"
+        value="passphrase"
+        bind:group={mode}
+        aria-describedby="vault-unseal-mode-help"
+      />
       <span>Passphrase</span>
     </label>
     <label class="flex items-center gap-2">
-      <input type="radio" name="unsealMode" value="envelopeKeyPath" bind:group={mode} />
+      <input
+        type="radio"
+        name="unsealMode"
+        value="envelopeKeyPath"
+        bind:group={mode}
+        aria-describedby="vault-unseal-mode-help"
+      />
       <span>Envelope key file</span>
     </label>
     <label class="flex items-center gap-2">
-      <input type="radio" name="unsealMode" value="masterKeyPath" bind:group={mode} />
+      <input
+        type="radio"
+        name="unsealMode"
+        value="masterKeyPath"
+        bind:group={mode}
+        aria-describedby="vault-unseal-mode-help"
+      />
       <span>Master key file</span>
     </label>
   </fieldset>
+  <FormHelpText id="vault-unseal-mode-help" kind="radio" />
 
   {#if mode === 'passphrase'}
     <div class="space-y-2">
@@ -72,7 +92,9 @@
         autocomplete="current-password"
         bind:value={passphrase}
         required
+        aria-describedby="vault-unseal-passphrase-help"
       />
+      <FormHelpText id="vault-unseal-passphrase-help" kind="secret" />
     </div>
   {:else if mode === 'envelopeKeyPath'}
     <div class="space-y-2">
@@ -87,7 +109,9 @@
         autocomplete="off"
         bind:value={envelopeKeyPath}
         required
+        aria-describedby="vault-unseal-envelope-path-help"
       />
+      <FormHelpText id="vault-unseal-envelope-path-help" kind="text" />
     </div>
   {:else}
     <div class="space-y-2">
@@ -102,7 +126,9 @@
         autocomplete="off"
         bind:value={masterKeyPath}
         required
+        aria-describedby="vault-unseal-master-path-help"
       />
+      <FormHelpText id="vault-unseal-master-path-help" kind="text" />
     </div>
   {/if}
 

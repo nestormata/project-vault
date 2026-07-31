@@ -5,6 +5,8 @@
   // nothing about `confirmUserId`/`{ confirm: true }` — those request-shape decisions stay in the
   // parent per D4/D5. The comparison is case-insensitive and trimmed (adversarial review, low) so
   // a legitimate operator isn't permanently blocked by a letter-case difference from stored data.
+  import FormHelpText from './FormHelpText.svelte'
+
   let {
     expectedValue,
     onMatchChange,
@@ -38,5 +40,7 @@
     bind:value
     oninput={handleInput}
     autocomplete="off"
+    aria-describedby="typed-confirm-help"
   />
+  <FormHelpText id="typed-confirm-help" kind="text" />
 </div>

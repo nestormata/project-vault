@@ -1,6 +1,6 @@
 # Story 19.3: Contextual Help for All User-Facing Input Fields
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -92,18 +92,18 @@ available in the local journey.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Complete a source and rendered-control inventory; reconcile contradictions between
+- [x] Task 1: Complete a source and rendered-control inventory; reconcile contradictions between
   G5, existing Story 18.3's bounded floor, current route behavior, and shared components.
-- [ ] Task 2: Add the deterministic red-phase inventory test/check and Makefile integration before
+- [x] Task 2: Add the deterministic red-phase inventory test/check and Makefile integration before
   adding missing help text; document structural exclusions and suppression policy.
-- [ ] Task 3: Add localized explanations and accessible relationships to every in-scope shared
+- [x] Task 3: Add localized explanations and accessible relationships to every in-scope shared
   component and route control, preserving existing behavior and avoiding duplicate IDs.
-- [ ] Task 4: Add/update focused tests for representative controls, both locales, conditional
+- [x] Task 4: Add/update focused tests for representative controls, both locales, conditional
   branches, shared abstractions, and submit/value preservation.
-- [ ] Task 5: Run targeted typecheck/lint/tests and a Playwright persona journey at desktop and
+- [x] Task 5: Run targeted typecheck/lint/tests and a Playwright persona journey at desktop and
   narrow viewports; review tenant/RLS, audit/failure, auth/session, concurrency/replay, rate-limit,
   logging/metrics, migration/schema, and deployment implications.
-- [ ] Task 6: Record evidence, perform adversarial review, synchronize status, and merge locally
+- [x] Task 6: Record evidence, perform adversarial review, synchronize status, and merge locally
   into `main` only after the story gate is green. Do not push remotely.
 
 ## Dev Notes
@@ -178,3 +178,29 @@ Codex (GPT-5)
 - 2026-07-31: Created from Epic 18 retrospective Finding 3. Planning included five elicitation
   rounds covering boundaries, security personas, accessibility, architecture, and failure modes;
   status set to ready-for-dev. No remote push authorized.
+
+### Implementation and review evidence
+
+- Inventory scope: all native `input`, `select`, and `textarea` controls in `apps/web/src`; hidden
+  inputs, HTML comments/script/style regions, native options, and option-only child markup are
+  structural exclusions. No suppressions were added.
+- The deterministic checker is `scripts/check-form-guidance.ts`, covered by
+  `scripts/check-form-guidance.test.ts`, exposed as `pnpm check-form-guidance`, and wired into
+  `make ci` through `ci-inner`. It reports file, line, control kind, and failure reason.
+- Added the shared localized `FormHelpText` relationship and guidance to the complete audited
+  control inventory across shared components and route forms. English and Spanish messages use
+  Paraglide; generated output was refreshed by the web typecheck.
+- Red phase: the checker tests first failed because the checker module was absent. Green phase:
+  5 checker tests passed, followed by 33 affected web test files with 559 tests passing.
+- Targeted verification: `pnpm check-form-guidance`; `pnpm exec vitest run
+  scripts/check-form-guidance.test.ts --reporter=verbose`; `pnpm --filter @project-vault/web
+  run typecheck`; targeted ESLint; and affected web Vitest tests all passed.
+- Playwright: `j9-form-guidance.spec.ts` passed 2/2. It covers authenticated project creation,
+  anonymous registration, narrow viewport behavior, locale switching with entered values, and
+  visible `aria-describedby` targets.
+- Security/accessibility review: no API, database, migration, RLS, authorization, auth/session,
+  audit, rate-limit, logging, secret-handling, or request-body changes. A label/help nesting
+  regression found by targeted tests was corrected before review. No Critical or High findings.
+- Changed files are limited to the checker/tests, Makefile/package script, localized messages,
+  `FormHelpText`, affected web controls, and the J9 journey. Full CI remains deferred until all
+  Epic 19 stories are complete.

@@ -10,6 +10,7 @@
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import FieldSetEditor from '$lib/components/credentials/FieldSetEditor.svelte'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import {
     buildTemplateFieldDrafts,
     canCreateCredential,
@@ -151,7 +152,9 @@
           bind:value={name}
           autocomplete="off"
           required
+          aria-describedby="credential-name-help"
         />
+        <FormHelpText id="credential-name-help" kind="text" />
         {#if fieldErrors.name}
           <p class="text-sm text-red-700">{fieldErrors.name}</p>
         {/if}
@@ -163,6 +166,7 @@
           id="credential-template"
           class="w-full rounded-xl border border-slate-300 px-3 py-3"
           value={template}
+          aria-describedby="credential-template-help"
           onchange={(event) =>
             onTemplateChange(event.currentTarget.value as '' | CredentialTemplate)}
         >
@@ -171,6 +175,7 @@
             <option value={tpl}>{CREDENTIAL_TEMPLATE_LABELS[tpl]}</option>
           {/each}
         </select>
+        <FormHelpText id="credential-template-help" kind="select" />
       </div>
 
       {#if !useFieldSet}
@@ -183,7 +188,9 @@
             bind:value
             autocomplete="new-password"
             required
+            aria-describedby="credential-value-help"
           />
+          <FormHelpText id="credential-value-help" kind="secret" />
           {#if fieldErrors.value}
             <p class="text-sm text-red-700">{fieldErrors.value}</p>
           {/if}
@@ -212,7 +219,9 @@
         <textarea
           id="credential-description"
           class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3"
-          bind:value={description}></textarea>
+          bind:value={description}
+          aria-describedby="credential-description-help"></textarea>
+        <FormHelpText id="credential-description-help" kind="text" />
       </div>
 
       <div class="space-y-2">
@@ -223,7 +232,9 @@
           type="text"
           placeholder="production, api"
           bind:value={tags}
+          aria-describedby="credential-tags-help"
         />
+        <FormHelpText id="credential-tags-help" kind="text" />
       </div>
 
       {#if errorMessage}

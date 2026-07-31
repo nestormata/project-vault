@@ -4,6 +4,7 @@
   import { onDestroy, onMount } from 'svelte'
   import { globalSearch, type SearchResultItem } from '$lib/api/search.js'
   import { trapFocus } from '$lib/components/onboarding/focus-trap.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { daysUntil, expiresWithinDays, highlightParts } from './search-ui.js'
 
   let {
@@ -174,7 +175,9 @@
           aria-controls="global-search-results"
           autocomplete="off"
           oninput={handleQueryInput}
+          aria-describedby="global-search-help"
         />
+        <FormHelpText id="global-search-help" kind="search" />
       </div>
 
       {#if loading}

@@ -2,6 +2,7 @@
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
   import SettingsFormGate from '$lib/components/settings/SettingsFormGate.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import {
     linkExternalIdentity,
     unlinkExternalIdentity,
@@ -109,12 +110,14 @@
             class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
             bind:value={newUserId}
             required
+            aria-describedby="external-identity-member-help"
           >
             <option value="" disabled>Choose a member…</option>
             {#each data.orgUsers as orgUser (orgUser.userId)}
               <option value={orgUser.userId}>{orgUser.email}</option>
             {/each}
           </select>
+          <FormHelpText id="external-identity-member-help" kind="select" />
         </label>
         <label class="flex flex-col gap-1 text-sm" for="new-provider-name">
           Provider name
@@ -123,9 +126,11 @@
             type="text"
             class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
             placeholder="e.g. test.mock-sso-extension"
+            aria-describedby="external-identity-provider-help"
             bind:value={newProviderName}
             required
           />
+          <FormHelpText id="external-identity-provider-help" kind="text" />
         </label>
         <label class="flex flex-col gap-1 text-sm" for="new-external-subject">
           External subject
@@ -134,9 +139,11 @@
             type="text"
             class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
             placeholder="e.g. alex-sso-subject-123"
+            aria-describedby="external-identity-subject-help"
             bind:value={newExternalSubject}
             required
           />
+          <FormHelpText id="external-identity-subject-help" kind="text" />
         </label>
         <button
           type="submit"

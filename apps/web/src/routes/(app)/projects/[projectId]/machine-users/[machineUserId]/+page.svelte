@@ -11,6 +11,7 @@
   import { ApiClientError } from '$lib/api/client.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { canManageMachineUsers } from '$lib/machine-users/permissions.js'
 
   let { data } = $props()
@@ -262,7 +263,9 @@
               type="text"
               bind:value={issueName}
               required
+              aria-describedby="issue-key-name-help"
             />
+            <FormHelpText id="issue-key-name-help" kind="text" />
           </div>
           <button
             class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:opacity-60"
@@ -321,6 +324,7 @@
                       min="1"
                       max="1440"
                       value={overlapFor(key.id)}
+                      aria-describedby={`rotation-overlap-help-${key.id}`}
                       oninput={(event) => {
                         overlapByKey = {
                           ...overlapByKey,
@@ -328,6 +332,7 @@
                         }
                       }}
                     />
+                    <FormHelpText id={`rotation-overlap-help-${key.id}`} kind="date" />
                   </label>
                   <ConfirmDeleteButton
                     label="Rotate"

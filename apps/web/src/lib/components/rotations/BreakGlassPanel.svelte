@@ -5,6 +5,7 @@
   import { listCredentialDependencies } from '$lib/api/credentials.js'
   import { breakGlassRotation } from '$lib/api/rotations.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import {
     formatDateTime,
     mapRotationMutationError,
@@ -186,7 +187,9 @@
             bind:value={newValue}
             autocomplete="off"
             disabled={awaitingConfirmText}
-            required></textarea>
+            required
+            aria-describedby="break-glass-value-help"></textarea>
+          <FormHelpText id="break-glass-value-help" kind="secret" />
         </div>
 
         <div class="space-y-2">
@@ -196,7 +199,9 @@
             class="min-h-20 w-full rounded-xl border border-red-300 px-3 py-3"
             bind:value={reason}
             disabled={awaitingConfirmText}
-            required></textarea>
+            required
+            aria-describedby="break-glass-reason-help"></textarea>
+          <FormHelpText id="break-glass-reason-help" kind="text" />
           {#if reasonError}
             <p class="text-sm text-red-800" role="alert">{reasonError}</p>
           {/if}
@@ -224,7 +229,9 @@
                 type="text"
                 bind:value={confirmText}
                 autocomplete="off"
+                aria-describedby="break-glass-confirm-help"
               />
+              <FormHelpText id="break-glass-confirm-help" kind="text" />
             </div>
             <div class="flex gap-3">
               <button

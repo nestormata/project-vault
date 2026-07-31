@@ -2,6 +2,7 @@
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import RoleSelectOptions from '$lib/components/RoleSelectOptions.svelte'
   import {
     createInvitation,
@@ -176,6 +177,7 @@
                     <select
                       class="rounded-lg border border-slate-300 px-2 py-1 text-xs"
                       aria-label={`Role for ${member.email}`}
+                      aria-describedby={`member-role-help-${member.userId}`}
                       value={member.role}
                       disabled={memberBusyId === member.userId}
                       onchange={(event) =>
@@ -186,6 +188,7 @@
                     >
                       <RoleSelectOptions />
                     </select>
+                    <FormHelpText id={`member-role-help-${member.userId}`} kind="select" />
                   {/if}
                 </td>
                 <td class="px-4 py-3 text-right">
@@ -217,12 +220,14 @@
             id="transfer-owner"
             class="rounded-lg border border-slate-300 px-2 py-1 text-sm"
             bind:value={transferTarget}
+            aria-describedby="transfer-owner-help"
           >
             <option value="">Select a member…</option>
             {#each nonOwnerMembers as member (member.userId)}
               <option value={member.userId}>{member.email}</option>
             {/each}
           </select>
+          <FormHelpText id="transfer-owner-help" kind="select" />
           <button
             class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             type="button"
@@ -258,7 +263,9 @@
               type="email"
               bind:value={email}
               required
+              aria-describedby="invite-email-help"
             />
+            <FormHelpText id="invite-email-help" kind="text" />
           </div>
           <div class="space-y-2">
             <label class="block font-medium text-slate-900" for="invite-role">Role</label>
@@ -266,11 +273,13 @@
               id="invite-role"
               class="w-full rounded-xl border border-slate-300 px-3 py-2"
               bind:value={role}
+              aria-describedby="invite-role-help"
             >
               <option value="admin">Admin</option>
               <option value="member">Member</option>
               <option value="viewer">Viewer</option>
             </select>
+            <FormHelpText id="invite-role-help" kind="select" />
           </div>
         </div>
         <MfaAwareErrorAlert

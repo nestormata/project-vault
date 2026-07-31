@@ -2,6 +2,7 @@
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { getEventTypeLabel } from '$lib/utils/event-type-labels.js'
   import type { ActionData, PageData } from './$types.js'
 
@@ -67,6 +68,7 @@
                   name="frequency"
                   class="mr-2 rounded border-gray-300 text-sm"
                   aria-label={`Frequency for ${getEventTypeLabel(pref.alertType)} via ${pref.channel}`}
+                  aria-describedby="notification-frequency-help"
                 >
                   <option value="immediate" selected={pref.frequency === 'immediate'}
                     >Immediate</option
@@ -75,10 +77,12 @@
                     >Daily digest</option
                   >
                 </select>
+                <FormHelpText id="notification-frequency-help" kind="select" />
                 <select
                   name="minSeverity"
                   class="mr-2 rounded border-gray-300 text-sm"
                   aria-label={`Minimum severity for ${getEventTypeLabel(pref.alertType)} via ${pref.channel}`}
+                  aria-describedby="notification-severity-help"
                 >
                   <option value="info" selected={pref.minSeverity === 'info'}>Info+</option>
                   <option value="warning" selected={pref.minSeverity === 'warning'}>Warning+</option
@@ -87,6 +91,7 @@
                     >Critical only</option
                   >
                 </select>
+                <FormHelpText id="notification-severity-help" kind="select" />
                 <button
                   type="submit"
                   class="text-sm font-medium text-indigo-600 hover:text-indigo-900">Save</button
@@ -118,11 +123,13 @@
                 name="routeTo_{route.alertType}"
                 class="rounded border-gray-300 text-sm"
                 value={route.routeTo}
+                aria-describedby="notification-route-help"
               >
                 <option value="owner">Owner</option>
                 <option value="admin">Admin</option>
                 <option value="member">All Members</option>
               </select>
+              <FormHelpText id="notification-route-help" kind="select" />
             </div>
           {/each}
           <button

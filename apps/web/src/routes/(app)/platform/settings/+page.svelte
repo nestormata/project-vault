@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { ApiClientError } from '$lib/api/client.js'
   import { updateSettings, type SystemSettingsUpdate } from '$lib/api/platform.js'
   import type { PageData } from './$types.js'
@@ -183,8 +184,10 @@
                 bind:value={smtpHost}
                 placeholder={settings.smtp.host ?? ''}
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="smtp-host-help"
               />
             </label>
+            <FormHelpText id="smtp-host-help" kind="text" />
             <label class="flex flex-col text-sm text-gray-700">
               Port
               <input
@@ -192,8 +195,10 @@
                 bind:value={smtpPort}
                 placeholder={settings.smtp.port?.toString() ?? ''}
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="smtp-port-help"
               />
             </label>
+            <FormHelpText id="smtp-port-help" kind="date" />
             <label class="flex flex-col text-sm text-gray-700">
               Username
               <input
@@ -201,8 +206,10 @@
                 bind:value={smtpUser}
                 placeholder={settings.smtp.user ?? ''}
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="smtp-user-help"
               />
             </label>
+            <FormHelpText id="smtp-user-help" kind="text" />
             <label class="flex flex-col text-sm text-gray-700">
               From address
               <input
@@ -210,11 +217,13 @@
                 bind:value={smtpFrom}
                 placeholder={settings.smtp.from ?? ''}
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="smtp-from-help"
               />
               {#if fieldErrors['smtp.from']}
                 <span class="text-xs text-red-600">{fieldErrors['smtp.from']}</span>
               {/if}
             </label>
+            <FormHelpText id="smtp-from-help" kind="text" />
             <label class="col-span-2 flex flex-col text-sm text-gray-700">
               Password
               <input
@@ -222,8 +231,10 @@
                 bind:value={smtpPassword}
                 placeholder="Leave blank to keep the current password"
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="smtp-password-help"
               />
             </label>
+            <FormHelpText id="smtp-password-help" kind="secret" />
           </div>
         </section>
 
@@ -249,8 +260,10 @@
                 bind:value={scheduleOverride}
                 placeholder="Leave blank to keep default"
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm font-mono"
+                aria-describedby="backup-schedule-help"
               />
             </label>
+            <FormHelpText id="backup-schedule-help" kind="text" />
             <label class="flex flex-col text-sm text-gray-700">
               Retention count override
               <input
@@ -258,8 +271,10 @@
                 bind:value={retentionCountOverride}
                 placeholder="Leave blank to keep default"
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="backup-retention-help"
               />
             </label>
+            <FormHelpText id="backup-retention-help" kind="date" />
           </div>
         </section>
 
@@ -274,8 +289,10 @@
               placeholder={settings.notifications.defaultSlackWebhook ??
                 'https://hooks.slack.com/…'}
               class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+              aria-describedby="slack-webhook-help"
             />
           </label>
+          <FormHelpText id="slack-webhook-help" kind="text" />
         </section>
 
         <!-- Instance policy -->
@@ -289,11 +306,13 @@
                 bind:value={maxOrgs}
                 placeholder={settings.instancePolicy.maxOrgs.toString()}
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="max-orgs-help"
               />
               {#if fieldErrors['instancePolicy.maxOrgs']}
                 <span class="text-xs text-red-600">{fieldErrors['instancePolicy.maxOrgs']}</span>
               {/if}
             </label>
+            <FormHelpText id="max-orgs-help" kind="date" />
             <label class="flex flex-col text-sm text-gray-700">
               Max users per org
               <input
@@ -301,6 +320,7 @@
                 bind:value={maxUsersPerOrg}
                 placeholder={settings.instancePolicy.maxUsersPerOrg.toString()}
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="max-users-help"
               />
               {#if fieldErrors['instancePolicy.maxUsersPerOrg']}
                 <span class="text-xs text-red-600"
@@ -308,6 +328,7 @@
                 >
               {/if}
             </label>
+            <FormHelpText id="max-users-help" kind="date" />
             <label class="flex flex-col text-sm text-gray-700">
               Session idle timeout (minutes)
               <input
@@ -315,8 +336,10 @@
                 bind:value={sessionIdleTimeoutMinutes}
                 placeholder={settings.instancePolicy.sessionIdleTimeoutMinutes.toString()}
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                aria-describedby="session-idle-help"
               />
             </label>
+            <FormHelpText id="session-idle-help" kind="date" />
           </div>
         </section>
 

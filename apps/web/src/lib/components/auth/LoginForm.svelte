@@ -5,6 +5,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale } from '$lib/paraglide/runtime.js'
   import { setPreAuthTheme, writePreAuthThemeCache } from '$lib/state/theme.svelte.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import PreAuthLanguageSwitcher from './PreAuthLanguageSwitcher.svelte'
   import { consumeRegistrationLocalePending } from './registration-locale.js'
   import {
@@ -218,7 +219,9 @@
         type="email"
         bind:value={email}
         required
+        aria-describedby="login-email-help"
       />
+      <FormHelpText id="login-email-help" kind="text" />
     </div>
   {/snippet}
 
@@ -294,7 +297,9 @@
           type="text"
           bind:value={ssoCredential}
           required
+          aria-describedby="login-sso-help"
         />
+        <FormHelpText id="login-sso-help" kind="text" />
       </div>
       {@render statusAndErrorMessages()}
       <button
@@ -332,7 +337,9 @@
           autocomplete="current-password"
           bind:value={password}
           required
+          aria-describedby="login-password-help"
         />
+        <FormHelpText id="login-password-help" kind="secret" />
       </div>
       {@render statusAndErrorMessages()}
       <button
