@@ -191,6 +191,11 @@ set `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, and `SMTP_FROM` for a real SMTP pro
 `SMTP_USER` and `SMTP_PASS` together when that provider requires authentication. Incomplete SMTP
 configuration fails API startup loudly.
 
+For a host-run API (`pnpm turbo dev`), start Mailpit with `docker compose up mailpit` and override
+the container-only defaults with `SMTP_HOST=127.0.0.1` and
+`SMTP_PORT=${MAILPIT_SMTP_HOST_PORT:-1025}`. The default `SMTP_HOST=mailpit` is for the Compose
+API container only.
+
 **Operator guide:** **[docs/operator-quickstart.md](docs/operator-quickstart.md)** — zero → eval-ready (`make bootstrap`, database roles, vault ceremony, troubleshooting).
 
 | Goal                   | Command                                                                                                              |

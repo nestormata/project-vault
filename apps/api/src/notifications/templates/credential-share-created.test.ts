@@ -25,6 +25,18 @@ describe('renderCredentialShareCreated', () => {
     expect(result.html).toContain('(field: api_key)')
   })
 
+  it('gives external recipients a usable, no-link next step', () => {
+    const result = renderCredentialShareCreated({
+      ...BASE_PAYLOAD,
+      recipientType: 'external',
+    })
+
+    expect(result.text).toContain('Contact the person who shared it with you for access.')
+    expect(result.html).toContain('Contact the person who shared it with you for access.')
+    expect(result.text).not.toContain('check your Shares')
+    expect(result.html).not.toContain('check your Shares')
+  })
+
   it('never embeds a share link/token in the rendered output (AC-10/AC-18)', () => {
     const result = renderCredentialShareCreated(BASE_PAYLOAD)
 

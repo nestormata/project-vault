@@ -165,6 +165,7 @@ services:
     image: axllent/mailpit:v1.27
     ports:
       - '127.0.0.1:${MAILPIT_UI_HOST_PORT:-8025}:8025'
+      - '127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-1025}:1025'
 
 volumes:
   db_data:

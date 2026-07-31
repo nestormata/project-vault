@@ -3,6 +3,7 @@ export type CredentialShareCreatedPayload = {
   credentialId: string
   sharedByUserId: string
   fieldKey: string | null
+  recipientType?: 'user' | 'external'
 }
 
 function escapeHtml(str: string): string {
@@ -26,12 +27,12 @@ export function renderCredentialShareCreated(raw: Record<string, unknown>): {
   const p = raw as CredentialShareCreatedPayload
   const subject = '[Project Vault] A credential was shared with you'
   const fieldNote = p.fieldKey ? ` (field: ${p.fieldKey})` : ''
+  const followUp =
+    p.recipientType === 'external'
+      ? 'Contact the person who shared it with you for access.'
+      : 'Open Project Vault and check your Shares to view it.'
 
-  const text = [
-    `A teammate shared a credential with you${fieldNote}.`,
-    '',
-    'Open Project Vault and check your Shares to view it.',
-  ].join('\n')
+  const text = [`A teammate shared a credential with you${fieldNote}.`, '', followUp].join('\n')
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -39,7 +40,7 @@ export function renderCredentialShareCreated(raw: Record<string, unknown>): {
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
   <h2>A credential was shared with you</h2>
   <p>A teammate shared a credential with you${escapeHtml(fieldNote)}.</p>
-  <p>Open Project Vault and check your Shares to view it.</p>
+  <p>${escapeHtml(followUp)}</p>
 </body>
 </html>`
 

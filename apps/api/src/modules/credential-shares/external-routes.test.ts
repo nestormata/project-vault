@@ -352,6 +352,11 @@ describe('external credential-shares routes', () => {
         template: expect.objectContaining({ templateId: 'credential.share_created' }),
       })
     )
+    expect(
+      dispatchSpy.mock.calls.some(
+        (call) => call[0].template.templateId === 'credential.external_share_created'
+      )
+    ).toBe(true)
 
     await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
     expect(
