@@ -613,3 +613,14 @@ against Epic 16's Key Takeaway 3.
 ## Deferred from: code review of 18-8-public-status-page-reorder-ui (2026-07-30)
 
 - AC-3's story prose calls `minimumRole: member` the effective status-page reorder gate, but the pre-existing route preflight requires project owner or org owner. The current page and regression test preserve that effective authorization. Revisit only with an explicit product/security decision about whether to relax the endpoint to project members.
+
+## Deferred from: Epic 18 retrospective (2026-07-31)
+
+- Story 18.11's remaining English login/register shell and MFA copy — scheduled as
+  `19-2-localize-pre-auth-shell-and-mfa-copy`.
+- Story 18.12's dashboard selector only exposing the first paginated project page — scheduled as
+  `19-1-dashboard-selector-all-accessible-projects`.
+- Story 18.3's bounded contextual-help floor — expanded by the new G5 contract and scheduled as
+  `19-3-contextual-help-for-all-input-fields`.
+- Story 2.9's programmatic empty dependent-system submission has no inline error — surfaced by the
+  new review-deferral guard and scheduled as `19-4-dependent-system-inline-validation`.

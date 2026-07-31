@@ -113,6 +113,9 @@ jobs:
       - name: Check PSC TBD UI deferrals tracked in deferred-work.md (retro P7-1/P8-2/P9-1)
         run: pnpm check-psc-tbd-tracking
 
+      - name: Check unchecked review deferrals have live follow-up stories (retro Epic 18 Finding 1)
+        run: pnpm check-story-review-deferrals
+
       - name: Check extension-api version-skew (Story 14.1 AC7)
         run: pnpm check-extension-api-version-skew
 
