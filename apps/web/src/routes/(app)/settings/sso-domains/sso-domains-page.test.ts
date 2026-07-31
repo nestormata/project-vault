@@ -52,12 +52,24 @@ function baseData(overrides: Record<string, unknown> = {}) {
 }
 
 describe('/settings/sso-domains +page.svelte (Story 14.6)', () => {
-  it('renders accessible help explaining the SSO domain input', () => {
+  it('renders clear examples and instructions for both SSO fields', () => {
     render(SsoDomainsPage, { props: { data: baseData({ domains: [] }) } })
 
     const domain = screen.getByLabelText(/^domain$/i)
     expect(domain.getAttribute('aria-describedby')).toBe('new-domain-help')
-    expect(screen.getByText(/domain your team uses in their email addresses/i)).toBeTruthy()
+    expect(
+      screen.getByText(
+        /enter the domain after the @ in your organization's email addresses.*alex@acme\.com.*enter acme\.com—not the @ or the full email address/i
+      )
+    ).toBeTruthy()
+
+    const provider = screen.getByLabelText(/^provider name$/i)
+    expect(provider.getAttribute('aria-describedby')).toBe('new-provider-help')
+    expect(
+      screen.getByText(
+        /exact registered provider extension name.*test\.mock-sso-extension.*not a display name/i
+      )
+    ).toBeTruthy()
   })
 
   it('is a real, existing route', () => {
@@ -133,6 +145,31 @@ describe('/settings/sso-domains +page.svelte (Story 14.6)', () => {
 
     expect(await screen.findByText(/this domain is on our list/i)).toBeTruthy()
     expect(invalidateAllMock).not.toHaveBeenCalled()
+  })
+
+  it('AC-2 edge: an unregistered provider error explains how to correct the provider name', async () => {
+    createOrgSsoDomainMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        {
+          code: 'provider_not_registered',
+          message:
+            'Provider is not registered on this server. Enter the exact provider extension name and make sure it is installed and enabled.',
+        },
+        'Provider is not registered on this server. Enter the exact provider extension name and make sure it is installed and enabled.'
+      )
+    )
+    render(SsoDomainsPage, { props: { data: baseData({ domains: [] }) } })
+
+    await fireEvent.input(screen.getByLabelText(/domain/i), { target: { value: 'acme.com' } })
+    await fireEvent.input(screen.getByLabelText(/provider/i), {
+      target: { value: 'missing.provider' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /add domain/i }))
+
+    expect(
+      await screen.findByText(/not registered on this server.*exact provider extension name/i)
+    ).toBeTruthy()
   })
 
   it('AC-8: the submit control is disabled while a create request is in flight (double-submit guard)', async () => {

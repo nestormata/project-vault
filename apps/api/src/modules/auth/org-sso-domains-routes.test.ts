@@ -244,6 +244,28 @@ describe('org-sso-domains-routes (Story 14.6)', () => {
     expect(rows[0]?.domain).toBe(raw.toLowerCase().slice(0, -1))
   })
 
+  it('Story 18.9 AC-1: creates a multi-label ccTLD domain through the authenticated HTTP path', async () => {
+    const owner = await registerOwner(app, 'multi-label-profesional')
+    const domain = `profesional-${randomUUID().slice(0, 8)}.co.cr`
+
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: LIST_URL,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { domain, providerName: PROVIDER },
+      })
+
+      expect(res.statusCode).toBe(201)
+      expect(res.json()).toMatchObject({
+        domain,
+        providerName: PROVIDER,
+      })
+    } finally {
+      await withOrg(owner.orgId, (tx) => tx.delete(orgSsoDomains))
+    }
+  })
+
   it('AC-2(b): rejects a malformed domain with 422 invalid_domain_format', async () => {
     const owner = await registerOwner(app, 'create-invalid')
     const res = await app.inject({
@@ -580,7 +602,7 @@ describe('ssoErrorMessage', () => {
     expect(ssoErrorMessage('invalid_domain_format')).toBe('Domain is not a valid hostname')
     expect(ssoErrorMessage('public_domain_blocked')).toMatch(/shared public email providers/)
     expect(ssoErrorMessage('provider_not_registered')).toBe(
-      'This provider is not currently registered'
+      'Provider is not registered on this server. Enter the exact provider extension name and make sure it is installed and enabled.'
     )
     expect(ssoErrorMessage('provider_check_unavailable')).toMatch(/try again shortly/)
     expect(ssoErrorMessage('domain_already_mapped')).toBe(
