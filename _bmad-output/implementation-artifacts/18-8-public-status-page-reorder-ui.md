@@ -68,3 +68,8 @@ Riley-admin opens the project's status-page management screen and can reorder th
 ### Completion Notes List
 
 ### File List
+
+### Review Findings (bmad-code-review, 2026-07-30)
+
+- [x] [Review][Patch] The API coverage did not exercise a cross-tenant write attempt or a real concurrent stale reorder versus service-add race [apps/api/src/modules/monitoring/status-page-routes.test.ts:377-436]. Added both regression tests; the existing full-replace/last-write-wins contract remains unchanged.
+- [x] [Review][Defer] AC-3's prose describes the `minimumRole: member` floor as the effective gate, but the pre-existing `preflightOwnedProject` gate requires project owner or org owner [apps/api/src/modules/monitoring/status-page-routes.ts:62-79]. Deferred, pre-existing authorization contract; changing it requires an explicit product/security decision. The page and regression test consistently enforce the effective owner/org-owner gate.

@@ -374,7 +374,25 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
       expect(res.json()).toMatchObject({ code: 'insufficient_role' })
     })
 
-    it('accepts last-write-wins when a stale reorder follows an intervening service add', async () => {
+    it('rejects a project A owner from reordering project B services across tenants', async () => {
+      const ownerA = await registerOwner(app, 'put-cross-tenant-owner-a')
+      const ownerB = await registerOwner(app, 'put-cross-tenant-owner-b')
+      const projectA = await createProjectViaApi(app, ownerA.cookies, 'sp-put-cross-tenant-a')
+      const projectB = await createProjectViaApi(app, ownerB.cookies, 'sp-put-cross-tenant-b')
+      const svcB = await insertEndpoint(ownerB.orgId, projectB, 'svc-cross-tenant-b')
+      await enableStatusPage(app, ownerB.cookies, projectB)
+
+      const res = await putStatusPage(app, ownerA.cookies, projectB, [
+        { serviceId: svcB, displayName: 'Cross-tenant write' },
+      ])
+
+      expect(projectA).not.toBe(projectB)
+      expect(ownerA.orgId).not.toBe(ownerB.orgId)
+      expect(res.statusCode).toBe(404)
+      expect(res.json()).toMatchObject({ code: 'project_not_found' })
+    })
+
+    it('resolves a concurrent stale reorder versus service add with last-write-wins', async () => {
       const owner = await registerOwner(app, 'put-stale-add')
       const projectId = await createProjectViaApi(app, owner.cookies, 'sp-put-stale-add')
       const svcA = await insertEndpoint(owner.orgId, projectId, 'svc-stale-a')
@@ -383,24 +401,39 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
       await enableStatusPage(app, owner.cookies, projectId)
       await putStatusPage(app, owner.cookies, projectId, [{ serviceId: svcA, displayName: 'A' }])
 
-      // The stale reorder was fetched before this intervening add, so the existing full-replace
-      // contract intentionally lets the later commit win and removes the newly added service.
-      await putStatusPage(app, owner.cookies, projectId, [
-        { serviceId: svcA, displayName: 'A' },
-        { serviceId: svcB, displayName: 'B' },
-      ])
-      const staleReorder = await putStatusPage(app, owner.cookies, projectId, [
-        { serviceId: svcA, displayName: staleDisplayName },
+      // Both submissions use valid snapshots from the same project. The existing full-replace
+      // contract intentionally lets whichever transaction commits last win, so the final state
+      // must be one complete submitted array rather than a partial or mixed list.
+      const [staleReorder, addService] = await Promise.all([
+        putStatusPage(app, owner.cookies, projectId, [
+          { serviceId: svcA, displayName: staleDisplayName },
+        ]),
+        putStatusPage(app, owner.cookies, projectId, [
+          { serviceId: svcA, displayName: 'A' },
+          { serviceId: svcB, displayName: 'B' },
+        ]),
       ])
 
       expect(staleReorder.statusCode).toBe(200)
-      expect(staleReorder.json()).toMatchObject({
-        data: { services: [{ serviceId: svcA, displayName: staleDisplayName, sortOrder: 0 }] },
-      })
+      expect(addService.statusCode).toBe(200)
       const config = await getStatusPage(app, owner.cookies, projectId)
-      expect(config.json()).toMatchObject({
-        data: { services: [{ serviceId: svcA, displayName: staleDisplayName, sortOrder: 0 }] },
-      })
+      expect(config.json()).toMatchObject({ data: { services: expect.any(Array) } })
+      const finalServices = config.json<{
+        data: { services: { serviceId: string; displayName: string; sortOrder: number }[] }
+      }>().data.services
+      expect([
+        [{ serviceId: svcA, displayName: staleDisplayName, sortOrder: 0 }],
+        [
+          { serviceId: svcA, displayName: 'A', sortOrder: 0 },
+          { serviceId: svcB, displayName: 'B', sortOrder: 1 },
+        ],
+      ]).toContainEqual(
+        finalServices.map(({ serviceId, displayName, sortOrder }) => ({
+          serviceId,
+          displayName,
+          sortOrder,
+        }))
+      )
     })
 
     it('rejects a duplicate serviceId in the same request with 422', async () => {
