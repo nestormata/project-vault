@@ -1,6 +1,6 @@
 # Story 18.10: Screen-Transition Loading Indicator
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -39,9 +39,14 @@ Riley-member clicks a nav link to a page whose data takes a moment to load. A vi
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Build global nav-loading indicator component driven by `navigating` store (AC: 1, 2, 3, 4)
-- [ ] Task 2: Wire into root layout (AC: 5)
-- [ ] Task 3: Tests (AC: 6, 7)
+- [x] Task 1: Build global nav-loading indicator component driven by `navigating` store (AC: 1, 2, 3, 4)
+- [x] Task 2: Wire into root layout (AC: 5)
+- [x] Task 3: Tests (AC: 6, 7)
+
+### Review Findings
+
+- [x] [Review][Patch] Restart the delayed reveal after a cancellation is immediately replaced by another navigation [apps/web/src/lib/components/NavigationProgressBar.svelte:16-43] — fixed by subscribing directly to every `navigating` store emission and adding regression coverage.
+- [x] [Review][Patch] Keep the global indicator above the existing onboarding modal stack [apps/web/src/lib/components/NavigationProgressBar.svelte:60-66] — fixed by raising the progress bar z-index to 70.
 
 ## Dev Notes
 
@@ -63,8 +68,39 @@ Riley-member clicks a nav link to a page whose data takes a moment to load. A vi
 
 ### Agent Model Used
 
+GPT-5 (Codex)
+
 ### Debug Log References
+
+- RED phase: focused Vitest run failed because `NavigationProgressBar.svelte` did not yet exist.
+- GREEN phase: focused component/root-layout tests pass. Dependency installation was required because
+  this isolated worktree had no `node_modules`; Paraglide emitted a pre-existing offline plugin-fetch
+  warning during test/typecheck/lint setup, but each requested command completed successfully.
 
 ### Completion Notes List
 
+- AC-1/2/4/8: Added a dependency-free root-safe Svelte component subscribed to `$app/stores`'s
+  `navigating` store. It reveals after 180ms, cancels the delayed reveal on `null`, and clears the
+  visible bar for resolved, cancelled, and errored navigations without guessed load durations.
+- AC-3: Uses a fixed 3px top-of-viewport brand-colored bar with `pointer-events: none`; no overlay or
+  full-page spinner was introduced.
+- AC-5: Mounted exactly once in `apps/web/src/routes/+layout.svelte`, covering authenticated and
+  pre-auth routes globally.
+- AC-6/7: Exposes `role="status"` with `aria-live="polite"` and a screen-reader label; the CSS media
+  query removes continuous animation and uses a static full-width treatment for reduced motion.
+- AC-9: Added focused tests for fast/slow delayed-show behavior, delayed-show cancellation, visible
+  cancellation/error clearing, accessibility/reduced motion, and root-layout wiring.
+- AC-10: Existing page-level loading states were not modified or duplicated; the existing GlobalSearch
+  loading tests remain green.
+
 ### File List
+
+- `apps/web/src/lib/components/NavigationProgressBar.svelte`
+- `apps/web/src/lib/components/NavigationProgressBar.test.ts`
+- `apps/web/src/routes/+layout.svelte`
+- `apps/web/src/routes/root-layout.test.ts`
+
+### Change Log
+
+- 2026-07-30: Implemented Story 18.10 via TDD red-green; all tasks and acceptance criteria are
+  complete and the story is ready for review.
