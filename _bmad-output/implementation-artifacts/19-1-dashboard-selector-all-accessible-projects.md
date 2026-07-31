@@ -1,6 +1,6 @@
 # Story 19.1: Dashboard Selector Includes Every Accessible Project
 
-Status: ready-for-dev
+Status: review
 Surface scope: web
 
 ## Story
@@ -81,35 +81,35 @@ revealing whether the rejected ID exists.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Inspect and specify the existing project-list pagination/client contract (AC: 1, 2, 4)
-  - [ ] Confirm the API's maximum supported limit and `hasNext` semantics in the shared schema,
+- [x] Task 1: Inspect and specify the existing project-list pagination/client contract (AC: 1, 2, 4)
+  - [x] Confirm the API's maximum supported limit and `hasNext` semantics in the shared schema,
         route, and project route tests.
-  - [ ] Confirm the existing RLS/membership join remains the only source of dashboard-selectable
+  - [x] Confirm the existing RLS/membership join remains the only source of dashboard-selectable
         projects.
-- [ ] Task 2: Implement complete project loading for the dashboard (AC: 1, 2, 3, 5)
-  - [ ] Add a focused client helper or equivalent loader logic that requests all pages sequentially
+- [x] Task 2: Implement complete project loading for the dashboard (AC: 1, 2, 3, 5)
+  - [x] Add a focused client helper or equivalent loader logic that requests all pages sequentially
         and returns one ordered project list.
-  - [ ] Add explicit termination/contradiction handling so incomplete pagination cannot be mistaken
+  - [x] Add explicit termination/contradiction handling so incomplete pagination cannot be mistaken
         for a complete list.
-  - [ ] Preserve URL selection, first-accessible fallback, vault-sealed handling, and downstream
+  - [x] Preserve URL selection, first-accessible fallback, vault-sealed handling, and downstream
         project-scoped requests.
-- [ ] Task 3: Keep the selector accessible and responsive (AC: 6)
-  - [ ] Add localized explanatory text for the select and wire `aria-describedby`.
-  - [ ] Verify the selector remains usable with 1, 20, 101, and narrow-viewport project lists.
-- [ ] Task 4: Add focused regression tests before implementation (AC: 4, 5, 7)
-  - [ ] Add red tests for later-page selection, ordered page requests, invalid selection fallback,
+- [x] Task 3: Keep the selector accessible and responsive (AC: 6)
+  - [x] Add localized explanatory text for the select and wire `aria-describedby`.
+  - [x] Verify the selector remains usable with 1, 20, 101, and narrow-viewport project lists.
+- [x] Task 4: Add focused regression tests before implementation (AC: 4, 5, 7)
+  - [x] Add red tests for later-page selection, ordered page requests, invalid selection fallback,
         pagination contradiction, and page failure.
-  - [ ] Add/adjust membership-isolation coverage if the existing project route tests do not prove
+  - [x] Add/adjust membership-isolation coverage if the existing project route tests do not prove
         the later-page query remains scoped.
-- [ ] Task 5: Run targeted validation and browser journey (AC: 7, 8)
-  - [ ] Run the affected web/client/load tests and any directly affected API project tests.
-  - [ ] Run lint/typecheck for changed packages only.
-  - [ ] Run the Playwright journey against the isolated local stack with worktree-specific ports;
+- [x] Task 5: Run targeted validation and browser journey (AC: 7, 8)
+  - [x] Run the affected web/client/load tests and any directly affected API project tests.
+  - [x] Run lint/typecheck for changed packages only.
+  - [x] Run the Playwright journey against the isolated local stack with worktree-specific ports;
         follow AGENTS.md Docker port isolation instructions before Docker commands.
-- [ ] Task 6: Review and record completion (AC: 1-8)
-  - [ ] Run adversarial code review for tenant/RLS, pagination termination, auth/session lifecycle,
+- [x] Task 6: Review and record completion (AC: 1-8)
+  - [x] Run adversarial code review for tenant/RLS, pagination termination, auth/session lifecycle,
         rate limits, operational logging, deployment assumptions, and accessibility.
-  - [ ] Update the Dev Agent Record, File List, Change Log, and status only after all evidence is
+  - [x] Update the Dev Agent Record, File List, Change Log, and status only after all evidence is
         captured; do not push a branch or open a PR during the Epic 19 local loop.
 
 ## Dev Notes
@@ -213,11 +213,45 @@ Codex
 
 ### Debug Log References
 
+- Initial red run: focused tests failed because `listAllProjects` and the dashboard all-pages call
+  did not yet exist; the selector had no `aria-describedby` guidance.
+- E2E setup required a DB-only fixture because the real project-create endpoint rate-limits at 20
+  requests/minute. The browser still exercised the real authenticated list, dashboard, and URL
+  fallback journey.
+
 ### Completion Notes List
 
+- Implemented sequential `limit=100` loading with a 1,000-page finite safety bound.
+- Fail-closed validation covers zero projects, exact page boundaries, empty continuation pages,
+  non-advancing metadata, duplicate/invalid IDs, total contradictions, and later-page failures.
+- Existing access-controlled `/api/v1/projects` membership/RLS behavior remains authoritative; no
+  API route, schema, migration, audit event, or RLS policy changed.
+- Added localized selector explanation text connected through `aria-describedby`.
+- Focused web tests: 62 passed. Web typecheck passed. Web lint passed with 21 pre-existing warnings
+  and no errors.
+- Playwright J7: 2 passed, including 101-project second-page selection and foreign-project-ID
+  fallback without disclosure, using worktree ports DB 29381/API 39380/web 49380.
+- Review disposition: no Critical/High findings. The only test-environment issue was the existing
+  Compose migration/API startup race; the API image and journey passed after isolated recovery.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/19-1-dashboard-selector-all-accessible-projects.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `apps/web/src/lib/api/projects.ts`
+- `apps/web/src/lib/api/projects.test.ts`
+- `apps/web/src/routes/(app)/dashboard/+page.server.ts`
+- `apps/web/src/routes/(app)/dashboard/dashboard-page.server.test.ts`
+- `apps/web/src/lib/components/dashboard/DashboardProjectSelector.svelte`
+- `apps/web/src/routes/dashboard.test.ts`
+- `apps/web/messages/en.json`
+- `apps/web/messages/es.json`
+- `apps/web/e2e/fixtures/db.ts`
+- `apps/web/e2e/journeys/j7-dashboard-project-pagination.spec.ts`
 
 ### Change Log
 
 - 2026-07-31: Story created from Epic 18 Finding 2 with pagination, tenant-safety, accessibility,
   targeted-test, and Playwright requirements.
+- 2026-07-31: Implemented and reviewed complete dashboard project pagination with TDD, localized
+  G5 guidance, and Playwright validation; status moved to review.
