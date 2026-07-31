@@ -1,3 +1,4 @@
+# last_updated: 2026-07-31 (18-12-fix-dashboard-not-showing-certificates-alerts-and-domains: ready-for-dev -> in-progress via pick-story; implementation will follow TDD red-green and include story-focused Chrome validation before targeted checks)
 # last_updated: 2026-07-30 (18-8-public-status-page-reorder-ui: review -> done after TDD implementation, code review, focused checks, and Chrome validation)
 # last_updated: 2026-07-30 (18-7-dependent-systems-list-and-form-ux-cleanup: in-progress -> review
 # via bmad-dev-story, TDD red-green. AC-1 investigation confirmed the "Updated" checkbox next to
@@ -419,4 +420,4 @@ development_status:
   18-9-fix-sso-domain-validation-false-rejection: done # updated: 18-9 -> done after UX/error-guidance implementation
   18-10-screen-transition-loading-indicator: ready-for-dev
   18-11-pre-login-and-registration-language-selection: ready-for-dev
-  18-12-fix-dashboard-not-showing-certificates-alerts-and-domains: ready-for-dev
+  18-12-fix-dashboard-not-showing-certificates-alerts-and-domains: in-progress
