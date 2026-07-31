@@ -31,7 +31,7 @@ type ElementId = { id: string; tag: string; line: number }
 
 function maskNonTemplate(source: string): string {
   return source.replace(
-    /<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script\s*>|<style\b[\s\S]*?<\/style\s*>/gi,
+    /<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script\b[^>]*>|<style\b[\s\S]*?<\/style\b[^>]*>/gi,
     (region) => region.replace(/[^\n]/g, ' ')
   )
 }
