@@ -147,6 +147,7 @@
   // field-selector's own field_meta.length > 1 gating convention (Story 13.4).
   let depFieldKey = $state('')
   let depSubmitting = $state(false)
+  let depNameError = $state<string | null>(null)
   let depError = $state<string | null>(null)
   let depBanner = $state<string | null>(null)
   let archivingDependencyId = $state<string | null>(null)
@@ -329,8 +330,12 @@
   async function onAddDependency(): Promise<void> {
     if (depSubmitting || !data.credential) return
     const systemName = depSystemName.trim()
-    if (!systemName) return
+    if (!systemName) {
+      depNameError = m.form_error_dependency_system_name_required()
+      return
+    }
     depSubmitting = true
+    depNameError = null
     depError = null
     depBanner = null
     try {
@@ -1314,9 +1319,15 @@
                 type="text"
                 required
                 bind:value={depSystemName}
-                aria-describedby="dependency-system-name-help"
+                aria-describedby={`dependency-system-name-help${depNameError ? ' dependency-system-name-error' : ''}`}
+                aria-invalid={depNameError ? 'true' : undefined}
               />
               <FormHelpText id="dependency-system-name-help" kind="text" />
+              {#if depNameError}
+                <p id="dependency-system-name-error" class="text-sm text-red-700" role="alert">
+                  {depNameError}
+                </p>
+              {/if}
             </div>
             <div class="space-y-1">
               <label class="block text-sm font-medium text-slate-800" for="dependency-system-type">
