@@ -73,5 +73,6 @@
   "form_help_radio": "Elige la opción que controla cómo se realiza esta operación.",
   "form_help_secret": "Este valor es sensible; ingrésalo solo cuando quieras guardar o usar un secreto.",
   "form_help_date": "Elige la fecha que controla esta configuración o filtro.",
-  "form_help_search": "Ingresa un valor para limitar los registros mostrados; no cambia los datos guardados."
+  "form_help_search": "Ingresa un valor para limitar los registros mostrados; no cambia los datos guardados.",
+  "form_error_dependency_system_name_required": "El nombre del sistema es obligatorio."
 }

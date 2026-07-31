@@ -1,6 +1,6 @@
 # Story 19.4: Inline Validation for Empty Dependent-System Submissions
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -140,7 +140,7 @@ finds no Critical or High issue and the focused gates are green.
 
 ## Implementation Notes
 
-- Reuse the existing `depError` state and `FormHelpText`/Paraglide patterns in
+- Reuse the existing page-local error handling plus `FormHelpText`/Paraglide patterns in
   `apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte`.
 - The smallest expected change is to replace the silent empty-name return in `onAddDependency` with
   a localized field error and to render/associate that error in the existing form.
@@ -164,8 +164,8 @@ finds no Critical or High issue and the focused gates are green.
    and secret-handling invariants rather than treating this as a purely cosmetic error.
 3. **Accessibility pass:** require a stable error relationship, visible text, duplicate-ID safety,
    keyboard submission, disclosure state, and narrow-layout evidence.
-4. **Architecture pass:** reuse existing `depError`, Paraglide, and page-local patterns; avoid a
-   new validation abstraction for one field.
+4. **Architecture pass:** use a small `depNameError` alongside the existing server `depError`,
+   reuse Paraglide and page-local patterns, and avoid a new validation abstraction for one field.
 5. **Failure-mode pass:** cover programmatic submit, whitespace, repeated submit, locale changes,
    server failure after correction, disclosure reopen, and no-network-call behavior.
 
@@ -180,3 +180,31 @@ Codex (GPT-5)
 - 2026-07-31: Created from the Epic 18 retrospective review-deferral guard and Story 2.9's
   unchecked Medium finding. Planning and adversarial review were performed locally by Codex; no
   remote push is authorized.
+
+### Implementation and review evidence
+
+- Red phase: the new whitespace-submission test failed because `onAddDependency` returned without
+  rendering an error. Green phase: the focused credential-detail test file passes 70/70 tests.
+- Implementation is limited to the existing dependent-system page handler, its field-local error
+  rendering/accessibility relationship, and one English/Spanish Paraglide message pair. No API,
+  database, migration, authorization, audit, rate-limit, session, or tenant-scope code changed.
+- The local error runs before `addCredentialDependency`, trims no user data into the message, keeps
+  the disclosure open, retains optional fields, clears on a valid retry, and leaves existing server
+  error/banner handling intact.
+- Targeted verification passed: focused Vitest route tests (70 tests), web typecheck, affected
+  ESLint, `git diff --check`, and `pnpm --filter @project-vault/shared build` for the local E2E
+  migration helper.
+- Playwright J10 passed 1/1 against the isolated Docker E2E stack. It used real Settings → Language
+  selection to switch to Spanish, rejected whitespace with no request, checked visible localized
+  error and `aria-invalid`/`aria-describedby`, preserved the open disclosure, resized to 375px,
+  and successfully created a trimmed dependent system.
+- The initial browser attempts found and corrected only test-environment/test-locator issues:
+  missing local shared build output for global setup, an ambiguous summary locator, and a test
+  assumption that an API locale PATCH also sets the SSR cookie. The application behavior then
+  passed unchanged.
+- Adversarial review found no Critical or High issue. The only pre-existing compiler output is
+  Svelte `state_referenced_locally` warnings on this large page; this story did not introduce a
+  new warning category or broaden its scope.
+- Changed files: the dependent-system credential-detail page, its focused test, English/Spanish
+  message catalogs, and the J10 Playwright journey. Full local CI remains deferred until Epic 19
+  is complete.

@@ -74,5 +74,6 @@
   "form_help_radio": "Choose the option that controls how this operation is performed.",
   "form_help_secret": "This value is sensitive; enter it only when you intend to store or use a secret.",
   "form_help_date": "Choose the date that controls this setting or filter.",
-  "form_help_search": "Enter a value to narrow the records shown; it does not change stored data."
+  "form_help_search": "Enter a value to narrow the records shown; it does not change stored data.",
+  "form_error_dependency_system_name_required": "System name is required."
 }
