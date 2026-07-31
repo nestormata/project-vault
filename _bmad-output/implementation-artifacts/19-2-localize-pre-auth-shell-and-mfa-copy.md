@@ -1,6 +1,6 @@
 # Story 19.2: Localize the Pre-Auth Shell and MFA Copy
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
