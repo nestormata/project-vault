@@ -30,6 +30,8 @@ describe('renderCredentialShareCreated', () => {
 
     expect(result.text).not.toContain('/shares/')
     expect(result.html).not.toContain('/shares/')
+    expect(result.text).not.toContain(BASE_PAYLOAD.shareId)
+    expect(result.html).not.toContain(BASE_PAYLOAD.shareId)
   })
 
   it('HTML-escapes a fieldKey containing special characters', () => {

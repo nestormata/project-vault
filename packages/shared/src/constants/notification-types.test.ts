@@ -60,3 +60,9 @@ describe('Story 9.1 backup health alert types (D7/AC-12)', () => {
     expect(NOTIFICATION_ALERT_TYPES).toContain('backup.failure')
   })
 })
+
+describe('Story 18.6 credential-share delivery', () => {
+  it('registers credential.share_created so recipients receive default notifications', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('credential.share_created')
+  })
+})

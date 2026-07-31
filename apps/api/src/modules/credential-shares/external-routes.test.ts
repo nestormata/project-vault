@@ -339,17 +339,19 @@ describe('external credential-shares routes', () => {
     expect(garbage.json()).toEqual(wellFormedNeverIssued.json())
   })
 
-  it('AC-11/AC-12: reveal audits CREDENTIAL_SHARE_VIEWED with recipientType external and notifies admins on creation and first view', async () => {
+  it('AC-11/AC-12/Story 18.6: reveal audits CREDENTIAL_SHARE_VIEWED and emails the external recipient without a token', async () => {
     const dispatchSpy = vi.spyOn(dispatcher, 'createOrgAdminNotificationEntries')
+    const recipientDispatchSpy = vi.spyOn(dispatcher, 'dispatchDirectEmailNotification')
     const { sharer, projectId, credentialId } = await createFixture('admin-notify')
 
     const create = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {})
     const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
-    expect(
-      dispatchSpy.mock.calls.some(
-        (call) => call[0].template.templateId === 'credential.external_share_created'
-      )
-    ).toBe(true)
+    expect(recipientDispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientEmail: DEFAULT_RECIPIENT_EMAIL,
+        template: expect.objectContaining({ templateId: 'credential.share_created' }),
+      })
+    )
 
     await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
     expect(
@@ -370,6 +372,7 @@ describe('external credential-shares routes', () => {
     expect((entry?.payload as Record<string, unknown> | null)?.['recipientType']).toBe('external')
 
     dispatchSpy.mockRestore()
+    recipientDispatchSpy.mockRestore()
   })
 
   it('AC-22: exceeding the reveal-attempt cap auto-revokes the share, with no attempt count leaked in the response', async () => {

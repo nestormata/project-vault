@@ -837,8 +837,17 @@ const envSchema = z
       })
     }
     validateDummyPasswordHash(env, ctx)
-    if (env.SMTP_HOST && !env.SMTP_FROM) {
-      addEnvIssue(ctx, 'SMTP_FROM', 'SMTP_FROM is required when SMTP_HOST is set')
+    if (env.SMTP_HOST) {
+      if (!env.SMTP_PORT)
+        addEnvIssue(ctx, 'SMTP_PORT', 'SMTP_PORT is required when SMTP_HOST is set')
+      if (env.SMTP_SECURE === undefined) {
+        addEnvIssue(ctx, 'SMTP_SECURE', 'SMTP_SECURE is required when SMTP_HOST is set')
+      }
+      if (!env.SMTP_FROM)
+        addEnvIssue(ctx, 'SMTP_FROM', 'SMTP_FROM is required when SMTP_HOST is set')
+      if (Boolean(env.SMTP_USER) !== Boolean(env.SMTP_PASS)) {
+        addEnvIssue(ctx, 'SMTP_PASS', 'SMTP_USER and SMTP_PASS must be set together')
+      }
     }
     validateBackupEnv(env, ctx)
   })

@@ -8,13 +8,14 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-project_vault}"]
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-project_vault}']
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
     ports:
-      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
+      - '127.0.0.1:${DB_HOST_PORT:-5432}:5432'
 
   # One-shot migration runner: creates the vault_app role, RLS policies, and triggers
   # (see packages/db/src/migrations/0001_rls_and_triggers.sql) before `api` starts, so
@@ -26,7 +27,7 @@ services:
       target: db-builder
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
-    command: ["pnpm", "--filter", "@project-vault/db", "db:migrate"]
+    command: ['pnpm', '--filter', '@project-vault/db', 'db:migrate']
     depends_on:
       db:
         condition: service_healthy
@@ -109,6 +110,14 @@ services:
       # verification found it, meaning self-hosted docker deployments had no way to actually use
       # this feature. Set in .env to a resolvable package name.
       VAULT_EXTENSIONS_PACKAGE: ${VAULT_EXTENSIONS_PACKAGE:-}
+      # Story 18.6: Mailpit is the local default. Production/demo deployments should replace
+      # these with their provider's host, port, TLS mode, credentials, and verified sender.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-notifications@project-vault.local}
     volumes:
       - ./dev-secrets:/run/secrets:ro
       - backup_data:/var/backups/vault
@@ -117,7 +126,7 @@ services:
       # container restart, so the 24h orphan-cleanup window is meaningful across restarts:
       # - backup_staging_data:/var/backups/vault-staging
     ports:
-      - "${API_HOST_PORT:-3000}:3000"
+      - '${API_HOST_PORT:-3000}:3000'
     depends_on:
       db:
         condition: service_healthy
@@ -125,7 +134,7 @@ services:
         condition: service_completed_successfully
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 10s
       timeout: 5s
       retries: 3
@@ -146,9 +155,16 @@ services:
       # above — make fix-ports/docker-ports.sh can bump WEB_HOST_PORT so this can't be hardcoded.
       ORIGIN: http://localhost:${WEB_HOST_PORT:-5173}
     ports:
-      - "${WEB_HOST_PORT:-5173}:3000"
+      - '${WEB_HOST_PORT:-5173}:3000'
     depends_on:
       - api
+
+  # Local/dev SMTP sink. Browse http://localhost:${MAILPIT_UI_HOST_PORT:-8025} to inspect mail.
+  # SMTP itself stays container-only, avoiding another per-worktree host-port collision.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - '127.0.0.1:${MAILPIT_UI_HOST_PORT:-8025}:8025'
 
 volumes:
   db_data:

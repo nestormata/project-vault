@@ -22,6 +22,7 @@ import * as preferencesModule from '../modules/notifications/preferences.js'
 const FAILED_AUTH_TEMPLATE = 'security.failed_auth_threshold'
 const SERVICE_DOWN_TEMPLATE = 'service.down'
 const MFA_RECOVERY_USED_TEMPLATE = 'security.mfa_recovery_used'
+const CREDENTIAL_SHARE_TEMPLATE = 'credential.share_created'
 
 async function seedOwner(orgId: string, userId: string) {
   await withOrg(orgId, (tx) =>
@@ -30,6 +31,26 @@ async function seedOwner(orgId: string, userId: string) {
 }
 
 describe('notification dispatcher', () => {
+  it('creates immediate email and inbox entries for a share recipient with default preferences', async () => {
+    const userId = await createTestUser('dispatcher-share-default')
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const jobs = await withOrg(orgId, (tx) =>
+          dispatchDirectUserNotification({
+            orgId,
+            userId,
+            template: { templateId: CREDENTIAL_SHARE_TEMPLATE, payload: {}, severity: 'info' },
+            tx,
+          })
+        )
+        expect(jobs).toHaveLength(2)
+        const rows = await withOrg(orgId, (tx) => tx.select().from(notificationQueue))
+        expect(rows.filter((row) => row.channel === 'email')).toHaveLength(1)
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
+  })
   it('creates email and inbox entries for owner with default preferences', async () => {
     const userId = await createTestUser('dispatcher-owner')
     try {

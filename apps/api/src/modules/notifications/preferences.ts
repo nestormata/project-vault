@@ -15,6 +15,7 @@ import type { PreferenceItemSchema } from './schema.js'
 
 type PreferenceInput = z.infer<typeof PreferenceItemSchema>
 type StoredNotificationChannel = NotificationChannel | 'none'
+const IMMEDIATE_INFO_DEFAULT_ALERT_TYPES = new Set(['credential.share_created'])
 
 export type PreferenceOutput = {
   alertType: string
@@ -38,7 +39,12 @@ function fillDefaultPreferences(stored: PreferenceOutput[]): PreferenceOutput[] 
           alertType,
           channel,
           frequency: DEFAULT_NOTIFICATION_FREQUENCY,
-          minSeverity: DEFAULT_NOTIFICATION_MIN_SEVERITY,
+          // Share recipients should receive the deliberately informational share-created event
+          // without an opt-in. This virtual default is retrospective too: no migration or
+          // surprise preference rows are written for existing users.
+          minSeverity: IMMEDIATE_INFO_DEFAULT_ALERT_TYPES.has(alertType)
+            ? 'info'
+            : DEFAULT_NOTIFICATION_MIN_SEVERITY,
         })
       }
     }

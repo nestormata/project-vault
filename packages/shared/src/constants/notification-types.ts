@@ -34,6 +34,9 @@ export const NOTIFICATION_ALERT_TYPES = [
   'audit_storage.critical',
   // Story 9.2 AC-19/AC-20: master-key custody risk — delivered to every org owner (D7).
   'key_custody_risk',
+  // Story 18.6: recipient-directed, informational notification. Unlike operational alerts,
+  // this must be delivered at the default `info` threshold (see preferences.ts).
+  'credential.share_created',
   // Story 17.2 AC-12: external recipients have no in-app account to notify, so admins are
   // notified instead — once at share creation, once at the recipient's first successful reveal
   // (never again for a single-use share).

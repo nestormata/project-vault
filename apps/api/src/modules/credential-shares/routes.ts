@@ -2,7 +2,12 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
-import { parseBody, parseParams, parseQuery } from '../../lib/route-helpers.js'
+import {
+  enforceUserRateLimit,
+  parseBody,
+  parseParams,
+  parseQuery,
+} from '../../lib/route-helpers.js'
 import { roleRank, secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeShareAuditEntry } from './audit.js'
 import type { BossService } from '../../lib/boss.js'
@@ -13,6 +18,7 @@ import {
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import {
   createOrgAdminNotificationEntries,
+  dispatchDirectEmailNotification,
   dispatchDirectUserNotification,
   dispatchPendingJobs,
   type NotificationQueueJob,
@@ -58,6 +64,25 @@ const CREDENTIAL_NOT_FOUND = {
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const SHARE_NOT_FOUND = { code: 'share_not_found', message: 'Share not found' } as const
 const AUDIT_FAILED_EVENT_TYPE = 'credential_share.audit_failed'
+const SHARE_EMAIL_PAIR_RATE_LIMIT = {
+  max: 5,
+  timeWindowMs: 60_000,
+  key: 'credential-share-email-recipient',
+} as const
+
+function enforceShareRecipientEmailRateLimit(
+  userId: string,
+  recipient: string,
+  reply: FastifyReply
+): boolean {
+  return enforceUserRateLimit({
+    // The primitive scopes its window by userId+key. Supplying the pair here prevents a sharer
+    // from repeatedly sending mail to one target while leaving different recipients independent.
+    userId: `${userId}:${recipient.trim().toLowerCase()}`,
+    reply,
+    ...SHARE_EMAIL_PAIR_RATE_LIMIT,
+  })
+}
 
 export function serializeShare(share: CredentialShareRow) {
   return {
@@ -340,6 +365,16 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
 
+      if (
+        !enforceShareRecipientEmailRateLimit(
+          secureCtx.auth.userId,
+          parsed.data.recipientUserId,
+          reply
+        )
+      ) {
+        return reply
+      }
+
       // AC-1: share-creation eligibility reuses reveal's exact permission gate — never a second,
       // parallel check that could drift out of sync with reveal's rules.
       if (
@@ -452,6 +487,16 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       }
       const secureCtx = ctx as SecureRouteContext
 
+      if (
+        !enforceShareRecipientEmailRateLimit(
+          secureCtx.auth.userId,
+          parsed.data.recipientEmail,
+          reply
+        )
+      ) {
+        return reply
+      }
+
       // AC-2: identical eligibility gate as member-share creation and normal reveal — no looser
       // check for the external path.
       if (
@@ -508,22 +553,21 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         logShareAuditFailureAndRethrow(req, params.credentialId, 'External credential share', error)
       }
 
-      // AC-12/AC-18: admin notification on creation (external recipients have no in-app account
-      // to notify) — best-effort, never blocks or rolls back share creation.
+      // Story 18.6: external recipients have no account/preferences, so queue the existing
+      // no-token share notice directly to their captured address. Best-effort never blocks.
       let jobs: NotificationQueueJob[] = []
       try {
-        jobs = await createOrgAdminNotificationEntries({
+        jobs = await dispatchDirectEmailNotification({
           orgId: secureCtx.auth.orgId,
+          recipientEmail: result.share.recipientEmail ?? parsed.data.recipientEmail,
           template: {
-            templateId: 'credential.external_share_created',
+            templateId: 'credential.share_created',
             payload: {
               shareId: result.share.id,
               credentialId: params.credentialId,
               sharedByUserId: secureCtx.auth.userId,
               fieldKey: result.share.fieldKey,
-              expiresAt: result.share.expiresAt.toISOString(),
             },
-            severity: 'warning',
           },
           tx: secureCtx.tx,
         })

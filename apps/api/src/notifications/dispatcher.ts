@@ -265,6 +265,30 @@ export async function dispatchDirectUserNotification(opts: {
   return jobs
 }
 
+/** Queues a recipient-addressed email when no in-app user exists (external credential shares).
+ * It deliberately bypasses user preferences/inbox creation because the recipient has no account. */
+export async function dispatchDirectEmailNotification(opts: {
+  orgId: string
+  recipientEmail: string
+  template: NotificationTemplate
+  tx: Tx
+}): Promise<NotificationQueueJob[]> {
+  const [entry] = await opts.tx
+    .insert(notificationQueue)
+    .values({
+      orgId: opts.orgId,
+      recipientUserId: null,
+      recipientEmail: opts.recipientEmail,
+      channel: 'email',
+      templateId: opts.template.templateId,
+      payload: opts.template.payload,
+      status: 'pending',
+      deliverAt: null,
+    })
+    .returning({ id: notificationQueue.id })
+  return entry?.id ? [{ id: entry.id, orgId: opts.orgId, deliverAt: null }] : []
+}
+
 export async function enqueueSecurityAlertNotification(opts: {
   orgId: string
   templateId: string
