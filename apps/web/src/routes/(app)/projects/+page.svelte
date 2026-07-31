@@ -1,4 +1,5 @@
 <script lang="ts">
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { goto, invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
@@ -266,12 +267,14 @@
                     id={`project-tags-${project.id}`}
                     class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                     type="text"
+                    aria-describedby="project-tags-help"
                     placeholder="production, api"
                     value={tagInputValue(project)}
                     oninput={(event) => {
                       tagInputs = { ...tagInputs, [project.id]: event.currentTarget.value }
                     }}
                   />
+                  <FormHelpText id="project-tags-help" kind="text" />
                   {#if tagErrors[project.id]}
                     <p class="text-sm text-red-700" role="alert">{tagErrors[project.id]}</p>
                   {/if}

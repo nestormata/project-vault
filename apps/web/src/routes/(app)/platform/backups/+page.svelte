@@ -4,6 +4,7 @@
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
   import TypedConfirmInput from '$lib/components/forms/TypedConfirmInput.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { formatBytes } from '$lib/utils/format-bytes.js'
   import { ApiClientError } from '$lib/api/client.js'
   import {
@@ -360,7 +361,9 @@
                       class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
                       rows="2"
                       bind:value={restoreReason}
-                      placeholder="Enter reason for restore"></textarea>
+                      placeholder="Enter reason for restore"
+                      aria-describedby="backup-restore-reason-help"></textarea>
+                    <FormHelpText id="backup-restore-reason-help" kind="text" />
                   </label>
                   {#if restoreError}
                     <p class="text-sm text-red-700" role="alert">{restoreError}</p>

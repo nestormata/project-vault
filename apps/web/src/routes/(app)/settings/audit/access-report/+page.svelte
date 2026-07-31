@@ -5,6 +5,7 @@
   import { runAccessReportCsv } from '$lib/api/audit.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { triggerTextDownload } from '$lib/download.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { data } = $props()
 
@@ -64,9 +65,11 @@
           name="asOf"
           type="date"
           class="rounded-lg border border-slate-300 px-2 py-1"
+          aria-describedby="access-report-date-help"
           value={toDateInputValue(data.asOf)}
         />
       </label>
+      <FormHelpText id="access-report-date-help" kind="date" />
       <button
         type="submit"
         class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white"

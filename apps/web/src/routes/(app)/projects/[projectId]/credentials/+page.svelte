@@ -4,6 +4,7 @@
   import { canImportCredentials } from '$lib/credentials/permissions.js'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import RotationBadge from '$lib/components/rotations/RotationBadge.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import type { CredentialStatus } from '@project-vault/shared'
 
   let { data } = $props()
@@ -105,7 +106,9 @@
           name="q"
           value={data.filters.q}
           placeholder="Search by name"
+          aria-describedby="credential-search-help"
         />
+        <FormHelpText id="credential-search-help" kind="search" />
       </div>
       <div class="space-y-1">
         <label class="block text-sm font-medium text-slate-800" for="credential-status"
@@ -116,12 +119,14 @@
           class="rounded-xl border border-slate-300 px-3 py-2"
           name="status"
           value={data.filters.status}
+          aria-describedby="credential-status-help"
         >
           <option value="">All</option>
           <option value="active">Active</option>
           <option value="expiring">Expiring</option>
           <option value="expired">Expired</option>
         </select>
+        <FormHelpText id="credential-status-help" kind="select" />
       </div>
       <div class="space-y-1">
         <label class="block text-sm font-medium text-slate-800" for="credential-tags">Tags</label>
@@ -132,7 +137,9 @@
           name="tags"
           value={data.filters.tags}
           placeholder="db, prod"
+          aria-describedby="credential-tags-help"
         />
+        <FormHelpText id="credential-tags-help" kind="text" />
         <p class="text-xs text-slate-500">Matches credentials with ALL of these tags.</p>
       </div>
       <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit">

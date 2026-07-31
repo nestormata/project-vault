@@ -81,7 +81,9 @@
           bind:value={name}
           autocomplete="off"
           required
+          aria-describedby="machine-user-name-help"
         />
+        <FormHelpText id="machine-user-name-help" kind="text" />
       </div>
 
       <div class="space-y-2">
@@ -105,7 +107,9 @@
         <textarea
           id="machine-user-description"
           class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3"
-          bind:value={description}></textarea>
+          bind:value={description}
+          aria-describedby="machine-user-description-help"></textarea>
+        <FormHelpText id="machine-user-description-help" kind="text" />
       </div>
 
       {#if errorMessage}

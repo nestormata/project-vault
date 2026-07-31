@@ -1,4 +1,6 @@
 <script lang="ts">
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+
   interface Props {
     fromValue: string
     toValue: string
@@ -21,6 +23,7 @@
     placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
     class="rounded-lg border border-slate-300 px-2 py-1"
     value={fromValue}
+    aria-describedby="audit-date-range-help"
   />
 </label>
 <label class="flex flex-col text-sm text-slate-700" for="filter-to">
@@ -32,8 +35,10 @@
     placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
     class="rounded-lg border border-slate-300 px-2 py-1"
     value={toValue}
+    aria-describedby="audit-date-range-help"
   />
 </label>
+<FormHelpText id="audit-date-range-help" kind="date" />
 <button type="submit" class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
   Search
 </button>

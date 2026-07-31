@@ -5,6 +5,7 @@
   import { getLocale } from '$lib/paraglide/runtime.js'
   import { m } from '$lib/paraglide/messages.js'
   import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import PreAuthLanguageSwitcher from './PreAuthLanguageSwitcher.svelte'
   import { markRegistrationLocalePending } from './registration-locale.js'
   import {
@@ -117,7 +118,9 @@
         readonly={Boolean(invitationToken)}
         required
         onblur={() => void applyThemeForEmail(email)}
+        aria-describedby="register-email-help"
       />
+      <FormHelpText id="register-email-help" kind="text" />
     </div>
     {#if !invitationToken}
       <div class="space-y-2">
@@ -131,7 +134,9 @@
           bind:value={orgName}
           maxlength="128"
           required
+          aria-describedby="register-org-help"
         />
+        <FormHelpText id="register-org-help" kind="text" />
       </div>
     {/if}
     <div class="space-y-2">
@@ -146,7 +151,9 @@
         bind:value={password}
         minlength="12"
         required
+        aria-describedby="register-password-help"
       />
+      <FormHelpText id="register-password-help" kind="secret" />
       <p class="text-sm text-slate-600">{m.auth_register_password_hint()}</p>
     </div>
     {#if errorMessage}

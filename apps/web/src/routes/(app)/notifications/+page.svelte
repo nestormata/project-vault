@@ -2,6 +2,7 @@
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
   import DismissDormancyAlertForm from '$lib/components/notifications/DismissDormancyAlertForm.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { markAllReadLocally, decrementUnread } from '$lib/state/notifications.svelte.js'
   import type { PageData } from './$types'
 
@@ -95,7 +96,9 @@
                 min="1"
                 max="365"
                 class="w-16 rounded border border-gray-300 px-2 py-1 text-xs"
+                aria-describedby="notification-dormancy-days-help"
               />
+              <FormHelpText id="notification-dormancy-days-help" kind="date" />
               <button
                 type="submit"
                 class="text-xs font-medium text-indigo-600 hover:text-indigo-800"

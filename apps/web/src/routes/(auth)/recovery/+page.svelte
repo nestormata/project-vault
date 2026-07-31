@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
   import { requestRecovery } from '$lib/api/recovery.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   const GENERIC_MESSAGE = "If that email is registered, we've sent a recovery link."
 
@@ -55,9 +56,11 @@
           id="recovery-email"
           type="email"
           autocomplete="email"
+          aria-describedby="recovery-email-help"
           bind:value={email}
           required
         />
+        <FormHelpText id="recovery-email-help" kind="text" />
       </div>
       <button
         class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"

@@ -9,6 +9,7 @@
   import { buildPageHref } from '$lib/audit/page-href.js'
   import { buildDateRangePart } from '$lib/audit/date-range.js'
   import { getEventTypeLabel } from '$lib/utils/event-type-labels.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { data } = $props()
 
@@ -106,7 +107,9 @@
             type="text"
             class="rounded-lg border border-slate-300 px-2 py-1"
             value={data.filters?.eventType ?? ''}
+            aria-describedby="audit-event-type-help"
           />
+          <FormHelpText id="audit-event-type-help" kind="text" />
         </label>
         <label class="flex flex-col text-sm text-slate-700" for="filter-actorId">
           Actor ID
@@ -116,7 +119,9 @@
             type="text"
             class="rounded-lg border border-slate-300 px-2 py-1"
             value={data.filters?.actorId ?? ''}
+            aria-describedby="audit-actor-help"
           />
+          <FormHelpText id="audit-actor-help" kind="text" />
         </label>
         <label class="flex flex-col text-sm text-slate-700" for="filter-resourceId">
           Resource ID
@@ -126,7 +131,9 @@
             type="text"
             class="rounded-lg border border-slate-300 px-2 py-1"
             value={data.filters?.resourceId ?? ''}
+            aria-describedby="audit-resource-help"
           />
+          <FormHelpText id="audit-resource-help" kind="text" />
         </label>
         <label class="flex flex-col text-sm text-slate-700" for="filter-projectId">
           Project ID
@@ -136,7 +143,9 @@
             type="text"
             class="rounded-lg border border-slate-300 px-2 py-1"
             value={data.filters?.projectId ?? ''}
+            aria-describedby="audit-project-help"
           />
+          <FormHelpText id="audit-project-help" kind="text" />
         </label>
         <AuditDateRangeInputs
           clearHref={resolve('/settings/audit')}

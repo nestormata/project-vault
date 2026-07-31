@@ -3,6 +3,7 @@
   import { buildAbsoluteUrl } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
   import {
     disableStatusPage,
@@ -321,6 +322,7 @@
                     type="checkbox"
                     checked={Boolean(current)}
                     onchange={() => toggleService(service)}
+                    aria-describedby={`status-page-service-help-${service.id}`}
                   />
                   <span class="text-sm text-slate-600">{service.name}</span>
                 </label>
@@ -330,11 +332,14 @@
                     type="text"
                     placeholder="Public display name"
                     value={current.displayName}
+                    aria-describedby={`status-page-display-name-help-${service.id}`}
                     oninput={(event) =>
                       setDisplayName(service.id, (event.currentTarget as HTMLInputElement).value)}
                   />
+                  <FormHelpText id={`status-page-display-name-help-${service.id}`} kind="text" />
                 {/if}
               </li>
+              <FormHelpText id={`status-page-service-help-${service.id}`} kind="checkbox" />
             {/each}
           </ul>
         {/if}

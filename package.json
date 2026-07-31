@@ -28,6 +28,7 @@
     "check-psc-tbd-tracking": "tsx scripts/check-psc-tbd-tracking.ts",
     "check-public-safety": "tsx scripts/check-public-safety.ts",
     "check-story-review-deferrals": "tsx scripts/check-story-review-deferrals.ts",
+    "check-form-guidance": "tsx scripts/check-form-guidance.ts",
     "check-sprint-status-rollup": "tsx scripts/check-sprint-status-rollup.ts",
     "check-post-merge-status-drift": "tsx scripts/check-post-merge-status-drift.ts",
     "check-extension-api-version-skew": "tsx scripts/check-extension-api-version-skew.ts",

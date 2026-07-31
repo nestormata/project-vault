@@ -67,5 +67,12 @@
   "form_help_sso_domain": "Enter the domain after the @ in your organization's email addresses. Example: if an address is alex@acme.com, enter acme.com—not the @ or the full email address.",
   "form_help_sso_provider_name": "Enter the exact registered provider extension name. Example for local testing: test.mock-sso-extension. This is not a display name like Okta; the extension must be installed and enabled on the server.",
   "form_help_machine_user_role": "This role controls what this machine identity can do with project credentials. Choose Viewer for read-only access or Member for read and write access.",
-  "form_help_dashboard_project": "Choose the project whose monitoring data you want to view."
+  "form_help_dashboard_project": "Choose the project whose monitoring data you want to view.",
+  "form_help_text": "Enter the value this setting uses. Review it before saving.",
+  "form_help_select": "Choose the option that controls this setting. Review its effect before saving.",
+  "form_help_checkbox": "Turn this option on only when you want the behavior described by its label.",
+  "form_help_radio": "Choose the option that controls how this operation is performed.",
+  "form_help_secret": "This value is sensitive; enter it only when you intend to store or use a secret.",
+  "form_help_date": "Choose the date that controls this setting or filter.",
+  "form_help_search": "Enter a value to narrow the records shown; it does not change stored data."
 }

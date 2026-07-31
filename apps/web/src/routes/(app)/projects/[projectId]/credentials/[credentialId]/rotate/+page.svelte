@@ -11,6 +11,7 @@
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import BreakGlassPanel from '$lib/components/rotations/BreakGlassPanel.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { mapRotationMutationError } from '$lib/components/rotations/rotation-copy.js'
 
   let { data } = $props()
@@ -277,6 +278,7 @@
                 checked={rotationMode === 'whole'}
                 disabled={rotationActive}
                 onchange={() => (rotationMode = 'whole')}
+                aria-describedby="rotation-mode-help"
               />
               Rotate whole secret
             </label>
@@ -288,10 +290,12 @@
                 checked={rotationMode === 'specific'}
                 disabled={rotationActive}
                 onchange={() => (rotationMode = 'specific')}
+                aria-describedby="rotation-mode-help"
               />
               Specific fields
             </label>
           </div>
+          <FormHelpText id="rotation-mode-help" kind="radio" />
           {#if rotationMode === 'specific'}
             <ul class="space-y-1">
               {#each fieldMeta as field (field.key)}
@@ -303,7 +307,9 @@
                       checked={selectedFields.includes(field.key)}
                       disabled={rotationActive}
                       onchange={() => toggleField(field.key)}
+                      aria-describedby={`rotation-field-help-${field.key}`}
                     />
+                    <FormHelpText id={`rotation-field-help-${field.key}`} kind="checkbox" />
                     {field.key}
                   </label>
                 </li>
@@ -335,7 +341,9 @@
                     [fieldKey]: (event.currentTarget as HTMLTextAreaElement).value,
                   })}
                 disabled={rotationActive}
-                autocomplete="off"></textarea>
+                autocomplete="off"
+                aria-describedby={`rotation-value-help-${fieldKey}`}></textarea>
+              <FormHelpText id={`rotation-value-help-${fieldKey}`} kind="secret" />
             </div>
           {/each}
           {#if valueError}
@@ -350,7 +358,9 @@
             class="min-h-24 w-full rounded-xl border border-slate-300 px-3 py-3 font-mono"
             bind:value={newValue}
             disabled={rotationActive}
-            autocomplete="off"></textarea>
+            autocomplete="off"
+            aria-describedby="rotation-new-value-help"></textarea>
+          <FormHelpText id="rotation-new-value-help" kind="secret" />
           {#if valueError}
             <p class="text-sm text-red-700">{valueError}</p>
           {/if}
@@ -362,7 +372,9 @@
         <textarea
           id="rotation-notes"
           class="min-h-20 w-full rounded-xl border border-slate-300 px-3 py-3"
-          bind:value={notes}></textarea>
+          bind:value={notes}
+          aria-describedby="rotation-notes-help"></textarea>
+        <FormHelpText id="rotation-notes-help" kind="text" />
       </div>
 
       {#if showSameValueConfirm}

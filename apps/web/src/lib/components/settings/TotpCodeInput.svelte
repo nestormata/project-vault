@@ -3,6 +3,8 @@
   regenerate-recovery-codes flows (jscpd flagged the two copies as duplication).
 -->
 <script lang="ts">
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+
   let {
     value = $bindable(),
     helperText,
@@ -26,6 +28,8 @@
     autocomplete="one-time-code"
     bind:value
     required
+    aria-describedby="mfa-security-totp-help"
   />
+  <FormHelpText id="mfa-security-totp-help" kind="secret" />
   <p class="text-sm text-slate-600">{helperText}</p>
 </div>

@@ -812,7 +812,9 @@
                     class="rounded-lg border border-amber-300 px-2 py-1 text-xs"
                     placeholder="Reason for dismissing (required)"
                     bind:value={dismissReason}
+                    aria-describedby={`dismiss-rotation-nudge-help-${bucket.fieldKey}`}
                   />
+                  <FormHelpText id={`dismiss-rotation-nudge-help-${bucket.fieldKey}`} kind="text" />
                   <button
                     type="button"
                     class="text-xs font-semibold text-amber-900 underline disabled:opacity-50"
@@ -892,7 +894,9 @@
                 class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
                 type="date"
                 bind:value={lifecycleExpiresAt}
+                aria-describedby="lifecycle-expires-help"
               />
+              <FormHelpText id="lifecycle-expires-help" kind="date" />
             </div>
             <div class="space-y-1">
               <label
@@ -1137,7 +1141,9 @@
                 <textarea
                   id="new-version-value"
                   class="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm"
-                  bind:value={newVersionValue}></textarea>
+                  bind:value={newVersionValue}
+                  aria-describedby="new-version-value-help"></textarea>
+                <FormHelpText id="new-version-value-help" kind="secret" />
               </div>
               {#if addVersionError}
                 <p class="text-sm text-red-700" role="alert">{addVersionError}</p>
@@ -1222,9 +1228,11 @@
                         Boolean(confirmingDependencyId) ||
                         dependency.checklistStatus?.status === 'confirmed'}
                       onchange={() => void onConfirmDependencyUpdate(dependency)}
+                      aria-describedby={`dependency-updated-help-${dependency.id}`}
                     />
                     <span class={isFailed ? 'font-medium text-amber-800' : undefined}>Updated</span>
                   </label>
+                  <FormHelpText id={`dependency-updated-help-${dependency.id}`} kind="checkbox" />
                 {/if}
                 <span class="font-medium">{dependency.systemName} ({dependency.systemType})</span>
                 {#if dependency.fieldKey}
@@ -1306,7 +1314,9 @@
                 type="text"
                 required
                 bind:value={depSystemName}
+                aria-describedby="dependency-system-name-help"
               />
+              <FormHelpText id="dependency-system-name-help" kind="text" />
             </div>
             <div class="space-y-1">
               <label class="block text-sm font-medium text-slate-800" for="dependency-system-type">
@@ -1336,7 +1346,9 @@
               <textarea
                 id="dependency-notes"
                 class="w-full rounded-xl border border-slate-300 px-3 py-2"
-                bind:value={depNotes}></textarea>
+                bind:value={depNotes}
+                aria-describedby="dependency-notes-help"></textarea>
+              <FormHelpText id="dependency-notes-help" kind="text" />
             </div>
             {#if fieldMeta.length > 1}
               <!-- Story 13.5 AC-6: only rendered for multi-field credentials — hidden entirely
@@ -1529,12 +1541,14 @@
               <select
                 class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 bind:value={shareRecipientUserId}
+                aria-describedby="share-recipient-user-help"
               >
                 <option value="">Select an org member…</option>
                 {#each shareableOrgMembers as member (member.userId)}
                   <option value={member.userId}>{member.displayName || member.email}</option>
                 {/each}
               </select>
+              <FormHelpText id="share-recipient-user-help" kind="select" />
             </label>
           {:else}
             <label class="text-sm font-medium text-slate-700">
@@ -1544,7 +1558,9 @@
                 class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 placeholder="vendor@example.com"
                 bind:value={shareRecipientEmail}
+                aria-describedby="share-recipient-email-help"
               />
+              <FormHelpText id="share-recipient-email-help" kind="text" />
             </label>
           {/if}
 
@@ -1554,12 +1570,14 @@
               <select
                 class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 bind:value={shareFieldKey}
+                aria-describedby="share-field-help"
               >
                 <option value="">Whole credential</option>
                 {#each fieldMetaKeys as key (key)}
                   <option value={key}>{key}</option>
                 {/each}
               </select>
+              <FormHelpText id="share-field-help" kind="select" />
             </label>
           {/if}
 
@@ -1573,13 +1591,20 @@
                 : MEMBER_SHARE_MAX_HOURS}
               class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
               bind:value={shareExpiresInHours}
+              aria-describedby="share-expiry-help"
             />
+            <FormHelpText id="share-expiry-help" kind="date" />
           </label>
 
           {#if shareRecipientType === 'user'}
             <label class="mt-6 flex items-center gap-2 text-sm font-medium text-slate-700">
-              <input type="checkbox" bind:checked={shareSingleUse} />
+              <input
+                type="checkbox"
+                bind:checked={shareSingleUse}
+                aria-describedby="share-single-use-help"
+              />
               Single view only
+              <FormHelpText id="share-single-use-help" kind="checkbox" />
             </label>
           {:else}
             <!-- Story 17.2 AC-5: singleUse is hard-coded true server-side for external shares —
@@ -1601,7 +1626,9 @@
                 class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 bind:value={shareStepUpPassword}
                 autocomplete="current-password"
+                aria-describedby="share-step-up-password-help"
               />
+              <FormHelpText id="share-step-up-password-help" kind="secret" />
             </label>
             <label class="text-sm font-medium text-slate-700">
               or a fresh authenticator code
@@ -1610,7 +1637,9 @@
                 inputmode="numeric"
                 class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 bind:value={shareStepUpTotp}
+                aria-describedby="share-step-up-totp-help"
               />
+              <FormHelpText id="share-step-up-totp-help" kind="secret" />
             </label>
           </div>
         {/if}
@@ -1643,6 +1672,7 @@
               url.searchParams.delete('sharesPage')
               window.location.href = url.toString()
             }}
+            aria-describedby="shares-status-help"
           >
             <option value="">All</option>
             <option value="active">Active</option>
@@ -1651,6 +1681,7 @@
             <option value="expired">Expired</option>
             <option value="superseded">Superseded</option>
           </select>
+          <FormHelpText id="shares-status-help" kind="select" />
         </label>
       </div>
       {#if shareItems.length === 0}

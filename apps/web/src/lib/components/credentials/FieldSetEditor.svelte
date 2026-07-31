@@ -2,6 +2,7 @@
   // Story 13.2 — the add/rename/remove field-list editor, shared by the create form and the
   // credential detail edit flow so the two never drift.
   import type { FieldDraft } from '$lib/components/onboarding/onboarding-logic.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let {
     fields = $bindable(),
@@ -24,6 +25,7 @@
         type="text"
         placeholder="field name"
         aria-label={`Field ${index + 1} name`}
+        aria-describedby={`credential-field-name-help-${index}`}
         bind:value={field.key}
       />
       <input
@@ -32,12 +34,20 @@
         placeholder="value"
         aria-label={`Field ${index + 1} value`}
         autocomplete="new-password"
+        aria-describedby={`credential-field-value-help-${index}`}
         bind:value={field.value}
       />
       <label class="flex items-center gap-1 text-xs text-slate-700">
-        <input type="checkbox" bind:checked={field.sensitive} />
+        <input
+          type="checkbox"
+          aria-describedby={`credential-field-sensitive-help-${index}`}
+          bind:checked={field.sensitive}
+        />
         Sensitive
       </label>
+      <FormHelpText id={`credential-field-name-help-${index}`} kind="text" />
+      <FormHelpText id={`credential-field-value-help-${index}`} kind="secret" />
+      <FormHelpText id={`credential-field-sensitive-help-${index}`} kind="checkbox" />
       <button
         class="text-sm font-medium text-red-700 underline"
         type="button"

@@ -66,5 +66,12 @@
   "form_help_sso_domain": "Ingresa el dominio que aparece después de @ en los correos de tu organización. Ejemplo: si una dirección es alex@acme.com, ingresa acme.com, no @ ni el correo completo.",
   "form_help_sso_provider_name": "Ingresa el nombre exacto de la extensión de proveedor registrada. Ejemplo para pruebas locales: test.mock-sso-extension. No es un nombre visible como Okta; la extensión debe estar instalada y habilitada en el servidor.",
   "form_help_machine_user_role": "Este rol controla lo que esta identidad de máquina puede hacer con las credenciales del proyecto. Elige Lector para acceso de solo lectura o Miembro para acceso de lectura y escritura.",
-  "form_help_dashboard_project": "Elige el proyecto cuyos datos de monitoreo quieres ver."
+  "form_help_dashboard_project": "Elige el proyecto cuyos datos de monitoreo quieres ver.",
+  "form_help_text": "Ingresa el valor que usa esta configuración. Revísalo antes de guardar.",
+  "form_help_select": "Elige la opción que controla esta configuración. Revisa su efecto antes de guardar.",
+  "form_help_checkbox": "Activa esta opción solo cuando quieras el comportamiento descrito por su etiqueta.",
+  "form_help_radio": "Elige la opción que controla cómo se realiza esta operación.",
+  "form_help_secret": "Este valor es sensible; ingrésalo solo cuando quieras guardar o usar un secreto.",
+  "form_help_date": "Elige la fecha que controla esta configuración o filtro.",
+  "form_help_search": "Ingresa un valor para limitar los registros mostrados; no cambia los datos guardados."
 }
