@@ -1,6 +1,6 @@
 # Story 18.12: Fix Dashboard Not Showing Certificates, Alerts, and Domains
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
