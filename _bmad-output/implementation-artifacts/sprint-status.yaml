@@ -433,3 +433,10 @@ development_status:
   19-3-contextual-help-for-all-input-fields: done # review -> done 2026-07-31 after local merge; deterministic G5 inventory, targeted tests, Playwright J9, and adversarial review passed; no remote push.
   19-4-dependent-system-inline-validation: done # review -> done 2026-07-31 after local merge; TDD focused tests, localized inline error coverage, Playwright J10, and review passed; no remote push.
   epic-19-retrospective: optional
+
+  # Epic 20: Safe Operational Context & Integration Foundations
+  epic-20: in-progress # registered 2026-07-31 as generic product capability work; Story 20.1 is the first prerequisite.
+  20-1-stable-credential-operational-context-read-model: backlog # reset 2026-07-31 for isolated plan-story authoring and adversarial review.
+  20-2-persist-and-enforce-a-health-check-pause-state: backlog # reset 2026-07-31 for isolated plan-story authoring and adversarial review; depends on 20-1.
+  20-3-show-and-control-paused-monitoring: backlog # reset 2026-07-31 for isolated plan-story authoring and adversarial review; depends on 20-2.
+  epic-20-retrospective: optional
