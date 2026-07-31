@@ -10,6 +10,14 @@
   "settings_language_locale_en": "English",
   "settings_language_locale_es": "Español",
   "settings_language_save_error": "No se pudo guardar tu preferencia de idioma. Inténtalo de nuevo.",
-  "credential_expiry_notification": "La credencial '{credentialName}' vence en {days} días"
+  "credential_expiry_notification": "La credencial '{credentialName}' vence en {days} días",
+  "form_help_rotation_schedule": "Sintaxis cron estándar de 5 campos: minuto hora día mes día de la semana. Ejemplo: 0 0 1 * * se ejecuta a medianoche el primer día de cada mes.",
+  "form_help_rotation_next_run": "Próxima ejecución (UTC): {nextRun}",
+  "form_help_cacheable": "Los agentes de máquina sin conectividad en vivo pueden almacenar en caché y reutilizar esta credencial localmente. Actívalo solo cuando aceptes ese riesgo de acceso sin conexión.",
+  "form_help_dependent_systems": "Sistemas externos que usan esta credencial. Regístralos para poder actualizarlos cuando rote la credencial.",
+  "form_help_dependency_system_type": "Elige el tipo de sistema externo que usa esta credencial.",
+  "form_help_dependency_scope": "Elige un campo específico de la credencial cuando este sistema use solo ese campo; de lo contrario, se aplica a toda la credencial.",
+  "form_help_dependency_link": "Agrega una URL no sensible que ayude al equipo a encontrar este sistema. No incluyas contraseñas, tokens ni URL firmadas.",
+  "form_help_sso_domain": "Ingresa el dominio que usa tu equipo en sus direcciones de correo, como acme.com. Las personas de este dominio se dirigirán al proveedor SSO seleccionado.",
+  "form_help_machine_user_role": "Este rol controla lo que esta identidad de máquina puede hacer con las credenciales del proyecto. Elige Lector para acceso de solo lectura o Miembro para acceso de lectura y escritura."
 }
-

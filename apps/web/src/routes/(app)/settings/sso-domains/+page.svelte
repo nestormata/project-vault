@@ -1,7 +1,9 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import SettingsFormGate from '$lib/components/settings/SettingsFormGate.svelte'
+  import { m } from '$lib/paraglide/messages.js'
   import { ORG_SSO_DOMAIN_ERROR_CODES } from '@project-vault/shared'
   import {
     createOrgSsoDomain,
@@ -143,10 +145,12 @@
             type="text"
             class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
             placeholder="acme.com"
+            aria-describedby="new-domain-help"
             bind:value={newDomain}
             required
           />
         </label>
+        <FormHelpText id="new-domain-help" text={m.form_help_sso_domain()} />
         <label class="flex flex-col gap-1 text-sm" for="new-provider">
           Provider name
           <input

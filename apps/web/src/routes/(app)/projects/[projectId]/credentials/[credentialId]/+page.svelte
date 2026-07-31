@@ -3,7 +3,7 @@
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import type { FieldMeta, SystemType } from '@project-vault/shared'
-  import { buildAbsoluteUrl, DEFAULT_FIELD_KEY } from '@project-vault/shared'
+  import { buildAbsoluteUrl, DEFAULT_FIELD_KEY, nextCronOccurrence } from '@project-vault/shared'
   import {
     addCredentialDependency,
     addCredentialVersion,
@@ -26,6 +26,7 @@
   } from '$lib/api/credential-shares.js'
   import { ApiClientError } from '$lib/api/client.js'
   import FieldSetEditor from '$lib/components/credentials/FieldSetEditor.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import {
     canCreateCredential,
     mapCredentialSubmitError,
@@ -38,6 +39,7 @@
     toLifecycleDateInputValue,
   } from '$lib/credentials/lifecycle-form.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
+  import { m } from '$lib/paraglide/messages.js'
   import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
   import {
     formatDateTime,
@@ -81,6 +83,18 @@
   let lifecycleSubmitting = $state(false)
   let lifecycleFieldError = $state<string | null>(null)
   let lifecycleBanner = $state<string | null>(null)
+  const lifecycleNextRun = $derived.by(() => {
+    const schedule = lifecycleRotationSchedule.trim()
+    if (!schedule) return null
+    try {
+      return nextCronOccurrence(schedule, new Date()).toLocaleString(undefined, {
+        timeZone: 'UTC',
+        timeZoneName: 'short',
+      })
+    } catch {
+      return null
+    }
+  })
 
   const canReveal = $derived(canCreateCredential(data.orgRole))
   const canManageRotation = $derived(canManageRotations(data.orgRole))
@@ -886,16 +900,33 @@
                 class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
                 type="text"
                 placeholder="0 0 1 * *"
+                aria-describedby="lifecycle-rotation-schedule-help"
                 bind:value={lifecycleRotationSchedule}
               />
+              <FormHelpText
+                id="lifecycle-rotation-schedule-help"
+                text={m.form_help_rotation_schedule()}
+              />
+              {#if lifecycleNextRun}
+                <p class="text-sm text-slate-600">
+                  {m.form_help_rotation_next_run({ nextRun: lifecycleNextRun })}
+                </p>
+              {/if}
               {#if lifecycleFieldError}
                 <p class="text-sm text-red-700" role="alert">{lifecycleFieldError}</p>
               {/if}
             </div>
-            <label class="flex items-center gap-2 text-sm text-slate-800">
-              <input type="checkbox" bind:checked={lifecycleCacheable} />
-              Cacheable by offline agents
-            </label>
+            <div class="space-y-1">
+              <label class="flex items-center gap-2 text-sm text-slate-800">
+                <input
+                  type="checkbox"
+                  aria-describedby="lifecycle-cacheable-help"
+                  bind:checked={lifecycleCacheable}
+                />
+                Cacheable by offline agents
+              </label>
+              <FormHelpText id="lifecycle-cacheable-help" text={m.form_help_cacheable()} />
+            </div>
             {#if lifecycleBanner}
               <p class="text-sm text-red-700" role="alert">{lifecycleBanner}</p>
             {/if}
@@ -1152,6 +1183,7 @@
 
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold text-slate-950">Dependent systems</h2>
+      <FormHelpText id="dependent-systems-help" text={m.form_help_dependent_systems()} />
       {#if dependencyItems.length === 0}
         <p class="mt-3 text-sm text-slate-600">No dependent systems recorded.</p>
       {:else}
@@ -1277,6 +1309,7 @@
               <select
                 id="dependency-system-type"
                 class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+                aria-describedby="dependency-system-type-help"
                 bind:value={depSystemType}
               >
                 <option value="service">Service</option>
@@ -1285,6 +1318,10 @@
                 <option value="third_party">Third party</option>
                 <option value="other">Other</option>
               </select>
+              <FormHelpText
+                id="dependency-system-type-help"
+                text={m.form_help_dependency_system_type()}
+              />
             </div>
             <div class="space-y-1">
               <label class="block text-sm font-medium text-slate-800" for="dependency-notes">
@@ -1306,6 +1343,7 @@
                 <select
                   id="dependency-field-key"
                   class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
+                  aria-describedby="dependency-field-key-help"
                   bind:value={depFieldKey}
                 >
                   <option value="">Whole credential</option>
@@ -1313,6 +1351,10 @@
                     <option value={field.key}>{field.key}</option>
                   {/each}
                 </select>
+                <FormHelpText
+                  id="dependency-field-key-help"
+                  text={m.form_help_dependency_scope()}
+                />
               </div>
             {/if}
             <div class="space-y-1">
@@ -1324,11 +1366,13 @@
                 class="w-full rounded-xl border border-slate-300 px-3 py-2"
                 type="url"
                 placeholder="https://…"
+                aria-describedby="dependency-link-url-help dependency-link-url-security-note"
                 bind:value={depLinkUrl}
               />
-              <p class="text-xs text-slate-500">
+              <FormHelpText id="dependency-link-url-help" text={m.form_help_dependency_link()} />
+              <p id="dependency-link-url-security-note" class="text-xs text-slate-500">
                 This link is visible to everyone with view access to this credential and is stored
-                in plaintext audit logs — do not include passwords, tokens, or signed URLs here.
+                in plaintext audit logs.
               </p>
             </div>
             {#if depError}

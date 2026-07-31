@@ -5,7 +5,9 @@
   import { ApiClientError } from '$lib/api/client.js'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { canManageMachineUsers } from '$lib/machine-users/permissions.js'
+  import { m } from '$lib/paraglide/messages.js'
   import type { MachineUserRole } from '@project-vault/shared'
 
   let { data } = $props()
@@ -87,11 +89,13 @@
         <select
           id="machine-user-role"
           class="w-full rounded-xl border border-slate-300 px-3 py-3"
+          aria-describedby="machine-user-role-help"
           bind:value={role}
         >
           <option value="member">Member — can read/write project credentials</option>
           <option value="viewer">Viewer — read-only project credentials</option>
         </select>
+        <FormHelpText id="machine-user-role-help" text={m.form_help_machine_user_role()} />
       </div>
 
       <div class="space-y-2">

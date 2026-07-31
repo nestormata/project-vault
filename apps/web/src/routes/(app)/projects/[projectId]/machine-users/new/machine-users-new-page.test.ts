@@ -33,6 +33,14 @@ function baseData(overrides: Record<string, unknown> = {}) {
 }
 
 describe('machine-users/new +page.svelte', () => {
+  it('renders accessible help explaining the machine user role permissions', () => {
+    render(NewMachineUserPage, { props: { data: baseData() } })
+
+    const role = screen.getByLabelText(/role/i)
+    expect(role.getAttribute('aria-describedby')).toBe('machine-user-role-help')
+    expect(screen.getByText(/controls what this machine identity can do/i)).toBeTruthy()
+  })
+
   it('renders an access notice and no form for a non-managing role', () => {
     render(NewMachineUserPage, { props: { data: baseData({ orgRole: 'viewer' }) } })
 
