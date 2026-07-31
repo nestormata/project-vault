@@ -1,6 +1,6 @@
 # Story 19.2: Localize the Pre-Auth Shell and MFA Copy
 
-Status: in-progress
+Status: review
 
 ## Story
 
@@ -78,17 +78,17 @@ currently rendered shell and MFA copy.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Audit the login/register route shells and enumerate every visible English literal,
+- [x] Task 1: Audit the login/register route shells and enumerate every visible English literal,
   including status/reason branches and invitation copy.
-- [ ] Task 2: Add English/Spanish Paraglide messages and replace shell literals while preserving
+- [x] Task 2: Add English/Spanish Paraglide messages and replace shell literals while preserving
   safe reason allowlisting, redirects, query handling, and invitation semantics.
-- [ ] Task 3: Localize all MFA labels, help, actions, and error/fallback paths without changing
+- [x] Task 3: Localize all MFA labels, help, actions, and error/fallback paths without changing
   authentication control flow or the six-digit validation contract.
-- [ ] Task 4: Add/extend focused component and route tests using TDD red-green, including G5
+- [x] Task 4: Add/extend focused component and route tests using TDD red-green, including G5
   explanations and state preservation.
-- [ ] Task 5: Run targeted review for tenant/auth/session/rate-limit/logging implications and
+- [x] Task 5: Run targeted review for tenant/auth/session/rate-limit/logging implications and
   execute the Playwright persona journey at desktop and narrow viewports.
-- [ ] Task 6: Record evidence, file list, review findings, status transition, and no-remote-push
+- [x] Task 6: Record evidence, file list, review findings, status transition, and no-remote-push
   disposition; merge locally into `main` only after targeted gates pass.
 
 ## Dev Notes
@@ -164,21 +164,56 @@ Codex (GPT-5)
 
 ### Implementation Plan
 
-To be completed during implementation.
+- Added localized shell/reason/MFA message keys in `en.json` and `es.json`, retaining the existing
+  auth API and safe redirect contract.
+- Threaded a locale-change callback from the existing pre-auth switcher through LoginForm/
+  RegisterForm so keyed shell content and document titles update without destroying form state.
+- Localized all MfaLoginForm copy and connected its visible explanation with `aria-describedby`.
+- Added focused TDD coverage and a real Playwright J8 journey at desktop/narrow auth surfaces.
 
 ### Debug Log References
 
-To be completed during implementation.
+- RED: four new Spanish shell/MFA assertions failed against the English literals.
+- GREEN: focused auth route/form/MFA suite passed 5 files/71 tests.
+- Typecheck passed; targeted ESLint passed; existing broader web lint remains clean with only its
+  known pre-existing warnings.
+- Playwright J8 first caught two reactive-boundary defects: document titles and footer links were
+  outside the locale-keyed shell. Both were fixed and the final J8 run passed 2 tests in 30.6s.
+- E2E used the documented disposable E2E overlay on worktree ports DB 29259/API 39258/web 49258,
+  with Mailpit isolated to 1026/8026; no remote push performed.
 
 ### Completion Notes List
 
-To be completed during implementation.
+- AC-1/2: Login and registration titles, headings, descriptions, reason branches, invitation
+  branch, and navigation links now use Paraglide English/Spanish messages; unknown reasons remain
+  mapped to the safe default and no query-string text is rendered.
+- AC-3: MFA label, visible six-digit explanation, expiry/invalid/generic failures, pending copy,
+  and submit action are localized; existing token/session, replay, and submit guards are unchanged.
+- AC-4/5: Locale callback/key boundaries update shell text/title while preserving form state; MFA
+  explanation is visibly connected with `aria-describedby="mfa-totp-help"`; no API/schema/RLS,
+  auth, redirect, rate-limit, or audit behavior changed.
+- AC-6: Focused route/component tests and Playwright J8 cover both supported locales, narrow
+  registration, preserved values, real MFA challenge, and localized invalid-code feedback.
+- Targeted review found no Critical/High findings. The initial Playwright defects were fixed before
+  review closure; final evidence is green.
 
 ### File List
 
-To be completed during implementation.
+- `apps/web/messages/en.json`
+- `apps/web/messages/es.json`
+- `apps/web/src/routes/(auth)/login/+page.svelte`
+- `apps/web/src/routes/(auth)/login/page.test.ts`
+- `apps/web/src/routes/(auth)/register/+page.svelte`
+- `apps/web/src/routes/(auth)/register/page.test.ts`
+- `apps/web/src/lib/components/auth/LoginForm.svelte`
+- `apps/web/src/lib/components/auth/RegisterForm.svelte`
+- `apps/web/src/lib/components/auth/MfaLoginForm.svelte`
+- `apps/web/src/lib/components/auth/MfaLoginForm.test.ts`
+- `apps/web/e2e/journeys/j8-pre-auth-localization.spec.ts`
 
 ### Change Log
 
 - 2026-07-31: Created from Epic 18 Finding 1 / Story 18.11 review deferral with five elicitation
   rounds integrated; status set to ready-for-dev. No remote push authorized.
+- 2026-07-31: Implemented with TDD, focused type/lint checks, adversarial auth/accessibility review,
+  and Playwright J8; status moved to review. No remote push authorized.

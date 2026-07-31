@@ -14,8 +14,11 @@
     resolvePreAuthTheme,
   } from './form-model.js'
 
-  let { invitationToken, prefillEmail = '' }: { invitationToken?: string; prefillEmail?: string } =
-    $props()
+  let {
+    invitationToken,
+    prefillEmail = '',
+    onLocaleChange,
+  }: { invitationToken?: string; prefillEmail?: string; onLocaleChange?: () => void } = $props()
 
   let email = $state(prefillEmail)
   let password = $state('')
@@ -85,6 +88,7 @@
 
   function handleLocaleChange() {
     localeRevision += 1
+    onLocaleChange?.()
   }
 </script>
 
