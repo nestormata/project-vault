@@ -1,6 +1,6 @@
 # Story 19.4: Inline Validation for Empty Dependent-System Submissions
 
-Status: review
+Status: done
 
 ## Story
 
