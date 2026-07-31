@@ -1,6 +1,6 @@
 # Story 18.8: Public Status Page Reorder UI
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
