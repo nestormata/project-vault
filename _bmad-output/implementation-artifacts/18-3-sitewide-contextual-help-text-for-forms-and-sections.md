@@ -1,6 +1,10 @@
+---
+baseline_commit: ef681b856baf3286bf7f68784d397060d2a185b4
+---
+
 # Story 18.3: Sitewide Contextual Help Text for Forms and Sections
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -39,12 +43,12 @@ Alex-viewer opens a credential's Lifecycle form, sees "Rotation schedule (cron)"
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Introduce shared help-text pattern (AC: 1, 7)
-- [ ] Task 2: Cron schedule help text + optional next-run preview (AC: 2)
-- [ ] Task 3: Cacheable checkbox help text (AC: 3)
-- [ ] Task 4: Dependent Systems section description (AC: 4, 6)
-- [ ] Task 5: Audit + add help text to remaining major forms (AC: 5)
-- [ ] Task 6: Tests (AC: 10)
+- [x] Task 1: Introduce shared help-text pattern (AC: 1, 7)
+- [x] Task 2: Cron schedule help text + optional next-run preview (AC: 2)
+- [x] Task 3: Cacheable checkbox help text (AC: 3)
+- [x] Task 4: Dependent Systems section description (AC: 4, 6)
+- [x] Task 5: Audit + add help text to remaining major forms (AC: 5)
+- [x] Task 6: Tests (AC: 10)
 
 ## Dev Notes
 
@@ -72,8 +76,32 @@ Alex-viewer opens a credential's Lifecycle form, sees "Rotation schedule (cron)"
 
 ### Agent Model Used
 
+GPT-5.6
+
 ### Debug Log References
+
+- Red: focused component tests failed as expected before implementation because no `aria-describedby` attributes or contextual help text existed (3 failed / 86 passed).
+- Green: focused tests passed after implementation (89/89); the cron-preview assertion then failed as expected before adding the `nextCronOccurrence` preview and passed after it was added (67/67).
+- Regression: `pnpm test`, `pnpm run typecheck`, and `pnpm run lint` in `apps/web` all passed.
 
 ### Completion Notes List
 
+- Added the reusable `FormHelpText` component with the existing small muted helper-text style and applied accessible help to the bounded set of fields named by this story.
+- Added localized English and Spanish help copy through Paraglide, including a UTC next-run preview calculated with the shared `nextCronOccurrence` helper. No lifecycle submission, validation, or field values were changed.
+- Dependent-system help is applied after Story 18.7's merged disclosure structure; this story intentionally does not expand the named floor into an exhaustive sitewide rewrite.
+
 ### File List
+
+- apps/web/messages/en.json
+- apps/web/messages/es.json
+- apps/web/src/lib/components/forms/FormHelpText.svelte
+- apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte
+- apps/web/src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-page.test.ts
+- apps/web/src/routes/(app)/projects/[projectId]/machine-users/new/+page.svelte
+- apps/web/src/routes/(app)/projects/[projectId]/machine-users/new/machine-users-new-page.test.ts
+- apps/web/src/routes/(app)/settings/sso-domains/+page.svelte
+- apps/web/src/routes/(app)/settings/sso-domains/sso-domains-page.test.ts
+
+## Change Log
+
+- 2026-07-30: Implemented contextual field and section help with Paraglide localization, accessible input descriptions, cron next-run preview, and component tests.

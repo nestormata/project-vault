@@ -11,5 +11,14 @@
   "settings_language_locale_es": "Español",
   "settings_language_save_error": "We couldn't save your language preference. Please try again.",
   "settings_language_save_success": "Language preference saved.",
-  "credential_expiry_notification": "Credential '{credentialName}' expires in {days} days"
+  "credential_expiry_notification": "Credential '{credentialName}' expires in {days} days",
+  "form_help_rotation_schedule": "Standard 5-field cron syntax: minute hour day month weekday. Example: 0 0 1 * * runs at midnight on the first day of every month.",
+  "form_help_rotation_next_run": "Next run (UTC): {nextRun}",
+  "form_help_cacheable": "Machine agents without live connectivity may cache and reuse this credential locally. Enable only when that offline-access tradeoff is acceptable.",
+  "form_help_dependent_systems": "External systems that use this credential. Track them so they can be updated when the credential rotates.",
+  "form_help_dependency_system_type": "Choose the kind of external system that uses this credential.",
+  "form_help_dependency_scope": "Choose a specific credential field when this system uses only that field; otherwise it applies to the whole credential.",
+  "form_help_dependency_link": "Add a non-sensitive URL that helps teammates find this system. Do not include passwords, tokens, or signed URLs.",
+  "form_help_sso_domain": "Enter the domain your team uses in their email addresses, such as acme.com. People at this domain will be routed to the selected SSO provider.",
+  "form_help_machine_user_role": "This role controls what this machine identity can do with project credentials. Choose Viewer for read-only access or Member for read and write access."
 }

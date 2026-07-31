@@ -52,6 +52,14 @@ function baseData(overrides: Record<string, unknown> = {}) {
 }
 
 describe('/settings/sso-domains +page.svelte (Story 14.6)', () => {
+  it('renders accessible help explaining the SSO domain input', () => {
+    render(SsoDomainsPage, { props: { data: baseData({ domains: [] }) } })
+
+    const domain = screen.getByLabelText(/^domain$/i)
+    expect(domain.getAttribute('aria-describedby')).toBe('new-domain-help')
+    expect(screen.getByText(/domain your team uses in their email addresses/i)).toBeTruthy()
+  })
+
   it('is a real, existing route', () => {
     expect(routeExists('/settings/sso-domains')).toBe(true)
   })

@@ -89,6 +89,53 @@ function baseData(overrides: Record<string, unknown> = {}) {
 }
 
 describe('credential detail +page.svelte', () => {
+  it('renders accessible, always-visible contextual help for lifecycle and dependency fields', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          credential: {
+            ...CREDENTIAL,
+            fields: [
+              { key: 'username', sensitive: false },
+              { key: 'password', sensitive: true },
+            ],
+          },
+        }),
+      },
+    })
+
+    const rotationSchedule = screen.getByLabelText(/rotation schedule/i)
+    expect(rotationSchedule.getAttribute('aria-describedby')).toBe(
+      'lifecycle-rotation-schedule-help'
+    )
+    expect(screen.getByText(/standard 5-field cron syntax/i)).toBeTruthy()
+    expect(screen.getByText(/next run \(utc\):/i)).toBeTruthy()
+
+    const cacheable = screen.getByLabelText(/cacheable by offline agents/i)
+    expect(cacheable.getAttribute('aria-describedby')).toBe('lifecycle-cacheable-help')
+    expect(screen.getByText(/may cache and reuse this credential locally/i)).toBeTruthy()
+
+    expect(screen.getByText(/external systems that use this credential/i)).toBeTruthy()
+
+    expect(screen.getByLabelText(/system type/i).getAttribute('aria-describedby')).toBe(
+      'dependency-system-type-help'
+    )
+    expect(screen.getByLabelText(/scope to field/i).getAttribute('aria-describedby')).toBe(
+      'dependency-field-key-help'
+    )
+    expect(screen.getByLabelText(/link \(optional\)/i).getAttribute('aria-describedby')).toContain(
+      'dependency-link-url-help'
+    )
+  })
+
+  it('does not preview a cron schedule the lifecycle API will reject as too frequent', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: { ...CREDENTIAL, rotationSchedule: '* * * * *' } }) },
+    })
+
+    expect(screen.queryByText(/next run \(utc\):/i)).toBeNull()
+  })
+
   it('shows the sealed-vault message when the vault is sealed', () => {
     render(CredentialDetailPage, { props: { data: baseData({ vaultSealed: true }) } })
     expect(screen.getByText(onboardingCopy.vaultSealedMessage)).toBeTruthy()
