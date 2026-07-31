@@ -128,6 +128,14 @@ describe('credential detail +page.svelte', () => {
     )
   })
 
+  it('does not preview a cron schedule the lifecycle API will reject as too frequent', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: { ...CREDENTIAL, rotationSchedule: '* * * * *' } }) },
+    })
+
+    expect(screen.queryByText(/next run \(utc\):/i)).toBeNull()
+  })
+
   it('shows the sealed-vault message when the vault is sealed', () => {
     render(CredentialDetailPage, { props: { data: baseData({ vaultSealed: true }) } })
     expect(screen.getByText(onboardingCopy.vaultSealedMessage)).toBeTruthy()

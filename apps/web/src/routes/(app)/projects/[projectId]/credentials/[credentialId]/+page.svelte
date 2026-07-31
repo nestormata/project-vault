@@ -3,7 +3,12 @@
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import type { FieldMeta, SystemType } from '@project-vault/shared'
-  import { buildAbsoluteUrl, DEFAULT_FIELD_KEY, nextCronOccurrence } from '@project-vault/shared'
+  import {
+    buildAbsoluteUrl,
+    DEFAULT_FIELD_KEY,
+    nextCronOccurrence,
+    validateRotationCron,
+  } from '@project-vault/shared'
   import {
     addCredentialDependency,
     addCredentialVersion,
@@ -86,6 +91,7 @@
   const lifecycleNextRun = $derived.by(() => {
     const schedule = lifecycleRotationSchedule.trim()
     if (!schedule) return null
+    if (!validateRotationCron(schedule).ok) return null
     try {
       return nextCronOccurrence(schedule, new Date()).toLocaleString(undefined, {
         timeZone: 'UTC',
