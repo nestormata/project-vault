@@ -431,5 +431,5 @@ development_status:
   19-1-dashboard-selector-all-accessible-projects: done # review -> done 2026-07-31 after local merge; TDD implementation, targeted web checks, adversarial review, and Playwright J7 passed; no remote push.
   19-2-localize-pre-auth-shell-and-mfa-copy: review # in-progress -> review 2026-07-31 via pick-story; TDD implementation, targeted web checks, auth/accessibility review, and Playwright J8 passed; no remote push.
   19-3-contextual-help-for-all-input-fields: done # review -> done 2026-07-31 after local merge; deterministic G5 inventory, targeted tests, Playwright J9, and adversarial review passed; no remote push.
-  19-4-dependent-system-inline-validation: ready-for-dev # backlog -> ready-for-dev 2026-07-31 via Epic 19 local loop; Story 2.9 review deferral, five planning/review passes, no remote push.
+  19-4-dependent-system-inline-validation: in-progress # ready-for-dev -> in-progress 2026-07-31 via Epic 19 local loop; Codex implementation in isolated worktree, no remote push.
   epic-19-retrospective: optional
