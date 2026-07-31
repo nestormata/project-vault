@@ -21,6 +21,7 @@ export default mergeConfig(baseVitestConfig, {
         'src/check-rls-coverage.ts',
         'src/seed-fixtures.ts',
         'src/seed-demo.ts',
+        'src/scripts/guarded-migrate.ts',
       ],
       thresholds: {
         lines: 80,

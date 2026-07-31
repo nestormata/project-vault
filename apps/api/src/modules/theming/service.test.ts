@@ -5,6 +5,7 @@ import {
   getThemesHealthField,
   getCompiledThemes,
   __resetThemeStateForTests,
+  isValidColorGrammar,
   MAX_THEME_FILE_BYTES,
 } from './service.js'
 import { UnsafeForwardingUrlError } from '../../lib/safe-fetch.js'
@@ -189,6 +190,19 @@ describe('reloadThemes — AC-3 per-file validation isolation', () => {
 })
 
 describe('reloadThemes — AC-4 canonical token registry / CSS-injection safety', () => {
+  it.each([
+    ['rgb(30, 58, 138)', true],
+    ['rgba(30, 58, 138, 0.5)', true],
+    ['hsl(220, 64%, 33%)', true],
+    ['hsla(220, 64%, 33%, 0.75)', true],
+    ['rgb(30, 58)', false],
+    ['hsl(220, 64, 33%)', false],
+    ['rgba(30, 58, 138, 1.0)', false],
+    ['rgb(30, 58, 138, url(evil))', false],
+  ])('applies the bounded functional color grammar to %s', (value, expected) => {
+    expect(isValidColorGrammar(value)).toBe(expected)
+  })
+
   it('happy path: color/length/enum tokens all compile cleanly', async () => {
     const deps = fixtureDeps({
       'acme.json': {

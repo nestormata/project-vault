@@ -143,6 +143,17 @@ function log(event: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(event)}\n`)
 }
 
+export function resolveDrizzleKitExecutable(scriptDirectory: string): string {
+  return resolve(scriptDirectory, '../../node_modules/drizzle-kit/bin.cjs')
+}
+
+export function runDrizzleKitMigration(scriptDirectory: string): void {
+  execFileSync(resolveDrizzleKitExecutable(scriptDirectory), ['migrate'], {
+    stdio: 'inherit',
+    cwd: resolve(scriptDirectory, '../..'),
+  }) // NOSONAR(typescript:S4036) trusted dev-dependency binary at a fixed workspace path
+}
+
 /** Queries `drizzle.__drizzle_migrations` for the most recently applied migration's `created_at`
  * — `null` when the table/schema doesn't exist yet (fresh database, nothing applied). Read-only:
  * never creates the table, since a refused destructive migration must leave the database
@@ -163,7 +174,7 @@ export async function fetchLastAppliedMillis(databaseUrl: string): Promise<numbe
   }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const allowDestructive = process.argv.includes('--allow-destructive')
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) {
@@ -191,11 +202,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    const drizzleKitExecutable = resolve(__dirname, '../../node_modules/drizzle-kit/bin.cjs')
-    execFileSync(drizzleKitExecutable, ['migrate'], {
-      stdio: 'inherit',
-      cwd: resolve(__dirname, '../..'),
-    }) // NOSONAR(typescript:S4036) trusted dev-dependency binary at a fixed workspace path
+    runDrizzleKitMigration(__dirname)
   } catch {
     // drizzle-kit already prints its own error to stderr (inherited stdio); a non-zero exit
     // here is enough to satisfy AC-2 (migrate service exits non-zero, api never starts).
@@ -209,19 +216,22 @@ async function main(): Promise<void> {
 // `e2e/global-setup.ts` invokes this file as `node tsx/cli.mjs guarded-migrate.ts`, so the
 // migration path is not necessarily argv[1]. Check every CLI argument to keep both the package
 // script (`tsx guarded-migrate.ts`) and the explicit Node/tsx invocation executable.
-const invokedScript = process.argv.slice(1).some((argument) => {
-  try {
-    return resolve(argument) === __filename
-  } catch {
-    return false
-  }
-})
+export function isInvokedScript(argumentsList: string[], filename: string): boolean {
+  return argumentsList.some((argument) => resolve(argument) === filename)
+}
 
-if (invokedScript) {
+export async function runIfInvokedScript(
+  argumentsList: string[],
+  filename: string,
+  run: () => Promise<void>
+): Promise<void> {
+  if (!isInvokedScript(argumentsList, filename)) return
   try {
-    await main()
+    await run()
   } catch (error: unknown) {
     process.stderr.write(`FATAL: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1
   }
 }
+
+await runIfInvokedScript(process.argv.slice(1), __filename, main)
