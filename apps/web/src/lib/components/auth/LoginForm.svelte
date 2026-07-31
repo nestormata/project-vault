@@ -17,7 +17,10 @@
   } from './form-model.js'
   import MfaLoginForm from './MfaLoginForm.svelte'
 
-  let { nextPath = '/dashboard' }: { nextPath?: string } = $props()
+  let {
+    nextPath = '/dashboard',
+    onLocaleChange,
+  }: { nextPath?: string; onLocaleChange?: () => void } = $props()
 
   // Story 14.4 Task 3.1: two-step, email-first flow. 'email' is Step A (email + Continue);
   // 'password' and 'sso' are the two possible Step B outcomes of the domain-lookup call — never
@@ -195,6 +198,7 @@
 
   function handleLocaleChange() {
     localeRevision += 1
+    onLocaleChange?.()
   }
 </script>
 

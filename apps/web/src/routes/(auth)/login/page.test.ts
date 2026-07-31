@@ -29,6 +29,7 @@ vi.mock('$app/state', () => ({
 }))
 
 import LoginPage from './+page.svelte'
+import { setLocale } from '$lib/paraglide/runtime.js'
 
 // Story 14.4: the login screen is now email-first/two-step — Step A (email + Continue) always
 // runs before the password field renders (AC-4), even for an email with no SSO mapping (the case
@@ -48,6 +49,7 @@ async function submitLogin() {
 
 describe('/login +page.svelte', () => {
   beforeEach(() => {
+    document.cookie = 'PARAGLIDE_LOCALE=en; path=/'
     pageMock.url = new URL('http://localhost/login')
     loginMock.mockReset()
     getCurrentUserMock.mockReset()
@@ -59,6 +61,19 @@ describe('/login +page.svelte', () => {
     getCurrentUserMock.mockResolvedValue({ userId: 'u1' })
   })
   afterEach(() => cleanup())
+
+  it('renders the complete login shell in Spanish, including the safe registered reason', () => {
+    setLocale('es', { reload: false })
+    pageMock.url = new URL('http://localhost/login?reason=registered')
+    render(LoginPage)
+
+    expect(document.title).toBe('Iniciar sesión | Project Vault')
+    expect(screen.getByRole('heading', { name: 'Iniciar sesión' })).toBeTruthy()
+    expect(screen.getByText('Usa tu cuenta de Project Vault para continuar.')).toBeTruthy()
+    expect(screen.getByText('Cuenta creada. Inicia sesión para continuar.')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Registrarse' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: '¿No puedes acceder a tu cuenta?' })).toBeTruthy()
+  })
 
   it('shows the default sign-in message with no reason query param', () => {
     render(LoginPage)

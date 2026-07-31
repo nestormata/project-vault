@@ -18,13 +18,37 @@ vi.mock('$app/state', () => ({
 }))
 
 import RegisterPage from './+page.svelte'
+import { setLocale } from '$lib/paraglide/runtime.js'
 
 describe('/register +page.svelte', () => {
   beforeEach(() => {
+    document.cookie = 'PARAGLIDE_LOCALE=en; path=/'
     pageMock.url = new URL('http://localhost/register')
     registerMock.mockReset()
   })
   afterEach(() => cleanup())
+
+  it('renders the ordinary registration shell in Spanish', () => {
+    setLocale('es', { reload: false })
+    render(RegisterPage)
+
+    expect(document.title).toBe('Registrarse | Project Vault')
+    expect(screen.getByRole('heading', { name: 'Registrarse' })).toBeTruthy()
+    expect(
+      screen.getByText('Crea una organización independiente nueva en este vault.')
+    ).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Iniciar sesión' })).toBeTruthy()
+  })
+
+  it('renders the invitation registration branch in Spanish', () => {
+    setLocale('es', { reload: false })
+    pageMock.url = new URL('http://localhost/register?invitationToken=tok-1')
+    render(RegisterPage)
+
+    expect(
+      screen.getByText('Aún no tienes una cuenta; crea una para unirte al proyecto.')
+    ).toBeTruthy()
+  })
 
   it('shows the first-organization copy and an org-name field when there is no invitation token', () => {
     render(RegisterPage)
