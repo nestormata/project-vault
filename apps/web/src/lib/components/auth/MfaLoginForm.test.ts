@@ -46,6 +46,22 @@ describe('MfaLoginForm', () => {
     await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/dashboard'))
   })
 
+  it('runs the authenticated completion callback so login handoffs are not skipped', async () => {
+    verifyMfaLoginMock.mockResolvedValue({
+      userId: 'u1',
+      orgId: 'o1',
+      expiresAt: '2026-01-01T00:00:00Z',
+    })
+    const onAuthenticated = vi.fn(async () => {})
+
+    render(MfaLoginForm, { props: { mfaToken: 'tok-1', onExpired: vi.fn(), onAuthenticated } })
+    await submitCode('123456')
+
+    await waitFor(() => expect(onAuthenticated).toHaveBeenCalledTimes(1))
+    expect(getCurrentUserMock).not.toHaveBeenCalled()
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
   it('shows a friendly message when the TOTP code is rejected, and retains the token for retry', async () => {
     verifyMfaLoginMock.mockRejectedValue({ code: 'invalid_totp' })
 

@@ -4,8 +4,12 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/sv
 const registerMock = vi.hoisted(() => vi.fn())
 const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
+const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const getLocaleMock = vi.hoisted(() => vi.fn(() => 'es'))
+const markRegistrationLocalePendingMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/auth.js', () => ({
   register: registerMock,
@@ -14,11 +18,21 @@ vi.mock('$lib/api/auth.js', () => ({
 
 vi.mock('$app/navigation', () => ({
   goto: gotoMock,
+  invalidateAll: invalidateAllMock,
 }))
 
 vi.mock('$lib/state/theme.svelte.js', () => ({
   setPreAuthTheme: setPreAuthThemeMock,
   writePreAuthThemeCache: writePreAuthThemeCacheMock,
+}))
+
+vi.mock('$lib/paraglide/runtime.js', () => ({
+  experimentalStaticLocale: 'en',
+  setLocale: setLocaleMock,
+  getLocale: getLocaleMock,
+}))
+vi.mock('./registration-locale.js', () => ({
+  markRegistrationLocalePending: markRegistrationLocalePendingMock,
 }))
 
 import RegisterForm from './RegisterForm.svelte'
@@ -29,9 +43,35 @@ describe('RegisterForm', () => {
     lookupSsoDomainMock.mockReset()
     lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
     gotoMock.mockClear()
+    invalidateAllMock.mockClear()
     setPreAuthThemeMock.mockReset()
+    setLocaleMock.mockClear()
+    getLocaleMock.mockReturnValue('es')
+    markRegistrationLocalePendingMock.mockReset()
   })
   afterEach(() => cleanup())
+
+  it('shows the pre-auth language switcher and preserves all typed registration fields', async () => {
+    render(RegisterForm)
+    await fireEvent.input(screen.getByLabelText(/email/i), {
+      target: { value: 'alex@example.com' },
+    })
+    await fireEvent.input(screen.getByLabelText(/organization name/i), {
+      target: { value: 'Acme' },
+    })
+    await fireEvent.input(screen.getByLabelText(/^password$/i), {
+      target: { value: 'super-secret-password' },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Español' }))
+
+    expect(setLocaleMock).toHaveBeenCalledWith('es', { reload: false })
+    expect((screen.getByLabelText(/email/i) as HTMLInputElement).value).toBe('alex@example.com')
+    expect((screen.getByLabelText(/organization name/i) as HTMLInputElement).value).toBe('Acme')
+    expect((screen.getByLabelText(/^password$/i) as HTMLInputElement).value).toBe(
+      'super-secret-password'
+    )
+  })
 
   it('registers with an org name (no invitation) and redirects to the post-register login path', async () => {
     registerMock.mockResolvedValue({
@@ -65,6 +105,7 @@ describe('RegisterForm', () => {
       })
     )
     await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login?reason=registered'))
+    expect(markRegistrationLocalePendingMock).toHaveBeenCalledWith('u1', 'es')
   })
 
   it('hides the org-name field and readonly-locks email when an invitationToken is supplied, redirecting into the project', async () => {

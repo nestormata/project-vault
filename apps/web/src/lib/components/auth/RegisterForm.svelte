@@ -2,7 +2,11 @@
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { register } from '$lib/api/auth.js'
+  import { getLocale } from '$lib/paraglide/runtime.js'
+  import { m } from '$lib/paraglide/messages.js'
   import { setPreAuthTheme } from '$lib/state/theme.svelte.js'
+  import PreAuthLanguageSwitcher from './PreAuthLanguageSwitcher.svelte'
+  import { markRegistrationLocalePending } from './registration-locale.js'
   import {
     buildRegisterRequest,
     clearRegisterFields,
@@ -17,6 +21,7 @@
   let password = $state('')
   let orgName = $state('')
   let errorMessage = $state(null)
+  let localeRevision = $state(0)
   let emailInputEl: HTMLInputElement | undefined = $state()
 
   // Story 16.5 AC-1/AC-2/AC-8: tracks which email a background theme lookup is currently in
@@ -66,71 +71,88 @@
         fetch,
         buildRegisterRequest({ email, password, orgName, invitationToken })
       )
+      markRegistrationLocalePending(result.userId, getLocale())
       clearFields()
       // getPostRegisterPath() returns either a static route or a server-issued project id —
       // not a literal resolve() can type-check at compile time.
       // eslint-disable-next-line svelte/no-navigation-without-resolve
       await goto(getPostRegisterPath(result.invitedProject))
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : 'Registration failed.'
+      errorMessage = error instanceof Error ? error.message : m.auth_register_failed()
       password = ''
     }
   }
+
+  function handleLocaleChange() {
+    localeRevision += 1
+  }
 </script>
 
-<form
-  class="space-y-5"
-  onsubmit={(event) => {
-    event.preventDefault()
-    void submitForm()
-  }}
->
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="register-email">Email</label>
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
-      id="register-email"
-      type="email"
-      bind:value={email}
-      bind:this={emailInputEl}
-      readonly={Boolean(invitationToken)}
-      required
-      onblur={() => void applyThemeForEmail(email)}
-    />
+{#key localeRevision}
+  <div class="mb-5">
+    <PreAuthLanguageSwitcher onLocaleChange={handleLocaleChange} />
   </div>
-  {#if !invitationToken}
+
+  <form
+    class="space-y-5"
+    onsubmit={(event) => {
+      event.preventDefault()
+      void submitForm()
+    }}
+  >
     <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="register-org">Organization name</label>
+      <label class="block font-medium text-slate-900" for="register-email"
+        >{m.auth_register_email()}</label
+      >
       <input
         class="w-full rounded-xl border border-slate-300 px-3 py-2"
-        id="register-org"
-        type="text"
-        bind:value={orgName}
-        maxlength="128"
+        id="register-email"
+        type="email"
+        bind:value={email}
+        bind:this={emailInputEl}
+        readonly={Boolean(invitationToken)}
         required
+        onblur={() => void applyThemeForEmail(email)}
       />
     </div>
-  {/if}
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="register-password">Password</label>
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
-      id="register-password"
-      type="password"
-      autocomplete="new-password"
-      bind:value={password}
-      minlength="12"
-      required
-    />
-    <p class="text-sm text-slate-600">Use at least 12 characters.</p>
-  </div>
-  {#if errorMessage}
-    <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-      {errorMessage}
-    </p>
-  {/if}
-  <button
-    class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700"
-    type="submit">Create account</button
-  >
-</form>
+    {#if !invitationToken}
+      <div class="space-y-2">
+        <label class="block font-medium text-slate-900" for="register-org"
+          >{m.auth_register_organization()}</label
+        >
+        <input
+          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          id="register-org"
+          type="text"
+          bind:value={orgName}
+          maxlength="128"
+          required
+        />
+      </div>
+    {/if}
+    <div class="space-y-2">
+      <label class="block font-medium text-slate-900" for="register-password"
+        >{m.auth_register_password()}</label
+      >
+      <input
+        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        id="register-password"
+        type="password"
+        autocomplete="new-password"
+        bind:value={password}
+        minlength="12"
+        required
+      />
+      <p class="text-sm text-slate-600">{m.auth_register_password_hint()}</p>
+    </div>
+    {#if errorMessage}
+      <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+        {errorMessage}
+      </p>
+    {/if}
+    <button
+      class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700"
+      type="submit">{m.auth_register_create_account()}</button
+    >
+  </form>
+{/key}

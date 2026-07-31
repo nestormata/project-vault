@@ -9,8 +9,13 @@ const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const ssoStartMock = vi.hoisted(() => vi.fn())
 const ssoCallbackMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
+const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const getLocaleMock = vi.hoisted(() => vi.fn(() => 'es'))
+const patchUserLocaleMock = vi.hoisted(() => vi.fn())
+const consumeRegistrationLocalePendingMock = vi.hoisted(() => vi.fn(() => null))
 
 vi.mock('$lib/api/auth.js', () => ({
   login: loginMock,
@@ -23,11 +28,23 @@ vi.mock('$lib/api/auth.js', () => ({
 
 vi.mock('$app/navigation', () => ({
   goto: gotoMock,
+  invalidateAll: invalidateAllMock,
 }))
 
 vi.mock('$lib/state/theme.svelte.js', () => ({
   setPreAuthTheme: setPreAuthThemeMock,
   writePreAuthThemeCache: writePreAuthThemeCacheMock,
+}))
+
+vi.mock('$lib/paraglide/runtime.js', () => ({
+  experimentalStaticLocale: 'en',
+  setLocale: setLocaleMock,
+  getLocale: getLocaleMock,
+}))
+
+vi.mock('$lib/api/locale.js', () => ({ patchUserLocale: patchUserLocaleMock }))
+vi.mock('./registration-locale.js', () => ({
+  consumeRegistrationLocalePending: consumeRegistrationLocalePendingMock,
 }))
 
 import LoginForm from './LoginForm.svelte'
@@ -54,10 +71,73 @@ describe('LoginForm', () => {
     ssoStartMock.mockReset()
     ssoCallbackMock.mockReset()
     gotoMock.mockClear()
+    invalidateAllMock.mockClear()
     setPreAuthThemeMock.mockReset()
     writePreAuthThemeCacheMock.mockReset()
+    setLocaleMock.mockClear()
+    getLocaleMock.mockReturnValue('es')
+    patchUserLocaleMock.mockReset()
+    consumeRegistrationLocalePendingMock.mockReset()
+    consumeRegistrationLocalePendingMock.mockReturnValue(null)
   })
   afterEach(() => cleanup())
+
+  it('shows the pre-auth language switcher and preserves typed email when switching locale', async () => {
+    render(LoginForm, { props: {} })
+    const email = screen.getByLabelText(/email/i) as HTMLInputElement
+    await fireEvent.input(email, { target: { value: 'alex@example.com' } })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Español' }))
+
+    expect(setLocaleMock).toHaveBeenCalledWith('es', { reload: false })
+    expect(email.value).toBe('alex@example.com')
+  })
+
+  it('preserves a failed-login error when switching locale', async () => {
+    lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+    loginMock.mockRejectedValue(new Error('Service unavailable'))
+    render(LoginForm, { props: {} })
+    await fillAndSubmitPassword('alex@example.com', 'correcthorsebattery')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Español' }))
+
+    expect(screen.getByRole('alert').textContent).toContain('Service unavailable')
+  })
+
+  it('persists the selected registration locale after the first authenticated login', async () => {
+    consumeRegistrationLocalePendingMock.mockReturnValue('es')
+    patchUserLocaleMock.mockResolvedValue({ locale: 'es' })
+    lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+    loginMock.mockResolvedValue({ userId: 'u1', orgId: 'o1', expiresAt: '2026-01-01T00:00:00Z' })
+    getCurrentUserMock.mockResolvedValue({ userId: 'u1' })
+
+    render(LoginForm, { props: { nextPath: '/dashboard' } })
+    await fillAndSubmitPassword()
+
+    await waitFor(() => expect(patchUserLocaleMock).toHaveBeenCalledWith(fetch, 'es'))
+    expect(consumeRegistrationLocalePendingMock).toHaveBeenCalledWith('u1')
+    expect(gotoMock).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('does not block login or navigation when registration locale persistence fails', async () => {
+    const persistError = new Error('locale API unavailable')
+    consumeRegistrationLocalePendingMock.mockReturnValue('es')
+    patchUserLocaleMock.mockRejectedValue(persistError)
+    loginMock.mockResolvedValue({ userId: 'u1', orgId: 'o1', expiresAt: '2026-01-01T00:00:00Z' })
+    getCurrentUserMock.mockResolvedValue({ userId: 'u1' })
+    lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    render(LoginForm, { props: { nextPath: '/dashboard' } })
+    await fillAndSubmitPassword()
+
+    await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/dashboard'))
+    expect(consoleError).toHaveBeenCalledWith(
+      '[auth.registration_locale_persistence_failed]',
+      persistError
+    )
+    consoleError.mockRestore()
+  })
 
   describe('Step A: email-only entry (AC-1/AC-2/AC-4)', () => {
     it('shows only the email field and Continue button on initial render — no password field yet', () => {
