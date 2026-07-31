@@ -9,6 +9,7 @@ const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const ssoStartMock = vi.hoisted(() => vi.fn())
 const ssoCallbackMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
@@ -27,6 +28,7 @@ vi.mock('$lib/api/auth.js', () => ({
 
 vi.mock('$app/navigation', () => ({
   goto: gotoMock,
+  invalidateAll: invalidateAllMock,
 }))
 
 vi.mock('$lib/state/theme.svelte.js', () => ({
@@ -69,6 +71,7 @@ describe('LoginForm', () => {
     ssoStartMock.mockReset()
     ssoCallbackMock.mockReset()
     gotoMock.mockClear()
+    invalidateAllMock.mockClear()
     setPreAuthThemeMock.mockReset()
     writePreAuthThemeCacheMock.mockReset()
     setLocaleMock.mockClear()

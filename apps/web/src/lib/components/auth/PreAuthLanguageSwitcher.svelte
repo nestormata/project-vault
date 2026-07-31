@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation'
   import { setLocale } from '$lib/paraglide/runtime.js'
   import { m } from '$lib/paraglide/messages.js'
   import {
@@ -7,6 +8,8 @@
     type SupportedLocale,
   } from '@project-vault/shared'
 
+  let { onLocaleChange }: { onLocaleChange?: () => void } = $props()
+
   let latestRequest = 0
   let latestLocale = $state<SupportedLocale | null>(null)
 
@@ -14,6 +17,8 @@
     const request = ++latestRequest
     latestLocale = locale
     await setLocale(locale, { reload: false })
+    await invalidateAll()
+    onLocaleChange?.()
 
     // setLocale is normally synchronous, but keeping the latest request as the source of truth
     // prevents a slower custom locale strategy from allowing an earlier click to win the race.

@@ -4,6 +4,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/sv
 const registerMock = vi.hoisted(() => vi.fn())
 const lookupSsoDomainMock = vi.hoisted(() => vi.fn())
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const setPreAuthThemeMock = vi.hoisted(() => vi.fn())
 const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
@@ -17,6 +18,7 @@ vi.mock('$lib/api/auth.js', () => ({
 
 vi.mock('$app/navigation', () => ({
   goto: gotoMock,
+  invalidateAll: invalidateAllMock,
 }))
 
 vi.mock('$lib/state/theme.svelte.js', () => ({
@@ -41,6 +43,7 @@ describe('RegisterForm', () => {
     lookupSsoDomainMock.mockReset()
     lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
     gotoMock.mockClear()
+    invalidateAllMock.mockClear()
     setPreAuthThemeMock.mockReset()
     setLocaleMock.mockClear()
     getLocaleMock.mockReturnValue('es')

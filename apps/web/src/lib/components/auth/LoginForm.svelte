@@ -32,6 +32,7 @@
   let statusMessage = $state(null)
   let errorMessage = $state(null)
   let isSubmitting = $state(false)
+  let localeRevision = $state(0)
   // Story 14.4 AC-8/AC-11: tracks which email a domain-lookup is currently in flight for.
   // Distinct from `isSubmitting` (used by the password/SSO steps' single-request guard) because
   // Step A must allow a *new* lookup the moment the user edits the email away from the one a
@@ -191,144 +192,152 @@
     mfaToken = null
     statusMessage = m.auth_login_expired()
   }
+
+  function handleLocaleChange() {
+    localeRevision += 1
+  }
 </script>
 
-<div class="mb-5">
-  <PreAuthLanguageSwitcher />
-</div>
-
-{#snippet emailField()}
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="login-email">{m.auth_login_email()}</label>
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
-      id="login-email"
-      type="email"
-      bind:value={email}
-      required
-    />
+{#key localeRevision}
+  <div class="mb-5">
+    <PreAuthLanguageSwitcher onLocaleChange={handleLocaleChange} />
   </div>
-{/snippet}
 
-{#snippet statusAndErrorMessages()}
-  {#if statusMessage}
-    <p class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-      {statusMessage}
-    </p>
-  {/if}
-  {#if errorMessage}
-    <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-      {errorMessage}
-    </p>
-  {/if}
-{/snippet}
+  {#snippet emailField()}
+    <div class="space-y-2">
+      <label class="block font-medium text-slate-900" for="login-email"
+        >{m.auth_login_email()}</label
+      >
+      <input
+        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        id="login-email"
+        type="email"
+        bind:value={email}
+        required
+      />
+    </div>
+  {/snippet}
 
-{#if mfaToken}
-  <div class="space-y-4">
+  {#snippet statusAndErrorMessages()}
     {#if statusMessage}
       <p class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
         {statusMessage}
       </p>
     {/if}
-    <MfaLoginForm {mfaToken} onExpired={restartLogin} onAuthenticated={completeSession} />
-    <button
-      class="text-sm font-medium text-slate-700 underline"
-      type="button"
-      onclick={() => (mfaToken = null)}
-    >
-      {m.auth_login_use_different_password()}
-    </button>
-  </div>
-{:else if step === 'email'}
-  <form
-    class="space-y-5"
-    onsubmit={(event) => {
-      event.preventDefault()
-      void submitEmailStep()
-    }}
-  >
-    {@render emailField()}
     {#if errorMessage}
       <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
         {errorMessage}
       </p>
     {/if}
-    <button
-      class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-      type="submit"
-      disabled={pendingLookupEmail === email}
-    >
-      {pendingLookupEmail === email ? m.auth_login_checking() : m.auth_login_continue()}
-    </button>
-  </form>
-{:else if step === 'sso'}
-  <form
-    class="space-y-5"
-    onsubmit={(event) => {
-      event.preventDefault()
-      void submitSsoStep()
-    }}
-  >
-    <p class="text-sm text-slate-600">
-      {m.auth_login_sso_description({ email })}
-    </p>
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="sso-credential"
-        >{m.auth_login_sso_credential()}</label
+  {/snippet}
+
+  {#if mfaToken}
+    <div class="space-y-4">
+      {#if statusMessage}
+        <p class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          {statusMessage}
+        </p>
+      {/if}
+      <MfaLoginForm {mfaToken} onExpired={restartLogin} onAuthenticated={completeSession} />
+      <button
+        class="text-sm font-medium text-slate-700 underline"
+        type="button"
+        onclick={() => (mfaToken = null)}
       >
-      <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
-        id="sso-credential"
-        type="text"
-        bind:value={ssoCredential}
-        required
-      />
+        {m.auth_login_use_different_password()}
+      </button>
     </div>
-    {@render statusAndErrorMessages()}
-    <button
-      class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-      type="submit"
-      disabled={isSubmitting}
+  {:else if step === 'email'}
+    <form
+      class="space-y-5"
+      onsubmit={(event) => {
+        event.preventDefault()
+        void submitEmailStep()
+      }}
     >
-      {isSubmitting ? m.auth_login_signing_sso() : m.auth_login_continue_sso()}
-    </button>
-    <button
-      class="text-sm font-medium text-slate-700 underline"
-      type="button"
-      onclick={useADifferentEmail}
-    >
-      {m.auth_login_use_different_email()}
-    </button>
-  </form>
-{:else}
-  <form
-    class="space-y-5"
-    onsubmit={(event) => {
-      event.preventDefault()
-      void submitPasswordStep()
-    }}
-  >
-    {@render emailField()}
-    <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="login-password"
-        >{m.auth_login_password()}</label
+      {@render emailField()}
+      {#if errorMessage}
+        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+          {errorMessage}
+        </p>
+      {/if}
+      <button
+        class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        type="submit"
+        disabled={pendingLookupEmail === email}
       >
-      <input
-        class="w-full rounded-xl border border-slate-300 px-3 py-2"
-        id="login-password"
-        type="password"
-        autocomplete="current-password"
-        bind:value={password}
-        required
-      />
-    </div>
-    {@render statusAndErrorMessages()}
-    <button
-      class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
-      type="submit"
-      disabled={isSubmitting}
+        {pendingLookupEmail === email ? m.auth_login_checking() : m.auth_login_continue()}
+      </button>
+    </form>
+  {:else if step === 'sso'}
+    <form
+      class="space-y-5"
+      onsubmit={(event) => {
+        event.preventDefault()
+        void submitSsoStep()
+      }}
     >
-      {isSubmitting ? m.auth_login_signing_in() : m.auth_login_sign_in()}
-    </button>
-  </form>
-{/if}
+      <p class="text-sm text-slate-600">
+        {m.auth_login_sso_description({ email })}
+      </p>
+      <div class="space-y-2">
+        <label class="block font-medium text-slate-900" for="sso-credential"
+          >{m.auth_login_sso_credential()}</label
+        >
+        <input
+          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          id="sso-credential"
+          type="text"
+          bind:value={ssoCredential}
+          required
+        />
+      </div>
+      {@render statusAndErrorMessages()}
+      <button
+        class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        type="submit"
+        disabled={isSubmitting}
+      >
+        {isSubmitting ? m.auth_login_signing_sso() : m.auth_login_continue_sso()}
+      </button>
+      <button
+        class="text-sm font-medium text-slate-700 underline"
+        type="button"
+        onclick={useADifferentEmail}
+      >
+        {m.auth_login_use_different_email()}
+      </button>
+    </form>
+  {:else}
+    <form
+      class="space-y-5"
+      onsubmit={(event) => {
+        event.preventDefault()
+        void submitPasswordStep()
+      }}
+    >
+      {@render emailField()}
+      <div class="space-y-2">
+        <label class="block font-medium text-slate-900" for="login-password"
+          >{m.auth_login_password()}</label
+        >
+        <input
+          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          id="login-password"
+          type="password"
+          autocomplete="current-password"
+          bind:value={password}
+          required
+        />
+      </div>
+      {@render statusAndErrorMessages()}
+      <button
+        class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        type="submit"
+        disabled={isSubmitting}
+      >
+        {isSubmitting ? m.auth_login_signing_in() : m.auth_login_sign_in()}
+      </button>
+    </form>
+  {/if}
+{/key}

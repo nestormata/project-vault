@@ -21,6 +21,7 @@
   let password = $state('')
   let orgName = $state('')
   let errorMessage = $state(null)
+  let localeRevision = $state(0)
   let emailInputEl: HTMLInputElement | undefined = $state()
 
   // Story 16.5 AC-1/AC-2/AC-8: tracks which email a background theme lookup is currently in
@@ -81,71 +82,77 @@
       password = ''
     }
   }
+
+  function handleLocaleChange() {
+    localeRevision += 1
+  }
 </script>
 
-<div class="mb-5">
-  <PreAuthLanguageSwitcher />
-</div>
-
-<form
-  class="space-y-5"
-  onsubmit={(event) => {
-    event.preventDefault()
-    void submitForm()
-  }}
->
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="register-email"
-      >{m.auth_register_email()}</label
-    >
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
-      id="register-email"
-      type="email"
-      bind:value={email}
-      bind:this={emailInputEl}
-      readonly={Boolean(invitationToken)}
-      required
-      onblur={() => void applyThemeForEmail(email)}
-    />
+{#key localeRevision}
+  <div class="mb-5">
+    <PreAuthLanguageSwitcher onLocaleChange={handleLocaleChange} />
   </div>
-  {#if !invitationToken}
+
+  <form
+    class="space-y-5"
+    onsubmit={(event) => {
+      event.preventDefault()
+      void submitForm()
+    }}
+  >
     <div class="space-y-2">
-      <label class="block font-medium text-slate-900" for="register-org"
-        >{m.auth_register_organization()}</label
+      <label class="block font-medium text-slate-900" for="register-email"
+        >{m.auth_register_email()}</label
       >
       <input
         class="w-full rounded-xl border border-slate-300 px-3 py-2"
-        id="register-org"
-        type="text"
-        bind:value={orgName}
-        maxlength="128"
+        id="register-email"
+        type="email"
+        bind:value={email}
+        bind:this={emailInputEl}
+        readonly={Boolean(invitationToken)}
         required
+        onblur={() => void applyThemeForEmail(email)}
       />
     </div>
-  {/if}
-  <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="register-password"
-      >{m.auth_register_password()}</label
+    {#if !invitationToken}
+      <div class="space-y-2">
+        <label class="block font-medium text-slate-900" for="register-org"
+          >{m.auth_register_organization()}</label
+        >
+        <input
+          class="w-full rounded-xl border border-slate-300 px-3 py-2"
+          id="register-org"
+          type="text"
+          bind:value={orgName}
+          maxlength="128"
+          required
+        />
+      </div>
+    {/if}
+    <div class="space-y-2">
+      <label class="block font-medium text-slate-900" for="register-password"
+        >{m.auth_register_password()}</label
+      >
+      <input
+        class="w-full rounded-xl border border-slate-300 px-3 py-2"
+        id="register-password"
+        type="password"
+        autocomplete="new-password"
+        bind:value={password}
+        minlength="12"
+        required
+      />
+      <p class="text-sm text-slate-600">{m.auth_register_password_hint()}</p>
+    </div>
+    {#if errorMessage}
+      <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+        {errorMessage}
+      </p>
+    {/if}
+    <button
+      class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700"
+      type="submit">{m.auth_register_create_account()}</button
     >
-    <input
-      class="w-full rounded-xl border border-slate-300 px-3 py-2"
-      id="register-password"
-      type="password"
-      autocomplete="new-password"
-      bind:value={password}
-      minlength="12"
-      required
-    />
-    <p class="text-sm text-slate-600">{m.auth_register_password_hint()}</p>
-  </div>
-  {#if errorMessage}
-    <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-      {errorMessage}
-    </p>
-  {/if}
-  <button
-    class="rounded-xl bg-brand-600 px-4 py-2 font-semibold text-white hover:bg-brand-700"
-    type="submit">{m.auth_register_create_account()}</button
-  >
-</form>
+  </form>
+{/key}

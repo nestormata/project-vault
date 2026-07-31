@@ -73,6 +73,7 @@ Codex (GPT-5)
 
 - Confirmed the existing settings switcher and SSR cookie path are correct; no AC-2 bug was found in the inspected implementation and focused settings/hooks regression tests.
 - Added a shared, button-based pre-auth switcher using `setLocale(locale, { reload: false })`, with a latest-request guard and flex wrapping for narrow viewports.
+- Added an explicit locale-change callback and keyed auth-form rendering so the parent form's localized labels/messages update immediately while bound input and error state remain intact.
 - Added a tab-local registration handoff marker. Because registration intentionally returns no session, the first successful login consumes the marker and persists the current Paraglide locale through the authenticated `PATCH /api/v1/users/me/locale` path.
 - Kept locale persistence soft-fail: account login/navigation continues and a support-triage error is logged if the follow-up fails.
 
@@ -81,6 +82,7 @@ Codex (GPT-5)
 - RED: the new focused switcher, handoff, form-preservation, and persistence tests initially failed because the production switcher/handoff did not exist; existing auth tests remained green.
 - GREEN: focused auth/switcher suite passed: 4 files, 50 tests.
 - Final focused auth/page suite passed: 6 files, 63 tests after adding localized form copy.
+- RED/GREEN: added a regression test for parent-form rerendering after locale changes; the focused switcher/login/register suite now passes 49 tests.
 - Existing settings/hooks regression suite passed: 3 files, 20 tests.
 - Web typecheck and lint passed; lint reported 21 pre-existing warnings and no errors.
 - The focused API users-locale integration suite could not execute assertions because PostgreSQL is not listening on `127.0.0.1:5432` (9 tests skipped during setup). Existing API tests already cover invalid `xx` and `en-US` values returning 422 before DB mutation.
@@ -88,12 +90,12 @@ Codex (GPT-5)
 ### Completion Notes List
 
 - AC-1: Verified existing Paraglide, `users.locale`, SSR cookie, and settings-switcher infrastructure; no i18n rebuild or schema change was needed.
-- AC-2: Verified-no-bug-found by inspecting `setLocale`/`?/updateLocale` response handling, `PARAGLIDE_LOCALE` SSR middleware, and focused settings/hooks tests. The current flow applies the server-confirmed locale without reload and preserves it across subsequent navigations; browser Chrome validation remains with the parent session.
-- AC-3/5: Added the same text-labeled button control pattern to LoginForm and RegisterForm. Visible pre-auth copy now uses the existing Paraglide message catalog, `setLocale(..., { reload: false })` preserves form state/error state, and the control wraps on narrow viewports.
+- AC-2: Verified in Chrome by changing to Español, authenticating, opening the language settings route, and confirming Español remained selected. The SSR cookie and authenticated persistence flow apply the selected locale across navigation; the surrounding app shell still has intentionally deferred English copy.
+- AC-3/5: Added the same text-labeled button control pattern to LoginForm and RegisterForm. The switcher calls back to keyed parent forms after `setLocale(..., { reload: false })`, so localized labels/messages update immediately while typed values survive; Chrome confirmed this on registration and login.
 - AC-4: Registration remains unauthenticated by design; it marks a tab-local handoff and the first successful login performs the authenticated locale PATCH. `registerUser` and its client-input guard were not modified.
 - AC-6: Locale PATCH failure is non-blocking after successful login and is logged as `[auth.registration_locale_persistence_failed]`.
 - AC-7: Existing API validation remains in force through the shared `SUPPORTED_LOCALES` enum and strict locale body schema; unsupported values are rejected cleanly before DB access.
-- AC-8: Added focused component and handoff tests covering locale switching, state preservation, out-of-order locale requests, persistence, and soft failure. No browser tests were added or run.
+- AC-8: Added focused component and handoff tests covering locale switching, parent-form rerendering, state preservation, out-of-order locale requests, persistence, and soft failure. Chrome MCP validation covered the end-to-end pre-auth switch, registration, login, and settings persistence path.
 
 ### File List
 
@@ -112,6 +114,7 @@ Codex (GPT-5)
 
 - 2026-07-31: Implemented pre-auth language switching and deferred post-registration locale persistence with strict TDD red-green validation.
 - 2026-07-31: Added localized pre-auth form copy and revalidated focused auth tests, typecheck, and lint.
+- 2026-07-31: Chrome validation found stale parent-form messages after switching locale; added callback-driven keyed rerendering and regression coverage.
 
 ### Review Findings
 
@@ -119,4 +122,4 @@ Codex (GPT-5)
 - [x] [Review][Patch] The pending handoff marker was not bound to the newly registered user [apps/web/src/lib/components/auth/registration-locale.ts:1-49] — fixed by storing the registration user ID and selected locale and consuming only for that user.
 - [x] [Review][Patch] The new sessionStorage use failed the existing frontend hardening guard [apps/web/src/lib/security/static-hardening.test.ts:24-105] — fixed by adding a narrow reviewed allowlist entry and key assertion for the non-sensitive handoff.
 - [ ] [Review][Patch] The surrounding login/register page shell and MFA copy remain English after switching locale [apps/web/src/routes/(auth)/login/+page.svelte:18-40; apps/web/src/routes/(auth)/register/+page.svelte:10-28; apps/web/src/lib/components/auth/MfaLoginForm.svelte:68-90] — deferred because this review was authorized to fix only Critical/High findings.
-- [ ] [Review][Patch] AC-2's required two-page before/after navigation reproduction is documented but not independently evidenced in this worktree [18-11-pre-login-and-registration-language-selection.md:49-51] — deferred to the parent session's browser validation per instruction.
+- [x] [Review][Patch] AC-2's required navigation reproduction was completed in Chrome: post-registration login landed in the localized app, and `/settings/language` confirmed Español remained selected after authentication and navigation.

@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 
 const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const invalidateAllMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const onLocaleChangeMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/paraglide/runtime.js', () => ({ setLocale: setLocaleMock }))
+vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
 vi.mock('$lib/paraglide/messages.js', () => ({
   m: {
     settings_nav_language_title: () => 'Language',
@@ -18,6 +21,8 @@ describe('PreAuthLanguageSwitcher', () => {
   afterEach(() => {
     cleanup()
     setLocaleMock.mockClear()
+    invalidateAllMock.mockClear()
+    onLocaleChangeMock.mockClear()
   })
 
   it('uses the settings control pattern with a visible text label for both locales', () => {
@@ -34,7 +39,16 @@ describe('PreAuthLanguageSwitcher', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Español' }))
 
     expect(setLocaleMock).toHaveBeenCalledWith('es', { reload: false })
+    expect(invalidateAllMock).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('group').className).toContain('flex-wrap')
+  })
+
+  it('notifies the parent after the locale cookie has been updated', async () => {
+    render(PreAuthLanguageSwitcher, { props: { onLocaleChange: onLocaleChangeMock } })
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Español' }))
+
+    expect(onLocaleChangeMock).toHaveBeenCalledTimes(1)
   })
 
   it('trusts the most recently requested locale when setLocale calls resolve out of order', async () => {
