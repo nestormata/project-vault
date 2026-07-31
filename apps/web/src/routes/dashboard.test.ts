@@ -59,12 +59,96 @@ const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 function baseDashboardData(dashboardOverrides: Record<string, unknown> = {}) {
   return {
-    projects: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+    projects: {
+      items: [
+        {
+          id: projectId,
+          name: 'Payments',
+          description: null,
+          slug: 'payments',
+          role: 'owner',
+          credentialCount: 0,
+          expiringCount: 0,
+          alertCount: 0,
+          tags: [],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          archivedAt: null,
+          isArchived: false,
+        },
+      ],
+      total: 1,
+      page: 1,
+      limit: 20,
+      hasNext: false,
+    },
     orgDashboard: null,
     selectedProject: { id: projectId, name: 'Payments', description: null },
     dashboard: { ...EMPTY_PROJECT_DASHBOARD, ...dashboardOverrides },
+    monitoringAssets: {
+      certificates: { status: 'ready', count: 0 },
+      domains: { status: 'ready', count: 0 },
+    },
+    alertStatus: 'ready',
   }
 }
+
+describe('/dashboard project selection (Story 18.12 AC-1b/AC-7)', () => {
+  afterEach(() => cleanup())
+
+  it('shows the selected project scope and an accessible project selector', () => {
+    render(DashboardPage, {
+      props: {
+        data: {
+          ...baseDashboardData(),
+          projects: {
+            ...baseDashboardData().projects,
+            items: [
+              baseDashboardData().projects.items[0],
+              {
+                ...baseDashboardData().projects.items[0],
+                id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                name: 'Inventory',
+                slug: 'inventory',
+              },
+            ],
+            total: 2,
+          },
+        },
+      },
+    })
+
+    expect(screen.getByText('Showing data for Payments')).toBeTruthy()
+    const selector = screen.getByRole('combobox', { name: 'Dashboard project' })
+    expect(selector).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Inventory' })).toBeTruthy()
+  })
+})
+
+describe('/dashboard independent monitoring states (Story 18.12 AC-4/AC-6)', () => {
+  afterEach(() => cleanup())
+
+  it('keeps certificate/domain counts visible and marks the single Alerts source unavailable when the dashboard call fails', () => {
+    render(DashboardPage, {
+      props: {
+        data: {
+          ...baseDashboardData(),
+          dashboard: null,
+          dashboardError: true,
+          alertStatus: 'error',
+          monitoringAssets: {
+            certificates: { status: 'ready', count: 2 },
+            domains: { status: 'ready', count: 1 },
+          },
+        },
+      },
+    })
+
+    expect(screen.getByText('Alerts')).toBeTruthy()
+    expect(screen.getByText('Unavailable right now.')).toBeTruthy()
+    expect(screen.getByText('2 certificates')).toBeTruthy()
+    expect(screen.getByText('1 domain')).toBeTruthy()
+  })
+})
 
 describe('/dashboard +page.svelte — upcoming rotations widget (AC-23, G3)', () => {
   afterEach(() => cleanup())
@@ -288,7 +372,7 @@ describe('/dashboard +page.svelte — Suggested next actions for partial coverag
 describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC-G2)', () => {
   afterEach(() => cleanup())
 
-  it('AC-G1 positive: a fully populated project suppresses the Credentials/Services placeholder cards but keeps Certs/Alerts', () => {
+  it('AC-G1 positive: a fully populated project suppresses the Credentials/Services placeholder cards and keeps the real alert summary', () => {
     render(DashboardPage, {
       props: {
         data: baseDashboardData({
@@ -302,7 +386,7 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
     expect(screen.queryByText('Credentials', { selector: 'h2' })).toBeNull()
     expect(screen.queryByText('Services and health', { selector: 'h2' })).toBeNull()
     expect(screen.getByText('Certificates and domains', { selector: 'h2' })).toBeTruthy()
-    expect(screen.getByText('Alerts', { selector: 'h2' })).toBeTruthy()
+    expect(screen.getByText('Alerts', { selector: 'dt' })).toBeTruthy()
   })
 
   it('AC-G1 edge: partial coverage (credentials but no services) only suppresses the Credentials card', () => {
@@ -328,7 +412,6 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
     expect(screen.getByText('Credentials', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Services and health', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Certificates and domains', { selector: 'h2' })).toBeTruthy()
-    expect(screen.getByText('Alerts', { selector: 'h2' })).toBeTruthy()
   })
 
   it('AC-G2 regression: no project selected still shows the full 4-card grid', () => {
@@ -346,7 +429,6 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
     expect(screen.getByText('Credentials', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Services and health', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Certificates and domains', { selector: 'h2' })).toBeTruthy()
-    expect(screen.getByText('Alerts', { selector: 'h2' })).toBeTruthy()
   })
 })
 
