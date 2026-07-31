@@ -131,7 +131,11 @@ export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
         result.row
       )
 
-      return reply.status(201).send(serializeRow(result.row))
+      // Return data and let secureRoute send it after the transaction commits. Sending here
+      // would allow Fastify's injected response to resolve before the DELETE/INSERT transaction
+      // is visible to the next request.
+      reply.status(201)
+      return serializeRow(result.row)
     },
   })
 
@@ -185,7 +189,8 @@ export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
         result.row
       )
 
-      return reply.status(200).send(serializeRow(result.row))
+      reply.status(200)
+      return serializeRow(result.row)
     },
   })
 
@@ -225,7 +230,8 @@ export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
         row
       )
 
-      return reply.status(200).send({ id: row.id })
+      reply.status(200)
+      return { id: row.id }
     },
   })
 }

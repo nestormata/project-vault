@@ -63,6 +63,21 @@ export const PRE_AUTH_THEME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 // Story 16.1's server-only `validateAndCompileTokens` (Node-only dependencies; cannot run in
 // `apps/web` — see Dev Notes "Pre-mortem" correction and Task 1.3).
 const UNSAFE_CSS_SUBSTRINGS = ['expression(', '@import', 'javascript:', '<script', 'behavior:']
+const CSS_URL_FUNCTION_START = /url\(/gi
+const CSS_URL_FUNCTION = /url\(([^)]*)\)/gi
+
+function parseCssUrlReference(rawReference: string): string | null {
+  const reference = rawReference.trim()
+  if (!reference) return ''
+
+  const openingQuote = reference[0]
+  if (openingQuote !== '"' && openingQuote !== "'") {
+    return reference.includes('"') || reference.includes("'") ? null : reference
+  }
+
+  if (reference.at(-1) !== openingQuote) return null
+  return reference.slice(1, -1).trim()
+}
 
 /**
  * AC-2 security edge case: rejects a cached CSS string containing any deny-listed construct, or a
@@ -75,8 +90,14 @@ export function isSafeCachedThemeCss(css: string): boolean {
     return false
   }
 
-  for (const match of css.matchAll(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi)) {
-    const reference = (match[2] ?? '').trim().toLowerCase()
+  const urlStarts = [...css.matchAll(CSS_URL_FUNCTION_START)]
+  const urlFunctions = [...css.matchAll(CSS_URL_FUNCTION)]
+  if (urlStarts.length !== urlFunctions.length) return false
+
+  for (const match of urlFunctions) {
+    const parsedReference = parseCssUrlReference(match[1] ?? '')
+    if (parsedReference === null) return false
+    const reference = parsedReference.toLowerCase()
     if (!reference.startsWith('data:') && !reference.startsWith('https://')) {
       return false
     }

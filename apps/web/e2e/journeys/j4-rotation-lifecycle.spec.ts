@@ -13,7 +13,7 @@ import {
 } from '../fixtures/ids.js'
 import { RotationPage } from '../pages/RotationPage.js'
 
-// J4: Initiate rotation -> confirm checklist -> complete rotation.
+// J4: Initiate rotation -> confirm checklist -> promote -> retire rotation.
 // See story AC-J4-1/AC-J4-2/AC-J4-3.
 //
 // Setup (project/credential/dependent-system creation) is done via direct API calls, per AC-I4's
@@ -21,7 +21,7 @@ import { RotationPage } from '../pages/RotationPage.js'
 // this journey's subject under test is the rotation flow itself.
 //
 // Discovered while implementing this story (documented here, not silently worked around): both
-// initiate-rotation and complete-rotation routes require `minimumRole: 'admin'` AND
+// initiate-rotation, promote-rotation, and retire-rotation routes require `minimumRole: 'admin'` AND
 // `requireMfa: true` (apps/api/src/modules/rotation/routes.ts) — the same MFA-enrollment posture
 // as project archive/transfer-ownership. The owner session must be MFA-enrolled before either
 // action, or both 403 with mfa_required and the journey never executes (same class of finding as
@@ -49,7 +49,7 @@ async function setupCredentialWithDependency(context: import('@playwright/test')
 }
 
 test.describe('J4 — rotation lifecycle', () => {
-  test('AC-J4-1: happy path — initiate, confirm every checklist item, complete', async ({
+  test('AC-J4-1: happy path — initiate, confirm every checklist item, promote, retire', async ({
     page,
     context,
   }) => {
@@ -65,11 +65,15 @@ test.describe('J4 — rotation lifecycle', () => {
     await rotationPage.confirmButton(0).click()
     await expect(rotationPage.confirmButton(0)).toHaveCount(0)
 
-    await rotationPage.completeRotationButton().click()
-    await expect(page.getByText('completed', { exact: true })).toBeVisible()
+    await expect(rotationPage.promoteRotationButton()).toBeEnabled()
+    await rotationPage.promoteRotationButton().click()
+    await expect(page.getByText('promoted', { exact: true })).toBeVisible()
+
+    await rotationPage.retireRotationButton().click()
+    await expect(page.getByText('retired', { exact: true })).toBeVisible()
   })
 
-  test('AC-J4-2: failure path — completing with an unconfirmed checklist item is rejected server-side too', async ({
+  test('AC-J4-2: failure path — promoting with an unconfirmed checklist item requires acknowledgement', async ({
     page,
     context,
   }) => {
@@ -83,17 +87,17 @@ test.describe('J4 — rotation lifecycle', () => {
     if (!rotationIdSegment) throw new Error('expected a rotation id in the URL after initiation')
     const rotationId = rotationIdSegment
 
-    // Deliberately leave the checklist item unconfirmed: the complete button must be disabled
-    // (no UI path to trigger it), matching AC-E5a's minimum-checklist-gate design.
-    await expect(rotationPage.completeRotationButton()).toBeDisabled()
+    // Deliberately leave the checklist item unconfirmed: promotion requires an explicit
+    // acknowledgement before the advisory checklist can be bypassed.
+    await expect(rotationPage.promoteRotationButton()).toBeDisabled()
 
     // A disabled button alone is not evidence of a real guard — verify the server itself rejects
-    // completion via a direct authenticated API call.
-    const completeResponse = await context.request.post(
-      `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/complete`,
+    // promotion via a direct authenticated API call.
+    const promoteResponse = await context.request.post(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/promote`,
       { data: {} }
     )
-    expect(completeResponse.status()).toBe(422)
+    expect(promoteResponse.status()).toBe(422)
   })
 
   test('AC-J4-2b: edge — zero dependent systems still requires the explicit acknowledgement checkbox', async ({
@@ -120,14 +124,20 @@ test.describe('J4 — rotation lifecycle', () => {
     await rotationPage.initiate(uniqueCredentialValue('j4-empty-rotated'))
     await page.waitForURL(`**/projects/${project.id}/credentials/${credential.id}/rotations/*`)
 
-    await expect(rotationPage.completeRotationButton()).toBeDisabled()
+    await expect(rotationPage.promoteRotationButton()).toBeDisabled()
     await rotationPage.acknowledgeNoDependenciesCheckbox().check()
-    await expect(rotationPage.completeRotationButton()).toBeEnabled()
-    await rotationPage.completeRotationButton().click()
-    await expect(page.getByText('completed', { exact: true })).toBeVisible()
+    await expect(rotationPage.promoteRotationButton()).toBeEnabled()
+    await rotationPage.promoteRotationButton().click()
+    await expect(page.getByText('promoted', { exact: true })).toBeVisible()
+
+    // Retire is a separate irreversible action and must require its own acknowledgement.
+    await expect(rotationPage.retireRotationButton()).toBeDisabled()
+    await rotationPage.acknowledgeNoDependenciesCheckbox().check()
+    await rotationPage.retireRotationButton().click()
+    await expect(page.getByText('retired', { exact: true })).toBeVisible()
   })
 
-  test('AC-J4-3: failure path — a second rotation cannot be initiated while one is already in progress', async ({
+  test('AC-J4-3: failure path — a second rotation cannot be initiated while one is staged', async ({
     page,
     context,
   }) => {
@@ -137,16 +147,13 @@ test.describe('J4 — rotation lifecycle', () => {
     await rotationPage.gotoInitiate(projectId, credentialId)
     await rotationPage.initiate(uniqueCredentialValue('j4-first-rotation'))
     await page.waitForURL(`**/projects/${projectId}/credentials/${credentialId}/rotations/*`)
-    const firstRotationUrl = page.url()
 
-    // Discovered while implementing this story: the /rotate page's own server load function
-    // (apps/web/.../rotate/+page.server.ts) checks for an active rotation and redirects (303) to
-    // it BEFORE the initiate form ever renders — the real concurrency guard here is a load-time
-    // redirect, not a submit-time error on the form. Attempting a second rotation for the SAME
-    // credential therefore never reaches the form at all.
+    // Staged rotations remain on /rotate so the UI can explain the conflict and disable the
+    // form. The API remains the authoritative concurrency guard.
     await rotationPage.gotoInitiate(projectId, credentialId)
-    await expect(page).toHaveURL(firstRotationUrl)
-    await expect(rotationPage.newValueInput()).toHaveCount(0)
+    await expect(page).toHaveURL(/\/rotate$/)
+    await expect(rotationPage.newValueInput()).toBeDisabled()
+    await expect(rotationPage.startRotationButton()).toBeDisabled()
 
     // Verify the server itself rejects a concurrent initiate too (not just the UI's redirect),
     // matching AC-J1-3/AC-J2-3/AC-J4-2's shared "prove the server enforces it" principle.

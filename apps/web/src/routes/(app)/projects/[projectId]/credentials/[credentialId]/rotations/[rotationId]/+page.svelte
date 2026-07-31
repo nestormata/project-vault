@@ -192,6 +192,9 @@
         data.rotationId,
         body
       )
+      // AC-6.2: the zero-dependency acknowledgement is required independently for promote and
+      // retire. Do not carry the promote confirmation into the irreversible retire action.
+      acknowledgedNoDependencies = false
       acknowledgeIncompleteChecklistForPromote = false
     } catch (error) {
       if (error instanceof ApiClientError) {

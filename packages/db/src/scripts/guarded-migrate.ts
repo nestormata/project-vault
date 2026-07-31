@@ -24,6 +24,7 @@ import {
 } from '../lib/migration-safety.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const __filename = fileURLToPath(import.meta.url)
 
 export type LocalMigration = { tag: string; sql: string; folderMillis: number }
 export type DestructiveScanResult = { tag: string; findings: string[] }
@@ -142,6 +143,17 @@ function log(event: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(event)}\n`)
 }
 
+export function resolveDrizzleKitExecutable(scriptDirectory: string): string {
+  return resolve(scriptDirectory, '../../node_modules/drizzle-kit/bin.cjs')
+}
+
+export function runDrizzleKitMigration(scriptDirectory: string): void {
+  execFileSync(resolveDrizzleKitExecutable(scriptDirectory), ['migrate'], {
+    stdio: 'inherit',
+    cwd: resolve(scriptDirectory, '../..'),
+  }) // NOSONAR(typescript:S4036) trusted dev-dependency binary at a fixed workspace path
+}
+
 /** Queries `drizzle.__drizzle_migrations` for the most recently applied migration's `created_at`
  * — `null` when the table/schema doesn't exist yet (fresh database, nothing applied). Read-only:
  * never creates the table, since a refused destructive migration must leave the database
@@ -162,7 +174,7 @@ export async function fetchLastAppliedMillis(databaseUrl: string): Promise<numbe
   }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const allowDestructive = process.argv.includes('--allow-destructive')
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) {
@@ -190,7 +202,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    execFileSync('drizzle-kit', ['migrate'], { stdio: 'inherit', cwd: resolve(__dirname, '../..') }) // NOSONAR(typescript:S4036) trusted dev-dependency binary on fixed PATH
+    runDrizzleKitMigration(__dirname)
   } catch {
     // drizzle-kit already prints its own error to stderr (inherited stdio); a non-zero exit
     // here is enough to satisfy AC-2 (migrate service exits non-zero, api never starts).
@@ -201,11 +213,25 @@ async function main(): Promise<void> {
   log(buildMigrationLogEvent({ kind: 'applied', applied: pending.map((m) => m.tag) }))
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// `e2e/global-setup.ts` invokes this file as `node tsx/cli.mjs guarded-migrate.ts`, so the
+// migration path is not necessarily argv[1]. Check every CLI argument to keep both the package
+// script (`tsx guarded-migrate.ts`) and the explicit Node/tsx invocation executable.
+export function isInvokedScript(argumentsList: string[], filename: string): boolean {
+  return argumentsList.some((argument) => resolve(argument) === filename)
+}
+
+export async function runIfInvokedScript(
+  argumentsList: string[],
+  filename: string,
+  run: () => Promise<void>
+): Promise<void> {
+  if (!isInvokedScript(argumentsList, filename)) return
   try {
-    await main()
+    await run()
   } catch (error: unknown) {
     process.stderr.write(`FATAL: ${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1
   }
 }
+
+await runIfInvokedScript(process.argv.slice(1), __filename, main)

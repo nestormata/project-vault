@@ -33,7 +33,9 @@ export class RotationPage {
 
   // --- Checklist page ---
   statusBadge() {
-    return this.page.getByText(/^(in_progress|completed|abandoned|stale_recovery)$/)
+    return this.page.getByText(
+      /^(in_progress|staged|promoted|retired|completed|abandoned|stale_recovery)$/
+    )
   }
 
   confirmButton(index = 0) {
@@ -48,6 +50,14 @@ export class RotationPage {
 
   completeRotationButton() {
     return this.page.getByRole('button', { name: /complete rotation/i })
+  }
+
+  promoteRotationButton() {
+    return this.page.getByRole('button', { name: /^promote$/i })
+  }
+
+  retireRotationButton() {
+    return this.page.getByRole('button', { name: /retire old value/i })
   }
 
   completeErrorBanner() {

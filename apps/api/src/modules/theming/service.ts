@@ -87,15 +87,43 @@ const defaultAuditWriter: AuditWriterFn = (orgId, eventType, payload) =>
 // form. No `url(`, no `;`, no `}`, no nesting — the exact breakout characters architecture.md
 // names are structurally impossible to match this pattern.
 const HEX_COLOR_GRAMMAR = /^#[0-9a-fA-F]{3,8}$/
-const RGB_COLOR_GRAMMAR =
-  /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
-const HSL_COLOR_GRAMMAR =
-  /^hsla?\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(,\s*(0|1|0?\.\d+)\s*)?\)$/
+const COLOR_FUNCTION_GRAMMAR = /^([a-z]+)\(([^()]*)\)$/
+const RGB_COMPONENT_GRAMMAR = /^\d{1,3}$/
+const HSL_COMPONENT_GRAMMAR = /^\d{1,3}%$/
+const ALPHA_COMPONENT_GRAMMAR = /^(0|1|0?\.\d+)$/
+const COLOR_FUNCTION_COMPONENT_GRAMMARS = new Map([
+  ['rgb', [RGB_COMPONENT_GRAMMAR, RGB_COMPONENT_GRAMMAR, RGB_COMPONENT_GRAMMAR]],
+  ['rgba', [RGB_COMPONENT_GRAMMAR, RGB_COMPONENT_GRAMMAR, RGB_COMPONENT_GRAMMAR]],
+  ['hsl', [RGB_COMPONENT_GRAMMAR, HSL_COMPONENT_GRAMMAR, HSL_COMPONENT_GRAMMAR]],
+  ['hsla', [RGB_COMPONENT_GRAMMAR, HSL_COMPONENT_GRAMMAR, HSL_COMPONENT_GRAMMAR]],
+])
 
-function isValidColorGrammar(value: string): boolean {
-  return (
-    HEX_COLOR_GRAMMAR.test(value) || RGB_COLOR_GRAMMAR.test(value) || HSL_COLOR_GRAMMAR.test(value)
-  )
+function areValidColorComponents(components: string[], grammars: RegExp[]): boolean {
+  if (components.length < 3 || components.length > 4) return false
+  return grammars.every((grammar, index) => grammar.test(components[index] ?? ''))
+}
+
+function hasValidAlphaComponent(components: string[]): boolean {
+  return components.length === 3 || ALPHA_COMPONENT_GRAMMAR.test(components[3] ?? '')
+}
+
+export function isValidColorGrammar(value: string): boolean {
+  if (HEX_COLOR_GRAMMAR.test(value)) return true
+
+  const functionMatch = COLOR_FUNCTION_GRAMMAR.exec(value)
+  if (!functionMatch) return false
+
+  const functionName = functionMatch[1]
+  const body = functionMatch[2]
+  if (!functionName || body === undefined) return false
+
+  const componentGrammars = COLOR_FUNCTION_COMPONENT_GRAMMARS.get(functionName)
+  if (!componentGrammars) return false
+
+  const components = body.split(',').map((component) => component.trim())
+  if (!areValidColorComponents(components, componentGrammars)) return false
+
+  return hasValidAlphaComponent(components)
 }
 // AC-4: strict numeric+unit pattern — rejects calc(), custom units, and any embedded expression.
 const LENGTH_GRAMMAR = /^-?\d+(\.\d+)?(px|rem|em|%)$/

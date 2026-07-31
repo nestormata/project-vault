@@ -5,6 +5,7 @@ import {
   getThemesHealthField,
   getCompiledThemes,
   __resetThemeStateForTests,
+  isValidColorGrammar,
   MAX_THEME_FILE_BYTES,
 } from './service.js'
 import { UnsafeForwardingUrlError } from '../../lib/safe-fetch.js'
@@ -189,6 +190,19 @@ describe('reloadThemes — AC-3 per-file validation isolation', () => {
 })
 
 describe('reloadThemes — AC-4 canonical token registry / CSS-injection safety', () => {
+  it.each([
+    ['rgb(30, 58, 138)', true],
+    ['rgba(30, 58, 138, 0.5)', true],
+    ['hsl(220, 64%, 33%)', true],
+    ['hsla(220, 64%, 33%, 0.75)', true],
+    ['rgb(30, 58)', false],
+    ['hsl(220, 64, 33%)', false],
+    ['rgba(30, 58, 138, 1.0)', false],
+    ['rgb(30, 58, 138, url(evil))', false],
+  ])('applies the bounded functional color grammar to %s', (value, expected) => {
+    expect(isValidColorGrammar(value)).toBe(expected)
+  })
+
   it('happy path: color/length/enum tokens all compile cleanly', async () => {
     const deps = fixtureDeps({
       'acme.json': {
@@ -208,6 +222,26 @@ describe('reloadThemes — AC-4 canonical token registry / CSS-injection safety'
     expect(css).toContain('--color-primary-600: #1e3a8a;')
     expect(css).toContain('--radius-md: 0.5rem;')
     expect(css).toContain('--font-weight-body: medium;')
+  })
+
+  it('accepts the bounded rgb/rgba/hsl/hsla color grammar', async () => {
+    const deps = fixtureDeps({
+      'color-functions.json': {
+        content: JSON.stringify({
+          name: 'color-functions',
+          tokens: {
+            colorPrimary600: 'rgb(30, 58, 138)',
+            colorPrimary700: 'rgba(30, 58, 138, 0.5)',
+            colorBackground: 'hsl(220, 64%, 33%)',
+            colorForeground: 'hsla(220, 64%, 33%, 0.75)',
+          },
+        }),
+      },
+    })
+
+    const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+
+    expect(result).toEqual({ loaded: ['color-functions.json'], failed: [] })
   })
 
   it('rejects a CSS-injection breakout attempt via a color token (url(/;/} breakout)', async () => {

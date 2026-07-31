@@ -36,7 +36,7 @@ function readStoredRegistrationLocale(): PendingRegistrationLocale | null {
 export function consumeRegistrationLocalePending(userId: string): SupportedLocale | null {
   const pending = readStoredRegistrationLocale() ?? inMemoryPending
 
-  if (!pending || pending.userId !== userId) return null
+  if (pending?.userId !== userId) return null
 
   inMemoryPending = null
   try {
