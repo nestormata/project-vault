@@ -610,3 +610,6 @@ functional defect).** See `17-3-...md` Review Findings and Dev Notes.
 See `epic-17-retro-2026-07-29.md` Gap & Risk Audit for full context, including the recurrence note
 against Epic 16's Key Takeaway 3.
 
+## Deferred from: code review of 18-8-public-status-page-reorder-ui (2026-07-30)
+
+- AC-3's story prose calls `minimumRole: member` the effective status-page reorder gate, but the pre-existing route preflight requires project owner or org owner. The current page and regression test preserve that effective authorization. Revisit only with an explicit product/security decision about whether to relax the endpoint to project members.

@@ -120,6 +120,27 @@ describe.sequential('public status page route (Story 6.3, Section E)', () => {
     }
   })
 
+  it('renders the public services in the persisted reordered order', async () => {
+    const owner = await registerOwner(app, 'reordered')
+    const projectId = await createProjectViaApi(app, owner.cookies, 'psp-reordered')
+    const svcA = await insertEndpoint(owner.orgId, projectId, 'reordered-a')
+    const svcB = await insertEndpoint(owner.orgId, projectId, 'reordered-b')
+    const enableRes = await enableStatusPage(app, owner.cookies, projectId)
+    const token = enableRes.json<{ data: { token: string } }>().data.token
+
+    await putStatusPage(app, owner.cookies, projectId, [
+      { serviceId: svcB, displayName: 'Second in source' },
+      { serviceId: svcA, displayName: 'First in source' },
+    ])
+
+    const res = await publicStatusPage(app, token)
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ data: { services: { displayName: string }[] } }>().data.services).toEqual([
+      { displayName: 'Second in source', status: 'healthy', lastCheckedAt: null },
+      { displayName: 'First in source', status: 'healthy', lastCheckedAt: null },
+    ])
+  })
+
   it('sets Cache-Control: no-store so an intermediate proxy never serves a stale state', async () => {
     const owner = await registerOwner(app, 'cache-control')
     const projectId = await createProjectViaApi(app, owner.cookies, 'psp-cache-control')

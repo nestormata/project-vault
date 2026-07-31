@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import {
   projects,
@@ -140,6 +140,9 @@ export async function updateStatusPageServices(
   tx: Tx,
   input: { orgId: string; projectId: string; body: UpdateStatusPageBody }
 ): Promise<UpdateStatusPageServicesResult> {
+  // The replacement contract is last-write-wins, so concurrent full replacements must queue
+  // behind one another instead of deadlocking while both delete and reinsert the same rows.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.projectId}, 0))`)
   const statusPage = await findStatusPageByProject(tx, input.projectId)
   if (!statusPage) throw new StatusPageNotFoundError()
 
