@@ -80,9 +80,39 @@
   {#if data.selectedProject && data.dashboard}
     <div class="space-y-6">
       <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {#if (data.projects?.items?.length ?? 0) > 1}
+          <form
+            method="GET"
+            action={resolve('/dashboard')}
+            class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end"
+          >
+            <div class="flex-1">
+              <label class="block text-sm font-semibold text-slate-700" for="dashboard-project">
+                Dashboard project
+              </label>
+              <select
+                id="dashboard-project"
+                name="projectId"
+                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                value={data.selectedProject.id}
+              >
+                {#each data.projects?.items ?? [] as project (project.id)}
+                  <option value={project.id}>{project.name}</option>
+                {/each}
+              </select>
+            </div>
+            <button
+              type="submit"
+              class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+            >
+              View project
+            </button>
+          </form>
+        {/if}
         <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">
           Project dashboard
         </p>
+        <p class="mt-2 text-sm text-slate-600">Showing data for {data.selectedProject.name}</p>
         <h1 class="mt-2 text-3xl font-bold text-slate-950">
           <a class="hover:underline" href={resolve(`/projects/${data.selectedProject.id}`)}>
             {data.selectedProject.name}
@@ -211,6 +241,8 @@
           data.dashboard.monitoredServiceHealth.degraded +
           data.dashboard.monitoredServiceHealth.down >
           0}
+        certificates={data.monitoringAssets?.certificates}
+        domains={data.monitoringAssets?.domains}
       />
 
       {#if data.dashboard.suggestedActions.length > 0}
@@ -253,6 +285,62 @@
           </ul>
         </section>
       {/if}
+    </div>
+  {:else if data.selectedProject}
+    <div class="space-y-6">
+      <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {#if (data.projects?.items?.length ?? 0) > 1}
+          <form
+            method="GET"
+            action={resolve('/dashboard')}
+            class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end"
+          >
+            <div class="flex-1">
+              <label
+                class="block text-sm font-semibold text-slate-700"
+                for="dashboard-project-error"
+              >
+                Dashboard project
+              </label>
+              <select
+                id="dashboard-project-error"
+                name="projectId"
+                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                value={data.selectedProject.id}
+              >
+                {#each data.projects?.items ?? [] as project (project.id)}
+                  <option value={project.id}>{project.name}</option>
+                {/each}
+              </select>
+            </div>
+            <button
+              type="submit"
+              class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+            >
+              View project
+            </button>
+          </form>
+        {/if}
+        <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Project dashboard
+        </p>
+        <p class="mt-2 text-sm text-slate-600">Showing data for {data.selectedProject.name}</p>
+        <h1 class="mt-2 text-3xl font-bold text-slate-950">{data.selectedProject.name}</h1>
+        <p class="mt-4 text-sm text-amber-700" role="status">
+          Dashboard summary is unavailable right now. Monitoring counts below may still be
+          available.
+        </p>
+        <div class="mt-5 rounded-2xl bg-amber-50 p-4">
+          <dt class="text-sm text-amber-800">Alerts</dt>
+          <dd class="mt-1 text-sm font-semibold text-amber-900">Unavailable right now.</dd>
+        </div>
+      </section>
+      <DashboardPlaceholderGrid
+        hasCredentials={true}
+        hasServices={true}
+        certificates={data.monitoringAssets?.certificates}
+        domains={data.monitoringAssets?.domains}
+      />
     </div>
   {:else}
     <div class="space-y-6">
