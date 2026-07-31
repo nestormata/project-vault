@@ -251,7 +251,7 @@ export function ssoErrorMessage(code: string): string {
     case 'public_domain_blocked':
       return "This domain is on our list of shared public email providers and can't be mapped"
     case 'provider_not_registered':
-      return 'This provider is not currently registered'
+      return 'Provider is not registered on this server. Enter the exact provider extension name and make sure it is installed and enabled.'
     case 'provider_check_unavailable':
       return 'Unable to verify the provider right now, try again shortly'
     case 'domain_already_mapped':
