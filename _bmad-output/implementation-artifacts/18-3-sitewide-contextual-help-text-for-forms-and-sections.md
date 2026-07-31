@@ -4,7 +4,7 @@ baseline_commit: ef681b856baf3286bf7f68784d397060d2a185b4
 
 # Story 18.3: Sitewide Contextual Help Text for Forms and Sections
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
