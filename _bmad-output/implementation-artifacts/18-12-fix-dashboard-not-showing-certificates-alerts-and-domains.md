@@ -1,6 +1,6 @@
 # Story 18.12: Fix Dashboard Not Showing Certificates, Alerts, and Domains
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -98,3 +98,8 @@ GPT-5 Codex
 ### Change Log
 
 - 2026-07-31: Implemented Story 18.12 dashboard monitoring counts, explicit project selection, duplicate-alert removal, loading/empty/error states, and independent failure handling; status moved to review.
+
+### Review Findings
+
+- [x] [Review][Patch] Stream monitoring-card loading states during dashboard data fetches [apps/web/src/routes/(app)/dashboard/+page.server.ts:88] — fixed by streaming independent certificate/domain state promises and rendering pending skeletons in `DashboardPlaceholderGrid`.
+- [ ] [Review][Patch] Project selector only exposes the first paginated project page [apps/web/src/routes/(app)/dashboard/+page.server.ts:14] — the dashboard can select among the default first 20 accessible projects, but users with later accessible projects need project-list pagination or an all-projects loader; left unfixed because this review was authorized to apply Critical/High fixes only.

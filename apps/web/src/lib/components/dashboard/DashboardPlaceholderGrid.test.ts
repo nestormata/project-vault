@@ -76,6 +76,20 @@ describe('DashboardPlaceholderGrid (Story 18.12)', () => {
     expect(screen.queryByText('No certificate or domain records added yet.')).toBeNull()
   })
 
+  it('AC-5: loading state remains visible while a monitoring query is pending', () => {
+    const pending = new Promise<{ status: 'ready'; count: number }>(() => {})
+
+    render(DashboardPlaceholderGrid, {
+      props: {
+        certificates: pending,
+        domains: { status: 'ready', count: 1 },
+      },
+    })
+
+    expect(screen.getByLabelText('Loading certificates')).toBeTruthy()
+    expect(screen.getByText('1 domain')).toBeTruthy()
+  })
+
   it('AC-G1: the Coverage-gaps card no longer claims stale "not tracked" copy', () => {
     render(DashboardPlaceholderGrid, { props: { hasCredentials: true, hasServices: true } })
 

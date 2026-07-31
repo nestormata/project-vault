@@ -3,6 +3,7 @@
 
   type CardStatus = 'loading' | 'ready' | 'error'
   type MonitoringCard = { status: CardStatus; count: number }
+  type MonitoringCardInput = MonitoringCard | PromiseLike<MonitoringCard>
 
   const initialCard: MonitoringCard = { status: 'loading', count: 0 }
 
@@ -14,12 +15,16 @@
   }: {
     hasCredentials?: boolean
     hasServices?: boolean
-    certificates?: MonitoringCard
-    domains?: MonitoringCard
+    certificates?: MonitoringCardInput
+    domains?: MonitoringCardInput
   } = $props()
 
   function countLabel(count: number, singular: string, plural: string): string {
     return `${count} ${count === 1 ? singular : plural}`
+  }
+
+  function isPromiseLike(value: MonitoringCardInput): value is PromiseLike<MonitoringCard> {
+    return typeof value === 'object' && value !== null && 'then' in value
   }
 </script>
 
@@ -36,35 +41,64 @@
   {/if}
   <article class="rounded-2xl border border-slate-200 bg-white p-4">
     <h2 class="font-semibold">Certificates and domains</h2>
-    {#if certificates.status === 'loading'}
+    {#await certificates}
       <p
         class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
         aria-label="Loading certificates"
       >
         Loading certificates
       </p>
-    {:else if certificates.status === 'error'}
+    {:then certificateState}
+      {#if certificateState.status === 'loading'}
+        <p
+          class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
+          aria-label="Loading certificates"
+        >
+          Loading certificates
+        </p>
+      {:else if certificateState.status === 'error'}
+        <p class="mt-2 text-sm text-amber-700">Certificates unavailable right now.</p>
+      {:else}
+        <p class="mt-2 text-sm text-slate-600">
+          {countLabel(certificateState.count, 'certificate', 'certificates')}
+        </p>
+      {/if}
+    {:catch}
       <p class="mt-2 text-sm text-amber-700">Certificates unavailable right now.</p>
-    {:else}
-      <p class="mt-2 text-sm text-slate-600">
-        {countLabel(certificates.count, 'certificate', 'certificates')}
-      </p>
-    {/if}
-    {#if domains.status === 'loading'}
+    {/await}
+    {#await domains}
       <p
         class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
         aria-label="Loading domains"
       >
         Loading domains
       </p>
-    {:else if domains.status === 'error'}
+    {:then domainState}
+      {#if domainState.status === 'loading'}
+        <p
+          class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
+          aria-label="Loading domains"
+        >
+          Loading domains
+        </p>
+      {:else if domainState.status === 'error'}
+        <p class="mt-2 text-sm text-amber-700">Domains unavailable right now.</p>
+      {:else}
+        <p class="mt-2 text-sm text-slate-600">
+          {countLabel(domainState.count, 'domain', 'domains')}
+        </p>
+      {/if}
+    {:catch}
       <p class="mt-2 text-sm text-amber-700">Domains unavailable right now.</p>
-    {:else}
-      <p class="mt-2 text-sm text-slate-600">{countLabel(domains.count, 'domain', 'domains')}</p>
-    {/if}
-    {#if certificates.status === 'ready' && domains.status === 'ready' && certificates.count === 0 && domains.count === 0}
+    {/await}
+    {#if !isPromiseLike(certificates) && !isPromiseLike(domains) && certificates.status === 'ready' && domains.status === 'ready' && certificates.count === 0 && domains.count === 0}
       <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.noCertificates}</p>
     {/if}
+    {#await Promise.all([certificates, domains]) then states}
+      {#if (isPromiseLike(certificates) || isPromiseLike(domains)) && states[0].status === 'ready' && states[1].status === 'ready' && states[0].count === 0 && states[1].count === 0}
+        <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.noCertificates}</p>
+      {/if}
+    {/await}
   </article>
   {#if !hasServices}
     <article class="rounded-2xl border border-slate-200 bg-white p-4">

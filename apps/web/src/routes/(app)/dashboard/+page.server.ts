@@ -37,12 +37,13 @@ function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
   return result.status === 'fulfilled' ? result.value : fallback
 }
 
-function settledAssetState<T>(
-  result: PromiseSettledResult<T[]>
-): { status: 'ready'; count: number } | { status: 'error'; count: 0 } {
-  return result.status === 'fulfilled'
-    ? { status: 'ready', count: result.value.length }
-    : { status: 'error', count: 0 }
+function streamedAssetState<T>(
+  promise: Promise<T[]>
+): Promise<{ status: 'ready'; count: number } | { status: 'error'; count: 0 }> {
+  return promise.then(
+    (items) => ({ status: 'ready' as const, count: items.length }),
+    () => ({ status: 'error' as const, count: 0 })
+  )
 }
 
 function projectDashboardRequest(fetch: typeof globalThis.fetch, projectId: string | undefined) {
@@ -84,11 +85,9 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
   const certificatesPromise = assetRequest(fetch, projectId, listCertificates)
   const domainsPromise = assetRequest(fetch, projectId, listDomains)
 
-  const [orgResult, dashboardResult, certificatesResult, domainsResult] = await Promise.allSettled([
+  const [orgResult, dashboardResult] = await Promise.allSettled([
     orgDashboardPromise,
     projectDashboardPromise,
-    certificatesPromise,
-    domainsPromise,
   ])
 
   const orgDashboard = settledValue(orgResult, null)
@@ -105,8 +104,11 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
     dashboardError: dashboardResult.status === 'rejected',
     alertStatus: dashboard === null ? ('error' as const) : ('ready' as const),
     monitoringAssets: {
-      certificates: settledAssetState(certificatesResult),
-      domains: settledAssetState(domainsResult),
+      // Leave these promises unresolved so SvelteKit streams the card data after the page shell
+      // renders. Each promise converts its own failure into an unavailable state, preserving the
+      // independent card degradation contract.
+      certificates: streamedAssetState(certificatesPromise),
+      domains: streamedAssetState(domainsPromise),
     },
   }
 }
