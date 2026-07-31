@@ -1,6 +1,9 @@
+---
+baseline_commit: 193d9e6
+---
 # Story 18.6: Email Delivery for Credential Shares and Demo SMTP Configuration
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -40,12 +43,12 @@ Riley-member shares a credential field with a colleague (session-authenticated s
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Confirm current share-created notification-preference/email-routing behavior (AC: 1)
-- [ ] Task 2: Seed/fix default email routing for `credential.share_created` if missing (AC: 2)
-- [ ] Task 3: Extend template for both recipient types + preserve no-token-in-body design (AC: 3, 4)
-- [ ] Task 4: Failure handling, logging, rate limiting (AC: 5, 6)
-- [ ] Task 5: Add dev/demo mail-catcher to docker-compose + docs (AC: 7, 8, 9)
-- [ ] Task 6: Tests (AC: 11)
+- [x] Task 1: Confirm current share-created notification-preference/email-routing behavior (AC: 1)
+- [x] Task 2: Seed/fix default email routing for `credential.share_created` if missing (AC: 2)
+- [x] Task 3: Extend template for both recipient types + preserve no-token-in-body design (AC: 3, 4)
+- [x] Task 4: Failure handling, logging, rate limiting (AC: 5, 6)
+- [x] Task 5: Add dev/demo mail-catcher to docker-compose + docs (AC: 7, 8, 9)
+- [x] Task 6: Tests (AC: 11)
 
 ## Dev Notes
 
@@ -71,8 +74,36 @@ Riley-member shares a credential field with a colleague (session-authenticated s
 
 ### Agent Model Used
 
+GPT-5.6
+
 ### Debug Log References
+
+- RED: notification-type registry test failed before `credential.share_created` was registered.
+- Integration rerun is blocked because no PostgreSQL service is listening on the configured test port.
 
 ### Completion Notes List
 
+- AC-1/2: `credential.share_created` was absent from virtual defaults; added an immediate `info`-severity email/inbox default. This applies retrospectively at read time without backfilling rows.
+- AC-3/4: retained the no-token template and queue external-recipient emails directly to their captured address.
+- AC-5/6: existing best-effort dispatch/logging is retained; share-email creation is limited to five requests per sharer/recipient per minute.
+- AC-7/8/9: Docker Compose now runs Mailpit with a configurable UI port; SMTP config validates as a complete transport and docs explain local versus provider setup.
+
 ### File List
+
+- .env.example
+- README.md
+- docker-compose.yml
+- packages/shared/src/constants/notification-types.ts
+- packages/shared/src/constants/notification-types.test.ts
+- apps/api/src/config/env.ts
+- apps/api/src/config/env.test.ts
+- apps/api/src/modules/credential-shares/routes.ts
+- apps/api/src/modules/credential-shares/external-routes.test.ts
+- apps/api/src/modules/notifications/preferences.ts
+- apps/api/src/notifications/dispatcher.ts
+- apps/api/src/notifications/dispatcher.test.ts
+- apps/api/src/notifications/templates/credential-share-created.test.ts
+
+## Change Log
+
+- 2026-07-30: Implemented credential-share email defaults, external recipient delivery, SMTP/Mailpit configuration, and regression coverage.

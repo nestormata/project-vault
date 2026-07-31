@@ -109,6 +109,14 @@ services:
       # verification found it, meaning self-hosted docker deployments had no way to actually use
       # this feature. Set in .env to a resolvable package name.
       VAULT_EXTENSIONS_PACKAGE: ${VAULT_EXTENSIONS_PACKAGE:-}
+      # Story 18.6: Mailpit is the local default. Production/demo deployments should replace
+      # these with their provider's host, port, TLS mode, credentials, and verified sender.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-notifications@project-vault.local}
     volumes:
       - ./dev-secrets:/run/secrets:ro
       - backup_data:/var/backups/vault
@@ -149,6 +157,14 @@ services:
       - "${WEB_HOST_PORT:-5173}:3000"
     depends_on:
       - api
+
+  # Local/dev SMTP sink. Browse http://localhost:${MAILPIT_UI_HOST_PORT:-8025} to inspect mail.
+  # SMTP itself stays container-only, avoiding another per-worktree host-port collision.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - '127.0.0.1:${MAILPIT_UI_HOST_PORT:-8025}:8025'
+      - '127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-1025}:1025'
 
 volumes:
   db_data:

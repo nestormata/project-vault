@@ -1080,6 +1080,17 @@ describe('env', () => {
       expect(exitSpy).toHaveBeenCalledWith(1)
     })
 
+    it('requires SMTP_PORT and SMTP_SECURE when SMTP_HOST is set', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SMTP_HOST: SMTP_HOST_FIXTURE,
+        SMTP_FROM: SMTP_FROM_FIXTURE,
+      }
+      await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
     it('does not require SMTP_FROM when SMTP_HOST is unset', async () => {
       process.env = {
         ...BASE_ENV,
@@ -1090,11 +1101,13 @@ describe('env', () => {
       expect(exitSpy).not.toHaveBeenCalled()
     })
 
-    it('accepts SMTP_HOST with a valid SMTP_FROM (guard satisfied)', async () => {
+    it('accepts a complete unauthenticated SMTP configuration', async () => {
       process.env = {
         ...BASE_ENV,
         DATABASE_URL: VAULT_APP_DATABASE_URL,
         SMTP_HOST: SMTP_HOST_FIXTURE,
+        SMTP_PORT: '1025',
+        SMTP_SECURE: 'false',
         SMTP_FROM: SMTP_FROM_FIXTURE,
       }
       const { env } = await import('./env.js')

@@ -7,9 +7,9 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-orange)](package.json)
 
-*Run complex projects. Miss nothing.*
+_Run complex projects. Miss nothing._
 
-Project Vault is a self-hostable, open-core **Project Operations Platform (ProjOps)** — the institutional memory of an engineering project. Where every existing secrets manager organizes by environment (dev / staging / prod), Project Vault organizes by *project*: credentials, certificates, domains, services, payments, and documentation grouped under the natural unit of engineering responsibility.
+Project Vault is a self-hostable, open-core **Project Operations Platform (ProjOps)** — the institutional memory of an engineering project. Where every existing secrets manager organizes by environment (dev / staging / prod), Project Vault organizes by _project_: credentials, certificates, domains, services, payments, and documentation grouped under the natural unit of engineering responsibility.
 
 This is not a UI reorganization. It is a different data model, a different RBAC model, and a different mental model.
 
@@ -17,7 +17,7 @@ This is not a UI reorganization. It is a different data model, a different RBAC 
 
 **[project-vault-demo-web.fly.dev](https://project-vault-demo-web.fly.dev)** — a self-hosted deployment you can log into and explore right now.
 
-- Log in with `demo@example.com` / *(ask for the current demo password, or register your own account)*
+- Log in with `demo@example.com` / _(ask for the current demo password, or register your own account)_
 - **The demo database resets every night** — everything you create (projects, credentials, org settings) is wiped and reseeded on a nightly schedule. Treat it as a scratchpad: great for testing and exploring the product, not for anything you need to keep.
 - It's a real deployment (not a mock) — same Docker images, same self-hosted Postgres, same code path as a production install.
 
@@ -25,7 +25,7 @@ This is not a UI reorganization. It is a different data model, a different RBAC 
 
 ## What Makes This Different
 
-Every existing secrets manager organizes around a *storage location*. Project Vault organizes by *project* — like filing by project folder, not by cabinet. Operational metadata (certificate expiry, payment renewal dates, uptime monitoring, documentation, service relationships) does not exist in secrets managers at all. It requires a project-centric architecture designed from the ground up.
+Every existing secrets manager organizes around a _storage location_. Project Vault organizes by _project_ — like filing by project folder, not by cabinet. Operational metadata (certificate expiry, payment renewal dates, uptime monitoring, documentation, service relationships) does not exist in secrets managers at all. It requires a project-centric architecture designed from the ground up.
 
 Key differentiators:
 
@@ -40,22 +40,22 @@ Key differentiators:
 
 ## Features
 
-| Feature | Details |
-|---|---|
-| 🔐 **Secrets management** | Versioned, encrypted storage with RBAC, expiry tracking, bulk import from `.env` / JSON |
-| 🔄 **Manual rotation with propagation** | Per-system confirmation checklist, stale-recovery, break-glass emergency mode, full web UI |
-| 📡 **Operational monitoring** | HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, cross-project health dashboard, public status pages |
-| 🏢 **Multi-user RBAC** | Project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival, fine-grained per-project visibility (`read:secret_value` vs `read:secret_metadata`) |
-| 🔔 **Notifications** | Email + Slack delivery, per-alert-type routing, in-app inbox, credential-expiry alerts |
-| 🤖 **Machine user support** | Scoped API keys, offline/cache fallback, GitHub Actions integration, full web UI |
-| 📋 **Immutable audit logs** | Append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI |
-| 🔑 **Vault unsealing** | Master password, envelope encryption with split-key default, or external KMS (AWS KMS) |
-| 🌐 **REST API** | Nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init. Generated OpenAPI spec, live Swagger UI (`ENABLE_API_DOCS=true`), and an independent contract-test suite |
-| 🐳 **Self-hosted Docker** | `docker compose up` deployment (dev + prod compose files) |
-| 💾 **Built-in backup** | Scheduled encrypted snapshots, retention, restore verification, admin web UI, concurrency guard, missed-backup alerts, S3-failure handling |
-| ⚙️ **System settings & platform administration** | SMTP/backup/policy config UI, multi-org resource monitoring |
-| ⬆️ **In-place version upgrades** | Migration-safety guard, upgrade API, informational upgrade/API-docs page |
-| 🛡️ **Platform operator audit log** | Instance-wide privileged-action log, distinct from per-org audit log, with integrity verification, maintenance-mode failsafe, and MFA-aware access controls |
+| Feature                                          | Details                                                                                                                                                                                                                           |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔐 **Secrets management**                        | Versioned, encrypted storage with RBAC, expiry tracking, bulk import from `.env` / JSON                                                                                                                                           |
+| 🔄 **Manual rotation with propagation**          | Per-system confirmation checklist, stale-recovery, break-glass emergency mode, full web UI                                                                                                                                        |
+| 📡 **Operational monitoring**                    | HTTP uptime checks, SSL/TLS certificate expiry, domain renewal alerts, cross-project health dashboard, public status pages                                                                                                        |
+| 🏢 **Multi-user RBAC**                           | Project-scoped roles (Owner, Admin, Member, Viewer), invitations, org-level user management, account deactivation/recovery, project archival, fine-grained per-project visibility (`read:secret_value` vs `read:secret_metadata`) |
+| 🔔 **Notifications**                             | Email + Slack delivery, per-alert-type routing, in-app inbox, credential-expiry alerts                                                                                                                                            |
+| 🤖 **Machine user support**                      | Scoped API keys, offline/cache fallback, GitHub Actions integration, full web UI                                                                                                                                                  |
+| 📋 **Immutable audit logs**                      | Append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI                                                                                       |
+| 🔑 **Vault unsealing**                           | Master password, envelope encryption with split-key default, or external KMS (AWS KMS)                                                                                                                                            |
+| 🌐 **REST API**                                  | Nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init. Generated OpenAPI spec, live Swagger UI (`ENABLE_API_DOCS=true`), and an independent contract-test suite     |
+| 🐳 **Self-hosted Docker**                        | `docker compose up` deployment (dev + prod compose files)                                                                                                                                                                         |
+| 💾 **Built-in backup**                           | Scheduled encrypted snapshots, retention, restore verification, admin web UI, concurrency guard, missed-backup alerts, S3-failure handling                                                                                        |
+| ⚙️ **System settings & platform administration** | SMTP/backup/policy config UI, multi-org resource monitoring                                                                                                                                                                       |
+| ⬆️ **In-place version upgrades**                 | Migration-safety guard, upgrade API, informational upgrade/API-docs page                                                                                                                                                          |
+| 🛡️ **Platform operator audit log**               | Instance-wide privileged-action log, distinct from per-org audit log, with integrity verification, maintenance-mode failsafe, and MFA-aware access controls                                                                       |
 
 ---
 
@@ -64,6 +64,7 @@ Key differentiators:
 A closer look at what's implemented in each area, current as of 2026-07-28:
 
 ### Authentication & Security
+
 - Docker deployment with health/readiness endpoints
 - Password + TOTP MFA authentication, JWT sessions with idle timeout and revocation
 - Structured operational logging and metrics
@@ -72,6 +73,7 @@ A closer look at what's implemented in each area, current as of 2026-07-28:
   provider, with an admin UI (`/settings/sso-domains`) for managing domain-to-provider mappings
 
 ### Extension Architecture & Pluggable Authentication
+
 - AGPLv3-licensed core with a signed contributor agreement (CLA) for external contributions
 - Versioned `@project-vault/extension-api` package for building extensions against a stable API surface
 - Fail-safe extension loading at startup (a broken or misconfigured extension never blocks boot),
@@ -80,34 +82,40 @@ A closer look at what's implemented in each area, current as of 2026-07-28:
   end users authenticate against via the standard login flow
 
 ### Secrets & Credential Management
+
 - Project-scoped credential CRUD with immutable version history
 - Search/filter/tags, dependent-system records, expiry/rotation schedules
 - Bulk import from `.env` / JSON, onboarding wizard, cross-project search
 - Manual rotation workflow — initiation + checklist, stale-recovery, break-glass emergency rotation, full web UI
 
 ### Teams & Organizations
+
 - Invitations & role assignment (Owner, Admin, Member, Viewer)
 - Org-level user management, account deactivation/recovery, project archival
 - Fine-grained per-project visibility (`read:secret_value` vs `read:secret_metadata` split)
 
 ### Operational Monitoring
+
 - Service/certificate/domain records
 - HTTP endpoint monitoring & alerts
 - Cross-project health dashboard and public status pages
 - Full monitored-asset web UI
 
 ### Notifications
+
 - Email + Slack delivery with per-alert-type routing
 - In-app inbox (`/notifications`)
 - Credential-expiry notification delivery
 
 ### Machine Users & CI/CD
+
 - Machine user identities and scoped API keys
 - Offline/cache fallback for CI environments
 - GitHub Actions integration
 - Full machine-user management web UI
 
 ### Audit & Compliance
+
 - Tamper-evident, append-only audit log with HMAC row-level integrity
 - Search, export, and external forwarding
 - Access reports and dormant-user detection
@@ -115,6 +123,7 @@ A closer look at what's implemented in each area, current as of 2026-07-28:
 - Full audit/compliance web UI
 
 ### Platform Operations & Backup
+
 - Encrypted backup/restore with scheduled snapshots, retention, and restore verification
 - System settings, multi-org provisioning, and resource-usage monitoring, all via an admin web UI
 - In-place version upgrades with a migration-safety guard
@@ -123,12 +132,14 @@ A closer look at what's implemented in each area, current as of 2026-07-28:
 - Operational runbook covering vault lifecycle, backup/restore, and incident response
 
 ### Quality
+
 - Playwright end-to-end test suite covering critical user journeys, run nightly
 - Branch-coverage thresholds enforced in CI for both `apps/web` and `apps/api`
 - SonarCloud-gated code quality and new-code coverage on every PR
 - Mutation testing (Stryker) tracked nightly
 
 Current limitations, disclosed up front rather than discovered later:
+
 - `vault_state.key_rotated_at` exists but no rotation-execution code path updates it yet. This
   also applies to KMS mode's wrapped data key — no code path re-wraps `kms_encrypted_dek` under a
   new KMS key; only IAM credential rotation is transparent by construction (see runbook).
@@ -138,15 +149,15 @@ Current limitations, disclosed up front rather than discovered later:
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | Svelte 5 + SvelteKit 2 + Tailwind CSS v4 |
-| Backend | Fastify v5 (TypeScript) |
-| Database | PostgreSQL + Drizzle ORM + Row-Level Security |
-| Background jobs | pg-boss (PostgreSQL-backed, no Redis) |
-| Monorepo | Turborepo + pnpm workspaces |
-| Testing | Vitest |
-| Deployment | Docker / Docker Compose (AMD64 + ARM64) |
+| Layer           | Technology                                    |
+| --------------- | --------------------------------------------- |
+| Frontend        | Svelte 5 + SvelteKit 2 + Tailwind CSS v4      |
+| Backend         | Fastify v5 (TypeScript)                       |
+| Database        | PostgreSQL + Drizzle ORM + Row-Level Security |
+| Background jobs | pg-boss (PostgreSQL-backed, no Redis)         |
+| Monorepo        | Turborepo + pnpm workspaces                   |
+| Testing         | Vitest                                        |
+| Deployment      | Docker / Docker Compose (AMD64 + ARM64)       |
 
 ---
 
@@ -160,11 +171,11 @@ A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise
 
 ## Roadmap
 
-| Version | Target | Status |
-|---|---|---|
+| Version     | Target                                                                                                                                                                                                 | Status  |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
 | **Current** | Self-hosted Docker, full secrets lifecycle, manual rotation, monitoring, teams, notifications, machine users, audit logs, backup, in-place upgrades, extension architecture, pluggable/self-hosted SSO | Shipped |
-| **Next** | Webhooks, project wiki | Planned |
-| **Later** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Planned |
+| **Next**    | Webhooks, project wiki                                                                                                                                                                                 | Planned |
+| **Later**   | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting                                                                                    | Planned |
 
 See [Capabilities](#capabilities) above for the current feature breakdown.
 
@@ -172,22 +183,35 @@ See [Capabilities](#capabilities) above for the current feature breakdown.
 
 ## Getting Started
 
+### Email in local development and deployments
+
+`docker compose up` includes Mailpit. The API sends mail to it by default; open
+`http://localhost:8025` (or `MAILPIT_UI_HOST_PORT`) to inspect messages. For demo or production,
+set `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, and `SMTP_FROM` for a real SMTP provider; set
+`SMTP_USER` and `SMTP_PASS` together when that provider requires authentication. Incomplete SMTP
+configuration fails API startup loudly.
+
+For a host-run API (`pnpm turbo dev`), start Mailpit with `docker compose up mailpit` and override
+the container-only defaults with `SMTP_HOST=127.0.0.1` and
+`SMTP_PORT=${MAILPIT_SMTP_HOST_PORT:-1025}`. The default `SMTP_HOST=mailpit` is for the Compose
+API container only.
+
 **Operator guide:** **[docs/operator-quickstart.md](docs/operator-quickstart.md)** — zero → eval-ready (`make bootstrap`, database roles, vault ceremony, troubleshooting).
 
-| Goal | Command |
-|------|---------|
+| Goal                   | Command                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Local dev (hot reload) | `make bootstrap` then `pnpm turbo dev` — [Path A](docs/operator-quickstart.md#path-a--local-dev-fastest-for-ui-work) |
-| Full Docker stack | `make bootstrap-docker` — [Path B](docs/operator-quickstart.md#path-b--full-docker-stack) |
-| All make targets | `make help` |
+| Full Docker stack      | `make bootstrap-docker` — [Path B](docs/operator-quickstart.md#path-b--full-docker-stack)                            |
+| All make targets       | `make help`                                                                                                          |
 
 ### Minimum Tooling Versions
 
-| Tool | Minimum Version |
-|---|---|
-| Node.js | 24 LTS |
-| pnpm | 9.x or later |
-| Docker | 24+ with Buildx |
-| Docker Compose | v2 |
+| Tool           | Minimum Version |
+| -------------- | --------------- |
+| Node.js        | 24 LTS          |
+| pnpm           | 9.x or later    |
+| Docker         | 24+ with Buildx |
+| Docker Compose | v2              |
 
 **Supported platforms:** macOS and Linux natively. Windows requires WSL2.
 
@@ -211,6 +235,7 @@ Vault init/unseal in the web UI, readiness states, and troubleshooting: **[docs/
 Manual equivalent: `docker compose up --build -d`
 
 Services:
+
 - Web: http://localhost:5173
 - API: http://localhost:3000
 - API health: http://localhost:3000/health
@@ -256,10 +281,10 @@ make bootstrap                # preferred — see docs/operator-quickstart.md
 
 The repo uses **two** PostgreSQL roles (details in the [operator quickstart](docs/operator-quickstart.md#two-database-roles-read-this-first)):
 
-| Role | Used for | Why |
-|---|---|---|
-| `postgres` (superuser) | migrations only (`make db-migrate`) | creates `vault_app`, RLS policies, triggers |
-| `vault_app` | app, tests, `check-rls`, `turbo dev` | superuser **bypasses RLS** — false-green tests if misused |
+| Role                   | Used for                             | Why                                                       |
+| ---------------------- | ------------------------------------ | --------------------------------------------------------- |
+| `postgres` (superuser) | migrations only (`make db-migrate`)  | creates `vault_app`, RLS policies, triggers               |
+| `vault_app`            | app, tests, `check-rls`, `turbo dev` | superuser **bypasses RLS** — false-green tests if misused |
 
 `make bootstrap` runs migrate + `check-rls` with the correct roles. Individual targets when you need them:
 
@@ -284,13 +309,13 @@ REFRESH_TOKEN_HMAC_SECRET=$(openssl rand -hex 32)
 
 Key auth settings:
 
-| Variable | Local default | Production note |
-|---|---|---|
-| `AUTH_REGISTRATION_ENABLED` | `true` | Set `false` for invite-only deployments |
-| `COOKIE_SECURE` | `false` | Set `true` behind HTTPS/Traefik so browsers persist auth cookies |
-| `TRUST_PROXY` / `TRUST_PROXY_HOPS` | `false` / `1` | Enable only behind a trusted reverse proxy |
-| `JWT_ACCESS_TTL_SECONDS` | `300` | Access cookie lifetime |
-| `REFRESH_TOKEN_TTL_DAYS` | `7` | Refresh cookie lifetime |
+| Variable                           | Local default | Production note                                                  |
+| ---------------------------------- | ------------- | ---------------------------------------------------------------- |
+| `AUTH_REGISTRATION_ENABLED`        | `true`        | Set `false` for invite-only deployments                          |
+| `COOKIE_SECURE`                    | `false`       | Set `true` behind HTTPS/Traefik so browsers persist auth cookies |
+| `TRUST_PROXY` / `TRUST_PROXY_HOPS` | `false` / `1` | Enable only behind a trusted reverse proxy                       |
+| `JWT_ACCESS_TTL_SECONDS`           | `300`         | Access cookie lifetime                                           |
+| `REFRESH_TOKEN_TTL_DAYS`           | `7`           | Refresh cookie lifetime                                          |
 
 Example auth flow after the vault is initialized and unsealed:
 
@@ -329,17 +354,18 @@ Full operator flows: **[docs/operator-quickstart.md](docs/operator-quickstart.md
 
 Each gate runs on every PR:
 
-| Gate | Command | What it checks |
-|---|---|---|
-| TypeScript | `pnpm turbo typecheck` | strict TS, noUncheckedIndexedAccess |
-| Lint | `pnpm turbo lint` | ESLint flat config with security rules |
-| Tests | `pnpm turbo test` (as `vault_app`) | Vitest with ≥80% coverage |
-| Duplication | `pnpm jscpd` | Zero code duplication |
-| Secrets | ESLint no-secrets | Entropy-based secret detection |
-| Audit | `pnpm audit --audit-level=high` | Zero high/critical CVEs |
-| Docker | CI only | Multi-arch build validation |
+| Gate        | Command                            | What it checks                         |
+| ----------- | ---------------------------------- | -------------------------------------- |
+| TypeScript  | `pnpm turbo typecheck`             | strict TS, noUncheckedIndexedAccess    |
+| Lint        | `pnpm turbo lint`                  | ESLint flat config with security rules |
+| Tests       | `pnpm turbo test` (as `vault_app`) | Vitest with ≥80% coverage              |
+| Duplication | `pnpm jscpd`                       | Zero code duplication                  |
+| Secrets     | ESLint no-secrets                  | Entropy-based secret detection         |
+| Audit       | `pnpm audit --audit-level=high`    | Zero high/critical CVEs                |
+| Docker      | CI only                            | Multi-arch build validation            |
 
 Nightly gates (runs at 02:00 UTC):
+
 - **Mutation testing** (Stryker) — score ≥60% (target ≥80%; ratchet per project policy)
 - **Docker image scan** (Trivy) — zero high/critical CVEs
 
