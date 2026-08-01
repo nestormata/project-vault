@@ -429,12 +429,12 @@ describe.sequential('dashboard stats', () => {
     await setRotationScheduleViaApi(app, owner.cookies, projectId, overdue.id, HOURLY_CRON)
     await backdateCredentialCreatedAt(owner.orgId, overdue.id, FAR_PAST_DATE)
 
-    // Pending: monthly schedule computed from "now" — due well within 30 days but not overdue.
+    // Pending: daily schedule computed from "now" — always due within 30 days but not overdue.
     const pending = await createCredentialViaApi(app, owner.cookies, projectId, {
       name: 'Pending Rotation Credential',
       value: 'pending-value',
     })
-    await setRotationScheduleViaApi(app, owner.cookies, projectId, pending.id, '0 0 1 * *')
+    await setRotationScheduleViaApi(app, owner.cookies, projectId, pending.id, '0 0 * * *')
 
     const orgResponse = await app.inject({
       method: 'GET',
