@@ -14,7 +14,7 @@ const { initVault } = await bootstrapRouteIntegrationTest()
 
 // Mocked so main()'s test never actually binds a real port — every other function under test
 // here (ensureUnsealed, seedFixtures, printRunbook) exercises real DB/vault code, matching this
-// repo's integration-test convention (AGENTS.md); only the HTTP server itself is stubbed.
+// repo's integration-test convention (docs/development.md); only the HTTP server itself is stubbed.
 vi.mock('../app.js', () => ({
   createApp: vi.fn().mockResolvedValue({ listen: vi.fn().mockResolvedValue(undefined) }),
 }))

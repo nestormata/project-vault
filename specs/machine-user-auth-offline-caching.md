@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** 2026-04-09  
 **Status:** Research-complete; pending ADR sign-off on three open decisions (ADR-10, ADR-11, ADR-12)  
-**Source:** Technical research document `_bmad-output/planning-artifacts/research/technical-machine-user-auth-offline-caching-research-2026-04-09.md`
+**Source:** Internal technical research; the public decisions and implementation contract are captured in this specification.
 
 ---
 

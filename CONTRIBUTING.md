@@ -50,8 +50,9 @@ unaffected by whether you've ever signed the CLA.
 2. Fork the repository and branch from `main`.
 3. Follow this repo's existing development setup, coding standards, and CI quality gates — see
    the [Getting Started](./README.md#getting-started) and [CI Quality Gates](./README.md#ci-quality-gates)
-   sections of `README.md`, and `AGENTS.md` for AI-assisted development conventions. This
-   document intentionally does not duplicate that material.
+   sections of `README.md`, plus the [development guide](./docs/development.md). This document
+   intentionally does not duplicate that material. No private maintainer repository or planning
+   artifacts are required to contribute to the public project.
 4. Open a pull request against `main`. The PR template will remind you of the CLA requirement.
 5. On your first PR, the CLA bot will comment with signing instructions if you haven't signed
    yet; the PR cannot merge until the required "CLA signed" status check passes.

@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** 2026-04-09  
 **Status:** Research-complete; pending ADR sign-off on three open decisions (ADR-07, ADR-08, ADR-09)  
-**Source:** Technical research document `_bmad-output/planning-artifacts/research/technical-rotation-plugin-architecture-research-2026-04-09.md`
+**Source:** Internal technical research; the public decisions and implementation contract are captured in this specification.
 
 ---
 

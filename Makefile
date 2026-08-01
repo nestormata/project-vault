@@ -30,7 +30,7 @@ endif
 # localhost by default (bare-host `make test`/`make db-migrate`/etc. against a docker-up'd or
 # bootstrapped stack). docker-compose.ci.yml overrides this to `db` for the `ci` service, so the
 # exact same targets below resolve to the container-internal Compose network instead — see
-# Makefile's `ci`/`ci-inner` targets and docs/development.md "CI runs in Docker".
+# Makefile's `ci`/`ci-inner` targets and docs/development.md "Local quality gates".
 DB_CONN_HOST ?= localhost
 BASE_REF ?= main
 

@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** 2026-04-09  
 **Status:** Research-complete; pending ADR sign-off on three open decisions (ADR-13, ADR-14, ADR-15)  
-**Source:** Technical research document `_bmad-output/planning-artifacts/research/technical-service-health-monitoring-architecture-research-2026-04-09.md`
+**Source:** Internal technical research; the public decisions and implementation contract are captured in this specification.
 
 ---
 

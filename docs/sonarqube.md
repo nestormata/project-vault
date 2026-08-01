@@ -43,7 +43,7 @@ Sonar has two independent mechanisms and they are not interchangeable:
 | `apps/api/src/**/*-test-helpers.ts` | Colocated per-module test fixture files (e.g. `credential-route-test-helpers.ts`). |
 | `apps/api/src/**/*-test-bootstrap.ts` | Colocated per-module integration-test bootstrap files (e.g. `machine-user-route-test-bootstrap.ts`, `project-route-test-bootstrap.ts`). |
 | `apps/web/src/lib/test/**` | Web test utilities (Story 10.3 precedent). |
-| `packages/api-contract-tests/**` | A private black-box OpenAPI conformance suite: its own `vitest.config.ts` sets all four coverage thresholds to `0` with the comment "not designed... its own business logic"; its `package.json` exposes no runtime export and only consumes `@project-vault/api` as a test dependency, never the reverse. Its fixtures/harness (`src/fixtures/**`, `src/openapi/**`) are conformance tooling, not reusable product code. |
+| `packages/api-contract-tests/**` | A public black-box OpenAPI conformance suite: its own `vitest.config.ts` sets all four coverage thresholds to `0` with the comment "not designed... its own business logic"; its `package.json` exposes no runtime export and only consumes `@project-vault/api` as a test dependency, never the reverse. Its fixtures/harness (`src/fixtures/**`, `src/openapi/**`) are conformance tooling, not reusable product code. |
 
 **Must-not-exclude rule:** no product runtime path (`apps/api/src/modules/**`,
 `apps/api/src/workers/**`, `apps/api/src/routes/**`, `apps/api/src/plugins/**`,

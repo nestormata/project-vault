@@ -167,6 +167,20 @@ Project Vault is **free and open source** under the AGPL-3.0 license. The core �
 
 A commercial **SaaS tier** is planned for v2, adding managed hosting, enterprise/managed SSO, and compliance reporting — distinct from the self-hosted, org-configured SSO already available today (see Capabilities above). Self-hosted deployments remain free.
 
+## Repository Boundary
+
+This public repository is the complete distributable Project Vault application. It contains the
+source code, public technical specifications, documentation, Docker configuration, and GitHub
+workflows required to build, test, deploy, and operate the project. A checkout of this repository
+does not require access to any other repository.
+
+Maintainers may use a separate private repository for BMAD planning artifacts, agent instructions,
+story and sprint governance, and other internal development output. That private overlay is not part
+of the public product, is not required for external contributions, and must not be added to this
+repository. Public behavior and contributor requirements are defined by this README,
+[`CONTRIBUTING.md`](./CONTRIBUTING.md), [`docs/`](./docs/), [`specs/`](./specs/), and the checked-in
+build and CI configuration.
+
 ---
 
 ## Roadmap
@@ -364,6 +378,11 @@ Each gate runs on every PR:
 | Audit       | `pnpm audit --audit-level=high`    | Zero high/critical CVEs                |
 | Docker      | CI only                            | Multi-arch build validation            |
 
+GitHub also runs CodeQL over the public GitHub Actions and JavaScript/TypeScript code, and runs
+SonarCloud analysis and its quality gate. The local `make ci` sequence additionally runs the
+publication-safety check, which detects private-development artifacts, secrets, and other content
+that should not enter the public repository.
+
 Nightly gates (runs at 02:00 UTC):
 
 - **Mutation testing** (Stryker) — score ≥60% (target ≥80%; ratchet per project policy)
@@ -375,6 +394,7 @@ Requires Postgres on `localhost:5432` (`make db-up` or `make bootstrap` first).
 
 ```bash
 make ci              # typecheck, lint, migrate, RLS check, test, jscpd, audit, spec freshness
+make check-public-safety BASE_REF=origin/main # review changed content before publication
 make docker-smoke    # end-to-end Docker health check
 ```
 

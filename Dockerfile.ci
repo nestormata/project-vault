@@ -1,4 +1,4 @@
-# Full-monorepo image for `make ci` (see docker-compose.ci.yml + AGENTS.md "CI runs in Docker").
+# Full-monorepo image for `make ci` (see docker-compose.ci.yml + docs/development.md).
 # Unlike apps/api/Dockerfile and apps/web/Dockerfile (which each build one deployable app), this
 # image installs every workspace package's devDependencies so the whole `make ci` gate — typecheck,
 # lint, tests, jscpd, generated-spec drift — can run in one container, on the Docker network, talking
@@ -8,14 +8,14 @@
 # running CI *inside* that same isolated network sidesteps host ports entirely for this path.
 #
 # `.git` is excluded here (see .dockerignore) and bind-mounted read-only at runtime instead
-# (docker-compose.ci.yml) — the git-history-dependent checks (openapi.json drift, story-status
-# sync) need real repo metadata, and bind-mounting it avoids having to rebuild this image on every
+# (docker-compose.ci.yml) — the git-history-dependent checks (generated-spec/openapi drift and
+# other repository checks) need real repo metadata, and bind-mounting it avoids having to rebuild this image on every
 # commit just to keep `.git` current.
 FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
 
 RUN npm install -g pnpm@11.9.0 --ignore-scripts
 # g++/make/python3: argon2 (packages/crypto) native rebuild, same as apps/api/Dockerfile.
-# git: story-status/openapi-drift checks shell out to git against the bind-mounted .git.
+# git: generated-spec/openapi checks shell out to git against the bind-mounted .git.
 # bash: the root Makefile sets `SHELL := /usr/bin/env bash`; Alpine's base image only ships `sh`.
 RUN apk add --no-cache g++ make python3 git postgresql16-client bash
 

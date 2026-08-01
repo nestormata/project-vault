@@ -3,7 +3,7 @@
 **Version:** 1.1  
 **Date:** 2026-06-24  
 **Status:** Research-complete; v1 implementation spec available for vault init/seal  
-**Source:** Technical research document `_bmad-output/planning-artifacts/research/technical-cryptographic-architecture-secrets-vault-research-2026-04-08.md`
+**Source:** Internal technical research; the public decisions and implementation contract are captured in this specification.
 
 > **v1 implementation (Node.js / Story 1.5):** The running codebase uses PostgreSQL + `packages/crypto` (AES-256-GCM, HKDF, Argon2id) with manual seal/unseal — not Shamir/Raft from this research doc. See **[specs/vault-initialization-and-key-management.md](vault-initialization-and-key-management.md)** for operational details: custody models (passphrase, envelope, file), API endpoints, Docker wiring, and operator runbook.
 
