@@ -148,12 +148,12 @@ Export `VAULT_BOOTSTRAP_TOKEN` / `VAULT_ALLOW_REMOTE_INIT` in the **same shell**
 
 ### First `docker compose up` is slow
 
-The `migrate` service rebuilds the API builder image to run `pnpm db:migrate` (known tradeoff — see `deferred-work.md` D4). Subsequent starts are faster if images are cached.
+The `migrate` service rebuilds the API builder image to run `pnpm db:migrate`. Subsequent starts are faster if images are cached.
 
 ### Browser console shows `Not allowed by CORS` on login/register
 
-`WEB_HOST_PORT` got auto-bumped away from 5173 by `make fix-ports`/`docker-ports.sh` (see AGENTS.md
-"Docker port isolation"), but `docker-compose.yml`'s `CORS_ALLOWED_ORIGINS` tracks `WEB_HOST_PORT`
+`WEB_HOST_PORT` got auto-bumped away from 5173 by `make fix-ports`/`docker-ports.sh` (see
+[`docs/development.md`](development.md) "Docker port isolation"), but `docker-compose.yml`'s `CORS_ALLOWED_ORIGINS` tracks `WEB_HOST_PORT`
 automatically — so this should only happen if you hardcoded `CORS_ALLOWED_ORIGINS` yourself, or
 you're hitting the web app on a different host/port than `.env` declares. Confirm the browser's
 actual origin matches `http://localhost:${WEB_HOST_PORT}`.
@@ -197,6 +197,6 @@ without a matching default wired into `docker-compose.yml`.
 
 ## Related docs
 
-- [MFA Policy Matrix](../_bmad-output/planning-artifacts/mfa-policy-matrix.md) — when MFA applies (login vs privileged routes vs invites)
 - [README — Getting Started](../README.md)
-- [Epic 1 retrospective](../_bmad-output/implementation-artifacts/epic-1-retro-2026-06-30.md)
+- [Development guide](development.md)
+- [Operational runbook](runbook.md)

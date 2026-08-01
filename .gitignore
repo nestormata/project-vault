@@ -75,4 +75,33 @@ design/brand-source/
 .bmad-loop/runs/
 .bmad-loop/cache/
 .bmad-loop/policy.toml
-_bmad/config.user.yaml
+
+# Private BMAD companion overlay. These paths are linked into a public checkout only by
+# project-vault-private/scripts/attach-public.sh and must never enter the public repository.
+.agents/
+.bmad-loop/
+_bmad/
+_bmad-output/
+.github/skills/
+.github/agents/
+.github/workflows/post-merge-status-drift.yml
+AGENTS.md
+CLAUDE.md
+design-artifacts/
+docs/federated-multi-tenant-architecture-analysis.md
+docs/usability-audit-2026-07-13.md
+scripts/check-alert-pending-epic3.test.ts
+scripts/check-alert-pending-epic3.ts
+scripts/check-operational-log-language.ts
+scripts/check-post-merge-status-drift.test.ts
+scripts/check-post-merge-status-drift.ts
+scripts/check-psc-tbd-tracking.test.ts
+scripts/check-psc-tbd-tracking.ts
+scripts/check-sprint-status-rollup.test.ts
+scripts/check-sprint-status-rollup.ts
+scripts/check-story-references.test.ts
+scripts/check-story-references.ts
+scripts/check-story-review-deferrals.test.ts
+scripts/check-story-review-deferrals.ts
+scripts/check-story-status-sync.test.ts
+scripts/check-story-status-sync.ts

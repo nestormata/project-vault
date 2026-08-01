@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end Docker smoke test: build, start, curl /health + /ready, tear down.
 # Resolves host port conflicts first so this can run alongside another
-# worktree's stack — see AGENTS.md "Docker port isolation".
+# worktree's stack — see docs/development.md "Docker port isolation".
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

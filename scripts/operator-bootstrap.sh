@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Auto-resolve host port conflicts (concurrent worktrees, standalone test stacks) before
-# computing any localhost:<port> URLs below. See AGENTS.md "Docker port isolation".
+# computing any localhost:<port> URLs below. See docs/development.md "Docker port isolation".
 "$ROOT/scripts/docker-ports.sh" fix
 
 env_port() {

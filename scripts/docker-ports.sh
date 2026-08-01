@@ -3,7 +3,7 @@
 # worktrees of this repo — or a standalone test stack — can run concurrently
 # without a `docker compose up` silently failing to bind.
 #
-# See AGENTS.md "Docker port isolation" for the workflow this supports.
+# See docs/development.md "Docker port isolation" for the workflow this supports.
 #
 # Usage:
 #   scripts/docker-ports.sh check   # report BUSY/OK for each port (default); exits 1 on conflict

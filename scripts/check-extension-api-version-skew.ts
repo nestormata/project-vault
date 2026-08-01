@@ -3,9 +3,7 @@
  * Story 14.1 AC7 — `packages/extension-api` is a versioned contract package: any change under
  * `packages/extension-api/src/**` (a hook interface, `registerExtension()`'s validation logic,
  * the manifest shape, …) must ship with a corresponding bump to `packages/extension-api/package.json`'s
- * `version` field in the same diff. Following the same `check-*.ts` CI-guard pattern as
- * `scripts/check-story-status-sync.ts`/`scripts/check-psc-tbd-tracking.ts` — this is a build
- * failure instead of a hoped-for review comment.
+ * `version` field in the same diff. This is a build failure instead of a hoped-for review comment.
  *
  * Compares the actual before/after `version` *field value* in `packages/extension-api/package.json`
  * across the PR's base/head, via `git show <ref>:<path>` — not merely whether `package.json` was

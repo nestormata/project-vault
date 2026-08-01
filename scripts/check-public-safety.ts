@@ -59,12 +59,6 @@ const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
 const SECRET_ENV_NAME_PATTERN =
   /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*\b/
-const UNRESOLVED_REVIEW_PATTERN =
-  /\[Review\].*(?:unfixed|left unfixed|deferred|unresolved|known (?:bug|finding))/i
-const SECURITY_DETAIL_PATTERN =
-  /(?:cross[- ]tenant|RLS|MFA|tokenized|security finding|auth(?:entication)? bypass)/i
-const ROADMAP_PATTERN =
-  /(?:epic[- ]?19|19-[1-4]-[a-z]|\bbacklog\b|\bin-progress\b|\bready-for-dev\b)/i
 
 function makeFinding(
   file: string,
@@ -149,57 +143,8 @@ function scanMetadata(file: string, line: number, text: string): PublicSafetyFin
   return findings
 }
 
-function scanArtifactDetails(file: string, line: number, text: string): PublicSafetyFinding[] {
-  if (!file.startsWith('_bmad-output/')) return []
-  const findings: PublicSafetyFinding[] = []
-  if (UNRESOLVED_REVIEW_PATTERN.test(text)) {
-    findings.push(
-      makeFinding(
-        file,
-        line,
-        text,
-        'unresolved-review-detail',
-        'high',
-        'public planning artifacts should not disclose known unresolved findings'
-      )
-    )
-  }
-  if (SECURITY_DETAIL_PATTERN.test(text)) {
-    findings.push(
-      makeFinding(
-        file,
-        line,
-        text,
-        'security-implementation-detail',
-        'medium',
-        'security implementation details belong in sanitized public documentation or private review records'
-      )
-    )
-  }
-  if (
-    /(?:sprint-status\.yaml|planning-artifacts\/epics\.md|deferred-work\.md)$/.test(file) &&
-    ROADMAP_PATTERN.test(text)
-  ) {
-    findings.push(
-      makeFinding(
-        file,
-        line,
-        text,
-        'internal-roadmap',
-        'medium',
-        'internal backlog and delivery status should be intentionally reviewed before publication'
-      )
-    )
-  }
-  return findings
-}
-
 function scanLine(file: string, line: number, text: string): PublicSafetyFinding[] {
-  return [
-    ...scanSecretPatterns(file, line, text),
-    ...scanMetadata(file, line, text),
-    ...scanArtifactDetails(file, line, text),
-  ]
+  return [...scanSecretPatterns(file, line, text), ...scanMetadata(file, line, text)]
 }
 
 export function scanText(file: string, content: string): PublicSafetyFinding[] {
@@ -236,6 +181,7 @@ function git(root: string, args: string[]): string {
   return execFileSync('/usr/bin/git', args, {
     cwd: root,
     encoding: 'utf8',
+    maxBuffer: 128 * 1024 * 1024,
     env: { ...process.env, PATH: '/usr/bin:/bin' },
   })
 }
