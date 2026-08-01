@@ -424,7 +424,8 @@ Other ways to contribute without opening a PR:
 - ⭐ **Star this repository** to signal interest and help with OSS discovery
 - 🐛 **Open issues** for feature requests, use cases, or questions — early input shapes the roadmap
 - 💬 **Start a discussion** if you have ideas about the plugin interface, RBAC model, or integration patterns
-- 📖 **Review the planning artifacts** in `_bmad-output/planning-artifacts/` — the PRD, UX spec, and architecture docs are open, as are the implementation notes and retrospectives in `_bmad-output/implementation-artifacts/`
+- 📖 **Review the public technical specifications** in [`specs/`](./specs/) and the operational
+  documentation in [`docs/`](./docs/)
 
 ---
 
@@ -436,7 +437,7 @@ Project Vault handles credentials, certificates, and sensitive operational data.
 - TLS 1.3 required for all inbound connections
 - Constant-time comparisons for all secret/token operations; memory zeroing after secret use
 - Secret values must never appear in logs, stack traces, or error messages
-- Full security model documented in architecture artifacts
+- Full security model documented in the public architecture specifications
 
 To report a security vulnerability, please **do not open a public issue**. Contact details will be published in a `SECURITY.md` file.
 

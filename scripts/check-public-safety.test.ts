@@ -26,16 +26,6 @@ describe('check-public-safety', () => {
     )
   })
 
-  it('detects unresolved security details in planning artifacts', () => {
-    const findings = scanText(
-      '_bmad-output/implementation-artifacts/story.md',
-      '- [ ] [Review][Patch] MFA issue left unfixed'
-    )
-    expect(findings.map((finding) => finding.rule)).toEqual(
-      expect.arrayContaining(['unresolved-review-detail', 'security-implementation-detail'])
-    )
-  })
-
   it('does not flag ordinary implementation text', () => {
     expect(scanText('apps/web/src/lib/example.ts', 'export const answer = 42')).toEqual([])
   })

@@ -10,7 +10,7 @@ SHELL := /usr/bin/env bash
 # Read from .env so `make db-migrate`/etc. talk to the same host port
 # docker-compose.yml actually published (which may have been bumped by
 # `make fix-ports` to dodge a conflict). Override on the command line, e.g.
-# `make db-migrate DB_HOST_PORT=5433`. See AGENTS.md "Docker port isolation".
+# `make db-migrate DB_HOST_PORT=5433`. See docs/development.md "Docker port isolation".
 #
 # Fallback chain (first one already set wins): env var (e.g. docker-compose.ci.yml sets
 # DB_HOST_PORT=5432 for the `ci` service — that's Postgres's fixed *in-container* port, unrelated
@@ -30,7 +30,7 @@ endif
 # localhost by default (bare-host `make test`/`make db-migrate`/etc. against a docker-up'd or
 # bootstrapped stack). docker-compose.ci.yml overrides this to `db` for the `ci` service, so the
 # exact same targets below resolve to the container-internal Compose network instead — see
-# Makefile's `ci`/`ci-inner` targets and AGENTS.md "CI runs in Docker".
+# Makefile's `ci`/`ci-inner` targets and docs/development.md "CI runs in Docker".
 DB_CONN_HOST ?= localhost
 BASE_REF ?= main
 
@@ -136,7 +136,7 @@ test-repeat: ## Run the test suite N times back-to-back, stopping at the first f
 stryker: ## Run Stryker mutation testing (matches nightly CI)
 	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run
 
-ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; see AGENTS.md "CI runs in Docker")
+ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; see docs/development.md)
 	$(MAKE) fix-ports
 	GIT_COMMON_DIR=$$(git rev-parse --path-format=absolute --git-common-dir) \
 		docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm --build ci make ci-inner
@@ -149,15 +149,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	$(MAKE) check-audit-actor-token-coverage
 	pnpm check-search-index
 	pnpm check-migration-compatibility
-	pnpm check-story-status-sync
-	pnpm check-sprint-status-rollup
-	pnpm check-story-references
-	pnpm check-psc-tbd-tracking
 	$(MAKE) check-form-guidance
 	pnpm check-public-safety -- --base main --strict
-	pnpm check-story-review-deferrals
 	pnpm check-extension-api-version-skew
-	pnpm check-alert-pending-epic3
 	$(MAKE) test
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts
@@ -170,7 +164,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 
 # --- Docker -----------------------------------------------------------------
 
-check-ports: ## Check DB/API/WEB host ports are free (fails with a hint if not; see AGENTS.md)
+check-ports: ## Check DB/API/WEB host ports are free (fails with a hint if not; see docs/development.md)
 	./scripts/docker-ports.sh check
 
 fix-ports: ## Auto-bump any busy DB/API/WEB host port to the next free one and write .env
