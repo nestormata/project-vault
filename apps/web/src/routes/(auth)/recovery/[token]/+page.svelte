@@ -4,6 +4,7 @@
   import { page } from '$app/state'
   import { ApiClientError } from '$lib/api/client.js'
   import { completeRecovery, peekRecovery, startRecoveryMfa } from '$lib/api/recovery.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   const token = page.params.token ?? ''
 
@@ -184,10 +185,12 @@
           id="recovery-new-password"
           type="password"
           autocomplete="new-password"
+          aria-describedby="recovery-new-password-help"
           bind:value={newPassword}
           minlength="12"
           required
         />
+        <FormHelpText id="recovery-new-password-help" kind="secret" />
         <p class="text-sm text-slate-600">Use at least 12 characters.</p>
       </div>
 
@@ -198,9 +201,11 @@
             checked={wantsMfa}
             disabled={isStartingMfa}
             onchange={() => void onToggleMfa()}
+            aria-describedby="recovery-mfa-toggle-help"
           />
           Set up two-factor authentication
         </label>
+        <FormHelpText id="recovery-mfa-toggle-help" kind="checkbox" />
         {#if isStartingMfa}
           <p class="text-sm text-slate-600">Generating a new authenticator secret...</p>
         {/if}
@@ -227,8 +232,10 @@
               inputmode="numeric"
               pattern={'[0-9]{6}'}
               autocomplete="one-time-code"
+              aria-describedby="recovery-totp-help"
               bind:value={totpCode}
             />
+            <FormHelpText id="recovery-totp-help" kind="secret" />
           </div>
         {/if}
       </div>

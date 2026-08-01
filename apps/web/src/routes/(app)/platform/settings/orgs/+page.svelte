@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths'
   import PlatformSettingsBreadcrumb from '$lib/components/platform/PlatformSettingsBreadcrumb.svelte'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import { ApiClientError } from '$lib/api/client.js'
   import { createOrg, listOrgs, type OrgListItem } from '$lib/api/platform.js'
@@ -149,7 +150,9 @@
           bind:value={newOrgName}
           class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
           placeholder="Acme Corp"
+          aria-describedby="platform-org-name-help"
         />
+        <FormHelpText id="platform-org-name-help" kind="text" />
         {#if createNameError}
           <span class="mt-1 text-xs text-red-600">{createNameError}</span>
         {/if}
@@ -162,7 +165,9 @@
           bind:value={newOrgOwnerEmail}
           class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
           placeholder="owner@example.com"
+          aria-describedby="platform-org-owner-help"
         />
+        <FormHelpText id="platform-org-owner-help" kind="text" />
       </label>
       <div>
         <button

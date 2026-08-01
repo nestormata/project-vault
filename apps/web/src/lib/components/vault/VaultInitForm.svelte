@@ -1,5 +1,6 @@
 <script>
   import { buildVaultInitRequest, clearVaultInitFields } from './form-model.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { onSubmit } = $props()
   let mode = $state('passphrase')
@@ -61,7 +62,9 @@
       autocomplete="off"
       bind:value={bootstrapToken}
       required
+      aria-describedby="vault-bootstrap-token-help"
     />
+    <FormHelpText id="vault-bootstrap-token-help" kind="secret" />
     <p class="text-sm text-slate-600">
       This operator token is configured on the vault host and is sent only as a request header.
     </p>
@@ -70,18 +73,37 @@
   <fieldset class="space-y-3">
     <legend class="font-medium text-slate-900">Initialization mode</legend>
     <label class="flex items-center gap-2">
-      <input type="radio" name="kmsType" value="passphrase" bind:group={mode} />
+      <input
+        type="radio"
+        name="kmsType"
+        value="passphrase"
+        bind:group={mode}
+        aria-describedby="vault-kms-mode-help"
+      />
       <span>Passphrase</span>
     </label>
     <label class="flex items-center gap-2">
-      <input type="radio" name="kmsType" value="envelope" bind:group={mode} />
+      <input
+        type="radio"
+        name="kmsType"
+        value="envelope"
+        bind:group={mode}
+        aria-describedby="vault-kms-mode-help"
+      />
       <span>Envelope key path</span>
     </label>
     <label class="flex items-center gap-2">
-      <input type="radio" name="kmsType" value="file" bind:group={mode} />
+      <input
+        type="radio"
+        name="kmsType"
+        value="file"
+        bind:group={mode}
+        aria-describedby="vault-kms-mode-help"
+      />
       <span>Master key file path</span>
     </label>
   </fieldset>
+  <FormHelpText id="vault-kms-mode-help" kind="radio" />
 
   {#if mode === 'passphrase'}
     <div class="space-y-2">
@@ -96,7 +118,9 @@
         autocomplete="new-password"
         bind:value={passphrase}
         required
+        aria-describedby="vault-init-passphrase-help"
       />
+      <FormHelpText id="vault-init-passphrase-help" kind="secret" />
       <p class="text-sm text-slate-600">
         The vault key is derived from this passphrase. Losing it can make stored secrets
         unrecoverable.
@@ -115,15 +139,23 @@
         autocomplete="off"
         bind:value={envelopeKeyPath}
         required
+        aria-describedby="vault-envelope-key-path-help"
       />
+      <FormHelpText id="vault-envelope-key-path-help" kind="text" />
       <p class="text-sm text-slate-600">
         The API reads this path on the server host, inside the configured key directory. The browser
         never uploads the file.
       </p>
       <label class="flex items-start gap-2 text-sm text-slate-700">
-        <input type="checkbox" bind:checked={acknowledgeSplitKeyModel} required />
+        <input
+          type="checkbox"
+          bind:checked={acknowledgeSplitKeyModel}
+          required
+          aria-describedby="vault-split-key-help"
+        />
         <span>I understand the split-key model for envelope mode.</span>
       </label>
+      <FormHelpText id="vault-split-key-help" kind="checkbox" />
     </div>
   {:else}
     <div class="space-y-2">
@@ -138,15 +170,23 @@
         autocomplete="off"
         bind:value={masterKeyPath}
         required
+        aria-describedby="vault-master-key-path-help"
       />
+      <FormHelpText id="vault-master-key-path-help" kind="text" />
       <p class="text-sm text-slate-600">
         File mode keeps key material near the vault host. It is not recommended for production
         without host hardening.
       </p>
       <label class="flex items-start gap-2 text-sm text-slate-700">
-        <input type="checkbox" bind:checked={acknowledgeCoLocationRisk} required />
+        <input
+          type="checkbox"
+          bind:checked={acknowledgeCoLocationRisk}
+          required
+          aria-describedby="vault-co-location-help"
+        />
         <span>I understand the key co-location risk for file mode.</span>
       </label>
+      <FormHelpText id="vault-co-location-help" kind="checkbox" />
     </div>
   {/if}
 

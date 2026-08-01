@@ -2776,3 +2776,109 @@ This entry was added retroactively by `epic-17-retro-2026-07-29.md` (Finding 1) 
 - Story 17.3 — Share History, Expiry Enforcement, and Rotation-Recommended Nudge: `_bmad-output/implementation-artifacts/17-3-share-history-expiry-enforcement-and-rotation-recommended-nudge.md`
 
 All three stories are `done` (`sprint-status.yaml`); `epic-17` rolled up to `done` 2026-07-29.
+
+### Epic 19: Epic 18 Follow-through — Dashboard, Auth Localization & Form Guidance
+**Phase 2**
+
+Follow-up work from the Epic 18 retrospective: make dashboard project selection complete for all
+accessible projects, finish localization of the pre-auth shell and MFA flow, and bring every
+user-facing input control into compliance with the new contextual-help rule. The epic also carries
+the mechanical review-deferral follow-up guard now wired into `make ci`.
+
+The first guard scan also surfaced one older unchecked review deferral from Story 2.9; it is tracked
+as `19-4-dependent-system-inline-validation` rather than excluded from enforcement.
+
+### Epic 20: Safe Operational Context & Integration Foundations
+**Post-Phase-2 foundation**
+
+Project Vault exposes the small, generic capability increments needed for safe operational use and
+approved integrations: a stable credential-context read model first, followed by controllable
+health checks, bounded sharing, notification delivery, extension packaging, project knowledge,
+classified access, and explicit shared-compute readiness. This epic is product-generic: it does
+not assume or name a particular consumer or hosted deployment.
+
+**Sequencing:** Story 20.1 is the first implementation prerequisite. Later stories are registered
+only after a planning-readiness pass reconciles their detailed contracts with the shipped product,
+especially tenant/RLS boundaries, audit failure handling, extension compatibility, and the Product
+Surface Contract.
+
+#### Story 20.1: Provide a Stable Credential Operational-Context Read Model
+
+**As a** Project Vault user,
+**I want** to retrieve a credential's operational context in one stable read shape,
+**So that** I can understand what it is and where it is used before taking action.
+
+**Acceptance Criteria:**
+
+**Given** an authorized user can read a credential,
+**When** they request its operational context,
+**Then** the response provides a documented, versioned representation of credential type, account,
+rotation state, and usage/dependency locations.
+
+**Given** existing credential versions, dependencies, and rotation records,
+**When** the context is assembled,
+**Then** it derives from the existing source-of-truth model without duplicating or exposing secret
+values.
+
+**Given** an unauthorized or cross-organization request,
+**When** it is made,
+**Then** it fails closed and returns no credential metadata.
+
+**Given** the response contract,
+**When** it is tested,
+**Then** contract and tenant-isolation tests cover empty, multiple, and stale dependency/rotation
+states.
+
+#### Story 20.2: Persist and Enforce a Health-Check Pause State
+
+**As a** Project Vault user,
+**I want** a health check to have a durable paused state,
+**So that** I can safely suspend monitoring without deleting its setup or history.
+
+**Acceptance Criteria:**
+
+**Given** an authorized user manages a health check,
+**When** they pause it,
+**Then** the persisted status becomes `paused` without altering its target, schedule, thresholds,
+or history.
+
+**Given** a health check is paused,
+**When** the monitoring scheduler runs,
+**Then** it does not execute a probe, open or update an incident, or send an alert for that check.
+
+**Given** a paused health check,
+**When** an authorized user resumes it,
+**Then** its prior configuration is retained and its next scheduled probe is eligible to run
+normally.
+
+**Given** a paused state transition,
+**When** it occurs,
+**Then** it is authorization-checked, organization-scoped, audit logged, and covered by
+persistence and scheduler tests.
+
+#### Story 20.3: Show and Control Paused Monitoring
+
+**As a** Project Vault user,
+**I want** to clearly see whether a health check is paused and resume or pause it from its
+management view,
+**So that** the monitoring state is understandable and reversible.
+
+**Acceptance Criteria:**
+
+**Given** I can manage a health check,
+**When** I view it,
+**Then** its paused state is clearly distinguishable from healthy, degraded, and failed states.
+
+**Given** an active health check,
+**When** I choose Pause,
+**Then** the UI requests the authorized pause operation and reflects the persisted paused state
+without implying an outage.
+
+**Given** a paused health check,
+**When** I choose Resume,
+**Then** the UI requests the authorized resume operation and reports that monitoring will continue
+on its normal schedule.
+
+**Given** the operation fails or my permission changes,
+**When** the UI receives that result,
+**Then** it preserves the last confirmed state and presents a calm actionable error.

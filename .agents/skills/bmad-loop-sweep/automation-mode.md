@@ -65,6 +65,21 @@ field-by-field, and will kill this session after your final turn.
     `build|close|keep-open`, `intent` required when effect is `build`,
     `recommendation` must be one of the option keys.
 
+- Write `already_resolved[].evidence` and an option's `label` and `resolution`
+  as a **single line** — the orchestrator copies each onto one line of the
+  line-oriented deferred-work ledger. This is guidance, not a validation rule:
+  a break is collapsed to a space rather than rejected, so it costs you nothing
+  but reads worse.
+
+  Both `intent` fields stay 2-6 sentences as asked for above, newlines and all,
+  but for two different reasons. A **bundle's** `intent` is rendered to its own
+  intent file and never reaches the ledger. A **build option's** `intent` does
+  reach it — the ledger `decision:` line takes `resolution or intent`, and a
+  build option normally has no `resolution`, so its intent is usually exactly
+  what lands there. It is exempt anyway because the orchestrator flattens it on
+  write, and holding it to one line would flatten the brief that drives the
+  whole dev bundle to buy nothing.
+
 - **Migration sessions** (`--migrate`, see `./migration-mode.md`) use this
   result schema instead:
 

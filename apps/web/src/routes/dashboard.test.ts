@@ -120,6 +120,10 @@ describe('/dashboard project selection (Story 18.12 AC-1b/AC-7)', () => {
     expect(screen.getByText('Showing data for Payments')).toBeTruthy()
     const selector = screen.getByRole('combobox', { name: 'Dashboard project' })
     expect(selector).toBeTruthy()
+    expect(selector.getAttribute('aria-describedby')).toBe('dashboard-project-help')
+    expect(
+      screen.getByText('Choose the project whose monitoring data you want to view.')
+    ).toBeTruthy()
     expect(screen.getByRole('option', { name: 'Inventory' })).toBeTruthy()
   })
 })

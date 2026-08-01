@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { getCurrentUser, verifyMfaLogin } from '$lib/api/auth.js'
+  import { m } from '$lib/paraglide/messages.js'
   import { buildMfaLoginRequest, clearMfaLoginFields } from './form-model.js'
 
   let {
@@ -41,16 +42,16 @@
       if (code === 'mfa_token_expired') {
         clearFields(true)
         onExpired?.()
-        errorMessage = 'Your login step expired. Please sign in again.'
+        errorMessage = m.auth_mfa_expired()
         return
       }
       clearFields(false)
       errorMessage =
         code === 'invalid_totp'
-          ? 'That code was not accepted. Try the next code from your authenticator.'
+          ? m.auth_mfa_invalid_code()
           : error instanceof Error
             ? error.message
-            : 'MFA verification failed.'
+            : m.auth_mfa_failed()
     } finally {
       isSubmitting = false
     }
@@ -65,7 +66,7 @@
   }}
 >
   <div class="space-y-2">
-    <label class="block font-medium text-slate-900" for="mfa-totp">Authenticator code</label>
+    <label class="block font-medium text-slate-900" for="mfa-totp">{m.auth_mfa_code_label()}</label>
     <!-- Story 10-1 discovered this as a real, no-mock browser bug: a literal pattern="[0-9]{6}"
          is misparsed by Svelte's attribute compiler — "{6}" reads as a mustache expression
          evaluating to the number 6, producing pattern="[0-9]6" in the rendered DOM (verified via
@@ -77,13 +78,14 @@
     <input
       class="w-full rounded-xl border border-slate-300 px-3 py-2"
       id="mfa-totp"
+      aria-describedby="mfa-totp-help"
       inputmode="numeric"
       pattern={'[0-9]{6}'}
       autocomplete="one-time-code"
       bind:value={totp}
       required
     />
-    <p class="text-sm text-slate-600">Enter the six-digit code from your authenticator app.</p>
+    <p class="text-sm text-slate-600" id="mfa-totp-help">{m.auth_mfa_code_help()}</p>
   </div>
   {#if errorMessage}
     <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
@@ -95,6 +97,6 @@
     type="submit"
     disabled={isSubmitting}
   >
-    {isSubmitting ? 'Verifying...' : 'Verify MFA code'}
+    {isSubmitting ? m.auth_mfa_verifying() : m.auth_mfa_verify()}
   </button>
 </form>

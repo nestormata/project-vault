@@ -3,6 +3,7 @@
   import { ApiClientError } from '$lib/api/client.js'
   import type { OrgRole } from './onboarding-logic.js'
   import { canCreateProject, onboardingCopy } from './onboarding-logic.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let {
     orgName,
@@ -76,7 +77,9 @@
       type="text"
       autocomplete="off"
       bind:value={projectName}
+      aria-describedby="onboarding-project-name-help"
     />
+    <FormHelpText id="onboarding-project-name-help" kind="text" />
     {#if errorMessage}
       <p class="mt-2 text-sm text-red-700" role="alert">{errorMessage}</p>
     {/if}

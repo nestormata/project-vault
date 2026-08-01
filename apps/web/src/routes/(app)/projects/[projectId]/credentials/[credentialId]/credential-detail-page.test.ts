@@ -433,6 +433,48 @@ describe('credential detail +page.svelte', () => {
     expect(await screen.findByText(/billing-worker \(service\)/)).toBeTruthy()
   })
 
+  it('shows an inline error and makes no request when the dependent-system name is whitespace', async () => {
+    render(CredentialDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
+
+    const nameInput = screen.getByLabelText(/system name/i) as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: ' \t\n ' } })
+    await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+
+    expect(addCredentialDependencyMock).not.toHaveBeenCalled()
+    expect((await screen.findByRole('alert')).textContent).toContain('System name is required.')
+    expect(nameInput.getAttribute('aria-describedby')).toContain('dependency-system-name-error')
+  })
+
+  it('clears the local error on a corrected retry and submits the trimmed name once', async () => {
+    addCredentialDependencyMock.mockResolvedValue({
+      id: 'dep-2',
+      systemName: 'billing-worker',
+      systemType: 'other',
+      notes: null,
+    })
+    render(CredentialDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
+
+    const nameInput = screen.getByLabelText(/system name/i) as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: '   ' } })
+    await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+    expect(await screen.findByText('System name is required.')).toBeTruthy()
+
+    await fireEvent.input(nameInput, { target: { value: '  billing-worker  ' } })
+    await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+
+    await vi.waitFor(() =>
+      expect(addCredentialDependencyMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        { systemName: 'billing-worker', systemType: 'other' }
+      )
+    )
+    expect(screen.queryByText('System name is required.')).toBeNull()
+  })
+
   it('add dependency: too_many_dependencies shows its own error, not the generic one', async () => {
     addCredentialDependencyMock.mockRejectedValue(
       new ApiClientError(422, { code: 'too_many_dependencies' }, 'Too many dependent systems')

@@ -15,16 +15,20 @@ vi.mock('$app/navigation', () => ({
 }))
 
 import MfaLoginForm from './MfaLoginForm.svelte'
+import { setLocale } from '$lib/paraglide/runtime.js'
 
 async function submitCode(code = '123456') {
-  await fireEvent.input(screen.getByLabelText(/authenticator code/i), {
+  await fireEvent.input(screen.getByLabelText(/authenticator code|código del autenticador/i), {
     target: { value: code },
   })
-  await fireEvent.click(screen.getByRole('button', { name: /verify mfa code/i }))
+  await fireEvent.click(
+    screen.getByRole('button', { name: /verify mfa code|verificar código mfa/i })
+  )
 }
 
 describe('MfaLoginForm', () => {
   beforeEach(() => {
+    document.cookie = 'PARAGLIDE_LOCALE=en; path=/'
     verifyMfaLoginMock.mockReset()
     getCurrentUserMock.mockReset()
     gotoMock.mockClear()
@@ -44,6 +48,45 @@ describe('MfaLoginForm', () => {
 
     expect(verifyMfaLoginMock).toHaveBeenCalledWith(fetch, { mfaToken: 'tok-1', totp: '123456' })
     await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/dashboard'))
+  })
+
+  it('renders the complete Spanish MFA challenge and localizes invalid-code feedback', async () => {
+    setLocale('es', { reload: false })
+    verifyMfaLoginMock.mockRejectedValue({ code: 'invalid_totp' })
+
+    render(MfaLoginForm, { props: { mfaToken: 'tok-1', onExpired: vi.fn() } })
+
+    expect(screen.getByLabelText('Código del autenticador')).toBeTruthy()
+    const codeInput = screen.getByLabelText('Código del autenticador')
+    expect(codeInput.getAttribute('aria-describedby')).toBe('mfa-totp-help')
+    expect(
+      screen.getByText('Introduce el código de seis dígitos de tu aplicación autenticadora.')
+    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Verificar código MFA' })).toBeTruthy()
+    await submitCode('000000')
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /ese código no fue aceptado. prueba el siguiente código/i
+    )
+  })
+
+  it('localizes expired-token and generic MFA failures in Spanish', async () => {
+    setLocale('es', { reload: false })
+    verifyMfaLoginMock.mockRejectedValueOnce({ code: 'mfa_token_expired' })
+    const onExpired = vi.fn()
+
+    render(MfaLoginForm, { props: { mfaToken: 'tok-1', onExpired } })
+    await submitCode()
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Tu paso de inicio de sesión expiró. Inicia sesión de nuevo.'
+    )
+    expect(onExpired).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    verifyMfaLoginMock.mockRejectedValueOnce('unexpected failure')
+    render(MfaLoginForm, { props: { mfaToken: 'tok-2', onExpired: vi.fn() } })
+    await submitCode()
+    expect((await screen.findByRole('alert')).textContent).toBe('La verificación MFA falló.')
   })
 
   it('runs the authenticated completion callback so login handoffs are not skipped', async () => {

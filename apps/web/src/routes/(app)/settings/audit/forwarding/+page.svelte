@@ -2,6 +2,7 @@
   import { resolve } from '$app/paths'
   import { updateAuditForwarding, updateAuditRetention } from '$lib/api/audit.js'
   import { ApiClientError } from '$lib/api/client.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { data } = $props()
 
@@ -162,14 +163,27 @@
 
       <div class="mt-4 flex gap-4 text-sm">
         <label class="flex items-center gap-2">
-          <input type="radio" name="forwarderType" value="webhook" bind:group={forwarderType} />
+          <input
+            type="radio"
+            name="forwarderType"
+            value="webhook"
+            bind:group={forwarderType}
+            aria-describedby="forwarder-type-help"
+          />
           Webhook
         </label>
         <label class="flex items-center gap-2">
-          <input type="radio" name="forwarderType" value="s3" bind:group={forwarderType} />
+          <input
+            type="radio"
+            name="forwarderType"
+            value="s3"
+            bind:group={forwarderType}
+            aria-describedby="forwarder-type-help"
+          />
           S3-compatible
         </label>
       </div>
+      <FormHelpText id="forwarder-type-help" kind="radio" />
 
       {#if forwarderType === 'webhook'}
         <div class="mt-4 flex flex-col gap-3">
@@ -181,7 +195,9 @@
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={webhookUrl}
               placeholder="https://siem.example.com/ingest"
+              aria-describedby="webhook-url-help"
             />
+            <FormHelpText id="webhook-url-help" kind="text" />
           </label>
           <label class="flex flex-col text-sm text-slate-700" for="webhook-secret">
             Secret header
@@ -191,7 +207,9 @@
               autocomplete="off"
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={secretHeader}
+              aria-describedby="webhook-secret-help"
             />
+            <FormHelpText id="webhook-secret-help" kind="secret" />
           </label>
           <button
             type="button"
@@ -222,7 +240,9 @@
               type="text"
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={bucket}
+              aria-describedby="s3-bucket-help"
             />
+            <FormHelpText id="s3-bucket-help" kind="text" />
           </label>
           <label class="flex flex-col text-sm text-slate-700" for="s3-region">
             Region
@@ -231,7 +251,9 @@
               type="text"
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={region}
+              aria-describedby="s3-region-help"
             />
+            <FormHelpText id="s3-region-help" kind="text" />
           </label>
           <label class="flex flex-col text-sm text-slate-700" for="s3-access-key">
             Access key ID
@@ -241,7 +263,9 @@
               autocomplete="off"
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={accessKeyId}
+              aria-describedby="s3-access-key-help"
             />
+            <FormHelpText id="s3-access-key-help" kind="secret" />
           </label>
           <label class="flex flex-col text-sm text-slate-700" for="s3-secret-key">
             Secret access key
@@ -251,7 +275,9 @@
               autocomplete="off"
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={secretAccessKey}
+              aria-describedby="s3-secret-key-help"
             />
+            <FormHelpText id="s3-secret-key-help" kind="secret" />
           </label>
           <label class="flex flex-col text-sm text-slate-700" for="s3-prefix">
             Prefix (optional)
@@ -260,7 +286,9 @@
               type="text"
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={prefix}
+              aria-describedby="s3-prefix-help"
             />
+            <FormHelpText id="s3-prefix-help" kind="text" />
           </label>
           <label class="flex flex-col text-sm text-slate-700" for="s3-endpoint">
             Endpoint (optional, e.g. Minio)
@@ -269,7 +297,9 @@
               type="text"
               class="rounded-lg border border-slate-300 px-2 py-1"
               bind:value={endpoint}
+              aria-describedby="s3-endpoint-help"
             />
+            <FormHelpText id="s3-endpoint-help" kind="text" />
           </label>
           <button
             type="button"
@@ -307,11 +337,18 @@
             class="rounded-lg border border-slate-300 px-2 py-1"
             bind:value={retentionDaysInput}
             disabled={retainForever}
+            aria-describedby="retention-days-help"
           />
+          <FormHelpText id="retention-days-help" kind="date" />
         </label>
         <label class="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" bind:checked={retainForever} />
+          <input
+            type="checkbox"
+            bind:checked={retainForever}
+            aria-describedby="retain-forever-help"
+          />
           Never automatically delete audit events
+          <FormHelpText id="retain-forever-help" kind="checkbox" />
         </label>
         <button
           type="button"

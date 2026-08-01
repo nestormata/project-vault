@@ -12,6 +12,7 @@
   } from '$lib/api/audit.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { toIsoRangeStart, toIsoRangeEnd } from '$lib/audit/date-range.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   const MAX_POLLS = 60
   const POLL_INTERVAL_MS = 2000
@@ -124,6 +125,7 @@
         type="date"
         class="rounded-lg border border-slate-300 px-2 py-1"
         bind:value={from}
+        aria-describedby="audit-export-date-help"
       />
     </label>
     <label class="flex flex-col text-sm text-slate-700" for="export-to">
@@ -133,8 +135,10 @@
         type="date"
         class="rounded-lg border border-slate-300 px-2 py-1"
         bind:value={to}
+        aria-describedby="audit-export-date-help"
       />
     </label>
+    <FormHelpText id="audit-export-date-help" kind="date" />
     <button
       type="button"
       class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"

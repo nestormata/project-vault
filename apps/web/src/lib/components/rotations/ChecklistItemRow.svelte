@@ -14,6 +14,7 @@
     mapRotationMutationError,
   } from './rotation-copy.js'
   import type { RotationChecklistItem } from '@project-vault/shared'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let {
     item,
@@ -262,7 +263,9 @@
         <textarea
           id={`fail-reason-${item.id}`}
           class="w-full rounded-xl border border-slate-300 px-3 py-2"
-          bind:value={failReason}></textarea>
+          bind:value={failReason}
+          aria-describedby={`checklist-fail-reason-help-${item.id}`}></textarea>
+        <FormHelpText id={`checklist-fail-reason-help-${item.id}`} kind="text" />
         {#if failReasonError}
           <p class="text-sm text-red-700">{failReasonError}</p>
         {/if}
@@ -274,7 +277,9 @@
           class="rounded-xl border border-slate-300 px-3 py-2"
           type="datetime-local"
           bind:value={retryScheduledAt}
+          aria-describedby={`checklist-retry-at-help-${item.id}`}
         />
+        <FormHelpText id={`checklist-retry-at-help-${item.id}`} kind="date" />
         <div class="flex gap-2">
           <button
             type="button"

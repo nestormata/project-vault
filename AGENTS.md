@@ -43,6 +43,9 @@ Full rules: `_bmad-output/implementation-artifacts/product-surface-contract.md`
 4. **G4 — Persona journey** — user-facing stories include a persona journey stub; QA verifies
    before `done`.
 5. **P3 — Status sync** — story file `Status:` must match `sprint-status.yaml` on every transition.
+6. **G5 — Contextual input guidance** — every user-facing input, select, checkbox, and equivalent
+   form control must have visible, localized plain-language explanatory text wired through
+   `aria-describedby`; do not omit guidance because a control seems self-explanatory.
 
 ## Docker port isolation (multiple worktrees in parallel)
 

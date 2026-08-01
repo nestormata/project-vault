@@ -4,6 +4,8 @@
   and [id]/+page.svelte forms, which otherwise repeat this exact label+input+error block per field.
 -->
 <script lang="ts">
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+
   let {
     id,
     label,
@@ -35,11 +37,13 @@
     {min}
     {max}
     {value}
+    aria-describedby={`${id}-help`}
     oninput={(event) => {
       const raw = event.currentTarget.value
       value = type === 'number' ? Number(raw) : raw
     }}
   />
+  <FormHelpText id={`${id}-help`} kind={type === 'date' ? 'date' : 'text'} />
   {#if error}
     <p class="text-sm text-red-700">{error}</p>
   {/if}

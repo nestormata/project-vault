@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { enhance } from '$app/forms'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { alertId }: { alertId: string } = $props()
 </script>
@@ -18,7 +19,9 @@
     required
     placeholder="Reason for dismissing"
     class="rounded border border-gray-300 px-2 py-1 text-xs"
+    aria-describedby="dismiss-dormancy-reason-help"
   />
+  <FormHelpText id="dismiss-dormancy-reason-help" kind="text" />
   <button type="submit" class="text-xs font-medium text-gray-600 hover:text-gray-800">
     Dismiss
   </button>

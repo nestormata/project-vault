@@ -7,6 +7,7 @@
   } from '$lib/api/credentials.js'
   import { ApiClientError } from '$lib/api/client.js'
   import AccessNotice from '$lib/components/credentials/AccessNotice.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { data } = $props()
 
@@ -171,7 +172,9 @@
         accept=".env,.json,text/plain,application/json"
         disabled={uploading}
         onchange={(event) => void handleFileSelect(event)}
+        aria-describedby="import-file-help"
       />
+      <FormHelpText id="import-file-help" kind="text" />
       {#if uploading}
         <p class="mt-3 text-sm text-slate-600">Parsing file…</p>
       {/if}

@@ -72,6 +72,17 @@ Before story → `done` (after code review):
 - [ ] Viewer/member/admin role gates verified if story is role-sensitive
 - [ ] API-only stories: evaluator path documented and honest
 
+## G5 — Contextual input guidance
+
+Every user-facing input, select, checkbox, and equivalent form control must have visible,
+localized, plain-language explanatory text describing what it controls, why it matters, or what
+trade-off it carries. The control must reference that explanation through `aria-describedby` (or an
+equivalent accessible relationship). This applies to new and existing forms; a control must not be
+omitted merely because its behavior seems self-explanatory to the implementer.
+
+Before an epic can close, any existing controls found without this guidance must be fixed or have a
+tracked follow-up story in `sprint-status.yaml`.
+
 ---
 
 ## P3 — Story status sync

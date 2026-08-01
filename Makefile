@@ -32,6 +32,7 @@ endif
 # exact same targets below resolve to the container-internal Compose network instead — see
 # Makefile's `ci`/`ci-inner` targets and AGENTS.md "CI runs in Docker".
 DB_CONN_HOST ?= localhost
+BASE_REF ?= main
 
 # --- DB connection strings -----------------------------------------------
 # postgres = superuser, only used to run migrations (creates the vault_app
@@ -41,7 +42,7 @@ DB_CONN_HOST ?= localhost
 DB_URL_SUPERUSER ?= postgresql://postgres:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
-.PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues \
+.PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance \
         db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner \
         bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-prod docker-prod-down \
@@ -82,6 +83,12 @@ audit: ## Audit dependencies for high/critical CVEs
 
 sonar-issues: ## List open SonarCloud issues (needs SONAR_TOKEN/SONAR_ORGANIZATION/SONAR_PROJECT_KEY in .env; see docs/sonarqube.md)
 	./scripts/sonar-issues.sh
+
+check-public-safety: ## Review changed/untracked content for publication risks (BASE_REF=main; strict blocks all findings)
+	BASE_REF=$(BASE_REF) pnpm check-public-safety -- --base "$(BASE_REF)" --strict
+
+check-form-guidance: ## Verify every user-facing web form control has localized accessible help
+	pnpm check-form-guidance
 
 # --- Operator bootstrap (Epic 1 retro D2) ------------------------------------
 
@@ -146,6 +153,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-sprint-status-rollup
 	pnpm check-story-references
 	pnpm check-psc-tbd-tracking
+	$(MAKE) check-form-guidance
+	pnpm check-public-safety -- --base main --strict
+	pnpm check-story-review-deferrals
 	pnpm check-extension-api-version-skew
 	pnpm check-alert-pending-epic3
 	$(MAKE) test

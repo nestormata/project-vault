@@ -5,6 +5,7 @@ import {
   archiveProject,
   createProject,
   getProjectDashboard,
+  listAllProjects,
   listProjects,
   suggestProjectSlug,
   unarchiveProject,
@@ -71,6 +72,134 @@ describe('project API helpers', () => {
     await listProjects(fetchFn, { includeArchived: false })
 
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/projects', expect.anything())
+  })
+
+  const project = (id: string) => ({
+    id,
+    name: `Project ${id}`,
+    slug: id,
+    description: null,
+    role: 'member',
+    credentialCount: 0,
+    expiringCount: 0,
+    alertCount: 0,
+    tags: [],
+    createdAt: '2026-07-01T00:00:00.000Z',
+    archivedAt: null,
+    isArchived: false,
+  })
+
+  it('listAllProjects requests pages sequentially and includes project 101', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => project(`project-${index + 1}`))
+    const secondPage = [project('project-101')]
+    const fetchFn = vi.fn().mockImplementation(async (path: string) => {
+      if (path === '/api/v1/projects?page=1&limit=100') {
+        return jsonResponse({
+          data: { items: firstPage, total: 101, page: 1, limit: 100, hasNext: true },
+        })
+      }
+      if (path === '/api/v1/projects?page=2&limit=100') {
+        return jsonResponse({
+          data: { items: secondPage, total: 101, page: 2, limit: 100, hasNext: false },
+        })
+      }
+      throw new Error(`unexpected request ${path}`)
+    })
+
+    const result = await listAllProjects(fetchFn)
+
+    expect(result.items).toHaveLength(101)
+    expect(result.items.at(-1)?.id).toBe('project-101')
+    expect(fetchFn.mock.calls.map(([path]) => path)).toEqual([
+      '/api/v1/projects?page=1&limit=100',
+      '/api/v1/projects?page=2&limit=100',
+    ])
+  })
+
+  it('listAllProjects accepts an empty first page and exactly one full page', async () => {
+    const emptyFetch = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ data: { items: [], total: 0, page: 1, limit: 100, hasNext: false } })
+      )
+    await expect(listAllProjects(emptyFetch)).resolves.toMatchObject({ items: [], total: 0 })
+
+    const fullPage = Array.from({ length: 100 }, (_, index) => project(`project-${index + 1}`))
+    const fullFetch = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ data: { items: fullPage, total: 100, page: 1, limit: 100, hasNext: false } })
+      )
+    await expect(listAllProjects(fullFetch)).resolves.toMatchObject({ items: fullPage, total: 100 })
+    expect(fullFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      name: 'empty continuation page',
+      response: { items: [], total: 101, page: 2, limit: 100, hasNext: true },
+    },
+    {
+      name: 'non-advancing page number',
+      response: { items: [project('project-1')], total: 1, page: 1, limit: 100, hasNext: false },
+    },
+    {
+      name: 'duplicate project id',
+      response: {
+        items: [project('project-1'), project('project-1')],
+        total: 2,
+        page: 1,
+        limit: 100,
+        hasNext: false,
+      },
+    },
+  ])('listAllProjects rejects $name pagination metadata', async ({ response }) => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            items: [project('project-1')],
+            total: 101,
+            page: 1,
+            limit: 100,
+            hasNext: true,
+          },
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ data: response }))
+
+    await expect(listAllProjects(fetchFn)).rejects.toThrow(/pagination/i)
+  })
+
+  it('listAllProjects propagates a later-page request failure', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: { items: [project('project-1')], total: 2, page: 1, limit: 100, hasNext: true },
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ message: 'temporarily unavailable' }, { status: 503 }))
+
+    await expect(listAllProjects(fetchFn)).rejects.toBeInstanceOf(ApiClientError)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('listAllProjects rejects a total that is lower than the accumulated items', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          items: [project('project-1'), project('project-2')],
+          total: 1,
+          page: 1,
+          limit: 100,
+          hasNext: false,
+        },
+      })
+    )
+
+    await expect(listAllProjects(fetchFn)).rejects.toThrow(/pagination/i)
   })
 
   it('archiveProject posts to the archive URL and returns archive state', async () => {

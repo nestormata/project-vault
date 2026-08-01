@@ -9,6 +9,7 @@
     parseTagsInput,
     validateCredentialForm,
   } from './onboarding-logic.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let {
     orgRole,
@@ -105,7 +106,9 @@
           autocomplete="off"
           bind:value={name}
           aria-invalid={fieldErrors.name ? 'true' : undefined}
+          aria-describedby="onboarding-credential-name-help"
         />
+        <FormHelpText id="onboarding-credential-name-help" kind="text" />
         {#if fieldErrors.name}
           <p class="mt-1 text-sm text-red-700" role="alert">{fieldErrors.name}</p>
         {/if}
@@ -126,6 +129,7 @@
             aria-label="Credential value"
             bind:value
             aria-invalid={fieldErrors.value ? 'true' : undefined}
+            aria-describedby="onboarding-credential-value-help"
           />
           <button
             class="min-h-11 min-w-11 rounded-xl border border-slate-300 px-3 text-sm"
@@ -139,6 +143,7 @@
             {revealValue ? 'Hide' : 'Show'}
           </button>
         </div>
+        <FormHelpText id="onboarding-credential-value-help" kind="secret" />
         {#if fieldErrors.value}
           <p class="mt-1 text-sm text-red-700" role="alert">{fieldErrors.value}</p>
         {/if}
@@ -152,7 +157,9 @@
           id="credential-description"
           class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3"
           rows="2"
-          bind:value={description}></textarea>
+          bind:value={description}
+          aria-describedby="onboarding-credential-description-help"></textarea>
+        <FormHelpText id="onboarding-credential-description-help" kind="text" />
       </div>
 
       <div>
@@ -165,7 +172,9 @@
           type="text"
           placeholder="production, api"
           bind:value={tags}
+          aria-describedby="onboarding-credential-tags-help"
         />
+        <FormHelpText id="onboarding-credential-tags-help" kind="text" />
       </div>
 
       {#if apiError}

@@ -214,6 +214,11 @@
                       class="w-full rounded-lg border border-slate-300 px-2 py-1"
                       aria-label="Domain"
                       bind:value={editDomain}
+                      aria-describedby={`edit-domain-help-${row.id}`}
+                    />
+                    <FormHelpText
+                      id={`edit-domain-help-${row.id}`}
+                      text={m.form_help_sso_domain()}
                     />
                   </td>
                   <td class="px-4 py-3">
@@ -221,6 +226,11 @@
                       class="w-full rounded-lg border border-slate-300 px-2 py-1"
                       aria-label="Provider name"
                       bind:value={editProvider}
+                      aria-describedby={`edit-provider-help-${row.id}`}
+                    />
+                    <FormHelpText
+                      id={`edit-provider-help-${row.id}`}
+                      text={m.form_help_sso_provider_name()}
                     />
                   </td>
                   <td class="px-4 py-3 text-slate-600">{formatCreatedAt(row.createdAt)}</td>

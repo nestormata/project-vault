@@ -16,6 +16,7 @@
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import ChecklistItemRow from '$lib/components/rotations/ChecklistItemRow.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import StaleRecoveryBanner from '$lib/components/rotations/StaleRecoveryBanner.svelte'
   import {
     canActOnChecklist,
@@ -337,8 +338,13 @@
 
 {#snippet noDependenciesCheckbox()}
   <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
-    <input type="checkbox" bind:checked={acknowledgedNoDependencies} />
+    <input
+      type="checkbox"
+      bind:checked={acknowledgedNoDependencies}
+      aria-describedby="rotation-no-dependencies-help"
+    />
     I confirm this credential is updated in all consuming systems
+    <FormHelpText id="rotation-no-dependencies-help" kind="checkbox" />
   </label>
 {/snippet}
 
@@ -529,8 +535,13 @@
           {@render noDependenciesCheckbox()}
         {:else if !allConfirmed}
           <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
-            <input type="checkbox" bind:checked={acknowledgeIncompleteChecklistForPromote} />
+            <input
+              type="checkbox"
+              bind:checked={acknowledgeIncompleteChecklistForPromote}
+              aria-describedby="rotation-promote-incomplete-help"
+            />
             Promote even though not every system has confirmed yet
+            <FormHelpText id="rotation-promote-incomplete-help" kind="checkbox" />
           </label>
         {/if}
         <button
@@ -561,8 +572,13 @@
           {@render noDependenciesCheckbox()}
         {:else if !allConfirmed}
           <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
-            <input type="checkbox" bind:checked={acknowledgeIncompleteChecklistForRetire} />
+            <input
+              type="checkbox"
+              bind:checked={acknowledgeIncompleteChecklistForRetire}
+              aria-describedby="rotation-retire-incomplete-help"
+            />
             Retire even though not every system has confirmed yet
+            <FormHelpText id="rotation-retire-incomplete-help" kind="checkbox" />
           </label>
         {/if}
         <button
