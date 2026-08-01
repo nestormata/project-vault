@@ -714,6 +714,12 @@ const envSchema = z
     // needs more than 10 registrations across its 4 journeys). Same E2E-only override scoping.
     AUTH_REGISTER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
 
+    // Story 14.4: the public email-domain lookup has its own 20/15-minute limiter because it
+    // performs a pre-auth database lookup. The E2E stack raises this independently so the full
+    // serial browser suite can exercise the SSO path after earlier login journeys without
+    // weakening the production default.
+    AUTH_SSO_DOMAIN_LOOKUP_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+
     SMTP_HOST: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
     SMTP_PORT: z.preprocess(
       (v) => (v === '' ? undefined : v),

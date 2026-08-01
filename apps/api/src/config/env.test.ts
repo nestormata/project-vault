@@ -1355,4 +1355,27 @@ describe('env', () => {
       expect(exitSpy).not.toHaveBeenCalled()
     })
   })
+
+  describe('Story 14.4: SSO domain-lookup rate limit', () => {
+    it('defaults to the production-safe 20 requests per window', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.AUTH_SSO_DOMAIN_LOOKUP_RATE_LIMIT_MAX).toBe(20)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts the explicit E2E-only override', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        AUTH_SSO_DOMAIN_LOOKUP_RATE_LIMIT_MAX: '1000',
+      }
+      const { env } = await import('./env.js')
+      expect(env.AUTH_SSO_DOMAIN_LOOKUP_RATE_LIMIT_MAX).toBe(1000)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
 })
