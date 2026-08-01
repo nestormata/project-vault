@@ -23,3 +23,10 @@ BMAD artifacts. Private story and sprint governance checks live in the companion
 
 Run focused package tests while developing, then run `make ci` once after the complete change set
 is ready.
+
+## CodeQL language coverage
+
+The public repository's CodeQL default setup scans GitHub Actions and JavaScript/TypeScript. Private
+BMAD tooling is maintained in the companion private repository, so Python is intentionally not part
+of the public CodeQL language set. Update the repository CodeQL default-setup configuration whenever
+the public language footprint changes.
