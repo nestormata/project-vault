@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test'
 //
 // baseURL/WEB_HOST_PORT: the web app is a thin server-side proxy for every /api/v1/* request
 // (apps/web/src/routes/api/v1/[...path]/+server.ts), so Playwright only ever needs ONE origin —
-// the web app's own — matching this repo's AGENTS.md "Docker port isolation" convention where
+// the web app's own — matching this repo's docs/development.md "Docker port isolation" convention where
 // WEB_HOST_PORT may have been bumped by `make fix-ports` away from the 5173 default.
 const webHostPort = process.env['WEB_HOST_PORT'] ?? '5173'
 const baseURL = process.env['E2E_BASE_URL'] ?? `http://localhost:${webHostPort}`

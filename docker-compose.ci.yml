@@ -1,5 +1,5 @@
-# Overlay for `make ci` (see Makefile's `ci` target + Dockerfile.ci + AGENTS.md "CI runs in
-# Docker"). Applied on top of docker-compose.yml via `-f docker-compose.yml -f docker-compose.ci.yml`
+# Overlay for `make ci` (see Makefile's `ci` target + Dockerfile.ci + docs/development.md).
+# Applied on top of docker-compose.yml via `-f docker-compose.yml -f docker-compose.ci.yml`
 # so the `ci` service joins the same Compose project/network as `db` — reachable by its service
 # name `db` on the internal Docker network, never through a host-published port. That's the whole
 # point: Compose already namespaces containers/volumes/networks per-worktree (by directory name),
@@ -22,11 +22,12 @@ services:
       DB_HOST_PORT: "5432"
     volumes:
       # .git is excluded from the image (.dockerignore) — bind-mounted read-only here instead so
-      # git-history-dependent checks (openapi.json drift, story-status sync) see the real repo
+      # git-history-dependent checks (generated-spec/openapi drift and other repository checks) see
+      # the real repo
       # without requiring an image rebuild on every commit.
       #
-      # In a git worktree (see AGENTS.md "Docker port isolation" — worktrees live under
-      # .claude/worktrees/), ./.git is a plain *file* containing `gitdir: <absolute host path
+      # In a git worktree (see docs/development.md "Docker port isolation"), ./.git is a plain
+      # *file* containing `gitdir: <absolute host path
       # under the main repo's .git/worktrees/...>`, not a directory. Bind-mounting only that file
       # leaves the absolute path it points to missing inside the container, so git fails with
       # "not a git repository: (null)". Mounting the resolved common git dir (GIT_COMMON_DIR, set

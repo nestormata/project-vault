@@ -3,7 +3,7 @@
 **Version:** 1.2  
 **Date:** 2026-06-24  
 **Status:** Story 1.5 ready-for-dev (includes Red Team AC-23–25 + FMEA AC-26–30)  
-**Story:** `_bmad-output/implementation-artifacts/1-5-vault-initialization-and-master-key-management.md`  
+**Implementation context:** Initial vault initialization and master-key management implementation.
 **FR:** FR60  
 **Related:** `specs/cryptographic-architecture.md` (research baseline), `specs/multi-tenancy-data-model.md` (`vault_app` role)
 

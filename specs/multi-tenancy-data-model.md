@@ -2,7 +2,7 @@
 
 **Status:** Active — v1 design  
 **Version:** 1.0  
-**Source:** `_bmad-output/planning-artifacts/research/technical-multi-tenancy-data-model-research-2026-04-09.md`  
+**Source:** Internal technical research; the public decisions and implementation contract are captured in this specification.
 **ADRs:** ADR-16 (isolation strategy), ADR-17 (org_id denorm policy), ADR-18 (reporting bypass)
 
 ---
@@ -479,5 +479,5 @@ Phase 2:         LXC 101 — new app server (Server 02), new tenants land here
 Phase 3 (VIP):   LXC 102 — dedicated server, single-tenant cell
 ```
 
-**Full analysis:** `design-artifacts/central-auth-tenant-routing-analysis.md`, `design-artifacts/cell-based-architecture-analysis.md`, `docs/federated-multi-tenant-architecture-analysis.md`  
-**Research addendum:** `_bmad-output/planning-artifacts/research/technical-multi-tenancy-data-model-research-2026-04-09.md` (Addendum A.1–A.7)
+**Full analysis:** Additional architecture analysis is maintained in the private development repository; the public design baseline is documented here.
+**Research addendum:** Internal research addendum (A.1–A.7), maintained separately from this public specification.
