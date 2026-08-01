@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
+import { ApiClientError } from '$lib/api/client.js'
 
 const updateServiceEndpointMock = vi.hoisted(() => vi.fn())
 const deleteServiceEndpointMock = vi.hoisted(() => vi.fn())
@@ -35,6 +36,10 @@ const ENDPOINT = {
   url: 'https://api.example.com/health (redacted)',
   checkFrequencyMinutes: 5,
   downThresholdFailures: 2,
+  status: 'healthy',
+  healthCheckPaused: false,
+  healthCheckPausedAt: null,
+  healthCheckPausedBy: null,
 }
 
 function baseData(overrides: Record<string, unknown> = {}) {
@@ -70,6 +75,85 @@ describe('service-endpoint detail +page.svelte', () => {
     render(ServiceEndpointDetailPage, { props: { data: baseData({ orgRole: 'viewer' }) } })
     expect(await screen.findByText(/checked every 5 min/i)).toBeTruthy()
     expect(screen.queryByLabelText('Name')).toBeNull()
+  })
+
+  it('shows paused state as last-known status and hides mutation controls from viewers', async () => {
+    getHealthHistoryMock.mockResolvedValue(emptyHistory())
+    render(ServiceEndpointDetailPage, {
+      props: {
+        data: baseData({
+          orgRole: 'viewer',
+          endpoint: {
+            ...ENDPOINT,
+            status: 'down',
+            healthCheckPaused: true,
+            healthCheckPausedAt: '2026-08-01T10:00:00.000Z',
+            healthCheckPausedBy: null,
+          },
+        }),
+      },
+    })
+
+    expect(await screen.findByText('Monitoring paused')).toBeTruthy()
+    expect(screen.getByText('Down', { exact: true })).toBeTruthy()
+    expect(screen.getByText('Monitoring paused').parentElement?.textContent).toMatch(
+      /no new probes, health\s+history, alerts/i
+    )
+    expect(screen.queryByRole('button', { name: /resume monitoring/i })).toBeNull()
+  })
+
+  it('requires confirmation, sends only the pause field, and renders the server response', async () => {
+    getHealthHistoryMock.mockResolvedValue(emptyHistory())
+    updateServiceEndpointMock.mockResolvedValue({
+      ...ENDPOINT,
+      healthCheckPaused: true,
+      healthCheckPausedAt: '2026-08-01T10:00:00.000Z',
+      healthCheckPausedBy: 'user-1',
+    })
+    render(ServiceEndpointDetailPage, { props: { data: baseData() } })
+    await screen.findByLabelText('Name')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause monitoring' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(updateServiceEndpointMock).not.toHaveBeenCalled()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause monitoring' }))
+    const confirmButtons = screen.getAllByRole('button', { name: 'Pause monitoring' })
+    const confirmButton = confirmButtons.at(-1)
+    expect(confirmButton).toBeDefined()
+    if (!confirmButton) throw new Error('confirmation button was not rendered')
+    await fireEvent.click(confirmButton)
+    await waitFor(() =>
+      expect(updateServiceEndpointMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        ENDPOINT.id,
+        { healthCheckPaused: true }
+      )
+    )
+    expect(await screen.findByText('Monitoring paused')).toBeTruthy()
+  })
+
+  it('maps a denied pause without changing the displayed state', async () => {
+    getHealthHistoryMock.mockResolvedValue(emptyHistory())
+    updateServiceEndpointMock.mockRejectedValue(
+      new ApiClientError(403, { message: 'Forbidden' }, 'Forbidden')
+    )
+    render(ServiceEndpointDetailPage, { props: { data: baseData() } })
+    await screen.findByLabelText('Name')
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Pause monitoring' }))
+    const confirmButtons = screen.getAllByRole('button', { name: 'Pause monitoring' })
+    const confirmButton = confirmButtons.at(-1)
+    expect(confirmButton).toBeDefined()
+    if (!confirmButton) throw new Error('confirmation button was not rendered')
+    await fireEvent.click(confirmButton)
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /permission to change monitoring/i
+    )
+    expect(screen.getByText('Monitoring active')).toBeTruthy()
   })
 
   it('blocks submit client-side when the name is cleared, with no API call', async () => {

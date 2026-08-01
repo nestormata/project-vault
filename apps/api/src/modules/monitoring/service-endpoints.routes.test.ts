@@ -75,7 +75,7 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
   let app: TestApp
   let owner: { userId: string; orgId: string; cookies: Cookies }
   let other: { userId: string; orgId: string; cookies: Cookies }
-  const { addUserToOrg } = createMembershipTestHelpers({
+  const { addProjectMember, addUserToOrg } = createMembershipTestHelpers({
     emailPrefix: 'svc-endpoint',
     orgNamePrefix: 'SvcEndpoint',
   })
@@ -270,17 +270,18 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
       expect(res.json()).toMatchObject({ code: 'service_endpoint_not_found' })
     })
 
-    it('requires member+ role — a viewer gets 403 (same minimumRole as the list route)', async () => {
+    it('allows a project viewer to read endpoint state without mutation access', async () => {
       const projectId = await createProjectViaApi(app, owner.cookies, 'se-get-403')
       const created = await createEndpointExpect201(app, owner.cookies, projectId)
       const viewer = await addUserToOrg(app, owner.orgId, 'se-get-viewer', { orgRole: 'viewer' })
+      await addProjectMember(owner.orgId, projectId, viewer.userId, 'viewer')
 
       const res = await app.inject({
         method: 'GET',
         url: itemUrl(projectId, created['id'] as string),
         headers: { cookie: cookieHeader(viewer.cookies) },
       })
-      expect(res.statusCode).toBe(403)
+      expect(res.statusCode).toBe(200)
     })
 
     it('allows a plain member (the minimumRole boundary) to read', async () => {

@@ -40,6 +40,9 @@ function makeEndpoint(overrides: Record<string, unknown> = {}) {
     status: 'healthy' as const,
     consecutiveFailures: 0,
     lastCheckedAt: null,
+    healthCheckPaused: false,
+    healthCheckPausedAt: null,
+    healthCheckPausedBy: null,
     createdBy: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
@@ -80,6 +83,22 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     expect(screen.getByText('healthy')).toBeTruthy()
     expect(screen.getByText(/every 5 min/i)).toBeTruthy()
     expect(screen.getByText(/2 consecutive/i)).toBeTruthy()
+  })
+
+  it('shows paused monitoring and the last-known status without relying on color', () => {
+    render(ServiceEndpointsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'viewer',
+          endpoints: [makeEndpoint({ status: 'down', healthCheckPaused: true })],
+          alerts: [],
+          notFound: false,
+        },
+      },
+    })
+    expect(screen.getByText('Monitoring paused')).toBeTruthy()
+    expect(screen.getByText('Down', { exact: true })).toBeTruthy()
   })
 
   it('AC-F1: embeds the ActiveAlertsPanel with the loaded alerts', () => {
