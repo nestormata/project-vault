@@ -22,8 +22,11 @@ export type ReviewDeferralViolation = {
 
 const STORIES_DIR = '_bmad-output/implementation-artifacts'
 const ACTIVE_STATUSES = new Set(['backlog', 'ready-for-dev', 'in-progress', 'review', 'done'])
-const REVIEW_DEFERRAL = /^\s*-\s*\[ \]\s+.*\[Review\].*(?:\bdefer(?:red)?\b|\bfuture\b|\bfollow[- ]?up\b|\bout of scope\b|\bnot built\b|\bleft unfixed\b|\bleft open\b|\bunresolved\b)/i
-const FOLLOW_UP_KEY = /follow[- ]?up\s*:\s*`?([0-9]+-[0-9]+-[a-z0-9-]+)`?/i
+const REVIEW_ITEM = /^\s*-\s*\[ \]\s+/i
+const REVIEW_TAG = /\[Review\]/i
+const REVIEW_DEFERRAL_LANGUAGE =
+  /\b(?:defer(?:red)?|future|follow[- ]?up|out of scope|not built|left unfixed|left open|unresolved)\b/i
+const FOLLOW_UP_KEY = /follow[- ]?up\s*:\s*`?(\d+-\d+-[a-z0-9-]+)`?/i
 
 export function hasTrackedFollowUp(
   line: string,
@@ -40,7 +43,13 @@ export function findUntrackedReviewDeferrals(
   return content
     .split(/\r?\n/)
     .map((text, index) => ({ line: index + 1, text }))
-    .filter(({ text }) => REVIEW_DEFERRAL.test(text) && !hasTrackedFollowUp(text, sprintStatuses))
+    .filter(
+      ({ text }) =>
+        REVIEW_ITEM.test(text) &&
+        REVIEW_TAG.test(text) &&
+        REVIEW_DEFERRAL_LANGUAGE.test(text) &&
+        !hasTrackedFollowUp(text, sprintStatuses)
+    )
 }
 
 export function scanStoryReviewDeferrals(rootDir = process.cwd()): ReviewDeferralViolation[] {
@@ -68,7 +77,9 @@ export function scanStoryReviewDeferrals(rootDir = process.cwd()): ReviewDeferra
 
 function report(violations: ReviewDeferralViolation[]): void {
   if (violations.length === 0) {
-    process.stdout.write('check-story-review-deferrals: all unchecked review deferrals have live follow-ups — OK\n')
+    process.stdout.write(
+      'check-story-review-deferrals: all unchecked review deferrals have live follow-ups — OK\n'
+    )
     return
   }
 

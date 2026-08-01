@@ -41,7 +41,7 @@ function lineAt(source: string, offset: number): number {
 }
 
 function readQuotedAttribute(attrs: string, name: string): string | undefined {
-  const pattern = new RegExp(`\\b${name}\\s*=\\s*[\\"']([^\\"']*)[\\"']`, 'i')
+  const pattern = new RegExp(String.raw`\b${name}\s*=\s*["']([^"']*)["']`, 'i')
   return pattern.exec(attrs)?.[1]
 }
 
@@ -116,7 +116,8 @@ function extractStaticIds(source: string): ElementId[] {
 
 function controlName(control: NativeControl): string {
   const id = readQuotedAttribute(control.attrs, 'id')
-  return `${control.tag}${id ? `#${id}` : `[${control.type}]`}`
+  const suffix = id === undefined ? `[${control.type}]` : `#${id}`
+  return control.tag + suffix
 }
 
 function indexStaticIds(ids: ElementId[]): Map<string, ElementId[]> {

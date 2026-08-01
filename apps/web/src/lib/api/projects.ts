@@ -128,7 +128,7 @@ export async function listAllProjects(fetchFn: typeof fetch): Promise<ProjectLis
     const response = await listProjects(fetchFn, { page, limit: PROJECT_LIST_PAGE_SIZE })
     validateProjectPageMetadata(response, page)
 
-    if (total === undefined) total = response.total
+    total ??= response.total
     if (response.total !== total) {
       throw invalidProjectPagination(`page ${page} changed total`)
     }

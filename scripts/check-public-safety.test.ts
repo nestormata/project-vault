@@ -7,6 +7,15 @@ describe('check-public-safety', () => {
     expect(findings.some((finding) => finding.rule === 'secret-assignment')).toBe(true)
   })
 
+  it('does not treat secret-related help markup as a secret assignment', () => {
+    const findings = scanText(
+      'apps/web/src/lib/components/auth/LoginForm.svelte',
+      '<FormHelpText id="login-password-help" kind="secret" />'
+    )
+
+    expect(findings.some((finding) => finding.rule === 'secret-assignment')).toBe(false)
+  })
+
   it('detects personal and machine-specific information', () => {
     const findings = scanText(
       'notes.md',

@@ -42,14 +42,18 @@ const SECRET_PATTERNS: Array<{ rule: string; pattern: RegExp; reason: string }> 
       /\b(?:gh[pousr]_|github_pat_|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20,}\.)[A-Za-z0-9_./=-]{12,}/,
     reason: 'credential-shaped token value detected',
   },
-  {
-    rule: 'secret-assignment',
-    pattern:
-      /\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
-    reason: 'literal secret-like assignment detected',
-  },
 ]
 
+const SECRET_ASSIGNMENT_PATTERNS = [
+  /\bpassword\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
+  /\bpasswd\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
+  /\bsecret\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
+  /\bapi[_-]?key\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
+  /\baccess[_-]?token\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
+  /\brefresh[_-]?token\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
+  /\bclient[_-]?secret\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
+]
+const NO_NEWLINE_MARKER = String.raw`\ No newline at end of file`
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
 const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees\/)/
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
@@ -74,9 +78,22 @@ function makeFinding(
 }
 
 function scanSecretPatterns(file: string, line: number, text: string): PublicSafetyFinding[] {
-  return SECRET_PATTERNS.filter(({ pattern }) => pattern.test(text)).map(({ rule, reason }) =>
-    makeFinding(file, line, text, rule, 'critical', reason)
+  const findings = SECRET_PATTERNS.filter(({ pattern }) => pattern.test(text)).map(
+    ({ rule, reason }) => makeFinding(file, line, text, rule, 'critical', reason)
   )
+  if (SECRET_ASSIGNMENT_PATTERNS.some((pattern) => pattern.test(text))) {
+    findings.push(
+      makeFinding(
+        file,
+        line,
+        text,
+        'secret-assignment',
+        'critical',
+        'literal secret-like assignment detected'
+      )
+    )
+  }
+  return findings
 }
 
 function scanMetadata(file: string, line: number, text: string): PublicSafetyFinding[] {
@@ -199,7 +216,7 @@ function parseAddedLines(diff: string): AddedLine[] {
       file = rawLine.slice('+++ b/'.length)
       continue
     }
-    const hunk = /^@@ -[0-9,]+ \+([0-9]+)/.exec(rawLine)
+    const hunk = /^@@ -\d[\d,]* \+(\d+)/.exec(rawLine)
     if (hunk) {
       newLine = Number(hunk[1])
       continue
@@ -208,7 +225,7 @@ function parseAddedLines(diff: string): AddedLine[] {
     if (rawLine.startsWith('+')) {
       added.push({ file, line: newLine, text: rawLine.slice(1) })
       newLine += 1
-    } else if (!rawLine.startsWith('-') && rawLine !== '\\ No newline at end of file') {
+    } else if (!rawLine.startsWith('-') && rawLine !== NO_NEWLINE_MARKER) {
       newLine += 1
     }
   }
@@ -216,7 +233,11 @@ function parseAddedLines(diff: string): AddedLine[] {
 }
 
 function git(root: string, args: string[]): string {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+  return execFileSync('/usr/bin/git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, PATH: '/usr/bin:/bin' },
+  })
 }
 
 export function scanChangedContent(
