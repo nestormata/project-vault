@@ -1010,7 +1010,9 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'PATCH /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
     action: 'mutation',
     auditEvent: 'service_endpoint.updated',
-    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+    // The Story 20.2 handler selects the pause/resume event inside this wrapper while still
+    // receiving secureCtx.tx, so the route-audit scanner can verify the same-transaction call.
+    sameTransactionAuditService: 'auditServiceEndpointUpdate',
   },
   'DELETE /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
     action: 'mutation',

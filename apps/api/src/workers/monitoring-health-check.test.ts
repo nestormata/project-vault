@@ -17,6 +17,7 @@ import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.j
 import { withExpiryAlertTestOrg, queueEntriesForTemplate } from './expiry-alert-test-helpers.js'
 import {
   probeServiceEndpoint,
+  fetchDueServiceEndpoints,
   runHealthCheckTick,
   runWithConcurrencyLimit,
 } from './monitoring-health-check.js'
@@ -371,12 +372,53 @@ describe('runHealthCheckTick (AC 4-8, 16 — DB integration)', () => {
         checkFrequencyMinutes: 5,
         lastCheckedAt: new Date(Date.now() - 6 * 60_000), // 6 minutes ago, due every 5 min
       })
+      const pausedEndpoint = await seedEndpoint(orgId, project.id, {
+        name: 'paused',
+        url: 'https://paused-canary.example.com/health',
+        lastCheckedAt: null,
+        healthCheckPausedAt: new Date(),
+        healthCheckPausedBy: ownerId,
+      })
+
+      expect(pausedEndpoint.healthCheckPausedAt).toBeInstanceOf(Date)
+      const dueBeforeTick = await fetchDueServiceEndpoints(orgId)
+      expect(dueBeforeTick.map((row) => row.id)).toContain(dueEndpoint.id)
+      expect(dueBeforeTick.map((row) => row.id)).not.toContain(pausedEndpoint.id)
 
       await runHealthCheckTick(boss)
 
       expect(await healthChecksFor(orgId, notDueEndpoint.id)).toHaveLength(0)
       expect(await healthChecksFor(orgId, dueEndpoint.id)).toHaveLength(1)
+      expect(await healthChecksFor(orgId, pausedEndpoint.id)).toHaveLength(0)
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).not.toContain(
+        'https://paused-canary.example.com/health'
+      )
       void fetchMock
+    })
+  }, 60_000)
+
+  it('discards an in-flight probe result when pause commits before apply', async () => {
+    const { boss } = createMockBoss()
+    await boss.start()
+
+    await withExpiryAlertTestOrg('health-check-pause-race', async ({ orgId, ownerId }) => {
+      const project = await insertTestProject(orgId, { userId: ownerId, slug: 'hc-pause-race' })
+      const endpoint = await seedEndpoint(orgId, project.id, { lastCheckedAt: null })
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        await withOrg(orgId, (tx) =>
+          tx
+            .update(serviceEndpoints)
+            .set({ healthCheckPausedAt: new Date(), healthCheckPausedBy: ownerId })
+            .where(eq(serviceEndpoints.id, endpoint.id))
+        )
+        return jsonResponse(200)
+      })
+
+      await runHealthCheckTick(boss)
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(await healthChecksFor(orgId, endpoint.id)).toHaveLength(0)
+      expect((await fetchEndpoint(orgId, endpoint.id))?.status).toBe('healthy')
     })
   }, 60_000)
 

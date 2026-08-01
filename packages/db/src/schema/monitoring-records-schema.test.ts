@@ -76,9 +76,16 @@ describe('service_endpoints schema (Story 6.2 ADR-6.2-01)', () => {
     expect(serviceEndpoints.consecutiveFailures).toBeDefined()
     expect(serviceEndpoints.lastCheckedAt).toBeDefined()
     expect(serviceEndpoints.downEpisodeStartedAt).toBeDefined()
+    expect(serviceEndpoints.healthCheckPausedAt).toBeDefined()
+    expect(serviceEndpoints.healthCheckPausedBy).toBeDefined()
     expect(serviceEndpoints.createdBy).toBeDefined()
     expect(serviceEndpoints.createdAt).toBeDefined()
     expect(serviceEndpoints.updatedAt).toBeDefined()
+  })
+
+  it('models an explicit durable health-check pause without changing last-known status', () => {
+    expect(serviceEndpoints.healthCheckPausedAt).toBeDefined()
+    expect(serviceEndpoints.healthCheckPausedBy).toBeDefined()
   })
 })
 

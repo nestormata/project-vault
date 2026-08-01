@@ -1,5 +1,5 @@
 import { performance } from 'node:perf_hooks'
-import { sql } from 'drizzle-orm'
+import { and, isNull, sql } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { serviceEndpoints } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
@@ -156,13 +156,16 @@ export async function runWithConcurrencyLimit<T>(
 
 type ServiceEndpointRow = typeof serviceEndpoints.$inferSelect
 
-async function fetchDueServiceEndpoints(orgId: string): Promise<ServiceEndpointRow[]> {
+export async function fetchDueServiceEndpoints(orgId: string): Promise<ServiceEndpointRow[]> {
   return runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
     tx
       .select()
       .from(serviceEndpoints)
       .where(
-        sql`${serviceEndpoints.lastCheckedAt} IS NULL OR ${serviceEndpoints.lastCheckedAt} <= now() - (${serviceEndpoints.checkFrequencyMinutes} || ' minutes')::interval`
+        and(
+          sql`(${serviceEndpoints.lastCheckedAt} IS NULL OR ${serviceEndpoints.lastCheckedAt} <= now() - (${serviceEndpoints.checkFrequencyMinutes} || ' minutes')::interval)`,
+          isNull(serviceEndpoints.healthCheckPausedAt)
+        )
       )
   )
 }

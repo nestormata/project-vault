@@ -26,6 +26,10 @@ export const serviceEndpoints = pgTable(
     status: text('status').notNull().default('healthy'),
     consecutiveFailures: integer('consecutive_failures').notNull().default(0),
     lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    healthCheckPausedAt: timestamp('health_check_paused_at', { withTimezone: true }),
+    healthCheckPausedBy: uuid('health_check_paused_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     // Internal bookkeeping only for ADR-6.2-05's episodeKey — deliberately excluded from every
     // response schema (adversarial-review finding 23); not part of the public API contract.
     downEpisodeStartedAt: timestamp('down_episode_started_at', { withTimezone: true }),

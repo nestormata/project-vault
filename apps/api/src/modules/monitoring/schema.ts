@@ -178,6 +178,7 @@ export const UpdateServiceEndpointBodySchema = z
     url: serviceEndpointWriteFields.url.optional(),
     checkFrequencyMinutes: serviceEndpointWriteFields.checkFrequencyMinutes.optional(),
     downThresholdFailures: serviceEndpointWriteFields.downThresholdFailures.optional(),
+    healthCheckPaused: z.boolean().optional(),
   })
   .strict()
   .meta({ id: 'UpdateServiceEndpointBody' })
@@ -196,6 +197,9 @@ export const ServiceEndpointSchema = z
     status: z.enum(['healthy', 'degraded', 'down']),
     consecutiveFailures: z.number().int(),
     lastCheckedAt: z.iso.datetime().nullable(),
+    healthCheckPaused: z.boolean(),
+    healthCheckPausedAt: z.iso.datetime().nullable(),
+    healthCheckPausedBy: z.uuid().nullable(),
     createdBy: z.uuid().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),

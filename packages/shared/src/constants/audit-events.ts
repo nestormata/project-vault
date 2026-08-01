@@ -67,6 +67,8 @@ export const AuditEvent = {
   DOMAIN_RECORD_DELETED: 'domain_record.deleted',
   SERVICE_ENDPOINT_CREATED: 'service_endpoint.created',
   SERVICE_ENDPOINT_UPDATED: 'service_endpoint.updated',
+  SERVICE_ENDPOINT_HEALTH_CHECK_PAUSED: 'service_endpoint.health_check_paused',
+  SERVICE_ENDPOINT_HEALTH_CHECK_RESUMED: 'service_endpoint.health_check_resumed',
   SERVICE_ENDPOINT_DELETED: 'service_endpoint.deleted',
   MONITORING_ALERT_SNOOZED: 'monitoring_alert.snoozed',
   MONITORING_ALERT_DISMISSED: 'monitoring_alert.dismissed',

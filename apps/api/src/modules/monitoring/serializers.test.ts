@@ -99,6 +99,8 @@ describe('serializeServiceEndpoint', () => {
       status: HEALTHY_STATUS,
       consecutiveFailures: 0,
       lastCheckedAt: new Date('2026-01-05T00:00:00.000Z'),
+      healthCheckPausedAt: null,
+      healthCheckPausedBy: null,
       downEpisodeStartedAt: null,
     } as Parameters<typeof serializeServiceEndpoint>[0])
     expect(withDate.lastCheckedAt).toBe('2026-01-05T00:00:00.000Z')
@@ -113,6 +115,8 @@ describe('serializeServiceEndpoint', () => {
       status: HEALTHY_STATUS,
       consecutiveFailures: 0,
       lastCheckedAt: null,
+      healthCheckPausedAt: null,
+      healthCheckPausedBy: null,
       downEpisodeStartedAt: null,
     } as Parameters<typeof serializeServiceEndpoint>[0])
     expect(withoutDate.lastCheckedAt).toBeNull()

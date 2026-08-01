@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Tx } from '@project-vault/db'
+import { AuditEvent } from '@project-vault/shared'
 import type { ZodType } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -144,6 +145,45 @@ export async function writeMonitoringAuditOrFailClosed(
 
 function rawBodyOf(req: FastifyRequest): Record<string, unknown> {
   return req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {}
+}
+
+async function auditServiceEndpointUpdate(
+  req: FastifyRequest,
+  tx: Tx,
+  input: {
+    orgId: string
+    actorUserId: string
+    projectId: string
+    updated: Awaited<ReturnType<typeof updateServiceEndpoint>>
+    rawBody: Record<string, unknown>
+  }
+): Promise<void> {
+  if (!input.updated) return
+  const idempotentPauseRequest =
+    'healthCheckPaused' in input.rawBody &&
+    Object.keys(input.rawBody).length === 1 &&
+    !input.updated.pauseTransition
+  if (idempotentPauseRequest) return
+  await writeMonitoringAuditOrFailClosed(req, tx, {
+    resourceType: 'service_endpoint',
+    orgId: input.orgId,
+    actorUserId: input.actorUserId,
+    eventType:
+      input.updated.pauseTransition === 'paused'
+        ? AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_PAUSED
+        : input.updated.pauseTransition === 'resumed'
+          ? AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_RESUMED
+          : AuditEvent.SERVICE_ENDPOINT_UPDATED,
+    resourceId: input.updated.row.id,
+    payload: {
+      projectId: input.projectId,
+      ...(input.updated.pauseTransition
+        ? { healthCheckPaused: input.updated.pauseTransition === 'paused' }
+        : input.rawBody),
+      url: serializeServiceEndpoint(input.updated.row).url,
+    },
+    request: req,
+  })
 }
 
 export const LIST_RATE_LIMIT = { max: 120, timeWindowMs: 60_000 }
@@ -1015,6 +1055,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       try {
         updated = await updateServiceEndpoint(secureCtx.tx, {
           ...params,
+          userId: secureCtx.auth.userId,
           body,
           rawBody: rawBodyOf(req),
         })
@@ -1024,17 +1065,15 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       }
       if (!updated) return reply.status(404).send(SERVICE_ENDPOINT_NOT_FOUND)
 
-      await writeMonitoringAuditOrFailClosed(req, secureCtx.tx, {
-        resourceType: 'service_endpoint',
+      await auditServiceEndpointUpdate(req, secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         actorUserId: secureCtx.auth.userId,
-        eventType: 'service_endpoint.updated',
-        resourceId: updated.id,
-        payload: { ...rawBodyOf(req), url: serializeServiceEndpoint(updated).url },
-        request: req,
+        projectId: params.projectId,
+        updated,
+        rawBody: rawBodyOf(req),
       })
 
-      return { data: serializeServiceEndpoint(updated) }
+      return { data: serializeServiceEndpoint(updated.row) }
     },
   })
 

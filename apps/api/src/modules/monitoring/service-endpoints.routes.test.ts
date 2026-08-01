@@ -298,6 +298,55 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
   })
 
   describe('PATCH /:projectId/service-endpoints/:id', () => {
+    it('pauses and resumes monitoring with an explicit state and transition audit events', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-pause')
+      const created = await createEndpointExpect201(app, owner.cookies, projectId)
+
+      const paused = await app.inject({
+        method: 'PATCH',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { healthCheckPaused: true },
+      })
+      expect(paused.statusCode).toBe(200)
+      expect(paused.json()).toMatchObject({
+        data: { healthCheckPaused: true, healthCheckPausedBy: owner.userId },
+      })
+
+      const repeatedPause = await app.inject({
+        method: 'PATCH',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { healthCheckPaused: true },
+      })
+      expect(repeatedPause.statusCode).toBe(200)
+
+      const resumed = await app.inject({
+        method: 'PATCH',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { healthCheckPaused: false },
+      })
+      expect(resumed.statusCode).toBe(200)
+      expect(resumed.json()).toMatchObject({ data: { healthCheckPaused: false } })
+
+      const events = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ eventType: auditLogEntries.eventType })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.resourceId, created['id'] as string))
+      )
+      expect(events.map((event) => event.eventType)).toEqual(
+        expect.arrayContaining([
+          'service_endpoint.health_check_paused',
+          'service_endpoint.health_check_resumed',
+        ])
+      )
+      expect(
+        events.filter((event) => event.eventType === 'service_endpoint.health_check_paused')
+      ).toHaveLength(1)
+    })
+
     it('updates checkFrequencyMinutes (happy path)', async () => {
       const projectId = await createProjectViaApi(app, owner.cookies, 'se-patch')
       const created = await createEndpointExpect201(app, owner.cookies, projectId)
