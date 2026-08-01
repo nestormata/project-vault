@@ -6,7 +6,8 @@ import {
   FIELD_VALUE_MAX_LENGTH,
   MAX_FIELDS_PER_SECRET,
 } from '../credential-templates.js'
-import { ActiveRotationBadgeSchema } from './rotations.js'
+import { ActiveRotationBadgeSchema, RotationStatusSchema } from './rotations.js'
+import { SystemTypeSchema } from './credential-dependencies.js'
 
 // Story 13.2 — structured multi-field secrets.
 export const CredentialTemplateSchema = z
@@ -132,6 +133,81 @@ export const CredentialVersionSummarySchema = z
 
 export const CredentialStatusSchema = z.enum(['active', 'expiring', 'expired'])
 
+// Story 20.1 — deliberately metadata-only, closed, versioned read model for a credential's
+// operational context. Keep this separate from CredentialDetailSchema: detail may evolve for the
+// web surface, whereas this is an additive external/API contract.
+const CredentialOperationalContextTypeSchema = z.union([
+  z.literal('legacy'),
+  z.literal('untemplated'),
+  CredentialTemplateSchema,
+  z.literal('custom'),
+])
+
+const CredentialOperationalContextLocationSchema = z
+  .object({
+    dependencyId: z.uuid(),
+    systemName: z.string(),
+    systemType: SystemTypeSchema,
+    fieldKey: FieldKeySchema.nullable(),
+  })
+  .strict()
+
+export const CredentialOperationalContextSchema = z
+  .object({
+    contractVersion: z.literal(1),
+    credential: z
+      .object({
+        id: z.uuid(),
+        projectId: z.uuid(),
+        name: z.string(),
+        credentialType: CredentialOperationalContextTypeSchema,
+        account: z
+          .object({
+            status: z.literal('not_available'),
+            fieldKeys: z.array(FieldKeySchema).max(MAX_FIELDS_PER_SECRET),
+          })
+          .strict(),
+        rotationSchedule: z.string().nullable(),
+        expiresAt: z.iso.datetime().nullable(),
+        cacheable: z.boolean(),
+        currentVersion: z
+          .object({
+            number: z.number().int().positive(),
+            schemaVersion: z.number().int().positive(),
+          })
+          .strict()
+          .nullable(),
+      })
+      .strict(),
+    rotation: z
+      .object({
+        state: z.union([RotationStatusSchema, z.literal('none')]),
+        id: z.uuid().nullable(),
+        initiatedAt: z.iso.datetime().nullable(),
+        completedAt: z.iso.datetime().nullable(),
+        targetFields: z.array(FieldKeySchema).max(MAX_FIELDS_PER_SECRET).nullable(),
+      })
+      .strict(),
+    usage: z
+      .object({
+        activeDependencyCount: z.number().int().nonnegative(),
+        locations: z
+          .object({
+            items: z.array(CredentialOperationalContextLocationSchema).max(100),
+            nextCursor: z.string().min(1).max(2048).nullable(),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict()
+  .meta({ id: 'CredentialOperationalContextV1' })
+
+export const CredentialOperationalContextResponseSchema = z
+  .object({ data: CredentialOperationalContextSchema })
+  .strict()
+  .meta({ id: 'CredentialOperationalContextResponse' })
+
 export const CredentialSummarySchema = z
   .object({
     id: z.uuid(),
@@ -160,3 +236,4 @@ export type CredentialFieldsValue = z.infer<typeof CredentialFieldsValueSchema>
 export type CredentialVersionSummary = z.infer<typeof CredentialVersionSummarySchema>
 export type CredentialStatus = z.infer<typeof CredentialStatusSchema>
 export type CredentialSummary = z.infer<typeof CredentialSummarySchema>
+export type CredentialOperationalContext = z.infer<typeof CredentialOperationalContextSchema>

@@ -29,4 +29,10 @@ describe('check-public-safety', () => {
   it('does not flag ordinary implementation text', () => {
     expect(scanText('apps/web/src/lib/example.ts', 'export const answer = 42')).toEqual([])
   })
+
+  it('does not treat the shared field-count domain constant as an environment variable', () => {
+    expect(scanText('packages/shared/src/schemas/credentials.ts', 'MAX_FIELDS_PER_SECRET')).toEqual(
+      []
+    )
+  })
 })

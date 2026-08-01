@@ -393,6 +393,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Credential metadata read returns no secret value; detail page load path (ADR-2.8-05).',
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/operational-context': {
+    action: 'read',
+    auditOmissionReason:
+      'Credential operational-context read returns metadata only; no values or business audit event.',
+    reviewer: SECURITY_OWNER,
+  },
   'PUT /api/v1/projects/:projectId/credentials/:credentialId/tags': {
     action: 'mutation',
     auditEvent: 'credential.tags_updated',
