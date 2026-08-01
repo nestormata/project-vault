@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Tx } from '@project-vault/db'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, type AuthAuditEventType } from '@project-vault/shared'
 import type { ZodType } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -164,16 +164,17 @@ async function auditServiceEndpointUpdate(
     Object.keys(input.rawBody).length === 1 &&
     !input.updated.pauseTransition
   if (idempotentPauseRequest) return
+  let eventType: AuthAuditEventType = AuditEvent.SERVICE_ENDPOINT_UPDATED
+  if (input.updated.pauseTransition === 'paused') {
+    eventType = AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_PAUSED
+  } else if (input.updated.pauseTransition === 'resumed') {
+    eventType = AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_RESUMED
+  }
   await writeMonitoringAuditOrFailClosed(req, tx, {
     resourceType: 'service_endpoint',
     orgId: input.orgId,
     actorUserId: input.actorUserId,
-    eventType:
-      input.updated.pauseTransition === 'paused'
-        ? AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_PAUSED
-        : input.updated.pauseTransition === 'resumed'
-          ? AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_RESUMED
-          : AuditEvent.SERVICE_ENDPOINT_UPDATED,
+    eventType,
     resourceId: input.updated.row.id,
     payload: {
       projectId: input.projectId,

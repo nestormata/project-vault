@@ -73,8 +73,7 @@ function encodeCursor(
 
 function classifyCredentialType(schemaVersion: number | null, fieldMeta: FieldMeta[]) {
   if (schemaVersion === 1) return 'legacy' as const
-  if (fieldMeta.length === 0 || fieldMeta.every((field) => field.template === undefined))
-    return 'untemplated' as const
+  if (fieldMeta.every((field) => field.template === undefined)) return 'untemplated' as const
   const template = fieldMeta[0]?.template
   if (!template || template === 'custom' || fieldMeta.some((field) => field.template !== template))
     return 'custom' as const

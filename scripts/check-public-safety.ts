@@ -131,7 +131,7 @@ function scanMetadata(file: string, line: number, text: string): PublicSafetyFin
       )
     )
   }
-  const secretName = text.match(SECRET_ENV_NAME_PATTERN)?.[0]
+  const secretName = SECRET_ENV_NAME_PATTERN.exec(text)?.[0]
   if (secretName && !SAFE_PUBLIC_CONSTANT_NAMES.has(secretName)) {
     findings.push(
       makeFinding(
