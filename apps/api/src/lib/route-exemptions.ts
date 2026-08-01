@@ -393,6 +393,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Credential metadata read returns no secret value; detail page load path (ADR-2.8-05).',
     reviewer: SECURITY_OWNER,
   },
+  'GET /api/v1/projects/:projectId/credentials/:credentialId/operational-context': {
+    action: 'read',
+    auditOmissionReason:
+      'Credential operational-context read returns metadata only; no values or business audit event.',
+    reviewer: SECURITY_OWNER,
+  },
   'PUT /api/v1/projects/:projectId/credentials/:credentialId/tags': {
     action: 'mutation',
     auditEvent: 'credential.tags_updated',
@@ -1004,7 +1010,9 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'PATCH /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
     action: 'mutation',
     auditEvent: 'service_endpoint.updated',
-    sameTransactionAuditService: WRITE_MONITORING_AUDIT_OR_FAIL_CLOSED,
+    // The Story 20.2 handler selects the pause/resume event inside this wrapper while still
+    // receiving secureCtx.tx, so the route-audit scanner can verify the same-transaction call.
+    sameTransactionAuditService: 'auditServiceEndpointUpdate',
   },
   'DELETE /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId': {
     action: 'mutation',

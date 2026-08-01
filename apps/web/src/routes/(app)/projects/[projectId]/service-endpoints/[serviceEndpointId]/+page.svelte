@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
+  import { ApiClientError } from '$lib/api/client.js'
   import {
     CHECK_FREQUENCY_MINUTES,
     deleteServiceEndpoint,
@@ -16,6 +17,7 @@
     DetailTitleCard,
     EntityNotFoundBanner,
     FieldInput,
+    MonitoringPauseControl,
     ReadOnlyField,
     ReadOnlyPanel,
     SaveChangesFooter,
@@ -34,6 +36,8 @@
   // forbids trying to "restore" or edit around the redaction.
   const form = new ServiceEndpointFormState()
   let deleteError = $state<string | null>(null)
+  let pauseSubmitting = $state(false)
+  let pauseError = $state<string | null>(null)
 
   $effect(() => {
     form.name = data.endpoint?.name ?? ''
@@ -77,6 +81,31 @@
       form.errorMessage = mapped.errorMessage
     } finally {
       form.submitting = false
+    }
+  }
+
+  async function handlePauseToggle(paused: boolean): Promise<boolean> {
+    if (!data.endpoint || pauseSubmitting || !canManage) return false
+    pauseSubmitting = true
+    pauseError = null
+    try {
+      const updated = await updateServiceEndpoint(fetch, data.projectId, data.endpoint.id, {
+        healthCheckPaused: paused,
+      })
+      data = { ...data, endpoint: updated }
+      return true
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status === 404) {
+        data = { ...data, endpoint: null, notFound: true }
+        return false
+      }
+      pauseError = mapMonitoringSubmitError(
+        error,
+        'You do not have permission to change monitoring state.'
+      ).errorMessage
+      return false
+    } finally {
+      pauseSubmitting = false
     }
   }
 
@@ -163,6 +192,18 @@
       title={data.endpoint.name}
       note={`Current URL: ${data.endpoint.url}`}
     />
+
+    {#if data.endpoint.healthCheckPaused === true || data.endpoint.healthCheckPaused === false}
+      <MonitoringPauseControl
+        paused={data.endpoint.healthCheckPaused}
+        pausedAt={data.endpoint.healthCheckPausedAt ?? null}
+        lastKnownStatus={data.endpoint.status}
+        {canManage}
+        submitting={pauseSubmitting}
+        errorMessage={pauseError}
+        onToggle={handlePauseToggle}
+      />
+    {/if}
 
     {#if canManage}
       <AssetForm onsubmit={submitForm}>

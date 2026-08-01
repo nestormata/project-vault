@@ -25,6 +25,7 @@ services:
       VAULT_ALLOW_REMOTE_INIT: 'true'
       AUTH_RATE_LIMIT_MAX: '100000'
       AUTH_REGISTER_RATE_LIMIT_MAX: '1000'
+      AUTH_SSO_DOMAIN_LOOKUP_RATE_LIMIT_MAX: '1000'
       # Story 14.3 Task 10: loads the in-process mock external-IdP extension (never a real
       # network call) so sso-login.spec.ts can exercise start -> callback -> session-issuance
       # end to end. Deliberately only set here, never in the base docker-compose.yml/.env.example

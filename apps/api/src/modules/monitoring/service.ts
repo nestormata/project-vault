@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, lte, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
   paymentRecords,
@@ -452,6 +452,9 @@ export function serializeServiceEndpoint(row: typeof serviceEndpoints.$inferSele
     status: row.status as 'healthy' | 'degraded' | 'down',
     consecutiveFailures: row.consecutiveFailures,
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
+    healthCheckPaused: row.healthCheckPausedAt !== null,
+    healthCheckPausedAt: row.healthCheckPausedAt?.toISOString() ?? null,
+    healthCheckPausedBy: row.healthCheckPausedBy,
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -528,28 +531,24 @@ export async function updateServiceEndpoint(
   input: {
     serviceEndpointId: string
     projectId: string
+    userId: string
     body: UpdateServiceEndpointBody
     rawBody: Record<string, unknown>
   }
 ) {
-  const updates: Record<string, unknown> = {}
-  if ('name' in input.rawBody) updates.name = input.body.name
-  if ('url' in input.rawBody && input.body.url !== undefined) {
-    await assertUrlIsMonitorable(input.body.url) // AC 3: re-validated per AC 2
-    updates.url = input.body.url
-  }
-  if ('checkFrequencyMinutes' in input.rawBody) {
-    updates.checkFrequencyMinutes = input.body.checkFrequencyMinutes
-  }
-  if ('downThresholdFailures' in input.rawBody) {
-    updates.downThresholdFailures = input.body.downThresholdFailures
-  }
+  const updates = await buildServiceEndpointUpdates(input)
+  const pause = await resolvePauseUpdate(tx, input)
+  if (pause.notFound) return null
+  Object.assign(updates, pause.updates)
 
   if (Object.keys(updates).length === 0) {
-    return findServiceEndpointInProject(tx, {
-      serviceEndpointId: input.serviceEndpointId,
-      projectId: input.projectId,
-    })
+    const row =
+      pause.current ??
+      (await findServiceEndpointInProject(tx, {
+        serviceEndpointId: input.serviceEndpointId,
+        projectId: input.projectId,
+      }))
+    return row ? { row, pauseTransition: null } : null
   }
 
   const [updated] = await tx
@@ -562,7 +561,64 @@ export async function updateServiceEndpoint(
       )
     )
     .returning()
-  return updated ?? null
+  return updated ? { row: updated, pauseTransition: pause.transition } : null
+}
+
+async function buildServiceEndpointUpdates(input: {
+  body: UpdateServiceEndpointBody
+  rawBody: Record<string, unknown>
+}): Promise<Record<string, unknown>> {
+  const updates: Record<string, unknown> = {}
+  if ('name' in input.rawBody) updates.name = input.body.name
+  if ('url' in input.rawBody && input.body.url !== undefined) {
+    await assertUrlIsMonitorable(input.body.url)
+    updates.url = input.body.url
+  }
+  if ('checkFrequencyMinutes' in input.rawBody) {
+    updates.checkFrequencyMinutes = input.body.checkFrequencyMinutes
+  }
+  if ('downThresholdFailures' in input.rawBody) {
+    updates.downThresholdFailures = input.body.downThresholdFailures
+  }
+  return updates
+}
+
+async function resolvePauseUpdate(
+  tx: Tx,
+  input: {
+    serviceEndpointId: string
+    projectId: string
+    userId: string
+    body: UpdateServiceEndpointBody
+    rawBody: Record<string, unknown>
+  }
+): Promise<{
+  updates: Record<string, unknown>
+  transition: 'paused' | 'resumed' | null
+  current: typeof serviceEndpoints.$inferSelect | null
+  notFound: boolean
+}> {
+  if (!('healthCheckPaused' in input.rawBody)) {
+    return { updates: {}, transition: null, current: null, notFound: false }
+  }
+  const current = await findServiceEndpointInProject(tx, {
+    serviceEndpointId: input.serviceEndpointId,
+    projectId: input.projectId,
+  })
+  if (!current) return { updates: {}, transition: null, current: null, notFound: true }
+  const shouldPause = input.body.healthCheckPaused === true
+  if ((current.healthCheckPausedAt !== null) === shouldPause) {
+    return { updates: {}, transition: null, current, notFound: false }
+  }
+  return {
+    updates: {
+      healthCheckPausedAt: shouldPause ? new Date() : null,
+      healthCheckPausedBy: shouldPause ? input.userId : null,
+    },
+    transition: shouldPause ? 'paused' : 'resumed',
+    current,
+    notFound: false,
+  }
 }
 
 /**
@@ -682,6 +738,23 @@ export async function applyHealthCheckResult(
   updatedRow: typeof serviceEndpoints.$inferSelect
 }> {
   const checkedAt = input.checkedAt ?? new Date()
+
+  // A due-query result may race with a committed pause while the HTTP probe is in flight.
+  // Re-read the authoritative row in the write transaction so a paused endpoint cannot acquire
+  // a post-pause history row, status transition, alert, notification, or audit event.
+  const [currentEndpoint] = await tx
+    .select()
+    .from(serviceEndpoints)
+    .where(
+      and(
+        eq(serviceEndpoints.id, input.serviceEndpoint.id),
+        isNull(serviceEndpoints.healthCheckPausedAt)
+      )
+    )
+    .limit(1)
+  if (!currentEndpoint) {
+    return { alertFired: null, episodeKey: null, updatedRow: input.serviceEndpoint }
+  }
 
   await tx.insert(endpointHealthChecks).values({
     serviceEndpointId: input.serviceEndpoint.id,

@@ -11,6 +11,9 @@ export type ServiceEndpoint = {
   url: string
   status: ServiceEndpointStatus
   lastCheckedAt: string | null
+  healthCheckPaused: boolean
+  healthCheckPausedAt: string | null
+  healthCheckPausedBy: string | null
 }
 
 // Story 6.4 (Task 2): the full record shape used by the new create/edit/detail pages — a
@@ -34,6 +37,9 @@ export type ServiceEndpointDetail = {
   status: ServiceEndpointStatus
   consecutiveFailures: number
   lastCheckedAt: string | null
+  healthCheckPaused: boolean
+  healthCheckPausedAt: string | null
+  healthCheckPausedBy: string | null
   createdBy: string | null
   createdAt: string
   updatedAt: string
@@ -51,6 +57,7 @@ export type UpdateServiceEndpointRequest = {
   url?: string
   checkFrequencyMinutes?: number
   downThresholdFailures?: number
+  healthCheckPaused?: boolean
 }
 
 export type HealthHistoryFailureReason = 'timeout' | 'http_error' | 'network_error' | 'ssrf_blocked'

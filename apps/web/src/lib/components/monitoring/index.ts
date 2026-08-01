@@ -25,5 +25,6 @@ export { default as ProjectNotFoundBanner } from './ProjectNotFoundBanner.svelte
 export { default as ReadOnlyField } from './ReadOnlyField.svelte'
 export { default as ReadOnlyPanel } from './ReadOnlyPanel.svelte'
 export { default as SaveChangesFooter } from './SaveChangesFooter.svelte'
+export { default as MonitoringPauseControl } from './MonitoringPauseControl.svelte'
 export { ServiceEndpointFormState } from './service-endpoint-form-state.svelte.js'
 export { default as ServiceEndpointFrequencyThresholdFields } from './ServiceEndpointFrequencyThresholdFields.svelte'

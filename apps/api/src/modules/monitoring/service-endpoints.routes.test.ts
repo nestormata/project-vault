@@ -75,7 +75,7 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
   let app: TestApp
   let owner: { userId: string; orgId: string; cookies: Cookies }
   let other: { userId: string; orgId: string; cookies: Cookies }
-  const { addUserToOrg } = createMembershipTestHelpers({
+  const { addProjectMember, addUserToOrg } = createMembershipTestHelpers({
     emailPrefix: 'svc-endpoint',
     orgNamePrefix: 'SvcEndpoint',
   })
@@ -270,17 +270,18 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
       expect(res.json()).toMatchObject({ code: 'service_endpoint_not_found' })
     })
 
-    it('requires member+ role — a viewer gets 403 (same minimumRole as the list route)', async () => {
+    it('allows a project viewer to read endpoint state without mutation access', async () => {
       const projectId = await createProjectViaApi(app, owner.cookies, 'se-get-403')
       const created = await createEndpointExpect201(app, owner.cookies, projectId)
       const viewer = await addUserToOrg(app, owner.orgId, 'se-get-viewer', { orgRole: 'viewer' })
+      await addProjectMember(owner.orgId, projectId, viewer.userId, 'viewer')
 
       const res = await app.inject({
         method: 'GET',
         url: itemUrl(projectId, created['id'] as string),
         headers: { cookie: cookieHeader(viewer.cookies) },
       })
-      expect(res.statusCode).toBe(403)
+      expect(res.statusCode).toBe(200)
     })
 
     it('allows a plain member (the minimumRole boundary) to read', async () => {
@@ -298,6 +299,55 @@ describe.sequential('service-endpoints / health-history / alerts routes (Story 6
   })
 
   describe('PATCH /:projectId/service-endpoints/:id', () => {
+    it('pauses and resumes monitoring with an explicit state and transition audit events', async () => {
+      const projectId = await createProjectViaApi(app, owner.cookies, 'se-pause')
+      const created = await createEndpointExpect201(app, owner.cookies, projectId)
+
+      const paused = await app.inject({
+        method: 'PATCH',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { healthCheckPaused: true },
+      })
+      expect(paused.statusCode).toBe(200)
+      expect(paused.json()).toMatchObject({
+        data: { healthCheckPaused: true, healthCheckPausedBy: owner.userId },
+      })
+
+      const repeatedPause = await app.inject({
+        method: 'PATCH',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { healthCheckPaused: true },
+      })
+      expect(repeatedPause.statusCode).toBe(200)
+
+      const resumed = await app.inject({
+        method: 'PATCH',
+        url: itemUrl(projectId, created['id'] as string),
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { healthCheckPaused: false },
+      })
+      expect(resumed.statusCode).toBe(200)
+      expect(resumed.json()).toMatchObject({ data: { healthCheckPaused: false } })
+
+      const events = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ eventType: auditLogEntries.eventType })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.resourceId, created['id'] as string))
+      )
+      expect(events.map((event) => event.eventType)).toEqual(
+        expect.arrayContaining([
+          'service_endpoint.health_check_paused',
+          'service_endpoint.health_check_resumed',
+        ])
+      )
+      expect(
+        events.filter((event) => event.eventType === 'service_endpoint.health_check_paused')
+      ).toHaveLength(1)
+    })
+
     it('updates checkFrequencyMinutes (happy path)', async () => {
       const projectId = await createProjectViaApi(app, owner.cookies, 'se-patch')
       const created = await createEndpointExpect201(app, owner.cookies, projectId)

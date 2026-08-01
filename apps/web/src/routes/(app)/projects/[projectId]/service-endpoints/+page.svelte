@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ApiClientError } from '$lib/api/client.js'
-  import { deleteServiceEndpoint } from '$lib/api/service-endpoints.js'
+  import { deleteServiceEndpoint, updateServiceEndpoint } from '$lib/api/service-endpoints.js'
   import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
   import ServiceStatusItem from '$lib/components/dashboard/ServiceStatusItem.svelte'
   import {
@@ -9,9 +9,10 @@
     AssetRowActions,
     EmptyAssetState,
     FormErrorBanner,
+    MonitoringPauseControl,
     ProjectNotFoundBanner,
   } from '$lib/components/monitoring/index.js'
-  import { canManageMonitoredAssets } from '$lib/monitoring/index.js'
+  import { canManageMonitoredAssets, mapMonitoringSubmitError } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
@@ -20,6 +21,8 @@
   // row removal below.
   let endpoints = $derived<ServiceEndpointDetail[]>(data.endpoints)
   let deleteError = $state<string | null>(null)
+  let pauseSubmittingId = $state<string | null>(null)
+  let pauseErrors = $state<Record<string, string>>({})
 
   const canManage = $derived(canManageMonitoredAssets(data.orgRole))
   const endpointNames = $derived(endpoints.map((e) => ({ id: e.id, name: e.name })))
@@ -34,6 +37,29 @@
         endpoints = endpoints.filter((e) => e.id !== serviceEndpointId)
       }
       deleteError = error instanceof Error ? error.message : 'Could not delete endpoint.'
+    }
+  }
+
+  async function handlePauseToggle(serviceEndpointId: string, paused: boolean): Promise<boolean> {
+    const endpoint = endpoints.find((item) => item.id === serviceEndpointId)
+    if (!endpoint || pauseSubmittingId) return false
+    pauseSubmittingId = serviceEndpointId
+    pauseErrors = { ...pauseErrors, [serviceEndpointId]: '' }
+    try {
+      const updated = await updateServiceEndpoint(fetch, data.projectId, serviceEndpointId, {
+        healthCheckPaused: paused,
+      })
+      endpoints = endpoints.map((item) => (item.id === serviceEndpointId ? updated : item))
+      return true
+    } catch (error) {
+      const mapped = mapMonitoringSubmitError(
+        error,
+        'You do not have permission to change monitoring state.'
+      )
+      pauseErrors = { ...pauseErrors, [serviceEndpointId]: mapped.errorMessage }
+      return false
+    } finally {
+      pauseSubmittingId = null
     }
   }
 </script>
@@ -82,6 +108,18 @@
               <p>Checked every {endpoint.checkFrequencyMinutes} min</p>
               <p>Down after {endpoint.downThresholdFailures} consecutive failures</p>
             </div>
+            {#if endpoint.healthCheckPaused === true || endpoint.healthCheckPaused === false}
+              <MonitoringPauseControl
+                paused={endpoint.healthCheckPaused}
+                pausedAt={endpoint.healthCheckPausedAt ?? null}
+                lastKnownStatus={endpoint.status}
+                {canManage}
+                idSuffix={endpoint.id}
+                submitting={pauseSubmittingId === endpoint.id}
+                errorMessage={pauseErrors[endpoint.id] || null}
+                onToggle={(paused) => handlePauseToggle(endpoint.id, paused)}
+              />
+            {/if}
             {#if canManage}
               <AssetRowActions
                 editHref={`/projects/${data.projectId}/service-endpoints/${endpoint.id}`}

@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import {
   OperationalEvent,
   ImportValidationError,
+  CredentialOperationalContextResponseSchema,
   validateRotationCron,
 } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
@@ -79,6 +80,11 @@ import {
   revealCurrentValue,
   updateCredentialTags,
 } from './service.js'
+import {
+  CredentialOperationalContextQuerySchema,
+  getCredentialOperationalContext,
+  parseOperationalContextQuery,
+} from './operational-context-service.js'
 import { FieldKeyConflictError, LegacyShapeFieldLossError } from './field-set.js'
 import {
   addCredentialDependency,
@@ -516,6 +522,47 @@ async function withCredentialParams<T>(
 }
 
 export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
+  secureRoute(fastify, {
+    method: 'GET',
+    url: '/:projectId/credentials/:credentialId/operational-context',
+    schema: {
+      querystring: CredentialOperationalContextQuerySchema,
+      response: {
+        200: CredentialOperationalContextResponseSchema,
+        ...CREDENTIAL_SUBRESOURCE_READ_ERRORS,
+        429: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'viewer',
+      writeAuditEvent: false,
+      rateLimit: {
+        max: 120,
+        timeWindowMs: 60_000,
+        key: 'GET /api/v1/projects/:projectId/credentials/:credentialId/operational-context',
+      },
+    },
+    handler: async (ctx, req, reply) => {
+      const rawQuery = parseQuery(CredentialOperationalContextQuerySchema, req, reply)
+      if (!rawQuery) return reply
+      const query = parseOperationalContextQuery(rawQuery)
+      if (!query.ok)
+        return reply.status(422).send({
+          code: 'validation_error',
+          message: 'Request validation failed',
+          details: { querystring: ['Invalid cursor or limit'] },
+        })
+      return withCredentialParams(ctx, req, reply, async (secureCtx, params) => {
+        const context = await getCredentialOperationalContext(secureCtx.tx, {
+          orgId: secureCtx.auth.orgId,
+          ...params,
+          ...query,
+        })
+        return context ? { data: context } : null
+      })
+    },
+  })
+
   secureRoute(fastify, {
     method: 'GET',
     url: '/:projectId/credentials',

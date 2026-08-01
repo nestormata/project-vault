@@ -7,6 +7,7 @@ import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { secureRoute } from '../../lib/secure-route.js'
 import { validationError } from '../../lib/route-helpers.js'
 import { getAdminDb } from '../../lib/db.js'
+import { env } from '../../config/env.js'
 import { findAuthStrategy } from './strategies.js'
 import { getCompiledThemes } from '../theming/service.js'
 
@@ -115,7 +116,11 @@ export async function domainLookupRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       // Story 14.4 AC-9 — matches /start's/callback's rate-limit convention; independent key so
       // this endpoint's own resource-exhaustion budget doesn't share a bucket with /start.
-      rateLimit: { max: 20, timeWindowMs: 15 * 60 * 1000, key: 'POST /domain-lookup' },
+      rateLimit: {
+        max: env.AUTH_SSO_DOMAIN_LOOKUP_RATE_LIMIT_MAX,
+        timeWindowMs: 15 * 60 * 1000,
+        key: 'POST /domain-lookup',
+      },
     },
     handler: async (_ctx, request, reply) => handleDomainLookup(request, reply),
   })

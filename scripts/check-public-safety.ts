@@ -59,6 +59,9 @@ const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
 const SECRET_ENV_NAME_PATTERN =
   /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*\b/
+// Domain constants can contain SECRET as a noun without being environment-variable names.
+// Keep this allowlist exact so the scanner remains conservative for actual configuration names.
+const SAFE_PUBLIC_CONSTANT_NAMES = new Set(['MAX_FIELDS_PER_SECRET'])
 
 function makeFinding(
   file: string,
@@ -128,7 +131,8 @@ function scanMetadata(file: string, line: number, text: string): PublicSafetyFin
       )
     )
   }
-  if (SECRET_ENV_NAME_PATTERN.test(text)) {
+  const secretName = SECRET_ENV_NAME_PATTERN.exec(text)?.[0]
+  if (secretName && !SAFE_PUBLIC_CONSTANT_NAMES.has(secretName)) {
     findings.push(
       makeFinding(
         file,

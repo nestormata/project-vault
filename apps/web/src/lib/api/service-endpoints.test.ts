@@ -24,6 +24,9 @@ const sampleEndpoint = {
   status: 'healthy' as const,
   consecutiveFailures: 0,
   lastCheckedAt: null,
+  healthCheckPaused: false,
+  healthCheckPausedAt: null,
+  healthCheckPausedBy: null,
   createdBy: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -94,6 +97,23 @@ describe('service-endpoints API wrapper extension (Story 6.4 AC-E)', () => {
     const [url, init] = fetchFn.mock.calls[0] ?? []
     expect(url).toBe(`/api/v1/projects/${projectId}/service-endpoints/${serviceEndpointId}`)
     expect(init.method).toBe('DELETE')
+  })
+
+  it('updateServiceEndpoint sends only the strict pause transition field', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          ...sampleEndpoint,
+          healthCheckPaused: true,
+          healthCheckPausedAt: '2026-08-01T10:00:00.000Z',
+        },
+      })
+    )
+    await updateServiceEndpoint(fetchFn, projectId, serviceEndpointId, {
+      healthCheckPaused: true,
+    })
+    const [, init] = fetchFn.mock.calls[0] ?? []
+    expect(JSON.parse(init.body)).toEqual({ healthCheckPaused: true })
   })
 
   it('getHealthHistory paginates via page/limit query params (AC-E6)', async () => {

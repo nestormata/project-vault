@@ -65,6 +65,24 @@ export function extractTokenFromAcceptUrl(acceptUrl: string): string {
   return token
 }
 
+export async function setOrganizationRoleViaDb(
+  orgId: string,
+  email: string,
+  role: 'owner' | 'admin' | 'member' | 'viewer'
+): Promise<void> {
+  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
+  try {
+    await sql`
+      update org_memberships
+      set role = ${role}
+      where org_id = ${orgId}
+        and user_id = (select id from users where email = ${email})
+    `
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
 /**
  * Creates a large deterministic project set for pagination journeys without spending the real
  * project-creation rate limit. The browser still performs the authenticated GET/list/dashboard

@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Tx } from '@project-vault/db'
+import { AuditEvent, type AuthAuditEventType } from '@project-vault/shared'
 import type { ZodType } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
@@ -144,6 +145,46 @@ export async function writeMonitoringAuditOrFailClosed(
 
 function rawBodyOf(req: FastifyRequest): Record<string, unknown> {
   return req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {}
+}
+
+async function auditServiceEndpointUpdate(
+  req: FastifyRequest,
+  tx: Tx,
+  input: {
+    orgId: string
+    actorUserId: string
+    projectId: string
+    updated: Awaited<ReturnType<typeof updateServiceEndpoint>>
+    rawBody: Record<string, unknown>
+  }
+): Promise<void> {
+  if (!input.updated) return
+  const idempotentPauseRequest =
+    'healthCheckPaused' in input.rawBody &&
+    Object.keys(input.rawBody).length === 1 &&
+    !input.updated.pauseTransition
+  if (idempotentPauseRequest) return
+  let eventType: AuthAuditEventType = AuditEvent.SERVICE_ENDPOINT_UPDATED
+  if (input.updated.pauseTransition === 'paused') {
+    eventType = AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_PAUSED
+  } else if (input.updated.pauseTransition === 'resumed') {
+    eventType = AuditEvent.SERVICE_ENDPOINT_HEALTH_CHECK_RESUMED
+  }
+  await writeMonitoringAuditOrFailClosed(req, tx, {
+    resourceType: 'service_endpoint',
+    orgId: input.orgId,
+    actorUserId: input.actorUserId,
+    eventType,
+    resourceId: input.updated.row.id,
+    payload: {
+      projectId: input.projectId,
+      ...(input.updated.pauseTransition
+        ? { healthCheckPaused: input.updated.pauseTransition === 'paused' }
+        : input.rawBody),
+      url: serializeServiceEndpoint(input.updated.row).url,
+    },
+    request: req,
+  })
 }
 
 export const LIST_RATE_LIMIT = { max: 120, timeWindowMs: 60_000 }
@@ -484,7 +525,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'viewer',
+      minimumRole: 'member',
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/certificates' },
     },
@@ -681,7 +722,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       response: { 200: DomainRecordListResponseSchema, 401: ApiErrorSchema, 404: ApiErrorSchema },
     },
     security: {
-      minimumRole: 'viewer',
+      minimumRole: 'member',
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/domains' },
     },
@@ -868,9 +909,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   // --- Service endpoints (service_endpoints) — Story 6.2, ADR-6.2-01 ---
-  // Note: every route in this trio uses minimumRole: 'member' (per Task 5), including the GET
-  // list — a deliberate divergence from the services/certificates/domains trio above (whose GET
-  // list is 'viewer'), matching this story's literal Task 5 instruction.
+  // Read-only endpoint state is visible to project viewers; mutation routes remain member+.
 
   secureRoute(fastify, {
     method: 'GET',
@@ -883,7 +922,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member',
+      minimumRole: 'viewer',
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/service-endpoints' },
     },
@@ -952,8 +991,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
     },
   })
 
-  // GET single mirrors the list route's permission level ('member', not 'viewer' — see the note
-  // above the list route): viewing one endpoint shouldn't require more privilege than the list.
+  // GET single mirrors the list route's viewer read permission.
   secureRoute(fastify, {
     method: 'GET',
     url: SERVICE_ENDPOINT_ITEM_URL,
@@ -965,7 +1003,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member',
+      minimumRole: 'viewer',
       writeAuditEvent: false,
       rateLimit: {
         ...LIST_RATE_LIMIT,
@@ -993,7 +1031,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member',
+      minimumRole: 'viewer',
       rateLimit: {
         ...WRITE_RATE_LIMIT,
         key: 'PATCH /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId',
@@ -1015,6 +1053,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       try {
         updated = await updateServiceEndpoint(secureCtx.tx, {
           ...params,
+          userId: secureCtx.auth.userId,
           body,
           rawBody: rawBodyOf(req),
         })
@@ -1024,17 +1063,15 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       }
       if (!updated) return reply.status(404).send(SERVICE_ENDPOINT_NOT_FOUND)
 
-      await writeMonitoringAuditOrFailClosed(req, secureCtx.tx, {
-        resourceType: 'service_endpoint',
+      await auditServiceEndpointUpdate(req, secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         actorUserId: secureCtx.auth.userId,
-        eventType: 'service_endpoint.updated',
-        resourceId: updated.id,
-        payload: { ...rawBodyOf(req), url: serializeServiceEndpoint(updated).url },
-        request: req,
+        projectId: params.projectId,
+        updated,
+        rawBody: rawBodyOf(req),
       })
 
-      return { data: serializeServiceEndpoint(updated) }
+      return { data: serializeServiceEndpoint(updated.row) }
     },
   })
 
@@ -1050,7 +1087,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member',
+      minimumRole: 'viewer',
       rateLimit: {
         ...WRITE_RATE_LIMIT,
         key: 'DELETE /api/v1/projects/:projectId/service-endpoints/:serviceEndpointId',
@@ -1100,7 +1137,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member',
+      minimumRole: 'viewer',
       writeAuditEvent: false,
       rateLimit: {
         ...LIST_RATE_LIMIT,
@@ -1143,7 +1180,7 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     security: {
-      minimumRole: 'member',
+      minimumRole: 'viewer',
       writeAuditEvent: false,
       rateLimit: { ...LIST_RATE_LIMIT, key: 'GET /api/v1/projects/:projectId/alerts' },
     },

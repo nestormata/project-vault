@@ -442,6 +442,20 @@
       "when": 1785391900000,
       "tag": "0062_credential_share_nudge_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1785478300000,
+      "tag": "0063_service_endpoint_health_check_pause",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1785598929774,
+      "tag": "0064_migration_snapshot_chain_repair",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { insertTestProject } from '@project-vault/db/test-helpers'
+import { CredentialOperationalContextResponseSchema } from '@project-vault/shared'
 import {
   auditLogEntries,
   credentials,
@@ -31,6 +32,7 @@ import {
 import {
   bootCredentialRouteApp,
   bootstrapCredentialRouteOwners,
+  addCredentialDependencyViaApi,
   createCredentialTestProject,
   createCredentialViaApi,
   SENTINEL_VALUE,
@@ -325,6 +327,193 @@ describe.sequential('credential routes', () => {
       headers: { cookie: cookieHeader(owner.cookies) },
     })
     expect(missing.statusCode).toBe(404)
+  }, 60_000)
+
+  it('GET operational-context returns a closed metadata-only snapshot with paginated active usage', async () => {
+    const projectId = await createTestProject(app, owner.cookies, 'operational-context')
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/v1/projects/${projectId}/credentials`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {
+        name: 'Operational login',
+        template: 'login',
+        fields: [
+          { key: 'username', value: 'alice', sensitive: false },
+          { key: 'password', value: SENTINEL_VALUE, sensitive: true },
+        ],
+      },
+    })
+    expect(created.statusCode).toBe(201)
+    const credentialId = created.json<{ data: { id: string } }>().data.id
+
+    const dependencyIds: string[] = []
+    for (const payload of [
+      { systemName: 'A service', systemType: 'service' },
+      { systemName: 'B pipeline', systemType: 'ci_pipeline', fieldKey: 'password' },
+      { systemName: 'Archived service', systemType: 'service' },
+    ]) {
+      const dependency = await addCredentialDependencyViaApi(
+        app,
+        owner.cookies,
+        projectId,
+        credentialId,
+        payload
+      )
+      expect(dependency.statusCode).toBe(201)
+      dependencyIds.push(dependency.json<{ data: { id: string } }>().data.id)
+    }
+    const archived = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies/${dependencyIds[2]}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(archived.statusCode).toBe(200)
+
+    const beforeAuditRows = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ id: auditLogEntries.id })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.resourceId, credentialId))
+    )
+    const first = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/operational-context?limit=1`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(first.statusCode).toBe(200)
+    const firstBody = CredentialOperationalContextResponseSchema.parse(first.json())
+    expect(firstBody.data).toMatchObject({
+      contractVersion: 1,
+      credential: {
+        id: credentialId,
+        projectId,
+        credentialType: 'login',
+        account: { status: 'not_available', fieldKeys: ['username', 'password'] },
+        currentVersion: { number: 1, schemaVersion: 2 },
+      },
+      usage: {
+        activeDependencyCount: 2,
+        locations: {
+          items: [{ systemName: 'A service', systemType: 'service', fieldKey: null }],
+        },
+      },
+    })
+    expect(JSON.stringify(firstBody)).not.toContain(SENTINEL_VALUE)
+    expect(JSON.stringify(firstBody)).not.toContain('notes')
+    const nextCursor = firstBody.data.usage.locations.nextCursor
+    expect(nextCursor).toEqual(expect.any(String))
+    if (typeof nextCursor !== 'string') throw new Error('expected a pagination cursor')
+
+    const second = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/operational-context?limit=1&cursor=${encodeURIComponent(nextCursor)}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(second.statusCode).toBe(200)
+    expect(second.json()).toMatchObject({
+      data: {
+        usage: {
+          activeDependencyCount: 2,
+          locations: {
+            items: [{ systemName: 'B pipeline', systemType: 'ci_pipeline', fieldKey: 'password' }],
+            nextCursor: null,
+          },
+        },
+      },
+    })
+
+    const afterAuditRows = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ id: auditLogEntries.id })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.resourceId, credentialId))
+    )
+    expect(afterAuditRows).toHaveLength(beforeAuditRows.length)
+
+    const mismatchedProjectId = await createTestProject(
+      app,
+      owner.cookies,
+      'operational-context-mismatch'
+    )
+    const mismatched = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${mismatchedProjectId}/credentials/${credentialId}/operational-context`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(mismatched.statusCode).toBe(404)
+    expect(mismatched.json()).toMatchObject({ code: 'credential_not_found' })
+
+    const malformedParams = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/not-a-uuid/credentials/${credentialId}/operational-context`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(malformedParams.statusCode).toBe(422)
+
+    const operationalViewer = await createDirectAuthenticatedUser(
+      app,
+      'operational-context-viewer',
+      'viewer'
+    )
+    const viewerCookies = await loginExistingUserInOrg(app, {
+      userId: operationalViewer.userId,
+      orgId: owner.orgId,
+      role: 'viewer',
+    })
+    await withOrg(owner.orgId, (tx) =>
+      tx.insert(projectMemberships).values({
+        orgId: owner.orgId,
+        projectId,
+        userId: operationalViewer.userId,
+        role: 'viewer',
+      })
+    )
+    const viewerResponse = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/operational-context`,
+      headers: { cookie: cookieHeader(viewerCookies) },
+    })
+    expect(viewerResponse.statusCode).toBe(200)
+
+    const invalidQuery = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/operational-context?extra=true`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(invalidQuery.statusCode).toBe(422)
+    expect(invalidQuery.json()).toMatchObject({ code: 'validation_error' })
+
+    const hidden = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/operational-context`,
+      headers: { cookie: cookieHeader(other.cookies) },
+    })
+    expect(hidden.statusCode).toBe(404)
+    expect(hidden.json()).toMatchObject({ code: 'credential_not_found' })
+
+    const unauthenticated = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credentialId}/operational-context`,
+    })
+    expect(unauthenticated.statusCode).toBe(401)
+
+    const previousRateLimitBypass = process.env['RATE_LIMIT_TEST_BYPASS']
+    delete process.env['RATE_LIMIT_TEST_BYPASS']
+    try {
+      let finalRateLimitedResponse = first
+      for (let attempt = 0; attempt < 121; attempt += 1) {
+        finalRateLimitedResponse = await app.inject({
+          method: 'GET',
+          url: `/api/v1/projects/${projectId}/credentials/${credentialId}/operational-context`,
+          headers: { cookie: cookieHeader(owner.cookies) },
+        })
+      }
+      expect(finalRateLimitedResponse.statusCode).toBe(429)
+    } finally {
+      if (previousRateLimitBypass === undefined) delete process.env['RATE_LIMIT_TEST_BYPASS']
+      else process.env['RATE_LIMIT_TEST_BYPASS'] = previousRateLimitBypass
+    }
   }, 60_000)
 
   it('POST rejects missing/empty value, unknown keys, and malformed cron', async () => {

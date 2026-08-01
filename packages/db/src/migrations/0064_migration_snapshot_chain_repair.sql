@@ -1,0 +1,5 @@
+-- Snapshot-chain repair baseline.
+--
+-- The schema represented by 0064_snapshot.json is already present after migration 0063.
+-- This intentionally empty migration records the repaired canonical Drizzle snapshot without
+-- replaying historical DDL that was hand-authored after the last complete snapshot.

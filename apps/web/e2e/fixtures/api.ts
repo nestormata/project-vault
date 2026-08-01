@@ -34,6 +34,19 @@ export async function createCredentialViaApi(
   })
 }
 
+export async function createServiceEndpointViaApi(
+  context: BrowserContext,
+  projectId: string,
+  opts: { name: string; url: string }
+): Promise<{ id: string; name: string }> {
+  const response = await context.request.post(`/api/v1/projects/${projectId}/service-endpoints`, {
+    data: opts,
+  })
+  expect(response.ok(), await response.text()).toBeTruthy()
+  const body = (await response.json()) as { data: { id: string; name: string } }
+  return body.data
+}
+
 export async function addCredentialDependencyViaApi(
   context: BrowserContext,
   projectId: string,
