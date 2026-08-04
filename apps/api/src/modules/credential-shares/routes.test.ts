@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditLogEntries, credentialShares, orgMemberships } from '@project-vault/db/schema'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
+  expectAuditWriteFailed,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
@@ -13,9 +14,14 @@ import {
   bootCredentialRouteApp,
   createCredentialTestProject,
   createCredentialViaApi,
+  createSharingMultiFieldFixture,
+  SENTINEL_VALUE,
 } from '../credentials/credential-route-test-helpers.js'
+import { resourceExists } from '../credentials/bounded-share-adapter.js'
 
-const { createApp, initVault } = await bootstrapRouteIntegrationTest()
+const SENTINEL_PASSWORD = 'sentinel-password-sensitive'
+
+const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
@@ -224,7 +230,7 @@ describe('credential-shares routes', () => {
     const body = response.json<{ data: { credentialId: string; status: string } }>()
     expect(body.data.credentialId).toBe(credentialId)
     expect(body.data.status).toBe('active')
-    expect(JSON.stringify(body)).not.toContain('sentinel-credential-value-never-leaks')
+    expect(JSON.stringify(body)).not.toContain(SENTINEL_VALUE)
   })
 
   it('AC-7: a token opened by a different org member (not the recipient) is a 403, not a 404', async () => {
@@ -265,8 +271,15 @@ describe('credential-shares routes', () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers['cache-control']).toBe('no-store')
     expect(response.headers['referrer-policy']).toBe('no-referrer')
+    // Story 20.5 AC-2 (sensitivity-default-exclusion — the one intended Epic 17 behavior
+    // tightening, not a regression): `createFixture`'s credential is a legacy single-value
+    // secret, whose sole field is `sensitive: true` by convention. A whole-resource share
+    // (`fieldKey`/`attributeKeys` both null) now excludes every sensitive attribute by default —
+    // this share never named `value` explicitly, so the sentinel is no longer revealed, and the
+    // response's empty field-array shape signals "nothing eligible", not an error.
     const body = response.json<{ data: { value: string } }>()
-    expect(body.data.value).toBe('sentinel-credential-value-never-leaks')
+    expect(body.data.value).toBe('[]')
+    expect(body.data.value).not.toContain(SENTINEL_VALUE)
 
     const audit = await withOrg(sharer.orgId, (tx) =>
       tx
@@ -284,6 +297,69 @@ describe('credential-shares routes', () => {
     })
     expect(second.statusCode).toBe(410)
     expect(second.json<{ code: string }>().code).toBe('share_already_viewed')
+  })
+
+  it('AC-1/AC-2: naming a sensitive attribute explicitly in attributeKeys reveals it (explicit consent overrides the default exclusion)', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('reveal-explicit')
+    const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      attributeKeys: ['value'],
+      expiresAt: futureIso(),
+      singleUse: true,
+    })
+    expect(create.statusCode).toBe(201)
+    expect(create.json<{ data: { attributeKeys: string[] | null } }>().data.attributeKeys).toEqual([
+      'value',
+    ])
+    const { token } = create.json<{ data: { token: string } }>().data
+
+    const response = await app.inject({
+      method: 'POST',
+      url: accessUrl(token, '/reveal'),
+      headers: { cookie: cookieHeader(recipient.cookies) },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const body = response.json<{ data: { value: string } }>()
+    expect(body.data.value).toBe(SENTINEL_VALUE)
+  })
+
+  it('AC-1: a create request with action other than "read" is rejected 422, never coerced', async () => {
+    const { sharer, recipient, projectId, credentialId } = await createFixture('bad-action')
+
+    const response = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientUserId: recipient.userId,
+      action: 'write',
+      expiresAt: futureIso(),
+      singleUse: true,
+    })
+
+    // Story 20.5 AC-1's prose names 400; this codebase uniformly maps every Zod schema-validation
+    // failure (including this module's own existing `status` enum filter) to 422, never 400 — see
+    // the story's Dev Agent Record for the note reconciling this. The request must be rejected and
+    // the literal, invalid value must never be coerced into a persisted row.
+    expect(response.statusCode).toBe(422)
+  })
+
+  // AC-3: `resourceExists` is one of the three required `credential` adapter functions. No
+  // current call site invokes it (the sharing layer's own `credentialExistsInProject` serves
+  // today's project-scoped routes instead — see the adapter's doc comment), but the function is
+  // still real, exported, RLS/org-scoped surface area the contract requires to exist and behave
+  // correctly, so it gets direct coverage rather than relying on indirect exercise through a route.
+  it('AC-3: resourceExists is org-scoped and reflects whether the row is visible in this org', async () => {
+    const { sharer, credentialId } = await createFixture('resource-exists')
+
+    const existsInOwnOrg = await withOrg(sharer.orgId, (tx) => resourceExists(credentialId, tx))
+    expect(existsInOwnOrg).toBe(true)
+
+    const otherOrgOwner = await registerOwner(app, 'resource-exists-other')
+    const existsInOtherOrg = await withOrg(otherOrgOwner.orgId, (tx) =>
+      resourceExists(credentialId, tx)
+    )
+    expect(existsInOtherOrg).toBe(false)
+
+    const existsForRandomId = await withOrg(sharer.orgId, (tx) => resourceExists(randomUUID(), tx))
+    expect(existsForRandomId).toBe(false)
   })
 
   it('AC-14: concurrent reveal requests for a single-use share only let one succeed', async () => {
@@ -782,5 +858,277 @@ describe('credential-shares routes', () => {
         .where(eq(auditLogEntries.eventType, 'credential.share_nudge_dismissed'))
     )
     expect(audit.length).toBeGreaterThanOrEqual(1)
+  })
+
+  describe('Story 20.5: bounded/scoped sharing (Scoped/Bounded Sharing Contract)', () => {
+    async function createMultiFieldFixture(label: string) {
+      const { sharer, projectId, credentialId } = await createSharingMultiFieldFixture(
+        app,
+        registerOwner,
+        label,
+        'sentinel-username-non-sensitive',
+        SENTINEL_PASSWORD
+      )
+      const recipient = await addUserToOrg(app, sharer.orgId, `${label}-recipient`, {
+        orgRole: 'member',
+      })
+      return { sharer, recipient, projectId, credentialId }
+    }
+
+    it('AC-2: whole-resource share (attributeKeys omitted) of a mixed credential returns only non-sensitive fields', async () => {
+      const { sharer, recipient, projectId, credentialId } =
+        await createMultiFieldFixture('bounded-default')
+      const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientUserId: recipient.userId,
+        expiresAt: futureIso(),
+        singleUse: true,
+      })
+      expect(create.statusCode).toBe(201)
+      const { token } = create.json<{ data: { token: string } }>().data
+
+      const response = await app.inject({
+        method: 'POST',
+        url: accessUrl(token, '/reveal'),
+        headers: { cookie: cookieHeader(recipient.cookies) },
+      })
+      expect(response.statusCode).toBe(200)
+      const { value } = response.json<{ data: { value: string } }>().data
+      const fields = JSON.parse(value) as Array<{ key: string; sensitive: boolean }>
+      expect(fields).toEqual([
+        { key: 'username', value: 'sentinel-username-non-sensitive', sensitive: false },
+      ])
+      // Failure case (AC-2): no sensitive field is ever returned unnamed.
+      expect(value).not.toContain(SENTINEL_PASSWORD)
+    })
+
+    it('AC-1/AC-2: attributeKeys naming a sensitive field explicitly includes it (explicit consent)', async () => {
+      const { sharer, recipient, projectId, credentialId } =
+        await createMultiFieldFixture('bounded-explicit')
+      const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientUserId: recipient.userId,
+        attributeKeys: ['password'],
+        expiresAt: futureIso(),
+        singleUse: true,
+      })
+      expect(create.statusCode).toBe(201)
+      expect(
+        create.json<{ data: { attributeKeys: string[] | null } }>().data.attributeKeys
+      ).toEqual(['password'])
+      const { token } = create.json<{ data: { token: string } }>().data
+
+      const response = await app.inject({
+        method: 'POST',
+        url: accessUrl(token, '/reveal'),
+        headers: { cookie: cookieHeader(recipient.cookies) },
+      })
+      expect(response.statusCode).toBe(200)
+      const { value } = response.json<{ data: { value: string } }>().data
+      const fields = JSON.parse(value) as Array<{ key: string; value: string; sensitive: boolean }>
+      expect(fields).toEqual([{ key: 'password', value: SENTINEL_PASSWORD, sensitive: true }])
+    })
+
+    it('AC-1: an unknown attributeKeys entry is rejected the same way an unknown fieldKey is', async () => {
+      const { sharer, recipient, projectId, credentialId } =
+        await createMultiFieldFixture('bounded-unknown-key')
+      const response = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientUserId: recipient.userId,
+        attributeKeys: ['does-not-exist'],
+        expiresAt: futureIso(),
+        singleUse: true,
+      })
+      expect(response.statusCode).toBe(400)
+      expect(response.json<{ code: string }>().code).toBe('unknown_field_key')
+    })
+
+    it('AC-1: specifying both fieldKey and attributeKeys is rejected rather than silently preferring one', async () => {
+      const { sharer, recipient, projectId, credentialId } =
+        await createMultiFieldFixture('bounded-both')
+      const response = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientUserId: recipient.userId,
+        fieldKey: 'username',
+        attributeKeys: ['password'],
+        expiresAt: futureIso(),
+        singleUse: true,
+      })
+      expect(response.statusCode).toBe(422)
+    })
+
+    it('AC-1 (bugfix, review patch): the 50-key attributeKeys cap applies to the deduplicated set, not the raw request — 51 raw entries where one is a case-variant duplicate of another (50 unique after normalization) is accepted', async () => {
+      const sharer = await registerOwner(app, 'bounded-cap-dedup-sharer')
+      const recipient = await addUserToOrg(app, sharer.orgId, 'bounded-cap-dedup-recipient', {
+        orgRole: 'member',
+      })
+      const projectId = await createCredentialTestProject(app, sharer.cookies, 'bounded-cap-dedup')
+      const fieldKeys = Array.from({ length: 50 }, (_, i) => `field${i}`)
+      const credential = await createCredentialViaApi(app, sharer.cookies, projectId, {
+        name: 'bounded-cap-dedup-login',
+        template: 'login',
+        fields: fieldKeys.map((key) => ({ key, value: `value-${key}`, sensitive: false })),
+      } as unknown as { name: string; value: string })
+
+      const response = await createShareViaApi(sharer.cookies, projectId, credential.id, {
+        recipientUserId: recipient.userId,
+        // 51 raw entries, only 50 distinct once normalized (trim/case-folded) — the last entry
+        // is an upper-cased duplicate of the first. Before the reordering fix, a raw Zod
+        // `.max(50)` on the UN-deduplicated array rejected this with a 422 even though the
+        // deduplicated set fits the cap; now the cap is enforced post-dedup, so this succeeds.
+        attributeKeys: [...fieldKeys, 'FIELD0'],
+        expiresAt: futureIso(),
+        singleUse: true,
+      })
+      expect(response.statusCode).toBe(201)
+      expect(
+        response.json<{ data: { attributeKeys: string[] | null } }>().data.attributeKeys
+      ).toHaveLength(50)
+    })
+
+    it("AC-4: a cross-org shareId/credentialId combination is not visible to a different org's owner", async () => {
+      const fixtureA = await createMultiFieldFixture('bounded-cross-org-a')
+      const fixtureB = await createMultiFieldFixture('bounded-cross-org-b')
+
+      const create = await createShareViaApi(
+        fixtureA.sharer.cookies,
+        fixtureA.projectId,
+        fixtureA.credentialId,
+        {
+          recipientUserId: fixtureA.recipient.userId,
+          expiresAt: futureIso(),
+          singleUse: true,
+        }
+      )
+      expect(create.statusCode).toBe(201)
+      const { id: shareId } = create.json<{ data: { id: string } }>().data
+
+      // Story 20.5 AC-4: org B's own owner, scoped to org A's project/credential ids, must not
+      // see org A's share — the sharing layer's org-scoped transaction (not the adapter) is what
+      // enforces this, so this also exercises that the adapter never receives an unscoped lookup.
+      const revokeAsOtherOrg = await app.inject({
+        method: 'POST',
+        url: sharesUrl(fixtureA.projectId, fixtureA.credentialId, `/${shareId}/revoke`),
+        headers: { cookie: cookieHeader(fixtureB.sharer.cookies) },
+      })
+      expect(revokeAsOtherOrg.statusCode).toBe(404)
+
+      const listAsOtherOrg = await app.inject({
+        method: 'GET',
+        url: sharesUrl(fixtureA.projectId, fixtureA.credentialId),
+        headers: { cookie: cookieHeader(fixtureB.sharer.cookies) },
+      })
+      expect(listAsOtherOrg.statusCode).toBe(404)
+    })
+
+    it('AC-1/AC-3: a legacy fieldKey-only share (no attributeKeys) of a sensitive field still reveals it unfiltered (backward compatibility)', async () => {
+      // Proves the backward-compatibility guarantee `effectiveAttributeKeysForShare`'s doc comment
+      // asserts but no existing test exercised directly: naming a single field via the legacy
+      // `fieldKey` column is exactly as much explicit consent as naming it via `attributeKeys`, so
+      // a `sensitive: true` field named this way must never be excluded by AC-2's sensitivity-
+      // default-exclusion rule (that rule only applies to a whole-resource share with neither
+      // `fieldKey` nor `attributeKeys` set). On a genuine multi-field credential, `revealCurrentValue`'s
+      // own `?field=` path returns `kind: 'fields'` (a one-element JSON envelope), not a bare
+      // string — the real assertion here is that the real password value is present, unmasked,
+      // not filtered out.
+      const { sharer, recipient, projectId, credentialId } = await createMultiFieldFixture(
+        'legacy-field-key-sensitive'
+      )
+      const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientUserId: recipient.userId,
+        fieldKey: 'password',
+        expiresAt: futureIso(),
+        singleUse: true,
+      })
+      expect(create.statusCode).toBe(201)
+      expect(
+        create.json<{ data: { fieldKey: string | null; attributeKeys: string[] | null } }>().data
+          .fieldKey
+      ).toBe('password')
+      const { token } = create.json<{ data: { token: string } }>().data
+
+      const response = await app.inject({
+        method: 'POST',
+        url: accessUrl(token, '/reveal'),
+        headers: { cookie: cookieHeader(recipient.cookies) },
+      })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ data: { value: string } }>()
+      const fields = JSON.parse(body.data.value) as Array<{
+        key: string
+        value: string
+        sensitive: boolean
+      }>
+      expect(fields).toEqual([{ key: 'password', value: SENTINEL_PASSWORD, sensitive: true }])
+    })
+
+    it('AC-2/AC-3: a multi-key attributeKeys share whose every named field was renamed/removed since creation is expired, never a silent 200 with an empty field array', async () => {
+      // Regression coverage for the "empty result" ambiguity `serializeBoundedFiltered` must
+      // resolve correctly: for an explicit, non-null `attributeKeys` allow-list, named keys are
+      // never sensitivity-filtered (see `isIncluded`), so the ONLY way filtering can yield zero
+      // fields is that none of the named keys still exist on the credential's current version —
+      // that must collapse to the same `not_found` -> `expired` outcome the single-key path
+      // (`serializeBoundedSingleKey`) already gives for the identical scenario, not a 200 OK with
+      // `fields: []` (which is reserved for a legitimate whole-resource share with zero eligible
+      // non-sensitive fields).
+      const { sharer, recipient, projectId, credentialId } = await createMultiFieldFixture(
+        'bounded-multikey-all-removed'
+      )
+      const create = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientUserId: recipient.userId,
+        attributeKeys: ['username', 'password'],
+        expiresAt: futureIso(),
+        singleUse: true,
+      })
+      expect(create.statusCode).toBe(201)
+      const { id: shareId, token } = create.json<{ data: { id: string; token: string } }>().data
+
+      // Simulate both named fields having been renamed/removed from the credential since the share
+      // was created, the same way the existing single-key "field-gone" test does.
+      await withOrg(sharer.orgId, (tx) =>
+        tx
+          .update(credentialShares)
+          .set({ attributeKeys: ['ghost-username-since-removed', 'ghost-password-since-removed'] })
+          .where(eq(credentialShares.id, shareId))
+      )
+
+      const response = await app.inject({
+        method: 'POST',
+        url: accessUrl(token, '/reveal'),
+        headers: { cookie: cookieHeader(recipient.cookies) },
+      })
+
+      expect(response.statusCode).toBe(410)
+      expect(response.json<{ code: string }>().code).toBe('share_expired')
+
+      // Regression: must not burn the single-use claim or write a spurious viewed audit entry —
+      // same invariant the existing single-key "field-gone" test asserts.
+      const [row] = await withOrg(sharer.orgId, (tx) =>
+        tx.select().from(credentialShares).where(eq(credentialShares.id, shareId))
+      )
+      expect(row?.status).toBe('active')
+      expect(row?.viewCount).toBe(0)
+    })
+
+    it('AC-5: an audit-write failure on bounded-share creation rolls back the whole create (no persisted row)', async () => {
+      const { sharer, recipient, projectId, credentialId } =
+        await createMultiFieldFixture('bounded-audit-fail')
+      const auditSpy = vi
+        .spyOn(humanAudit, 'writeHumanAuditEntry')
+        .mockRejectedValueOnce(new Error('forced audit failure'))
+      try {
+        const response = await createShareViaApi(sharer.cookies, projectId, credentialId, {
+          recipientUserId: recipient.userId,
+          attributeKeys: ['username'],
+          expiresAt: futureIso(),
+          singleUse: true,
+        })
+        expectAuditWriteFailed(response)
+
+        const rows = await withOrg(sharer.orgId, (tx) =>
+          tx.select().from(credentialShares).where(eq(credentialShares.credentialId, credentialId))
+        )
+        expect(rows).toHaveLength(0)
+      } finally {
+        auditSpy.mockRestore()
+      }
+    })
   })
 })

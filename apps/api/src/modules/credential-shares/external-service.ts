@@ -1,14 +1,15 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
-import { credentials, credentialShares } from '@project-vault/db/schema'
+import { credentialShares } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { getAdminDb } from '../../lib/db.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
-import { revealCurrentValue } from '../credentials/service.js'
+import { serializeBounded } from '../credentials/bounded-share-adapter.js'
 import {
   baseShareInsertValues,
   claimSingleUseView,
+  effectiveAttributeKeysForShare,
   generateAndHashShareToken,
   hashShareToken,
   lazilyExpireShareIfDue,
@@ -45,6 +46,52 @@ async function adminLookupByTokenHash(tokenHash: string): Promise<CredentialShar
   return row ?? null
 }
 
+/** Extracted from `createExternalCredentialShare` purely to keep its own cyclomatic complexity
+ *  under this repo's eslint threshold. AC-16's pending-share cap bucket, keyed by whichever share
+ *  scope was actually named (`fieldKey`, `attributeKeys`, or neither/whole-resource) — see the
+ *  caller's own comment for why `attributeKeys` must participate in this bucket key.
+ *
+ *  Bugfix (independent dev-auto reviews): a share's *effective* attribute-key set is exactly what
+ *  `effectiveAttributeKeysForShare` (service.ts) computes at reveal time — a single-key
+ *  `fieldKey: 'password'` request and a single-element `attributeKeys: ['password']` request name
+ *  the same field and are treated identically there. This bucketing function must mirror that same
+ *  normalization: both request shapes are folded into one canonical bucket key (and one SQL
+ *  `fieldCondition` that matches rows created via EITHER shape) whenever they name the same
+ *  effective field(s), so a caller cannot double AC-16's cap by alternating between the legacy
+ *  `fieldKey` column and the new `attributeKeys` array for the same field. */
+function pendingCapBucket(validation: {
+  normalizedField: string | null
+  normalizedAttributeKeys: string[] | null
+}): { lockSuffix: string; fieldCondition: SQL } {
+  // `normalizedField` (already validated as a single declared key) and a single-element
+  // `normalizedAttributeKeys` both collapse to the same one-element effective set — same
+  // normalization `effectiveAttributeKeysForShare` applies at reveal time.
+  const effectiveKeys = validation.normalizedField
+    ? [validation.normalizedField]
+    : validation.normalizedAttributeKeys
+
+  if (effectiveKeys && effectiveKeys.length > 0) {
+    const attributeKeysCondition = eq(credentialShares.attributeKeys, effectiveKeys)
+    // A single-field effective set may have been persisted via either request shape — match rows
+    // created via the legacy `fieldKey` column OR the `attributeKeys` array. A multi-key effective
+    // set can only ever have been persisted via `attributeKeys` (the `fieldKey` column can't
+    // represent more than one field), so no `fieldKey` alternative applies there.
+    const [onlyKey] = effectiveKeys
+    const fieldCondition =
+      effectiveKeys.length === 1 && onlyKey
+        ? sql`(${eq(credentialShares.fieldKey, onlyKey)} OR ${attributeKeysCondition})`
+        : attributeKeysCondition
+    return {
+      lockSuffix: JSON.stringify(effectiveKeys),
+      fieldCondition,
+    }
+  }
+  return {
+    lockSuffix: '',
+    fieldCondition: sql`${credentialShares.fieldKey} IS NULL AND ${credentialShares.attributeKeys} IS NULL`,
+  }
+}
+
 export type CreateExternalShareInput = {
   orgId: string
   projectId: string
@@ -52,12 +99,17 @@ export type CreateExternalShareInput = {
   sharedByUserId: string
   recipientEmail: string
   fieldKey?: string
+  // Story 20.5 AC-1: see `CreateShareInput.attributeKeys` (service.ts) — identical semantics.
+  attributeKeys?: string[] | null
   expiresAt: Date
 }
 
 export type CreateExternalShareResult =
   | { status: 'credential_not_found' }
   | { status: 'unknown_field_key'; field: string }
+  | { status: 'ambiguous_share_scope' }
+  // Bugfix (review patch): see `ShareFieldAndExpiryValidation`'s matching variant in service.ts.
+  | { status: 'too_many_attribute_keys' }
   | { status: 'expires_at_invalid'; reason: 'past' | 'too_far_in_future' }
   | { status: 'cap_exceeded' }
   | { status: 'ok'; share: CredentialShareRow; token: string }
@@ -81,6 +133,7 @@ export async function createExternalCredentialShare(
     tx,
     input.credentialId,
     input.fieldKey,
+    input.attributeKeys,
     input.expiresAt,
     EXTERNAL_SHARE_MAX_TTL_MS
   )
@@ -92,13 +145,19 @@ export async function createExternalCredentialShare(
   // and both insert), so this also takes a credential+field-scoped advisory lock first — same
   // precedent as rotation-locks.ts's `tryAcquireCredentialScopedLock` — to serialize concurrent
   // creations for the same (credentialId, fieldKey) bucket.
-  const lockFieldSuffix = validation.normalizedField ?? ''
+  //
+  // Bugfix (dev-auto review): this bucket key used to be derived from `normalizedField` alone, so
+  // every `attributeKeys`-scoped share (and every whole-resource share) collapsed into the single
+  // `fieldKey IS NULL` bucket regardless of which attributes it actually named — two shares naming
+  // disjoint attribute sets competed for the same cap, while an equivalent single-field share made
+  // via the legacy `fieldKey` column got its own separate bucket. `normalizedAttributeKeys` is
+  // sorted by `validateAttributeKeys`, so two requests naming the same set of keys always produce
+  // the same bucket key/array regardless of the order the caller supplied them in. See
+  // `pendingCapBucket` above.
+  const { lockSuffix: lockFieldSuffix, fieldCondition } = pendingCapBucket(validation)
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended('external-share-cap:' || ${input.credentialId} || ':' || ${lockFieldSuffix}, 0))`
   )
-  const fieldCondition = validation.normalizedField
-    ? eq(credentialShares.fieldKey, validation.normalizedField)
-    : sql`${credentialShares.fieldKey} IS NULL`
   const countRows = await tx
     .select({ count: sql<number>`count(*)::int` })
     .from(credentialShares)
@@ -125,7 +184,12 @@ export async function createExternalCredentialShare(
   const [share] = await tx
     .insert(credentialShares)
     .values({
-      ...baseShareInsertValues(input, validation.normalizedField, tokenHash),
+      ...baseShareInsertValues(
+        input,
+        validation.normalizedField,
+        validation.normalizedAttributeKeys,
+        tokenHash
+      ),
       recipientType: 'external',
       recipientUserId: null,
       recipientEmail: input.recipientEmail.trim().toLowerCase(),
@@ -317,20 +381,15 @@ export async function revealExternalShare(rawToken: string): Promise<RevealExter
 
     // Field-existence check BEFORE the atomic claim — the PR #251 ordering fix, applied here from
     // this function's first commit. NOT counted as an AC-22 losing attempt: this never reaches
-    // the atomic-claim step.
-    const [credentialRow] = await tx
-      .select({ projectId: credentials.projectId })
-      .from(credentials)
-      .where(eq(credentials.id, share.credentialId))
-      .limit(1)
-    const revealed = credentialRow
-      ? await revealCurrentValue(tx, {
-          credentialId: share.credentialId,
-          projectId: credentialRow.projectId,
-          field: share.fieldKey ?? undefined,
-        })
-      : { status: 'not_found' as const }
-    if (revealed.status !== 'found') return { status: 'expired' }
+    // the atomic-claim step. Story 20.5 AC-2/AC-3: `serializeBounded` also applies
+    // sensitivity-default-exclusion for a whole-resource share — see service.ts's `revealShare`
+    // for the full rationale, identical here.
+    const bounded = await serializeBounded(
+      share.credentialId,
+      effectiveAttributeKeysForShare(share),
+      tx
+    )
+    if (bounded.status !== 'ok') return { status: 'expired' }
 
     const claimed = await claimSingleUseView(tx, share.id)
     if (!claimed) return resolveLostExternalClaim(tx, share)
@@ -354,12 +413,15 @@ export async function revealExternalShare(rawToken: string): Promise<RevealExter
       payload: {
         credentialId: claimed.credentialId,
         fieldKey: share.fieldKey,
+        // Story 20.5 (review patch): see access-routes.ts's identical addition to the member
+        // reveal path's VIEWED payload.
+        attributeKeys: share.attributeKeys,
         viewCount: claimed.viewCount,
         recipientType: 'external',
       },
     })
 
-    const value = revealed.kind === 'value' ? revealed.value : JSON.stringify(revealed.fields)
+    const value = bounded.kind === 'value' ? bounded.value : JSON.stringify(bounded.fields)
     return { status: 'ok', share: claimed, value, fieldKey: share.fieldKey }
   })
 }

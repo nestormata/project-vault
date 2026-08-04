@@ -28807,6 +28807,19 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "attributeKeys": {
+                          "nullable": true,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "read"
+                          ]
+                        },
                         "sharedBy": {
                           "type": "string",
                           "format": "uuid",
@@ -28877,6 +28890,8 @@
                         "id",
                         "credentialId",
                         "fieldKey",
+                        "attributeKeys",
+                        "action",
                         "sharedBy",
                         "recipientType",
                         "recipientUserId",
@@ -29012,6 +29027,19 @@
                                 "nullable": true,
                                 "type": "string"
                               },
+                              "attributeKeys": {
+                                "nullable": true,
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "read"
+                                ]
+                              },
                               "sharedBy": {
                                 "type": "string",
                                 "format": "uuid",
@@ -29079,6 +29107,8 @@
                               "id",
                               "credentialId",
                               "fieldKey",
+                              "attributeKeys",
+                              "action",
                               "sharedBy",
                               "recipientType",
                               "recipientUserId",
@@ -29193,6 +29223,19 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "attributeKeys": {
+                          "nullable": true,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "read"
+                          ]
+                        },
                         "sharedBy": {
                           "type": "string",
                           "format": "uuid",
@@ -29263,6 +29306,8 @@
                         "id",
                         "credentialId",
                         "fieldKey",
+                        "attributeKeys",
+                        "action",
                         "sharedBy",
                         "recipientType",
                         "recipientUserId",
@@ -29403,6 +29448,19 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "attributeKeys": {
+                          "nullable": true,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "read"
+                          ]
+                        },
                         "sharedBy": {
                           "type": "string",
                           "format": "uuid",
@@ -29470,6 +29528,8 @@
                         "id",
                         "credentialId",
                         "fieldKey",
+                        "attributeKeys",
+                        "action",
                         "sharedBy",
                         "recipientType",
                         "recipientUserId",
@@ -29770,6 +29830,19 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "attributeKeys": {
+                          "nullable": true,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "read"
+                          ]
+                        },
                         "expiresAt": {
                           "type": "string",
                           "format": "date-time",
@@ -29795,6 +29868,8 @@
                         "sharedBy",
                         "sharedByEmail",
                         "fieldKey",
+                        "attributeKeys",
+                        "action",
                         "expiresAt",
                         "singleUse",
                         "status"
@@ -29875,6 +29950,19 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "attributeKeys": {
+                          "nullable": true,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "read"
+                          ]
+                        },
                         "value": {
                           "type": "string"
                         },
@@ -29887,6 +29975,8 @@
                       "required": [
                         "credentialId",
                         "fieldKey",
+                        "attributeKeys",
+                        "action",
                         "value",
                         "viewedAt"
                       ],
@@ -29982,6 +30072,19 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "attributeKeys": {
+                          "nullable": true,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "read"
+                          ]
+                        },
                         "expiresAt": {
                           "type": "string",
                           "format": "date-time",
@@ -30003,6 +30106,8 @@
                         "credentialName",
                         "sharedByDisplayName",
                         "fieldKey",
+                        "attributeKeys",
+                        "action",
                         "expiresAt",
                         "status"
                       ],
@@ -30072,6 +30177,19 @@
                           "nullable": true,
                           "type": "string"
                         },
+                        "attributeKeys": {
+                          "nullable": true,
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "read"
+                          ]
+                        },
                         "value": {
                           "type": "string"
                         },
@@ -30084,6 +30202,8 @@
                       "required": [
                         "credentialId",
                         "fieldKey",
+                        "attributeKeys",
+                        "action",
                         "value",
                         "viewedAt"
                       ],

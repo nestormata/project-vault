@@ -89,6 +89,8 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
           credentialName,
           sharedByDisplayName,
           fieldKey: share.fieldKey,
+          attributeKeys: share.attributeKeys,
+          action: share.action,
           expiresAt: share.expiresAt.toISOString(),
           status: share.status,
         },
@@ -166,6 +168,8 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
         data: {
           credentialId: share.credentialId,
           fieldKey,
+          attributeKeys: share.attributeKeys,
+          action: share.action,
           value,
           viewedAt: viewedAt.toISOString(),
         },

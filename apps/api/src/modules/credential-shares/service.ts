@@ -1,20 +1,16 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import {
-  credentials,
-  credentialShares,
-  credentialVersions,
-  orgMemberships,
-  users,
-} from '@project-vault/db/schema'
+import { credentials, credentialShares, orgMemberships, users } from '@project-vault/db/schema'
 import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
-import { fieldMetaForResponse } from '../credentials/field-set.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
-import { revealCurrentValue } from '../credentials/service.js'
-import { DEFAULT_SHARE_LIST_LIMIT, SHARE_MAX_TTL_MS } from './schema.js'
+import {
+  attributeKeys as declaredAdapterAttributeKeys,
+  serializeBounded,
+} from '../credentials/bounded-share-adapter.js'
+import { DEFAULT_SHARE_LIST_LIMIT, MAX_ATTRIBUTE_KEYS, SHARE_MAX_TTL_MS } from './schema.js'
 
 export type CredentialShareRow = typeof credentialShares.$inferSelect
 
@@ -50,17 +46,41 @@ export function generateAndHashShareToken(): { rawToken: string; tokenHash: stri
 export function baseShareInsertValues(
   input: { orgId: string; credentialId: string; sharedByUserId: string; expiresAt: Date },
   fieldKey: string | null,
+  attributeKeys: string[] | null,
   tokenHash: string
 ) {
   return {
     orgId: input.orgId,
     credentialId: input.credentialId,
     fieldKey,
+    // Story 20.5 AC-1: `attributeKeys` generalizes `fieldKey` without narrowing it — both are
+    // persisted as validated/normalized, `fieldKey` untouched for existing Epic 17 call paths.
+    attributeKeys,
+    // Story 20.5 AC-1: `action` is `'read'`-only in this contract version — hard-coded here
+    // (never taken from caller input) since both creation paths only ever create read shares.
+    action: 'read' as const,
     sharedBy: input.sharedByUserId,
     tokenHash,
     expiresAt: input.expiresAt,
     status: 'active' as const,
   }
+}
+
+/** Story 20.5 (Scoped/Bounded Sharing Contract): resolves a persisted share row's effective
+ *  `attributeKeys` for serialization — `attributeKeys` (non-empty) wins; otherwise a non-null
+ *  `fieldKey` is treated as `[fieldKey]` (naming one field via the legacy column is exactly as
+ *  much explicit consent as naming it via `attributeKeys`, per the contract's "generalizes
+ *  `field_key` without narrowing its existing behavior"); `null` when neither is set, which is a
+ *  whole-resource share subject to sensitivity-default-exclusion (AC-2) — this covers both a
+ *  newly created whole-resource share and every pre-existing Epic 17 whole-credential share
+ *  (`fieldKey IS NULL`), since the rule applies going forward at serialization time, never by
+ *  reclassifying old rows. */
+export function effectiveAttributeKeysForShare(
+  share: Pick<CredentialShareRow, 'fieldKey' | 'attributeKeys'>
+): string[] | null {
+  if (share.attributeKeys && share.attributeKeys.length > 0) return share.attributeKeys
+  if (share.fieldKey) return [share.fieldKey]
+  return null
 }
 
 function constantTimeHexEqual(a: string, b: string): boolean {
@@ -77,6 +97,9 @@ export type CreateShareInput = {
   sharedByUserId: string
   recipientUserId: string
   fieldKey?: string
+  // Story 20.5 AC-1: `BoundedShareScope.attributeKeys` — `null`/omitted means "whole-resource,
+  // sensitivity-default-exclusion applies" (AC-2); a non-empty array is an explicit allow-list.
+  attributeKeys?: string[] | null
   expiresAt: Date
   singleUse: boolean
 }
@@ -87,30 +110,31 @@ export type CreateShareResult =
   | { status: 'recipient_not_found' }
   | { status: 'recipient_inactive' }
   | { status: 'unknown_field_key'; field: string }
+  // Story 20.5 (review patch): distinct from 'unknown_field_key' — the named key(s) are valid,
+  // the request just named both fieldKey and attributeKeys, which is a different failure mode.
+  | { status: 'ambiguous_share_scope' }
+  // Bugfix (review patch): see `ShareFieldAndExpiryValidation`'s matching variant above.
+  | { status: 'too_many_attribute_keys' }
   | { status: 'expires_at_invalid'; reason: 'past' | 'too_far_in_future' }
   | { status: 'ok'; share: CredentialShareRow; token: string }
 
-async function loadCredentialFieldMeta(
-  tx: Tx,
-  credentialId: string
-): Promise<{ schemaVersion: number; fieldMeta: unknown } | null> {
-  const [row] = await tx
-    .select({
-      currentVersionId: credentials.currentVersionId,
-    })
-    .from(credentials)
-    .where(eq(credentials.id, credentialId))
-    .limit(1)
-  if (!row?.currentVersionId) return null
-  const [version] = await tx
-    .select({
-      schemaVersion: credentialVersions.schemaVersion,
-      fieldMeta: credentialVersions.fieldMeta,
-    })
-    .from(credentialVersions)
-    .where(eq(credentialVersions.id, row.currentVersionId))
-    .limit(1)
-  return version ?? null
+/** Shared by `validateFieldKey`/`validateAttributeKeys` below: the credential's current version's
+ *  declared field keys, normalized identically (trim + NFC + lowercase). Factored out so the two
+ *  validators can never compute this differently from one another.
+ *
+ *  Bugfix (post-implementation review): this used to re-derive the credential's declared keys
+ *  independently (its own `selectCurrentVersionMeta`/`loadCredentialFieldMeta` + `fieldMetaForResponse`
+ *  pair) rather than reusing the adapter's own `attributeKeys` export — the exact same "declared
+ *  keys for a resource" question Story 20.5's contract already answers in exactly one place
+ *  (`bounded-share-adapter.ts`). Delegating here means that adapter function has a real caller
+ *  (it previously satisfied the contract's shape only nominally, never invoked) and this module no
+ *  longer maintains a second, parallel implementation of the same lookup. `normalizeFieldKey` is
+ *  applied here, not in the adapter, since the adapter's own contract intentionally returns
+ *  declared keys as-is (unnormalized) — this validator is the one place that needs the normalized
+ *  form for its own duplicate/allow-list comparisons. */
+async function declaredFieldKeys(tx: Tx, credentialId: string): Promise<string[]> {
+  const keys = await declaredAdapterAttributeKeys(credentialId, tx)
+  return keys.map((key) => normalizeFieldKey(key))
 }
 
 // Exported (Story 17.2 AC-4) so the external-share path reuses this exact validation rather than
@@ -121,42 +145,111 @@ export async function validateFieldKey(
   fieldKey: string | undefined
 ): Promise<{ ok: true; normalized: string | null } | { ok: false; field: string }> {
   if (!fieldKey) return { ok: true, normalized: null }
-  const version = await loadCredentialFieldMeta(tx, credentialId)
-  const declaredKeys = version
-    ? fieldMetaForResponse(version.schemaVersion, version.fieldMeta).map((f) =>
-        normalizeFieldKey(f.key)
-      )
-    : []
+  const declaredKeys = await declaredFieldKeys(tx, credentialId)
   const normalized = normalizeFieldKey(fieldKey)
   if (!declaredKeys.includes(normalized)) return { ok: false, field: fieldKey }
   return { ok: true, normalized }
 }
 
+// Story 20.5 AC-1: the `attributeKeys` sibling of `validateFieldKey` — every named key must be a
+// key actually declared on the credential's current version, normalized identically (trim + NFC +
+// lowercase via `normalizeFieldKey`), or the whole request is rejected the same way an unknown
+// `fieldKey` is (never a silent partial-acceptance of only the valid names).
+export async function validateAttributeKeys(
+  tx: Tx,
+  credentialId: string,
+  attributeKeys: string[] | null | undefined
+): Promise<
+  | { ok: true; normalized: string[] | null }
+  | { ok: false; field: string; tooMany?: false }
+  | { ok: false; tooMany: true }
+> {
+  if (!attributeKeys || attributeKeys.length === 0) return { ok: true, normalized: null }
+  const declaredKeys = await declaredFieldKeys(tx, credentialId)
+  // Bugfix (post-implementation review): dedupe on the NORMALIZED form — a client sending
+  // `['password', 'password']` (or case/whitespace-variant duplicates that normalize to the same
+  // key, e.g. `['Password', ' password ']`) must persist a single entry, not a redundant array
+  // (`isIncluded`'s `.includes()` check makes duplicates harmless for filtering, but a persisted
+  // duplicate is still bytes/rows worth of noise this validator can trivially prevent).
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const key of attributeKeys) {
+    const norm = normalizeFieldKey(key)
+    if (!declaredKeys.includes(norm)) return { ok: false, field: key }
+    if (seen.has(norm)) continue
+    seen.add(norm)
+    normalized.push(norm)
+  }
+  // Bugfix (review patch): the `MAX_ATTRIBUTE_KEYS` cap is checked here, AFTER deduping, not as a
+  // raw `.max()` on the Zod schema (schema.ts's `AttributeKeysSchema`) — a caller sending
+  // `MAX_ATTRIBUTE_KEYS` keys where one is a case/whitespace duplicate of another must not be
+  // rejected for exceeding the cap when the deduplicated set actually fits within it.
+  if (normalized.length > MAX_ATTRIBUTE_KEYS) return { ok: false, tooMany: true }
+  // Bugfix (dev-auto review): sorted so two requests naming the same set of keys in a different
+  // order persist identically — `external-service.ts`'s AC-16 pending-share cap counts/locks a
+  // bounded share's bucket by exact `attribute_keys` array equality, which is order-sensitive in
+  // Postgres; an unsorted array let two functionally-identical requests (e.g. `['a','b']` vs
+  // `['b','a']`) land in different buckets and partially evade the cap.
+  normalized.sort()
+  return { ok: true, normalized }
+}
+
 export type ShareFieldAndExpiryValidation =
   | { status: 'unknown_field_key'; field: string }
+  | { status: 'ambiguous_share_scope' }
+  // Bugfix (review patch): distinct from 'unknown_field_key' — every named key is a real,
+  // declared field; the deduplicated set is simply too large (see `validateAttributeKeys`'s
+  // `tooMany` case above for why this is checked post-dedup rather than as a raw Zod `.max()`).
+  | { status: 'too_many_attribute_keys' }
   | { status: 'expires_at_invalid'; reason: 'past' | 'too_far_in_future' }
-  | { status: 'ok'; normalizedField: string | null }
+  | { status: 'ok'; normalizedField: string | null; normalizedAttributeKeys: string[] | null }
 
 /** Shared by both share-creation paths (Story 17.2 AC-4/AC-13): unknown-field-key and expiry-
  *  window validation, parameterized only by the caller's own max-TTL constant. The result's
  *  `status` variants line up 1:1 with `CreateShareResult`/`CreateExternalShareResult` so a caller
- *  can return a non-'ok' result directly without re-mapping it. */
+ *  can return a non-'ok' result directly without re-mapping it.
+ *
+ *  Story 20.5 AC-1: also validates `attributeKeys` (the request schema rejects supplying both
+ *  `fieldKey` and `attributeKeys` on the same request — see `schema.ts` — so at most one of the
+ *  two inputs here is ever non-empty in practice, but both are validated independently regardless
+ *  so a non-HTTP caller gets the same guarantee). */
 export async function validateShareFieldAndExpiry(
   tx: Tx,
   credentialId: string,
   fieldKey: string | undefined,
+  attributeKeys: string[] | null | undefined,
   expiresAt: Date,
   maxTtlMs: number
 ): Promise<ShareFieldAndExpiryValidation> {
   const fieldValidation = await validateFieldKey(tx, credentialId, fieldKey)
   if (!fieldValidation.ok) return { status: 'unknown_field_key', field: fieldValidation.field }
 
+  const attributeKeysValidation = await validateAttributeKeys(tx, credentialId, attributeKeys)
+  if (!attributeKeysValidation.ok) {
+    if (attributeKeysValidation.tooMany) return { status: 'too_many_attribute_keys' }
+    return { status: 'unknown_field_key', field: attributeKeysValidation.field }
+  }
+
+  // Bugfix (post-review): the HTTP layer's `rejectBothFieldKeyAndAttributeKeys` Zod `.refine`
+  // (schema.ts) is the only thing that previously blocked a request naming both `fieldKey` and
+  // `attributeKeys` — a non-HTTP caller of this function bypassed that and would only fail at
+  // insert time against the DB `credential_shares_field_key_attribute_keys_check` constraint (an
+  // unhandled insert failure, not a graceful validation result). Re-checked here so this
+  // function's own doc comment ("a non-HTTP caller gets the same guarantee") is actually true.
+  if (fieldValidation.normalized && attributeKeysValidation.normalized) {
+    return { status: 'ambiguous_share_scope' }
+  }
+
   const now = Date.now()
   if (expiresAt.getTime() <= now) return { status: 'expires_at_invalid', reason: 'past' }
   if (expiresAt.getTime() > now + maxTtlMs) {
     return { status: 'expires_at_invalid', reason: 'too_far_in_future' }
   }
-  return { status: 'ok', normalizedField: fieldValidation.normalized }
+  return {
+    status: 'ok',
+    normalizedField: fieldValidation.normalized,
+    normalizedAttributeKeys: attributeKeysValidation.normalized,
+  }
 }
 
 async function findActiveOrgMembership(
@@ -196,6 +289,7 @@ export async function createCredentialShare(
     tx,
     input.credentialId,
     input.fieldKey,
+    input.attributeKeys,
     input.expiresAt,
     SHARE_MAX_TTL_MS
   )
@@ -206,7 +300,12 @@ export async function createCredentialShare(
   const [share] = await tx
     .insert(credentialShares)
     .values({
-      ...baseShareInsertValues(input, validation.normalizedField, tokenHash),
+      ...baseShareInsertValues(
+        input,
+        validation.normalizedField,
+        validation.normalizedAttributeKeys,
+        tokenHash
+      ),
       recipientType: 'user',
       recipientUserId: input.recipientUserId,
       recipientEmail: null,
@@ -403,6 +502,7 @@ export async function lazilyExpireShareIfDue(
       credentialId: updated.credentialId,
       fieldKey: updated.fieldKey,
       recipientType: updated.recipientType,
+      attributeKeys: updated.attributeKeys,
     },
   })
 
@@ -507,21 +607,24 @@ export async function revealShare(
   })
   if (found.status === 'not_found') return { status: 'not_found' }
   if (found.status === 'session_mismatch') return { status: 'session_mismatch' }
-  const { share, credentialProjectId } = found.metadata
+  const { share } = found.metadata
 
   const blocked = await precheckShareClaimable(tx, params, share)
   if (blocked) return blocked
 
-  const revealed = await revealCurrentValue(tx, {
-    credentialId: share.credentialId,
-    projectId: credentialProjectId,
-    field: share.fieldKey ?? undefined,
-  })
-  // AC-3: the field was renamed/removed since the share was created (or the credential/version
-  // is otherwise gone) — treat as expired rather than a 500 or a silent null reveal. Checked
-  // BEFORE the atomic claim below: a single-use share must not be burned (nor a multi-view
-  // share's view_count incremented) by a reveal attempt that never actually reveals anything.
-  if (revealed.status !== 'found') return { status: 'expired' }
+  // Story 20.5 AC-2/AC-3: `serializeBounded` is the credential adapter's bounded, sensitivity-
+  // filtered serialization — `effectiveAttributeKeysForShare` generalizes `fieldKey` into the
+  // contract's `attributeKeys` shape without changing a single-`fieldKey`-scoped share's behavior
+  // (see that function's doc comment). Checked BEFORE the atomic claim below, same as the
+  // pre-existing "field renamed/removed since creation" check this replaces: a single-use share
+  // must not be burned (nor a multi-view share's view_count incremented) by a reveal attempt that
+  // never actually reveals anything.
+  const bounded = await serializeBounded(
+    share.credentialId,
+    effectiveAttributeKeysForShare(share),
+    tx
+  )
+  if (bounded.status !== 'ok') return { status: 'expired' }
 
   // AC-4: singleUse: false remains viewable (re-incrementing view_count) until expiry — only a
   // singleUse: true share ever transitions to the terminal 'viewed' status.
@@ -536,11 +639,11 @@ export async function revealShare(
     })
   }
 
-  // A whole-credential share (fieldKey null) of a genuinely multi-field secret gets the full
-  // field envelope (same shape the ordinary reveal endpoint returns for that case) serialized as
-  // JSON; every other case (field-scoped share, or a whole-credential share of a single-value
-  // secret) is a bare string.
-  const value = revealed.kind === 'value' ? revealed.value : JSON.stringify(revealed.fields)
+  // A whole-credential share (fieldKey null) of a genuinely multi-field secret (minus any
+  // sensitive fields excluded by AC-2's default) gets its field set serialized as JSON (same
+  // shape the ordinary reveal endpoint returns for that case); every other case (field-scoped
+  // share, or a whole-credential share that collapses to a single value) is a bare string.
+  const value = bounded.kind === 'value' ? bounded.value : JSON.stringify(bounded.fields)
 
   return { status: 'ok', share: claimed, value, fieldKey: share.fieldKey }
 }

@@ -54,6 +54,7 @@
         sharedByLabel={data.metadata.sharedByDisplayName}
         credentialName={data.metadata.credentialName}
         fieldKey={data.metadata.fieldKey}
+        attributeKeys={data.metadata.attributeKeys}
         expiresAt={data.metadata.expiresAt}
         expiryNote="single view only"
       />

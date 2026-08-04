@@ -36,6 +36,7 @@ import {
   ListCredentialSharesQuerySchema,
   ListCredentialSharesResponseSchema,
   ListNudgeResponseSchema,
+  MAX_ATTRIBUTE_KEYS,
   MAX_SHARE_LIST_LIMIT,
   RevokeCredentialShareResponseSchema,
   type CreateCredentialShareBody,
@@ -126,6 +127,9 @@ export function serializeShare(share: CredentialShareRow) {
     id: share.id,
     credentialId: share.credentialId,
     fieldKey: share.fieldKey,
+    // Story 20.5 AC-1: the persisted `BoundedShareScope` fields.
+    attributeKeys: share.attributeKeys,
+    action: share.action,
     sharedBy: share.sharedBy,
     recipientType: share.recipientType as 'user' | 'external',
     recipientUserId: share.recipientUserId,
@@ -138,6 +142,36 @@ export function serializeShare(share: CredentialShareRow) {
     viewCount: share.viewCount,
     status: share.status,
   }
+}
+
+// Story 20.5 (review patch): factored out of both `createShareErrorResponse` and
+// `createExternalShareErrorResponse` below — they handled `unknown_field_key`/
+// `ambiguous_share_scope` identically, and the duplication tripped jscpd once the second status
+// was added.
+function shareScopeErrorResponse(
+  reply: FastifyReply,
+  result:
+    | { status: 'unknown_field_key'; field: string }
+    | { status: 'ambiguous_share_scope' }
+    | { status: 'too_many_attribute_keys' }
+): unknown {
+  if (result.status === 'unknown_field_key') {
+    return reply.status(400).send({
+      code: 'unknown_field_key',
+      message: `Unknown field key: '${result.field}'`,
+      field: result.field,
+    })
+  }
+  if (result.status === 'too_many_attribute_keys') {
+    return reply.status(400).send({
+      code: 'too_many_attribute_keys',
+      message: `attributeKeys must name at most ${MAX_ATTRIBUTE_KEYS} distinct fields.`,
+    })
+  }
+  return reply.status(400).send({
+    code: 'ambiguous_share_scope',
+    message: 'Specify at most one of fieldKey or attributeKeys.',
+  })
 }
 
 function createShareErrorResponse(
@@ -162,12 +196,12 @@ function createShareErrorResponse(
       .status(400)
       .send({ code: 'recipient_inactive', message: 'Recipient is a deactivated org user.' })
   }
-  if (result.status === 'unknown_field_key') {
-    return reply.status(400).send({
-      code: 'unknown_field_key',
-      message: `Unknown field key: '${result.field}'`,
-      field: result.field,
-    })
+  if (
+    result.status === 'unknown_field_key' ||
+    result.status === 'ambiguous_share_scope' ||
+    result.status === 'too_many_attribute_keys'
+  ) {
+    return shareScopeErrorResponse(reply, result)
   }
   return reply.status(400).send({
     code: 'expires_at_invalid',
@@ -185,12 +219,12 @@ function createExternalShareErrorResponse(
   if (result.status === 'credential_not_found') {
     return reply.status(404).send(CREDENTIAL_NOT_FOUND)
   }
-  if (result.status === 'unknown_field_key') {
-    return reply.status(400).send({
-      code: 'unknown_field_key',
-      message: `Unknown field key: '${result.field}'`,
-      field: result.field,
-    })
+  if (
+    result.status === 'unknown_field_key' ||
+    result.status === 'ambiguous_share_scope' ||
+    result.status === 'too_many_attribute_keys'
+  ) {
+    return shareScopeErrorResponse(reply, result)
   }
   if (result.status === 'cap_exceeded') {
     return reply.status(429).send({
@@ -433,6 +467,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         sharedByUserId: secureCtx.auth.userId,
         recipientUserId: parsed.data.recipientUserId,
         fieldKey: parsed.data.fieldKey,
+        attributeKeys: parsed.data.attributeKeys,
         expiresAt: new Date(parsed.data.expiresAt),
         singleUse: parsed.data.singleUse,
       })
@@ -445,6 +480,8 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
           req,
           buildShareCreationAuditPayload(params, result.share, {
             recipientUserId: parsed.data.recipientUserId,
+            attributeKeys: result.share.attributeKeys,
+            action: result.share.action,
           })
         )
       } catch (error) {
@@ -555,6 +592,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         sharedByUserId: secureCtx.auth.userId,
         recipientEmail: parsed.data.recipientEmail,
         fieldKey: parsed.data.fieldKey,
+        attributeKeys: parsed.data.attributeKeys,
         expiresAt: new Date(parsed.data.expiresAt),
       })
       if (result.status !== 'ok') return createExternalShareErrorResponse(reply, result)
@@ -567,6 +605,8 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
           buildShareCreationAuditPayload(params, result.share, {
             recipientType: 'external',
             recipientEmail: result.share.recipientEmail,
+            attributeKeys: result.share.attributeKeys,
+            action: result.share.action,
           })
         )
       } catch (error) {
@@ -736,6 +776,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
               credentialId: params.credentialId,
               projectId: params.projectId,
               reason: 'manual_revoke',
+              attributeKeys: existing.share.attributeKeys,
             },
           })
         } catch (error) {

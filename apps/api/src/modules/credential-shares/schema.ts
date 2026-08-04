@@ -38,14 +38,64 @@ export const CredentialShareRevokeParamsSchema = CredentialShareParamsSchema.ext
   shareId: z.uuid(),
 })
 
-export const CreateCredentialShareBodySchema = z
-  .object({
-    recipientUserId: z.uuid(),
-    fieldKey: z.string().trim().min(1).max(64).optional(),
-    expiresAt: z.iso.datetime({ offset: true }),
-    singleUse: z.boolean().default(true),
+// Story 20.5 AC-1 (Scoped/Bounded Sharing Contract, decided by Story 20.4 in architecture.md):
+// `attributeKeys: string[] | null` generalizes `fieldKey` without narrowing its existing behavior
+// — `null` (or omitted) means "whole-resource, sensitivity-default-exclusion applies" (AC-2); a
+// non-empty array is an explicit allow-list of attribute/field keys, included whether sensitive
+// or not (naming a key is explicit consent). `.min(1)` on the array itself rejects an explicit
+// `[]`, which would be ambiguous ("named nothing" vs "whole-resource") rather than a meaningful
+// third state.
+//
+// Bugfix (review patch): the 50-key cap is deliberately NOT enforced here as a raw `.max(50)` —
+// `validateAttributeKeys` (service.ts) dedupes keys on their normalized (trim/case-folded) form,
+// so a caller sending 50 keys where one is a case/whitespace duplicate of another would otherwise
+// be rejected for exceeding the cap even though the deduplicated set fits within it. The cap is
+// instead enforced post-dedup in `validateAttributeKeys`, returning a proper validation result
+// rather than a Zod parse failure. This schema's role is limited to shape/type validation only.
+export const AttributeKeysSchema = z.array(z.string().trim().min(1).max(64)).min(1).nullable()
+
+// The cap itself (see `AttributeKeysSchema`'s comment above for why it's enforced post-dedup in
+// `validateAttributeKeys`, service.ts, rather than as a raw `.max()` on this schema).
+export const MAX_ATTRIBUTE_KEYS = 50
+
+// Story 20.5 AC-1: `action` accepts only `'read'` in this contract version — `z.literal('read')`
+// rejects any other value with the schema's own validation error rather than silently coercing it
+// (a request that omits `action` defaults to `'read'`, which is a default, not a coercion of an
+// explicitly-wrong value).
+export const ShareActionSchema = z.literal('read').default('read')
+
+// Story 20.5: `fieldKey` and `attributeKeys` are two spellings of the same scope concept — a
+// request supplying both is ambiguous, not additive, so it is rejected rather than silently
+// preferring one over the other. Shared by both create-share body schemas below so the rule (and
+// its error shape) can never drift between the member and external-recipient variants.
+function rejectBothFieldKeyAndAttributeKeys<
+  T extends { fieldKey?: string; attributeKeys?: string[] | null },
+>(schema: z.ZodType<T>) {
+  return schema.refine((body) => !(body.fieldKey && body.attributeKeys), {
+    message: 'Specify at most one of fieldKey or attributeKeys.',
+    path: ['attributeKeys'],
   })
-  .strict()
+}
+
+// Story 20.5 AC-1: the `BoundedShareScope` fields shared by both create-share body schemas —
+// spread into each `.object()` below rather than repeated, so the two variants' `fieldKey`/
+// `attributeKeys`/`action`/`expiresAt` declarations can never drift apart.
+const boundedShareScopeRequestShape = {
+  fieldKey: z.string().trim().min(1).max(64).optional(),
+  attributeKeys: AttributeKeysSchema.optional(),
+  action: ShareActionSchema,
+  expiresAt: z.iso.datetime({ offset: true }),
+}
+
+export const CreateCredentialShareBodySchema = rejectBothFieldKeyAndAttributeKeys(
+  z
+    .object({
+      recipientUserId: z.uuid(),
+      ...boundedShareScopeRequestShape,
+      singleUse: z.boolean().default(true),
+    })
+    .strict()
+)
 
 export const CredentialShareStatusSchema = z.enum([
   'active',
@@ -59,6 +109,9 @@ export const CredentialShareSummarySchema = z.object({
   id: z.uuid(),
   credentialId: z.uuid(),
   fieldKey: z.string().nullable(),
+  // Story 20.5 AC-1: the persisted `BoundedShareScope` fields.
+  attributeKeys: z.array(z.string()).nullable(),
+  action: z.literal('read'),
   sharedBy: z.uuid(),
   recipientType: z.enum(['user', 'external']),
   recipientUserId: z.uuid().nullable(),
@@ -80,16 +133,17 @@ export const CredentialShareSummarySchema = z.object({
 // hard-codes `singleUse: true` on the insert regardless of what was validated here. The step-up
 // factor (`password` xor `totpCode`) is part of this same body (AC-3) — validated for shape here,
 // verified for correctness by the step-up helper, never persisted.
-export const CreateExternalCredentialShareBodySchema = z
-  .object({
-    recipientEmail: z.email().trim().max(320),
-    fieldKey: z.string().trim().min(1).max(64).optional(),
-    expiresAt: z.iso.datetime({ offset: true }),
-    singleUse: z.boolean().optional(),
-    password: z.string().min(1).max(512).optional(),
-    totpCode: z.string().trim().min(1).max(16).optional(),
-  })
-  .strict()
+export const CreateExternalCredentialShareBodySchema = rejectBothFieldKeyAndAttributeKeys(
+  z
+    .object({
+      recipientEmail: z.email().trim().max(320),
+      ...boundedShareScopeRequestShape,
+      singleUse: z.boolean().optional(),
+      password: z.string().min(1).max(512).optional(),
+      totpCode: z.string().trim().min(1).max(16).optional(),
+    })
+    .strict()
+)
 
 export const ExternalCredentialShareSummarySchema = CredentialShareSummarySchema
 
@@ -101,6 +155,18 @@ export const CreateExternalCredentialShareResponseSchema = z.object({
 
 export const ExternalShareAccessParamsSchema = z.object({ token: z.string().min(1) })
 
+// Story 20.5 (review patch): the recipient-visible `BoundedShareScope` fields — surfaced so a
+// recipient can tell they're looking at a bounded subset of fields, not an ordinary
+// whole-credential share (the sharer-facing summary already carries these; the recipient-facing
+// metadata/reveal responses previously silently dropped them). Spread into every recipient-facing
+// response schema below so they can never drift apart, mirroring `boundedShareScopeRequestShape`'s
+// identical role for the create-share request bodies above.
+const boundedShareScopeResponseShape = {
+  fieldKey: z.string().nullable(),
+  attributeKeys: z.array(z.string()).nullable(),
+  action: z.literal('read'),
+}
+
 // Story 17.2 AC-9: metadata only — credential name, sharer *display name* (not email, so an
 // unauthenticated party never learns an org member's address), field if scoped, expiry. No
 // `sharedByEmail` field at all (unlike 17.1's authenticated-recipient metadata response).
@@ -109,7 +175,7 @@ export const ExternalShareMetadataResponseSchema = z.object({
     credentialId: z.uuid(),
     credentialName: z.string(),
     sharedByDisplayName: z.string(),
-    fieldKey: z.string().nullable(),
+    ...boundedShareScopeResponseShape,
     expiresAt: z.iso.datetime(),
     status: CredentialShareStatusSchema,
   }),
@@ -158,7 +224,7 @@ export const ShareMetadataResponseSchema = z.object({
     credentialName: z.string(),
     sharedBy: z.uuid(),
     sharedByEmail: z.string().nullable(),
-    fieldKey: z.string().nullable(),
+    ...boundedShareScopeResponseShape,
     expiresAt: z.iso.datetime(),
     singleUse: z.boolean(),
     status: CredentialShareStatusSchema,
@@ -168,7 +234,7 @@ export const ShareMetadataResponseSchema = z.object({
 export const ShareRevealResponseSchema = z.object({
   data: z.object({
     credentialId: z.uuid(),
-    fieldKey: z.string().nullable(),
+    ...boundedShareScopeResponseShape,
     value: z.string(),
     viewedAt: z.iso.datetime(),
   }),

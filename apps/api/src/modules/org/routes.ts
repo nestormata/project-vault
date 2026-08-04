@@ -337,7 +337,11 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           actorUserId: secureCtx.auth.userId,
           eventType: AuditEvent.CREDENTIAL_SHARE_REVOKED,
           resourceId: share.id,
-          payload: { credentialId: share.credentialId, reason: 'sharer_deactivated' },
+          payload: {
+            credentialId: share.credentialId,
+            reason: 'sharer_deactivated',
+            attributeKeys: share.attributeKeys,
+          },
           request: req,
         })
       }

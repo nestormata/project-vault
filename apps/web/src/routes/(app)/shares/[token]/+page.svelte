@@ -56,6 +56,7 @@
         sharedByLabel={data.metadata.sharedByEmail ?? 'A teammate'}
         credentialName={data.metadata.credentialName}
         fieldKey={data.metadata.fieldKey}
+        attributeKeys={data.metadata.attributeKeys}
         expiresAt={data.metadata.expiresAt}
         expiryNote={data.metadata.singleUse ? 'single view only' : 'viewable until expiry'}
       />

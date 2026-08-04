@@ -386,6 +386,7 @@ async function supersedeOutstandingSharesAndAudit(
         fieldKey: share.fieldKey,
         rotationId: rotation.id,
         recipientType: share.recipientType,
+        attributeKeys: share.attributeKeys,
       },
     })
   }

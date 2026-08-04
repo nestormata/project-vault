@@ -30,6 +30,19 @@ export const credentialShares = pgTable(
     // single-nullable-text-column shape (not rotations.target_fields' array shape) — a share
     // always targets at most one field or the whole credential. NULL = whole-credential value.
     fieldKey: text('field_key'),
+    // Story 20.5 (Scoped/Bounded Sharing Contract, Epic 20 Story 20.4): generalizes `fieldKey`
+    // without narrowing its existing behavior — NULL means "defer to `fieldKey`, or if that is
+    // also NULL, whole-resource with sensitivity-default-exclusion applied at serialization time
+    // (see `effectiveAttributeKeysForShare` in service.ts)". A non-null, non-empty array is an
+    // explicit allow-list of attribute/field keys (naming a key is explicit consent, sensitive or
+    // not). `fieldKey` is left fully intact for existing (Epic 17) call paths — this column is
+    // strictly additive, never a replacement.
+    attributeKeys: text('attribute_keys').array(),
+    // Story 20.5: `BoundedShareScope.action` — `'read'` only in this contract version (see
+    // architecture.md's Scoped/Bounded Sharing Contract). Persisted (not merely validated at the
+    // API layer) so a future contract revision that adds a second action value has a real column
+    // to migrate rather than an implicit default with no persisted record of the decision.
+    action: text('action').notNull().default('read').$type<'read'>(),
     sharedBy: uuid('shared_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
@@ -85,6 +98,26 @@ export const credentialShares = pgTable(
     statusCheck: check(
       'credential_shares_status_check',
       sql`${t.status} IN ('active','viewed','revoked','expired','superseded')`
+    ),
+    // Story 20.5 AC-1: `action` accepts only `'read'` in this contract version — enforced at the
+    // database level too, not just the Zod schema, matching this table's existing double-enforced
+    // `recipient_type`/`status` convention.
+    actionCheck: check('credential_shares_action_check', sql`${t.action} IN ('read')`),
+    // Bugfix (post-implementation review): backs up `schema.ts`'s Zod-level
+    // `rejectBothFieldKeyAndAttributeKeys` `.refine` with a real DB invariant — `field_key` and
+    // `attribute_keys` are two spellings of the same scope concept (see `attributeKeys` column
+    // comment above) and must never both be set on the same row, regardless of write path.
+    fieldKeyAttributeKeysCheck: check(
+      'credential_shares_field_key_attribute_keys_check',
+      sql`NOT (${t.fieldKey} IS NOT NULL AND ${t.attributeKeys} IS NOT NULL)`
+    ),
+    // Story 20.5 (review patch): backs up `schema.ts`'s Zod-level `AttributeKeysSchema.min(1)`
+    // with a real DB invariant — an explicit `attribute_keys = '{}'` is ambiguous ("named nothing"
+    // vs. "whole-resource") and this table's other invariants are already double-enforced at the
+    // DB layer, not just Zod (see `actionCheck`/`fieldKeyAttributeKeysCheck` above).
+    attributeKeysNotEmptyCheck: check(
+      'credential_shares_attribute_keys_not_empty_check',
+      sql`${t.attributeKeys} IS NULL OR cardinality(${t.attributeKeys}) > 0`
     ),
   })
 )

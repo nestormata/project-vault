@@ -1199,6 +1199,11 @@ describe('credential detail +page.svelte', () => {
       await fireEvent.change(screen.getByLabelText(/recipient/i), {
         target: { value: 'recipient-1' },
       })
+      // The default fixture is a legacy single-value credential — its one implicit field is
+      // always `sensitive: true`, so it must be explicitly checked or the share would resolve to
+      // an empty field set and the create-share guard blocks the submission (see the AC-9 bugfix
+      // test above).
+      await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
       await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
 
       expect(createCredentialShareMock).toHaveBeenCalledWith(
@@ -1208,6 +1213,237 @@ describe('credential detail +page.svelte', () => {
         expect.objectContaining({ recipientUserId: 'recipient-1', singleUse: true })
       )
       expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
+    })
+
+    // Story 20.5 AC-9: sensitive fields render unchecked-by-default with a visible
+    // "excluded by default" badge (not hidden entirely); non-sensitive fields render checked.
+    // Leaving every field at its default sends `attributeKeys: null` (whole-resource,
+    // sensitivity-default-exclusion applies at serialization time) rather than an explicit list.
+    it('Story 20.5 AC-9: renders a checkbox per field, sensitive fields unchecked with a visible badge, non-sensitive checked', () => {
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            credential: {
+              ...CREDENTIAL,
+              fields: [
+                { key: 'username', sensitive: false },
+                { key: 'password', sensitive: true },
+              ],
+            },
+          }),
+        },
+      })
+
+      const usernameCheckbox = screen.getByRole('checkbox', { name: /username/i })
+      const passwordCheckbox = screen.getByRole('checkbox', { name: /password/i })
+      expect((usernameCheckbox as HTMLInputElement).checked).toBe(true)
+      expect((passwordCheckbox as HTMLInputElement).checked).toBe(false)
+      expect(screen.getByText(/excluded by default/i)).toBeTruthy()
+    })
+
+    it('Story 20.5 AC-9: leaving every field at its default sends attributeKeys: null (whole-resource, unchanged from today)', async () => {
+      createCredentialShareMock.mockResolvedValue({
+        id: 'share-1',
+        credentialId,
+        fieldKey: null,
+        attributeKeys: null,
+        action: 'read',
+        sharedBy: 'sharer-1',
+        recipientUserId: 'recipient-1',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-29T00:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-one-time-token',
+      })
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            credential: {
+              ...CREDENTIAL,
+              fields: [
+                { key: 'username', sensitive: false },
+                { key: 'password', sensitive: true },
+              ],
+            },
+          }),
+        },
+      })
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      expect(createCredentialShareMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        expect.objectContaining({ attributeKeys: null })
+      )
+    })
+
+    it('Story 20.5 AC-9: explicitly checking a sensitive field includes it in attributeKeys (explicit consent)', async () => {
+      createCredentialShareMock.mockResolvedValue({
+        id: 'share-1',
+        credentialId,
+        fieldKey: null,
+        attributeKeys: ['username', 'password'],
+        action: 'read',
+        sharedBy: 'sharer-1',
+        recipientUserId: 'recipient-1',
+        singleUse: true,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        expiresAt: '2026-07-29T00:00:00.000Z',
+        revokedAt: null,
+        firstViewedAt: null,
+        viewCount: 0,
+        status: 'active',
+        token: 'raw-one-time-token',
+      })
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            credential: {
+              ...CREDENTIAL,
+              fields: [
+                { key: 'username', sensitive: false },
+                { key: 'password', sensitive: true },
+              ],
+            },
+          }),
+        },
+      })
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('checkbox', { name: /password/i }))
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      expect(createCredentialShareMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        expect.objectContaining({ attributeKeys: ['username', 'password'] })
+      )
+    })
+
+    // Bugfix (post-implementation review): `shareAttributeOverrides` is keyed by field key and
+    // must never silently carry over to a field set it wasn't recorded against — e.g. if
+    // `data.credential.fields` changes underneath the open picker (a concurrent edit re-fetches
+    // credential data with a field renamed since the checkbox was toggled). Proves the override
+    // is reset (checkboxes fall back to their fresh per-field default) once the field-key set
+    // changes, rather than a stale `password` override silently reapplying to an unrelated field
+    // that now happens to reuse a key, or the checked-state UI drifting from what will actually be
+    // submitted.
+    it('Story 20.5 AC-9 bugfix: a share-attribute override is reset when the credential field-key set changes underneath it', async () => {
+      const { rerender } = render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            credential: {
+              ...CREDENTIAL,
+              fields: [
+                { key: 'username', sensitive: false },
+                { key: 'password', sensitive: true },
+              ],
+            },
+          }),
+        },
+      })
+
+      // Explicitly check the sensitive `password` field — an override now exists for that key.
+      await fireEvent.click(screen.getByRole('checkbox', { name: /password/i }))
+      expect(
+        (screen.getByRole('checkbox', { name: /password/i }) as HTMLInputElement).checked
+      ).toBe(true)
+
+      // Simulate the field set changing underneath the open form (e.g. a concurrent field-set
+      // edit re-fetching `data.credential` with `password` renamed to `secret`).
+      await rerender({
+        data: baseData({
+          credential: {
+            ...CREDENTIAL,
+            fields: [
+              { key: 'username', sensitive: false },
+              { key: 'secret', sensitive: true },
+            ],
+          },
+        }),
+      })
+
+      // The new sensitive field renders unchecked at its own fresh default — the stale override
+      // recorded under the old `password` key must not silently apply to `secret`, nor leave any
+      // lingering checked state now that the key it was recorded against no longer exists.
+      const secretCheckbox = screen.getByRole('checkbox', { name: /secret/i })
+      expect((secretCheckbox as HTMLInputElement).checked).toBe(false)
+      expect(screen.queryByRole('checkbox', { name: /password/i })).toBeNull()
+    })
+
+    // Bugfix (post-implementation review): a credential whose fields are ALL sensitive has every
+    // checkbox unchecked at its own default — a legitimate "default whole-resource" selection per
+    // `resolveShareAttributeKeys`, but one AC-2's sensitivity-default-exclusion always reveals as
+    // an empty field set. Submitting it must be blocked with guidance, not silently create a share
+    // that can never disclose anything.
+    it('Story 20.5 AC-9 bugfix: blocks creating a share when every field is sensitive and none is explicitly checked', async () => {
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            credential: {
+              ...CREDENTIAL,
+              fields: [
+                { key: 'apiKey', sensitive: true },
+                { key: 'apiSecret', sensitive: true },
+              ],
+            },
+          }),
+        },
+      })
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      expect(await screen.findByText(/every field on this credential is sensitive/i)).toBeTruthy()
+      expect(createCredentialShareMock).not.toHaveBeenCalled()
+    })
+
+    // UX gap fix: mirrors the backend's `AttributeKeysSchema.max(50)` (schema.ts) client-side —
+    // checking more than 50 fields must be blocked with a specific message before submission,
+    // not left to surface as a generic "Could not create share" after a round-trip 422.
+    it('blocks creating a share when more than 50 fields are explicitly checked', async () => {
+      const manyFields = Array.from({ length: 51 }, (_, i) => ({
+        key: `field-${i}`,
+        sensitive: true,
+      }))
+      render(CredentialDetailPage, {
+        props: {
+          data: baseData({
+            credential: {
+              ...CREDENTIAL,
+              fields: manyFields,
+            },
+          }),
+        },
+      })
+
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      const fieldsToShareGroup = screen.getByRole('group', { name: /fields to share/i })
+      const fieldCheckboxes = within(fieldsToShareGroup).getAllByRole('checkbox')
+      expect(fieldCheckboxes).toHaveLength(manyFields.length)
+      for (const checkbox of fieldCheckboxes) {
+        await fireEvent.click(checkbox)
+      }
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      expect(await screen.findByText(/at most 50 fields/i)).toBeTruthy()
+      expect(createCredentialShareMock).not.toHaveBeenCalled()
     })
 
     // Story 18.2 AC-1/AC-2/AC-7: the rendered share link is a full absolute URL (scheme + host +
@@ -1236,6 +1472,9 @@ describe('credential detail +page.svelte', () => {
       await fireEvent.change(screen.getByLabelText(/recipient/i), {
         target: { value: 'recipient-1' },
       })
+      // Legacy single-value credential — explicitly opt its one (always-sensitive) implicit field
+      // in, or the create-share guard blocks the submission (see the AC-9 bugfix test above).
+      await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
       await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
 
       const link = await screen.findByText('https://vault.example.com/shares/raw-one-time-token')
@@ -1268,6 +1507,9 @@ describe('credential detail +page.svelte', () => {
       await fireEvent.change(screen.getByLabelText(/recipient/i), {
         target: { value: 'recipient-1' },
       })
+      // Legacy single-value credential — explicitly opt its one (always-sensitive) implicit field
+      // in, or the create-share guard blocks the submission before origin resolution ever runs.
+      await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
 
       await expect(
         fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
@@ -1302,6 +1544,9 @@ describe('credential detail +page.svelte', () => {
       await fireEvent.input(screen.getByLabelText(/confirm your password/i), {
         target: { value: 'sharer-password' },
       })
+      // Legacy single-value credential — explicitly opt its one (always-sensitive) implicit field
+      // in, or the create-share guard blocks the submission before it ever reaches the API.
+      await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
       await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
 
       expect(createExternalCredentialShareMock).toHaveBeenCalledWith(

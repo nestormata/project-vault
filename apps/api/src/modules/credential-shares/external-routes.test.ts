@@ -16,6 +16,7 @@ import {
   bootCredentialRouteApp,
   createCredentialTestProject,
   createCredentialViaApi,
+  createSharingMultiFieldFixture,
 } from '../credentials/credential-route-test-helpers.js'
 import * as dispatcher from '../../notifications/dispatcher.js'
 
@@ -41,6 +42,7 @@ function futureIso(ms = 30 * 60 * 1000): string {
 }
 
 const DEFAULT_RECIPIENT_EMAIL = 'priya@vendor.example'
+const SENTINEL_PASSWORD = 'sentinel-external-password-sensitive'
 
 describe('external credential-shares routes', () => {
   let app: TestApp
@@ -60,6 +62,20 @@ describe('external credential-shares routes', () => {
     const projectId = await createCredentialTestProject(app, sharer.cookies, label)
     const credential = await createCredentialViaApi(app, sharer.cookies, projectId)
     return { sharer, projectId, credentialId: credential.id }
+  }
+
+  // Story 20.5 AC-1/AC-2: shared with `routes.test.ts`'s identical fixture via
+  // `createSharingMultiFieldFixture` — a mixed sensitive/non-sensitive multi-field credential,
+  // needed to exercise bounded/scoped sharing's sensitivity-default-exclusion and explicit-opt-in
+  // rules on the external-recipient path too.
+  async function createMultiFieldFixture(label: string) {
+    return createSharingMultiFieldFixture(
+      app,
+      registerOwner,
+      label,
+      'sentinel-external-username-non-sensitive',
+      SENTINEL_PASSWORD
+    )
   }
 
   async function createExternalShareViaApi(
@@ -258,6 +274,79 @@ describe('external credential-shares routes', () => {
 
     expect(sixth.statusCode).toBe(429)
     expect(sixth.json<{ code: string }>().code).toBe('external_share_cap_exceeded')
+  })
+
+  it('AC-16/Story 20.5 (dev-auto review): the per-field cap buckets by attributeKeys, not just the legacy fieldKey — disjoint attribute sets get their own buckets, but re-naming the same set (any order) reuses the same one', async () => {
+    const { sharer, projectId, credentialId } = await createSharingMultiFieldFixture(
+      app,
+      registerOwner,
+      'cap-attribute-keys',
+      'sentinel-cap-username',
+      'sentinel-cap-password'
+    )
+
+    for (let i = 0; i < 5; i += 1) {
+      const response = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientEmail: `vendor-username-${i}@example.com`,
+        attributeKeys: ['username'],
+      })
+      expect(response.statusCode).toBe(201)
+    }
+    // A 6th share naming the SAME attribute set (even reordered, for a would-be multi-key set) is
+    // rejected — same bucket.
+    const sixthSameScope = await createExternalShareViaApi(
+      sharer.cookies,
+      projectId,
+      credentialId,
+      {
+        recipientEmail: 'vendor-username-6@example.com',
+        attributeKeys: ['username'],
+      }
+    )
+    expect(sixthSameScope.statusCode).toBe(429)
+
+    // A share naming a DISJOINT attribute set is a separate bucket — must not be blocked by the
+    // 'username' bucket being full. Regression for the bug where every attributeKeys-scoped share
+    // (and every whole-resource share) collapsed into the single `fieldKey IS NULL` bucket.
+    const disjointScope = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+      recipientEmail: 'vendor-password@example.com',
+      attributeKeys: ['password'],
+    })
+    expect(disjointScope.statusCode).toBe(201)
+  })
+
+  it('AC-16 (regression): the per-field cap is shared across the legacy fieldKey shape and the attributeKeys shape naming the same effective field — mixing shapes must not double the cap', async () => {
+    const { sharer, projectId, credentialId } = await createSharingMultiFieldFixture(
+      app,
+      registerOwner,
+      'cap-mixed-shapes',
+      'sentinel-cap-mixed-username',
+      'sentinel-cap-mixed-password'
+    )
+
+    for (let i = 0; i < 5; i += 1) {
+      const response = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+        recipientEmail: `vendor-fieldkey-${i}@example.com`,
+        fieldKey: 'password',
+      })
+      expect(response.statusCode).toBe(201)
+    }
+
+    // A 6th share naming the SAME effective field via the `attributeKeys` shape must be rejected
+    // — `fieldKey: 'password'` and `attributeKeys: ['password']` are semantically identical (per
+    // `effectiveAttributeKeysForShare`) and must share one bucket, not two independent caps.
+    const sixthOtherShape = await createExternalShareViaApi(
+      sharer.cookies,
+      projectId,
+      credentialId,
+      {
+        recipientEmail: 'vendor-attributekeys-6@example.com',
+        attributeKeys: ['password'],
+      }
+    )
+
+    expect(sixthOtherShape.statusCode).toBe(429)
+    expect(sixthOtherShape.json<{ code: string }>().code).toBe('external_share_cap_exceeded')
   })
 
   it("AC-16: a share past its expiresAt but not yet lazily swept doesn't count toward the cap", async () => {
@@ -463,6 +552,43 @@ describe('external credential-shares routes', () => {
         })
       )
     ).rejects.toThrow()
+  })
+
+  it('Story 20.5 AC-2: a whole-resource external share (attributeKeys/fieldKey both omitted) of a mixed credential reveals only non-sensitive fields', async () => {
+    const { sharer, projectId, credentialId } = await createMultiFieldFixture('bounded-default')
+
+    const create = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {})
+    expect(create.statusCode).toBe(201)
+    const { token } = create.json<{ data: { token: string } }>().data
+
+    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    expect(reveal.statusCode).toBe(200)
+    const { value } = reveal.json<{ data: { value: string } }>().data
+    const fields = JSON.parse(value) as Array<{ key: string; value: string; sensitive: boolean }>
+    expect(fields).toEqual([
+      { key: 'username', value: 'sentinel-external-username-non-sensitive', sensitive: false },
+    ])
+    // Failure case (AC-2): no sensitive field is ever returned unnamed.
+    expect(value).not.toContain(SENTINEL_PASSWORD)
+  })
+
+  it('Story 20.5 AC-1/AC-2: attributeKeys naming a sensitive field explicitly includes it for an external share (explicit consent)', async () => {
+    const { sharer, projectId, credentialId } = await createMultiFieldFixture('bounded-explicit')
+
+    const create = await createExternalShareViaApi(sharer.cookies, projectId, credentialId, {
+      attributeKeys: ['password'],
+    })
+    expect(create.statusCode).toBe(201)
+    expect(create.json<{ data: { attributeKeys: string[] | null } }>().data.attributeKeys).toEqual([
+      'password',
+    ])
+    const { token } = create.json<{ data: { token: string } }>().data
+
+    const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
+    expect(reveal.statusCode).toBe(200)
+    const { value } = reveal.json<{ data: { value: string } }>().data
+    const fields = JSON.parse(value) as Array<{ key: string; value: string; sensitive: boolean }>
+    expect(fields).toEqual([{ key: 'password', value: SENTINEL_PASSWORD, sensitive: true }])
   })
 
   it('AC-22: repeated metadata GETs never increment the reveal-attempt counter', async () => {

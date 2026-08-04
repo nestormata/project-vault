@@ -64,6 +64,8 @@ export async function credentialShareAccessRoutes(fastify: FastifyApp): Promise<
           sharedBy: share.sharedBy,
           sharedByEmail,
           fieldKey: share.fieldKey,
+          attributeKeys: share.attributeKeys,
+          action: share.action,
           expiresAt: share.expiresAt.toISOString(),
           singleUse: share.singleUse,
           status: share.status,
@@ -136,6 +138,10 @@ export async function credentialShareAccessRoutes(fastify: FastifyApp): Promise<
           payload: {
             credentialId: result.share.credentialId,
             fieldKey: result.share.fieldKey,
+            // Story 20.5 (review patch): the CREATED audit event already records attributeKeys —
+            // the VIEWED event previously dropped it for any attributeKeys-scoped share, losing
+            // which specific fields were actually disclosed at view time.
+            attributeKeys: result.share.attributeKeys,
             viewCount: result.share.viewCount,
           },
         })
@@ -151,6 +157,8 @@ export async function credentialShareAccessRoutes(fastify: FastifyApp): Promise<
         data: {
           credentialId: result.share.credentialId,
           fieldKey: result.fieldKey,
+          attributeKeys: result.share.attributeKeys,
+          action: result.share.action,
           value: result.value,
           viewedAt: viewedAt.toISOString(),
         },

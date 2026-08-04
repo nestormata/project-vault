@@ -456,6 +456,20 @@
       "when": 1785598929774,
       "tag": "0064_migration_snapshot_chain_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1785699146261,
+      "tag": "0065_credential_shares_bounded_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1785723021687,
+      "tag": "0066_credential_shares_attribute_keys_not_empty",
+      "breakpoints": true
     }
   ]
 }

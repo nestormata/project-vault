@@ -173,7 +173,13 @@
   let shareRecipientType = $state<'user' | 'external'>('user')
   let shareRecipientUserId = $state('')
   let shareRecipientEmail = $state('')
-  let shareFieldKey = $state('')
+  // Story 20.5 AC-9: attribute-key selection for the create-share form. Only explicit deviations
+  // from the default ("all non-sensitive fields included, all sensitive fields excluded") are
+  // stored here — the effective checked state for a given field is computed by
+  // `isShareAttributeChecked` below, so this map never needs to be rebuilt when the field set
+  // changes (e.g. after an in-place field-set edit re-fetches `data.credential`). Shared by both
+  // the member and external create forms (same UI, same state) since AC-9 does not distinguish.
+  let shareAttributeOverrides = $state<Record<string, boolean>>({})
   let shareExpiresInHours = $state(24)
   let shareSingleUse = $state(true)
   // Story 17.2 AC-3: step-up re-authentication, required before an external share can be
@@ -198,6 +204,18 @@
 
   function bucketKey(fieldKey: string | null): string {
     return fieldKey ?? '__whole_credential__'
+  }
+
+  // Story 20.5 AC-9: human-readable scope label for a share-list row — `attributeKeys` is the
+  // current, generalized shape; `fieldKey` is what pre-Story-20.5 rows still carry (a share never
+  // has both populated). Neither populated means whole-resource (sensitivity-default-exclusion
+  // applied at creation time).
+  function shareScopeLabel(share: CredentialShareSummary): string {
+    if (share.attributeKeys && share.attributeKeys.length > 0) {
+      return share.attributeKeys.join(', ')
+    }
+    if (share.fieldKey) return share.fieldKey
+    return 'All non-sensitive fields'
   }
 
   // Story 17.3 AC-2: builds the Shares-tab pagination query string — appended onto a resolve()
@@ -247,9 +265,46 @@
   const EXTERNAL_SHARE_DEFAULT_HOURS = 1
   const EXTERNAL_SHARE_MAX_HOURS = 72
   const MEMBER_SHARE_MAX_HOURS = 168
+  // Mirrors the backend's `AttributeKeysSchema.max(50)` (apps/api/src/modules/credential-shares/
+  // schema.ts) — a client-side equivalent so a sharer who checks more than 50 boxes on a
+  // many-field credential gets a specific, actionable message here rather than a generic
+  // "Could not create share" after a round-trip 422.
+  const SHARE_ATTRIBUTE_KEYS_MAX = 50
 
-  const fieldMetaKeys = $derived((data.credential?.fields ?? []).map((field) => field.key))
   const shareableOrgMembers = $derived(data.orgMembers ?? [])
+
+  // Story 20.5 AC-9: a field's effective checked state in the create-share attribute picker — the
+  // explicit override if the user toggled it away from default, otherwise the default itself
+  // (non-sensitive => included, sensitive => excluded). Reused by both the checkbox rendering and
+  // `resolveShareAttributeKeys` below so the two can never disagree on what "checked" means.
+  function isShareAttributeChecked(field: FieldMeta): boolean {
+    // Bugfix (review patch): `Object.hasOwn` instead of the `in` operator — `in` also matches
+    // inherited `Object.prototype` properties, so a field literally named `constructor`/
+    // `toString`/`hasOwnProperty`/etc. would get a false-positive "overridden" state via
+    // prototype inheritance rather than falling through to the sensitivity-based default.
+    return Object.hasOwn(effectiveShareAttributeOverrides, field.key)
+      ? effectiveShareAttributeOverrides[field.key]
+      : !field.sensitive
+  }
+
+  function toggleShareAttribute(field: FieldMeta): void {
+    shareAttributeOverrides = {
+      ...shareAttributeOverrides,
+      [field.key]: !isShareAttributeChecked(field),
+    }
+  }
+
+  // Story 20.5 AC-9: `null` when the current selection exactly matches the default (all
+  // non-sensitive fields checked, all sensitive fields unchecked) — the more faithful mapping to
+  // the backend's `attributeKeys: null` "whole-resource, sensitivity-default-exclusion applies"
+  // semantics — otherwise the explicit list of checked keys.
+  function resolveShareAttributeKeys(): string[] | null {
+    const isDefaultSelection = fieldMeta.every(
+      (field) => isShareAttributeChecked(field) === !field.sensitive
+    )
+    if (isDefaultSelection) return null
+    return fieldMeta.filter((field) => isShareAttributeChecked(field)).map((field) => field.key)
+  }
 
   // Story 17.2 AC-21: switching recipient type resets the expiry field to that type's own
   // reasoned default (1h external / 24h member) rather than carrying over a value that may now
@@ -265,6 +320,39 @@
     if (shareSubmitting || !data.credential) return
     if (shareRecipientType === 'user' && !shareRecipientUserId) return
     if (shareRecipientType === 'external' && !shareRecipientEmail) return
+    const attributeKeys = resolveShareAttributeKeys()
+    // Story 20.5 AC-9: an explicit, non-null selection must name at least one field — "nothing
+    // checked" is not a meaningful third state (and the backend's own `.min(1)` would reject an
+    // explicit `[]` as ambiguous against `null`'s "whole-resource" meaning).
+    if (attributeKeys !== null && attributeKeys.length === 0) {
+      shareError = 'Select at least one field to share, or restore the defaults.'
+      return
+    }
+    // UX gap fix: the backend rejects more than 50 explicit attributeKeys with a generic 422 —
+    // catch it here with a message that actually explains why, before ever submitting.
+    if (attributeKeys !== null && attributeKeys.length > SHARE_ATTRIBUTE_KEYS_MAX) {
+      shareError = `You can share at most ${SHARE_ATTRIBUTE_KEYS_MAX} fields at once. Uncheck some fields, or restore the defaults to share the whole credential.`
+      return
+    }
+    // Bugfix (post-implementation review): a credential whose fields are ALL sensitive — including
+    // a legacy single-value credential, whose one implicit field is always `sensitive: true` per
+    // `fieldMetaForResponse`'s existing convention — resolves to the default whole-resource
+    // selection (`attributeKeys: null`) with every checkbox unchecked. That is a legitimate
+    // "default" per `resolveShareAttributeKeys`, but AC-2's sensitivity-default-exclusion means it
+    // always reveals as an empty field set. The field-picker below already renders a checkbox for
+    // every entry in `fieldMeta` (including the legacy single-value fallback), so the sharer
+    // always has a way to opt in explicitly; this guard just stops them from submitting a share
+    // that can never disclose anything without first doing so, using the same message as the
+    // explicit-empty-selection case above.
+    if (
+      attributeKeys === null &&
+      fieldMeta.length > 0 &&
+      fieldMeta.every((field) => field.sensitive)
+    ) {
+      shareError =
+        'Every field on this credential is sensitive, so the default share would include nothing. Check at least one field to share explicitly.'
+      return
+    }
     shareSubmitting = true
     shareError = null
     lastCreatedShareToken = null
@@ -277,7 +365,7 @@
           data.credentialId,
           {
             recipientEmail: shareRecipientEmail,
-            ...(shareFieldKey ? { fieldKey: shareFieldKey } : {}),
+            attributeKeys,
             expiresAt,
             ...(shareStepUpPassword ? { password: shareStepUpPassword } : {}),
             ...(shareStepUpTotp ? { totpCode: shareStepUpTotp } : {}),
@@ -291,7 +379,7 @@
       } else {
         const created = await createCredentialShare(fetch, data.projectId, data.credentialId, {
           recipientUserId: shareRecipientUserId,
-          ...(shareFieldKey ? { fieldKey: shareFieldKey } : {}),
+          attributeKeys,
           expiresAt,
           singleUse: shareSingleUse,
         })
@@ -301,7 +389,7 @@
         lastCreatedShareIsExternal = false
         shareRecipientUserId = ''
       }
-      shareFieldKey = ''
+      shareAttributeOverrides = {}
     } catch (error) {
       shareError = error instanceof Error ? error.message : 'Could not create share.'
     } finally {
@@ -685,6 +773,21 @@
   // its pre-Phase-2 appearance (AC-7); anything else renders the multi-field editor.
   const fieldMeta = $derived<FieldMeta[]>(
     data.credential?.fields ?? [{ key: DEFAULT_FIELD_KEY, sensitive: true }]
+  )
+  // Story 20.5 AC-9 bugfix (review patch — supersedes an earlier `$effect`-based reset that
+  // cleared EVERY override whenever the field-key set changed at all, e.g. an unrelated field
+  // being added elsewhere on the credential, silently discarding a sharer's already-made
+  // sensitive-field opt-in choice before they ever got to submit. `shareAttributeOverrides` is
+  // keyed by field key and is only ever meaningful for a field that still exists — rather than
+  // mutating the raw overrides map on every field-set change, this derives the *effective*
+  // overrides by filtering out entries for keys that no longer exist on the current version,
+  // leaving every override for a field that's still present untouched regardless of what else
+  // changed.
+  const currentFieldKeys = $derived(new Set(fieldMeta.map((field) => field.key)))
+  const effectiveShareAttributeOverrides = $derived(
+    Object.fromEntries(
+      Object.entries(shareAttributeOverrides).filter(([key]) => currentFieldKeys.has(key))
+    )
   )
   const isMultiField = $derived(
     fieldMeta.length > 1 || (fieldMeta[0]?.key ?? DEFAULT_FIELD_KEY) !== DEFAULT_FIELD_KEY
@@ -1575,23 +1678,6 @@
             </label>
           {/if}
 
-          {#if fieldMetaKeys.length > 1}
-            <label class="text-sm font-medium text-slate-700">
-              Field
-              <select
-                class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                bind:value={shareFieldKey}
-                aria-describedby="share-field-help"
-              >
-                <option value="">Whole credential</option>
-                {#each fieldMetaKeys as key (key)}
-                  <option value={key}>{key}</option>
-                {/each}
-              </select>
-              <FormHelpText id="share-field-help" kind="select" />
-            </label>
-          {/if}
-
           <label class="text-sm font-medium text-slate-700">
             Expires in (hours)
             <input
@@ -1625,6 +1711,38 @@
             </p>
           {/if}
         </div>
+
+        <!-- Story 20.5 AC-9: attribute-keys selection — one checkbox per available field, plus
+             sensitivity-default-exclusion shown (not hidden): a sensitive field renders unchecked
+             by default with a visible "excluded by default" badge, so the sharer sees before
+             submitting which fields won't be shared unless explicitly opted in. Every non-
+             sensitive field renders checked by default. Unchecking a default-included field, or
+             checking a default-excluded sensitive field, produces an explicit `attributeKeys`
+             list; leaving every field at its default sends `attributeKeys: null` (whole-resource,
+             identical to today's behavior). Shared by both recipient-type forms above. -->
+        <fieldset class="mt-4" aria-describedby="share-attribute-keys-help">
+          <legend class="text-sm font-medium text-slate-700">Fields to share</legend>
+          <div class="mt-1 flex flex-col gap-1.5">
+            {#each fieldMeta as field (field.key)}
+              <label class="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isShareAttributeChecked(field)}
+                  onchange={() => toggleShareAttribute(field)}
+                />
+                {field.key}
+                {#if field.sensitive}
+                  <span
+                    class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900"
+                  >
+                    Sensitive — excluded by default
+                  </span>
+                {/if}
+              </label>
+            {/each}
+          </div>
+          <FormHelpText id="share-attribute-keys-help" kind="checkbox" />
+        </fieldset>
 
         {#if shareRecipientType === 'external'}
           <!-- Story 17.2 AC-3: step-up re-authentication, required before creating an external
@@ -1707,7 +1825,7 @@
               class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm"
             >
               <span class="font-medium text-slate-950">
-                Field: {share.fieldKey ?? 'Whole credential'}
+                Fields: {shareScopeLabel(share)}
               </span>
               <span class="text-slate-600">
                 {#if share.recipientType === 'external'}

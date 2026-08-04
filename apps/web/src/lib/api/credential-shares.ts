@@ -2,10 +2,18 @@ import { apiFetch, buildQuery } from './client.js'
 
 export type CredentialShareStatus = 'active' | 'viewed' | 'revoked' | 'expired' | 'superseded'
 
+// Story 20.5 AC-1: `action` accepts only `'read'` in this contract version — no UI picker is
+// offered for it (see credentials detail route), it is simply carried through summaries.
+export type ShareAction = 'read'
+
 export type CredentialShareSummary = {
   id: string
   credentialId: string
   fieldKey: string | null
+  // Story 20.5 AC-1: generalizes `fieldKey` — `null` means "whole-resource,
+  // sensitivity-default-exclusion applies", a non-empty array is an explicit allow-list.
+  attributeKeys: string[] | null
+  action: ShareAction
   sharedBy: string
   recipientType: 'user' | 'external'
   recipientUserId: string | null
@@ -23,7 +31,9 @@ export type CreatedCredentialShare = CredentialShareSummary & { token: string }
 
 export type CreateCredentialShareRequest = {
   recipientUserId: string
-  fieldKey?: string
+  // Story 20.5 AC-1: `attributeKeys` generalizes the legacy single `fieldKey` — send at most one
+  // of the two (the backend rejects both being present).
+  attributeKeys?: string[] | null
   expiresAt: string
   singleUse?: boolean
 }
@@ -34,6 +44,9 @@ export type ShareMetadata = {
   sharedBy: string
   sharedByEmail: string | null
   fieldKey: string | null
+  // Story 20.5 (review patch): see CredentialShareSummary's identical field above.
+  attributeKeys: string[] | null
+  action: ShareAction
   expiresAt: string
   singleUse: boolean
   status: CredentialShareStatus
@@ -42,6 +55,8 @@ export type ShareMetadata = {
 export type ShareRevealResult = {
   credentialId: string
   fieldKey: string | null
+  attributeKeys: string[] | null
+  action: ShareAction
   value: string
   viewedAt: string
 }
@@ -116,7 +131,9 @@ export function revealCredentialShare(fetchFn: typeof fetch, token: string) {
 // (password xor totpCode) is required.
 export type CreateExternalCredentialShareRequest = {
   recipientEmail: string
-  fieldKey?: string
+  // Story 20.5 AC-1: `attributeKeys` generalizes the legacy single `fieldKey` — send at most one
+  // of the two (the backend rejects both being present).
+  attributeKeys?: string[] | null
   expiresAt: string
   password?: string
   totpCode?: string
@@ -145,6 +162,8 @@ export type ExternalShareMetadata = {
   credentialName: string
   sharedByDisplayName: string
   fieldKey: string | null
+  attributeKeys: string[] | null
+  action: ShareAction
   expiresAt: string
   status: CredentialShareStatus
 }

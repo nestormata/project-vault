@@ -47,6 +47,39 @@ export async function createCredentialViaApi(
   return response.json<{ data: { id: string } }>().data
 }
 
+/** Story 20.5 (review patch): a mixed sensitive/non-sensitive multi-field credential, needed by
+ *  both the member (`routes.test.ts`) and external (`external-routes.test.ts`) credential-shares
+ *  suites to exercise bounded/scoped sharing's sensitivity-default-exclusion and explicit-opt-in
+ *  rules — factored out here after the two suites had each grown a near-identical copy. Only the
+ *  sharer/project/credential setup is shared; recipient setup (member-only) stays in the caller
+ *  since the external suite has no recipient. */
+export async function createSharingMultiFieldFixture(
+  app: CredentialRouteTestApp,
+  registerOwner: (
+    app: CredentialRouteTestApp,
+    label: string
+  ) => Promise<{ cookies: Record<string, string>; orgId: string; userId: string }>,
+  label: string,
+  usernameValue: string,
+  passwordValue: string
+) {
+  const sharer = await registerOwner(app, `${label}-sharer`)
+  const projectId = await createCredentialTestProject(app, sharer.cookies, label)
+  // Story 13.2's field-set create body is a `{ fields }`/`{ value }` discriminated union
+  // (`.strict()` on both variants) — this helper's shared parameter type is typed to the legacy
+  // `{ name, value }` shape only, so the field-set shape is cast past it here rather than
+  // widening a helper every other (legacy-shape) test in these suites still relies on.
+  const credential = await createCredentialViaApi(app, sharer.cookies, projectId, {
+    name: `${label}-login`,
+    template: 'login',
+    fields: [
+      { key: 'username', value: usernameValue, sensitive: false },
+      { key: 'password', value: passwordValue, sensitive: true },
+    ],
+  } as unknown as { name: string; value: string })
+  return { sharer, projectId, credentialId: credential.id }
+}
+
 export function credentialDependenciesUrl(projectId: string, credentialId: string, suffix = '') {
   return `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies${suffix}`
 }
