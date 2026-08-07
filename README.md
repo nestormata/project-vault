@@ -212,6 +212,8 @@ API container only.
 
 **Operator guide:** **[docs/operator-quickstart.md](docs/operator-quickstart.md)** — zero → eval-ready (`make bootstrap`, database roles, vault ceremony, troubleshooting).
 
+**Published images:** [docs/container-images.md](docs/container-images.md) — GHCR images, release tags, and Portainer configuration.
+
 | Goal                   | Command                                                                                                              |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Local dev (hot reload) | `make bootstrap` then `pnpm turbo dev` — [Path A](docs/operator-quickstart.md#path-a--local-dev-fastest-for-ui-work) |
