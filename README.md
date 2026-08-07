@@ -233,10 +233,28 @@ API container only.
 
 ### Docker Quickstart
 
+This starts the complete Compose stack: PostgreSQL, the one-shot migration runner, API, web, and
+Mailpit. Run it from the repository root.
+
 ```bash
 cp .env.example .env
+make check-ports
 make bootstrap-docker
 ```
+
+`make bootstrap-docker` automatically moves busy host ports before starting the stack and writes
+the selected values to `.env`. To run Compose directly, check and fix ports first:
+
+```bash
+make check-ports
+make fix-ports                 # only if check-ports reports BUSY
+docker compose up --build -d
+docker compose ps
+docker compose logs -f api
+```
+
+Stop the stack with `docker compose down`. Keep the named volumes to preserve the database; use
+`docker compose down -v` only when you intentionally want to destroy local data.
 
 Optional vault init/unseal via API (requires `jq`):
 
@@ -255,6 +273,12 @@ Services:
 - Web: http://localhost:5173
 - API: http://localhost:3000
 - API health: http://localhost:3000/health
+
+For published GHCR images, use the image names and release tags in
+[docs/container-images.md](docs/container-images.md). The checked-in Compose files are
+source-build files; for a prebuilt-image deployment, replace each service's `build:` block with
+the matching `image:` while preserving the environment, volumes, dependencies, health checks, and
+the migration command.
 
 ### Local dev (API + web, hot reload)
 
@@ -417,12 +441,19 @@ Run `scripts/update-base-image.sh` weekly to get fresh digests for pinned Docker
 ### Production Usage
 
 ```bash
+cp .env.example .env
+# Generate and set distinct production secrets in .env. The production overlay requires:
+export VAULT_ENVELOPE_KEY_HALF="$(openssl rand -hex 16)"
+export VAULT_BOOTSTRAP_TOKEN="$(openssl rand -base64 32)"
+make check-ports
 make docker-prod
 # equivalent:
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```
 
-Production hardening checklist: [docs/operator-quickstart.md — Production hardening](docs/operator-quickstart.md#production-hardening-before-non-dev-deploy).
+Before a non-development deployment, replace every placeholder secret and the default database
+password, keep `VAULT_ALLOW_REMOTE_INIT=false`, and review the full
+[production hardening checklist](docs/operator-quickstart.md#production-hardening-before-non-dev-deploy).
 
 ---
 
