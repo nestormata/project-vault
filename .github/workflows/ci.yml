@@ -79,6 +79,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check container publish workflow contract
+        run: pnpm vitest run scripts/check-container-publish-workflow.test.ts
+
       - name: Typecheck
         run: pnpm turbo typecheck
 

@@ -16,6 +16,8 @@ describe('container publish workflow contract', () => {
     expect(workflow).toMatch(/workflow_dispatch:/)
     expect(workflow).toMatch(/tag:\s*\n\s*description:/)
     expect(workflow).not.toMatch(/push:\s*\n\s*(branches|tags):/)
+    expect(workflow).toMatch(/refs\/heads\/main/)
+    expect(workflow).toMatch(/0\|\[1-9\]\[0-9\]\*\)/)
   })
 
   it('uses least-privilege GitHub and registry permissions', () => {
@@ -45,11 +47,24 @@ describe('container publish workflow contract', () => {
     const workflow = workflowText()
 
     expect(workflow).toMatch(/type=raw,value=\$\{\{\s*needs\.prepare\.outputs\.version\s*\}\}/)
-    expect(workflow).toMatch(/type=sha,prefix=sha-/)
+    expect(workflow).toMatch(/type=sha,format=long,prefix=sha-/)
     expect(workflow).toMatch(/promote-aliases:/)
-    expect(workflow).toMatch(/needs:\s*build-publish/)
+    expect(workflow).toMatch(/needs:\s*\[prepare, build-publish\]/)
     expect(workflow).toMatch(/imagetools create/)
     expect(workflow).toMatch(/latest/)
+    expect(workflow).toMatch(/git ls-remote --exit-code/)
+    expect(workflow).toMatch(/imagetools inspect/)
+  })
+
+  it('uses one resolved source commit and serializes shared aliases', () => {
+    const workflow = workflowText()
+
+    expect(workflow).toMatch(/group:\s*container-publish-aliases/)
+    expect(workflow).toMatch(/commit:\s*\$\{\{\s*steps\.source\.outputs\.commit\s*\}\}/)
+    expect(workflow).toMatch(/ref:\s*\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/)
+    expect(workflow).toMatch(
+      /org\.opencontainers\.image\.revision=\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/
+    )
   })
 
   it('includes BuildKit caching and supply-chain metadata', () => {
