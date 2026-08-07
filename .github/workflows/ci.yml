@@ -322,6 +322,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate SvelteKit config for SonarCloud
+        run: pnpm --filter @project-vault/web exec svelte-kit sync
+
       - name: Test (with coverage) - web, agent, crypto, shared, vault-action, extension-api
         run: >-
           pnpm turbo test --filter=@project-vault/web --filter=@project-vault/shared
@@ -335,6 +338,7 @@ jobs:
           name: coverage-shard-web-other
           path: |
             apps/web/coverage/
+            apps/web/.svelte-kit/tsconfig.json
             packages/agent/coverage/
             packages/crypto/coverage/
             packages/shared/coverage/
