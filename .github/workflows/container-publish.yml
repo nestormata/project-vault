@@ -99,7 +99,7 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.commit }}
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

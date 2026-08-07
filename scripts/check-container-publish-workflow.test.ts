@@ -56,12 +56,13 @@ describe('container publish workflow contract', () => {
     expect(workflow).toMatch(/imagetools inspect/)
   })
 
-  it('uses one resolved source commit and serializes shared aliases', () => {
+  it('uses the release tag as the checkout ref and stamps one resolved source commit', () => {
     const workflow = workflowText()
 
     expect(workflow).toMatch(/group:\s*container-publish-aliases/)
     expect(workflow).toMatch(/commit:\s*\$\{\{\s*steps\.source\.outputs\.commit\s*\}\}/)
-    expect(workflow).toMatch(/ref:\s*\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/)
+    expect(workflow).toMatch(/ref:\s*\$\{\{\s*needs\.prepare\.outputs\.ref\s*\}\}/)
+    expect(workflow).not.toMatch(/ref:\s*\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/)
     expect(workflow).toMatch(
       /org\.opencontainers\.image\.revision=\$\{\{\s*needs\.prepare\.outputs\.commit\s*\}\}/
     )
