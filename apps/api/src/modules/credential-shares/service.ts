@@ -190,7 +190,7 @@ export async function validateAttributeKeys(
   // bounded share's bucket by exact `attribute_keys` array equality, which is order-sensitive in
   // Postgres; an unsorted array let two functionally-identical requests (e.g. `['a','b']` vs
   // `['b','a']`) land in different buckets and partially evade the cap.
-  normalized.sort()
+  normalized.sort((left, right) => left.localeCompare(right))
   return { ok: true, normalized }
 }
 

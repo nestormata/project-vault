@@ -29,7 +29,11 @@ esac
 
 port_is_free() {
   # Bash's /dev/tcp pseudo-device: connecting succeeds iff something is listening.
-  ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+  if exec 3<>"/dev/tcp/127.0.0.1/$1" 2>/dev/null; then
+    exec 3>&-
+    return 1
+  fi
+  return 0
 }
 
 env_value() {
