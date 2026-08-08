@@ -14,16 +14,14 @@ function numericField(value: string): number | null {
 }
 
 function ordinal(value: number): string {
-  const suffix =
-    value % 100 >= 11 && value % 100 <= 13
-      ? 'th'
-      : value % 10 === 1
-        ? 'st'
-        : value % 10 === 2
-          ? 'nd'
-          : value % 10 === 3
-            ? 'rd'
-            : 'th'
+  let suffix = 'th'
+  const lastTwoDigits = value % 100
+  if (lastTwoDigits < 11 || lastTwoDigits > 13) {
+    const lastDigit = value % 10
+    if (lastDigit === 1) suffix = 'st'
+    else if (lastDigit === 2) suffix = 'nd'
+    else if (lastDigit === 3) suffix = 'rd'
+  }
   return `${value}${suffix}`
 }
 

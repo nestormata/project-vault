@@ -8,7 +8,10 @@ describe('describeRotationCron', () => {
   it('describes a monthly day-of-month schedule in plain language', () => {
     expect(describeRotationCron('0 0 1 * *')).toBe('Every 1st day of the month')
     expect(describeRotationCron('15 2 21 * *')).toBe('Every 21st day of the month at 02:15 UTC')
+    expect(describeRotationCron('0 0 2 * *')).toBe('Every 2nd day of the month')
+    expect(describeRotationCron('0 0 3 * *')).toBe('Every 3rd day of the month')
     expect(describeRotationCron('0 0 11 * *')).toBe('Every 11th day of the month')
+    expect(describeRotationCron('0 0 13 * *')).toBe('Every 13th day of the month')
     expect(describeRotationCron('0 0 22 * *')).toBe('Every 22nd day of the month')
   })
 
