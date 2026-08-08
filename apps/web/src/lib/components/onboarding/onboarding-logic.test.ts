@@ -73,6 +73,18 @@ describe('onboarding logic', () => {
       { fieldErrors: {}, errorMessage: 'You do not have permission to create credentials.' },
     ],
     [
+      new ApiClientError(401, { code: 'access_token_missing' }, 'Access token is missing'),
+      { fieldErrors: {}, errorMessage: 'Your session expired. Sign in again to continue.' },
+    ],
+    [
+      new ApiClientError(401, { code: 'access_token_invalid' }, 'Access token is invalid'),
+      { fieldErrors: {}, errorMessage: 'Your session expired. Sign in again to continue.' },
+    ],
+    [
+      new ApiClientError(401, { code: 'step_up_required' }, 'Step-up authentication required'),
+      { fieldErrors: {}, errorMessage: 'Step-up authentication required' },
+    ],
+    [
       new ApiClientError(500, {}, 'Server unavailable'),
       { fieldErrors: {}, errorMessage: 'Server unavailable' },
     ],
@@ -164,6 +176,37 @@ describe('onboarding API client', () => {
 })
 
 describe('field-set form logic (Story 13.2)', () => {
+  it.each([
+    [
+      'login',
+      [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 'pw', sensitive: true },
+      ],
+    ],
+    [
+      'db_connection',
+      [
+        { key: 'host', value: 'db.example', sensitive: false },
+        { key: 'port', value: '5432', sensitive: false },
+        { key: 'database', value: 'vault', sensitive: false },
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 'pw', sensitive: true },
+      ],
+    ],
+    ['api_key', [{ key: 'key', value: 'sk_live', sensitive: true }]],
+    ['secure_note', [{ key: 'note', value: 'keep this safe', sensitive: true }]],
+    [
+      'custom',
+      [
+        { key: 'access-token', value: 'token', sensitive: true },
+        { key: 'region', value: 'us-east-1', sensitive: false },
+      ],
+    ],
+  ] as const)('validates a populated %s template field set', (_template, fields) => {
+    expect(validateFieldSet(fields).ok).toBe(true)
+  })
+
   it('buildTemplateFieldDrafts pre-populates a template with empty values (AC-1/AC-2)', () => {
     expect(buildTemplateFieldDrafts('login')).toEqual([
       { key: 'username', value: '', sensitive: false },
