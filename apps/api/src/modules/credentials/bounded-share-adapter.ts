@@ -59,6 +59,16 @@ export type SerializeBoundedResult =
   | { status: 'ok'; kind: 'value'; value: string }
   | { status: 'ok'; kind: 'fields'; fields: BoundedField[] }
 
+export type BoundedRevealValue = { value: string; valueFormat: 'scalar' | 'fields' }
+
+export function formatBoundedRevealValue(
+  bounded: Extract<SerializeBoundedResult, { status: 'ok' }>
+): BoundedRevealValue {
+  return bounded.kind === 'value'
+    ? { value: bounded.value, valueFormat: 'scalar' }
+    : { value: JSON.stringify(bounded.fields), valueFormat: 'fields' }
+}
+
 function isIncluded(
   attributeKeysFilter: string[] | null,
   key: string,

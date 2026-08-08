@@ -2,8 +2,11 @@
   import { revealExternalCredentialShare } from '$lib/api/credential-shares.js'
   import { mapShareRevealError } from '$lib/api/credential-share-reveal-error.js'
   import SharedCredentialSummary from '$lib/components/credential-shares/SharedCredentialSummary.svelte'
-  import RevealedShareValue from '$lib/components/credential-shares/RevealedShareValue.svelte'
-  import { createShareRevealState } from '$lib/components/credential-shares/reveal-state.svelte.js'
+  import ShareRevealContent from '$lib/components/credential-shares/ShareRevealContent.svelte'
+  import {
+    createShareRevealState,
+    revealShareValue,
+  } from '$lib/components/credential-shares/reveal-state.svelte.js'
 
   let { data } = $props()
 
@@ -11,21 +14,13 @@
   // explicit "Reveal secret" button click, mirroring 17.1's own reveal-page pattern. Unlike
   // 17.1's session-bound page, this unauthenticated path never produces the 'ineligible' reason.
   const reveal = createShareRevealState<'expired' | 'already_viewed' | 'revoked' | 'other'>()
-  let revealedValueFormat = $state<'scalar' | 'fields'>('scalar')
-
   async function onReveal(): Promise<void> {
     if (reveal.revealing || !data.metadata) return
-    reveal.revealing = true
-    reveal.revealError = null
-    try {
-      const result = await revealExternalCredentialShare(fetch, data.token)
-      reveal.revealedValue = result.value
-      revealedValueFormat = result.valueFormat
-    } catch (error) {
-      reveal.revealError = mapShareRevealError(error)
-    } finally {
-      reveal.revealing = false
-    }
+    await revealShareValue(
+      reveal,
+      () => revealExternalCredentialShare(fetch, data.token),
+      mapShareRevealError
+    )
   }
 </script>
 
@@ -63,26 +58,19 @@
 
       {#if data.metadata.status !== 'active'}
         <p class="mt-4 text-sm text-red-700">This link is no longer active.</p>
-      {:else if reveal.revealedValue !== null}
-        <RevealedShareValue value={reveal.revealedValue} valueFormat={revealedValueFormat} />
-      {:else if reveal.revealError === 'already_viewed'}
-        <p class="mt-4 text-sm text-red-700">This link has already been used.</p>
-      {:else if reveal.revealError === 'revoked'}
-        <p class="mt-4 text-sm text-red-700">This link has been revoked.</p>
-      {:else if reveal.revealError === 'expired'}
-        <p class="mt-4 text-sm text-red-700">This link has expired.</p>
       {:else}
-        {#if reveal.revealError === 'other'}
-          <p class="mt-4 text-sm text-red-700">Could not reveal this secret. Try again.</p>
-        {/if}
-        <button
-          type="button"
-          class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-          disabled={reveal.revealing}
-          onclick={onReveal}
-        >
-          {reveal.revealing ? 'Revealing…' : 'Reveal secret'}
-        </button>
+        <ShareRevealContent
+          revealedValue={reveal.revealedValue}
+          valueFormat={reveal.revealedValueFormat}
+          revealError={reveal.revealError}
+          revealing={reveal.revealing}
+          {onReveal}
+          buttonLabel="Reveal secret"
+          expiredMessage="This link has expired."
+          alreadyViewedMessage="This link has already been used."
+          revokedMessage="This link has been revoked."
+          otherMessage="Could not reveal this secret. Try again."
+        />
       {/if}
     </div>
   {/if}

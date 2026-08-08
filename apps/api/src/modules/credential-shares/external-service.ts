@@ -8,6 +8,7 @@ import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import { serializeBounded } from '../credentials/bounded-share-adapter.js'
 import {
   baseShareInsertValues,
+  buildShareRevealResult,
   claimSingleUseView,
   effectiveAttributeKeysForShare,
   generateAndHashShareToken,
@@ -427,13 +428,6 @@ export async function revealExternalShare(rawToken: string): Promise<RevealExter
       },
     })
 
-    const value = bounded.kind === 'value' ? bounded.value : JSON.stringify(bounded.fields)
-    return {
-      status: 'ok',
-      share: claimed,
-      value,
-      valueFormat: bounded.kind === 'value' ? 'scalar' : 'fields',
-      fieldKey: share.fieldKey,
-    }
+    return buildShareRevealResult(claimed, bounded, share.fieldKey)
   })
 }

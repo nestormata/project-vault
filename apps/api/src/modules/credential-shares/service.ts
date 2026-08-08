@@ -8,7 +8,9 @@ import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-close
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import {
   attributeKeys as declaredAdapterAttributeKeys,
+  formatBoundedRevealValue,
   serializeBounded,
+  type SerializeBoundedResult,
 } from '../credentials/bounded-share-adapter.js'
 import { DEFAULT_SHARE_LIST_LIMIT, MAX_ATTRIBUTE_KEYS, SHARE_MAX_TTL_MS } from './schema.js'
 
@@ -556,6 +558,19 @@ export type RevealShareResult =
       fieldKey: string | null
     }
 
+export function buildShareRevealResult(
+  share: CredentialShareRow,
+  bounded: Extract<SerializeBoundedResult, { status: 'ok' }>,
+  fieldKey: string | null
+): Extract<RevealShareResult, { status: 'ok' }> {
+  return {
+    status: 'ok',
+    share,
+    ...formatBoundedRevealValue(bounded),
+    fieldKey,
+  }
+}
+
 /** Extracted from `revealShare` purely to keep its own cyclomatic complexity under this repo's
  *  eslint threshold. AC-16: re-checks recipient org-membership/active-status, share status, and
  *  live/lazy expiry — all before any claim attempt. Returns a terminal RevealShareResult when the
@@ -649,15 +664,7 @@ export async function revealShare(
   // sensitive fields excluded by AC-2's default) gets its field set serialized as JSON (same
   // shape the ordinary reveal endpoint returns for that case); every other case (field-scoped
   // share, or a whole-credential share that collapses to a single value) is a bare string.
-  const value = bounded.kind === 'value' ? bounded.value : JSON.stringify(bounded.fields)
-
-  return {
-    status: 'ok',
-    share: claimed,
-    value,
-    valueFormat: bounded.kind === 'value' ? 'scalar' : 'fields',
-    fieldKey: share.fieldKey,
-  }
+  return buildShareRevealResult(claimed, bounded, share.fieldKey)
 }
 
 /** AC-14: the atomic conditional claim for a single-use share — never a read-then-branch-then-

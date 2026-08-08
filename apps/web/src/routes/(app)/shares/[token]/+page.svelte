@@ -3,8 +3,11 @@
   import { ApiClientError } from '$lib/api/client.js'
   import { mapShareRevealError } from '$lib/api/credential-share-reveal-error.js'
   import SharedCredentialSummary from '$lib/components/credential-shares/SharedCredentialSummary.svelte'
-  import RevealedShareValue from '$lib/components/credential-shares/RevealedShareValue.svelte'
-  import { createShareRevealState } from '$lib/components/credential-shares/reveal-state.svelte.js'
+  import ShareRevealContent from '$lib/components/credential-shares/ShareRevealContent.svelte'
+  import {
+    createShareRevealState,
+    revealShareValue,
+  } from '$lib/components/credential-shares/reveal-state.svelte.js'
 
   let { data } = $props()
 
@@ -15,24 +18,16 @@
   const reveal = createShareRevealState<
     'expired' | 'already_viewed' | 'revoked' | 'ineligible' | 'other'
   >()
-  let revealedValueFormat = $state<'scalar' | 'fields'>('scalar')
-
   async function onReveal(): Promise<void> {
     if (reveal.revealing || !data.metadata) return
-    reveal.revealing = true
-    reveal.revealError = null
-    try {
-      const result = await revealCredentialShare(fetch, data.token)
-      reveal.revealedValue = result.value
-      revealedValueFormat = result.valueFormat
-    } catch (error) {
-      reveal.revealError =
+    await revealShareValue(
+      reveal,
+      () => revealCredentialShare(fetch, data.token),
+      (error) =>
         error instanceof ApiClientError && error.status === 403
           ? 'ineligible'
           : mapShareRevealError(error)
-    } finally {
-      reveal.revealing = false
-    }
+    )
   }
 </script>
 
@@ -67,28 +62,20 @@
         <p class="mt-4 text-sm text-red-700">
           This share is no longer active ({data.metadata.status}).
         </p>
-      {:else if reveal.revealedValue !== null}
-        <RevealedShareValue value={reveal.revealedValue} valueFormat={revealedValueFormat} />
-      {:else if reveal.revealError === 'already_viewed'}
-        <p class="mt-4 text-sm text-red-700">This share has already been viewed.</p>
-      {:else if reveal.revealError === 'revoked'}
-        <p class="mt-4 text-sm text-red-700">This share has been revoked.</p>
-      {:else if reveal.revealError === 'expired'}
-        <p class="mt-4 text-sm text-red-700">This share has expired.</p>
-      {:else if reveal.revealError === 'ineligible'}
-        <p class="mt-4 text-sm text-red-700">You are no longer eligible to view this share.</p>
       {:else}
-        {#if reveal.revealError === 'other'}
-          <p class="mt-4 text-sm text-red-700">Could not reveal this share. Try again.</p>
-        {/if}
-        <button
-          type="button"
-          class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-          disabled={reveal.revealing}
-          onclick={onReveal}
-        >
-          {reveal.revealing ? 'Revealing…' : 'Reveal'}
-        </button>
+        <ShareRevealContent
+          revealedValue={reveal.revealedValue}
+          valueFormat={reveal.revealedValueFormat}
+          revealError={reveal.revealError}
+          revealing={reveal.revealing}
+          {onReveal}
+          buttonLabel="Reveal"
+          expiredMessage="This share has expired."
+          alreadyViewedMessage="This share has already been viewed."
+          revokedMessage="This share has been revoked."
+          otherMessage="Could not reveal this share. Try again."
+          ineligibleMessage="You are no longer eligible to view this share."
+        />
       {/if}
     </div>
   {/if}
