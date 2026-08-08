@@ -155,6 +155,21 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
             : undefined,
         })
       }
+      // Body parsing happens before route handlers run, so the MFA verify-login route cannot
+      // use its normal Zod parser for Fastify's 413/415 errors. Normalize both to the route's
+      // documented validation contract without exposing parser internals.
+      const parserErrorCode = (error as Error & { code?: string }).code
+      if (
+        error.statusCode === 413 ||
+        error.statusCode === 415 ||
+        parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE' ||
+        parserErrorCode === 'FST_ERR_CTP_INVALID_MEDIA_TYPE'
+      ) {
+        return reply.status(422).send({
+          code: 'validation_error',
+          message: 'Request validation failed',
+        })
+      }
       // Preserve Fastify/Zod validation errors (statusCode already set)
       if (typeof error.statusCode === 'number') {
         return reply.status(error.statusCode).send({

@@ -40,13 +40,39 @@ async function dbNow(tx: Tx): Promise<Date> {
   return new Date(String((rows[0] as { now: Date | string }).now))
 }
 
-async function attemptedEmailForUser(tx: Tx, userId: string): Promise<string> {
+async function attemptedEmailForUser(tx: Tx, userId: string): Promise<string | null> {
   const rows = await tx
     .select({ email: users.email })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1)
-  return rows[0]?.email ?? 'unknown@example.invalid'
+  return rows[0]?.email ?? null
+}
+
+async function tryWriteLoginVerifiedAudit(
+  tx: Tx,
+  row: { userId: string; orgId: string },
+  identityTokenId: string | null,
+  meta: RequestMeta
+): Promise<void> {
+  try {
+    // Keep the best-effort audit write inside a savepoint: a database error aborts the
+    // current PostgreSQL transaction, so catching a direct INSERT failure would not be enough
+    // to let the already-created login session commit.
+    await tx.transaction((auditTx) =>
+      writeHumanAuditEntry(auditTx as Tx, {
+        orgId: row.orgId,
+        actorTokenId: identityTokenId,
+        eventType: AuditEvent.MFA_LOGIN_VERIFIED,
+        payload: { method: TOTP_METHOD },
+        meta,
+      })
+    )
+  } catch (error) {
+    process.stderr.write(
+      `[auth.mfa_login_verified_audit_error] ${error instanceof Error ? error.message : String(error)}\n`
+    )
+  }
 }
 
 async function tryWriteLoginFailedAudit(
@@ -88,7 +114,7 @@ async function recordInvalidTotpFailure(
   void recordFailedAuthAttempt({
     userId: row.userId,
     ipAddress: meta.ipAddress ?? row.ipAddress ?? '0.0.0.0',
-    attemptedEmail: await attemptedEmailForUser(tx, row.userId),
+    attemptedEmail: (await attemptedEmailForUser(tx, row.userId)) ?? '',
     reason: 'invalid_totp',
   })
 }
@@ -225,13 +251,7 @@ export async function verifyLogin(
       row.orgId,
       meta
     )
-    await writeHumanAuditEntry(db, {
-      orgId: row.orgId,
-      actorTokenId: identityTokenId,
-      eventType: AuditEvent.MFA_LOGIN_VERIFIED,
-      payload: { method: TOTP_METHOD },
-      meta,
-    })
+    await tryWriteLoginVerifiedAudit(db, row, identityTokenId, meta)
     await deletePendingSession(db, tokenHash)
     process.stdout.write(
       `${JSON.stringify({ eventType: MFA_LOGIN_VERIFIED_EVENT, userId: row.userId, orgId: row.orgId, method: TOTP_METHOD })}\n`

@@ -1,6 +1,6 @@
 import QRCode from 'qrcode'
 import bcrypt from 'bcrypt'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
 import {
   mfaEnrollments,
@@ -90,14 +90,14 @@ function isUniqueViolation(error: unknown): boolean {
   return (error as { cause?: { code?: string } }).cause?.code === '23505'
 }
 
-async function attemptedEmailForUser(userId: string, tx?: Tx): Promise<string> {
+async function attemptedEmailForUser(userId: string, tx?: Tx): Promise<string | null> {
   const db = tx ?? getDb()
   const rows = await db
     .select({ email: users.email })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1)
-  return rows[0]?.email ?? 'unknown@example.invalid'
+  return rows[0]?.email ?? null
 }
 
 async function tryWriteFailedRecoverAudit(
@@ -319,7 +319,7 @@ export async function verifyConfirmedLoginTotp(
 
 async function handleInvalidEnrollmentTotp(
   authContext: AuthContext,
-  attemptedEmail: string,
+  attemptedEmail: string | null,
   meta: RequestMeta,
   replayed: boolean
 ): Promise<never> {
@@ -327,7 +327,7 @@ async function handleInvalidEnrollmentTotp(
     void recordFailedAuthAttempt({
       userId: authContext.userId,
       ipAddress: meta.ipAddress ?? '0.0.0.0',
-      attemptedEmail,
+      attemptedEmail: attemptedEmail ?? '',
       reason: 'invalid_totp',
     })
   }
@@ -483,8 +483,11 @@ async function findRecoveryUser(email: string) {
   return userRows[0] ?? null
 }
 
-async function activeOrgForUser(tx: Tx, userId: string): Promise<string | null> {
-  const orgRows = await tx.select({ orgId: organizations.id }).from(organizations)
+export async function activeOrgForUser(tx: Tx, userId: string): Promise<string | null> {
+  const orgRows = await tx
+    .select({ orgId: organizations.id })
+    .from(organizations)
+    .orderBy(asc(organizations.createdAt), asc(organizations.id))
   for (const { orgId } of orgRows) {
     await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`)
     const memberships = await tx

@@ -35,7 +35,7 @@ export async function enrollUserWithMfa(
   // Compute the enrollment TOTP once and reuse it below (rather than calling totpForSecret()
   // again later) — a second call at a new Date.now() can land in a different 30s TOTP period
   // under CI/CPU contention, silently producing a fresh, never-used code instead of the one
-  // that actually confirmed enrollment. That mismatch made mfa-login.test.ts's replay-detection
+  // that actually confirmed enrollment. That mismatch made mfa-login.integration.test.ts's replay-detection
   // test flaky: it "replayed" a code that was never really used, so login legitimately succeeded.
   const enrollmentTotp = totpForSecret(secret)
   const verify = await app.inject({

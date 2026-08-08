@@ -7,9 +7,7 @@ import {
 } from '@project-vault/shared'
 
 function isTotpInput(value: string): boolean {
-  const digits = [...value].filter((char) => char >= '0' && char <= '9')
-  const nonWhitespace = [...value].filter((char) => char.trim() !== '')
-  return digits.length === 6 && nonWhitespace.every((char) => char >= '0' && char <= '9')
+  return value.length === 6 && [...value].every((char) => char >= '0' && char <= '9')
 }
 
 export {

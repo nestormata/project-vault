@@ -1,30 +1,43 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
-import { getDb, withOrg } from '@project-vault/db'
+import { getDb, withOrg, type Tx } from '@project-vault/db'
 import { AuditEvent } from '@project-vault/shared'
-import { auditLogEntries, failedAuthAttempts, pendingMfaSessions } from '@project-vault/db/schema'
-import { env } from '../../config/env.js'
-import * as tokensModule from './tokens.js'
+import {
+  auditLogEntries,
+  failedAuthAttempts,
+  notificationQueue,
+  orgMemberships,
+  organizations,
+  pendingMfaSessions,
+  securityAlerts,
+} from '@project-vault/db/schema'
+import { env } from '../config/env.js'
+import * as auditModule from '../modules/audit/human-entry.js'
+import * as tokensModule from '../modules/auth/tokens.js'
 import {
   configureAuthIntegrationEnv,
   initVaultForTest,
   parseSetCookies,
-} from '../../__tests__/helpers/auth-test-helpers.js'
-import { enrollUserWithMfa } from '../../__tests__/helpers/mfa-enroll-test-helpers.js'
-import { totpForSecret } from '../../__tests__/helpers/totp.js'
+} from './helpers/auth-test-helpers.js'
+import { enrollUserWithMfa } from './helpers/mfa-enroll-test-helpers.js'
+import { totpForSecret } from './helpers/totp.js'
+import { BossService } from '../lib/boss.js'
+import { runFailedAuthThresholdCheck } from '../workers/check-failed-auth-threshold.js'
+import { PgBoss } from 'pg-boss'
 
 configureAuthIntegrationEnv()
 // Most tests here enroll MFA (Argon2 hashing + multiple createApp() round trips) and can
 // exceed vitest's 5s default under the concurrent cross-package load of `make ci`/`pnpm test`.
 vi.setConfig({ testTimeout: 45_000 })
 
-const { createApp } = await import('../../app.js')
-const { initVault } = await import('../vault/key-service.js')
-const { resetVaultForTest } = await import('../../__tests__/helpers/vault-test-cleanup.js')
-const { loginUser } = await import('./service.js')
-const { createPendingMfaSession, verifyLogin } = await import('./mfa-login.js')
-const { hashPendingMfaToken } = await import('./tokens.js')
+const { createApp } = await import('../app.js')
+const { initVault } = await import('../modules/vault/key-service.js')
+const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
+const { loginUser } = await import('../modules/auth/service.js')
+const { activeOrgForUser } = await import('../modules/auth/mfa.js')
+const { createPendingMfaSession, verifyLogin } = await import('../modules/auth/mfa-login.js')
+const { hashPendingMfaToken } = await import('../modules/auth/tokens.js')
 
 const PASSWORD = 'correct-horse-battery-staple'
 const TEST_PASSPHRASE = 'mfa-login-tests-passphrase'
@@ -379,6 +392,109 @@ describe.sequential('MFA login service', () => {
       getDb().select().from(pendingMfaSessions).where(eq(pendingMfaSessions.userId, user.userId))
     ).resolves.toHaveLength(0)
   })
+
+  it('still completes login when the success audit insert fails', async () => {
+    const { user, challenge } = await challengeForEnrolledUser()
+    const auditSpy = vi
+      .spyOn(auditModule, 'writeHumanAuditEntry')
+      .mockRejectedValueOnce(new Error('audit store unavailable'))
+
+    try {
+      const result = await verifyLogin({
+        mfaToken: challenge.mfaToken,
+        totp: totpForSecret(user.secret, Date.now() + 30_000),
+      })
+      expect(result.userId).toBe(user.userId)
+    } finally {
+      auditSpy.mockRestore()
+    }
+  })
+
+  it('selects the oldest active organization deterministically for a multi-org user', async () => {
+    const user = await enrollMfaUser()
+    const [older] = await getDb()
+      .insert(organizations)
+      .values({
+        name: `Older MFA org ${randomUUID()}`,
+        slug: `older-mfa-${randomUUID()}`,
+        createdAt: new Date('2000-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: organizations.id })
+    const [newer] = await getDb()
+      .insert(organizations)
+      .values({
+        name: `Newer MFA org ${randomUUID()}`,
+        slug: `newer-mfa-${randomUUID()}`,
+        createdAt: new Date('2001-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: organizations.id })
+    if (!older || !newer) throw new Error('expected organizations')
+    await withOrg(older.id, (tx) =>
+      tx.insert(orgMemberships).values({
+        orgId: older.id,
+        userId: user.userId,
+        role: 'member',
+        status: 'active',
+      })
+    )
+    await withOrg(newer.id, (tx) =>
+      tx.insert(orgMemberships).values({
+        orgId: newer.id,
+        userId: user.userId,
+        role: 'member',
+        status: 'active',
+      })
+    )
+
+    try {
+      await expect(
+        getDb().transaction((tx) => activeOrgForUser(tx as unknown as Tx, user.userId))
+      ).resolves.toBe(older.id)
+    } finally {
+      await getDb().delete(organizations).where(eq(organizations.id, older.id))
+      await getDb().delete(organizations).where(eq(organizations.id, newer.id))
+    }
+  })
+
+  it('crosses the failed-auth threshold after repeated invalid login TOTPs', async () => {
+    const previousMaxAttempts = env.MFA_LOGIN_MAX_ATTEMPTS
+    env.MFA_LOGIN_MAX_ATTEMPTS = env.FAILED_AUTH_THRESHOLD_COUNT
+    const { user, challenge } = await challengeForEnrolledUser()
+    try {
+      for (let attempt = 0; attempt < env.FAILED_AUTH_THRESHOLD_COUNT; attempt += 1) {
+        await expect(
+          verifyLogin(
+            { mfaToken: challenge.mfaToken, totp: INVALID_TOTP_CODE },
+            { ipAddress: '198.51.100.42' }
+          )
+        ).rejects.toMatchObject({
+          code: attempt + 1 === env.MFA_LOGIN_MAX_ATTEMPTS ? MFA_TOKEN_EXPIRED : INVALID_TOTP,
+        })
+      }
+      await vi.waitFor(
+        async () => {
+          const rows = await failedTotpRowsForUser(user.userId)
+          if (rows.length < env.FAILED_AUTH_THRESHOLD_COUNT) throw new Error('waiting for failures')
+        },
+        { timeout: 2_000, interval: 25 }
+      )
+
+      const boss = new BossService(() => ({
+        start: vi.fn().mockResolvedValue({} as PgBoss),
+        stop: vi.fn().mockResolvedValue(undefined),
+        createQueue: vi.fn().mockResolvedValue(undefined),
+        send: vi.fn().mockResolvedValue('job-id'),
+      }))
+      await boss.start()
+      await runFailedAuthThresholdCheck(boss)
+      const alerts = await withOrg(user.orgId, (tx) => tx.select().from(securityAlerts))
+      const queued = await withOrg(user.orgId, (tx) => tx.select().from(notificationQueue))
+      expect(alerts.some((row) => row.alertType === 'security.failed_auth_threshold')).toBe(true)
+      expect(queued.some((row) => row.templateId === 'security.failed_auth_threshold')).toBe(true)
+    } finally {
+      env.MFA_LOGIN_MAX_ATTEMPTS = previousMaxAttempts
+    }
+  }, 90_000)
 
   it('retries token generation on a token_hash collision and never returns the collided token', async () => {
     const user = await enrollMfaUser()
