@@ -408,8 +408,9 @@ describe('external credential-shares routes', () => {
     expect(reveal.statusCode).toBe(200)
     expect(reveal.headers['cache-control']).toBe('no-store')
     expect(reveal.headers['referrer-policy']).toBe('no-referrer')
-    const body = reveal.json<{ data: { value: string } }>()
+    const body = reveal.json<{ data: { value: string; valueFormat: string } }>()
     expect(body.data.value).toEqual(expect.any(String))
+    expect(body.data.valueFormat).toBe('fields')
 
     const second = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
     expect(second.statusCode).toBe(410)
@@ -563,7 +564,9 @@ describe('external credential-shares routes', () => {
 
     const reveal = await app.inject({ method: 'POST', url: accessUrl(token, '/reveal') })
     expect(reveal.statusCode).toBe(200)
-    const { value } = reveal.json<{ data: { value: string } }>().data
+    const { value, valueFormat } = reveal.json<{ data: { value: string; valueFormat: string } }>()
+      .data
+    expect(valueFormat).toBe('fields')
     const fields = JSON.parse(value) as Array<{ key: string; value: string; sensitive: boolean }>
     expect(fields).toEqual([
       { key: 'username', value: 'sentinel-external-username-non-sensitive', sensitive: false },

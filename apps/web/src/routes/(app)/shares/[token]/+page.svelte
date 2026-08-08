@@ -15,6 +15,7 @@
   const reveal = createShareRevealState<
     'expired' | 'already_viewed' | 'revoked' | 'ineligible' | 'other'
   >()
+  let revealedValueFormat = $state<'scalar' | 'fields'>('scalar')
 
   async function onReveal(): Promise<void> {
     if (reveal.revealing || !data.metadata) return
@@ -23,6 +24,7 @@
     try {
       const result = await revealCredentialShare(fetch, data.token)
       reveal.revealedValue = result.value
+      revealedValueFormat = result.valueFormat
     } catch (error) {
       reveal.revealError =
         error instanceof ApiClientError && error.status === 403
@@ -66,7 +68,7 @@
           This share is no longer active ({data.metadata.status}).
         </p>
       {:else if reveal.revealedValue !== null}
-        <RevealedShareValue value={reveal.revealedValue} />
+        <RevealedShareValue value={reveal.revealedValue} valueFormat={revealedValueFormat} />
       {:else if reveal.revealError === 'already_viewed'}
         <p class="mt-4 text-sm text-red-700">This share has already been viewed.</p>
       {:else if reveal.revealError === 'revoked'}

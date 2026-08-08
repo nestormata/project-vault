@@ -320,8 +320,9 @@ describe('credential-shares routes', () => {
     })
 
     expect(response.statusCode).toBe(200)
-    const body = response.json<{ data: { value: string } }>()
+    const body = response.json<{ data: { value: string; valueFormat: string } }>()
     expect(body.data.value).toBe(SENTINEL_VALUE)
+    expect(body.data.valueFormat).toBe('scalar')
   })
 
   it('AC-1: a create request with action other than "read" is rejected 422, never coerced', async () => {

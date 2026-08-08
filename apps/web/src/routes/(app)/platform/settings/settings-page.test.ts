@@ -67,6 +67,17 @@ describe('/platform/settings +page.svelte', () => {
     expect(screen.getByText(/retention 7 backups/i)).toBeTruthy()
   })
 
+  it('interprets a backup schedule override and exposes the cron field help dialog', async () => {
+    render(SettingsPage, { props: { data: allowedData() } })
+
+    const schedule = screen.getByLabelText(/schedule override/i)
+    await fireEvent.input(schedule, { target: { value: '0 4 * * *' } })
+
+    expect(screen.getByText(/every day at 04:00 utc/i)).toBeTruthy()
+    await fireEvent.click(screen.getAllByRole('button', { name: /show cron field help/i })[0])
+    expect(screen.getByRole('dialog', { name: /cron schedule fields/i })).toBeTruthy()
+  })
+
   it('links to Organizations, Resource Usage, and Manage backups resolve to real routes', () => {
     render(SettingsPage, { props: { data: allowedData() } })
 

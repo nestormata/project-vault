@@ -89,7 +89,7 @@ function baseData(overrides: Record<string, unknown> = {}) {
 }
 
 describe('credential detail +page.svelte', () => {
-  it('renders accessible, always-visible contextual help for lifecycle and dependency fields', () => {
+  it('renders accessible, always-visible contextual help for lifecycle and dependency fields', async () => {
     render(CredentialDetailPage, {
       props: {
         data: baseData({
@@ -109,13 +109,21 @@ describe('credential detail +page.svelte', () => {
       'lifecycle-rotation-schedule-help'
     )
     expect(screen.getByText(/standard 5-field cron syntax/i)).toBeTruthy()
+    expect(screen.getByText(/every 1st day of the month/i)).toBeTruthy()
     expect(screen.getByText(/next run \(utc\):/i)).toBeTruthy()
+
+    const cronHelpButton = screen.getByRole('button', { name: /show cron field help/i })
+    await fireEvent.click(cronHelpButton)
+    expect(screen.getByRole('dialog', { name: /cron schedule fields/i })).toBeTruthy()
 
     const cacheable = screen.getByLabelText(/cacheable by offline agents/i)
     expect(cacheable.getAttribute('aria-describedby')).toBe('lifecycle-cacheable-help')
     expect(screen.getByText(/may cache and reuse this credential locally/i)).toBeTruthy()
 
     expect(screen.getByText(/external systems that use this credential/i)).toBeTruthy()
+
+    const shareFieldCheckbox = screen.getByRole('checkbox', { name: /username/i })
+    expect(shareFieldCheckbox.getAttribute('aria-describedby')).toBe('share-attribute-keys-help')
 
     expect(screen.getByLabelText(/system type/i).getAttribute('aria-describedby')).toBe(
       'dependency-system-type-help'

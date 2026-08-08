@@ -548,7 +548,13 @@ export type RevealShareResult =
   | { status: 'expired' } // includes AC-3's field-removed-since-creation case
   | { status: 'already_viewed' }
   | { status: 'revoked' }
-  | { status: 'ok'; share: CredentialShareRow; value: string; fieldKey: string | null }
+  | {
+      status: 'ok'
+      share: CredentialShareRow
+      value: string
+      valueFormat: 'scalar' | 'fields'
+      fieldKey: string | null
+    }
 
 /** Extracted from `revealShare` purely to keep its own cyclomatic complexity under this repo's
  *  eslint threshold. AC-16: re-checks recipient org-membership/active-status, share status, and
@@ -645,7 +651,13 @@ export async function revealShare(
   // share, or a whole-credential share that collapses to a single value) is a bare string.
   const value = bounded.kind === 'value' ? bounded.value : JSON.stringify(bounded.fields)
 
-  return { status: 'ok', share: claimed, value, fieldKey: share.fieldKey }
+  return {
+    status: 'ok',
+    share: claimed,
+    value,
+    valueFormat: bounded.kind === 'value' ? 'scalar' : 'fields',
+    fieldKey: share.fieldKey,
+  }
 }
 
 /** AC-14: the atomic conditional claim for a single-use share — never a read-then-branch-then-

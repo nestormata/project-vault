@@ -5,6 +5,7 @@ export type CredentialShareStatus = 'active' | 'viewed' | 'revoked' | 'expired' 
 // Story 20.5 AC-1: `action` accepts only `'read'` in this contract version — no UI picker is
 // offered for it (see credentials detail route), it is simply carried through summaries.
 export type ShareAction = 'read'
+export type ShareRevealValueFormat = 'scalar' | 'fields'
 
 export type CredentialShareSummary = {
   id: string
@@ -58,6 +59,7 @@ export type ShareRevealResult = {
   attributeKeys: string[] | null
   action: ShareAction
   value: string
+  valueFormat: ShareRevealValueFormat
   viewedAt: string
 }
 

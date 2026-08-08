@@ -160,6 +160,27 @@ describe('AppShell.svelte', () => {
     expect(screen.getByText('MFA grace period ends in 3 days')).toBeTruthy()
   })
 
+  it('renders the MFA settings path in the banner as a direct accessible link', () => {
+    render(AppShell, {
+      props: {
+        user: baseUser({
+          mfaStatus: {
+            enrollmentRequired: true,
+            gracePeriodActive: false,
+            gracePeriodExpiresAt: null,
+            gracePeriodDaysRemaining: null,
+            bannerMessage:
+              'MFA enrollment is required for Owner and Admin roles within 7 days. Enroll at /settings/security.',
+          },
+        }),
+        children: childrenSnippet(),
+      },
+    })
+
+    const link = screen.getByRole('link', { name: /settings\/security/i })
+    expect(link.getAttribute('href')).toBe('/settings/security')
+  })
+
   it('shows no mfa banner when neither enrollmentRequired nor bannerMessage are set', () => {
     render(AppShell, { props: { user: baseUser(), children: childrenSnippet() } })
 

@@ -141,7 +141,7 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
       // `revealExternalShare`'s own transaction, atomically with the claim — see external-service.ts.
       // If it had failed, `revealExternalShare` itself would have thrown (rolling back the claim
       // too) and this line would never be reached, so there is nothing left to audit here.
-      const { share, value, fieldKey } = result
+      const { share, value, valueFormat, fieldKey } = result
       const viewedAt = share.firstViewedAt ?? new Date()
 
       // AC-12/AC-18: best-effort — a notification-dispatch failure never blocks the reveal the
@@ -171,6 +171,7 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
           attributeKeys: share.attributeKeys,
           action: share.action,
           value,
+          valueFormat,
           viewedAt: viewedAt.toISOString(),
         },
       }

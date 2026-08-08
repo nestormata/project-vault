@@ -259,7 +259,13 @@ export type RevealExternalShareResult =
   | { status: 'expired' }
   | { status: 'already_viewed' }
   | { status: 'revoked' }
-  | { status: 'ok'; share: CredentialShareRow; value: string; fieldKey: string | null }
+  | {
+      status: 'ok'
+      share: CredentialShareRow
+      value: string
+      valueFormat: 'scalar' | 'fields'
+      fieldKey: string | null
+    }
 
 /** AC-22: increments the resolved share's reveal-attempt counter and auto-revokes on exceeding
  *  the cap. Called only once the token has already resolved to a real row (never on a
@@ -422,6 +428,12 @@ export async function revealExternalShare(rawToken: string): Promise<RevealExter
     })
 
     const value = bounded.kind === 'value' ? bounded.value : JSON.stringify(bounded.fields)
-    return { status: 'ok', share: claimed, value, fieldKey: share.fieldKey }
+    return {
+      status: 'ok',
+      share: claimed,
+      value,
+      valueFormat: bounded.kind === 'value' ? 'scalar' : 'fields',
+      fieldKey: share.fieldKey,
+    }
   })
 }

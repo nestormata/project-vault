@@ -11,6 +11,7 @@
   // explicit "Reveal secret" button click, mirroring 17.1's own reveal-page pattern. Unlike
   // 17.1's session-bound page, this unauthenticated path never produces the 'ineligible' reason.
   const reveal = createShareRevealState<'expired' | 'already_viewed' | 'revoked' | 'other'>()
+  let revealedValueFormat = $state<'scalar' | 'fields'>('scalar')
 
   async function onReveal(): Promise<void> {
     if (reveal.revealing || !data.metadata) return
@@ -19,6 +20,7 @@
     try {
       const result = await revealExternalCredentialShare(fetch, data.token)
       reveal.revealedValue = result.value
+      revealedValueFormat = result.valueFormat
     } catch (error) {
       reveal.revealError = mapShareRevealError(error)
     } finally {
@@ -62,7 +64,7 @@
       {#if data.metadata.status !== 'active'}
         <p class="mt-4 text-sm text-red-700">This link is no longer active.</p>
       {:else if reveal.revealedValue !== null}
-        <RevealedShareValue value={reveal.revealedValue} />
+        <RevealedShareValue value={reveal.revealedValue} valueFormat={revealedValueFormat} />
       {:else if reveal.revealError === 'already_viewed'}
         <p class="mt-4 text-sm text-red-700">This link has already been used.</p>
       {:else if reveal.revealError === 'revoked'}
