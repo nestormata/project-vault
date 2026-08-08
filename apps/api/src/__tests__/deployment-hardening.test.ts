@@ -113,6 +113,14 @@ describe('deployment hardening configuration', () => {
     expect(nightlyWorkflow).toMatch(/\npermissions:\n\s+contents: read\n/)
   })
 
+  it('allows the API and database test shard enough time to finish before Sonar consumes coverage', () => {
+    const ciWorkflow = readRepoFile('.github/workflows/ci.yml')
+    const apiDbJob = ciWorkflow.match(/\n  test-api-db:[\s\S]*?(?=\n  test-web-other:)/)?.[0]
+    const timeout = apiDbJob?.match(/\n\s+timeout-minutes:\s+(\d+)/)?.[1]
+
+    expect(Number(timeout)).toBeGreaterThanOrEqual(45)
+  })
+
   it('configures Dependabot for pnpm and GitHub Actions updates', () => {
     const dependabot = readRepoFile('.github/dependabot.yml')
 

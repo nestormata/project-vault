@@ -169,7 +169,9 @@ jobs:
   test-api-db:
     name: Test (api + db)
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # This shard can exceed 35 minutes on a loaded GitHub runner. If it is cancelled before
+    # uploading LCOV, the Sonar job analyzes partial coverage and reports a misleading gate failure.
+    timeout-minutes: 45
     env:
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
       VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
