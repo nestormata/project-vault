@@ -1,3 +1,5 @@
+import { browser } from '$app/environment'
+
 export type ApiSuccess<T> = { data: T }
 export type ApiFailure = {
   code?: string
@@ -33,6 +35,51 @@ export function isMfaRequiredError(reason: unknown): boolean {
   return reason instanceof ApiClientError && reason.status === 403 && reason.code === 'mfa_required'
 }
 
+function isRefreshableAccessError(reason: unknown): reason is ApiClientError {
+  return (
+    reason instanceof ApiClientError &&
+    reason.status === 401 &&
+    (reason.code === 'access_token_missing' || reason.code === 'access_token_invalid')
+  )
+}
+
+function canReplayRequestBody(body: RequestInit['body']): boolean {
+  return body === undefined || body === null || typeof body === 'string'
+}
+
+let refreshInFlight: Promise<boolean> | null = null
+
+function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight
+
+  const refreshPromise = (async () => {
+    try {
+      const response = await fetchFn('/api/v1/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {},
+        ...(signal ? { signal } : {}),
+      })
+      if (!response.ok) return false
+      await parseApiEnvelope<{ expiresAt: string }>(response)
+      return true
+    } catch {
+      return false
+    }
+  })()
+
+  refreshInFlight = refreshPromise
+  void refreshPromise.then(
+    () => {
+      if (refreshInFlight === refreshPromise) refreshInFlight = null
+    },
+    () => {
+      if (refreshInFlight === refreshPromise) refreshInFlight = null
+    }
+  )
+  return refreshPromise
+}
+
 export async function parseApiEnvelope<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T
 
@@ -54,16 +101,32 @@ export async function apiFetch<T>(
   // Fastify's default JSON body parser rejects `Content-Type: application/json` paired with an
   // empty body ("Body cannot be empty when content-type is set to 'application/json'"), so only
   // set it when there's actually a body to send.
-  const response = await fetchFn(path, {
+  const requestInit: RequestInit = {
     ...init,
     credentials: 'include',
     headers: {
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...init.headers,
     },
-  })
+  }
 
-  return parseApiEnvelope<T>(response)
+  let response = await fetchFn(path, requestInit)
+  try {
+    return await parseApiEnvelope<T>(response)
+  } catch (error) {
+    // Access tokens are short-lived while the refresh token remains HttpOnly. Retry only this
+    // explicit auth failure, once, and only when the request body can be replayed safely.
+    if (
+      !browser ||
+      !isRefreshableAccessError(error) ||
+      !canReplayRequestBody(init.body) ||
+      !(await refreshAccessSession(fetchFn, init.signal ?? undefined))
+    ) {
+      throw error
+    }
+    response = await fetchFn(path, requestInit)
+    return parseApiEnvelope<T>(response)
+  }
 }
 
 /** Shared by every API module building a query string from optional filter/pagination params

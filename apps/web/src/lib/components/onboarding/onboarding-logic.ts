@@ -110,6 +110,13 @@ export type CredentialSubmitError = {
   fieldKeyConflict?: string
 }
 
+const SESSION_AUTH_ERROR_CODES = new Set([
+  'access_token_missing',
+  'access_token_invalid',
+  'session_expired',
+  'session_revoked',
+])
+
 function mapValidationSubmitError(error: ApiClientError): CredentialSubmitError {
   const details =
     error.details && typeof error.details === 'object'
@@ -129,6 +136,9 @@ function mapApiClientSubmitError(error: ApiClientError): CredentialSubmitError {
       errorMessage: error.message,
       ...(conflicting ? { fieldKeyConflict: conflicting } : {}),
     }
+  }
+  if (error.status === 401 && SESSION_AUTH_ERROR_CODES.has(error.code ?? '')) {
+    return { fieldErrors: {}, errorMessage: 'Your session expired. Sign in again to continue.' }
   }
   if (error.status === 422) return mapValidationSubmitError(error)
   if (error.status === 403) {

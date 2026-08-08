@@ -81,6 +81,83 @@ describe('new credential +page.svelte (Story 13.2)', () => {
     await vi.waitFor(() => expect(gotoMock).toHaveBeenCalled())
   })
 
+  it.each([
+    [
+      'login',
+      [
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 'pw', sensitive: true },
+      ],
+    ],
+    [
+      'db_connection',
+      [
+        { key: 'host', value: 'db.example', sensitive: false },
+        { key: 'port', value: '5432', sensitive: false },
+        { key: 'database', value: 'vault', sensitive: false },
+        { key: 'username', value: 'alice', sensitive: false },
+        { key: 'password', value: 'pw', sensitive: true },
+      ],
+    ],
+    ['api_key', [{ key: 'key', value: 'sk_live', sensitive: true }]],
+    ['secure_note', [{ key: 'note', value: 'keep this safe', sensitive: true }]],
+  ] as const)(
+    'submits a valid %s template through the shared create path',
+    async (template, values) => {
+      createCredentialMock.mockResolvedValue({ id: 'cred-1' })
+      render(NewCredentialPage, { props: { data: data() } })
+      await fireEvent.input(screen.getByLabelText('Name'), {
+        target: { value: `${template} credential` },
+      })
+      await selectTemplate(template)
+
+      for (const [index, field] of values.entries()) {
+        await fireEvent.input(screen.getByLabelText(`Field ${index + 1} value`), {
+          target: { value: field.value },
+        })
+      }
+      await fireEvent.click(screen.getByRole('button', { name: /create credential/i }))
+
+      expect(createCredentialMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        expect.objectContaining({ template, fields: values })
+      )
+      await vi.waitFor(() => expect(gotoMock).toHaveBeenCalled())
+    }
+  )
+
+  it('submits multiple Custom fields without treating the field set as a single access token value', async () => {
+    createCredentialMock.mockResolvedValue({ id: 'cred-custom' })
+    render(NewCredentialPage, { props: { data: data() } })
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Custom credential' } })
+    await selectTemplate('custom')
+    await fireEvent.click(screen.getByRole('button', { name: /add field/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /add field/i }))
+    await fireEvent.input(screen.getByLabelText('Field 1 name'), {
+      target: { value: 'access-token' },
+    })
+    await fireEvent.input(screen.getByLabelText('Field 1 value'), { target: { value: 'token' } })
+    await fireEvent.input(screen.getByLabelText('Field 2 name'), { target: { value: 'region' } })
+    await fireEvent.input(screen.getByLabelText('Field 2 value'), {
+      target: { value: 'us-east-1' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /create credential/i }))
+
+    expect(createCredentialMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      expect.objectContaining({
+        template: 'custom',
+        fields: [
+          { key: 'access-token', value: 'token', sensitive: false },
+          { key: 'region', value: 'us-east-1', sensitive: false },
+        ],
+      })
+    )
+    await vi.waitFor(() => expect(gotoMock).toHaveBeenCalled())
+  })
+
   it('shows an inline error on the colliding field for a 409 field_key_conflict (AC-3)', async () => {
     createCredentialMock.mockRejectedValue(
       new ApiClientError(
