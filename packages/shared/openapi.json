@@ -29966,6 +29966,13 @@
                         "value": {
                           "type": "string"
                         },
+                        "valueFormat": {
+                          "type": "string",
+                          "enum": [
+                            "scalar",
+                            "fields"
+                          ]
+                        },
                         "viewedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -29978,6 +29985,7 @@
                         "attributeKeys",
                         "action",
                         "value",
+                        "valueFormat",
                         "viewedAt"
                       ],
                       "additionalProperties": false
@@ -30193,6 +30201,13 @@
                         "value": {
                           "type": "string"
                         },
+                        "valueFormat": {
+                          "type": "string",
+                          "enum": [
+                            "scalar",
+                            "fields"
+                          ]
+                        },
                         "viewedAt": {
                           "type": "string",
                           "format": "date-time",
@@ -30205,6 +30220,7 @@
                         "attributeKeys",
                         "action",
                         "value",
+                        "valueFormat",
                         "viewedAt"
                       ],
                       "additionalProperties": false

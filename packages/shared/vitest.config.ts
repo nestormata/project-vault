@@ -16,7 +16,12 @@ export default mergeConfig(baseVitestConfig, {
       // `src/**/*.ts` contract (Story 10.4) — worth doing here too, as its own dedicated change
       // (broadening now would newly subject ~15 previously-excluded files to this package's 80%
       // aggregate threshold below, which needs its own verification pass, not a CI-fix drive-by).
-      include: ['src/schemas/api.ts', 'src/schemas/auth.ts', 'src/utils/absolute-url.ts'],
+      include: [
+        'src/schemas/api.ts',
+        'src/schemas/auth.ts',
+        'src/utils/absolute-url.ts',
+        'src/validation/rotation-cron-description.ts',
+      ],
       thresholds: {
         lines: 80,
         branches: 80,

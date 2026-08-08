@@ -17,7 +17,7 @@ This is not a UI reorganization. It is a different data model, a different RBAC 
 
 **[project-vault-demo-web.fly.dev](https://project-vault-demo-web.fly.dev)** — a self-hosted deployment you can log into and explore right now.
 
-- Log in with `demo@example.com` / _(ask for the current demo password, or register your own account)_
+- Register your own account
 - **The demo database resets every night** — everything you create (projects, credentials, org settings) is wiped and reseeded on a nightly schedule. Treat it as a scratchpad: great for testing and exploring the product, not for anything you need to keep.
 - It's a real deployment (not a mock) — same Docker images, same self-hosted Postgres, same code path as a production install.
 

@@ -7,6 +7,7 @@
     buildAbsoluteUrl,
     DEFAULT_FIELD_KEY,
     nextCronOccurrence,
+    describeRotationCron,
     validateRotationCron,
   } from '@project-vault/shared'
   import {
@@ -32,6 +33,7 @@
   import { ApiClientError } from '$lib/api/client.js'
   import FieldSetEditor from '$lib/components/credentials/FieldSetEditor.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import CronScheduleHelp from '$lib/components/forms/CronScheduleHelp.svelte'
   import {
     canCreateCredential,
     mapCredentialSubmitError,
@@ -45,6 +47,7 @@
   } from '$lib/credentials/lifecycle-form.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import { m } from '$lib/paraglide/messages.js'
+  import { getLocale } from '$lib/paraglide/runtime.js'
   import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
   import {
     formatDateTime,
@@ -88,6 +91,7 @@
   let lifecycleSubmitting = $state(false)
   let lifecycleFieldError = $state<string | null>(null)
   let lifecycleBanner = $state<string | null>(null)
+  const cronLocale = getLocale() === 'es' ? 'es' : 'en'
   const lifecycleNextRun = $derived.by(() => {
     const schedule = lifecycleRotationSchedule.trim()
     if (!schedule) return null
@@ -101,6 +105,9 @@
       return null
     }
   })
+  const lifecycleInterpretation = $derived(
+    describeRotationCron(lifecycleRotationSchedule.trim(), cronLocale)
+  )
 
   const canReveal = $derived(canCreateCredential(data.orgRole))
   const canManageRotation = $derived(canManageRotations(data.orgRole))
@@ -1007,12 +1014,15 @@
               <FormHelpText id="lifecycle-expires-help" kind="date" />
             </div>
             <div class="space-y-1">
-              <label
-                class="block text-sm font-medium text-slate-800"
-                for="lifecycle-rotation-schedule"
-              >
-                Rotation schedule (cron)
-              </label>
+              <div class="flex items-center gap-2">
+                <label
+                  class="block text-sm font-medium text-slate-800"
+                  for="lifecycle-rotation-schedule"
+                >
+                  Rotation schedule (cron)
+                </label>
+                <CronScheduleHelp id="lifecycle-rotation-schedule-help" />
+              </div>
               <input
                 id="lifecycle-rotation-schedule"
                 class="w-full max-w-xs rounded-xl border border-slate-300 px-3 py-2"
@@ -1025,6 +1035,11 @@
                 id="lifecycle-rotation-schedule-help"
                 text={m.form_help_rotation_schedule()}
               />
+              {#if lifecycleInterpretation}
+                <p class="text-sm text-slate-600">
+                  {m.form_help_rotation_interpretation({ description: lifecycleInterpretation })}
+                </p>
+              {/if}
               {#if lifecycleNextRun}
                 <p class="text-sm text-slate-600">
                   {m.form_help_rotation_next_run({ nextRun: lifecycleNextRun })}
@@ -1728,6 +1743,7 @@
                 <input
                   type="checkbox"
                   checked={isShareAttributeChecked(field)}
+                  aria-describedby="share-attribute-keys-help"
                   onchange={() => toggleShareAttribute(field)}
                 />
                 {field.key}

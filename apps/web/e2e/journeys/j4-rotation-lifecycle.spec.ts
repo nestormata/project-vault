@@ -49,6 +49,25 @@ async function setupCredentialWithDependency(context: import('@playwright/test')
 }
 
 test.describe('J4 — rotation lifecycle', () => {
+  test('shows an interpretation and accessible field help for a cron rotation schedule', async ({
+    page,
+    context,
+  }) => {
+    const { projectId, credentialId } = await setupCredentialWithDependency(context)
+
+    await page.goto(`/projects/${projectId}/credentials/${credentialId}`)
+    const schedule = page.getByLabel('Rotation schedule (cron)')
+    await schedule.fill('0 0 1 * *')
+    await expect(page.getByText('Every 1st day of the month')).toBeVisible()
+
+    await page.getByRole('button', { name: /show cron field help/i }).click()
+    await expect(page.getByRole('dialog', { name: /cron schedule fields/i })).toBeVisible()
+    await expect(page.getByText(/weekday \(0–7/i)).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: /cron schedule fields/i })).toHaveCount(0)
+  })
+
   test('AC-J4-1: happy path — initiate, confirm every checklist item, promote, retire', async ({
     page,
     context,

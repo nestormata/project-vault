@@ -160,6 +160,7 @@ export async function credentialShareAccessRoutes(fastify: FastifyApp): Promise<
           attributeKeys: result.share.attributeKeys,
           action: result.share.action,
           value: result.value,
+          valueFormat: result.valueFormat,
           viewedAt: viewedAt.toISOString(),
         },
       }

@@ -1,8 +1,12 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import { describeBackupCron } from '@project-vault/shared'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import CronScheduleHelp from '$lib/components/forms/CronScheduleHelp.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import { m } from '$lib/paraglide/messages.js'
+  import { getLocale } from '$lib/paraglide/runtime.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { updateSettings, type SystemSettingsUpdate } from '$lib/api/platform.js'
   import type { PageData } from './$types.js'
@@ -24,6 +28,8 @@
   let smtpPassword = $state('')
 
   let scheduleOverride = $state('')
+  const cronLocale = getLocale() === 'es' ? 'es' : 'en'
+  const scheduleInterpretation = $derived(describeBackupCron(scheduleOverride.trim(), cronLocale))
   let retentionCountOverride = $state('')
   let defaultSlackWebhook = $state(settings?.notifications.defaultSlackWebhook ?? '')
   let maxOrgs = $state(settings?.instancePolicy.maxOrgs?.toString() ?? '')
@@ -253,16 +259,25 @@
             </a>
           </p>
           <div class="mt-4 grid grid-cols-2 gap-4">
-            <label class="flex flex-col text-sm text-gray-700">
-              Schedule override (cron)
+            <div class="flex flex-col text-sm text-gray-700">
+              <div class="flex items-center gap-2">
+                <label for="backup-schedule-override">Schedule override (cron)</label>
+                <CronScheduleHelp id="backup-schedule-cron-help" />
+              </div>
               <input
+                id="backup-schedule-override"
                 type="text"
                 bind:value={scheduleOverride}
                 placeholder="Leave blank to keep default"
                 class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm font-mono"
                 aria-describedby="backup-schedule-help"
               />
-            </label>
+              {#if scheduleInterpretation}
+                <p class="mt-1 text-sm text-gray-600">
+                  {m.form_help_rotation_interpretation({ description: scheduleInterpretation })}
+                </p>
+              {/if}
+            </div>
             <FormHelpText id="backup-schedule-help" kind="text" />
             <label class="flex flex-col text-sm text-gray-700">
               Retention count override

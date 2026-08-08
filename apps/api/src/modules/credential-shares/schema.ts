@@ -236,6 +236,7 @@ export const ShareRevealResponseSchema = z.object({
     credentialId: z.uuid(),
     ...boundedShareScopeResponseShape,
     value: z.string(),
+    valueFormat: z.enum(['scalar', 'fields']),
     viewedAt: z.iso.datetime(),
   }),
 })

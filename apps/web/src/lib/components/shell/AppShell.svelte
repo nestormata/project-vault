@@ -19,6 +19,7 @@
     onsearch?: () => void
   } = $props()
   let logoutError = $state(null)
+  const MFA_SETTINGS_PATH = '/settings/security'
 
   async function signOut() {
     logoutError = null
@@ -94,7 +95,18 @@
     </div>
     {#if user.mfaStatus.enrollmentRequired || user.mfaStatus.bannerMessage}
       <div class="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        {user.mfaStatus.bannerMessage}
+        {#if user.mfaStatus.bannerMessage && user.mfaStatus.bannerMessage.includes(MFA_SETTINGS_PATH)}
+          {user.mfaStatus.bannerMessage.slice(
+            0,
+            user.mfaStatus.bannerMessage.indexOf(MFA_SETTINGS_PATH)
+          )}<a class="font-medium underline" href={resolve(MFA_SETTINGS_PATH)}
+            >{MFA_SETTINGS_PATH}</a
+          >{user.mfaStatus.bannerMessage.slice(
+            user.mfaStatus.bannerMessage.indexOf(MFA_SETTINGS_PATH) + MFA_SETTINGS_PATH.length
+          )}
+        {:else}
+          {user.mfaStatus.bannerMessage}
+        {/if}
       </div>
     {/if}
     {#if logoutError}
