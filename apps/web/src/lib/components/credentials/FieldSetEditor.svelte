@@ -7,11 +7,13 @@
   let {
     fields = $bindable(),
     errors = {},
+    multilineValue = false,
     onAdd,
     onRemove,
   }: {
     fields: FieldDraft[]
     errors?: Record<number, string>
+    multilineValue?: boolean
     onAdd: () => void
     onRemove: (index: number) => void
   } = $props()
@@ -28,15 +30,24 @@
         aria-describedby={`credential-field-name-help-${index}`}
         bind:value={field.key}
       />
-      <input
-        class="flex-1 rounded-lg border border-slate-300 px-2 py-2 font-mono text-sm"
-        type={field.sensitive ? 'password' : 'text'}
-        placeholder="value"
-        aria-label={`Field ${index + 1} value`}
-        autocomplete="new-password"
-        aria-describedby={`credential-field-value-help-${index}`}
-        bind:value={field.value}
-      />
+      {#if multilineValue}
+        <textarea
+          class="min-h-32 flex-1 rounded-lg border border-slate-300 px-2 py-2 font-mono text-sm"
+          placeholder="value"
+          aria-label={`Field ${index + 1} value`}
+          aria-describedby={`credential-field-value-help-${index}`}
+          bind:value={field.value}></textarea>
+      {:else}
+        <input
+          class="flex-1 rounded-lg border border-slate-300 px-2 py-2 font-mono text-sm"
+          type={field.sensitive ? 'password' : 'text'}
+          placeholder="value"
+          aria-label={`Field ${index + 1} value`}
+          autocomplete="new-password"
+          aria-describedby={`credential-field-value-help-${index}`}
+          bind:value={field.value}
+        />
+      {/if}
       <label class="flex items-center gap-1 text-xs text-slate-700">
         <input
           type="checkbox"

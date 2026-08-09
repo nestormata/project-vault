@@ -42,6 +42,14 @@ describe('new credential +page.svelte (Story 13.2)', () => {
     expect(screen.queryByLabelText('Value')).toBeNull()
   })
 
+  it('uses a textarea for the Secure Note value', async () => {
+    render(NewCredentialPage, { props: { data: data() } })
+    await selectTemplate('secure_note')
+
+    expect(screen.getByLabelText('Field 1 value', { selector: 'textarea' })).toBeTruthy()
+    expect(screen.queryByLabelText('Field 1 value', { selector: 'input' })).toBeNull()
+  })
+
   it('selecting Custom starts empty and can add a field', async () => {
     render(NewCredentialPage, { props: { data: data() } })
     await selectTemplate('custom')
