@@ -22,6 +22,9 @@ process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 
 let createApp: typeof import('../../app.js').createApp
+const POST_METHOD = 'POST'
+const GET_METHOD = 'GET'
+const VERIFY_LOGIN_URL = '/api/v1/auth/mfa/verify-login'
 
 type OpenApiDocument = {
   paths?: Record<string, unknown>
@@ -38,22 +41,22 @@ describe('auth routes', () => {
 
   it('registers auth routes as POST-only with 405 for GET', async () => {
     const app = await createApp({ logger: false })
-    const login = await app.inject({ method: 'GET', url: '/api/v1/auth/login' })
-    const refresh = await app.inject({ method: 'GET', url: '/api/v1/auth/refresh' })
-    const enroll = await app.inject({ method: 'GET', url: '/api/v1/auth/mfa/enroll' })
-    const recover = await app.inject({ method: 'GET', url: '/api/v1/auth/mfa/recover' })
-    const verifyLogin = await app.inject({ method: 'GET', url: '/api/v1/auth/mfa/verify-login' })
+    const login = await app.inject({ method: GET_METHOD, url: '/api/v1/auth/login' })
+    const refresh = await app.inject({ method: GET_METHOD, url: '/api/v1/auth/refresh' })
+    const enroll = await app.inject({ method: GET_METHOD, url: '/api/v1/auth/mfa/enroll' })
+    const recover = await app.inject({ method: GET_METHOD, url: '/api/v1/auth/mfa/recover' })
+    const verifyLogin = await app.inject({ method: GET_METHOD, url: VERIFY_LOGIN_URL })
 
     expect(login.statusCode).toBe(405)
-    expect(login.headers['allow']).toBe('POST')
+    expect(login.headers['allow']).toBe(POST_METHOD)
     expect(refresh.statusCode).toBe(405)
-    expect(refresh.headers['allow']).toBe('POST')
+    expect(refresh.headers['allow']).toBe(POST_METHOD)
     expect(enroll.statusCode).toBe(405)
-    expect(enroll.headers['allow']).toBe('POST')
+    expect(enroll.headers['allow']).toBe(POST_METHOD)
     expect(recover.statusCode).toBe(405)
-    expect(recover.headers['allow']).toBe('POST')
+    expect(recover.headers['allow']).toBe(POST_METHOD)
     expect(verifyLogin.statusCode).toBe(405)
-    expect(verifyLogin.headers['allow']).toBe('POST')
+    expect(verifyLogin.headers['allow']).toBe(POST_METHOD)
 
     await app.close()
   })
@@ -61,14 +64,18 @@ describe('auth routes', () => {
   it('protects MFA enrollment routes with access-token auth', async () => {
     const app = await createApp({ logger: false })
 
-    const enroll = await app.inject({ method: 'POST', url: '/api/v1/auth/mfa/enroll', payload: {} })
+    const enroll = await app.inject({
+      method: POST_METHOD,
+      url: '/api/v1/auth/mfa/enroll',
+      payload: {},
+    })
     const verify = await app.inject({
-      method: 'POST',
+      method: POST_METHOD,
       url: '/api/v1/auth/mfa/verify-enrollment',
       payload: { totp: '123456' },
     })
     const regenerate = await app.inject({
-      method: 'POST',
+      method: POST_METHOD,
       url: '/api/v1/auth/mfa/regenerate-recovery-codes',
       payload: { totp: '123456' },
     })
@@ -84,7 +91,7 @@ describe('auth routes', () => {
     const app = await createApp({ logger: false })
 
     const verify = await app.inject({
-      method: 'POST',
+      method: POST_METHOD,
       url: '/api/v1/auth/mfa/verify-enrollment',
       payload: { totp: '123 456' },
     })
@@ -113,7 +120,7 @@ describe('auth routes', () => {
     const app = await createApp({ logger: false })
 
     const response = await app.inject({
-      method: 'POST',
+      method: POST_METHOD,
       url: '/api/v1/auth/mfa/recover',
       payload: { email: 'not-an-email', password: 'short', recoveryCode: 'bad' },
     })
@@ -127,12 +134,50 @@ describe('auth routes', () => {
     const app = await createApp({ logger: false })
 
     const response = await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/mfa/verify-login',
+      method: POST_METHOD,
+      url: VERIFY_LOGIN_URL,
       payload: { mfaToken: 'short', totp: 'bad' },
     })
 
     expect(response.statusCode).toBe(422)
+
+    await app.close()
+  })
+
+  it('rejects internal whitespace in a public MFA verify-login TOTP before token lookup', async () => {
+    const app = await createApp({ logger: false })
+
+    const response = await app.inject({
+      method: POST_METHOD,
+      url: VERIFY_LOGIN_URL,
+      payload: { mfaToken: 'a'.repeat(16), totp: '123 456' },
+    })
+
+    expect(response.statusCode).toBe(422)
+    expect(response.json()).toMatchObject({ code: 'validation_error' })
+    await app.close()
+  })
+
+  it('maps oversized and unsupported media-type MFA verify-login requests to the documented error schema', async () => {
+    const app = await createApp({ logger: false })
+
+    const oversized = await app.inject({
+      method: POST_METHOD,
+      url: VERIFY_LOGIN_URL,
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify({ mfaToken: 'a'.repeat(16), totp: '1'.repeat(4100) }),
+    })
+    const unsupported = await app.inject({
+      method: POST_METHOD,
+      url: VERIFY_LOGIN_URL,
+      headers: { 'content-type': 'text/plain' },
+      payload: 'not-json',
+    })
+
+    expect(oversized.statusCode).toBe(422)
+    expect(oversized.json()).toMatchObject({ code: 'validation_error' })
+    expect(unsupported.statusCode).toBe(422)
+    expect(unsupported.json()).toMatchObject({ code: 'validation_error' })
 
     await app.close()
   })
@@ -249,7 +294,7 @@ describe.sequential('POST /api/v1/auth/login for users seeded via raw SQL', () =
       )
 
       const login = await suite.app.inject({
-        method: 'POST',
+        method: POST_METHOD,
         url: '/api/v1/auth/login',
         payload: { email, password },
       })

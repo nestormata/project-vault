@@ -834,12 +834,13 @@ const envSchema = z
     }
     if (
       env.MFA_PENDING_SESSION_TTL_SECONDS <
-      (env.MFA_TOTP_WINDOW + 1) * env.MFA_TOTP_PERIOD_SECONDS
+      (env.MFA_TOTP_WINDOW + 1) * env.MFA_TOTP_PERIOD_SECONDS + env.JWT_MAX_CLOCK_SKEW_SECONDS
     ) {
       ctx.addIssue({
         code: 'custom',
         path: ['MFA_PENDING_SESSION_TTL_SECONDS'],
-        message: 'MFA_PENDING_SESSION_TTL_SECONDS must cover the accepted TOTP window',
+        message:
+          'MFA_PENDING_SESSION_TTL_SECONDS must cover the accepted TOTP window and clock skew',
       })
     }
     validateDummyPasswordHash(env, ctx)

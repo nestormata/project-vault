@@ -68,7 +68,7 @@ describe('credential-shares step-up re-authentication', () => {
     })
 
     // Distinct 30s period from the enrollment TOTP already consumed above, so this isn't
-    // rejected as a replay of the enrollment code (same pattern as mfa-login.test.ts).
+    // rejected as a replay of the enrollment code (same pattern as mfa-login.integration.test.ts).
     const code = totpForSecret(enrolled.secret, Date.now() + 30_000)
     const result = await getDb().transaction((tx) =>
       verifyStepUp(tx, { userId: enrolled.userId, totpCode: code })

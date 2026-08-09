@@ -685,6 +685,30 @@ describe('env', () => {
     expect(exitSpy).toHaveBeenCalledWith(1)
   })
 
+  it('requires pending MFA TTL to include the configured JWT clock-skew allowance', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      MFA_PENDING_SESSION_TTL_SECONDS: '89',
+      MFA_TOTP_WINDOW: '1',
+      JWT_MAX_CLOCK_SKEW_SECONDS: '30',
+    }
+    await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
+    expect(exitSpy).toHaveBeenCalledWith(1)
+
+    resetEnvImport(exitSpy)
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      MFA_PENDING_SESSION_TTL_SECONDS: '90',
+      MFA_TOTP_WINDOW: '1',
+      JWT_MAX_CLOCK_SKEW_SECONDS: '30',
+    }
+    const { env } = await import('./env.js')
+    expect(env.MFA_PENDING_SESSION_TTL_SECONDS).toBe(90)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
   it('accepts Story 1.9 MFA enforcement and failed auth settings within bounds', async () => {
     process.env = {
       ...BASE_ENV,
