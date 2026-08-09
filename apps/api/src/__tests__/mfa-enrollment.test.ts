@@ -203,7 +203,7 @@ describe.sequential('MFA enrollment integration', () => {
       method: 'POST',
       url: MFA_REGENERATE_RECOVERY_CODES_URL,
       headers: { cookie: cookies },
-      payload: { totp: `${token.slice(0, 3)} ${token.slice(3)}` },
+      payload: { totp: token },
     })
 
     expect(replay.statusCode).toBe(422)
