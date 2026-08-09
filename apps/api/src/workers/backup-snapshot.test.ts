@@ -16,7 +16,7 @@ const { resetVaultForTest } = await import('../__tests__/helpers/vault-test-clea
 const { getDb } = await import('@project-vault/db')
 const { backupRuns, adminAlerts } = await import('@project-vault/db/schema')
 const { eq, desc } = await import('drizzle-orm')
-const { runBackupSnapshotJob } = await import('./backup-snapshot.js')
+const { backupSnapshotHandler, runBackupSnapshotJob } = await import('./backup-snapshot.js')
 const { backupStorageFor } = await import('../modules/backup/storage.js')
 
 const FAKE_DUMP_SQL = Buffer.from(`
@@ -26,6 +26,7 @@ CREATE TABLE "projects" (id uuid);
 CREATE TABLE "credentials" (id uuid);
 CREATE TABLE "audit_log_entries" (id uuid);
 `)
+const EXPECTED_SLOT_ERROR = 'expected slot'
 
 function fakeBoss() {
   return { send: vi.fn(async () => 'job-id'), isStarted: () => false } as unknown as Parameters<
@@ -81,7 +82,7 @@ describe.sequential('Story 9.1: backup-snapshot worker', () => {
   it('manual fire (job.data carries an existing slot) uses that slot rather than acquiring a new one', async () => {
     const { acquireBackupSlot } = await import('../modules/backup/service.js')
     const slot = await acquireBackupSlot({ triggeredBy: 'manual' })
-    if (!slot.ok) throw new Error('expected slot')
+    if (!slot.ok) throw new Error(EXPECTED_SLOT_ERROR)
     const storage = backupStorageFor({ type: 'filesystem', path: storageDir })
     const logger = silentLogger()
 
@@ -95,6 +96,28 @@ describe.sequential('Story 9.1: backup-snapshot worker', () => {
     const [row] = await getDb().select().from(backupRuns).where(eq(backupRuns.id, slot.runId))
     expect(row?.status).toBe('succeeded')
     expect(row?.filename).toBe(slot.filename)
+  })
+
+  it('handles pg-boss batch callbacks so a manual job does not become a stranded running row', async () => {
+    const { acquireBackupSlot } = await import('../modules/backup/service.js')
+    const slot = await acquireBackupSlot({ triggeredBy: 'manual' })
+    if (!slot.ok) throw new Error(EXPECTED_SLOT_ERROR)
+    const storage = backupStorageFor({ type: 'filesystem', path: storageDir })
+    const logger = silentLogger()
+    const handler = backupSnapshotHandler(fakeBoss(), logger, {
+      dump: async () => FAKE_DUMP_SQL,
+      storage,
+    })
+
+    await handler([
+      {
+        id: 'pg-boss-job-id',
+        data: { runId: slot.runId, filename: slot.filename, metaFilename: slot.metaFilename },
+      },
+    ])
+
+    const [row] = await getDb().select().from(backupRuns).where(eq(backupRuns.id, slot.runId))
+    expect(row?.status).toBe('succeeded')
   })
 
   it('AC-13: a failed dump creates a backup.failure admin_alerts row and delivers a notification', async () => {
@@ -120,7 +143,7 @@ describe.sequential('Story 9.1: backup-snapshot worker', () => {
   it('AC-7: scheduled fire skips silently (no throw, no alert) when a backup is already running', async () => {
     const { acquireBackupSlot } = await import('../modules/backup/service.js')
     const running = await acquireBackupSlot({ triggeredBy: 'manual' })
-    if (!running.ok) throw new Error('expected slot')
+    if (!running.ok) throw new Error(EXPECTED_SLOT_ERROR)
     const logger = silentLogger()
 
     await expect(runBackupSnapshotJob(fakeBoss(), logger, undefined, {})).resolves.toBeUndefined()

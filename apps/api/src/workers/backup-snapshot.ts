@@ -67,6 +67,20 @@ export async function runBackupSnapshotJob(
   }
 }
 
-export function backupSnapshotHandler(boss: BossService, logger: WorkerLogger) {
-  return (job: BossJob) => runBackupSnapshotJob(boss, logger, job.data as BackupSnapshotJobData)
+export function backupSnapshotHandler(
+  boss: BossService,
+  logger: WorkerLogger,
+  deps: BackupServiceDeps = {}
+) {
+  return (job: BossJob | BossJob[]) => {
+    // pg-boss 12 invokes callbacks with a batch array, even at the default batchSize of 1.
+    // Normalize that boundary here so manual job data is not mistaken for a scheduled fire.
+    const [currentJob] = Array.isArray(job) ? job : [job]
+    return runBackupSnapshotJob(
+      boss,
+      logger,
+      currentJob?.data as BackupSnapshotJobData | undefined,
+      deps
+    )
+  }
 }

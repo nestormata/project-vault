@@ -408,6 +408,35 @@ backup for a real restore.
 Check `GET /api/v1/admin/backups` first to confirm no backup is already in progress before
 triggering another.
 
+### Proxmox/NFS-backed filesystem storage
+
+For a Docker LXC on Proxmox, mount the NFS export on the Proxmox host and expose only the
+backup subdirectory to the LXC. The application should then use the tracked
+`docker-compose.nfs.yml` override instead of the default Docker named volume:
+
+```bash
+# On the Proxmox host; choose a subdirectory dedicated to Project Vault.
+mkdir -p /mnt/pve/backups01/vault-backups
+pct set 103 -mp0 /mnt/pve/backups01/vault-backups,mp=/mnt/backups
+
+# Inside LXC 103, from the deployment directory.
+export BACKUP_NFS_PATH=/mnt/backups
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.nfs.yml \
+  up -d
+```
+
+Before starting the API, verify that `/mnt/backups` is mounted and writable by the API's
+runtime user (`uid=1000`). Do not use the NFS export root for this application; keep it in a
+dedicated subdirectory. The NFS export must allow the mapped LXC/Docker runtime identity to
+create files, including the temporary `.tmp-*` file used during an atomic backup write.
+
+After the stack starts, confirm the API container sees the bind mount at
+`/var/backups/vault`, then trigger a manual backup and wait for a `succeeded` row before
+validating it.
+
 ### Full restore procedure, step by step
 
 <!-- Source: Story 9.5 AC-9; verified against apps/api/src/modules/backup/{routes,schema}.ts -->
