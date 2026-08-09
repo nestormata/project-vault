@@ -206,6 +206,7 @@
           <FieldSetEditor
             bind:fields
             errors={fieldSetErrors}
+            multilineValue={template === 'secure_note'}
             onAdd={addField}
             onRemove={removeField}
           />
