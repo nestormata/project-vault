@@ -1,0 +1,11 @@
+# Production override for an NFS-backed filesystem backup destination.
+# Set BACKUP_NFS_PATH to the path visible to the Docker host/LXC, for example
+# /mnt/backups after Proxmox bind-mounts the NFS export into the LXC.
+
+services:
+  api:
+    volumes:
+      - type: bind
+        source: ${BACKUP_NFS_PATH:?BACKUP_NFS_PATH must point to the mounted NFS backup directory}
+        target: /var/backups/vault
+        read_only: false
