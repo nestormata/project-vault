@@ -18,7 +18,7 @@ process.env['VAULT_KEY_DIR'] = keyDir
 process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 
 const { createApp } = await import('../app.js')
-const { initVault, unsealVault, zeroKeys, loadInitialVaultState } =
+const { initVault, unsealVault, zeroKeys, loadInitialVaultState, getVaultStatus } =
   await import('../modules/vault/key-service.js')
 const { resetVaultForTest } = await import('./helpers/vault-test-cleanup.js')
 const { getDb } = await import('@project-vault/db')
@@ -270,6 +270,26 @@ describe.sequential('Vault key-service custody models', () => {
 
     const unsealResult = await unsealVault({ masterKeyPath: keyPath })
     expect(unsealResult).toMatchObject({ unsealed: true, kmsType: 'file' })
+  })
+
+  it('maps a vault_state kms_type CHECK failure and leaves initialization retryable', async () => {
+    const keyPath = join(keyDir, 'vault-key-invalid-kms-type.bin')
+    writeFileSync(keyPath, randomBytes(32))
+    const invalidRuntimeBody = {
+      kmsType: 'bogus',
+      masterKeyPath: keyPath,
+    } as unknown as Parameters<typeof initVault>[0]
+
+    await expect(initVault(invalidRuntimeBody, {})).rejects.toMatchObject({
+      code: 'VAULT_CORRUPTED',
+      statusCode: 503,
+    })
+    expect(getVaultStatus()).toBe('uninitialized')
+    await expect(getDb().select().from(vaultState)).resolves.toHaveLength(0)
+
+    await expect(
+      initVault({ kmsType: 'file', masterKeyPath: keyPath, acknowledgeCoLocationRisk: true }, {})
+    ).resolves.toMatchObject({ initialized: true, kmsType: 'file' })
   })
 
   it('file mode: rejects key file outside VAULT_KEY_DIR', async () => {

@@ -58,6 +58,7 @@ describe('vault route validation errors', () => {
       payload: { kmsType: 'bogus' },
     })
     expect(res.statusCode).toBe(400)
+    expect(res.json()).toMatchObject({ error: 'validation_error' })
     await app.close()
   })
 
