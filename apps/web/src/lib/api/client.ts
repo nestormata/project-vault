@@ -39,7 +39,13 @@ function isRefreshableAccessError(reason: unknown): reason is ApiClientError {
   return (
     reason instanceof ApiClientError &&
     reason.status === 401 &&
-    (reason.code === 'access_token_missing' || reason.code === 'access_token_invalid')
+    // `session_revoked` fires when a concurrent request's refresh rotation revoked the session
+    // this request's access token belonged to (SvelteKit fires several requests per navigation).
+    // Retrying picks up the winning session via the server's rotation grace window; if the
+    // session is genuinely dead the refresh call itself will fail and the original error surfaces.
+    (reason.code === 'access_token_missing' ||
+      reason.code === 'access_token_invalid' ||
+      reason.code === 'session_revoked')
   )
 }
 
