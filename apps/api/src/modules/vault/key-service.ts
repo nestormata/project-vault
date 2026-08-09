@@ -441,6 +441,15 @@ function zeroSecondaryKeys(auditKey: Buffer, backupKey: Buffer, platformAuditKey
   platformAuditKey.fill(0)
 }
 
+function isVaultStateKmsTypeCheckViolation(error: unknown): boolean {
+  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
+  if (!cause || typeof cause !== 'object') return false
+  const postgresError = cause as { code?: string; constraint_name?: string }
+  return (
+    postgresError.code === '23514' && postgresError.constraint_name === 'vault_state_kms_type_check'
+  )
+}
+
 /** Shared by `initVault`/`unsealVault`'s final step: commits the freshly-derived keys as the new
  * module-level state, zeroing whatever was cached before (a no-op on first init, real cleanup on
  * every subsequent unseal), then flips `_status` to `'unsealed'` and fires the post-unseal hook. */
@@ -494,24 +503,38 @@ export async function initVault(
   const { primaryKey, auditKey, backupKey, platformAuditKey } = deriveAllKeysFromIkm(ikm)
 
   const sentinel = Buffer.from(SENTINEL_PLAINTEXT, 'utf8')
-  const encryptedSentinel: EncryptedValue = await encrypt(sentinel, primaryKey)
-  sentinel.fill(0)
+  let encryptedSentinel: EncryptedValue
+  try {
+    encryptedSentinel = await encrypt(sentinel, primaryKey)
+  } finally {
+    sentinel.fill(0)
+  }
 
   // INSERT ON CONFLICT DO NOTHING: atomic check-then-insert eliminates TOCTOU race.
-  const inserted = await db
-    .insert(vaultState)
-    .values({
-      id: 1,
-      keyVersion: 1,
-      auditKeyVersion: 1,
-      encryptedSentinel: JSON.stringify(encryptedSentinel),
-      kmsType: body.kmsType,
-      keyDerivationParams: kdfParams ? JSON.stringify(kdfParams) : null,
-      kmsKeyId: ikmResult.kmsKeyId ?? null,
-      kmsEncryptedDek: ikmResult.kmsEncryptedDek ?? null,
-    })
-    .onConflictDoNothing()
-    .returning()
+  let inserted: (typeof vaultState.$inferSelect)[]
+  try {
+    inserted = await db
+      .insert(vaultState)
+      .values({
+        id: 1,
+        keyVersion: 1,
+        auditKeyVersion: 1,
+        encryptedSentinel: JSON.stringify(encryptedSentinel),
+        kmsType: body.kmsType,
+        keyDerivationParams: kdfParams ? JSON.stringify(kdfParams) : null,
+        kmsKeyId: ikmResult.kmsKeyId ?? null,
+        kmsEncryptedDek: ikmResult.kmsEncryptedDek ?? null,
+      })
+      .onConflictDoNothing()
+      .returning()
+  } catch (error) {
+    primaryKey.fill(0)
+    zeroSecondaryKeys(auditKey, backupKey, platformAuditKey)
+    if (isVaultStateKmsTypeCheckViolation(error)) {
+      throw new AppError('VAULT_CORRUPTED', VAULT_CORRUPTED_MESSAGE, 503)
+    }
+    throw error
+  }
 
   if (inserted.length === 0) {
     primaryKey.fill(0)

@@ -96,6 +96,21 @@ export type AppOptions = {
   vaultGuardEnabled?: boolean
 }
 
+function shouldNormalizeMfaParserError(
+  url: string,
+  statusCode: number | undefined,
+  parserErrorCode: string | undefined
+): boolean {
+  const path = url.split('?')[0]
+  return (
+    path === '/api/v1/auth/mfa/verify-login' &&
+    (statusCode === 413 ||
+      statusCode === 415 ||
+      parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE' ||
+      parserErrorCode === 'FST_ERR_CTP_INVALID_MEDIA_TYPE')
+  )
+}
+
 export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   let logger: boolean | object
   if (options.logger === false) {
@@ -159,12 +174,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       // use its normal Zod parser for Fastify's 413/415 errors. Normalize both to the route's
       // documented validation contract without exposing parser internals.
       const parserErrorCode = (error as Error & { code?: string }).code
-      if (
-        error.statusCode === 413 ||
-        error.statusCode === 415 ||
-        parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE' ||
-        parserErrorCode === 'FST_ERR_CTP_INVALID_MEDIA_TYPE'
-      ) {
+      if (shouldNormalizeMfaParserError(req.url, error.statusCode, parserErrorCode)) {
         return reply.status(422).send({
           code: 'validation_error',
           message: 'Request validation failed',
