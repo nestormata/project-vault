@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
+import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
@@ -30,19 +31,18 @@ test.describe('J5 — multi-field secret via templates', () => {
     const projectId = (await projectRes.json()).data.id as string
 
     // --- Create from the Login template ---
-    await page.goto(`/projects/${projectId}/credentials/new`)
-    await page.getByLabel('Name', { exact: true }).fill('j5-db-login')
-    await page.getByLabel('Template', { exact: true }).selectOption('login')
-
-    // Template pre-populates username + password (AC-1).
-    await expect(page.getByLabel('Field 1 name')).toHaveValue('username')
-    await expect(page.getByLabel('Field 2 name')).toHaveValue('password')
-    await page.getByLabel(FIELD_1_VALUE).fill('svc-account')
-    await page.getByLabel(FIELD_2_VALUE).fill('initial-password')
-    await page.getByRole('button', { name: 'Create credential' }).click()
+    await createLoginTemplateCredentialViaUi(page, projectId, {
+      name: 'j5-db-login',
+      field1Value: 'svc-account',
+      field2Value: 'initial-password',
+      beforeSubmit: async () => {
+        // Template pre-populates username + password (AC-1).
+        await expect(page.getByLabel('Field 1 name')).toHaveValue('username')
+        await expect(page.getByLabel('Field 2 name')).toHaveValue('password')
+      },
+    })
 
     // Lands on the detail page, which iterates the field list.
-    await page.waitForURL(`**/projects/${projectId}/credentials/*`)
     const fieldList = page.getByTestId('field-list')
     await expect(fieldList).toContainText('username')
     await expect(fieldList).toContainText('password')

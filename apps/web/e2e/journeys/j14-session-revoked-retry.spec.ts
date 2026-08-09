@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
 import { createProjectViaApi } from '../fixtures/api.js'
+import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
-const FIELD_1_VALUE = 'Field 1 value'
-const FIELD_2_VALUE = 'Field 2 value'
 
 // J14 — regression test for a fast-navigation false sign-out. SvelteKit fires several
 // concurrent requests during rapid navigation; if one wins a server-side refresh-token
@@ -32,13 +31,11 @@ test.describe('J14 — session_revoked on a client mutation is retried, not a fa
     })
     const projectId = project.id
 
-    await page.goto(`/projects/${projectId}/credentials/new`)
-    await page.getByLabel('Name', { exact: true }).fill('j14-db-login')
-    await page.getByLabel('Template', { exact: true }).selectOption('login')
-    await page.getByLabel(FIELD_1_VALUE).fill('svc-account')
-    await page.getByLabel(FIELD_2_VALUE).fill('initial-password')
-    await page.getByRole('button', { name: 'Create credential' }).click()
-    await page.waitForURL(`**/projects/${projectId}/credentials/*`)
+    await createLoginTemplateCredentialViaUi(page, projectId, {
+      name: 'j14-db-login',
+      field1Value: 'svc-account',
+      field2Value: 'initial-password',
+    })
 
     await page.getByRole('button', { name: 'Edit fields' }).click()
     await expect(page.getByRole('button', { name: 'Save fields' })).toBeVisible()
