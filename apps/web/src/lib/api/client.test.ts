@@ -3,7 +3,7 @@ import { apiFetch } from './client.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
 describe('apiFetch', () => {
-  it.each(['access_token_missing', 'access_token_invalid'] as const)(
+  it.each(['access_token_missing', 'access_token_invalid', 'session_revoked'] as const)(
     'refreshes an expired access session once for %s before retrying the original request',
     async (code) => {
       const fetchFn = vi
@@ -31,6 +31,33 @@ describe('apiFetch', () => {
       )
     }
   )
+
+  // Regression guard: fast navigation fires several concurrent SvelteKit __data.json requests.
+  // If one of them wins a refresh-token rotation first, a sibling request still holding the
+  // now-revoked access token gets `session_revoked` from the server. Before this fix, that code
+  // wasn't retried and surfaced as a false "your session expired" sign-out.
+  it('recovers from session_revoked by refreshing and retrying, instead of surfacing a sign-out', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { code: 'session_revoked', message: 'Session has been revoked' },
+          { status: 401 }
+        )
+      )
+      .mockResolvedValueOnce(jsonResponse({ data: { expiresAt: '2026-08-08T02:00:00.000Z' } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { ok: true } }))
+
+    await expect(
+      apiFetch(fetchFn, '/api/v1/projects/project-1/credentials', { method: 'GET' })
+    ).resolves.toEqual({ ok: true })
+
+    expect(fetchFn).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/auth/refresh',
+      expect.objectContaining({ method: 'POST', credentials: 'include' })
+    )
+  })
 
   it('shares one refresh request between concurrent expired API calls', async () => {
     let originalCalls = 0
@@ -101,6 +128,31 @@ describe('apiFetch', () => {
     await expect(
       apiFetch(fetchFn, '/api/v1/projects/project-1/credentials', { method: 'POST', body: '{}' })
     ).rejects.toThrow('Access token is missing')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  // Distinct from the `session_revoked` happy-path test above: a session that was genuinely
+  // revoked (logout elsewhere, admin action) rather than merely raced by a concurrent rotation
+  // must still surface as a real error, not retry-loop or get silently swallowed.
+  it('does not mask a genuinely dead session behind session_revoked when the refresh also fails', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { code: 'session_revoked', message: 'Session has been revoked' },
+          { status: 401 }
+        )
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { code: 'refresh_token_invalid', message: 'Refresh token is invalid' },
+          { status: 401 }
+        )
+      )
+
+    await expect(
+      apiFetch(fetchFn, '/api/v1/projects/project-1/credentials', { method: 'POST', body: '{}' })
+    ).rejects.toThrow('Session has been revoked')
     expect(fetchFn).toHaveBeenCalledTimes(2)
   })
 

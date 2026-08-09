@@ -110,6 +110,10 @@ export type CredentialSubmitError = {
   fieldKeyConflict?: string
 }
 
+// `session_revoked` reaching this point means apps/web/src/lib/api/client.ts's apiFetch already
+// tried a refresh-and-retry and it failed (see isRefreshableAccessError there) — i.e. the session
+// is genuinely dead, not just racing a concurrent rotation. Don't "fix" this in isolation by
+// special-casing session_revoked here; that retry is what keeps it from being a false sign-out.
 const SESSION_AUTH_ERROR_CODES = new Set([
   'access_token_missing',
   'access_token_invalid',
