@@ -348,6 +348,225 @@ describe('credential detail +page.svelte', () => {
     expect(screen.getByText('sk_live_abc123')).toBeTruthy()
   })
 
+  it('copies a legacy value without revealing it or storing plaintext in rendered state', async () => {
+    revealCredentialValueMock.mockResolvedValue({ value: 'sk_live_copy_only', versionNumber: 3 })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, { props: { data: baseData() } })
+
+    const copyButton = screen.getByRole('button', {
+      name: /copy credential value without revealing/i,
+    })
+    const guidanceId = copyButton.getAttribute('aria-describedby')
+    expect(guidanceId).toBeTruthy()
+    expect(document.getElementById(guidanceId ?? '')?.textContent).toMatch(
+      /copies the value to your clipboard without showing it/i
+    )
+
+    await fireEvent.click(copyButton)
+
+    expect(revealCredentialValueMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId
+    )
+    expect(writeText).toHaveBeenCalledWith('sk_live_copy_only')
+    expect(screen.queryByText('sk_live_copy_only')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^hide$/i })).toBeNull()
+    expect((await screen.findByRole('status')).textContent).toMatch(/copied to clipboard/i)
+    expect(screen.getByRole('status').textContent).not.toContain('sk_live_copy_only')
+  })
+
+  it('copies one multi-field value through the scoped reveal path while the field stays masked', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      fields: [{ key: 'password', value: 'field_copy_only', sensitive: true }],
+      schemaVersion: 2,
+      versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
+    })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE }) },
+    })
+
+    const passwordRow = screen.getByTestId('field-row-password')
+    const copyButton = within(passwordRow).getByRole('button', {
+      name: /copy password without revealing/i,
+    })
+    const guidanceId = copyButton.getAttribute('aria-describedby')
+    expect(guidanceId).toBeTruthy()
+    expect(document.getElementById(guidanceId ?? '')?.textContent).toMatch(
+      /copies only the password field .*without showing it/i
+    )
+
+    await fireEvent.click(copyButton)
+
+    expect(revealCredentialValueMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId,
+      { field: 'password' }
+    )
+    expect(writeText).toHaveBeenCalledWith('field_copy_only')
+    expect(screen.getByTestId('field-masked-password')).toBeTruthy()
+    expect(screen.getByTestId('field-value-host').textContent).toContain('db.example.com')
+    expect(screen.queryByText('field_copy_only')).toBeNull()
+    expect(screen.getByRole('status').textContent).not.toContain('field_copy_only')
+    expect((await screen.findByRole('status')).textContent).toMatch(/copied password to clipboard/i)
+  })
+
+  it('keeps a failed copy actionable and announces only a localized generic failure', async () => {
+    revealCredentialValueMock.mockRejectedValue(new Error('secret must not escape'))
+    const writeText = vi.fn()
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, { props: { data: baseData() } })
+
+    const copyButton = screen.getByRole('button', {
+      name: /copy credential value without revealing/i,
+    })
+    await fireEvent.click(copyButton)
+
+    const status = await screen.findByRole('status')
+    expect(status.textContent).toMatch(/could not copy the credential value/i)
+    expect(status.textContent).not.toContain('secret must not escape')
+    expect((copyButton as HTMLButtonElement).disabled).toBe(false)
+    expect(writeText).not.toHaveBeenCalled()
+    expect(screen.queryByText('secret must not escape')).toBeNull()
+  })
+
+  it('keeps plaintext out of the DOM when the copy-only clipboard write fails', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      value: 'clipboard_secret_only',
+      versionNumber: 3,
+    })
+    const writeText = vi.fn().mockRejectedValue(new Error('clipboard denied'))
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, { props: { data: baseData() } })
+
+    const copyButton = screen.getByRole('button', {
+      name: /copy credential value without revealing/i,
+    })
+    await fireEvent.click(copyButton)
+
+    const status = await screen.findByRole('status')
+    expect(status.textContent).toMatch(/could not copy the credential value/i)
+    expect(status.textContent).not.toContain('clipboard_secret_only')
+    expect(screen.queryByText('clipboard_secret_only')).toBeNull()
+    expect((copyButton as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('prevents duplicate clicks during a copy and restores the control afterward', async () => {
+    let resolveReveal!: (value: { value: string; versionNumber: number }) => void
+    revealCredentialValueMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReveal = resolve
+      })
+    )
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, { props: { data: baseData() } })
+
+    const copyButton = screen.getByRole('button', {
+      name: /copy credential value without revealing/i,
+    })
+    await fireEvent.click(copyButton)
+    expect((copyButton as HTMLButtonElement).disabled).toBe(true)
+    await fireEvent.click(copyButton)
+    expect(revealCredentialValueMock).toHaveBeenCalledTimes(1)
+
+    resolveReveal({ value: 'concurrent_copy_only', versionNumber: 3 })
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('concurrent_copy_only'))
+    expect((copyButton as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText('concurrent_copy_only')).toBeNull()
+  })
+
+  it('copies field keys that inherit object properties without silently no-oping', async () => {
+    revealCredentialValueMock.mockResolvedValue({
+      fields: [{ key: 'toString', value: 'special-field-copy', sensitive: true }],
+      schemaVersion: 2,
+      versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
+    })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          credential: {
+            ...CREDENTIAL,
+            schemaVersion: 2,
+            fields: [{ key: 'toString', sensitive: true }],
+          },
+        }),
+      },
+    })
+
+    await fireEvent.click(
+      within(screen.getByTestId('field-row-toString')).getByRole('button', {
+        name: /copy tostring without revealing/i,
+      })
+    )
+
+    expect(revealCredentialValueMock).toHaveBeenCalledWith(
+      expect.anything(),
+      projectId,
+      credentialId,
+      { field: 'toString' }
+    )
+    expect(writeText).toHaveBeenCalledWith('special-field-copy')
+  })
+
+  it('keeps copy guidance accessible for field keys containing spaces', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          credential: {
+            ...CREDENTIAL,
+            schemaVersion: 2,
+            fields: [{ key: 'api key', sensitive: true }],
+          },
+        }),
+      },
+    })
+
+    const copyButton = within(screen.getByTestId('field-row-api key')).getByRole('button', {
+      name: /copy api key without revealing/i,
+    })
+    const guidanceId = copyButton.getAttribute('aria-describedby')
+    expect(guidanceId).toBe('credential-copy-help-api%20key')
+    expect(document.getElementById(guidanceId ?? '')).toBeTruthy()
+  })
+
+  it('hides copy and reveal controls from project viewers', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          orgRole: 'member',
+          project: { role: 'viewer' },
+          credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE,
+        }),
+      },
+    })
+
+    expect(screen.queryByRole('button', { name: /copy .* without revealing/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^reveal( all| value)?$/i })).toBeNull()
+  })
+
+  it('does not render copy-without-reveal controls for viewers', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          orgRole: 'viewer',
+          credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE,
+        }),
+      },
+    })
+
+    expect(screen.queryByRole('button', { name: /copy .* without revealing/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^reveal( all| value)?$/i })).toBeNull()
+  })
+
   it('adding a new version requires a non-blank value, no API call otherwise', async () => {
     render(CredentialDetailPage, { props: { data: baseData() } })
 

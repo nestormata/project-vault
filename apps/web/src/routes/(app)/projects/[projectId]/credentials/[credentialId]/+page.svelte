@@ -109,7 +109,7 @@
     describeRotationCron(lifecycleRotationSchedule.trim(), cronLocale)
   )
 
-  const canReveal = $derived(canCreateCredential(data.orgRole))
+  const canReveal = $derived(canCreateCredential(data.orgRole) && data.project?.role !== 'viewer')
   const canManageRotation = $derived(canManageRotations(data.orgRole))
   const displayExpiresAt = $derived(
     lifecycleOverride ? lifecycleOverride.expiresAt : (data.credential?.expiresAt ?? null)
@@ -719,6 +719,8 @@
   // confirmation (or failure message) rather than a silent no-op or an unhandled rejection.
   let copyStatus = $state<{ kind: 'success' | 'failure'; message: string } | null>(null)
   let copyStatusTimeout: ReturnType<typeof setTimeout> | null = null
+  let copyingValue = $state(false)
+  let copyingFields = $state<Record<string, boolean>>({})
 
   function showCopyStatus(kind: 'success' | 'failure', message: string) {
     if (copyStatusTimeout) clearTimeout(copyStatusTimeout)
@@ -727,6 +729,50 @@
       copyStatus = null
       copyStatusTimeout = null
     }, 3000)
+  }
+
+  async function copyWithoutReveal(field?: string): Promise<void> {
+    if (!canReveal || !data.credential) return
+    if (field ? copyingFields[field] === true : copyingValue) return
+
+    if (field) {
+      copyingFields = { ...copyingFields, [field]: true }
+    } else {
+      copyingValue = true
+    }
+
+    try {
+      // Keep this on the existing audited reveal boundary. The returned plaintext is deliberately
+      // held only in this function long enough for the clipboard write; it never enters reveal
+      // state or the rendered DOM.
+      const result = field
+        ? await revealCredentialValue(fetch, data.projectId, data.credentialId, { field })
+        : await revealCredentialValue(fetch, data.projectId, data.credentialId)
+      const value = isFieldsValue(result)
+        ? (result.fields.find((entry) => entry.key === field)?.value ?? undefined)
+        : result.value
+      if (value === undefined) throw new Error('copy value missing')
+
+      await navigator.clipboard.writeText(value)
+      showCopyStatus(
+        'success',
+        field ? m.credential_copy_field_success({ field }) : m.credential_copy_legacy_success()
+      )
+    } catch {
+      // Do not surface API or clipboard errors here: either may contain sensitive server detail.
+      showCopyStatus(
+        'failure',
+        field ? m.credential_copy_field_failure({ field }) : m.credential_copy_legacy_failure()
+      )
+    } finally {
+      if (field) {
+        const next = { ...copyingFields }
+        delete next[field]
+        copyingFields = next
+      } else {
+        copyingValue = false
+      }
+    }
   }
 
   async function copyValue() {
@@ -1088,13 +1134,31 @@
              gated by canReveal (member+), same as the legacy path below. -->
         <ul class="mt-3 space-y-1" data-testid="field-list">
           {#each fieldMeta as meta (meta.key)}
-            {@const eagerValue = !meta.sensitive ? visibleFieldValues[meta.key] : undefined}
-            {@const revealedFieldValue = revealedFields[meta.key]}
+            {@const eagerValue =
+              !meta.sensitive && Object.hasOwn(visibleFieldValues, meta.key)
+                ? visibleFieldValues[meta.key]
+                : undefined}
+            {@const revealedFieldValue = Object.hasOwn(revealedFields, meta.key)
+              ? revealedFields[meta.key]
+              : undefined}
+            {@const fieldError = Object.hasOwn(fieldRevealError, meta.key)
+              ? fieldRevealError[meta.key]
+              : undefined}
+            {@const isCopyingField = copyingFields[meta.key] === true}
+            {@const copyHelpId = `credential-copy-help-${encodeURIComponent(meta.key)}`}
             <li
               class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"
               data-testid={`field-row-${meta.key}`}
             >
-              <span class="font-medium text-slate-900">{meta.key}</span>
+              <div class="min-w-0">
+                <span class="font-medium text-slate-900">{meta.key}</span>
+                {#if canReveal}
+                  <FormHelpText
+                    id={copyHelpId}
+                    text={m.credential_copy_field_help({ field: meta.key })}
+                  />
+                {/if}
+              </div>
               <div class="flex items-center gap-2">
                 {#if eagerValue !== undefined}
                   <span class="font-mono text-slate-700" data-testid={`field-value-${meta.key}`}
@@ -1128,10 +1192,23 @@
                     </button>
                   {/if}
                 {/if}
+                {#if canReveal}
+                  <button
+                    class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium disabled:opacity-60"
+                    type="button"
+                    aria-describedby={copyHelpId}
+                    disabled={isCopyingField}
+                    onclick={() => void copyWithoutReveal(meta.key)}
+                  >
+                    {isCopyingField
+                      ? m.credential_copy_field_copying({ field: meta.key })
+                      : m.credential_copy_field_label({ field: meta.key })}
+                  </button>
+                {/if}
               </div>
             </li>
-            {#if fieldRevealError[meta.key]}
-              <p class="text-sm text-red-700" role="alert">{fieldRevealError[meta.key]}</p>
+            {#if fieldError}
+              <p class="text-sm text-red-700" role="alert">{fieldError}</p>
             {/if}
           {/each}
         </ul>
@@ -1154,14 +1231,28 @@
           <!-- AC-6: legacy/single-default-field secret — byte-for-byte unchanged single reveal
                button + <pre> block. -->
           {#if revealedValue === null}
-            <button
-              class="mt-4 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
-              type="button"
-              disabled={revealing}
-              onclick={() => void revealValue()}
-            >
-              {revealing ? 'Revealing…' : 'Reveal value'}
-            </button>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button
+                class="rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                type="button"
+                disabled={revealing}
+                onclick={() => void revealValue()}
+              >
+                {revealing ? 'Revealing…' : 'Reveal value'}
+              </button>
+              <button
+                class="rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium disabled:opacity-60"
+                type="button"
+                aria-describedby="credential-copy-help"
+                disabled={copyingValue}
+                onclick={() => void copyWithoutReveal()}
+              >
+                {copyingValue
+                  ? m.credential_copy_legacy_copying()
+                  : m.credential_copy_legacy_label()}
+              </button>
+            </div>
+            <FormHelpText id="credential-copy-help" text={m.credential_copy_legacy_help()} />
           {:else}
             <pre
               class="mt-4 overflow-x-auto rounded-xl bg-slate-950 p-4 font-mono text-sm text-white">{revealedValue}</pre>
@@ -1184,14 +1275,6 @@
                 Hide
               </button>
             </div>
-            {#if copyStatus}
-              <p
-                class={`mt-2 text-sm ${copyStatus.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
-                role="status"
-              >
-                {copyStatus.message}
-              </p>
-            {/if}
             {#if revealVersion !== null}
               <p class="mt-2 text-sm text-slate-600">Version {revealVersion}</p>
             {/if}
@@ -1199,6 +1282,16 @@
           {#if revealError}
             <p class="mt-3 text-sm text-red-700" role="alert">{revealError}</p>
           {/if}
+        {/if}
+
+        {#if copyStatus}
+          <p
+            class={`mt-3 text-sm ${copyStatus.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
+            role="status"
+            aria-live="polite"
+          >
+            {copyStatus.message}
+          </p>
         {/if}
 
         <div class="mt-6 border-t border-slate-200 pt-6">

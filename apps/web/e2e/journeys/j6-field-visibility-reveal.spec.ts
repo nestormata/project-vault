@@ -43,15 +43,26 @@ test.describe('J6 — per-field visibility and reveal', () => {
     // AC-1/AC-2: username's value is visible immediately, no reveal click required.
     const usernameRow = page.getByTestId('field-row-username')
     await expect(usernameRow).toContainText(USERNAME_VALUE)
-    await expect(usernameRow.getByRole('button', { name: 'Reveal' })).toHaveCount(0)
+    await expect(usernameRow.getByRole('button', { name: 'Reveal', exact: true })).toHaveCount(0)
 
     // AC-3: password starts masked with its own Reveal button; not fetched yet.
     const passwordRow = page.getByTestId('field-row-password')
     await expect(passwordRow).not.toContainText(PASSWORD_VALUE)
     await expect(page.getByTestId('field-masked-password')).toBeVisible()
 
+    // Story 21.5: copy the masked sensitive field through the audited field-scoped path without
+    // changing the rendered reveal state.
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+      origin: new URL(page.url()).origin,
+    })
+    await passwordRow.getByRole('button', { name: 'Copy password without revealing' }).click()
+    await expect(page.getByRole('status')).toContainText('Copied password to clipboard')
+    await expect(passwordRow.getByTestId('field-masked-password')).toBeVisible()
+    await expect(passwordRow).not.toContainText(PASSWORD_VALUE)
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(PASSWORD_VALUE)
+
     // AC-4: revealing password does not disturb the already-visible username value.
-    await passwordRow.getByRole('button', { name: 'Reveal' }).click()
+    await passwordRow.getByRole('button', { name: 'Reveal', exact: true }).click()
     await expect(passwordRow).toContainText(PASSWORD_VALUE)
     await expect(usernameRow).toContainText(USERNAME_VALUE)
 
