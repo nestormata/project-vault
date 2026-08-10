@@ -27,6 +27,7 @@ const NOTIFICATION_JOB_OPTIONS = {
   retryBackoff: true,
   retryDelay: 60,
 } as const
+const DISPATCH_UNAVAILABLE_EVENT = 'notification.dispatch.unavailable'
 
 const SEVERITY_LEVEL: Record<NotificationSeverity, number> = {
   info: 0,
@@ -186,12 +187,12 @@ export type NotificationQueueIds = {
 export async function sendNotificationJobs(
   boss: BossService,
   jobs: NotificationQueueJob[]
-): Promise<void> {
+): Promise<boolean> {
   if (!boss.isStarted()) {
     process.stderr.write(
       `${JSON.stringify({ eventType: 'notification.dispatch.boss_not_started', jobCount: jobs.length })}\n`
     )
-    return
+    return false
   }
 
   const now = Date.now()
@@ -203,6 +204,7 @@ export async function sendNotificationJobs(
       NOTIFICATION_JOB_OPTIONS
     )
   }
+  return true
 }
 
 /** Post-commit, best-effort notification dispatch shared across route modules (e.g.
@@ -216,21 +218,48 @@ export async function dispatchPendingJobs(
 ): Promise<void> {
   if (jobs.length === 0) return
   const jobContext = jobs.map(({ id, orgId }) => ({ id, orgId }))
-  if (!boss || !boss.isStarted()) {
+  try {
+    if (!boss || !boss.isStarted()) {
+      warnDispatchFailure(
+        request,
+        {
+          eventType: DISPATCH_UNAVAILABLE_EVENT,
+          label,
+          jobCount: jobs.length,
+          jobs: jobContext,
+        },
+        `${label} notification dispatch unavailable`
+      )
+      return
+    }
+  } catch (error) {
     warnDispatchFailure(
       request,
       {
-        eventType: 'notification.dispatch.unavailable',
+        eventType: DISPATCH_UNAVAILABLE_EVENT,
         label,
         jobCount: jobs.length,
         jobs: jobContext,
+        err: error,
       },
       `${label} notification dispatch unavailable`
     )
     return
   }
   try {
-    await sendNotificationJobs(boss, jobs)
+    const dispatched = await sendNotificationJobs(boss, jobs)
+    if (!dispatched) {
+      warnDispatchFailure(
+        request,
+        {
+          eventType: DISPATCH_UNAVAILABLE_EVENT,
+          label,
+          jobCount: jobs.length,
+          jobs: jobContext,
+        },
+        `${label} notification dispatch unavailable`
+      )
+    }
   } catch (error) {
     warnDispatchFailure(
       request,

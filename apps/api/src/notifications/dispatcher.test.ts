@@ -25,6 +25,7 @@ const SERVICE_DOWN_TEMPLATE = 'service.down'
 const MFA_RECOVERY_USED_TEMPLATE = 'security.mfa_recovery_used'
 const CREDENTIAL_SHARE_TEMPLATE = 'credential.share_created'
 const INVITATION_DISPATCH_LABEL = 'project invitation'
+const DISPATCH_UNAVAILABLE_EVENT = 'notification.dispatch.unavailable'
 
 async function seedOwner(orgId: string, userId: string) {
   await withOrg(orgId, (tx) =>
@@ -153,7 +154,7 @@ describe('notification dispatcher', () => {
 
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'notification.dispatch.unavailable',
+        eventType: DISPATCH_UNAVAILABLE_EVENT,
         label: INVITATION_DISPATCH_LABEL,
         jobCount: 1,
         jobs: [{ id: 'queue-1', orgId: 'org-1' }],
@@ -171,9 +172,51 @@ describe('notification dispatcher', () => {
 
     expect(warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'notification.dispatch.unavailable',
+        eventType: DISPATCH_UNAVAILABLE_EVENT,
         label: INVITATION_DISPATCH_LABEL,
         jobs: [{ id: 'queue-2', orgId: 'org-2' }],
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('keeps dispatch best-effort when the Boss availability probe throws', async () => {
+    const { boss } = createMockBoss()
+    vi.spyOn(boss, 'isStarted').mockImplementation(() => {
+      throw new Error('Boss state unavailable')
+    })
+    const warn = vi.fn()
+    const job = { id: 'queue-probe-error', orgId: 'org-probe-error', deliverAt: null }
+
+    await expect(
+      dispatchPendingJobs(boss, { log: { warn } }, [job], INVITATION_DISPATCH_LABEL)
+    ).resolves.toBeUndefined()
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: DISPATCH_UNAVAILABLE_EVENT,
+        label: INVITATION_DISPATCH_LABEL,
+        jobs: [{ id: job.id, orgId: job.orgId }],
+        err: expect.any(Error),
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('warns when Boss stops between the availability probe and send', async () => {
+    const { boss, send } = createMockBoss()
+    vi.spyOn(boss, 'isStarted').mockReturnValueOnce(true).mockReturnValueOnce(false)
+    const warn = vi.fn()
+    const job = { id: 'queue-shutdown-race', orgId: 'org-shutdown-race', deliverAt: null }
+
+    await dispatchPendingJobs(boss, { log: { warn } }, [job], INVITATION_DISPATCH_LABEL)
+
+    expect(send).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: DISPATCH_UNAVAILABLE_EVENT,
+        label: INVITATION_DISPATCH_LABEL,
+        jobs: [{ id: job.id, orgId: job.orgId }],
       }),
       expect.any(String)
     )
