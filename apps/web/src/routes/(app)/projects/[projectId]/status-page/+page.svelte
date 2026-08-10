@@ -66,7 +66,7 @@
 
   // Story 21.8: single merged row source — `selected` services first (preserving reorder-relevant
   // order), then any `data.serviceEndpoints` not currently selected, in their existing order. Feeds
-  // one `<ul>` instead of the previous reorder-only box + separate checkbox list.
+  // one `<ol>` instead of the previous reorder-only box + separate checkbox list.
   const serviceRows = $derived<ServiceRow[]>([
     ...selected.map((service, index) => ({
       id: service.serviceId,
@@ -294,9 +294,9 @@
         <h2 class="text-xl font-semibold text-slate-950">Services shown on the public page</h2>
         {#if serviceRows.length > 0}
           <p class="text-sm text-slate-600">
-            Check a service to publish it, edit its public display name, and use the
-            keyboard-operable move buttons to choose the order visitors see. Selected services are
-            listed first, in the order they'll appear.
+            Check a service to publish it and edit its public display name. Selected services are
+            listed first, in the order they'll appear — use the keyboard-operable move buttons to
+            reorder them when more than one is selected.
           </p>
           <ol aria-label="Services shown on the public page" class="space-y-3">
             {#each serviceRows as row (row.id)}

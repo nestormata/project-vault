@@ -159,6 +159,8 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
     })
 
     const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(3)
+
     const rowLabels = rows.map((row) => row.textContent ?? '')
 
     expect(rowLabels[0]).toContain('Worker')
