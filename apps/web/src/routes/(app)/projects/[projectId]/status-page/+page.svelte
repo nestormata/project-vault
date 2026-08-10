@@ -41,7 +41,7 @@
     return selected.some((s) => s.serviceId === serviceId)
   }
 
-  function toggleService(service: ServiceEndpoint) {
+  function toggleService(service: Pick<ServiceEndpoint, 'id' | 'name'>) {
     if (isSelected(service.id)) {
       selected = selected.filter((s) => s.serviceId !== service.id)
     } else {
@@ -56,6 +56,33 @@
   function serviceLabel(serviceId: string, displayName: string): string {
     return data.serviceEndpoints.find((service) => service.id === serviceId)?.name ?? displayName
   }
+
+  type ServiceRow = {
+    id: string
+    label: string
+    current: SelectedService | undefined
+    index: number
+  }
+
+  // Story 21.8: single merged row source — `selected` services first (preserving reorder-relevant
+  // order), then any `data.serviceEndpoints` not currently selected, in their existing order. Feeds
+  // one `<ul>` instead of the previous reorder-only box + separate checkbox list.
+  const serviceRows = $derived<ServiceRow[]>([
+    ...selected.map((service, index) => ({
+      id: service.serviceId,
+      label: serviceLabel(service.serviceId, service.displayName),
+      current: service,
+      index,
+    })),
+    ...data.serviceEndpoints
+      .filter((service) => !isSelected(service.id))
+      .map((service) => ({
+        id: service.id,
+        label: service.name,
+        current: undefined,
+        index: -1,
+      })),
+  ])
 
   function copyServices(services: SelectedService[]): SelectedService[] {
     return services.map((service) => ({ ...service }))
@@ -265,45 +292,67 @@
 
       <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 class="text-xl font-semibold text-slate-950">Services shown on the public page</h2>
-        {#if selected.length > 0}
-          <div class="space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-4">
-            <div>
-              <h3 class="font-semibold text-slate-950">Public service order</h3>
-              <p class="text-sm text-slate-600">
-                Use the keyboard-operable move buttons to choose the order visitors see.
-              </p>
-            </div>
-            <ol aria-label="Public service order" class="space-y-2">
-              {#each selected as service, index (service.serviceId)}
-                {@const label = serviceLabel(service.serviceId, service.displayName)}
-                <li class="flex items-center justify-between gap-3 rounded-lg bg-white p-3">
-                  <span class="min-w-0 truncate text-sm font-medium text-slate-800">{label}</span>
-                  {#if selected.length > 1}
-                    <span class="flex shrink-0 gap-1">
-                      <button
-                        class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                        type="button"
-                        aria-label={`Move ${label} up`}
-                        disabled={isBusy || index === 0}
-                        onclick={() => moveService(index, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                        type="button"
-                        aria-label={`Move ${label} down`}
-                        disabled={isBusy || index === selected.length - 1}
-                        onclick={() => moveService(index, 1)}
-                      >
-                        ↓
-                      </button>
-                    </span>
+        <p class="text-sm text-slate-600">
+          Check a service to publish it, edit its public display name, and use the keyboard-operable
+          move buttons to choose the order visitors see. Selected services are listed first, in the
+          order they'll appear.
+        </p>
+        {#if serviceRows.length > 0}
+          <ul aria-label="Services shown on the public page" class="space-y-3">
+            {#each serviceRows as row (row.id)}
+              <li class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
+                <label class="flex min-w-[12rem] items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(row.current)}
+                    onchange={() => toggleService({ id: row.id, name: row.label })}
+                    aria-describedby={`status-page-service-help-${row.id}`}
+                  />
+                  <span class="text-sm text-slate-600">{row.label}</span>
+                </label>
+
+                <div class="flex min-w-0 flex-1 items-center gap-2">
+                  {#if row.current}
+                    <input
+                      class="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                      type="text"
+                      placeholder="Public display name"
+                      value={row.current.displayName}
+                      aria-describedby={`status-page-display-name-help-${row.id}`}
+                      oninput={(event) =>
+                        setDisplayName(row.id, (event.currentTarget as HTMLInputElement).value)}
+                    />
+                    <FormHelpText id={`status-page-display-name-help-${row.id}`} kind="text" />
                   {/if}
-                </li>
-              {/each}
-            </ol>
-          </div>
+                </div>
+
+                <div class="flex shrink-0 items-center gap-1">
+                  {#if row.current && selected.length > 1}
+                    <button
+                      class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      type="button"
+                      aria-label={`Move ${row.label} up`}
+                      disabled={isBusy || row.index === 0}
+                      onclick={() => moveService(row.index, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      type="button"
+                      aria-label={`Move ${row.label} down`}
+                      disabled={isBusy || row.index === selected.length - 1}
+                      onclick={() => moveService(row.index, 1)}
+                    >
+                      ↓
+                    </button>
+                  {/if}
+                </div>
+
+                <FormHelpText id={`status-page-service-help-${row.id}`} kind="checkbox" />
+              </li>
+            {/each}
+          </ul>
         {/if}
         {#if data.serviceEndpoints.length === 0}
           <p class="text-slate-600">
@@ -316,36 +365,6 @@
             </a>
             .
           </p>
-        {:else}
-          <ul class="space-y-3">
-            {#each data.serviceEndpoints as service (service.id)}
-              {@const current = selected.find((s) => s.serviceId === service.id)}
-              <li class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
-                <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(current)}
-                    onchange={() => toggleService(service)}
-                    aria-describedby={`status-page-service-help-${service.id}`}
-                  />
-                  <span class="text-sm text-slate-600">{service.name}</span>
-                </label>
-                {#if current}
-                  <input
-                    class="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                    type="text"
-                    placeholder="Public display name"
-                    value={current.displayName}
-                    aria-describedby={`status-page-display-name-help-${service.id}`}
-                    oninput={(event) =>
-                      setDisplayName(service.id, (event.currentTarget as HTMLInputElement).value)}
-                  />
-                  <FormHelpText id={`status-page-display-name-help-${service.id}`} kind="text" />
-                {/if}
-              </li>
-              <FormHelpText id={`status-page-service-help-${service.id}`} kind="checkbox" />
-            {/each}
-          </ul>
         {/if}
         <button
           class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"

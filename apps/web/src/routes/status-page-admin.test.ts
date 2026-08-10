@@ -278,8 +278,11 @@ describe('/projects/:projectId/status-page', () => {
       },
     })
 
-    const orderList = () => screen.getByRole('list', { name: /public service order/i })
-    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('API')
+    // Story 21.8: the reorder-only box was merged into the single services `<ul>` — assert on
+    // that list's row order instead of the removed "Public service order" list.
+    const serviceList = () =>
+      screen.getByRole('list', { name: /services shown on the public page/i })
+    expect(serviceList().querySelectorAll('li')[0]?.textContent).toContain('API')
     await fireEvent.click(screen.getByRole('button', { name: /move web up/i }))
 
     expect(updateStatusPageServicesMock).toHaveBeenLastCalledWith(expect.anything(), projectId, {
@@ -288,7 +291,7 @@ describe('/projects/:projectId/status-page', () => {
         { serviceId: 'endpoint-1', displayName: 'API' },
       ],
     })
-    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('Web')
+    expect(serviceList().querySelectorAll('li')[0]?.textContent).toContain('Web')
   })
 
   it('reverts an optimistic reorder when persistence fails and surfaces the error', async () => {
@@ -313,13 +316,14 @@ describe('/projects/:projectId/status-page', () => {
       },
     })
 
-    const orderList = () => screen.getByRole('list', { name: /public service order/i })
+    const serviceList = () =>
+      screen.getByRole('list', { name: /services shown on the public page/i })
     await fireEvent.click(screen.getByRole('button', { name: /move web up/i }))
-    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('Web')
+    expect(serviceList().querySelectorAll('li')[0]?.textContent).toContain('Web')
 
     rejectReorder(new Error('reorder failed'))
     expect((await screen.findByRole('alert')).textContent).toMatch(/reorder failed/i)
-    expect(orderList().querySelectorAll('li')[0]?.textContent).toContain('API')
+    expect(serviceList().querySelectorAll('li')[0]?.textContent).toContain('API')
   })
 
   it('does not render reorder controls when one or fewer services are selected', () => {
