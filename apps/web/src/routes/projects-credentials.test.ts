@@ -133,6 +133,50 @@ describe('project credential routes', () => {
     expect(screen.getByText(/Matches credentials with ALL of these tags/i)).toBeTruthy()
   })
 
+  it("AC-1/AC-2/AC-5: Search/Status/Tags labels+inputs and the Apply/Clear controls share the same structural grid row regardless of each field's help-text length", () => {
+    render(CredentialsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member' as const,
+          credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+          // Tags carries an extra hint line ("Matches credentials with ALL of these tags.")
+          // that Search/Status do not have, so this is the height-mismatch case from the story.
+          filters: { q: '', status: '', tags: 'db, prod', page: 1 },
+        },
+      },
+    })
+
+    const searchLabel = screen.getByText('Search')
+    const statusLabel = screen.getByText('Status')
+    const tagsLabel = screen.getByText('Tags')
+    const searchInput = screen.getByLabelText('Search')
+    const statusSelect = screen.getByLabelText('Status')
+    const tagsInput = screen.getByLabelText('Tags')
+    const applyButton = screen.getByRole('button', { name: 'Apply filters' })
+    const clearLink = screen.getByRole('link', { name: 'Clear' })
+
+    // The fix must be structural (e.g. a shared CSS grid row definition), not derived from
+    // each field's help-text height. Assert every label sits in the same declared grid row,
+    // every input/select sits in the next declared grid row, and the Apply/Clear controls
+    // share that same input row — independent of Tags' extra hint line.
+    const rowStart = (el: Element): string | null =>
+      el.className.match(/row-start-(\d+)/)?.[1] ?? null
+
+    const labelRow = rowStart(searchLabel)
+    expect(labelRow).not.toBeNull()
+    expect(rowStart(statusLabel)).toBe(labelRow)
+    expect(rowStart(tagsLabel)).toBe(labelRow)
+
+    const inputRow = rowStart(searchInput)
+    expect(inputRow).not.toBeNull()
+    expect(inputRow).not.toBe(labelRow)
+    expect(rowStart(statusSelect)).toBe(inputRow)
+    expect(rowStart(tagsInput)).toBe(inputRow)
+    expect(rowStart(applyButton)).toBe(inputRow)
+    expect(rowStart(clearLink)).toBe(inputRow)
+  })
+
   it('AC-F2: a tags-only filter with zero results shows "Try adjusting your filters." and a Clear link', () => {
     render(CredentialsListPage, {
       props: {
