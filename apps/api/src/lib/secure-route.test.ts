@@ -4,6 +4,7 @@ import {
   buildSecurePreHandlers,
   secureRoute,
   secureRoutes,
+  type SecureRouteContext,
   type SecureRouteOptions,
   type SecureRouteRegistrationOptions,
 } from './secure-route.js'
@@ -180,6 +181,28 @@ describe('secureRoute', () => {
 
     expect(registered.preHandler).toEqual([])
     expect(handler).toHaveBeenCalledWith({}, {}, expect.any(Object))
+  })
+
+  it('provides a safe no-op post-commit registrar for authenticated non-org routes', async () => {
+    const handler = vi.fn(async (ctx) => {
+      const secureCtx = ctx as SecureRouteContext
+      secureCtx.onPostCommit(() => undefined)
+      return { data: { ok: true } }
+    })
+    const { registered } = mountProtectedRoute(
+      {
+        method: 'POST',
+        url: '/api/v1/test/non-org-post-commit',
+        security: { requireOrgScope: false, writeAuditEvent: false },
+        handler,
+      },
+      'owner'
+    )
+
+    const reply = replyMock()
+    await invokeRegisteredRoute(registered, { authContext: undefined }, reply)
+
+    expect(reply.send).toHaveBeenCalledWith({ data: { ok: true } })
   })
 
   it('throws at registration when auth is required but the auth plugin is missing', () => {
@@ -365,5 +388,111 @@ describe('secureRoute', () => {
       'SecureRoute: audited handlers must return data instead of sending replies'
     )
     expect(reply.send).not.toHaveBeenCalled()
+  })
+
+  it('runs post-commit callbacks after commit and in registration order', async () => {
+    const events: string[] = []
+    const tx = { execute: vi.fn() }
+    const transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const result = await fn(tx)
+      events.push('commit')
+      return result
+    })
+    const { registered } = mountProtectedRoute({
+      method: 'POST',
+      url: '/api/v1/test/post-commit-order',
+      db: { transaction },
+      security: { writeAuditEvent: false },
+      handler: async (ctx) => {
+        const secureCtx = ctx as SecureRouteContext
+        events.push('handler')
+        secureCtx.onPostCommit(async () => {
+          events.push('first callback')
+        })
+        secureCtx.onPostCommit(() => {
+          events.push('second callback')
+        })
+        return { data: { ok: true } }
+      },
+    })
+
+    await invokeRegisteredRoute(registered, { authContext: undefined })
+
+    expect(events).toEqual(['handler', 'commit', 'first callback', 'second callback'])
+  })
+
+  it('does not run post-commit callbacks when the transaction rolls back', async () => {
+    const events: string[] = []
+    const tx = { execute: vi.fn() }
+    const transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      try {
+        return await fn(tx)
+      } catch (error) {
+        events.push('rollback')
+        throw error
+      }
+    })
+    const { registered } = mountProtectedRoute({
+      method: 'POST',
+      url: '/api/v1/test/post-commit-rollback',
+      db: { transaction },
+      security: { writeAuditEvent: false },
+      handler: async (ctx) => {
+        const secureCtx = ctx as SecureRouteContext
+        events.push('handler')
+        secureCtx.onPostCommit(() => {
+          events.push('callback')
+        })
+        throw new Error('transaction failed')
+      },
+    })
+
+    await expect(invokeRegisteredRoute(registered, { authContext: undefined })).rejects.toThrow(
+      'transaction failed'
+    )
+
+    expect(events).toEqual(['handler', 'rollback'])
+  })
+
+  it('isolates post-commit callback failures and still completes the request', async () => {
+    const events: string[] = []
+    const warn = vi.fn(() => {
+      throw new Error('logger unavailable')
+    })
+    const { tx, transaction } = transactionHarness()
+    const { registered } = mountProtectedRoute({
+      method: 'POST',
+      url: '/api/v1/test/post-commit-failure',
+      db: { transaction },
+      security: { writeAuditEvent: false },
+      handler: async (ctx) => {
+        const secureCtx = ctx as SecureRouteContext
+        secureCtx.onPostCommit(() => {
+          throw new Error('dispatch unavailable')
+        })
+        secureCtx.onPostCommit(() => {
+          events.push('later callback')
+        })
+        return { data: { ok: true } }
+      },
+    })
+
+    const { reply } = await invokeRegisteredRoute(
+      registered,
+      { authContext: undefined, log: { warn } },
+      replyMock()
+    )
+
+    expect(reply.statusCode).toBe(200)
+    expect(reply.send).toHaveBeenCalledWith({ data: { ok: true } })
+    expect(events).toEqual(['later callback'])
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'secure_route.post_commit_callback_failed',
+        err: expect.any(Error),
+      }),
+      expect.any(String)
+    )
+    expect(tx.execute).toHaveBeenCalled()
   })
 })

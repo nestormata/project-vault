@@ -2,7 +2,6 @@ import { z } from 'zod/v4'
 import { and, desc, eq, gt, isNull } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
-  notificationQueue,
   projectInvitations,
   projectMemberships,
   projects,
@@ -11,6 +10,7 @@ import {
 } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
+import type { BossService } from '../../lib/boss.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, roleRank, type SecureRouteContext } from '../../lib/secure-route.js'
@@ -23,6 +23,11 @@ import { findErasedRequestForEmailInOrg } from '../compliance/erasure-lookup.js'
 import { PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
 import { generateInvitationToken, hashInvitationToken } from './tokens.js'
 import {
+  dispatchDirectEmailNotification,
+  dispatchPendingJobs,
+  type NotificationQueueJob,
+} from '../../notifications/dispatcher.js'
+import {
   CreateInvitationBodySchema,
   CreateInvitationResponseSchema,
   InvitationListResponseSchema,
@@ -32,6 +37,7 @@ import {
 
 const INVITATION_EXPIRY_MS = 72 * 60 * 60 * 1000
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
+type BossFastify = FastifyApp & { boss?: BossService }
 
 async function findExistingProjectMember(
   tx: Tx,
@@ -105,27 +111,27 @@ async function enqueueInvitationEmail(
     project: { id: string; name: string }
     opaqueToken: string
   }
-): Promise<void> {
+): Promise<NotificationQueueJob[]> {
   const [inviter] = await tx
     .select({ email: users.email })
     .from(users)
     .where(eq(users.id, input.inviterUserId))
     .limit(1)
 
-  await tx.insert(notificationQueue).values({
+  return dispatchDirectEmailNotification({
     orgId: input.orgId,
-    recipientUserId: null,
     recipientEmail: input.email,
-    channel: 'email',
-    templateId: 'project.invitation_created',
-    payload: {
-      projectId: input.project.id,
-      projectName: input.project.name,
-      inviterEmail: inviter?.email ?? null,
-      role: input.role,
-      acceptUrl: `${stripTrailingSlashes(env.WEB_BASE_URL)}/invitations/accept?token=${input.opaqueToken}`,
+    template: {
+      templateId: 'project.invitation_created',
+      payload: {
+        projectId: input.project.id,
+        projectName: input.project.name,
+        inviterEmail: inviter?.email ?? null,
+        role: input.role,
+        acceptUrl: `${stripTrailingSlashes(env.WEB_BASE_URL)}/invitations/accept?token=${input.opaqueToken}`,
+      },
     },
-    status: 'pending',
+    tx,
   })
 }
 
@@ -212,7 +218,7 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
         invitedBy: secureCtx.auth.userId,
       })
 
-      await enqueueInvitationEmail(secureCtx.tx, {
+      const notificationJobs = await enqueueInvitationEmail(secureCtx.tx, {
         orgId: secureCtx.auth.orgId,
         inviterUserId: secureCtx.auth.userId,
         email,
@@ -220,6 +226,14 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
         project,
         opaqueToken,
       })
+      secureCtx.onPostCommit(() =>
+        dispatchPendingJobs(
+          (fastify as BossFastify).boss,
+          req,
+          notificationJobs,
+          'project invitation'
+        )
+      )
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
         resourceType: 'project_invitation',

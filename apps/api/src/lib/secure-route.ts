@@ -42,6 +42,7 @@ export type AuditConfig = {
 export type SecureRouteContext = {
   auth: AuthContext
   tx: Tx
+  onPostCommit: (callback: PostCommitCallback) => void
   audit: {
     eventType?: string
     resourceType?: string
@@ -49,6 +50,8 @@ export type SecureRouteContext = {
     payload?: Record<string, unknown>
   }
 }
+
+export type PostCommitCallback = () => void | Promise<void>
 
 export type PublicRouteContext = Record<string, never>
 
@@ -152,6 +155,51 @@ function sendPlatformOperatorRequired(reply: FastifyReply): unknown {
 
 function logRouteError(request: FastifyRequest, payload: Record<string, unknown>): void {
   ;(request as unknown as { log?: { error?: (payload: unknown) => void } }).log?.error?.(payload)
+}
+
+function logPostCommitCallbackFailure(request: FastifyRequest, error: unknown): void {
+  try {
+    ;(
+      request as unknown as {
+        log?: { warn?: (payload: unknown, message: string) => void }
+      }
+    ).log?.warn?.(
+      { eventType: 'secure_route.post_commit_callback_failed', err: error },
+      'SecureRoute post-commit callback failed'
+    )
+  } catch {
+    // Post-commit logging is best-effort too; a broken logger must not change a committed result.
+  }
+}
+
+async function runPostCommitCallback(callback: PostCommitCallback): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      Promise.resolve().then(callback),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('SecureRoute post-commit callback timed out')),
+          10_000
+        )
+      }),
+    ])
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
+  }
+}
+
+async function runPostCommitCallbacks(
+  request: FastifyRequest,
+  callbacks: PostCommitCallback[]
+): Promise<void> {
+  for (const callback of callbacks.splice(0)) {
+    try {
+      await runPostCommitCallback(callback)
+    } catch (error) {
+      logPostCommitCallbackFailure(request, error)
+    }
+  }
 }
 
 function normalizeRecord(value: unknown): Record<string, unknown> {
@@ -276,6 +324,11 @@ type ResolvedSecurity = {
 
 type RequestPhase = 'rls' | 'handler' | 'audit'
 
+type TransactionOutcome = {
+  result: unknown
+  postCommitCallbacks: PostCommitCallback[]
+}
+
 function withAuditSendGuard(reply: FastifyReply, enabled: boolean): () => void {
   if (!enabled) return () => undefined
   const guarded = reply as FastifyReply & { send: FastifyReply['send'] }
@@ -391,11 +444,19 @@ async function runProtectedHandler({
 }): Promise<unknown> {
   const auditConfig = auditConfigFor(options)
   if (!requireOrgScope) {
-    return options.handler({ auth } as unknown as SecureRouteContext, request, reply)
+    return {
+      result: await options.handler(
+        { auth, onPostCommit: () => undefined } as unknown as SecureRouteContext,
+        request,
+        reply
+      ),
+      postCommitCallbacks: [],
+    }
   }
 
   const db = (options.db ?? getDb()) as TransactionalDb
-  return db.transaction(async (tx) => {
+  const postCommitCallbacks: PostCommitCallback[] = []
+  const result = await db.transaction(async (tx) => {
     const typedTx = tx as Tx
     state.phase = 'rls'
     await setRlsOrgContext(tx as { execute: (query: unknown) => Promise<unknown> }, auth.orgId)
@@ -407,6 +468,9 @@ async function runProtectedHandler({
         {
           auth,
           tx: typedTx,
+          onPostCommit: (callback) => {
+            postCommitCallbacks.push(callback)
+          },
           audit: auditConfig
             ? { eventType: auditConfig.eventType, resourceType: auditConfig.resourceType }
             : {},
@@ -427,6 +491,7 @@ async function runProtectedHandler({
     }
     return handlerResult
   })
+  return { result, postCommitCallbacks }
 }
 
 function sendSecureRouteFailure(
@@ -488,7 +553,7 @@ async function handleSecureRouteRequest({
 
   const state: { phase: RequestPhase } = { phase: 'handler' }
   try {
-    const result = await runProtectedHandler({
+    const outcome = (await runProtectedHandler({
       auth,
       options,
       requireOrgScope: resolvedSecurity.requireOrgScope,
@@ -496,8 +561,9 @@ async function handleSecureRouteRequest({
       reply,
       auditWriter: options.auditWriter ?? defaultAuditWriter,
       state,
-    })
-    return sendIfNeeded(reply, result)
+    })) as TransactionOutcome
+    await runPostCommitCallbacks(request, outcome.postCommitCallbacks)
+    return sendIfNeeded(reply, outcome.result)
   } catch (error) {
     return sendSecureRouteFailure(request, reply, error, state.phase)
   }

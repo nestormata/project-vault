@@ -128,7 +128,12 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
       const outcome = await withOrg(invitation.orgId, async (tx) => {
         // Not SecureRoute-managed (requireOrgScope: false — the org isn't known until the
         // token resolves above), so this mirrors the shape by hand for the audit write below.
-        const secureCtx: SecureRouteContext = { auth: authCtx.auth, tx, audit: {} }
+        const secureCtx: SecureRouteContext = {
+          auth: authCtx.auth,
+          tx,
+          onPostCommit: () => undefined,
+          audit: {},
+        }
 
         // 4.4 AC-5: a user invited before archival must not still be able to join after archival —
         // this is a distinct guard from invite *creation*'s, since acceptance is token-scoped.

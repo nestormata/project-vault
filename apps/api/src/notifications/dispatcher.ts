@@ -214,11 +214,33 @@ export async function dispatchPendingJobs(
   jobs: NotificationQueueJob[],
   label: string
 ): Promise<void> {
-  if (!boss || jobs.length === 0) return
+  if (jobs.length === 0) return
+  const jobContext = jobs.map(({ id, orgId }) => ({ id, orgId }))
+  if (!boss || !boss.isStarted()) {
+    request.log.warn(
+      {
+        eventType: 'notification.dispatch.unavailable',
+        label,
+        jobCount: jobs.length,
+        jobs: jobContext,
+      },
+      `${label} notification dispatch unavailable`
+    )
+    return
+  }
   try {
     await sendNotificationJobs(boss, jobs)
   } catch (error) {
-    request.log.warn({ err: error }, `${label} notification dispatch failed`)
+    request.log.warn(
+      {
+        eventType: 'notification.dispatch.failed',
+        label,
+        jobCount: jobs.length,
+        jobs: jobContext,
+        err: error,
+      },
+      `${label} notification dispatch failed`
+    )
   }
 }
 

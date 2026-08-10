@@ -13,6 +13,7 @@ import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.j
 import {
   createOrgAdminNotificationEntries,
   dispatchDirectUserNotification,
+  dispatchPendingJobs,
   sendNotificationJobs,
 } from './dispatcher.js'
 import { patchPreferences } from '../modules/notifications/preferences.js'
@@ -23,6 +24,7 @@ const FAILED_AUTH_TEMPLATE = 'security.failed_auth_threshold'
 const SERVICE_DOWN_TEMPLATE = 'service.down'
 const MFA_RECOVERY_USED_TEMPLATE = 'security.mfa_recovery_used'
 const CREDENTIAL_SHARE_TEMPLATE = 'credential.share_created'
+const INVITATION_DISPATCH_LABEL = 'project invitation'
 
 async function seedOwner(orgId: string, userId: string) {
   await withOrg(orgId, (tx) =>
@@ -141,6 +143,60 @@ describe('notification dispatcher', () => {
     ])
 
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('warns with queue context when Boss is unavailable', async () => {
+    const warn = vi.fn()
+    const job = { id: 'queue-1', orgId: 'org-1', deliverAt: null }
+
+    await dispatchPendingJobs(undefined, { log: { warn } }, [job], INVITATION_DISPATCH_LABEL)
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'notification.dispatch.unavailable',
+        label: INVITATION_DISPATCH_LABEL,
+        jobCount: 1,
+        jobs: [{ id: 'queue-1', orgId: 'org-1' }],
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('warns with queue context when Boss is not started', async () => {
+    const { boss } = createMockBoss()
+    const warn = vi.fn()
+    const job = { id: 'queue-2', orgId: 'org-2', deliverAt: null }
+
+    await dispatchPendingJobs(boss, { log: { warn } }, [job], INVITATION_DISPATCH_LABEL)
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'notification.dispatch.unavailable',
+        label: INVITATION_DISPATCH_LABEL,
+        jobs: [{ id: 'queue-2', orgId: 'org-2' }],
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('warns with queue context when Boss send rejects', async () => {
+    const { boss, send } = createMockBoss()
+    await boss.start()
+    send.mockRejectedValueOnce(new Error('broker unavailable'))
+    const warn = vi.fn()
+    const job = { id: 'queue-3', orgId: 'org-3', deliverAt: null }
+
+    await dispatchPendingJobs(boss, { log: { warn } }, [job], INVITATION_DISPATCH_LABEL)
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'notification.dispatch.failed',
+        label: INVITATION_DISPATCH_LABEL,
+        jobs: [{ id: 'queue-3', orgId: 'org-3' }],
+        err: expect.any(Error),
+      }),
+      expect.any(String)
+    )
   })
 
   it('severity filtering skips email when alert severity is below user threshold', async () => {

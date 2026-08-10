@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { notificationQueue, projectInvitations, users } from '@project-vault/db/schema'
+import type { BossService } from '../../lib/boss.js'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
   createProjectViaApi as createProject,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { createMockBoss } from '../../__tests__/helpers/notification-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { bootProjectRouteTestApp } from '../projects/project-route-test-bootstrap.js'
 import { generateInvitationToken, hashInvitationToken } from './tokens.js'
@@ -19,6 +21,7 @@ type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const PASSWORD = 'correct-horse-battery-staple'
 const MEMBER_ROLE = 'member'
+const INVITATION_TEMPLATE_ID = 'project.invitation_created'
 
 function uniqueEmail(label: string): string {
   return `invitations-${label}-${randomUUID()}@example.com`
@@ -194,13 +197,25 @@ async function expectInvitationAccepted(orgId: string, invitationId: string): Pr
 
 describe.sequential('project invitation routes', () => {
   let app: TestApp
+  let boss: BossService
+  let bossSend: ReturnType<typeof createMockBoss>['send']
 
   beforeAll(async () => {
     app = await bootProjectRouteTestApp(createApp, initVault)
+    const mockBoss = createMockBoss()
+    boss = mockBoss.boss
+    bossSend = mockBoss.send
+    await boss.start()
+    ;(app as TestApp & { boss: BossService }).boss = boss
+  })
+
+  beforeEach(() => {
+    bossSend.mockClear()
   })
 
   afterAll(async () => {
     await app.close()
+    await boss.stop()
     await resetVaultForTest()
   })
 
@@ -208,6 +223,17 @@ describe.sequential('project invitation routes', () => {
     const owner = await registerOwner(app, 'create')
     const projectId = await createProject(app, owner.cookies, 'create-invite')
     const email = uniqueEmail('invitee')
+    let dispatchedQueueId: string | undefined
+    bossSend.mockImplementationOnce(async (_jobName, payload) => {
+      const [row] = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(notificationQueue)
+          .where(eq(notificationQueue.id, payload.notificationQueueId))
+      )
+      dispatchedQueueId = row?.id
+      return 'job-id'
+    })
 
     const res = await invite(app, owner.cookies, projectId, { email, role: MEMBER_ROLE })
 
@@ -229,10 +255,40 @@ describe.sequential('project invitation routes', () => {
       tx
         .select()
         .from(notificationQueue)
-        .where(eq(notificationQueue.templateId, 'project.invitation_created'))
+        .where(eq(notificationQueue.templateId, INVITATION_TEMPLATE_ID))
     )
     expect(queueRow?.recipientEmail).toBe(email)
     expect(queueRow?.recipientUserId).toBeNull()
+    expect(dispatchedQueueId).toBe(queueRow?.id)
+    expect(queueRow?.payload).toMatchObject({
+      projectId,
+      role: MEMBER_ROLE,
+      acceptUrl: expect.stringContaining('/invitations/accept?token='),
+    })
+    expect(bossSend).toHaveBeenCalledWith(
+      'notification/deliver',
+      { notificationQueueId: queueRow?.id, orgId: owner.orgId },
+      expect.objectContaining({ retryLimit: 3, retryBackoff: true, retryDelay: 60 })
+    )
+  })
+
+  it('keeps the invitation successful and the email pending when immediate dispatch fails', async () => {
+    bossSend.mockRejectedValueOnce(new Error('Boss unavailable'))
+    const owner = await registerOwner(app, 'dispatch-failure')
+    const projectId = await createProject(app, owner.cookies, 'dispatch-failure-project')
+    const email = uniqueEmail('dispatch-failure-target')
+
+    const res = await invite(app, owner.cookies, projectId, { email, role: MEMBER_ROLE })
+
+    expect(res.statusCode).toBe(201)
+    const [queueRow] = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select()
+        .from(notificationQueue)
+        .where(eq(notificationQueue.templateId, INVITATION_TEMPLATE_ID))
+    )
+    expect(queueRow?.status).toBe('pending')
+    expect(bossSend).toHaveBeenCalledOnce()
   })
 
   it('blocks invite creation for an unenrolled owner (403 mfa_required), no row created', async () => {
@@ -259,6 +315,11 @@ describe.sequential('project invitation routes', () => {
     const owner = await registerOwner(app, 'duplicate')
     const projectId = await createProject(app, owner.cookies, 'duplicate-invite')
     const email = uniqueEmail('duplicate-target')
+    const dispatchedQueueIds: string[] = []
+    bossSend.mockImplementation(async (_jobName, payload) => {
+      dispatchedQueueIds.push(payload.notificationQueueId)
+      return 'job-id'
+    })
 
     const first = await invite(app, owner.cookies, projectId, { email, role: 'viewer' })
     expect(first.statusCode).toBe(201)
@@ -270,6 +331,15 @@ describe.sequential('project invitation routes', () => {
     )
     expect(rows).toHaveLength(1)
     expect(rows[0]?.roleToAssign).toBe('admin')
+    expect(bossSend).toHaveBeenCalledTimes(2)
+    const queueRows = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ id: notificationQueue.id })
+        .from(notificationQueue)
+        .where(eq(notificationQueue.templateId, INVITATION_TEMPLATE_ID))
+    )
+    expect(dispatchedQueueIds).toHaveLength(2)
+    expect(new Set(dispatchedQueueIds)).toEqual(new Set(queueRows.map((row) => row.id)))
   })
 
   it('rejects inviting an existing project member with 409 already_member', async () => {
