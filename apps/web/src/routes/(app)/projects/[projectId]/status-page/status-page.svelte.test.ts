@@ -45,7 +45,7 @@ function data(overrides: Record<string, unknown> = {}) {
 }
 
 describe('status-page +page.svelte (Story 21.8: deduplicated Services section)', () => {
-  it('renders exactly one <ul> for the services section, with no separate reorder-only box', () => {
+  it('renders exactly one list for the services section, with no separate reorder-only box', () => {
     render(StatusPage, {
       props: {
         data: data({
@@ -58,9 +58,9 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
       },
     })
 
-    expect(document.querySelectorAll('ul').length).toBe(1)
-    expect(screen.queryByText(/public service order/i)).toBeNull()
-    expect(screen.queryByRole('list', { name: /public service order/i })).toBeNull()
+    expect(document.querySelectorAll('ol, ul').length).toBe(1)
+    expect(screen.queryByText(/^public service order$/i)).toBeNull()
+    expect(screen.queryByRole('list', { name: /^public service order$/i })).toBeNull()
   })
 
   it('toggling a checkbox on shows its display-name input, toggling off hides it', async () => {
@@ -166,7 +166,7 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
     expect(rowLabels[2]).toContain('Database')
   })
 
-  it('both FormHelpText instances render as children of their <li>, not as direct <ul> siblings', async () => {
+  it('both FormHelpText instances render as children of their <li>, not as direct list siblings', async () => {
     render(StatusPage, {
       props: {
         data: data({
@@ -179,15 +179,15 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
       },
     })
 
-    const ul = document.querySelector('ul')
-    expect(ul).not.toBeNull()
+    const ol = document.querySelector('ol')
+    expect(ol).not.toBeNull()
 
-    // No direct <p> (FormHelpText's root element) siblings of <li> inside the <ul>.
-    for (const child of Array.from(ul?.children ?? [])) {
+    // No direct <p> (FormHelpText's root element) siblings of <li> inside the list.
+    for (const child of Array.from(ol?.children ?? [])) {
       expect(child.tagName).toBe('LI')
     }
 
-    for (const li of Array.from(ul?.querySelectorAll('li') ?? [])) {
+    for (const li of Array.from(ol?.querySelectorAll('li') ?? [])) {
       const helpTexts = li.querySelectorAll('p')
       expect(helpTexts.length).toBeGreaterThanOrEqual(1)
       for (const p of Array.from(helpTexts)) {

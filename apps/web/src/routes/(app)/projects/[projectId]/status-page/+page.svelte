@@ -292,13 +292,13 @@
 
       <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 class="text-xl font-semibold text-slate-950">Services shown on the public page</h2>
-        <p class="text-sm text-slate-600">
-          Check a service to publish it, edit its public display name, and use the keyboard-operable
-          move buttons to choose the order visitors see. Selected services are listed first, in the
-          order they'll appear.
-        </p>
         {#if serviceRows.length > 0}
-          <ul aria-label="Services shown on the public page" class="space-y-3">
+          <p class="text-sm text-slate-600">
+            Check a service to publish it, edit its public display name, and use the
+            keyboard-operable move buttons to choose the order visitors see. Selected services are
+            listed first, in the order they'll appear.
+          </p>
+          <ol aria-label="Services shown on the public page" class="space-y-3">
             {#each serviceRows as row (row.id)}
               <li class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
                 <label class="flex min-w-[12rem] items-center gap-2">
@@ -352,7 +352,7 @@
                 <FormHelpText id={`status-page-service-help-${row.id}`} kind="checkbox" />
               </li>
             {/each}
-          </ul>
+          </ol>
         {/if}
         {#if data.serviceEndpoints.length === 0}
           <p class="text-slate-600">
