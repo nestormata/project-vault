@@ -15,7 +15,11 @@
   let { data } = $props()
 
   let enabled = $state(data.config.enabled)
+  // Ephemeral fallback for the instant right after enable/regenerate: the POST response still
+  // returns the raw token directly, but `data.config` (the last GET) hasn't been re-fetched yet
+  // to include it. Once the page re-loads config, `data.config.token` takes over.
   let freshToken = $state<string | null>(null)
+  let configToken = $state<string | null>(data.config.token ?? null)
   let errorMessage = $state<string | null>(null)
   let isBusy = $state(false)
   let copied = $state(false)
@@ -28,8 +32,9 @@
   let selected = $state<SelectedService[]>(initialSelected)
   let persistedSelected = $state<SelectedService[]>(initialSelected)
 
+  const activeToken = $derived(configToken ?? freshToken)
   const publicUrl = $derived(
-    freshToken ? buildAbsoluteUrl(data.origin, `/status/${freshToken}`) : null
+    activeToken ? buildAbsoluteUrl(data.origin, `/status/${activeToken}`) : null
   )
 
   function isSelected(serviceId: string): boolean {
@@ -70,6 +75,7 @@
     try {
       const result = await enableStatusPage(fetch, data.projectId)
       freshToken = result.token
+      configToken = null
       enabled = true
       copied = false
     } catch (error) {
@@ -88,6 +94,7 @@
     try {
       const result = await regenerateStatusPageToken(fetch, data.projectId)
       freshToken = result.token
+      configToken = null
       copied = false
     } catch (error) {
       errorMessage =
@@ -106,6 +113,7 @@
       await disableStatusPage(fetch, data.projectId)
       enabled = false
       freshToken = null
+      configToken = null
       selected = []
       persistedSelected = []
     } catch (error) {
@@ -236,10 +244,7 @@
         </div>
 
         {#if publicUrl}
-          <div class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <p class="text-sm font-semibold text-amber-900">
-              This link cannot be shown again — copy it now, or regenerate to get a new one.
-            </p>
+          <div class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div class="flex flex-wrap items-center gap-2">
               <code class="break-all rounded-lg bg-white px-3 py-2 text-sm">{publicUrl}</code>
               <button
@@ -253,8 +258,7 @@
           </div>
         {:else}
           <p class="text-sm text-slate-500">
-            The shareable link was only shown once, when it was created or last regenerated.
-            Regenerate to get a new one.
+            This link isn't persistently viewable yet — regenerate to get a persistent link.
           </p>
         {/if}
       </div>

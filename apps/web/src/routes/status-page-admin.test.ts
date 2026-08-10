@@ -113,6 +113,35 @@ describe('/projects/:projectId/status-page', () => {
     expect(screen.getByRole('button', { name: /copied/i })).toBeTruthy()
   })
 
+  // Story 21.7: config.token (from the GET response) renders the same persistent link+Copy
+  // panel as freshToken, with no "shown once" warning — this is the redisplay case, not the
+  // ephemeral post-enable/regenerate one.
+  it('renders a persistent link from data.config.token with no "shown once" warning', () => {
+    render(StatusPageAdminPage, {
+      props: {
+        data: pageData({ config: { enabled: true, token: 'persisted-token', services: [] } }),
+      },
+    })
+
+    expect(screen.getByText('https://vault.example.com/status/persisted-token')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^copy$/i })).toBeTruthy()
+    expect(screen.queryByText(/shown once/i)).toBeNull()
+    expect(screen.queryByText(/cannot be shown again/i)).toBeNull()
+  })
+
+  // Story 21.7 LEGACY_ROW / VAULT_SEALED_ON_READ: enabled with no token available at all (legacy
+  // row predating the migration, or a sealed vault at read time) — an honest fallback, not an
+  // implied error.
+  it('shows an honest fallback when enabled but no token is available (legacy row / sealed vault)', () => {
+    render(StatusPageAdminPage, {
+      props: { data: pageData({ config: { enabled: true, token: null, services: [] } }) },
+    })
+
+    expect(
+      screen.getByText(/isn't persistently viewable yet.*regenerate to get a persistent link/i)
+    ).toBeTruthy()
+  })
+
   it.each([
     [
       new ApiClientError(403, { code: 'mfa_required', message: 'MFA required' }, 'MFA required'),

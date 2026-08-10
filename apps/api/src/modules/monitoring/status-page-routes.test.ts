@@ -589,6 +589,18 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
       ])
     })
 
+    it('returns the same token as GET after enable, without regenerating (Story 21.7 HAPPY_PATH_NEW)', async () => {
+      const owner = await registerOwner(app, 'get-config-token')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'sp-get-config-token')
+
+      const enableRes = await enableStatusPage(app, owner.cookies, projectId)
+      const issuedToken = enableRes.json<{ data: { token: string } }>().data.token
+
+      const res = await getStatusPage(app, owner.cookies, projectId)
+      expect(res.statusCode).toBe(200)
+      expect(res.json<{ data: { token?: string } }>().data.token).toBe(issuedToken)
+    })
+
     it('returns 403 for a non-owner project member', async () => {
       const owner = await registerOwner(app, 'get-config-forbidden')
       const projectId = await createProjectViaApi(app, owner.cookies, 'sp-get-config-forbidden')
@@ -648,6 +660,27 @@ describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () 
 
       const res = await enableStatusPage(app, orgOwner.cookies, projectId)
       expect(res.statusCode).toBe(201)
+    })
+  })
+
+  describe('public/private boundary (Story 21.7)', () => {
+    it('never exposes encryptedToken, tokenHash, or token on the public (unauthenticated) status route', async () => {
+      const owner = await registerOwner(app, 'public-boundary')
+      const projectId = await createProjectViaApi(app, owner.cookies, 'sp-public-boundary')
+      const svc = await insertEndpoint(owner.orgId, projectId, 'svc-public-boundary')
+      const enableRes = await enableStatusPage(app, owner.cookies, projectId)
+      const token = enableRes.json<{ data: { token: string } }>().data.token
+      await putStatusPage(app, owner.cookies, projectId, [
+        { serviceId: svc, displayName: PAYMENTS_API_DISPLAY_NAME },
+      ])
+
+      const res = await publicStatusPage(app, token)
+      expect(res.statusCode).toBe(200)
+      const raw = JSON.stringify(res.json())
+      expect(raw).not.toContain('encryptedToken')
+      expect(raw).not.toContain('tokenHash')
+      expect(raw).not.toContain('"token"')
+      expect(raw).not.toContain(token)
     })
   })
 

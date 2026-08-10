@@ -1,14 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const PAYMENTS_API_DISPLAY_NAME = 'Payments API'
+const TEST_PASSPHRASE = 'status-page-service-passphrase'
+import { eq } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
-import { serviceEndpoints } from '@project-vault/db/schema'
+import { serviceEndpoints, statusPages } from '@project-vault/db/schema'
 import {
   createTestUser,
   deleteTestUser,
   insertTestProject,
   withTestOrg,
 } from '@project-vault/db/test-helpers'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import { initVault, unsealVault, zeroKeys } from '../vault/key-service.js'
 import {
   disableStatusPage,
   enableStatusPage,
@@ -63,7 +71,21 @@ async function withProjectAndEndpoint(
   }
 }
 
-describe('status-page-service', () => {
+// .sequential: this suite mutates the process-wide vault key-service singleton (zeroKeys()/
+// unsealVault() in the VAULT_SEALED_ON_READ test) — matches the established convention for every
+// other vault-singleton-mutating suite in this codebase (see vault-lifecycle.test.ts,
+// backup-key.test.ts, etc.) to prevent cross-test interference.
+describe.sequential('status-page-service', () => {
+  beforeAll(async () => {
+    configureAuthIntegrationEnv()
+    await resetVaultForTest()
+    await initVaultForTest(initVault, TEST_PASSPHRASE)
+  })
+
+  afterAll(async () => {
+    await resetVaultForTest()
+  })
+
   describe('enableStatusPage', () => {
     it('creates a status_pages row and returns a one-time plaintext token (AC 8)', async () => {
       await withProjectAndEndpoint(async ({ orgId, tx, projectId, userId }) => {
@@ -82,6 +104,15 @@ describe('status-page-service', () => {
         await expect(enableStatusPage(tx, { orgId, projectId, userId })).rejects.toThrow(
           StatusPageAlreadyEnabledError
         )
+      })
+    })
+
+    it('stores the token as a decryptable encryptedToken + keyVersion alongside tokenHash (Story 21.7)', async () => {
+      await withProjectAndEndpoint(async ({ orgId, tx, projectId, userId }) => {
+        await enableStatusPage(tx, { orgId, projectId, userId })
+        const row = await findStatusPageByProject(tx, projectId)
+        expect(row?.encryptedToken).not.toBeNull()
+        expect(row?.keyVersion).toBe(1)
       })
     })
   })
@@ -103,6 +134,24 @@ describe('status-page-service', () => {
         await expect(regenerateStatusPageToken(tx, projectId)).rejects.toThrow(
           StatusPageNotFoundError
         )
+      })
+    })
+
+    it('rotates tokenHash and encryptedToken together, atomically (Story 21.7)', async () => {
+      await withProjectAndEndpoint(async ({ orgId, tx, projectId, userId }) => {
+        await enableStatusPage(tx, { orgId, projectId, userId })
+        const before = await findStatusPageByProject(tx, projectId)
+
+        const regenerated = await regenerateStatusPageToken(tx, projectId)
+
+        const after = await findStatusPageByProject(tx, projectId)
+        expect(after?.tokenHash).not.toBe(before?.tokenHash)
+        expect(JSON.stringify(after?.encryptedToken)).not.toBe(
+          JSON.stringify(before?.encryptedToken)
+        )
+
+        const config = await getStatusPageConfig(tx, projectId)
+        expect(config.token).toBe(regenerated.token)
       })
     })
   })
@@ -129,6 +178,45 @@ describe('status-page-service', () => {
         expect(config.services).toEqual([
           { serviceId: endpointId, displayName: PAYMENTS_API_DISPLAY_NAME, sortOrder: 0 },
         ])
+      })
+    })
+
+    it('returns the same token via GET after enable, without regenerating (Story 21.7 HAPPY_PATH_NEW)', async () => {
+      await withProjectAndEndpoint(async ({ orgId, tx, projectId, userId }) => {
+        const enabled = await enableStatusPage(tx, { orgId, projectId, userId })
+
+        const config = await getStatusPageConfig(tx, projectId)
+        expect(config.token).toBe(enabled.token)
+      })
+    })
+
+    it('omits token for a legacy row with no encryptedToken (Story 21.7 LEGACY_ROW)', async () => {
+      await withProjectAndEndpoint(async ({ orgId, tx, projectId, userId }) => {
+        await enableStatusPage(tx, { orgId, projectId, userId })
+        // Simulate a pre-21.7 row by clearing the columns this migration added.
+        await tx
+          .update(statusPages)
+          .set({ encryptedToken: null, keyVersion: null })
+          .where(eq(statusPages.projectId, projectId))
+
+        const config = await getStatusPageConfig(tx, projectId)
+        expect(config.enabled).toBe(true)
+        expect(config.token).toBeUndefined()
+      })
+    })
+
+    it('omits token instead of throwing when the vault is sealed at read time (Story 21.7 VAULT_SEALED_ON_READ)', async () => {
+      await withProjectAndEndpoint(async ({ orgId, tx, projectId, userId }) => {
+        await enableStatusPage(tx, { orgId, projectId, userId })
+
+        zeroKeys()
+        try {
+          const config = await getStatusPageConfig(tx, projectId)
+          expect(config.enabled).toBe(true)
+          expect(config.token).toBeUndefined()
+        } finally {
+          await unsealVault({ passphrase: TEST_PASSPHRASE })
+        }
       })
     })
   })

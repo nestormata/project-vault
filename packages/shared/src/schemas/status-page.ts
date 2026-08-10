@@ -1,8 +1,11 @@
 import { z } from 'zod/v4'
 
 // Story 6.3 AC 21 (Task 6): the admin-facing "current configuration" shape returned by
-// GET /api/v1/projects/:projectId/status-page. Never includes the plaintext token (never
-// persisted, AC 8) or tokenHash.
+// GET /api/v1/projects/:projectId/status-page. Never includes tokenHash. Story 21.7 adds one
+// narrow, intentional exception to the "never includes the plaintext token" rule: `token` is
+// populated when the row has a decryptable `encryptedToken` (i.e. not a legacy pre-21.7 row and
+// the vault isn't sealed at read time), so the owner-facing settings page can redisplay the
+// already-issued link without forcing a regenerate. It is absent otherwise — never an error.
 export const StatusPageConfigServiceSchema = z
   .object({
     serviceId: z.uuid(),
@@ -17,6 +20,7 @@ export const StatusPageConfigSchema = z
     createdAt: z.iso.datetime().optional(),
     updatedAt: z.iso.datetime().optional(),
     services: z.array(StatusPageConfigServiceSchema).optional(),
+    token: z.string().optional(),
   })
   .meta({ id: 'StatusPageConfig' })
 

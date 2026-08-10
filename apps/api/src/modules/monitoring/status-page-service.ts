@@ -6,8 +6,11 @@ import {
   statusPages,
   statusPageServices,
 } from '@project-vault/db/schema'
+import { withSecret, type EncryptedValue } from '@project-vault/crypto'
 import type { PublicStatusPageService, StatusPageConfig } from '@project-vault/shared'
 import { getAdminDb } from '../../lib/db.js'
+import { encryptValue } from '../../lib/encrypt-value.js'
+import { currentKeyVersion } from '../credentials/db-helpers.js'
 import { generateStatusPageToken, hashStatusPageToken } from './status-page-tokens.js'
 import type { UpdateStatusPageBody } from './schema.js'
 
@@ -58,12 +61,18 @@ export async function enableStatusPage(
 ): Promise<{ id: string; token: string; createdAt: string }> {
   const token = generateStatusPageToken()
   const tokenHash = hashStatusPageToken(token)
+  // Story 21.7: written in the same INSERT as tokenHash so the redisplayable ciphertext and the
+  // public-lookup hash are always in lockstep (never a row with one but not the other).
+  const encryptedToken = await encryptValue(token)
+  const keyVersion = await currentKeyVersion(tx)
   const [row] = await tx
     .insert(statusPages)
     .values({
       orgId: input.orgId,
       projectId: input.projectId,
       tokenHash,
+      encryptedToken,
+      keyVersion,
       createdBy: input.userId,
     })
     .onConflictDoNothing({ target: statusPages.projectId })
@@ -78,13 +87,37 @@ export async function regenerateStatusPageToken(
 ): Promise<{ id: string; token: string; updatedAt: string }> {
   const token = generateStatusPageToken()
   const tokenHash = hashStatusPageToken(token)
+  // Story 21.7: tokenHash + encryptedToken + keyVersion are overwritten together in the same
+  // UPDATE, so the previous token's public lookup (tokenHash) and its redisplayable ciphertext
+  // both go stale atomically — "only one link is ever active" holds for both mechanisms at once.
+  const encryptedToken = await encryptValue(token)
+  const keyVersion = await currentKeyVersion(tx)
   const [row] = await tx
     .update(statusPages)
-    .set({ tokenHash })
+    .set({ tokenHash, encryptedToken, keyVersion })
     .where(eq(statusPages.projectId, projectId))
     .returning()
   if (!row) throw new StatusPageNotFoundError()
   return { id: row.id, token, updatedAt: row.updatedAt.toISOString() }
+}
+
+/**
+ * Story 21.7: decrypts `encryptedToken` for redisplay on the owner-facing settings page.
+ * Returns `null` (never throws) for a legacy row with no `encryptedToken`, and — via the
+ * catch — when the vault is sealed at read time: `withSecret` throws in that case, and unlike
+ * this module's other fail-closed points (which throw route-level, surfacing a 5xx/503), this one
+ * is purely presentational — the rest of the config must still render, so decrypt failure just
+ * means "token temporarily unavailable, regenerate to get a persistent link" rather than an error.
+ */
+async function decryptStatusPageToken(
+  encryptedToken: EncryptedValue | null
+): Promise<string | null> {
+  if (!encryptedToken) return null
+  try {
+    return await withSecret(encryptedToken, async (plaintext) => plaintext.toString('utf8'))
+  } catch {
+    return null
+  }
 }
 
 export async function getStatusPageConfig(tx: Tx, projectId: string): Promise<StatusPageConfig> {
@@ -101,11 +134,14 @@ export async function getStatusPageConfig(tx: Tx, projectId: string): Promise<St
     .where(eq(statusPageServices.statusPageId, statusPage.id))
     .orderBy(statusPageServices.sortOrder)
 
+  const token = await decryptStatusPageToken(statusPage.encryptedToken as EncryptedValue | null)
+
   return {
     enabled: true,
     createdAt: statusPage.createdAt.toISOString(),
     updatedAt: statusPage.updatedAt.toISOString(),
     services,
+    ...(token !== null ? { token } : {}),
   }
 }
 
