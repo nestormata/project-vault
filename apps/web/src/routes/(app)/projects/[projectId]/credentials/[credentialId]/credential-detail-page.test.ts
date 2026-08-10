@@ -136,6 +136,23 @@ describe('credential detail +page.svelte', () => {
     )
   })
 
+  it('explains that the Expiry date and Rotation schedule fields are independent of each other', () => {
+    render(CredentialDetailPage, { props: { data: baseData() } })
+
+    const expiryInput = screen.getByLabelText(/expiry date/i)
+    expect(expiryInput.getAttribute('aria-describedby')).toBe('lifecycle-expires-help')
+    const expiryHelp = document.getElementById('lifecycle-expires-help')
+    expect(expiryHelp?.textContent).toBeTruthy()
+    expect(expiryHelp?.textContent).toMatch(/rotation/i)
+    expect(expiryHelp?.textContent).not.toBe(
+      'Choose the date that controls this setting or filter.'
+    )
+
+    expect(
+      screen.getByText(/never changes the expiry date|expiry date field's value/i)
+    ).toBeTruthy()
+  })
+
   it('does not preview a cron schedule the lifecycle API will reject as too frequent', () => {
     render(CredentialDetailPage, {
       props: { data: baseData({ credential: { ...CREDENTIAL, rotationSchedule: '* * * * *' } }) },

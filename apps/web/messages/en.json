@@ -57,6 +57,8 @@
   "auth_register_create_account": "Create account",
   "auth_register_failed": "Registration failed.",
   "credential_expiry_notification": "Credential '{credentialName}' expires in {days} days",
+  "form_help_lifecycle_expiry": "You set this date manually; it only controls whether the credential shows as expiring or expired. Rotation runs, manual or scheduled, never update it.",
+  "form_help_lifecycle_rotation_independence": "The cron schedule only drives the dashboard's Upcoming rotations list and the rotation job. It never changes the Expiry date field's value.",
   "form_help_rotation_schedule": "Standard 5-field cron syntax: minute hour day month weekday. Example: 0 0 1 * * runs at midnight on the first day of every month.",
   "form_help_rotation_next_run": "Next run (UTC): {nextRun}",
   "form_help_rotation_interpretation": "Schedule: {description}",

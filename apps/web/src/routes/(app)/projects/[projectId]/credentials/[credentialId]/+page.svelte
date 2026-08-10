@@ -1011,7 +1011,7 @@
                 bind:value={lifecycleExpiresAt}
                 aria-describedby="lifecycle-expires-help"
               />
-              <FormHelpText id="lifecycle-expires-help" kind="date" />
+              <FormHelpText id="lifecycle-expires-help" text={m.form_help_lifecycle_expiry()} />
             </div>
             <div class="space-y-1">
               <div class="flex items-center gap-2">
@@ -1045,6 +1045,9 @@
                   {m.form_help_rotation_next_run({ nextRun: lifecycleNextRun })}
                 </p>
               {/if}
+              <p class="text-sm text-slate-600">
+                {m.form_help_lifecycle_rotation_independence()}
+              </p>
               {#if lifecycleFieldError}
                 <p class="text-sm text-red-700" role="alert">{lifecycleFieldError}</p>
               {/if}
