@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
+  import { SvelteMap } from 'svelte/reactivity'
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import type { FieldMeta, SystemType } from '@project-vault/shared'
@@ -109,7 +110,9 @@
     describeRotationCron(lifecycleRotationSchedule.trim(), cronLocale)
   )
 
-  const canReveal = $derived(canCreateCredential(data.orgRole) && data.project?.role !== 'viewer')
+  const canReveal = $derived(
+    canCreateCredential(data.orgRole) && data.project != null && data.project.role !== 'viewer'
+  )
   const canManageRotation = $derived(canManageRotations(data.orgRole))
   const displayExpiresAt = $derived(
     lifecycleOverride ? lifecycleOverride.expiresAt : (data.credential?.expiresAt ?? null)
@@ -613,12 +616,15 @@
   })
 
   onMount(() => {
+    pageMounted = true
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleDependencyVisibilityChange)
     }
   })
 
   onDestroy(() => {
+    pageMounted = false
+    copyRequestGeneration += 1
     clearDependencyPoll()
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', handleDependencyVisibilityChange)
@@ -626,7 +632,8 @@
     revealedValue = null
     revealVersion = null
     revealedFields = {}
-    if (copyStatusTimeout) clearTimeout(copyStatusTimeout)
+    for (const timeout of copyStatusTimeouts.values()) clearTimeout(timeout)
+    copyStatusTimeouts.clear()
   })
 
   // Story 13.3 AC-4 — reveal exactly one field. `GET .../value?field=<key>` is called; only that
@@ -717,18 +724,25 @@
   // AC-20/21: mirrors the existing `role="status"`/`aria-live="polite"` "✓ Credential saved
   // securely" pattern used elsewhere on this same page — a brief, auto-dismissing, announced
   // confirmation (or failure message) rather than a silent no-op or an unhandled rejection.
-  let copyStatus = $state<{ kind: 'success' | 'failure'; message: string } | null>(null)
-  let copyStatusTimeout: ReturnType<typeof setTimeout> | null = null
+  type CopyStatus = { id: number; kind: 'success' | 'failure'; message: string }
+  let copyStatuses = $state<CopyStatus[]>([])
+  let nextCopyStatusId = 0
+  const copyStatusTimeouts = new SvelteMap<number, ReturnType<typeof setTimeout>>()
+  let pageMounted = $state(false)
+  let copyRequestGeneration = 0
   let copyingValue = $state(false)
   let copyingFields = $state<Record<string, boolean>>({})
 
   function showCopyStatus(kind: 'success' | 'failure', message: string) {
-    if (copyStatusTimeout) clearTimeout(copyStatusTimeout)
-    copyStatus = { kind, message }
-    copyStatusTimeout = setTimeout(() => {
-      copyStatus = null
-      copyStatusTimeout = null
-    }, 3000)
+    const id = nextCopyStatusId++
+    copyStatuses = [...copyStatuses, { id, kind, message }]
+    copyStatusTimeouts.set(
+      id,
+      setTimeout(() => {
+        copyStatuses = copyStatuses.filter((status) => status.id !== id)
+        copyStatusTimeouts.delete(id)
+      }, 3000)
+    )
   }
 
   async function copyWithoutReveal(field?: string): Promise<void> {
@@ -741,6 +755,9 @@
       copyingValue = true
     }
 
+    const requestGeneration = copyRequestGeneration
+    const requestProjectId = data.projectId
+    const requestCredentialId = data.credentialId
     try {
       // Keep this on the existing audited reveal boundary. The returned plaintext is deliberately
       // held only in this function long enough for the clipboard write; it never enters reveal
@@ -752,6 +769,14 @@
         ? (result.fields.find((entry) => entry.key === field)?.value ?? undefined)
         : result.value
       if (value === undefined) throw new Error('copy value missing')
+      if (
+        !pageMounted ||
+        copyRequestGeneration !== requestGeneration ||
+        data.projectId !== requestProjectId ||
+        data.credentialId !== requestCredentialId
+      ) {
+        return
+      }
 
       await navigator.clipboard.writeText(value)
       showCopyStatus(
@@ -779,10 +804,10 @@
     if (!revealedValue) return
     try {
       await navigator.clipboard.writeText(revealedValue)
-      showCopyStatus('success', 'Copied to clipboard')
+      showCopyStatus('success', m.credential_copy_revealed_success())
     } catch {
       // Clipboard may be unavailable in some contexts (permissions denied, non-secure context).
-      showCopyStatus('failure', "Couldn't copy — copy manually")
+      showCopyStatus('failure', m.credential_copy_revealed_failure())
     }
   }
 
@@ -1260,9 +1285,10 @@
               <button
                 class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
                 type="button"
+                aria-describedby="credential-copy-revealed-help"
                 onclick={() => void copyValue()}
               >
-                Copy
+                {m.credential_copy_revealed_label()}
               </button>
               <button
                 class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium"
@@ -1278,21 +1304,25 @@
             {#if revealVersion !== null}
               <p class="mt-2 text-sm text-slate-600">Version {revealVersion}</p>
             {/if}
+            <FormHelpText
+              id="credential-copy-revealed-help"
+              text={m.credential_copy_revealed_help()}
+            />
           {/if}
           {#if revealError}
             <p class="mt-3 text-sm text-red-700" role="alert">{revealError}</p>
           {/if}
         {/if}
 
-        {#if copyStatus}
+        {#each copyStatuses as status (status.id)}
           <p
-            class={`mt-3 text-sm ${copyStatus.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
+            class={`mt-3 text-sm ${status.kind === 'success' ? 'text-emerald-700' : 'text-red-700'}`}
             role="status"
             aria-live="polite"
           >
-            {copyStatus.message}
+            {status.message}
           </p>
-        {/if}
+        {/each}
 
         <div class="mt-6 border-t border-slate-200 pt-6">
           {#if isMultiField}

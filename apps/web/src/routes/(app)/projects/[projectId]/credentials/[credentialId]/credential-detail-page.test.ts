@@ -74,6 +74,7 @@ function baseData(overrides: Record<string, unknown> = {}) {
     projectId,
     credentialId,
     orgRole: 'member',
+    project: { role: 'member' },
     origin: 'https://vault.example.com',
     vaultSealed: false,
     notFound: false,
@@ -481,6 +482,69 @@ describe('credential detail +page.svelte', () => {
     expect(screen.queryByText('concurrent_copy_only')).toBeNull()
   })
 
+  it('does not copy plaintext after the page is unmounted while the reveal is pending', async () => {
+    let resolveReveal!: (value: { value: string; versionNumber: number }) => void
+    revealCredentialValueMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReveal = resolve
+      })
+    )
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, { props: { data: baseData() } })
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: /copy credential value without revealing/i })
+    )
+    cleanup()
+    resolveReveal({ value: 'unmounted_copy_must_not_escape', versionNumber: 3 })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(writeText).not.toHaveBeenCalled()
+  })
+
+  it('announces each concurrent copy result instead of replacing the earlier status', async () => {
+    let resolveHost!: (value: {
+      fields: Array<{ key: string; value: string; sensitive: boolean }>
+    }) => void
+    let resolvePassword!: (value: {
+      fields: Array<{ key: string; value: string; sensitive: boolean }>
+    }) => void
+    revealCredentialValueMock.mockImplementation((_fetch, _projectId, _credentialId, options) => {
+      return options?.field === 'host'
+        ? new Promise((resolve) => {
+            resolveHost = resolve
+          })
+        : new Promise((resolve) => {
+            resolvePassword = resolve
+          })
+    })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(CredentialDetailPage, {
+      props: { data: baseData({ credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE }) },
+    })
+
+    await fireEvent.click(
+      within(screen.getByTestId('field-row-host')).getByRole('button', {
+        name: /copy host without revealing/i,
+      })
+    )
+    await fireEvent.click(
+      within(screen.getByTestId('field-row-password')).getByRole('button', {
+        name: /copy password without revealing/i,
+      })
+    )
+
+    resolveHost({ fields: [{ key: 'host', value: 'db.example.com', sensitive: false }] })
+    resolvePassword({ fields: [{ key: 'password', value: 'secret', sensitive: true }] })
+
+    await vi.waitFor(() => expect(screen.getAllByRole('status')).toHaveLength(2))
+    expect(screen.getByText(/copied host to clipboard/i)).toBeTruthy()
+    expect(screen.getByText(/copied password to clipboard/i)).toBeTruthy()
+  })
+
   it('copies field keys that inherit object properties without silently no-oping', async () => {
     revealCredentialValueMock.mockResolvedValue({
       fields: [{ key: 'toString', value: 'special-field-copy', sensitive: true }],
@@ -558,6 +622,20 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           orgRole: 'viewer',
+          credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE,
+        }),
+      },
+    })
+
+    expect(screen.queryByRole('button', { name: /copy .* without revealing/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^reveal( all| value)?$/i })).toBeNull()
+  })
+
+  it('fails closed when the project context is unavailable', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          project: null,
           credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE,
         }),
       },
