@@ -217,7 +217,8 @@ export async function dispatchPendingJobs(
   if (jobs.length === 0) return
   const jobContext = jobs.map(({ id, orgId }) => ({ id, orgId }))
   if (!boss || !boss.isStarted()) {
-    request.log.warn(
+    warnDispatchFailure(
+      request,
       {
         eventType: 'notification.dispatch.unavailable',
         label,
@@ -231,7 +232,8 @@ export async function dispatchPendingJobs(
   try {
     await sendNotificationJobs(boss, jobs)
   } catch (error) {
-    request.log.warn(
+    warnDispatchFailure(
+      request,
       {
         eventType: 'notification.dispatch.failed',
         label,
@@ -241,6 +243,18 @@ export async function dispatchPendingJobs(
       },
       `${label} notification dispatch failed`
     )
+  }
+}
+
+function warnDispatchFailure(
+  request: { log: { warn: (payload: unknown, msg: string) => void } },
+  payload: unknown,
+  message: string
+): void {
+  try {
+    request.log.warn(payload, message)
+  } catch {
+    // Dispatch remains best-effort even when the request logger is unavailable.
   }
 }
 

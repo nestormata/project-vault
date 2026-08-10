@@ -210,7 +210,7 @@ describe.sequential('project invitation routes', () => {
   })
 
   beforeEach(() => {
-    bossSend.mockClear()
+    bossSend.mockReset().mockResolvedValue('job-id')
   })
 
   afterAll(async () => {

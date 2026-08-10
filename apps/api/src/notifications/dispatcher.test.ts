@@ -199,6 +199,24 @@ describe('notification dispatcher', () => {
     )
   })
 
+  it('keeps dispatch best-effort when the warning logger itself fails', async () => {
+    const warn = vi.fn(() => {
+      throw new Error('logger unavailable')
+    })
+    const unavailableJob = { id: 'queue-4', orgId: 'org-4', deliverAt: null }
+
+    await expect(
+      dispatchPendingJobs(undefined, { log: { warn } }, [unavailableJob], INVITATION_DISPATCH_LABEL)
+    ).resolves.toBeUndefined()
+
+    const { boss, send } = createMockBoss()
+    await boss.start()
+    send.mockRejectedValueOnce(new Error('broker unavailable'))
+    await expect(
+      dispatchPendingJobs(boss, { log: { warn } }, [unavailableJob], INVITATION_DISPATCH_LABEL)
+    ).resolves.toBeUndefined()
+  })
+
   it('severity filtering skips email when alert severity is below user threshold', async () => {
     const userId = await createTestUser('dispatcher-severity')
     try {
