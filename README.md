@@ -113,6 +113,7 @@ A closer look at what's implemented in each area, current as of 2026-07-28:
 - Offline/cache fallback for CI environments
 - GitHub Actions integration
 - Full machine-user management web UI
+- See [`docs/machine-users.md`](docs/machine-users.md) for the API-key -> token -> credential-fetch flow, a working curl example, and error reference
 
 ### Audit & Compliance
 

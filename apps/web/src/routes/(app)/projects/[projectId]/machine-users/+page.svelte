@@ -28,6 +28,20 @@
       <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Machine users</p>
       <h1 class="mt-2 text-3xl font-bold text-slate-950">CI/CD service identities</h1>
       <p class="mt-2 text-slate-600">Manage machine users and their API keys for this project.</p>
+      <p class="mt-2 text-slate-600">
+        Machine users provide non-interactive, CI/CD-scoped credential access — issue an API key
+        here, then exchange it for a short-lived token to fetch credential values from your
+        pipeline. See the
+        <a
+          href="https://github.com/nestormata/project-vault/blob/main/docs/machine-users.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-medium text-slate-700 underline"
+        >
+          machine users runbook
+        </a>
+        for the full flow, error cases, and a working curl example.
+      </p>
       <a
         class="mt-3 inline-block text-sm font-medium text-slate-700 underline"
         href={resolve(`/projects/${data.projectId}/credentials`)}
