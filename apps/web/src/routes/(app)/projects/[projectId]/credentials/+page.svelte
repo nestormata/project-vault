@@ -91,63 +91,74 @@
     </div>
   {:else}
     <form
-      class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-end"
+      class="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:grid-rows-[auto_auto_auto] sm:items-start sm:gap-x-4 sm:gap-y-2"
       method="GET"
       action={resolve(`/projects/${data.projectId}/credentials`)}
     >
-      <div class="flex-1 space-y-1">
-        <label class="block text-sm font-medium text-slate-800" for="credential-search"
-          >Search</label
-        >
-        <input
-          id="credential-search"
-          class="w-full rounded-xl border border-slate-300 px-3 py-2"
-          type="search"
-          name="q"
-          value={data.filters.q}
-          placeholder="Search by name"
-          aria-describedby="credential-search-help"
-        />
+      <label
+        class="block text-sm font-medium text-slate-800 sm:col-start-1 sm:row-start-1"
+        for="credential-search">Search</label
+      >
+      <input
+        id="credential-search"
+        class="w-full rounded-xl border border-slate-300 px-3 py-2 sm:col-start-1 sm:row-start-2"
+        type="search"
+        name="q"
+        value={data.filters.q}
+        placeholder="Search by name"
+        aria-describedby="credential-search-help"
+      />
+      <div class="sm:col-start-1 sm:row-start-3">
         <FormHelpText id="credential-search-help" kind="search" />
       </div>
-      <div class="space-y-1">
-        <label class="block text-sm font-medium text-slate-800" for="credential-status"
-          >Status</label
-        >
-        <select
-          id="credential-status"
-          class="rounded-xl border border-slate-300 px-3 py-2"
-          name="status"
-          value={data.filters.status}
-          aria-describedby="credential-status-help"
-        >
-          <option value="">All</option>
-          <option value="active">Active</option>
-          <option value="expiring">Expiring</option>
-          <option value="expired">Expired</option>
-        </select>
+
+      <label
+        class="block text-sm font-medium text-slate-800 sm:col-start-2 sm:row-start-1"
+        for="credential-status">Status</label
+      >
+      <select
+        id="credential-status"
+        class="rounded-xl border border-slate-300 px-3 py-2 sm:col-start-2 sm:row-start-2"
+        name="status"
+        value={data.filters.status}
+        aria-describedby="credential-status-help"
+      >
+        <option value="">All</option>
+        <option value="active">Active</option>
+        <option value="expiring">Expiring</option>
+        <option value="expired">Expired</option>
+      </select>
+      <div class="sm:col-start-2 sm:row-start-3">
         <FormHelpText id="credential-status-help" kind="select" />
       </div>
-      <div class="space-y-1">
-        <label class="block text-sm font-medium text-slate-800" for="credential-tags">Tags</label>
-        <input
-          id="credential-tags"
-          class="w-full rounded-xl border border-slate-300 px-3 py-2"
-          type="text"
-          name="tags"
-          value={data.filters.tags}
-          placeholder="db, prod"
-          aria-describedby="credential-tags-help"
-        />
+
+      <label
+        class="block text-sm font-medium text-slate-800 sm:col-start-3 sm:row-start-1"
+        for="credential-tags">Tags</label
+      >
+      <input
+        id="credential-tags"
+        class="w-full rounded-xl border border-slate-300 px-3 py-2 sm:col-start-3 sm:row-start-2"
+        type="text"
+        name="tags"
+        value={data.filters.tags}
+        placeholder="db, prod"
+        aria-describedby="credential-tags-help"
+      />
+      <div class="space-y-1 sm:col-start-3 sm:row-start-3">
         <FormHelpText id="credential-tags-help" kind="text" />
         <p class="text-xs text-slate-500">Matches credentials with ALL of these tags.</p>
       </div>
-      <button class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white" type="submit">
+
+      <button
+        class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white sm:col-start-4 sm:row-start-2 sm:self-start"
+        type="submit"
+      >
         Apply filters
       </button>
       {#if data.filters.q || data.filters.status || data.filters.tags}
         <a
-          class="py-2 text-sm font-medium text-slate-700 underline"
+          class="py-2 text-sm font-medium text-slate-700 underline sm:col-start-5 sm:row-start-2 sm:self-start"
           href={resolve(`/projects/${data.projectId}/credentials`)}
         >
           Clear
