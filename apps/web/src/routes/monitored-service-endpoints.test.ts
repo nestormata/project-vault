@@ -200,6 +200,81 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     expect(screen.getByText('API health')).toBeTruthy()
   })
 
+  it('row layout: keeps a fixed 4-cell grid structure whether the pause control and actions are present or absent', () => {
+    const { container } = render(ServiceEndpointsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'viewer', // no manage permission -> actions column collapses
+          endpoints: [makeEndpoint({ id: 'e-1', name: 'Short', healthCheckPaused: undefined })],
+          alerts: [],
+          notFound: false,
+        },
+      },
+    })
+    const row = container.querySelector('li')
+    expect(row).toBeTruthy()
+    expect(row?.className).not.toMatch(/\bflex\b/)
+    expect(row?.className).toMatch(/\bgrid\b/)
+    // Four always-present direct-child wrapper cells: name+status, meta, pause, actions.
+    expect(row?.children.length).toBe(4)
+  })
+
+  it('row layout: same 4-cell structure when the pause control and actions are both present, regardless of long content', () => {
+    const { container } = render(ServiceEndpointsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member', // has manage permission -> actions column renders
+          endpoints: [
+            makeEndpoint({
+              id: 'e-2',
+              name: 'A very long endpoint name that could otherwise wrap the row layout unpredictably',
+              status: 'degraded',
+              healthCheckPaused: false,
+            }),
+          ],
+          alerts: [],
+          notFound: false,
+        },
+      },
+    })
+    const row = container.querySelector('li')
+    expect(row).toBeTruthy()
+    expect(row?.className).not.toMatch(/\bflex\b/)
+    expect(row?.className).toMatch(/\bgrid\b/)
+    expect(row?.children.length).toBe(4)
+  })
+
+  it('row layout: multiple rows with mixed content lengths and mixed pause/actions presence all keep 4 cells', () => {
+    const { container } = render(ServiceEndpointsListPage, {
+      props: {
+        data: {
+          projectId,
+          orgRole: 'member',
+          endpoints: [
+            makeEndpoint({ id: 'e-1', name: 'Short', healthCheckPaused: undefined }),
+            makeEndpoint({
+              id: 'e-2',
+              name: 'A much longer name used to check that columns stay aligned',
+              healthCheckPaused: true,
+            }),
+            makeEndpoint({ id: 'e-3', name: 'Mid length name', healthCheckPaused: false }),
+          ],
+          alerts: [],
+          notFound: false,
+        },
+      },
+    })
+    const rows = container.querySelectorAll('li')
+    expect(rows.length).toBe(3)
+    for (const row of rows) {
+      expect(row.className).not.toMatch(/\bflex\b/)
+      expect(row.className).toMatch(/\bgrid\b/)
+      expect(row.children.length).toBe(4)
+    }
+  })
+
   it('renders project-not-found and all endpoint status/date variants', () => {
     render(ServiceEndpointsListPage, {
       props: {

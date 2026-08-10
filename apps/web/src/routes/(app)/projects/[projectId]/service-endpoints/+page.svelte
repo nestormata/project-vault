@@ -97,36 +97,43 @@
       <ul class="space-y-3">
         {#each endpoints as endpoint (endpoint.id)}
           <li
-            class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            class="grid grid-cols-1 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
           >
-            <ServiceStatusItem
-              name={endpoint.name}
-              status={endpoint.status}
-              lastCheckedAt={endpoint.lastCheckedAt}
-            />
-            <div class="text-sm text-slate-600">
+            <!-- ServiceStatusItem has two root nodes (name div + status span); this wrapper gives it a single grid cell -->
+            <div class="flex min-w-0 items-center gap-2">
+              <ServiceStatusItem
+                name={endpoint.name}
+                status={endpoint.status}
+                lastCheckedAt={endpoint.lastCheckedAt}
+              />
+            </div>
+            <div class="min-w-0 text-sm text-slate-600">
               <p>Checked every {endpoint.checkFrequencyMinutes} min</p>
               <p>Down after {endpoint.downThresholdFailures} consecutive failures</p>
             </div>
-            {#if endpoint.healthCheckPaused === true || endpoint.healthCheckPaused === false}
-              <MonitoringPauseControl
-                paused={endpoint.healthCheckPaused}
-                pausedAt={endpoint.healthCheckPausedAt ?? null}
-                lastKnownStatus={endpoint.status}
-                {canManage}
-                idSuffix={endpoint.id}
-                submitting={pauseSubmittingId === endpoint.id}
-                errorMessage={pauseErrors[endpoint.id] || null}
-                onToggle={(paused) => handlePauseToggle(endpoint.id, paused)}
-              />
-            {/if}
-            {#if canManage}
-              <AssetRowActions
-                editHref={`/projects/${data.projectId}/service-endpoints/${endpoint.id}`}
-                confirmLabel="Confirm delete? This will also resolve any active alerts for it."
-                onDelete={() => handleDelete(endpoint.id)}
-              />
-            {/if}
+            <div class="min-w-0">
+              {#if endpoint.healthCheckPaused === true || endpoint.healthCheckPaused === false}
+                <MonitoringPauseControl
+                  paused={endpoint.healthCheckPaused}
+                  pausedAt={endpoint.healthCheckPausedAt ?? null}
+                  lastKnownStatus={endpoint.status}
+                  {canManage}
+                  idSuffix={endpoint.id}
+                  submitting={pauseSubmittingId === endpoint.id}
+                  errorMessage={pauseErrors[endpoint.id] || null}
+                  onToggle={(paused) => handlePauseToggle(endpoint.id, paused)}
+                />
+              {/if}
+            </div>
+            <div class="min-w-0">
+              {#if canManage}
+                <AssetRowActions
+                  editHref={`/projects/${data.projectId}/service-endpoints/${endpoint.id}`}
+                  confirmLabel="Confirm delete? This will also resolve any active alerts for it."
+                  onDelete={() => handleDelete(endpoint.id)}
+                />
+              {/if}
+            </div>
           </li>
         {/each}
       </ul>
