@@ -278,7 +278,7 @@ describe('/projects/:projectId/status-page', () => {
       },
     })
 
-    // Story 21.8: the reorder-only box was merged into the single services `<ul>` — assert on
+    // Story 21.8: the reorder-only box was merged into the single services `<ol>` — assert on
     // that list's row order instead of the removed "Public service order" list.
     const serviceList = () =>
       screen.getByRole('list', { name: /services shown on the public page/i })

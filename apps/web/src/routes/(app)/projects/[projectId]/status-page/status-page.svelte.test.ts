@@ -124,6 +124,30 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
     )
   })
 
+  it("leaves a middle row's reorder buttons enabled when three or more services are selected", () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: {
+            enabled: true,
+            token: 'tok-1',
+            services: [
+              { serviceId: 'svc-1', displayName: 'API' },
+              { serviceId: 'svc-2', displayName: 'Database' },
+              { serviceId: 'svc-3', displayName: 'Worker' },
+            ],
+          },
+        }),
+      },
+    })
+
+    const upButtons = screen.getAllByRole('button', { name: /move .* up/i })
+    const downButtons = screen.getAllByRole('button', { name: /move .* down/i })
+
+    expect((upButtons[1] as HTMLButtonElement).disabled).toBe(false)
+    expect((downButtons[1] as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('reorder controls are absent entirely when only one service is selected', () => {
     render(StatusPage, {
       props: {
