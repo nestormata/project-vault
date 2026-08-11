@@ -236,6 +236,19 @@ export const OperationalEvent = {
   // AC-7 edge case: mirrors EXTENSION_AUDIT_FANOUT_ROW_FAILED for the startup auto-reload pass's
   // per-org audit write failures (log-and-continue, never blocks boot).
   THEME_AUDIT_FANOUT_ROW_FAILED: 'theme.audit_fanout_row_failed',
+
+  // Story 1.19: GET /status probe outcomes (AC-6 — probe traffic is counted, not audit-logged).
+  STATUS_PROBE_SUCCESS: 'status.probe_success',
+  STATUS_PROBE_DEGRADED: 'status.probe_degraded',
+  STATUS_PROBE_UNAVAILABLE: 'status.probe_unavailable',
+  STATUS_PROBE_UNAUTHORIZED: 'status.probe_unauthorized',
+  STATUS_PROBE_RATE_LIMITED: 'status.probe_rate_limited',
+  STATUS_CHECK_TIMEOUT: 'status.check_timeout',
+  STATUS_CHECK_ERROR: 'status.check_error',
+  // Story 1.19 adversarial review fix: the best-effort last-used timestamp write is still
+  // best-effort (never blocks/fails the GET /status response) but its failure is no longer
+  // silently discarded — this is the visibility signal.
+  STATUS_TOKEN_TOUCH_FAILED: 'status.token_touch_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

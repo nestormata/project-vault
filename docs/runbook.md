@@ -125,6 +125,46 @@ upgrade-trigger button — see Story 9.7 D3/D4).
    curl -sf http://localhost:3000/ready            # {"status":"ready"}
    ```
 
+### External monitoring — `GET /status`
+
+<!-- Source: Story 1.19 AC-1/AC-4/AC-8; verified against apps/api/src/routes/status.ts and
+     apps/api/src/modules/platform-admin/status-token-routes.ts -->
+
+Three distinct probes exist — use the right one:
+
+| Probe | Purpose | Depends on DB/vault? | Who should call it |
+|-------|---------|----------------------|---------------------|
+| `GET /health` | Unconditional liveness (Docker healthcheck) | No | Container supervisor |
+| `GET /ready` | Readiness (init/seal/DB gate) | Yes | Orchestrator routing decisions |
+| `GET /status` | Aggregate operational status (DB responsiveness, vault seal state, disk capacity) | Yes | External monitor / alerting (Proxmox, uptime checks) |
+
+`GET /status` returns `{"status":"healthy"|"degraded"|"unavailable","version":"...","timestamp":"...","checks":{"database":{...},"vault":{...},"disk":{...}}}` —
+HTTP 200 when `healthy`, HTTP 503 otherwise (same schema either way). Each check reports a stable,
+non-sensitive reason code (`db_timeout`, `db_error`, `db_unavailable`, `vault_sealed`,
+`vault_uninitialized`, `disk_threshold_exceeded`, `disk_check_failed`, or `disk_not_configured`
+when no filesystem backup path is configured — the disk check is skipped entirely in that case,
+not treated as a failure). The response never includes tenant names, credentials, connection
+strings, filesystem paths, or stack traces, and is sent with `Cache-Control: no-store`.
+
+**Access control (safe by default):** if no bearer token has been generated, only loopback callers
+(`127.0.0.1`/`::1`) may call `GET /status` unauthenticated — every other caller gets a generic 404
+(the endpoint is undiscoverable to a remote caller until an operator opts in, rather than a 401
+that would confirm it exists). Once a token is generated, every caller — including loopback — must
+supply `Authorization: Bearer <token>`; missing, malformed, wrong, or revoked tokens all return the
+same generic 401. The route is rate-limited (30 requests/minute per source IP).
+
+**Generating/rotating/revoking the token:** Settings → Platform Admin (operator + MFA required).
+Generate shows the plaintext token exactly once (secure-display-once — copy it immediately, it is
+never shown again and never persisted in plaintext); Rotate issues a new token and immediately
+invalidates the old one; Revoke disables token-based access entirely (reverting to the safe
+loopback-only default); Test calls the live check logic in-process and shows the current
+healthy/degraded/unavailable result without needing a separate `curl`.
+
+**Reverse-proxy exposure:** if exposing `/status` to an external monitor over the public internet
+(rather than calling it from inside the LXC/host network), always go through Traefik with TLS —
+never forward the bare HTTP port. Configure the token in your monitor's `Authorization: Bearer`
+header, not as a URL query parameter (query parameters are logged by intermediate proxies).
+
 ### Normal startup and shutdown
 
 <!-- Source: Story 9.5 AC-3; verified against docker-compose.yml (stop_grace_period: 30s on api) -->

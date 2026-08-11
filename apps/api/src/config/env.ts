@@ -10,6 +10,7 @@ const DEV_MACHINE_JWT_SECRET = 'h'.repeat(64)
 const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
 const DEV_ERASURE_EMAIL_HASH_SECRET = 'j'.repeat(64)
 const DEV_SSO_STATE_HMAC_SECRET = 'k'.repeat(64)
+const DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET = 'l'.repeat(64)
 const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
@@ -45,6 +46,7 @@ type ProductionEnv = {
   STATUS_PAGE_TOKEN_HMAC_SECRET?: string
   ERASURE_EMAIL_HASH_SECRET?: string
   SSO_STATE_HMAC_SECRET?: string
+  OPERATIONAL_STATUS_TOKEN_HMAC_SECRET?: string
   LOG_LEVEL: string
   VAULT_KMS_ENDPOINT?: string
 }
@@ -353,6 +355,53 @@ function validateSsoStateProductionSecret(env: ProductionEnv, ctx: z.RefinementC
   }
 }
 
+// Story 1.19 D6: same array-based comparison pattern as SSO_STATE_HMAC_SECRET — dedicated HMAC
+// secret for the optional GET /status bearer token (operational_status_tokens.token_hash), never
+// shared with the unrelated public status-page token (STATUS_PAGE_TOKEN_HMAC_SECRET) despite the
+// similar name — these protect two different features (public customer-facing status pages vs.
+// this instance's own internal-operator monitoring probe).
+function operationalStatusTokenSharesAnotherAuthSecret(env: ProductionEnv): boolean {
+  const otherSecrets = [
+    env.SESSION_SECRET,
+    env.REFRESH_TOKEN_HMAC_SECRET,
+    env.TOTP_REPLAY_HMAC_SECRET,
+    env.MFA_PENDING_SESSION_HMAC_SECRET,
+    env.INVITATION_TOKEN_HMAC_SECRET,
+    env.RECOVERY_TOKEN_HMAC_SECRET,
+    env.API_KEY_HMAC_SECRET,
+    env.MACHINE_JWT_SECRET,
+    env.STATUS_PAGE_TOKEN_HMAC_SECRET,
+    env.ERASURE_EMAIL_HASH_SECRET,
+    env.SSO_STATE_HMAC_SECRET,
+  ]
+  return otherSecrets.includes(env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET)
+}
+
+function validateOperationalStatusTokenProductionSecret(
+  env: ProductionEnv,
+  ctx: z.RefinementCtx
+): void {
+  if (!env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET) {
+    addEnvIssue(
+      ctx,
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET is required in production'
+    )
+  } else if (operationalStatusTokenSharesAnotherAuthSecret(env)) {
+    addEnvIssue(
+      ctx,
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  }
+}
+
 // Story 9.1 AC-14/AC-15: backup is opt-in. "Enabled" means at least one of
 // STORAGE_PATH/S3_BUCKET/DATABASE_URL is configured — any one of them alone is enough to trigger
 // the fail-fast checks below, since all three are required together for a working setup.
@@ -412,6 +461,7 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateStatusPageTokenProductionSecret(env, ctx)
   validateErasureEmailHashProductionSecret(env, ctx)
   validateSsoStateProductionSecret(env, ctx)
+  validateOperationalStatusTokenProductionSecret(env, ctx)
   validateVaultKmsEndpointProductionSafety(env, ctx)
 }
 
@@ -573,6 +623,14 @@ const envSchema = z
       (value) => (value === '' ? undefined : value),
       z.string().min(32).optional()
     ),
+    // Story 1.19 D6: dedicated HMAC secret for the optional GET /status bearer token
+    // (operational_status_tokens.token_hash) — mirrors STATUS_PAGE_TOKEN_HMAC_SECRET's exact
+    // shape, but never shared with it (see the comment on
+    // operationalStatusTokenSharesAnotherAuthSecret below).
+    OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(32).optional()
+    ),
     // Story 8.4 D6: dedicated keyed-HMAC secret for data_erasure_requests.original_email_hash —
     // a bare unsalted hash of a low-entropy email address is brute-forceable, so this must be a
     // server-side secret never shared with any other auth-token HMAC (see the production
@@ -619,6 +677,10 @@ const envSchema = z
     // by a future refactor. Read fresh on every worker run, same convention as the other
     // rotation thresholds above.
     STALE_STAGED_ROTATION_THRESHOLD_DAYS: z.coerce.number().int().min(1).max(90).default(14),
+    // Story 1.19 AC-1/AC-3: GET /status disk-capacity check threshold — only evaluated when
+    // BACKUP_STORAGE_PATH is configured (see modules/status/service.ts's checkDisk). Percentage
+    // of free space below which the check reports 'disk_threshold_exceeded'.
+    STATUS_DISK_MIN_FREE_PERCENT: z.coerce.number().int().min(1).max(50).default(10),
     ARGON2_MEMORY_COST: z.coerce.number().int().min(19456).max(262144).default(65536),
     ARGON2_TIME_COST: z.coerce.number().int().min(2).default(3),
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(4),
@@ -869,6 +931,7 @@ type AuthEnvKey =
   | 'STATUS_PAGE_TOKEN_HMAC_SECRET'
   | 'ERASURE_EMAIL_HASH_SECRET'
   | 'SSO_STATE_HMAC_SECRET'
+  | 'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET'
 export type Env = Omit<
   RawEnv,
   | 'TOTP_REPLAY_HMAC_SECRET'
@@ -880,6 +943,7 @@ export type Env = Omit<
   | 'STATUS_PAGE_TOKEN_HMAC_SECRET'
   | 'ERASURE_EMAIL_HASH_SECRET'
   | 'SSO_STATE_HMAC_SECRET'
+  | 'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET'
 > & {
   TOTP_REPLAY_HMAC_SECRET: string
   MFA_PENDING_SESSION_HMAC_SECRET: string
@@ -890,6 +954,7 @@ export type Env = Omit<
   STATUS_PAGE_TOKEN_HMAC_SECRET: string
   ERASURE_EMAIL_HASH_SECRET: string
   SSO_STATE_HMAC_SECRET: string
+  OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: string
 }
 
 // Story 14.3: extracted so adding SSO_STATE_HMAC_SECRET's fallback didn't push loadEnv() past
@@ -934,6 +999,11 @@ function loadEnv(): Env {
   applyDevSecretFallback(data, 'STATUS_PAGE_TOKEN_HMAC_SECRET', DEV_STATUS_PAGE_TOKEN_HMAC_SECRET)
   applyDevSecretFallback(data, 'ERASURE_EMAIL_HASH_SECRET', DEV_ERASURE_EMAIL_HASH_SECRET)
   applyDevSecretFallback(data, 'SSO_STATE_HMAC_SECRET', DEV_SSO_STATE_HMAC_SECRET)
+  applyDevSecretFallback(
+    data,
+    'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
+    DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET
+  )
   return data as Env
 }
 

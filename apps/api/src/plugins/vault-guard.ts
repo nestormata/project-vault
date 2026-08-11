@@ -17,6 +17,13 @@ function normalizePath(rawUrl: string): string {
 const VAULT_GUARD_ALLOWLIST = new Set([
   'GET /health',
   'GET /ready',
+  // Story 1.19 AC-1/AC-3: /status must itself report a sealed/uninitialized vault as a checks.vault
+  // result within its own {status, version, timestamp, checks} contract (200/503) — not vault-
+  // guard's unrelated {status:'sealed', message} shape, which would break the aggregate schema
+  // and make the endpoint useless to a monitor while sealed (arguably the most important moment
+  // for an external monitor to be able to observe). Allowlisting here does not weaken security:
+  // /status's own bearer-token/loopback auth (routes/status.ts) still gates every response.
+  'GET /status',
   'POST /api/v1/vault/init',
   'POST /api/v1/vault/unseal',
   'POST /api/v1/auth/register',

@@ -19,6 +19,11 @@ export const PlatformAuditAction = {
   // D8: maintenance-mode activation/deactivation.
   MAINTENANCE_MODE_ACTIVATED: 'maintenance_mode.activated',
   MAINTENANCE_MODE_DEACTIVATED: 'maintenance_mode.deactivated',
+  // Story 1.19 AC-6: GET /status bearer-token lifecycle mutations. Never the routine /status
+  // probe traffic itself — that is counted via modules/status/metrics.ts, not audited here.
+  STATUS_TOKEN_GENERATED: 'status_token.generated',
+  STATUS_TOKEN_ROTATED: 'status_token.rotated',
+  STATUS_TOKEN_REVOKED: 'status_token.revoked',
 } as const
 
 export type PlatformAuditActionType = (typeof PlatformAuditAction)[keyof typeof PlatformAuditAction]

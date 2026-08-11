@@ -44,6 +44,9 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     // Story 14.3: same reasoning — baked into the base fixture so unrelated production tests
     // aren't also tripped by this newest dedicated secret being unset.
     SSO_STATE_HMAC_SECRET: 'k'.repeat(64),
+    // Story 1.19 D6: same reasoning — baked into the base fixture so unrelated production tests
+    // aren't also tripped by this newest dedicated secret being unset.
+    OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: 'l'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -638,6 +641,44 @@ describe('env', () => {
       process.env = productionEnv({
         ...priorSecretsSatisfiedWithErasureEmailHash,
         SSO_STATE_HMAC_SECRET,
+      })
+      await expectInvalidEnv(exitSpy)
+    }
+  })
+
+  const priorSecretsSatisfiedWithSsoState = {
+    ...priorSecretsSatisfiedWithErasureEmailHash,
+    SSO_STATE_HMAC_SECRET: 'k'.repeat(64),
+  }
+
+  it('requires a dedicated operational status token secret in production (Story 1.19 D6)', async () => {
+    await expectDedicatedSecretRequired(
+      exitSpy,
+      { ...priorSecretsSatisfiedWithSsoState, OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: undefined },
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
+      'l'.repeat(64)
+    )
+  })
+
+  it('rejects placeholder or reused operational status token secrets in production', async () => {
+    for (const OPERATIONAL_STATUS_TOKEN_HMAC_SECRET of [
+      'change-me'.repeat(8),
+      'a'.repeat(64),
+      'b'.repeat(64),
+      'c'.repeat(64),
+      'd'.repeat(64),
+      'e'.repeat(64),
+      'f'.repeat(64),
+      'g'.repeat(64),
+      'h'.repeat(64),
+      'i'.repeat(64),
+      'j'.repeat(64),
+      'k'.repeat(64),
+    ]) {
+      resetEnvImport(exitSpy)
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
       })
       await expectInvalidEnv(exitSpy)
     }

@@ -19,6 +19,8 @@ import type { SecureRouteContext } from '../../lib/secure-route.js'
  */
 export const VaultSealedResponseSchema = z.object({ status: z.string(), message: z.string() })
 
+export const PLATFORM_ADMIN_TAGS = ['Platform Admin']
+
 export const PLATFORM_ADMIN_ERROR_RESPONSES = {
   401: ApiErrorSchema,
   403: ApiErrorSchema,

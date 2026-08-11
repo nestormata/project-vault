@@ -78,6 +78,10 @@ services:
       # missing from this env list entirely until Story 14.4 discovered it blocked `make docker-up`
       # outright for any local stack once Story 14.3 landed.
       SSO_STATE_HMAC_SECRET: ${SSO_STATE_HMAC_SECRET:-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk}
+      # Story 1.19 D6: HMAC secret for the GET /status bearer-token hash (operational_status_tokens).
+      # Required in production the same way the secrets above are — same "distinct, non-placeholder"
+      # strict validation applies here too, so `make docker-up` fails fast at boot without it.
+      OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: ${OPERATIONAL_STATUS_TOKEN_HMAC_SECRET:-llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll}
       VAULT_KEY_DIR: /run/secrets
       # First-init protection: set in .env or shell. Generate: openssl rand -base64 32
       VAULT_BOOTSTRAP_TOKEN: ${VAULT_BOOTSTRAP_TOKEN:-}
@@ -132,6 +136,18 @@ services:
       migrate:
         condition: service_completed_successfully
     stop_grace_period: 30s
+    # Story 1.19 AC-8: three distinct probes exist — use the right one for the job:
+    #   GET /health  - unconditional liveness (this Docker healthcheck). Never depends on the
+    #                  DB/vault; only answers "is the process alive". Always 200.
+    #   GET /ready   - readiness (init/seal/DB dependency gate). Used by an orchestrator deciding
+    #                  whether to route traffic to this instance yet.
+    #   GET /status  - aggregate operational status for an external monitor/alerting system (DB
+    #                  responsiveness, vault seal state, disk capacity). Optionally protected by a
+    #                  bearer token generated in Settings (Platform Admin); safe by default —
+    #                  unauthenticated non-loopback callers get 404 until a token is configured.
+    #                  Do not point a container healthcheck at /status — it is not a liveness
+    #                  probe and its 503s are meaningful outage signals a supervisor could
+    #                  misinterpret as "restart me", not "not ready yet".
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s

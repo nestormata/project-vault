@@ -14,6 +14,7 @@ import {
 } from '@fastify/type-provider-zod'
 import swaggerUi from '@fastify/swagger-ui'
 import { healthRoutes } from './routes/health.js'
+import { statusRoutes } from './routes/status.js'
 import { metricsRoutes } from './routes/metrics.js'
 import { openapiRoutes } from './routes/openapi.js'
 import { docsEnabled } from './lib/docs-gating.js'
@@ -42,6 +43,7 @@ import { backupRoutes } from './modules/backup/routes.js'
 import { settingsRoutes } from './modules/platform-admin/settings-routes.js'
 import { orgsRoutes } from './modules/platform-admin/orgs-routes.js'
 import { resourceUsageRoutes } from './modules/platform-admin/resource-usage-routes.js'
+import { statusTokenRoutes } from './modules/platform-admin/status-token-routes.js'
 import { platformAuditRoutes } from './modules/platform-audit/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
@@ -271,6 +273,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   }
 
   await fastify.register(healthRoutes, { dbPool: options.dbPool })
+  await fastify.register(statusRoutes, { dbPool: options.dbPool })
   await fastify.register(metricsRoutes, {
     metricsBindHost: options.metricsBindHost ?? env.METRICS_BIND_HOST,
   })
@@ -324,6 +327,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(settingsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(orgsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(resourceUsageRoutes, { prefix: ADMIN_PREFIX })
+  // Story 1.19 AC-5/AC-6: platform-operator+MFA-gated CRUD for the GET /status bearer token,
+  // same route-audit.test.ts rationale as the sibling registrations above (own file, own
+  // secureRoute() calls directly visible to the AST scan).
+  await fastify.register(statusTokenRoutes, { prefix: ADMIN_PREFIX, dbPool: options.dbPool })
   // Story 14.2: functionally an admin-status read, so mounted at ADMIN_PREFIX alongside the
   // routes above even though the implementation file lives under extensions/ (conceptually part
   // of the extension subsystem, not modules/admin/'s "system config only" scope) — see Dev Notes.

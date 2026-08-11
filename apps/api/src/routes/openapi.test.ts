@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
 
+type OpenApiOperation = { parameters?: Array<{ name: string }>; responses: Record<string, unknown> }
+
 type OpenApiSpec = {
-  paths: Record<
-    string,
-    { get?: { parameters?: Array<{ name: string }>; responses: Record<string, unknown> } }
-  >
+  paths: Record<string, { get?: OpenApiOperation; post?: OpenApiOperation }>
   components?: { schemas?: Record<string, { additionalProperties?: unknown }> }
 }
 
@@ -69,5 +68,67 @@ describe('GET /api/v1/openapi.json and GET /api/v1/docs (D5, AC-6/AC-7)', () => 
     expect(getSchema(spec, 'CredentialOperationalContextV1').additionalProperties).toBe(false)
     expect(getSchema(spec, 'CredentialOperationalContextResponse').additionalProperties).toBe(false)
     await app.close()
+  })
+
+  // Story 1.19 AC-9: "API/OpenAPI contract tests" for GET /status and the /admin/settings/
+  // status-token* CRUD routes — asserts the live spec (app.swagger(), same source the checked-in
+  // packages/shared/openapi.json is regenerated from via `pnpm generate-spec`) documents the
+  // expected paths, methods, and status codes, so a route change that silently drops a documented
+  // status code or path is caught here instead of only being noticed in a manually-regenerated,
+  // manually-eyeballed openapi.json diff.
+  describe('Story 1.19: GET /status and /admin/settings/status-token* contract', () => {
+    it('documents GET /status with the healthy/degraded/unavailable + auth-failure status codes', async () => {
+      const app = await createApp({ logger: false })
+      await app.ready()
+      const spec = app.swagger() as OpenApiSpec
+      const operation = spec.paths['/status']?.get
+      if (!operation) throw new Error('/status operation missing from OpenAPI spec')
+      expect(Object.keys(operation.responses)).toEqual(
+        expect.arrayContaining(['200', '401', '404', '503'])
+      )
+      await app.close()
+    })
+
+    it('documents the platform-admin status-token CRUD routes with their MFA/operator-gated error codes', async () => {
+      const app = await createApp({ logger: false })
+      await app.ready()
+      const spec = app.swagger() as OpenApiSpec
+
+      const expectations: Array<{ path: string; method: 'get' | 'post'; codes: string[] }> = [
+        {
+          path: '/api/v1/admin/settings/status-token',
+          method: 'get',
+          codes: ['200', '401', '403'],
+        },
+        {
+          path: '/api/v1/admin/settings/status-token/generate',
+          method: 'post',
+          codes: ['200', '401', '403'],
+        },
+        {
+          path: '/api/v1/admin/settings/status-token/rotate',
+          method: 'post',
+          codes: ['200', '401', '403'],
+        },
+        {
+          path: '/api/v1/admin/settings/status-token/revoke',
+          method: 'post',
+          codes: ['204', '401', '403', '409'],
+        },
+        {
+          path: '/api/v1/admin/settings/status-token/test',
+          method: 'post',
+          codes: ['200', '401', '403'],
+        },
+      ]
+
+      for (const { path, method, codes } of expectations) {
+        const operation = spec.paths[path]?.[method]
+        if (!operation) throw new Error(`${method.toUpperCase()} ${path} missing from OpenAPI spec`)
+        expect(Object.keys(operation.responses)).toEqual(expect.arrayContaining(codes))
+      }
+
+      await app.close()
+    })
   })
 })

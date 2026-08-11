@@ -8,10 +8,116 @@
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale } from '$lib/paraglide/runtime.js'
   import { ApiClientError } from '$lib/api/client.js'
-  import { updateSettings, type SystemSettingsUpdate } from '$lib/api/platform.js'
+  import {
+    updateSettings,
+    generateStatusToken,
+    rotateStatusToken,
+    revokeStatusToken,
+    testStatusToken,
+    type StatusTokenTestResponse,
+    type SystemSettingsUpdate,
+  } from '$lib/api/platform.js'
   import type { PageData } from './$types.js'
 
   let { data }: { data: PageData } = $props()
+
+  // Story 1.19 AC-5/AC-6: GET /status bearer-token settings — separate from the SMTP/backup/
+  // notifications/instance-policy form above (its own POST actions, not part of the settings
+  // PUT payload).
+  let statusTokenConfigured = $state(data.allowed ? (data.statusToken?.configured ?? false) : false)
+  let statusTokenCreatedAt = $state(data.allowed ? data.statusToken?.createdAt : undefined)
+  let statusTokenLastUsedAt = $state(data.allowed ? data.statusToken?.lastUsedAt : undefined)
+  // Adversarial review fix: distinct from "not configured" — a load failure (network/5xx) must
+  // never silently render as if the token simply doesn't exist yet.
+  let statusTokenLoadFailed = $state(data.allowed ? (data.statusTokenLoadFailed ?? false) : false)
+  // Secure-display-once: the plaintext only ever lives in this ephemeral, component-local state
+  // — never re-fetchable, never part of `data` (mirrors machine-users' revealedKey pattern).
+  let revealedStatusToken = $state<string | null>(null)
+  let statusTokenBusy = $state(false)
+  let statusTokenError = $state<string | null>(null)
+  let statusTokenTestResult = $state<StatusTokenTestResponse | null>(null)
+  let statusTokenTestBusy = $state(false)
+  let statusTokenCopied = $state(false)
+  let statusTokenCopyFailed = $state(false)
+
+  async function copyStatusToken(value: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      statusTokenCopied = true
+      statusTokenCopyFailed = false
+    } catch {
+      // Clipboard may be unavailable in some contexts (e.g. insecure origin, denied
+      // permission) — surface it so the operator doesn't assume the copy succeeded and
+      // navigate away from this one-time reveal without the token.
+      statusTokenCopyFailed = true
+    }
+  }
+
+  async function onGenerateOrRotateStatusToken() {
+    if (statusTokenBusy) return
+    statusTokenBusy = true
+    statusTokenError = null
+    statusTokenCopied = false
+    statusTokenCopyFailed = false
+    // Adversarial review fix: clear any previously revealed plaintext up front, before the
+    // result of this request is known — otherwise a failed rotate leaves a stale (possibly
+    // already-invalidated) plaintext token displayed next to the error, which is misleading.
+    revealedStatusToken = null
+    try {
+      const result = statusTokenConfigured
+        ? await rotateStatusToken(fetch)
+        : await generateStatusToken(fetch)
+      revealedStatusToken = result.token
+      statusTokenConfigured = true
+      statusTokenCreatedAt = result.createdAt
+      statusTokenLastUsedAt = undefined
+      statusTokenTestResult = null
+    } catch (err) {
+      statusTokenError =
+        err instanceof ApiClientError
+          ? (err.message ?? m.status_token_generate_or_rotate_error_default())
+          : m.status_token_generate_or_rotate_error_default()
+    } finally {
+      statusTokenBusy = false
+    }
+  }
+
+  async function onRevokeStatusToken() {
+    if (statusTokenBusy) return
+    statusTokenBusy = true
+    statusTokenError = null
+    try {
+      await revokeStatusToken(fetch)
+      statusTokenConfigured = false
+      statusTokenCreatedAt = undefined
+      statusTokenLastUsedAt = undefined
+      revealedStatusToken = null
+      statusTokenTestResult = null
+    } catch (err) {
+      statusTokenError =
+        err instanceof ApiClientError
+          ? (err.message ?? m.status_token_revoke_error_default())
+          : m.status_token_revoke_error_default()
+    } finally {
+      statusTokenBusy = false
+    }
+  }
+
+  async function onTestStatusToken() {
+    if (statusTokenTestBusy) return
+    statusTokenTestBusy = true
+    statusTokenError = null
+    try {
+      statusTokenTestResult = await testStatusToken(fetch)
+    } catch (err) {
+      statusTokenError =
+        err instanceof ApiClientError
+          ? (err.message ?? m.status_token_test_error_default())
+          : m.status_token_test_error_default()
+    } finally {
+      statusTokenTestBusy = false
+    }
+  }
 
   let settings = $state(data.allowed ? data.settings : null)
   let saving = $state(false)
@@ -368,6 +474,136 @@
           </button>
         </div>
       </form>
+
+      <!-- Story 1.19 AC-5/AC-6: GET /status monitoring bearer token -->
+      <section class="mt-8 rounded-xl border border-gray-200 bg-white p-6">
+        <h2 class="text-lg font-semibold text-gray-900">{m.status_token_section_heading()}</h2>
+        <p id="status-token-help" class="mt-1 text-sm text-slate-600">
+          {m.form_help_status_token()}
+        </p>
+
+        {#if statusTokenLoadFailed}
+          <p
+            class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+            role="alert"
+          >
+            {m.status_token_load_failed()}
+          </p>
+        {/if}
+
+        {#if statusTokenError}
+          <p
+            class="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+            role="alert"
+          >
+            {statusTokenError}
+          </p>
+        {/if}
+
+        {#if revealedStatusToken}
+          <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+            <p class="text-sm font-medium text-amber-900">
+              {m.status_token_reveal_notice()}
+            </p>
+            <div class="mt-2 flex items-center gap-2">
+              <code
+                class="flex-1 overflow-x-auto rounded border border-amber-200 bg-white px-2 py-1.5 text-xs"
+                >{revealedStatusToken}</code
+              >
+              <button
+                type="button"
+                class="rounded border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                onclick={() => copyStatusToken(revealedStatusToken ?? '')}
+              >
+                {statusTokenCopied
+                  ? m.status_token_copy_button_copied()
+                  : m.status_token_copy_button()}
+              </button>
+            </div>
+            {#if statusTokenCopyFailed}
+              <p class="mt-2 text-xs font-medium text-red-700" role="alert">
+                {m.status_token_copy_failed()}
+              </p>
+            {/if}
+          </div>
+        {/if}
+
+        <div class="mt-4 text-sm text-gray-700">
+          <p>
+            {m.status_token_status_label()}
+            {#if statusTokenConfigured}<span
+                data-testid="status-token-state"
+                class="font-medium text-green-700">{m.status_token_state_configured()}</span
+              >{:else}<span data-testid="status-token-state" class="font-medium text-gray-500"
+                >{m.status_token_state_not_configured()}</span
+              >{/if}
+          </p>
+          {#if statusTokenCreatedAt}
+            <p class="mt-1 text-xs text-gray-500">
+              {m.status_token_created_label({
+                date: new Date(statusTokenCreatedAt).toLocaleString(),
+              })}
+              {#if statusTokenLastUsedAt}
+                {m.status_token_last_used_label({
+                  date: new Date(statusTokenLastUsedAt).toLocaleString(),
+                })}
+              {/if}
+            </p>
+          {/if}
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2" aria-describedby="status-token-help">
+          <button
+            type="button"
+            disabled={statusTokenBusy}
+            class="rounded-lg border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            onclick={onGenerateOrRotateStatusToken}
+          >
+            {statusTokenConfigured
+              ? m.status_token_rotate_button()
+              : m.status_token_generate_button()}
+          </button>
+          {#if statusTokenConfigured}
+            <button
+              type="button"
+              disabled={statusTokenBusy}
+              class="rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+              onclick={onRevokeStatusToken}
+            >
+              {m.status_token_revoke_button()}
+            </button>
+          {/if}
+          <button
+            type="button"
+            disabled={statusTokenTestBusy}
+            class="rounded-lg border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            onclick={onTestStatusToken}
+          >
+            {statusTokenTestBusy ? m.status_token_test_button_busy() : m.status_token_test_button()}
+          </button>
+        </div>
+
+        {#if statusTokenTestResult}
+          <p
+            class="mt-3 rounded-lg border px-4 py-3 text-sm"
+            class:border-green-200={statusTokenTestResult.status === 'healthy'}
+            class:bg-green-50={statusTokenTestResult.status === 'healthy'}
+            class:text-green-800={statusTokenTestResult.status === 'healthy'}
+            class:border-amber-200={statusTokenTestResult.status !== 'healthy'}
+            class:bg-amber-50={statusTokenTestResult.status !== 'healthy'}
+            class:text-amber-800={statusTokenTestResult.status !== 'healthy'}
+            role="status"
+          >
+            {m.status_token_test_result_prefix()}
+            <span class="font-semibold">{statusTokenTestResult.status}</span>
+            {m.status_token_test_result_details({
+              database: statusTokenTestResult.checks.database.status,
+              vault: statusTokenTestResult.checks.vault.status,
+              disk: statusTokenTestResult.checks.disk.status,
+            })}
+          </p>
+        {/if}
+      </section>
     {/if}
   </div>
 {/if}

@@ -477,6 +477,20 @@
       "when": 1786396532163,
       "tag": "0067_status_pages_encrypted_token",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1786410294093,
+      "tag": "0068_operational_status_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1786414128546,
+      "tag": "0069_operational_status_tokens_hardening",
+      "breakpoints": true
     }
   ]
 }

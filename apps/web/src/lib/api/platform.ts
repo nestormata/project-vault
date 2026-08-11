@@ -282,6 +282,62 @@ export function getResourceUsage(fetchFn: typeof fetch) {
   return apiFetch<ResourceUsageResponse>(fetchFn, '/api/v1/admin/resource-usage')
 }
 
+// Story 1.19 AC-5/AC-6: GET /status bearer-token settings (unwrapped, mirrors settings/orgs
+// endpoints above).
+export type StatusTokenMetadataResponse = {
+  configured: boolean
+  createdAt?: string
+  lastUsedAt?: string
+}
+
+export type StatusTokenSecretResponse = {
+  token: string
+  createdAt: string
+}
+
+export type StatusCheckResult = { status: string; reason?: string }
+
+export type StatusTokenTestResponse = {
+  status: 'healthy' | 'degraded' | 'unavailable'
+  checks: {
+    database: StatusCheckResult
+    vault: StatusCheckResult
+    disk: StatusCheckResult
+  }
+}
+
+export function getStatusTokenMetadata(fetchFn: typeof fetch) {
+  return apiFetch<StatusTokenMetadataResponse>(fetchFn, '/api/v1/admin/settings/status-token')
+}
+
+export function generateStatusToken(fetchFn: typeof fetch) {
+  return apiFetch<StatusTokenSecretResponse>(
+    fetchFn,
+    '/api/v1/admin/settings/status-token/generate',
+    { method: 'POST' }
+  )
+}
+
+export function rotateStatusToken(fetchFn: typeof fetch) {
+  return apiFetch<StatusTokenSecretResponse>(
+    fetchFn,
+    '/api/v1/admin/settings/status-token/rotate',
+    { method: 'POST' }
+  )
+}
+
+export function revokeStatusToken(fetchFn: typeof fetch) {
+  return apiFetch<undefined>(fetchFn, '/api/v1/admin/settings/status-token/revoke', {
+    method: 'POST',
+  })
+}
+
+export function testStatusToken(fetchFn: typeof fetch) {
+  return apiFetch<StatusTokenTestResponse>(fetchFn, '/api/v1/admin/settings/status-token/test', {
+    method: 'POST',
+  })
+}
+
 function buildAuditFilterParams(filters: PlatformAuditFilters): URLSearchParams {
   const params = new URLSearchParams()
   if (filters.operatorId) params.set('operatorId', filters.operatorId)

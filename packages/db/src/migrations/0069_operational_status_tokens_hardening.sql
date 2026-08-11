@@ -1,0 +1,2 @@
+ALTER TABLE "operational_status_tokens" ADD CONSTRAINT "operational_status_tokens_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_operational_status_tokens_single_active" ON "operational_status_tokens" USING btree ((true)) WHERE "operational_status_tokens"."revoked_at" IS NULL;
