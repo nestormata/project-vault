@@ -247,9 +247,9 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     })
     const headerCount = container.querySelectorAll('thead th').length
     const rows = container.querySelectorAll('tbody tr')
-    expect(rows.length).toBe(1)
+    expect(rows).toHaveLength(1)
     expect(headerCount).toBe(5)
-    for (const row of rows) expect(row.querySelectorAll('td').length).toBe(headerCount)
+    for (const row of rows) expect(row.querySelectorAll('td')).toHaveLength(headerCount)
   })
 
   it('AC-3 row layout: a viewer loses the Actions column entirely, header and cells together', () => {
@@ -293,7 +293,7 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
       },
     })
     const cells = container.querySelectorAll('tbody tr td')
-    expect(cells.length).toBe(4)
+    expect(cells).toHaveLength(4)
     expect(cells[3]?.textContent?.trim()).toBe('')
   })
 
@@ -342,8 +342,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
       },
     })
     const rows = container.querySelectorAll('tbody tr')
-    expect(rows.length).toBe(3)
-    for (const row of rows) expect(row.querySelectorAll('td').length).toBe(5)
+    expect(rows).toHaveLength(3)
+    for (const row of rows) expect(row.querySelectorAll('td')).toHaveLength(5)
     // Only the paused row carries the amber tint — the at-a-glance signal the old per-row card
     // used to provide. Nothing else asserted this, so a Tailwind cleanup could have dropped it
     // with the whole suite still green.
@@ -469,7 +469,7 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
         },
       },
     })
-    expect(container.querySelectorAll('tbody tr').length).toBe(1)
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(1)
     for (const link of screen.getAllByRole('link', { name: 'Edit' })) {
       expect(link.getAttribute('href')).toMatch(
         new RegExp(`^/projects/${projectId}/service-endpoints/`)

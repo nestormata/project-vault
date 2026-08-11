@@ -53,7 +53,8 @@ const NotFoundResponseSchema = z.object({
   message: z.string(),
 })
 
-const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+// This is the loopback allowlist itself (AC-4), not an incidental literal — NOSONAR(typescript:S1313).
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']) // NOSONAR(typescript:S1313)
 
 function isLoopback(ip: string): boolean {
   return LOOPBACK_ADDRESSES.has(ip)

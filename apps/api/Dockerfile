@@ -2,11 +2,11 @@
 # is redundant since the digest alone already fixes the exact image).
 FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS builder
 
-RUN npm install -g pnpm@11.9.0 --ignore-scripts
 # argon2 (packages/crypto) is a native module. node-gyp-build falls back to compiling
 # from source when no bundled prebuild matches this platform, so these tools are
 # installed unconditionally rather than detected at build time (Story 1.5 AC-30).
-RUN apk add --no-cache g++ make python3
+RUN npm install -g pnpm@11.9.0 --ignore-scripts \
+ && apk add --no-cache g++ make python3
 
 WORKDIR /app
 
@@ -28,8 +28,8 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/
 # comment above).
 COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
 
-RUN pnpm install --frozen-lockfile --ignore-scripts
-RUN pnpm rebuild argon2 esbuild
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && pnpm rebuild argon2 esbuild
 
 COPY apps/api ./apps/api
 COPY packages/tsconfig ./packages/tsconfig

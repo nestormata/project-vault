@@ -24,7 +24,8 @@ TARGET_GID=1000
 # double-quote must be escaped, and newlines/CRs (which can appear in captured stderr) collapsed
 # to spaces so a multi-line error can't break the single-line JSON envelope.
 json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\r' '  '
+  value="$1"
+  printf '%s' "$value" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\r' '  '
 }
 
 path="${BACKUP_STORAGE_PATH:-}"

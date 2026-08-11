@@ -219,7 +219,7 @@ export async function dispatchPendingJobs(
   if (jobs.length === 0) return
   const jobContext = jobs.map(({ id, orgId }) => ({ id, orgId }))
   try {
-    if (!boss || !boss.isStarted()) {
+    if (!boss?.isStarted()) {
       warnDispatchFailure(
         request,
         {

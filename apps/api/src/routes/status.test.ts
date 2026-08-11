@@ -254,40 +254,21 @@ describe('GET /status', () => {
       await app.close()
     })
 
-    it('rejects a missing Authorization header with generic 401 once a token is configured', async () => {
+    it.each([
+      ['a missing Authorization header, once a token is configured', undefined],
+      ['a wrong token', { authorization: 'Bearer wrong-token' }],
+      ['a malformed Authorization header', { authorization: 'correct-token' }],
+    ])('rejects %s with the same generic 401', async (_label, headers) => {
       const app = await createApp({ logger: false, dbPool: okDbPool })
       const res = await app.inject({
         method: 'GET',
         url: '/status',
         remoteAddress: NON_LOOPBACK_REMOTE_ADDRESS,
+        headers,
       })
       expect(res.statusCode).toBe(401)
       const body = res.json<{ code: string }>()
       expect(body.code).toBe('unauthorized')
-      await app.close()
-    })
-
-    it('rejects a wrong token with the same generic 401', async () => {
-      const app = await createApp({ logger: false, dbPool: okDbPool })
-      const res = await app.inject({
-        method: 'GET',
-        url: '/status',
-        remoteAddress: NON_LOOPBACK_REMOTE_ADDRESS,
-        headers: { authorization: 'Bearer wrong-token' },
-      })
-      expect(res.statusCode).toBe(401)
-      await app.close()
-    })
-
-    it('rejects a malformed Authorization header with the same generic 401', async () => {
-      const app = await createApp({ logger: false, dbPool: okDbPool })
-      const res = await app.inject({
-        method: 'GET',
-        url: '/status',
-        remoteAddress: NON_LOOPBACK_REMOTE_ADDRESS,
-        headers: { authorization: 'correct-token' },
-      })
-      expect(res.statusCode).toBe(401)
       await app.close()
     })
 

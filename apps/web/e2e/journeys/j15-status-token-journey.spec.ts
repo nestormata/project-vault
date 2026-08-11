@@ -41,7 +41,10 @@ test.describe.serial('J15 — operational status token journey', () => {
 
     const settingsCheck = await context.request.get('/api/v1/admin/settings')
     if (settingsCheck.status() === 403) {
+      // Playwright's conditional test.skip(condition, reason) — not a disabled/ignored test; see
+      // the file-level comment for why this runtime check exists. NOSONAR(typescript:S1607)
       test.skip(
+        // NOSONAR(typescript:S1607)
         true,
         'This registration did not land the instance-wide "first user" platform-operator ' +
           'bootstrap slot (see file-level comment) — skipping rather than failing.'

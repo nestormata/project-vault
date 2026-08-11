@@ -59,7 +59,7 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
       },
     })
 
-    expect(document.querySelectorAll('ol, ul').length).toBe(1)
+    expect(document.querySelectorAll('ol, ul')).toHaveLength(1)
     expect(screen.queryByText(/^public service order$/i)).toBeNull()
     expect(screen.queryByRole('list', { name: /^public service order$/i })).toBeNull()
   })

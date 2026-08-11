@@ -55,14 +55,15 @@ describe('deployment hardening configuration', () => {
     ['api', API_DOCKERFILE_PATH],
     ['web', WEB_DOCKERFILE_PATH],
   ])('disables dependency lifecycle scripts in the %s image install steps', (_, path) => {
-    const commands = dockerRunCommands(readRepoFile(path))
+    // Substring, not exact-command matching: the api Dockerfile merges its npm-install and
+    // apk-add RUNs (and its pnpm-install and pnpm-rebuild RUNs) into single `&&`-joined RUN
+    // instructions to satisfy Sonar's "merge consecutive RUN" rule, while the web Dockerfile
+    // still runs them as separate RUNs — both are equally valid Docker, so this only needs each
+    // flag to appear somewhere in the image's RUN commands.
+    const commands = dockerRunCommands(readRepoFile(path)).join('\n')
 
-    expect(commands).toEqual(
-      expect.arrayContaining([
-        'npm install -g pnpm@11.9.0 --ignore-scripts',
-        'pnpm install --frozen-lockfile --ignore-scripts',
-      ])
-    )
+    expect(commands).toContain('npm install -g pnpm@11.9.0 --ignore-scripts')
+    expect(commands).toContain('pnpm install --frozen-lockfile --ignore-scripts')
   })
 
   it.each([
@@ -70,11 +71,12 @@ describe('deployment hardening configuration', () => {
     ['web', WEB_DOCKERFILE_PATH, ['esbuild']],
   ])('rebuilds only the required native dependencies in the %s image', (_, path, dependencies) => {
     const rebuildCommands = dockerRunCommands(readRepoFile(path)).filter((command) =>
-      command.startsWith('pnpm rebuild ')
+      command.includes('pnpm rebuild ')
     )
 
     expect(rebuildCommands).toHaveLength(1)
-    expect(rebuildCommands[0]?.split(/\s+/).slice(2).sort()).toEqual([...dependencies].sort())
+    const rebuildArgs = rebuildCommands[0]?.split('pnpm rebuild ')[1]?.trim().split(/\s+/)
+    expect(rebuildArgs?.sort()).toEqual([...dependencies].sort())
   })
 
   // Story 9.1 D4/AC-17: pg_dump/pg_restore/psql must be present in the runner stage — a
