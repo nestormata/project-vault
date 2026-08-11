@@ -89,9 +89,12 @@ jobs:
           - name: api
             file: apps/api/Dockerfile
             target: runner
+          # `migrate` is a leaf stage that is filesystem-identical to `db-builder` and only adds
+          # the release-version OCI label — see apps/api/Dockerfile's comment on why the label
+          # cannot live in `db-builder` itself without cache-busting the whole api build chain.
           - name: migrate
             file: apps/api/Dockerfile
-            target: db-builder
+            target: migrate
           - name: web
             file: apps/web/Dockerfile
             target: runner
@@ -139,6 +142,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
 
       - name: Build and push image
         id: push
@@ -153,6 +157,8 @@ jobs:
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            RELEASE_VERSION=${{ needs.prepare.outputs.version }}
           cache-from: type=gha,scope=container-publish-${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=container-publish-${{ matrix.name }}
 
@@ -162,6 +168,78 @@ jobs:
           subject-name: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+      # Story 9.10 AC-2: fails the run — before promote-aliases can create/move any alias tag —
+      # if the pushed org.opencontainers.image.version label disagrees with the validated release
+      # tag, or (for api, whose runtime actually reads RELEASE_VERSION) the image's baked runtime
+      # value disagrees with it. Runs after "Attest image provenance" so a mismatch is caught
+      # immediately after push, using the same digest just built.
+      #
+      # Uses `imagetools inspect --format '{{json .}}'` + jq rather than a Go-template field
+      # reference because the JSON document's keys are lowercase (`.image`, `.config`) even though
+      # the Go template exposes them capitalised (`.Image.Config`) — mixing the two casings makes
+      # the jq silently read `null`. `.image` is the image config object for a single-platform ref
+      # but a map keyed by platform for the multi-platform manifest list this workflow actually
+      # publishes (`linux/amd64,linux/arm64`), so the jq below normalises both shapes and then
+      # asserts EVERY real platform, not just the first — an arm64 image with the wrong identity
+      # must not ride along on a correct amd64 one. `unknown/*` keys are skipped: `provenance`/
+      # `sbom` add attestation manifests to the index that carry no image config. Config.Env is
+      # read as a real JSON array rather than split on spaces (a value containing a space would
+      # otherwise silently truncate).
+      - name: Verify published image version matches the release tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          IMAGE_NAME: ${{ matrix.name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          SOURCE="${IMAGE_NAMESPACE}/${IMAGE_NAME}@${DIGEST}"
+
+          INSPECT_JSON=$(docker buildx imagetools inspect "$SOURCE" --format '{{json .}}')
+
+          # One TSV row per real platform: <platform>\t<oci label>\t<baked RELEASE_VERSION>
+          ROWS=$(jq -r '
+            (if (.image | type) != "object" then {}
+             elif (.image.config? != null) then { "single": .image }
+             else .image end)
+            | to_entries[]
+            | select(.key | startswith("unknown/") | not)
+            | [ .key,
+                (.value.config.Labels["org.opencontainers.image.version"] // ""),
+                ((.value.config.Env // [])
+                  | map(select(startswith("RELEASE_VERSION=")))
+                  | (.[0] // "")
+                  | sub("^RELEASE_VERSION="; "")) ]
+            | @tsv
+          ' <<<"$INSPECT_JSON")
+
+          if [[ -z "$ROWS" ]]; then
+            echo "Cannot verify ${IMAGE_NAME}: 'imagetools inspect $SOURCE' returned no readable image config" >&2
+            exit 1
+          fi
+
+          while IFS=$'\t' read -r PLATFORM LABEL_VERSION RUNTIME_VERSION; do
+            [[ -n "$PLATFORM" ]] || continue
+
+            if [[ "$LABEL_VERSION" != "$VERSION" ]]; then
+              echo "Version mismatch for ${IMAGE_NAME} (${PLATFORM}): image label 'org.opencontainers.image.version' is '$LABEL_VERSION', expected '$VERSION' (release tag)" >&2
+              exit 1
+            fi
+
+            # Only the api runtime image actually runs the app (ENV RELEASE_VERSION), so it is the
+            # only image whose baked-in runtime value can be checked. Note the label check above
+            # is necessary but not sufficient on its own: `build-push-action` applies
+            # docker/metadata-action's `--label` on top of the Dockerfile's own
+            # `LABEL ...=$RELEASE_VERSION`, so for migrate/web the label proves the pushed
+            # metadata is right, while this Env assertion is what proves the build-arg itself
+            # was wired through. See deferred DW-107 for closing that gap with a build smoke test.
+            if [[ "$IMAGE_NAME" == "api" && "$RUNTIME_VERSION" != "$VERSION" ]]; then
+              echo "Version mismatch for ${IMAGE_NAME} (${PLATFORM}): baked-in runtime RELEASE_VERSION is '$RUNTIME_VERSION', expected '$VERSION' (release tag)" >&2
+              exit 1
+            fi
+
+            echo "Verified ${IMAGE_NAME} (${PLATFORM}): version '$VERSION'"
+          done <<<"$ROWS"
 
   promote-aliases:
     name: Promote release aliases

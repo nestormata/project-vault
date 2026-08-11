@@ -62,6 +62,51 @@ describe('deployment hardening configuration', () => {
     expect(runnerStage).toMatch(/\bapk add --no-cache\b[^\n]*\bpostgresql16-client\b/)
   })
 
+  // Story 9.10 AC-1/AC-2: RELEASE_VERSION must be injectable as a build-arg and available both
+  // as OCI metadata (org.opencontainers.image.version label) and, for api/migrate, a
+  // runtime-readable env var — with a documented 'dev' default so an unlabeled local build never
+  // silently looks like a numbered release.
+  it('declares RELEASE_VERSION as a build-arg with a documented dev default in the api migrate and runner stages', () => {
+    const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const migrateStageStart = dockerfile.indexOf('FROM db-builder AS migrate')
+    const runnerStage = dockerfile.slice(dockerfile.indexOf('AS runner'), migrateStageStart)
+    const migrateStage = dockerfile.slice(migrateStageStart)
+
+    expect(migrateStageStart).toBeGreaterThan(-1)
+    expect(migrateStage).toMatch(/ARG RELEASE_VERSION=dev/)
+    expect(migrateStage).toMatch(/LABEL org\.opencontainers\.image\.version=\$RELEASE_VERSION/)
+    expect(runnerStage).toMatch(/ARG RELEASE_VERSION=dev/)
+    expect(runnerStage).toMatch(/LABEL org\.opencontainers\.image\.version=\$RELEASE_VERSION/)
+    // The api runner stage must also expose it at container runtime (consumed by
+    // getReleaseVersion() in apps/api/src/lib/package-version.ts) — the migrate image never runs
+    // the app so it only needs the label, not the ENV.
+    expect(runnerStage).toMatch(/ENV RELEASE_VERSION=\$RELEASE_VERSION/)
+  })
+
+  // The release version changes on every publish, so a stage carrying its ARG/LABEL invalidates
+  // the cache of every stage built FROM it. `migrate` therefore has to stay a leaf: nothing may
+  // derive from it, and `db-builder` (which `builder` -> `deploy` -> the runner's COPY all
+  // descend from) must not carry the ARG itself.
+  it('keeps the release-version ARG out of every api stage other stages build FROM', () => {
+    const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const dbBuilderStage = dockerfile.slice(
+      dockerfile.indexOf('AS db-builder'),
+      dockerfile.indexOf('FROM db-builder AS builder')
+    )
+
+    expect(dbBuilderStage).not.toMatch(/ARG RELEASE_VERSION/)
+    expect(dockerfile).not.toMatch(/FROM migrate\b/)
+    expect(dockerfile).not.toMatch(/--from=migrate\b/)
+  })
+
+  it('declares RELEASE_VERSION as a build-arg with the OCI version label in the web runner stage', () => {
+    const dockerfile = readRepoFile(WEB_DOCKERFILE_PATH)
+    const runnerStage = dockerfile.slice(dockerfile.indexOf('AS runner'))
+
+    expect(runnerStage).toMatch(/ARG RELEASE_VERSION=dev/)
+    expect(runnerStage).toMatch(/LABEL org\.opencontainers\.image\.version=\$RELEASE_VERSION/)
+  })
+
   it('does not expose Postgres on every host interface', () => {
     const compose = readRepoFile('docker-compose.yml')
 

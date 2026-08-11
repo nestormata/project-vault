@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Project Vault API",
-    "version": "0.0.1"
+    "version": "dev"
   },
   "components": {
     "schemas": {
@@ -20176,6 +20176,13 @@
                     "version": {
                       "type": "string"
                     },
+                    "versionSource": {
+                      "type": "string",
+                      "enum": [
+                        "release",
+                        "development"
+                      ]
+                    },
                     "extensions_status": {
                       "type": "string",
                       "enum": [
@@ -20198,6 +20205,7 @@
                   "required": [
                     "status",
                     "version",
+                    "versionSource",
                     "extensions_status",
                     "themesLoaded",
                     "themesFailed"

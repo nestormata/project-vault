@@ -1,23 +1,25 @@
 import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
-import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { z } from 'zod/v4'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { getVaultStatus } from '../modules/vault/key-service.js'
 import { getExtensionsHealthField } from '../extensions/loader.js'
 import { getThemesHealthField } from '../modules/theming/service.js'
+import { getReleaseVersion } from '../lib/package-version.js'
 
 // Story 14.2 AC-1/2/3/6: additive field, always present, never causes /health to deviate from
 // its existing unconditional-200 liveness contract — extension state is informational only.
 // Story 16.1 AC-9: themesLoaded/themesFailed are simple counts only (never filenames/reasons —
 // this is a public, unauthenticated endpoint) so a fresh boot before the startup reload pass
 // completes still reports a well-formed 0/0 shape, never null/undefined.
+// Story 9.10 AC-1: versionSource distinguishes a real injected RELEASE_VERSION ('release') from
+// the documented dev fallback ('development') so callers (e.g. Version & Upgrade) never present
+// a local/untagged build as a production release.
 const HealthResponseSchema = z.object({
   status: z.literal('ok'),
   version: z.string(),
+  versionSource: z.enum(['release', 'development']),
   extensions_status: z.enum(['not_configured', 'loaded', 'load_failed']),
   themesLoaded: z.number().int().nonnegative(),
   themesFailed: z.number().int().nonnegative(),
@@ -40,11 +42,6 @@ const ReadyUnavailableResponseSchema = z.union([
     retryAfter: z.number().int().positive(),
   }),
 ])
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8')) as {
-  version: string
-}
 
 type DbPool = {
   query: (sql: string) => Promise<unknown>
@@ -93,9 +90,14 @@ export async function healthRoutes(
     },
     handler: async (_req: FastifyRequest, reply: FastifyReply) => {
       const themesHealth = getThemesHealthField()
+      // Story 9.10 AC-1/AC-4: resolved per-request (not cached at module load) so a
+      // RELEASE_VERSION set only for tests, or a future hot-reload scenario, is always
+      // reflected — cheap env-var read, no .git/network access.
+      const release = getReleaseVersion()
       return reply.send({
         status: 'ok',
-        version: pkg.version,
+        version: release.version,
+        versionSource: release.isRelease ? 'release' : 'development',
         extensions_status: getExtensionsHealthField(),
         themesLoaded: themesHealth.themesLoaded,
         themesFailed: themesHealth.themesFailed,

@@ -42,6 +42,14 @@ WORKDIR /app
 
 COPY --from=builder --chown=node:node /app/deploy .
 
+# Story 9.10 AC-1/AC-2: build-time-injected release identity, label only — the web image never
+# serves version data itself (Version & Upgrade reads it from the API's /health), so this stage
+# only needs the OCI label for image-metadata parity with the api/migrate images, not a runtime
+# ENV. Same 'dev' default rationale as apps/api/Dockerfile, and declared after the apk/COPY layers
+# for the same cache reason (RELEASE_VERSION changes every release; anything below it rebuilds).
+ARG RELEASE_VERSION=dev
+LABEL org.opencontainers.image.version=$RELEASE_VERSION
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \

@@ -26,6 +26,15 @@
       <h2 class="text-base font-semibold text-gray-900">Current Version</h2>
       {#if data.version}
         <p class="mt-2 text-sm text-gray-700">Running version <strong>{data.version}</strong>.</p>
+        {#if data.versionSource === 'release'}
+          <p class="mt-1 text-sm text-gray-500">This is a release build.</p>
+        {:else if data.versionSource === 'development'}
+          <p class="mt-1 text-sm text-gray-500">
+            This is a development build — not a production release.
+          </p>
+        {:else}
+          <p class="mt-1 text-sm text-gray-500">Build type unknown.</p>
+        {/if}
       {:else}
         <p class="mt-2 text-sm text-gray-500">Version information unavailable.</p>
       {/if}

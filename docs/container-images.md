@@ -18,6 +18,16 @@ Once all three images succeed, the workflow promotes the `1.2`, `1`, and `latest
 Use an exact version or digest for production and Portainer deployments. `latest` is a convenience
 alias and moves when a newer release is published.
 
+Each published image also carries an `org.opencontainers.image.version` label matching the release
+tag (`docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}'
+<image>`), and the running `api` image additionally sets the same value as the `RELEASE_VERSION`
+environment variable (the `migrate` image carries the label only — it never runs the app, so it
+has no runtime environment to read) — this is the same source the deployed `api`'s `/health` and `/status`
+responses, its OpenAPI `info.version`, and its `STARTUP_COMPLETE` startup log all report, so the
+image label, the container env, and every version-reporting surface always agree. See
+`docs/runbook.md` § Upgrades § Release-identity source for the full injection/verification
+pipeline.
+
 ## First publication
 
 The first workflow publication creates GHCR packages. GitHub may create them as private initially.

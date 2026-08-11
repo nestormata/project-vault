@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { OperationalEvent } from '@project-vault/shared'
 import { createEventEmitter } from './lib/events.js'
 import { createApp } from './app.js'
@@ -70,6 +67,7 @@ import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
 import { operationalLog, serializeLogError } from './lib/logger.js'
 import { createStartupLogger, logStartupFailure } from './lib/startup-logging.js'
+import { getReleaseVersion } from './lib/package-version.js'
 import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
 
@@ -87,10 +85,6 @@ const ROTATION_STALE_STAGED_ALERT_JOB = 'rotation/stale-staged-alert'
 // (see credential-share-expire.ts's own doc comment and the story's Dev Agent Record).
 const CREDENTIAL_SHARE_EXPIRE_JOB = 'credential-shares/expire'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const pkg = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf-8')) as {
-  version: string
-}
 let startupLogger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> | undefined
 
 async function main(): Promise<void> {
@@ -393,7 +387,9 @@ async function main(): Promise<void> {
   await fastify.listen({ port: env.API_PORT, host: '::' })
   operationalLog(fastify.log, 'info', OperationalEvent.STARTUP_COMPLETE, 'API startup complete', {
     nodeVersion: process.version,
-    serviceVersion: pkg.version,
+    // Story 9.10 AC-1: the release identity, not package.json's 0.0.1 placeholder — log-based
+    // release forensics ("which version was running when this broke?") depends on it.
+    serviceVersion: getReleaseVersion().version,
     vaultStatus: getVaultStatus(),
     dbConnected: true,
     port: env.API_PORT,

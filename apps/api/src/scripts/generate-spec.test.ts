@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createApp } from '../app.js'
+import { DEV_RELEASE_VERSION } from '../lib/package-version.js'
 
 // D4 point 1: importing app.js requires DATABASE_URL/CORS_ALLOWED_ORIGINS to already be set
 // (env.ts's Zod schema has no .default() for either) — set safe placeholders exactly like
@@ -61,16 +60,36 @@ describe('generate-spec: live OpenAPI generation (D4)', () => {
     }
   })
 
-  it('reads info.version from apps/api/package.json, not a hardcoded literal (AC-19)', async () => {
-    const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf-8')) as {
-      version: string
-    }
+  // Story 9.10 AC-1: info.version is sourced from getReleaseVersion() (RELEASE_VERSION env var,
+  // 'dev' fallback) — apps/api/package.json's `version` field is a permanent 0.0.1
+  // workspace-development placeholder and must never again be read as release identity.
+  describe('Story 9.10 AC-1: info.version reflects RELEASE_VERSION, not package.json', () => {
+    const original = process.env.RELEASE_VERSION
 
-    const app = await createApp({ logger: false })
-    await app.ready()
-    const spec = app.swagger() as { info: { version: string } }
-    await app.close()
+    afterEach(() => {
+      if (original === undefined) delete process.env.RELEASE_VERSION
+      else process.env.RELEASE_VERSION = original
+    })
 
-    expect(spec.info.version).toBe(pkg.version)
+    it('reports the injected RELEASE_VERSION when set', async () => {
+      process.env.RELEASE_VERSION = '1.0.2'
+      const app = await createApp({ logger: false })
+      await app.ready()
+      const spec = app.swagger() as { info: { version: string } }
+      await app.close()
+
+      expect(spec.info.version).toBe('1.0.2')
+    })
+
+    it('reports the documented dev fallback, never 0.0.1, when RELEASE_VERSION is unset', async () => {
+      delete process.env.RELEASE_VERSION
+      const app = await createApp({ logger: false })
+      await app.ready()
+      const spec = app.swagger() as { info: { version: string } }
+      await app.close()
+
+      expect(spec.info.version).toBe(DEV_RELEASE_VERSION)
+      expect(spec.info.version).not.toBe('0.0.1')
+    })
   })
 })

@@ -48,6 +48,7 @@ COPY fixtures/mock-sso-extension ./fixtures/mock-sso-extension
 # type EncryptedValue from @project-vault/crypto; omitting crypto's build fails db's build with
 # TS2307 (verified empirically — do not regress to a shared+db-only RUN here).
 FROM builder AS db-builder
+
 RUN pnpm --filter @project-vault/shared build \
  && pnpm --filter @project-vault/crypto build \
  && pnpm --filter @project-vault/db build
@@ -118,6 +119,23 @@ COPY --from=deploy --chown=node:node /app/deploy .
 COPY apps/api/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
+# Story 9.10 AC-1/AC-2: build-time-injected release identity — sourced from the release tag by
+# .github/workflows/container-publish.yml (RELEASE_VERSION=${{ needs.prepare.outputs.version }}).
+# The 'dev' default means any build that doesn't explicitly pass this build-arg (a local
+# `docker build`, `make docker-up`, etc.) is unambiguously labeled as a non-release build rather
+# than silently carrying no version metadata at all. Exported as a runtime ENV as well as an OCI
+# label because this stage's process actually runs the app, and getReleaseVersion()
+# (apps/api/src/lib/package-version.ts) reads RELEASE_VERSION from the live process environment
+# to serve /health, /status and OpenAPI info.version with no .git/network access.
+# Declared LAST in the stage on purpose: RELEASE_VERSION changes on every release, and every
+# layer below a referenced ARG is cache-invalidated — putting it above this stage's apk/COPY
+# layers would rebuild them on each publish, defeating the workflow's cache-from/cache-to GHA
+# cache. For the same reason it must NOT be declared in a stage other stages build FROM (see the
+# `migrate` leaf stage at the end of this file).
+ARG RELEASE_VERSION=dev
+ENV RELEASE_VERSION=$RELEASE_VERSION
+LABEL org.opencontainers.image.version=$RELEASE_VERSION
+
 EXPOSE 3000
 
 # Story 9.9: HEALTHCHECK runs using the image's configured user, not whatever the entrypoint
@@ -134,3 +152,15 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
 # immediately before exec" so it can happen AFTER the narrow chown repair.
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]
+
+# Story 9.10 AC-1/AC-2: the `migrate` image's build target. Filesystem-identical to `db-builder`
+# (it adds no layer beyond the OCI label) and it never runs the app, so it needs the label only,
+# not a runtime ENV. It exists as a separate LEAF stage purely for build caching: RELEASE_VERSION
+# changes on every release, so declaring the ARG/LABEL directly in `db-builder` would invalidate
+# every layer of the stages that build FROM it (`builder` -> `deploy` -> the runner's
+# COPY --from=deploy), re-running every `pnpm build` — including the QEMU-emulated linux/arm64
+# leg — on each publish. Keeping it in a stage nothing else derives from means the release
+# version can only ever bust this one label layer.
+FROM db-builder AS migrate
+ARG RELEASE_VERSION=dev
+LABEL org.opencontainers.image.version=$RELEASE_VERSION

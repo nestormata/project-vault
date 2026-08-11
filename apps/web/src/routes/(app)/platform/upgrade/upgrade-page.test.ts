@@ -10,6 +10,7 @@ function allowedData(overrides: Record<string, unknown> = {}) {
   return {
     allowed: true as const,
     version: '0.9.0',
+    versionSource: 'release' as const,
     apiDocsEnabled: false,
     ...overrides,
   }
@@ -34,9 +35,54 @@ describe('/platform/upgrade +page.svelte', () => {
   })
 
   it('edge: shows a fallback message when version is unavailable', () => {
-    render(UpgradePage, { props: { data: allowedData({ version: null }) } })
+    render(UpgradePage, {
+      props: { data: allowedData({ version: null, versionSource: null }) },
+    })
 
     expect(screen.getByText(/version information unavailable/i)).toBeTruthy()
+  })
+
+  // Story 9.10 AC-1/AC-3: the page must identify whether the running version is a release or a
+  // development build, never silently presenting a dev build as a production release.
+  describe('Story 9.10: versionSource', () => {
+    it('AC-1: labels a real release build as "release"', () => {
+      render(UpgradePage, {
+        props: { data: allowedData({ version: '1.0.2', versionSource: 'release' }) },
+      })
+
+      expect(screen.getByText(/release build/i)).toBeTruthy()
+    })
+
+    it('AC-1: labels the dev-fallback build as "development", not a release', () => {
+      render(UpgradePage, {
+        props: { data: allowedData({ version: 'dev', versionSource: 'development' }) },
+      })
+
+      expect(screen.getByText(/development build/i)).toBeTruthy()
+      // Unanchored: the rendered copy is a full sentence ("This is a release build."), so an
+      // anchored /^release build$/ could never match any node and would pass vacuously.
+      expect(screen.queryByText(/this is a release build/i)).toBeNull()
+    })
+
+    it('AC-3 edge: shows an honest unknown state when versionSource is unavailable', () => {
+      render(UpgradePage, {
+        props: { data: allowedData({ version: null, versionSource: null }) },
+      })
+
+      expect(screen.getByText(/version information unavailable/i)).toBeTruthy()
+      expect(screen.queryByText(/release build/i)).toBeNull()
+      expect(screen.queryByText(/development build/i)).toBeNull()
+    })
+
+    it('AC-3 edge: shows an honest unknown build type when a version is present but versionSource is not', () => {
+      render(UpgradePage, {
+        props: { data: allowedData({ version: '1.2.3', versionSource: null }) },
+      })
+
+      expect(screen.getByText(/build type unknown/i)).toBeTruthy()
+      expect(screen.queryByText(/release build/i)).toBeNull()
+      expect(screen.queryByText(/development build/i)).toBeNull()
+    })
   })
 
   it('shows the API docs disabled message and no Swagger link when apiDocsEnabled is false', () => {

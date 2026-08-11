@@ -78,6 +78,39 @@ describe('GET /status', () => {
       await app.close()
     })
 
+    // Story 9.10 AC-1: /status is a runtime version consumer too — it must resolve its version
+    // from the same RELEASE_VERSION source /health and OpenAPI info.version use, never from
+    // package.json's permanent 0.0.1 placeholder (which would make two operational endpoints on
+    // the same instance report different versions).
+    it('AC-1: reports the injected RELEASE_VERSION, not the 0.0.1 package placeholder', async () => {
+      const original = process.env.RELEASE_VERSION
+      process.env.RELEASE_VERSION = '4.5.6'
+      try {
+        const app = await createApp({ logger: false, dbPool: okDbPool })
+        const res = await app.inject({ method: 'GET', url: '/status' })
+        expect(res.json<{ version: string }>().version).toBe('4.5.6')
+        await app.close()
+      } finally {
+        if (original === undefined) delete process.env.RELEASE_VERSION
+        else process.env.RELEASE_VERSION = original
+      }
+    })
+
+    it('AC-1: reports the dev fallback rather than 0.0.1 when no release version is injected', async () => {
+      const original = process.env.RELEASE_VERSION
+      delete process.env.RELEASE_VERSION
+      try {
+        const app = await createApp({ logger: false, dbPool: okDbPool })
+        const res = await app.inject({ method: 'GET', url: '/status' })
+        const { version } = res.json<{ version: string }>()
+        expect(version).toBe('dev')
+        expect(version).not.toBe('0.0.1')
+        await app.close()
+      } finally {
+        if (original !== undefined) process.env.RELEASE_VERSION = original
+      }
+    })
+
     it('sets Cache-Control: no-store', async () => {
       const app = await createApp({ logger: false, dbPool: okDbPool })
       const res = await app.inject({ method: 'GET', url: '/status' })

@@ -179,6 +179,10 @@ export type PlatformAuditVerifyResult = {
 export type HealthResponse = {
   status: 'ok' | 'error'
   version: string
+  // Story 9.10 AC-1/AC-3: distinguishes a real injected release (`RELEASE_VERSION`) from the
+  // documented `dev` fallback — optional because older/mocked API responses in tests may omit
+  // it; Version & Upgrade must treat a missing value as unknown, never assume "release".
+  versionSource?: 'release' | 'development'
   // Story 14.5 Task 1: passthrough field — the backend has returned this since Story 14.2's
   // health.ts, this type was simply never updated to declare it.
   extensions_status?: 'not_configured' | 'loaded' | 'load_failed'

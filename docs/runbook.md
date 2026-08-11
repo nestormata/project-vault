@@ -132,11 +132,11 @@ upgrade-trigger button — see Story 9.7 D3/D4).
 
 Three distinct probes exist — use the right one:
 
-| Probe | Purpose | Depends on DB/vault? | Who should call it |
-|-------|---------|----------------------|---------------------|
-| `GET /health` | Unconditional liveness (Docker healthcheck) | No | Container supervisor |
-| `GET /ready` | Readiness (init/seal/DB gate) | Yes | Orchestrator routing decisions |
-| `GET /status` | Aggregate operational status (DB responsiveness, vault seal state, disk capacity) | Yes | External monitor / alerting (Proxmox, uptime checks) |
+| Probe         | Purpose                                                                           | Depends on DB/vault? | Who should call it                                   |
+| ------------- | --------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------- |
+| `GET /health` | Unconditional liveness (Docker healthcheck)                                       | No                   | Container supervisor                                 |
+| `GET /ready`  | Readiness (init/seal/DB gate)                                                     | Yes                  | Orchestrator routing decisions                       |
+| `GET /status` | Aggregate operational status (DB responsiveness, vault seal state, disk capacity) | Yes                  | External monitor / alerting (Proxmox, uptime checks) |
 
 `GET /status` returns `{"status":"healthy"|"degraded"|"unavailable","version":"...","timestamp":"...","checks":{"database":{...},"vault":{...},"disk":{...}}}` —
 HTTP 200 when `healthy`, HTTP 503 otherwise (same schema either way). Each check reports a stable,
@@ -253,7 +253,7 @@ For local-dev / hot-reload workflows instead of a production-style deploy, see
 
 ### In-place version upgrade
 
-<!-- Source: Story 9.5 AC-6; verified against docker-compose.yml, packages/db/src/scripts/guarded-migrate.ts, apps/api/src/routes/openapi.ts, apps/api/src/app.ts -->
+<!-- Source: Story 9.5 AC-6; Story 9.10 AC-1/AC-2; verified against docker-compose.yml, packages/db/src/scripts/guarded-migrate.ts, apps/api/src/routes/openapi.ts, apps/api/src/app.ts, apps/api/src/lib/package-version.ts, apps/api/Dockerfile, apps/web/Dockerfile, .github/workflows/container-publish.yml -->
 
 1. Pull the new image (`docker compose pull`) or update the pinned tag/digest in
    `docker-compose.prod.yml`.
@@ -265,17 +265,80 @@ For local-dev / hot-reload workflows instead of a production-style deploy, see
    leaving whatever was running before (if not yet torn down) as the last known-good state. Do not
    force-start `api` against a database mid-refusal.
 3. Verify: `curl -sf http://localhost:3000/ready` → `{"status":"ready"}`. Optionally spot-check the
-   deployed version via `GET /api/v1/openapi.json`'s `info.version` field — this is sourced live
-   from `apps/api/package.json` at request time, not a hardcoded placeholder. **Note:** this route
+   deployed version via `GET /api/v1/openapi.json`'s `info.version` field. **Note:** this route
    (and the Swagger UI at `/api/v1/docs`) is only registered when `ENABLE_API_DOCS=true` or
    `NODE_ENV` is `development`/`test` — it is **off by default in production**. Set
    `ENABLE_API_DOCS=true` deliberately (e.g. behind your own reverse-proxy auth) if you want this
    check available; otherwise rely on `/health`'s `version` field
    (`curl -sf http://localhost:3000/health` → `{"status":"ok","version":"..."}`) instead.
+   Story 9.10: `/health` also returns a `versionSource` field (`"release"` or `"development"`)
+   alongside `version` — see § Release-identity source below.
 
 The first `docker compose up` after a fresh image pull can be slow — the `migrate` service rebuilds
 the API builder image to run the migration command (a known, accepted tradeoff, see
 `deferred-work.md` D4). This is progress, not a hang.
+
+#### Release-identity source (Story 9.10)
+
+Every surface that reports a version comes from **one source of truth**: the `RELEASE_VERSION`
+build-arg/env var, resolved by `getReleaseVersion()`. That is `/health`'s
+`version`/`versionSource`, the protected `/status` endpoint's `version`, the OpenAPI
+`info.version`, the `STARTUP_COMPLETE` operational log's `serviceVersion`, the Version & Upgrade
+page (which reads `/health`), and every published image's `org.opencontainers.image.version` OCI
+label — so `/health` and `/status` can never disagree about what is running. The resolver lives in
+`apps/api/src/lib/package-version.ts`. `apps/api/package.json`'s `"version"` field (and every
+other workspace package's) intentionally stays a permanent `0.0.1` development placeholder and is
+never read as release identity — do not "fix" a `0.0.1` report by bumping a manifest.
+
+- **Where it's injected:** `.github/workflows/container-publish.yml`'s `build-publish` job passes
+  `build-args: RELEASE_VERSION=${{ needs.prepare.outputs.version }}` (the validated
+  `vMAJOR.MINOR.PATCH` release tag, without the `v` prefix) to `docker/build-push-action`, and adds
+  the same value as the `org.opencontainers.image.version` label via `docker/metadata-action`.
+  `apps/api/Dockerfile` declares `ARG RELEASE_VERSION=dev` in both the `migrate` and `runner` (api
+  image) stages, and additionally sets `ENV RELEASE_VERSION=$RELEASE_VERSION` in `runner` so the
+  running process can read it. `migrate` is a leaf stage that is filesystem-identical to
+  `db-builder` and adds only the OCI label: because the release version changes on every publish,
+  a stage carrying that `ARG` invalidates the build cache of everything built `FROM` it, so it
+  must never live in `db-builder` (which `builder` → `deploy` → the api runner's `COPY` all
+  descend from). `apps/web/Dockerfile` declares the same `ARG`/`LABEL`
+  in its `runner` stage for OCI metadata parity — the web app itself never reads
+  `RELEASE_VERSION` directly, since Version & Upgrade sources its version from the API's `/health`.
+- **Development fallback:** any build that doesn't pass the `RELEASE_VERSION` build-arg (a bare
+  `docker build`, `make docker-up`, `pnpm dev`, etc.) reports the literal `dev` and
+  `versionSource: "development"` everywhere — never a numbered version, and never `0.0.1`. An
+  explicitly set `RELEASE_VERSION=dev` (the Dockerfile's own default, so also what a compose
+  `environment:` copy-paste produces) and a blank/whitespace-only value are both treated as
+  "no release version injected", never as a release build.
+- **CI verification:** after each image is built, tagged, and pushed, a
+  "Verify published image version matches the release tag" step in `build-publish` inspects the
+  pushed image's `org.opencontainers.image.version` label (all three images) and, for the `api`
+  image specifically, the baked-in runtime `RELEASE_VERSION` env var, and fails the workflow run —
+  **before** `promote-aliases` can create/move the `latest`/major/minor alias tags — if either
+  disagrees with the release tag.
+- **If that verification step fails:** the alias tags are correctly left untouched, but the
+  immutable `:VERSION` tag has **already been pushed** (verification runs post-push, on the
+  published digest). A plain re-run of the workflow will therefore stop at its "Reject existing
+  immutable release tag" guard, which is working as designed — release tags are never silently
+  overwritten. Recover one of two ways, after fixing the underlying wiring:
+  1. **Preferred** — publish the next patch release (`v1.2.4`). The bad `1.2.3` tag exists but no
+     alias ever pointed at it, so no `latest`/major/minor consumer was exposed to it.
+  2. **Reuse the same version** — delete the bad package version first (repository → Packages →
+     the affected image → **Manage versions** → delete the `1.2.3` version; this must be done for
+     every image the failed run pushed), then re-run the workflow via its `workflow_dispatch`
+     recovery input. Only do this while no consumer can have pulled the tag.
+- **Manually verify a local build** (the image must be tagged with `-t`, or the following two
+  commands have nothing to reference):
+
+  ```sh
+  docker build --build-arg RELEASE_VERSION=1.2.3 \
+    -f apps/api/Dockerfile --target runner -t pv-api-version-check .
+  docker run --rm pv-api-version-check node -e 'console.log(process.env.RELEASE_VERSION)'
+  docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
+    pv-api-version-check
+  ```
+
+  Both print `1.2.3`. Rebuild without `--build-arg` and both print `dev` instead, confirming the
+  development fallback.
 
 ### Identifying a destructive migration and the offline migration path
 
@@ -352,7 +415,7 @@ Deploying such app code first will crash on any row the backfill hasn't yet reac
    deploying the new application image. The migration logs a `RAISE NOTICE` per skipped
    (zero-version) credential, naming only its id (never `encrypted_value` or any plaintext field),
    plus a final summary line: `N credentials backfilled, M skipped (zero versions) - see notices
-   above for ids`. A non-zero `M` is not a migration failure — the migration still exits `0` — but
+above for ids`. A non-zero `M` is not a migration failure — the migration still exits `0` — but
    it does flag pre-existing orphaned credentials worth investigating separately.
 3. **Re-run safety:** the backfill UPDATE is idempotent (guarded by
    `WHERE current_version_id IS NULL`) — if the migration step is interrupted (connection drop,
@@ -379,7 +442,7 @@ visibility or silently un-serves a value dependent systems have already switched
 1. Any `rotations` row still `status = 'in_progress'` at the moment this migration runs is
    migrated to `status = 'promoted'` (**not** `staged`) — its new value is already live/servable
    under the pre-5.6 model, and moving it to `staged` would immediately revert `GET
-   .../credentials/:id/value` to the old, pre-rotation value for that credential, with zero
+.../credentials/:id/value` to the old, pre-rotation value for that credential, with zero
    warning. This is intentional (see the story file's AC-7/ADR-5.6-02), not an oversight — do not
    "fix" this to `staged` in a future edit.
 2. Every other `credential_versions` row (not touched by step 1) gets `promoted_at = created_at`
@@ -388,14 +451,14 @@ visibility or silently un-serves a value dependent systems have already switched
    `break_glass_complete`) or has never been rotated.
 3. **Self-verification, read this before trusting a green migration run:** the migration ends
    with a `DO $$ ... RAISE NOTICE 'migration 0050: N credential(s) failed the
-   exactly-one-current-version invariant check (expected 0)' ... END $$` block. **Grep the
+exactly-one-current-version invariant check (expected 0)' ... END $$` block. **Grep the
    migration output for this line and confirm `N` is `0`** before considering the deploy
    successful — a non-zero count means some credential's "current" version selection is
    ambiguous or wrong, and needs manual investigation (query
    `credential_versions WHERE credential_id = '<id>' ORDER BY promoted_at DESC, version_number
-   DESC` for the affected credential) before proceeding, not a reason to roll back blindly.
+DESC` for the affected credential) before proceeding, not a reason to roll back blindly.
 4. **Re-run safety:** both backfill `UPDATE`s are idempotent (guarded by `WHERE status =
-   'in_progress'` and `WHERE promoted_at IS NULL` respectively — a second run finds zero
+'in_progress'` and `WHERE promoted_at IS NULL` respectively — a second run finds zero
    matching rows for whichever step already completed). If the migration is interrupted mid-run,
    simply re-running `make db-migrate` is the correct recovery action.
 5. **No maintenance window strictly required** — the backfill UPDATEs are set-based but scoped by
@@ -662,7 +725,7 @@ manual, offline, out-of-band procedure:
 3. Re-seal and re-unseal with the new key material to confirm it decrypts correctly before
    considering the rotation complete.
 4. Take a fresh backup immediately after rotation. The backup encryption key is itself derived from
-   the master key (HKDF), so a backup taken under the *old* key remains restorable via
+   the master key (HKDF), so a backup taken under the _old_ key remains restorable via
    key-version-aware decryption — but a fresh post-rotation backup is good hygiene regardless.
 
 **Disclosed limitation:** rotating the master key via this manual procedure does **not** update
@@ -799,7 +862,7 @@ then set to `null` and cannot be recovered from the live database (only from a p
 snapshot, see § Backup & Recovery).
 
 `CREDENTIAL_RETENTION_DRY_RUN` (env var, boolean) controls whether the worker actually purges or only
-logs what it *would* purge:
+logs what it _would_ purge:
 
 - **Production defaults to `true` (dry-run)** — `apps/api/src/config/env.ts` sets the default from
   `isProduction`, so a fresh production deployment never purges anything until an operator explicitly
@@ -940,8 +1003,8 @@ curl -s -X POST http://localhost:3000/api/v1/machine-users/mu_abc123/api-keys/pk
 
 No request body. This is an **atomic revoke-old + issue-new operation in a single call** —
 deliberately distinct from both the routine `.../rotate` endpoint's overlap-based zero-downtime
-rotation (the old key here stops working *immediately*, with no overlap window, since a suspected
-compromise means it must stop working *now*) and from a plain revoke — there is no separate
+rotation (the old key here stops working _immediately_, with no overlap window, since a suspected
+compromise means it must stop working _now_) and from a plain revoke — there is no separate
 "issue a replacement key" step because the replacement is already in this response. **Capture
 `newKey` immediately: like every other key-issuance response in this API, the plaintext is
 returned exactly once and is not recoverable from any later `GET` call.** Requires MFA on the
@@ -977,15 +1040,15 @@ deliberately if you need external scraping.
 Verified, currently-shipped metric set (not aspirational — cross-checked directly against
 `apps/api/src/routes/metrics.ts` and `apps/api/src/modules/rotation/metrics.ts`):
 
-| Metric | Meaning |
-|---|---|
-| `http_requests_total` | Per-route request count, labeled `method`/`route`/`status_code` |
-| `http_request_duration_seconds` | Per-route request latency histogram, same labels |
-| `process_uptime_seconds` | Process uptime |
-| `vault_sealed` | **1** if sealed or uninitialized, **0** if unsealed — the single most important dashboard tile for this application |
-| `db_pool_connections_active` | In-flight query count — sustained high values indicate connection-pool exhaustion (§ Incident Response) |
-| `rotation_initiations_total`, `rotation_completions_total`, `rotation_checklist_items_pending_total`, `rotation_break_glass_total` (+ related stale/recovery counters/gauges) | Rotation-lifecycle metrics (Epic 5) |
-| Node.js default process metrics | via `collectDefaultMetrics()` |
+| Metric                                                                                                                                                                        | Meaning                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `http_requests_total`                                                                                                                                                         | Per-route request count, labeled `method`/`route`/`status_code`                                                     |
+| `http_request_duration_seconds`                                                                                                                                               | Per-route request latency histogram, same labels                                                                    |
+| `process_uptime_seconds`                                                                                                                                                      | Process uptime                                                                                                      |
+| `vault_sealed`                                                                                                                                                                | **1** if sealed or uninitialized, **0** if unsealed — the single most important dashboard tile for this application |
+| `db_pool_connections_active`                                                                                                                                                  | In-flight query count — sustained high values indicate connection-pool exhaustion (§ Incident Response)             |
+| `rotation_initiations_total`, `rotation_completions_total`, `rotation_checklist_items_pending_total`, `rotation_break_glass_total` (+ related stale/recovery counters/gauges) | Rotation-lifecycle metrics (Epic 5)                                                                                 |
+| Node.js default process metrics                                                                                                                                               | via `collectDefaultMetrics()`                                                                                       |
 
 Recommended alerting: `vault_sealed == 1` for more than 2 minutes (an unattended reseal, worth
 paging on) plus a sustained `db_pool_connections_active` threshold.
@@ -999,14 +1062,14 @@ this table only lists metrics verified to exist in code.
 
 <!-- Source: Story 9.5 AC-20; verified against apps/api/src/workers/{backup-health-check,key-custody-check,audit-storage-check,resource-usage-check,user-dormancy-check,check-failed-auth-threshold}.ts -->
 
-| Alert type | First response |
-|---|---|
-| `backup.missed` / `backup.failure` | § Backup & Recovery → What to do when a backup has been missed |
-| `key_custody_risk` (key age > `KEY_ROTATION_MAX_AGE_DAYS`, default 365 days) | § Master Key Management → Rotating the master key / Lost key file / KMS status |
-| `audit_storage_critical` (95% of `AUDIT_LOG_STORAGE_LIMIT_GB`) | § Incident Response → Audit log storage at 95% capacity |
-| `resource.orgs_near_limit`, `resource.users_near_limit` (80/90/95% tier thresholds) | Contact the org to plan a tier upgrade or usage reduction — **not** a technical incident |
-| `security.failed_auth_threshold` (FR73) | Existing, already-documented response owner: Organization Admins, not the platform operator |
-| `user.dormant` (FR71) | Existing, already-documented response owner: Organization Admins, not the platform operator |
+| Alert type                                                                          | First response                                                                              |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `backup.missed` / `backup.failure`                                                  | § Backup & Recovery → What to do when a backup has been missed                              |
+| `key_custody_risk` (key age > `KEY_ROTATION_MAX_AGE_DAYS`, default 365 days)        | § Master Key Management → Rotating the master key / Lost key file / KMS status              |
+| `audit_storage_critical` (95% of `AUDIT_LOG_STORAGE_LIMIT_GB`)                      | § Incident Response → Audit log storage at 95% capacity                                     |
+| `resource.orgs_near_limit`, `resource.users_near_limit` (80/90/95% tier thresholds) | Contact the org to plan a tier upgrade or usage reduction — **not** a technical incident    |
+| `security.failed_auth_threshold` (FR73)                                             | Existing, already-documented response owner: Organization Admins, not the platform operator |
+| `user.dormant` (FR71)                                                               | Existing, already-documented response owner: Organization Admins, not the platform operator |
 
 Org-level alerts landing in a shared ops channel the platform operator also monitors are **not**
 automatically the platform operator's to act on — the table above exists specifically to prevent
@@ -1026,7 +1089,7 @@ mean you have checked "the" audit trail.
   (**Owner role only** — there is no separate "Audit" role in this application; an org Admin is
   not sufficient and receives `403`). Response:
   `{"data":{"summary":"...", "rowsChecked":N, "passed":N, "failed":[{"id","eventType","timestamp"}],
-  "failedCount":N, "failedTruncated":bool, "verifiedAt":"..."}}`.
+"failedCount":N, "failedTruncated":bool, "verifiedAt":"..."}}`.
 - **Platform operator audit log** (`platform_audit_events`, Story 9.4) —
   `GET /api/v1/platform/audit/verify` (platform-operator-only, requires MFA). Every response from
   this endpoint carries an `X-Log-Scope: platform` header. Response shape matches the org-scoped
@@ -1056,7 +1119,7 @@ actually running the underlying procedure, not just reading its description.
       `GET /api/v1/platform/audit/verify` (§ Monitoring → Verifying audit log integrity). Checking
       only one is an incomplete check.
 - [ ] **Dormant user review** — normally an org-admin responsibility (FR71/Story 8.3); the platform
-      operator's quarterly item is confirming the alert *mechanism* itself is healthy
+      operator's quarterly item is confirming the alert _mechanism_ itself is healthy
       instance-wide, not merely that there happen to be no dormant users this quarter (a vacuous
       "no dormant users" does not confirm the mechanism works).
 - [ ] **Key custody review** — confirm `kmsType` is not `'file'` in production; confirm the team is

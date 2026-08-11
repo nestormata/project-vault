@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import swagger from '@fastify/swagger'
 import helmet from '@fastify/helmet'
@@ -73,7 +71,7 @@ import { createLoggerConfig, serializeLogError } from './lib/logger.js'
 import { env } from './config/env.js'
 import { AppError } from './lib/errors.js'
 import type { FastifyApp } from './lib/fastify-app.js'
-import { readPackageVersion } from './lib/package-version.js'
+import { getReleaseVersion } from './lib/package-version.js'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyRequest } from 'fastify'
 
@@ -81,11 +79,6 @@ import type { FastifyRequest } from 'fastify'
 // this regex — nil UUID and non-v4 formats are intentionally rejected so a caller
 // cannot inject arbitrary trace-correlation strings via X-Request-ID.
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-// AC-19: read once at module load — same convention as routes/health.ts's existing pkg.version
-// read — rather than on every request or every createApp() call.
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const API_VERSION = readPackageVersion(resolve(__dirname, '../package.json'))
 
 type DbPool = {
   query: (sql: string) => Promise<unknown>
@@ -114,6 +107,12 @@ function shouldNormalizeMfaParserError(
 }
 
 export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
+  // Story 9.10 AC-1: read fresh on every createApp() call (not cached at module load) — the
+  // env var is fixed for the life of a real process, but reading it here (rather than at
+  // import time) keeps this in sync with any test/harness that sets RELEASE_VERSION per call,
+  // with zero behavioral difference for a real deployment.
+  const API_VERSION = getReleaseVersion().version
+
   let logger: boolean | object
   if (options.logger === false) {
     logger = false
@@ -204,10 +203,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       openapi: '3.0.0',
       info: {
         title: 'Project Vault API',
-        // AC-19: sourced from apps/api/package.json at generation time, not a hardcoded
-        // placeholder — both the live GET /api/v1/openapi.json route (D5) and the build-time
-        // generate-spec.ts script share this same createApp() pipeline, so fixing the version
-        // source here fixes both with no duplicate version-reading logic.
+        // Story 9.10 AC-1: sourced from getReleaseVersion() (RELEASE_VERSION), not a hardcoded
+        // placeholder or package.json's permanent 0.0.1 — both the live GET /api/v1/openapi.json
+        // route (D5) and the build-time generate-spec.ts script share this same createApp()
+        // pipeline, so fixing the version source here fixes both with no duplicate logic.
         version: API_VERSION,
       },
     },

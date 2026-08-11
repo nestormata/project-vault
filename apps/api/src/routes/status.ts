@@ -1,8 +1,5 @@
 import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
-import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { z } from 'zod/v4'
 import rateLimit from '@fastify/rate-limit'
 import { OperationalEvent } from '@project-vault/shared'
@@ -20,11 +17,7 @@ import {
   findActiveOperationalStatusTokenByHash,
   touchOperationalStatusTokenLastUsed,
 } from '../modules/status/token-store.js'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8')) as {
-  version: string
-}
+import { getReleaseVersion } from '../lib/package-version.js'
 
 // AC-1/AC-7: same reason-code vocabulary the checks in modules/status/service.ts emit — kept as
 // a plain string, not an enum, so it stays a stable public contract independent of internal
@@ -194,7 +187,10 @@ export async function statusRoutes(
       const status = deriveAggregateStatus(checks)
       const body = {
         status,
-        version: pkg.version,
+        // Story 9.10 AC-1: the same getReleaseVersion() source /health and OpenAPI
+        // info.version use — never package.json's permanent 0.0.1 placeholder, which would
+        // otherwise make this operational endpoint disagree with /health on the same instance.
+        version: getReleaseVersion().version,
         timestamp: new Date().toISOString(),
         checks,
       }

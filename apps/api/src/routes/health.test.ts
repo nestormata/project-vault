@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
 import { OperationalEvent } from '@project-vault/shared'
 import { createApp } from '../app.js'
 import { createLoggerConfig } from '../lib/logger.js'
@@ -82,6 +82,61 @@ describe('GET /health', () => {
     expect(body.status).toBe('ok')
     expect(typeof body.version).toBe('string')
     await app.close()
+  })
+
+  // Story 9.10 AC-1/AC-6: /health's version must come from getReleaseVersion() (RELEASE_VERSION
+  // env var), never a hardcoded/package.json-sourced 0.0.1 placeholder, and must carry an
+  // explicit versionSource so callers (e.g. Version & Upgrade) can distinguish a real release
+  // from the documented dev fallback.
+  describe('Story 9.10: release version reporting', () => {
+    const originalReleaseVersion = process.env.RELEASE_VERSION
+
+    afterEach(() => {
+      if (originalReleaseVersion === undefined) delete process.env.RELEASE_VERSION
+      else process.env.RELEASE_VERSION = originalReleaseVersion
+    })
+
+    it('AC-1: reports the injected RELEASE_VERSION and versionSource "release" when set', async () => {
+      process.env.RELEASE_VERSION = '1.0.2'
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ version: string; versionSource: string }>()
+      expect(body.version).toBe('1.0.2')
+      expect(body.versionSource).toBe('release')
+      await app.close()
+    })
+
+    it('AC-1: reports the documented dev fallback and versionSource "development" when unset', async () => {
+      delete process.env.RELEASE_VERSION
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ version: string; versionSource: string }>()
+      expect(body.version).toBe('dev')
+      expect(body.version).not.toBe('0.0.1')
+      expect(body.versionSource).toBe('development')
+      await app.close()
+    })
+
+    // AC-4: version reporting must be observable and correct regardless of vault/DB readiness —
+    // /health is orthogonal to /ready's gating.
+    it('AC-4: still reports the correct release version while the vault is sealed', async () => {
+      process.env.RELEASE_VERSION = '1.0.2'
+      mockVaultStatus.value = 'sealed'
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ version: string }>()
+      expect(body.version).toBe('1.0.2')
+      await app.close()
+    })
   })
 
   describe('Story 14.2: extensions_status', () => {

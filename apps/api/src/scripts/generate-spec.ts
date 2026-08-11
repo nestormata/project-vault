@@ -13,6 +13,15 @@ const outPath = resolve(__dirname, '../../../../packages/shared/openapi.json')
 // looking like a credential to secret-scanning tools).
 process.env.DATABASE_URL ??= 'postgresql://vault_app@localhost:5432/project_vault'
 
+// Story 9.10: the checked-in artifact must be byte-identical wherever it is regenerated, because
+// CI and `make ci` gate on `git diff --exit-code packages/shared/openapi.json`. `info.version`
+// now comes from RELEASE_VERSION at runtime, so any environment that happens to export it (a
+// release-time regeneration, a developer with it in their shell, running the suite inside a
+// released container) would otherwise emit a different `info.version` and fail that drift check
+// with a confusing diff. Pinning it to the dev fallback here keeps the committed spec
+// deterministic; the live `/openapi.json` route still reports the real injected release version.
+delete process.env.RELEASE_VERSION
+
 const { createApp } = await import('../app.js')
 
 // @fastify/swagger (registered in app.ts with @fastify/type-provider-zod's
