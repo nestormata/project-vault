@@ -2,7 +2,7 @@
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { backupStorageFor, BackupNotFoundOnDestinationError } from './storage.js'
 
 const TEST_FILENAME = 'backup_test.vault'
@@ -71,6 +71,34 @@ describe('Story 9.1 AC-5: filesystem backup storage', () => {
 
     // No throw on a second delete of an already-absent file.
     await expect(storage.delete(filename)).resolves.toBeUndefined()
+  })
+})
+
+describe('Story 9.9 AC-4: filesystem write failures are classified', () => {
+  afterEach(() => {
+    vi.doUnmock('./atomic-write.js')
+    vi.resetModules()
+  })
+
+  it('a permission-denied write throws the sanitized, stable classifier message (not the raw error)', async () => {
+    vi.doMock('./atomic-write.js', () => ({
+      atomicFileWrite: vi.fn(async () => {
+        const error = new Error(
+          "EACCES: permission denied, open '.tmp-abc-backup.vault'"
+        ) as NodeJS.ErrnoException
+        error.code = 'EACCES'
+        throw error
+      }),
+    }))
+    const { backupStorageFor: mockedBackupStorageFor } = await import('./storage.js')
+    const storage = mockedBackupStorageFor({ type: 'filesystem', path: '/var/backups/vault' })
+
+    await expect(storage.write(TEST_FILENAME, Buffer.from('x'))).rejects.toThrow(
+      /permission.*BACKUP_STORAGE_PATH/is
+    )
+    await expect(storage.write(TEST_FILENAME, Buffer.from('x'))).rejects.toThrow(/1000:1000/)
+    // Never leak the raw fs error text (e.g. the literal tmp filename) into the classified message.
+    await expect(storage.write(TEST_FILENAME, Buffer.from('x'))).rejects.not.toThrow(/\.tmp-abc/)
   })
 })
 

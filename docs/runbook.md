@@ -576,6 +576,72 @@ than hitting at restart time. With all three unset, `backup.missed` should never
 fire on an instance believed to have backups disabled, that is itself a configuration-drift
 incident (verify the disable setting actually took effect), not a normal missed-backup scenario.
 
+### Backup permission remediation
+
+<!-- Source: Story 9.9; verified against apps/api/docker-entrypoint.sh, apps/api/Dockerfile,
+     apps/api/src/modules/backup/storage-errors.ts, docker-compose.yml -->
+
+The API container runs as the non-root `node` user (uid:gid **1000:1000**). `BACKUP_STORAGE_PATH`
+must be writable by that uid/gid. At container start, `apps/api/docker-entrypoint.sh` runs briefly
+as root and repairs ownership of **only** that single directory (`mkdir -p`, `chown 1000:1000`,
+`chmod 0750`) before dropping privileges via `su-exec` and exec'ing the app — the running
+application process itself never runs as root, and this repair never touches any other path or
+recurses into the directory's existing contents. If it cannot repair ownership (see "Unfixable bind
+mount" below), the container still starts and serves `/health`; only the backup path degrades.
+
+**A backup write failing with a permission/full/unavailable error surfaces on `GET
+/api/v1/admin/backups`** (and the admin Backups page) as a stable, sanitized category message
+referencing `BACKUP_STORAGE_PATH` and this section — never the raw Node `EACCES`/`ENOSPC`/etc. text
+or any secret value (`apps/api/src/modules/backup/storage-errors.ts`).
+
+**Named volume (default, `backup_data` in `docker-compose.yml`):** Docker creates a fresh named
+volume root-owned by default. No manual action is normally needed — the entrypoint above repairs it
+automatically on first start. If a backup still fails with a permission error against a named
+volume, something outside normal operation changed its ownership; verify and fix from the host:
+
+```bash
+# Inspect current ownership inside the volume (host-side, via a disposable container):
+docker run --rm -v <project>_backup_data:/var/backups/vault alpine stat -c '%u:%g' /var/backups/vault
+# Repair it directly if it's not 1000:1000 (the entrypoint should have already done this — this
+# is the manual fallback):
+docker run --rm -v <project>_backup_data:/var/backups/vault alpine chown 1000:1000 /var/backups/vault
+```
+
+**Bind mount:** if `BACKUP_STORAGE_PATH` maps to a host directory (bind mount) instead of the named
+volume, pre-create it and set ownership on the **host** before starting the container:
+
+```bash
+sudo mkdir -p /path/on/host/for/backups
+sudo chown 1000:1000 /path/on/host/for/backups
+```
+
+**Unfixable bind mount:** some bind-mount configurations (e.g. a host filesystem/permission model
+the container's root can't chown, or a mount marked read-only) can't be repaired by the entrypoint
+at all. In that case:
+
+1. Startup logs a structured `backup.storage_init_failed` warning stating the exact required
+   uid:gid (1000:1000) and the configured path — check container logs around startup, not just at
+   backup-attempt time.
+2. The container still starts and `/health` still succeeds; only backup writes fail, each recorded
+   as a `failed` `backup_runs` row with the same sanitized remediation message.
+3. Fix ownership/mode on the host for that specific mount (see the bind-mount commands above), or
+   point `BACKUP_STORAGE_PATH` at a fresh named volume instead, then restart the `api` container so
+   the entrypoint re-attempts the repair.
+
+**Safe recovery after an `EACCES` failure:** fixing ownership never requires deleting or moving
+existing backup files — the entrypoint's repair, and the manual commands above, only change the
+destination directory's owner/mode, not its contents. After remediation:
+
+1. Restart the `api` container (or wait for the next scheduled run) so the entrypoint's repair
+   re-runs.
+2. Trigger a manual backup (§ Triggering a manual backup) to confirm the fix.
+3. Confirm `GET /api/v1/admin/backups` shows a new `succeeded` row and that previously listed
+   backups are still present and unchanged.
+
+**Verifying a fix worked:** `docker compose logs api | grep backup.storage_init_failed` should show
+no new occurrences after the affected container start, and a subsequent manual backup should
+complete with `status: succeeded`.
+
 ---
 
 ## Master Key Management

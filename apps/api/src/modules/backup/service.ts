@@ -345,6 +345,11 @@ export async function executeBackupSnapshot(
     // AC-5: write the encrypted file first, then the sidecar — if the process crashes between
     // the two, a `.vault` with no sidecar is a detectable, safe partial state (validate/restore
     // will fail loudly), never the reverse (a sidecar promising a backup that doesn't exist).
+    //
+    // Story 9.9 AC-4: a filesystem-destination write failure arrives here already classified —
+    // `storage.ts`'s `filesystemStorage().write()` wraps `atomicFileWrite` and throws a sanitized,
+    // operator-actionable message via `storage-errors.ts`. The S3 destination's `write()` is
+    // untouched and still throws its original (unclassified) error.
     await storage.write(run.filename, encrypted)
     await storage.write(
       run.metaFilename,
@@ -369,6 +374,11 @@ export async function executeBackupSnapshot(
 
     return { sizeBytes: encrypted.length, checksumSha256, durationMs: Date.now() - start }
   } catch (error) {
+    // Story 9.9 AC-4: for a filesystem destination, `error.message` here is already the sanitized,
+    // operator-actionable category message from storage-errors.ts (classified in storage.ts at
+    // the storage.write() call site). Every other error (dump/encrypt failure, or an
+    // S3-destination write failure) keeps its original, unclassified message — s3-upload.ts's
+    // retry/staging semantics are untouched by this story.
     const message = error instanceof Error ? error.message : String(error)
     await getDb()
       .update(backupRuns)

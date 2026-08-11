@@ -131,6 +131,43 @@ describe.sequential('Story 9.1: backup service', () => {
     expect(row?.errorMessage).toMatch(/pg_dump/)
   })
 
+  it('Story 9.9 AC-4: a classified filesystem storage failure (e.g. EACCES) reaches backup_runs as a sanitized message, not the raw error', async () => {
+    const slot = await acquireBackupSlot({ triggeredBy: 'manual' })
+    expect(slot.ok).toBe(true)
+    if (!slot.ok) throw new Error(EXPECTED_OK_MESSAGE)
+
+    const rawErrorText = "EACCES: permission denied, open '.tmp-9f2a-backup.vault'"
+    const failingFilesystemStorage = backupStorageFor({ type: 'filesystem', path: storageDir })
+    // Simulate the real failure mode (a root-owned/unwritable BACKUP_STORAGE_PATH) at the storage
+    // boundary storage.ts actually classifies at, rather than depending on this test process's
+    // own uid/permissions (which may be root in CI, where chmod-based permission denial doesn't
+    // reliably reproduce).
+    failingFilesystemStorage.write = async () => {
+      const error = new Error(rawErrorText) as NodeJS.ErrnoException
+      error.code = 'EACCES'
+      // Route through the real classifier the same way storage.ts's filesystemStorage().write()
+      // does, so this test exercises the actual sanitized-message contract, not a hand-rolled one.
+      const { classifyStorageError } = await import('./storage-errors.js')
+      throw new Error(classifyStorageError(error, storageDir).message)
+    }
+
+    await expect(
+      executeBackupSnapshot(
+        { runId: slot.runId, filename: slot.filename, metaFilename: slot.metaFilename },
+        { dump: fakeDump, storage: failingFilesystemStorage }
+      )
+    ).rejects.toThrow()
+
+    const [row] = await getDb().select().from(backupRuns).where(eq(backupRuns.id, slot.runId))
+    expect(row?.status).toBe('failed')
+    expect(row?.errorMessage).toMatch(/permission/i)
+    expect(row?.errorMessage).toMatch(/1000:1000/)
+    expect(row?.errorMessage).toContain(storageDir)
+    // The raw Node fs error text (including the literal temp filename) must never reach the
+    // operator-facing errorMessage.
+    expect(row?.errorMessage ?? '').not.toContain('.tmp-9f2a-backup.vault')
+  })
+
   it('AC-6 negative: an S3 upload failure marks the run failed without leaking any credential material', async () => {
     const { backupStorageFor } = await import('./storage.js')
     const slot = await acquireBackupSlot({ triggeredBy: 'manual' })

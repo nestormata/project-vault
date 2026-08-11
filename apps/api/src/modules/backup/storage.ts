@@ -4,6 +4,7 @@ import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import type { BackupDestination } from './config.js'
 import { atomicFileWrite } from './atomic-write.js'
 import { stageAndUploadToS3 } from './s3-upload.js'
+import { classifyStorageError } from './storage-errors.js'
 
 export class BackupNotFoundOnDestinationError extends Error {}
 
@@ -22,8 +23,22 @@ function filesystemStorage(path: string): BackupStorage {
   // is either this module's own generated backup_<timestamp>_<instanceId>.vault or an admin-only
   // :filename route param already gated by requirePlatformOperator().
   return {
+    // Story 9.9 AC-4: classify a write failure (permission/full/unavailable/rename-failure) into
+    // a stable, sanitized, operator-actionable message before it propagates — `service.ts`'s
+    // `executeBackupSnapshot` stores `error.message` verbatim into `backup_runs.errorMessage`, so
+    // classification must happen here, at the filesystem-destination write call site, rather than
+    // by inferring destination type from environment config elsewhere (which would misclassify
+    // when a test or caller dependency-injects a different storage than the configured
+    // destination). The S3 destination's `write()` below is untouched.
     async write(filename, data) {
-      await atomicFileWrite(path, filename, data)
+      try {
+        await atomicFileWrite(path, filename, data)
+      } catch (error) {
+        // No `{ cause: error }` here on purpose: many JSON loggers recursively serialize
+        // `.cause`, which would resurface the raw, unsanitized fs error this classification
+        // exists to hide (AC-4 secrets discipline).
+        throw new Error(classifyStorageError(error, path).message)
+      }
     },
     async read(filename) {
       try {
@@ -37,7 +52,11 @@ function filesystemStorage(path: string): BackupStorage {
       }
     },
     async delete(filename) {
-      await rm(join(path, filename), { force: true })
+      try {
+        await rm(join(path, filename), { force: true })
+      } catch (error) {
+        throw new Error(classifyStorageError(error, path).message)
+      }
     },
   }
 }

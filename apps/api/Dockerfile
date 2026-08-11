@@ -102,18 +102,35 @@ FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbf
 # and ARM64 (NFR-MAINT5 multi-arch builds).
 # npm/npx are never invoked at runtime (CMD runs node directly) — dropping them
 # removes their bundled deps (e.g. undici) as a source of image CVEs.
-RUN apk add --no-cache curl postgresql16-client \
+# Story 9.9: su-exec lets docker-entrypoint.sh drop from root to the non-root `node` user right
+# before exec'ing the app (see that script's own comment) — the minimal, purpose-built tool for
+# this, unlike `gosu` (bigger) or `sudo` (not in Alpine's base repo, broader privilege model than
+# needed here).
+RUN apk add --no-cache curl postgresql16-client su-exec \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 WORKDIR /app
 
 COPY --from=deploy --chown=node:node /app/deploy .
 
+# Story 9.9: root-owned (not --chown=node:node) — it needs to run as root briefly to chown the
+# backup destination before dropping privileges; see the script's own header comment.
+COPY apps/api/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 EXPOSE 3000
 
+# Story 9.9: HEALTHCHECK runs using the image's configured user, not whatever the entrypoint
+# drops to at runtime — since there's no longer a top-level `USER node`, that default is now
+# root. Route the probe itself through `su-exec node` so it runs as the non-root user too; only
+# the entrypoint's brief startup window (before `exec su-exec node:node "$@"`) runs as root.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD su-exec node curl -f http://localhost:3000/health || exit 1
 
-USER node
-
+# Story 9.9: no top-level `USER node` here anymore — the container starts as root so the
+# entrypoint can repair BACKUP_STORAGE_PATH ownership, then drops to `node` itself via
+# `su-exec` before exec'ing CMD below. The running application process is still never root;
+# the privilege-drop boundary just moved from "image config" to "inside the entrypoint,
+# immediately before exec" so it can happen AFTER the narrow chown repair.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]

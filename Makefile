@@ -45,7 +45,7 @@ DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HO
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance \
         db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner \
         bootstrap bootstrap-docker check-ports fix-ports \
-        docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-prod docker-prod-down \
+        docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-backup-permission-smoke docker-prod docker-prod-down \
         e2e \
         clean
 
@@ -140,6 +140,11 @@ ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; s
 	$(MAKE) fix-ports
 	GIT_COMMON_DIR=$$(git rev-parse --path-format=absolute --git-common-dir) \
 		docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm --build ci make ci-inner
+	# Story 9.9 AC-6/Product Surface Contract G3: runs on the HOST (not inside ci-inner's
+	# container, which has no Docker socket to build/run nested images from) — builds the real
+	# apps/api image and exercises docker-entrypoint.sh's backup-volume chown-then-drop-privileges
+	# behavior end-to-end, both the fresh-named-volume and unfixable-bind-mount cases.
+	$(MAKE) docker-backup-permission-smoke
 
 ci-inner: ## The actual CI steps — only meant to run inside the `ci` container (make ci), not directly
 	pnpm turbo typecheck
@@ -210,6 +215,9 @@ e2e: fix-ports ## Playwright E2E suite against a real docker-compose stack (inst
 
 docker-smoke: fix-ports ## Build, start, and curl /health + /ready end-to-end
 	pnpm docker:smoke
+
+docker-backup-permission-smoke: ## Story 9.9 AC-6: verify docker-entrypoint.sh's backup volume chown-then-drop-privileges behavior against the real built image
+	./scripts/backup-permission-smoke.sh
 
 docker-prod: ## Start the stack with production overrides
 	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
