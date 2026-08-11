@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-      target: builder
+      target: app-builder
     volumes:
       - ./apps/api/src:/app/apps/api/src
     environment:

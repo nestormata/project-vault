@@ -17,12 +17,23 @@ const dockerRunCommands = (dockerfile: string) =>
     .map((line) => line.slice(4).trim())
 
 describe('deployment hardening configuration', () => {
-  it('runs api and web containers as the node user', () => {
-    const apiDockerfile = readRepoFile(API_DOCKERFILE_PATH)
+  it('runs the web container as the node user', () => {
     const webDockerfile = readRepoFile(WEB_DOCKERFILE_PATH)
 
-    expect(apiDockerfile).toMatch(/\nUSER node\n/)
     expect(webDockerfile).toMatch(/\nUSER node\n/)
+  })
+
+  // Story 9.9 deliberately removed the top-level `USER node` from apps/api/Dockerfile: the
+  // container now starts as root so docker-entrypoint.sh can repair BACKUP_STORAGE_PATH
+  // ownership, then drops to `node` via `su-exec` immediately before exec'ing the app. The
+  // running application process is still never root — the privilege-drop boundary just moved
+  // from image config to inside the entrypoint (see that script's own header comment).
+  it('runs the api container’s app process as the node user via the entrypoint’s su-exec drop, not a top-level USER', () => {
+    const apiDockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const entrypoint = readRepoFile('apps/api/docker-entrypoint.sh')
+
+    expect(apiDockerfile).not.toMatch(/\nUSER node\n/)
+    expect(entrypoint).toMatch(/exec su-exec node:node ".*"\n?/)
   })
 
   it.each([
@@ -85,13 +96,13 @@ describe('deployment hardening configuration', () => {
 
   // The release version changes on every publish, so a stage carrying its ARG/LABEL invalidates
   // the cache of every stage built FROM it. `migrate` therefore has to stay a leaf: nothing may
-  // derive from it, and `db-builder` (which `builder` -> `deploy` -> the runner's COPY all
+  // derive from it, and `db-builder` (which `app-builder` -> `deploy` -> the runner's COPY all
   // descend from) must not carry the ARG itself.
   it('keeps the release-version ARG out of every api stage other stages build FROM', () => {
     const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
     const dbBuilderStage = dockerfile.slice(
       dockerfile.indexOf('AS db-builder'),
-      dockerfile.indexOf('FROM db-builder AS builder')
+      dockerfile.indexOf('FROM db-builder AS app-builder')
     )
 
     expect(dbBuilderStage).not.toMatch(/ARG RELEASE_VERSION/)

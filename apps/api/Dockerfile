@@ -61,7 +61,11 @@ RUN pnpm --filter @project-vault/shared build \
 # TS2307 "Cannot find module '@project-vault/extension-api'" (verified empirically — this
 # package was previously missing from the Dockerfile entirely, only caught by CI, not local
 # `make ci`, since pnpm's local workspace symlinks resolve it without a dist build).
-FROM db-builder AS builder
+# Named app-builder, not builder: BuildKit's DuplicateStageName check now flags redeclaring an
+# earlier stage name even though position-based FROM resolution made this unambiguous (every
+# reference to `builder` above this line, e.g. db-builder's own `FROM builder`, correctly bound
+# to the original stage at line 3).
+FROM db-builder AS app-builder
 RUN pnpm --filter @project-vault/agent build \
  && pnpm --filter @project-vault/extension-api build \
  && pnpm --filter @project-vault/api build
@@ -74,14 +78,14 @@ ARG INCLUDE_MOCK_SSO_EXTENSION=false
 RUN if [ "$INCLUDE_MOCK_SSO_EXTENSION" = "true" ]; then pnpm --filter @project-vault/mock-sso-extension build; fi
 
 # Bundle the api and its production deps into a self-contained directory. This runs in its
-# own stage (not in `builder`) because `pnpm deploy` prunes the workspace node_modules to
+# own stage (not in `app-builder`) because `pnpm deploy` prunes the workspace node_modules to
 # production-only in place — the `migrate` service targets `db-builder` directly (Story 1.13
 # AC-D3) to run drizzle-kit, and a pruned workspace there made pnpm's automatic deps-status
 # check try to self-heal via `pnpm install --production`, which fails on the root
 # `prepare: husky` script (a devDependency absent from a production install).
 # pnpm deploy copies from the already-built virtual store (argon2 native binary included)
 # so no compiler toolchain is needed in the runner stage.
-FROM builder AS deploy
+FROM app-builder AS deploy
 ARG INCLUDE_MOCK_SSO_EXTENSION=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 # `pnpm deploy --prod` always prunes devDependencies — that's the correct, desired behavior for
@@ -157,7 +161,7 @@ CMD ["node", "dist/main.js"]
 # (it adds no layer beyond the OCI label) and it never runs the app, so it needs the label only,
 # not a runtime ENV. It exists as a separate LEAF stage purely for build caching: RELEASE_VERSION
 # changes on every release, so declaring the ARG/LABEL directly in `db-builder` would invalidate
-# every layer of the stages that build FROM it (`builder` -> `deploy` -> the runner's
+# every layer of the stages that build FROM it (`app-builder` -> `deploy` -> the runner's
 # COPY --from=deploy), re-running every `pnpm build` — including the QEMU-emulated linux/arm64
 # leg — on each publish. Keeping it in a stage nothing else derives from means the release
 # version can only ever bust this one label layer.
