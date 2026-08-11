@@ -63,7 +63,11 @@
     <EmptyAssetState message="No domains registered yet." />
   {:else}
     <FormErrorBanner message={deleteError} />
-    <AssetTable columns={['Domain name', 'Renewal date', 'Alert lead days']} {canManage}>
+    <AssetTable
+      caption="Domains monitored in this project"
+      columns={['Domain name', 'Renewal date', 'Alert lead days']}
+      {canManage}
+    >
       {#each domains as domain (domain.id)}
         <tr class="border-b border-slate-100 last:border-b-0">
           <td class="px-4 py-3 font-semibold text-slate-950">{domain.domainName}</td>

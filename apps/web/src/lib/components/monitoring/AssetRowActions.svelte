@@ -1,7 +1,6 @@
 <!--
   The "Edit" link + two-step delete button shown in each row of a monitored-asset list table.
-  Shared by the certificates/domains/services list pages (service-endpoints uses its own card
-  layout but still delegates to this for the actions themselves).
+  Shared by the certificates/domains/services/service-endpoints list pages.
 -->
 <script lang="ts">
   import { resolve } from '$app/paths'

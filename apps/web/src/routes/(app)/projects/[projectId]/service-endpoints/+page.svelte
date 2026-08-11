@@ -2,11 +2,12 @@
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteServiceEndpoint, updateServiceEndpoint } from '$lib/api/service-endpoints.js'
   import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
-  import ServiceStatusItem from '$lib/components/dashboard/ServiceStatusItem.svelte'
+  import { formatCheckedAt, statusClass } from '$lib/components/dashboard/service-status.js'
   import {
     ActiveAlertsPanel,
     AssetListHeader,
     AssetRowActions,
+    AssetTable,
     EmptyAssetState,
     FormErrorBanner,
     MonitoringPauseControl,
@@ -94,24 +95,44 @@
       <EmptyAssetState message="No service endpoints registered yet." />
     {:else}
       <FormErrorBanner message={deleteError} />
-      <ul class="space-y-3">
+      <AssetTable
+        caption="Service endpoints monitored in this project"
+        columns={[{ label: 'Endpoint', headerClass: 'w-1/3' }, 'Status', 'Schedule', 'Monitoring']}
+        {canManage}
+      >
         {#each endpoints as endpoint (endpoint.id)}
-          <li
-            class="grid grid-cols-1 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
+          <!-- The amber tint restores the at-a-glance paused signal the old per-row card carried;
+               the "Monitoring paused" text in the cell is what actually conveys it. -->
+          <tr
+            class={`border-b border-slate-100 last:border-b-0 ${endpoint.healthCheckPaused ? 'bg-amber-50' : ''}`.trim()}
           >
-            <!-- ServiceStatusItem has two root nodes (name div + status span); this wrapper gives it a single grid cell -->
-            <div class="flex min-w-0 items-center gap-2">
-              <ServiceStatusItem
-                name={endpoint.name}
-                status={endpoint.status}
-                lastCheckedAt={endpoint.lastCheckedAt}
-              />
-            </div>
-            <div class="min-w-0 text-sm text-slate-600">
+            <td class="px-4 py-3 font-semibold text-slate-950">
+              <!-- `truncate` needs a bounded box; an auto-width <td> would just grow instead. -->
+              <div class="max-w-[14rem] sm:max-w-[20rem]">
+                <p class="truncate" title={endpoint.name}>{endpoint.name}</p>
+                <p class="truncate text-xs font-normal text-slate-500" title={endpoint.url}>
+                  {endpoint.url}
+                </p>
+                <p class="text-xs font-normal text-slate-500">
+                  {formatCheckedAt(endpoint.lastCheckedAt)}
+                </p>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-slate-600">
+              <span
+                class={`inline-block rounded-full px-2 py-1 text-xs font-semibold ${statusClass(endpoint.status)}`}
+              >
+                {endpoint.status}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-slate-600">
               <p>Checked every {endpoint.checkFrequencyMinutes} min</p>
               <p>Down after {endpoint.downThresholdFailures} consecutive failures</p>
-            </div>
-            <div class="min-w-0">
+            </td>
+            <!-- Bounded like the Endpoint cell: a per-row pause error is a full sentence, and in an
+                 auto-layout table an unbounded cell would widen the Monitoring column for every
+                 row — re-introducing the content-driven misalignment this story removed. -->
+            <td class="w-[15rem] max-w-[15rem] px-4 py-3 text-slate-600">
               {#if endpoint.healthCheckPaused === true || endpoint.healthCheckPaused === false}
                 <MonitoringPauseControl
                   paused={endpoint.healthCheckPaused}
@@ -119,24 +140,25 @@
                   lastKnownStatus={endpoint.status}
                   {canManage}
                   idSuffix={endpoint.id}
+                  variant="row"
                   submitting={pauseSubmittingId === endpoint.id}
                   errorMessage={pauseErrors[endpoint.id] || null}
                   onToggle={(paused) => handlePauseToggle(endpoint.id, paused)}
                 />
               {/if}
-            </div>
-            <div class="min-w-0">
-              {#if canManage}
+            </td>
+            {#if canManage}
+              <td class="px-4 py-3">
                 <AssetRowActions
                   editHref={`/projects/${data.projectId}/service-endpoints/${endpoint.id}`}
                   confirmLabel="Confirm delete? This will also resolve any active alerts for it."
                   onDelete={() => handleDelete(endpoint.id)}
                 />
-              {/if}
-            </div>
-          </li>
+              </td>
+            {/if}
+          </tr>
         {/each}
-      </ul>
+      </AssetTable>
     {/if}
   {/if}
 </section>

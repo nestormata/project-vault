@@ -73,6 +73,18 @@ describe('/projects/:projectId/domains list (AC-D1)', () => {
     expect(screen.getAllByText('example.com')).toHaveLength(2)
   })
 
+  // Story 18.13: AssetTable's caption is a required prop precisely so no list ships a table
+  // without an accessible name; assert it for real rather than trusting the type.
+  it('gives the table a non-empty accessible caption', () => {
+    const { container } = render(DomainsListPage, {
+      props: {
+        data: { projectId, orgRole: 'viewer', domains: [makeDomain()], notFound: false },
+      },
+    })
+    const caption = container.querySelector('caption')
+    expect(caption?.textContent?.trim()).toBeTruthy()
+  })
+
   it('two-step delete removes the row without a full reload', async () => {
     deleteDomainMock.mockResolvedValue(undefined)
     render(DomainsListPage, {

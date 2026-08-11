@@ -7,6 +7,7 @@
     submitting = false,
     errorMessage = null,
     idSuffix = 'detail',
+    variant = 'card',
     onToggle,
   }: {
     paused: boolean
@@ -16,6 +17,9 @@
     submitting?: boolean
     errorMessage?: string | null
     idSuffix?: string
+    // Story 18.13: 'row' is a compact rendering for a monitored-asset table cell — same state,
+    // same confirmation flow, no per-row <h2> or card chrome. 'card' is the detail-page form.
+    variant?: 'card' | 'row'
     onToggle: (paused: boolean) => boolean | Promise<boolean>
   } = $props()
 
@@ -57,52 +61,88 @@
   }
 </script>
 
-<section
-  class={`rounded-2xl border p-4 ${paused ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}
-  aria-labelledby={`monitoring-state-heading-${idSuffix}`}
->
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <h2 id={`monitoring-state-heading-${idSuffix}`} class="font-semibold text-slate-950">
-        {paused ? 'Monitoring paused' : 'Monitoring active'}
-      </h2>
-      <p class="mt-1 text-sm text-slate-700">
-        {#if paused}
-          Last known status: <strong>{statusLabel(lastKnownStatus)}</strong>. No new probes, health
-          history, alerts, or notifications are created while paused.
-        {:else}
-          Checks run according to the configured schedule. The status below is the latest recorded
-          check.
-        {/if}
-      </p>
-      {#if paused && pausedAt}
-        <p class="mt-1 text-xs text-slate-600">Paused {formatDateTime(pausedAt)}</p>
-      {/if}
-    </div>
+{#snippet pausedCardCopy()}
+  Last known status: <strong>{statusLabel(lastKnownStatus)}</strong>. No new probes, health history,
+  alerts, or notifications are created while paused.
+{/snippet}
 
-    {#if canManage}
-      <button
-        class="rounded-lg border border-slate-400 px-3 py-2 text-sm font-medium text-slate-800 underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:cursor-wait disabled:opacity-60"
-        type="button"
-        disabled={submitting}
-        aria-haspopup="dialog"
-        onclick={openConfirmation}
-      >
-        {submitting ? 'Saving…' : paused ? 'Resume monitoring' : 'Pause monitoring'}
-      </button>
-    {/if}
-  </div>
+{#snippet toggleButton(extraClass: string)}
+  {#if canManage}
+    <button
+      class={`rounded-lg border border-slate-400 font-medium text-slate-800 underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:cursor-wait disabled:opacity-60 ${extraClass}`}
+      type="button"
+      disabled={submitting}
+      aria-haspopup="dialog"
+      onclick={openConfirmation}
+    >
+      {submitting ? 'Saving…' : paused ? 'Resume monitoring' : 'Pause monitoring'}
+    </button>
+  {/if}
+{/snippet}
 
+{#snippet viewerNote(extraClass: string)}
   {#if !canManage && paused}
-    <p class="mt-3 text-sm text-slate-700">
+    <p class={`text-slate-700 ${extraClass}`}>
       You can view this state, but your role cannot change it.
     </p>
   {/if}
+{/snippet}
 
+{#snippet errorNote(extraClass: string)}
   {#if errorMessage}
-    <p class="mt-3 text-sm text-red-700" role="alert">{errorMessage}</p>
+    <p class={`text-red-700 ${extraClass}`} role="alert">{errorMessage}</p>
   {/if}
-</section>
+{/snippet}
+
+{#if variant === 'row'}
+  <!-- Table-cell rendering: a labelled group carries the state name a <h2> would carry on the
+       detail page, so a row never injects a heading into the page outline. -->
+  <div class="space-y-1" role="group" aria-labelledby={`monitoring-state-heading-${idSuffix}`}>
+    <p id={`monitoring-state-heading-${idSuffix}`} class="font-medium text-slate-900">
+      {paused ? 'Monitoring paused' : 'Monitoring active'}
+    </p>
+    {#if paused}
+      <p class="text-xs text-slate-600">
+        Last known status: <strong>{statusLabel(lastKnownStatus)}</strong>
+      </p>
+      {#if pausedAt}
+        <p class="text-xs text-slate-600">Paused {formatDateTime(pausedAt)}</p>
+      {/if}
+    {/if}
+    {@render toggleButton('px-2 py-1 text-xs')}
+    {@render viewerNote('text-xs')}
+    {@render errorNote('text-xs')}
+  </div>
+{:else}
+  <section
+    class={`rounded-2xl border p-4 ${paused ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}
+    aria-labelledby={`monitoring-state-heading-${idSuffix}`}
+  >
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h2 id={`monitoring-state-heading-${idSuffix}`} class="font-semibold text-slate-950">
+          {paused ? 'Monitoring paused' : 'Monitoring active'}
+        </h2>
+        <p class="mt-1 text-sm text-slate-700">
+          {#if paused}
+            {@render pausedCardCopy()}
+          {:else}
+            Checks run according to the configured schedule. The status below is the latest recorded
+            check.
+          {/if}
+        </p>
+        {#if paused && pausedAt}
+          <p class="mt-1 text-xs text-slate-600">Paused {formatDateTime(pausedAt)}</p>
+        {/if}
+      </div>
+
+      {@render toggleButton('px-3 py-2 text-sm')}
+    </div>
+
+    {@render viewerNote('mt-3 text-sm')}
+    {@render errorNote('mt-3 text-sm')}
+  </section>
+{/if}
 
 {#if confirming}
   <div class="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4" role="presentation">
@@ -110,15 +150,15 @@
       class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="monitoring-confirm-title"
-      aria-describedby="monitoring-confirm-description"
+      aria-labelledby={`monitoring-confirm-title-${idSuffix}`}
+      aria-describedby={`monitoring-confirm-description-${idSuffix}`}
       tabindex="-1"
       onkeydown={(event) => event.key === 'Escape' && cancelConfirmation()}
     >
-      <h2 id="monitoring-confirm-title" class="text-lg font-semibold text-slate-950">
+      <h2 id={`monitoring-confirm-title-${idSuffix}`} class="text-lg font-semibold text-slate-950">
         {paused ? 'Resume monitoring?' : 'Pause monitoring?'}
       </h2>
-      <p id="monitoring-confirm-description" class="mt-3 text-sm text-slate-700">
+      <p id={`monitoring-confirm-description-${idSuffix}`} class="mt-3 text-sm text-slate-700">
         {#if paused}
           Checks will run again according to the configured schedule and may be due immediately.
           Existing status, history, and alerts remain unchanged.

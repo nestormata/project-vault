@@ -66,6 +66,18 @@ describe('/projects/:projectId/certificates list (AC-C1/C2)', () => {
     expect(screen.queryByText('Renews on')).toBeNull()
   })
 
+  // Story 18.13: AssetTable's caption is a required prop precisely so no list ships a table
+  // without an accessible name; assert it for real rather than trusting the type.
+  it('gives the table a non-empty accessible caption', () => {
+    const { container } = render(CertificatesListPage, {
+      props: {
+        data: { projectId, orgRole: 'viewer', certificates: [makeCertificate()], notFound: false },
+      },
+    })
+    const caption = container.querySelector('caption')
+    expect(caption?.textContent?.trim()).toBeTruthy()
+  })
+
   it('member sees Edit/Delete controls', () => {
     render(CertificatesListPage, {
       props: {

@@ -35,6 +35,11 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      # Explicit, not implicit: story 9.10 appended a leaf `migrate` stage after `runner`, and an
+      # omitted target builds the Dockerfile's LAST stage — which silently gave this service the
+      # db-builder-derived migrate image, whose default command exits 0 without ever starting the
+      # app. Name the stage so appending another one can never repoint the API again.
+      target: runner
     # Vault Initialization & Master Key Management (Story 1.5):
     #   Passphrase init (dev):
     #     curl -X POST http://localhost:3000/api/v1/vault/init -H 'Content-Type: application/json' \

@@ -64,7 +64,11 @@
     <EmptyAssetState message="No services registered yet." />
   {:else}
     <FormErrorBanner message={deleteError} />
-    <AssetTable columns={['Name', 'URL', 'Renewal date', 'Alert lead days']} {canManage}>
+    <AssetTable
+      caption="Services monitored in this project"
+      columns={['Name', 'URL', 'Renewal date', 'Alert lead days']}
+      {canManage}
+    >
       {#each services as service (service.id)}
         <tr class="border-b border-slate-100 last:border-b-0">
           <td class="px-4 py-3 font-semibold text-slate-950">{service.name}</td>

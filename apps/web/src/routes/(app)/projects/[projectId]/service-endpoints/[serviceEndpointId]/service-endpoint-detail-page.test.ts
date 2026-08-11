@@ -96,9 +96,10 @@ describe('service-endpoint detail +page.svelte', () => {
 
     expect(await screen.findByText('Monitoring paused')).toBeTruthy()
     expect(screen.getByText('Down', { exact: true })).toBeTruthy()
-    expect(screen.getByText('Monitoring paused').parentElement?.textContent).toMatch(
-      /no new probes, health\s+history, alerts/i
-    )
+    // Whitespace-normalized: the copy is fixed, but where the source template wraps it is not.
+    expect(
+      screen.getByText('Monitoring paused').parentElement?.textContent?.replace(/\s+/g, ' ')
+    ).toMatch(/no new probes, health history, alerts/i)
     expect(screen.queryByRole('button', { name: /resume monitoring/i })).toBeNull()
   })
 

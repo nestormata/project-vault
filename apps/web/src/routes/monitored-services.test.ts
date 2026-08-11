@@ -84,6 +84,18 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
     expect(screen.getByText('Alerts at 14, 3 days before')).toBeTruthy()
   })
 
+  // Story 18.13: AssetTable's caption is a required prop precisely so no list ships a table
+  // without an accessible name; assert it for real rather than trusting the type.
+  it('gives the table a non-empty accessible caption', () => {
+    const { container } = render(ServicesListPage, {
+      props: {
+        data: { projectId, orgRole: 'viewer', services: [makeService()], notFound: false },
+      },
+    })
+    const caption = container.querySelector('caption')
+    expect(caption?.textContent?.trim()).toBeTruthy()
+  })
+
   it('AC-I1: viewer sees no Edit/Delete controls; member sees both', () => {
     const { unmount } = render(ServicesListPage, {
       props: { data: { projectId, orgRole: 'viewer', services: [makeService()], notFound: false } },

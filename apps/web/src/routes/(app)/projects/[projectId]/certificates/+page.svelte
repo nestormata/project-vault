@@ -58,7 +58,11 @@
     <EmptyAssetState message="No certificates registered yet." />
   {:else}
     <FormErrorBanner message={deleteError} />
-    <AssetTable columns={['Domain', 'Expires on', 'Alert lead days']} {canManage}>
+    <AssetTable
+      caption="Certificates monitored in this project"
+      columns={['Domain', 'Expires on', 'Alert lead days']}
+      {canManage}
+    >
       {#each certificates as certificate (certificate.id)}
         <tr class="border-b border-slate-100 last:border-b-0">
           <td class="px-4 py-3 font-semibold text-slate-950">{certificate.domain}</td>

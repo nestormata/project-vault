@@ -5,15 +5,26 @@
 // at" formatting) has exactly one home here to avoid drift between the two surfaces.
 export type ServiceHealthStatus = 'healthy' | 'degraded' | 'down'
 
+const NEUTRAL_BADGE_CLASS = 'bg-slate-100 text-slate-700'
+
+const STATUS_BADGE_CLASSES: Record<ServiceHealthStatus, string> = {
+  healthy: 'bg-emerald-100 text-emerald-800',
+  degraded: 'bg-amber-100 text-amber-900',
+  down: 'bg-red-100 text-red-800',
+}
+
+// Story 18.13: a keyed lookup rather than a switch, so adding a member to ServiceHealthStatus is
+// still a compile error here, while an off-contract runtime value (the API enum says it cannot
+// happen, but a badge is not worth trusting it for) falls back to a neutral badge instead of
+// stringifying `undefined` into the class attribute.
+//
+// hasOwn, not a bare index + `??`: plain-object lookup walks the prototype, so a status of
+// 'constructor' or 'toString' would resolve to an inherited function and stringify it into the
+// class attribute — the exact failure the fallback exists to prevent.
 export function statusClass(status: ServiceHealthStatus): string {
-  switch (status) {
-    case 'healthy':
-      return 'bg-emerald-100 text-emerald-800'
-    case 'degraded':
-      return 'bg-amber-100 text-amber-900'
-    case 'down':
-      return 'bg-red-100 text-red-800'
-  }
+  return Object.hasOwn(STATUS_BADGE_CLASSES, status)
+    ? STATUS_BADGE_CLASSES[status]
+    : NEUTRAL_BADGE_CLASS
 }
 
 export function formatCheckedAt(value: string | null): string {

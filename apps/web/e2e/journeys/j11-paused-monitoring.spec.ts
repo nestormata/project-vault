@@ -15,6 +15,8 @@ import { InvitationAcceptPage } from '../pages/InvitationAcceptPage.js'
 import { LoginPage } from '../pages/LoginPage.js'
 import { RegisterPage } from '../pages/RegisterPage.js'
 
+const MONITORING_ACTIVE = 'Monitoring active'
+
 test.describe('Epic 20.3 — paused monitoring controls', () => {
   test('owner can navigate list → detail → pause → resume', async ({ page, context }) => {
     const ownerPassword = ['e2e', 'Epic20', 'Owner', 'Password', '123'].join('-')
@@ -34,7 +36,12 @@ test.describe('Epic 20.3 — paused monitoring controls', () => {
 
     await page.goto(`/projects/${project.id}/service-endpoints`)
     await expect(page.getByText('Epic 20 canary')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Monitoring active' })).toBeVisible()
+    // Story 18.13: list rows render the compact pause variant, which carries the state as text
+    // rather than a per-row heading. The detail-page heading assertions below are unchanged.
+    await expect(page.getByText(MONITORING_ACTIVE)).toBeVisible()
+    // ...and it must NOT be a heading here — a heading would mean the detail-page card variant
+    // leaked back into a table row, which is exactly what this story removed.
+    await expect(page.getByRole('heading', { name: MONITORING_ACTIVE })).toHaveCount(0)
     await page.getByRole('link', { name: 'Edit' }).click()
     await expect(page).toHaveURL((url) =>
       url.pathname.endsWith(`/projects/${project.id}/service-endpoints/${endpoint.id}`)
@@ -48,7 +55,7 @@ test.describe('Epic 20.3 — paused monitoring controls', () => {
 
     await page.getByRole('button', { name: 'Resume monitoring' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Resume monitoring' }).click()
-    await expect(page.getByRole('heading', { name: 'Monitoring active' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: MONITORING_ACTIVE })).toBeVisible()
   })
 
   test('viewer sees paused state and no mutation control', async ({ browser }) => {
