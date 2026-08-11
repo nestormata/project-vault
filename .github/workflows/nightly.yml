@@ -206,6 +206,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Playwright's own global-setup.ts (run on the HOST by `test:e2e`, not inside a container)
+      # calls resetDatabase() -> guarded-migrate.ts, which imports @project-vault/shared -- that
+      # needs a built dist/ on the host regardless of docker-compose building it separately inside
+      # the api/migrate containers below. Matches the "Build workspace packages" step the
+      # flaky-test-repeat and mutation jobs already run before touching packages/db's scripts.
+      - name: Build workspace packages
+        run: pnpm turbo build
+
       # Story 10-1 Dev Notes: VAULT_ALLOW_REMOTE_INIT=true is applied ONLY via
       # docker-compose.e2e.yml's override, scoped to this job — never the base docker-compose.yml
       # (that would weaken every developer's default local bootstrap-token protection).
