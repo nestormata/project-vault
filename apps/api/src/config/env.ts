@@ -321,8 +321,10 @@ function validateErasureEmailHashProductionSecret(env: ProductionEnv, ctx: z.Ref
 
 // Story 14.3 AC-3/AC-4: same array-based comparison pattern as ERASURE_EMAIL_HASH_SECRET — a
 // 10th OR-chain would push cyclomatic complexity past the repo's eslint threshold.
-function ssoStateHmacSharesAnotherAuthSecret(env: ProductionEnv): boolean {
-  const otherSecrets = [
+// Shared with operationalStatusTokenSharesAnotherAuthSecret below, which checks against this same
+// list plus SSO_STATE_HMAC_SECRET itself.
+function priorAuthSecrets(env: ProductionEnv): (string | undefined)[] {
+  return [
     env.SESSION_SECRET,
     env.REFRESH_TOKEN_HMAC_SECRET,
     env.TOTP_REPLAY_HMAC_SECRET,
@@ -334,7 +336,10 @@ function ssoStateHmacSharesAnotherAuthSecret(env: ProductionEnv): boolean {
     env.STATUS_PAGE_TOKEN_HMAC_SECRET,
     env.ERASURE_EMAIL_HASH_SECRET,
   ]
-  return otherSecrets.includes(env.SSO_STATE_HMAC_SECRET)
+}
+
+function ssoStateHmacSharesAnotherAuthSecret(env: ProductionEnv): boolean {
+  return priorAuthSecrets(env).includes(env.SSO_STATE_HMAC_SECRET)
 }
 
 function validateSsoStateProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
@@ -361,19 +366,7 @@ function validateSsoStateProductionSecret(env: ProductionEnv, ctx: z.RefinementC
 // similar name — these protect two different features (public customer-facing status pages vs.
 // this instance's own internal-operator monitoring probe).
 function operationalStatusTokenSharesAnotherAuthSecret(env: ProductionEnv): boolean {
-  const otherSecrets = [
-    env.SESSION_SECRET,
-    env.REFRESH_TOKEN_HMAC_SECRET,
-    env.TOTP_REPLAY_HMAC_SECRET,
-    env.MFA_PENDING_SESSION_HMAC_SECRET,
-    env.INVITATION_TOKEN_HMAC_SECRET,
-    env.RECOVERY_TOKEN_HMAC_SECRET,
-    env.API_KEY_HMAC_SECRET,
-    env.MACHINE_JWT_SECRET,
-    env.STATUS_PAGE_TOKEN_HMAC_SECRET,
-    env.ERASURE_EMAIL_HASH_SECRET,
-    env.SSO_STATE_HMAC_SECRET,
-  ]
+  const otherSecrets = [...priorAuthSecrets(env), env.SSO_STATE_HMAC_SECRET]
   return otherSecrets.includes(env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET)
 }
 

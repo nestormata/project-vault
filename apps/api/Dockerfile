@@ -168,3 +168,8 @@ CMD ["node", "dist/main.js"]
 FROM db-builder AS migrate
 ARG RELEASE_VERSION=dev
 LABEL org.opencontainers.image.version=$RELEASE_VERSION
+# Sonar docker:S6471: unlike `runner` (which starts as root on purpose -- see that stage's own
+# comment -- to chown BACKUP_STORAGE_PATH before dropping privilege via su-exec), this published
+# image never touches a host-mounted volume and only ever runs `pnpm --filter @project-vault/db
+# db:migrate` against the database over the network, so there's no reason for it to run as root.
+USER node

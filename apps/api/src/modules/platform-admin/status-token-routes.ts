@@ -56,6 +56,39 @@ function asSecureCtx(ctx: SecureRouteContext | PublicRouteContext): SecureRouteC
   return ctx as SecureRouteContext
 }
 
+// generate and rotate use the exact same schema and try/catch/response shape — only the
+// token-producing service function differs — so both are factored out here to keep the two
+// secureRoute() calls from being flagged as clones.
+const STATUS_TOKEN_SECRET_SCHEMA = {
+  tags: PLATFORM_ADMIN_TAGS,
+  response: {
+    200: StatusTokenSecretResponseSchema,
+    ...PLATFORM_ADMIN_ERROR_RESPONSES,
+  },
+}
+
+function newTokenHandler(
+  produceToken: (
+    userId: string,
+    req: FastifyRequest
+  ) => Promise<{ plaintext: string; createdAt: string }>
+) {
+  return async (
+    ctx: SecureRouteContext | PublicRouteContext,
+    req: FastifyRequest,
+    reply: FastifyReply
+  ) => {
+    const secureCtx = asSecureCtx(ctx)
+    try {
+      const { plaintext, createdAt } = await produceToken(secureCtx.auth.userId, req)
+      return { token: plaintext, createdAt }
+    } catch (error) {
+      if (sendPlatformAuditWriteFailure(error, reply)) return reply
+      throw error
+    }
+  }
+}
+
 /**
  * Story 1.19 AC-5/AC-6/AC-9: operator+MFA-gated CRUD for the GET /status bearer token, mounted
  * alongside settings-routes.ts under the same `/api/v1/admin` prefix. Every mutation uses the
@@ -88,65 +121,27 @@ export async function statusTokenRoutes(
   secureRoute(fastify, {
     method: 'POST',
     url: '/settings/status-token/generate',
-    schema: {
-      tags: PLATFORM_ADMIN_TAGS,
-      response: {
-        200: StatusTokenSecretResponseSchema,
-        ...PLATFORM_ADMIN_ERROR_RESPONSES,
-      },
-    },
+    schema: STATUS_TOKEN_SECRET_SCHEMA,
     security: {
       requireOrgScope: false,
       requirePlatformOperator: true,
       requireMfa: true,
       writeAuditEvent: false,
     },
-    handler: async (
-      ctx: SecureRouteContext | PublicRouteContext,
-      req: FastifyRequest,
-      reply: FastifyReply
-    ) => {
-      const secureCtx = asSecureCtx(ctx)
-      try {
-        const { plaintext, createdAt } = await generateStatusToken(secureCtx.auth.userId, req)
-        return { token: plaintext, createdAt }
-      } catch (error) {
-        if (sendPlatformAuditWriteFailure(error, reply)) return reply
-        throw error
-      }
-    },
+    handler: newTokenHandler(generateStatusToken),
   })
 
   secureRoute(fastify, {
     method: 'POST',
     url: '/settings/status-token/rotate',
-    schema: {
-      tags: PLATFORM_ADMIN_TAGS,
-      response: {
-        200: StatusTokenSecretResponseSchema,
-        ...PLATFORM_ADMIN_ERROR_RESPONSES,
-      },
-    },
+    schema: STATUS_TOKEN_SECRET_SCHEMA,
     security: {
       requireOrgScope: false,
       requirePlatformOperator: true,
       requireMfa: true,
       writeAuditEvent: false,
     },
-    handler: async (
-      ctx: SecureRouteContext | PublicRouteContext,
-      req: FastifyRequest,
-      reply: FastifyReply
-    ) => {
-      const secureCtx = asSecureCtx(ctx)
-      try {
-        const { plaintext, createdAt } = await rotateStatusToken(secureCtx.auth.userId, req)
-        return { token: plaintext, createdAt }
-      } catch (error) {
-        if (sendPlatformAuditWriteFailure(error, reply)) return reply
-        throw error
-      }
-    },
+    handler: newTokenHandler(rotateStatusToken),
   })
 
   secureRoute(fastify, {

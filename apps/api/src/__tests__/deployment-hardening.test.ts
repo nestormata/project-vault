@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(__dirname, '../../../../')
 const API_DOCKERFILE_PATH = 'apps/api/Dockerfile'
 const WEB_DOCKERFILE_PATH = 'apps/web/Dockerfile'
+const MIGRATE_STAGE_FROM = 'FROM db-builder AS migrate'
 
 const readRepoFile = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
@@ -29,11 +30,25 @@ describe('deployment hardening configuration', () => {
   // running application process is still never root — the privilege-drop boundary just moved
   // from image config to inside the entrypoint (see that script's own header comment).
   it('runs the api container’s app process as the node user via the entrypoint’s su-exec drop, not a top-level USER', () => {
-    const apiDockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const runnerStage = dockerfile.slice(
+      dockerfile.indexOf('AS runner'),
+      dockerfile.indexOf(MIGRATE_STAGE_FROM)
+    )
     const entrypoint = readRepoFile('apps/api/docker-entrypoint.sh')
 
-    expect(apiDockerfile).not.toMatch(/\nUSER node\n/)
+    expect(runnerStage).not.toMatch(/\nUSER node\n/)
     expect(entrypoint).toMatch(/exec su-exec node:node ".*"\n?/)
+  })
+
+  // Sonar docker:S6471: unlike `runner`, the published `migrate` image never touches a
+  // host-mounted volume — it only runs `pnpm --filter @project-vault/db db:migrate` against the
+  // database over the network — so it has no reason to default to root.
+  it('runs the migrate stage as the node user', () => {
+    const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const migrateStage = dockerfile.slice(dockerfile.indexOf(MIGRATE_STAGE_FROM))
+
+    expect(migrateStage).toMatch(/\nUSER node\n/)
   })
 
   it.each([
@@ -79,7 +94,7 @@ describe('deployment hardening configuration', () => {
   // silently looks like a numbered release.
   it('declares RELEASE_VERSION as a build-arg with a documented dev default in the api migrate and runner stages', () => {
     const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
-    const migrateStageStart = dockerfile.indexOf('FROM db-builder AS migrate')
+    const migrateStageStart = dockerfile.indexOf(MIGRATE_STAGE_FROM)
     const runnerStage = dockerfile.slice(dockerfile.indexOf('AS runner'), migrateStageStart)
     const migrateStage = dockerfile.slice(migrateStageStart)
 
