@@ -30,6 +30,17 @@ RUN pnpm --filter @project-vault/shared build \
 WORKDIR /app
 RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
 
+# @inlang/paraglide-js declares vite as a runtime dependency (for its `/vite` plugin export,
+# used only in vite.config.ts at build time) but its compiled dist/ never requires it — verified
+# by grepping the package for any 'vite'/'esbuild' import. adapter-node's build/index.js is
+# self-contained and never requires them either. They're pure build-time dead weight here, and
+# esbuild's bundled Go toolchain is a recurring source of stdlib CVEs (crypto/tls, net/mail, mime
+# — see .trivyignore's history) with no clean fix: esbuild 0.26+ carries a patched Go toolchain
+# but breaks this app's SvelteKit build with a destructuring-lowering regression against our Vite
+# target (verified 0.27.7 and 0.28.2 both fail identically). Pruning removes the CVE surface
+# entirely instead of chasing each new Go stdlib disclosure through .trivyignore.
+RUN find /app/deploy/node_modules/.pnpm -maxdepth 1 \( -name 'vite@*' -o -name 'esbuild@*' -o -name '@esbuild+*' \) -exec rm -rf {} +
+
 # node:24-alpine, pinned by digest — see builder stage comment above.
 FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
 
