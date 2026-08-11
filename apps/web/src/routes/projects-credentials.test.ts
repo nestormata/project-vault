@@ -348,6 +348,18 @@ describe('project credential routes', () => {
           projectId,
           credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
           orgRole: 'member' as const,
+          project: {
+            id: '11111111-1111-4111-8111-111111111111',
+            orgId: '11111111-1111-4111-8111-111111111111',
+            name: 'Test Project',
+            slug: 'test-project',
+            description: null,
+            role: 'member' as const,
+            createdBy: null,
+            createdAt: '2026-06-01T00:00:00.000Z',
+            updatedAt: '2026-06-01T00:00:00.000Z',
+            archivedAt: null,
+          },
           credential: {
             id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
             projectId,
@@ -639,6 +651,24 @@ describe('project credential routes', () => {
       projectId,
       credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       orgRole: 'admin' as const,
+      // Story 21.5's `data.project != null` hardening (84df9c44) requires this field to be
+      // present, matching the real +layout.server.ts loader (project is only null on a 404,
+      // which this fixture never represents). Project-level role independently gates
+      // `canReveal` alongside org-level `orgRole` — defaults to 'admin' to match orgRole so
+      // existing tests keep their pre-hardening behavior; override explicitly for viewer-role
+      // scenarios.
+      project: {
+        id: '11111111-1111-4111-8111-111111111111',
+        orgId: '11111111-1111-4111-8111-111111111111',
+        name: 'Test Project',
+        slug: 'test-project',
+        description: null,
+        role: 'admin' as const,
+        createdBy: null,
+        createdAt: '2026-06-01T00:00:00.000Z',
+        updatedAt: '2026-06-01T00:00:00.000Z',
+        archivedAt: null,
+      },
       credential: {
         id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         projectId,
