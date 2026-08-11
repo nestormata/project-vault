@@ -10,6 +10,13 @@ primary_region = "iad"
 
 [build]
   dockerfile = "apps/api/Dockerfile"
+  # Must match container-publish.yml / ci.yml / nightly.yml, which all build the api image
+  # with `--target runner`. Without this, `fly deploy` builds the Dockerfile's LAST stage,
+  # which is the `migrate` leaf stage — it has no CMD/ENTRYPOINT of its own, so it inherits
+  # the base node image's `CMD ["node"]`, starts a bare REPL, exits 0 immediately, and Fly
+  # stops the machine ("machine exited with exit code 0, not restarting"). The web app's
+  # proxy routes then report {"status":"unavailable","reason":"api_unreachable"}.
+  build-target = "runner"
   # No [build.args] / context override: fly deploy uses this file's own directory (repo
   # root) as the build context by default, matching docker-compose.yml's `context: .` —
   # required because the Dockerfile COPYs sibling packages/* by path from the repo root.

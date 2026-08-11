@@ -69,6 +69,8 @@ flyctl secrets set -a "$API_APP" \
   API_KEY_HMAC_SECRET="$(openssl rand -hex 32)" \
   MACHINE_JWT_SECRET="$(openssl rand -hex 32)" \
   STATUS_PAGE_TOKEN_HMAC_SECRET="$(openssl rand -hex 32)" \
+  OPERATIONAL_STATUS_TOKEN_HMAC_SECRET="$(openssl rand -hex 32)" \
+  SSO_STATE_HMAC_SECRET="$(openssl rand -hex 32)" \
   ERASURE_EMAIL_HASH_SECRET="$(openssl rand -hex 32)" \
   VAULT_BOOTSTRAP_TOKEN="$BOOTSTRAP_TOKEN" \
   DEMO_VAULT_PASSPHRASE="$VAULT_PASSPHRASE"
