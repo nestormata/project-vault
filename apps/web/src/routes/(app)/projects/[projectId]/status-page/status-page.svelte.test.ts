@@ -2,11 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 
 const updateStatusPageServicesMock = vi.hoisted(() => vi.fn())
+const regenerateStatusPageTokenMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/status-page.js', () => ({
   disableStatusPage: vi.fn(),
   enableStatusPage: vi.fn(),
-  regenerateStatusPageToken: vi.fn(),
+  regenerateStatusPageToken: regenerateStatusPageTokenMock,
   updateStatusPageServices: updateStatusPageServicesMock,
 }))
 
@@ -225,5 +226,76 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
     const selectedLi = screen.getByRole('checkbox', { name: 'API' }).closest('li')
     expect(selectedLi).not.toBeNull()
     expect(selectedLi?.querySelectorAll('p').length).toBe(2)
+  })
+})
+
+describe('status-page +page.svelte (Story 6.6: two-step rotation confirm and legacy-row copy)', () => {
+  it('does not call regenerate on the first click of "Regenerate link", only after the relabeled confirm click', async () => {
+    render(StatusPage, { props: { data: data() } })
+
+    const button = screen.getByRole('button', { name: 'Regenerate link' })
+    await fireEvent.click(button)
+
+    expect(regenerateStatusPageTokenMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/\/status\/tok-1$/)).toBeTruthy()
+
+    const confirmButton = screen.getByRole('button', { name: /confirm.*old link stops working/i })
+    regenerateStatusPageTokenMock.mockResolvedValue({ token: 'tok-2' })
+    await fireEvent.click(confirmButton)
+
+    expect(regenerateStatusPageTokenMock).toHaveBeenCalledWith(expect.anything(), projectId)
+  })
+
+  it('renders the "cannot be reconstructed" migration copy for a legacy row, not the generic fallback', () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: true, token: undefined, legacyToken: true, services: [] },
+        }),
+      },
+    })
+
+    expect(screen.getByText(/can't be redisplayed/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Migrate to persistent link' })).toBeTruthy()
+    expect(screen.queryByText(/temporarily unavailable/i)).toBeNull()
+  })
+
+  it('legacy row: does not call regenerate on the first click of "Migrate to persistent link", only after the relabeled confirm click, and clears legacyToken once it resolves', async () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: true, token: undefined, legacyToken: true, services: [] },
+        }),
+      },
+    })
+
+    const button = screen.getByRole('button', { name: 'Migrate to persistent link' })
+    await fireEvent.click(button)
+
+    expect(regenerateStatusPageTokenMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/can't be redisplayed/i)).toBeTruthy()
+
+    const confirmButton = screen.getByRole('button', { name: /confirm.*old link stops working/i })
+    regenerateStatusPageTokenMock.mockResolvedValue({ token: 'tok-migrated' })
+    await fireEvent.click(confirmButton)
+
+    expect(regenerateStatusPageTokenMock).toHaveBeenCalledWith(expect.anything(), projectId)
+    expect(await screen.findByText(/tok-migrated$/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Regenerate link' })).toBeTruthy()
+    expect(screen.queryByText(/can't be redisplayed/i)).toBeNull()
+  })
+
+  it('renders the neutral temporarily-unavailable copy for a sealed/transient row, unchanged', () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: true, token: undefined, legacyToken: false, services: [] },
+        }),
+      },
+    })
+
+    expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Regenerate link' })).toBeTruthy()
+    expect(screen.queryByText(/can't be redisplayed/i)).toBeNull()
   })
 })

@@ -21,6 +21,11 @@ export const StatusPageConfigSchema = z
     updatedAt: z.iso.datetime().optional(),
     services: z.array(StatusPageConfigServiceSchema).optional(),
     token: z.string().optional(),
+    // Story 6.6 AC-4: true only for a genuine legacy row (enabled, `encryptedToken` column is
+    // null — i.e. it never had a recoverable ciphertext written, pre-21.7). Deliberately absent
+    // for the transient sealed-vault case (encryptedToken exists but decrypt failed right now) so
+    // the UI can tell "this URL can never be reconstructed, migrate" apart from "try again soon".
+    legacyToken: z.boolean().optional(),
   })
   .meta({ id: 'StatusPageConfig' })
 

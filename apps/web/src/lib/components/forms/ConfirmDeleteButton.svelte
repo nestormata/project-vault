@@ -8,12 +8,17 @@
     confirmLabel = 'Confirm delete?',
     pendingLabel = 'Deleting…',
     disabled = false,
+    // Story 6.6: non-destructive two-step actions (e.g. rotate/regenerate a link) reuse this same
+    // relabel-and-reclick pattern but must not look identical to an adjacent, genuinely
+    // irreversible action (e.g. Disable) — 'neutral' opts out of the red/danger styling below.
+    variant = 'danger',
     onConfirm,
   }: {
     label?: string
     confirmLabel?: string
     pendingLabel?: string
     disabled?: boolean
+    variant?: 'danger' | 'neutral'
     onConfirm: () => void | Promise<void>
   } = $props()
 
@@ -38,7 +43,10 @@
 
 <button
   type="button"
-  class="rounded-xl border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+  class="rounded-xl border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 {variant ===
+  'danger'
+    ? 'border-red-300 text-red-700'
+    : 'border-slate-300 text-slate-900'}"
   disabled={disabled || pending}
   onclick={() => void handleClick()}
 >

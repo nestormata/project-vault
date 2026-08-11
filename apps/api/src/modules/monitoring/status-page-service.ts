@@ -134,7 +134,14 @@ export async function getStatusPageConfig(tx: Tx, projectId: string): Promise<St
     .where(eq(statusPageServices.statusPageId, statusPage.id))
     .orderBy(statusPageServices.sortOrder)
 
-  const token = await decryptStatusPageToken(statusPage.encryptedToken as EncryptedValue | null)
+  const encryptedToken = statusPage.encryptedToken as EncryptedValue | null
+  const token = await decryptStatusPageToken(encryptedToken)
+  // Story 6.6 AC-4: distinguish "never had a recoverable ciphertext" (genuine legacy row, the
+  // hash truly cannot be reversed) from "has one but couldn't decrypt it just now" (sealed vault
+  // — transient, decryptStatusPageToken already returns null for that case too). Only the former
+  // gets `legacyToken: true`; checked on the raw column, not on `token === null`, so the two
+  // null-token causes stay distinguishable downstream.
+  const legacyToken = encryptedToken === null
 
   return {
     enabled: true,
@@ -142,6 +149,7 @@ export async function getStatusPageConfig(tx: Tx, projectId: string): Promise<St
     updatedAt: statusPage.updatedAt.toISOString(),
     services,
     ...(token !== null ? { token } : {}),
+    ...(legacyToken ? { legacyToken: true } : {}),
   }
 }
 

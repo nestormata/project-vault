@@ -137,9 +137,7 @@ describe('/projects/:projectId/status-page', () => {
       props: { data: pageData({ config: { enabled: true, token: null, services: [] } }) },
     })
 
-    expect(
-      screen.getByText(/isn't persistently viewable yet.*regenerate to get a persistent link/i)
-    ).toBeTruthy()
+    expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
   })
 
   it.each([
@@ -175,7 +173,10 @@ describe('/projects/:projectId/status-page', () => {
     expect(link.getAttribute('href')).toBe('/settings/security')
   })
 
-  it('regenerates once while busy and replaces the one-time URL', async () => {
+  // Story 6.6 AC-3/AC-6: rotation now needs an explicit two-step confirm (reused
+  // ConfirmDeleteButton pattern) — the first click only relabels the button, the API call fires
+  // only on the second, post-relabel click.
+  it('requires a second, relabeled click to regenerate, and replaces the one-time URL', async () => {
     let resolveRegenerate!: (value: { token: string }) => void
     regenerateStatusPageTokenMock.mockReturnValue(
       new Promise<{ token: string }>((resolve) => {
@@ -184,9 +185,13 @@ describe('/projects/:projectId/status-page', () => {
     )
     render(StatusPageAdminPage, { props: { data: pageData() } })
 
-    const regenerate = screen.getByRole('button', { name: /regenerate link/i })
+    const regenerate = screen.getByRole('button', { name: /^regenerate link$/i })
     await fireEvent.click(regenerate)
-    await fireEvent.click(regenerate)
+    expect(regenerateStatusPageTokenMock).not.toHaveBeenCalled()
+
+    const confirm = screen.getByRole('button', { name: /confirm.*old link stops working/i })
+    await fireEvent.click(confirm)
+    await fireEvent.click(confirm)
     expect(regenerateStatusPageTokenMock).toHaveBeenCalledTimes(1)
     resolveRegenerate({ token: 'replacement' })
     expect(await screen.findByText('https://vault.example.com/status/replacement')).toBeTruthy()
@@ -202,7 +207,8 @@ describe('/projects/:projectId/status-page', () => {
   ])('maps regenerate failures', async (failure, expected) => {
     regenerateStatusPageTokenMock.mockRejectedValue(failure)
     render(StatusPageAdminPage, { props: { data: pageData() } })
-    await fireEvent.click(screen.getByRole('button', { name: /regenerate link/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /^regenerate link$/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /confirm.*old link stops working/i }))
     expect((await screen.findByRole('alert')).textContent).toMatch(expected)
   })
 

@@ -202,6 +202,10 @@ describe.sequential('status-page-service', () => {
         const config = await getStatusPageConfig(tx, projectId)
         expect(config.enabled).toBe(true)
         expect(config.token).toBeUndefined()
+        // Story 6.6 AC-4: a genuine legacy row (encryptedToken column is null) is flagged so the
+        // UI can offer the honest "cannot be reconstructed, migrate" copy instead of the neutral
+        // sealed-vault fallback.
+        expect(config.legacyToken).toBe(true)
       })
     })
 
@@ -214,6 +218,9 @@ describe.sequential('status-page-service', () => {
           const config = await getStatusPageConfig(tx, projectId)
           expect(config.enabled).toBe(true)
           expect(config.token).toBeUndefined()
+          // Story 6.6 AC-4: the sealed-vault case has a recoverable ciphertext, just not right
+          // now — it must stay distinguishable from the genuine legacy-row case above.
+          expect(config.legacyToken).toBeFalsy()
         } finally {
           await unsealVault({ passphrase: TEST_PASSPHRASE })
         }

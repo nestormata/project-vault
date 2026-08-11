@@ -3,6 +3,7 @@
   import { buildAbsoluteUrl } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
   import {
@@ -20,6 +21,9 @@
   // to include it. Once the page re-loads config, `data.config.token` takes over.
   let freshToken = $state<string | null>(null)
   let configToken = $state<string | null>(data.config.token ?? null)
+  // Story 6.6 AC-4: true only for a genuine legacy row (no recoverable ciphertext was ever
+  // written) — never for the transient sealed-vault case, which keeps today's neutral copy.
+  let legacyToken = $state(data.config.legacyToken ?? false)
   let errorMessage = $state<string | null>(null)
   let isBusy = $state(false)
   let copied = $state(false)
@@ -103,6 +107,9 @@
       const result = await enableStatusPage(fetch, data.projectId)
       freshToken = result.token
       configToken = null
+      // Story 6.6: a fresh enable always writes a new encryptedToken, so any legacy state carried
+      // over from a previously-disabled legacy row no longer applies.
+      legacyToken = false
       enabled = true
       copied = false
     } catch (error) {
@@ -122,6 +129,7 @@
       const result = await regenerateStatusPageToken(fetch, data.projectId)
       freshToken = result.token
       configToken = null
+      legacyToken = false
       copied = false
     } catch (error) {
       errorMessage =
@@ -141,6 +149,7 @@
       enabled = false
       freshToken = null
       configToken = null
+      legacyToken = false
       selected = []
       persistedSelected = []
     } catch (error) {
@@ -251,14 +260,19 @@
         <div class="flex items-center justify-between">
           <h2 class="text-xl font-semibold text-slate-950">Shareable link</h2>
           <div class="flex gap-2">
-            <button
-              class="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-              type="button"
+            <!-- Story 6.6 AC-3/AC-6: two-step confirm (reused ConfirmDeleteButton pattern) so
+                 rotation always requires an explicit label + a second click that warns the old
+                 link stops working, instead of firing on a single click. `variant="neutral"`
+                 keeps this visually distinct from the genuinely irreversible Disable button next
+                 to it — regenerating a link is not the same severity as disabling the page. -->
+            <ConfirmDeleteButton
+              label={legacyToken ? 'Migrate to persistent link' : 'Regenerate link'}
+              confirmLabel="Confirm — old link stops working?"
+              pendingLabel={legacyToken ? 'Migrating…' : 'Regenerating…'}
+              variant="neutral"
               disabled={isBusy}
-              onclick={() => onRegenerate()}
-            >
-              Regenerate link
-            </button>
+              onConfirm={onRegenerate}
+            />
             <button
               class="rounded-xl border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               type="button"
@@ -283,9 +297,20 @@
               </button>
             </div>
           </div>
+        {:else if legacyToken}
+          <!-- Story 6.6 AC-4: this URL predates persistent-link support and genuinely cannot be
+               reconstructed from its stored hash — distinct, honest copy from the transient
+               sealed-vault fallback below, plus the "Migrate to persistent link" action above. -->
+          <p class="text-sm text-slate-500">
+            This link was created before persistent links were supported, so it can't be redisplayed
+            — its hash can't be reversed into the original URL. The existing shared link keeps
+            working. Use "Migrate to persistent link" above for a link you can copy again later;
+            doing so invalidates the current shared URL.
+          </p>
         {:else}
           <p class="text-sm text-slate-500">
-            This link isn't persistently viewable yet — regenerate to get a persistent link.
+            This link is temporarily unavailable — try again shortly, or regenerate to get a
+            persistent link.
           </p>
         {/if}
       </div>

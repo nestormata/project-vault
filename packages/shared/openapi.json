@@ -1252,6 +1252,9 @@
           },
           "token": {
             "type": "string"
+          },
+          "legacyToken": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -11198,6 +11201,9 @@
           },
           "token": {
             "type": "string"
+          },
+          "legacyToken": {
+            "type": "boolean"
           }
         },
         "required": [

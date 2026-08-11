@@ -56,4 +56,21 @@ describe('ConfirmDeleteButton (Story 6.4 Dev Notes: shared two-step confirm, no 
     await fireEvent.click(button)
     expect(onConfirm).not.toHaveBeenCalled()
   })
+
+  it('Story 6.6: variant="neutral" opts out of the default red/danger styling for non-destructive two-step actions', () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined)
+    render(ConfirmDeleteButton, { props: { onConfirm, variant: 'neutral' } })
+
+    const button = screen.getByRole('button', { name: 'Delete' })
+    expect(button.className).not.toMatch(/red/)
+    expect(button.className).toMatch(/slate/)
+  })
+
+  it('defaults to the red/danger styling when variant is omitted (existing destructive-action callers unaffected)', () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined)
+    render(ConfirmDeleteButton, { props: { onConfirm } })
+
+    const button = screen.getByRole('button', { name: 'Delete' })
+    expect(button.className).toMatch(/red/)
+  })
 })
