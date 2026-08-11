@@ -426,6 +426,12 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
+          # Matches container-publish.yml's own target for the published project-vault-api
+          # image. Without this, docker/build-push-action builds the Dockerfile's default (last)
+          # stage -- which became the `migrate` leaf stage once Story 9.10 added it at the end of
+          # the file, silently validating and size-checking an unpruned, dev-toolchain-heavy
+          # image instead of the one that actually ships.
+          target: runner
           platforms: ${{ matrix.platform }}
           push: false
           provenance: false
@@ -453,6 +459,9 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
+          # Same reasoning as the "Build API image" step above: must match the published
+          # runner target, not the Dockerfile's default (last) stage.
+          target: runner
           load: true
           tags: project-vault-api:size-check
           cache-from: type=gha,scope=api-${{ matrix.arch }}
