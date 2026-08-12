@@ -99,11 +99,21 @@ export class BossService {
     if (!this.#boss) throw new Error(BOSS_NOT_STARTED_ERROR)
     if (!this.#boss.work) throw new Error('BossService work API unavailable')
     await this.ensureQueue(name)
+    // pg-boss 12 always invokes work callbacks with a batch array (Job[]), even at the default
+    // batchSize of 1 — no handler here opts into multi-job batches, so unwrap to the single job
+    // every registered handler actually expects. Without this, `job.data`/`job.id` reads silently
+    // see `undefined` (array properties), which is indistinguishable from a malformed job at the
+    // handler level — this is what caused notification/email and notification/deliver jobs to
+    // fail on every attempt with "missing notificationQueueId or orgId".
+    const runSingle = async (jobs: unknown) => {
+      const [job] = Array.isArray(jobs) ? jobs : [jobs]
+      return handler(job as BossJob)
+    }
     if (options?.localConcurrency !== undefined || options?.localGroupConcurrency !== undefined) {
-      await this.#boss.work(name, options, async (job: unknown) => handler(job as BossJob))
+      await this.#boss.work(name, options, runSingle)
       return
     }
-    await this.#boss.work(name, async (job: unknown) => handler(job as BossJob))
+    await this.#boss.work(name, runSingle)
   }
 
   async registerWorkers(handlers: Record<string, WorkerRegistration>): Promise<void> {
