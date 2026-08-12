@@ -97,7 +97,9 @@ describe('user password hashing', () => {
     const hash = await hashUserPassword(USER_PASSWORD, fastTestConfig)
 
     expect(hash).toMatch(/^\$argon2id\$/)
-    expect(hash).toContain('m=19456,t=2,p=1')
+    expect(hash).toMatch(/\bm=19456\b/)
+    expect(hash).toMatch(/\bt=2\b/)
+    expect(hash).toMatch(/\bp=1\b/)
   })
 
   it('verifies matching and non-matching user passwords', async () => {
