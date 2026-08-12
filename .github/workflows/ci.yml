@@ -54,7 +54,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 11.9.0
+          version: 11.21.0
 
       - name: Get pnpm store directory
         shell: bash
@@ -202,7 +202,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 11.9.0
+          version: 11.21.0
 
       - name: Get pnpm store directory
         shell: bash
@@ -299,7 +299,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 11.9.0
+          version: 11.21.0
 
       - name: Get pnpm store directory
         shell: bash

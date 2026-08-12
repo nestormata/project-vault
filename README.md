@@ -5,7 +5,7 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=nestormata_project-vault&metric=coverage)](https://sonarcloud.io/summary/new_code?id=nestormata_project-vault)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
-[![pnpm](https://img.shields.io/badge/pnpm-%3E%3D9.0.0-orange)](package.json)
+[![pnpm](https://img.shields.io/badge/pnpm-%3E%3D11.21.0-brightgreen)](package.json)
 
 _Run complex projects. Miss nothing._
 
@@ -226,7 +226,7 @@ API container only.
 | Tool           | Minimum Version |
 | -------------- | --------------- |
 | Node.js        | 24 LTS          |
-| pnpm           | 9.x or later    |
+| pnpm           | 11.21.0+        |
 | Docker         | 24+ with Buildx |
 | Docker Compose | v2              |
 

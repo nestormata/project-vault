@@ -70,7 +70,7 @@ jobs:
         if: steps.tagcheck.outputs.is_full_release == 'true'
         uses: pnpm/action-setup@v6
         with:
-          version: 11.9.0
+          version: 11.21.0
 
       - name: Install dependencies
         if: steps.tagcheck.outputs.is_full_release == 'true'
