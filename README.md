@@ -226,7 +226,7 @@ API container only.
 | Tool           | Minimum Version |
 | -------------- | --------------- |
 | Node.js        | 24 LTS          |
-| pnpm           | 11.21.x         |
+| pnpm           | 11.21.0+        |
 | Docker         | 24+ with Buildx |
 | Docker Compose | v2              |
 
