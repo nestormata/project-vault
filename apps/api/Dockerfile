@@ -5,7 +5,7 @@ FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbf
 # argon2 (packages/crypto) is a native module. node-gyp-build falls back to compiling
 # from source when no bundled prebuild matches this platform, so these tools are
 # installed unconditionally rather than detected at build time (Story 1.5 AC-30).
-RUN npm install -g pnpm@11.9.0 --ignore-scripts \
+RUN npm install -g pnpm@11.21.0 --ignore-scripts \
  && apk add --no-cache g++ make python3
 
 WORKDIR /app
