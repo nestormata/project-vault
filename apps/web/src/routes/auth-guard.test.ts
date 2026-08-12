@@ -256,6 +256,9 @@ describe('isProtectedAppPath', () => {
     }
     expect(isProtectedAppPath('/project')).toBe(false)
     expect(isProtectedAppPath('/login')).toBe(false)
+    // Lookalike guard for the newly added /notifications prefix specifically — a path that merely
+    // starts with the same characters (not a real sub-path) must not match.
+    expect(isProtectedAppPath('/notifications-archive')).toBe(false)
   })
 
   it('recognizes only login and registration as auth paths', () => {

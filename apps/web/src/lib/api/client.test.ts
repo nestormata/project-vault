@@ -36,6 +36,8 @@ describe('apiFetch', () => {
         '/api/v1/projects/project-1/credentials',
         expect.objectContaining({ method: 'POST', credentials: 'include' })
       )
+      // A successful refresh-and-retry is not a session expiry — no reason to redirect.
+      expect(gotoMock).not.toHaveBeenCalled()
     }
   )
 
@@ -64,6 +66,7 @@ describe('apiFetch', () => {
       '/api/v1/auth/refresh',
       expect.objectContaining({ method: 'POST', credentials: 'include' })
     )
+    expect(gotoMock).not.toHaveBeenCalled()
   })
 
   it('shares one refresh request between concurrent expired API calls', async () => {

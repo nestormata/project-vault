@@ -72,9 +72,14 @@
         method="POST"
         action="?/markAllRead"
         use:enhance={() => ({
-          update: ({ update }) => {
-            markAllReadLocallyInList()
-            markAllReadLocally()
+          update: ({ result, update }) => {
+            // Only apply the optimistic mutation once the server actually confirms success —
+            // otherwise a failed action (e.g. a downstream error) would leave the UI showing a
+            // false success state with no way back short of a manual reload.
+            if (result.type === 'success') {
+              markAllReadLocallyInList()
+              markAllReadLocally()
+            }
             void update()
           },
         })}
@@ -306,9 +311,11 @@
                     method="POST"
                     action="?/markRead"
                     use:enhance={() => ({
-                      update: ({ update }) => {
-                        markReadLocally(notification.id)
-                        decrementUnread(1)
+                      update: ({ result, update }) => {
+                        if (result.type === 'success') {
+                          markReadLocally(notification.id)
+                          decrementUnread(1)
+                        }
                         void update()
                       },
                     })}
@@ -326,9 +333,11 @@
                   method="POST"
                   action="?/dismiss"
                   use:enhance={() => ({
-                    update: ({ update }) => {
-                      if (!notification.readAt) decrementUnread(1)
-                      dismissLocally(notification.id)
+                    update: ({ result, update }) => {
+                      if (result.type === 'success') {
+                        if (!notification.readAt) decrementUnread(1)
+                        dismissLocally(notification.id)
+                      }
                       void update()
                     },
                   })}

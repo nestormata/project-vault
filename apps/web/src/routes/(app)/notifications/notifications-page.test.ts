@@ -4,8 +4,11 @@ import { tick } from 'svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 
 type EnhancedSubmitCallback = (input: { cancel?: () => void }) => {
-  update: (input: { update: () => void }) => void
+  update: (input: { result: { type: string }; update: () => void }) => void
 }
+
+const successResult = { type: 'success' }
+const failureResult = { type: 'failure' }
 
 const enhanceCallbacks = vi.hoisted(() => new Map<HTMLFormElement, EnhancedSubmitCallback>())
 const markAllReadLocallyMock = vi.hoisted(() => vi.fn())
@@ -144,13 +147,46 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     const markAllResult = enhancedSubmit(screen.getByRole('button', { name: /mark all as read/i }))(
       {}
     )
-    markAllResult.update({ update })
+    markAllResult.update({ result: successResult, update })
     expect(markAllReadLocallyMock).toHaveBeenCalledTimes(1)
     expect(update).toHaveBeenCalledTimes(1)
 
-    enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({ update })
-    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({ update })
+    enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({
+      result: successResult,
+      update,
+    })
+    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
+      result: successResult,
+      update,
+    })
     expect(decrementUnreadMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('bug fix: a failed mark-all-read/mark-read/dismiss action leaves the list untouched (no optimistic rollback needed)', () => {
+    render(NotificationsPage, {
+      props: { data: baseData({ notifications: [unreadNotification], total: 1 }) },
+    })
+
+    const update = vi.fn()
+    enhancedSubmit(screen.getByRole('button', { name: /mark all as read/i }))({}).update({
+      result: failureResult,
+      update,
+    })
+    enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({
+      result: failureResult,
+      update,
+    })
+    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
+      result: failureResult,
+      update,
+    })
+
+    expect(markAllReadLocallyMock).not.toHaveBeenCalled()
+    expect(decrementUnreadMock).not.toHaveBeenCalled()
+    // The server's own result (error message, etc.) must still be applied either way.
+    expect(update).toHaveBeenCalledTimes(3)
+    expect(screen.getByTitle('Unread')).toBeTruthy()
+    expect(screen.getByText('Service Down')).toBeTruthy()
   })
 
   it('bug fix: mark as read updates the row immediately, before the server round trip resolves', async () => {
@@ -165,6 +201,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     // not because `invalidateAll()` happened to already come back.
     const neverResolvingUpdate = vi.fn()
     enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({
+      result: successResult,
       update: neverResolvingUpdate,
     })
     await tick()
@@ -182,6 +219,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
 
     const neverResolvingUpdate = vi.fn()
     enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
+      result: successResult,
       update: neverResolvingUpdate,
     })
     await tick()
@@ -199,6 +237,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
 
     const neverResolvingUpdate = vi.fn()
     enhancedSubmit(screen.getByRole('button', { name: /mark all as read/i }))({}).update({
+      result: successResult,
       update: neverResolvingUpdate,
     })
     await tick()
@@ -230,7 +269,10 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     expect(screen.queryByRole('button', { name: /mark as read/i })).toBeNull()
     expect(screen.queryByRole('link', { name: /view project/i })).toBeNull()
     const update = vi.fn()
-    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({ update })
+    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
+      result: successResult,
+      update,
+    })
     expect(decrementUnreadMock).not.toHaveBeenCalled()
     expect(update).toHaveBeenCalled()
   })

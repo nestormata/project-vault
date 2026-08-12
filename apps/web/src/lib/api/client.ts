@@ -56,6 +56,24 @@ function canReplayRequestBody(body: RequestInit['body']): boolean {
 }
 
 let refreshInFlight: Promise<boolean> | null = null
+// Guards against every concurrent apiFetch call independently redirecting when a shared refresh
+// fails — SvelteKit fires several requests per navigation (see isRefreshableAccessError), so
+// without this a single dead session can trigger the same goto() many times over.
+let redirectingToLogin = false
+
+function redirectToSessionExpired(): void {
+  if (redirectingToLogin) return
+  redirectingToLogin = true
+  // Reset once the navigation settles (success or failure) rather than staying latched forever —
+  // client-side routing keeps this module alive across the whole SPA session, so a user who logs
+  // back in and later hits another dead session must be able to redirect again. `.then(reset,
+  // reset)` (not `.catch`/`.finally`) so a rejection is consumed here rather than propagating as
+  // an unhandled rejection.
+  const reset = () => {
+    redirectingToLogin = false
+  }
+  void goto(resolve('/login?reason=session-expired')).then(reset, reset)
+}
 
 function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
@@ -127,14 +145,16 @@ export async function apiFetch<T>(
     if (!browser || !isRefreshableAccessError(error)) {
       throw error
     }
-    if (
-      !canReplayRequestBody(init.body) ||
-      !(await refreshAccessSession(fetchFn, init.signal ?? undefined))
-    ) {
+    if (!canReplayRequestBody(init.body)) {
+      // This specific request can't be safely retried, but that says nothing about whether the
+      // session itself is still good — don't treat it as a session-expiry signal.
+      throw error
+    }
+    if (!(await refreshAccessSession(fetchFn, init.signal ?? undefined))) {
       // The refresh token itself is gone/expired — this is a genuinely dead session, not a
       // rotation race (see isRefreshableAccessError). Nothing short of a fresh login can recover
       // it, so send the user there instead of leaving the page stuck on a swallowed/opaque error.
-      void goto(resolve('/login?reason=session-expired'))
+      redirectToSessionExpired()
       throw error
     }
     response = await fetchFn(path, requestInit)
