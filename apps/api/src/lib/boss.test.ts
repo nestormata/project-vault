@@ -127,6 +127,63 @@ describe('BossService', () => {
     )
   })
 
+  describe('pg-boss 12 batch-array unwrapping', () => {
+    // pg-boss 12's work() callback is always invoked with a Job[] batch array, even at the
+    // default batchSize of 1 (no worker in this codebase opts into multi-job batches). A
+    // handler reading `job.data`/`job.id` off the raw array — instead of the single job inside
+    // it — silently sees `undefined`, which crashed every notification/email and
+    // notification/deliver job with "missing notificationQueueId or orgId" in production.
+    it('unwraps a single-element batch array before calling the handler (no options)', async () => {
+      const work = vi.fn().mockResolvedValue(undefined)
+      const boss = createBossWithMocks({ work })
+      const handler = vi.fn().mockResolvedValue(undefined)
+
+      await boss.start()
+      await boss.registerWorker(TEST_QUEUE_NAME, handler)
+
+      const registeredCallback = work.mock.calls[0]?.[1] as (job: unknown) => Promise<void>
+      const jobPayload = { id: 'job-123', data: { notificationQueueId: 'nq-1', orgId: 'org-1' } }
+      await registeredCallback([jobPayload])
+
+      expect(handler).toHaveBeenCalledWith(jobPayload)
+      expect(handler).not.toHaveBeenCalledWith([jobPayload])
+    })
+
+    it('unwraps a single-element batch array before calling the handler (with concurrency options)', async () => {
+      const work = vi.fn().mockResolvedValue(undefined)
+      const boss = createBossWithMocks({ work })
+      const handler = vi.fn().mockResolvedValue(undefined)
+
+      await boss.start()
+      await boss.registerWorker(NOTIFICATION_EMAIL_JOB, handler, {
+        localConcurrency: 5,
+        localGroupConcurrency: 3,
+      })
+
+      const registeredCallback = work.mock.calls[0]?.[2] as (job: unknown) => Promise<void>
+      const jobPayload = { id: 'job-456', data: { notificationQueueId: 'nq-2', orgId: 'org-2' } }
+      await registeredCallback([jobPayload])
+
+      expect(handler).toHaveBeenCalledWith(jobPayload)
+      expect(handler).not.toHaveBeenCalledWith([jobPayload])
+    })
+
+    it('still passes a bare (non-array) job through unchanged, for callers/tests that invoke the callback directly', async () => {
+      const work = vi.fn().mockResolvedValue(undefined)
+      const boss = createBossWithMocks({ work })
+      const handler = vi.fn().mockResolvedValue(undefined)
+
+      await boss.start()
+      await boss.registerWorker(TEST_QUEUE_NAME, handler)
+
+      const registeredCallback = work.mock.calls[0]?.[1] as (job: unknown) => Promise<void>
+      const jobPayload = { id: 'job-789', data: { notificationQueueId: 'nq-3', orgId: 'org-3' } }
+      await registeredCallback(jobPayload)
+
+      expect(handler).toHaveBeenCalledWith(jobPayload)
+    })
+  })
+
   describe('Story 10.4: not-started guards', () => {
     it('isStarted() is false before start() and true after', async () => {
       const boss = createBossWithMocks()
