@@ -72,7 +72,10 @@ function redirectToSessionExpired(): void {
   const reset = () => {
     redirectingToLogin = false
   }
-  void goto(resolve('/login?reason=session-expired')).then(reset, reset)
+  // resolve() only accepts a known route/pathname, not a route plus an appended query string —
+  // the base path segment is still resolved, only the "?reason=..." suffix is a plain string.
+  // eslint-disable-next-line svelte/no-navigation-without-resolve
+  void goto(`${resolve('/login', {})}?reason=session-expired`).then(reset, reset)
 }
 
 function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
