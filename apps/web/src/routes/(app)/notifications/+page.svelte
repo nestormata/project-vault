@@ -8,6 +8,29 @@
 
   const { data }: { data: PageData } = $props()
 
+  // Bug fix: mark-as-read/dismiss previously relied solely on `invalidateAll()` re-running the
+  // server load — visible, but only after a full round trip. A writable `$derived` lets the local
+  // mutations below update the row the instant the action resolves, while still recomputing from
+  // `data.notifications` whenever a fresh load lands (tab switch, pagination) — the override is
+  // discarded automatically the moment its source dependency changes.
+  let notifications = $derived(data.notifications)
+
+  function markReadLocally(id: string) {
+    notifications = notifications.map((n) =>
+      n.id === id && !n.readAt ? { ...n, readAt: new Date().toISOString() } : n
+    )
+  }
+
+  function markAllReadLocallyInList() {
+    notifications = notifications.map((n) =>
+      n.readAt ? n : { ...n, readAt: new Date().toISOString() }
+    )
+  }
+
+  function dismissLocally(id: string) {
+    notifications = notifications.filter((n) => n.id !== id)
+  }
+
   const SEVERITY_COLORS: Record<string, string> = {
     info: 'bg-blue-50 border-blue-200',
     warning: 'bg-yellow-50 border-yellow-200',
@@ -44,18 +67,27 @@
 <div class="mx-auto max-w-3xl px-4 py-8">
   <div class="mb-6 flex items-center justify-between">
     <h1 class="text-2xl font-bold text-gray-900">Notifications</h1>
-    {#if data.notifications.some((n) => !n.readAt)}
+    {#if notifications.some((n) => !n.readAt)}
       <form
         method="POST"
         action="?/markAllRead"
         use:enhance={() => ({
-          update: ({ update }) => {
-            markAllReadLocally()
+          update: ({ result, update }) => {
+            // Only apply the optimistic mutation once the server actually confirms success —
+            // otherwise a failed action (e.g. a downstream error) would leave the UI showing a
+            // false success state with no way back short of a manual reload.
+            if (result.type === 'success') {
+              markAllReadLocallyInList()
+              markAllReadLocally()
+            }
             void update()
           },
         })}
       >
-        <button type="submit" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+        <button
+          type="submit"
+          class="cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-800"
+        >
           Mark all as read
         </button>
       </form>
@@ -101,7 +133,7 @@
               <FormHelpText id="notification-dormancy-days-help" kind="date" />
               <button
                 type="submit"
-                class="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                class="cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800"
               >
                 Extend (days)
               </button>
@@ -126,7 +158,10 @@
             >
               <input type="hidden" name="machineUserId" value={alert.machineUserId} />
               <input type="hidden" name="keyId" value={alert.keyId} />
-              <button type="submit" class="text-xs font-medium text-red-600 hover:text-red-800">
+              <button
+                type="submit"
+                class="cursor-pointer text-xs font-medium text-red-600 hover:text-red-800"
+              >
                 Revoke key
               </button>
             </form>
@@ -177,7 +212,7 @@
                 <input type="hidden" name="userId" value={alert.userId} />
                 <button
                   type="submit"
-                  class="text-xs font-medium text-amber-700 hover:text-amber-900"
+                  class="cursor-pointer text-xs font-medium text-amber-700 hover:text-amber-900"
                 >
                   Deactivate account
                 </button>
@@ -206,7 +241,7 @@
     {/each}
   </div>
 
-  {#if data.notifications.length === 0}
+  {#if notifications.length === 0}
     <div class="py-16 text-center">
       <svg
         class="mx-auto mb-4 h-12 w-12 text-gray-300"
@@ -230,7 +265,7 @@
     </div>
   {:else}
     <div class="space-y-3">
-      {#each data.notifications as notification (notification.id)}
+      {#each notifications as notification (notification.id)}
         <div
           class="rounded-lg border p-4 {SEVERITY_COLORS[notification.severity] ??
             'border-gray-200 bg-gray-50'} {!notification.readAt ? 'shadow-sm' : 'opacity-75'}"
@@ -276,14 +311,20 @@
                     method="POST"
                     action="?/markRead"
                     use:enhance={() => ({
-                      update: ({ update }) => {
-                        decrementUnread(1)
+                      update: ({ result, update }) => {
+                        if (result.type === 'success') {
+                          markReadLocally(notification.id)
+                          decrementUnread(1)
+                        }
                         void update()
                       },
                     })}
                   >
                     <input type="hidden" name="id" value={notification.id} />
-                    <button type="submit" class="text-xs text-gray-500 hover:text-gray-700">
+                    <button
+                      type="submit"
+                      class="cursor-pointer text-xs text-gray-500 hover:text-gray-700"
+                    >
                       Mark as read
                     </button>
                   </form>
@@ -292,14 +333,20 @@
                   method="POST"
                   action="?/dismiss"
                   use:enhance={() => ({
-                    update: ({ update }) => {
-                      if (!notification.readAt) decrementUnread(1)
+                    update: ({ result, update }) => {
+                      if (result.type === 'success') {
+                        if (!notification.readAt) decrementUnread(1)
+                        dismissLocally(notification.id)
+                      }
                       void update()
                     },
                   })}
                 >
                   <input type="hidden" name="id" value={notification.id} />
-                  <button type="submit" class="text-xs text-red-500 hover:text-red-700">
+                  <button
+                    type="submit"
+                    class="cursor-pointer text-xs text-red-500 hover:text-red-700"
+                  >
                     Dismiss
                   </button>
                 </form>
@@ -319,7 +366,7 @@
           Previous
         </a>
       {/if}
-      {#if data.notifications.length === 20}
+      {#if data.hasNext}
         <a
           href="{resolve('/notifications')}?page={data.page + 1}&status={data.status}"
           class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"

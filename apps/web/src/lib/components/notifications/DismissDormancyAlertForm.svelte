@@ -22,7 +22,10 @@
     aria-describedby="dismiss-dormancy-reason-help"
   />
   <FormHelpText id="dismiss-dormancy-reason-help" kind="text" />
-  <button type="submit" class="text-xs font-medium text-gray-600 hover:text-gray-800">
+  <button
+    type="submit"
+    class="cursor-pointer text-xs font-medium text-gray-600 hover:text-gray-800"
+  >
     Dismiss
   </button>
 </form>

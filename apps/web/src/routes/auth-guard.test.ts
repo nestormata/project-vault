@@ -250,12 +250,15 @@ describe('isProtectedAppPath', () => {
   })
 
   it('covers every protected prefix and rejects lookalike/public paths', () => {
-    for (const prefix of ['/projects', '/credentials', '/alerts', '/health']) {
+    for (const prefix of ['/projects', '/credentials', '/alerts', '/health', '/notifications']) {
       expect(isProtectedAppPath(prefix)).toBe(true)
       expect(isProtectedAppPath(`${prefix}/child`)).toBe(true)
     }
     expect(isProtectedAppPath('/project')).toBe(false)
     expect(isProtectedAppPath('/login')).toBe(false)
+    // Lookalike guard for the newly added /notifications prefix specifically — a path that merely
+    // starts with the same characters (not a real sub-path) must not match.
+    expect(isProtectedAppPath('/notifications-archive')).toBe(false)
   })
 
   it('recognizes only login and registration as auth paths', () => {
