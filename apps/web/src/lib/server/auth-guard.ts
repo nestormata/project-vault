@@ -137,6 +137,7 @@ export function isProtectedAppPath(pathname: string) {
     '/health',
     '/settings',
     '/platform',
+    '/notifications',
   ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 

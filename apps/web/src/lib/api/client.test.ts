@@ -1,8 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiFetch } from './client.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
+const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('$app/navigation', () => ({ goto: gotoMock }))
+
 describe('apiFetch', () => {
+  beforeEach(() => {
+    gotoMock.mockClear()
+  })
+
   it.each(['access_token_missing', 'access_token_invalid', 'session_revoked'] as const)(
     'refreshes an expired access session once for %s before retrying the original request',
     async (code) => {
@@ -107,6 +114,33 @@ describe('apiFetch', () => {
       apiFetch(fetchFn, '/api/v1/projects/project-1/credentials', { method: 'POST', body: '{}' })
     ).rejects.toThrow('Step-up authentication required')
     expect(fetchFn).toHaveBeenCalledTimes(1)
+    // Not a session-expiry case at all — no reason to bounce the user to /login.
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
+  // Bug fix: a genuinely expired session used to just throw, leaving the page stuck (a swallowed
+  // error, or the generic +error.svelte boundary) with no way back in short of a manual reload.
+  it('redirects to /login when the session is genuinely expired and refresh fails', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { code: 'access_token_invalid', message: 'Access token is invalid' },
+          { status: 401 }
+        )
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { code: 'refresh_token_invalid', message: 'Refresh token is invalid' },
+          { status: 401 }
+        )
+      )
+
+    await expect(
+      apiFetch(fetchFn, '/api/v1/projects/project-1/credentials', { method: 'GET' })
+    ).rejects.toThrow('Access token is invalid')
+
+    expect(gotoMock).toHaveBeenCalledWith('/login?reason=session-expired')
   })
 
   it('does not retry when the refresh request fails', async () => {

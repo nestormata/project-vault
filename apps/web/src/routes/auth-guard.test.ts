@@ -250,7 +250,7 @@ describe('isProtectedAppPath', () => {
   })
 
   it('covers every protected prefix and rejects lookalike/public paths', () => {
-    for (const prefix of ['/projects', '/credentials', '/alerts', '/health']) {
+    for (const prefix of ['/projects', '/credentials', '/alerts', '/health', '/notifications']) {
       expect(isProtectedAppPath(prefix)).toBe(true)
       expect(isProtectedAppPath(`${prefix}/child`)).toBe(true)
     }

@@ -1,4 +1,6 @@
 import { browser } from '$app/environment'
+import { goto } from '$app/navigation'
+import { resolve } from '$app/paths'
 
 export type ApiSuccess<T> = { data: T }
 export type ApiFailure = {
@@ -122,12 +124,17 @@ export async function apiFetch<T>(
   } catch (error) {
     // Access tokens are short-lived while the refresh token remains HttpOnly. Retry only this
     // explicit auth failure, once, and only when the request body can be replayed safely.
+    if (!browser || !isRefreshableAccessError(error)) {
+      throw error
+    }
     if (
-      !browser ||
-      !isRefreshableAccessError(error) ||
       !canReplayRequestBody(init.body) ||
       !(await refreshAccessSession(fetchFn, init.signal ?? undefined))
     ) {
+      // The refresh token itself is gone/expired — this is a genuinely dead session, not a
+      // rotation race (see isRefreshableAccessError). Nothing short of a fresh login can recover
+      // it, so send the user there instead of leaving the page stuck on a swallowed/opaque error.
+      void goto(resolve('/login?reason=session-expired'))
       throw error
     }
     response = await fetchFn(path, requestInit)

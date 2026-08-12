@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
+import { tick } from 'svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 
 type EnhancedSubmitCallback = (input: { cancel?: () => void }) => {
@@ -152,6 +153,60 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     expect(decrementUnreadMock).toHaveBeenCalledTimes(2)
   })
 
+  it('bug fix: mark as read updates the row immediately, before the server round trip resolves', async () => {
+    render(NotificationsPage, {
+      props: { data: baseData({ notifications: [unreadNotification], total: 1 }) },
+    })
+
+    expect(screen.getByTitle('Unread')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^mark as read$/i })).toBeTruthy()
+
+    // Deliberately never resolves `update` — proves the row updates from local state alone,
+    // not because `invalidateAll()` happened to already come back.
+    const neverResolvingUpdate = vi.fn()
+    enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({
+      update: neverResolvingUpdate,
+    })
+    await tick()
+
+    expect(screen.queryByTitle('Unread')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^mark as read$/i })).toBeNull()
+  })
+
+  it('bug fix: dismiss removes the row immediately, before the server round trip resolves', async () => {
+    render(NotificationsPage, {
+      props: { data: baseData({ notifications: [unreadNotification], total: 1 }) },
+    })
+
+    expect(screen.getByText('Service Down')).toBeTruthy()
+
+    const neverResolvingUpdate = vi.fn()
+    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
+      update: neverResolvingUpdate,
+    })
+    await tick()
+
+    expect(screen.queryByText('Service Down')).toBeNull()
+  })
+
+  it('bug fix: mark all as read clears every unread dot and hides the mark-all button immediately', async () => {
+    const second = { ...unreadNotification, id: 'notification-2', title: 'Backup Failure' }
+    render(NotificationsPage, {
+      props: { data: baseData({ notifications: [unreadNotification, second], total: 2 }) },
+    })
+
+    expect(screen.getAllByTitle('Unread')).toHaveLength(2)
+
+    const neverResolvingUpdate = vi.fn()
+    enhancedSubmit(screen.getByRole('button', { name: /mark all as read/i }))({}).update({
+      update: neverResolvingUpdate,
+    })
+    await tick()
+
+    expect(screen.queryByTitle('Unread')).toBeNull()
+    expect(screen.queryByRole('button', { name: /mark all as read/i })).toBeNull()
+  })
+
   it('renders read unknown notifications with fallbacks and no read or project action', () => {
     render(NotificationsPage, {
       props: {
@@ -196,7 +251,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
       readAt: '2026-07-10T01:00:00.000Z',
     }))
     render(NotificationsPage, {
-      props: { data: baseData({ notifications, page: 2, status: 'read' }) },
+      props: { data: baseData({ notifications, page: 2, status: 'read', hasNext: true }) },
     })
     expect(screen.getByRole('link', { name: /previous/i }).getAttribute('href')).toBe(
       '/notifications?page=1&status=read'
