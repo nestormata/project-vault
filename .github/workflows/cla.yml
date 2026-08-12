@@ -54,8 +54,10 @@ jobs:
           # holds only `signatures/version1/cla.json`, which the action updates in place.
           branch: "cla-signatures"
           # Exclude the repo owner and known bot accounts so they are never blocked by the
-          # gate on their own PRs (see story 14-0 AC5 negative case).
-          allowlist: "nestormata,dependabot[bot],dependabot-preview[bot]"
+          # gate on their own PRs (see story 14-0 AC5 negative case). "Copilot" is the commit
+          # author login used by the GitHub Copilot coding agent (copilot-swe-agent[bot]) —
+          # it cannot sign a CLA on its own behalf.
+          allowlist: "nestormata,dependabot[bot],dependabot-preview[bot],Copilot"
           # If the Action itself fails to run (e.g. a GitHub Actions outage), the required
           # status check for this job fails closed by default — GitHub reports a required
           # check as failing/missing rather than passing when the job that produces it
