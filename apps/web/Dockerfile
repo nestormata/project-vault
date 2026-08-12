@@ -39,7 +39,9 @@ RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
 # but breaks this app's SvelteKit build with a destructuring-lowering regression against our Vite
 # target (verified 0.27.7 and 0.28.2 both fail identically). Pruning removes the CVE surface
 # entirely instead of chasing each new Go stdlib disclosure through .trivyignore.
-RUN find /app/deploy/node_modules/.pnpm -maxdepth 1 \( -name 'vite@*' -o -name 'esbuild@*' -o -name '@esbuild+*' \) -exec rm -rf {} +
+RUN find /app/deploy/node_modules/.pnpm \
+  -maxdepth 1 \( -name 'vite@*' -o -name 'esbuild@*' -o -name '@esbuild+*' \) \
+  -exec rm -rf {} +
 
 # node:24-alpine, pinned by digest — see builder stage comment above.
 FROM node@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS runner
