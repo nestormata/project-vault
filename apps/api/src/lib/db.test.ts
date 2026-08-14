@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-const DEFAULT_ADMIN_DATABASE_URL = 'postgresql://postgres:password@localhost:5432/project_vault'
 const CUSTOM_ADMIN_DATABASE_URL = 'postgresql://custom:custom@example.invalid:5432/custom_db'
 
 const postgresMock = vi.fn((_url: string) => ({ __brand: 'postgres-client' }))
@@ -12,6 +11,14 @@ vi.mock('postgres', () => ({
 
 vi.mock('drizzle-orm/postgres-js', () => ({
   drizzle: (...args: [unknown]) => drizzleMock(...args),
+}))
+
+vi.mock('../config/env.js', () => ({
+  env: {
+    get ADMIN_DATABASE_URL() {
+      return process.env['ADMIN_DATABASE_URL']
+    },
+  },
 }))
 
 const ORIGINAL_ADMIN_DATABASE_URL = process.env['ADMIN_DATABASE_URL']
@@ -43,15 +50,13 @@ describe('getAdminDb', () => {
     expect(drizzleMock).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to the default local URL when ADMIN_DATABASE_URL is unset', async () => {
+  it('fails when the validated ADMIN_DATABASE_URL is unset', async () => {
     delete process.env['ADMIN_DATABASE_URL']
 
     const { getAdminDb } = await import('./db.js')
 
-    expect(() => getAdminDb()).not.toThrow()
-    const result = getAdminDb()
-    expect(result).toBeTruthy()
-    expect(postgresMock).toHaveBeenCalledWith(DEFAULT_ADMIN_DATABASE_URL)
-    expect(drizzleMock).toHaveBeenCalledTimes(1)
+    expect(() => getAdminDb()).toThrow(/ADMIN_DATABASE_URL.*required/i)
+    expect(postgresMock).not.toHaveBeenCalled()
+    expect(drizzleMock).not.toHaveBeenCalled()
   })
 })

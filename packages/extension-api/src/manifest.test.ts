@@ -2,14 +2,22 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import semver from 'semver'
-import { EXTENSION_API_VERSION, defineExtension } from './manifest.js'
+import {
+  EXTENSION_API_VERSION,
+  HOST_SUPPORTED_EXTENSION_API_RANGE,
+  defineExtension,
+} from './manifest.js'
 import type { ExtensionManifest } from './manifest.js'
 
 const PACKAGE_JSON_PATH = fileURLToPath(new URL('../package.json', import.meta.url))
 
 describe('EXTENSION_API_VERSION', () => {
   it('is a valid semver string (AC1)', () => {
-    expect(semver.valid(EXTENSION_API_VERSION)).not.toBeNull()
+    expect(semver.valid(EXTENSION_API_VERSION)).toBe(EXTENSION_API_VERSION)
+  })
+
+  it('derives the host-owned floor and ceiling range', () => {
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.1.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
@@ -25,7 +33,7 @@ describe('defineExtension', () => {
   it('is a typed identity function returning the manifest unchanged (AC1)', () => {
     const manifest: ExtensionManifest = {
       name: 'com.acme.sso-extension',
-      apiVersion: '^1.0.0',
+      apiVersion: EXTENSION_API_VERSION,
       capabilities: ['auth-provider'],
     }
 

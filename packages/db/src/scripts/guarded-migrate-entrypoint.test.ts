@@ -11,9 +11,12 @@ import {
 const mocks = vi.hoisted(() => ({
   execFileSync: vi.fn(),
   postgres: vi.fn(() => {
-    const sql = Object.assign(() => Promise.resolve([]), {
-      end: vi.fn(async () => undefined),
-    })
+    const sql = Object.assign(
+      () => Promise.resolve([{ rolname: 'postgres', rolsuper: true, rolbypassrls: false }]),
+      {
+        end: vi.fn(async () => undefined),
+      }
+    )
     return sql
   }),
 }))

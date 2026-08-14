@@ -55,13 +55,32 @@ const SECRET_ASSIGNMENT_PATTERNS = [
 ]
 const NO_NEWLINE_MARKER = String.raw`\ No newline at end of file`
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
+const CONNECTION_STRING_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\//i
 const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees\/)/
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
 const SECRET_ENV_NAME_PATTERN =
   /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*\b/
-// Domain constants can contain SECRET as a noun without being environment-variable names.
-// Keep this allowlist exact so the scanner remains conservative for actual configuration names.
-const SAFE_PUBLIC_CONSTANT_NAMES = new Set(['MAX_FIELDS_PER_SECRET'])
+// These names are public deployment interfaces; their values are still scanned for credentials.
+// Keep this allowlist exact so unknown secret-like names remain review findings.
+const SAFE_PUBLIC_CONSTANT_NAMES = new Set([
+  'ADMIN_PG_PASSWORD',
+  'DEMO_LOGIN_PASSWORD',
+  'FLY_DEMO_VAULT_ADMIN_PASSWORD',
+  'FLY_DEMO_VAULT_APP_PASSWORD',
+  'MAX_FIELDS_PER_SECRET',
+  'PGPASSWORD',
+  'VAULT_ADMIN_PASSWORD',
+  'VAULT_APP_PASSWORD',
+])
+// These files intentionally document or exercise local service endpoints. A local endpoint in
+// source, prose, or an arbitrary workflow remains a finding.
+const SAFE_LOCAL_ENDPOINT_FILES = new Set([
+  '.env.example',
+  '.github/workflows/ci.yml',
+  '.github/workflows/nightly.yml',
+  'apps/api/src/config/env.test.ts',
+  'docker-compose.yml',
+])
 
 function makeFinding(
   file: string,
@@ -93,9 +112,18 @@ function scanSecretPatterns(file: string, line: number, text: string): PublicSaf
   return findings
 }
 
+function hasConnectionStringUserinfo(text: string): boolean {
+  const connectionScheme = CONNECTION_STRING_SCHEME_PATTERN.exec(text)
+  if (!connectionScheme) return false
+  const authority = text
+    .slice((connectionScheme.index ?? 0) + connectionScheme[0].length)
+    .split(/[/?#\s]/, 1)[0]
+  return authority.lastIndexOf('@') > 0
+}
+
 function scanMetadata(file: string, line: number, text: string): PublicSafetyFinding[] {
   const findings: PublicSafetyFinding[] = []
-  if (EMAIL_PATTERN.test(text)) {
+  if (EMAIL_PATTERN.test(text) && !hasConnectionStringUserinfo(text)) {
     findings.push(
       makeFinding(
         file,
@@ -119,7 +147,7 @@ function scanMetadata(file: string, line: number, text: string): PublicSafetyFin
       )
     )
   }
-  if (LOCAL_ENDPOINT_PATTERN.test(text)) {
+  if (LOCAL_ENDPOINT_PATTERN.test(text) && !SAFE_LOCAL_ENDPOINT_FILES.has(file)) {
     findings.push(
       makeFinding(
         file,

@@ -66,6 +66,9 @@ jobs:
         env:
           DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
+      - name: Provision local test admin role credential
+        run: psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
+
       - name: Run Stryker mutation tests
         run: pnpm stryker run
         env:
@@ -73,7 +76,7 @@ jobs:
           # entirely, which would make the RLS isolation tests pass even if policies
           # were broken or missing.
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
-          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+          ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
 
   flaky-test-repeat:
     name: Flaky Test Repeat Run
@@ -141,13 +144,14 @@ jobs:
             psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 \
               -c 'DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
             DATABASE_URL="$SUPERUSER_DATABASE_URL" pnpm db:migrate
+            psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
             pnpm turbo test --force
           done
         env:
           # SUPERUSER_DATABASE_URL is already set at the job level and inherited here —
           # only the override for the test run itself (vault_app, not postgres) is needed.
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
-          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+          ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
 
   trivy-image:
     name: Trivy Docker Image Scan

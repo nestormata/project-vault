@@ -362,7 +362,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // loadExtension() is designed to never throw/reject — a bug in this story's own code cannot
   // regress AC-3's "still starts" guarantee — but `await` (not fire-and-forget) so state is
   // fully resolved before createApp() returns to any caller (e.g. /health's first response).
-  await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, { logger: fastify.log })
+  await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, {
+    logger: fastify.log,
+    allowApiVersionAboveHost: env.VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST,
+  })
 
   // Story 16.1 AC-1/Task 5: startup automatic reload pass for VAULT_THEMES_DIR — identical code
   // path to the manual POST /admin/themes/reload endpoint, just invoked here so a fresh

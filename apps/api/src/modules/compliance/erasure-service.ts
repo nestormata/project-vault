@@ -240,7 +240,7 @@ export async function createErasureRequest(
  * read back 0, silently defeating the entire cross-org guard). This is the same
  * legitimate-cross-org-lookup exception already established for pre-org-context lookups (e.g.
  * `findRecoveryTokenByHash` in `modules/auth/recovery-lookup.ts`): a read-only query via the
- * admin/superuser connection, never used for writes (the actual mutation stays on secureCtx.tx).
+ * RLS-bypassing admin connection, never used for writes (the actual mutation stays on secureCtx.tx).
  */
 async function countOtherOrgMemberships(userId: string, excludeOrgId: string): Promise<number> {
   const [row] = await getAdminDb()

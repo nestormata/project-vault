@@ -11,7 +11,7 @@ import type { LoadExtensionDeps } from './loader.js'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
-  apiVersion: '^1.0.0',
+  apiVersion: '1.1.0',
   capabilities: ['auth-provider'],
 }
 
@@ -130,6 +130,34 @@ describe('loadExtension — failure reasons (AC-3a/3b/3c)', () => {
     await loadExtension('incompatible-package', baseDeps({ importFn }))
 
     expect(getExtensionStatus()).toEqual({ status: 'load_failed', reason: 'capability_mismatch' })
+  })
+
+  it('maps malformed apiVersion to capability_mismatch and keeps its message out of audit payloads', async () => {
+    const auditWriter = vi.fn().mockResolvedValue(undefined)
+    const logger = noopLogger()
+    const importFn = vi.fn().mockResolvedValue({
+      default: {
+        manifest: { ...VALID_MANIFEST, apiVersion: 'banana' },
+        hooksFactory: () => NOOP_HOOKS,
+      },
+    })
+
+    await loadExtension(
+      'malformed-package',
+      baseDeps({ importFn, auditWriter, listOrgIds: async () => ['org-1'], logger })
+    )
+
+    expect(getExtensionStatus()).toEqual({ status: 'load_failed', reason: 'capability_mismatch' })
+    expect(logger?.fatal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'capability_mismatch',
+        message: expect.stringContaining('not a concrete semver version'),
+      }),
+      expect.any(String)
+    )
+    expect(auditWriter).toHaveBeenCalledWith('org-1', 'extension.load_failed', {
+      reason: 'capability_mismatch',
+    })
   })
 
   it('3d: hooksFactory crash after negotiation passed maps to import_error, never escapes', async () => {
@@ -267,6 +295,51 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     expect(payload).not.toHaveProperty('stack')
     expect(payload).not.toHaveProperty('message')
     expect(JSON.stringify(payload)).not.toContain('/secret/internal/path')
+  })
+
+  it('logs the bounded registration message for both shape and range failures', async () => {
+    const logger = noopLogger()
+    const importFn = vi.fn().mockResolvedValue({
+      default: {
+        manifest: { ...VALID_MANIFEST, apiVersion: '^1.0.0' },
+        hooksFactory: () => NOOP_HOOKS,
+      },
+    })
+
+    await loadExtension('range-package', baseDeps({ importFn, logger }))
+
+    expect(logger?.fatal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'capability_mismatch',
+        message: expect.stringContaining('not a concrete semver version'),
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('warns on every load using the explicit above-host rollback escape', async () => {
+    const logger = noopLogger()
+    const importFn = vi.fn().mockResolvedValue({
+      default: {
+        manifest: { ...VALID_MANIFEST, apiVersion: '1.2.0' },
+        hooksFactory: () => NOOP_HOOKS,
+      },
+    })
+
+    await loadExtension(
+      'rollback-package',
+      baseDeps({ importFn, logger, allowApiVersionAboveHost: true })
+    )
+
+    expect(getExtensionStatus().status).toBe('loaded')
+    expect(logger?.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        declaredApiVersion: '1.2.0',
+        hostApiVersion: '1.1.0',
+        flag: 'VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST',
+      }),
+      expect.any(String)
+    )
   })
 })
 

@@ -1,7 +1,12 @@
 import type { FastifyBaseLogger } from 'fastify'
 import { withOrg } from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
-import { ExtensionRegistrationError, registerExtension } from '@project-vault/extension-api'
+import {
+  EXTENSION_API_VERSION,
+  ExtensionRegistrationError,
+  isExtensionApiVersionSupported,
+  registerExtension,
+} from '@project-vault/extension-api'
 import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
 import { operationalLog } from '../lib/logger.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
@@ -45,6 +50,8 @@ export type LoadExtensionDeps = {
   logger?: LoaderLogger
   /** Bounded timeout (ms) wrapping the import()+hooksFactory chain. Defaults to 5000. */
   timeoutMs?: number
+  /** Incident-only rollback escape; relaxes the host-version ceiling, never shape or major. */
+  allowApiVersionAboveHost?: boolean
 }
 
 const DEFAULT_TIMEOUT_MS = 5000
@@ -127,7 +134,7 @@ async function runAuditFanout(
 }
 
 type LoadOutcome = { manifest: ExtensionManifest; hooks: ExtensionHooks }
-type RaceResult = { outcome?: LoadOutcome; reason: ExtensionLoadFailureReason }
+type RaceResult = { outcome?: LoadOutcome; reason: ExtensionLoadFailureReason; message?: string }
 
 /**
  * Dev Notes judgment call #2/#3: races the import()+registerExtension() chain against a bounded
@@ -139,11 +146,14 @@ type RaceResult = { outcome?: LoadOutcome; reason: ExtensionLoadFailureReason }
 async function raceWithTimeout(
   packageName: string,
   importFn: ImportFn,
-  timeoutMs: number
+  timeoutMs: number,
+  allowApiVersionAboveHost: boolean
 ): Promise<RaceResult> {
   const attempt = (async (): Promise<LoadOutcome> => {
     const mod = await importFn(packageName)
-    return registerExtension(mod.default.manifest, mod.default.hooksFactory)
+    return registerExtension(mod.default.manifest, mod.default.hooksFactory, {
+      allowApiVersionAboveHost,
+    })
   })()
   attempt.catch(() => undefined)
 
@@ -156,7 +166,11 @@ async function raceWithTimeout(
     const outcome = await Promise.race([attempt, timeoutPromise])
     return { outcome, reason: 'import_error' }
   } catch (error) {
-    return { reason: mapFailureReason(error) }
+    return {
+      reason: mapFailureReason(error),
+      message:
+        error instanceof ExtensionRegistrationError ? error.message.slice(0, 320) : undefined,
+    }
   } finally {
     clearTimeout(timeoutHandle)
   }
@@ -181,11 +195,25 @@ async function applyOutcome(
   result: RaceResult,
   listOrgIds: ListOrgIdsFn,
   auditWriter: AuditWriterFn,
-  logger: LoaderLogger
+  logger: LoaderLogger,
+  allowApiVersionAboveHost: boolean
 ): Promise<void> {
   if (result.outcome) {
     const { manifest, hooks } = result.outcome
     state = { status: 'loaded', manifest, loadedAt: new Date().toISOString(), hooks }
+    if (allowApiVersionAboveHost && !isExtensionApiVersionSupported(manifest.apiVersion)) {
+      operationalLog(
+        logger,
+        'warn',
+        OperationalEvent.EXTENSION_API_VERSION_ABOVE_HOST_ALLOWED,
+        'Extension loaded using the rollback API-version escape; roll the extension back to match the host',
+        {
+          declaredApiVersion: manifest.apiVersion,
+          hostApiVersion: EXTENSION_API_VERSION,
+          flag: 'VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST',
+        }
+      )
+    }
     await runAuditFanout(
       AuditEvent.EXTENSION_LOADED,
       { name: manifest.name, apiVersion: manifest.apiVersion, capabilities: manifest.capabilities },
@@ -202,7 +230,10 @@ async function applyOutcome(
     'fatal',
     OperationalEvent.EXTENSION_LOAD_FAILED,
     'Extension failed to load — API continuing without it',
-    { reason: result.reason }
+    {
+      reason: result.reason,
+      ...(result.message ? { message: result.message } : {}),
+    }
   )
   await runAuditFanout(
     AuditEvent.EXTENSION_LOAD_FAILED,
@@ -223,19 +254,17 @@ export async function loadExtension(
   packageName: string | undefined,
   deps: LoadExtensionDeps = {}
 ): Promise<void> {
-  const logger = deps.logger ?? silentLogger
+  const {
+    logger = silentLogger,
+    importFn = defaultImportFn,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    listOrgIds = fetchAllOrgIds,
+    auditWriter = defaultAuditWriter,
+    allowApiVersionAboveHost = false,
+  } = deps
   if (!packageName) return
   if (isDoubleInvocation(logger)) return
 
-  const result = await raceWithTimeout(
-    packageName,
-    deps.importFn ?? defaultImportFn,
-    deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  )
-  await applyOutcome(
-    result,
-    deps.listOrgIds ?? fetchAllOrgIds,
-    deps.auditWriter ?? defaultAuditWriter,
-    logger
-  )
+  const result = await raceWithTimeout(packageName, importFn, timeoutMs, allowApiVersionAboveHost)
+  await applyOutcome(result, listOrgIds, auditWriter, logger, allowApiVersionAboveHost)
 }

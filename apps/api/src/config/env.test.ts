@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
 
 const VAULT_APP_DATABASE_URL = 'postgresql://vault_app:secret@localhost:5432/project_vault'
+const ADMIN_DATABASE_URL = 'postgresql://vault_admin:secret@localhost:5432/project_vault'
 const SMTP_HOST_FIXTURE = 'smtp.example.com'
 const SMTP_FROM_FIXTURE = 'noreply@example.com'
 const VALID_KMS_ENDPOINT = 'http://localhost:4566'
@@ -11,6 +12,7 @@ const BASE_ENV = {
   CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
   METRICS_BIND_HOST: '127.0.0.1',
   LOG_LEVEL: 'fatal',
+  ADMIN_DATABASE_URL,
 }
 
 const AUTH_DUMMY_PASSWORD_HASH = [
@@ -24,6 +26,7 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     ...BASE_ENV,
     NODE_ENV: 'production',
     DATABASE_URL: VAULT_APP_DATABASE_URL,
+    ADMIN_DATABASE_URL,
     SESSION_SECRET: 'a'.repeat(64),
     REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
     // Story 4.3: required in production since RECOVERY_TOKEN_HMAC_SECRET's own validation
@@ -114,6 +117,53 @@ describe('env', () => {
     }
     await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
     expect(exitSpy).toHaveBeenCalledWith(1)
+  })
+
+  it.each(['', '   '])('rejects an empty ADMIN_DATABASE_URL (%j) at boot', async (value) => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ADMIN_DATABASE_URL: value,
+    }
+    await expectInvalidEnv(exitSpy)
+    expect((process.stderr.write as unknown as MockInstance).mock.calls.join('\n')).toMatch(
+      /ADMIN_DATABASE_URL.*non-superuser.*\.env\.example/is
+    )
+  })
+
+  it('rejects ADMIN_DATABASE_URL using postgres even when its URL is otherwise valid', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ADMIN_DATABASE_URL: 'postgresql://postgres:secret@localhost:5432/project_vault',
+    }
+    await expectInvalidEnv(exitSpy)
+    expect((process.stderr.write as unknown as MockInstance).mock.calls.join('\n')).not.toContain(
+      'secret'
+    )
+  })
+
+  it.each([
+    'postgresql://vault_app:secret@localhost:5432/project_vault',
+    'postgresql://vault_app:secret@localhost:5432/project_vault?sslmode=require',
+  ])('rejects ADMIN_DATABASE_URL colliding with DATABASE_URL tuple: %s', async (value) => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ADMIN_DATABASE_URL: value,
+    }
+    await expectInvalidEnv(exitSpy)
+  })
+
+  it('accepts a narrowed admin role on the same database tuple as DATABASE_URL', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      ADMIN_DATABASE_URL,
+    }
+    const { env } = await import('./env.js')
+    expect(env.ADMIN_DATABASE_URL).toBe(ADMIN_DATABASE_URL)
+    expect(exitSpy).not.toHaveBeenCalled()
   })
 
   it('defaults VAULT_KEY_DIR to /run/secrets and VAULT_ALLOW_REMOTE_INIT to false when unset', async () => {

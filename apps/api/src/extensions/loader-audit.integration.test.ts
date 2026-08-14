@@ -16,7 +16,7 @@ const TEST_PASSPHRASE = 'extension-loader-audit-passphrase'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
-  apiVersion: '^1.0.0',
+  apiVersion: '1.1.0',
   capabilities: ['auth-provider'],
 }
 

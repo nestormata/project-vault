@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-process.env['ADMIN_DATABASE_URL'] ??= 'postgresql://postgres:password@localhost:5432/project_vault'
+process.env['ADMIN_DATABASE_URL'] ??= 'postgresql://vault_admin@admin-db.invalid:5432/project_vault'
 process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 // Tiny limit (bytes, expressed in GB) so the real (already non-empty) audit_log_entries table
 // comfortably exceeds 95% utilization without needing to seed millions of rows.

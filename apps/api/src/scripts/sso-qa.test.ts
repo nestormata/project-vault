@@ -10,6 +10,11 @@ import {
 import { bootstrapRouteIntegrationTest } from '../__tests__/helpers/auth-test-helpers.js'
 import { initVaultForTest } from '../__tests__/helpers/auth-test-helpers.js'
 
+// The manual-QA script deliberately requires a separately named cross-org connection. The
+// integration harness supplies the CI superuser connection for this test-only fixture cleanup;
+// production code has no fallback and still requires QA_DATABASE_URL explicitly.
+process.env['QA_DATABASE_URL'] ??= process.env['SUPERUSER_DATABASE_URL']
+
 const { initVault } = await bootstrapRouteIntegrationTest()
 
 // Mocked so main()'s test never actually binds a real port — every other function under test

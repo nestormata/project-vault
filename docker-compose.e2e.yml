@@ -32,3 +32,4 @@ services:
       # (see fixtures/mock-sso-extension/README.md's "Production-safety" section) — same
       # e2e-only-override precedent as the vars above.
       VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-sso-extension'
+      VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: 'false'

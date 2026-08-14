@@ -13,6 +13,7 @@ vi.mock('../config/env.js', () => ({
     METRICS_BIND_HOST: '127.0.0.1',
     LOG_LEVEL: 'silent',
     SERVICE_NAME: 'api',
+    ADMIN_DATABASE_URL: process.env['ADMIN_DATABASE_URL'],
     TRUST_PROXY: false,
     TRUST_PROXY_HOPS: 1,
   },

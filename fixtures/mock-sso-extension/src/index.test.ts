@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { EXTENSION_API_VERSION, isExtensionApiVersionSupported } from '@project-vault/extension-api'
 import mockSsoExtension, { FIXTURE_IDENTITIES } from './index.js'
 
 describe('mock-sso-extension (Story 14.3 Task 10, AC-12)', () => {
@@ -39,5 +40,10 @@ describe('mock-sso-extension (Story 14.3 Task 10, AC-12)', () => {
   it('never makes an outbound network call (no fetch/http import in the module)', () => {
     // Static, structural guarantee: this fixture's own source never imports node:http(s)/fetch.
     expect(Object.keys(mockSsoExtension)).toEqual(['manifest', 'hooksFactory'])
+  })
+
+  it('declares the canonical version consumed by the host gate', () => {
+    expect(mockSsoExtension.manifest.apiVersion).toBe(EXTENSION_API_VERSION)
+    expect(isExtensionApiVersionSupported(mockSsoExtension.manifest.apiVersion)).toBe(true)
   })
 })

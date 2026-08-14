@@ -510,6 +510,35 @@ function secretEnvDefault(defaultValue: string | undefined) {
   )
 }
 
+function connectionTuple(value: string): [string, string, string, string] | null {
+  try {
+    const parsed = new URL(value)
+    const port =
+      parsed.port ||
+      (parsed.protocol === 'postgresql:' || parsed.protocol === 'postgres:' ? '5432' : '')
+    return [parsed.username, parsed.hostname, port, parsed.pathname.replace(/^\//, '')]
+  } catch {
+    return null
+  }
+}
+
+function addAdminDatabaseUrlCollisionIssue(
+  databaseUrl: string,
+  adminDatabaseUrl: string,
+  ctx: z.RefinementCtx
+): void {
+  const databaseTuple = connectionTuple(databaseUrl)
+  const adminTuple = connectionTuple(adminDatabaseUrl)
+  if (databaseTuple?.join('\u0000') === adminTuple?.join('\u0000') && databaseTuple !== null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['ADMIN_DATABASE_URL'],
+      message:
+        'FATAL: ADMIN_DATABASE_URL must use a distinct role from DATABASE_URL. See .env.example.',
+    })
+  }
+}
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -524,6 +553,24 @@ const envSchema = z
           return false
         }
       }, "FATAL: DATABASE_URL must not use the 'postgres' superuser — RLS enforcement requires a non-superuser role.\nUse 'vault_app' or another application role. See .env.example."),
+    // Story 24.2: this is the deliberately non-superuser RLS-bypassing handle used only for the
+    // reviewed cross-org/admin call sites. It is required because silently falling back to a
+    // superuser makes a deployment appear healthy while bypassing every RLS policy.
+    ADMIN_DATABASE_URL: z
+      .string()
+      .trim()
+      .min(
+        1,
+        'FATAL: ADMIN_DATABASE_URL is required and must name a non-superuser role. See .env.example.'
+      )
+      .refine(
+        (value) => connectionTuple(value) !== null,
+        'FATAL: ADMIN_DATABASE_URL must be a parseable PostgreSQL URL. See .env.example.'
+      )
+      .refine((value) => {
+        const tuple = connectionTuple(value)
+        return tuple !== null && tuple[0] !== 'postgres'
+      }, "FATAL: ADMIN_DATABASE_URL must not use the 'postgres' superuser — use the narrowed non-superuser role. See .env.example."),
     CORS_ALLOWED_ORIGINS: z
       .string()
       .min(1)
@@ -747,6 +794,9 @@ const envSchema = z
       (v) => (v === '' ? undefined : v),
       z.string().min(1).optional()
     ),
+    // Story 24.3: incident-only escape for a same-major extension built above a rolled-back host.
+    // Default false; this relaxes only the ceiling and emits a warning on every boot while set.
+    VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: booleanEnvDefault(false),
 
     // Story 16.1 AC-1/AC-2: directory of admin-installed custom theme definition files, inside
     // the persistent Docker Compose volume (never the application image, so themes survive image
@@ -899,6 +949,7 @@ const envSchema = z
       })
     }
     validateDummyPasswordHash(env, ctx)
+    addAdminDatabaseUrlCollisionIssue(env.DATABASE_URL, env.ADMIN_DATABASE_URL, ctx)
     if (env.SMTP_HOST) {
       if (!env.SMTP_PORT)
         addEnvIssue(ctx, 'SMTP_PORT', 'SMTP_PORT is required when SMTP_HOST is set')

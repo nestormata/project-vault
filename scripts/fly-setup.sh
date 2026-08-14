@@ -34,6 +34,7 @@ echo "== db: secrets =="
 # value, and GitHub secrets can't be read back once set, so pass the same value you used
 # there rather than letting this script mint a second, different one.
 PG_PASSWORD="${ADMIN_PG_PASSWORD:-$(openssl rand -hex 24)}"
+: "${VAULT_ADMIN_PASSWORD:?Set VAULT_ADMIN_PASSWORD to the provisioned vault_admin credential}"
 flyctl secrets set -a "$DB_APP" \
   POSTGRES_USER=postgres \
   POSTGRES_PASSWORD="$PG_PASSWORD"
@@ -58,7 +59,7 @@ BOOTSTRAP_TOKEN="${VAULT_BOOTSTRAP_TOKEN:-$(openssl rand -base64 32)}"
 # fly-reset.sh (and, if you're wiring up the nightly cron, FLY_DEMO_VAULT_APP_PASSWORD).
 flyctl secrets set -a "$API_APP" \
   DATABASE_URL="postgresql://vault_app:${VAULT_APP_PASSWORD:-dev-only-change-in-prod}@${DB_APP}.internal:5432/project_vault" \
-  ADMIN_DATABASE_URL="postgresql://postgres:${PG_PASSWORD}@${DB_APP}.internal:5432/project_vault" \
+  ADMIN_DATABASE_URL="postgresql://vault_admin:${VAULT_ADMIN_PASSWORD}@${DB_APP}.internal:5432/project_vault" \
   CORS_ALLOWED_ORIGINS="https://${WEB_APP}.fly.dev" \
   SESSION_SECRET="$(openssl rand -hex 32)" \
   REFRESH_TOKEN_HMAC_SECRET="$(openssl rand -hex 32)" \
@@ -90,6 +91,7 @@ cat <<EOF
 
 Then run scripts/fly-reset.sh (or the Fly Demo Reset workflow) to migrate schema, seed
 demo data, and init/unseal vault. It needs ADMIN_PG_PASSWORD, VAULT_APP_PASSWORD, and
+VAULT_ADMIN_PASSWORD,
 DEMO_VAULT_PASSPHRASE to match whatever you passed to this script (defaults were used
 for any you didn't override) — if those already live in GitHub Actions secrets
 (FLY_DEMO_PG_SUPERUSER_PASSWORD etc.), prefer running the workflow via workflow_dispatch

@@ -1,16 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import postgres from 'postgres'
 import { checkRlsCoverage, RlsCoverageGapError } from '../check-rls-coverage.js'
+import { DATABASE_URL, SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 
-const sql = postgres(
-  process.env['DATABASE_URL'] ??
-    'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-)
+const sql = postgres(DATABASE_URL)
 
 // Database creation/drop requires the superuser — vault_app has no CREATEDB privilege.
-const adminConnectionString =
-  process.env['ADMIN_DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
-const adminSql = postgres(adminConnectionString)
+const adminSql = postgres(SUPERUSER_DATABASE_URL)
 
 // Serialize live-policy mutation against the shared dev/CI Postgres instance. API integration
 // tests authenticate via the sessions table RLS policy; dropping it concurrently yields flaky 401s.
@@ -134,6 +130,76 @@ async function withPolicyDropped<T>(
   })
 }
 
+async function withForceDropped<T>(table: string, fn: () => Promise<T>): Promise<T> {
+  return withRlsPolicyMutationLock(async () => {
+    const original = await adminSql<{ forced: boolean }[]>`
+      SELECT relforcerowsecurity AS forced
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ${table}
+    `
+    await adminSql.unsafe(`ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`)
+    try {
+      return await fn()
+    } finally {
+      if (original[0]?.forced) {
+        await adminSql.unsafe(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`)
+      } else {
+        await adminSql.unsafe(`ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`)
+      }
+    }
+  })
+}
+
+async function withRlsDisabled<T>(table: string, fn: () => Promise<T>): Promise<T> {
+  return withRlsPolicyMutationLock(async () => {
+    const original = await adminSql<{ enabled: boolean }[]>`
+      SELECT relrowsecurity AS enabled
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ${table}
+    `
+    await adminSql.unsafe(`ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`)
+    try {
+      return await fn()
+    } finally {
+      if (original[0]?.enabled) {
+        await adminSql.unsafe(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`)
+      } else {
+        await adminSql.unsafe(`ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`)
+      }
+    }
+  })
+}
+
+async function withOwnerSetToPostgres<T>(table: string, fn: () => Promise<T>): Promise<T> {
+  return withRlsPolicyMutationLock(async () => {
+    const original = await adminSql<{ owner: string }[]>`
+      SELECT pg_get_userbyid(c.relowner) AS owner
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ${table}
+    `
+    await adminSql.unsafe(`ALTER TABLE ${table} OWNER TO postgres`)
+    try {
+      return await fn()
+    } finally {
+      if (original[0]?.owner && original[0].owner !== 'postgres') {
+        await adminSql.unsafe(`ALTER TABLE ${table} OWNER TO ${original[0].owner}`)
+      }
+    }
+  })
+}
+
+async function withVaultOwnerMember<T>(fn: () => Promise<T>): Promise<T> {
+  const memberRole = `story24_1_member_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  await adminSql.unsafe(`CREATE ROLE ${memberRole} NOLOGIN NOSUPERUSER NOBYPASSRLS`)
+  await adminSql.unsafe(`GRANT vault_owner TO ${memberRole}`)
+  try {
+    return await fn()
+  } finally {
+    await adminSql.unsafe(`REVOKE vault_owner FROM ${memberRole}`)
+    await adminSql.unsafe(`DROP ROLE ${memberRole}`)
+  }
+}
+
 describe('checkRlsCoverage', () => {
   afterEach(async () => {
     // Story 1.15: last-resort safety net only. The primary restore is now inline (see
@@ -148,6 +214,82 @@ describe('checkRlsCoverage', () => {
 
   it('resolves when every org_id table has an RLS policy', async () => {
     await expect(checkRlsCoverage(sql)).resolves.toBeUndefined()
+  })
+
+  it('fails when an RLS-enabled table loses FORCE ROW LEVEL SECURITY', async () => {
+    await withForceDropped('credential_shares', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /credential_shares.*FORCE|FORCE.*credential_shares/i
+      )
+    })
+  })
+
+  it('fails when platform_audit_events keeps FORCE after RLS is disabled', async () => {
+    await withRlsDisabled('platform_audit_events', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /platform_audit_events.*ENABLE.*FORCE|FORCE.*platform_audit_events/i
+      )
+    })
+  })
+
+  it('fails when an RLS-enabled table is owned by postgres', async () => {
+    await withOwnerSetToPostgres('credential_shares', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /credential_shares.*owner|owner.*credential_shares/i
+      )
+    })
+  })
+
+  it('fails when any role is a member of vault_owner', async () => {
+    await withVaultOwnerMember(async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /vault_owner membership|member of vault_owner/i
+      )
+    })
+  })
+
+  it('requires append-only audit tables to keep SELECT/INSERT without direct UPDATE/DELETE', async () => {
+    const rows = await adminSql<{ table_name: string; privilege_type: string }[]>`
+      SELECT c.relname AS table_name, acl.privilege_type
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl ON true
+        JOIN pg_catalog.pg_roles grantee ON grantee.oid = acl.grantee
+       WHERE n.nspname = 'public'
+         AND c.relname IN ('audit_log_entries', 'platform_audit_events')
+         AND grantee.rolname = 'vault_app'
+    `
+    const byTable = new Map<string, Set<string>>()
+    for (const row of rows) {
+      const privileges = byTable.get(row.table_name) ?? new Set<string>()
+      privileges.add(row.privilege_type)
+      byTable.set(row.table_name, privileges)
+    }
+    for (const table of ['audit_log_entries', 'platform_audit_events']) {
+      expect(byTable.get(table)).toEqual(new Set(['SELECT', 'INSERT']))
+    }
+  })
+
+  it('fails when an append-only audit table grants TRUNCATE', async () => {
+    await adminSql`GRANT TRUNCATE ON TABLE audit_log_entries TO vault_app`
+    try {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /audit_log_entries.*TRUNCATE|TRUNCATE.*audit_log_entries/i
+      )
+    } finally {
+      await adminSql`REVOKE TRUNCATE ON TABLE audit_log_entries FROM vault_app`
+    }
+  })
+
+  it('fails closed for a normal public view over an RLS-enabled table', async () => {
+    await withRlsPolicyMutationLock(async () => {
+      await adminSql`CREATE OR REPLACE VIEW public.__story24_1_unsafe_view AS SELECT id FROM public.credentials`
+      try {
+        await expect(checkRlsCoverage(sql)).rejects.toThrow(/__story24_1_unsafe_view/)
+      } finally {
+        await adminSql`DROP VIEW IF EXISTS public.__story24_1_unsafe_view`
+      }
+    })
   })
 
   it('throws RlsCoverageGapError listing the table missing a policy', async () => {
@@ -220,9 +362,9 @@ describe('checkRlsCoverage', () => {
     let emptySql: ReturnType<typeof postgres> | undefined
     try {
       await adminSql.unsafe(`CREATE DATABASE ${emptyDbName}`)
-      // Reuse the admin connection's host/port/credentials rather than hardcoding
-      // localhost:5432 — CI/dev may point ADMIN_DATABASE_URL at a non-default port.
-      emptySql = postgres(adminConnectionString.replace(/\/[^/]*$/, `/${emptyDbName}`))
+      // Reuse the superuser connection's host/port/credentials rather than hardcoding a
+      // deployment endpoint — CI/dev may point SUPERUSER_DATABASE_URL at a non-default port.
+      emptySql = postgres(SUPERUSER_DATABASE_URL.replace(/\/[^/]*$/, `/${emptyDbName}`))
       await expect(checkRlsCoverage(emptySql)).rejects.toThrow(/No tables found/)
     } finally {
       await emptySql?.end()

@@ -86,6 +86,8 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
+          VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
+          VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
 
       - name: Deploy api
         run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only

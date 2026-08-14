@@ -3,10 +3,9 @@ import { sql } from 'drizzle-orm'
 import postgres from 'postgres'
 import { getDb, withPlatformOperatorContext } from '../index.js'
 import { createTestUser, deleteTestUser } from '../test-helpers.js'
+import { SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 
-const adminConnectionString =
-  process.env['ADMIN_DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
-const adminSql = postgres(adminConnectionString)
+const adminSql = postgres(SUPERUSER_DATABASE_URL)
 
 async function tryDeleteTestUser(userId: string): Promise<void> {
   try {

@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 import {
   buildMigrationLogEvent,
   buildRefusalMessage,
@@ -10,6 +11,7 @@ import {
   readLocalMigrations,
   resolvePendingMigrations,
   scanPendingForDestructive,
+  validateMigrationRole,
 } from './guarded-migrate.js'
 
 const TAG_UNSAFE = '0001_unsafe'
@@ -170,6 +172,42 @@ describe('decideMigrationAction', () => {
   })
 })
 
+describe('validateMigrationRole', () => {
+  it('refuses a non-superuser BYPASSRLS migration role', () => {
+    expect(
+      validateMigrationRole({ rolname: 'unsafe', rolsuper: false, rolbypassrls: true })
+    ).toMatchObject({
+      action: 'refuse',
+      message: expect.stringContaining('BYPASSRLS'),
+    })
+  })
+
+  it('allows the supported postgres superuser even when PostgreSQL marks it BYPASSRLS', () => {
+    expect(
+      validateMigrationRole({ rolname: 'postgres', rolsuper: true, rolbypassrls: true })
+    ).toMatchObject({
+      action: 'warn',
+      message: expect.stringContaining('SUPERUSER'),
+    })
+  })
+
+  it('warns but permits the currently supported postgres superuser migration role', () => {
+    expect(
+      validateMigrationRole({ rolname: 'postgres', rolsuper: true, rolbypassrls: false })
+    ).toMatchObject({
+      action: 'warn',
+      message: expect.stringContaining('SUPERUSER'),
+    })
+  })
+
+  it('permits a least-privilege non-superuser migration role', () => {
+    expect(
+      validateMigrationRole({ rolname: 'vault_migrate', rolsuper: false, rolbypassrls: false })
+        .action
+    ).toBe('proceed')
+  })
+})
+
 describe('buildRefusalMessage', () => {
   it('names every offending file and finding, and cross-references the runbook (AC-20)', () => {
     const message = buildRefusalMessage([
@@ -235,7 +273,7 @@ describe('buildMigrationLogEvent', () => {
 // instance — proves the DB-query half of pending-detection actually works against a live
 // `drizzle.__drizzle_migrations` table, not just the pure in-memory logic above.
 //
-// Uses the *superuser* connection (ADMIN_DATABASE_URL), not the app's own DATABASE_URL: in real
+// Uses the *superuser* connection (SUPERUSER_DATABASE_URL), not the app's own DATABASE_URL: in real
 // usage (docker-compose.yml's `migrate` service, CI's "Run database migrations" step,
 // Makefile's `db-migrate` target) guarded-migrate.ts always runs as the Postgres superuser —
 // drizzle-kit itself creates the `drizzle` schema under that role, and the `vault_app` app role
@@ -243,9 +281,7 @@ describe('buildMigrationLogEvent', () => {
 // permission context (a permission-denied error, swallowed by fetchLastAppliedMillis's
 // intentionally-broad catch, masquerading as "nothing applied yet").
 describe('fetchLastAppliedMillis (integration)', () => {
-  const databaseUrl =
-    process.env['ADMIN_DATABASE_URL'] ??
-    'postgresql://postgres:password@localhost:5432/project_vault'
+  const databaseUrl = SUPERUSER_DATABASE_URL
 
   it('returns a numeric timestamp once migrations have been applied', async () => {
     const lastApplied = await fetchLastAppliedMillis(databaseUrl)

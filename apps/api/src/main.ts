@@ -67,6 +67,7 @@ import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
 import { operationalLog, serializeLogError } from './lib/logger.js'
 import { createStartupLogger, logStartupFailure } from './lib/startup-logging.js'
+import { adminPoolIdentityFailure, inspectConfiguredAdminPool } from './lib/admin-pool-identity.js'
 import { getReleaseVersion } from './lib/package-version.js'
 import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
@@ -104,6 +105,9 @@ async function main(): Promise<void> {
   // Check vault state from DB before starting server — throws if DB unreachable (AC-27)
   const initialVaultStatus = await loadInitialVaultState()
 
+  const adminPoolIdentity = await inspectConfiguredAdminPool()
+  if (adminPoolIdentity.status !== 'ok') throw adminPoolIdentityFailure(adminPoolIdentity)
+
   // 3. createApp({ emitter, ringBuffer })
   const fastify = await createApp({
     dbPool,
@@ -121,6 +125,13 @@ async function main(): Promise<void> {
     }
   )
   operationalLog(fastify.log, 'info', OperationalEvent.STARTUP_DB_CONNECTED, 'Database reachable')
+  operationalLog(
+    fastify.log,
+    'info',
+    OperationalEvent.ADMIN_POOL_IDENTITY_VERIFIED,
+    'Admin database pool identity verified',
+    adminPoolIdentity.identity
+  )
   if (env.NODE_ENV === 'production' && env.METRICS_BIND_HOST === '0.0.0.0') {
     operationalLog(
       fastify.log,

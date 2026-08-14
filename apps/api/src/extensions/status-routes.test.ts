@@ -21,7 +21,7 @@ const STATUS_URL = '/api/v1/admin/extensions/status'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
-  apiVersion: '^1.0.0',
+  apiVersion: '1.1.0',
   capabilities: ['auth-provider'],
 }
 

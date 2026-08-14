@@ -41,7 +41,7 @@ function isFixtureCredential(value: string): value is FixtureCredential {
 
 const manifest: ExtensionManifest = {
   name: MOCK_PROVIDER_NAME,
-  apiVersion: '^1.0.0',
+  apiVersion: '1.1.0',
   capabilities: ['auth-provider'],
 }
 

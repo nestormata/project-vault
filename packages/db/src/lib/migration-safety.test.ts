@@ -2,6 +2,24 @@ import { describe, expect, it } from 'vitest'
 import { findDestructiveStatements } from './migration-safety.js'
 
 describe('findDestructiveStatements', () => {
+  it('flags DDL that removes the RLS boundary', () => {
+    expect(
+      findDestructiveStatements('ALTER TABLE credentials NO FORCE ROW LEVEL SECURITY;')
+    ).toEqual([expect.stringMatching(/NO FORCE ROW LEVEL SECURITY/)])
+    expect(
+      findDestructiveStatements('ALTER TABLE credentials DISABLE ROW LEVEL SECURITY;')
+    ).toEqual([expect.stringMatching(/DISABLE ROW LEVEL SECURITY/)])
+    expect(findDestructiveStatements('ALTER TABLE credentials OWNER TO postgres;')).toEqual([
+      expect.stringMatching(/OWNER TO postgres/),
+    ])
+  })
+
+  it('does not flag boundary terms in comments or string literals', () => {
+    expect(
+      findDestructiveStatements(`-- ALTER TABLE credentials NO FORCE ROW LEVEL SECURITY;
+        SELECT 'ALTER TABLE credentials OWNER TO postgres';`)
+    ).toEqual([])
+  })
   it('flags DROP COLUMN', () => {
     const findings = findDestructiveStatements('ALTER TABLE credentials DROP COLUMN notes;')
     expect(findings).toHaveLength(1)
