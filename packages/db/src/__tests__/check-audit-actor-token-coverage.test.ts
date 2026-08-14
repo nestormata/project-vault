@@ -5,7 +5,7 @@ import {
   checkAuditActorTokenCoverage,
   AuditActorTokenCoverageGapError,
 } from '../check-audit-actor-token-coverage.js'
-import { ADMIN_DATABASE_URL } from '../test-db-urls.js'
+import { SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 
 // Unlike checkRlsCoverage (which only queries RLS-exempt catalog views: pg_policies /
 // information_schema), checkAuditActorTokenCoverage queries live audit_log_entries rows, which
@@ -13,7 +13,7 @@ import { ADMIN_DATABASE_URL } from '../test-db-urls.js'
 // every org's rows, not just whichever single org happens to be set in app.current_org_id on a
 // given connection — so this check (both here and in the Makefile's `ci` wiring) always runs
 // against the Postgres superuser connection, which bypasses RLS entirely by design.
-const adminSql = postgres(ADMIN_DATABASE_URL)
+const adminSql = postgres(SUPERUSER_DATABASE_URL)
 
 /** Sentinel thrown to force `adminSql.begin()` to roll back a test fixture — never a real failure. */
 class RollbackTestTransaction extends Error {}

@@ -7,9 +7,9 @@ const migrationSql = readFileSync(
   resolve(import.meta.dirname, '../migrations/0070_rls_ownership_and_force.sql'),
   'utf8'
 )
-const adminConnectionString = process.env['ADMIN_DATABASE_URL'] ?? ''
+const adminConnectionString = process.env['SUPERUSER_DATABASE_URL'] ?? ''
 if (!adminConnectionString) {
-  throw new Error('ADMIN_DATABASE_URL is required for Story 24.1 migration integration tests')
+  throw new Error('SUPERUSER_DATABASE_URL is required for Story 24.1 migration integration tests')
 }
 const adminSql = postgres(adminConnectionString)
 

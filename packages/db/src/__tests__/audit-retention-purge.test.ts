@@ -3,9 +3,9 @@ import { sql } from 'drizzle-orm'
 import postgres from 'postgres'
 import { withOrg } from '../index.js'
 import { withTestOrg, withTwoTestOrgs } from '../test-helpers.js'
-import { ADMIN_DATABASE_URL } from '../test-db-urls.js'
+import { SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 
-const adminSql = postgres(ADMIN_DATABASE_URL)
+const adminSql = postgres(SUPERUSER_DATABASE_URL)
 
 /** Drizzle wraps the real Postgres error as `error.cause` — `.message` on the thrown error is
  * just "Failed query: ...". Matches the isAppendOnlyViolation pattern in test-helpers.ts. */

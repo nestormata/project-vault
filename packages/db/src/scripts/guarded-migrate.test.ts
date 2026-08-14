@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ADMIN_DATABASE_URL } from '../test-db-urls.js'
+import { SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 import {
   buildMigrationLogEvent,
   buildRefusalMessage,
@@ -273,7 +273,7 @@ describe('buildMigrationLogEvent', () => {
 // instance — proves the DB-query half of pending-detection actually works against a live
 // `drizzle.__drizzle_migrations` table, not just the pure in-memory logic above.
 //
-// Uses the *superuser* connection (ADMIN_DATABASE_URL), not the app's own DATABASE_URL: in real
+// Uses the *superuser* connection (SUPERUSER_DATABASE_URL), not the app's own DATABASE_URL: in real
 // usage (docker-compose.yml's `migrate` service, CI's "Run database migrations" step,
 // Makefile's `db-migrate` target) guarded-migrate.ts always runs as the Postgres superuser —
 // drizzle-kit itself creates the `drizzle` schema under that role, and the `vault_app` app role
@@ -281,7 +281,7 @@ describe('buildMigrationLogEvent', () => {
 // permission context (a permission-denied error, swallowed by fetchLastAppliedMillis's
 // intentionally-broad catch, masquerading as "nothing applied yet").
 describe('fetchLastAppliedMillis (integration)', () => {
-  const databaseUrl = ADMIN_DATABASE_URL
+  const databaseUrl = SUPERUSER_DATABASE_URL
 
   it('returns a numeric timestamp once migrations have been applied', async () => {
     const lastApplied = await fetchLastAppliedMillis(databaseUrl)

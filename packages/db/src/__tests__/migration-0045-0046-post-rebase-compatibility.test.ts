@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import postgres from 'postgres'
-import { ADMIN_DATABASE_URL } from '../test-db-urls.js'
+import { SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 
-const databaseUrl = ADMIN_DATABASE_URL
+const databaseUrl = SUPERUSER_DATABASE_URL
 
 function readMigrationSql(tag: string): string {
   return readFileSync(resolve(__dirname, '../migrations', `${tag}.sql`), 'utf-8')

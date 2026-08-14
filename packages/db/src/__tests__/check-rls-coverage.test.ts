@@ -1,12 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import postgres from 'postgres'
 import { checkRlsCoverage, RlsCoverageGapError } from '../check-rls-coverage.js'
-import { ADMIN_DATABASE_URL, DATABASE_URL } from '../test-db-urls.js'
+import { DATABASE_URL, SUPERUSER_DATABASE_URL } from '../test-db-urls.js'
 
 const sql = postgres(DATABASE_URL)
 
 // Database creation/drop requires the superuser — vault_app has no CREATEDB privilege.
-const adminSql = postgres(ADMIN_DATABASE_URL)
+const adminSql = postgres(SUPERUSER_DATABASE_URL)
 
 // Serialize live-policy mutation against the shared dev/CI Postgres instance. API integration
 // tests authenticate via the sessions table RLS policy; dropping it concurrently yields flaky 401s.
@@ -362,9 +362,9 @@ describe('checkRlsCoverage', () => {
     let emptySql: ReturnType<typeof postgres> | undefined
     try {
       await adminSql.unsafe(`CREATE DATABASE ${emptyDbName}`)
-      // Reuse the admin connection's host/port/credentials rather than hardcoding
-      // localhost:5432 — CI/dev may point ADMIN_DATABASE_URL at a non-default port.
-      emptySql = postgres(ADMIN_DATABASE_URL.replace(/\/[^/]*$/, `/${emptyDbName}`))
+      // Reuse the superuser connection's host/port/credentials rather than hardcoding a
+      // deployment endpoint — CI/dev may point SUPERUSER_DATABASE_URL at a non-default port.
+      emptySql = postgres(SUPERUSER_DATABASE_URL.replace(/\/[^/]*$/, `/${emptyDbName}`))
       await expect(checkRlsCoverage(emptySql)).rejects.toThrow(/No tables found/)
     } finally {
       await emptySql?.end()

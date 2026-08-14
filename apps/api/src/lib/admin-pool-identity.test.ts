@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { inspectAdminPoolIdentity } from './admin-pool-identity.js'
+import { adminPoolIdentityFailure, inspectAdminPoolIdentity } from './admin-pool-identity.js'
 
 describe('admin pool identity verification', () => {
   it.each([
@@ -23,5 +23,17 @@ describe('admin pool identity verification', () => {
     await expect(inspectAdminPoolIdentity(async () => [])).resolves.toEqual({
       status: 'unreachable',
     })
+  })
+
+  it.each([
+    ['superuser', /superuser/],
+    ['no-bypassrls', /without BYPASSRLS/],
+    ['unreachable', /could not reach/],
+  ] as const)('builds a safe startup failure for %s', (status, expectedMessage) => {
+    const error = adminPoolIdentityFailure({ status })
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toMatch(expectedMessage)
+    expect(error.message).not.toContain('password')
   })
 })
