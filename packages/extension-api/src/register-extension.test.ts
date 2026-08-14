@@ -1,20 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ExtensionRegistrationError } from './errors.js'
 import type { ExtensionRegistrationErrorReason } from './errors.js'
-import { EXTENSION_API_VERSION } from './manifest.js'
+import { EXTENSION_API_VERSION, HOST_SUPPORTED_EXTENSION_API_RANGE } from './manifest.js'
 import type { ExtensionManifest } from './manifest.js'
-import { isApiVersionCompatible, registerExtension } from './register-extension.js'
+import { isExtensionApiVersionSupported, registerExtension } from './register-extension.js'
 import type { ExtensionHooks } from './register-extension.js'
 
 const VALID_NAME = 'com.acme.sso-extension'
-const INCOMPATIBLE_API_VERSION = '^2.0.0'
+const INCOMPATIBLE_API_VERSION = '2.0.0'
+const INCOMPATIBLE_VERSION_REASON: ExtensionRegistrationErrorReason = 'incompatible-version'
 const INVALID_NAME_REASON: ExtensionRegistrationErrorReason = 'invalid-name'
 
 function manifest(overrides: Partial<ExtensionManifest> = {}): ExtensionManifest {
   return {
     name: VALID_NAME,
-    // Compatible with this story's EXTENSION_API_VERSION ("1.0.0" — see manifest.ts).
-    apiVersion: '^1.0.0',
+    apiVersion: EXTENSION_API_VERSION,
     capabilities: ['auth-provider'],
     ...overrides,
   }
@@ -59,18 +59,18 @@ describe('registerExtension — AC4 (compatible manifest)', () => {
     expect(result.manifest.name).toBe(VALID_NAME)
   })
 
-  it("matches the story's literal AC4 example (apiVersion '^1.2.0' against core '1.3.0')", () => {
-    expect(isApiVersionCompatible('1.3.0', '^1.2.0')).toBe(true)
+  it('accepts the exact host version through the host-owned predicate', () => {
+    expect(isExtensionApiVersionSupported(EXTENSION_API_VERSION)).toBe(true)
   })
 })
 
 describe('registerExtension — AC5 (incompatible manifest)', () => {
   it('throws ExtensionRegistrationError with reason "incompatible-version" and never calls hooksFactory', () => {
-    expectRejection({ apiVersion: INCOMPATIBLE_API_VERSION }, 'incompatible-version')
+    expectRejection({ apiVersion: INCOMPATIBLE_API_VERSION }, INCOMPATIBLE_VERSION_REASON)
   })
 
-  it("matches the story's literal AC5 example (apiVersion '^2.0.0' against core '1.3.0')", () => {
-    expect(isApiVersionCompatible('1.3.0', INCOMPATIBLE_API_VERSION)).toBe(false)
+  it('rejects a valid version outside the host-owned range', () => {
+    expect(isExtensionApiVersionSupported(INCOMPATIBLE_API_VERSION)).toBe(false)
   })
 
   it('throws synchronously (not a rejected Promise)', () => {
@@ -103,7 +103,25 @@ describe('registerExtension — AC6 (manifest name validation)', () => {
 
 describe('registerExtension — validation ordering (name before semver)', () => {
   it('rejects for invalid-name even when apiVersion is also incompatible, proving name is checked first', () => {
-    expectRejection({ name: 'not-reverse-dns', apiVersion: '^99.0.0' }, INVALID_NAME_REASON)
+    // The version is deliberately irrelevant because the name gate must fire first.
+    expectRejection(
+      { name: 'not-reverse-dns', apiVersion: INCOMPATIBLE_API_VERSION },
+      INVALID_NAME_REASON
+    )
+  })
+
+  it('reports the shape failure before the range failure for a valid name', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(manifest({ apiVersion: '^2.0.0' }), hooksFactory)
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INCOMPATIBLE_VERSION_REASON)
+    expect((caught as ExtensionRegistrationError).message).toContain(
+      'not a concrete semver version'
+    )
   })
 })
 
@@ -122,21 +140,88 @@ describe('registerExtension — hooksFactory laziness', () => {
   })
 })
 
-describe('isApiVersionCompatible — AC5 prerelease handling', () => {
-  it('a stable manifest range does NOT satisfy a prerelease core version (explicit includePrerelease: false)', () => {
-    // EXTENSION_API_VERSION could in principle be a prerelease (e.g. "1.3.0-beta.1") ahead of a
-    // stable release; a manifest declaring a plain "^1.2.0" range must not silently activate
-    // against unstable, in-flight core behavior. This is the deliberately chosen, documented
-    // behavior (see register-extension.ts) rather than an accidental default.
-    expect(isApiVersionCompatible('1.3.0-beta.1', '^1.2.0')).toBe(false)
+describe('registerExtension — concrete canonical version gate', () => {
+  it.each(['*', '', 'x', '>=1', '>=1.0.0', '>0.0.1', '^1.0.0', '~1.0.0'])(
+    'rejects bypass range %j',
+    (apiVersion) => {
+      expectRejection({ apiVersion }, INCOMPATIBLE_VERSION_REASON)
+    }
+  )
+
+  it.each(['v1.0.0', ' 1.0.0 ', '1.0.0+' + 'A'.repeat(200), 'banana', 1, undefined])(
+    'rejects non-canonical declaration %j with the shape message',
+    (apiVersion) => {
+      const hooksFactory = makeHooksFactory()
+      let caught: unknown
+      try {
+        registerExtension(manifest({ apiVersion: apiVersion as string }), hooksFactory)
+      } catch (error) {
+        caught = error
+      }
+      expect((caught as ExtensionRegistrationError).message).toContain(
+        'not a concrete semver version'
+      )
+      expect((caught as ExtensionRegistrationError).message.length).toBeLessThan(320)
+      expect(hooksFactory).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    '1.2.0',
+    '1.4.0',
+    '0.9.0',
+    '2.0.0',
+    '2.0.0-beta.1',
+    '1.1.0-beta.1',
+    '1.3.0-beta.1',
+    '2.3.1',
+  ])('rejects canonical version outside %s', (apiVersion) => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(manifest({ apiVersion }), hooksFactory)
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).message).toContain(
+      HOST_SUPPORTED_EXTENSION_API_RANGE
+    )
+    expect(hooksFactory).not.toHaveBeenCalled()
   })
 
-  it('a manifest range that itself opts into the same prerelease line is satisfied', () => {
-    expect(isApiVersionCompatible('1.3.0-beta.1', '^1.3.0-beta.1')).toBe(true)
+  it('reads apiVersion once and records the validated value', () => {
+    let reads = 0
+    const getterManifest = { ...manifest() }
+    Object.defineProperty(getterManifest, 'apiVersion', {
+      get: () => {
+        reads += 1
+        return reads === 1 ? EXTENSION_API_VERSION : '*'
+      },
+      enumerable: true,
+    })
+
+    const result = registerExtension(getterManifest, makeHooksFactory())
+
+    expect(reads).toBe(1)
+    expect(result.manifest.apiVersion).toBe(EXTENSION_API_VERSION)
   })
 
-  it('a stable core version against a stable range behaves normally', () => {
-    expect(isApiVersionCompatible(EXTENSION_API_VERSION, '^1.0.0')).toBe(true)
-    expect(isApiVersionCompatible(EXTENSION_API_VERSION, INCOMPATIBLE_API_VERSION)).toBe(false)
+  it('allows only the above-host same-major rollback escape', () => {
+    expect(() => registerExtension(manifest({ apiVersion: '1.2.0' }), makeHooksFactory())).toThrow()
+    expect(() =>
+      registerExtension(manifest({ apiVersion: '1.2.0' }), makeHooksFactory(), {
+        allowApiVersionAboveHost: true,
+      })
+    ).not.toThrow()
+    expect(() =>
+      registerExtension(manifest({ apiVersion: '*' }), makeHooksFactory(), {
+        allowApiVersionAboveHost: true,
+      })
+    ).toThrow(/not a concrete semver version/)
+    expect(() =>
+      registerExtension(manifest({ apiVersion: '2.0.0' }), makeHooksFactory(), {
+        allowApiVersionAboveHost: true,
+      })
+    ).toThrow(/outside this host's supported range/)
   })
 })

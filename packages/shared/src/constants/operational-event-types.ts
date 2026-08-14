@@ -220,6 +220,9 @@ export const OperationalEvent = {
   // failure-reason log — never carries the raw exception message/stack (fixed-enum reason
   // only, matching this codebase's secret-redaction-in-logs precedent).
   EXTENSION_LOAD_FAILED: 'extension.load_failed',
+  // Story 24.3: an operator deliberately enabled the rollback escape for an above-host,
+  // same-major extension version. This is a warning on every boot while the escape is active.
+  EXTENSION_API_VERSION_ABOVE_HOST_ALLOWED: 'extension.api_version_above_host_allowed',
   // A single org's boot-time audit-fanout row failed to write — log-and-continue, distinct
   // from an actual extension load failure so the two are never conflated in monitoring.
   EXTENSION_AUDIT_FANOUT_ROW_FAILED: 'extension.audit_fanout_row_failed',

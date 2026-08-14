@@ -13,10 +13,14 @@ export type { NotificationChannel, NotificationPayload } from './hooks/notificat
 export type { UIPanel, UIPanelContext, UIPanelResult } from './hooks/ui-panel.js'
 
 export type { ExtensionCapability, ExtensionManifest } from './manifest.js'
-export { EXTENSION_API_VERSION, defineExtension } from './manifest.js'
+export {
+  EXTENSION_API_VERSION,
+  HOST_SUPPORTED_EXTENSION_API_RANGE,
+  defineExtension,
+} from './manifest.js'
 
 export type { ExtensionRegistrationErrorReason } from './errors.js'
 export { ExtensionRegistrationError } from './errors.js'
 
 export type { ExtensionHooks } from './register-extension.js'
-export { isApiVersionCompatible, registerExtension } from './register-extension.js'
+export { isExtensionApiVersionSupported, registerExtension } from './register-extension.js'

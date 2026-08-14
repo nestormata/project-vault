@@ -6,14 +6,17 @@ import * as ExtensionApi from './index.js'
 const PACKAGE_JSON_PATH = fileURLToPath(new URL('../package.json', import.meta.url))
 
 describe('index.ts — root-only export surface (AC1, AC2)', () => {
-  it('exports defineExtension, registerExtension, and EXTENSION_API_VERSION', () => {
-    expect(typeof ExtensionApi.defineExtension).toBe('function')
-    expect(typeof ExtensionApi.registerExtension).toBe('function')
-    expect(typeof ExtensionApi.EXTENSION_API_VERSION).toBe('string')
-  })
-
-  it('exports ExtensionRegistrationError', () => {
-    expect(typeof ExtensionApi.ExtensionRegistrationError).toBe('function')
+  it('exports exactly the reviewed runtime surface', () => {
+    expect(new Set(Object.keys(ExtensionApi))).toEqual(
+      new Set([
+        'defineExtension',
+        'EXTENSION_API_VERSION',
+        'HOST_SUPPORTED_EXTENSION_API_RANGE',
+        'ExtensionRegistrationError',
+        'isExtensionApiVersionSupported',
+        'registerExtension',
+      ])
+    )
   })
 
   it("package.json's exports map exposes only the root entry point — no hooks/ subpath (AC2 guard)", () => {

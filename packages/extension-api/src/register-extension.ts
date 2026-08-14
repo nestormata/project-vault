@@ -1,6 +1,6 @@
 import semver from 'semver'
 import { ExtensionRegistrationError } from './errors.js'
-import { EXTENSION_API_VERSION } from './manifest.js'
+import { EXTENSION_API_VERSION, HOST_SUPPORTED_EXTENSION_API_RANGE } from './manifest.js'
 import type { ExtensionManifest } from './manifest.js'
 import type { AuthStrategy } from './hooks/auth-strategy.js'
 import type { NotificationChannel } from './hooks/notification-channel.js'
@@ -26,24 +26,25 @@ export type ExtensionHooks = {
 }
 
 /**
- * AC5 — whether `coreVersion` satisfies `manifestApiVersionRange`, via `semver.satisfies()` (never
- * hand-rolled range parsing, per architecture.md).
- *
- * Explicit, deliberate choice on prerelease handling: called with `{ includePrerelease: false }`
- * (semver's own default, made explicit here rather than left implicit) — a prerelease core
- * version (e.g. "1.3.0-beta.1") does NOT satisfy a plain stable range (e.g. "^1.2.0") unless the
- * manifest's own range itself opts into that exact prerelease line (e.g. "^1.3.0-beta.1" or
- * similar). Rationale: an extension declaring a stable compatibility range should never silently
- * activate against unstable, in-flight core behavior just because the numeric range happens to
- * overlap — that would defeat the purpose of the negotiation gate. Exported (not just internal)
- * so this behavior is directly unit-testable independent of the fixed `EXTENSION_API_VERSION`
- * constant (see register-extension.test.ts).
+ * Host-side predicate: the extension declares a concrete version and the host owns the range.
+ * Reverting to `satisfies(hostVersion, extensionRange)` is a security regression, not a
+ * stylistic preference. See docs/extension-api-versioning-policy.md § Load-time gate.
  */
-export function isApiVersionCompatible(
-  coreVersion: string,
-  manifestApiVersionRange: string
-): boolean {
-  return semver.satisfies(coreVersion, manifestApiVersionRange, { includePrerelease: false })
+export function isExtensionApiVersionSupported(declaredApiVersion: string): boolean {
+  return semver.satisfies(declaredApiVersion, HOST_SUPPORTED_EXTENSION_API_RANGE, {
+    includePrerelease: false,
+  })
+}
+
+type RegisterExtensionOptions = {
+  allowApiVersionAboveHost?: boolean
+}
+
+function isAboveHostButSameMajor(declaredApiVersion: string): boolean {
+  return (
+    semver.major(declaredApiVersion) === semver.major(EXTENSION_API_VERSION) &&
+    semver.gt(declaredApiVersion, EXTENSION_API_VERSION)
+  )
 }
 
 /**
@@ -55,7 +56,8 @@ export function isApiVersionCompatible(
  */
 export function registerExtension(
   manifest: ExtensionManifest,
-  hooksFactory: () => ExtensionHooks
+  hooksFactory: () => ExtensionHooks,
+  options: RegisterExtensionOptions = {}
 ): { manifest: ExtensionManifest; hooks: ExtensionHooks } {
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -64,13 +66,40 @@ export function registerExtension(
     )
   }
 
-  if (!isApiVersionCompatible(EXTENSION_API_VERSION, manifest.apiVersion)) {
+  const { apiVersion: declaredApiVersion } = manifest
+  const truncatedApiVersion = String(declaredApiVersion).slice(0, 64)
+  const isCanonicalVersion =
+    typeof declaredApiVersion === 'string' &&
+    declaredApiVersion.length <= 64 &&
+    semver.valid(declaredApiVersion) === declaredApiVersion
+
+  if (!isCanonicalVersion) {
     throw new ExtensionRegistrationError(
       'incompatible-version',
-      `Extension manifest apiVersion range "${manifest.apiVersion}" is not compatible with core EXTENSION_API_VERSION "${EXTENSION_API_VERSION}"`
+      `Extension manifest apiVersion "${truncatedApiVersion}" is not a concrete semver version. Declare the exact EXTENSION_API_VERSION this extension was built against (e.g. "${EXTENSION_API_VERSION}"); ranges and wildcards are no longer accepted.`
+    )
+  }
+
+  const supported = isExtensionApiVersionSupported(declaredApiVersion)
+  const allowedByRollbackEscape =
+    options.allowApiVersionAboveHost === true &&
+    !supported &&
+    isAboveHostButSameMajor(declaredApiVersion)
+
+  if (!supported && !allowedByRollbackEscape) {
+    throw new ExtensionRegistrationError(
+      'incompatible-version',
+      `Extension manifest apiVersion "${truncatedApiVersion}" is outside this host's supported range "${HOST_SUPPORTED_EXTENSION_API_RANGE}" (host EXTENSION_API_VERSION "${EXTENSION_API_VERSION}").`
     )
   }
 
   const hooks = hooksFactory()
-  return { manifest, hooks }
+  return {
+    manifest: {
+      name: manifest.name,
+      apiVersion: declaredApiVersion,
+      capabilities: manifest.capabilities,
+    },
+    hooks,
+  }
 }

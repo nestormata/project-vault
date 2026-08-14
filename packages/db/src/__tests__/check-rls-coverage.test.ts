@@ -364,7 +364,7 @@ describe('checkRlsCoverage', () => {
       await adminSql.unsafe(`CREATE DATABASE ${emptyDbName}`)
       // Reuse the admin connection's host/port/credentials rather than hardcoding
       // localhost:5432 — CI/dev may point ADMIN_DATABASE_URL at a non-default port.
-      emptySql = postgres(adminConnectionString.replace(/\/[^/]*$/, `/${emptyDbName}`))
+      emptySql = postgres(ADMIN_DATABASE_URL.replace(/\/[^/]*$/, `/${emptyDbName}`))
       await expect(checkRlsCoverage(emptySql)).rejects.toThrow(/No tables found/)
     } finally {
       await emptySql?.end()

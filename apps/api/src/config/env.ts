@@ -794,6 +794,9 @@ const envSchema = z
       (v) => (v === '' ? undefined : v),
       z.string().min(1).optional()
     ),
+    // Story 24.3: incident-only escape for a same-major extension built above a rolled-back host.
+    // Default false; this relaxes only the ceiling and emits a warning on every boot while set.
+    VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: booleanEnvDefault(false),
 
     // Story 16.1 AC-1/AC-2: directory of admin-installed custom theme definition files, inside
     // the persistent Docker Compose volume (never the application image, so themes survive image
