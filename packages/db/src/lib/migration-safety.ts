@@ -191,6 +191,11 @@ function splitTopLevel(text: string, separator: string): string[] {
 }
 
 const SIMPLE_PATTERNS: { label: string; regex: RegExp }[] = [
+  // Story 24.1: these statements can silently remove the ownership/FORCE boundary. Story 23.5
+  // may extend this same scanner with privilege patterns; keep one scanner and one source of truth.
+  { label: 'NO FORCE ROW LEVEL SECURITY', regex: /\bNO\s+FORCE\s+ROW\s+LEVEL\s+SECURITY\b/gi },
+  { label: 'DISABLE ROW LEVEL SECURITY', regex: /\bDISABLE\s+ROW\s+LEVEL\s+SECURITY\b/gi },
+  { label: 'OWNER TO postgres', regex: /\bOWNER\s+TO\s+postgres\b/gi },
   { label: 'DROP COLUMN', regex: /\bDROP\s+COLUMN\b/gi },
   { label: 'DROP TABLE', regex: /\bDROP\s+TABLE\b/gi },
   { label: 'RENAME COLUMN', regex: /\bRENAME\s+COLUMN\b/gi },

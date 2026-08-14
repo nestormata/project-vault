@@ -40,3 +40,8 @@ $$ LANGUAGE plpgsql;
 -- revoked, migration 0041). The function's own internal SECURITY DEFINER + session-flag-gated
 -- trigger escape hatch is what keeps this broad EXECUTE grant safe.
 GRANT EXECUTE ON FUNCTION purge_expired_platform_audit_entries(timestamptz) TO vault_app;
+
+-- Story 24.1 contract note (append-only documentation; function body and owner unchanged):
+-- platform_audit_events remains SELECT/INSERT for vault_app. Historical platform cleanup is
+-- available only through this controlled SECURITY DEFINER function; direct DELETE is not granted
+-- when RLS ownership moves to vault_owner.

@@ -10,6 +10,7 @@ import {
   readLocalMigrations,
   resolvePendingMigrations,
   scanPendingForDestructive,
+  validateMigrationRole,
 } from './guarded-migrate.js'
 
 const TAG_UNSAFE = '0001_unsafe'
@@ -167,6 +168,42 @@ describe('decideMigrationAction', () => {
   it('proceeds when there are no offending migrations regardless of the flag', () => {
     expect(decideMigrationAction([], false)).toBe('proceed')
     expect(decideMigrationAction([], true)).toBe('proceed')
+  })
+})
+
+describe('validateMigrationRole', () => {
+  it('refuses a non-superuser BYPASSRLS migration role', () => {
+    expect(
+      validateMigrationRole({ rolname: 'unsafe', rolsuper: false, rolbypassrls: true })
+    ).toMatchObject({
+      action: 'refuse',
+      message: expect.stringContaining('BYPASSRLS'),
+    })
+  })
+
+  it('allows the supported postgres superuser even when PostgreSQL marks it BYPASSRLS', () => {
+    expect(
+      validateMigrationRole({ rolname: 'postgres', rolsuper: true, rolbypassrls: true })
+    ).toMatchObject({
+      action: 'warn',
+      message: expect.stringContaining('SUPERUSER'),
+    })
+  })
+
+  it('warns but permits the currently supported postgres superuser migration role', () => {
+    expect(
+      validateMigrationRole({ rolname: 'postgres', rolsuper: true, rolbypassrls: false })
+    ).toMatchObject({
+      action: 'warn',
+      message: expect.stringContaining('SUPERUSER'),
+    })
+  })
+
+  it('permits a least-privilege non-superuser migration role', () => {
+    expect(
+      validateMigrationRole({ rolname: 'vault_migrate', rolsuper: false, rolbypassrls: false })
+        .action
+    ).toBe('proceed')
   })
 })
 

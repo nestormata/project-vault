@@ -145,3 +145,9 @@ $$ LANGUAGE plpgsql;
 -- own internal p_org_id/session-context check (above) is what keeps this broad EXECUTE grant
 -- safe despite SECURITY DEFINER's RLS bypass.
 GRANT EXECUTE ON FUNCTION purge_expired_audit_log_entries(uuid, timestamptz) TO vault_app;
+
+-- Story 24.1 contract note (append-only documentation; function body and owner unchanged):
+-- audit_log_entries remains SELECT/INSERT for vault_app. Historical deletion is available only
+-- through this controlled SECURITY DEFINER function, whose org-context check and session-local
+-- trigger escape hatch are part of its caller contract. The table's direct DELETE grant remains
+-- revoked after RLS ownership moves to vault_owner.

@@ -33,6 +33,38 @@ export type MigrationAction = 'refuse' | 'proceed'
 type JournalEntry = { idx: number; when: number; tag: string }
 type Journal = { entries: JournalEntry[] }
 
+export type MigrationRoleState = {
+  rolname: string
+  rolsuper: boolean
+  rolbypassrls: boolean
+}
+
+export type MigrationRoleDecision = {
+  action: 'proceed' | 'warn' | 'refuse'
+  message: string
+}
+
+export function validateMigrationRole(state: MigrationRoleState): MigrationRoleDecision {
+  if (!state.rolsuper && state.rolbypassrls) {
+    return {
+      action: 'refuse',
+      message: `FATAL: non-superuser migration role ${state.rolname} has BYPASSRLS; this makes Story 24.1's RLS boundary inert. Use a role without BYPASSRLS.`,
+    }
+  }
+  if (state.rolsuper) {
+    return {
+      action: 'warn',
+      message:
+        `WARN: migration role ${state.rolname} is SUPERUSER${state.rolbypassrls ? ' (also marked BYPASSRLS)' : ''} and bypasses RLS. ` +
+        'Cross-organization migrations must use the documented joined-org mechanism; do not disable or bypass RLS in a migration.',
+    }
+  }
+  return {
+    action: 'proceed',
+    message: `Migration role ${state.rolname} is non-superuser and non-BYPASSRLS; RLS remains active during migration execution.`,
+  }
+}
+
 /** Reads every migration file listed in `${migrationsDir}/meta/_journal.json`, in journal (idx)
  * order — the full local migration history, not filtered to pending ones. */
 export function readLocalMigrations(migrationsDir: string): LocalMigration[] {
@@ -174,6 +206,22 @@ export async function fetchLastAppliedMillis(databaseUrl: string): Promise<numbe
   }
 }
 
+export async function fetchMigrationRoleState(databaseUrl: string): Promise<MigrationRoleState> {
+  const sql = postgres(databaseUrl, { max: 1 })
+  try {
+    const rows = await sql<MigrationRoleState[]>`
+      SELECT current_user AS rolname, rolsuper, rolbypassrls
+        FROM pg_roles
+       WHERE rolname = current_user
+    `
+    const state = rows[0]
+    if (!state) throw new Error('Cannot determine migration connection role')
+    return state
+  } finally {
+    await sql.end()
+  }
+}
+
 export async function main(): Promise<void> {
   const allowDestructive = process.argv.includes('--allow-destructive')
   const databaseUrl = process.env['DATABASE_URL']
@@ -200,6 +248,21 @@ export async function main(): Promise<void> {
   if (offending.length > 0) {
     log(buildMigrationLogEvent({ kind: 'allowed', offending }))
   }
+
+  let roleDecision: MigrationRoleDecision
+  try {
+    roleDecision = validateMigrationRole(await fetchMigrationRoleState(databaseUrl))
+  } catch (error) {
+    process.stderr.write(`FATAL: migration role preflight failed: ${(error as Error).message}\n`)
+    process.exitCode = 1
+    return
+  }
+  if (roleDecision.action === 'refuse') {
+    process.stderr.write(`${roleDecision.message}\n`)
+    process.exitCode = 1
+    return
+  }
+  process.stderr.write(`${roleDecision.message}\n`)
 
   try {
     runDrizzleKitMigration(__dirname)

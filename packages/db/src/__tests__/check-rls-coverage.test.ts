@@ -134,6 +134,44 @@ async function withPolicyDropped<T>(
   })
 }
 
+async function withForceDropped<T>(table: string, fn: () => Promise<T>): Promise<T> {
+  return withRlsPolicyMutationLock(async () => {
+    const original = await adminSql<{ forced: boolean }[]>`
+      SELECT relforcerowsecurity AS forced
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ${table}
+    `
+    await adminSql.unsafe(`ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`)
+    try {
+      return await fn()
+    } finally {
+      if (original[0]?.forced) {
+        await adminSql.unsafe(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`)
+      } else {
+        await adminSql.unsafe(`ALTER TABLE ${table} NO FORCE ROW LEVEL SECURITY`)
+      }
+    }
+  })
+}
+
+async function withOwnerSetToPostgres<T>(table: string, fn: () => Promise<T>): Promise<T> {
+  return withRlsPolicyMutationLock(async () => {
+    const original = await adminSql<{ owner: string }[]>`
+      SELECT pg_get_userbyid(c.relowner) AS owner
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ${table}
+    `
+    await adminSql.unsafe(`ALTER TABLE ${table} OWNER TO postgres`)
+    try {
+      return await fn()
+    } finally {
+      if (original[0]?.owner && original[0].owner !== 'postgres') {
+        await adminSql.unsafe(`ALTER TABLE ${table} OWNER TO ${original[0].owner}`)
+      }
+    }
+  })
+}
+
 describe('checkRlsCoverage', () => {
   afterEach(async () => {
     // Story 1.15: last-resort safety net only. The primary restore is now inline (see
@@ -148,6 +186,55 @@ describe('checkRlsCoverage', () => {
 
   it('resolves when every org_id table has an RLS policy', async () => {
     await expect(checkRlsCoverage(sql)).resolves.toBeUndefined()
+  })
+
+  it('fails when an RLS-enabled table loses FORCE ROW LEVEL SECURITY', async () => {
+    await withForceDropped('credential_shares', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /credential_shares.*FORCE|FORCE.*credential_shares/i
+      )
+    })
+  })
+
+  it('fails when an RLS-enabled table is owned by postgres', async () => {
+    await withOwnerSetToPostgres('credential_shares', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /credential_shares.*owner|owner.*credential_shares/i
+      )
+    })
+  })
+
+  it('requires append-only audit tables to keep SELECT/INSERT without direct UPDATE/DELETE', async () => {
+    const rows = await adminSql<{ table_name: string; privilege_type: string }[]>`
+      SELECT c.relname AS table_name, acl.privilege_type
+        FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl ON true
+        JOIN pg_catalog.pg_roles grantee ON grantee.oid = acl.grantee
+       WHERE n.nspname = 'public'
+         AND c.relname IN ('audit_log_entries', 'platform_audit_events')
+         AND grantee.rolname = 'vault_app'
+    `
+    const byTable = new Map<string, Set<string>>()
+    for (const row of rows) {
+      const privileges = byTable.get(row.table_name) ?? new Set<string>()
+      privileges.add(row.privilege_type)
+      byTable.set(row.table_name, privileges)
+    }
+    for (const table of ['audit_log_entries', 'platform_audit_events']) {
+      expect(byTable.get(table)).toEqual(new Set(['SELECT', 'INSERT']))
+    }
+  })
+
+  it('fails closed for a normal public view over an RLS-enabled table', async () => {
+    await withRlsPolicyMutationLock(async () => {
+      await adminSql`CREATE OR REPLACE VIEW public.__story24_1_unsafe_view AS SELECT id FROM public.credentials`
+      try {
+        await expect(checkRlsCoverage(sql)).rejects.toThrow(/__story24_1_unsafe_view/)
+      } finally {
+        await adminSql`DROP VIEW IF EXISTS public.__story24_1_unsafe_view`
+      }
+    })
   })
 
   it('throws RlsCoverageGapError listing the table missing a policy', async () => {

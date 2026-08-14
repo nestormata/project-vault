@@ -13,13 +13,14 @@
 
 All three strategies were evaluated:
 
-| Strategy | Verdict for Project Vault v1 |
-|---|---|
-| Shared schema + `org_id` | ✅ Recommended — single node, simple migrations, works with GORM scopes + RLS |
+| Strategy                              | Verdict for Project Vault v1                                                       |
+| ------------------------------------- | ---------------------------------------------------------------------------------- |
+| Shared schema + `org_id`              | ✅ Recommended — single node, simple migrations, works with GORM scopes + RLS      |
 | Schema-per-tenant (`SET search_path`) | ❌ Deferred — migration tooling pain, catalog bloat at scale, breaks SQLite compat |
-| Database-per-tenant | ❌ Not suitable — operationally heavy for self-hosted single-node |
+| Database-per-tenant                   | ❌ Not suitable — operationally heavy for self-hosted single-node                  |
 
 **Defense-in-depth**: Three isolation layers, any single failure does not produce a cross-tenant leak:
+
 1. **Application layer** — GORM `OrgScope` appends `WHERE org_id = ?` to every query
 2. **Database layer** — PostgreSQL RLS policy validates `org_id = current_setting('app.current_org_id', true)::uuid`
 3. **RBAC layer** — Casbin `org:{uuid}` domain enforcement (see `specs/rbac-permission-architecture.md`)
@@ -158,11 +159,12 @@ CREATE INDEX idx_secret_versions_org    ON secret_versions(org_id);
 
 ### Database Roles
 
-| Role | Privileges | RLS Behavior |
-|---|---|---|
-| `vault_migrate` | SUPERUSER — schema changes and seed data | Bypasses RLS (expected for migrations) |
-| `vault_app` | Application queries (SELECT, INSERT, UPDATE, DELETE) | Bound by RLS policies — FORCE RLS if owner |
-| `vault_ro` | Read-only compliance/audit queries | Explicit SELECT-only bypass policy |
+| Role          | Privileges                                                           | RLS Behavior                                                                                  |
+| ------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `postgres`    | Supported SUPERUSER migration role — schema changes and seed data    | Bypasses RLS during migration; guarded preflight rejects only non-superuser `BYPASSRLS` roles |
+| `vault_app`   | Application queries (SELECT, INSERT, UPDATE, DELETE)                 | Bound by RLS policies; owns no public tables                                                  |
+| `vault_owner` | NOLOGIN, NOSUPERUSER, NOBYPASSRLS owner of RLS-enabled public tables | `FORCE ROW LEVEL SECURITY` binds owner DML to policy                                          |
+| `vault_ro`    | Read-only compliance/audit queries                                   | Explicit SELECT-only bypass policy                                                            |
 
 ### Tenant Context Injection
 
@@ -182,7 +184,7 @@ ALTER TABLE environments   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE secrets        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE secret_versions ENABLE ROW LEVEL SECURITY;
 
--- FORCE RLS so vault_app (table owner) is also subject to policy
+-- Story 24.1: every RLS-enabled public table is owned by vault_owner and forced.
 ALTER TABLE projects       FORCE ROW LEVEL SECURITY;
 ALTER TABLE environments   FORCE ROW LEVEL SECURITY;
 ALTER TABLE secrets        FORCE ROW LEVEL SECURITY;
@@ -348,15 +350,15 @@ func (s *SecretService) GetSecret(ctx context.Context, orgID, projectID uuid.UUI
 
 ## Cross-Tenant Leakage Prevention
 
-| Risk vector | Prevention mechanism |
-|---|---|
-| URL `org_id` manipulation | Auth middleware validates URL `orgID` against JWT-claimed `orgID`; mismatch → 403 |
-| `project_id` belonging to different org | `ProjectScope(orgID, projectID)` filters BOTH columns; missing row → 404 |
-| GORM scope forgotten at call site | RLS backstop; integration test per API endpoint asserting cross-tenant 404 |
-| RLS GUC not set | `current_setting(..., true)` returns NULL → USING false → 0 rows (no error, no leak) |
-| Migration bypassing app-layer scopes | Migrations run as `vault_migrate` (superuser); bypasses RLS intentionally |
-| Backup/pg_dump cross-tenant | pg_dump uses `vault_migrate` role; `row_security=off` set explicitly |
-| Machine token cross-org | Token's `org_id` from DB record (not request); request org validated against token's org |
+| Risk vector                             | Prevention mechanism                                                                                 |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| URL `org_id` manipulation               | Auth middleware validates URL `orgID` against JWT-claimed `orgID`; mismatch → 403                    |
+| `project_id` belonging to different org | `ProjectScope(orgID, projectID)` filters BOTH columns; missing row → 404                             |
+| GORM scope forgotten at call site       | RLS backstop; integration test per API endpoint asserting cross-tenant 404                           |
+| RLS GUC not set                         | `current_setting(..., true)` returns NULL → USING false → 0 rows (no error, no leak)                 |
+| Migration bypassing app-layer scopes    | Migrations run as `vault_migrate` (superuser); bypasses RLS intentionally                            |
+| Backup/pg_dump cross-tenant             | pg_dump uses `vault_migrate` role; `row_security=off` set explicitly                                 |
+| Machine token cross-org                 | Token's `org_id` from DB record (not request); request org validated against token's org             |
 | Concurrent connection GUC contamination | `is_local=true` in `set_config` — GUC auto-resets on COMMIT/ROLLBACK; cannot leak across connections |
 
 ---
@@ -385,14 +387,14 @@ internal/
 
 ## Open ADRs
 
-| ADR | Topic | Recommendation |
-|---|---|---|
-| ADR-16 | Tenant isolation strategy — Shared Schema for Tier 0 (v1 self-hosted + small SaaS). Cell-based for Tier 1/2 when triggered by isolation contracts or 50+ enterprise tenants. | Shared Schema now; cell-based when business trigger materializes. |
-| ADR-17 | `org_id` denormalization scope — all tenant-owned tables vs. only tables with RLS | All tables (RLS applied to all; one UUID column overhead is negligible; enables future cell extraction with zero schema changes) |
-| ADR-18 | Reporting bypass strategy — `vault_ro` role with explicit SELECT-only bypass policy | `vault_ro` + bypass policy; no separate analytics DB until scale requires it |
-| ADR-19 | When federation is built: lookup-table routing (Pattern A) vs. consistent hash routing. Central auth JWT design. | Lookup table for operational flexibility. RS256 JWTs with `vault.app_server` routing hint. JWKS-based local validation on app servers (no per-request central auth coupling). |
-| ADR-20 | Machine tokens in federated model — how do they bypass browser redirect? | Machine tokens exchange directly with central auth for JWT + `server_url`. `VAULT_SERVER_URL` env var overrides routing for air-gapped/CI deployments. |
-| ADR-21 | Connection pooling in DB-per-tenant cells | PgBouncer in transaction mode per cell (mandatory when >10 tenant DBs per cell). Per-tenant `pgxpool` registry with idle reaper on app servers. Compatible with existing `set_config(..., true)` pattern. |
+| ADR    | Topic                                                                                                                                                                        | Recommendation                                                                                                                                                                                            |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-16 | Tenant isolation strategy — Shared Schema for Tier 0 (v1 self-hosted + small SaaS). Cell-based for Tier 1/2 when triggered by isolation contracts or 50+ enterprise tenants. | Shared Schema now; cell-based when business trigger materializes.                                                                                                                                         |
+| ADR-17 | `org_id` denormalization scope — all tenant-owned tables vs. only tables with RLS                                                                                            | All tables (RLS applied to all; one UUID column overhead is negligible; enables future cell extraction with zero schema changes)                                                                          |
+| ADR-18 | Reporting bypass strategy — `vault_ro` role with explicit SELECT-only bypass policy                                                                                          | `vault_ro` + bypass policy; no separate analytics DB until scale requires it                                                                                                                              |
+| ADR-19 | When federation is built: lookup-table routing (Pattern A) vs. consistent hash routing. Central auth JWT design.                                                             | Lookup table for operational flexibility. RS256 JWTs with `vault.app_server` routing hint. JWKS-based local validation on app servers (no per-request central auth coupling).                             |
+| ADR-20 | Machine tokens in federated model — how do they bypass browser redirect?                                                                                                     | Machine tokens exchange directly with central auth for JWT + `server_url`. `VAULT_SERVER_URL` env var overrides routing for air-gapped/CI deployments.                                                    |
+| ADR-21 | Connection pooling in DB-per-tenant cells                                                                                                                                    | PgBouncer in transaction mode per cell (mandatory when >10 tenant DBs per cell). Per-tenant `pgxpool` registry with idle reaper on app servers. Compatible with existing `set_config(..., true)` pattern. |
 
 ---
 
@@ -435,9 +437,9 @@ TIER 2 — DEDICATED CELLS (enterprise)
   "exp": 1720003600,
   "jti": "tok_01HXYZ...",
   "vault": {
-    "org_id":      "org_01HABC...",
-    "app_server":  "https://app-eu.vault.example.com",
-    "shard_id":    "eu-1",
+    "org_id": "org_01HABC...",
+    "app_server": "https://app-eu.vault.example.com",
+    "shard_id": "eu-1",
     "auth_method": "password"
   },
   "roles": { "org:org_01HABC...": "org_member" }

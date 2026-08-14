@@ -19,6 +19,7 @@ export default mergeConfig(baseVitestConfig, {
         'src/index.ts',
         'src/test-helpers.ts',
         'src/check-rls-coverage.ts',
+        'src/lib/migration-safety.ts',
         'src/seed-fixtures.ts',
         'src/seed-demo.ts',
         'src/scripts/guarded-migrate.ts',

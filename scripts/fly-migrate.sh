@@ -17,6 +17,9 @@
 #   ADMIN_PG_PASSWORD  postgres superuser password (scripts/fly-setup.sh printed it; same value
 #                      as fly-reset.sh's ADMIN_PG_PASSWORD / the FLY_DEMO_PG_SUPERUSER_PASSWORD
 #                      GitHub Actions secret)
+#   VAULT_APP_PASSWORD  vault_app password used for the post-migration RLS guard. In CI this is
+#                       FLY_DEMO_VAULT_APP_PASSWORD; alternatively set RLS_CHECK_DATABASE_URL to
+#                       an arbitrary vault_app connection string.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,9 +38,13 @@ done
 open_fly_db_proxy "$DB_APP" "$PROXY_PORT"
 
 SUPERUSER_URL="postgresql://postgres:${ADMIN_PG_PASSWORD}@localhost:${PROXY_PORT}/project_vault"
+RLS_CHECK_URL="${RLS_CHECK_DATABASE_URL:-postgresql://vault_app:${VAULT_APP_PASSWORD:?Set VAULT_APP_PASSWORD or RLS_CHECK_DATABASE_URL}@localhost:${PROXY_PORT}/project_vault}"
 
 echo "== Applying pending migrations =="
 DATABASE_URL="$SUPERUSER_URL" pnpm --filter @project-vault/db db:migrate
+
+echo "== Verifying RLS as vault_app =="
+DATABASE_URL="$RLS_CHECK_URL" pnpm check-rls
 
 echo "== Closing db proxy =="
 cleanup
