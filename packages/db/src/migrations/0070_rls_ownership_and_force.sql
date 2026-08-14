@@ -33,6 +33,7 @@ $$;
 DO $$
 DECLARE
   role_is_safe boolean;
+  member_count integer;
 BEGIN
   SELECT NOT rolsuper AND NOT rolbypassrls AND NOT rolcanlogin AND NOT rolcreatedb AND NOT rolcreaterole AND rolinherit
     INTO role_is_safe
@@ -41,6 +42,16 @@ BEGIN
 
   IF NOT COALESCE(role_is_safe, false) THEN
     RAISE EXCEPTION 'Story 24.1: vault_owner must be NOLOGIN, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, INHERIT';
+  END IF;
+
+  SELECT count(*)
+    INTO member_count
+    FROM pg_auth_members m
+    JOIN pg_roles owner_role ON owner_role.oid = m.roleid
+   WHERE owner_role.rolname = 'vault_owner';
+
+  IF member_count > 0 THEN
+    RAISE EXCEPTION 'Story 24.1: vault_owner must have no role members; found %', member_count;
   END IF;
 END
 $$;
@@ -71,7 +82,7 @@ BEGIN
 
     IF table_row.table_name IN ('audit_log_entries', 'platform_audit_events') THEN
       EXECUTE format('GRANT SELECT, INSERT ON TABLE %I.%I TO vault_app', table_row.schema_name, table_row.table_name);
-      EXECUTE format('REVOKE UPDATE, DELETE ON TABLE %I.%I FROM vault_app', table_row.schema_name, table_row.table_name);
+      EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON TABLE %I.%I FROM vault_app', table_row.schema_name, table_row.table_name);
     ELSE
       EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I TO vault_app', table_row.schema_name, table_row.table_name);
     END IF;

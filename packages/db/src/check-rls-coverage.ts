@@ -165,6 +165,21 @@ export async function checkRlsCoverage(sql: postgres.Sql): Promise<void> {
     throw new RlsCoverageDriftError('RLS-exempt ownership', [...ownerGaps, ...vaultAppOwnedTables])
   }
 
+  const ownerMemberships = await sql<{ member: string }[]>`
+    SELECT member_role.rolname AS member
+      FROM pg_catalog.pg_auth_members memberships
+      JOIN pg_catalog.pg_roles owner_role ON owner_role.oid = memberships.roleid
+      JOIN pg_catalog.pg_roles member_role ON member_role.oid = memberships.member
+     WHERE owner_role.rolname = 'vault_owner'
+     ORDER BY member_role.rolname
+  `
+  if (ownerMemberships.length > 0) {
+    throw new RlsCoverageDriftError(
+      'vault_owner membership',
+      ownerMemberships.map((row) => `${row.member} (member of vault_owner)`)
+    )
+  }
+
   const appPrivileges = await sql<{ table_name: string; privilege_type: string }[]>`
     SELECT c.relname AS table_name, acl.privilege_type
       FROM pg_catalog.pg_class c
@@ -190,7 +205,7 @@ export async function checkRlsCoverage(sql: postgres.Sql): Promise<void> {
       : ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
     const missing = required.filter((privilege) => !actual.has(privilege))
     const forbidden = APPEND_ONLY_AUDIT_TABLES.has(table.table_name)
-      ? ['UPDATE', 'DELETE'].filter((privilege) => actual.has(privilege))
+      ? ['UPDATE', 'DELETE', 'TRUNCATE'].filter((privilege) => actual.has(privilege))
       : []
     if (missing.length > 0 || forbidden.length > 0) {
       const details = [

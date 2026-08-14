@@ -192,6 +192,18 @@ async function withOwnerSetToPostgres<T>(table: string, fn: () => Promise<T>): P
   })
 }
 
+async function withVaultOwnerMember<T>(fn: () => Promise<T>): Promise<T> {
+  const memberRole = `story24_1_member_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  await adminSql.unsafe(`CREATE ROLE ${memberRole} NOLOGIN NOSUPERUSER NOBYPASSRLS`)
+  await adminSql.unsafe(`GRANT vault_owner TO ${memberRole}`)
+  try {
+    return await fn()
+  } finally {
+    await adminSql.unsafe(`REVOKE vault_owner FROM ${memberRole}`)
+    await adminSql.unsafe(`DROP ROLE ${memberRole}`)
+  }
+}
+
 describe('checkRlsCoverage', () => {
   afterEach(async () => {
     // Story 1.15: last-resort safety net only. The primary restore is now inline (see
@@ -232,6 +244,14 @@ describe('checkRlsCoverage', () => {
     })
   })
 
+  it('fails when any role is a member of vault_owner', async () => {
+    await withVaultOwnerMember(async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /vault_owner membership|member of vault_owner/i
+      )
+    })
+  })
+
   it('requires append-only audit tables to keep SELECT/INSERT without direct UPDATE/DELETE', async () => {
     const rows = await adminSql<{ table_name: string; privilege_type: string }[]>`
       SELECT c.relname AS table_name, acl.privilege_type
@@ -251,6 +271,17 @@ describe('checkRlsCoverage', () => {
     }
     for (const table of ['audit_log_entries', 'platform_audit_events']) {
       expect(byTable.get(table)).toEqual(new Set(['SELECT', 'INSERT']))
+    }
+  })
+
+  it('fails when an append-only audit table grants TRUNCATE', async () => {
+    await adminSql`GRANT TRUNCATE ON TABLE audit_log_entries TO vault_app`
+    try {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /audit_log_entries.*TRUNCATE|TRUNCATE.*audit_log_entries/i
+      )
+    } finally {
+      await adminSql`REVOKE TRUNCATE ON TABLE audit_log_entries FROM vault_app`
     }
   })
 

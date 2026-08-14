@@ -8,8 +8,10 @@ const migrationSql = readFileSync(
   'utf8'
 )
 const adminConnectionString = process.env['ADMIN_DATABASE_URL'] ?? ''
+if (!adminConnectionString) {
+  throw new Error('ADMIN_DATABASE_URL is required for Story 24.1 migration integration tests')
+}
 const adminSql = postgres(adminConnectionString)
-const databaseDescribe = describe.skipIf(!adminConnectionString)
 
 const ROLE_NAME = 'vault_owner'
 
@@ -69,7 +71,7 @@ async function restoreSafeOwnerRole(createdByTest: boolean): Promise<void> {
   }
 }
 
-databaseDescribe('migration 0070 vault_owner preflight', () => {
+describe('migration 0070 vault_owner preflight', () => {
   afterAll(async () => {
     await adminSql.end()
   })
@@ -94,6 +96,27 @@ databaseDescribe('migration 0070 vault_owner preflight', () => {
       })
     } finally {
       await restoreSafeOwnerRole(createdByTest)
+    }
+  })
+
+  it('fails clearly when a role is already a member of vault_owner', async () => {
+    const memberRole = `story24_1_member_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+    await adminSql.unsafe(`CREATE ROLE ${memberRole} NOLOGIN NOSUPERUSER NOBYPASSRLS`)
+    await adminSql.unsafe(`GRANT vault_owner TO ${memberRole}`)
+    try {
+      await withTemporaryDatabase(async (databaseName) => {
+        const databaseSql = postgres(databaseUrl(databaseName))
+        try {
+          await expect(databaseSql.unsafe(migrationSql)).rejects.toThrow(
+            /vault_owner must have no role members|role members/i
+          )
+        } finally {
+          await databaseSql.end()
+        }
+      })
+    } finally {
+      await adminSql.unsafe(`REVOKE vault_owner FROM ${memberRole}`)
+      await adminSql.unsafe(`DROP ROLE ${memberRole}`)
     }
   })
 
