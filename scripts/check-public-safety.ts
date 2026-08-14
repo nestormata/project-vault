@@ -55,7 +55,7 @@ const SECRET_ASSIGNMENT_PATTERNS = [
 ]
 const NO_NEWLINE_MARKER = String.raw`\ No newline at end of file`
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
-const CONNECTION_STRING_USERINFO_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^/\s@]+(?::[^/\s@]*)?@[^\s]+/i
+const CONNECTION_STRING_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\//i
 const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees\/)/
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
 const SECRET_ENV_NAME_PATTERN =
@@ -112,9 +112,18 @@ function scanSecretPatterns(file: string, line: number, text: string): PublicSaf
   return findings
 }
 
+function hasConnectionStringUserinfo(text: string): boolean {
+  const connectionScheme = CONNECTION_STRING_SCHEME_PATTERN.exec(text)
+  if (!connectionScheme) return false
+  const authority = text
+    .slice((connectionScheme.index ?? 0) + connectionScheme[0].length)
+    .split(/[/?#\s]/, 1)[0]
+  return authority.lastIndexOf('@') > 0
+}
+
 function scanMetadata(file: string, line: number, text: string): PublicSafetyFinding[] {
   const findings: PublicSafetyFinding[] = []
-  if (EMAIL_PATTERN.test(text) && !CONNECTION_STRING_USERINFO_PATTERN.test(text)) {
+  if (EMAIL_PATTERN.test(text) && !hasConnectionStringUserinfo(text)) {
     findings.push(
       makeFinding(
         file,

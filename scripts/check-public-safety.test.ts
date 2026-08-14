@@ -42,7 +42,7 @@ describe('check-public-safety', () => {
     expect(
       scanText(
         'packages/db/src/test-db-urls.ts',
-        'postgresql://vault_admin:missing@admin-db.invalid:5432/project_vault'
+        'postgresql://vault_admin@admin-db.invalid:5432/project_vault'
       )
     ).not.toContainEqual(expect.objectContaining({ rule: 'personal-email' }))
   })

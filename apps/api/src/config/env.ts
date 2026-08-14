@@ -529,7 +529,7 @@ function addAdminDatabaseUrlCollisionIssue(
 ): void {
   const databaseTuple = connectionTuple(databaseUrl)
   const adminTuple = connectionTuple(adminDatabaseUrl)
-  if (databaseTuple && adminTuple && databaseTuple.join('\u0000') === adminTuple.join('\u0000')) {
+  if (databaseTuple?.join('\u0000') === adminTuple?.join('\u0000') && databaseTuple !== null) {
     ctx.addIssue({
       code: 'custom',
       path: ['ADMIN_DATABASE_URL'],

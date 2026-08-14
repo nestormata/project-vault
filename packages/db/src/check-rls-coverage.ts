@@ -1,4 +1,7 @@
 import type postgres from 'postgres'
+import { RLS_FORCE_ALLOWLIST } from './rls-force-allowlist.js'
+
+export { RLS_FORCE_ALLOWLIST } from './rls-force-allowlist.js'
 
 // Platform-level or identity-scoped tables that intentionally need no org RLS policy.
 export const EXCLUDED_TABLES = new Set([
@@ -42,12 +45,6 @@ export const EXCLUDED_TABLES = new Set([
   // pre-auth trust model) replace RLS for this table.
   'sso_login_states',
 ])
-
-// Deliberately empty: every currently RLS-enabled table must have FORCE enabled. If a future table
-// has a documented reason to remain ENABLE-only, add it here with a story/AC reference rather than
-// weakening the catalog query. Story 23.5 must call this module's checks rather than add a second
-// ownership/RLS implementation.
-export const RLS_FORCE_ALLOWLIST = new Set<string>()
 
 const APPEND_ONLY_AUDIT_TABLES = new Set(['audit_log_entries', 'platform_audit_events'])
 
@@ -267,9 +264,7 @@ export async function checkRlsCoverage(sql: postgres.Sql): Promise<void> {
   `
   const unsafeViewGaps = unsafeViews
     .filter(
-      (view) =>
-        view.relkind === 'm' ||
-        !(view.reloptions ?? []).some((option) => option === 'security_invoker=true')
+      (view) => view.relkind === 'm' || !(view.reloptions ?? []).includes('security_invoker=true')
     )
     .map(
       (view) =>

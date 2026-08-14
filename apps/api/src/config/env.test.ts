@@ -126,7 +126,7 @@ describe('env', () => {
       ADMIN_DATABASE_URL: value,
     }
     await expectInvalidEnv(exitSpy)
-    expect((process.stderr.write as MockInstance).mock.calls.join('\n')).toMatch(
+    expect((process.stderr.write as unknown as MockInstance).mock.calls.join('\n')).toMatch(
       /ADMIN_DATABASE_URL.*non-superuser.*\.env\.example/is
     )
   })
@@ -138,7 +138,9 @@ describe('env', () => {
       ADMIN_DATABASE_URL: 'postgresql://postgres:secret@localhost:5432/project_vault',
     }
     await expectInvalidEnv(exitSpy)
-    expect((process.stderr.write as MockInstance).mock.calls.join('\n')).not.toContain('secret')
+    expect((process.stderr.write as unknown as MockInstance).mock.calls.join('\n')).not.toContain(
+      'secret'
+    )
   })
 
   it.each([
