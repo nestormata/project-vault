@@ -142,7 +142,9 @@ export async function checkRlsCoverage(sql: postgres.Sql): Promise<void> {
     throw new RlsCoverageDriftError('RLS enabled coverage', rlsGaps)
   }
 
-  const forceGaps = rlsEnabledTables
+  // Compare the complete public-table catalog, not only the enabled side. This catches both
+  // ENABLE without FORCE and the equally dangerous FORCE without ENABLE state.
+  const forceGaps = publicTables
     .filter((table) => !RLS_FORCE_ALLOWLIST.has(table.table_name))
     .filter((table) => table.rls_enabled !== table.force_rls)
     .map((table) => `${table.table_name} (ENABLE=${table.rls_enabled}, FORCE=${table.force_rls})`)

@@ -10,17 +10,26 @@
 SET LOCAL lock_timeout = '5s';
 
 DO $$
+DECLARE
+  role_is_safe boolean;
 BEGIN
-  CREATE ROLE vault_owner NOLOGIN NOSUPERUSER NOBYPASSRLS;
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
+  SELECT NOT rolsuper AND NOT rolbypassrls AND NOT rolcanlogin AND NOT rolcreatedb AND NOT rolcreaterole AND rolinherit
+    INTO role_is_safe
+    FROM pg_roles
+   WHERE rolname = 'vault_owner';
+
+  IF FOUND THEN
+    IF NOT role_is_safe THEN
+      RAISE EXCEPTION 'Story 24.1: pre-existing vault_owner has unsafe attributes; expected NOLOGIN, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE, INHERIT';
+    END IF;
+  ELSE
+    CREATE ROLE vault_owner NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE INHERIT;
+  END IF;
 END
 $$;
 
--- The create block is intentionally idempotent only for existence. Never silently adopt a role with
--- unsafe attributes, even when another database on this cluster created the name first.
-ALTER ROLE vault_owner NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE INHERIT;
-
+-- Assert the attributes after either the safe-existing or create path. Never normalize an unsafe
+-- cluster-scoped role: a role owned by another system must be repaired or renamed by an operator.
 DO $$
 DECLARE
   role_is_safe boolean;
@@ -41,6 +50,8 @@ $$;
 -- append-only audit tables are deliberately granted only SELECT/INSERT below and never direct DELETE.
 ALTER DEFAULT PRIVILEGES FOR ROLE vault_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO vault_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE vault_owner IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO vault_app;
 
 DO $$
 DECLARE

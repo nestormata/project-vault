@@ -154,6 +154,26 @@ async function withForceDropped<T>(table: string, fn: () => Promise<T>): Promise
   })
 }
 
+async function withRlsDisabled<T>(table: string, fn: () => Promise<T>): Promise<T> {
+  return withRlsPolicyMutationLock(async () => {
+    const original = await adminSql<{ enabled: boolean }[]>`
+      SELECT relrowsecurity AS enabled
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relname = ${table}
+    `
+    await adminSql.unsafe(`ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`)
+    try {
+      return await fn()
+    } finally {
+      if (original[0]?.enabled) {
+        await adminSql.unsafe(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`)
+      } else {
+        await adminSql.unsafe(`ALTER TABLE ${table} DISABLE ROW LEVEL SECURITY`)
+      }
+    }
+  })
+}
+
 async function withOwnerSetToPostgres<T>(table: string, fn: () => Promise<T>): Promise<T> {
   return withRlsPolicyMutationLock(async () => {
     const original = await adminSql<{ owner: string }[]>`
@@ -192,6 +212,14 @@ describe('checkRlsCoverage', () => {
     await withForceDropped('credential_shares', async () => {
       await expect(checkRlsCoverage(sql)).rejects.toThrow(
         /credential_shares.*FORCE|FORCE.*credential_shares/i
+      )
+    })
+  })
+
+  it('fails when platform_audit_events keeps FORCE after RLS is disabled', async () => {
+    await withRlsDisabled('platform_audit_events', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /platform_audit_events.*ENABLE.*FORCE|FORCE.*platform_audit_events/i
       )
     })
   })
