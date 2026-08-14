@@ -93,6 +93,9 @@ jobs:
         env:
           DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
+      - name: Provision local test admin role credential
+        run: psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
+
       - name: Check RLS policy coverage
         run: pnpm check-rls
         env:
@@ -241,6 +244,9 @@ jobs:
         env:
           DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
 
+      - name: Provision local test admin role credential
+        run: psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
+
       - name: Test (with coverage) - api, db
         run: pnpm turbo test --filter=@project-vault/api --filter=@project-vault/db
         env:
@@ -250,7 +256,7 @@ jobs:
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           # check-rls-coverage.test.ts needs superuser access to create/drop its
           # throwaway test database and manage RLS policies directly.
-          ADMIN_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
+          ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
 
       - name: Upload RLS isolation coverage (SOC2 Type II evidence)
         if: always()

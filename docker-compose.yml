@@ -8,13 +8,14 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-project_vault}"]
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-project_vault}']
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
     ports:
-      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
+      - '127.0.0.1:${DB_HOST_PORT:-5432}:5432'
 
   # One-shot migration runner: creates the vault_app role, RLS policies, and triggers
   # (see packages/db/src/migrations/0001_rls_and_triggers.sql) before `api` starts, so
@@ -26,10 +27,28 @@ services:
       target: db-builder
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
-    command: ["pnpm", "--filter", "@project-vault/db", "db:migrate"]
+    command: ['pnpm', '--filter', '@project-vault/db', 'db:migrate']
     depends_on:
       db:
         condition: service_healthy
+
+  # Local-only credential provisioning for the role created by migration 0071. Production
+  # operators must provision the credential through their secret manager instead.
+  admin-provision:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-password}
+      VAULT_ADMIN_PASSWORD: ${VAULT_ADMIN_PASSWORD:-password}
+    command:
+      - sh
+      - -c
+      - >-
+        until pg_isready -h db -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-project_vault}; do sleep 1; done;
+        psql -h db -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-project_vault} -v ON_ERROR_STOP=1
+        -c "ALTER ROLE vault_admin PASSWORD '$$VAULT_ADMIN_PASSWORD'"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   api:
     build:
@@ -53,11 +72,8 @@ services:
       NODE_ENV: production
       # vault_app, not postgres — the postgres superuser bypasses RLS entirely (AC-1b).
       DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@db:5432/${POSTGRES_DB:-project_vault}
-      # Used by getAdminDb() (apps/api/src/lib/db.ts) for legitimate cross-org reads that predate
-      # RLS org context (e.g. registration's global erasure-request lookup). Without this, it
-      # falls back to a localhost default that doesn't resolve inside the container (db is a
-      # separate compose service, not localhost).
-      ADMIN_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
+      # Narrowed by migration 0071; admin-provision sets the local-only credential before api starts.
+      ADMIN_DATABASE_URL: postgresql://vault_admin:${VAULT_ADMIN_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
       API_PORT: 3000
       # Must match the host port the browser actually hits, i.e. WEB_HOST_PORT — not the
       # container-internal port. make fix-ports/docker-ports.sh can bump WEB_HOST_PORT away
@@ -141,11 +157,13 @@ services:
       # container restart, so the 24h orphan-cleanup window is meaningful across restarts:
       # - backup_staging_data:/var/backups/vault-staging
     ports:
-      - "${API_HOST_PORT:-3000}:3000"
+      - '${API_HOST_PORT:-3000}:3000'
     depends_on:
       db:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      admin-provision:
         condition: service_completed_successfully
     stop_grace_period: 30s
     # Story 1.19 AC-8: three distinct probes exist — use the right one for the job:
@@ -161,7 +179,7 @@ services:
     #                  probe and its 503s are meaningful outage signals a supervisor could
     #                  misinterpret as "restart me", not "not ready yet".
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/health']
       interval: 10s
       timeout: 5s
       retries: 3
@@ -182,7 +200,7 @@ services:
       # above — make fix-ports/docker-ports.sh can bump WEB_HOST_PORT so this can't be hardcoded.
       ORIGIN: http://localhost:${WEB_HOST_PORT:-5173}
     ports:
-      - "${WEB_HOST_PORT:-5173}:3000"
+      - '${WEB_HOST_PORT:-5173}:3000'
     depends_on:
       - api
 

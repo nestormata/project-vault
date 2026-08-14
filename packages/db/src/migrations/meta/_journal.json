@@ -498,6 +498,13 @@
       "when": 1786696185894,
       "tag": "0070_rls_ownership_and_force",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0071_admin_pool_role",
+      "breakpoints": true
     }
   ]
 }

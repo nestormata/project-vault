@@ -9,6 +9,7 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import { ADMIN_DATABASE_URL } from '../../__tests__/db-urls.js'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 type TestApp = Awaited<ReturnType<typeof createApp>>
@@ -19,9 +20,7 @@ const { registerOwner, addUserToOrg } = createMembershipTestHelpers({
   orgNamePrefix: 'Backfill Check',
 })
 
-const adminConnectionString =
-  process.env['ADMIN_DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
-const adminSql = postgres(adminConnectionString)
+const adminSql = postgres(ADMIN_DATABASE_URL)
 
 class RollbackTestTransaction extends Error {}
 

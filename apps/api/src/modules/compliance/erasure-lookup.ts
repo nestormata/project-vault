@@ -34,7 +34,7 @@ export async function findErasedRequestForEmailInOrg(
  * D6/AC-17B: `POST /register` is not reliably org-scoped (self-service signup creates a brand
  * new org; there is no RLS org context yet at this point in the flow), so — like
  * `findRecoveryTokenByHash` in `modules/auth/recovery-lookup.ts` — this is a legitimate read-only
- * lookup via the admin/superuser connection, checked globally across every org's erasure
+ * lookup via the RLS-bypassing admin connection, checked globally across every org's erasure
  * requests. Never used for writes.
  */
 export async function findErasedRequestForEmailGlobally(

@@ -20,6 +20,7 @@
 #   VAULT_APP_PASSWORD  vault_app password used for the post-migration RLS guard. In CI this is
 #                       FLY_DEMO_VAULT_APP_PASSWORD; alternatively set RLS_CHECK_DATABASE_URL to
 #                       an arbitrary vault_app connection string.
+#   VAULT_ADMIN_PASSWORD vault_admin password provisioned for ADMIN_DATABASE_URL.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,6 +31,7 @@ DB_APP="${FLY_DB_APP:-project-vault-demo-db}"
 PROXY_PORT="${FLY_DB_PROXY_PORT:-15432}"
 
 : "${ADMIN_PG_PASSWORD:?Set ADMIN_PG_PASSWORD (postgres superuser password)}"
+: "${VAULT_ADMIN_PASSWORD:?Set VAULT_ADMIN_PASSWORD (vault_admin password)}"
 
 for bin in flyctl pnpm psql; do
   command -v "$bin" >/dev/null 2>&1 || { echo "missing required binary: $bin" >&2; exit 1; }
@@ -42,6 +44,10 @@ RLS_CHECK_URL="${RLS_CHECK_DATABASE_URL:-postgresql://vault_app:${VAULT_APP_PASS
 
 echo "== Applying pending migrations =="
 DATABASE_URL="$SUPERUSER_URL" pnpm --filter @project-vault/db db:migrate
+
+echo "== Provisioning vault_admin credential =="
+psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -c \
+  "ALTER ROLE vault_admin PASSWORD '${VAULT_ADMIN_PASSWORD}';"
 
 echo "== Verifying RLS as vault_app =="
 DATABASE_URL="$RLS_CHECK_URL" pnpm check-rls

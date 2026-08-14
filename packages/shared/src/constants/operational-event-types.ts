@@ -10,6 +10,8 @@ export const OperationalEvent = {
   STARTUP_FAILED: 'startup.failed',
   STARTUP_DB_CONNECTED: 'startup.db_connected',
   STARTUP_DB_FAILED: 'startup.db_failed',
+  ADMIN_POOL_IDENTITY_VERIFIED: 'admin_pool.identity_verified',
+  ADMIN_POOL_IDENTITY_DRIFTED: 'admin_pool.identity_drifted',
   STARTUP_METRICS_EXPOSED: 'startup.metrics_exposed',
   SHUTDOWN_SIGNAL: 'shutdown.signal_received',
   SHUTDOWN_COMPLETE: 'shutdown.complete',

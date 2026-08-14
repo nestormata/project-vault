@@ -1,16 +1,12 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import postgres from 'postgres'
 import { checkRlsCoverage, RlsCoverageGapError } from '../check-rls-coverage.js'
+import { ADMIN_DATABASE_URL, DATABASE_URL } from '../test-db-urls.js'
 
-const sql = postgres(
-  process.env['DATABASE_URL'] ??
-    'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-)
+const sql = postgres(DATABASE_URL)
 
 // Database creation/drop requires the superuser — vault_app has no CREATEDB privilege.
-const adminConnectionString =
-  process.env['ADMIN_DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
-const adminSql = postgres(adminConnectionString)
+const adminSql = postgres(ADMIN_DATABASE_URL)
 
 // Serialize live-policy mutation against the shared dev/CI Postgres instance. API integration
 // tests authenticate via the sessions table RLS policy; dropping it concurrently yields flaky 401s.

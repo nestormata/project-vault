@@ -41,6 +41,7 @@ BASE_REF ?= main
 # the isolation tests. See .env.example and docs/operator-quickstart.md.
 DB_URL_SUPERUSER ?= postgresql://postgres:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
+DB_URL_ADMIN      ?= postgresql://vault_admin:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance \
         db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner \
@@ -119,7 +120,7 @@ check-audit-actor-token-coverage: ## Verify no human-actor audit row lacks actor
 # --- Tests / quality gates --------------------------------------------------
 
 test: ## Run the test suite (must run as vault_app — postgres bypasses RLS)
-	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm turbo test --force
+	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm turbo test --force
 
 # N repeat runs turns a rare, timing-dependent flake (e.g. one bad run in ~6-8) into a run
 # that fails almost every time, so it surfaces locally/in nightly CI instead of silently
@@ -130,11 +131,11 @@ N ?= 5
 test-repeat: ## Run the test suite N times back-to-back, stopping at the first failure (make test-repeat N=10)
 	for i in $$(seq 1 $(N)); do \
 		echo "=== test-repeat: run $$i/$(N) ==="; \
-		DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm turbo test --force || exit 1; \
+		DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm turbo test --force || exit 1; \
 	done
 
 stryker: ## Run Stryker mutation testing (matches nightly CI)
-	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run
+	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm stryker run
 
 ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; see docs/development.md)
 	$(MAKE) fix-ports

@@ -103,6 +103,11 @@ export async function withPlatformOperatorContext<T>(fn: (tx: Tx) => Promise<T>)
   })
 }
 
+/**
+ * Application-role authorization helper. This uses the RLS-bound `getDb()` transaction and is
+ * unrelated to `getAdminDb()`, the separately configured non-superuser `BYPASSRLS` pool used by
+ * narrowly reviewed cross-org/pre-auth call sites. Do not use this helper for cross-org reads.
+ */
 export async function withAdminAccess<T>(
   authCtx: { role?: string },
   fn: (tx: Tx) => Promise<T>

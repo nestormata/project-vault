@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { ADMIN_DATABASE_URL } from '../test-db-urls.js'
 import {
   buildMigrationLogEvent,
   buildRefusalMessage,
@@ -280,9 +281,7 @@ describe('buildMigrationLogEvent', () => {
 // permission context (a permission-denied error, swallowed by fetchLastAppliedMillis's
 // intentionally-broad catch, masquerading as "nothing applied yet").
 describe('fetchLastAppliedMillis (integration)', () => {
-  const databaseUrl =
-    process.env['ADMIN_DATABASE_URL'] ??
-    'postgresql://postgres:password@localhost:5432/project_vault'
+  const databaseUrl = ADMIN_DATABASE_URL
 
   it('returns a numeric timestamp once migrations have been applied', async () => {
     const lastApplied = await fetchLastAppliedMillis(databaseUrl)

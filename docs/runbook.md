@@ -278,6 +278,29 @@ The first `docker compose up` after a fresh image pull can be slow — the `migr
 the API builder image to run the migration command (a known, accepted tradeoff, see
 `deferred-work.md` D4). This is progress, not a hang.
 
+#### Story 24.2 admin-pool rotation
+
+The API now refuses to start unless `ADMIN_DATABASE_URL` reaches the dedicated `vault_admin`
+role (`rolsuper=false`, `rolbypassrls=true`). Existing deployments that still point this setting
+at `postgres` must rotate before deploying the new image; do not restore service by pointing it
+back at a superuser.
+
+Run the steps in this order:
+
+1. Run `make db-migrate` (or `pnpm db:migrate`) with the migration-only superuser connection.
+   Migration `0071_admin_pool_role` creates the role and its explicit table grants, but does not
+   install a usable credential.
+2. Provision `vault_admin`'s credential through the deployment secret manager.
+3. Set `ADMIN_DATABASE_URL` to that role everywhere the API runs. For a live deployment, run
+   `pnpm check-admin-pool` with the deployment's existing environment before restarting; it reports
+   only the role and flags, never the DSN.
+4. Deploy/restart the API and verify the startup log reports the non-superuser/BYPASSRLS identity.
+
+Docker Compose runs the local-only credential provisioning service between `migrate` and `api`.
+Production/Fly operators must provision the role credential separately. To roll back the image,
+keep the narrowed role configured—the pre-24.2 image accepts it; only drop the role after rotating
+away from it and redeploying the older image.
+
 #### Release-identity source (Story 9.10)
 
 Every surface that reports a version comes from **one source of truth**: the `RELEASE_VERSION`

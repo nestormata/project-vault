@@ -25,6 +25,7 @@
     "check-public-safety": "tsx scripts/check-public-safety.ts",
     "check-form-guidance": "tsx scripts/check-form-guidance.ts",
     "check-extension-api-version-skew": "tsx scripts/check-extension-api-version-skew.ts",
+    "check-admin-pool": "tsx scripts/check-admin-pool.ts",
     "docker:smoke": "bash scripts/docker-smoke.sh",
     "prepare": "husky"
   },

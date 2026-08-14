@@ -14,6 +14,8 @@
  */
 import { randomUUID } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
+import postgres from 'postgres'
+import { drizzle } from 'drizzle-orm/postgres-js'
 import { getDb, withOrg } from '@project-vault/db'
 import {
   externalIdentities,
@@ -23,10 +25,14 @@ import {
   users,
 } from '@project-vault/db/schema'
 import { createApp } from '../app.js'
-import { getAdminDb } from '../lib/db.js'
 import { initVault, isSealed } from '../modules/vault/key-service.js'
 
 export const PROVIDER_NAME = 'test.mock-sso-extension'
+
+// This manual-QA-only cleanup must not widen the production vault_admin grant set. Supply a
+// separately provisioned QA connection explicitly when running this script; there is no fallback.
+const qaDatabaseUrl = process.env['QA_DATABASE_URL']
+const qaDb = qaDatabaseUrl ? drizzle(postgres(qaDatabaseUrl)) : null
 // Not a credential — a fixed, non-secret local-only vault passphrase for this manual-QA script
 // alone; the script never runs in production (see file header + the
 // mock-extension-not-in-production.test.ts guard), so there is nothing here for the rule to protect.
@@ -89,10 +95,11 @@ export async function seedFixtures() {
   // still-pending invitation left over from a previous manual-QA run for this same email first —
   // otherwise a second run leaves two pending invitations across two orgs, and AC-8's genuine
   // multi-org-ambiguous-match guard rejects the demo instead of hitting the happy path again.
-  // getAdminDb() (not getDb()), matching sso-routes.ts's own findCandidateInvitations() precedent
-  // — this is a cross-org search/update with no org context yet, so per-org RLS would otherwise
-  // hide every row from a previous run's different org.
-  await getAdminDb()
+  // This is a cross-org search/update with no org context yet, so per-org RLS would otherwise hide
+  // every row from a previous run's different org. It uses a separately named QA connection so the
+  // production vault_admin role remains read-only on project_invitations.
+  if (!qaDb) throw new Error('sso-qa: QA_DATABASE_URL is required for cross-org fixture cleanup')
+  await qaDb
     .update(projectInvitations)
     .set({ revokedAt: new Date() })
     .where(

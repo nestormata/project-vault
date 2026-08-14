@@ -8,6 +8,12 @@ export type LoggerConfig = ReturnType<typeof buildPinoOptions>
 export type SerializedLogError = { message: string; name?: string; stack?: string }
 type LoggerEnv = Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 
+const CONNECTION_STRING_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+(?::[^\s/@]*)?@/gi
+
+function redactConnectionStrings(value: string | undefined): string | undefined {
+  return value?.replace(CONNECTION_STRING_RE, '$1[REDACTED]@')
+}
+
 function buildPinoOptions(env: LoggerEnv, level: string) {
   return {
     level,
@@ -95,12 +101,12 @@ export function serializeLogError(err: unknown): SerializedLogError {
   if (err instanceof Error) {
     return {
       name: err.name,
-      message: err.message,
-      stack: err.stack,
+      message: redactConnectionStrings(err.message) ?? '',
+      stack: redactConnectionStrings(err.stack),
     }
   }
   try {
-    return { message: String(err) }
+    return { message: redactConnectionStrings(String(err)) ?? '' }
   } catch {
     return { message: 'Unable to serialize thrown value' }
   }

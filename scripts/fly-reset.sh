@@ -14,6 +14,7 @@
 # Required env:
 #   ADMIN_PG_PASSWORD     postgres superuser password (scripts/fly-setup.sh printed it)
 #   VAULT_APP_PASSWORD    vault_app role password (default matches pre-hardening compose value)
+#   VAULT_ADMIN_PASSWORD  vault_admin role password configured in the api app's ADMIN_DATABASE_URL
 #   DEMO_VAULT_PASSPHRASE passphrase used for vault init/unseal (scripts/fly-setup.sh printed it)
 #   DEMO_LOGIN_EMAIL      email for the one real, login-able seeded user
 #   DEMO_LOGIN_PASSWORD   its password — never written to Fly secrets or committed anywhere;
@@ -39,6 +40,7 @@ PROXY_PORT="${FLY_DB_PROXY_PORT:-15432}"
 : "${DEMO_LOGIN_EMAIL:?Set DEMO_LOGIN_EMAIL}"
 : "${DEMO_LOGIN_PASSWORD:?Set DEMO_LOGIN_PASSWORD}"
 : "${VAULT_BOOTSTRAP_TOKEN:?Set VAULT_BOOTSTRAP_TOKEN (same value set on the api app by fly-setup.sh)}"
+: "${VAULT_ADMIN_PASSWORD:?Set VAULT_ADMIN_PASSWORD (same value set on the api app by fly-setup.sh)}"
 VAULT_APP_PASSWORD="${VAULT_APP_PASSWORD:-dev-only-change-in-prod}"
 
 for bin in flyctl pnpm jq psql curl; do
@@ -75,6 +77,10 @@ SQL
 
 echo "== Running migrations (creates vault_app role + RLS + schema) =="
 DATABASE_URL="$SUPERUSER_URL" pnpm --filter @project-vault/db db:migrate
+
+echo "== Hardening vault_admin password to match VAULT_ADMIN_PASSWORD =="
+psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -c \
+  "ALTER ROLE vault_admin PASSWORD '${VAULT_ADMIN_PASSWORD}';"
 
 echo "== Hardening vault_app password to match VAULT_APP_PASSWORD =="
 psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -c \

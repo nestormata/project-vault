@@ -33,7 +33,7 @@ function generateAlias(): string {
  * is RLS-protected to the caller's own org (`org_memberships_isolation`,
  * `org_id = current_setting('app.current_org_id')`). There is no way for an Org A owner's
  * ordinary, RLS-scoped `secureCtx.tx` to see Org B's `org_memberships` rows — this cross-org
- * existence check requires the admin connection (`getAdminDb()`, the Postgres superuser role,
+ * existence check requires the admin connection (`getAdminDb()`, the narrowed RLS-bypassing role,
  * which bypasses RLS by Postgres's own semantics), mirroring the same "admin connection strictly
  * for a narrow point lookup, never for writes" pattern already established by
  * `auth/recovery-lookup.ts` and `invitations/lookup.ts` for other pre-org-context queries. No

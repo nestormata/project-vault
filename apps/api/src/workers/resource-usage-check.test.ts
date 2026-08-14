@@ -7,7 +7,8 @@ import { runResourceUsageCheck } from './resource-usage-check.js'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-process.env['ADMIN_DATABASE_URL'] ??= 'postgresql://postgres:password@localhost:5432/project_vault'
+process.env['ADMIN_DATABASE_URL'] ??=
+  'postgresql://vault_admin:missing@admin-db.invalid:5432/project_vault'
 
 const ORGS_NEAR_LIMIT_ALERT_TYPE = 'resource.orgs_near_limit'
 const USERS_NEAR_LIMIT_ALERT_TYPE = 'resource.users_near_limit'

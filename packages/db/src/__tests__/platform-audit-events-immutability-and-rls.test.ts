@@ -5,13 +5,12 @@ import postgres from 'postgres'
 import { getDb, withPlatformOperatorContext, type Tx } from '../index.js'
 import { createTestUser, deleteTestUser } from '../test-helpers.js'
 import { platformAuditEvents } from '../schema/index.js'
+import { ADMIN_DATABASE_URL } from '../test-db-urls.js'
 
 // Only the table owner/superuser can actually re-GRANT a privilege (vault_app attempting its own
 // re-grant is a silent no-op WARNING, not a real grant) — this dedicated admin connection is
 // needed solely for the "trigger alone" regression test below.
-const adminSql = postgres(
-  process.env['ADMIN_DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
-)
+const adminSql = postgres(ADMIN_DATABASE_URL)
 
 async function insertPlatformAuditRow(operatorId: string, hmac: string): Promise<string> {
   const [row] = await withPlatformOperatorContext((tx: Tx) =>

@@ -20,6 +20,17 @@ describe('sensitive log field registry coverage', () => {
     }
   })
 
+  it('covers both admin URL spellings and redacts an env-shaped payload', () => {
+    expect(BODY_SENSITIVE_LOG_FIELDS).toEqual(
+      expect.arrayContaining(['adminDatabaseUrl', 'ADMIN_DATABASE_URL'])
+    )
+    expect(REDACTED_BODY_FIELDS.has('adminDatabaseUrl')).toBe(true)
+    expect(REDACTED_BODY_FIELDS.has('ADMIN_DATABASE_URL')).toBe(true)
+    expect(PINO_REDACT_PATHS).toEqual(
+      expect.arrayContaining(['*.adminDatabaseUrl', '*.ADMIN_DATABASE_URL'])
+    )
+  })
+
   it('keeps header sensitive fields covered by Pino redaction', () => {
     for (const field of HEADER_SENSITIVE_LOG_FIELDS) {
       expect(pinoCoversField(field), `${field} missing from PINO_REDACT_PATHS`).toBe(true)

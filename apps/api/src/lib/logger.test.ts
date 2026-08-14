@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SYSTEM_TRACE_ID } from '@project-vault/shared'
 import { createLogCaptureStream } from '../__tests__/helpers/capture-logs.js'
-import { createLoggerConfig, operationalLog } from './logger.js'
+import { createLoggerConfig, operationalLog, serializeLogError } from './logger.js'
 import type { Env } from '../config/env.js'
 import type { FastifyBaseLogger } from 'fastify'
 
@@ -56,6 +56,21 @@ describe('createLoggerConfig', () => {
     logger.info({ eventType: 'custom.event' }, 'overridden')
     const parsed = JSON.parse(lines[0] ?? '{}')
     expect(parsed.eventType).toBe('custom.event')
+  })
+})
+
+describe('serializeLogError', () => {
+  it('redacts connection-string userinfo from error messages and stacks', () => {
+    const error = new Error(
+      'connect failed for postgresql://vault_admin:super-secret@example.invalid:5432/project_vault'
+    )
+    error.stack = `${error.stack}\npostgresql://vault_admin:super-secret@example.invalid:5432/project_vault`
+
+    const serialized = serializeLogError(error)
+    expect(serialized.message).not.toContain('super-secret')
+    expect(serialized.stack).not.toContain('super-secret')
+    expect(serialized.message).toContain('[REDACTED]')
+    expect(serialized.stack).toContain('[REDACTED]')
   })
 })
 
