@@ -129,7 +129,9 @@ RUN node scripts/materialize-deploy-runtime.mjs \
       /app/packages/crypto/node_modules/argon2 \
       /app/packages/extension-api/node_modules/semver \
       /app/deploy/node_modules/@project-vault/extension-api \
- && node --input-type=module -e "await import('/app/deploy/node_modules/@project-vault/shared/dist/index.js'); await import('/app/deploy/node_modules/@project-vault/crypto/dist/index.js'); await import('/app/deploy/node_modules/@project-vault/db/dist/index.js')"
+ && node --input-type=module -e "await import('/app/deploy/node_modules/@project-vault/shared/dist/index.js')" \
+ && node --input-type=module -e "await import('/app/deploy/node_modules/@project-vault/crypto/dist/index.js')" \
+ && node --input-type=module -e "await import('/app/deploy/node_modules/@project-vault/db/dist/index.js')"
 # `pnpm deploy --prod` always prunes devDependencies — that's the correct, desired behavior for
 # every default/production build (the mock extension must never ship there). When explicitly
 # opted in for e2e, manually graft the already-built fixture into the deployed node_modules so
