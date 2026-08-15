@@ -111,6 +111,9 @@ jobs:
       - name: Check extension-api version-skew (Story 14.1 AC7)
         run: pnpm check-extension-api-version-skew
 
+      - name: Check extension-api LICENSE freshness (Story 23.1 AC6)
+        run: pnpm check-extension-api-license-fresh
+
       - name: Check for duplicate code
         run: pnpm jscpd
 
@@ -355,6 +358,39 @@ jobs:
             packages/extension-api/coverage/
           retention-days: 1
 
+  extension-api-compatibility:
+    name: Extension API compatibility (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 24]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build extension API
+        run: pnpm --filter @project-vault/extension-api build
+
+      - name: Typecheck extension API
+        run: pnpm --filter @project-vault/extension-api typecheck
+
+      - name: Test extension API
+        run: pnpm --filter @project-vault/extension-api test
+
   # Combines both shards' coverage before running SonarCloud, so project-wide coverage numbers
   # reflect the whole suite rather than just one shard. `if: ${{ !cancelled() }}` at the job
   # level (not just on the individual steps) is required here: GitHub Actions skips a job's
@@ -482,6 +518,19 @@ jobs:
           load: true
           tags: project-vault-web:size-check
           cache-from: type=gha,scope=web-${{ matrix.arch }}
+
+      - name: Check extension-api deployed tree
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh project-vault-api:size-check -c '
+            test -f node_modules/@project-vault/extension-api/dist/index.js
+            if find node_modules/@project-vault/extension-api/dist -type f -name "*.test.js" -print -quit | grep -q .; then
+              echo "FATAL: production image contains extension-api test JavaScript" >&2
+              exit 1
+            fi
+            echo "extension-api production tree: dist/index.js present; zero *.test.js"
+          '
 
       - name: Check image size
         if: matrix.arch == 'amd64'

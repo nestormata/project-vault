@@ -2,6 +2,7 @@
 .env*
 !/.env.example
 .npmrc
+!.npmrc
 .pnpmrc
 node_modules
 dist

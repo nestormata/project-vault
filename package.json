@@ -21,6 +21,7 @@
     "check-audit-actor-token-coverage": "tsx scripts/check-audit-actor-token-coverage.ts",
     "check-search-index": "tsx scripts/check-search-index.ts",
     "check-vault-action-dist": "tsx scripts/check-vault-action-dist-fresh.ts",
+    "check-extension-api-license-fresh": "tsx scripts/check-extension-api-license-fresh.ts",
     "check-migration-compatibility": "tsx scripts/migration-compatibility-check.ts",
     "check-public-safety": "tsx scripts/check-public-safety.ts",
     "check-form-guidance": "tsx scripts/check-form-guidance.ts",
