@@ -1,7 +1,6 @@
 {
   "name": "@project-vault/extension-api",
   "version": "1.1.0",
-  "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,14 +11,41 @@
       "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "tsconfig.json",
+    "tsconfig.build.json"
+  ],
+  "description": "The typed extension contract and host-side registration helpers for Project Vault.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nestormata/project-vault.git",
+    "directory": "packages/extension-api"
+  },
+  "homepage": "https://github.com/nestormata/project-vault/tree/main/packages/extension-api",
+  "bugs": {
+    "url": "https://github.com/nestormata/project-vault/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --coverage",
-    "build": "tsc"
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "semver": "^7.8.5"
+    "semver": "7.8.5"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",

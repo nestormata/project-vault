@@ -1,0 +1,191 @@
+name: Extension API release
+
+# Release controls for the package loaded in-process by Project Vault:
+# - only extension-api-vMAJOR.MINOR.PATCH(-prerelease) tags are eligible;
+# - the npm-publish environment must have required reviewers and the repository ruleset must
+#   restrict who may create extension-api-v* tags;
+# - every workflow publish uses OIDC Trusted Publishing and npm provenance, and always targets
+#   the `next` dist-tag. A maintainer promotes a verified version to `latest` separately;
+# - npm versions are immutable. Never use --force or npm unpublish. For a compromised release:
+#   0. verify the maintainer can authenticate (`npm login` + 2FA/OTP) and run
+#      `npm dist-tag ls @project-vault/extension-api`;
+#   1. revoke the npm trusted publisher and disable the npm-publish environment;
+#   2. deprecate malicious versions with `npm deprecate` and point at the advisory;
+#   3. open a GitHub Security Advisory and notify the CentralizeMe maintainer directly;
+#   4. provide safe integrity hashes; consumers must verify provenance, pin integrity, and use
+#      a minimum release age and frozen lockfile;
+#   5. publish a clean patch through this staged path and promote it to latest;
+#   6. record the incident in architecture.md's Publish Readiness section.
+# The first real release is staged: offline proof -> dry run -> publish next -> external verification
+# -> operator promotion to latest. A bootstrap package is only needed if npm requires the package to
+# exist before a trusted publisher can be attached; it is manually deprecated and never latest/next.
+
+on:
+  push:
+    tags:
+      - 'extension-api-v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run the tagged release rehearsal without uploading a package'
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: extension-api-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_release: ${{ steps.tagcheck.outputs.should_release }}
+      version: ${{ steps.tagcheck.outputs.version }}
+    steps:
+      - name: Check whether this is a full release tag
+        id: tagcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" =~ ^extension-api-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Eligible release tag: $TAG (version $VERSION)"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "Skipping '$TAG': it is not an extension-api-vMAJOR.MINOR.PATCH release tag."
+          fi
+
+  publish:
+    name: Build, verify, and publish (${{ matrix.node-version }})
+    needs: validate
+    if: needs.validate.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 24]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build extension API at the tagged ref
+        run: pnpm --filter @project-vault/extension-api build
+
+      - name: Typecheck extension API at the tagged ref
+        run: pnpm --filter @project-vault/extension-api typecheck
+
+      - name: Test extension API at the tagged ref
+        run: pnpm --filter @project-vault/extension-api test
+
+      - name: Verify version triangle
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+          import { EXTENSION_API_VERSION } from './packages/extension-api/dist/manifest.js'
+
+          const packageJson = JSON.parse(readFileSync('./packages/extension-api/package.json', 'utf8'))
+          const releaseVersion = process.env.RELEASE_VERSION
+          const values = {
+            tag: releaseVersion,
+            package: packageJson.version,
+            compiled: EXTENSION_API_VERSION,
+          }
+          console.log(JSON.stringify(values))
+          if (new Set(Object.values(values)).size !== 1) {
+            throw new Error(`version triangle mismatch: ${JSON.stringify(values)}`)
+          }
+          NODE
+
+      - name: Strip workspace-only devDependencies before packing
+        working-directory: packages/extension-api
+        run: npm pkg delete devDependencies
+
+      - name: Inspect the exact npm tarball
+        id: pack
+        working-directory: packages/extension-api
+        run: |
+          set -euo pipefail
+          PACK_JSON="$(npm pack --json)"
+          TARBALL="$(node -e "const p=JSON.parse(process.argv[1]); console.log(p[0].filename)" "$PACK_JSON")"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "$PACK_JSON"
+          if tar -xzOf "$TARBALL" package/package.json | grep -q 'workspace:'; then
+            echo 'FATAL: packed manifest contains workspace: dependency specifiers' >&2
+            exit 1
+          fi
+          if tar -xzOf "$TARBALL" package/package.json | grep -q 'devDependencies'; then
+            echo 'FATAL: packed manifest still contains devDependencies' >&2
+            exit 1
+          fi
+
+      - name: Dry-run publish (no registry upload)
+        if: inputs.dry_run == true && matrix.node-version == 24
+        working-directory: packages/extension-api
+        run: npm publish --dry-run --provenance --access public --tag next
+
+      - name: Publish to npm next with OIDC provenance
+        if: inputs.dry_run != true && matrix.node-version == 24
+        working-directory: packages/extension-api
+        run: |
+          set -o pipefail
+          if ! npm publish --provenance --access public --tag next; then
+            echo "ERROR: npm publish failed for ${{ needs.validate.outputs.version }}. Versions are immutable; bump the version and tag again." >&2
+            exit 1
+          fi
+
+  record:
+    name: Record GitHub release
+    needs: [validate, publish]
+    if: needs.publish.result == 'success' && inputs.dry_run != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Create GitHub Release record
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const tag = process.env.GITHUB_REF_NAME
+            const version = tag.replace(/^extension-api-v/, '')
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `@project-vault/extension-api ${version}`,
+              body: `Published to npm dist-tag next with OIDC Trusted Publishing and provenance. Workflow run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              make_latest: 'false',
+            })

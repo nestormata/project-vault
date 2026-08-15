@@ -8,6 +8,7 @@
     "packages/shared/openapi.json",
     "**/*test-helpers*",
     "**/*.test.ts",
+    "packages/extension-api/vitest.config.ts",
     "packages/agent/src/cache-crypto.ts",
     "apps/api/src/modules/audit/machine-entry.ts",
     "apps/api/src/workers/user-dormancy-check.ts",

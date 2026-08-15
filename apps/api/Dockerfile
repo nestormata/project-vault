@@ -12,6 +12,10 @@ WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
+# Keep production deploys aligned with the repository workspace policy: without this file,
+# pnpm deploy creates broken workspace symlinks instead of injecting packed workspace packages.
+COPY .npmrc ./
+COPY scripts/materialize-deploy-runtime.mjs ./scripts/
 COPY apps/api/package.json ./apps/api/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/shared/package.json ./packages/shared/
@@ -88,6 +92,46 @@ RUN if [ "$INCLUDE_MOCK_SSO_EXTENSION" = "true" ]; then pnpm --filter @project-v
 FROM app-builder AS deploy
 ARG INCLUDE_MOCK_SSO_EXTENSION=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
+# `pnpm deploy --legacy` leaves workspace links for injected packages on this pnpm version. Replace
+# the extension-api link with the exact npm pack boundary used for external consumers so the runner
+# cannot ship a broken link or build-only test output. The committed manifest is never edited.
+RUN set -eu; \
+    rm -rf /tmp/extension-api-package /tmp/extension-api-tarball; \
+    mkdir -p /tmp/extension-api-package /tmp/extension-api-tarball /app/deploy/node_modules/@project-vault/extension-api; \
+    cp -a /app/packages/extension-api/. /tmp/extension-api-package/; \
+    cd /tmp/extension-api-package; \
+    npm pkg delete devDependencies; \
+    PACK_JSON="$(npm pack --json --pack-destination /tmp/extension-api-tarball)"; \
+    TARBALL="$(node -e 'const p=JSON.parse(process.argv[1]); console.log(p[0].filename)' "$PACK_JSON")"; \
+    rm -rf /app/deploy/node_modules/@project-vault/extension-api; \
+    mkdir -p /app/deploy/node_modules/@project-vault/extension-api; \
+    tar -xzf "/tmp/extension-api-tarball/$TARBALL" -C /app/deploy/node_modules/@project-vault/extension-api --strip-components=1
+# `pnpm deploy --legacy` also leaves the private runtime workspace packages as links. Copy their
+# built package boundaries into the deploy tree so the runner is self-contained; otherwise
+# `@project-vault/shared`/`db`/`crypto` resolve to `/app/packages/*`, which is not copied into the
+# runner image. These packages remain private and are not published.
+RUN set -eu; \
+    for package in shared crypto db; do \
+      rm -rf "/app/deploy/node_modules/@project-vault/$package"; \
+      mkdir -p "/app/deploy/node_modules/@project-vault/$package"; \
+      cp "/app/packages/$package/package.json" "/app/deploy/node_modules/@project-vault/$package/package.json"; \
+      cp -r "/app/packages/$package/dist" "/app/deploy/node_modules/@project-vault/$package/dist"; \
+    done
+# Legacy deploy also prunes dependencies declared only by those private workspace packages. Do
+# not copy their workspace links: those links are relative to `/app/packages/*/node_modules` and
+# become dangling when moved under `/app/deploy`. Walk the exact dependency closure from pnpm's
+# installed workspace and copy each package as regular files into the deploy root. The materializer
+# fails on missing required dependencies, conflicting versions, or any symlink in the copied tree.
+RUN node scripts/materialize-deploy-runtime.mjs \
+      /app/deploy \
+      /app \
+      /app/packages/shared/node_modules/cron-parser \
+      /app/packages/crypto/node_modules/argon2 \
+      /app/packages/extension-api/node_modules/semver \
+      /app/deploy/node_modules/@project-vault/extension-api \
+ && node --input-type=module -e "await import('/app/deploy/node_modules/@project-vault/shared/dist/index.js')" \
+ && node --input-type=module -e "await import('/app/deploy/node_modules/@project-vault/crypto/dist/index.js')" \
+ && node --input-type=module -e "await import('/app/deploy/node_modules/@project-vault/db/dist/index.js')"
 # `pnpm deploy --prod` always prunes devDependencies — that's the correct, desired behavior for
 # every default/production build (the mock extension must never ship there). When explicitly
 # opted in for e2e, manually graft the already-built fixture into the deployed node_modules so
