@@ -1,12 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const listOrgUsersMock = vi.hoisted(() => vi.fn())
+const resolveNativeLoginEnabledMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/org-users.js', () => ({
   listOrgUsers: listOrgUsersMock,
 }))
 vi.mock('$lib/server/require-user.js', () => ({
   requireUser: (locals: { user: { orgRole: string; orgId: string } }) => locals.user,
+}))
+vi.mock('$lib/server/native-login-status.js', () => ({
+  resolveNativeLoginEnabled: resolveNativeLoginEnabledMock,
 }))
 
 import { load } from './+page.server.js'
@@ -19,7 +23,33 @@ function makeEvent(orgRole: string) {
 }
 
 describe('/settings/users +page.server.ts', () => {
-  beforeEach(() => listOrgUsersMock.mockReset())
+  beforeEach(() => {
+    listOrgUsersMock.mockReset()
+    resolveNativeLoginEnabledMock.mockReset().mockResolvedValue(true)
+  })
+
+  describe('Story 23.2 AC-6 row #10 / G3: nativeLoginEnabled', () => {
+    it('defaults true when the health check succeeds', async () => {
+      listOrgUsersMock.mockResolvedValue([])
+      resolveNativeLoginEnabledMock.mockResolvedValue(true)
+      const result = await load(makeEvent('owner'))
+      expect(result.nativeLoginEnabled).toBe(true)
+    })
+
+    it('is false once native login is excluded', async () => {
+      listOrgUsersMock.mockResolvedValue([])
+      resolveNativeLoginEnabledMock.mockResolvedValue(false)
+      const result = await load(makeEvent('owner'))
+      expect(result.nativeLoginEnabled).toBe(false)
+    })
+
+    it('fails safe to true when the health check itself fails (returns null)', async () => {
+      listOrgUsersMock.mockResolvedValue([])
+      resolveNativeLoginEnabledMock.mockResolvedValue(null)
+      const result = await load(makeEvent('owner'))
+      expect(result.nativeLoginEnabled).toBe(true)
+    })
+  })
 
   it('an owner can manage and sees the loaded user list', async () => {
     listOrgUsersMock.mockResolvedValue([{ id: 'u1' }])

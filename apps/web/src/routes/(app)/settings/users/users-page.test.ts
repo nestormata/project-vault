@@ -648,4 +648,26 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       expect((await screen.findByRole('alert')).textContent).toMatch(expected)
     })
   })
+
+  describe('Story 23.2 AC-6 row #10 / G3: send-recovery-link is hidden, not a dead button, under exclusion', () => {
+    it('shows the live button when nativeLoginEnabled is true (default/regression)', () => {
+      render(UsersPage, {
+        props: { data: baseData({ users: [memberUser], nativeLoginEnabled: true }) },
+      })
+      expect(screen.getByRole('button', { name: /send recovery link/i })).toBeTruthy()
+    })
+
+    it('shows the live button when nativeLoginEnabled is absent (fail-safe default)', () => {
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      expect(screen.getByRole('button', { name: /send recovery link/i })).toBeTruthy()
+    })
+
+    it('replaces the button with an honest disabled state when nativeLoginEnabled is false', () => {
+      render(UsersPage, {
+        props: { data: baseData({ users: [memberUser], nativeLoginEnabled: false }) },
+      })
+      expect(screen.queryByRole('button', { name: /send recovery link/i })).toBeNull()
+      expect(screen.getByText(/recovery link unavailable/i)).toBeTruthy()
+    })
+  })
 })
