@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type { ExtensionState } from '../../extensions/loader.js'
 
 const ENV_MODULE = '../../config/env.js'
+const DEV_DUMMY_HASH_MODULE = '../../config/dev-dummy-hash.js'
 const LATCH_MODULE = './native-login-latch.js'
 const RLS_MODULE = '../../middleware/rls.js'
 const DB_MODULE = '@project-vault/db'
@@ -54,8 +55,8 @@ function mockEnvBreakGlassAndConfirmed(overrides?: {
       VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED: overrides?.confirmed ?? false,
       AUTH_DUMMY_PASSWORD_HASH: overrides?.dummyPasswordHash ?? SAFE_DUMMY_HASH,
     },
-    DEV_AUTH_DUMMY_PASSWORD_HASH: DEV_DUMMY_HASH,
   }))
+  vi.doMock(DEV_DUMMY_HASH_MODULE, () => ({ DEV_AUTH_DUMMY_PASSWORD_HASH: DEV_DUMMY_HASH }))
 }
 
 function mockCollaborators(latch: {
@@ -87,6 +88,7 @@ function mockCollaborators(latch: {
 
 function unmockAll(): void {
   vi.doUnmock(ENV_MODULE)
+  vi.doUnmock(DEV_DUMMY_HASH_MODULE)
   vi.doUnmock(LATCH_MODULE)
   vi.doUnmock(RLS_MODULE)
   vi.doUnmock(DB_MODULE)
