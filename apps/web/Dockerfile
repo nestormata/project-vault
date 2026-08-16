@@ -12,6 +12,20 @@ COPY apps/web/package.json ./apps/web/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
+# Story 23.2 Task 10: @project-vault/mock-envelope-extension is a devDependency of apps/web
+# (see fixtures/mock-envelope-extension/README.md's "Production-safety" section — it is never a
+# runtime/production dep of web either) but is a real pnpm-workspace member present in
+# pnpm-lock.yaml. `pnpm --filter @project-vault/web deploy --prod --legacy` resolves the full
+# workspace dependency graph before applying the --prod filter, so it fails with
+# ERR_PNPM_WORKSPACE_PKG_NOT_FOUND without this package.json present, even though the deployed
+# output never includes it (same "frozen-lockfile/deploy needs every referenced member's
+# package.json regardless of whether this build ships it" reasoning as apps/api/Dockerfile's
+# identical mock-sso-extension/mock-envelope-extension COPY lines). Only the manifest is needed
+# here — never built, never grafted into /app/deploy — because --prod excludes devDependencies.
+# mock-envelope-extension itself depends on @project-vault/extension-api (workspace:*), which pnpm
+# also resolves transitively during deploy's workspace-graph pass — same reasoning, manifest only.
+COPY fixtures/mock-envelope-extension/package.json ./fixtures/mock-envelope-extension/
+COPY packages/extension-api/package.json ./packages/extension-api/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm rebuild esbuild
