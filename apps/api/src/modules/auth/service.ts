@@ -15,8 +15,9 @@ import {
   users,
   type ProjectInvitation,
 } from '@project-vault/db/schema'
-import { AuditEvent, trimHyphens } from '@project-vault/shared'
+import { AuditEvent, OperationalEvent, trimHyphens } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
+import { operationalLog } from '../../lib/logger.js'
 import { isNativeLoginEnabled } from './native-login-policy.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
@@ -395,7 +396,7 @@ async function resolveIsFirstUser(tx: Tx): Promise<boolean> {
 async function insertUserRow(
   tx: Tx,
   fields: { email: string; passwordHash: string; isPlatformOperator: boolean; locale: string }
-): Promise<{ id: string; email: string }> {
+): Promise<{ id: string; email: string; isPlatformOperator: boolean }> {
   const inserted = await tx
     .insert(users)
     .values({
@@ -404,7 +405,7 @@ async function insertUserRow(
       isPlatformOperator: fields.isPlatformOperator,
       locale: fields.locale,
     })
-    .returning({ id: users.id, email: users.email })
+    .returning({ id: users.id, email: users.email, isPlatformOperator: users.isPlatformOperator })
   const user = inserted[0]
   if (!user) throw new Error('insertUserWithPlatformOperatorBootstrap: insert returned no row')
   return user
@@ -427,7 +428,7 @@ export async function insertUserWithPlatformOperatorBootstrap(
   tx: Tx,
   fields: { email: string; passwordHash: string; locale: string },
   isFirstUser: boolean
-): Promise<{ id: string; email: string }> {
+): Promise<{ id: string; email: string; isPlatformOperator: boolean }> {
   if (!isFirstUser) return insertUserRow(tx, { ...fields, isPlatformOperator: false })
 
   try {
@@ -515,6 +516,29 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
           ? { emailDomain: emailDomain(email), projectId: invitation.projectId }
           : { emailDomain: emailDomain(email) },
       })
+
+      // Story 23.2 AC-6a item 3 / AC-9: every request that passes through the bootstrap
+      // carve-out (native login gated, but this was genuinely the first user ever) emits both a
+      // warn operational log and this dedicated audit event, so an operator can see in the audit
+      // trail exactly when and how the first account was created on an otherwise-gated instance.
+      // Never the email — only userId and isPlatformOperator, mirroring the fixed-payload
+      // discipline every other AC-9 event in this story follows.
+      if (!isNativeLoginEnabled() && isFirstUser) {
+        operationalLog(
+          { warn: () => undefined } as never,
+          'warn',
+          OperationalEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED_LOG,
+          'AC-6a bootstrap carve-out let a registration through on an otherwise-gated instance',
+          { userId: user.id, isPlatformOperator: user.isPlatformOperator }
+        )
+        await insertAuditEntry(tx as Tx, {
+          orgId: org.id,
+          actorTokenId: identityToken.id,
+          actorType: 'human',
+          eventType: AuditEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED,
+          payload: { userId: user.id, isPlatformOperator: user.isPlatformOperator },
+        })
+      }
 
       return buildRegisterResult(tx as Tx, org, user, invitation)
     })

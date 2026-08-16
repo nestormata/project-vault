@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { lt, sql } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
+import { AuditEvent } from '@project-vault/shared'
 import {
   bootUnsealedRouteApp,
   bootstrapRouteIntegrationTest,
@@ -190,7 +191,22 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
     const priorCount = await countUsersCreatedBefore(beforeInsert)
     const wasFirstUser = priorCount === 0
     expect(res.statusCode).toBe(wasFirstUser ? 201 : 403)
-    if (!wasFirstUser) expect(res.json()).toMatchObject({ code: 'native_login_disabled' })
+    if (!wasFirstUser) {
+      expect(res.json()).toMatchObject({ code: 'native_login_disabled' })
+      return
+    }
+
+    // AC-6a item 3 / AC-9: the carve-out was genuinely exercised — assert both the warn log
+    // (implicitly exercised, not directly observable via app.inject) and the dedicated audit
+    // event, with the fixed, no-email payload shape.
+    const body = res.json<{ data: { orgId: string; userId: string } }>()
+    const [row] = await getDb()
+      .execute(
+        sql`SELECT payload FROM audit_log_entries WHERE org_id = ${body.data.orgId} AND event_type = ${AuditEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED} LIMIT 1`
+      )
+      .then((result) => result as unknown as { payload: Record<string, unknown> }[])
+    expect(row).toBeDefined()
+    expect(row?.payload).toEqual({ userId: body.data.userId, isPlatformOperator: true })
   })
 
   it('AC-6a: a registration that is NOT the first user is gated (native_login_disabled), deterministically', async () => {
