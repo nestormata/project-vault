@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { sql } from 'drizzle-orm'
+import { lt, sql } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
 import {
@@ -73,11 +73,28 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await forcePolicyEnabled()
-  await getDb().delete(users)
+  // Deliberately does NOT truncate `users` — this suite shares a database with every other test
+  // file in a full run (fileParallelism:false is sequential, not isolated), and other files'
+  // rows are FK-referenced from tables like credential_shares. A blanket delete(users) here
+  // breaks unrelated tests. Every test below uses randomUUID()-based unique emails/org names
+  // instead, matching platform-operator-bootstrap.test.ts's own established convention for the
+  // one test that genuinely cares about "was this the first user" (see below).
+  //
   // /mfa/recover and /recovery/request share a DB-backed (not RATE_LIMIT_TEST_BYPASS-gated)
   // IP bucket — reset it each test so this suite's own volume of requests never trips it.
   await getDb().execute(sql`DELETE FROM auth_rate_limit_buckets`)
 })
+
+/** Number of user rows that existed strictly before `createdAt` — mirrors
+ * platform-operator-bootstrap.test.ts's own helper. Robust against concurrently running test
+ * files inserting users, unlike asserting the table is empty. */
+async function countUsersCreatedBefore(createdAt: Date): Promise<number> {
+  const rows = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(lt(users.createdAt, createdAt))
+  return rows.length
+}
 
 describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
   const GATED_CASES: Array<{ name: string; method: string; url: string; body?: unknown }> = [
@@ -153,8 +170,9 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
     expect(res.statusCode).toBe(403)
   })
 
-  it('AC-6a bootstrap carve-out: first POST /register succeeds even when policy is disabled, on an empty users table', async () => {
+  it("AC-6a bootstrap carve-out: a registration under a disabled policy succeeds iff it is genuinely the first user ever, mirroring Story 9.1 D1/AC-1's own convention", async () => {
     await forcePolicyDisabled()
+    const beforeInsert = new Date()
     const res = await app.inject({
       method: POST,
       url: REGISTER_URL,
@@ -164,32 +182,44 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
         orgName: `bootstrap org ${randomUUID()}`,
       },
     })
-    expect(res.statusCode).toBe(201)
+    // isFirstUser is resolved from the live table at the moment of insert (never cached), so
+    // this reflects whatever this run's actual DB state is — genuinely first in an isolated
+    // run of this file, genuinely not-first when run alongside other suites that already
+    // populated `users`. Either way, the response must match the real state.
+    const priorCount = await countUsersCreatedBefore(beforeInsert)
+    const wasFirstUser = priorCount === 0
+    expect(res.statusCode).toBe(wasFirstUser ? 201 : 403)
+    if (!wasFirstUser) expect(res.json()).toMatchObject({ code: 'native_login_disabled' })
   })
 
-  it('AC-6a: a SECOND registration after the first is gated (native_login_disabled)', async () => {
-    await forcePolicyDisabled()
-    const first = await app.inject({
+  it('AC-6a: a registration that is NOT the first user is gated (native_login_disabled), deterministically', async () => {
+    // Register one user under the ENABLED policy first, guaranteeing `users` is non-empty by
+    // the time the real test registration runs under the DISABLED policy — deterministic
+    // regardless of whatever else is in the shared test database (same technique
+    // platform-operator-bootstrap.test.ts uses for its own "not first" test).
+    await forcePolicyEnabled()
+    const guarantorRes = await app.inject({
       method: POST,
       url: REGISTER_URL,
       payload: {
-        email: `bootstrap-first-${randomUUID()}@example.com`,
+        email: `bootstrap-guarantor-${randomUUID()}@example.com`,
         password: TEST_PASSWORD,
-        orgName: `bootstrap org ${randomUUID()}`,
+        orgName: `bootstrap guarantor org ${randomUUID()}`,
       },
     })
-    expect(first.statusCode).toBe(201)
+    expect(guarantorRes.statusCode).toBe(201)
 
-    const second = await app.inject({
+    await forcePolicyDisabled()
+    const res = await app.inject({
       method: POST,
       url: REGISTER_URL,
       payload: {
         email: `bootstrap-second-${randomUUID()}@example.com`,
         password: TEST_PASSWORD,
-        orgName: 'another org',
+        orgName: `bootstrap second org ${randomUUID()}`,
       },
     })
-    expect(second.statusCode).toBe(403)
-    expect(second.json()).toMatchObject({ code: 'native_login_disabled' })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({ code: 'native_login_disabled' })
   })
 })
