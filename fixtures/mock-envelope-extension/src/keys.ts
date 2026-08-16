@@ -10,9 +10,18 @@
  * `onAuthenticate()`. Never reuse it, never treat a token it signs as meaningful outside this
  * fixture's own test suite.
  */
-export const FIXTURE_TEST_ONLY_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VwBCIEIKOLvMAl5eNOu1BdJ+AL6jjYhD8xgvtWpchKG790e8OV
------END PRIVATE KEY-----`
+// Split into concatenated string literals (byte-identical to a template literal at runtime —
+// verified) rather than one multi-line template literal, specifically so the
+// `// trivy:ignore:private-key` inline-suppression comment below can sit on the SAME physical
+// line as the flagged key-material line — Trivy's secret scanner only honors an inline ignore
+// comment on that exact line, not a preceding one, which a template literal has no room for.
+// This is a real, deliberately-suppressed HIGH finding (Trivy's `AsymmetricPrivateKey` rule) on
+// a key that is, by design, test-only and already public in this repository (see the doc
+// comment above) — suppressed narrowly, not via a broad path/rule ignore.
+export const FIXTURE_TEST_ONLY_PRIVATE_KEY =
+  '-----BEGIN PRIVATE KEY-----\n' +
+  'MC4CAQAwBQYDK2VwBCIEIKOLvMAl5eNOu1BdJ+AL6jjYhD8xgvtWpchKG790e8OV\n' + // trivy:ignore:private-key
+  '-----END PRIVATE KEY-----'
 
 /** The public half of the same test-only keypair — this is what `onAuthenticate()`'s default
  * `getVerificationKey()` verifies against. Safe to be public; only the private key is sensitive
