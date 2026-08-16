@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
+import { getDb } from '@project-vault/db'
 import { accountRecoveryTokens, type AccountRecoveryToken } from '@project-vault/db/schema'
 import { getAdminDb } from '../../lib/db.js'
 
@@ -101,6 +102,38 @@ export async function supersedePriorRecoveryTokens(tx: Tx, userId: string): Prom
     .where(
       and(
         eq(accountRecoveryTokens.userId, userId),
+        isNull(accountRecoveryTokens.usedAt),
+        isNull(accountRecoveryTokens.supersededAt),
+        gt(accountRecoveryTokens.expiresAt, new Date())
+      )
+    )
+}
+
+/**
+ * Story 23.2 AC-6 (pre-staging closed retroactively, not just prospectively): called on every
+ * boot whose resolved native-login policy is 'disabled' (native-login-policy.ts). Rows minted
+ * *before* the exclusion took effect would otherwise sit redeemable and wait for a break-glass
+ * window — an org admin's `POST /org/users/:userId/recovery/send-link` (gate row #10) is itself
+ * gated the instant exclusion is active, but a token minted in the window before the restart is
+ * unaffected by that gate. Superseding EVERY un-redeemed, unexpired row, across every user, closes
+ * that retroactively. Reuses the exact `supersededAt` mechanism `supersedePriorRecoveryTokens`
+ * already uses — nothing is deleted, no schema change — so `GET /recovery/:token` and
+ * `POST /recovery/:token/complete` refuse with the existing superseded-token response, unchanged.
+ * Idempotent: an already-superseded row simply doesn't match the WHERE clause again, so this is
+ * safe to run on every disabled boot, not gated behind the same "first boot only" latch the audit
+ * fanout uses.
+ */
+export async function supersedeAllPriorRecoveryTokensForExclusion(): Promise<void> {
+  // Uses the ordinary (vault_app) connection, NOT getAdminDb() — the admin role only has read
+  // grants on this app-owned table (findRecoveryTokenByHash()'s pre-org-context precedent is a
+  // SELECT, not a write). This table carries no org_id / RLS (see the schema comment), so a
+  // plain vault_app UPDATE with no org context set is exactly the right connection for a sweep
+  // spanning every user across every org.
+  await getDb()
+    .update(accountRecoveryTokens)
+    .set({ supersededAt: new Date() })
+    .where(
+      and(
         isNull(accountRecoveryTokens.usedAt),
         isNull(accountRecoveryTokens.supersededAt),
         gt(accountRecoveryTokens.expiresAt, new Date())

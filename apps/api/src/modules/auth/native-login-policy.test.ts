@@ -6,6 +6,7 @@ const LATCH_MODULE = './native-login-latch.js'
 const RLS_MODULE = '../../middleware/rls.js'
 const DB_MODULE = '@project-vault/db'
 const AUDIT_ROW_MODULE = '../../lib/system-audit-row.js'
+const RECOVERY_LOOKUP_MODULE = './recovery-lookup.js'
 // eslint-disable-next-line sonarjs/no-duplicate-string -- also appears as a `typeof import(...)` literal type, which TS requires inline
 const POLICY_MODULE = './native-login-policy.js'
 const TEST_API_VERSION = '1.2.0'
@@ -60,6 +61,7 @@ function mockEnvBreakGlassAndConfirmed(overrides?: {
 function mockCollaborators(latch: {
   readLatch: ReturnType<typeof vi.fn>
   writeLatch: ReturnType<typeof vi.fn>
+  supersedeRecoveryTokens?: ReturnType<typeof vi.fn>
 }): void {
   vi.doMock(LATCH_MODULE, () => ({
     readReplacementLatch: latch.readLatch,
@@ -69,6 +71,10 @@ function mockCollaborators(latch: {
   vi.doMock(RLS_MODULE, () => ({ fetchAllOrgIds: vi.fn().mockResolvedValue([]) }))
   vi.doMock(DB_MODULE, () => ({ withOrg: vi.fn() }))
   vi.doMock(AUDIT_ROW_MODULE, () => ({ writeSystemAuditRow: vi.fn() }))
+  vi.doMock(RECOVERY_LOOKUP_MODULE, () => ({
+    supersedeAllPriorRecoveryTokensForExclusion:
+      latch.supersedeRecoveryTokens ?? vi.fn().mockResolvedValue(undefined),
+  }))
 }
 
 function unmockAll(): void {
@@ -77,6 +83,7 @@ function unmockAll(): void {
   vi.doUnmock(RLS_MODULE)
   vi.doUnmock(DB_MODULE)
   vi.doUnmock(AUDIT_ROW_MODULE)
+  vi.doUnmock(RECOVERY_LOOKUP_MODULE)
 }
 
 describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
@@ -84,13 +91,15 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
   let env: typeof import('../../config/env.js').env
   let readLatch: ReturnType<typeof vi.fn>
   let writeLatch: ReturnType<typeof vi.fn>
+  let supersedeRecoveryTokens: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     vi.resetModules()
     mockEnvBreakGlassAndConfirmed()
     readLatch = vi.fn().mockResolvedValue(null)
     writeLatch = vi.fn().mockResolvedValue(undefined)
-    mockCollaborators({ readLatch, writeLatch })
+    supersedeRecoveryTokens = vi.fn().mockResolvedValue(undefined)
+    mockCollaborators({ readLatch, writeLatch, supersedeRecoveryTokens })
     mod = await import(POLICY_MODULE)
     env = (await import(ENV_MODULE)).env
   })
@@ -129,6 +138,26 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
     readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.isNativeLoginEnabled()).toBe(false)
+    expect(mod.getNativeLoginPolicyState().state).toBe('disabled')
+  })
+
+  it('AC-6 pre-staging retroactive close: sweeps recovery tokens on a disabled boot', async () => {
+    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    await mod.resolveNativeLoginPolicy(loadedDeclared())
+    expect(mod.getNativeLoginPolicyState().state).toBe('disabled')
+    expect(supersedeRecoveryTokens).toHaveBeenCalledTimes(1)
+  })
+
+  it('AC-6 pre-staging retroactive close: does NOT sweep on a boot that stays enabled', async () => {
+    await mod.resolveNativeLoginPolicy(loadedNotDeclared())
+    expect(mod.isNativeLoginEnabled()).toBe(true)
+    expect(supersedeRecoveryTokens).not.toHaveBeenCalled()
+  })
+
+  it('AC-6 pre-staging retroactive close: a sweep failure never fails policy resolution', async () => {
+    supersedeRecoveryTokens.mockRejectedValue(new Error('db down'))
+    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    await expect(mod.resolveNativeLoginPolicy(loadedDeclared())).resolves.toBeUndefined()
     expect(mod.getNativeLoginPolicyState().state).toBe('disabled')
   })
 

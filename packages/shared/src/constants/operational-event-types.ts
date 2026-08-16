@@ -258,6 +258,11 @@ export const OperationalEvent = {
   // other than 'enabled', i.e. exactly the instances whose safety depends on the unusability
   // claim this AC is about.
   NATIVE_LOGIN_DUMMY_HASH_UNSAFE: 'native_login.dummy_hash_unsafe',
+  // AC-6 pre-staging retroactive close: fires (warn) if the every-disabled-boot recovery-token
+  // supersession sweep fails — must never crash boot or block the policy from resolving; a
+  // failed sweep just leaves some pre-staged tokens live for another boot cycle.
+  NATIVE_LOGIN_RECOVERY_TOKEN_SUPERSESSION_FAILED:
+    'native_login.recovery_token_supersession_failed',
 
   // Story 16.1: theming reload (apps/api/src/modules/theming/service.ts). AC-2's "directory
   // present but unreadable" operational-log distinction — never fired for the (silent, expected)

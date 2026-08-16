@@ -11,6 +11,7 @@ import {
   readReplacementLatch,
   writeReplacementLatch,
 } from './native-login-latch.js'
+import { supersedeAllPriorRecoveryTokensForExclusion } from './recovery-lookup.js'
 
 /**
  * Story 23.2 AC-4/AC-4a: native-login exclusion is resolved exactly once at boot, from
@@ -163,6 +164,29 @@ async function announceDisabledTransitionIfFirst(state: ExtensionState): Promise
 }
 
 /**
+ * Story 23.2 AC-6 ("pre-staging is closed retroactively, not just prospectively"). Unlike
+ * `announceDisabledTransitionIfFirst` above, this runs on EVERY boot whose resolved policy is
+ * 'disabled' — not gated behind the "first boot only" latch — because the supersession UPDATE is
+ * itself idempotent (an already-superseded row simply doesn't match the WHERE clause again) and
+ * the story text says so explicitly. A failure here must never crash boot or block the policy
+ * from resolving — worst case, some pre-staged tokens stay live for one more boot cycle, which is
+ * strictly better than failing the whole instance's startup over a defense-in-depth sweep.
+ */
+async function supersedePreStagedRecoveryTokensIfDisabled(
+  policyState: NativeLoginPolicyState
+): Promise<void> {
+  if (policyState !== 'disabled') return
+  try {
+    await supersedeAllPriorRecoveryTokensForExclusion()
+  } catch {
+    warn(
+      OperationalEvent.NATIVE_LOGIN_RECOVERY_TOKEN_SUPERSESSION_FAILED,
+      'failed to supersede pre-staged recovery tokens on a disabled boot — will retry next boot'
+    )
+  }
+}
+
+/**
  * Story 23.2 AC-4: called once from `createApp()`, immediately after
  * `wireExtensionAuthStrategy()`. Idempotent under double-invocation (the
  * `generate-spec.ts` / `route-audit.test.ts` pattern, mirroring `loadExtension()`'s own
@@ -196,6 +220,7 @@ export async function resolveNativeLoginPolicy(state: ExtensionState): Promise<v
 
     assertDummyPasswordHashSafe(policyState)
     await logBootWarnings(policyState, replacementDeclared, state)
+    await supersedePreStagedRecoveryTokensIfDisabled(policyState)
     if (policyState === 'disabled') await announceDisabledTransitionIfFirst(state)
   })()
   await resolving
