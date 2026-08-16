@@ -7,9 +7,11 @@ import {
   HOST_SUPPORTED_EXTENSION_API_RANGE,
   defineExtension,
 } from './manifest.js'
-import type { ExtensionManifest } from './manifest.js'
+import type { ExtensionCapability, ExtensionManifest } from './manifest.js'
 
 const PACKAGE_JSON_PATH = fileURLToPath(new URL('../package.json', import.meta.url))
+const TEST_EXTENSION_NAME = 'com.acme.sso-extension'
+const TEST_CAPABILITIES: ExtensionCapability[] = ['auth-provider']
 
 describe('EXTENSION_API_VERSION', () => {
   it('is a valid semver string (AC1)', () => {
@@ -17,7 +19,7 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.1.0')
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.2.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
@@ -32,11 +34,32 @@ describe('EXTENSION_API_VERSION', () => {
 describe('defineExtension', () => {
   it('is a typed identity function returning the manifest unchanged (AC1)', () => {
     const manifest: ExtensionManifest = {
-      name: 'com.acme.sso-extension',
+      name: TEST_EXTENSION_NAME,
       apiVersion: EXTENSION_API_VERSION,
-      capabilities: ['auth-provider'],
+      capabilities: TEST_CAPABILITIES,
     }
 
     expect(defineExtension(manifest)).toBe(manifest)
+  })
+
+  it('accepts replacesNativeLogin: true unchanged (Story 23.2 AC-2)', () => {
+    const manifest: ExtensionManifest = {
+      name: TEST_EXTENSION_NAME,
+      apiVersion: EXTENSION_API_VERSION,
+      capabilities: TEST_CAPABILITIES,
+      replacesNativeLogin: true,
+    }
+
+    expect(defineExtension(manifest)).toBe(manifest)
+  })
+
+  it('is unchanged when replacesNativeLogin is omitted (Story 23.2 AC-2)', () => {
+    const manifest: ExtensionManifest = {
+      name: TEST_EXTENSION_NAME,
+      apiVersion: EXTENSION_API_VERSION,
+      capabilities: TEST_CAPABILITIES,
+    }
+
+    expect(defineExtension(manifest).replacesNativeLogin).toBeUndefined()
   })
 })

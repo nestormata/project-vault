@@ -1,0 +1,1 @@
+ALTER TABLE "system_settings" ADD COLUMN "native_login_replacement_proven_by_extension" text;

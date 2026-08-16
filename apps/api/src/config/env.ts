@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { DEV_AUTH_DUMMY_PASSWORD_HASH } from './dev-dummy-hash.js'
 
 const DEV_SESSION_SECRET = 'a'.repeat(64)
 const DEV_REFRESH_TOKEN_HMAC_SECRET = 'b'.repeat(64)
@@ -11,11 +12,6 @@ const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
 const DEV_ERASURE_EMAIL_HASH_SECRET = 'j'.repeat(64)
 const DEV_SSO_STATE_HMAC_SECRET = 'k'.repeat(64)
 const DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET = 'l'.repeat(64)
-const DEV_AUTH_DUMMY_PASSWORD_HASH = [
-  '$argon2id$v=19$m=65536,t=3,p=4',
-  'c/PLdA7Wvhkg8hPqLu5AlQ',
-  ['7zS8GhNt', 'QTJsiMmJ', 'LErN9kM1', '9VoNBM3P', 'HV3OhidvHtY'].join(''),
-].join('$')
 const PLACEHOLDER_SECRET_PATTERN = /change-me|dev-only|placeholder/i
 // Story 9.1 AC-14: syntactic-only 5-field cron validation (no minimum-interval constraint, unlike
 // packages/shared/src/validation/rotation-cron.ts's validateRotationCron — backup scheduling has
@@ -797,6 +793,16 @@ const envSchema = z
     // Story 24.3: incident-only escape for a same-major extension built above a rolled-back host.
     // Default false; this relaxes only the ceiling and emits a warning on every boot while set.
     VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: booleanEnvDefault(false),
+
+    // Story 23.2 AC-8: break-glass — re-enables every native-credential route regardless of the
+    // resolved policy. Read only at boot (apps/api/src/modules/auth/native-login-policy.ts). Not
+    // reachable from any route or request; host-set only. Fires a loud warn-level boot log and,
+    // when replacementDeclared is also true, an audit fanout on every boot while set.
+    VAULT_NATIVE_LOGIN_BREAK_GLASS: booleanEnvDefault(false),
+    // Story 23.2 AC-4a: escape hatch that skips the proving latch and disables native login on
+    // the strength of the manifest declaration alone. For operators who have already validated
+    // their IdP out of band. Warns on every boot with explicit lockout language.
+    VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED: booleanEnvDefault(false),
 
     // Story 16.1 AC-1/AC-2: directory of admin-installed custom theme definition files, inside
     // the persistent Docker Compose volume (never the application image, so themes survive image

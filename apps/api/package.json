@@ -22,7 +22,8 @@
     "test": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "generate-spec": "tsx src/scripts/generate-spec.ts",
-    "sso:qa": "tsx src/scripts/sso-qa.ts"
+    "sso:qa": "tsx src/scripts/sso-qa.ts",
+    "operator:recovery-link": "tsx src/scripts/operator-recovery-link.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1106.0",
@@ -59,6 +60,7 @@
   "devDependencies": {
     "@project-vault/agent": "workspace:*",
     "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/mock-envelope-extension": "workspace:*",
     "@project-vault/mock-sso-extension": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/bcrypt": "^6.0.0",

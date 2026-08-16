@@ -7,6 +7,7 @@ import { getVaultStatus } from '../modules/vault/key-service.js'
 import { getExtensionsHealthField } from '../extensions/loader.js'
 import { getThemesHealthField } from '../modules/theming/service.js'
 import { getReleaseVersion } from '../lib/package-version.js'
+import { isNativeLoginEnabled } from '../modules/auth/native-login-policy.js'
 
 // Story 14.2 AC-1/2/3/6: additive field, always present, never causes /health to deviate from
 // its existing unconditional-200 liveness contract — extension state is informational only.
@@ -23,6 +24,12 @@ const HealthResponseSchema = z.object({
   extensions_status: z.enum(['not_configured', 'loaded', 'load_failed']),
   themesLoaded: z.number().int().nonnegative(),
   themesFailed: z.number().int().nonnegative(),
+  // Story 23.2 AC-13: the one field the login screen actually reads to decide whether to render
+  // the password form at all — before the user has typed anything, so it cannot live behind
+  // POST /auth/domain-lookup (which requires an email). Boot-resolved, in-process, zero DB reads
+  // (see native-login-policy.ts's module-level `resolved` object) — reading it here is exactly
+  // as cheap as extensions_status above.
+  nativeLoginEnabled: z.boolean(),
 })
 
 const ReadyResponseSchema = z.object({
@@ -101,6 +108,7 @@ export async function healthRoutes(
         extensions_status: getExtensionsHealthField(),
         themesLoaded: themesHealth.themesLoaded,
         themesFailed: themesHealth.themesFailed,
+        nativeLoginEnabled: isNativeLoginEnabled(),
       })
     },
   })

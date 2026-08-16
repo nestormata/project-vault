@@ -1471,6 +1471,52 @@ describe('env', () => {
     })
   })
 
+  describe('Story 23.2: VAULT_NATIVE_LOGIN_BREAK_GLASS', () => {
+    it('defaults to false (native login enabled) when unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_NATIVE_LOGIN_BREAK_GLASS).toBe(false)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('is true when VAULT_NATIVE_LOGIN_BREAK_GLASS is explicitly set to "true"', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_NATIVE_LOGIN_BREAK_GLASS: 'true',
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_NATIVE_LOGIN_BREAK_GLASS).toBe(true)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Story 23.2: VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED', () => {
+    it('defaults to false (proving latch required) when unset', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED).toBe(false)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('is true when VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED is explicitly set to "true"', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED: 'true',
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED).toBe(true)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
+
   describe('Story 14.4: SSO domain-lookup rate limit', () => {
     it('defaults to the production-safe 20 requests per window', async () => {
       process.env = {

@@ -1,0 +1,2 @@
+ALTER TABLE "system_settings" ADD COLUMN "native_login_replacement_proven_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "system_settings" ADD COLUMN "native_login_disabled_announced_at" timestamp with time zone;

@@ -21,12 +21,20 @@
   let {
     nextPath = '/dashboard',
     onLocaleChange,
-  }: { nextPath?: string; onLocaleChange?: () => void } = $props()
+    // Story 23.2 AC-13: server-resolved from GET /api/v1/health in the page's own load (see
+    // +page.server.ts) so the very first paint already reflects it. Defaults to `true` — the
+    // fail-safe, byte-identical-to-today direction — so every existing caller/test that doesn't
+    // pass this prop is unaffected (AC-16).
+    nativeLoginEnabled = true,
+  }: { nextPath?: string; onLocaleChange?: () => void; nativeLoginEnabled?: boolean } = $props()
 
   // Story 14.4 Task 3.1: two-step, email-first flow. 'email' is Step A (email + Continue);
-  // 'password' and 'sso' are the two possible Step B outcomes of the domain-lookup call — never
-  // both shown at once, and never chosen without the lookup actually running (AC-4).
-  let step = $state<'email' | 'password' | 'sso'>('email')
+  // 'password' and 'sso' are two of the possible Step B outcomes of the domain-lookup call.
+  // Story 23.2 AC-13: 'placeholder' is the third Step B outcome — reached instead of 'password'
+  // whenever native login is disabled and the looked-up email has no SSO mapping, i.e. no usable
+  // sign-in path exists for it at all. Never both `password` and `placeholder` shown, and never
+  // chosen without the lookup actually running (AC-4/AC-13).
+  let step = $state<'email' | 'password' | 'sso' | 'placeholder'>('email')
 
   let email = $state('')
   let password = $state('')
@@ -106,17 +114,25 @@
       if (isSsoRequired(result)) {
         ssoProviderName = result.providerName
         step = 'sso'
-      } else {
+      } else if (nativeLoginEnabled) {
         step = 'password'
+      } else {
+        // Story 23.2 AC-13: no SSO mapping for this email's domain, and native login is
+        // disabled instance-wide — there is no usable sign-in path for this email at all.
+        // Honest placeholder, never a password box that would 403 on submit.
+        step = 'placeholder'
       }
     } catch {
       // AC-3/AC-3a: any failure (server error response, thrown ApiClientError, or a network-level
       // failure of the fetch call itself) falls open to the password field — never a hung or
       // broken login screen. Story 16.4: also falls open to the base theme (never a stale
       // previously-resolved theme lingering after a failed lookup for a different email).
+      // Story 23.2 AC-13: except when native login is disabled — falling open to a password
+      // field there would render a dead form that 403s on submit, so it falls open to the
+      // honest placeholder instead.
       if (email === requestEmail) {
         setPreAuthTheme(null, null)
-        step = 'password'
+        step = nativeLoginEnabled ? 'password' : 'placeholder'
       }
     } finally {
       // Only clear the flag if a newer request (for a different email) hasn't already taken over
@@ -142,11 +158,17 @@
       await completeSession()
     } catch (error) {
       password = ''
+      const code = typeof error === 'object' && error && 'code' in error ? error.code : undefined
+      if (code === 'native_login_disabled') {
+        // Story 23.2 AC-13: a rare race — the page's own load already read `nativeLoginEnabled`
+        // before an operator's restart flipped the policy mid-session (see AC-4's rolling-restart
+        // note). Self-corrects to the honest placeholder without echoing the password (already
+        // cleared above) and without a generic "sign in failed" message that would invite a retry.
+        step = 'placeholder'
+        return
+      }
       errorMessage =
-        typeof error === 'object' &&
-        error &&
-        'code' in error &&
-        error.code === 'invalid_credentials'
+        code === 'invalid_credentials'
           ? m.auth_login_invalid_credentials()
           : error instanceof Error
             ? error.message
@@ -317,6 +339,24 @@
         {m.auth_login_use_different_email()}
       </button>
     </form>
+  {:else if step === 'placeholder'}
+    <!-- Story 23.2 AC-13: the honest placeholder — never a dead password box that 403s on
+    submit, and never a fabricated success. -->
+    <div class="space-y-4">
+      <div class="space-y-2">
+        <h2 class="text-lg font-semibold text-slate-900">
+          {m.auth_login_external_signin_heading()}
+        </h2>
+        <p class="text-sm text-slate-600">{m.auth_login_external_signin_description()}</p>
+      </div>
+      <button
+        class="text-sm font-medium text-slate-700 underline"
+        type="button"
+        onclick={useADifferentEmail}
+      >
+        {m.auth_login_use_different_email()}
+      </button>
+    </div>
   {:else}
     <form
       class="space-y-5"

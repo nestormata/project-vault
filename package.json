@@ -27,6 +27,7 @@
     "check-form-guidance": "tsx scripts/check-form-guidance.ts",
     "check-extension-api-version-skew": "tsx scripts/check-extension-api-version-skew.ts",
     "check-admin-pool": "tsx scripts/check-admin-pool.ts",
+    "check-native-credential-surface": "tsx scripts/check-native-credential-surface.ts",
     "docker:smoke": "bash scripts/docker-smoke.sh",
     "prepare": "husky"
   },

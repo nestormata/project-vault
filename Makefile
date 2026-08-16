@@ -158,6 +158,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	$(MAKE) check-form-guidance
 	pnpm check-public-safety -- --base main --strict
 	pnpm check-extension-api-version-skew
+	pnpm check-native-credential-surface
 	$(MAKE) test
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts

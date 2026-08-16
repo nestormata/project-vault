@@ -16,7 +16,7 @@ import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { getAdminDb } from '../../lib/db.js'
 import { isUniqueViolation } from '../credentials/db-helpers.js'
-import { hashUserPassword } from '../auth/password.js'
+import { generateUnusablePasswordHash } from '../auth/password.js'
 import { normalizeEmail } from '../auth/normalize.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { pseudonymizeUserIdentityToken } from './pseudonymize-identity.js'
@@ -250,12 +250,11 @@ async function countOtherOrgMemberships(userId: string, excludeOrgId: string): P
   return Number(row?.c ?? 0)
 }
 
-/** D13: freshly-generated, per-user random, non-functional bcrypt/argon2-shaped sentinel — never
- * a fixed shared constant (which would let anyone with DB read access fingerprint every erased
- * account with one `WHERE password_hash = :sentinel` query). */
-async function generateSentinelPasswordHash(): Promise<string> {
-  return hashUserPassword(randomBytes(32).toString('hex'))
-}
+// D13 / Story 23.2 AC-6e: freshly-generated, per-user random, non-functional bcrypt/argon2-shaped
+// sentinel — never a fixed shared constant (which would let anyone with DB read access
+// fingerprint every erased account with one `WHERE password_hash = :sentinel` query). Now the
+// single shared implementation in auth/password.ts (generateUnusablePasswordHash) — see that
+// file's comment.
 
 function generateErasedEmail(): string {
   return `erased_${randomBytes(6).toString('hex')}@erased.invalid`
@@ -368,7 +367,7 @@ export async function executeErasure(
 
   // Step 2: overwrite users.email (non-reversible, unique per erasure).
   // Step 3 (D13): overwrite users.password_hash with a fresh, per-user random sentinel.
-  const sentinelPasswordHash = await generateSentinelPasswordHash()
+  const sentinelPasswordHash = await generateUnusablePasswordHash()
   await tx
     .update(users)
     .set({

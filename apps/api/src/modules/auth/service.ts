@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
+import type { FastifyBaseLogger } from 'fastify'
 import { and, asc, desc, eq, gt, isNull, sql, type SQL } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
@@ -15,8 +16,10 @@ import {
   users,
   type ProjectInvitation,
 } from '@project-vault/db/schema'
-import { AuditEvent, trimHyphens } from '@project-vault/shared'
+import { AuditEvent, OperationalEvent, trimHyphens } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
+import { operationalLog } from '../../lib/logger.js'
+import { isNativeLoginEnabled } from './native-login-policy.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
@@ -394,7 +397,7 @@ async function resolveIsFirstUser(tx: Tx): Promise<boolean> {
 async function insertUserRow(
   tx: Tx,
   fields: { email: string; passwordHash: string; isPlatformOperator: boolean; locale: string }
-): Promise<{ id: string; email: string }> {
+): Promise<{ id: string; email: string; isPlatformOperator: boolean }> {
   const inserted = await tx
     .insert(users)
     .values({
@@ -403,7 +406,7 @@ async function insertUserRow(
       isPlatformOperator: fields.isPlatformOperator,
       locale: fields.locale,
     })
-    .returning({ id: users.id, email: users.email })
+    .returning({ id: users.id, email: users.email, isPlatformOperator: users.isPlatformOperator })
   const user = inserted[0]
   if (!user) throw new Error('insertUserWithPlatformOperatorBootstrap: insert returned no row')
   return user
@@ -426,7 +429,7 @@ export async function insertUserWithPlatformOperatorBootstrap(
   tx: Tx,
   fields: { email: string; passwordHash: string; locale: string },
   isFirstUser: boolean
-): Promise<{ id: string; email: string }> {
+): Promise<{ id: string; email: string; isPlatformOperator: boolean }> {
   if (!isFirstUser) return insertUserRow(tx, { ...fields, isPlatformOperator: false })
 
   try {
@@ -442,11 +445,49 @@ export async function insertUserWithPlatformOperatorBootstrap(
 }
 
 /**
+ * Story 23.2 AC-6a: an instance whose native login is gated must never be permanently
+ * unadministrable — `insertUserWithPlatformOperatorBootstrap()` is the ONLY production write of
+ * `isPlatformOperator: true`, reachable only through `registerUser()`. Every registration AFTER
+ * the first on a gated instance is refused with the same `native_login_disabled` contract AC-6
+ * uses everywhere else.
+ */
+function assertRegistrationAllowedUnderGatedPolicy(isFirstUser: boolean): void {
+  if (isNativeLoginEnabled() || isFirstUser) return
+  throw new AppError('native_login_disabled', 'Native login is disabled on this instance.', 403)
+}
+
+/**
+ * Story 23.2 AC-6a fix (code review, TOCTOU): `resolveIsFirstUser()` runs a plain SELECT under
+ * READ COMMITTED — it takes no lock, so two concurrent registrations against a fresh,
+ * native-login-disabled instance can BOTH observe `isFirstUser === true` before either commits,
+ * and both then pass `assertRegistrationAllowedUnderGatedPolicy()` above.
+ * `insertUserWithPlatformOperatorBootstrap()` only arbitrates the *platform-operator* flag via a
+ * savepoint + unique-index race — its own doc comment says the loser "is then re-inserted as an
+ * ordinary (non-operator) user, so the request still succeeds with 201 rather than failing
+ * outright." On a gated instance that is exactly the bypass AC-6a exists to close: a
+ * race-losing request would still mint a fully functional, native-password account.
+ * `user.isPlatformOperator` is the ground truth for who actually won the race (resolved by the
+ * unique index inside the same transaction) — if this request lost it on a gated instance, it
+ * was never the legitimate first user and the whole transaction must roll back rather than
+ * silently succeed.
+ */
+function assertRegistrationWonFirstUserRace(
+  isFirstUser: boolean,
+  isPlatformOperator: boolean
+): void {
+  if (isNativeLoginEnabled() || !isFirstUser || isPlatformOperator) return
+  throw new AppError('native_login_disabled', 'Native login is disabled on this instance.', 403)
+}
+
+/**
  * This is the single riskiest diff in Story 4.1 (D4) — it changes a Story 1.6 auth-critical
  * function to also support joining an existing org via invitation token instead of always
  * creating a new org. Adversarial review mandatory per Epic 1 retro P5.
  */
-export async function registerUser(input: RegisterInput): Promise<RegisterResult> {
+export async function registerUser(
+  input: RegisterInput,
+  logger?: Partial<Pick<FastifyBaseLogger, 'warn'>>
+): Promise<RegisterResult> {
   const email = normalizeEmail(input.email)
 
   // Story 8.4 D6/AC-17B: once erasure execution overwrites users.email to
@@ -469,6 +510,12 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
       // Story 9.1 D1/AC-1: detect + bootstrap the first-ever user as the platform operator
       // BEFORE the insert, inside this same transaction.
       const isFirstUser = await resolveIsFirstUser(tx as Tx)
+
+      // Story 23.2 AC-6a: evaluated inside the same transaction as isFirstUser, and re-checked
+      // again below once the insert has resolved which registration actually won the
+      // first-user race under concurrency — see assertRegistrationWonFirstUserRace()'s doc
+      // comment for why this check alone is not sufficient.
+      assertRegistrationAllowedUnderGatedPolicy(isFirstUser)
       // Story 15.2 AC 2: seed this brand-new user's locale from the resolved org's
       // default_locale (either the invited org's current value, or a freshly-created org's own
       // 'en' default for self-signup) — never from client input.
@@ -477,6 +524,7 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
         { email, passwordHash, locale: org.defaultLocale },
         isFirstUser
       )
+      assertRegistrationWonFirstUserRace(isFirstUser, user.isPlatformOperator)
 
       await tx.execute(sql`SELECT set_config('app.current_org_id', ${org.id}, true)`)
       await tx.execute(sql`SELECT set_config('app.auth_bootstrap_org_id', ${org.id}, true)`)
@@ -499,6 +547,29 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
           ? { emailDomain: emailDomain(email), projectId: invitation.projectId }
           : { emailDomain: emailDomain(email) },
       })
+
+      // Story 23.2 AC-6a item 3 / AC-9: every request that passes through the bootstrap
+      // carve-out (native login gated, but this was genuinely the first user ever) emits both a
+      // warn operational log and this dedicated audit event, so an operator can see in the audit
+      // trail exactly when and how the first account was created on an otherwise-gated instance.
+      // Never the email — only userId and isPlatformOperator, mirroring the fixed-payload
+      // discipline every other AC-9 event in this story follows.
+      if (!isNativeLoginEnabled() && isFirstUser) {
+        operationalLog(
+          logger ?? {},
+          'warn',
+          OperationalEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED_LOG,
+          'AC-6a bootstrap carve-out let a registration through on an otherwise-gated instance',
+          { userId: user.id, isPlatformOperator: user.isPlatformOperator }
+        )
+        await insertAuditEntry(tx as Tx, {
+          orgId: org.id,
+          actorTokenId: identityToken.id,
+          actorType: 'human',
+          eventType: AuditEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED,
+          payload: { userId: user.id, isPlatformOperator: user.isPlatformOperator },
+        })
+      }
 
       return buildRegisterResult(tx as Tx, org, user, invitation)
     })

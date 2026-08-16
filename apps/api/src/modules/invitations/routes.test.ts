@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { notificationQueue, projectInvitations, users } from '@project-vault/db/schema'
@@ -537,6 +537,66 @@ describe.sequential('project invitation routes', () => {
       const res = await peekInvitation(app, token)
       expect(res.statusCode).toBe(200)
       expect(res.json()).toMatchObject({ data: { accountExists: true } })
+    })
+
+    describe('Story 23.2 AC-6c: nativeLoginEnabled field', () => {
+      afterEach(async () => {
+        const { __resetNativeLoginPolicyForTests, resolveNativeLoginPolicy } =
+          await import('../auth/native-login-policy.js')
+        __resetNativeLoginPolicyForTests()
+        await resolveNativeLoginPolicy({ status: 'not_configured' })
+      })
+
+      it('is true when native login is enabled — byte-identical to today (regression guard)', async () => {
+        const owner = await registerOwner(app, 'peek-native-enabled')
+        const projectId = await createProject(app, owner.cookies, 'peek-native-enabled')
+        const { token } = await inviteAndTokenize(app, owner, projectId, {
+          email: uniqueEmail('peek-native-enabled-invitee'),
+          role: MEMBER_ROLE,
+        })
+
+        const res = await peekInvitation(app, token)
+        expect(res.statusCode).toBe(200)
+        expect(res.json()).toMatchObject({ data: { nativeLoginEnabled: true } })
+      })
+
+      it('is false once native login is excluded, without changing accountExists', async () => {
+        const owner = await registerOwner(app, 'peek-native-disabled')
+        const projectId = await createProject(app, owner.cookies, 'peek-native-disabled')
+        const { token } = await inviteAndTokenize(app, owner, projectId, {
+          email: uniqueEmail('peek-native-disabled-invitee'),
+          role: MEMBER_ROLE,
+        })
+
+        const {
+          __resetNativeLoginPolicyForTests,
+          markReplacementProven,
+          resolveNativeLoginPolicy,
+        } = await import('../auth/native-login-policy.js')
+        await markReplacementProven('test.mock-envelope-extension')
+        __resetNativeLoginPolicyForTests()
+        await resolveNativeLoginPolicy({
+          status: 'loaded',
+          manifest: {
+            name: 'test.mock-envelope-extension',
+            apiVersion: '1.2.0',
+            capabilities: ['auth-provider'],
+            replacesNativeLogin: true,
+          },
+          loadedAt: new Date().toISOString(),
+          hooks: {
+            authStrategy: {
+              onAuthenticate: async () => ({ externalSubject: 'x', providerName: 'test' }),
+            },
+          },
+        })
+
+        const res = await peekInvitation(app, token)
+        expect(res.statusCode).toBe(200)
+        expect(res.json()).toMatchObject({
+          data: { nativeLoginEnabled: false, accountExists: false },
+        })
+      })
     })
   })
 

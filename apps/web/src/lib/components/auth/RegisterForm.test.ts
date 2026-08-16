@@ -182,6 +182,28 @@ describe('RegisterForm', () => {
     expect((await screen.findByRole('alert')).textContent).toMatch(/registration failed/i)
   })
 
+  it('Story 23.2 AC-6a: shows the honest native_login_disabled message, not a generic failure', async () => {
+    registerMock.mockRejectedValue({ code: 'native_login_disabled', message: 'raw api message' })
+
+    render(RegisterForm)
+
+    await fireEvent.input(screen.getByLabelText(/email/i), {
+      target: { value: 'second-user@example.com' },
+    })
+    await fireEvent.input(screen.getByLabelText(/organization name/i), {
+      target: { value: 'Acme' },
+    })
+    await fireEvent.input(screen.getByLabelText(/^password$/i), {
+      target: { value: 'super-secret-password' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /this vault is configured for external sign-in/i
+    )
+    expect((screen.getByLabelText(/^password$/i) as HTMLInputElement).value).toBe('')
+  })
+
   // Story 16.5 AC-1: RegisterForm resolves org branding for a free-typed email (self-registration).
   describe('pre-auth theme resolution — free-typed email (AC-1)', () => {
     it('applies the resolved theme when the email field is blurred', async () => {

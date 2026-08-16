@@ -3,6 +3,7 @@ import type { Tx } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
 import { verifyUserPassword } from '../auth/password.js'
 import { verifyConfirmedLoginTotp } from '../auth/mfa.js'
+import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 
 /**
  * Story 17.2 AC-3: sharer step-up re-authentication for external-share creation. This is a
@@ -31,14 +32,24 @@ export type StepUpInput = {
  * requirement (a sharer with no MFA enrolled can always use the password path).
  */
 export async function verifyStepUp(tx: Tx, input: StepUpInput): Promise<StepUpResult> {
-  if (input.password) {
+  // Story 23.2 AC-6b: under exclusion the password factor is disabled outright — `input.password`
+  // is ignored (never read against `users.passwordHash`, never even looked at) and this behaves
+  // as if no password were supplied. Checked once, up front, rather than duplicated inside the
+  // `if (input.password)` branch below, so a caller supplying BOTH factors still falls through to
+  // the TOTP check (AC-6b item 2: "both factors supplied: password ignored, TOTP evaluated") —
+  // duplicating the check inside that branch would incorrectly short-circuit on the password
+  // before ever reaching the TOTP path.
+  const passwordFactorDisabled = !isNativeLoginEnabled()
+  const password = passwordFactorDisabled ? undefined : input.password
+
+  if (password) {
     const [row] = await tx
       .select({ passwordHash: users.passwordHash })
       .from(users)
       .where(eq(users.id, input.userId))
       .limit(1)
     if (!row) return { status: 'invalid_password' }
-    const valid = await verifyUserPassword(input.password, row.passwordHash)
+    const valid = await verifyUserPassword(password, row.passwordHash)
     return valid ? { status: 'ok' } : { status: 'invalid_password' }
   }
 

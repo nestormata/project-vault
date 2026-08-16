@@ -97,6 +97,76 @@ describe('/invitations/accept +page.svelte', () => {
     expect(getCurrentUserMock).not.toHaveBeenCalled()
   })
 
+  describe('Story 23.2 AC-6c: external sign-in state for an account-less invitee under exclusion', () => {
+    it('renders the honest external-sign-in state instead of redirecting to /register when nativeLoginEnabled is false', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'new@example.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: false,
+        nativeLoginEnabled: false,
+      })
+
+      render(InvitationsAcceptPage)
+
+      expect(await screen.findByText(/external sign-in required/i)).toBeTruthy()
+      expect(
+        screen.getByText(/sign in with your organization account to accept this invitation/i)
+      ).toBeTruthy()
+      expect(gotoMock).not.toHaveBeenCalled()
+    })
+
+    it('the external-sign-in link points into /login with a next param that returns to this invitation', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'new@example.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: false,
+        nativeLoginEnabled: false,
+      })
+
+      render(InvitationsAcceptPage)
+
+      const link = await screen.findByRole('link', {
+        name: /sign in with your organization account/i,
+      })
+      expect(link.getAttribute('href')).toBe('/login?next=%2Finvitations%2Faccept%3Ftoken%3Dtok-1')
+    })
+
+    it('never a dead end: does not show a "create your account" link into the gated /register form', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'new@example.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: false,
+        nativeLoginEnabled: false,
+      })
+
+      render(InvitationsAcceptPage)
+
+      await screen.findByText(/external sign-in required/i)
+      expect(screen.queryByText(/create your account/i)).toBeNull()
+    })
+
+    it('AC-16 regression: still redirects to /register, byte-identical, when nativeLoginEnabled is true', async () => {
+      peekInvitationMock.mockResolvedValue({
+        email: 'new@example.com',
+        projectName: 'Payments',
+        role: 'member',
+        accountExists: false,
+        nativeLoginEnabled: true,
+      })
+
+      render(InvitationsAcceptPage)
+
+      await waitFor(() =>
+        expect(gotoMock).toHaveBeenCalledWith(
+          '/register?invitationToken=tok-1&email=new%40example.com'
+        )
+      )
+    })
+  })
+
   it('redirects to login (preserving a return path) when an account exists but the caller is not authenticated', async () => {
     peekInvitationMock.mockResolvedValue({
       email: 'existing@example.com',

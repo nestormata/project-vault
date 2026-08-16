@@ -24,6 +24,16 @@ export const PlatformAuditAction = {
   STATUS_TOKEN_GENERATED: 'status_token.generated',
   STATUS_TOKEN_ROTATED: 'status_token.rotated',
   STATUS_TOKEN_REVOKED: 'status_token.revoked',
+  // Story 23.2 AC-8a: the host-side operator:recovery-link break-glass CLI. Written on EVERY
+  // invocation (minted or refused) as a single fail-closed write against the whole-instance,
+  // non-RLS platform_audit_events table — deliberately NOT the per-org audit_log_entries
+  // fanout that AC-8/AC-9's NATIVE_LOGIN_BREAK_GLASS_ACTIVE/NATIVE_LOGIN_DISABLED events use.
+  // AC-8a item 4 requires a single strict fail-closed write ("if the audit write fails, the
+  // command exits non-zero and prints nothing"); the sibling fanout is deliberately
+  // best-effort per-org and swallows individual row failures, which would not satisfy that
+  // contract. Reuses the identical string value as
+  // AuditEvent.NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED for grep-ability across both registries.
+  NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED: 'native_login.break_glass_recovery_minted',
 } as const
 
 export type PlatformAuditActionType = (typeof PlatformAuditAction)[keyof typeof PlatformAuditAction]

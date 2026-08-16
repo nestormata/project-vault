@@ -132,6 +132,26 @@ describe('loadExtension — failure reasons (AC-3a/3b/3c)', () => {
     expect(getExtensionStatus()).toEqual({ status: 'load_failed', reason: 'capability_mismatch' })
   })
 
+  it('Story 23.2 AC-2: manifest_invalid — registerExtension throws invalid-manifest-field', async () => {
+    const importFn = vi.fn().mockImplementation(async () => {
+      throw new ExtensionRegistrationError('invalid-manifest-field', 'bad replacesNativeLogin')
+    })
+
+    await loadExtension('bad-field-package', baseDeps({ importFn }))
+
+    expect(getExtensionStatus()).toEqual({ status: 'load_failed', reason: 'manifest_invalid' })
+  })
+
+  it('Story 23.2 regression: incompatible-version still maps to capability_mismatch (not manifest_invalid)', async () => {
+    const importFn = vi.fn().mockImplementation(async () => {
+      throw new ExtensionRegistrationError('incompatible-version', 'still bad version')
+    })
+
+    await loadExtension('still-incompatible-package', baseDeps({ importFn }))
+
+    expect(getExtensionStatus()).toEqual({ status: 'load_failed', reason: 'capability_mismatch' })
+  })
+
   it('maps malformed apiVersion to capability_mismatch and keeps its message out of audit payloads', async () => {
     const auditWriter = vi.fn().mockResolvedValue(undefined)
     const logger = noopLogger()
@@ -321,7 +341,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     const logger = noopLogger()
     const importFn = vi.fn().mockResolvedValue({
       default: {
-        manifest: { ...VALID_MANIFEST, apiVersion: '1.2.0' },
+        manifest: { ...VALID_MANIFEST, apiVersion: '1.3.0' },
         hooksFactory: () => NOOP_HOOKS,
       },
     })
@@ -334,8 +354,8 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     expect(getExtensionStatus().status).toBe('loaded')
     expect(logger?.warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        declaredApiVersion: '1.2.0',
-        hostApiVersion: '1.1.0',
+        declaredApiVersion: '1.3.0',
+        hostApiVersion: '1.2.0',
         flag: 'VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST',
       }),
       expect.any(String)

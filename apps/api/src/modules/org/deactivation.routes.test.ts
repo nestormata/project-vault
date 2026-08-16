@@ -2,7 +2,16 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { notificationQueue, orgMemberships, projectInvitations } from '@project-vault/db/schema'
+import {
+  accountRecoveryTokens,
+  notificationQueue,
+  orgMemberships,
+  projectInvitations,
+} from '@project-vault/db/schema'
+import {
+  __resetNativeLoginPolicyForTests,
+  resolveNativeLoginPolicy,
+} from '../auth/native-login-policy.js'
 import type { CookieJar } from '../../__tests__/helpers/auth-test-helpers.js'
 import {
   bootstrapRouteIntegrationTest,
@@ -20,6 +29,8 @@ import {
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
+
+const MOCK_EXTENSION_NAME = 'test.mock-envelope-extension'
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
@@ -516,6 +527,71 @@ describe.sequential('account deactivation routes', () => {
 
       expect(res.statusCode).toBe(403)
       expect(res.json()).toMatchObject({ code: 'insufficient_role' })
+    })
+
+    it('Story 23.2 AC-6 row #10: 403 native_login_disabled when the policy is disabled, zero tokens minted, zero emails queued', async () => {
+      const owner = await registerOwner(app, 'send-link-gated-owner')
+      const sam = await addUserToOrg(app, owner.orgId, 'send-link-gated-sam')
+
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy({
+        status: 'loaded',
+        manifest: {
+          name: MOCK_EXTENSION_NAME,
+          apiVersion: '1.2.0',
+          capabilities: ['auth-provider'],
+          replacesNativeLogin: true,
+        },
+        loadedAt: new Date().toISOString(),
+        hooks: {
+          authStrategy: {
+            onAuthenticate: async () => ({ externalSubject: 'x', providerName: 't' }),
+          },
+        },
+      })
+      const { markReplacementProven } = await import('../auth/native-login-policy.js')
+      await markReplacementProven(MOCK_EXTENSION_NAME)
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy({
+        status: 'loaded',
+        manifest: {
+          name: MOCK_EXTENSION_NAME,
+          apiVersion: '1.2.0',
+          capabilities: ['auth-provider'],
+          replacesNativeLogin: true,
+        },
+        loadedAt: new Date().toISOString(),
+        hooks: {
+          authStrategy: {
+            onAuthenticate: async () => ({ externalSubject: 'x', providerName: 't' }),
+          },
+        },
+      })
+
+      try {
+        const res = await sendLink(owner.cookies, sam.userId)
+        expect(res.statusCode).toBe(403)
+        expect(res.json()).toMatchObject({ code: 'native_login_disabled' })
+
+        const tokenRows = await withOrg(owner.orgId, (tx) =>
+          tx
+            .select()
+            .from(accountRecoveryTokens)
+            .where(eq(accountRecoveryTokens.userId, sam.userId))
+        )
+        expect(tokenRows).toHaveLength(0)
+
+        const queueRows = await withOrg(owner.orgId, (tx) =>
+          tx
+            .select()
+            .from(notificationQueue)
+            .where(eq(notificationQueue.templateId, 'auth.recovery_link_sent'))
+        )
+        expect(queueRows.find((row) => row.recipientEmail === sam.email)).toBeUndefined()
+      } finally {
+        __resetNativeLoginPolicyForTests()
+        await resolveNativeLoginPolicy({ status: 'not_configured' })
+      }
     })
   })
 })

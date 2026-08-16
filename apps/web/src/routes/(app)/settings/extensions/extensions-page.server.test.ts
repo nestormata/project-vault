@@ -32,6 +32,26 @@ const SAMPLE_MANIFEST = {
   loadedAt: '2026-07-20T10:00:00.000Z',
 }
 
+// Story 23.2 AC-12: getExtensionStatus() now resolves the { extension, nativeLoginPolicy }
+// envelope rather than a bare manifest-or-null value.
+const SAMPLE_POLICY = {
+  enabled: true,
+  state: 'enabled' as const,
+  replacementDeclared: false,
+  replacementProven: false,
+  replacementProvenAt: null,
+  appliedAtBoot: false,
+  breakGlassActive: false,
+  replacementConfirmedOverride: false,
+  extensionStatus: 'not_configured' as const,
+  extensionFailureReason: null,
+  sessionsLive: 0,
+}
+
+function envelope(extension: typeof SAMPLE_MANIFEST | null) {
+  return { extension, nativeLoginPolicy: SAMPLE_POLICY }
+}
+
 describe('/settings/extensions +page.server.ts', () => {
   beforeEach(() => {
     getExtensionStatusMock.mockReset()
@@ -41,7 +61,7 @@ describe('/settings/extensions +page.server.ts', () => {
 
   it('AC-1/AC-2: admin + loaded manifest -> allowed=true with the manifest', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
-    getExtensionStatusMock.mockResolvedValue(SAMPLE_MANIFEST)
+    getExtensionStatusMock.mockResolvedValue(envelope(SAMPLE_MANIFEST))
     fetchHealthMock.mockResolvedValue({
       status: 'ok',
       version: '1.0.0',
@@ -61,7 +81,7 @@ describe('/settings/extensions +page.server.ts', () => {
 
   it('AC-3: admin + not-configured -> allowed=true, manifest null, healthStatus not_configured', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
-    getExtensionStatusMock.mockResolvedValue(null)
+    getExtensionStatusMock.mockResolvedValue(envelope(null))
     fetchHealthMock.mockResolvedValue({
       status: 'ok',
       version: '1.0.0',
@@ -80,7 +100,7 @@ describe('/settings/extensions +page.server.ts', () => {
 
   it('AC-4: admin + load-failed -> allowed=true, manifest null, healthStatus load_failed', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
-    getExtensionStatusMock.mockResolvedValue(null)
+    getExtensionStatusMock.mockResolvedValue(envelope(null))
     fetchHealthMock.mockResolvedValue({
       status: 'ok',
       version: '1.0.0',
@@ -143,7 +163,7 @@ describe('/settings/extensions +page.server.ts', () => {
 
   it('AC-7: fetchHealth() throwing -> honest errorMessage (status resolves null, health throws)', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
-    getExtensionStatusMock.mockResolvedValue(null)
+    getExtensionStatusMock.mockResolvedValue(envelope(null))
     fetchHealthMock.mockRejectedValue(new Error('boom'))
 
     const result = await load(makeEvent())
@@ -176,7 +196,7 @@ describe('/settings/extensions +page.server.ts', () => {
 
   it('AC-8: manifest present but health disagrees -> loaded state still renders (manifest authoritative)', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
-    getExtensionStatusMock.mockResolvedValue(SAMPLE_MANIFEST)
+    getExtensionStatusMock.mockResolvedValue(envelope(SAMPLE_MANIFEST))
     fetchHealthMock.mockResolvedValue({
       status: 'ok',
       version: '1.0.0',
@@ -197,7 +217,7 @@ describe('/settings/extensions +page.server.ts', () => {
 
   it('AC-8 reverse: manifest null but health says loaded -> falls back to not_configured, warns, no crash', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
-    getExtensionStatusMock.mockResolvedValue(null)
+    getExtensionStatusMock.mockResolvedValue(envelope(null))
     fetchHealthMock.mockResolvedValue({
       status: 'ok',
       version: '1.0.0',

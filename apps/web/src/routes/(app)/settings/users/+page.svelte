@@ -30,6 +30,9 @@
   } from '@project-vault/shared'
 
   let { data } = $props()
+  // Story 23.2 AC-6 row #10 / G3: default true (fail-safe, byte-identical-to-today) so any
+  // caller/test that doesn't pass this field is unaffected — see +page.server.ts.
+  let nativeLoginEnabled = $derived(data.nativeLoginEnabled ?? true)
 
   let errorMessage = $state<string | null>(null)
   let busyKey = $state<string | null>(null)
@@ -537,16 +540,28 @@
               </td>
               <td class="px-4 py-3 text-right">
                 <div class="flex flex-col items-end gap-1">
-                  <button
-                    class="text-sm font-medium text-slate-700 underline disabled:cursor-not-allowed disabled:opacity-60"
-                    type="button"
-                    disabled={busyKey === user.userId}
-                    onclick={() => onSendRecoveryLink(user)}
-                  >
-                    Send recovery link
-                  </button>
-                  {#if recoveryLinkSentFor === user.userId}
-                    <p class="text-xs text-slate-600">Recovery link sent.</p>
+                  {#if nativeLoginEnabled}
+                    <button
+                      class="text-sm font-medium text-slate-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                      type="button"
+                      disabled={busyKey === user.userId}
+                      onclick={() => onSendRecoveryLink(user)}
+                    >
+                      Send recovery link
+                    </button>
+                    {#if recoveryLinkSentFor === user.userId}
+                      <p class="text-xs text-slate-600">Recovery link sent.</p>
+                    {/if}
+                  {:else}
+                    <!-- Story 23.2 AC-6 row #10 / G3: this action 403s (native_login_disabled)
+                         once native login is excluded -- honest disabled state, never a live
+                         button that fails on click. -->
+                    <span
+                      class="text-xs text-slate-500"
+                      title="Native login is disabled on this vault; recovery links cannot be sent."
+                    >
+                      Recovery link unavailable (external sign-in)
+                    </span>
                   {/if}
 
                   <!--

@@ -12,6 +12,7 @@ import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { sendAdminRecoveryLink } from '../auth/recovery.js'
+import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 import { checkActiveRotationsForUser, revokePendingInvitationsSentBy } from './deactivation.js'
 import { autoRevokeSharesForDeactivatedUser } from '../credential-shares/service.js'
 import { dismissSecurityAlert, listSecurityAlerts } from './security-alerts.js'
@@ -393,6 +394,16 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 20, key: 'POST /org/users/:userId/recovery/send-link' },
     },
     handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
+      // Story 23.2 AC-6 row #10 (finding N1): this is a recovery-token ISSUANCE path, invisible
+      // to a grep for password verification — an ordinary org admin could otherwise pre-stage
+      // password-set links that become redeemable the instant break-glass reopens AC-8's gated
+      // routes. Checked before any read/write, same contract as every other AC-6 route.
+      if (!isNativeLoginEnabled()) {
+        return reply.status(403).send({
+          code: 'native_login_disabled',
+          message: 'Native login is disabled on this instance.',
+        })
+      }
       const params = parseParams(OrgUserParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext

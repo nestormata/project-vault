@@ -147,6 +147,17 @@ describe('AuditEvent', () => {
     expect(AuditEvent.THEME_SELECTED).toBe('theme.selected')
   })
 
+  it('exposes Story 23.2 AC-9 native-login-exclusion audit event names', () => {
+    expect(AuditEvent.NATIVE_LOGIN_DISABLED).toBe('native_login.disabled')
+    expect(AuditEvent.NATIVE_LOGIN_BREAK_GLASS_ACTIVE).toBe('native_login.break_glass_active')
+    expect(AuditEvent.NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED).toBe(
+      'native_login.break_glass_recovery_minted'
+    )
+    expect(AuditEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED).toBe(
+      'native_login.bootstrap_register_allowed'
+    )
+  })
+
   it('derives AuditEventType from every current AuditEvent value (AC-J1/J3, single source of truth)', () => {
     for (const value of Object.values(AuditEvent)) {
       expect(assertValidAuditEventType(value)).toBe(value)

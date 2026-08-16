@@ -97,7 +97,10 @@ export const load: PageServerLoad = async ({ fetch, locals }) => {
     return allowedResult({ errorMessage: GENERIC_FETCH_ERROR }, orgRole)
   }
 
-  const manifest = statusResult.value
+  // AC-12: the route now returns an envelope ({ extension, nativeLoginPolicy }) rather than a
+  // bare manifest-or-null body — this page only consumes `.extension`; `.nativeLoginPolicy` is
+  // not yet surfaced here (no story task asked for an admin-facing policy panel on this page).
+  const manifest = statusResult.value.extension
   const health = healthResult.status === 'fulfilled' ? healthResult.value : null
 
   if (manifest) {

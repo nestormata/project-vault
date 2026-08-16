@@ -138,4 +138,24 @@ describe('/login +page.svelte', () => {
     await submitLogin()
     await waitFor(() => expect(gotoMock).toHaveBeenCalledWith(expected))
   })
+
+  describe('Story 23.2 AC-13: nativeLoginEnabled', () => {
+    it('hides the Register and Recovery links when native login is disabled', () => {
+      render(LoginPage, { props: { data: { nativeLoginEnabled: false } } })
+      expect(screen.queryByRole('link', { name: /create.*account|register/i })).toBeNull()
+      expect(screen.queryByRole('link', { name: /can't access your account/i })).toBeNull()
+    })
+
+    it('shows the Register and Recovery links when native login is enabled (default)', () => {
+      render(LoginPage)
+      expect(screen.getByRole('link', { name: /can't access your account/i })).toBeTruthy()
+    })
+
+    it('renders a neutral, retryable state and no form at all when the health status is unknown (cold-start failure)', () => {
+      render(LoginPage, { props: { data: { nativeLoginEnabled: null } } })
+      expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
+      expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy()
+      expect(screen.queryByLabelText(/email/i)).toBeNull()
+    })
+  })
 })

@@ -25,10 +25,12 @@ import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { getAdminDb } from '../../lib/db.js'
 import { claimInvitation } from '../invitations/lookup.js'
+import { generateUnusablePasswordHash } from './password.js'
 import { findAuthStrategy } from './strategies.js'
 import { createPendingMfaSession } from './mfa-login.js'
 import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
 import { buildCookieTokens, setAuthCookies, type CookieReply, type JwtSigner } from './tokens.js'
+import { markReplacementProven } from './native-login-policy.js'
 
 const STATE_COOKIE_NAME = 'sso-state'
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -115,12 +117,27 @@ function unknownProviderError(): AppError {
 async function sendSsoSession(
   fastify: FastifyApp,
   reply: FastifyReply,
-  result: LoginResult
+  result: LoginResult,
+  providerName: string
 ): Promise<unknown> {
   setAuthCookies(
     reply as unknown as CookieReply,
     await buildCookieTokens(fastify as unknown as JwtSigner, result.tokens)
   )
+  // Story 23.2 AC-4a/AC-5: the proving-latch write, strictly AFTER a session has been issued —
+  // this is the one and only call site for every SSO success path (linked-identity and
+  // invitation-provisioning both funnel through here). Never touches the frozen in-process
+  // policy object (findings N3/N11) and never fails the response (markReplacementProven()
+  // swallows its own errors).
+  // Story 23.2 fix (code review): attributes the proof to WHICH strategy actually authenticated
+  // this session, so a later-loaded, unrelated extension can never inherit this proof for itself
+  // — see isLatchProvenForExtension()'s doc comment in native-login-latch.ts. `providerName` is
+  // used (rather than re-reading getExtensionStatus() here) because it is exactly the identity
+  // this specific login authenticated under — and in production the two are the same string by
+  // construction: wireExtensionAuthStrategy() (strategies.ts) registers every extension-provided
+  // strategy under `state.manifest.name` as its provider name, so `providerName` here already
+  // equals the loaded extension's manifest name whenever the strategy came from an extension.
+  await markReplacementProven(providerName)
   return reply.send({
     data: { userId: result.userId, orgId: result.orgId, expiresAt: result.expiresAt },
   })
@@ -345,6 +362,7 @@ async function handleLinkedSession(
   fastify: FastifyApp,
   reply: FastifyReply,
   linked: { orgId: string; userId: string },
+  providerName: string,
   meta: RequestMeta
 ): Promise<unknown> {
   try {
@@ -379,7 +397,7 @@ async function handleLinkedSession(
       })
       return session
     })
-    return sendSsoSession(fastify, reply, result)
+    return sendSsoSession(fastify, reply, result, providerName)
   } catch {
     // AC-6: issueSession fails AFTER state was already consumed — the caller gets a clear,
     // retryable error; the consumed state is never required again (a fresh /start mints a new
@@ -419,11 +437,14 @@ async function handleInvitationProvisioning(
       const claimed = await claimInvitation(tx as Tx, invitation.id)
       if (!claimed) return null
 
+      // Story 23.2 AC-6e: a freshly-generated, per-user random, non-functional password hash —
+      // NOT the shared env.AUTH_DUMMY_PASSWORD_HASH constant this used to write. See
+      // auth/password.ts's generateUnusablePasswordHash() comment for why.
       const [user] = await (tx as Tx)
         .insert(users)
         .values({
           email: (authResult.email as string).toLowerCase(),
-          passwordHash: env.AUTH_DUMMY_PASSWORD_HASH,
+          passwordHash: await generateUnusablePasswordHash(),
         })
         .returning({ id: users.id })
       if (!user) throw new Error('handleInvitationProvisioning: user insert returned no row')
@@ -504,7 +525,7 @@ async function handleInvitationProvisioning(
         )
       )
     }
-    return sendSsoSession(fastify, reply, outcome)
+    return sendSsoSession(fastify, reply, outcome, authResult.providerName)
   } catch {
     return sendAppError(reply, new AppError('login_failed', 'Login failed, please try again', 503))
   }
@@ -540,7 +561,13 @@ async function resolveSessionForAuthResult(
     )
   }
   if (linked.kind === 'found') {
-    return handleLinkedSession(fastify, reply, { orgId: linked.orgId, userId: linked.userId }, meta)
+    return handleLinkedSession(
+      fastify,
+      reply,
+      { orgId: linked.orgId, userId: linked.userId },
+      authResult.providerName,
+      meta
+    )
   }
 
   // AC-8 edge case: no email on the AuthResult — invitation-matching is skipped entirely.

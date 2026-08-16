@@ -43,6 +43,20 @@ describe('/recovery +page.svelte', () => {
     expect((await screen.findByRole('status')).textContent).toBe(GENERIC_MESSAGE)
   })
 
+  it('Story 23.2 AC-13: shows the honest native_login_disabled message, never the fabricated generic confirmation', async () => {
+    requestRecoveryMock.mockRejectedValue({ code: 'native_login_disabled', message: 'raw' })
+
+    render(RecoveryPage)
+    await fireEvent.input(screen.getByLabelText(/email/i), {
+      target: { value: 'someone@example.com' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /send recovery link/i }))
+
+    const status = await screen.findByRole('status')
+    expect(status.textContent).not.toBe(GENERIC_MESSAGE)
+    expect(status.textContent).toMatch(/external sign-in/i)
+  })
+
   it('disables the submit button and shows pending copy while the request is in flight', async () => {
     let resolveRequest: (value: { message: string }) => void = () => {}
     requestRecoveryMock.mockReturnValue(

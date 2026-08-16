@@ -31,6 +31,12 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/
 # empirically — same "Docker only builds what's explicitly listed" gotcha as extension-api's own
 # comment above).
 COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
+# Story 23.2 Task 10: @project-vault/mock-envelope-extension is a devDependency of apps/api
+# (never a production dep — see fixtures/mock-envelope-extension/README.md's
+# "Production-safety" section) but is a real pnpm-workspace member present in
+# pnpm-lock.yaml — same "frozen-lockfile install needs every member's package.json regardless
+# of whether this build ever deploys it" reasoning as mock-sso-extension immediately above.
+COPY fixtures/mock-envelope-extension/package.json ./fixtures/mock-envelope-extension/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild argon2 esbuild
@@ -44,6 +50,7 @@ COPY packages/agent ./packages/agent
 COPY packages/extension-api ./packages/extension-api
 COPY packages/eslint-config ./packages/eslint-config
 COPY fixtures/mock-sso-extension ./fixtures/mock-sso-extension
+COPY fixtures/mock-envelope-extension ./fixtures/mock-envelope-extension
 
 # Split off from the final `builder` stage (Story 1.13 AC-D1) so the one-shot `migrate` service
 # (docker-compose.yml) doesn't have to build `agent`/`api` just to run a migration. `crypto` is
@@ -81,6 +88,14 @@ RUN pnpm --filter @project-vault/agent build \
 ARG INCLUDE_MOCK_SSO_EXTENSION=false
 RUN if [ "$INCLUDE_MOCK_SSO_EXTENSION" = "true" ]; then pnpm --filter @project-vault/mock-sso-extension build; fi
 
+# Story 23.2 Task 10: same opt-in-only pattern as mock-sso-extension immediately above, for the
+# native-login-exclusion envelope fixture — never set for the default build, only for the
+# e2e-specific build (docker-compose.e2e.yml's `build.args` override).
+ARG INCLUDE_MOCK_ENVELOPE_EXTENSION=false
+RUN if [ "$INCLUDE_MOCK_ENVELOPE_EXTENSION" = "true" ]; then \
+      pnpm --filter @project-vault/mock-envelope-extension build; \
+    fi
+
 # Bundle the api and its production deps into a self-contained directory. This runs in its
 # own stage (not in `app-builder`) because `pnpm deploy` prunes the workspace node_modules to
 # production-only in place — the `migrate` service targets `db-builder` directly (Story 1.13
@@ -91,6 +106,7 @@ RUN if [ "$INCLUDE_MOCK_SSO_EXTENSION" = "true" ]; then pnpm --filter @project-v
 # so no compiler toolchain is needed in the runner stage.
 FROM app-builder AS deploy
 ARG INCLUDE_MOCK_SSO_EXTENSION=false
+ARG INCLUDE_MOCK_ENVELOPE_EXTENSION=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 # `pnpm deploy --legacy` leaves workspace links for injected packages on this pnpm version. Replace
 # the extension-api link with the exact npm pack boundary used for external consumers so the runner
@@ -140,6 +156,11 @@ RUN if [ "$INCLUDE_MOCK_SSO_EXTENSION" = "true" ]; then \
       mkdir -p /app/deploy/node_modules/@project-vault/mock-sso-extension && \
       cp -r /app/fixtures/mock-sso-extension/dist /app/deploy/node_modules/@project-vault/mock-sso-extension/dist && \
       cp /app/fixtures/mock-sso-extension/package.json /app/deploy/node_modules/@project-vault/mock-sso-extension/package.json; \
+    fi
+RUN if [ "$INCLUDE_MOCK_ENVELOPE_EXTENSION" = "true" ]; then \
+      mkdir -p /app/deploy/node_modules/@project-vault/mock-envelope-extension && \
+      cp -r /app/fixtures/mock-envelope-extension/dist /app/deploy/node_modules/@project-vault/mock-envelope-extension/dist && \
+      cp /app/fixtures/mock-envelope-extension/package.json /app/deploy/node_modules/@project-vault/mock-envelope-extension/package.json; \
     fi
 
 # node:24-alpine, pinned by digest — see builder stage comment above.

@@ -82,8 +82,16 @@ async function activeOrgMembershipsForUser(
   return memberships
 }
 
-/** AC-9 step 2-3 / AC-10: creates a fresh recovery token, superseding any prior live one. */
-async function createRecoveryToken(
+/**
+ * AC-9 step 2-3 / AC-10: creates a fresh recovery token, superseding any prior live one.
+ *
+ * Exported for reuse by AC-8a's `operator:recovery-link` break-glass CLI
+ * (`apps/api/src/scripts/operator-recovery-link.ts`) — the story's own text is explicit that the
+ * command must reuse this exact machinery rather than invent a second token type, lifetime, or
+ * hash. The CLI is the only caller outside this module that ever passes `initiatedBy: 'admin'`
+ * with both `initiatorUserId` and `initiatorOrgId` omitted — see AC-8a item 5.
+ */
+export async function createRecoveryToken(
   tx: Tx,
   input: {
     userId: string
@@ -107,7 +115,8 @@ async function createRecoveryToken(
   return { opaqueToken, expiresAt }
 }
 
-function recoveryLinkUrl(opaqueToken: string): string {
+/** Exported for the same AC-8a reuse reason as `createRecoveryToken` above. */
+export function recoveryLinkUrl(opaqueToken: string): string {
   return `${stripTrailingSlashes(env.WEB_BASE_URL)}/recovery/${opaqueToken}`
 }
 

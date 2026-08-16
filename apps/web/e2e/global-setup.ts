@@ -5,6 +5,7 @@ import {
   generateE2EVaultPassphrase,
 } from '../src/lib/server/e2e-setup-security.js'
 import { superuserDatabaseUrl } from './fixtures/db.js'
+import { pollUntilOk } from './fixtures/poll-until-ready.js'
 
 // AC-I3: global-setup.ts's job is readiness-polling + DB-reset + vault-init ONLY — it does NOT
 // start the API/DB itself (unlike architecture.md's original illustrative comment). This story
@@ -27,18 +28,12 @@ async function waitForReady(
   attempts = 20,
   delayMs = 3000
 ): Promise<void> {
-  let lastError: unknown
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      const response = await fetch(url)
-      if (response.ok) return
-      lastError = new Error(`${label} responded with ${response.status}`)
-    } catch (error) {
-      lastError = error
-    }
-    await new Promise((resolve) => setTimeout(resolve, delayMs))
-  }
-  throw new Error(`${NOT_RUNNING_HINT}\n(${label} never became ready: ${String(lastError)})`)
+  await pollUntilOk(url, {
+    attempts,
+    delayMs,
+    onExhausted: (lastError) =>
+      new Error(`${NOT_RUNNING_HINT}\n(${label} never became ready: ${String(lastError)})`),
+  })
 }
 
 // Code review (10-1): superuserDatabaseUrl() defaults to postgresql://postgres:password@

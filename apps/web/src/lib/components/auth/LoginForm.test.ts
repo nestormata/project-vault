@@ -297,6 +297,87 @@ describe('LoginForm', () => {
     })
   })
 
+  describe('Story 23.2 AC-13: nativeLoginEnabled=false', () => {
+    it('never renders a password field when the email has no SSO mapping — honest placeholder instead', async () => {
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+
+      render(LoginForm, { props: { nativeLoginEnabled: false } })
+      await fillEmailAndContinue('alex@example.com')
+
+      expect(await screen.findByText(/external sign-in required/i)).toBeTruthy()
+      expect(screen.queryByLabelText(/^password$/i)).toBeNull()
+    })
+
+    it('still renders the SSO credential step when the domain resolves to SSO', async () => {
+      lookupSsoDomainMock.mockResolvedValue({
+        ssoRequired: true,
+        providerName: 'test.mock-envelope-extension',
+      })
+
+      render(LoginForm, { props: { nativeLoginEnabled: false } })
+      await fillEmailAndContinue('newhire@acme.com')
+
+      expect(await screen.findByLabelText(/sso credential/i)).toBeTruthy()
+      expect(screen.queryByLabelText(/^password$/i)).toBeNull()
+    })
+
+    it('falls open to the honest placeholder (never the password field) when the lookup itself fails', async () => {
+      lookupSsoDomainMock.mockRejectedValue(new Error('network error'))
+
+      render(LoginForm, { props: { nativeLoginEnabled: false } })
+      await fillEmailAndContinue('alex@example.com')
+
+      expect(await screen.findByText(/external sign-in required/i)).toBeTruthy()
+      expect(screen.queryByLabelText(/^password$/i)).toBeNull()
+    })
+
+    it('lets the user return to Step A from the placeholder', async () => {
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+
+      render(LoginForm, { props: { nativeLoginEnabled: false } })
+      await fillEmailAndContinue('alex@example.com')
+      await screen.findByText(/external sign-in required/i)
+
+      await fireEvent.click(screen.getByRole('button', { name: /use a different email/i }))
+
+      expect(screen.getByLabelText(/email/i)).toBeTruthy()
+      expect(screen.queryByText(/external sign-in required/i)).toBeNull()
+    })
+
+    it('self-corrects to the placeholder on a 403 native_login_disabled from POST /login, without echoing the password', async () => {
+      // A race window (AC-4's rolling-restart note): the page's own load read nativeLoginEnabled
+      // as true moments before an operator restart flipped the policy — LoginForm was still
+      // constructed with the stale prop, so the password step renders, but the API call itself
+      // now 403s. Simulated here directly by mounting with nativeLoginEnabled: true and having
+      // the login() call fail with the real error code.
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+      loginMock.mockRejectedValue(
+        new ApiClientError(
+          403,
+          { code: 'native_login_disabled', message: 'Native login is disabled on this instance.' },
+          'Native login is disabled on this instance.'
+        )
+      )
+
+      render(LoginForm, { props: { nativeLoginEnabled: true } })
+      await fillAndSubmitPassword('alex@example.com', 'correcthorsebattery')
+
+      expect(await screen.findByText(/external sign-in required/i)).toBeTruthy()
+      expect(screen.queryByLabelText(/^password$/i)).toBeNull()
+      expect(gotoMock).not.toHaveBeenCalled()
+    })
+
+    it('nativeLoginEnabled=true (default) still shows the password field exactly as before (AC-16)', async () => {
+      lookupSsoDomainMock.mockResolvedValue({ ssoRequired: false })
+
+      render(LoginForm, { props: {} })
+      await fillEmailAndContinue('alex@example.com')
+
+      expect(await screen.findByLabelText(/^password$/i)).toBeTruthy()
+      expect(screen.queryByText(/external sign-in required/i)).toBeNull()
+    })
+  })
+
   describe('Step B: SSO mapping — SSO step renders, no password field ever shown (AC-1)', () => {
     it('renders the SSO credential step instead of the password field', async () => {
       lookupSsoDomainMock.mockResolvedValue({
