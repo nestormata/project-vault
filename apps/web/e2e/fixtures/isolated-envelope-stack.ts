@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import postgres from 'postgres'
 import { superuserDatabaseUrl } from './db.js'
+import { pollUntilOk } from './poll-until-ready.js'
 
 /**
  * Story 23.2 — a self-contained, isolated API+web process pair for this story's own E2E journey
@@ -78,18 +79,11 @@ export async function dropIsolatedDatabase(dbName: string): Promise<void> {
 }
 
 async function waitForHttp(url: string, attempts = 40, delayMs = 500): Promise<void> {
-  let lastError: unknown
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      const response = await fetch(url)
-      if (response.ok) return
-      lastError = new Error(`${url} responded with ${response.status}`)
-    } catch (error) {
-      lastError = error
-    }
-    await new Promise((resolve) => setTimeout(resolve, delayMs))
-  }
-  throw new Error(`Timed out waiting for ${url}: ${String(lastError)}`)
+  await pollUntilOk(url, {
+    attempts,
+    delayMs,
+    onExhausted: (lastError) => new Error(`Timed out waiting for ${url}: ${String(lastError)}`),
+  })
 }
 
 export type ApiHandle = {

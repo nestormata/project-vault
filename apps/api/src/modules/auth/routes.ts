@@ -221,6 +221,18 @@ function parseRecoveryTokenParams(
   return parsed.data
 }
 
+/** Story 23.2 (jscpd gate): the shared gate-then-parse prefix `GET /recovery/:token` and
+ * `POST /recovery/:token/mfa/start` both open with. Returns the parsed params, or `null` once
+ * `reply` has already been sent (either the AC-6 gate or the params-validation failure). */
+function gateAndParseRecoveryToken(
+  req: FastifyRequest,
+  reply: FastifyReply
+): RecoveryTokenParams | null {
+  const gated = rejectIfNativeLoginDisabled(reply)
+  if (gated !== null) return null
+  return parseRecoveryTokenParams(req, reply)
+}
+
 /** Shared status-error shape all three recovery-lookup results (recovery.ts) resolve to. */
 function sendRecoveryStatusError(
   reply: FastifyReply,
@@ -868,9 +880,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 30, timeWindowMs: 60_000, key: 'GET /api/v1/auth/recovery/:token' },
     },
     handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const gated = rejectIfNativeLoginDisabled(reply)
-      if (gated !== null) return gated
-      const parsed = parseRecoveryTokenParams(req, reply)
+      const parsed = gateAndParseRecoveryToken(req, reply)
       if (!parsed) return reply
       const result = await peekRecoveryToken(parsed.token)
       if (!result.ok) return sendRecoveryStatusError(reply, result.error)
@@ -902,9 +912,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const gated = rejectIfNativeLoginDisabled(reply)
-      if (gated !== null) return gated
-      const parsed = parseRecoveryTokenParams(req, reply)
+      const parsed = gateAndParseRecoveryToken(req, reply)
       if (!parsed) return reply
       const result = await startRecoveryMfa(parsed.token)
       if (!result.ok) return sendRecoveryStatusError(reply, result.error)
