@@ -4,10 +4,18 @@
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   const GENERIC_MESSAGE = "If that email is registered, we've sent a recovery link."
+  // Story 23.2 AC-13: native_login_disabled is an INSTANCE-WIDE policy state, not a per-email
+  // signal — telling the truth about it leaks nothing about any specific email address, unlike
+  // every other failure this form deliberately hides behind GENERIC_MESSAGE. Showing the fake
+  // "we've sent a link" confirmation here would be an outright fabricated success (AC-13's
+  // "never a fabricated success" line) — no token was minted, no email was queued.
+  const NATIVE_LOGIN_DISABLED_MESSAGE =
+    'This vault is configured for external sign-in; password recovery is not available. Contact your administrator.'
 
   let email = $state('')
   let isSubmitting = $state(false)
   let submitted = $state(false)
+  let disabledMessage = $state(null)
 
   async function submitForm() {
     if (isSubmitting) return
@@ -16,13 +24,19 @@
       // AC-9/AC-11: always show the same generic confirmation regardless of the response body,
       // so the UI itself can never leak enumeration info even if a future API change did.
       await requestRecovery(fetch, email)
-    } catch {
-      // Rate-limited or transient failure — still show the generic confirmation. A real 4xx here
-      // does not tell the caller anything more useful than "try again later," and surfacing the
-      // difference would itself be an enumeration/abuse signal.
+      submitted = true
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? error.code : undefined
+      if (code === 'native_login_disabled') {
+        disabledMessage = NATIVE_LOGIN_DISABLED_MESSAGE
+      } else {
+        // Rate-limited or transient failure — still show the generic confirmation. A real 4xx
+        // here does not tell the caller anything more useful than "try again later," and
+        // surfacing the difference would itself be an enumeration/abuse signal.
+        submitted = true
+      }
     } finally {
       isSubmitting = false
-      submitted = true
     }
   }
 </script>
@@ -37,7 +51,11 @@
     <p class="text-slate-600">Enter your email and we'll send you a link to reset your password.</p>
   </div>
 
-  {#if submitted}
+  {#if disabledMessage}
+    <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700" role="status">
+      {disabledMessage}
+    </p>
+  {:else if submitted}
     <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700" role="status">
       {GENERIC_MESSAGE}
     </p>

@@ -82,7 +82,17 @@
       // eslint-disable-next-line svelte/no-navigation-without-resolve
       await goto(getPostRegisterPath(result.invitedProject))
     } catch (error) {
-      errorMessage = error instanceof Error ? error.message : m.auth_register_failed()
+      // Story 23.2 AC-6a/AC-13: registration is not blanket-hidden on this page — the very
+      // first registration on a native-login-gated instance must still succeed (AC-6a's
+      // bootstrap carve-out). Every registration AFTER that one gets this specific, honest
+      // message instead of a generic failure string.
+      const code = typeof error === 'object' && error && 'code' in error ? error.code : undefined
+      errorMessage =
+        code === 'native_login_disabled'
+          ? m.auth_register_native_login_disabled()
+          : error instanceof Error
+            ? error.message
+            : m.auth_register_failed()
       password = ''
     }
   }

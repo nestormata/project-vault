@@ -60,6 +60,7 @@
   "auth_register_password_hint": "Usa al menos 12 caracteres.",
   "auth_register_create_account": "Crear cuenta",
   "auth_register_failed": "No se pudo completar el registro.",
+  "auth_register_native_login_disabled": "Este vault está configurado para inicio de sesión externo y no acepta nuevos registros. Contacta a tu administrador, o inicia sesión con el proveedor SSO de tu organización.",
   "credential_expiry_notification": "La credencial '{credentialName}' vence en {days} días",
   "credential_copy_legacy_label": "Copiar el valor de la credencial sin revelarlo",
   "credential_copy_field_label": "Copiar {field} sin revelarlo",
