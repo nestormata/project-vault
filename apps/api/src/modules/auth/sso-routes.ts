@@ -29,6 +29,7 @@ import { findAuthStrategy } from './strategies.js'
 import { createPendingMfaSession } from './mfa-login.js'
 import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
 import { buildCookieTokens, setAuthCookies, type CookieReply, type JwtSigner } from './tokens.js'
+import { markReplacementProven } from './native-login-policy.js'
 
 const STATE_COOKIE_NAME = 'sso-state'
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -121,6 +122,12 @@ async function sendSsoSession(
     reply as unknown as CookieReply,
     await buildCookieTokens(fastify as unknown as JwtSigner, result.tokens)
   )
+  // Story 23.2 AC-4a/AC-5: the proving-latch write, strictly AFTER a session has been issued —
+  // this is the one and only call site for every SSO success path (linked-identity and
+  // invitation-provisioning both funnel through here). Never touches the frozen in-process
+  // policy object (findings N3/N11) and never fails the response (markReplacementProven()
+  // swallows its own errors).
+  await markReplacementProven()
   return reply.send({
     data: { userId: result.userId, orgId: result.orgId, expiresAt: result.expiresAt },
   })

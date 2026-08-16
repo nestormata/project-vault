@@ -245,6 +245,66 @@ describe('SSO routes (Story 14.3)', () => {
       await app.close()
     })
 
+    it('Story 23.2 AC-4a: a successful SSO login writes the native-login-replacement proving latch', async () => {
+      const { readReplacementLatch } = await import('./native-login-latch.js')
+      const { systemSettings } = await import('@project-vault/db/schema')
+      // The latch is a monotonic, no-reset-by-design instance-wide row (AC-4a) — this suite's
+      // own prior successful-login tests may have already set it, so force it back to
+      // unproven here rather than assuming a pristine table.
+      await getDb()
+        .update(systemSettings)
+        .set({ nativeLoginReplacementProvenAt: null })
+        .where(eq(systemSettings.id, 1))
+      const before = await readReplacementLatch()
+      expect(before?.replacementProvenAt ?? null).toBeNull()
+
+      const { orgId, userId } = await createTestOrgWithUser('latch-linked')
+      const subject = `sub-${randomUUID()}`
+      await linkExternalIdentity(orgId, userId, subject)
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({ externalSubject: subject, providerName: PROVIDER }),
+      })
+      const app = await createApp({ logger: false })
+
+      const start = await app.inject({ method: 'POST', url: `/api/v1/auth/sso/start/${PROVIDER}` })
+      const cookies = parseSetCookies(start.headers['set-cookie'])
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/callback/${PROVIDER}`,
+        payload: {},
+        headers: { cookie: `sso-state=${cookies['sso-state']}` },
+      })
+      expect(res.statusCode).toBe(200)
+
+      const after = await readReplacementLatch()
+      expect(after?.replacementProvenAt ?? null).not.toBeNull()
+
+      await app.close()
+    })
+
+    it('Story 23.2 AC-5: a rejected callback (state consumed but invalid) never sets the latch', async () => {
+      const { readReplacementLatch } = await import('./native-login-latch.js')
+      const { systemSettings } = await import('@project-vault/db/schema')
+      await getDb()
+        .update(systemSettings)
+        .set({ nativeLoginReplacementProvenAt: null })
+        .where(eq(systemSettings.id, 1))
+
+      const app = await createApp({ logger: false })
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/callback/${PROVIDER}`,
+        payload: {},
+        headers: { cookie: 'sso-state=not-a-real-state' },
+      })
+      expect(res.statusCode).not.toBe(200)
+
+      const after = await readReplacementLatch()
+      expect(after?.replacementProvenAt ?? null).toBeNull()
+
+      await app.close()
+    })
+
     it('returns an MfaChallengeResult (not a full session) for an MFA-enrolled linked user — no SSO-specific bypass', async () => {
       const { orgId, userId } = await createTestOrgWithUser('mfa-linked')
       await getDb().update(users).set({ mfaEnrolledAt: new Date() }).where(eq(users.id, userId))
