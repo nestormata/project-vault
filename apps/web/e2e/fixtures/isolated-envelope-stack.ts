@@ -148,10 +148,10 @@ export async function startEnvelopeApi(options: {
   })
   // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
   child.stdout?.on('data', (chunk) => console.log(`[api-envelope:${options.port}]`, String(chunk)))
-  // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
-  child.stderr?.on('data', (chunk) =>
+  child.stderr?.on('data', (chunk) => {
+    // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
     console.error(`[api-envelope:${options.port}]`, String(chunk))
-  )
+  })
 
   await waitForHttp(`http://localhost:${options.port}/health`)
 
@@ -229,10 +229,10 @@ export async function startEnvelopeWeb(options: {
   })
   // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
   child.stdout?.on('data', (chunk) => console.log(`[web-envelope:${options.port}]`, String(chunk)))
-  // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
-  child.stderr?.on('data', (chunk) =>
+  child.stderr?.on('data', (chunk) => {
+    // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
     console.error(`[web-envelope:${options.port}]`, String(chunk))
-  )
+  })
 
   await waitForHttp(`http://localhost:${options.port}/login`)
 
