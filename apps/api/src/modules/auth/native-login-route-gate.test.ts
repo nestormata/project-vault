@@ -54,6 +54,7 @@ async function forcePolicyEnabled(): Promise<void> {
 }
 
 const POST = 'POST'
+const LOGIN_URL = '/api/v1/auth/login'
 const TEST_EMAIL = 'a@example.com'
 const TEST_PASSWORD = 'CorrectHorseBattery9!'
 const REGISTER_URL = '/api/v1/auth/register'
@@ -101,7 +102,7 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
     {
       name: 'login',
       method: POST,
-      url: '/api/v1/auth/login',
+      url: LOGIN_URL,
       body: { email: TEST_EMAIL, password: 'x' },
     },
     {
@@ -163,7 +164,7 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
     await forcePolicyDisabled()
     const res = await app.inject({
       method: POST,
-      url: '/api/v1/auth/login',
+      url: LOGIN_URL,
       headers: { 'x-native-login': 'enabled', 'x-vault-break-glass': 'true' },
       payload: { email: TEST_EMAIL, password: 'x', nativeLoginEnabled: true },
     })
@@ -222,4 +223,56 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
     expect(res.statusCode).toBe(403)
     expect(res.json()).toMatchObject({ code: 'native_login_disabled' })
   })
+
+  // AC-6 finding L2/N15: registerMethodNotAllowed() (routes.ts) is registered for exactly nine
+  // paths, four of which are also on the AC-6 gated-routes list: /register, /login,
+  // /mfa/verify-login, /mfa/recover. The gate must never shadow that 405 registration — a wrong
+  // method still 405s under exclusion, byte-identical to the enabled path.
+  it.each([
+    { name: 'register', url: REGISTER_URL },
+    { name: 'login', url: LOGIN_URL },
+    { name: 'mfa/verify-login', url: '/api/v1/auth/mfa/verify-login' },
+    { name: 'mfa/recover', url: '/api/v1/auth/mfa/recover' },
+  ])(
+    '405-preservation: GET $name still returns 405 Method Not Allowed under exclusion, never 403',
+    async ({ url }) => {
+      await forcePolicyDisabled()
+      const res = await app.inject({ method: 'GET', url })
+      expect(res.statusCode).toBe(405)
+      expect(res.json()).toMatchObject({ code: 'method_not_allowed' })
+    }
+  )
+
+  // AC-6 finding L2: no `registerMethodNotAllowed()` registration exists for any /recovery/*
+  // route, gate row #10, or the external-shares route — this story must not add one. The
+  // required assertion instead is "wrong-method behavior unchanged from today": byte-identical
+  // between the enabled and disabled policy, whatever that behavior happens to be.
+  // Deliberately does NOT include GET /recovery/request as a "wrong method" case: fastify's
+  // router matches it against the parametric GET /recovery/:token route (token="request") rather
+  // than 404ing outright, since there is no static GET handler for /recovery/request specifically
+  // to compete with it — that is correct, gate-eligible routing, not a wrong-method gap.
+  it.each([
+    {
+      name: 'recovery/:token (GET-only route, wrong method PUT)',
+      method: 'PUT',
+      url: '/api/v1/auth/recovery/some-token',
+    },
+    {
+      name: 'recovery/:token/complete (POST-only route, wrong method GET)',
+      method: 'GET',
+      url: '/api/v1/auth/recovery/some-token/complete',
+    },
+  ])(
+    '405-preservation: $name behaves byte-identically enabled vs. disabled',
+    async ({ method, url }) => {
+      await forcePolicyEnabled()
+      const enabledRes = await app.inject({ method, url })
+
+      await forcePolicyDisabled()
+      const disabledRes = await app.inject({ method, url })
+
+      expect(disabledRes.statusCode).toBe(enabledRes.statusCode)
+      expect(disabledRes.json()).toEqual(enabledRes.json())
+    }
+  )
 })
