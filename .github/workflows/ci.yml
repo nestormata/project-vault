@@ -435,7 +435,7 @@ jobs:
 
       - name: SonarCloud Quality Gate
         if: ${{ !cancelled() }}
-        uses: SonarSource/sonarqube-quality-gate-action@v1.2.0
+        uses: SonarSource/sonarqube-quality-gate-action@v1.2.1
         with:
           pollingTimeoutSec: 600
         env:
