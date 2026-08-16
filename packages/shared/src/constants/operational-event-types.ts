@@ -252,6 +252,12 @@ export const OperationalEvent = {
   // CLI (apps/api/src/scripts/operator-recovery-link.ts) on EVERY invocation, minted or refused —
   // "a refused invocation is exactly the signal an operator wants."
   NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED_LOG: 'native_login.break_glass_recovery_minted_log',
+  // AC-6e item 3: warn-severity boot log on every instance whose env.AUTH_DUMMY_PASSWORD_HASH
+  // still equals the in-repo, publicly-known DEV_AUTH_DUMMY_PASSWORD_HASH constant — startup
+  // additionally FAILS (this log line still fires first) when the resolved policy is anything
+  // other than 'enabled', i.e. exactly the instances whose safety depends on the unusability
+  // claim this AC is about.
+  NATIVE_LOGIN_DUMMY_HASH_UNSAFE: 'native_login.dummy_hash_unsafe',
 
   // Story 16.1: theming reload (apps/api/src/modules/theming/service.ts). AC-2's "directory
   // present but unreadable" operational-log distinction — never fired for the (silent, expected)

@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 import { count, desc, eq, sql } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
@@ -24,7 +23,7 @@ import { AppError } from '../../lib/errors.js'
 import { writePlatformAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { allocateOrganizationSlug, isUniqueViolation, slugify } from '../auth/service.js'
 import { normalizeEmail } from '../auth/normalize.js'
-import { hashUserPassword } from '../auth/password.js'
+import { generateUnusablePasswordHash } from '../auth/password.js'
 import { generateRecoveryToken, hashRecoveryToken } from '../auth/recovery-tokens.js'
 import type {
   CreateOrgRequest,
@@ -381,12 +380,10 @@ export class OwnerAccountDeactivatedError extends AppError {
   }
 }
 
-/** D7 point 4: same discipline as generateSentinelPasswordHash() (compliance/erasure-service.ts)
- * — a freshly-generated, per-user random, non-functional password hash, never a fixed shared
- * constant. */
-async function generateUnusablePasswordHash(): Promise<string> {
-  return hashUserPassword(randomBytes(32).toString('hex'))
-}
+// D7 point 4 / Story 23.2 AC-6e: the freshly-generated, per-user random, non-functional
+// password hash used for a new org owner is now the single shared implementation in
+// auth/password.ts (generateUnusablePasswordHash) — see that file's comment for why this
+// stopped being three independently-reinvented copies of the same discipline.
 
 /** D7 point 4: enqueues the "set your initial password" email via the same notification_queue
  * mechanism/template `enqueueRecoveryEmail` (auth/recovery.ts) uses for admin-initiated recovery

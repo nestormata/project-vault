@@ -36,15 +36,24 @@ const loadedNotDeclared = (): ExtensionState => ({
 const notConfigured = (): ExtensionState => ({ status: 'not_configured' })
 const loadFailed = (): ExtensionState => ({ status: 'load_failed', reason: 'manifest_invalid' })
 
+const DEV_DUMMY_HASH = 'dev-dummy-hash-placeholder'
+const SAFE_DUMMY_HASH = 'operator-set-unique-dummy-hash'
+
 function mockEnvBreakGlassAndConfirmed(overrides?: {
   breakGlass?: boolean
   confirmed?: boolean
+  // AC-6e item 3: defaults to a value distinct from DEV_AUTH_DUMMY_PASSWORD_HASH so the boot
+  // check added for that AC does not spuriously fire in every other test in this file that
+  // doesn't care about it.
+  dummyPasswordHash?: string
 }): void {
   vi.doMock(ENV_MODULE, () => ({
     env: {
       VAULT_NATIVE_LOGIN_BREAK_GLASS: overrides?.breakGlass ?? false,
       VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED: overrides?.confirmed ?? false,
+      AUTH_DUMMY_PASSWORD_HASH: overrides?.dummyPasswordHash ?? SAFE_DUMMY_HASH,
     },
+    DEV_AUTH_DUMMY_PASSWORD_HASH: DEV_DUMMY_HASH,
   }))
 }
 
@@ -135,6 +144,28 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.isNativeLoginEnabled()).toBe(true)
     expect(mod.getNativeLoginPolicyState().state).toBe('break_glass')
+  })
+
+  it('AC-6e item 3: the in-repo dummy-hash default is safe (only warns) when state stays enabled', async () => {
+    env.AUTH_DUMMY_PASSWORD_HASH = DEV_DUMMY_HASH
+    await expect(mod.resolveNativeLoginPolicy(notConfigured())).resolves.toBeUndefined()
+    expect(mod.isNativeLoginEnabled()).toBe(true)
+  })
+
+  it('AC-6e item 3: boot FAILS when the in-repo dummy-hash default is still set and the state is not plain enabled', async () => {
+    env.AUTH_DUMMY_PASSWORD_HASH = DEV_DUMMY_HASH
+    await expect(mod.resolveNativeLoginPolicy(loadedDeclared())).rejects.toThrow(
+      /AUTH_DUMMY_PASSWORD_HASH/
+    )
+  })
+
+  it('AC-6e item 3: an operator-set, non-default dummy hash never fails boot regardless of state', async () => {
+    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    // env.AUTH_DUMMY_PASSWORD_HASH stays at the default mock value (SAFE_DUMMY_HASH), distinct
+    // from DEV_AUTH_DUMMY_PASSWORD_HASH — resolves to the 'disabled' state below, which would
+    // have thrown above had the hash still been the in-repo default.
+    await expect(mod.resolveNativeLoginPolicy(loadedDeclared())).resolves.toBeUndefined()
+    expect(mod.getNativeLoginPolicyState().state).toBe('disabled')
   })
 
   it('freezes the resolved policy object', async () => {

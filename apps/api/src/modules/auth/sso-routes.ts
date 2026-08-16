@@ -25,6 +25,7 @@ import { writeHumanAuditEntry } from '../audit/human-entry.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { getAdminDb } from '../../lib/db.js'
 import { claimInvitation } from '../invitations/lookup.js'
+import { generateUnusablePasswordHash } from './password.js'
 import { findAuthStrategy } from './strategies.js'
 import { createPendingMfaSession } from './mfa-login.js'
 import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
@@ -426,11 +427,14 @@ async function handleInvitationProvisioning(
       const claimed = await claimInvitation(tx as Tx, invitation.id)
       if (!claimed) return null
 
+      // Story 23.2 AC-6e: a freshly-generated, per-user random, non-functional password hash —
+      // NOT the shared env.AUTH_DUMMY_PASSWORD_HASH constant this used to write. See
+      // auth/password.ts's generateUnusablePasswordHash() comment for why.
       const [user] = await (tx as Tx)
         .insert(users)
         .values({
           email: (authResult.email as string).toLowerCase(),
-          passwordHash: env.AUTH_DUMMY_PASSWORD_HASH,
+          passwordHash: await generateUnusablePasswordHash(),
         })
         .returning({ id: users.id })
       if (!user) throw new Error('handleInvitationProvisioning: user insert returned no row')

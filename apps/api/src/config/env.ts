@@ -11,7 +11,11 @@ const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
 const DEV_ERASURE_EMAIL_HASH_SECRET = 'j'.repeat(64)
 const DEV_SSO_STATE_HMAC_SECRET = 'k'.repeat(64)
 const DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET = 'l'.repeat(64)
-const DEV_AUTH_DUMMY_PASSWORD_HASH = [
+// Story 23.2 AC-6e item 3: exported (not just a module-private const) so the boot check in
+// native-login-policy.ts can compare the resolved env.AUTH_DUMMY_PASSWORD_HASH against this
+// exact in-repo, publicly-known value on instances whose safety depends on native-login
+// exclusion actually excluding anything.
+export const DEV_AUTH_DUMMY_PASSWORD_HASH = [
   '$argon2id$v=19$m=65536,t=3,p=4',
   'c/PLdA7Wvhkg8hPqLu5AlQ',
   ['7zS8GhNt', 'QTJsiMmJ', 'LErN9kM1', '9VoNBM3P', 'HV3OhidvHtY'].join(''),

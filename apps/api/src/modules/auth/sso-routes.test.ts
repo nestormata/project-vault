@@ -481,6 +481,72 @@ describe('SSO routes (Story 14.3)', () => {
       await app.close()
     })
 
+    it('AC-6e: provisions each invited user with a distinct, non-shared password hash — never env.AUTH_DUMMY_PASSWORD_HASH', async () => {
+      const { env } = await import('../../config/env.js')
+
+      const emailA = `invited-a-${randomUUID()}@example.com`
+      const { orgId: orgIdA } = await createOrgWithPendingInvitation(emailA)
+      const subjectA = `sub-a-${randomUUID()}`
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({
+          externalSubject: subjectA,
+          providerName: PROVIDER,
+          email: emailA,
+        }),
+      })
+      const appA = await createApp({ logger: false })
+      const startA = await appA.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/start/${PROVIDER}`,
+      })
+      const cookiesA = parseSetCookies(startA.headers['set-cookie'])
+      await appA.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/callback/${PROVIDER}`,
+        payload: {},
+        headers: { cookie: `sso-state=${cookiesA['sso-state']}` },
+      })
+      await appA.close()
+
+      const emailB = `invited-b-${randomUUID()}@example.com`
+      const { orgId: orgIdB } = await createOrgWithPendingInvitation(emailB)
+      const subjectB = `sub-b-${randomUUID()}`
+      __resetAuthStrategiesForTests()
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => ({
+          externalSubject: subjectB,
+          providerName: PROVIDER,
+          email: emailB,
+        }),
+      })
+      const appB = await createApp({ logger: false })
+      const startB = await appB.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/start/${PROVIDER}`,
+      })
+      const cookiesB = parseSetCookies(startB.headers['set-cookie'])
+      await appB.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/callback/${PROVIDER}`,
+        payload: {},
+        headers: { cookie: `sso-state=${cookiesB['sso-state']}` },
+      })
+      await appB.close()
+
+      const [userA] = await withOrg(orgIdA, (tx) =>
+        tx.select({ passwordHash: users.passwordHash }).from(users).where(eq(users.email, emailA))
+      )
+      const [userB] = await withOrg(orgIdB, (tx) =>
+        tx.select({ passwordHash: users.passwordHash }).from(users).where(eq(users.email, emailB))
+      )
+
+      expect(userA?.passwordHash).toBeDefined()
+      expect(userB?.passwordHash).toBeDefined()
+      expect(userA?.passwordHash).not.toBe(userB?.passwordHash)
+      expect(userA?.passwordHash).not.toBe(env.AUTH_DUMMY_PASSWORD_HASH)
+      expect(userB?.passwordHash).not.toBe(env.AUTH_DUMMY_PASSWORD_HASH)
+    })
+
     it('skips invitation-matching and falls through to account_link_required when AuthResult.email is absent', async () => {
       const subject = `sub-${randomUUID()}`
       registerAuthStrategy(PROVIDER, {

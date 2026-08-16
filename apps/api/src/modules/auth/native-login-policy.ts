@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { withOrg } from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
-import { env } from '../../config/env.js'
+import { env, DEV_AUTH_DUMMY_PASSWORD_HASH } from '../../config/env.js'
 import { operationalLog } from '../../lib/logger.js'
 import { writeSystemAuditRow } from '../../lib/system-audit-row.js'
 import { fetchAllOrgIds } from '../../middleware/rls.js'
@@ -119,6 +119,36 @@ async function logBootWarnings(
   }
 }
 
+/**
+ * Story 23.2 AC-6e item 3: a boot check scoped to this story's blast radius. The whole
+ * exclusion story's safety premise (AC-8a, AC-6b, and the security-posture Dev Notes) is that
+ * extension/SSO-provisioned users hold an UNUSABLE credential, so re-opening `POST /login` via
+ * break-glass "recovers nobody and discloses nothing." That premise depends on
+ * `env.AUTH_DUMMY_PASSWORD_HASH` never being stored as a real credential (AC-6e items 1-2) AND
+ * never being left at its in-repo, publicly-known default on an instance where the policy is
+ * anything other than plain 'enabled' — the exact set of instances whose safety depends on the
+ * unusability claim being true. On every other instance (including every existing
+ * extension-less production deployment) this only warns — making the var required in production
+ * unconditionally would break existing deployments relying on the default and would violate
+ * AC-16.
+ */
+function assertDummyPasswordHashSafe(policyState: NativeLoginPolicyState): void {
+  if (env.AUTH_DUMMY_PASSWORD_HASH !== DEV_AUTH_DUMMY_PASSWORD_HASH) return
+
+  warn(
+    OperationalEvent.NATIVE_LOGIN_DUMMY_HASH_UNSAFE,
+    'env.AUTH_DUMMY_PASSWORD_HASH is still the in-repo, publicly-known default value',
+    { policyState }
+  )
+
+  if (policyState === 'enabled') return
+  throw new Error(
+    'AC-6e: env.AUTH_DUMMY_PASSWORD_HASH must not be left at its in-repo default ' +
+      '(DEV_AUTH_DUMMY_PASSWORD_HASH) on an instance whose native-login policy is not plain ' +
+      '"enabled" — set a unique AUTH_DUMMY_PASSWORD_HASH for this deployment before booting again.'
+  )
+}
+
 async function announceDisabledTransitionIfFirst(state: ExtensionState): Promise<void> {
   // AC-9: written once per instance, on the transition into the disabled policy — never on
   // every subsequent boot in the disabled state, and never on a mid-process flip (there is
@@ -164,6 +194,7 @@ export async function resolveNativeLoginPolicy(state: ExtensionState): Promise<v
       extensionFailureReason,
     })
 
+    assertDummyPasswordHashSafe(policyState)
     await logBootWarnings(policyState, replacementDeclared, state)
     if (policyState === 'disabled') await announceDisabledTransitionIfFirst(state)
   })()
