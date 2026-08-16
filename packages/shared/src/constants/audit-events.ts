@@ -128,7 +128,12 @@ export const AuditEvent = {
   // instance, per org, on the transition into the disabled policy (never on every boot, never on
   // a mid-process flip). NATIVE_LOGIN_BREAK_GLASS_ACTIVE fires once at boot when the break-glass
   // flag is set and the loaded extension declares replacement. NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED
-  // is written by the AC-8a host-side CLI on every invocation, minted or refused.
+  // is the value shared with the matching constant of the same name in
+  // platform-audit-actions.ts's PlatformAuditAction registry — the AC-8a host-side CLI writes
+  // into the whole-instance,
+  // non-RLS platform_audit_events table (single fail-closed write) rather than this org-scoped,
+  // per-org-fanout table, so this constant here is documentation/grep-ability only, not a value
+  // ever inserted into audit_log_entries.
   // NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED is written when AC-6a's carve-out lets a registration
   // through on an otherwise-gated instance. Deliberately NOT in this list: a rejected AC-6 request
   // (`native_login_disabled`) is an operational log line only, never an audit row (AC-9's H8

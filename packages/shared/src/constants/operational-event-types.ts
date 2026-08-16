@@ -248,6 +248,10 @@ export const OperationalEvent = {
   NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED_LOG: 'native_login.bootstrap_register_allowed_log',
   // Mirrors EXTENSION_AUDIT_FANOUT_ROW_FAILED for this module's own per-org audit fanout.
   NATIVE_LOGIN_AUDIT_FANOUT_ROW_FAILED: 'native_login.audit_fanout_row_failed',
+  // AC-8a: warn-severity operational log line written by the operator:recovery-link break-glass
+  // CLI (apps/api/src/scripts/operator-recovery-link.ts) on EVERY invocation, minted or refused —
+  // "a refused invocation is exactly the signal an operator wants."
+  NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED_LOG: 'native_login.break_glass_recovery_minted_log',
 
   // Story 16.1: theming reload (apps/api/src/modules/theming/service.ts). AC-2's "directory
   // present but unreadable" operational-log distinction — never fired for the (silent, expected)
