@@ -128,6 +128,15 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
     expect(mod.getNativeLoginPolicyState().replacementDeclared).toBe(false)
   })
 
+  it('AC-7: resolveNativeLoginPolicy() itself throwing during resolution fails safe to enabled, fatal-logged, never leaves policy unresolved', async () => {
+    readLatch.mockRejectedValue(new Error('simulated bug in resolution logic'))
+    await expect(mod.resolveNativeLoginPolicy(loadedDeclared())).resolves.toBeUndefined()
+    expect(mod.isNativeLoginEnabled()).toBe(true)
+    const state = mod.getNativeLoginPolicyState()
+    expect(state.state).toBe('enabled')
+    expect(state.replacementDeclared).toBe(false)
+  })
+
   it('declared but never proven: enabled, state=replacement_declared_unproven (AC-4a)', async () => {
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.isNativeLoginEnabled()).toBe(true)

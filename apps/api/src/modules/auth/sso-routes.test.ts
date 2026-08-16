@@ -710,5 +710,69 @@ describe('SSO routes (Story 14.3)', () => {
 
       await app.close()
     }, 15_000)
+
+    it('Story 23.2 AC-7: a declared extension whose strategy always throws never proves the latch — native login stays enabled (the single largest safety improvement over the original design)', async () => {
+      const { readReplacementLatch } = await import('./native-login-latch.js')
+      const { __resetNativeLoginPolicyForTests, resolveNativeLoginPolicy, isNativeLoginEnabled } =
+        await import('./native-login-policy.js')
+      const { systemSettings } = await import('@project-vault/db/schema')
+      // The latch is a monotonic, no-reset-by-design instance-wide row (AC-4a) — this suite's
+      // own prior successful-login tests may have already set it, so force it back to unproven
+      // here rather than assuming a pristine table (same technique the AC-4a test above uses).
+      await getDb()
+        .update(systemSettings)
+        .set({ nativeLoginReplacementProvenAt: null })
+        .where(eq(systemSettings.id, 1))
+
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => {
+          throw new Error('strategy is broken — never authenticates anyone')
+        },
+      })
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy({
+        status: 'loaded',
+        manifest: {
+          name: PROVIDER,
+          apiVersion: '1.2.0',
+          capabilities: ['auth-provider'],
+          replacesNativeLogin: true,
+        },
+        loadedAt: new Date().toISOString(),
+        hooks: {
+          authStrategy: {
+            onAuthenticate: async () => ({ externalSubject: 'x', providerName: PROVIDER }),
+          },
+        },
+      })
+
+      const app = await createApp({ logger: false })
+      try {
+        // Several failed attempts — the latch is per-instance, not per-attempt, so this proves
+        // "never" rather than merely "not yet" after one try.
+        for (let i = 0; i < 3; i += 1) {
+          const start = await app.inject({
+            method: 'POST',
+            url: `/api/v1/auth/sso/start/${PROVIDER}`,
+          })
+          const cookies = parseSetCookies(start.headers['set-cookie'])
+          const res = await app.inject({
+            method: 'POST',
+            url: `/api/v1/auth/sso/callback/${PROVIDER}`,
+            payload: {},
+            headers: { cookie: `sso-state=${cookies['sso-state']}` },
+          })
+          expect(res.statusCode).toBe(502)
+        }
+
+        expect(isNativeLoginEnabled()).toBe(true)
+        const latch = await readReplacementLatch()
+        expect(latch?.replacementProvenAt ?? null).toBeNull()
+      } finally {
+        await app.close()
+        __resetNativeLoginPolicyForTests()
+        await resolveNativeLoginPolicy({ status: 'not_configured' })
+      }
+    })
   })
 })

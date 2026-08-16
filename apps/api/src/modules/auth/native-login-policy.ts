@@ -193,31 +193,75 @@ async function supersedePreStagedRecoveryTokensIfDisabled(
  * double-invocation guard) — a second call in the same process is a silent no-op, never a
  * re-resolution.
  */
+/**
+ * Story 23.2 AC-7: resolveNativeLoginPolicy() itself must never be able to disable native login
+ * via a bug in its OWN resolution logic (as opposed to an intentional refusal like AC-6e's
+ * dummy-hash boot check below, which is deliberately allowed to throw and fail startup). Only the
+ * derivation-and-freeze block is wrapped — a throw there resolves fail-safe to plain 'enabled'
+ * with fatal logging instead of leaving `policy` unset (which would otherwise crash every
+ * subsequent `isNativeLoginEnabled()`/`getNativeLoginPolicyState()` caller, i.e. every request).
+ */
+/** AC-7 fail-safe fallback: the frozen diagnostics object used when the try block below throws. */
+function failSafeEnabledPolicy(state: ExtensionState): NativeLoginPolicyDiagnostics {
+  return {
+    enabled: true,
+    state: 'enabled',
+    replacementDeclared: false,
+    replacementProven: false,
+    replacementProvenAt: null,
+    appliedAtBoot: true,
+    breakGlassActive: env.VAULT_NATIVE_LOGIN_BREAK_GLASS,
+    replacementConfirmedOverride: env.VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED,
+    extensionStatus: state.status,
+    extensionFailureReason: state.status === 'load_failed' ? state.reason : null,
+  }
+}
+
+/** The core derivation — everything AC-7 requires to be wrapped in a fail-safe try/catch. */
+async function resolveCorePolicy(
+  state: ExtensionState
+): Promise<{ policyState: NativeLoginPolicyState; replacementDeclared: boolean }> {
+  const replacementDeclared = deriveReplacementDeclared(state)
+  const latch = await readReplacementLatch()
+  const replacementProven = latch?.replacementProvenAt != null
+  const computed = computePolicy(replacementDeclared, replacementProven)
+
+  policy = Object.freeze({
+    enabled: computed.enabled,
+    state: computed.state,
+    replacementDeclared,
+    replacementProven,
+    replacementProvenAt: latch?.replacementProvenAt ?? null,
+    appliedAtBoot: computed.state === 'disabled' || !(replacementDeclared && replacementProven),
+    breakGlassActive: env.VAULT_NATIVE_LOGIN_BREAK_GLASS,
+    replacementConfirmedOverride: env.VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED,
+    extensionStatus: state.status,
+    extensionFailureReason: state.status === 'load_failed' ? state.reason : null,
+  })
+  return { policyState: computed.state, replacementDeclared }
+}
+
 export async function resolveNativeLoginPolicy(state: ExtensionState): Promise<void> {
   if (policy) return
   if (resolving) return resolving
   resolving = (async () => {
-    const replacementDeclared = deriveReplacementDeclared(state)
-    const latch = await readReplacementLatch()
-    const replacementProven = latch?.replacementProvenAt != null
-    const { enabled, state: policyState } = computePolicy(replacementDeclared, replacementProven)
+    let resolved: { policyState: NativeLoginPolicyState; replacementDeclared: boolean }
 
-    const extensionStatus = state.status
-    const extensionFailureReason = state.status === 'load_failed' ? state.reason : null
+    try {
+      resolved = await resolveCorePolicy(state)
+    } catch (error) {
+      policy = Object.freeze(failSafeEnabledPolicy(state))
+      operationalLog(
+        { fatal: () => undefined } as never,
+        'fatal',
+        OperationalEvent.NATIVE_LOGIN_POLICY_RESOLUTION_FAILED,
+        'resolveNativeLoginPolicy() threw while resolving — failing safe to native login enabled',
+        { error: error instanceof Error ? error.message : String(error) }
+      )
+      return
+    }
 
-    policy = Object.freeze({
-      enabled,
-      state: policyState,
-      replacementDeclared,
-      replacementProven,
-      replacementProvenAt: latch?.replacementProvenAt ?? null,
-      appliedAtBoot: policyState === 'disabled' || !(replacementDeclared && replacementProven),
-      breakGlassActive: env.VAULT_NATIVE_LOGIN_BREAK_GLASS,
-      replacementConfirmedOverride: env.VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED,
-      extensionStatus,
-      extensionFailureReason,
-    })
-
+    const { policyState, replacementDeclared } = resolved
     assertDummyPasswordHashSafe(policyState)
     await logBootWarnings(policyState, replacementDeclared, state)
     await supersedePreStagedRecoveryTokensIfDisabled(policyState)

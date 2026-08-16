@@ -263,6 +263,11 @@ export const OperationalEvent = {
   // failed sweep just leaves some pre-staged tokens live for another boot cycle.
   NATIVE_LOGIN_RECOVERY_TOKEN_SUPERSESSION_FAILED:
     'native_login.recovery_token_supersession_failed',
+  // AC-7: resolveNativeLoginPolicy() itself must never be able to disable native login via a bug
+  // in its own resolution logic — fatal-severity so a genuine bug here is impossible to miss,
+  // mirroring loadExtension()'s "a bug in this story's own code cannot regress the still-starts
+  // guarantee" design (app.ts).
+  NATIVE_LOGIN_POLICY_RESOLUTION_FAILED: 'native_login.policy_resolution_failed',
 
   // Story 16.1: theming reload (apps/api/src/modules/theming/service.ts). AC-2's "directory
   // present but unreadable" operational-log distinction — never fired for the (silent, expected)
