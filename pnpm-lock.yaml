@@ -169,6 +169,9 @@ importers:
       '@project-vault/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@project-vault/mock-envelope-extension':
+        specifier: workspace:*
+        version: link:../../fixtures/mock-envelope-extension
       '@project-vault/mock-sso-extension':
         specifier: workspace:*
         version: link:../../fixtures/mock-sso-extension
@@ -224,6 +227,9 @@ importers:
       '@project-vault/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@project-vault/mock-envelope-extension':
+        specifier: workspace:*
+        version: link:../../fixtures/mock-envelope-extension
       '@project-vault/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig

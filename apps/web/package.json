@@ -20,6 +20,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/mock-envelope-extension": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@sveltejs/adapter-node": "^5.5.7",
     "@sveltejs/kit": "^2.70.2",
