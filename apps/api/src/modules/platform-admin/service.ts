@@ -24,6 +24,7 @@ import { writePlatformAuditEntryOrFailClosed } from '../../lib/audit-or-fail-clo
 import { allocateOrganizationSlug, isUniqueViolation, slugify } from '../auth/service.js'
 import { normalizeEmail } from '../auth/normalize.js'
 import { generateUnusablePasswordHash } from '../auth/password.js'
+import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 import { generateRecoveryToken, hashRecoveryToken } from '../auth/recovery-tokens.js'
 import type {
   CreateOrgRequest,
@@ -380,6 +381,25 @@ export class OwnerAccountDeactivatedError extends AppError {
   }
 }
 
+/**
+ * Story 23.2 AC-6d (finding N12: the code, status, and shape are specified explicitly here, not
+ * left to the implementer). `createOrg()` provisions a brand-new owner with
+ * `generateUnusablePasswordHash()` and `issueNewOwnerRecoveryLink()` — whose only redemption path
+ * is `POST /auth/recovery/:token/complete`, gate row #8. Under exclusion that would silently
+ * create an org whose owner can never sign in. Thrown before the org row is allocated (see the
+ * call site in `createOrg()`), so no orphaned org, no orphaned user, no orphaned recovery token.
+ */
+export class OwnerRequiresExternalProvisioningError extends AppError {
+  constructor() {
+    super(
+      'owner_requires_external_provisioning',
+      'Native login is disabled on this instance. Provision the owner through your external ' +
+        'identity provider first, then re-run this request with the now-existing email.',
+      409
+    )
+  }
+}
+
 // D7 point 4 / Story 23.2 AC-6e: the freshly-generated, per-user random, non-functional
 // password hash used for a new org owner is now the single shared implementation in
 // auth/password.ts (generateUnusablePasswordHash) — see that file's comment for why this
@@ -489,6 +509,22 @@ export async function createOrg(
   }
 
   return getDb().transaction(async (tx) => {
+    // Story 23.2 AC-6d: refuse BEFORE any write (org allocation included) when native login is
+    // excluded and the owner email does not already exist as a user — provisioning would
+    // otherwise silently create an org whose owner can never sign in (its only activation path,
+    // recovery, is itself gated). Deliberately its own pre-check rather than restructuring the
+    // existingUser lookup further down, so the refusal happens first with the smallest possible
+    // diff against the existing control flow. An email that DOES already exist is unaffected —
+    // that path (existingUser, below) behaves byte-identically regardless of policy.
+    if (!isNativeLoginEnabled()) {
+      const [preCheckExistingUser] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1)
+      if (!preCheckExistingUser) throw new OwnerRequiresExternalProvisioningError()
+    }
+
     // Code review fix: serializes the count-check-then-insert sequence so two concurrent
     // createOrg() calls near the limit cannot both observe an under-limit count and both insert
     // (AC-10's cap must be hard-enforced, not merely "usually" enforced).

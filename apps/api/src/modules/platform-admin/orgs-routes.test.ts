@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import {
@@ -227,6 +227,103 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     })
     expect(res.statusCode).toBe(409)
     expect(res.json()).toMatchObject({ code: 'owner_account_deactivated' })
+  })
+
+  describe('Story 23.2 AC-6d: createOrg() refuses honestly instead of provisioning an unreachable owner', () => {
+    async function forcePolicyDisabled(): Promise<void> {
+      const { __resetNativeLoginPolicyForTests, markReplacementProven, resolveNativeLoginPolicy } =
+        await import('../auth/native-login-policy.js')
+      await markReplacementProven()
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy({
+        status: 'loaded',
+        manifest: {
+          name: 'test.mock-envelope-extension',
+          apiVersion: '1.2.0',
+          capabilities: ['auth-provider'],
+          replacesNativeLogin: true,
+        },
+        loadedAt: new Date().toISOString(),
+        hooks: {
+          authStrategy: {
+            onAuthenticate: async () => ({ externalSubject: 'x', providerName: 'test' }),
+          },
+        },
+      })
+    }
+
+    async function forcePolicyEnabled(): Promise<void> {
+      const { __resetNativeLoginPolicyForTests, resolveNativeLoginPolicy } =
+        await import('../auth/native-login-policy.js')
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy({ status: 'not_configured' })
+    }
+
+    afterEach(forcePolicyEnabled)
+
+    it('refuses with 409 owner_requires_external_provisioning when the owner email does not already exist, zero rows written', async () => {
+      const operator = await registerPlatformOperator(suite.app, {
+        emailPrefix: 'orgs-ac6d-new-owner-op',
+        orgNamePrefix: 'Orgs AC-6d New Owner Op',
+        password: PASSWORD,
+      })
+      await forcePolicyDisabled()
+
+      const email = `never-provisioned-${randomUUID()}@example.com`
+      const orgsBefore = await getDb()
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email))
+      expect(orgsBefore).toHaveLength(0)
+
+      const res = await createOrgReq(suite.app, operator.cookies, {
+        name: `Should Not Provision AC-6d ${randomUUID()}`,
+        ownerEmail: email,
+      })
+
+      expect(res.statusCode).toBe(409)
+      expect(res.json()).toMatchObject({ code: 'owner_requires_external_provisioning' })
+
+      const usersAfter = await getDb()
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email))
+      expect(usersAfter).toHaveLength(0)
+      const tokensAfter = await getDb()
+        .select({ id: accountRecoveryTokens.id })
+        .from(accountRecoveryTokens)
+        .innerJoin(users, eq(users.id, accountRecoveryTokens.userId))
+        .where(eq(users.email, email))
+      expect(tokensAfter).toHaveLength(0)
+    })
+
+    it('succeeds unchanged when the owner email already exists as a user (existing_user_added branch)', async () => {
+      const operator = await registerPlatformOperator(suite.app, {
+        emailPrefix: 'orgs-ac6d-existing-op',
+        orgNamePrefix: 'Orgs AC-6d Existing Op',
+        password: PASSWORD,
+      })
+      const preExisting = await registerAndLoginViaApi(suite.app, {
+        email: `pre-provisioned-${randomUUID()}@example.com`,
+        password: PASSWORD,
+        orgName: `Pre-provisioned Org ${randomUUID()}`,
+      })
+      const email = (
+        await getDb()
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, preExisting.userId))
+      )[0]?.email
+      await forcePolicyDisabled()
+
+      const res = await createOrgReq(suite.app, operator.cookies, {
+        name: `AC-6d Existing Owner ${randomUUID()}`,
+        ownerEmail: email,
+      })
+
+      expect(res.statusCode).toBe(201)
+      expect(res.json()).toMatchObject({ ownerAccountAction: 'existing_user_added' })
+    })
   })
 
   it('AC-9: malformed ownerEmail returns 422', async () => {
