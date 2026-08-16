@@ -9,6 +9,10 @@ import { enrollUserWithMfa } from '../../__tests__/helpers/mfa-enroll-test-helpe
 import { totpForSecret } from '../../__tests__/helpers/totp.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { verifyStepUp } from './step-up.js'
+import {
+  __resetNativeLoginPolicyForTests,
+  resolveNativeLoginPolicy,
+} from '../auth/native-login-policy.js'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -118,5 +122,54 @@ describe('credential-shares step-up re-authentication', () => {
     const result = await getDb().transaction((tx) => verifyStepUp(tx, { userId: user.userId }))
 
     expect(result).toEqual({ status: 'missing_factor' })
+  })
+
+  describe('Story 23.2 AC-6b: password factor is gated when native login is disabled', () => {
+    afterAll(async () => {
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy({ status: 'not_configured' })
+    })
+
+    it('a correct password is rejected (never reads users.passwordHash) once the policy is disabled', async () => {
+      const email = `step-up-gated-${randomUUID()}@example.com`
+      const user = await registerAndLoginViaApi(app, {
+        email,
+        password: PASSWORD,
+        orgName: `Step Up Org ${randomUUID()}`,
+      })
+
+      const declaredLoaded: import('../../extensions/loader.js').ExtensionState = {
+        status: 'loaded',
+        manifest: {
+          name: 'test.mock-envelope-extension',
+          apiVersion: '1.2.0',
+          capabilities: ['auth-provider'],
+          replacesNativeLogin: true,
+        },
+        loadedAt: new Date().toISOString(),
+        hooks: {
+          authStrategy: {
+            onAuthenticate: async () => ({ externalSubject: 'x', providerName: 't' }),
+          },
+        },
+      }
+      const { markReplacementProven } = await import('../auth/native-login-policy.js')
+      await markReplacementProven()
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy(declaredLoaded)
+
+      const result = await getDb().transaction((tx) =>
+        verifyStepUp(tx, { userId: user.userId, password: PASSWORD })
+      )
+
+      expect(result).toEqual({ status: 'invalid_password' })
+    })
+
+    it('the TOTP factor is untouched by the gate', async () => {
+      const result = await getDb().transaction((tx) =>
+        verifyStepUp(tx, { userId: randomUUID(), totpCode: '000000' })
+      )
+      expect(result).toEqual({ status: 'invalid_totp' })
+    })
   })
 })

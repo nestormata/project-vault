@@ -3,6 +3,7 @@ import type { Tx } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
 import { verifyUserPassword } from '../auth/password.js'
 import { verifyConfirmedLoginTotp } from '../auth/mfa.js'
+import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 
 /**
  * Story 17.2 AC-3: sharer step-up re-authentication for external-share creation. This is a
@@ -32,6 +33,11 @@ export type StepUpInput = {
  */
 export async function verifyStepUp(tx: Tx, input: StepUpInput): Promise<StepUpResult> {
   if (input.password) {
+    // Story 23.2 AC-6b: under exclusion this is a live native-credential check and a
+    // password-confirmation oracle — refused before `users.passwordHash` is ever read. The TOTP
+    // factor below is untouched; the route's existing `401 step_up_required` contract is
+    // preserved byte-identical on the enabled path (this check is a no-op then).
+    if (!isNativeLoginEnabled()) return { status: 'invalid_password' }
     const [row] = await tx
       .select({ passwordHash: users.passwordHash })
       .from(users)
