@@ -56,6 +56,12 @@ BEGIN
 END
 $$;
 
+-- The table owner must be able to resolve objects in its schema. PostgreSQL does not imply
+-- schema USAGE from table ownership, and foreign-key checks execute with the owner role's
+-- privileges. Without this grant, inserts into refresh_tokens fail when PostgreSQL checks its
+-- sessions foreign key after ownership moves to vault_owner.
+GRANT USAGE ON SCHEMA public TO vault_owner;
+
 -- Belt-and-braces defaults for objects created by the owner role. A later migration must still issue
 -- an explicit GRANT for each RLS-enabled table; the coverage guard enforces that convention. The two
 -- append-only audit tables are deliberately granted only SELECT/INSERT below and never direct DELETE.

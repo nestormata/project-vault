@@ -150,6 +150,10 @@ describe('migration 0070 vault_owner preflight', () => {
               { object_type: 'SEQUENCES', privilege_type: 'SELECT' },
             ])
           )
+          const schemaPrivileges = await databaseSql<{ usage: boolean }[]>`
+            SELECT has_schema_privilege(${ROLE_NAME}, 'public', 'USAGE') AS usage
+          `
+          expect(schemaPrivileges).toEqual([{ usage: true }])
         } finally {
           await databaseSql.end()
         }
