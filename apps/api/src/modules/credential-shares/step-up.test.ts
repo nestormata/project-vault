@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { getDb } from '@project-vault/db'
 import {
   bootstrapRouteIntegrationTest,
@@ -125,19 +125,21 @@ describe('credential-shares step-up re-authentication', () => {
   })
 
   describe('Story 23.2 AC-6b: password factor is gated when native login is disabled', () => {
+    // Each test in this block needs to register (via a real POST /register) BEFORE gating the
+    // policy, since AC-6a's bootstrap carve-out only ever allows the very first user overall —
+    // a beforeEach reset back to enabled keeps every test's own registration call independent of
+    // whatever the previous test in this file left the module-level policy singleton at.
+    beforeEach(async () => {
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy({ status: 'not_configured' })
+    })
+
     afterAll(async () => {
       __resetNativeLoginPolicyForTests()
       await resolveNativeLoginPolicy({ status: 'not_configured' })
     })
 
-    it('a correct password is rejected (never reads users.passwordHash) once the policy is disabled', async () => {
-      const email = `step-up-gated-${randomUUID()}@example.com`
-      const user = await registerAndLoginViaApi(app, {
-        email,
-        password: PASSWORD,
-        orgName: `Step Up Org ${randomUUID()}`,
-      })
-
+    async function gatePolicy(): Promise<void> {
       const declaredLoaded: import('../../extensions/loader.js').ExtensionState = {
         status: 'loaded',
         manifest: {
@@ -157,19 +159,90 @@ describe('credential-shares step-up re-authentication', () => {
       await markReplacementProven()
       __resetNativeLoginPolicyForTests()
       await resolveNativeLoginPolicy(declaredLoaded)
+    }
+
+    it('a correct password is rejected as missing_factor (never reads users.passwordHash) once the policy is disabled', async () => {
+      const email = `step-up-gated-${randomUUID()}@example.com`
+      const user = await registerAndLoginViaApi(app, {
+        email,
+        password: PASSWORD,
+        orgName: `Step Up Org ${randomUUID()}`,
+      })
+
+      await gatePolicy()
 
       const result = await getDb().transaction((tx) =>
         verifyStepUp(tx, { userId: user.userId, password: PASSWORD })
       )
 
-      expect(result).toEqual({ status: 'invalid_password' })
+      // Deliberately 'missing_factor', not 'invalid_password' — see AC-6b item 4 below: the
+      // route renders a different message for each, and 'invalid_password' would leak whether
+      // native login is disabled to any authenticated caller who supplies a password.
+      expect(result).toEqual({ status: 'missing_factor' })
+    })
+
+    it('AC-6b item 4: "password supplied" and "no factor supplied" are indistinguishable under exclusion — the oracle is closed', async () => {
+      const email = `step-up-oracle-${randomUUID()}@example.com`
+      const user = await registerAndLoginViaApi(app, {
+        email,
+        password: PASSWORD,
+        orgName: `Step Up Org ${randomUUID()}`,
+      })
+
+      await gatePolicy()
+
+      const withPassword = await getDb().transaction((tx) =>
+        verifyStepUp(tx, { userId: user.userId, password: PASSWORD })
+      )
+      const withNoFactor = await getDb().transaction((tx) =>
+        verifyStepUp(tx, { userId: user.userId })
+      )
+
+      expect(withPassword).toEqual(withNoFactor)
+      expect(withPassword).toEqual({ status: 'missing_factor' })
     })
 
     it('the TOTP factor is untouched by the gate', async () => {
+      await gatePolicy()
       const result = await getDb().transaction((tx) =>
         verifyStepUp(tx, { userId: randomUUID(), totpCode: '000000' })
       )
       expect(result).toEqual({ status: 'invalid_totp' })
     })
+
+    it('both factors supplied: password ignored, TOTP evaluated', async () => {
+      const enrolled = await enrollUserWithMfa(app, {
+        emailPrefix: 'step-up-both-factors',
+        orgNamePrefix: 'Step Up Both Factors Org',
+        password: PASSWORD,
+      })
+      await gatePolicy()
+
+      const code = totpForSecret(enrolled.secret, Date.now() + 30_000)
+      const result = await getDb().transaction((tx) =>
+        verifyStepUp(tx, { userId: enrolled.userId, password: PASSWORD, totpCode: code })
+      )
+
+      expect(result).toEqual({ status: 'ok' })
+    })
+  })
+
+  it('AC-6b: native login enabled (the default) — password path behaves byte-identically to today', async () => {
+    const email = `step-up-enabled-regression-${randomUUID()}@example.com`
+    const user = await registerAndLoginViaApi(app, {
+      email,
+      password: PASSWORD,
+      orgName: `Step Up Org ${randomUUID()}`,
+    })
+
+    const correct = await getDb().transaction((tx) =>
+      verifyStepUp(tx, { userId: user.userId, password: PASSWORD })
+    )
+    const wrong = await getDb().transaction((tx) =>
+      verifyStepUp(tx, { userId: user.userId, password: 'nope' })
+    )
+
+    expect(correct).toEqual({ status: 'ok' })
+    expect(wrong).toEqual({ status: 'invalid_password' })
   })
 })
