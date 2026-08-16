@@ -124,11 +124,13 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     page,
   }) => {
     await page.goto(`http://localhost:${WEB_PORT}/login`)
-    // Vite dev mode serves an unbundled module graph (200+ requests) — wait for it to settle so
-    // SvelteKit has actually hydrated (attached the form's onsubmit handler) before interacting;
-    // clicking too early falls through to a native, unhandled form GET-submit/reload.
-    await page.waitForLoadState('networkidle')
     const loginPage = new LoginPage(page)
+    // Vite dev mode serves an unbundled module graph (200+ requests), and SvelteKit's route chunk
+    // is fetched via a dynamic import() that resolves after the page's 'load' event — a web-first
+    // assertion on the email input (rather than a blanket networkidle heuristic) is what actually
+    // proves hydration reached this component and attached the form's onsubmit handler; clicking
+    // too early falls through to a native, unhandled form GET-submit/reload.
+    await expect(loginPage.emailInput()).toBeVisible()
     await loginPage.emailInput().fill(NO_MAPPING_EMAIL)
     await loginPage.continueButton().click()
 
@@ -172,11 +174,11 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     // at the NEXT boot — re-navigating to /login in this process must still show the password
     // form.
     await page.goto(`http://localhost:${WEB_PORT}/login`)
-    // Vite dev mode serves an unbundled module graph (200+ requests) — wait for it to settle so
-    // SvelteKit has actually hydrated (attached the form's onsubmit handler) before interacting;
-    // clicking too early falls through to a native, unhandled form GET-submit/reload.
-    await page.waitForLoadState('networkidle')
     const loginPage = new LoginPage(page)
+    // See the identical comment in the previous test — web-first assertion on the email input in
+    // place of a blanket networkidle heuristic, waiting for the actual hydration-dependent
+    // readiness condition this step needs.
+    await expect(loginPage.emailInput()).toBeVisible()
     await loginPage.emailInput().fill('someone-else@example.test')
     await loginPage.continueButton().click()
     await expect(loginPage.passwordInput()).toBeVisible()
@@ -203,16 +205,16 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
 
     // Real Chrome, fresh navigation against the restarted process.
     await page.goto(`http://localhost:${WEB_PORT}/login`)
-    // Vite dev mode serves an unbundled module graph (200+ requests) — wait for it to settle so
-    // SvelteKit has actually hydrated (attached the form's onsubmit handler) before interacting;
-    // clicking too early falls through to a native, unhandled form GET-submit/reload.
-    await page.waitForLoadState('networkidle')
+    const loginPage = new LoginPage(page)
+    // See the identical comment in the first test in this file — web-first assertion on the email
+    // input in place of a blanket networkidle heuristic, waiting for the actual
+    // hydration-dependent readiness condition this step needs before the subsequent fill/click.
+    await expect(loginPage.emailInput()).toBeVisible()
     // AC-13: Register/Recovery links are gone from the page immediately (nativeLoginEnabled is
     // resolved server-side, before the user does anything) — the SSO-only/honest-placeholder
     // state itself is Step B, reached only after Step A's email + Continue (this email's domain
     // has no org_sso_domains mapping, so it resolves to the honest placeholder, not an SSO step).
     await expect(page.getByRole('link', { name: /register/i })).toHaveCount(0)
-    const loginPage = new LoginPage(page)
     await loginPage.emailInput().fill(NO_MAPPING_EMAIL)
     await loginPage.continueButton().click()
     await expect(page.getByText(/external sign-in required/i)).toBeVisible()

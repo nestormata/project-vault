@@ -124,7 +124,7 @@ export function scanNativeCredentialSurface(repoRoot: string): SurfaceHit[] {
 
   const hits: SurfaceHit[] = []
   for (const absPath of files) {
-    const relPath = relative(repoRoot, absPath).split('\\').join('/')
+    const relPath = relative(repoRoot, absPath).replaceAll('\\', '/')
     if (isTestFile(relPath)) continue
     // absPath is derived from a directory walk of this repo's own tracked source tree, not
     // attacker-controlled input.

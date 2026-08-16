@@ -92,7 +92,9 @@ RUN if [ "$INCLUDE_MOCK_SSO_EXTENSION" = "true" ]; then pnpm --filter @project-v
 # native-login-exclusion envelope fixture — never set for the default build, only for the
 # e2e-specific build (docker-compose.e2e.yml's `build.args` override).
 ARG INCLUDE_MOCK_ENVELOPE_EXTENSION=false
-RUN if [ "$INCLUDE_MOCK_ENVELOPE_EXTENSION" = "true" ]; then pnpm --filter @project-vault/mock-envelope-extension build; fi
+RUN if [ "$INCLUDE_MOCK_ENVELOPE_EXTENSION" = "true" ]; then \
+      pnpm --filter @project-vault/mock-envelope-extension build; \
+    fi
 
 # Bundle the api and its production deps into a self-contained directory. This runs in its
 # own stage (not in `app-builder`) because `pnpm deploy` prunes the workspace node_modules to
