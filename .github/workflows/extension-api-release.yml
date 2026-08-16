@@ -98,6 +98,17 @@ jobs:
       - name: Build extension API at the tagged ref
         run: pnpm --filter @project-vault/extension-api build
 
+      - name: Reject test artifacts from the deployable extension API tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          unexpected="$(find packages/extension-api/dist -type f \( -name '*.test.*' -o -name 'type-fixtures.*' \) -print)"
+          if [[ -n "$unexpected" ]]; then
+            echo 'FATAL: the deployable extension-api tree contains test artifacts:' >&2
+            printf '%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
       - name: Typecheck extension API at the tagged ref
         run: pnpm --filter @project-vault/extension-api typecheck
 
