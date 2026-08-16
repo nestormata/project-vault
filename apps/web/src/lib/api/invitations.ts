@@ -20,6 +20,9 @@ export type InvitationPeek = {
   projectName: string
   role: InvitationRole
   accountExists: boolean
+  // Story 23.2 AC-6c: lets this page route an account-less invitee to the honest
+  // external-sign-in state instead of a "create your account" link into a 403ing /register form.
+  nativeLoginEnabled: boolean
 }
 
 export type InvitationAcceptResult = {

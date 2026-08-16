@@ -5803,13 +5803,17 @@
               },
               "accountExists": {
                 "type": "boolean"
+              },
+              "nativeLoginEnabled": {
+                "type": "boolean"
               }
             },
             "required": [
               "email",
               "projectName",
               "role",
-              "accountExists"
+              "accountExists",
+              "nativeLoginEnabled"
             ]
           }
         },
@@ -15876,13 +15880,17 @@
               },
               "accountExists": {
                 "type": "boolean"
+              },
+              "nativeLoginEnabled": {
+                "type": "boolean"
               }
             },
             "required": [
               "email",
               "projectName",
               "role",
-              "accountExists"
+              "accountExists",
+              "nativeLoginEnabled"
             ],
             "additionalProperties": false
           }

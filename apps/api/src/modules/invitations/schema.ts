@@ -56,6 +56,11 @@ export const InvitationPeekResponseSchema = z
       projectName: z.string(),
       role: InvitationRoleSchema,
       accountExists: z.boolean(),
+      // Story 23.2 AC-6c: does NOT change the shape or meaning of `accountExists`, which
+      // existing clients already consume — purely additive. Lets the web client route an
+      // account-less invitee to the honest external-sign-in state instead of a 403ing
+      // /register form when native login is excluded on this instance.
+      nativeLoginEnabled: z.boolean(),
     }),
   })
   .meta({ id: 'InvitationPeekResponse' })

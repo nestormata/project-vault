@@ -8,6 +8,7 @@ import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { normalizeEmail } from '../auth/normalize.js'
+import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 import { isProjectArchived, PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
 import { claimInvitation, findInvitationByTokenHash, validateInvitationStatus } from './lookup.js'
 import { hashInvitationToken } from './tokens.js'
@@ -80,6 +81,10 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
           projectName: project?.name ?? '',
           role: invitation.roleToAssign,
           accountExists: Boolean(existingUser),
+          // Story 23.2 AC-6c item 1: purely additive, does not change accountExists's shape or
+          // meaning. Lets the web client route an account-less invitee to the honest
+          // external-sign-in state instead of a 403ing /register form.
+          nativeLoginEnabled: isNativeLoginEnabled(),
         },
       }
     },
