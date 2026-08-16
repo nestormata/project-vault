@@ -78,8 +78,24 @@ export function evaluateBreakGlassGate(policy: {
   return { allowed: true }
 }
 
+// Story 23.2 fix (code review): this CLI boots `createApp({ logger: false })` (see `main()`
+// below), which gives Fastify a no-op logger — so a `warn` line written through that logger, as
+// the original code did, is silently swallowed. The AC-8a doc comment above promises "a
+// `warn`-severity operational log line ... on every invocation ... exactly the signal an operator
+// wants," which requires actually reaching the operator's terminal, not Fastify's disabled
+// transport. Writes structured JSON straight to stderr instead, independent of app boot logging.
 function warn(eventType: string, message: string, fields?: Record<string, unknown>): void {
-  operationalLog({ warn: () => undefined } as never, 'warn', eventType, message, fields)
+  operationalLog(
+    {
+      warn: (payload: object, msg?: string) => {
+        process.stderr.write(`${JSON.stringify({ level: 'warn', message: msg, ...payload })}\n`)
+      },
+    } as never,
+    'warn',
+    eventType,
+    message,
+    fields
+  )
 }
 
 /**

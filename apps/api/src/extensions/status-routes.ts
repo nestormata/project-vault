@@ -5,6 +5,7 @@ import { ApiErrorSchema } from '../lib/api-contracts.js'
 import { secureRoute } from '../lib/secure-route.js'
 import { getExtensionStatus } from './loader.js'
 import { getNativeLoginPolicyState } from '../modules/auth/native-login-policy.js'
+import { readReplacementLatch } from '../modules/auth/native-login-latch.js'
 import { countLiveSessionsAcrossInstance } from './sessions-live-count.js'
 
 // AC-2/AC-4: OrgAdmin sees the loaded manifest, or a real `null` (not 404, not `{}`) when
@@ -78,6 +79,29 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
       const policy = getNativeLoginPolicyState()
       const sessionsLive = await countLiveSessionsAcrossInstance()
 
+      // Story 23.2 fix (code review): `policy` is intentionally frozen at boot (AC-4) and
+      // `enabled`/`state` must stay exactly what booted — this route never overrides those. But
+      // the story's own persona journey (step 2b) requires this diagnostics envelope to be able
+      // to show "replacementProven: true, appliedAtBoot: false" the moment a colleague's first
+      // successful SSO login writes the latch, WITHOUT waiting for a restart — otherwise
+      // AC-17.4's pre-flight checklist ("confirm replacementProven before restarting") has
+      // nothing live to read. `getNativeLoginPolicyState()` alone can't do this: it only returns
+      // the frozen boot snapshot. So this route — the one place a DB read for this is already
+      // allowed (see sessionsLive above) — re-reads the latch live and reports the CURRENT
+      // proven state, layered onto (never replacing) the frozen enabled/state.
+      const latch = await readReplacementLatch()
+      const replacementProven = latch?.replacementProvenAt != null
+      // appliedAtBoot is false in exactly one case: the exclusion is now fully declared+proven
+      // but the running process hasn't picked it up yet because it hasn't been restarted since
+      // (i.e. `state` is not already 'disabled' or 'break_glass'). Every other case — nothing
+      // declared, not yet proven, already disabled, or break-glass override — is "applied" as
+      // far as this running process is concerned.
+      const pendingRestart =
+        policy.state !== 'disabled' &&
+        policy.state !== 'break_glass' &&
+        policy.replacementDeclared &&
+        replacementProven
+
       return {
         extension:
           status.status === 'loaded'
@@ -88,7 +112,13 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
                 loadedAt: status.loadedAt,
               }
             : null,
-        nativeLoginPolicy: { ...policy, sessionsLive },
+        nativeLoginPolicy: {
+          ...policy,
+          replacementProven,
+          replacementProvenAt: latch?.replacementProvenAt ?? policy.replacementProvenAt,
+          appliedAtBoot: !pendingRestart,
+          sessionsLive,
+        },
       }
     },
   })

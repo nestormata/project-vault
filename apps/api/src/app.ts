@@ -383,7 +383,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // replacement-confirmed env vars + the AC-4a persisted proving latch). `await`ed (not
   // fire-and-forget) so the policy is fully resolved before createApp() returns to any caller —
   // e.g. the very first `/health` response already reflects it.
-  await resolveNativeLoginPolicy(getExtensionStatus())
+  await resolveNativeLoginPolicy(getExtensionStatus(), fastify.log)
 
   return fastify
 }

@@ -692,7 +692,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = RegisterRequestSchema.safeParse(normalized.body)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
-        const result = await registerUser(parsed.data)
+        const result = await registerUser(parsed.data, req.log)
         return reply.status(201).send({ data: result })
       } catch (error) {
         if (error instanceof AppError) return sendAppError(reply, error)

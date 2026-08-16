@@ -1,4 +1,4 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import { withOrg } from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
@@ -40,6 +40,16 @@ export type NativeLoginPolicyDiagnostics = {
 let policy: Readonly<NativeLoginPolicyDiagnostics> | undefined
 let resolving: Promise<void> | undefined
 
+// Story 23.2 fix (code review): the AC-4a/AC-7/AC-8 boot-time warn/fatal lines this module emits
+// were being written to a `{ warn: () => undefined }` stub — a silent no-op — instead of the
+// real Fastify logger `createApp()` already has in hand at the call site. Every operator-facing
+// "loud warning" this story promises (NATIVE_LOGIN_REPLACEMENT_PENDING, the break-glass-active
+// line, the dummy-hash-unsafe warning, the fail-safe fatal line) never actually appeared anywhere
+// observable. `resolveNativeLoginPolicy()` now accepts the real logger and stores it here so the
+// module-private `warn()` helper (and the AC-7 fatal fallback) can use it. Defaults to a no-op so
+// existing tests that call `resolveNativeLoginPolicy(state)` without a logger keep passing.
+let activeLogger: Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>> = {}
+
 function deriveReplacementDeclared(state: ExtensionState): boolean {
   // register-extension.ts already refuses to load an extension that declares
   // replacesNativeLogin: true without 'auth-provider' in capabilities[] or without an
@@ -60,7 +70,7 @@ function computePolicy(
 }
 
 function warn(eventType: string, message: string, fields?: Record<string, unknown>): void {
-  operationalLog({ warn: () => undefined }, 'warn', eventType, message, fields)
+  operationalLog(activeLogger, 'warn', eventType, message, fields)
 }
 
 async function fanoutAudit(eventType: string, payload: Record<string, unknown>): Promise<void> {
@@ -242,7 +252,11 @@ async function resolveCorePolicy(
   return { policyState: computed.state, replacementDeclared }
 }
 
-export async function resolveNativeLoginPolicy(state: ExtensionState): Promise<void> {
+export async function resolveNativeLoginPolicy(
+  state: ExtensionState,
+  logger?: Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
+): Promise<void> {
+  if (logger) activeLogger = logger
   if (policy) return
   if (resolving) return resolving
   resolving = (async () => {
@@ -253,7 +267,7 @@ export async function resolveNativeLoginPolicy(state: ExtensionState): Promise<v
     } catch (error) {
       policy = Object.freeze(failSafeEnabledPolicy(state))
       operationalLog(
-        { fatal: () => undefined } as never,
+        activeLogger,
         'fatal',
         OperationalEvent.NATIVE_LOGIN_POLICY_RESOLUTION_FAILED,
         'resolveNativeLoginPolicy() threw while resolving — failing safe to native login enabled',
@@ -303,6 +317,7 @@ export async function markReplacementProven(): Promise<void> {
 export function __resetNativeLoginPolicyForTests(): void {
   policy = undefined
   resolving = undefined
+  activeLogger = {}
 }
 
 /**
@@ -318,7 +333,7 @@ export function nativeCredentialGatePreHandler(
 ): FastifyReply | undefined {
   if (isNativeLoginEnabled()) return undefined
   operationalLog(
-    { info: () => undefined } as never,
+    _request.log ?? {},
     'info',
     OperationalEvent.NATIVE_LOGIN_REJECTED,
     'native-credential route rejected — native login is disabled on this instance',
