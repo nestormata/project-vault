@@ -34844,8 +34844,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
+                  "type": "object",
+                  "properties": {
+                    "extension": {
+                      "nullable": true,
                       "type": "object",
                       "properties": {
                         "name": {
@@ -34877,14 +34879,79 @@
                       ],
                       "additionalProperties": false
                     },
-                    {
-                      "type": "string",
-                      "nullable": true,
-                      "enum": [
-                        null
-                      ]
+                    "nativeLoginPolicy": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "enabled",
+                            "replacement_declared_unproven",
+                            "disabled",
+                            "break_glass"
+                          ]
+                        },
+                        "replacementDeclared": {
+                          "type": "boolean"
+                        },
+                        "replacementProven": {
+                          "type": "boolean"
+                        },
+                        "replacementProvenAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "appliedAtBoot": {
+                          "type": "boolean"
+                        },
+                        "breakGlassActive": {
+                          "type": "boolean"
+                        },
+                        "replacementConfirmedOverride": {
+                          "type": "boolean"
+                        },
+                        "extensionStatus": {
+                          "type": "string",
+                          "enum": [
+                            "not_configured",
+                            "loaded",
+                            "load_failed"
+                          ]
+                        },
+                        "extensionFailureReason": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "sessionsLive": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "state",
+                        "replacementDeclared",
+                        "replacementProven",
+                        "replacementProvenAt",
+                        "appliedAtBoot",
+                        "breakGlassActive",
+                        "replacementConfirmedOverride",
+                        "extensionStatus",
+                        "extensionFailureReason",
+                        "sessionsLive"
+                      ],
+                      "additionalProperties": false
                     }
-                  ]
+                  },
+                  "required": [
+                    "extension",
+                    "nativeLoginPolicy"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }

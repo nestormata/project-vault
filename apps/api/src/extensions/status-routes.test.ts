@@ -10,7 +10,11 @@ import {
 } from '../__tests__/helpers/auth-test-helpers.js'
 import { createDirectAuthenticatedUser } from '../__tests__/helpers/org-role-test-helpers.js'
 import { createUnsealedRouteSuite } from '../__tests__/helpers/unsealed-route-suite-test-helpers.js'
-import { __resetExtensionStateForTests, loadExtension } from './loader.js'
+import {
+  __resetNativeLoginPolicyForTests,
+  resolveNativeLoginPolicy,
+} from '../modules/auth/native-login-policy.js'
+import { __resetExtensionStateForTests, getExtensionStatus, loadExtension } from './loader.js'
 
 const { initVault } = await bootstrapRouteIntegrationTest()
 
@@ -42,27 +46,47 @@ async function getStatus(app: TestApp, cookies?: CookieJar) {
 describe.sequential('GET /api/v1/admin/extensions/status', () => {
   suite.registerLifecycle()
 
-  beforeEach(() => {
+  beforeEach(async () => {
     __resetExtensionStateForTests()
+    __resetNativeLoginPolicyForTests()
+    await resolveNativeLoginPolicy(getExtensionStatus())
   })
 
-  it('AC-4: returns 200 null when no extension is loaded', async () => {
+  it('AC-4/AC-12: returns extension: null and a well-formed nativeLoginPolicy envelope when no extension is loaded', async () => {
     const admin = await createDirectAuthenticatedUser(suite.app, 'status-null', 'admin')
     await enrollMfa(admin.userId)
 
     const res = await getStatus(suite.app, admin.cookies)
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toBeNull()
+    const body = res.json<{
+      extension: unknown
+      nativeLoginPolicy: {
+        enabled: boolean
+        state: string
+        replacementDeclared: boolean
+        sessionsLive: number
+      }
+    }>()
+    expect(body.extension).toBeNull()
+    // No extension declares replacement, so the policy stays enabled regardless of anything
+    // else — AC-4's default-safe posture.
+    expect(body.nativeLoginPolicy.enabled).toBe(true)
+    expect(body.nativeLoginPolicy.state).toBe('enabled')
+    expect(body.nativeLoginPolicy.replacementDeclared).toBe(false)
+    expect(typeof body.nativeLoginPolicy.sessionsLive).toBe('number')
+    expect(body.nativeLoginPolicy.sessionsLive).toBeGreaterThanOrEqual(0)
   })
 
-  it('AC-2: returns the manifest JSON when an extension is loaded', async () => {
+  it('AC-2/AC-12: returns the manifest under extension when an extension is loaded', async () => {
     await loadExtension('@acme/extension', {
       importFn: async () => ({
         default: { manifest: VALID_MANIFEST, hooksFactory: () => ({}) },
       }),
       listOrgIds: async () => [],
     })
+    __resetNativeLoginPolicyForTests()
+    await resolveNativeLoginPolicy(getExtensionStatus())
     const admin = await createDirectAuthenticatedUser(suite.app, 'status-loaded', 'admin')
     await enrollMfa(admin.userId)
 
@@ -70,31 +94,43 @@ describe.sequential('GET /api/v1/admin/extensions/status', () => {
 
     expect(res.statusCode).toBe(200)
     const body = res.json<{
-      name: string
-      apiVersion: string
-      capabilities: string[]
-      loadedAt: string
+      extension: {
+        name: string
+        apiVersion: string
+        capabilities: string[]
+        loadedAt: string
+      } | null
+      nativeLoginPolicy: { extensionStatus: string }
     }>()
-    expect(body.name).toBe(VALID_MANIFEST.name)
-    expect(body.apiVersion).toBe(VALID_MANIFEST.apiVersion)
-    expect(body.capabilities).toEqual(VALID_MANIFEST.capabilities)
-    expect(typeof body.loadedAt).toBe('string')
+    expect(body.extension?.name).toBe(VALID_MANIFEST.name)
+    expect(body.extension?.apiVersion).toBe(VALID_MANIFEST.apiVersion)
+    expect(body.extension?.capabilities).toEqual(VALID_MANIFEST.capabilities)
+    expect(typeof body.extension?.loadedAt).toBe('string')
+    expect(body.nativeLoginPolicy.extensionStatus).toBe('loaded')
   })
 
-  it('AC-4: returns 200 null when a load failed', async () => {
+  it('AC-4: returns extension: null when a load failed, with extensionFailureReason set', async () => {
     await loadExtension('bad-package', {
       importFn: async () => {
         throw new Error('nope')
       },
       listOrgIds: async () => [],
     })
+    __resetNativeLoginPolicyForTests()
+    await resolveNativeLoginPolicy(getExtensionStatus())
     const admin = await createDirectAuthenticatedUser(suite.app, 'status-failed', 'admin')
     await enrollMfa(admin.userId)
 
     const res = await getStatus(suite.app, admin.cookies)
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toBeNull()
+    const body = res.json<{
+      extension: unknown
+      nativeLoginPolicy: { extensionStatus: string; extensionFailureReason: string | null }
+    }>()
+    expect(body.extension).toBeNull()
+    expect(body.nativeLoginPolicy.extensionStatus).toBe('load_failed')
+    expect(body.nativeLoginPolicy.extensionFailureReason).not.toBeNull()
   })
 
   it.each(['member', 'viewer'] as const)('AC-5: returns 403 for org role %s', async (role) => {
