@@ -42,7 +42,7 @@ const DECLARED_LOADED: ExtensionState = {
 }
 
 async function forcePolicyDisabled(): Promise<void> {
-  await markReplacementProven()
+  await markReplacementProven('test.mock-envelope-extension')
   __resetNativeLoginPolicyForTests()
   await resolveNativeLoginPolicy(DECLARED_LOADED)
 }

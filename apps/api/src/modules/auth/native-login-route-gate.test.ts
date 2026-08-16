@@ -44,7 +44,7 @@ const DECLARED_LOADED: ExtensionState = {
  * gated routes read the live module state per-request, so this affects the already-created
  * `app` too (no per-test createApp() needed). */
 async function forcePolicyDisabled(): Promise<void> {
-  await markReplacementProven()
+  await markReplacementProven('test.mock-envelope-extension')
   __resetNativeLoginPolicyForTests()
   await resolveNativeLoginPolicy(DECLARED_LOADED)
 }

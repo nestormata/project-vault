@@ -233,7 +233,7 @@ describe.sequential('Story 9.2 platform-admin orgs routes', () => {
     async function forcePolicyDisabled(): Promise<void> {
       const { __resetNativeLoginPolicyForTests, markReplacementProven, resolveNativeLoginPolicy } =
         await import('../auth/native-login-policy.js')
-      await markReplacementProven()
+      await markReplacementProven('test.mock-envelope-extension')
       __resetNativeLoginPolicyForTests()
       await resolveNativeLoginPolicy({
         status: 'loaded',

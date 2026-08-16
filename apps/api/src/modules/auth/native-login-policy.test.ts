@@ -12,12 +12,18 @@ const RECOVERY_LOOKUP_MODULE = './recovery-lookup.js'
 const POLICY_MODULE = './native-login-policy.js'
 const TEST_API_VERSION = '1.2.0'
 
+const EXTENSION_A_NAME = 'test.mock-envelope-extension'
+const EXTENSION_B_NAME = 'test.mock-sso-extension'
+const AUTH_PROVIDER_CAPABILITIES: ('auth-provider' | 'notification-channel' | 'ui-panel')[] = [
+  'auth-provider',
+]
+
 const loadedDeclared = (): ExtensionState => ({
   status: 'loaded',
   manifest: {
-    name: 'test.mock-envelope-extension',
+    name: EXTENSION_A_NAME,
     apiVersion: TEST_API_VERSION,
-    capabilities: ['auth-provider'],
+    capabilities: AUTH_PROVIDER_CAPABILITIES,
     replacesNativeLogin: true,
   },
   loadedAt: new Date().toISOString(),
@@ -27,9 +33,25 @@ const loadedDeclared = (): ExtensionState => ({
 const loadedNotDeclared = (): ExtensionState => ({
   status: 'loaded',
   manifest: {
-    name: 'test.mock-sso-extension',
+    name: EXTENSION_B_NAME,
     apiVersion: TEST_API_VERSION,
-    capabilities: ['auth-provider'],
+    capabilities: AUTH_PROVIDER_CAPABILITIES,
+  },
+  loadedAt: new Date().toISOString(),
+  hooks: { authStrategy: { onAuthenticate: vi.fn() } as never },
+})
+
+// Story 23.2 fix (code review): a SECOND extension, distinct from `loadedDeclared()`'s
+// EXTENSION_A_NAME, that also declares replacesNativeLogin — used to prove an extension swap
+// (operator installs A, someone logs in through it proving A, then swaps to B) does not let B
+// inherit A's proof.
+const loadedDeclaredDifferentExtension = (): ExtensionState => ({
+  status: 'loaded',
+  manifest: {
+    name: EXTENSION_B_NAME,
+    apiVersion: TEST_API_VERSION,
+    capabilities: AUTH_PROVIDER_CAPABILITIES,
+    replacesNativeLogin: true,
   },
   loadedAt: new Date().toISOString(),
   hooks: { authStrategy: { onAuthenticate: vi.fn() } as never },
@@ -66,11 +88,18 @@ function mockCollaborators(latch: {
   writeAuditRow?: ReturnType<typeof vi.fn>
   fetchOrgIds?: ReturnType<typeof vi.fn>
 }): void {
-  vi.doMock(LATCH_MODULE, () => ({
-    readReplacementLatch: latch.readLatch,
-    writeReplacementLatch: latch.writeLatch,
-    markDisabledAnnouncedIfFirst: vi.fn().mockResolvedValue(true),
-  }))
+  vi.doMock(LATCH_MODULE, async () => {
+    // isLatchProvenForExtension() is pure identity-matching logic (no DB access) — use the REAL
+    // implementation here so this file's extension-scoping tests actually exercise it, rather
+    // than mocking it away and only testing that the module calls into a stub.
+    const actual = await vi.importActual<typeof import('./native-login-latch.js')>(LATCH_MODULE)
+    return {
+      readReplacementLatch: latch.readLatch,
+      writeReplacementLatch: latch.writeLatch,
+      markDisabledAnnouncedIfFirst: vi.fn().mockResolvedValue(true),
+      isLatchProvenForExtension: actual.isLatchProvenForExtension,
+    }
+  })
   vi.doMock(RLS_MODULE, () => ({
     fetchAllOrgIds: latch.fetchOrgIds ?? vi.fn().mockResolvedValue([]),
   }))
@@ -164,14 +193,53 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
   })
 
   it('declared AND proven (latch row present at boot): disabled (AC-4 positive example)', async () => {
-    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: EXTENSION_A_NAME,
+    })
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.isNativeLoginEnabled()).toBe(false)
     expect(mod.getNativeLoginPolicyState().state).toBe('disabled')
   })
 
+  // Story 23.2 fix (code review, critical finding): extension A gets proven (someone logs in
+  // through it), the operator later swaps to extension B — which also declares
+  // replacesNativeLogin but has NEVER itself authenticated anyone on this instance. Before this
+  // fix, the latch was a bare timestamp with no extension identity, so B would inherit A's stale
+  // proof and native login would resolve to 'disabled' on B's very first boot even though B's
+  // own auth strategy has never been shown to work. This must resolve exactly like the
+  // never-proven case: enabled, state=replacement_declared_unproven.
+  it('extension swap: a latch proven by a DIFFERENT extension does not carry over — resolves enabled/unproven, not disabled', async () => {
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: EXTENSION_A_NAME, // extension A proved it
+    })
+    // Operator has swapped to extension B — never itself proven.
+    await mod.resolveNativeLoginPolicy(loadedDeclaredDifferentExtension())
+    expect(mod.isNativeLoginEnabled()).toBe(true)
+    const diagnostics = mod.getNativeLoginPolicyState()
+    expect(diagnostics.state).toBe('replacement_declared_unproven')
+    expect(diagnostics.replacementProven).toBe(false)
+    expect(diagnostics.replacementProvenAt).toBeNull()
+  })
+
+  // A pre-fix row (proven, but no extension identity recorded — the column did not exist yet)
+  // must be treated the same way: unproven for whatever is loaded now, never trusted blindly.
+  it('extension swap: a legacy latch row with no recorded extension identity is treated as unproven', async () => {
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: null,
+    })
+    await mod.resolveNativeLoginPolicy(loadedDeclared())
+    expect(mod.isNativeLoginEnabled()).toBe(true)
+    expect(mod.getNativeLoginPolicyState().state).toBe('replacement_declared_unproven')
+  })
+
   it('AC-6 pre-staging retroactive close: sweeps recovery tokens on a disabled boot', async () => {
-    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: EXTENSION_A_NAME,
+    })
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.getNativeLoginPolicyState().state).toBe('disabled')
     expect(supersedeRecoveryTokens).toHaveBeenCalledTimes(1)
@@ -185,7 +253,10 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
 
   it('AC-6 pre-staging retroactive close: a sweep failure never fails policy resolution', async () => {
     supersedeRecoveryTokens.mockRejectedValue(new Error('db down'))
-    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: EXTENSION_A_NAME,
+    })
     await expect(mod.resolveNativeLoginPolicy(loadedDeclared())).resolves.toBeUndefined()
     expect(mod.getNativeLoginPolicyState().state).toBe('disabled')
   })
@@ -197,7 +268,10 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
   })
 
   it('declared and proven, but break-glass set: enabled, state=break_glass (AC-8)', async () => {
-    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: EXTENSION_A_NAME,
+    })
     env.VAULT_NATIVE_LOGIN_BREAK_GLASS = true
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.isNativeLoginEnabled()).toBe(true)
@@ -237,7 +311,10 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
   })
 
   it('AC-6e item 3: an operator-set, non-default dummy hash never fails boot regardless of state', async () => {
-    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: EXTENSION_A_NAME,
+    })
     // env.AUTH_DUMMY_PASSWORD_HASH stays at the default mock value (SAFE_DUMMY_HASH), distinct
     // from DEV_AUTH_DUMMY_PASSWORD_HASH — resolves to the 'disabled' state below, which would
     // have thrown above had the hash still been the in-repo default.
@@ -271,16 +348,19 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.isNativeLoginEnabled()).toBe(true)
     const before = mod.getNativeLoginPolicyState()
-    await mod.markReplacementProven()
+    await mod.markReplacementProven(EXTENSION_A_NAME)
     expect(mod.isNativeLoginEnabled()).toBe(true)
     expect(mod.getNativeLoginPolicyState()).toBe(before)
     expect(writeLatch).toHaveBeenCalledTimes(1)
   })
 
   it('markReplacementProven() is a no-op (does not re-write) once the latch is already set', async () => {
-    readLatch.mockResolvedValue({ replacementProvenAt: new Date().toISOString() })
+    readLatch.mockResolvedValue({
+      replacementProvenAt: new Date().toISOString(),
+      provenByExtension: EXTENSION_A_NAME,
+    })
     await mod.resolveNativeLoginPolicy(loadedDeclared())
-    await mod.markReplacementProven()
+    await mod.markReplacementProven(EXTENSION_A_NAME)
     // Still calls the idempotent ON CONFLICT DO NOTHING writer — monotonicity is enforced by
     // the storage layer, not by skipping the call.
     expect(writeLatch).toHaveBeenCalledTimes(1)
@@ -289,7 +369,7 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
   it('a failed latch write never throws and never disables native login', async () => {
     writeLatch.mockRejectedValue(new Error('db down'))
     await mod.resolveNativeLoginPolicy(loadedDeclared())
-    await expect(mod.markReplacementProven()).resolves.toBeUndefined()
+    await expect(mod.markReplacementProven(EXTENSION_A_NAME)).resolves.toBeUndefined()
     expect(mod.isNativeLoginEnabled()).toBe(true)
   })
 
@@ -332,7 +412,10 @@ describe('nativeCredentialGatePreHandler (Story 23.2 AC-6)', () => {
     vi.resetModules()
     mockEnvBreakGlassAndConfirmed()
     mockCollaborators({
-      readLatch: vi.fn().mockResolvedValue({ replacementProvenAt: new Date().toISOString() }),
+      readLatch: vi.fn().mockResolvedValue({
+        replacementProvenAt: new Date().toISOString(),
+        provenByExtension: EXTENSION_A_NAME,
+      }),
       writeLatch: vi.fn(),
     })
     const freshMod = await import(POLICY_MODULE)

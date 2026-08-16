@@ -8,6 +8,7 @@ import { writeSystemAuditRow } from '../../lib/system-audit-row.js'
 import { fetchAllOrgIds } from '../../middleware/rls.js'
 import type { ExtensionLoadFailureReason, ExtensionState } from '../../extensions/loader.js'
 import {
+  isLatchProvenForExtension,
   markDisabledAnnouncedIfFirst,
   readReplacementLatch,
   writeReplacementLatch,
@@ -49,6 +50,12 @@ let resolving: Promise<void> | undefined
 // module-private `warn()` helper (and the AC-7 fatal fallback) can use it. Defaults to a no-op so
 // existing tests that call `resolveNativeLoginPolicy(state)` without a logger keep passing.
 let activeLogger: Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>> = {}
+
+/** The stable identity string used everywhere else in this module (AC-9 audit payloads) to name
+ * the currently-loaded extension — `null` when nothing is loaded or loading failed. */
+function currentExtensionName(state: ExtensionState): string | null {
+  return state.status === 'loaded' ? state.manifest.name : null
+}
 
 function deriveReplacementDeclared(state: ExtensionState): boolean {
   // register-extension.ts already refuses to load an extension that declares
@@ -234,7 +241,10 @@ async function resolveCorePolicy(
 ): Promise<{ policyState: NativeLoginPolicyState; replacementDeclared: boolean }> {
   const replacementDeclared = deriveReplacementDeclared(state)
   const latch = await readReplacementLatch()
-  const replacementProven = latch?.replacementProvenAt != null
+  // Story 23.2 fix (code review): a latch proven by a DIFFERENT (or no longer loaded) extension
+  // must never be inherited as proof for whatever is loaded now — see
+  // isLatchProvenForExtension()'s doc comment.
+  const replacementProven = isLatchProvenForExtension(latch, currentExtensionName(state))
   const computed = computePolicy(replacementDeclared, replacementProven)
 
   policy = Object.freeze({
@@ -242,7 +252,10 @@ async function resolveCorePolicy(
     state: computed.state,
     replacementDeclared,
     replacementProven,
-    replacementProvenAt: latch?.replacementProvenAt ?? null,
+    // Scoped to match: a provenAt timestamp that belongs to a different extension than the one
+    // loaded now is not evidence about THIS extension, so it is not surfaced as this policy's
+    // replacementProvenAt either — surfacing it would look like proof for the wrong thing.
+    replacementProvenAt: replacementProven ? (latch?.replacementProvenAt ?? null) : null,
     appliedAtBoot: computed.state === 'disabled' || !(replacementDeclared && replacementProven),
     breakGlassActive: env.VAULT_NATIVE_LOGIN_BREAK_GLASS,
     replacementConfirmedOverride: env.VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED,
@@ -303,10 +316,20 @@ export function getNativeLoginPolicyState(): Readonly<NativeLoginPolicyDiagnosti
  * the persisted latch row (idempotent, `ON CONFLICT`-safe under concurrent first successes) and
  * NEVER touches the frozen in-process `policy` object — the latch applies only at the next boot
  * (AC-4/finding N3). A failed write never fails the login and never disables native login.
+ *
+ * Story 23.2 fix (code review): `extensionName` records WHICH strategy actually authenticated
+ * someone — the caller (sso-routes.ts) passes the `providerName` this specific login
+ * authenticated under, which equals the loaded extension's manifest `name` by construction
+ * (`wireExtensionAuthStrategy()` in strategies.ts registers every extension-provided strategy
+ * under `state.manifest.name`). A `null`/empty value is never written — there is nothing
+ * meaningful to attribute the proof to, and writing an unattributed row would be
+ * indistinguishable from a legacy pre-fix row, which `isLatchProvenForExtension()` already
+ * treats as unproven.
  */
-export async function markReplacementProven(): Promise<void> {
+export async function markReplacementProven(extensionName: string | null): Promise<void> {
+  if (!extensionName) return
   try {
-    await writeReplacementLatch()
+    await writeReplacementLatch(extensionName)
   } catch {
     // Never propagate — a failed latch write must not fail the login that triggered it, and
     // will simply be retried on the next successful authentication.

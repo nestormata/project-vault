@@ -156,7 +156,7 @@ describe('credential-shares step-up re-authentication', () => {
         },
       }
       const { markReplacementProven } = await import('../auth/native-login-policy.js')
-      await markReplacementProven()
+      await markReplacementProven('test.mock-envelope-extension')
       __resetNativeLoginPolicyForTests()
       await resolveNativeLoginPolicy(declaredLoaded)
     }

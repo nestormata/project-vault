@@ -45,7 +45,7 @@ describe('Story 23.2 AC-6: AUTH_REGISTRATION_ENABLED=false wins over native_logi
   it('registration disabled AND native login disabled: the existing registration_disabled response wins', async () => {
     const app = await createApp({ logger: false })
     try {
-      await markReplacementProven()
+      await markReplacementProven('test.mock-envelope-extension')
       await resolveNativeLoginPolicy({
         status: 'loaded',
         manifest: {

@@ -30,6 +30,8 @@ import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
+const MOCK_EXTENSION_NAME = 'test.mock-envelope-extension'
+
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const { uniqueEmail, registerOwner, addUserToOrg, enrollMfa } = createMembershipTestHelpers({
@@ -535,7 +537,7 @@ describe.sequential('account deactivation routes', () => {
       await resolveNativeLoginPolicy({
         status: 'loaded',
         manifest: {
-          name: 'test.mock-envelope-extension',
+          name: MOCK_EXTENSION_NAME,
           apiVersion: '1.2.0',
           capabilities: ['auth-provider'],
           replacesNativeLogin: true,
@@ -548,12 +550,12 @@ describe.sequential('account deactivation routes', () => {
         },
       })
       const { markReplacementProven } = await import('../auth/native-login-policy.js')
-      await markReplacementProven()
+      await markReplacementProven(MOCK_EXTENSION_NAME)
       __resetNativeLoginPolicyForTests()
       await resolveNativeLoginPolicy({
         status: 'loaded',
         manifest: {
-          name: 'test.mock-envelope-extension',
+          name: MOCK_EXTENSION_NAME,
           apiVersion: '1.2.0',
           capabilities: ['auth-provider'],
           replacesNativeLogin: true,

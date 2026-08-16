@@ -5,7 +5,10 @@ import { ApiErrorSchema } from '../lib/api-contracts.js'
 import { secureRoute } from '../lib/secure-route.js'
 import { getExtensionStatus } from './loader.js'
 import { getNativeLoginPolicyState } from '../modules/auth/native-login-policy.js'
-import { readReplacementLatch } from '../modules/auth/native-login-latch.js'
+import {
+  isLatchProvenForExtension,
+  readReplacementLatch,
+} from '../modules/auth/native-login-latch.js'
 import { countLiveSessionsAcrossInstance } from './sessions-live-count.js'
 
 // AC-2/AC-4: OrgAdmin sees the loaded manifest, or a real `null` (not 404, not `{}`) when
@@ -89,8 +92,14 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
       // the frozen boot snapshot. So this route — the one place a DB read for this is already
       // allowed (see sessionsLive above) — re-reads the latch live and reports the CURRENT
       // proven state, layered onto (never replacing) the frozen enabled/state.
+      // Story 23.2 fix (code review): scoped to the currently-loaded extension — a latch proven
+      // by a DIFFERENT (or since-removed) extension must not be reported as proof for whatever
+      // is loaded now. See isLatchProvenForExtension()'s doc comment.
       const latch = await readReplacementLatch()
-      const replacementProven = latch?.replacementProvenAt != null
+      const replacementProven = isLatchProvenForExtension(
+        latch,
+        status.status === 'loaded' ? status.manifest.name : null
+      )
       // appliedAtBoot is false in exactly one case: the exclusion is now fully declared+proven
       // but the running process hasn't picked it up yet because it hasn't been restarted since
       // (i.e. `state` is not already 'disabled' or 'break_glass'). Every other case — nothing
@@ -115,7 +124,9 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
         nativeLoginPolicy: {
           ...policy,
           replacementProven,
-          replacementProvenAt: latch?.replacementProvenAt ?? policy.replacementProvenAt,
+          replacementProvenAt: replacementProven
+            ? (latch?.replacementProvenAt ?? policy.replacementProvenAt)
+            : null,
           appliedAtBoot: !pendingRestart,
           sessionsLive,
         },
