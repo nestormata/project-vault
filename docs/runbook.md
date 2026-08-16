@@ -1014,6 +1014,19 @@ Do not close the incident the moment the break-glass rotation itself succeeds �
 succeeding is necessary but not sufficient; skipping the dependency-sweep step (item 4) risks
 leaving a genuinely compromised dependent credential unaddressed.
 
+### Native-login exclusion — env vars, pre-flight checklist, break-glass recovery
+
+<!-- Source: Story 23.2 AC-17.4; full procedure in docs/runbooks/native-login-exclusion.md -->
+
+An installed auth extension can cause this instance to stop accepting native email/password
+credentials — an accepted, deliberate lockout risk with an operator-driven recovery path. See
+[`docs/runbooks/native-login-exclusion.md`](runbooks/native-login-exclusion.md) for: the three
+relevant env vars and their restart semantics, the two-state proving-latch model, the ordered
+first-boot bootstrap sequence, a pre-flight checklist to complete before enabling exclusion, the
+break-glass topology-reachability table (self-hosted vs. CentralizeMe-hosted), the host-side
+`operator:recovery-link` break-glass recovery procedure, and remediation steps for instances that
+provisioned SSO users before this story shipped.
+
 ### Compromised machine user API key — emergency revoke procedure
 
 <!-- Source: Story 9.5 AC-18; verified against apps/api/src/modules/machine-users/routes.ts (POST .../emergency-revoke) -->
