@@ -84,6 +84,23 @@ describe('GET /health', () => {
     await app.close()
   })
 
+  // Story 23.2 AC-13: the login screen's SSO-only-rendering decision depends on this field.
+  // extensions_status is mocked 'not_configured' by this file's wholesale loader.js mock (see
+  // top of file), so replacementDeclared is always false here — zero DB reads, native login
+  // stays enabled, matching every self-hosted deployment that installs no extension (AC-16).
+  describe('Story 23.2 AC-13: nativeLoginEnabled', () => {
+    it('is true with no extension configured, and no DB query is made', async () => {
+      const app = await createApp({ logger: false })
+
+      const response = await app.inject({ method: 'GET', url: '/health' })
+
+      expect(response.statusCode).toBe(200)
+      const body = response.json<{ nativeLoginEnabled: boolean }>()
+      expect(body.nativeLoginEnabled).toBe(true)
+      await app.close()
+    })
+  })
+
   // Story 9.10 AC-1/AC-6: /health's version must come from getReleaseVersion() (RELEASE_VERSION
   // env var), never a hardcoded/package.json-sourced 0.0.1 placeholder, and must carry an
   // explicit versionSource so callers (e.g. Version & Upgrade) can distinguish a real release

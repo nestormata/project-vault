@@ -20200,6 +20200,9 @@
                       "type": "integer",
                       "minimum": 0,
                       "maximum": 9007199254740991
+                    },
+                    "nativeLoginEnabled": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -20208,7 +20211,8 @@
                     "versionSource",
                     "extensions_status",
                     "themesLoaded",
-                    "themesFailed"
+                    "themesFailed",
+                    "nativeLoginEnabled"
                   ],
                   "additionalProperties": false
                 }
