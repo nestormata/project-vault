@@ -505,6 +505,13 @@
       "when": 1786700000000,
       "tag": "0071_admin_pool_role",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1786750000000,
+      "tag": "0072_vault_owner_schema_usage",
+      "breakpoints": true
     }
   ]
 }
