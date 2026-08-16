@@ -17,6 +17,7 @@ import {
 } from '@project-vault/db/schema'
 import { AuditEvent, trimHyphens } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
+import { isNativeLoginEnabled } from './native-login-policy.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
@@ -469,6 +470,21 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
       // Story 9.1 D1/AC-1: detect + bootstrap the first-ever user as the platform operator
       // BEFORE the insert, inside this same transaction.
       const isFirstUser = await resolveIsFirstUser(tx as Tx)
+
+      // Story 23.2 AC-6a: an instance whose native login is gated must never be permanently
+      // unadministrable — insertUserWithPlatformOperatorBootstrap() is the ONLY production write
+      // of isPlatformOperator: true, reachable only through this route. The carve-out is
+      // evaluated here (inside the same transaction as isFirstUser, atomically, never cached at
+      // boot) rather than as a route-level pre-check, so it cannot race the insert below. Every
+      // registration AFTER the first on a gated instance is refused with the same
+      // native_login_disabled contract AC-6 uses everywhere else.
+      if (!isNativeLoginEnabled() && !isFirstUser) {
+        throw new AppError(
+          'native_login_disabled',
+          'Native login is disabled on this instance.',
+          403
+        )
+      }
       // Story 15.2 AC 2: seed this brand-new user's locale from the resolved org's
       // default_locale (either the invited org's current value, or a freshly-created org's own
       // 'en' default for self-signup) — never from client input.

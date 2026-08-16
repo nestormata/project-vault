@@ -17,6 +17,7 @@ import {
 } from '../../lib/secure-route.js'
 import { sendNotificationJobs, type NotificationQueueJob } from '../../notifications/dispatcher.js'
 import type { BossService } from '../../lib/boss.js'
+import { isNativeLoginEnabled } from './native-login-policy.js'
 import {
   LoginRequestSchema,
   RegisterRequestSchema,
@@ -289,6 +290,21 @@ function accessTokenExpFromRequest(fastify: FastifyApp, req: FastifyRequest): Da
 
 function sendAppError(reply: FastifyReply, error: AppError) {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+}
+
+/**
+ * Story 23.2 AC-5/AC-6: the shared gate for the native-credential surface. Called as the very
+ * first statement of each gated handler — before any credential is read, hashed, compared, or
+ * persisted, and before any DB write — so it is unreachable to influence via any request-supplied
+ * value (header, body, query, cookie). Returns the reply when the caller must stop, or `null`
+ * when the handler should proceed normally.
+ */
+function rejectIfNativeLoginDisabled(reply: FastifyReply): unknown {
+  if (isNativeLoginEnabled()) return null
+  return reply.status(403).send({
+    code: 'native_login_disabled',
+    message: 'Native login is disabled on this instance.',
+  })
 }
 
 /**
@@ -687,6 +703,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const gated = rejectIfNativeLoginDisabled(reply)
+      if (gated !== null) return gated
       const normalized = normalizeEmailBodyForRoute(req.body, reply)
       if (!normalized.success) return normalized.reply
       const parsed = LoginRequestSchema.safeParse(normalized.body)
@@ -725,6 +743,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      const gated = rejectIfNativeLoginDisabled(reply)
+      if (gated !== null) return gated
       const parsed = parseBody(mfaVerifyLoginBodySchema, req, reply)
       if (!parsed.success) return parsed.reply
       try {
@@ -752,8 +772,13 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      // Story 23.2 AC-6: rate-limiting takes precedence over the native-login gate (a
+      // rate-limited caller must still see 429, not 403) — so the gate is checked AFTER the
+      // manual IP/email rate-limit enforcement below, never before.
       const normalizedBody = await enforceIpRateLimitAndNormalizeEmailBody(req, reply)
       if (normalizedBody === null) return reply
+      const gated = rejectIfNativeLoginDisabled(reply)
+      if (gated !== null) return gated
       const parsed = await parseBodyAndEnforceEmailRateLimit(
         mfaRecoverBodySchema,
         normalizedBody,
@@ -798,6 +823,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
     handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
       const normalizedBody = await enforceIpRateLimitAndNormalizeEmailBody(req, reply)
       if (normalizedBody === null) return reply
+      const gated = rejectIfNativeLoginDisabled(reply)
+      if (gated !== null) return gated
       const parsed = await parseBodyAndEnforceEmailRateLimit(
         RecoveryRequestBodySchema,
         normalizedBody,
@@ -841,6 +868,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 30, timeWindowMs: 60_000, key: 'GET /api/v1/auth/recovery/:token' },
     },
     handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const gated = rejectIfNativeLoginDisabled(reply)
+      if (gated !== null) return gated
       const parsed = parseRecoveryTokenParams(req, reply)
       if (!parsed) return reply
       const result = await peekRecoveryToken(parsed.token)
@@ -873,6 +902,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const gated = rejectIfNativeLoginDisabled(reply)
+      if (gated !== null) return gated
       const parsed = parseRecoveryTokenParams(req, reply)
       if (!parsed) return reply
       const result = await startRecoveryMfa(parsed.token)
@@ -908,6 +939,8 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (_ctx, req: FastifyRequest, reply: FastifyReply) => {
+      const gated = rejectIfNativeLoginDisabled(reply)
+      if (gated !== null) return gated
       const paramsParsed = parseRecoveryTokenParams(req, reply)
       if (!paramsParsed) return reply
       const bodyParsed = RecoveryCompleteBodySchema.safeParse(req.body)
