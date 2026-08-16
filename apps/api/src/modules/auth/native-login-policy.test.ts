@@ -62,15 +62,23 @@ function mockCollaborators(latch: {
   readLatch: ReturnType<typeof vi.fn>
   writeLatch: ReturnType<typeof vi.fn>
   supersedeRecoveryTokens?: ReturnType<typeof vi.fn>
+  writeAuditRow?: ReturnType<typeof vi.fn>
+  fetchOrgIds?: ReturnType<typeof vi.fn>
 }): void {
   vi.doMock(LATCH_MODULE, () => ({
     readReplacementLatch: latch.readLatch,
     writeReplacementLatch: latch.writeLatch,
     markDisabledAnnouncedIfFirst: vi.fn().mockResolvedValue(true),
   }))
-  vi.doMock(RLS_MODULE, () => ({ fetchAllOrgIds: vi.fn().mockResolvedValue([]) }))
-  vi.doMock(DB_MODULE, () => ({ withOrg: vi.fn() }))
-  vi.doMock(AUDIT_ROW_MODULE, () => ({ writeSystemAuditRow: vi.fn() }))
+  vi.doMock(RLS_MODULE, () => ({
+    fetchAllOrgIds: latch.fetchOrgIds ?? vi.fn().mockResolvedValue([]),
+  }))
+  vi.doMock(DB_MODULE, () => ({
+    withOrg: (_orgId: string, fn: (tx: unknown) => unknown) => fn({}),
+  }))
+  vi.doMock(AUDIT_ROW_MODULE, () => ({
+    writeSystemAuditRow: latch.writeAuditRow ?? vi.fn().mockResolvedValue(undefined),
+  }))
   vi.doMock(RECOVERY_LOOKUP_MODULE, () => ({
     supersedeAllPriorRecoveryTokensForExclusion:
       latch.supersedeRecoveryTokens ?? vi.fn().mockResolvedValue(undefined),
@@ -92,6 +100,8 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
   let readLatch: ReturnType<typeof vi.fn>
   let writeLatch: ReturnType<typeof vi.fn>
   let supersedeRecoveryTokens: ReturnType<typeof vi.fn>
+  let writeAuditRow: ReturnType<typeof vi.fn>
+  let fetchOrgIds: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     vi.resetModules()
@@ -99,7 +109,15 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
     readLatch = vi.fn().mockResolvedValue(null)
     writeLatch = vi.fn().mockResolvedValue(undefined)
     supersedeRecoveryTokens = vi.fn().mockResolvedValue(undefined)
-    mockCollaborators({ readLatch, writeLatch, supersedeRecoveryTokens })
+    writeAuditRow = vi.fn().mockResolvedValue(undefined)
+    fetchOrgIds = vi.fn().mockResolvedValue(['org-1', 'org-2'])
+    mockCollaborators({
+      readLatch,
+      writeLatch,
+      supersedeRecoveryTokens,
+      writeAuditRow,
+      fetchOrgIds,
+    })
     mod = await import(POLICY_MODULE)
     env = (await import(ENV_MODULE)).env
   })
@@ -182,6 +200,25 @@ describe('native-login-policy (Story 23.2 AC-4/AC-4a/AC-5/AC-7)', () => {
     await mod.resolveNativeLoginPolicy(loadedDeclared())
     expect(mod.isNativeLoginEnabled()).toBe(true)
     expect(mod.getNativeLoginPolicyState().state).toBe('break_glass')
+  })
+
+  it('AC-16/AC-8 H7 resolution: break-glass set on an extension-less boot warns but writes ZERO audit rows', async () => {
+    env.VAULT_NATIVE_LOGIN_BREAK_GLASS = true
+    await mod.resolveNativeLoginPolicy(notConfigured())
+    expect(mod.getNativeLoginPolicyState().state).toBe('break_glass')
+    expect(writeAuditRow).not.toHaveBeenCalled()
+  })
+
+  it('AC-8 H7 resolution (other half): break-glass set AND the extension declares replacement fans the audit event out per org', async () => {
+    env.VAULT_NATIVE_LOGIN_BREAK_GLASS = true
+    await mod.resolveNativeLoginPolicy(loadedDeclared())
+    expect(mod.getNativeLoginPolicyState().state).toBe('break_glass')
+    expect(fetchOrgIds).toHaveBeenCalledTimes(1)
+    expect(writeAuditRow).toHaveBeenCalledTimes(2)
+    expect(writeAuditRow).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ orgId: 'org-1', eventType: 'native_login.break_glass_active' })
+    )
   })
 
   it('AC-6e item 3: the in-repo dummy-hash default is safe (only warns) when state stays enabled', async () => {
