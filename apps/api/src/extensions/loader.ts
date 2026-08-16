@@ -84,7 +84,14 @@ export function __resetExtensionStateForTests(): void {
 
 function mapFailureReason(error: unknown): ExtensionLoadFailureReason {
   if (error instanceof ExtensionRegistrationError) {
-    return error.reason === 'invalid-name' ? 'manifest_invalid' : 'capability_mismatch'
+    // Story 23.2 AC-2 (finding H5): 'invalid-manifest-field' (the replacesNativeLogin /
+    // near-miss-key validation reason) maps to the same public 'manifest_invalid' value as
+    // 'invalid-name' — no new ExtensionLoadFailureReason is added, so Story 14.2's /health
+    // contract is unchanged. 'incompatible-version' remains the only reason mapped to
+    // 'capability_mismatch'.
+    return error.reason === 'invalid-name' || error.reason === 'invalid-manifest-field'
+      ? 'manifest_invalid'
+      : 'capability_mismatch'
   }
   // AC-3d (hooksFactory crash) and AC-3e (timeout) both land here — closest semantic fit,
   // see the type-level comment on ExtensionLoadFailureReason above.

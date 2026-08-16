@@ -798,6 +798,16 @@ const envSchema = z
     // Default false; this relaxes only the ceiling and emits a warning on every boot while set.
     VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: booleanEnvDefault(false),
 
+    // Story 23.2 AC-8: break-glass — re-enables every native-credential route regardless of the
+    // resolved policy. Read only at boot (apps/api/src/modules/auth/native-login-policy.ts). Not
+    // reachable from any route or request; host-set only. Fires a loud warn-level boot log and,
+    // when replacementDeclared is also true, an audit fanout on every boot while set.
+    VAULT_NATIVE_LOGIN_BREAK_GLASS: booleanEnvDefault(false),
+    // Story 23.2 AC-4a: escape hatch that skips the proving latch and disables native login on
+    // the strength of the manifest declaration alone. For operators who have already validated
+    // their IdP out of band. Warns on every boot with explicit lockout language.
+    VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED: booleanEnvDefault(false),
+
     // Story 16.1 AC-1/AC-2: directory of admin-installed custom theme definition files, inside
     // the persistent Docker Compose volume (never the application image, so themes survive image
     // upgrades). Absent directory (including the untouched default path on a fresh install) is

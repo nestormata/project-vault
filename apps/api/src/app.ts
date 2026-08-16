@@ -57,6 +57,7 @@ import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
 import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
+import { resolveNativeLoginPolicy } from './modules/auth/native-login-policy.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
 import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
 import { orgSsoDomainsRoutes } from './modules/auth/org-sso-domains-routes.js'
@@ -376,6 +377,13 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 14.3 Task 3: after loadExtension() resolves, append a registered authStrategy hook
   // (if any) to authStrategies — local-first invariant is preserved unconditionally either way.
   wireExtensionAuthStrategy(getExtensionStatus())
+
+  // Story 23.2 AC-4: resolved once, immediately after the auth-strategy wiring above, from
+  // server-side state only (the loaded extension's manifest + the host-set break-glass /
+  // replacement-confirmed env vars + the AC-4a persisted proving latch). `await`ed (not
+  // fire-and-forget) so the policy is fully resolved before createApp() returns to any caller —
+  // e.g. the very first `/health` response already reflects it.
+  await resolveNativeLoginPolicy(getExtensionStatus())
 
   return fastify
 }

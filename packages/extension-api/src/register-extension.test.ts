@@ -167,7 +167,7 @@ describe('registerExtension — concrete canonical version gate', () => {
   )
 
   it.each([
-    '1.2.0',
+    '1.3.0',
     '1.4.0',
     '0.9.0',
     '2.0.0',
@@ -207,9 +207,9 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '1.2.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '1.3.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '1.2.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '1.3.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -223,5 +223,119 @@ describe('registerExtension — concrete canonical version gate', () => {
         allowApiVersionAboveHost: true,
       })
     ).toThrow(/outside this host's supported range/)
+  })
+})
+
+/**
+ * Story 23.2 AC-2 — `replacesNativeLogin` manifest-field validation. All rejections use the
+ * `'invalid-manifest-field'` reason (findings F-H5/N16) and must be reached unconditionally,
+ * never gated behind or ordered after the apiVersion check (the `apiVersion: '*'` cases below).
+ */
+const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
+
+describe('registerExtension — AC2 (replacesNativeLogin)', () => {
+  const AUTH_STRATEGY_HOOKS: ExtensionHooks = { authStrategy: { onAuthenticate: vi.fn() } as never }
+
+  function authStrategyHooksFactory() {
+    return vi.fn(() => AUTH_STRATEGY_HOOKS)
+  }
+
+  it('omitted: parses fine, native login stays enabled (byte-identical to today)', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.replacesNativeLogin).toBeUndefined()
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('explicit false: treated exactly like omitted', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest({ replacesNativeLogin: false }), hooksFactory)
+    expect(result.manifest.replacesNativeLogin).toBe(false)
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('true, with auth-provider capability and an authStrategy hook: accepted', () => {
+    const hooksFactory = authStrategyHooksFactory()
+    const result = registerExtension(manifest({ replacesNativeLogin: true }), hooksFactory)
+    expect(result.manifest.replacesNativeLogin).toBe(true)
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['true', 1, null, {}, []])(
+    'rejects non-boolean replacesNativeLogin %j as invalid-manifest-field',
+    (value) => {
+      expectRejection({ replacesNativeLogin: value as unknown as boolean }, INVALID_MANIFEST_FIELD)
+    }
+  )
+
+  it('rejects true without an authStrategy hook (hooksFactory returns {}) — the lockout-prevention case', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(manifest({ replacesNativeLogin: true }), hooksFactory)
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects true without auth-provider in capabilities[]', () => {
+    const hooksFactory = authStrategyHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({ replacesNativeLogin: true, capabilities: ['ui-panel'] }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+  })
+
+  it('is enforced unconditionally, not gated behind the apiVersion wildcard', () => {
+    expectRejection(
+      { apiVersion: '*', replacesNativeLogin: 'yes' as unknown as boolean },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('warns on an unrelated unknown top-level key but loads fine', () => {
+    const hooksFactory = makeHooksFactory()
+    const warn = vi.fn()
+    const result = registerExtension(
+      { ...manifest(), someFutureField: true } as ExtensionManifest,
+      hooksFactory,
+      { logger: { warn } }
+    )
+    expect(result).toBeDefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('someFutureField'))
+  })
+
+  it.each(['replacesnativelogin', 'ReplacesNativeLogin', 'REPLACESNATIVELOGIN'])(
+    'fails the load for a case-insensitive near-miss of a known field: %s',
+    (key) => {
+      const hooksFactory = makeHooksFactory()
+      let caught: unknown
+      try {
+        registerExtension({ ...manifest(), [key]: true } as ExtensionManifest, hooksFactory)
+      } catch (error) {
+        caught = error
+      }
+      expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+      expect(hooksFactory).not.toHaveBeenCalled()
+    }
+  )
+
+  it('warns (does not fail) on an insertion-variant misspelling', () => {
+    const hooksFactory = makeHooksFactory()
+    const warn = vi.fn()
+    const result = registerExtension(
+      { ...manifest(), replacesNativeLoginn: true } as ExtensionManifest,
+      hooksFactory,
+      { logger: { warn } }
+    )
+    expect(result).toBeDefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('replacesNativeLoginn'))
   })
 })

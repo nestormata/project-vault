@@ -512,6 +512,13 @@
       "when": 1786750000000,
       "tag": "0072_vault_owner_schema_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1786855378557,
+      "tag": "0073_native_login_replacement_latch",
+      "breakpoints": true
     }
   ]
 }

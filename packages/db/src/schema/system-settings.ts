@@ -39,6 +39,20 @@ export const systemSettings = pgTable(
     sessionIdleTimeoutMinutesOverride: integer('session_idle_timeout_minutes_override'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedByUserId: uuid('updated_by_user_id'),
+    // Story 23.2 AC-4a/AC-11: the native-login-replacement proving latch. Reuses this existing
+    // instance-scoped singleton rather than adding a new table (AC-11's one-migration budget).
+    // NULL (the default on every existing row and every pre-this-story instance) means "never
+    // proven" — the fail-safe direction (native login stays enabled). Written once, by
+    // markReplacementProven(), with ON CONFLICT DO NOTHING; never cleared by this story.
+    nativeLoginReplacementProvenAt: timestamp('native_login_replacement_proven_at', {
+      withTimezone: true,
+    }),
+    // Story 23.2 AC-9: the once-per-instance NATIVE_LOGIN_DISABLED fanout guard. Written by the
+    // single process whose atomic conditional UPDATE ... WHERE disabled_announced_at IS NULL
+    // affects a row, so N workers booting together perform the per-org fanout exactly once.
+    nativeLoginDisabledAnnouncedAt: timestamp('native_login_disabled_announced_at', {
+      withTimezone: true,
+    }),
   },
   (t) => [check('system_settings_single_row', sql`${t.id} = 1`)]
 )

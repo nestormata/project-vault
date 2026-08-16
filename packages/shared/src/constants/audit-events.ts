@@ -124,6 +124,19 @@ export const AuditEvent = {
   CREDENTIAL_SHARE_EXPIRED: 'credential.share_expired',
   CREDENTIAL_SHARE_SUPERSEDED: 'credential.share_superseded',
   CREDENTIAL_SHARE_NUDGE_DISMISSED: 'credential.share_nudge_dismissed',
+  // Story 23.2 AC-9: native-login-exclusion lifecycle. NATIVE_LOGIN_DISABLED is written once per
+  // instance, per org, on the transition into the disabled policy (never on every boot, never on
+  // a mid-process flip). NATIVE_LOGIN_BREAK_GLASS_ACTIVE fires once at boot when the break-glass
+  // flag is set and the loaded extension declares replacement. NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED
+  // is written by the AC-8a host-side CLI on every invocation, minted or refused.
+  // NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED is written when AC-6a's carve-out lets a registration
+  // through on an otherwise-gated instance. Deliberately NOT in this list: a rejected AC-6 request
+  // (`native_login_disabled`) is an operational log line only, never an audit row (AC-9's H8
+  // resolution) — an unauthenticated, org-less, high-volume rejection is not a per-tenant event.
+  NATIVE_LOGIN_DISABLED: 'native_login.disabled',
+  NATIVE_LOGIN_BREAK_GLASS_ACTIVE: 'native_login.break_glass_active',
+  NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED: 'native_login.break_glass_recovery_minted',
+  NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED: 'native_login.bootstrap_register_allowed',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

@@ -231,6 +231,24 @@ export const OperationalEvent = {
   // regression that double-invokes the loader is still visible in monitoring.
   EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED: 'extension.load_double_invocation_ignored',
 
+  // Story 23.2: native-login-exclusion policy (apps/api/src/modules/auth/native-login-policy.ts).
+  // AC-4a: fires on EVERY boot while the declared extension has never proven a successful
+  // authentication — a permanently-broken integration must stay loud, not go silent after the
+  // first warning.
+  NATIVE_LOGIN_REPLACEMENT_PENDING: 'native_login.replacement_pending',
+  // AC-8: fires on every boot while break-glass is set, regardless of whether an extension is
+  // loaded (AC-16's "operational log always, audit fanout only when declared" split).
+  NATIVE_LOGIN_BREAK_GLASS_ACTIVE_LOG: 'native_login.break_glass_active_log',
+  // AC-4a: fires on every boot while the declaration-alone escape hatch is set.
+  NATIVE_LOGIN_REPLACEMENT_CONFIRMED_OVERRIDE: 'native_login.replacement_confirmed_override',
+  // AC-6: one line per AC-6-gated rejection — never an audit row (AC-9's H8 resolution).
+  NATIVE_LOGIN_REJECTED: 'native_login.rejected',
+  // AC-6a: fires whenever the bootstrap carve-out lets a registration through on an otherwise
+  // gated instance.
+  NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED_LOG: 'native_login.bootstrap_register_allowed_log',
+  // Mirrors EXTENSION_AUDIT_FANOUT_ROW_FAILED for this module's own per-org audit fanout.
+  NATIVE_LOGIN_AUDIT_FANOUT_ROW_FAILED: 'native_login.audit_fanout_row_failed',
+
   // Story 16.1: theming reload (apps/api/src/modules/theming/service.ts). AC-2's "directory
   // present but unreadable" operational-log distinction — never fired for the (silent, expected)
   // "directory absent" case.

@@ -12,6 +12,15 @@ export type ExtensionManifest = {
   /** Exact canonical EXTENSION_API_VERSION this extension was built against (e.g. "1.0.0"). Ranges and wildcards are rejected; "1.0.0" is accepted and "^1.0.0" is rejected. */
   apiVersion: string
   capabilities: ExtensionCapability[]
+  /**
+   * Story 23.2 AC-2 — optional declaration that this extension's `authStrategy` hook fully
+   * replaces the host's native (password) login. Omitted or `false` is byte-identical to every
+   * extension shipped before this field existed: native login stays enabled. `true` is only one
+   * of three facts the host requires before it will ever disable native login (see
+   * `apps/api/src/modules/auth/native-login-policy.ts`'s `replacementDeclared` /
+   * `replacementProven` distinction) — declaring this field alone never disables anything.
+   */
+  replacesNativeLogin?: boolean
 }
 
 /**
@@ -19,7 +28,7 @@ export type ExtensionManifest = {
  * under `src/**` (enforced by `scripts/check-extension-api-version-skew.ts`, AC7) and kept equal
  * to this package's `package.json` `version` field (see `manifest.test.ts`).
  */
-export const EXTENSION_API_VERSION = '1.1.0'
+export const EXTENSION_API_VERSION = '1.2.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
