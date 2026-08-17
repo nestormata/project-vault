@@ -2,17 +2,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tx } from '@project-vault/db'
 import { SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 
-const { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } = vi.hoisted(() => ({
-  assertOrgMayWriteAudit: vi.fn(),
-  estimateAuditEntrySizeBytes: vi.fn(() => 42),
-}))
+const { assertOrgMayWriteAudit, assertOrgMayWriteAuditAtRate, estimateAuditEntrySizeBytes } =
+  vi.hoisted(() => ({
+    assertOrgMayWriteAudit: vi.fn(),
+    assertOrgMayWriteAuditAtRate: vi.fn(),
+    estimateAuditEntrySizeBytes: vi.fn(() => 42),
+  }))
 
 vi.mock('./quota-gate.js', () => ({
   assertOrgMayWriteAudit,
+  assertOrgMayWriteAuditAtRate,
   estimateAuditEntrySizeBytes,
 }))
 
 import { writeMachineAuditEntry, writeSystemAuditEntry } from './machine-entry.js'
+
+const MACHINE_EVENT_TYPE = 'machine.something.happened'
+const SYSTEM_EVENT_TYPE = 'system.something.happened'
 
 function createStubTx(): Tx {
   return {
@@ -39,16 +45,20 @@ describe('machine-entry / quota-gate wiring', () => {
     await expect(
       writeMachineAuditEntry(tx, {
         orgId: 'org-1',
-        eventType: 'machine.something.happened',
+        eventType: MACHINE_EVENT_TYPE,
         payload: {},
         machineUserId: 'machine-1',
         keyId: 'key-1',
       })
     ).rejects.toBeInstanceOf(SameTransactionAuditWriteError)
 
+    expect(assertOrgMayWriteAuditAtRate).toHaveBeenCalledWith(tx, {
+      orgId: 'org-1',
+      eventType: MACHINE_EVENT_TYPE,
+    })
     expect(assertOrgMayWriteAudit).toHaveBeenCalledWith(
       tx,
-      expect.objectContaining({ orgId: 'org-1', eventType: 'machine.something.happened' })
+      expect.objectContaining({ orgId: 'org-1', eventType: MACHINE_EVENT_TYPE })
     )
     expect(tx.execute).not.toHaveBeenCalled()
     expect(tx.insert).not.toHaveBeenCalled()
@@ -60,14 +70,18 @@ describe('machine-entry / quota-gate wiring', () => {
     await expect(
       writeSystemAuditEntry(tx, {
         orgId: 'org-2',
-        eventType: 'system.something.happened',
+        eventType: SYSTEM_EVENT_TYPE,
         payload: {},
       })
     ).rejects.toBeInstanceOf(SameTransactionAuditWriteError)
 
+    expect(assertOrgMayWriteAuditAtRate).toHaveBeenCalledWith(tx, {
+      orgId: 'org-2',
+      eventType: SYSTEM_EVENT_TYPE,
+    })
     expect(assertOrgMayWriteAudit).toHaveBeenCalledWith(
       tx,
-      expect.objectContaining({ orgId: 'org-2', eventType: 'system.something.happened' })
+      expect.objectContaining({ orgId: 'org-2', eventType: SYSTEM_EVENT_TYPE })
     )
     expect(tx.execute).not.toHaveBeenCalled()
     expect(tx.insert).not.toHaveBeenCalled()

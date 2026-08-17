@@ -4,7 +4,11 @@ import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { computeAuditHmac } from './write-entry.js'
-import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from './quota-gate.js'
+import {
+  assertOrgMayWriteAudit,
+  assertOrgMayWriteAuditAtRate,
+  estimateAuditEntrySizeBytes,
+} from './quota-gate.js'
 
 type RequestMeta = {
   ipAddress?: string | null
@@ -40,6 +44,8 @@ export async function writeMachineAuditEntry(tx: Tx, fields: MachineAuditFields)
     machineUserId: fields.machineUserId,
     keyId: fields.keyId,
   }
+  // Story 22.2 AC-4 (site 2 of 9): rate gate first, then storage gate (documented ordering).
+  await assertOrgMayWriteAuditAtRate(tx, { orgId: fields.orgId, eventType: fields.eventType })
   // Story 22.1 AC-13 (see human-entry.ts). Size is estimated over the fully-assembled payload
   // (including machineUserId/keyId, which are folded in before the insert).
   await assertOrgMayWriteAudit(tx, {
@@ -93,6 +99,8 @@ export type SystemAuditFields = {
  * `audit_log_entries` CHECK constraint already permits; `actorTokenId` is always null.
  */
 export async function writeSystemAuditEntry(tx: Tx, fields: SystemAuditFields): Promise<void> {
+  // Story 22.2 AC-4 (site 3 of 9): rate gate first, then storage gate (documented ordering).
+  await assertOrgMayWriteAuditAtRate(tx, { orgId: fields.orgId, eventType: fields.eventType })
   // Story 22.1 AC-13 (see human-entry.ts).
   await assertOrgMayWriteAudit(tx, {
     orgId: fields.orgId,

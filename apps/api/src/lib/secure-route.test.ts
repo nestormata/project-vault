@@ -15,15 +15,20 @@ import {
 import { __resetCapabilityGateForTests, wireExtensionCapabilityGate } from './capability-gate.js'
 
 const recordAuditQuotaRefusalBestEffort = vi.fn(async (_orgId: string) => undefined)
+const recordAuditRateRefusalBestEffort = vi.fn(
+  async (_orgId: string): Promise<{ retryAfterSeconds: number } | null> => null
+)
 vi.mock('../modules/audit/quota-gate.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../modules/audit/quota-gate.js')>()
   return {
     ...actual,
     recordAuditQuotaRefusalBestEffort: (orgId: string) => recordAuditQuotaRefusalBestEffort(orgId),
+    recordAuditRateRefusalBestEffort: (orgId: string) => recordAuditRateRefusalBestEffort(orgId),
   }
 })
 
 const TEST_ORG_ID = ['00000000', '0000', '4000', '8000', '000000000001'].join('-')
+const RETRY_AFTER_HEADER = 'Retry-After'
 
 type RegisteredRoute = {
   preHandler: Array<(req: unknown, reply: unknown) => Promise<unknown>>
@@ -449,6 +454,83 @@ describe('secureRoute', () => {
       message: 'Audit quota gate is unavailable',
     })
     expect(recordAuditQuotaRefusalBestEffort).not.toHaveBeenCalled()
+  })
+
+  it('sends a 429 audit_rate_limited response with a Retry-After header and records the refusal (Story 22.2 AC-7/AC-9)', async () => {
+    recordAuditRateRefusalBestEffort.mockClear()
+    recordAuditRateRefusalBestEffort.mockResolvedValueOnce({ retryAfterSeconds: 42 })
+    const { tx, transaction } = transactionHarness()
+    const auditWriter = vi.fn(async () => {
+      throw new SameTransactionAuditWriteError('rate limited', 'audit_rate_limited')
+    })
+    const handler = vi.fn(async () => ({ data: { changed: true } }))
+    const { registered } = mountProtectedRoute(
+      {
+        method: 'POST',
+        url: '/api/v1/test/audit-rate-limited',
+        db: { transaction },
+        auditWriter,
+        security: {
+          writeAuditEvent: { eventType: 'test.audit_rate_limited', resourceType: 'test' },
+        },
+        handler,
+      },
+      'owner'
+    )
+
+    const { reply } = await invokeRegisteredRoute(registered, {
+      authContext: undefined,
+      ip: '127.0.0.1',
+      headers: {},
+    })
+
+    expect(handler).toHaveBeenCalledOnce()
+    expect(auditWriter).toHaveBeenCalledWith(
+      expect.objectContaining({ tx, auth: expect.objectContaining({ userId: 'user-1' }) })
+    )
+    expect(reply.statusCode).toBe(429)
+    expect(reply.header).toHaveBeenCalledWith(RETRY_AFTER_HEADER, '42')
+    expect(reply.send).toHaveBeenCalledWith({
+      code: 'audit_rate_limited',
+      message: 'Audit write rate limit exceeded for this organization',
+    })
+    expect(recordAuditRateRefusalBestEffort).toHaveBeenCalledWith(TEST_ORG_ID)
+    expect(recordAuditQuotaRefusalBestEffort).not.toHaveBeenCalled()
+  })
+
+  it('falls back to a conservative Retry-After (the configured window, in seconds) when the best-effort read returns null', async () => {
+    recordAuditRateRefusalBestEffort.mockClear()
+    recordAuditRateRefusalBestEffort.mockResolvedValueOnce(null)
+    const { transaction } = transactionHarness()
+    const auditWriter = vi.fn(async () => {
+      throw new SameTransactionAuditWriteError('rate limited', 'audit_rate_limited')
+    })
+    const handler = vi.fn(async () => ({ data: { changed: true } }))
+    const { registered } = mountProtectedRoute(
+      {
+        method: 'POST',
+        url: '/api/v1/test/audit-rate-limited-fallback',
+        db: { transaction },
+        auditWriter,
+        security: {
+          writeAuditEvent: { eventType: 'test.audit_rate_limited_fallback', resourceType: 'test' },
+        },
+        handler,
+      },
+      'owner'
+    )
+
+    const { reply } = await invokeRegisteredRoute(registered, {
+      authContext: undefined,
+      ip: '127.0.0.1',
+      headers: {},
+    })
+
+    expect(reply.statusCode).toBe(429)
+    expect(reply.header).toHaveBeenCalledWith(RETRY_AFTER_HEADER, expect.any(String))
+    const [, headerValue] =
+      reply.header.mock.calls.find(([name]) => name === RETRY_AFTER_HEADER) ?? []
+    expect(Number(headerValue)).toBeGreaterThan(0)
   })
 
   it('fails instead of preserving a pre-sent success when audit writing fails', async () => {

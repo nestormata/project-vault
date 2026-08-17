@@ -2,7 +2,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { findUnallowlistedInsertSites } from './check-audit-insert-sites.js'
+import {
+  findUnallowlistedInsertSites,
+  findSitesMissingRateGate,
+} from './check-audit-insert-sites.js'
 
 describe('Story 22.1 AC-13/AC-30 #18: check-audit-insert-sites', () => {
   let dir: string | undefined
@@ -47,5 +50,12 @@ describe('Story 22.1 AC-13/AC-30 #18: check-audit-insert-sites', () => {
       "await tx.insert(auditLogEntries).values({ orgId, eventType: 'x' })\n"
     )
     expect(findUnallowlistedInsertSites(dir)).toEqual([])
+  })
+})
+
+describe('Story 22.2 AC-4: findSitesMissingRateGate', () => {
+  it('every real allowlisted site calls assertOrgMayWriteAuditAtRate() (the live nine sites)', () => {
+    const repoRoot = join(import.meta.dirname, '..')
+    expect(findSitesMissingRateGate(repoRoot)).toEqual([])
   })
 })

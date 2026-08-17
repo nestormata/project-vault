@@ -234,3 +234,190 @@ export async function assertOrgMayWriteAudit(
     )
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Story 22.2 — the SECOND, independent gate: per-org write-RATE (throughput) limiting. Runs
+// alongside (not merged into) assertOrgMayWriteAudit above, at each of the same nine insert
+// sites, immediately BEFORE the storage gate (the documented ordering decision — a rate-refused
+// request never has its size estimated or attributed to the storage counter). Colocated on the
+// SAME `audit_org_storage_usage` row (no new table — see the Design Decision section of Story
+// 22.2's story file / docs/operations/audit-quota-degradation-strategy.md's addendum).
+// ---------------------------------------------------------------------------------------------
+
+type RateGateResult = { admitted: boolean; preauth: boolean }
+
+/**
+ * Story 22.2 AC-5/AC-8 — the single atomic conditional gate statement for the rate axis. Mirrors
+ * runGateStatement()'s shape exactly: one round trip, both the INSERT and UPDATE arms guarded by
+ * the same predicate (the NF-20 fix, applied fresh here rather than copy-pasted from an earlier,
+ * unguarded draft), zero rows returned means refused. All window-boundary comparisons use the
+ * DATABASE server's clock (`now()`), never the API process's clock, computed entirely inside this
+ * one statement — see the story's clock-consistency requirement.
+ */
+async function runRateGateStatement(
+  tx: Tx,
+  params: { orgId: string; windowMs: number; exempt: boolean; preauth: boolean }
+): Promise<RateGateResult> {
+  const rows = await tx.execute<{
+    rate_window_count: string
+    rate_window_reset_at: string | null
+  }>(sql`
+    WITH cfg AS (
+      SELECT write_rate_per_minute FROM audit_storage_quota_config WHERE org_id = ${params.orgId}
+    ),
+    resolved AS (
+      SELECT CASE
+        WHEN EXISTS (SELECT 1 FROM cfg) AND (SELECT write_rate_per_minute FROM cfg) IS NOT NULL
+          THEN (SELECT write_rate_per_minute FROM cfg)
+        WHEN ${env.AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN}::bigint > 0
+          THEN ${env.AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN}::bigint
+        ELSE NULL
+      END AS limit_per_window
+    )
+    INSERT INTO audit_org_storage_usage AS u
+      (org_id, rate_window_count, rate_window_reset_at,
+       preauth_rate_window_count, preauth_rate_window_reset_at, updated_at)
+    SELECT ${params.orgId},
+           CASE WHEN ${params.preauth} THEN 0 ELSE 1 END,
+           CASE WHEN ${params.preauth} THEN NULL
+                ELSE now() + (${params.windowMs} || ' ms')::interval END,
+           CASE WHEN ${params.preauth} THEN 1 ELSE 0 END,
+           CASE WHEN ${params.preauth} THEN now() + (${params.windowMs} || ' ms')::interval
+                ELSE NULL END,
+           now()
+     WHERE ${params.exempt} OR ${params.preauth}
+        OR (SELECT limit_per_window FROM resolved) IS NULL
+        OR 1 <= (SELECT limit_per_window FROM resolved)
+    ON CONFLICT (org_id) DO UPDATE
+       SET rate_window_count = CASE
+             WHEN ${params.preauth} THEN u.rate_window_count
+             WHEN u.rate_window_reset_at IS NULL OR u.rate_window_reset_at <= now() THEN 1
+             ELSE u.rate_window_count + 1
+           END,
+           rate_window_reset_at = CASE
+             WHEN ${params.preauth} THEN u.rate_window_reset_at
+             WHEN u.rate_window_reset_at IS NULL OR u.rate_window_reset_at <= now()
+               THEN now() + (${params.windowMs} || ' ms')::interval
+             ELSE u.rate_window_reset_at
+           END,
+           preauth_rate_window_count = CASE
+             WHEN NOT ${params.preauth} THEN u.preauth_rate_window_count
+             WHEN u.preauth_rate_window_reset_at IS NULL OR u.preauth_rate_window_reset_at <= now()
+               THEN 1
+             ELSE u.preauth_rate_window_count + 1
+           END,
+           preauth_rate_window_reset_at = CASE
+             WHEN NOT ${params.preauth} THEN u.preauth_rate_window_reset_at
+             WHEN u.preauth_rate_window_reset_at IS NULL OR u.preauth_rate_window_reset_at <= now()
+               THEN now() + (${params.windowMs} || ' ms')::interval
+             ELSE u.preauth_rate_window_reset_at
+           END,
+           updated_at = now()
+     WHERE ${params.exempt} OR ${params.preauth}
+        OR (SELECT limit_per_window FROM resolved) IS NULL
+        OR (CASE
+              WHEN u.rate_window_reset_at IS NULL OR u.rate_window_reset_at <= now() THEN 1
+              ELSE u.rate_window_count + 1
+            END) <= (SELECT limit_per_window FROM resolved)
+    RETURNING u.rate_window_count, u.rate_window_reset_at
+  `)
+  return { admitted: rows.length > 0, preauth: params.preauth }
+}
+
+/**
+ * Story 22.2 AC-9 — mirrors recordAuditQuotaRefusalBestEffort() exactly: best-effort, on a
+ * separate connection, called ONLY from the 429 error path AFTER the refusing transaction has
+ * already rolled back. Returns the current `rate_window_reset_at` converted to a
+ * `retryAfterSeconds` figure (with a small amount of server-added jitter, AC-7's
+ * thundering-herd mitigation) for secure-route.ts's 429 handler to set as the `Retry-After`
+ * header — or `null` if the read/update itself fails, in which case the caller falls back to a
+ * conservative default rather than omitting the header.
+ */
+export async function recordAuditRateRefusalBestEffort(
+  orgId: string
+): Promise<{ retryAfterSeconds: number } | null> {
+  try {
+    const rows = await withOrg(orgId, (tx) =>
+      tx.execute<{ rate_window_reset_at: string | null }>(sql`
+        UPDATE audit_org_storage_usage
+           SET rate_refused_count = rate_refused_count + 1,
+               last_rate_refusal_at = now(),
+               updated_at = now()
+         WHERE org_id = ${orgId}
+        RETURNING rate_window_reset_at
+      `)
+    )
+    const resetAt = rows[0]?.rate_window_reset_at
+    if (!resetAt) return null
+    const remainingMs = new Date(resetAt).getTime() - Date.now()
+    const jitterSeconds = Math.random() * 0.5
+    const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000 + jitterSeconds))
+    return { retryAfterSeconds }
+  } catch (error) {
+    process.stdout.write(
+      `${JSON.stringify({
+        event: OperationalEvent.AUDIT_RATE_REFUSAL_RECORD_FAILED,
+        level: 'warn',
+        orgId,
+        err: error instanceof Error ? error.message : String(error),
+      })}\n`
+    )
+    return null
+  }
+}
+
+/**
+ * Story 22.2 AC-4 — the second gate primitive, called immediately BEFORE assertOrgMayWriteAudit()
+ * at every one of the same nine insert sites, inside the SAME already-open transaction, after
+ * setRlsOrgContext() has run. Throw-or-succeed, never a boolean, same contract as the storage
+ * gate. `orgId` is taken explicitly — never re-derived from request body/query/headers at any
+ * call site (the non-influenceability invariant).
+ */
+export async function assertOrgMayWriteAuditAtRate(
+  tx: Tx,
+  input: { orgId: string; eventType: string }
+): Promise<void> {
+  // AC-3: the kill switch is an in-process boolean read, before any DB access. Off (the default)
+  // costs exactly zero additional statements — independent of AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED.
+  if (!env.AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED) return
+
+  const exemptionClass = classifyAuditWriteExemption(input.eventType)
+  const exempt = exemptionClass === 'security_critical' || exemptionClass === 'remediation'
+  const preauth = exemptionClass === 'preauth'
+
+  let result: RateGateResult
+  try {
+    result = await runRateGateStatement(tx, {
+      orgId: input.orgId,
+      windowMs: env.AUDIT_ORG_WRITE_RATE_WINDOW_MS,
+      exempt,
+      preauth,
+    })
+  } catch (error) {
+    throw new SameTransactionAuditWriteError(
+      error instanceof Error ? error.message : String(error),
+      'audit_gate_unavailable'
+    )
+  }
+
+  if (!preauth && exempt) {
+    auditQuotaExemptWriteAdmittedTotal.inc({ exemption_class: exemptionClass })
+  }
+
+  if (!result.admitted) {
+    auditWriteRefusedTotal.inc({ reason: 'rate_limited' })
+    process.stdout.write(
+      `${JSON.stringify({
+        event: OperationalEvent.AUDIT_RATE_LIMIT_WRITE_REFUSED,
+        level: 'warn',
+        orgId: input.orgId,
+        eventType: input.eventType,
+        windowMs: env.AUDIT_ORG_WRITE_RATE_WINDOW_MS,
+      })}\n`
+    )
+    throw new SameTransactionAuditWriteError(
+      `audit write rate limit exceeded for org ${input.orgId}`,
+      'audit_rate_limited'
+    )
+  }
+}

@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { auditOrgStorageUsage, auditStorageQuotaConfig } from '@project-vault/db/schema'
 
-const { withTwoTestOrgs } = await import('../test-helpers.js')
+const { withTwoTestOrgs, withTestOrg } = await import('../test-helpers.js')
 
 // Story 22.1 AC-3/AC-30 #2 — RLS isolation for BOTH new tables, read AND write side (finding M3:
 // a FOR SELECT policy would pass every read-only test below while leaving INSERT/UPDATE of an
@@ -137,6 +137,65 @@ describe('Story 22.1 AC-3: RLS isolation on audit_storage_quota_config / audit_o
         .where(eq(auditOrgStorageUsage.orgId, orgAId))
       expect(quotaRows).toHaveLength(0)
       expect(usageRows).toHaveLength(0)
+    })
+  })
+
+  // Story 22.2 AC-2 positive example (RLS reuse) — the SAME existing policies, exercised against
+  // the SIX new rate-tracking columns and the one new write_rate_per_minute column. No new policy
+  // was added; this asserts that claim rather than assuming it.
+  describe('Story 22.2 AC-2: RLS reuse for the new rate-tracking columns', () => {
+    it('write side: org A can UPDATE its own rate columns, invisible to org B', async () => {
+      await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+        await withOrg(orgAId, (tx) =>
+          tx.insert(auditOrgStorageUsage).values({ orgId: orgAId, rateWindowCount: 5 })
+        )
+
+        await withOrg(orgAId, (tx) =>
+          tx
+            .update(auditOrgStorageUsage)
+            .set({ rateWindowCount: 9, rateRefusedCount: 2 })
+            .where(eq(auditOrgStorageUsage.orgId, orgAId))
+        )
+
+        const [rowForA] = await withOrg(orgAId, (tx) =>
+          tx
+            .select({
+              rateWindowCount: auditOrgStorageUsage.rateWindowCount,
+              rateRefusedCount: auditOrgStorageUsage.rateRefusedCount,
+            })
+            .from(auditOrgStorageUsage)
+            .where(eq(auditOrgStorageUsage.orgId, orgAId))
+        )
+        expect(rowForA?.rateWindowCount).toBe(9)
+        expect(rowForA?.rateRefusedCount).toBe(2)
+
+        const rowsForB = await withOrg(orgBId, (tx) =>
+          tx.select().from(auditOrgStorageUsage).where(eq(auditOrgStorageUsage.orgId, orgAId))
+        )
+        expect(rowsForB).toHaveLength(0)
+      })
+    })
+
+    it('write side: org A cannot INSERT a write_rate_per_minute override row for org B', async () => {
+      await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+        await expect(
+          withOrg(orgAId, (tx) =>
+            tx.insert(auditStorageQuotaConfig).values({ orgId: orgBId, writeRatePerMinute: 100 })
+          )
+        ).rejects.toThrow()
+      })
+    })
+
+    it('unset RLS context: no rows readable/writable at all for the new columns either', async () => {
+      await withTestOrg(async ({ orgId }) => {
+        await withOrg(orgId, (tx) =>
+          tx.insert(auditOrgStorageUsage).values({ orgId, rateWindowCount: 3 })
+        )
+      })
+      const rows = await getDb()
+        .select({ rateWindowCount: auditOrgStorageUsage.rateWindowCount })
+        .from(auditOrgStorageUsage)
+      expect(rows).toHaveLength(0)
     })
   })
 })

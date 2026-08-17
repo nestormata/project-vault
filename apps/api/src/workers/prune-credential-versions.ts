@@ -14,7 +14,11 @@ import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-crede
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
-import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from '../modules/audit/quota-gate.js'
+import {
+  assertOrgMayWriteAudit,
+  assertOrgMayWriteAuditAtRate,
+  estimateAuditEntrySizeBytes,
+} from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 
@@ -94,6 +98,8 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
 
   const payload = { credentialId: candidate.credentialId, versionNumber: candidate.versionNumber }
   const purgeEventType = 'credential.version_purged'
+  // Story 22.2 AC-4 (site 8 of 9): rate gate first, then storage gate (documented ordering).
+  await assertOrgMayWriteAuditAtRate(tx, { orgId, eventType: purgeEventType })
   // Story 22.1 AC-13 (site 8 of 9 — this worker's own inline insert; it also calls the already-
   // gated writeSystemAuditRow site 5 elsewhere in this file).
   await assertOrgMayWriteAudit(tx, {

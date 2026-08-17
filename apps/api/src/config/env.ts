@@ -935,6 +935,15 @@ const envSchema = z
     AUDIT_ORG_USAGE_STALE_AFTER_HOURS: z.coerce.number().positive().default(240),
     // 0 = alert disabled.
     AUDIT_ORG_PREAUTH_ALERT_THRESHOLD_MB: z.coerce.number().min(0).default(0),
+
+    // Story 22.2 AC-3: per-org write-RATE (throughput) limiting — a SECOND, INDEPENDENT gate from
+    // AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED above. Enabling one does NOT enable the other. Kill
+    // switch checked FIRST, in process memory, before any DB access, same discipline as the quota
+    // gate's own kill switch.
+    AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED: booleanEnvDefault(false),
+    // 0 = unlimited (same "safety default" reasoning as AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB).
+    AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN: z.coerce.number().min(0).default(0),
+    AUDIT_ORG_WRITE_RATE_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {
