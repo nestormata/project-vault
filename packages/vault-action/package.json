@@ -20,7 +20,7 @@
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/node": "^26.2.0",
-    "@vercel/ncc": "^0.44.1",
+    "@vercel/ncc": "^0.45.0",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.1",
     "typescript": "^7.0.2",
