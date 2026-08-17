@@ -4,11 +4,13 @@ import { expect, test, type BrowserContext } from '@playwright/test'
 import { superuserDatabaseUrl } from '../fixtures/db.js'
 import {
   createIsolatedDatabase,
-  dropIsolatedDatabase,
+  initIsolatedVault,
+  teardownIsolatedStack,
+} from '../fixtures/isolated-stack-shared.js'
+import {
   restartCapabilityGateApi,
   startCapabilityGateApi,
   startCapabilityGateWeb,
-  stopProcess,
   type ApiHandle,
   type WebHandle,
 } from '../fixtures/isolated-capability-gate-stack.js'
@@ -86,21 +88,12 @@ test.describe
       webPort: WEB_PORT,
       extensionPackage: '@project-vault/mock-capability-gate-extension',
     })
-    const init = await fetch(`http://localhost:${API_PORT}/api/v1/vault/init`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kmsType: 'passphrase', passphrase: 'j20-capgate-e2e-passphrase' }),
-    })
-    if (!init.ok && init.status !== 409) {
-      throw new Error(`vault/init failed (${init.status}): ${await init.text()}`)
-    }
+    await initIsolatedVault(API_PORT, 'j20-capgate-e2e-passphrase')
     webHandle = await startCapabilityGateWeb({ port: WEB_PORT, apiPort: API_PORT })
   })
 
   test.afterAll(async () => {
-    if (webHandle) await stopProcess(webHandle.process)
-    if (apiHandle) await stopProcess(apiHandle.process)
-    await dropIsolatedDatabase(DB_NAME)
+    await teardownIsolatedStack({ webHandle, apiHandle, dbName: DB_NAME })
   })
 
   test('the gate is genuinely registered (real boot, not a mock)', async ({ page }) => {

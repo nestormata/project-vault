@@ -3,6 +3,7 @@ import { createProjectViaApi } from '../fixtures/api.js'
 import { enrollMfaViaUi, registerAndLoginViaApi } from '../fixtures/auth.js'
 import { setOrganizationRoleViaDb } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
+import { enablePublicStatusPageViaUi } from '../fixtures/status-page-ui.js'
 
 /**
  * J20 (Dana-orgadmin half) — Story 23.3's "no capability gate configured" persona journey. Runs
@@ -47,14 +48,7 @@ test.describe
       name: uniqueProjectName('J20 Dana Project'),
       slug: `j20-dana-project-${Date.now()}`,
     })
-    await page.goto(`/projects/${project.id}/status-page`)
-    await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
-    await page.getByRole('button', { name: 'Enable public status page' }).click()
-
-    const urlLocator = page.locator('code')
-    await expect(urlLocator).toHaveText(/^https?:\/\/.+\/status\/.{10,}$/)
-    const publishedUrl = await urlLocator.textContent()
-    expect(publishedUrl).toBeTruthy()
+    const publishedUrl = await enablePublicStatusPageViaUi(page, project.id)
 
     if (publishedUrl) {
       const publicRes = await context.request.get(publishedUrl)

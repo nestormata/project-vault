@@ -10,6 +10,7 @@ import type {
 } from '@project-vault/extension-api'
 import type { ExtensionState } from '../extensions/loader.js'
 import { operationalLog } from './logger.js'
+import { raceWithTimeout } from './race-with-timeout.js'
 
 /**
  * Story 23.3 Group B — the capability-gate registry, mirroring
@@ -267,34 +268,19 @@ function releaseSlot(key: string): void {
 
 /**
  * AC-11/AC-12/AC-18 — races a single `onCheckCapability()` invocation against
- * `CAPABILITY_GATE_TIMEOUT_MS`, matching `loader.ts:raceWithTimeout()`'s pattern exactly: an eager
- * no-op `.catch()` on the attempt promise so a late rejection after the timeout has already won
- * can never produce an `unhandledRejection`, and a late resolution is simply never consumed.
+ * `CAPABILITY_GATE_TIMEOUT_MS`, via the shared `raceWithTimeout()` primitive
+ * (`lib/race-with-timeout.ts`) also used by `extensions/loader.ts`'s extension-load race — the
+ * same eager-no-op-`.catch()` pattern, without duplicating it here.
  */
 async function invokeGateWithTimeout(
   gate: CapabilityGate,
   context: CapabilityGateContext,
   timeoutMs: number
 ): Promise<{ decision: CapabilityDecision } | { timedOut: true } | { error: unknown }> {
-  const attempt = (async () => gate.onCheckCapability(context))()
-  attempt.catch(() => undefined)
-
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error('capability gate timed out')), timeoutMs)
-  })
-
-  try {
-    const decision = await Promise.race([attempt, timeoutPromise])
-    return { decision }
-  } catch (error) {
-    if (error instanceof Error && error.message === 'capability gate timed out') {
-      return { timedOut: true }
-    }
-    return { error }
-  } finally {
-    clearTimeout(timeoutHandle)
-  }
+  const raced = await raceWithTimeout(async () => gate.onCheckCapability(context), timeoutMs)
+  if (raced.status === 'resolved') return { decision: raced.value }
+  if (raced.status === 'timed_out') return { timedOut: true }
+  return { error: raced.error }
 }
 
 /**
