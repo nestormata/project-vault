@@ -45,6 +45,34 @@ VAULT_EXTENSIONS_PACKAGE=@project-vault/mock-capability-gate-extension pnpm --fi
 The API's boot sequence (`apps/api/src/app.ts` → `loadExtension()` →
 `wireExtensionCapabilityGate()`) picks it up exactly like any other extension.
 
+## Capability gating (Story 23.3 Task 14) — what any real extension author needs to know
+
+No standalone "extension-authoring docs" file exists in this repo yet — this section is that
+content's interim home until one does, since a real, non-fixture extension implementing
+`CapabilityGate` needs to know all of the following before writing an `onCheckCapability()`:
+
+- **PV's caching contract (AC-16):** PV never caches or memoizes a gate decision — every gated
+  check invokes `onCheckCapability()`, with no per-request memo, no cross-request cache, no TTL,
+  and no `Map` keyed by `(orgId, capability)` holding a decision anywhere in `apps/api`. This means
+  an entitlement downgrade takes effect on the very next request, with no restart, no cache flush,
+  and no waiting period — but it also means your extension owns 100% of its own staleness/caching
+  strategy. If your real entitlement source is slow or rate-limited, you must cache on your side of
+  the hook, inside `onCheckCapability()`, where you also own the invalidation bound.
+- **The fail-closed rule, verbatim:** *"A registered gate that throws, rejects, times out, or
+  returns a malformed decision FAILS CLOSED for that capability check —
+  `403 capability_denied` with `reasonCode: 'gate_unavailable'` (collapsed to the route's own
+  uniform failure response on unauthenticated surfaces)."* Registering a gate is an explicit
+  operator declaration that an external policy layer governs the instance; once declared, an
+  unanswerable check is treated as an *unknown*, never as a permission.
+- **`message` is not localized, and cannot be:** `CapabilityGateContext` carries no `locale` field
+  — a French-locale PV user (Story 15.1) will see whatever single language your extension
+  hard-codes into `message`. Do not claim otherwise in your own docs; PV's own fallback message is
+  the only localized string in this flow.
+- **Quota is explicitly out of scope:** this hook answers exactly one question — "may this
+  organization use capability X at all?" (entitlement) — never "may this org create its 51st
+  secret" (quota). `CapabilityGateContext` carries no resource id, requested count, current usage,
+  or HTTP method, so quota enforcement cannot be expressed through this hook shape at all.
+
 ## Recovery runbook (Story 23.3 AC-13)
 
 There is deliberately no break-glass switch for a broken capability gate. To recover from one:
