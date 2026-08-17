@@ -84,6 +84,17 @@ export type SetOrgAuditQuotaInput = {
  * case). Story 22.3's operator-facing endpoint calls this same function rather than inventing a
  * second one.
  */
+// Story 22.2 AC-13: `undefined` input means "leave the stored value for this field unchanged" —
+// fall back to the existing raw DB value (not the resolved-to-default value) so a partial update
+// never clobbers the other field's stored override.
+function resolveUnchangedField(
+  inputValue: number | null | undefined,
+  existingRawValue: string | null | undefined
+): number | null {
+  if (inputValue !== undefined) return inputValue
+  return existingRawValue != null ? Number(existingRawValue) : null
+}
+
 export async function setOrgAuditQuota(tx: Tx, input: SetOrgAuditQuotaInput): Promise<void> {
   // AC-8: this is a cross-org (platform-operator) write, so the caller's transaction carries no
   // org RLS context yet — set it to the TARGET org explicitly before touching its RLS-protected
@@ -104,18 +115,11 @@ export async function setOrgAuditQuota(tx: Tx, input: SetOrgAuditQuotaInput): Pr
      WHERE org_id = ${input.orgId}
   `)
   const existing = existingRows[0]
-  const nextQuotaBytes =
-    input.quotaBytes !== undefined
-      ? input.quotaBytes
-      : existing?.quota_bytes != null
-        ? Number(existing.quota_bytes)
-        : null
-  const nextWriteRatePerMinute =
-    input.writeRatePerMinute !== undefined
-      ? input.writeRatePerMinute
-      : existing?.write_rate_per_minute != null
-        ? Number(existing.write_rate_per_minute)
-        : null
+  const nextQuotaBytes = resolveUnchangedField(input.quotaBytes, existing?.quota_bytes)
+  const nextWriteRatePerMinute = resolveUnchangedField(
+    input.writeRatePerMinute,
+    existing?.write_rate_per_minute
+  )
 
   await tx
     .insert(auditStorageQuotaConfig)

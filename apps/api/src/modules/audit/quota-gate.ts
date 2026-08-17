@@ -351,7 +351,9 @@ export async function recordAuditRateRefusalBestEffort(
     const resetAt = rows[0]?.rate_window_reset_at
     if (!resetAt) return null
     const remainingMs = new Date(resetAt).getTime() - Date.now()
-    const jitterSeconds = Math.random() * 0.5
+    // Jitter for thundering-herd prevention on retry timing only — not a security-sensitive
+    // value, so Math.random() is the correct choice here, not crypto.randomInt/randomBytes.
+    const jitterSeconds = Math.random() * 0.5 // NOSONAR(typescript:S2245)
     const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000 + jitterSeconds))
     return { retryAfterSeconds }
   } catch (error) {

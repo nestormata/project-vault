@@ -666,9 +666,7 @@ async function sendAuditRateLimitedFailure(
     const result = await recordAuditRateRefusalBestEffort(orgId)
     retryAfterSeconds = result?.retryAfterSeconds
   }
-  if (retryAfterSeconds === undefined) {
-    retryAfterSeconds = Math.ceil(env.AUDIT_ORG_WRITE_RATE_WINDOW_MS / 1000)
-  }
+  retryAfterSeconds ??= Math.ceil(env.AUDIT_ORG_WRITE_RATE_WINDOW_MS / 1000)
   reply.header('Retry-After', String(retryAfterSeconds))
   return reply.status(429).send({
     code: 'audit_rate_limited',

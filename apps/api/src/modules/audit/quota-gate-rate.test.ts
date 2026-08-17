@@ -439,7 +439,7 @@ describe.sequential('Story 22.2: assertOrgMayWriteAuditAtRate (the rate gate)', 
       // fields.orgId, never a request-supplied value (see human-entry.test.ts,
       // machine-entry.test.ts, service.test.ts, session-revoke.test.ts and friends, which already
       // assert exact orgId equality on every assertOrgMayWriteAudit/AtRate call).
-      expect(assertOrgMayWriteAuditAtRate.length).toBe(2)
+      expect(assertOrgMayWriteAuditAtRate).toHaveLength(2)
     })
   })
 })
