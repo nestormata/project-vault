@@ -426,6 +426,76 @@ describe.sequential('pruneCredentialVersions', () => {
     }
   }, 20_000)
 
+  // ---------------------------------------------------------------------------------------
+  // Story 22.2 code-review finding: the storage-quota isolation test above never exercises the
+  // NEW rate gate's refusal path through this same worker loop. `assertOrgMayWriteAuditAtRate`
+  // is called immediately before `assertOrgMayWriteAudit` inside `purgeVersion`'s transaction,
+  // so a rate refusal must be caught and isolated by the same `pruneOrgCredentialVersionsIsolated`
+  // try/catch — mirrors the test above exactly, but trips the rate axis instead of the storage
+  // axis, and leaves the storage axis untouched (no `audit_storage_quota_config` row for org A).
+  // ---------------------------------------------------------------------------------------
+
+  it('an org over its audit write-rate cap fails in isolation: its purge rolls back, CREDENTIAL_RETENTION_ORG_FAILED is logged, and the other org still gets pruned', async () => {
+    const { env } = await import('../config/env.js')
+    const previousEnforcement = env.AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED
+    Object.assign(env, { AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED: true })
+    try {
+      const { auditStorageQuotaConfig, auditOrgStorageUsage } =
+        await import('@project-vault/db/schema')
+
+      await withTwoTestOrgs(async (orgAId, orgBId) => {
+        // Org A: a rate cap of 1, with the current window's count already AT that cap and not
+        // yet expired — so purgeVersion's own assertOrgMayWriteAuditAtRate call is the write
+        // that would push the org over the cap, and is refused inside org A's own transaction.
+        await withOrg(orgAId, (tx) =>
+          tx
+            .insert(auditStorageQuotaConfig)
+            .values({ orgId: orgAId, writeRatePerMinute: 1, updatedAt: new Date() })
+        )
+        await withOrg(orgAId, (tx) =>
+          tx.insert(auditOrgStorageUsage).values({
+            orgId: orgAId,
+            rateWindowCount: 1,
+            rateWindowResetAt: new Date(Date.now() + 60_000),
+            updatedAt: new Date(),
+          })
+        )
+        const projectAId = await seedProject(orgAId)
+        const credentialAId = await seedCredential(orgAId, projectAId, 1)
+        await seedVersion(orgAId, credentialAId, 1)
+        await seedVersion(orgAId, credentialAId, 2)
+
+        // Org B: no rate cap configured — its purge should proceed normally.
+        const projectBId = await seedProject(orgBId)
+        const credentialBId = await seedCredential(orgBId, projectBId, 1)
+        await seedVersion(orgBId, credentialBId, 1)
+        await seedVersion(orgBId, credentialBId, 2)
+
+        const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+        await pruneCredentialVersions(logger)
+
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'credential.retention.org_failed',
+            orgId: orgAId,
+          }),
+          'credential retention: one org failed — continuing with the rest'
+        )
+
+        // Org A: the rate-limited transaction rolled back — nothing purged.
+        const versionsA = await versionsFor(orgAId, credentialAId)
+        expect(versionsA.every((v) => v.purgedAt === null)).toBe(true)
+        expect(versionsA.every((v) => v.encryptedValue !== null)).toBe(true)
+
+        // Org B: unaffected by org A's failure — its oldest version is purged as normal.
+        const versionsB = await versionsFor(orgBId, credentialBId)
+        expect(versionsB.filter((v) => v.purgedAt !== null)).toHaveLength(1)
+      })
+    } finally {
+      Object.assign(env, { AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED: previousEnforcement })
+    }
+  }, 20_000)
+
   it('dry-run mode mutates nothing and logs versionsWouldPurge', async () => {
     process.env['CREDENTIAL_RETENTION_DRY_RUN'] = 'true'
     const { env } = await import('../config/env.js')

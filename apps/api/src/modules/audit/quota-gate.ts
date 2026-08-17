@@ -21,10 +21,11 @@ function getOrCreateCounter<T extends string = string>(
 
 // Story 22.1 AC-19: per-org audit-storage-quota gate outcomes, registered directly on
 // prom-client's shared default registry (picked up by GET /metrics automatically). `reason` is
-// exactly `quota_exhausted` | `gate_unavailable` (Layer 1's `rate_limited` and the deleted
-// instance breaker's `instance_critical` are not reachable states any more). No `org_id` label
-// anywhere here — unbounded cardinality; org attribution lives in structured logs and in the
-// AC-26 durable counters on the org's own usage row.
+// one of `quota_exhausted` | `gate_unavailable` (the storage gate, above) or, as of Story 22.2,
+// `rate_limited` (the independent rate gate, below) — the deleted instance breaker's
+// `instance_critical` is the only state that is no longer reachable. No `org_id` label anywhere
+// here — unbounded cardinality; org attribution lives in structured logs and in the AC-26/22.2
+// durable counters on the org's own usage row.
 export const auditWriteRefusedTotal = getOrCreateCounter<'reason'>({
   name: 'audit_write_refused_total',
   help: 'Audited writes refused by the per-org audit-storage quota gate',
