@@ -4,6 +4,7 @@ import { AuditEvent } from '@project-vault/shared'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 
 /**
@@ -89,6 +90,19 @@ async function insertCapabilityDeniedRow(
     payload,
     keyVersion,
   }
+  // Story 22.1 AC-13 (site 9 of 9 — discovered by re-verifying the insert-site count at
+  // implementation time per Task 1: Story 23.3 landed after this story was drafted and added this
+  // site, so the enumerated "eight sites" is stale documentation drift; there are now nine. Same
+  // best-effort-caller contract applies: a refusal here propagates up through
+  // recordCapabilityDeniedAudit() to secure-route.ts's auditCapabilityDenialBestEffort(), which
+  // already catches and logs rather than turning a completed 403 into a 503 — a capability denial
+  // is never blocked on audit-storage quota, consistent with this file's own "never downgrade a
+  // 403 into a less-restrictive-looking outcome" rule.
+  await assertOrgMayWriteAudit(tx, {
+    orgId: input.orgId,
+    eventType: AuditEvent.CAPABILITY_DENIED,
+    sizeBytes: estimateAuditEntrySizeBytes({ payload }),
+  })
   const hmac = computeAuditHmac(fields, getAuditKey())
   await tx.insert(auditLogEntries).values({
     orgId: input.orgId,

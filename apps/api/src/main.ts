@@ -60,6 +60,7 @@ import { runBackupHealthCheck } from './workers/backup-health-check.js'
 import { isBackupEnabled } from './modules/backup/config.js'
 import { reconcileStaleRunningBackups } from './modules/backup/service.js'
 import { runAuditStorageCheck } from './workers/audit-storage-check.js'
+import { runAuditOrgUsageReconcile } from './workers/audit-org-usage-reconcile.js'
 import { runKeyCustodyCheck } from './workers/key-custody-check.js'
 import { runResourceUsageCheck } from './workers/resource-usage-check.js'
 import { env } from './config/env.js'
@@ -217,6 +218,10 @@ async function main(): Promise<void> {
         : {}),
       // Story 9.2 AC-15/AC-21: daily audit-log-storage-pressure check.
       'audit-storage/check': { cron: '0 4 * * *' },
+      // Story 22.1 AC-7: weekly per-org audit-storage usage reconciliation — its OWN, less
+      // frequent schedule, separate from the daily audit-storage/check job above (it is a full
+      // partitioned table scan, not the cheap pg_total_relation_size() call that job makes).
+      'audit-org-usage/reconcile': { cron: env.AUDIT_ORG_USAGE_RECONCILE_CRON },
       // Story 9.2 AC-19/AC-20/AC-21: weekly master-key custody-risk check.
       'key-custody/check': { cron: '0 5 * * 1' },
       // Story 9.2 AC-13/AC-14: hourly instance/per-org resource-usage threshold check.
@@ -352,6 +357,10 @@ async function main(): Promise<void> {
       'audit-storage/check': (job) =>
         withJobLogging(fastify.log, 'audit-storage/check', job.id ?? 'unknown', () =>
           runAuditStorageCheck(boss, fastify.log)
+        ),
+      'audit-org-usage/reconcile': (job) =>
+        withJobLogging(fastify.log, 'audit-org-usage/reconcile', job.id ?? 'unknown', () =>
+          runAuditOrgUsageReconcile(fastify.log, boss)
         ),
       'key-custody/check': (job) =>
         withJobLogging(fastify.log, 'key-custody/check', job.id ?? 'unknown', () =>

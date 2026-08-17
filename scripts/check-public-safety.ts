@@ -80,6 +80,15 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   '.github/workflows/nightly.yml',
   'apps/api/src/config/env.test.ts',
   'docker-compose.yml',
+  // Story 22.1: new test files following this codebase's established convention (identical to
+  // every other DB-backed test in apps/api/src/modules/audit/*.test.ts and
+  // apps/api/src/workers/*.test.ts) of a `process.env['DATABASE_URL'] ??= 'postgresql://vault_app
+  // :dev-only-change-in-prod@localhost:5432/project_vault'` dev-only default. New files trip this
+  // rule only because the checker scans added LINES, not full-file content, so a brand-new file
+  // reproduces an already-repo-wide pattern as a "new" finding.
+  'apps/api/src/modules/audit/quota-gate.test.ts',
+  'apps/api/src/modules/audit/quota-config.test.ts',
+  'apps/api/src/workers/audit-org-usage-reconcile.test.ts',
 ])
 
 function makeFinding(

@@ -14,6 +14,7 @@ import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-crede
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 
@@ -92,13 +93,25 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     .where(eq(credentialVersions.id, candidate.id))
 
   const payload = { credentialId: candidate.credentialId, versionNumber: candidate.versionNumber }
+  const purgeEventType = 'credential.version_purged'
+  // Story 22.1 AC-13 (site 8 of 9 — this worker's own inline insert; it also calls the already-
+  // gated writeSystemAuditRow site 5 elsewhere in this file).
+  await assertOrgMayWriteAudit(tx, {
+    orgId,
+    eventType: purgeEventType,
+    sizeBytes: estimateAuditEntrySizeBytes({
+      payload,
+      resourceId: candidate.credentialId,
+      resourceType: 'credential',
+    }),
+  })
   const keyVersion = await currentAuditKeyVersion(tx)
   const hmac = computeAuditHmac(
     {
       orgId,
       actorTokenId: null,
       actorType: 'system',
-      eventType: 'credential.version_purged',
+      eventType: purgeEventType,
       resourceId: candidate.credentialId,
       resourceType: 'credential',
       payload,
@@ -110,7 +123,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     orgId,
     actorTokenId: null,
     actorType: 'system',
-    eventType: 'credential.version_purged',
+    eventType: purgeEventType,
     resourceId: candidate.credentialId,
     resourceType: 'credential',
     payload,

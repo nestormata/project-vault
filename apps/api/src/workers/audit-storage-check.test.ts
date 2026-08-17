@@ -100,9 +100,11 @@ describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worke
     await expect(runAuditStorageCheck(boss, fakeLogger())).rejects.toThrow()
   })
 
-  it('AC-17: resumes normal operation — utilization dropping back below 95% clears maintenance mode and a routine write succeeds again', async () => {
-    const { shouldSuppressAuditWrite } = await import('../modules/audit/maintenance-mode.js')
-    const { withTestOrg } = await import('@project-vault/db/test-helpers')
+  it('AC-17/Story 22.1 AC-10/AC-12: resumes normal operation — utilization dropping back below 95% clears the (now alert-only) audit_storage.critical episode, and a routine write was never suppressed by it in the first place (the instance-wide write gate is deleted)', async () => {
+    const { writeHumanAuditEntry } = await import('../modules/audit/human-entry.js')
+    const { auditLogEntries } = await import('@project-vault/db/schema')
+    const { withTestOrg, createTestUser } = await import('@project-vault/db/test-helpers')
+    const { firstActorTokenIdForUser } = await import('../modules/audit/actor-token.js')
 
     // Seed maintenance mode as already active (simulating the prior day's critical check), then
     // run the check with a deliberately huge limit override so this call computes healthy
@@ -126,8 +128,23 @@ describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worke
     // The wasActive-and-now-healthy transition logs a distinct maintenance-mode-exited warning.
     expect(healthyLogger.warn).toHaveBeenCalled()
 
-    await withTestOrg(async ({ tx }) => {
-      expect(await shouldSuppressAuditWrite(tx, 'credential.value_revealed')).toBe(false)
+    // Story 22.1 AC-12's headline regression fix: even while the critical alert was active above,
+    // a routine (non-security-critical) write was never suppressed — the instance-wide
+    // maintenance-mode write gate no longer exists, so this now writes and succeeds unconditionally.
+    await withTestOrg(async ({ orgId, tx }) => {
+      const userId = await createTestUser('audit-storage-check-routine-actor')
+      const actorTokenId = await firstActorTokenIdForUser(tx, userId)
+      await writeHumanAuditEntry(tx, {
+        orgId,
+        actorTokenId,
+        eventType: 'credential.value_revealed',
+        payload: {},
+      })
+      const rows = await tx
+        .select({ id: auditLogEntries.id })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'credential.value_revealed'))
+      expect(rows.length).toBeGreaterThanOrEqual(1)
     })
   })
 })
