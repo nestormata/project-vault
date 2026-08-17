@@ -4,7 +4,8 @@ import semver from 'semver'
  * AC1 — the manifest shape an extension author declares, per architecture.md
  * § Extension Manifest Shape.
  */
-export type ExtensionCapability = 'auth-provider' | 'notification-channel' | 'ui-panel'
+export type ExtensionCapability =
+  'auth-provider' | 'notification-channel' | 'ui-panel' | 'capability-gate'
 
 export type ExtensionManifest = {
   /** Reverse-DNS-style identifier, e.g. "com.acme.sso-extension" — validated by registerExtension (AC6). */

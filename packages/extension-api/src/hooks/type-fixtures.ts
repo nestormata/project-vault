@@ -1,4 +1,5 @@
 import type { AuthResult, AuthStrategy } from './auth-strategy.js'
+import type { CapabilityDecision, CapabilityGate } from './capability-gate.js'
 
 /**
  * Compile-only fixture (AC3): proves `onAuthenticate` must return `Promise<AuthResult>`, not a
@@ -17,4 +18,13 @@ export const nonPromiseAuthStrategyFixture: AuthStrategy = {
     externalSubject: 'fixture-subject',
     providerName: 'fixture-provider',
   }),
+}
+
+/**
+ * AC1 — mirrors the AuthStrategy fixture above: proves `onCheckCapability` must return
+ * `Promise<CapabilityDecision>`, not a bare `CapabilityDecision`.
+ */
+export const nonPromiseCapabilityGateFixture: CapabilityGate = {
+  // @ts-expect-error — onCheckCapability must return Promise<CapabilityDecision>, not a bare CapabilityDecision
+  onCheckCapability: (): CapabilityDecision => ({ permitted: true }),
 }

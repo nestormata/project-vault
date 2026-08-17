@@ -4,7 +4,8 @@ import { apiFetch } from './client.js'
 // response envelope — `{ extension, nativeLoginPolicy }`. Story 23.2 AC-12 deliberately broke
 // the original bare manifest-or-null response shape into this envelope in the same commit as
 // the API route change and the regenerated openapi.json.
-export type ExtensionCapability = 'auth-provider' | 'notification-channel' | 'ui-panel'
+export type ExtensionCapability =
+  'auth-provider' | 'notification-channel' | 'ui-panel' | 'capability-gate'
 
 export type ExtensionStatus = {
   name: string

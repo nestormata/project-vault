@@ -1,8 +1,9 @@
-import { PublicStatusPageResponseSchema } from '@project-vault/shared'
+import { CapabilityId, PublicStatusPageResponseSchema } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute } from '../../lib/secure-route.js'
+import { assertCapability } from '../../lib/capability-gate.js'
 import { StatusPageTokenParamsSchema } from './schema.js'
 import { hashStatusPageToken, statusPageTokenMatches } from './status-page-tokens.js'
 import { findStatusPageByTokenHash, getPublicStatusPageServices } from './status-page-service.js'
@@ -45,7 +46,29 @@ export async function publicStatusPageRoutes(fastify: FastifyApp): Promise<void>
       // same 404, same latency profile — no early-return fast-path for "obviously malformed".
       const tokenHash = hashStatusPageToken(params.token)
       const statusPage = await findStatusPageByTokenHash(tokenHash)
-      if (!statusPage || !statusPageTokenMatches(statusPage.tokenHash, params.token)) {
+      const validStatusPage =
+        statusPage && statusPageTokenMatches(statusPage.tokenHash, params.token) ? statusPage : null
+
+      // Story 23.3 AC-24: invoked UNCONDITIONALLY on every request, valid token or not, with
+      // orgId resolved from the lookup above (or null for an unknown token) — so the gate wait is
+      // never a valid-token-only cost and never becomes a timing side channel that distinguishes
+      // token validity. Runs before withOrg(...) below (AC-19: no Postgres connection may be
+      // checked out while this is pending). ANY non-permitted outcome — explicit denial,
+      // gate_unavailable, gate_malformed_decision, or an invalid token — collapses into the
+      // route's EXISTING uniform 404. Entitlement state is not public information: "not entitled"
+      // and "no such page" are deliberately the same answer here, so a descriptive error code
+      // would be an enumeration oracle (Story 6.3's uniform-404 invariant outranks it).
+      const decision = await assertCapability({
+        capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
+        orgId: validStatusPage?.orgId ?? null,
+        userId: null,
+        orgRole: null,
+        surface: 'public',
+        requestId: req.id,
+        logger: req.log,
+      })
+
+      if (!validStatusPage || !decision.permitted) {
         reply.status(404).send(STATUS_PAGE_NOT_FOUND)
         return reply
       }
@@ -55,7 +78,7 @@ export async function publicStatusPageRoutes(fastify: FastifyApp): Promise<void>
       // disabled/deleted since step 1, or its project has since been archived — both collapse to
       // the same 404 as an unknown token (AC 16: no grace period; archived projects are excluded
       // from public visibility, matching the health dashboard's own archived-project exclusion).
-      const services = await getPublicStatusPageServices(statusPage.orgId, statusPage.id)
+      const services = await getPublicStatusPageServices(validStatusPage.orgId, validStatusPage.id)
       if (services === null) {
         reply.status(404).send(STATUS_PAGE_NOT_FOUND)
         return reply

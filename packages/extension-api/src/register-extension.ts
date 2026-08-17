@@ -5,6 +5,7 @@ import type { ExtensionManifest } from './manifest.js'
 import type { AuthStrategy } from './hooks/auth-strategy.js'
 import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
+import type { CapabilityGate } from './hooks/capability-gate.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -23,6 +24,7 @@ export type ExtensionHooks = {
   authStrategy?: AuthStrategy
   notificationChannel?: NotificationChannel
   uiPanel?: UIPanel
+  capabilityGate?: CapabilityGate
 }
 
 /**

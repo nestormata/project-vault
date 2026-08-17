@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
+import { CapabilityId } from '@project-vault/shared'
+import type { CapabilityGate } from '@project-vault/extension-api'
+import type { ExtensionState } from '../extensions/loader.js'
 import {
   buildSecurePreHandlers,
   secureRoute,
@@ -8,6 +11,7 @@ import {
   type SecureRouteOptions,
   type SecureRouteRegistrationOptions,
 } from './secure-route.js'
+import { __resetCapabilityGateForTests, wireExtensionCapabilityGate } from './capability-gate.js'
 
 const TEST_ORG_ID = ['00000000', '0000', '4000', '8000', '000000000001'].join('-')
 
@@ -494,5 +498,149 @@ describe('secureRoute', () => {
       expect.any(String)
     )
     expect(tx.execute).toHaveBeenCalled()
+  })
+})
+
+describe('secureRoute — declarative capability gating (Story 23.3 AC-5, AC-10, AC-20, AC-22)', () => {
+  afterEach(() => {
+    __resetCapabilityGateForTests()
+  })
+
+  function loadedGateState(onCheckCapability: CapabilityGate['onCheckCapability']): ExtensionState {
+    return {
+      status: 'loaded' as const,
+      manifest: { name: 'com.example.ext', apiVersion: '1.2.0', capabilities: [] },
+      loadedAt: new Date().toISOString(),
+      hooks: { capabilityGate: { onCheckCapability } },
+    }
+  }
+
+  it('registration throws for an unknown capability id (AC-22 boot-time validation)', () => {
+    expect(() =>
+      secureRoute(
+        fastifyStub(vi.fn(), async () => undefined),
+        {
+          method: 'GET',
+          url: '/api/v1/test/unknown-capability',
+          security: { capability: 'not_a_real_id' as never, requireOrgScope: false },
+          handler: async () => ({}),
+        }
+      )
+    ).toThrow('SecureRoute: unknown capability id')
+  })
+
+  it('with no capability annotation, the gate helper is never called even when a gate IS registered (AC-20 spy)', async () => {
+    const onCheckCapability = vi.fn(async () => ({ permitted: false, reasonCode: 'x' }))
+    wireExtensionCapabilityGate(loadedGateState(onCheckCapability))
+    const { registered } = mountProtectedRoute({
+      method: 'GET',
+      url: '/api/v1/test/ungated',
+      security: { requireOrgScope: false, writeAuditEvent: false },
+      handler: async () => ({ ok: true }),
+    })
+
+    const { reply } = await invokeRegisteredRoute(registered)
+
+    expect(reply.statusCode).toBe(200)
+    expect(onCheckCapability).not.toHaveBeenCalled()
+  })
+
+  it('with no gate registered, an annotated route proceeds ungated (AC-5 fail-open)', async () => {
+    const handler = vi.fn(async () => ({ ok: true }))
+    const { registered } = mountProtectedRoute({
+      method: 'GET',
+      url: '/api/v1/test/gated-no-gate',
+      security: {
+        capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
+        requireOrgScope: false,
+        writeAuditEvent: false,
+      },
+      handler,
+    })
+
+    const { reply } = await invokeRegisteredRoute(registered)
+
+    expect(reply.statusCode).toBe(200)
+    expect(handler).toHaveBeenCalled()
+  })
+
+  it('a registered gate denying the capability yields 403 capability_denied and the handler never runs', async () => {
+    wireExtensionCapabilityGate(
+      loadedGateState(async () => ({
+        permitted: false,
+        reasonCode: 'not_entitled',
+        message: 'Upgrade to enable this.',
+      }))
+    )
+    const handler = vi.fn()
+    const { registered } = mountProtectedRoute({
+      method: 'POST',
+      url: '/api/v1/test/gated-denied',
+      security: {
+        capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
+        requireOrgScope: false,
+        writeAuditEvent: false,
+      },
+      handler,
+    })
+
+    const { reply } = await invokeRegisteredRoute(registered)
+
+    expect(reply.statusCode).toBe(403)
+    expect(reply.send).toHaveBeenCalledWith({
+      code: 'capability_denied',
+      capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
+      reasonCode: 'not_entitled',
+      message: 'Upgrade to enable this.',
+    })
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('a registered gate permitting the capability lets the handler run', async () => {
+    wireExtensionCapabilityGate(loadedGateState(async () => ({ permitted: true })))
+    const handler = vi.fn(async () => ({ ok: true }))
+    const { registered } = mountProtectedRoute({
+      method: 'POST',
+      url: '/api/v1/test/gated-permitted',
+      security: {
+        capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
+        requireOrgScope: false,
+        writeAuditEvent: false,
+      },
+      handler,
+    })
+
+    const { reply } = await invokeRegisteredRoute(registered)
+
+    expect(reply.statusCode).toBe(200)
+    expect(handler).toHaveBeenCalled()
+  })
+
+  it('a below-minimumRole caller is rejected before the gate is ever consulted', async () => {
+    const onCheckCapability = vi.fn(async (): Promise<{ permitted: true }> => ({ permitted: true }))
+    wireExtensionCapabilityGate(loadedGateState(onCheckCapability))
+    const { registered } = mountProtectedRoute(
+      {
+        method: 'POST',
+        url: '/api/v1/test/gated-role-first',
+        security: {
+          capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
+          minimumRole: 'admin',
+          requireOrgScope: false,
+          writeAuditEvent: false,
+        },
+        handler: async () => ({ ok: true }),
+      },
+      'member'
+    )
+
+    const { reply } = await invokeRegisteredRoute(registered)
+
+    expect(reply.statusCode).toBe(403)
+    expect(reply.send).toHaveBeenCalledWith({
+      code: 'insufficient_role',
+      message: 'Insufficient permissions',
+    })
+    expect(onCheckCapability).not.toHaveBeenCalled()
   })
 })

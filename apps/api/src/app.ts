@@ -57,6 +57,7 @@ import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
 import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
+import { wireExtensionCapabilityGate } from './lib/capability-gate.js'
 import { resolveNativeLoginPolicy } from './modules/auth/native-login-policy.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
 import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
@@ -377,6 +378,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 14.3 Task 3: after loadExtension() resolves, append a registered authStrategy hook
   // (if any) to authStrategies — local-first invariant is preserved unconditionally either way.
   wireExtensionAuthStrategy(getExtensionStatus())
+
+  // Story 23.3 AC-7: sibling wiring step, on the very next line, mirroring
+  // wireExtensionAuthStrategy() exactly — reads only the already-resolved ExtensionState, no-ops
+  // for every state except loaded-with-a-capabilityGate-hook, and never throws.
+  wireExtensionCapabilityGate(getExtensionStatus(), fastify.log)
 
   // Story 23.2 AC-4: resolved once, immediately after the auth-strategy wiring above, from
   // server-side state only (the loaded extension's manifest + the host-set break-glass /

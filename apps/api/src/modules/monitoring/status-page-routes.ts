@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import {
+  CapabilityId,
   StatusPageConfigResponseSchema,
   StatusPageServicesResponseSchema,
   StatusPageTokenResponseSchema,
@@ -165,6 +166,10 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       requireMfa: true,
       writeAuditEvent: false,
       rateLimit: { ...WRITE_RATE_LIMIT, key: 'POST /api/v1/projects/:projectId/status-page' },
+      // Story 23.3 AC-23: the primary, authenticated, audited declarative call site. The
+      // entitlement being gated is "may this org publish a public status page." Golden route
+      // inventory: apps/api/src/__tests__/gated-route-inventory.test.ts.
+      capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
     },
     handler: withOwnedProject(async (secureCtx, projectId, req, reply) => {
       let enabled: Awaited<ReturnType<typeof enableStatusPage>>
