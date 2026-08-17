@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tx } from '@project-vault/db'
+import { SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 
-const { shouldSuppressAuditWrite, logAuditWriteSuspended } = vi.hoisted(() => ({
-  shouldSuppressAuditWrite: vi.fn(),
-  logAuditWriteSuspended: vi.fn(),
+const { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } = vi.hoisted(() => ({
+  assertOrgMayWriteAudit: vi.fn(),
+  estimateAuditEntrySizeBytes: vi.fn(() => 42),
 }))
 
-vi.mock('./maintenance-mode.js', () => ({
-  shouldSuppressAuditWrite,
-  logAuditWriteSuspended,
+vi.mock('./quota-gate.js', () => ({
+  assertOrgMayWriteAudit,
+  estimateAuditEntrySizeBytes,
 }))
 
 import { writeMachineAuditEntry, writeSystemAuditEntry } from './machine-entry.js'
@@ -20,13 +21,19 @@ function createStubTx(): Tx {
   } as unknown as Tx
 }
 
-describe('machine-entry maintenance-mode suppression', () => {
+// Story 22.1 AC-10/AC-13: shouldSuppressAuditWrite/logAuditWriteSuspended are deleted — there is
+// no "skip this write" return value any more. The gate primitive either returns (admitted) or
+// throws SameTransactionAuditWriteError (refused), which propagates and rolls back the caller's
+// transaction rather than silently short-circuiting to a successful no-op.
+describe('machine-entry / quota-gate wiring', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    shouldSuppressAuditWrite.mockResolvedValue(true)
+    assertOrgMayWriteAudit.mockRejectedValue(
+      new SameTransactionAuditWriteError('quota exhausted', 'audit_quota_exhausted')
+    )
   })
 
-  it('writeMachineAuditEntry short-circuits without touching tx when suppressed', async () => {
+  it('writeMachineAuditEntry propagates a gate refusal and never reaches the insert', async () => {
     const tx = createStubTx()
 
     await expect(
@@ -37,14 +44,17 @@ describe('machine-entry maintenance-mode suppression', () => {
         machineUserId: 'machine-1',
         keyId: 'key-1',
       })
-    ).resolves.toBeUndefined()
+    ).rejects.toBeInstanceOf(SameTransactionAuditWriteError)
 
-    expect(logAuditWriteSuspended).toHaveBeenCalledWith('machine.something.happened', 'org-1')
+    expect(assertOrgMayWriteAudit).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ orgId: 'org-1', eventType: 'machine.something.happened' })
+    )
     expect(tx.execute).not.toHaveBeenCalled()
     expect(tx.insert).not.toHaveBeenCalled()
   })
 
-  it('writeSystemAuditEntry short-circuits without touching tx when suppressed', async () => {
+  it('writeSystemAuditEntry propagates a gate refusal and never reaches the insert', async () => {
     const tx = createStubTx()
 
     await expect(
@@ -53,9 +63,12 @@ describe('machine-entry maintenance-mode suppression', () => {
         eventType: 'system.something.happened',
         payload: {},
       })
-    ).resolves.toBeUndefined()
+    ).rejects.toBeInstanceOf(SameTransactionAuditWriteError)
 
-    expect(logAuditWriteSuspended).toHaveBeenCalledWith('system.something.happened', 'org-2')
+    expect(assertOrgMayWriteAudit).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ orgId: 'org-2', eventType: 'system.something.happened' })
+    )
     expect(tx.execute).not.toHaveBeenCalled()
     expect(tx.insert).not.toHaveBeenCalled()
   })

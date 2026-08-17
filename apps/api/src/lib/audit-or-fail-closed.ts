@@ -56,11 +56,24 @@ export function isPlatformAuditStorageUnavailableError(error: unknown): boolean 
 
 /** Shared by every `write*AuditEntryOrFailClosed` wrapper below: any audit-write error is
  * rewrapped as `SameTransactionAuditWriteError` so SecureRoute (or a job's own transaction) rolls
- * back and fails closed instead of completing a mutation without an audit record. */
+ * back and fails closed instead of completing a mutation without an audit record.
+ *
+ * Bug fix (found by the J21 e2e journey, 2026-08-17): `write()` may itself throw a
+ * `SameTransactionAuditWriteError` — `assertOrgMayWriteAudit` (quota-gate.ts) throws one with
+ * `code: 'audit_quota_exhausted'` or `'audit_gate_unavailable'` from inside
+ * `writeHumanAuditEntry`/`writeMachineAuditEntry`/`writeSystemAuditEntry`. Unconditionally
+ * wrapping that in a *new* `SameTransactionAuditWriteError(message)` (no `code`) discarded the
+ * original code, so every route that calls one of these `...OrFailClosed` wrappers directly from
+ * its handler (`writeAuditEvent: false`, e.g. `POST /api/v1/projects`) silently downgraded a 503
+ * `audit_quota_exhausted` refusal to the generic `audit_write_failed` — the same class of bug
+ * `secure-route.ts`'s own default `auditWriter` catch already guards against (see its comment),
+ * just not here. Rethrow an already-`SameTransactionAuditWriteError` unchanged instead of
+ * re-wrapping it. */
 async function rethrowAsSameTransactionAuditWriteError(write: () => Promise<void>): Promise<void> {
   try {
     await write()
   } catch (error) {
+    if (error instanceof SameTransactionAuditWriteError) throw error
     throw new SameTransactionAuditWriteError(error instanceof Error ? error.message : String(error))
   }
 }

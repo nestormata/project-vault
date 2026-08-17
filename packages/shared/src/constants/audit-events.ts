@@ -146,6 +146,11 @@ export const AuditEvent = {
   // (surface: 'org'). Payload is { capability, reasonCode } only — never the extension-controlled
   // `message` (free-form text does not belong in a tamper-evident audit trail).
   CAPABILITY_DENIED: 'capability.denied',
+  // Story 22.1 AC-5: a platform operator created/changed/cleared an org's audit-storage quota.
+  // In QUOTA_REMEDIATION_EVENT_TYPES (apps/api/src/modules/audit/quota-gate.ts), NOT
+  // SECURITY_CRITICAL_AUDIT_EVENT_TYPES (finding M2) — an over-quota org must still be able to
+  // have its own quota raised (the deadlock-prevention case, AC-11).
+  AUDIT_QUOTA_CONFIGURED: 'audit.quota_configured',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

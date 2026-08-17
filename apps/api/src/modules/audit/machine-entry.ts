@@ -4,7 +4,7 @@ import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { computeAuditHmac } from './write-entry.js'
-import { logAuditWriteSuspended, shouldSuppressAuditWrite } from './maintenance-mode.js'
+import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 type RequestMeta = {
   ipAddress?: string | null
@@ -35,18 +35,20 @@ export type MachineAuditFields = {
  * discoverable via `payload->>'machineUserId'` for Epic 8's future audit search.
  */
 export async function writeMachineAuditEntry(tx: Tx, fields: MachineAuditFields): Promise<void> {
-  // Story 9.2 AC-17/D10: audit-storage maintenance-mode circuit breaker (see human-entry.ts).
-  if (await shouldSuppressAuditWrite(tx, fields.eventType)) {
-    logAuditWriteSuspended(fields.eventType, fields.orgId)
-    return
-  }
-  await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
-  const keyVersion = await currentAuditKeyVersion(tx)
   const payload = {
     ...fields.payload,
     machineUserId: fields.machineUserId,
     keyId: fields.keyId,
   }
+  // Story 22.1 AC-13 (see human-entry.ts). Size is estimated over the fully-assembled payload
+  // (including machineUserId/keyId, which are folded in before the insert).
+  await assertOrgMayWriteAudit(tx, {
+    orgId: fields.orgId,
+    eventType: fields.eventType,
+    sizeBytes: estimateAuditEntrySizeBytes({ ...fields, payload }),
+  })
+  await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
+  const keyVersion = await currentAuditKeyVersion(tx)
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -91,11 +93,12 @@ export type SystemAuditFields = {
  * `audit_log_entries` CHECK constraint already permits; `actorTokenId` is always null.
  */
 export async function writeSystemAuditEntry(tx: Tx, fields: SystemAuditFields): Promise<void> {
-  // Story 9.2 AC-17/D10: audit-storage maintenance-mode circuit breaker (see human-entry.ts).
-  if (await shouldSuppressAuditWrite(tx, fields.eventType)) {
-    logAuditWriteSuspended(fields.eventType, fields.orgId)
-    return
-  }
+  // Story 22.1 AC-13 (see human-entry.ts).
+  await assertOrgMayWriteAudit(tx, {
+    orgId: fields.orgId,
+    eventType: fields.eventType,
+    sizeBytes: estimateAuditEntrySizeBytes(fields),
+  })
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
   const keyVersion = await currentAuditKeyVersion(tx)
   const hmac = computeAuditHmac(

@@ -922,6 +922,19 @@ const envSchema = z
     // Story 9.4 AC-18/D10: independent of AUDIT_LOG_STORAGE_LIMIT_GB — the two logs' growth rates
     // are unrelated, so a single shared threshold would be wrong.
     PLATFORM_AUDIT_STORAGE_LIMIT_GB: z.coerce.number().positive().default(5),
+
+    // Story 22.1 AC-4: per-org audit-storage quota. The global kill switch — checked FIRST, in
+    // process memory, before any DB access (AC-25) — defaults to false so an upgraded instance
+    // sees zero behaviour change (AC-20).
+    AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED: booleanEnvDefault(false),
+    // 0 = unlimited (the safety default — a non-zero default would start failing writes on
+    // upgrade the moment any org exceeded it, AC-20's trap).
+    AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB: z.coerce.number().min(0).default(0),
+    AUDIT_ORG_USAGE_RECONCILE_CRON: z.string().min(1).default('0 5 * * 0'),
+    AUDIT_ORG_USAGE_RECONCILE_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+    AUDIT_ORG_USAGE_STALE_AFTER_HOURS: z.coerce.number().positive().default(240),
+    // 0 = alert disabled.
+    AUDIT_ORG_PREAUTH_ALERT_THRESHOLD_MB: z.coerce.number().min(0).default(0),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {

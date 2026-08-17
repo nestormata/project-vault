@@ -32,6 +32,16 @@ export const NOTIFICATION_ALERT_TYPES = [
   // every org (D7/D10), unlike resource.orgs_near_limit.
   'audit_storage.warning',
   'audit_storage.critical',
+  // Story 22.1 AC-17/AC-18: per-org audit-storage-quota tiered alerts (scopeKey = orgId),
+  // delivered to the org's OWN admins — never platform-wide, never naming other orgs.
+  'audit_org_storage.warning',
+  'audit_org_storage.critical',
+  // Story 22.1 AC-7: usage reconciliation failed (statement_timeout or a hard error) — an
+  // operator alert, not org-facing.
+  'audit_usage_reconciliation.failing',
+  // Story 22.1 AC-29: unauthenticated/pre-auth-attributable audit volume crossed the operator's
+  // configured threshold — an operator alert (this volume never affects any tenant's quota).
+  'audit_preauth_volume.high',
   // Story 9.2 AC-19/AC-20: master-key custody risk — delivered to every org owner (D7).
   'key_custody_risk',
   // Story 18.6: recipient-directed, informational notification. Unlike operational alerts,

@@ -24,6 +24,7 @@ import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
+import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from '../audit/quota-gate.js'
 import { findErasedRequestForEmailGlobally } from '../compliance/erasure-lookup.js'
 import {
   claimInvitation,
@@ -148,6 +149,14 @@ async function insertAuditEntry(
     userAgent?: string | null
   }
 ): Promise<void> {
+  // Story 22.1 AC-13 (site 6 of 9). Note: LOGIN_FAILED and the account-recovery events written
+  // through this helper are PREAUTH_ATTRIBUTABLE_EVENT_TYPES members — the gate routes their
+  // bytes to preauth_bytes_used, never bytes_used (AC-29).
+  await assertOrgMayWriteAudit(tx, {
+    orgId: fields.orgId,
+    eventType: fields.eventType,
+    sizeBytes: estimateAuditEntrySizeBytes(fields),
+  })
   const keyVersion = await currentAuditKeyVersion(tx)
   const hmac = computeAuditHmac(
     {

@@ -14,6 +14,7 @@ import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-crede
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 
@@ -92,13 +93,25 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     .where(eq(credentialVersions.id, candidate.id))
 
   const payload = { credentialId: candidate.credentialId, versionNumber: candidate.versionNumber }
+  const purgeEventType = 'credential.version_purged'
+  // Story 22.1 AC-13 (site 8 of 9 — this worker's own inline insert; it also calls the already-
+  // gated writeSystemAuditRow site 5 elsewhere in this file).
+  await assertOrgMayWriteAudit(tx, {
+    orgId,
+    eventType: purgeEventType,
+    sizeBytes: estimateAuditEntrySizeBytes({
+      payload,
+      resourceId: candidate.credentialId,
+      resourceType: 'credential',
+    }),
+  })
   const keyVersion = await currentAuditKeyVersion(tx)
   const hmac = computeAuditHmac(
     {
       orgId,
       actorTokenId: null,
       actorType: 'system',
-      eventType: 'credential.version_purged',
+      eventType: purgeEventType,
       resourceId: candidate.credentialId,
       resourceType: 'credential',
       payload,
@@ -110,7 +123,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     orgId,
     actorTokenId: null,
     actorType: 'system',
-    eventType: 'credential.version_purged',
+    eventType: purgeEventType,
     resourceId: candidate.credentialId,
     resourceType: 'credential',
     payload,
@@ -211,40 +224,81 @@ async function pruneOrgCredentialVersions(
   return { credentialsScanned: orgCredentials.length, versionsPurged, versionsWouldPurge }
 }
 
+type PruneOrgResult = {
+  credentialsScanned: number
+  versionsPurged: number
+  versionsWouldPurge: number
+}
+
+// Story 22.1 fix: purgeVersion() now calls assertOrgMayWriteAudit, which throws for an org that
+// is over its audit-storage quota. Without per-org isolation here, that throw would propagate out
+// of pruneCredentialVersions's loop and abort the retention purge for every org processed after
+// the offending one in this run — one over-quota org would silently defeat the
+// security/compliance credential-retention purge for the rest of the instance. Isolate per-org
+// failures the same way audit-org-usage-reconcile.ts's writeBackAllOrgs does. Returns null on
+// failure so the caller can skip logging a summary for this org.
+async function pruneOrgCredentialVersionsIsolated(
+  orgId: string,
+  dryRun: boolean,
+  logger?: WorkerLogger
+): Promise<PruneOrgResult | null> {
+  try {
+    return await pruneOrgCredentialVersions(orgId, dryRun, logger)
+  } catch (error) {
+    if (logger) {
+      operationalLog(
+        logger,
+        'error',
+        OperationalEvent.CREDENTIAL_RETENTION_ORG_FAILED,
+        'credential retention: one org failed — continuing with the rest',
+        { orgId, err: error instanceof Error ? error.message : String(error) }
+      )
+    }
+    return null
+  }
+}
+
+function logPruneOrgResult(
+  orgId: string,
+  dryRun: boolean,
+  result: PruneOrgResult,
+  logger?: WorkerLogger
+): void {
+  if (!logger) return
+  if (dryRun) {
+    operationalLog(
+      logger,
+      'info',
+      OperationalEvent.CREDENTIAL_RETENTION_DRY_RUN,
+      'credential retention dry-run summary',
+      {
+        orgId,
+        credentialsScanned: result.credentialsScanned,
+        versionsWouldPurge: result.versionsWouldPurge,
+      }
+    )
+    return
+  }
+  operationalLog(
+    logger,
+    'info',
+    OperationalEvent.CREDENTIAL_RETENTION_SUMMARY,
+    'credential retention purge summary',
+    {
+      orgId,
+      credentialsScanned: result.credentialsScanned,
+      versionsPurged: result.versionsPurged,
+    }
+  )
+}
+
 export async function pruneCredentialVersions(logger?: WorkerLogger): Promise<void> {
   const dryRun = env.CREDENTIAL_RETENTION_DRY_RUN
   const orgIds = await fetchAllOrgIds()
 
   for (const orgId of orgIds) {
-    const result = await pruneOrgCredentialVersions(orgId, dryRun, logger)
-    if (result.credentialsScanned === 0) continue
-
-    if (dryRun) {
-      if (logger) {
-        operationalLog(
-          logger,
-          'info',
-          OperationalEvent.CREDENTIAL_RETENTION_DRY_RUN,
-          'credential retention dry-run summary',
-          {
-            orgId,
-            credentialsScanned: result.credentialsScanned,
-            versionsWouldPurge: result.versionsWouldPurge,
-          }
-        )
-      }
-    } else if (logger) {
-      operationalLog(
-        logger,
-        'info',
-        OperationalEvent.CREDENTIAL_RETENTION_SUMMARY,
-        'credential retention purge summary',
-        {
-          orgId,
-          credentialsScanned: result.credentialsScanned,
-          versionsPurged: result.versionsPurged,
-        }
-      )
-    }
+    const result = await pruneOrgCredentialVersionsIsolated(orgId, dryRun, logger)
+    if (!result || result.credentialsScanned === 0) continue
+    logPruneOrgResult(orgId, dryRun, result, logger)
   }
 }

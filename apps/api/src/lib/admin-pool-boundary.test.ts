@@ -29,6 +29,7 @@ const importerAllowlist = new Set([
   'modules/platform-admin/service.ts',
   'modules/rotation/metrics.ts',
   'modules/status/token-store.ts',
+  'workers/audit-org-usage-reconcile.ts',
   'workers/audit-storage-check.ts',
   'workers/import-cleanup.ts',
   'workers/notification-inbox-purge.ts',

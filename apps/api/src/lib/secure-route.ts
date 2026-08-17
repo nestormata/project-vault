@@ -8,6 +8,11 @@ import { requireMfaEnrollment } from '../modules/auth/mfa-enforcement.js'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import {
+  assertOrgMayWriteAudit,
+  estimateAuditEntrySizeBytes,
+  recordAuditQuotaRefusalBestEffort,
+} from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
@@ -103,8 +108,16 @@ export type SecureRouteRegistrationOptions = {
 
 class AuditWriteError extends Error {}
 
+// Story 22.1 AC-9/AC-19: `code` distinguishes the three ways this rethrow can now happen —
+// `audit_quota_exhausted` (a per-org quota refusal), `audit_gate_unavailable` (the gate
+// statement itself errored, fail-closed), or undefined (the pre-existing generic
+// `audit_write_failed` case, unrelated to quota). Kept on the existing error class rather than a
+// new one so every other `rethrowAsSameTransactionAuditWriteError` call site is unaffected.
 export class SameTransactionAuditWriteError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public readonly code?: 'audit_quota_exhausted' | 'audit_gate_unavailable'
+  ) {
     super(message)
     this.name = 'SameTransactionAuditWriteError'
   }
@@ -323,6 +336,16 @@ async function defaultAuditWriter({
     keyVersion,
   }
   const hmac = computeAuditHmac(fields, getAuditKey())
+  // Story 22.1 AC-13 (site 4 of 9 — the inline defaultAuditWriter insert).
+  await assertOrgMayWriteAudit(tx, {
+    orgId: auth.orgId,
+    eventType: config.eventType,
+    sizeBytes: estimateAuditEntrySizeBytes({
+      payload,
+      resourceId,
+      resourceType: config.resourceType,
+    }),
+  })
   await tx.insert(auditLogEntries).values({
     orgId: auth.orgId,
     actorTokenId,
@@ -578,6 +601,15 @@ async function runProtectedHandler({
       try {
         await auditWriter({ tx: typedTx, auth, request, config: auditConfig })
       } catch (error) {
+        // Story 22.1 AC-9/AC-19 fix: a SameTransactionAuditWriteError (thrown by
+        // assertOrgMayWriteAudit inside defaultAuditWriter, or by a custom auditWriter) already
+        // carries the `code` sendSecureRouteFailure needs to distinguish `audit_quota_exhausted`
+        // and `audit_gate_unavailable` from a generic audit-write failure. Re-wrapping it here in
+        // a fresh AuditWriteError discarded that code and silently downgraded every quota refusal
+        // to the generic `audit_write_failed` 503 — rethrow it unchanged instead.
+        if (error instanceof SameTransactionAuditWriteError) {
+          throw error
+        }
         throw new AuditWriteError(error instanceof Error ? error.message : String(error))
       }
     }
@@ -586,12 +618,37 @@ async function runProtectedHandler({
   return { result, postCommitCallbacks }
 }
 
-function sendSecureRouteFailure(
+// Story 22.1 AC-9/AC-26: a per-org quota refusal, not a generic audit-write failure — the message
+// names no other organization, no instance-wide figure, and no absolute capacity number.
+// recordAuditQuotaRefusalBestEffort was implemented but never wired in anywhere before this fix —
+// refused_write_count/last_refusal_at on audit_org_storage_usage silently never incremented. This
+// is the one and only call site the function's own docstring describes ("only ever called from
+// the 503 error path... after the refusing transaction has rolled back"). Best-effort: it
+// swallows and logs its own failure internally. Split out of sendSecureRouteFailure to keep that
+// function's cyclomatic complexity under the lint threshold.
+async function sendAuditQuotaExhaustedFailure(
   request: FastifyRequest,
   reply: FastifyReply,
   error: unknown,
-  phase: RequestPhase
-): unknown {
+  orgId?: string
+): Promise<unknown> {
+  logRouteError(request, { eventType: 'secure_route.audit_quota_exhausted', err: error })
+  if (orgId) {
+    await recordAuditQuotaRefusalBestEffort(orgId)
+  }
+  return reply.status(503).send({
+    code: 'audit_quota_exhausted',
+    message: 'Audit storage quota exhausted for this organization',
+  })
+}
+
+async function sendSecureRouteFailure(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  error: unknown,
+  phase: RequestPhase,
+  orgId?: string
+): Promise<unknown> {
   if (isReplySent(reply)) {
     throw new Error('SecureRoute: handler sent a response before audit completed')
   }
@@ -600,6 +657,17 @@ function sendSecureRouteFailure(
     return reply.status(503).send({
       code: 'service_unavailable',
       message: 'Database security context unavailable',
+    })
+  }
+  if (error instanceof SameTransactionAuditWriteError && error.code === 'audit_quota_exhausted') {
+    return sendAuditQuotaExhaustedFailure(request, reply, error, orgId)
+  }
+  if (error instanceof SameTransactionAuditWriteError && error.code === 'audit_gate_unavailable') {
+    // Story 22.1 AC-19: the gate statement itself errored — fail closed, never a silent allow.
+    logRouteError(request, { eventType: 'secure_route.audit_gate_unavailable', err: error })
+    return reply.status(503).send({
+      code: 'audit_gate_unavailable',
+      message: 'Audit quota gate is unavailable',
     })
   }
   if (
@@ -657,7 +725,7 @@ async function handleSecureRouteRequest({
     await runPostCommitCallbacks(request, outcome.postCommitCallbacks)
     return sendIfNeeded(reply, outcome.result)
   } catch (error) {
-    return sendSecureRouteFailure(request, reply, error, state.phase)
+    return await sendSecureRouteFailure(request, reply, error, state.phase, auth.orgId)
   }
 }
 

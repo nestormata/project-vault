@@ -7,11 +7,21 @@ import {
   buildSecurePreHandlers,
   secureRoute,
   secureRoutes,
+  SameTransactionAuditWriteError,
   type SecureRouteContext,
   type SecureRouteOptions,
   type SecureRouteRegistrationOptions,
 } from './secure-route.js'
 import { __resetCapabilityGateForTests, wireExtensionCapabilityGate } from './capability-gate.js'
+
+const recordAuditQuotaRefusalBestEffort = vi.fn(async (_orgId: string) => undefined)
+vi.mock('../modules/audit/quota-gate.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../modules/audit/quota-gate.js')>()
+  return {
+    ...actual,
+    recordAuditQuotaRefusalBestEffort: (orgId: string) => recordAuditQuotaRefusalBestEffort(orgId),
+  }
+})
 
 const TEST_ORG_ID = ['00000000', '0000', '4000', '8000', '000000000001'].join('-')
 
@@ -361,6 +371,84 @@ describe('secureRoute', () => {
       code: 'audit_write_failed',
       message: 'Audit logging is unavailable',
     })
+  })
+
+  it('sends a 503 audit_quota_exhausted response and records the refusal when the audit gate refuses the write for quota', async () => {
+    recordAuditQuotaRefusalBestEffort.mockClear()
+    const { tx, transaction } = transactionHarness()
+    const auditWriter = vi.fn(async () => {
+      throw new SameTransactionAuditWriteError('quota exhausted', 'audit_quota_exhausted')
+    })
+    const handler = vi.fn(async () => ({ data: { changed: true } }))
+    const { registered } = mountProtectedRoute(
+      {
+        method: 'POST',
+        url: '/api/v1/test/audit-quota-exhausted',
+        db: { transaction },
+        auditWriter,
+        security: {
+          writeAuditEvent: { eventType: 'test.audit_quota_exhausted', resourceType: 'test' },
+        },
+        handler,
+      },
+      'owner'
+    )
+
+    const { reply } = await invokeRegisteredRoute(registered, {
+      authContext: undefined,
+      ip: '127.0.0.1',
+      headers: {},
+    })
+
+    expect(handler).toHaveBeenCalledOnce()
+    expect(auditWriter).toHaveBeenCalledWith(
+      expect.objectContaining({ tx, auth: expect.objectContaining({ userId: 'user-1' }) })
+    )
+    expect(reply.statusCode).toBe(503)
+    expect(reply.send).toHaveBeenCalledWith({
+      code: 'audit_quota_exhausted',
+      message: 'Audit storage quota exhausted for this organization',
+    })
+    expect(recordAuditQuotaRefusalBestEffort).toHaveBeenCalledWith(TEST_ORG_ID)
+  })
+
+  it('sends a 503 audit_gate_unavailable response when the audit quota gate statement itself errors', async () => {
+    recordAuditQuotaRefusalBestEffort.mockClear()
+    const { tx, transaction } = transactionHarness()
+    const auditWriter = vi.fn(async () => {
+      throw new SameTransactionAuditWriteError('gate down', 'audit_gate_unavailable')
+    })
+    const handler = vi.fn(async () => ({ data: { changed: true } }))
+    const { registered } = mountProtectedRoute(
+      {
+        method: 'POST',
+        url: '/api/v1/test/audit-gate-unavailable',
+        db: { transaction },
+        auditWriter,
+        security: {
+          writeAuditEvent: { eventType: 'test.audit_gate_unavailable', resourceType: 'test' },
+        },
+        handler,
+      },
+      'owner'
+    )
+
+    const { reply } = await invokeRegisteredRoute(registered, {
+      authContext: undefined,
+      ip: '127.0.0.1',
+      headers: {},
+    })
+
+    expect(handler).toHaveBeenCalledOnce()
+    expect(auditWriter).toHaveBeenCalledWith(
+      expect.objectContaining({ tx, auth: expect.objectContaining({ userId: 'user-1' }) })
+    )
+    expect(reply.statusCode).toBe(503)
+    expect(reply.send).toHaveBeenCalledWith({
+      code: 'audit_gate_unavailable',
+      message: 'Audit quota gate is unavailable',
+    })
+    expect(recordAuditQuotaRefusalBestEffort).not.toHaveBeenCalled()
   })
 
   it('fails instead of preserving a pre-sent success when audit writing fails', async () => {

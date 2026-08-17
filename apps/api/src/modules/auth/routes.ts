@@ -323,10 +323,26 @@ function rejectIfNativeLoginDisabled(reply: FastifyReply): unknown {
  * AC-16: recovery request/completion self-manage their own transaction (org context isn't known
  * before token/email resolution — see recovery.ts), so a failed-closed audit write surfaces as a
  * thrown SameTransactionAuditWriteError instead of SecureRoute's own audit-phase handling. Mirror
- * SecureRoute's 503 audit_write_failed contract here.
+ * SecureRoute's 503 contract here — including the AC-9/AC-19 `audit_quota_exhausted` /
+ * `audit_gate_unavailable` distinction, not just the generic `audit_write_failed` case (Story
+ * 22.1 code-review fix: /login, /mfa/verify-login and /mfa/recover are also raw fastify.route()
+ * handlers outside SecureRoute, so without this they'd fall through to a bare 500 instead of a
+ * graceful 503 whenever the per-org quota gate itself errors — e.g. SESSION_CREATED is exempt
+ * from quota refusal, but the gate's own DB statement can still fail for any event type).
  */
 function sendRecoveryFailure(reply: FastifyReply, error: unknown): unknown {
   if (error instanceof SameTransactionAuditWriteError) {
+    if (error.code === 'audit_quota_exhausted') {
+      return reply.status(503).send({
+        code: 'audit_quota_exhausted',
+        message: 'Audit storage quota exhausted for this organization',
+      })
+    }
+    if (error.code === 'audit_gate_unavailable') {
+      return reply
+        .status(503)
+        .send({ code: 'audit_gate_unavailable', message: 'Audit quota gate is unavailable' })
+    }
     return reply
       .status(503)
       .send({ code: 'audit_write_failed', message: 'Audit logging is unavailable' })
@@ -729,8 +745,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         }
         return sendAuthSession(fastify, reply, result)
       } catch (error) {
-        if (error instanceof AppError) return sendAppError(reply, error)
-        throw error
+        return sendRecoveryFailure(reply, error)
       }
     },
   })
@@ -763,8 +778,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
         const result = await verifyLogin(parsed.data, metaFromRequest(req))
         return sendAuthSession(fastify, reply, result)
       } catch (error) {
-        if (error instanceof AppError) return sendAppError(reply, error)
-        throw error
+        return sendRecoveryFailure(reply, error)
       }
     },
   })
@@ -804,8 +818,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
           remainingRecoveryCodes: result.remainingRecoveryCodes,
         })
       } catch (error) {
-        if (error instanceof AppError) return sendAppError(reply, error)
-        throw error
+        return sendRecoveryFailure(reply, error)
       }
     },
   })

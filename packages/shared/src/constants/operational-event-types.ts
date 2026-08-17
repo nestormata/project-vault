@@ -53,6 +53,9 @@ export const OperationalEvent = {
   CREDENTIAL_AUDIT_WRITE_FAILED: 'credential.audit_write_failed',
   CREDENTIAL_RETENTION_SUMMARY: 'credential.retention.summary',
   CREDENTIAL_RETENTION_DRY_RUN: 'credential.retention.dry_run',
+  // Story 22.1 fix: one org's audit-quota exhaustion (or any other per-org failure) must not
+  // abort the retention purge for every other org sharing this scheduled run.
+  CREDENTIAL_RETENTION_ORG_FAILED: 'credential.retention.org_failed',
   CREDENTIAL_DEPENDENCY_ADDED: 'credential.dependency.added',
   CREDENTIAL_DEPENDENCY_ARCHIVED: 'credential.dependency.archived',
   CREDENTIAL_DEPENDENCY_UPDATED: 'credential.dependency.updated',
@@ -312,6 +315,20 @@ export const OperationalEvent = {
   // AC-15: a check arrived over its accounting key's in-flight cap and was denied without
   // invoking the gate.
   CAPABILITY_GATE_SATURATED: 'capability_gate.saturated',
+  // Story 22.1 AC-9/AC-19: a per-org audit write refused for storage-quota reasons.
+  AUDIT_QUOTA_WRITE_REFUSED: 'audit_quota.write_refused',
+  // Story 22.1 AC-11: an exempt event was admitted over quota — one of three classes.
+  AUDIT_QUOTA_EXEMPT_WRITE_ADMITTED: 'audit_quota.exempt_write_admitted',
+  // Story 22.1 AC-26: the durable refusal-counter update itself failed (best-effort, swallowed).
+  AUDIT_QUOTA_REFUSAL_RECORD_FAILED: 'audit_quota.refusal_record_failed',
+  // Story 22.1 AC-19: the gate statement itself errored (fail-closed, 503 audit_gate_unavailable).
+  AUDIT_QUOTA_GATE_ERROR: 'audit_quota.gate_error',
+  // Story 22.1 AC-7: per-org usage reconciliation run outcome/failure/timeout.
+  AUDIT_ORG_USAGE_RECONCILE_COMPLETED: 'audit_org_usage_reconcile.completed',
+  AUDIT_ORG_USAGE_RECONCILE_FAILED: 'audit_org_usage_reconcile.failed',
+  AUDIT_ORG_USAGE_RECONCILE_TIMEOUT: 'audit_org_usage_reconcile.timed_out',
+  AUDIT_ORG_USAGE_RECONCILE_ORG_WRITEBACK_FAILED: 'audit_org_usage_reconcile.org_writeback_failed',
+  AUDIT_ORG_USAGE_RECONCILE_DRIFT: 'audit_org_usage_reconcile.drift',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

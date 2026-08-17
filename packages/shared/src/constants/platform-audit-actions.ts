@@ -34,6 +34,10 @@ export const PlatformAuditAction = {
   // contract. Reuses the identical string value as
   // AuditEvent.NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED for grep-ability across both registries.
   NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED: 'native_login.break_glass_recovery_minted',
+  // Story 22.1 AC-5: a platform operator created/changed/cleared an org's audit-storage quota.
+  // Dual-written alongside AuditEvent.AUDIT_QUOTA_CONFIGURED in the target org's own log (one
+  // transaction) — see apps/api/src/modules/audit/quota-config.ts.
+  AUDIT_QUOTA_CONFIGURED: 'audit_quota.configured',
 } as const
 
 export type PlatformAuditActionType = (typeof PlatformAuditAction)[keyof typeof PlatformAuditAction]

@@ -1,6 +1,3 @@
-import { and, eq } from 'drizzle-orm'
-import type { Tx } from '@project-vault/db'
-import { adminAlerts } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 
 /**
@@ -17,6 +14,13 @@ export const SECURITY_CRITICAL_AUDIT_EVENT_TYPES: ReadonlySet<string> = new Set(
   AuditEvent.MFA_RECOVERY_USED,
   AuditEvent.MFA_RECOVERY_CODES_REGENERATED,
   AuditEvent.SESSION_REVOKED,
+  // Story 22.1 fix: SESSION_CREATED must never be blocked by the per-org quota gate (this set
+  // now doubles as `classifyAuditWriteExemption`'s security_critical exemption class — see
+  // quota-gate.ts). Login itself is the prerequisite for reaching every QUOTA_REMEDIATION_EVENT_
+  // TYPES-triggering admin endpoint; without this entry, an over-quota org's own admins could
+  // never log in to fix the quota in the first place (createLoginSessionInTx's insertAuditEntry
+  // call would throw SameTransactionAuditWriteError and roll back the whole login transaction).
+  AuditEvent.SESSION_CREATED,
   AuditEvent.LOGIN_FAILED,
   AuditEvent.ACCOUNT_RECOVERY_REQUESTED,
   AuditEvent.ACCOUNT_RECOVERY_LINK_SENT,
@@ -40,44 +44,12 @@ export function isSecurityCriticalAuditEventType(eventType: string): boolean {
   return SECURITY_CRITICAL_AUDIT_EVENT_TYPES.has(eventType)
 }
 
-/** AC-17/D5: the daily audit-storage/check job's `admin_alerts` row for `audit_storage.critical`
- * IS the maintenance-mode flag — an active row means maintenance mode is on; the same job
- * acknowledges it once utilization drops back below 95% (AC-17's "resuming normal operation"
- * case), which is also what turns maintenance mode back off. No separate state table needed. */
-export async function isAuditStorageMaintenanceModeActive(tx: Tx): Promise<boolean> {
-  const [row] = await tx
-    .select({ id: adminAlerts.id })
-    .from(adminAlerts)
-    .where(
-      and(eq(adminAlerts.alertType, 'audit_storage.critical'), eq(adminAlerts.status, 'active'))
-    )
-    .limit(1)
-  return Boolean(row)
-}
-
-/**
- * AC-17: called by writeHumanAuditEntry/writeMachineAuditEntry/writeSystemAuditEntry immediately
- * before the INSERT. Returns true (write must be skipped) only for non-allowlisted event types
- * while maintenance mode is active — event-type membership is checked FIRST, before the storage-
- * pressure lookup, so a security-critical write never even queries maintenance-mode state.
- */
-export async function shouldSuppressAuditWrite(tx: Tx, eventType: string): Promise<boolean> {
-  if (isSecurityCriticalAuditEventType(eventType)) return false
-  return isAuditStorageMaintenanceModeActive(tx)
-}
-
-/** AC-17: structured WARN-level operational log for a suppressed write — emitted via direct
- * stdout write (same discipline as notifications/routing.ts's routing-fallback logging) since
- * the audit write-entry functions have no FastifyBaseLogger reference to thread through every
- * call site across the codebase. */
-export function logAuditWriteSuspended(eventType: string, orgId: string): void {
-  process.stdout.write(
-    `${JSON.stringify({
-      event: 'audit.write_suspended',
-      level: 'warn',
-      eventType,
-      orgId,
-      reason: 'audit_storage_maintenance_mode',
-    })}\n`
-  )
-}
+// Story 22.1 AC-10/AC-12: the instance-wide maintenance-mode write gate — `shouldSuppressAuditWrite`,
+// `isAuditStorageMaintenanceModeActive` (as a write gate), and `logAuditWriteSuspended` — is
+// DELETED, not narrowed. `audit_storage.critical` is now alert-only; the daily audit-storage/check
+// job's alerting behaviour (apps/api/src/workers/audit-storage-check.ts) is left exactly as it
+// was, but nothing anywhere reads that alert row to decide whether a write should be admitted. The
+// replacement enforcement mechanism is per-organization: see
+// apps/api/src/modules/audit/quota-gate.ts's assertOrgMayWriteAudit(). See D1/AC-12 for the full
+// rationale (three jointly-fatal defects in the "keep it, make it universal and hard" fix that
+// this deletion closes).

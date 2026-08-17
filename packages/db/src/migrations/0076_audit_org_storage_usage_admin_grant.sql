@@ -1,0 +1,11 @@
+-- Story 22.1 AC-7 (original intent): the audit-org-usage/reconcile worker's staleness check was
+-- originally written as a cross-org getAdminDb() COUNT(*) over audit_org_storage_usage, which
+-- needed this narrow SELECT grant to vault_admin.
+--
+-- Superseded 2026-08-17 (AC-8 review finding): checkStaleOrgs() was refactored to use
+-- fetchAllOrgIds() + per-org runOrgScopedJob() (the same RLS-scoped pattern as writeBackAllOrgs)
+-- instead of getAdminDb(), so this grant is no longer exercised by application code — vault_app
+-- already holds SELECT on this table via migration 0075. Left in place rather than reverted to
+-- avoid renumbering/rewriting the migration chain for a harmless, unused, read-only grant; do not
+-- treat its presence as evidence of a second getAdminDb() bypass call site (see AC-8, DW-22.1-4).
+GRANT SELECT ON audit_org_storage_usage TO vault_admin;
