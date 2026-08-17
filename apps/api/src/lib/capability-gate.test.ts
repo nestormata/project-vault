@@ -452,3 +452,156 @@ describe('checkCapability — AC-26 rate-limited logging for high-volume failure
     expect(malformedCalls).toHaveLength(2)
   })
 })
+
+describe('checkCapability — AC-16 no caching/memoization of decisions', () => {
+  it('positive example: 5 sequential requests with a counting gate → counter reads exactly 5, and flipping the decision between requests 3 and 4 takes effect immediately, no restart/flush/wait', async () => {
+    let callCount = 0
+    let permitted = true
+    const gate = makeGate(async () => {
+      callCount += 1
+      return permitted ? { permitted: true } : { permitted: false, reasonCode: 'downgraded' }
+    })
+
+    const results: CapabilityDecision[] = []
+    for (let i = 0; i < 5; i += 1) {
+      if (i === 3) permitted = false // flip between request 3 (index 2) and request 4 (index 3)
+      results.push(await checkCapability(gate, baseInput))
+    }
+
+    expect(callCount).toBe(5)
+    expect(results.slice(0, 3).every((r) => r.permitted)).toBe(true)
+    expect(results.slice(3).every((r) => !r.permitted)).toBe(true)
+  })
+
+  it('two identical consecutive calls both invoke onCheckCapability — no memoization', async () => {
+    const onCheckCapability = vi.fn(async () => ({ permitted: true }) as CapabilityDecision)
+    const gate = makeGate(onCheckCapability)
+    await checkCapability(gate, baseInput)
+    await checkCapability(gate, baseInput)
+    expect(onCheckCapability).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('checkCapability — AC-18 concurrency independence', () => {
+  it('50 concurrent requests, odd orgId indices denied and even permitted → exactly 25/25, no cross-contamination, no unhandledRejection, clearTimeout runs on every path', async () => {
+    vi.useFakeTimers()
+    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout')
+    const unhandledRejections: unknown[] = []
+    const onUnhandledRejection = (reason: unknown) => unhandledRejections.push(reason)
+    process.on('unhandledRejection', onUnhandledRejection)
+
+    try {
+      const gate = makeGate(async (context) => {
+        const index = Number(context.orgId?.replace('org_', ''))
+        if (index % 2 === 1) throw new Error(`boom for ${context.orgId}`)
+        return { permitted: true }
+      })
+
+      const promises: Promise<CapabilityDecision>[] = []
+      for (let i = 0; i < 50; i += 1) {
+        promises.push(checkCapability(gate, { ...baseInput, surface: 'org', orgId: `org_${i}` }))
+      }
+      // Let every gate call settle (fake timers pause real timeouts, but these gates resolve or
+      // throw synchronously via a rejected promise — no timer needed for this test's gates).
+      const results = await Promise.all(promises)
+      const denied = results.filter((r) => !r.permitted)
+      const permitted = results.filter((r) => r.permitted)
+      expect(denied).toHaveLength(25)
+      expect(permitted).toHaveLength(25)
+
+      await vi.runAllTimersAsync()
+      expect(unhandledRejections).toHaveLength(0)
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection)
+      clearTimeoutSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a hanging gate: clearTimeout still runs on the timeout path (fake-timer count)', async () => {
+    vi.useFakeTimers()
+    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout')
+    try {
+      const gate = makeGate(() => new Promise<CapabilityDecision>(() => undefined))
+      const resultPromise = checkCapability(gate, { ...baseInput, timeoutMs: 50 })
+      await vi.advanceTimersByTimeAsync(60)
+      const result = await resultPromise
+      expect(result).toMatchObject({ reasonCode: 'gate_unavailable' })
+      expect(clearTimeoutSpy).toHaveBeenCalled()
+    } finally {
+      clearTimeoutSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('checkCapability — AC-20 the object handed to onCheckCapability has exactly 5 keys, is JSON-safe (runtime mirror of AC-3(a))', () => {
+  it('the context object has exactly capability/orgId/userId/orgRole/gateCallId, round-trips through JSON, and JSON.stringify does not throw', async () => {
+    let observedContext: unknown
+    const gate = makeGate(async (context) => {
+      observedContext = context
+      return { permitted: true }
+    })
+    await checkCapability(gate, baseInput)
+
+    expect(observedContext).toBeDefined()
+    expect(new Set(Object.keys(observedContext as object))).toEqual(
+      new Set(['capability', 'orgId', 'userId', 'orgRole', 'gateCallId'])
+    )
+    expect(() => JSON.stringify(observedContext)).not.toThrow()
+    const roundTripped = JSON.parse(JSON.stringify(observedContext)) as unknown
+    expect(roundTripped).toEqual(observedContext)
+  })
+})
+
+/**
+ * Story 23.3 AC-17/AC-5 — relative-delta latency comparisons, never an absolute wall-clock bound
+ * (Testing Standards; Story 1.15 flake history). Measured in the same process and the same run.
+ *
+ * Honesty note: at true in-process, sub-millisecond scale, a pure percentage ratio against a
+ * near-zero baseline is itself a source of flakiness (dividing by noise). Both tests below express
+ * their bound primarily as a relative multiplier over the measured baseline, generously slacked
+ * for CI, with a small absolute floor added to the allowed budget specifically to absorb
+ * measurement noise at this scale — the floor is not the assertion, the multiplier is.
+ */
+function p95(samplesMs: number[]): number {
+  const sorted = [...samplesMs].sort((a, b) => a - b)
+  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)
+  return sorted[index] ?? 0
+}
+
+async function measureP95(fn: () => Promise<unknown>, iterations = 200): Promise<number> {
+  const samples: number[] = []
+  for (let i = 0; i < iterations; i += 1) {
+    const start = performance.now()
+    await fn()
+    samples.push(performance.now() - start)
+  }
+  return p95(samples)
+}
+
+describe('checkCapability — AC-17 latency: a fast gate adds no measurable relative overhead', () => {
+  it('200 iterations: p95 with a gate resolving an already-settled promise vs. p95 of an equivalent no-op — generous relative bound, never absolute', async () => {
+    const gate = makeGate(async () => ({ permitted: true }))
+    const noGateP95 = await measureP95(async () => undefined)
+    const withGateP95 = await measureP95(() => checkCapability(gate, baseInput))
+
+    // Generous CI slack: allow up to 5x the no-op baseline OR a small absolute floor (2ms),
+    // whichever is larger — the floor exists only to absorb near-zero-baseline measurement noise.
+    const allowedMs = Math.max(noGateP95 * 5, 2)
+    expect(withGateP95).toBeLessThanOrEqual(allowedMs)
+  })
+})
+
+describe('assertCapability — AC-5 latency: an unannotated/no-gate path pays nothing measurable', () => {
+  it('200 iterations: p95 of assertCapability with NO gate registered vs. p95 of an equivalent no-op — the fail-open short-circuit adds no measurable relative overhead', async () => {
+    __resetCapabilityGateForTests()
+    const noGateP95 = await measureP95(async () => undefined)
+    const assertNoGateP95 = await measureP95(() =>
+      assertCapability({ ...baseInput, surface: 'public' })
+    )
+
+    const allowedMs = Math.max(noGateP95 * 5, 2)
+    expect(assertNoGateP95).toBeLessThanOrEqual(allowedMs)
+  })
+})

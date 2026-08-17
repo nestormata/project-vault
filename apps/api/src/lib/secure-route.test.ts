@@ -643,4 +643,35 @@ describe('secureRoute — declarative capability gating (Story 23.3 AC-5, AC-10,
     })
     expect(onCheckCapability).not.toHaveBeenCalled()
   })
+
+  it('AC-20: a permitted:true gate grants NOTHING for an unauthenticated caller — still 401, gate never consulted', async () => {
+    const onCheckCapability = vi.fn(async (): Promise<{ permitted: true }> => ({ permitted: true }))
+    wireExtensionCapabilityGate(loadedGateState(onCheckCapability))
+    const route = vi.fn()
+    // A registered `authenticate` preHandler that never sets req.authContext — simulates a
+    // caller presenting no valid token, matching real Fastify authenticate-plugin behavior.
+    secureRoute(
+      fastifyStub(route, async () => undefined),
+      {
+        method: 'POST',
+        url: '/api/v1/test/gated-unauthenticated',
+        security: {
+          capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
+          requireOrgScope: false,
+          writeAuditEvent: false,
+        },
+        handler: async () => ({ ok: true }),
+      }
+    )
+    const registered = registeredRoute(route)
+
+    const { reply } = await invokeRegisteredRoute(registered, { authContext: undefined })
+
+    expect(reply.statusCode).toBe(401)
+    expect(reply.send).toHaveBeenCalledWith({
+      code: 'access_token_missing',
+      message: 'Access token is missing',
+    })
+    expect(onCheckCapability).not.toHaveBeenCalled()
+  })
 })

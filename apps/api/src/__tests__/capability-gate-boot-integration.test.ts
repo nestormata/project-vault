@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
-import { getDb } from '@project-vault/db'
-import { users } from '@project-vault/db/schema'
+import { and, eq } from 'drizzle-orm'
+import { getDb, withOrg } from '@project-vault/db'
+import { orgMemberships, users } from '@project-vault/db/schema'
 import {
   cookieHeader,
   createProjectViaApi,
@@ -12,6 +12,17 @@ import { __resetCapabilityGateForTests } from '../lib/capability-gate.js'
 
 async function enrollMfa(userId: string): Promise<void> {
   await getDb().update(users).set({ mfaEnrolledAt: new Date() }).where(eq(users.id, userId))
+}
+
+/** registerAndLoginViaApi grants a fresh MFA grace period — expire it to exercise the enforced
+ * branch of requireMfaEnrollment(), mirroring status-page-routes.test.ts's identical helper. */
+async function expireMfaGracePeriod(orgId: string, userId: string): Promise<void> {
+  await withOrg(orgId, (tx) =>
+    tx
+      .update(orgMemberships)
+      .set({ gracePeriodExpiresAt: new Date(Date.now() - 1000) })
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)))
+  )
 }
 
 /**
@@ -39,6 +50,7 @@ const { initVaultForTest } = await import('./helpers/auth-test-helpers.js')
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const TEST_PASSPHRASE = 'capability-gate-boot-integration-passphrase'
+const TEST_LOGIN_PASSWORD = 'correct-horse-battery-staple'
 
 function statusPageUrl(projectId: string): string {
   return `/api/v1/projects/${projectId}/status-page`
@@ -76,7 +88,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const permittedOwner = await registerAndLoginViaApi(app, {
       email: `cap-gate-permitted-${Date.now()}@example.test`,
-      password: 'correct-horse-battery-staple',
+      password: TEST_LOGIN_PASSWORD,
       orgName: `Cap Gate Permitted Org ${Date.now()}`,
     })
     // Mutate the fixture's in-memory lookup to include this real, DB-generated org id — see the
@@ -100,7 +112,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const deniedOwner = await registerAndLoginViaApi(app, {
       email: `cap-gate-denied-${Date.now()}@example.test`,
-      password: 'correct-horse-battery-staple',
+      password: TEST_LOGIN_PASSWORD,
       orgName: `Cap Gate Denied Org ${Date.now()}`,
     })
     await enrollMfa(deniedOwner.userId)
@@ -127,5 +139,70 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
       url: publicStatusPageUrl('deadbeef'.repeat(4)),
     })
     expect(publicUnknown.statusCode).toBe(404)
+  })
+
+  it('AC-20: a permitted gate grants NOTHING for an unenrolled-MFA user — still the MFA rejection, on the real AC-23 route (requireMfa: true)', async () => {
+    const fixtureModule = await import('@project-vault/mock-capability-gate-extension')
+
+    const owner = await registerAndLoginViaApi(app, {
+      email: `cap-gate-mfa-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Cap Gate MFA Org ${Date.now()}`,
+    })
+    // Permitted by the gate — but deliberately NOT enrolled in MFA, with the fresh-registration
+    // grace period expired so requireMfaEnrollment()'s enforced branch actually triggers.
+    fixtureModule.PERMITTED_ORG_IDS.add(owner.orgId)
+    await expireMfaGracePeriod(owner.orgId, owner.userId)
+
+    const projectId = await createProjectViaApi(app, owner.cookies, 'cap-gate-mfa')
+    const res = await app.inject({
+      method: 'POST',
+      url: statusPageUrl(projectId),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(403)
+    // Distinguishable from capability_denied — MFA enforcement runs (and blocks) BEFORE the
+    // capability check even executes, per enforceProtectedGuards()'s ordering.
+    expect(res.json()).not.toMatchObject({ code: 'capability_denied' })
+  })
+
+  it('AC-20: RLS still applies unchanged inside the handlers transaction — a permitted gate never lets one org read another orgs status page config', async () => {
+    const fixtureModule = await import('@project-vault/mock-capability-gate-extension')
+
+    const ownerA = await registerAndLoginViaApi(app, {
+      email: `cap-gate-rls-a-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Cap Gate RLS Org A ${Date.now()}`,
+    })
+    await enrollMfa(ownerA.userId)
+    fixtureModule.PERMITTED_ORG_IDS.add(ownerA.orgId)
+    const projectA = await createProjectViaApi(app, ownerA.cookies, 'cap-gate-rls-a')
+    const enableA = await app.inject({
+      method: 'POST',
+      url: statusPageUrl(projectA),
+      headers: { cookie: cookieHeader(ownerA.cookies) },
+      payload: {},
+    })
+    expect(enableA.statusCode).toBe(201)
+
+    const ownerB = await registerAndLoginViaApi(app, {
+      email: `cap-gate-rls-b-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Cap Gate RLS Org B ${Date.now()}`,
+    })
+    await enrollMfa(ownerB.userId)
+    fixtureModule.PERMITTED_ORG_IDS.add(ownerB.orgId)
+
+    // Org B's session (permitted by the gate) reading org A's project id — RLS, not the gate,
+    // must be what blocks this. A gate permitting a capability is additive-only; it grants
+    // nothing on its own.
+    const crossOrgRead = await app.inject({
+      method: 'GET',
+      url: statusPageUrl(projectA),
+      headers: { cookie: cookieHeader(ownerB.cookies) },
+    })
+    expect(crossOrgRead.statusCode).toBe(404)
   })
 })
