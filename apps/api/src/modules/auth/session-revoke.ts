@@ -7,11 +7,7 @@ import { AppError } from '../../lib/errors.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
-import {
-  assertOrgMayWriteAudit,
-  assertOrgMayWriteAuditAtRate,
-  estimateAuditEntrySizeBytes,
-} from '../audit/quota-gate.js'
+import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from '../audit/quota-gate.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { deletePendingEnrollmentForUser } from './recovery-codes.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
@@ -79,14 +75,9 @@ async function writeSessionRevokedAudit(
   // unbounded production gap, not a test-only issue. Resolve the acting user's real token the
   // same way every other human-actor audit write does (firstActorTokenIdForUser).
   const actorTokenId = await firstActorTokenIdForUser(tx, fields.actorUserId)
-  // Story 22.2 AC-4 (site 7 of 9): rate gate first, then storage gate (documented ordering).
-  // orgId is always fields.orgId (never request-derived).
-  await assertOrgMayWriteAuditAtRate(tx, {
-    orgId: fields.orgId,
-    eventType: AuditEvent.SESSION_REVOKED,
-  })
-  // Story 22.1 AC-13 (site 7 of 9).
-  await assertOrgMayWriteAudit(tx, {
+  // Story 22.1 AC-13 / 22.2 AC-4 (site 7 of 9). orgId is always fields.orgId (never
+  // request-derived).
+  await assertOrgMayWriteAuditGates(tx, {
     orgId: fields.orgId,
     eventType: AuditEvent.SESSION_REVOKED,
     sizeBytes: estimateAuditEntrySizeBytes({ payload }),

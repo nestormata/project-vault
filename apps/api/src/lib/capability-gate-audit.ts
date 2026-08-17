@@ -5,8 +5,7 @@ import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import {
-  assertOrgMayWriteAudit,
-  assertOrgMayWriteAuditAtRate,
+  assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
 } from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
@@ -102,12 +101,8 @@ async function insertCapabilityDeniedRow(
   // already catches and logs rather than turning a completed 403 into a 503 — a capability denial
   // is never blocked on audit-storage quota, consistent with this file's own "never downgrade a
   // 403 into a less-restrictive-looking outcome" rule.
-  // Story 22.2 AC-4 (site 9 of 9): rate gate first, then storage gate (documented ordering).
-  await assertOrgMayWriteAuditAtRate(tx, {
-    orgId: input.orgId,
-    eventType: AuditEvent.CAPABILITY_DENIED,
-  })
-  await assertOrgMayWriteAudit(tx, {
+  // Story 22.1 AC-13 / 22.2 AC-4 (site 9 of 9).
+  await assertOrgMayWriteAuditGates(tx, {
     orgId: input.orgId,
     eventType: AuditEvent.CAPABILITY_DENIED,
     sizeBytes: estimateAuditEntrySizeBytes({ payload }),

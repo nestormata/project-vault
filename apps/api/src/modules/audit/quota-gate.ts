@@ -424,3 +424,16 @@ export async function assertOrgMayWriteAuditAtRate(
     )
   }
 }
+
+/**
+ * Story 22.2 AC-4 — the documented rate-then-storage ordering, as a single call. All nine
+ * `audit_log_entries` insert sites call this instead of the two gates separately, so the pairing
+ * and ordering live in exactly one place rather than being copy-pasted at every site.
+ */
+export async function assertOrgMayWriteAuditGates(
+  tx: Tx,
+  input: { orgId: string; eventType: string; sizeBytes: number }
+): Promise<void> {
+  await assertOrgMayWriteAuditAtRate(tx, { orgId: input.orgId, eventType: input.eventType })
+  await assertOrgMayWriteAudit(tx, input)
+}

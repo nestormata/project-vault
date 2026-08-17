@@ -8,6 +8,7 @@ import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
   initIsolatedVault,
+  registerAndLoginIsolated,
   spawnIsolatedApiProcess,
   stopProcess,
 } from '../fixtures/isolated-stack-shared.js'
@@ -48,27 +49,11 @@ async function setOrgWriteRatePerMinute(
   }
 }
 
-async function registerAndLogin(
+function registerAndLogin(
   request: import('@playwright/test').APIRequestContext,
   opts: { email: string; password: string; orgName: string }
 ): Promise<{ userId: string; orgId: string }> {
-  const register = await request.post(`${API_BASE}/api/v1/auth/register`, {
-    data: { email: opts.email, password: opts.password, orgName: opts.orgName },
-  })
-  expect(register.ok(), await register.text()).toBeTruthy()
-
-  const login = await request.post(`${API_BASE}/api/v1/auth/login`, {
-    data: { email: opts.email, password: opts.password },
-  })
-  expect(login.ok(), await login.text()).toBeTruthy()
-  const body = (await login.json()) as { data: { userId: string; orgId: string } }
-
-  const onboarding = await request.post(`${API_BASE}/api/v1/users/me/onboarding`, {
-    data: { completed: true },
-  })
-  expect(onboarding.ok(), await onboarding.text()).toBeTruthy()
-
-  return body.data
+  return registerAndLoginIsolated(request, API_BASE, opts)
 }
 
 test.describe.configure({ mode: 'serial' })

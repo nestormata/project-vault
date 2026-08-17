@@ -2,6 +2,7 @@ import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import postgres from 'postgres'
+import { expect, type APIRequestContext } from '@playwright/test'
 import { superuserDatabaseUrl } from './db.js'
 import { pollUntilOk } from './poll-until-ready.js'
 
@@ -191,6 +192,38 @@ export async function initIsolatedVault(apiPort: number, passphrase: string): Pr
   if (!init.ok && init.status !== 409) {
     throw new Error(`vault/init failed (${init.status}): ${await init.text()}`)
   }
+}
+
+/**
+ * Registers an org owner, logs in, and marks onboarding complete against an isolated API-only
+ * process reached via an absolute base URL (as opposed to `auth.ts`'s `registerAndLoginViaApi`,
+ * which uses a Playwright `BrowserContext`'s configured baseURL/cookie jar — the isolated-stack
+ * journeys spawn their own API process on a one-off port with no web process or baseURL). Shared
+ * by J21 (Story 22.1) and J22 (Story 22.2), whose per-org audit-quota/rate journeys are otherwise
+ * identical apart from which axis (storage vs. throughput) they configure and assert on.
+ */
+export async function registerAndLoginIsolated(
+  request: APIRequestContext,
+  apiBase: string,
+  opts: { email: string; password: string; orgName: string }
+): Promise<{ userId: string; orgId: string }> {
+  const register = await request.post(`${apiBase}/api/v1/auth/register`, {
+    data: { email: opts.email, password: opts.password, orgName: opts.orgName },
+  })
+  expect(register.ok(), await register.text()).toBeTruthy()
+
+  const login = await request.post(`${apiBase}/api/v1/auth/login`, {
+    data: { email: opts.email, password: opts.password },
+  })
+  expect(login.ok(), await login.text()).toBeTruthy()
+  const body = (await login.json()) as { data: { userId: string; orgId: string } }
+
+  const onboarding = await request.post(`${apiBase}/api/v1/users/me/onboarding`, {
+    data: { completed: true },
+  })
+  expect(onboarding.ok(), await onboarding.text()).toBeTruthy()
+
+  return body.data
 }
 
 /** Standard `afterAll` teardown for an isolated API+web process pair: stops both processes (if

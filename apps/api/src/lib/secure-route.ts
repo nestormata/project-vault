@@ -9,8 +9,7 @@ import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import {
-  assertOrgMayWriteAudit,
-  assertOrgMayWriteAuditAtRate,
+  assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
   recordAuditQuotaRefusalBestEffort,
   recordAuditRateRefusalBestEffort,
@@ -339,12 +338,11 @@ async function defaultAuditWriter({
     keyVersion,
   }
   const hmac = computeAuditHmac(fields, getAuditKey())
-  // Story 22.2 AC-4 (site 4 of 9): rate gate runs first, then the storage gate — the documented
+  // Story 22.1 AC-13 / 22.2 AC-4 (site 4 of 9 — the inline defaultAuditWriter insert). Rate gate
+  // runs first, then the storage gate, inside assertOrgMayWriteAuditGates — the documented
   // ordering decision (a rate-refused request never has its size estimated/attributed to the
   // storage counter).
-  await assertOrgMayWriteAuditAtRate(tx, { orgId: auth.orgId, eventType: config.eventType })
-  // Story 22.1 AC-13 (site 4 of 9 — the inline defaultAuditWriter insert).
-  await assertOrgMayWriteAudit(tx, {
+  await assertOrgMayWriteAuditGates(tx, {
     orgId: auth.orgId,
     eventType: config.eventType,
     sizeBytes: estimateAuditEntrySizeBytes({
@@ -609,11 +607,12 @@ async function runProtectedHandler({
         await auditWriter({ tx: typedTx, auth, request, config: auditConfig })
       } catch (error) {
         // Story 22.1 AC-9/AC-19 fix: a SameTransactionAuditWriteError (thrown by
-        // assertOrgMayWriteAudit inside defaultAuditWriter, or by a custom auditWriter) already
-        // carries the `code` sendSecureRouteFailure needs to distinguish `audit_quota_exhausted`
-        // and `audit_gate_unavailable` from a generic audit-write failure. Re-wrapping it here in
-        // a fresh AuditWriteError discarded that code and silently downgraded every quota refusal
-        // to the generic `audit_write_failed` 503 — rethrow it unchanged instead.
+        // assertOrgMayWriteAuditGates inside defaultAuditWriter, or by a custom auditWriter)
+        // already carries the `code` sendSecureRouteFailure needs to distinguish
+        // `audit_quota_exhausted`/`audit_rate_limited` and `audit_gate_unavailable` from a
+        // generic audit-write failure. Re-wrapping it here in a fresh AuditWriteError discarded
+        // that code and silently downgraded every refusal to the generic `audit_write_failed`
+        // 503 — rethrow it unchanged instead.
         if (error instanceof SameTransactionAuditWriteError) {
           throw error
         }

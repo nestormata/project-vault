@@ -4,11 +4,7 @@ import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { computeAuditHmac } from './write-entry.js'
-import {
-  assertOrgMayWriteAudit,
-  assertOrgMayWriteAuditAtRate,
-  estimateAuditEntrySizeBytes,
-} from './quota-gate.js'
+import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 type RequestMeta = {
   ipAddress?: string | null
@@ -31,11 +27,10 @@ export type HumanAuditFields = {
 }
 
 export async function writeHumanAuditEntry(tx: Tx, fields: HumanAuditFields): Promise<void> {
-  // Story 22.2 AC-4 (site 1 of 9): rate gate first, then storage gate (documented ordering).
-  await assertOrgMayWriteAuditAtRate(tx, { orgId: fields.orgId, eventType: fields.eventType })
-  // Story 22.1 AC-13: gate immediately before the INSERT, inside the caller's transaction. Throws
-  // SameTransactionAuditWriteError on refusal — there is no "skip this write" return value.
-  await assertOrgMayWriteAudit(tx, {
+  // Story 22.1 AC-13 / 22.2 AC-4 (site 1 of 9): gate immediately before the INSERT, inside the
+  // caller's transaction. Throws SameTransactionAuditWriteError on refusal — there is no "skip
+  // this write" return value.
+  await assertOrgMayWriteAuditGates(tx, {
     orgId: fields.orgId,
     eventType: fields.eventType,
     sizeBytes: estimateAuditEntrySizeBytes(fields),

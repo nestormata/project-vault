@@ -2,16 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tx } from '@project-vault/db'
 import { SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 
-const { assertOrgMayWriteAudit, assertOrgMayWriteAuditAtRate, estimateAuditEntrySizeBytes } =
-  vi.hoisted(() => ({
-    assertOrgMayWriteAudit: vi.fn(),
-    assertOrgMayWriteAuditAtRate: vi.fn(),
-    estimateAuditEntrySizeBytes: vi.fn(() => 42),
-  }))
+const { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } = vi.hoisted(() => ({
+  assertOrgMayWriteAuditGates: vi.fn(),
+  estimateAuditEntrySizeBytes: vi.fn(() => 42),
+}))
 
 vi.mock('./quota-gate.js', () => ({
-  assertOrgMayWriteAudit,
-  assertOrgMayWriteAuditAtRate,
+  assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
 }))
 
@@ -34,7 +31,7 @@ function createStubTx(): Tx {
 describe('machine-entry / quota-gate wiring', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    assertOrgMayWriteAudit.mockRejectedValue(
+    assertOrgMayWriteAuditGates.mockRejectedValue(
       new SameTransactionAuditWriteError('quota exhausted', 'audit_quota_exhausted')
     )
   })
@@ -52,11 +49,7 @@ describe('machine-entry / quota-gate wiring', () => {
       })
     ).rejects.toBeInstanceOf(SameTransactionAuditWriteError)
 
-    expect(assertOrgMayWriteAuditAtRate).toHaveBeenCalledWith(tx, {
-      orgId: 'org-1',
-      eventType: MACHINE_EVENT_TYPE,
-    })
-    expect(assertOrgMayWriteAudit).toHaveBeenCalledWith(
+    expect(assertOrgMayWriteAuditGates).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({ orgId: 'org-1', eventType: MACHINE_EVENT_TYPE })
     )
@@ -75,11 +68,7 @@ describe('machine-entry / quota-gate wiring', () => {
       })
     ).rejects.toBeInstanceOf(SameTransactionAuditWriteError)
 
-    expect(assertOrgMayWriteAuditAtRate).toHaveBeenCalledWith(tx, {
-      orgId: 'org-2',
-      eventType: SYSTEM_EVENT_TYPE,
-    })
-    expect(assertOrgMayWriteAudit).toHaveBeenCalledWith(
+    expect(assertOrgMayWriteAuditGates).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({ orgId: 'org-2', eventType: SYSTEM_EVENT_TYPE })
     )

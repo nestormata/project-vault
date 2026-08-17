@@ -13,6 +13,8 @@
     "apps/api/src/modules/audit/machine-entry.ts",
     "apps/api/src/workers/user-dormancy-check.ts",
     "apps/web/src/lib/components/settings/SettingsFormGate.svelte",
+    "apps/web/e2e/journeys/j21-audit-quota-enforcement.spec.ts",
+    "apps/web/e2e/journeys/j22-audit-rate-limit-enforcement.spec.ts",
     "**/node_modules/**",
     "**/dist/**",
     "**/build/**",
