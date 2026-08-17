@@ -26,8 +26,8 @@
     "operator:recovery-link": "tsx src/scripts/operator-recovery-link.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1106.0",
-    "@aws-sdk/client-s3": "^3.1106.0",
+    "@aws-sdk/client-kms": "^3.1110.0",
+    "@aws-sdk/client-s3": "^3.1110.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.0",
@@ -44,7 +44,7 @@
     "bcrypt": "^6.0.0",
     "drizzle-orm": "^0.45.0",
     "fast-jwt": "^6.3.2",
-    "fastify": "5.11.3",
+    "fastify": "5.12.0",
     "fastify-plugin": "^6.0.0",
     "nodemailer": "^9.0.5",
     "otpauth": "^9.5.1",
@@ -72,7 +72,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.1",
     "form-data": "^4.0.6",
-    "tsx": "4.23.11",
+    "tsx": "4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
