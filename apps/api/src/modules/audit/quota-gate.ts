@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { Counter, register } from 'prom-client'
-import { getDb, type Tx } from '@project-vault/db'
+import { withOrg, type Tx } from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { SameTransactionAuditWriteError } from '../../lib/secure-route.js'
@@ -165,11 +165,13 @@ async function runGateStatement(
  */
 export async function recordAuditQuotaRefusalBestEffort(orgId: string): Promise<void> {
   try {
-    await getDb().execute(sql`
-      UPDATE audit_org_storage_usage
-         SET refused_write_count = refused_write_count + 1, last_refusal_at = now(), updated_at = now()
-       WHERE org_id = ${orgId}
-    `)
+    await withOrg(orgId, (tx) =>
+      tx.execute(sql`
+        UPDATE audit_org_storage_usage
+           SET refused_write_count = refused_write_count + 1, last_refusal_at = now(), updated_at = now()
+         WHERE org_id = ${orgId}
+      `)
+    )
   } catch (error) {
     // AC-26: no FastifyBaseLogger reference exists at this call site (same discipline as
     // maintenance-mode.ts's now-deleted logAuditWriteSuspended) — direct stdout write.

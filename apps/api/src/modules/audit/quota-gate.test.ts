@@ -36,14 +36,22 @@ async function setQuota(orgId: string, quotaBytes: number | null): Promise<void>
   )
 }
 
-async function readUsage(
-  orgId: string
-): Promise<{ bytesUsed: number; preauthBytesUsed: number } | undefined> {
+async function readUsage(orgId: string): Promise<
+  | {
+      bytesUsed: number
+      preauthBytesUsed: number
+      refusedWriteCount: number
+      lastRefusalAt: Date | null
+    }
+  | undefined
+> {
   return withOrg(orgId, async (tx) => {
     const [row] = await tx
       .select({
         bytesUsed: auditOrgStorageUsage.bytesUsed,
         preauthBytesUsed: auditOrgStorageUsage.preauthBytesUsed,
+        refusedWriteCount: auditOrgStorageUsage.refusedWriteCount,
+        lastRefusalAt: auditOrgStorageUsage.lastRefusalAt,
       })
       .from(auditOrgStorageUsage)
       .where(eq(auditOrgStorageUsage.orgId, orgId))
@@ -268,7 +276,7 @@ describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () =>
   })
 
   describe('AC-26: recordAuditQuotaRefusalBestEffort', () => {
-    it('resolves without throwing for a real orgId, taking the try branch (not the catch/stdout branch)', async () => {
+    it('actually increments refused_write_count/last_refusal_at for a real orgId, taking the try branch (not the catch/stdout branch)', async () => {
       await withTestOrg(async ({ orgId }) => {
         // Seed a usage row first, via the RLS-scoped `withOrg` helper.
         await withOrg(orgId, (tx) =>
@@ -277,14 +285,21 @@ describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () =>
 
         const writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
         try {
-          // getDb() here (line 168) is a fresh connection with no `app.current_org_id` RLS
-          // context set — unlike every other call in this file, which goes through `withOrg`.
-          // RLS FORCEs isolation on this table (migration 0075), so the UPDATE's WHERE clause
-          // matches zero rows; this is still the SUCCESS path (no DB error), just a no-op
-          // update, which is what this test asserts: the try branch (167-168) runs to
-          // completion and the catch/stdout branch (176-183) is never reached.
+          // The UPDATE now runs through withOrg() (line 168), which sets the target org's
+          // `app.current_org_id` RLS context — required because this table has FORCE RLS
+          // (migration 0075). Without it, the WHERE clause matches zero rows and the counter
+          // silently never increments in production. This asserts the row is actually mutated,
+          // not just that the call resolves without throwing.
           await expect(recordAuditQuotaRefusalBestEffort(orgId)).resolves.toBeUndefined()
           expect(writeSpy).not.toHaveBeenCalled()
+
+          const usage = await readUsage(orgId)
+          expect(usage?.refusedWriteCount).toBe(1)
+          expect(usage?.lastRefusalAt).not.toBeNull()
+
+          await recordAuditQuotaRefusalBestEffort(orgId)
+          const usageAfterSecondRefusal = await readUsage(orgId)
+          expect(usageAfterSecondRefusal?.refusedWriteCount).toBe(2)
         } finally {
           writeSpy.mockRestore()
         }
@@ -294,8 +309,8 @@ describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () =>
     it('swallows a failed UPDATE (never throws) and logs a JSON warn line to stdout', async () => {
       const writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
       try {
-        // Not a valid UUID — the raw SQL statement's `org_id = ${orgId}` comparison fails at the
-        // database with an "invalid input syntax for type uuid" error, exercising the catch path.
+        // Not a valid UUID — withOrg()'s own regex guard throws before any DB round trip,
+        // exercising the catch path.
         await expect(recordAuditQuotaRefusalBestEffort('not-a-uuid')).resolves.toBeUndefined()
 
         expect(writeSpy).toHaveBeenCalled()
