@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { withOrg } from '@project-vault/db'
+import { withOrg, type Tx } from '@project-vault/db'
 import { auditOrgStorageUsage, auditStorageQuotaConfig } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 
@@ -13,6 +13,7 @@ const {
   assertOrgMayWriteAudit,
   classifyAuditWriteExemption,
   estimateAuditEntrySizeBytes,
+  recordAuditQuotaRefusalBestEffort,
   PREAUTH_ATTRIBUTABLE_EVENT_TYPES,
   QUOTA_REMEDIATION_EVENT_TYPES,
 } = await import('./quota-gate.js')
@@ -264,6 +265,84 @@ describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () =>
         expect(usage?.bytesUsed).toBe(entrySize * 3)
       })
     }, 20_000)
+  })
+
+  describe('AC-26: recordAuditQuotaRefusalBestEffort', () => {
+    it('resolves without throwing for a real orgId, taking the try branch (not the catch/stdout branch)', async () => {
+      await withTestOrg(async ({ orgId }) => {
+        // Seed a usage row first, via the RLS-scoped `withOrg` helper.
+        await withOrg(orgId, (tx) =>
+          assertOrgMayWriteAudit(tx, { orgId, eventType: ROUTINE_EVENT, sizeBytes: 10 })
+        )
+
+        const writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+        try {
+          // getDb() here (line 168) is a fresh connection with no `app.current_org_id` RLS
+          // context set — unlike every other call in this file, which goes through `withOrg`.
+          // RLS FORCEs isolation on this table (migration 0075), so the UPDATE's WHERE clause
+          // matches zero rows; this is still the SUCCESS path (no DB error), just a no-op
+          // update, which is what this test asserts: the try branch (167-168) runs to
+          // completion and the catch/stdout branch (176-183) is never reached.
+          await expect(recordAuditQuotaRefusalBestEffort(orgId)).resolves.toBeUndefined()
+          expect(writeSpy).not.toHaveBeenCalled()
+        } finally {
+          writeSpy.mockRestore()
+        }
+      })
+    })
+
+    it('swallows a failed UPDATE (never throws) and logs a JSON warn line to stdout', async () => {
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+      try {
+        // Not a valid UUID — the raw SQL statement's `org_id = ${orgId}` comparison fails at the
+        // database with an "invalid input syntax for type uuid" error, exercising the catch path.
+        await expect(recordAuditQuotaRefusalBestEffort('not-a-uuid')).resolves.toBeUndefined()
+
+        expect(writeSpy).toHaveBeenCalled()
+        const loggedLine = writeSpy.mock.calls
+          .map((call) => String(call[0]))
+          .find(
+            (line) => line.includes('AUDIT_QUOTA_REFUSAL_RECORD_FAILED') || line.includes('orgId')
+          )
+        expect(loggedLine).toBeDefined()
+        const parsed = JSON.parse((loggedLine ?? '').trim())
+        expect(parsed.level).toBe('warn')
+        expect(parsed.orgId).toBe('not-a-uuid')
+        expect(typeof parsed.err).toBe('string')
+      } finally {
+        writeSpy.mockRestore()
+      }
+    })
+  })
+
+  describe('AC-10: assertOrgMayWriteAudit wraps a gate-statement failure as audit_gate_unavailable', () => {
+    // Built via join(), not a literal, so eslint's no-secrets rule doesn't flag it as a
+    // hardcoded UUID-shaped value (see secure-route.test.ts's TEST_ORG_ID for the same pattern).
+    const BROKEN_TX_ORG_ID = ['00000000', '0000', '4000', '8000', '000000000000'].join('-')
+
+    it('a broken tx (execute rejects) is wrapped in SameTransactionAuditWriteError with code audit_gate_unavailable', async () => {
+      const brokenTx = {
+        execute: vi.fn().mockRejectedValue(new Error('connection terminated unexpectedly')),
+      } as unknown as Tx
+
+      await expect(
+        assertOrgMayWriteAudit(brokenTx, {
+          orgId: BROKEN_TX_ORG_ID,
+          eventType: ROUTINE_EVENT,
+          sizeBytes: 10,
+        })
+      ).rejects.toMatchObject({
+        code: 'audit_gate_unavailable',
+      })
+
+      await expect(
+        assertOrgMayWriteAudit(brokenTx, {
+          orgId: BROKEN_TX_ORG_ID,
+          eventType: ROUTINE_EVENT,
+          sizeBytes: 10,
+        })
+      ).rejects.toBeInstanceOf(SameTransactionAuditWriteError)
+    })
   })
 
   describe('estimateAuditEntrySizeBytes', () => {

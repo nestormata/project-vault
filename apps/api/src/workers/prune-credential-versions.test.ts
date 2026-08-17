@@ -365,6 +365,67 @@ describe.sequential('pruneCredentialVersions', () => {
     })
   }, 20_000)
 
+  // ---------------------------------------------------------------------------------------
+  // Story 22.1: pruneOrgCredentialVersionsIsolated's catch branch — one org's audit-quota
+  // exhaustion must not abort the retention run for every org that follows it.
+  // ---------------------------------------------------------------------------------------
+
+  it('an org over its audit-storage quota fails in isolation: its purge rolls back, CREDENTIAL_RETENTION_ORG_FAILED is logged, and the other org still gets pruned', async () => {
+    // `env` is a module-level singleton read live by quota-gate.ts's assertOrgMayWriteAudit on
+    // every call (not just at import time), so mutating it in place — the same pattern the
+    // dry-run test above uses for CREDENTIAL_RETENTION_DRY_RUN — flips enforcement on for every
+    // already-imported module in this file's graph without a `vi.resetModules()` dance (which
+    // would also reset this file's vault-unseal singleton state and break org B's purge).
+    const { env } = await import('../config/env.js')
+    const previousEnforcement = env.AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED
+    Object.assign(env, { AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED: true })
+    try {
+      const { auditStorageQuotaConfig } = await import('@project-vault/db/schema')
+
+      await withTwoTestOrgs(async (orgAId, orgBId) => {
+        // Org A: a quota so tiny that any audit write is refused, which makes
+        // purgeVersion's assertOrgMayWriteAudit call throw inside org A's own transaction.
+        await withOrg(orgAId, (tx) =>
+          tx
+            .insert(auditStorageQuotaConfig)
+            .values({ orgId: orgAId, quotaBytes: 1, updatedAt: new Date() })
+        )
+        const projectAId = await seedProject(orgAId)
+        const credentialAId = await seedCredential(orgAId, projectAId, 1)
+        await seedVersion(orgAId, credentialAId, 1)
+        await seedVersion(orgAId, credentialAId, 2)
+
+        // Org B: no quota configured — its purge should proceed normally.
+        const projectBId = await seedProject(orgBId)
+        const credentialBId = await seedCredential(orgBId, projectBId, 1)
+        await seedVersion(orgBId, credentialBId, 1)
+        await seedVersion(orgBId, credentialBId, 2)
+
+        const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+        await pruneCredentialVersions(logger)
+
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'credential.retention.org_failed',
+            orgId: orgAId,
+          }),
+          'credential retention: one org failed — continuing with the rest'
+        )
+
+        // Org A: the quota-exhausted transaction rolled back — nothing purged.
+        const versionsA = await versionsFor(orgAId, credentialAId)
+        expect(versionsA.every((v) => v.purgedAt === null)).toBe(true)
+        expect(versionsA.every((v) => v.encryptedValue !== null)).toBe(true)
+
+        // Org B: unaffected by org A's failure — its oldest version is purged as normal.
+        const versionsB = await versionsFor(orgBId, credentialBId)
+        expect(versionsB.filter((v) => v.purgedAt !== null)).toHaveLength(1)
+      })
+    } finally {
+      Object.assign(env, { AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED: previousEnforcement })
+    }
+  }, 20_000)
+
   it('dry-run mode mutates nothing and logs versionsWouldPurge', async () => {
     process.env['CREDENTIAL_RETENTION_DRY_RUN'] = 'true'
     const { env } = await import('../config/env.js')
