@@ -167,7 +167,7 @@ describe('registerExtension — concrete canonical version gate', () => {
   )
 
   it.each([
-    '1.3.0',
+    '1.5.0',
     '1.4.0',
     '0.9.0',
     '2.0.0',
@@ -207,9 +207,9 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '1.3.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '1.4.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '1.3.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '1.4.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
