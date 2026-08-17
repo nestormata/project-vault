@@ -377,15 +377,16 @@ function resolveGateOutcome(
 
   if ('error' in outcome) {
     counters.failed += 1
+    // AC-26: log payloads carry only a fixed-enum classification, NEVER the extension's raw
+    // exception message or stack (which could carry internal credentials or claim material) —
+    // Story 14.2's fixed-enum boot-log redaction precedent, not Story 14.3's per-request
+    // message-logging allowance.
     logGateEvent(
       logger,
       'error',
       OperationalEvent.CAPABILITY_GATE_FAILED,
       'Capability gate threw or rejected',
-      {
-        ...fields,
-        subReason: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
-      }
+      { ...fields, subReason: 'gate_threw_or_rejected' }
     )
     const decision = denial('gate_unavailable')
     recordOutcome(decision)

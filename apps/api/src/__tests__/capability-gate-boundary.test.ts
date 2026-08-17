@@ -100,6 +100,67 @@ describe('capability-gate.ts import topology (AC-21)', () => {
   })
 })
 
+function matchBrace(source: string, openIndex: number): number {
+  let depth = 0
+  for (let i = openIndex; i < source.length; i += 1) {
+    const char = source.charAt(i)
+    if (char === '{') depth += 1
+    else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return i + 1
+    }
+  }
+  throw new Error('capability-gate-boundary: unbalanced braces while scanning source')
+}
+
+/** Extracts the CapabilityId values declared inside every bounded `security: { ... }` object
+ * that contains a `capability:` field, using a balanced-brace scan (not a loose regex, which
+ * would incorrectly span past the object's closing brace into unrelated later code). */
+function declaredSecurityCapabilityIds(source: string): string[] {
+  const ids: string[] = []
+  const securityRegex = /security:\s*\{/g
+  let match: RegExpExecArray | null
+  while ((match = securityRegex.exec(source))) {
+    const open = match.index + match[0].length - 1
+    const close = matchBrace(source, open)
+    const block = source.slice(open, close)
+    const idMatch = /capability:\s*CapabilityId\.(\w+)/.exec(block)
+    if (idMatch?.[1]) ids.push(idMatch[1])
+  }
+  return ids
+}
+
+/** Extracts the CapabilityId values passed to every `assertCapability({ ... })` call, using the
+ * same balanced-brace scan. */
+function assertCapabilityCallIds(source: string): string[] {
+  const ids: string[] = []
+  const callRegex = /assertCapability\(\s*\{/g
+  let match: RegExpExecArray | null
+  while ((match = callRegex.exec(source))) {
+    const open = match.index + match[0].length - 1
+    const close = matchBrace(source, open)
+    const block = source.slice(open, close)
+    const idMatch = /capability:\s*CapabilityId\.(\w+)/.exec(block)
+    if (idMatch?.[1]) ids.push(idMatch[1])
+  }
+  return ids
+}
+
+describe('capability-gate — AC-10 static double-charge scan', () => {
+  it('no file both passes security.capability to secureRoute() AND calls assertCapability() with the same CapabilityId', () => {
+    for (const file of walk(SRC_ROOT)) {
+      const source = readFileSync(file, 'utf-8')
+      const securityIds = declaredSecurityCapabilityIds(source)
+      const assertIds = assertCapabilityCallIds(source)
+      const overlap = securityIds.filter((id) => assertIds.includes(id))
+      expect(
+        overlap,
+        `${file.slice(SRC_ROOT.length + 1)} declares security.capability AND calls assertCapability() with the same CapabilityId — this is the forbidden double-charge arrangement`
+      ).toEqual([])
+    }
+  })
+})
+
 describe('capability-gate — client error distinguishability (AC-21 edge case)', () => {
   it('insufficient_role, capability_denied+reasonCode, and capability_denied+gate_unavailable are three distinguishable response shapes', () => {
     const insufficientRole = { code: 'insufficient_role', message: 'Insufficient permissions' }

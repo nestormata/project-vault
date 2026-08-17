@@ -605,3 +605,25 @@ describe('assertCapability — AC-5 latency: an unannotated/no-gate path pays no
     expect(assertNoGateP95).toBeLessThanOrEqual(allowedMs)
   })
 })
+
+describe('checkCapability — AC-26 log payload hygiene: never the extensions raw exception message/stack', () => {
+  beforeEach(() => __resetCapabilityGateRateLimitForTests())
+
+  it('a thrown error containing "secret-token-abc" never appears in any log line', async () => {
+    const error = vi.fn()
+    const warn = vi.fn()
+    const gate = makeGate(async () => {
+      throw new Error('boom: leaked secret-token-abc in stack trace')
+    })
+    await checkCapability(gate, { ...baseInput, logger: { error, warn } })
+
+    const allLoggedPayloads = [...error.mock.calls, ...warn.mock.calls].map((call) =>
+      JSON.stringify(call[0])
+    )
+    for (const payload of allLoggedPayloads) {
+      expect(payload).not.toContain('secret-token-abc')
+    }
+    // The fixed-enum classification is what actually gets logged instead.
+    expect(error.mock.calls[0]?.[0]).toMatchObject({ subReason: 'gate_threw_or_rejected' })
+  })
+})
