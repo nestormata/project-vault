@@ -29,7 +29,7 @@ export type ExtensionManifest = {
  * under `src/**` (enforced by `scripts/check-extension-api-version-skew.ts`, AC7) and kept equal
  * to this package's `package.json` `version` field (see `manifest.test.ts`).
  */
-export const EXTENSION_API_VERSION = '1.2.0'
+export const EXTENSION_API_VERSION = '1.3.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

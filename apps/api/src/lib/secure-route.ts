@@ -3,6 +3,7 @@ import { getDb, type Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { CapabilityId, type CapabilityIdValue } from '@project-vault/shared'
 import { checkCapability, getCapabilityGate } from './capability-gate.js'
+import { recordCapabilityDeniedAudit } from './capability-gate-audit.js'
 import { requireMfaEnrollment } from '../modules/auth/mfa-enforcement.js'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
@@ -448,8 +449,44 @@ async function enforceProtectedGuards({
   return enforceCapabilityIfRequired(options, auth, request, reply)
 }
 
-// Story 23.3 AC-10/AC-19/AC-20/AC-23 — the declarative capability-gate step, added as one new,
-// explicitly-named step inside enforceProtectedGuards(), strictly AFTER MFA enforcement and
+// Story 23.3 AC-10 — a per-request marker (log-only double-check backstop), keyed off the
+// FastifyRequest instance itself so it never outlives the request and never becomes a decision
+// cache.
+const perRequestCheckedCapabilities = new WeakMap<FastifyRequest, Set<string>>()
+
+function perRequestSeenSetFor(request: FastifyRequest): Set<string> {
+  const existing = perRequestCheckedCapabilities.get(request)
+  if (existing) return existing
+  const fresh = new Set<string>()
+  perRequestCheckedCapabilities.set(request, fresh)
+  return fresh
+}
+
+// Story 23.3 AC-25 — write (dampened) capability.denied audit row for an authenticated,
+// org-scoped denial. Never routed through sendSecureRouteFailure's audit_write_failed 503 path: a
+// denial is a completed authorization outcome, not a partially-applied mutation, so an audit
+// hiccup must not turn a completed 403 into a less-restrictive-looking 503. Failure is logged and
+// swallowed.
+async function auditCapabilityDenialBestEffort(
+  request: FastifyRequest,
+  auth: AuthContext,
+  capability: string,
+  reasonCode: string
+): Promise<void> {
+  try {
+    await recordCapabilityDeniedAudit({
+      orgId: auth.orgId,
+      userId: auth.userId,
+      capability,
+      reasonCode,
+    })
+  } catch (error) {
+    logRouteError(request, { eventType: 'secure_route.capability_denied_audit_failed', err: error })
+  }
+}
+
+// Story 23.3 AC-10/AC-19/AC-20/AC-23/AC-25 — the declarative capability-gate step, added as one
+// new, explicitly-named step inside enforceProtectedGuards(), strictly AFTER MFA enforcement and
 // BEFORE runProtectedHandler() opens the transaction, so a slow/hung gate holds no pooled
 // connection. Routes with `security.capability` unset make ZERO gate calls (AC-5/AC-20 spy
 // assertion). With NO gate registered, checkCapability() is never invoked at all — AC-5's
@@ -469,10 +506,13 @@ async function enforceCapabilityIfRequired(
     orgId: auth.orgId,
     userId: auth.userId,
     orgRole: auth.orgRole,
+    surface: 'org',
     requestId: request.id,
     logger: request.log,
+    perRequestSeen: perRequestSeenSetFor(request),
   })
   if (decision.permitted) return true
+  await auditCapabilityDenialBestEffort(request, auth, capability, decision.reasonCode)
   sendCapabilityDenied(reply, capability, decision)
   return false
 }

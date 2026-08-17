@@ -12,6 +12,9 @@ const MOCK_EXTENSION_PACKAGE_NAME = '@project-vault/mock-sso-extension'
 // Story 23.2 Task 10: the second reference fixture extension gets the exact same guard — a
 // production deploy must never be able to load either one.
 const MOCK_ENVELOPE_EXTENSION_PACKAGE_NAME = '@project-vault/mock-envelope-extension'
+// Story 23.3 AC-28: the third reference fixture extension (capability gating) gets the same
+// guard as the two above.
+const MOCK_CAPABILITY_GATE_EXTENSION_PACKAGE_NAME = '@project-vault/mock-capability-gate-extension'
 const REPO_ROOT = resolve(process.cwd(), '../..')
 
 const PRODUCTION_CONFIG_FILES = [
@@ -27,6 +30,11 @@ describe.each([
     'mock-envelope-extension',
     MOCK_ENVELOPE_EXTENSION_PACKAGE_NAME,
     'fixtures/mock-envelope-extension/package.json',
+  ],
+  [
+    'mock-capability-gate-extension',
+    MOCK_CAPABILITY_GATE_EXTENSION_PACKAGE_NAME,
+    'fixtures/mock-capability-gate-extension/package.json',
   ],
 ])(
   '%s is never referenced by production config (AC-12/Story 23.2 AC-15)',

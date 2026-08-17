@@ -18,6 +18,11 @@ import {
   touchOperationalStatusTokenLastUsed,
 } from '../modules/status/token-store.js'
 import { getReleaseVersion } from '../lib/package-version.js'
+import {
+  getCapabilityGate,
+  getCapabilityGateCounters,
+  getCapabilityGateName,
+} from '../lib/capability-gate.js'
 
 // AC-1/AC-7: same reason-code vocabulary the checks in modules/status/service.ts emit — kept as
 // a plain string, not an enum, so it stays a stable public contract independent of internal
@@ -25,6 +30,22 @@ import { getReleaseVersion } from '../lib/package-version.js'
 const CheckResultSchema = z.object({
   status: z.enum(['ok', 'degraded', 'unavailable', 'skipped']),
   reason: z.string().optional(),
+})
+
+// Story 23.3 AC-26: gate health, on this token-gated operational surface only — never on the
+// public /health payload. Absent entirely when no gate is registered (not present-with-zeros),
+// so AC-5's byte-identical guarantee holds for this endpoint too. Counters and gate identity are
+// in-process — under ADR 0003's multi-instance topology this reports whichever replica answered,
+// not a fleet-wide aggregate.
+const CapabilityGateStatusSchema = z.object({
+  gate: z.object({ name: z.string() }).nullable(),
+  counters: z.object({
+    checks: z.number(),
+    permitted: z.number(),
+    denied: z.number(),
+    failed: z.number(),
+    saturated: z.number(),
+  }),
 })
 
 const StatusResponseSchema = z.object({
@@ -36,6 +57,7 @@ const StatusResponseSchema = z.object({
     vault: CheckResultSchema,
     disk: CheckResultSchema,
   }),
+  capabilityGate: CapabilityGateStatusSchema.optional(),
 })
 
 // AC-4: every failure mode (missing token when required, malformed header, wrong token, revoked
@@ -186,6 +208,7 @@ export async function statusRoutes(
 
       const checks = await runStatusChecks(options.dbPool, req.log)
       const status = deriveAggregateStatus(checks)
+      const gate = getCapabilityGate()
       const body = {
         status,
         // Story 9.10 AC-1: the same getReleaseVersion() source /health and OpenAPI
@@ -194,6 +217,15 @@ export async function statusRoutes(
         version: getReleaseVersion().version,
         timestamp: new Date().toISOString(),
         checks,
+        // Story 23.3 AC-26: absent entirely (not present-with-zeros) when no gate is registered.
+        ...(gate
+          ? {
+              capabilityGate: {
+                gate: { name: getCapabilityGateName() ?? 'unknown' },
+                counters: getCapabilityGateCounters(),
+              },
+            }
+          : {}),
       }
 
       if (status === 'healthy') {

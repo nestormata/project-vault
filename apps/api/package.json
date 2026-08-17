@@ -60,6 +60,7 @@
   "devDependencies": {
     "@project-vault/agent": "workspace:*",
     "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/mock-capability-gate-extension": "workspace:*",
     "@project-vault/mock-envelope-extension": "workspace:*",
     "@project-vault/mock-sso-extension": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
