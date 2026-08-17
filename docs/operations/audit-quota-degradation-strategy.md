@@ -99,11 +99,39 @@ gate.
 ## Unit of measurement (AC-27)
 
 Exactly one unit in the enforcement path: **logical bytes**, `sum(pg_column_size(t.*))` over an
-org's `audit_log_entries` rows. This is what `bytes_used` accumulates (the gate statement), what
+org's `audit_log_entries` rows. This is the definition `bytes_used` accumulates toward, what
 reconciliation recomputes (the weekly `audit-org-usage/reconcile` job), and what `quota_bytes` is
 expressed in. No `AUDIT_ORG_QUOTA_PHYSICAL_OVERHEAD_ESTIMATE` constant is declared or read by this
 story — that estimate (and the operator-facing "≈ N GB physical" display it feeds) belongs to
 Story 22.3, which must measure it rather than guess it.
+
+### Write-path measurement vs. reconciliation ground truth (disclosed deviation)
+
+`pg_column_size(t.*)` cannot be evaluated as part of the write-path gate statement: it requires a
+row to already exist in the table, and the gate must decide whether to admit the write *before* the
+row is inserted (the chicken-and-egg problem Task 2a's spike named). Two measurements therefore
+exist in this story, deliberately, and they are not the same mechanism:
+
+- **Write-path enforcement (the hot path)** — `assertOrgMayWriteAudit()` (`quota-gate.ts`) uses
+  `estimateAuditEntrySizeBytes()`: a fast, in-process JSON-length-plus-fixed-overhead estimate of
+  the entry's size, computed in JS with no extra database round-trip. This is intentional for
+  latency: the gate already runs inside the same transaction as the insert, and adding a second
+  statement (e.g. inserting the row first and measuring it, or querying a comparable row's
+  `pg_column_size`) would add a round-trip to every audited write. The estimate is conservative and
+  approximate **by design** — it is not, and is not intended to be, byte-identical to what Postgres
+  will eventually report for the same row.
+- **Reconciliation (the ground truth)** — `audit-org-usage-reconcile.ts`'s weekly aggregate uses the
+  real `pg_column_size(t.*)` over the actual stored rows. This is the authoritative measurement:
+  it is what `bytes_used` and `preauth_bytes_used` are corrected to on every run, and it is what any
+  operator-facing utilization figure is ultimately traceable to. Reconciliation periodically
+  corrects any drift the write-path estimate accumulated between runs (AC-7's "usage counters are
+  reconciled against ground truth periodically" — this is that mechanism, not a hypothetical one).
+
+In short: the write path trades exactness for a zero-round-trip hot path, and periodic
+reconciliation is what keeps that estimate honest over time. Do not read the "logical bytes,
+`sum(pg_column_size(t.*))`" framing above as meaning the write-path gate calls `pg_column_size` on
+every write — it does not, and this section is the disclosure of that gap (code review finding,
+2026-08-17; product/architecture decision: disclose, do not change the write-path mechanism).
 
 ## Schema decision: `fillfactor = 70`
 
@@ -148,6 +176,12 @@ findings, beyond what the story file's own revision history already recorded:
 - **D-8 (new): `docs/operations/audit-log-scaling.md` did not exist.** `architecture.md` and this
   story both assume it does, as the escalation-path doc AC-1 must cross-link. Created alongside
   this note (see that file for the cross-link and the AC-12 release-note entry).
+- **D-9 (new, code review finding, 2026-08-17): this note previously implied `pg_column_size` was
+  the measurement used everywhere, including the write-path gate.** It is not — the write-path gate
+  uses the fast in-process estimate `estimateAuditEntrySizeBytes()`, not `pg_column_size`, for
+  latency reasons. Product/architecture decision: disclose the deviation rather than add a
+  `pg_column_size` round-trip to the hot write path. See "Write-path measurement vs. reconciliation
+  ground truth" above.
 
 ## Cross-reference
 

@@ -162,8 +162,10 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
 
     // The partial-write invariant: the refused create must not have persisted a project row —
     // confirmed by listing again and finding no project with the refused name/slug.
-    const projectsBody = (await listProjects.json()) as { data: Array<{ slug: string }> }
-    expect(projectsBody.data.some((p) => p.slug === 'j21-refused-project')).toBe(false)
+    // GET /api/v1/projects returns { data: { items: [...], ...pagination } } (ProjectListResponseSchema),
+    // not a flat { data: [...] } array.
+    const projectsBody = (await listProjects.json()) as { data: { items: Array<{ slug: string }> } }
+    expect(projectsBody.data.items.some((p) => p.slug === 'j21-refused-project')).toBe(false)
 
     // The sibling org is entirely unaffected — this is the story's headline regression fix
     // (AC-12/AC-15): one org's refusal must never touch another org's success rate.

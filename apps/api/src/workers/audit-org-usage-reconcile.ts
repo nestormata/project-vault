@@ -5,7 +5,7 @@ import { OperationalEvent } from '@project-vault/shared'
 import { env } from '../config/env.js'
 import { operationalLog } from '../lib/logger.js'
 import { getAdminDb } from '../lib/db.js'
-import { runOrgScopedJob } from '../middleware/rls.js'
+import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import {
   clearThresholdAlertEpisode,
   upsertThresholdAlert,
@@ -221,16 +221,53 @@ const STALE_USAGE_ALERT_TYPE = 'audit_usage_reconciliation.failing'
 /** AC-7 — any org whose `last_reconciled_at` is older than
  * `AUDIT_ORG_USAGE_STALE_AFTER_HOURS` (default 240h = 10 days) is flagged stale. The operator
  * surface that renders the per-org `stale` state ships in Story 22.3; this worker is only
- * responsible for raising the alert. Uses getAdminDb() — a cross-org read, the same justified
- * bypass class as the reconciliation aggregate itself (AC-8). */
+ * responsible for raising the alert. AC-8 permits exactly ONE getAdminDb() bypass call site for
+ * this worker — the reconciliation aggregate in `runReconcileAggregate` — so staleness detection
+ * instead reuses the same RLS-safe `fetchAllOrgIds()` + per-org `runOrgScopedJob()` iteration
+ * pattern already used by `writeBackAllOrgs` and every other cross-org worker in this codebase
+ * (see `middleware/rls.ts`), rather than a second cross-org admin-bypass scan.
+ */
+/** Per-org staleness check for one org, isolated from the rest of the loop: a failure here is
+ * logged and treated as "not stale" for this run rather than aborting the whole scan. */
+async function isOrgUsageStale(
+  orgId: string,
+  staleCutoff: number,
+  logger: WorkerLogger | undefined
+): Promise<boolean> {
+  try {
+    const [row] = await runOrgScopedJob(orgId, 'audit-org-usage-reconcile/stale-check', ({ tx }) =>
+      tx
+        .select({ lastReconciledAt: auditOrgStorageUsage.lastReconciledAt })
+        .from(auditOrgStorageUsage)
+        .where(eq(auditOrgStorageUsage.orgId, orgId))
+    )
+    const lastReconciledAt = row?.lastReconciledAt ?? null
+    return !lastReconciledAt || lastReconciledAt.getTime() < staleCutoff
+  } catch (error) {
+    if (logger) {
+      operationalLog(
+        logger,
+        'error',
+        OperationalEvent.AUDIT_ORG_USAGE_RECONCILE_ORG_WRITEBACK_FAILED,
+        'audit-org-usage-reconcile: one org stale-check failed — continuing with the rest',
+        { orgId, err: error instanceof Error ? error.message : String(error) }
+      )
+    }
+    return false
+  }
+}
+
 async function checkStaleOrgs(logger: WorkerLogger | undefined): Promise<void> {
-  const rows = await getAdminDb().execute<{ count: string }>(sql`
-    SELECT count(*)::text AS count
-      FROM audit_org_storage_usage
-     WHERE last_reconciled_at IS NULL
-        OR last_reconciled_at < now() - (${env.AUDIT_ORG_USAGE_STALE_AFTER_HOURS}::text || ' hours')::interval
-  `)
-  const staleCount = Number(rows[0]?.count ?? 0)
+  const staleAfterMs = env.AUDIT_ORG_USAGE_STALE_AFTER_HOURS * 60 * 60 * 1000
+  const staleCutoff = Date.now() - staleAfterMs
+  const orgIds = await fetchAllOrgIds()
+
+  let staleCount = 0
+  for (const orgId of orgIds) {
+    if (await isOrgUsageStale(orgId, staleCutoff, logger)) {
+      staleCount += 1
+    }
+  }
   if (staleCount === 0) return
   if (logger) {
     operationalLog(
