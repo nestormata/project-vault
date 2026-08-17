@@ -16,7 +16,9 @@ import { countLiveSessionsAcrossInstance } from './sessions-live-count.js'
 const ExtensionManifestSchema = z.object({
   name: z.string(),
   apiVersion: z.string(),
-  capabilities: z.array(z.enum(['auth-provider', 'notification-channel', 'ui-panel'])),
+  capabilities: z.array(
+    z.enum(['auth-provider', 'notification-channel', 'ui-panel', 'capability-gate'])
+  ),
   loadedAt: z.string(),
 })
 

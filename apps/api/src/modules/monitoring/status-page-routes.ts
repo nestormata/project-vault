@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import {
+  CapabilityId,
   StatusPageConfigResponseSchema,
   StatusPageServicesResponseSchema,
   StatusPageTokenResponseSchema,
@@ -8,6 +9,7 @@ import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { CapabilityDeniedErrorSchema } from '../../lib/capability-gate.js'
 import { rejectIfProjectArchived } from '../projects/archive-guards.js'
 import { findProjectInOrg } from '../credentials/service.js'
 import { callerProjectRole } from '../projects/routes.js'
@@ -154,7 +156,11 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         201: StatusPageTokenResponseSchema,
         401: ApiErrorSchema,
-        403: ApiErrorSchema,
+        // Story 23.3 AC-23: widened (not plain ApiErrorSchema) so a capability_denied 403's
+        // capability/reasonCode fields survive Fastify's schema-driven serialization — see
+        // CapabilityDeniedErrorSchema's own doc comment for why the plain schema would silently
+        // strip them.
+        403: CapabilityDeniedErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
         410: ApiErrorSchema,
@@ -165,6 +171,10 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       requireMfa: true,
       writeAuditEvent: false,
       rateLimit: { ...WRITE_RATE_LIMIT, key: 'POST /api/v1/projects/:projectId/status-page' },
+      // Story 23.3 AC-23: the primary, authenticated, audited declarative call site. The
+      // entitlement being gated is "may this org publish a public status page." Golden route
+      // inventory: apps/api/src/__tests__/gated-route-inventory.test.ts.
+      capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
     },
     handler: withOwnedProject(async (secureCtx, projectId, req, reply) => {
       let enabled: Awaited<ReturnType<typeof enableStatusPage>>

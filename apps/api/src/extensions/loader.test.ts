@@ -341,7 +341,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     const logger = noopLogger()
     const importFn = vi.fn().mockResolvedValue({
       default: {
-        manifest: { ...VALID_MANIFEST, apiVersion: '1.3.0' },
+        manifest: { ...VALID_MANIFEST, apiVersion: '1.5.0' },
         hooksFactory: () => NOOP_HOOKS,
       },
     })
@@ -354,8 +354,8 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     expect(getExtensionStatus().status).toBe('loaded')
     expect(logger?.warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        declaredApiVersion: '1.3.0',
-        hostApiVersion: '1.2.0',
+        declaredApiVersion: '1.5.0',
+        hostApiVersion: '1.3.0',
         flag: 'VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST',
       }),
       expect.any(String)

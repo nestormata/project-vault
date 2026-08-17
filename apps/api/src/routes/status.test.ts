@@ -1,5 +1,11 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { createApp } from '../app.js'
+import {
+  __resetCapabilityGateForTests,
+  wireExtensionCapabilityGate,
+} from '../lib/capability-gate.js'
+
+const TEST_GATE_MANIFEST_NAME = 'com.example.ext'
 
 // Mutable so the loopback-bypass-spoofing test (AC-4 hardening) can flip TRUST_PROXY on for a
 // single describe block without affecting every other test in this file — mirrors the
@@ -130,6 +136,58 @@ describe('GET /status', () => {
       expect(raw).not.toContain('/var/run')
       expect(raw).not.toContain('.s.PGSQL')
       expect(raw).not.toContain('at ')
+      await app.close()
+    })
+  })
+
+  describe('Story 23.3 AC-26: capabilityGate observability', () => {
+    afterEach(() => __resetCapabilityGateForTests())
+
+    it('capabilityGate is ABSENT entirely when no gate is registered (AC-5 byte-identical guarantee)', async () => {
+      const app = await createApp({ logger: false, dbPool: okDbPool })
+      const res = await app.inject({ method: 'GET', url: '/status' })
+      const body = res.json<Record<string, unknown>>()
+      expect(Object.keys(body)).not.toContain('capabilityGate')
+      await app.close()
+    })
+
+    it('capabilityGate reports gate identity and counters when a gate is registered', async () => {
+      const app = await createApp({ logger: false, dbPool: okDbPool })
+      wireExtensionCapabilityGate({
+        status: 'loaded',
+        manifest: { name: TEST_GATE_MANIFEST_NAME, apiVersion: '1.2.0', capabilities: [] },
+        loadedAt: new Date().toISOString(),
+        hooks: { capabilityGate: { onCheckCapability: async () => ({ permitted: true }) } },
+      })
+      const res = await app.inject({ method: 'GET', url: '/status' })
+      const body = res.json<{
+        capabilityGate?: { gate: { name: string } | null; counters: Record<string, number> }
+      }>()
+      expect(body.capabilityGate).toBeDefined()
+      expect(body.capabilityGate?.gate).toEqual({ name: TEST_GATE_MANIFEST_NAME })
+      expect(body.capabilityGate?.counters).toEqual({
+        checks: 0,
+        permitted: 0,
+        denied: 0,
+        failed: 0,
+        saturated: 0,
+      })
+      await app.close()
+    })
+
+    it('capabilityGate still validates and is populated on the 503/degraded response path', async () => {
+      const failingPool = { query: async () => Promise.reject(new Error('boom')) }
+      const app = await createApp({ logger: false, dbPool: failingPool })
+      wireExtensionCapabilityGate({
+        status: 'loaded',
+        manifest: { name: TEST_GATE_MANIFEST_NAME, apiVersion: '1.2.0', capabilities: [] },
+        loadedAt: new Date().toISOString(),
+        hooks: { capabilityGate: { onCheckCapability: async () => ({ permitted: true }) } },
+      })
+      const res = await app.inject({ method: 'GET', url: '/status' })
+      expect(res.statusCode).toBe(503)
+      const body = res.json<{ capabilityGate?: { gate: { name: string } | null } }>()
+      expect(body.capabilityGate?.gate).toEqual({ name: TEST_GATE_MANIFEST_NAME })
       await app.close()
     })
   })

@@ -20428,6 +20428,57 @@
                         "disk"
                       ],
                       "additionalProperties": false
+                    },
+                    "capabilityGate": {
+                      "type": "object",
+                      "properties": {
+                        "gate": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "counters": {
+                          "type": "object",
+                          "properties": {
+                            "checks": {
+                              "type": "number"
+                            },
+                            "permitted": {
+                              "type": "number"
+                            },
+                            "denied": {
+                              "type": "number"
+                            },
+                            "failed": {
+                              "type": "number"
+                            },
+                            "saturated": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "checks",
+                            "permitted",
+                            "denied",
+                            "failed",
+                            "saturated"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "gate",
+                        "counters"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -20585,6 +20636,57 @@
                         "database",
                         "vault",
                         "disk"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "capabilityGate": {
+                      "type": "object",
+                      "properties": {
+                        "gate": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "counters": {
+                          "type": "object",
+                          "properties": {
+                            "checks": {
+                              "type": "number"
+                            },
+                            "permitted": {
+                              "type": "number"
+                            },
+                            "denied": {
+                              "type": "number"
+                            },
+                            "failed": {
+                              "type": "number"
+                            },
+                            "saturated": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "checks",
+                            "permitted",
+                            "denied",
+                            "failed",
+                            "saturated"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "gate",
+                        "counters"
                       ],
                       "additionalProperties": false
                     }
@@ -32123,7 +32225,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "capability": {
+                      "type": "string"
+                    },
+                    "reasonCode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -34871,7 +34992,8 @@
                             "enum": [
                               "auth-provider",
                               "notification-channel",
-                              "ui-panel"
+                              "ui-panel",
+                              "capability-gate"
                             ]
                           }
                         },

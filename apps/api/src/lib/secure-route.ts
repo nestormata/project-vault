@@ -1,6 +1,9 @@
 import type { FastifyReply, FastifyRequest, FastifySchema, preHandlerHookHandler } from 'fastify'
 import { getDb, type Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
+import { CapabilityId, type CapabilityIdValue } from '@project-vault/shared'
+import { checkCapability, getCapabilityGate } from './capability-gate.js'
+import { recordCapabilityDeniedAudit } from './capability-gate-audit.js'
 import { requireMfaEnrollment } from '../modules/auth/mfa-enforcement.js'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
@@ -78,6 +81,11 @@ export type SecureRouteRegistrationOptions = {
     // set, org-role checks are skipped entirely (org role has no meaning for a whole-instance
     // operation) and only the platform-operator check applies.
     requirePlatformOperator?: boolean
+    // Story 23.3 AC-10/AC-14/AC-23: declarative capability-gate check. Unset behaves exactly as
+    // today — zero code path change (AC-5). This is the ONLY field secureRoute() gains for this
+    // story; growing the gated surface additionally requires editing the golden route inventory
+    // (apps/api/src/__tests__/gated-route-inventory.test.ts).
+    capability?: CapabilityIdValue
   }
   db?: TransactionalDb
   auditWriter?: (input: {
@@ -150,6 +158,21 @@ function sendPlatformOperatorRequired(reply: FastifyReply): unknown {
   return reply.status(403).send({
     code: 'platform_operator_required',
     message: 'This endpoint requires platform operator privileges.',
+  })
+}
+
+// Story 23.3 AC-21: distinct 403 code from both insufficient_role and platform_operator_required
+// — a separate authorization axis, never conflated with PV's own role/MFA authorization.
+function sendCapabilityDenied(
+  reply: FastifyReply,
+  capability: string,
+  decision: { reasonCode: string; message?: string }
+): unknown {
+  return reply.status(403).send({
+    code: 'capability_denied',
+    capability,
+    reasonCode: decision.reasonCode,
+    message: decision.message,
   })
 }
 
@@ -422,7 +445,76 @@ async function enforceProtectedGuards({
     return false
   }
   if (!enforceRouteRateLimit(options, rateLimit, auth, reply)) return false
-  return enforceMfaIfRequired(options, request, reply)
+  if (!(await enforceMfaIfRequired(options, request, reply))) return false
+  return enforceCapabilityIfRequired(options, auth, request, reply)
+}
+
+// Story 23.3 AC-10 — a per-request marker (log-only double-check backstop), keyed off the
+// FastifyRequest instance itself so it never outlives the request and never becomes a decision
+// cache.
+const perRequestCheckedCapabilities = new WeakMap<FastifyRequest, Set<string>>()
+
+function perRequestSeenSetFor(request: FastifyRequest): Set<string> {
+  const existing = perRequestCheckedCapabilities.get(request)
+  if (existing) return existing
+  const fresh = new Set<string>()
+  perRequestCheckedCapabilities.set(request, fresh)
+  return fresh
+}
+
+// Story 23.3 AC-25 — write (dampened) capability.denied audit row for an authenticated,
+// org-scoped denial. Never routed through sendSecureRouteFailure's audit_write_failed 503 path: a
+// denial is a completed authorization outcome, not a partially-applied mutation, so an audit
+// hiccup must not turn a completed 403 into a less-restrictive-looking 503. Failure is logged and
+// swallowed.
+async function auditCapabilityDenialBestEffort(
+  request: FastifyRequest,
+  auth: AuthContext,
+  capability: string,
+  reasonCode: string
+): Promise<void> {
+  try {
+    await recordCapabilityDeniedAudit({
+      orgId: auth.orgId,
+      userId: auth.userId,
+      capability,
+      reasonCode,
+    })
+  } catch (error) {
+    logRouteError(request, { eventType: 'secure_route.capability_denied_audit_failed', err: error })
+  }
+}
+
+// Story 23.3 AC-10/AC-19/AC-20/AC-23/AC-25 — the declarative capability-gate step, added as one
+// new, explicitly-named step inside enforceProtectedGuards(), strictly AFTER MFA enforcement and
+// BEFORE runProtectedHandler() opens the transaction, so a slow/hung gate holds no pooled
+// connection. Routes with `security.capability` unset make ZERO gate calls (AC-5/AC-20 spy
+// assertion). With NO gate registered, checkCapability() is never invoked at all — AC-5's
+// byte-identical-to-today guarantee for the overwhelmingly common no-extension case.
+async function enforceCapabilityIfRequired(
+  options: SecureRouteRegistrationOptions,
+  auth: AuthContext,
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<boolean> {
+  const capability = options.security?.capability
+  if (!capability) return true
+  const gate = getCapabilityGate()
+  if (!gate) return true
+  const decision = await checkCapability(gate, {
+    capability,
+    orgId: auth.orgId,
+    userId: auth.userId,
+    orgRole: auth.orgRole,
+    surface: 'org',
+    requestId: request.id,
+    logger: request.log,
+    perRequestSeen: perRequestSeenSetFor(request),
+  })
+  if (decision.permitted) return true
+  await auditCapabilityDenialBestEffort(request, auth, capability, decision.reasonCode)
+  sendCapabilityDenied(reply, capability, decision)
+  return false
 }
 
 async function runProtectedHandler({
@@ -587,6 +679,16 @@ export function buildSecurePreHandlers(
   return chain
 }
 
+// Story 23.3 AC-22: boot-time (primary) validation — an unknown capability id is a startup
+// failure, the cheapest possible place to catch an id typo'd or refactored away (which would
+// otherwise silently stop being gated, with no log and no failing test).
+function assertKnownCapabilityId(options: SecureRouteRegistrationOptions): void {
+  const capability = options.security?.capability
+  if (capability !== undefined && !(Object.values(CapabilityId) as string[]).includes(capability)) {
+    throw new Error(`SecureRoute: unknown capability id "${capability}"`)
+  }
+}
+
 function assertSecureRouteConfig(
   fastify: RouteFastify,
   options: SecureRouteRegistrationOptions,
@@ -601,6 +703,7 @@ function assertSecureRouteConfig(
   if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {
     throw new Error('SecureRoute: writeAuditEvent requires requireOrgScope')
   }
+  assertKnownCapabilityId(options)
 }
 
 export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrationOptions): void {

@@ -9,6 +9,7 @@ import {
 } from '@project-vault/extension-api'
 import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
 import { operationalLog } from '../lib/logger.js'
+import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeout.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 
@@ -145,10 +146,10 @@ type RaceResult = { outcome?: LoadOutcome; reason: ExtensionLoadFailureReason; m
 
 /**
  * Dev Notes judgment call #2/#3: races the import()+registerExtension() chain against a bounded
- * timeout. A no-op `.catch()` is attached to the attempt promise immediately (before racing) so
- * a late rejection of the "losing" promise — after the timeout already won — can never produce
- * an unhandledRejection; a late resolution is simply never consumed (Promise.race only reads the
- * first settled promise), so it cannot retroactively mutate the caller's already-finalized state.
+ * timeout, via the shared `raceWithTimeout()` primitive (`lib/race-with-timeout.ts`) also used by
+ * `lib/capability-gate.ts`'s gate invocation. A timeout maps to `'import_error'` — the closest
+ * semantic fit — rather than inventing a 4th failure reason not sanctioned by epics.md's literal
+ * AC text (Dev Notes judgment call #2).
  */
 async function raceWithTimeout(
   packageName: string,
@@ -156,30 +157,19 @@ async function raceWithTimeout(
   timeoutMs: number,
   allowApiVersionAboveHost: boolean
 ): Promise<RaceResult> {
-  const attempt = (async (): Promise<LoadOutcome> => {
+  const raced = await sharedRaceWithTimeout<LoadOutcome>(async () => {
     const mod = await importFn(packageName)
     return registerExtension(mod.default.manifest, mod.default.hooksFactory, {
       allowApiVersionAboveHost,
     })
-  })()
-  attempt.catch(() => undefined)
+  }, timeoutMs)
 
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error('extension load timed out')), timeoutMs)
-  })
-
-  try {
-    const outcome = await Promise.race([attempt, timeoutPromise])
-    return { outcome, reason: 'import_error' }
-  } catch (error) {
-    return {
-      reason: mapFailureReason(error),
-      message:
-        error instanceof ExtensionRegistrationError ? error.message.slice(0, 320) : undefined,
-    }
-  } finally {
-    clearTimeout(timeoutHandle)
+  if (raced.status === 'resolved') return { outcome: raced.value, reason: 'import_error' }
+  if (raced.status === 'timed_out') return { reason: 'import_error' }
+  const error = raced.error
+  return {
+    reason: mapFailureReason(error),
+    message: error instanceof ExtensionRegistrationError ? error.message.slice(0, 320) : undefined,
   }
 }
 

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { createProjectViaApi } from '../fixtures/api.js'
 import { enrollMfaViaUi, registerAndLoginViaApi } from '../fixtures/auth.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
+import { enablePublicStatusPageViaUi } from '../fixtures/status-page-ui.js'
 
 // J16: Story 6.6 AC-7's Playwright-specific requirement — "web unit/component coverage and
 // Playwright coverage for reload, copy, and explicit rotation confirmation" — on top of the
@@ -27,18 +28,11 @@ test.describe.serial('J16 — public status page persistent link journey', () =>
       slug: `j16-project-${Date.now()}`,
     })
 
-    await page.goto(`/projects/${project.id}/status-page`)
-    await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
+    const initialUrl = await enablePublicStatusPageViaUi(page, project.id)
 
-    // Enable.
-    await page.getByRole('button', { name: 'Enable public status page' }).click()
-
-    // A stable locator reference — reading `.textContent()` immediately after a click races the
-    // POST /enable|/regenerate request/DOM update, matching j15's own tokenLocator convention.
+    // A stable locator reference for the remaining assertions below — matching j15's own
+    // tokenLocator convention.
     const urlLocator = page.locator('code')
-    await expect(urlLocator).toHaveText(/^https?:\/\/.+\/status\/.{10,}$/)
-    const initialUrl = await urlLocator.textContent()
-    expect(initialUrl, 'shareable URL must be revealed on enable').toBeTruthy()
 
     await expect(page.getByRole('button', { name: 'Copy', exact: true })).toBeVisible()
     // AC-1: this is a persistent link, not a one-time reveal — no "shown once" style warning.

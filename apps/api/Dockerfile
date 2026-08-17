@@ -37,6 +37,16 @@ COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
 # pnpm-lock.yaml — same "frozen-lockfile install needs every member's package.json regardless
 # of whether this build ever deploys it" reasoning as mock-sso-extension immediately above.
 COPY fixtures/mock-envelope-extension/package.json ./fixtures/mock-envelope-extension/
+# Story 23.3 Task 12: @project-vault/mock-capability-gate-extension is a devDependency of apps/api
+# (never a production dep — see fixtures/mock-capability-gate-extension/README.md's
+# "Production-safety" section) but is a real pnpm-workspace member present in pnpm-lock.yaml —
+# same "frozen-lockfile install needs every member's package.json regardless of whether this
+# build ever deploys it" reasoning as mock-sso-extension immediately above. Its types must also
+# resolve during the plain `tsc` build of apps/api itself (its own boot-integration test statically
+# imports the fixture) — unlike mock-sso/mock-envelope, which no apps/api source file imports
+# directly — so this fixture's dist is built BEFORE `app-builder`'s `pnpm --filter
+# @project-vault/api build` step, not opt-in-only afterward like the other two.
+COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild argon2 esbuild
@@ -51,6 +61,7 @@ COPY packages/extension-api ./packages/extension-api
 COPY packages/eslint-config ./packages/eslint-config
 COPY fixtures/mock-sso-extension ./fixtures/mock-sso-extension
 COPY fixtures/mock-envelope-extension ./fixtures/mock-envelope-extension
+COPY fixtures/mock-capability-gate-extension ./fixtures/mock-capability-gate-extension
 
 # Split off from the final `builder` stage (Story 1.13 AC-D1) so the one-shot `migrate` service
 # (docker-compose.yml) doesn't have to build `agent`/`api` just to run a migration. `crypto` is
@@ -79,6 +90,12 @@ RUN pnpm --filter @project-vault/shared build \
 FROM db-builder AS app-builder
 RUN pnpm --filter @project-vault/agent build \
  && pnpm --filter @project-vault/extension-api build \
+ # Story 23.3 Task 12: built unconditionally (unlike mock-sso/mock-envelope's opt-in-only stage
+ # below) — apps/api's own boot-integration test statically imports this fixture, so its dist
+ # must exist before apps/api's own `tsc` build resolves that import's types. It is still never
+ # shipped to the `runner` stage by default (see the deploy-stage grafting below, gated on
+ # INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION exactly like the other two fixtures).
+ && pnpm --filter @project-vault/mock-capability-gate-extension build \
  && pnpm --filter @project-vault/api build
 
 # Story 14.3 Task 10: build the mock external-IdP fixture ONLY when explicitly opted in (default
@@ -107,6 +124,7 @@ RUN if [ "$INCLUDE_MOCK_ENVELOPE_EXTENSION" = "true" ]; then \
 FROM app-builder AS deploy
 ARG INCLUDE_MOCK_SSO_EXTENSION=false
 ARG INCLUDE_MOCK_ENVELOPE_EXTENSION=false
+ARG INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 # `pnpm deploy --legacy` leaves workspace links for injected packages on this pnpm version. Replace
 # the extension-api link with the exact npm pack boundary used for external consumers so the runner
@@ -161,6 +179,11 @@ RUN if [ "$INCLUDE_MOCK_ENVELOPE_EXTENSION" = "true" ]; then \
       mkdir -p /app/deploy/node_modules/@project-vault/mock-envelope-extension && \
       cp -r /app/fixtures/mock-envelope-extension/dist /app/deploy/node_modules/@project-vault/mock-envelope-extension/dist && \
       cp /app/fixtures/mock-envelope-extension/package.json /app/deploy/node_modules/@project-vault/mock-envelope-extension/package.json; \
+    fi
+RUN if [ "$INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION" = "true" ]; then \
+      mkdir -p /app/deploy/node_modules/@project-vault/mock-capability-gate-extension && \
+      cp -r /app/fixtures/mock-capability-gate-extension/dist /app/deploy/node_modules/@project-vault/mock-capability-gate-extension/dist && \
+      cp /app/fixtures/mock-capability-gate-extension/package.json /app/deploy/node_modules/@project-vault/mock-capability-gate-extension/package.json; \
     fi
 
 # node:24-alpine, pinned by digest — see builder stage comment above.

@@ -6,6 +6,14 @@
   function formatLoadedAt(iso: string): string {
     return new Date(iso).toLocaleString()
   }
+
+  // Story 23.3 AC-9/AC-33: the page has NO liveness data — it can read exactly one thing, the
+  // loaded manifest's declared `capabilities` array. Neither line below asserts that gating is
+  // or is not actually in effect; whether a declared gate is registered is reported only on the
+  // operational status endpoint (AC-26), which this page cannot reach.
+  const declaresCapabilityGate = $derived(
+    data.manifest?.capabilities.includes('capability-gate') ?? false
+  )
 </script>
 
 <svelte:head>
@@ -77,6 +85,17 @@
       <p class="mt-4 text-xs text-slate-500">
         Loaded at {formatLoadedAt(data.manifest.loadedAt)}
       </p>
+
+      <!-- Story 23.3 AC-9/AC-33: manifest-derived only — see the declaresCapabilityGate comment
+           above for why the copy stops short of a liveness claim. -->
+      <p class="mt-3 text-xs text-slate-500">
+        {#if declaresCapabilityGate}
+          This extension declares a capability gate. Whether it is actually registered is reported
+          on the operational status endpoint.
+        {:else}
+          No capability gate configured — all capabilities are available.
+        {/if}
+      </p>
     </div>
   {:else if data.healthStatus === 'load_failed'}
     <!-- AC-4: honest, visually/textually distinct from AC-3's not-configured state. Never
@@ -89,11 +108,17 @@
         The configured extension failed to load. Core vault functionality is unaffected. Check the
         server's structured logs and this org's audit log for details.
       </p>
+      <p class="mt-3 text-xs text-red-700">
+        No capability gate configured — all capabilities are available.
+      </p>
     </div>
   {:else}
     <!-- AC-3: the expected, common, non-error default for most self-hosted installs. -->
     <div class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
       <p class="text-slate-600">No extension configured for this vault.</p>
+      <p class="mt-3 text-xs text-slate-500">
+        No capability gate configured — all capabilities are available.
+      </p>
     </div>
   {/if}
 </div>

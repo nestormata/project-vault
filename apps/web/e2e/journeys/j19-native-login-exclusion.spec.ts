@@ -5,11 +5,13 @@ import { LoginPage } from '../pages/LoginPage.js'
 import { superuserDatabaseUrl } from '../fixtures/db.js'
 import {
   createIsolatedDatabase,
-  dropIsolatedDatabase,
+  initIsolatedVault,
+  teardownIsolatedStack,
+} from '../fixtures/isolated-stack-shared.js'
+import {
   restartEnvelopeApi,
   startEnvelopeApi,
   startEnvelopeWeb,
-  stopProcess,
   type ApiHandle,
   type WebHandle,
 } from '../fixtures/isolated-envelope-stack.js'
@@ -100,24 +102,14 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
       envAudience: AUDIENCE,
       webPort: WEB_PORT,
     })
-    // POST /api/v1/vault/init is vault-guard-allowlisted (unlike the SSO start/callback routes
-    // this journey needs), and VAULT_ALLOW_REMOTE_INIT=true (set by startEnvelopeApi) permits
-    // calling it without a bootstrap token — mirrors global-setup.ts's own initVault() exactly.
-    const init = await fetch(`http://localhost:${API_PORT}/api/v1/vault/init`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kmsType: 'passphrase', passphrase: 'j19-envelope-e2e-passphrase' }),
-    })
-    if (!init.ok && init.status !== 409) {
-      throw new Error(`vault/init failed (${init.status}): ${await init.text()}`)
-    }
+    // VAULT_ALLOW_REMOTE_INIT=true (set by startEnvelopeApi) permits vault/init without a
+    // bootstrap token — see initIsolatedVault()'s doc comment.
+    await initIsolatedVault(API_PORT, 'j19-envelope-e2e-passphrase')
     webHandle = await startEnvelopeWeb({ port: WEB_PORT, apiPort: API_PORT })
   })
 
   test.afterAll(async () => {
-    if (webHandle) await stopProcess(webHandle.process)
-    if (apiHandle) await stopProcess(apiHandle.process)
-    await dropIsolatedDatabase(DB_NAME)
+    await teardownIsolatedStack({ webHandle, apiHandle, dbName: DB_NAME })
   })
 
   test('AC-4a: declared-but-unproven — the extension is loaded but has never authenticated anyone, so the password form still renders', async ({

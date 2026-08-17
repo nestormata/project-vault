@@ -170,4 +170,64 @@ describe('/settings/extensions +page.svelte', () => {
     expect(screen.queryByText(/failed to load extension status/i)).toBeNull()
     expect(screen.queryByText(/need the admin role/i)).toBeNull()
   })
+
+  it('Story 23.3 AC-9: manifest without capability-gate shows the "no gate configured" line', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: SAMPLE_MANIFEST,
+          healthStatus: 'loaded',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(
+      screen.getByText(/no capability gate configured — all capabilities are available/i)
+    ).toBeTruthy()
+    expect(screen.queryByText(/this extension declares a capability gate/i)).toBeNull()
+  })
+
+  it('Story 23.3 AC-9: manifest declaring capability-gate shows the "declares a gate" line, not a liveness claim', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: { ...SAMPLE_MANIFEST, capabilities: ['auth-provider', 'capability-gate'] },
+          healthStatus: 'loaded',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(screen.getByText(/this extension declares a capability gate/i)).toBeTruthy()
+    expect(screen.getByText(/operational status endpoint/i)).toBeTruthy()
+    expect(
+      screen.queryByText(/no capability gate configured — all capabilities are available/i)
+    ).toBeNull()
+  })
+
+  it('Story 23.3 AC-9: not-configured state also shows the "no gate configured" line', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: null,
+          healthStatus: 'not_configured',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(
+      screen.getByText(/no capability gate configured — all capabilities are available/i)
+    ).toBeTruthy()
+  })
 })

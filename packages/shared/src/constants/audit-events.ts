@@ -142,6 +142,10 @@ export const AuditEvent = {
   NATIVE_LOGIN_BREAK_GLASS_ACTIVE: 'native_login.break_glass_active',
   NATIVE_LOGIN_BREAK_GLASS_RECOVERY_MINTED: 'native_login.break_glass_recovery_minted',
   NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED: 'native_login.bootstrap_register_allowed',
+  // Story 23.3 AC-25: a capability-gate denial on an authenticated, org-scoped enforcement
+  // (surface: 'org'). Payload is { capability, reasonCode } only — never the extension-controlled
+  // `message` (free-form text does not belong in a tamper-evident audit trail).
+  CAPABILITY_DENIED: 'capability.denied',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

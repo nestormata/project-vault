@@ -292,6 +292,26 @@ export const OperationalEvent = {
   // best-effort (never blocks/fails the GET /status response) but its failure is no longer
   // silently discarded — this is the visibility signal.
   STATUS_TOKEN_TOUCH_FAILED: 'status.token_touch_failed',
+
+  // Story 23.3: capability-entitlement gating extension hook (apps/api/src/lib/capability-gate.ts).
+  // AC-7 edge case: a second wireExtensionCapabilityGate() call in the same process no-ops.
+  CAPABILITY_GATE_DOUBLE_WIRE_IGNORED: 'capability_gate.double_wire_ignored',
+  // AC-11: a registered gate threw, rejected, or timed out.
+  CAPABILITY_GATE_FAILED: 'capability_gate.failed',
+  CAPABILITY_GATE_TIMED_OUT: 'capability_gate.timed_out',
+  // AC-12: a registered gate resolved something that fails the CapabilityDecision boundary schema.
+  CAPABILITY_GATE_MALFORMED_DECISION: 'capability_gate.malformed_decision',
+  // AC-12: a permitted:true decision carrying a reasonCode — most likely an inverted boolean bug,
+  // the one malformed shape that grants access, so it is warn-logged even though it is honored.
+  CAPABILITY_GATE_SUSPICIOUS_DECISION: 'capability_gate.suspicious_decision',
+  // AC-10: the same capability id was checked twice within one request (a config error, never a
+  // reason to memoize) — log-only backstop, does not throw in production.
+  CAPABILITY_GATE_DOUBLE_CHECK: 'capability_gate.double_check',
+  // AC-22: an id reaching assertCapability()/checkCapability() outside the closed CapabilityId set.
+  CAPABILITY_GATE_UNKNOWN_ID: 'capability_gate.unknown_id',
+  // AC-15: a check arrived over its accounting key's in-flight cap and was denied without
+  // invoking the gate.
+  CAPABILITY_GATE_SATURATED: 'capability_gate.saturated',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

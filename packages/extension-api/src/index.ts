@@ -11,6 +11,11 @@
 export type { AuthResult, AuthStrategy } from './hooks/auth-strategy.js'
 export type { NotificationChannel, NotificationPayload } from './hooks/notification-channel.js'
 export type { UIPanel, UIPanelContext, UIPanelResult } from './hooks/ui-panel.js'
+export type {
+  CapabilityDecision,
+  CapabilityGate,
+  CapabilityGateContext,
+} from './hooks/capability-gate.js'
 
 export type { ExtensionCapability, ExtensionManifest } from './manifest.js'
 export {

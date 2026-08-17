@@ -1,0 +1,32 @@
+{
+  "name": "@project-vault/mock-capability-gate-extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --coverage",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@project-vault/extension-api": "workspace:*"
+  },
+  "devDependencies": {
+    "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/tsconfig": "workspace:*",
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

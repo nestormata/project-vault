@@ -8,6 +8,7 @@ import {
   defineExtension,
 } from './manifest.js'
 import type { ExtensionCapability, ExtensionManifest } from './manifest.js'
+import { isExtensionApiVersionSupported } from './register-extension.js'
 
 const PACKAGE_JSON_PATH = fileURLToPath(new URL('../package.json', import.meta.url))
 const TEST_EXTENSION_NAME = 'com.acme.sso-extension'
@@ -19,7 +20,7 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.2.0')
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.3.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
@@ -61,5 +62,32 @@ describe('defineExtension', () => {
     }
 
     expect(defineExtension(manifest).replacesNativeLogin).toBeUndefined()
+  })
+})
+
+describe('Story 23.3 AC-30/AC-31 — the capability-gate version bump is additive-minor, backward compatible', () => {
+  it('an extension pinned to the exact previous-minor version still loads under the new ceiling (AC-31)', () => {
+    // 1.2.0 was the ceiling before this story bumped EXTENSION_API_VERSION to 1.3.0. An
+    // extension built against it must still be supported by the new, additive-minor host —
+    // this is the whole point of an additive-minor bump rather than a major one.
+    expect(isExtensionApiVersionSupported('1.2.0')).toBe(true)
+  })
+
+  it('an extension pinned above the new ceiling is rejected (unchanged, pre-existing floor/ceiling behavior)', () => {
+    expect(isExtensionApiVersionSupported('9.9.9')).toBe(false)
+  })
+
+  it('a prerelease of the new version is still rejected (includePrerelease: false, unchanged — AC-31 edge case)', () => {
+    expect(isExtensionApiVersionSupported(`${EXTENSION_API_VERSION}-beta.1`)).toBe(false)
+  })
+})
+
+describe('Story 23.3 AC-17/AC-32 — PV-internal tunables are NOT part of the published contract', () => {
+  it('no exported symbol from the package root references a timeout, in-flight cap, or audit-window value', async () => {
+    const rootExports = await import('./index.js')
+    const serialized = JSON.stringify(Object.keys(rootExports))
+    expect(serialized).not.toMatch(/timeout/i)
+    expect(serialized).not.toMatch(/inFlight/i)
+    expect(serialized).not.toMatch(/dampen/i)
   })
 })
