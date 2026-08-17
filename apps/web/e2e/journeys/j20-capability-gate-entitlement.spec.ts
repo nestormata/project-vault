@@ -123,10 +123,10 @@ test.describe
     // the story's own persona-journey text) — this real 403 IS the enforcement.
     await page.goto(`${BASE_URL}/projects/${projectId}/status-page`)
     await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
-    // Vite dev mode serves an unbundled module graph — wait for hydration to genuinely finish
-    // (network idle) before clicking, matching J19's own documented rationale for the same class
-    // of race (an early click falls through to no-op since the handler isn't attached yet).
-    await page.waitForLoadState('networkidle')
+    // Vite dev mode serves an unbundled module graph — a web-first assertion on the button itself
+    // (rather than a blanket networkidle heuristic, matching J19's own documented rationale for
+    // the same class of race) is what actually waits for hydration to attach the click handler;
+    // clicking too early falls through to a no-op.
     const enableButton = page.getByRole('button', { name: 'Enable public status page' })
     await expect(enableButton).toBeEnabled()
     await enableButton.click()
@@ -170,7 +170,6 @@ test.describe
 
     await page.goto(`${BASE_URL}/projects/${projectId}/status-page`)
     await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
-    await page.waitForLoadState('networkidle')
     const retryEnableButton = page.getByRole('button', { name: 'Enable public status page' })
     await expect(retryEnableButton).toBeEnabled()
     await retryEnableButton.click()

@@ -162,6 +162,6 @@ describe('recordCapabilityDeniedAudit — AC-25 dampener', () => {
       { orgId: 'org_1000', userId: 'user_1', capability: 'cap', reasonCode: 'x' },
       writer
     )
-    expect(writer.mock.calls.length).toBe(callsBeforeEviction + 1)
+    expect(writer.mock.calls).toHaveLength(callsBeforeEviction + 1)
   })
 })
