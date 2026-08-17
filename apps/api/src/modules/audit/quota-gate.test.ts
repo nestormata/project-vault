@@ -184,13 +184,15 @@ describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () =>
         await withTestOrg(async ({ orgId }) => {
           await setQuota(orgId, null)
           // 2 MiB, larger than the 1 MB env default — would refuse if the default applied.
-          await withOrg(orgId, (tx) =>
-            assertWithDefault(tx, {
-              orgId,
-              eventType: ROUTINE_EVENT,
-              sizeBytes: 2 * 1024 * 1024,
-            })
-          )
+          await expect(
+            withOrg(orgId, (tx) =>
+              assertWithDefault(tx, {
+                orgId,
+                eventType: ROUTINE_EVENT,
+                sizeBytes: 2 * 1024 * 1024,
+              })
+            )
+          ).resolves.toBeUndefined()
         })
       } finally {
         if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
@@ -213,9 +215,11 @@ describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () =>
         const { assertOrgMayWriteAudit: assertWithSwitchOff } = await import('./quota-gate.js')
         await withTestOrg(async ({ orgId }) => {
           await setQuota(orgId, 1)
-          await withOrg(orgId, (tx) =>
-            assertWithSwitchOff(tx, { orgId, eventType: ROUTINE_EVENT, sizeBytes: 999_999 })
-          )
+          await expect(
+            withOrg(orgId, (tx) =>
+              assertWithSwitchOff(tx, { orgId, eventType: ROUTINE_EVENT, sizeBytes: 999_999 })
+            )
+          ).resolves.toBeUndefined()
         })
       } finally {
         if (previous === undefined) delete process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']

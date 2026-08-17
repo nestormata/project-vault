@@ -1,8 +1,7 @@
 import { sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { auditStorageQuotaConfig } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
-import { PlatformAuditAction } from '@project-vault/shared'
+import { AuditEvent, PlatformAuditAction } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import {
   writePlatformAuditEntryOrFailClosed,

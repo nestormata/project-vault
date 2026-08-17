@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditOrgStorageUsage } from '@project-vault/db/schema'
@@ -38,7 +38,7 @@ async function readUsage(
 }
 
 describe.sequential('Story 22.1 AC-7: audit-org-usage/reconcile', () => {
-  it('boots the vault once', async () => {
+  beforeAll(async () => {
     await resetVaultForTest()
     try {
       await initVault({ kmsType: 'passphrase', passphrase: 'reconcile-test-passphrase' }, {})

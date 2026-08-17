@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditLogEntries, platformAuditEvents } from '@project-vault/db/schema'
@@ -19,7 +19,7 @@ const { getDb } = await import('@project-vault/db')
 const OPERATOR_LABEL = 'quota-config-operator'
 
 describe.sequential('Story 22.1 AC-5: setOrgAuditQuota dual-write', () => {
-  it('boots the vault once', async () => {
+  beforeAll(async () => {
     await resetVaultForTest()
     try {
       await initVault({ kmsType: 'passphrase', passphrase: 'quota-config-test-passphrase' }, {})

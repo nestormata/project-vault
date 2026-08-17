@@ -86,7 +86,7 @@ export function findUnallowlistedInsertSites(repoRoot: string): string[] {
       continue
     }
     for (const filePath of walk(rootDir)) {
-      const relPath = relative(repoRoot, filePath).split('\\').join('/')
+      const relPath = relative(repoRoot, filePath).replaceAll('\\', '/')
       if (isTestFile(relPath)) continue
       const source = readFileSync(filePath, 'utf-8')
       const matchesDrizzle = DRIZZLE_IDIOM.test(source)
