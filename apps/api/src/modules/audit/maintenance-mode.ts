@@ -14,6 +14,13 @@ export const SECURITY_CRITICAL_AUDIT_EVENT_TYPES: ReadonlySet<string> = new Set(
   AuditEvent.MFA_RECOVERY_USED,
   AuditEvent.MFA_RECOVERY_CODES_REGENERATED,
   AuditEvent.SESSION_REVOKED,
+  // Story 22.1 fix: SESSION_CREATED must never be blocked by the per-org quota gate (this set
+  // now doubles as `classifyAuditWriteExemption`'s security_critical exemption class — see
+  // quota-gate.ts). Login itself is the prerequisite for reaching every QUOTA_REMEDIATION_EVENT_
+  // TYPES-triggering admin endpoint; without this entry, an over-quota org's own admins could
+  // never log in to fix the quota in the first place (createLoginSessionInTx's insertAuditEntry
+  // call would throw SameTransactionAuditWriteError and roll back the whole login transaction).
+  AuditEvent.SESSION_CREATED,
   AuditEvent.LOGIN_FAILED,
   AuditEvent.ACCOUNT_RECOVERY_REQUESTED,
   AuditEvent.ACCOUNT_RECOVERY_LINK_SENT,

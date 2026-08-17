@@ -53,6 +53,9 @@ export const OperationalEvent = {
   CREDENTIAL_AUDIT_WRITE_FAILED: 'credential.audit_write_failed',
   CREDENTIAL_RETENTION_SUMMARY: 'credential.retention.summary',
   CREDENTIAL_RETENTION_DRY_RUN: 'credential.retention.dry_run',
+  // Story 22.1 fix: one org's audit-quota exhaustion (or any other per-org failure) must not
+  // abort the retention purge for every other org sharing this scheduled run.
+  CREDENTIAL_RETENTION_ORG_FAILED: 'credential.retention.org_failed',
   CREDENTIAL_DEPENDENCY_ADDED: 'credential.dependency.added',
   CREDENTIAL_DEPENDENCY_ARCHIVED: 'credential.dependency.archived',
   CREDENTIAL_DEPENDENCY_UPDATED: 'credential.dependency.updated',
