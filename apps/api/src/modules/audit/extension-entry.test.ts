@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tx } from '@project-vault/db'
 import { SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 
-const { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } = vi.hoisted(() => ({
-  assertOrgMayWriteAudit: vi.fn(),
+const { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } = vi.hoisted(() => ({
+  assertOrgMayWriteAuditGates: vi.fn(),
   estimateAuditEntrySizeBytes: vi.fn(() => 42),
 }))
 
@@ -20,7 +20,7 @@ const { getAuditKey } = vi.hoisted(() => ({
   getAuditKey: vi.fn(() => Buffer.from('fixture-key')),
 }))
 
-vi.mock('./quota-gate.js', () => ({ assertOrgMayWriteAudit, estimateAuditEntrySizeBytes }))
+vi.mock('./quota-gate.js', () => ({ assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes }))
 vi.mock('./key-version.js', () => ({ currentAuditKeyVersion }))
 vi.mock('./write-entry.js', () => ({ computeAuditHmac }))
 vi.mock('../vault/key-service.js', () => ({ getAuditKey }))
@@ -45,7 +45,7 @@ function createStubTx(): { tx: Tx; valuesSpy: ReturnType<typeof vi.fn> } {
 describe('writeExtensionAuditEntry — AC-9/AC-11/AC-12/AC-13/AC-14', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    assertOrgMayWriteAudit.mockResolvedValue(undefined)
+    assertOrgMayWriteAuditGates.mockResolvedValue(undefined)
     currentAuditKeyVersion.mockResolvedValue(5)
     computeAuditHmac.mockReturnValue(FIXTURE_HMAC)
   })
@@ -96,7 +96,7 @@ describe('writeExtensionAuditEntry — AC-9/AC-11/AC-12/AC-13/AC-14', () => {
 
   it('quota-gate propagation: refusal never reaches set_config/keyVersion/insert', async () => {
     const { tx, valuesSpy } = createStubTx()
-    assertOrgMayWriteAudit.mockRejectedValue(
+    assertOrgMayWriteAuditGates.mockRejectedValue(
       new SameTransactionAuditWriteError('quota exhausted', 'audit_quota_exhausted')
     )
 

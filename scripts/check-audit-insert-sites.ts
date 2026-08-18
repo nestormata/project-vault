@@ -49,8 +49,8 @@ const ALLOWLIST = new Set<string>([
   // Site 9 — capability-gate-audit.ts (Story 23.3, landed after this story was drafted; found by
   // re-verifying the insert-site count at implementation time, per Task 1)
   'apps/api/src/lib/capability-gate-audit.ts',
-  // Site 10 — writeExtensionAuditEntry (Story 23.8) — calls assertOrgMayWriteAudit() before its
-  // insert, same as every other site above.
+  // Site 10 — writeExtensionAuditEntry (Story 23.8) — calls assertOrgMayWriteAuditGates() before
+  // its insert, same as every other site above.
   'apps/api/src/modules/audit/extension-entry.ts',
 ])
 
@@ -97,7 +97,16 @@ export function findSitesMissingRateGate(repoRoot: string): string[] {
       offenders.push(relPath)
       continue
     }
-    if (!/assertOrgMayWriteAuditAtRate\s*\(/.test(source)) {
+    // Story 22.2 AC-4's rate gate is satisfied either by calling assertOrgMayWriteAuditAtRate()
+    // directly, or by calling the combined assertOrgMayWriteAuditGates() wrapper that every
+    // production insert site actually uses (it calls assertOrgMayWriteAuditAtRate() internally,
+    // immediately before assertOrgMayWriteAudit(), in the documented order) — fixed 2026-08-17
+    // while rebasing Story 23.8 onto 22-2: the original regex only matched the direct call and
+    // false-positived on every site, since none of them call the un-wrapped function by name.
+    if (
+      !/assertOrgMayWriteAuditAtRate\s*\(/.test(source) &&
+      !/assertOrgMayWriteAuditGates\s*\(/.test(source)
+    ) {
       offenders.push(relPath)
     }
   }

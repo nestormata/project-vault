@@ -4,7 +4,7 @@ import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { computeAuditHmac } from './write-entry.js'
-import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from './quota-gate.js'
+import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 export type ExtensionAuditFields = {
   orgId: string
@@ -39,10 +39,12 @@ export async function writeExtensionAuditEntry(
     extensionName: fields.extensionName,
   }
 
-  // Story 22.1 AC-13 (see human-entry.ts). Size is estimated over the fully-assembled payload
-  // (including extensionName, folded in before the insert) — same precedent as
-  // writeMachineAuditEntry().
-  await assertOrgMayWriteAudit(tx, {
+  // Story 22.1 AC-13 / Story 22.2 AC-4 (see human-entry.ts). Size is estimated over the
+  // fully-assembled payload (including extensionName, folded in before the insert) — same
+  // precedent as writeMachineAuditEntry(). Rebased onto 22-2's write-rate limiting (2026-08-17):
+  // extension-authored rows now go through the same combined rate-then-storage gate as every
+  // other of the nine insert sites, rather than the storage-only gate this story originally used.
+  await assertOrgMayWriteAuditGates(tx, {
     orgId: fields.orgId,
     eventType: fields.eventType,
     sizeBytes: estimateAuditEntrySizeBytes({ ...fields, payload }),
