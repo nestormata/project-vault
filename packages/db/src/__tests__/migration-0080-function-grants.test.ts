@@ -172,14 +172,32 @@ describeDatabase('Story 24.5a privilege integration', () => {
         `CREATE FUNCTION public.${functionName}() RETURNS integer LANGUAGE SQL AS $$SELECT 1$$`
       )
       const [row] = await adminSql<
-        { current_user: string; public_execute: boolean; app_execute: boolean }[]
+        {
+          current_user: string
+          function_owner: string
+          issuer_default_acl: boolean
+          public_execute: boolean
+          app_execute: boolean
+        }[]
       >`
         SELECT
           current_user,
+          owner.rolname AS function_owner,
+          EXISTS (
+            SELECT 1
+            FROM pg_default_acl defaults
+            WHERE defaults.defaclrole = owner.oid
+              AND defaults.defaclobjtype = 'f'
+          ) AS issuer_default_acl,
           has_function_privilege('public', ${`public.${functionName}()`}, 'EXECUTE') AS public_execute,
           has_function_privilege('vault_app', ${`public.${functionName}()`}, 'EXECUTE') AS app_execute
+        FROM pg_proc probe
+        JOIN pg_roles owner ON owner.oid = probe.proowner
+        WHERE probe.oid = ${`public.${functionName}()`}::regprocedure
       `
       expect(row?.current_user, 'default ACL assertion must identify its issuer').toBeTruthy()
+      expect(row?.function_owner).toBe(row?.current_user)
+      expect(row?.issuer_default_acl).toBe(true)
       expect(row?.public_execute).toBe(false)
       expect(row?.app_execute).toBe(false)
     } finally {
@@ -196,15 +214,24 @@ describeDatabase('Story 24.5a privilege integration', () => {
     const credentialValue = `pv_test_${Math.random().toString(36).slice(2)}`
     const lockKey = 245050080
     await adminSql`SELECT pg_advisory_lock(${lockKey})`
-    try {
+    let deniedSql: ReturnType<typeof postgres> | undefined
+    const cleanupRole = async () => {
+      try {
+        await adminSql.unsafe(`DROP OWNED BY "${roleName}"`)
+      } catch {
+        // The role may not exist yet during setup.
+      }
       await adminSql.unsafe(`DROP ROLE IF EXISTS "${roleName}"`)
+    }
+    try {
+      await cleanupRole()
       await adminSql.unsafe(
         `CREATE ROLE "${roleName}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '${credentialValue}'`
       )
       const roleUrl = new URL(privilegedUrl as string)
       roleUrl.username = roleName
       roleUrl.password = credentialValue
-      const deniedSql = postgres(roleUrl.toString(), { max: 1 })
+      deniedSql = postgres(roleUrl.toString(), { max: 1 })
       try {
         const [identity] = await deniedSql<{ current_user: string }[]>`SELECT current_user`
         expect(identity?.current_user, 'denial test must run as its throwaway role').toBe(roleName)
@@ -231,11 +258,20 @@ describeDatabase('Story 24.5a privilege integration', () => {
         expect(after).toEqual(before)
       } finally {
         await deniedSql.end()
+        deniedSql = undefined
       }
-      await adminSql.unsafe(`DROP OWNED BY "${roleName}"`)
-      await adminSql.unsafe(`DROP ROLE "${roleName}"`)
     } finally {
-      await adminSql`SELECT pg_advisory_unlock(${lockKey})`
+      try {
+        if (deniedSql) {
+          await deniedSql.end()
+        }
+      } finally {
+        try {
+          await cleanupRole()
+        } finally {
+          await adminSql`SELECT pg_advisory_unlock(${lockKey})`
+        }
+      }
     }
   })
 })
