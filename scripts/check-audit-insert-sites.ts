@@ -49,6 +49,9 @@ const ALLOWLIST = new Set<string>([
   // Site 9 — capability-gate-audit.ts (Story 23.3, landed after this story was drafted; found by
   // re-verifying the insert-site count at implementation time, per Task 1)
   'apps/api/src/lib/capability-gate-audit.ts',
+  // Site 10 — writeExtensionAuditEntry (Story 23.8) — calls assertOrgMayWriteAudit() before its
+  // insert, same as every other site above.
+  'apps/api/src/modules/audit/extension-entry.ts',
 ])
 
 const DRIZZLE_IDIOM = /\.insert\s*\(\s*[\s\S]{0,80}?auditLogEntries/g

@@ -196,7 +196,7 @@ describe('writeExtensionAuditEventForManifest — AC-23 operational logging', ()
     const warn = vi.fn()
     await writeExtensionAuditEventForManifest(
       NO_CAPABILITY_MANIFEST,
-      { eventType: VALID_EVENT_TYPE, orgId: 'org-1', payload: { secret: 'do-not-log' } },
+      { eventType: VALID_EVENT_TYPE, orgId: 'org-1', payload: { sensitiveField: 'do-not-log' } },
       { logger: { warn } }
     ).catch(() => undefined)
     expect(warn).toHaveBeenCalledWith(
