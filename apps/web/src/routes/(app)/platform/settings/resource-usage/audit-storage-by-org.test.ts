@@ -187,7 +187,7 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
     await fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     await waitFor(() => expect(setOrgAuditQuotaMock).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(screen.getByText(/saved/i)).toBeTruthy())
+    expect(await screen.findByText(/saved/i)).toBeTruthy()
   })
 
   it('AC-5: below-current-usage confirm dialog appears before submitting a lowering quota, then proceeds on confirm', async () => {
@@ -246,9 +246,7 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
     await fireEvent.click(screen.getByRole('button', { name: /edit/i }))
     await fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /continue anyway/i })).toBeTruthy()
-    )
+    expect(await screen.findByRole('button', { name: /continue anyway/i })).toBeTruthy()
 
     await fireEvent.click(screen.getByRole('button', { name: /continue anyway/i }))
 
@@ -266,7 +264,7 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
     await fireEvent.click(screen.getByRole('button', { name: /edit/i }))
     await fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-    await waitFor(() => expect(screen.getByText(/mfa required/i)).toBeTruthy())
+    expect(await screen.findByText(/mfa required/i)).toBeTruthy()
   })
 
   it('is defensive against a malformed/missing auditStorageByOrg (AC-6)', () => {

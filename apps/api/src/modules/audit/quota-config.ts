@@ -327,10 +327,7 @@ export async function resolveOrgQuotaAllocationAggregate(
 export function computeAuditQuotaAllocation(
   input: ComputeAuditQuotaAllocationInput
 ): AuditQuotaAllocationResult {
-  const proposedContribution =
-    input.requestedBytes === null || input.requestedBytes === undefined
-      ? input.targetOrgCurrentContributionBytes
-      : input.requestedBytes
+  const proposedContribution = input.requestedBytes ?? input.targetOrgCurrentContributionBytes
 
   const allocatedLogicalBytes =
     input.currentSumOfFiniteQuotaBytes -
