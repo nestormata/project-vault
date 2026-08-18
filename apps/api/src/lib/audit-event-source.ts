@@ -42,7 +42,7 @@ const MAX_EVENT_TYPE_LENGTH = 200
  * — a manifest name is reverse-DNS-style (register-extension.ts's REVERSE_DNS_NAME_PATTERN,
  * `[a-z0-9]+(\.[a-z0-9-]+)+`) so this is defensive, not a real attacker-controlled-regex risk. */
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
 }
 
 function buildNamespacePattern(manifestName: string): RegExp {
@@ -50,7 +50,7 @@ function buildNamespacePattern(manifestName: string): RegExp {
   // manifestName is host-derived (the loaded extension's own already-validated reverse-DNS
   // manifest.name), never caller-supplied per-call input.
   // eslint-disable-next-line security/detect-non-literal-regexp
-  return new RegExp(`^ext\\.${escapedName}\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$`)
+  return new RegExp(String.raw`^ext\.${escapedName}\.[a-z0-9_]+(\.[a-z0-9_]+)*$`)
 }
 
 /**
