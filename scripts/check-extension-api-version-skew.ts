@@ -1,45 +1,130 @@
 #!/usr/bin/env tsx
 /**
- * Story 14.1 AC7 — `packages/extension-api` is a versioned contract package: any change under
- * `packages/extension-api/src/**` (a hook interface, `registerExtension()`'s validation logic,
- * the manifest shape, …) must ship with a corresponding bump to `packages/extension-api/package.json`'s
- * `version` field in the same diff. This is a build failure instead of a hoped-for review comment.
+ * Story 14.1 AC7 / Story 24.4 — enforce forward-only versioning for the extension API contract.
  *
- * Compares the actual before/after `version` *field value* in `packages/extension-api/package.json`
- * across the PR's base/head, via `git show <ref>:<path>` — not merely whether `package.json` was
- * touched (a diff that edits the file without changing `version` must still fail, per AC7).
+ * The guard compares canonical semver values and requires the head to be strictly greater than
+ * the selected base. It tracks the contract paths below plus the loader's exact path; test files
+ * are excluded by basename so test-only edits do not manufacture version churn. The runtime gate
+ * remains Story 24.3's responsibility: these checks are independent, so passing CI does not imply
+ * that a loading extension is compatible, and a compatible extension does not imply a passing CI
+ * check.
+ *
+ * CI checks out the checks job with fetch-depth: 0 (ci.yml:47), which makes failing closed safe for
+ * the authoritative path. Local runs intentionally compare against a merge-base and therefore
+ * accept the residual where two branches allocate the same number before either is merged; the
+ * pull-request merge ref compares against the target branch tip and rejects that collision.
+ * EXTENSION_API_SKEW_ALLOW_BROKEN_BASE=1 is a reviewed escape hatch for a malformed base package;
+ * it warns on stderr and never bypasses head-side validation. Branch protection must still require
+ * up-to-date and non-skipped checks (DW-118), because a script cannot re-run a stale GitHub check.
  */
 import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import semver from 'semver'
 
 export const EXTENSION_API_SRC_PREFIX = 'packages/extension-api/src/'
 export const EXTENSION_API_PACKAGE_JSON = 'packages/extension-api/package.json'
 
-export type DiffRange = { base: string; head: string }
+// A version promises observable contract behaviour, including loader wiring and error mapping.
+export const CONTRACT_PATHS = [
+  EXTENSION_API_SRC_PREFIX, // Extension API types, manifest, and registration contract.
+] as const
+export const CONTRACT_FILES = [
+  'apps/api/src/extensions/loader.ts', // Loader hook wiring and load_failed behaviour are observable to extensions.
+] as const
+export const EXCLUDED_PATTERNS = [
+  /\.test\.ts$/, // Tests are not part of the shipped contract and must not force version churn.
+] as const
 
-/**
- * Determines the git ref range to diff. On a GitHub Actions `pull_request` event, `GITHUB_BASE_REF`
- * is set to the target branch name (e.g. "main") and the checked-out remote tracking ref is
- * `origin/<base>`; `GITHUB_SHA` is the head commit. Locally (or for push events, where
- * `GITHUB_BASE_REF` is unset), fall back to comparing local `main` against `HEAD` — the common
- * case for a developer running this guard by hand before opening a PR.
- */
-export function resolveDiffRange(env: Partial<NodeJS.ProcessEnv> = process.env): DiffRange {
-  if (env.GITHUB_BASE_REF) {
-    return { base: `origin/${env.GITHUB_BASE_REF}`, head: env.GITHUB_SHA ?? 'HEAD' }
-  }
-  return { base: 'main', head: 'HEAD' }
+const HEAD_REF = 'HEAD' as const
+const MAIN_REF = 'main' as const
+const BASE_TIP_COMPARISON = 'base-tip' as const
+const MERGE_BASE_COMPARISON = 'merge-base' as const
+const HEAD_SIDE = 'head' as const
+const MISSING_VERSION = 'missing-version' as const
+const INVALID_SEMVER = 'invalid-semver' as const
+const UNRESOLVABLE_RANGE = 'unresolvable-range' as const
+
+export type DiffRange = {
+  base: string
+  head: string
+  comparison: typeof BASE_TIP_COMPARISON | typeof MERGE_BASE_COMPARISON
+}
+
+export type SkewVerdict =
+  | { ok: true; reason: 'no-contract-change' }
+  | { ok: true; reason: 'valid-increase'; from: string; to: string }
+  | { ok: true; reason: 'new-package'; to: string }
+  | { ok: false; code: 'no-bump'; base: string; head: string }
+  | { ok: false; code: 'not-greater-than-merge-base'; base: string; head: string }
+  | {
+      ok: false
+      code: typeof INVALID_SEMVER
+      which: typeof MERGE_BASE_COMPARISON | typeof HEAD_SIDE
+      value: string | undefined
+    }
+  | {
+      ok: false
+      code: typeof MISSING_VERSION
+      which: typeof MERGE_BASE_COMPARISON | typeof HEAD_SIDE
+    }
+  | { ok: false; code: typeof UNRESOLVABLE_RANGE; detail: string }
+
+export type VersionSkewCheckResult = {
+  verdict: SkewVerdict
+  changedContractFiles: string[]
+  baseRef: string
+  headRef: string
+  baseSha?: string
+  headSha?: string
+  baseVersion?: string
+  headVersion?: string
+  baseWarning?: string
+}
+
+type DetectParams = {
+  changedFiles: string[]
+  baseVersion: string | undefined
+  headVersion: string | undefined
+  rangeError?: string
+  baseMissing?: boolean
+  allowBrokenBase?: boolean
 }
 
 function git(repoRoot: string, args: string[]): string {
-  return execFileSync(
-    'git', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
-    args,
-    { cwd: repoRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
-  )
+  try {
+    return execFileSync(
+      'git', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
+      args,
+      { cwd: repoRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
+    )
+  } catch (error) {
+    const stderr =
+      error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : ''
+    const message = stderr.trim() || (error instanceof Error ? error.message : String(error))
+    throw new Error(message)
+  }
 }
 
-/** Files changed between `base` and `head` (three-dot diff: base...head, i.e. against their merge-base). */
+/** Determines the authoritative comparison. Pushes use the first parent; local runs use a fork point. */
+export function resolveDiffRange(env: Partial<NodeJS.ProcessEnv> = process.env): DiffRange {
+  if (env.GITHUB_EVENT_NAME === 'push') {
+    return {
+      base: `${HEAD_REF}^1`,
+      head: env.GITHUB_SHA ?? HEAD_REF,
+      comparison: BASE_TIP_COMPARISON,
+    }
+  }
+  if (env.GITHUB_BASE_REF) {
+    return {
+      base: `origin/${env.GITHUB_BASE_REF}`,
+      head: env.GITHUB_SHA ?? HEAD_REF,
+      comparison: BASE_TIP_COMPARISON,
+    }
+  }
+  return { base: MAIN_REF, head: HEAD_REF, comparison: MERGE_BASE_COMPARISON }
+}
+
+/** Files changed between two commits (three-dot diff, relative to their merge-base). */
 export function getChangedFiles(repoRoot: string, base: string, head: string): string[] {
   const output = git(repoRoot, ['diff', '--name-only', `${base}...${head}`])
   return output
@@ -48,16 +133,7 @@ export function getChangedFiles(repoRoot: string, base: string, head: string): s
     .filter((line) => line.length > 0)
 }
 
-/**
- * Resolves the merge-base commit of `base` and `head`, or `undefined` if it can't be computed
- * (e.g. unrelated histories, shallow clone). `getChangedFiles`'s three-dot diff is already
- * merge-base-relative — the `version` field comparison must use the SAME merge-base commit for
- * "before", not the current tip of `base`. Using the live tip of `base` (e.g. `origin/main`)
- * would let unrelated commits merged into `base` *after* this PR branched off mask a real skew:
- * if `base` moved its `version` field for an unrelated reason after branch-off, `baseVersion`
- * (read from the tip) could differ from `headVersion` even though *this* PR's `head` never
- * bumped the version relative to where it actually forked — a false "no skew" pass.
- */
+/** Resolves a merge-base, or undefined when the refs are unrelated/unavailable. */
 export function getMergeBase(repoRoot: string, base: string, head: string): string | undefined {
   try {
     return git(repoRoot, ['merge-base', base, head]).trim()
@@ -66,19 +142,14 @@ export function getMergeBase(repoRoot: string, base: string, head: string): stri
   }
 }
 
-/** The `version` field of `filePath`'s JSON content at `ref`, or `undefined` if the file/ref/field doesn't resolve. */
+/** Returns the version field, preserving the old helper's undefined-on-read-failure contract. */
 export function getFileVersionAtRef(
   repoRoot: string,
   ref: string,
   filePath: string
 ): string | undefined {
-  let content: string
   try {
-    content = git(repoRoot, ['show', `${ref}:${filePath}`])
-  } catch {
-    return undefined
-  }
-  try {
+    const content = git(repoRoot, ['show', `${ref}:${filePath}`])
     const parsed = JSON.parse(content) as { version?: unknown }
     return typeof parsed.version === 'string' ? parsed.version : undefined
   } catch {
@@ -86,70 +157,257 @@ export function getFileVersionAtRef(
   }
 }
 
+function isExcluded(file: string): boolean {
+  const basename = file.split('/').pop() ?? file
+  return EXCLUDED_PATTERNS.some((pattern) => pattern.test(basename))
+}
+
+function isContractFile(file: string): boolean {
+  return (
+    !isExcluded(file) &&
+    (CONTRACT_PATHS.some((prefix) => file.startsWith(prefix)) ||
+      CONTRACT_FILES.includes(file as never))
+  )
+}
+
+/** True when at least one non-test contract path/file changed. The exclusion filters files, never the check. */
 export function hasExtensionApiSrcChange(changedFiles: string[]): boolean {
-  return changedFiles.some((file) => file.startsWith(EXTENSION_API_SRC_PREFIX))
+  return changedFiles.some(isContractFile)
+}
+
+function isCanonicalSemver(value: string): boolean {
+  return semver.valid(value, false) === value
+}
+
+function validateVersionInputs(params: DetectParams): SkewVerdict | undefined {
+  if (params.headVersion === undefined)
+    return { ok: false, code: MISSING_VERSION, which: HEAD_SIDE }
+  if (params.baseVersion === undefined) {
+    if (!params.baseMissing && !params.allowBrokenBase) {
+      return { ok: false, code: MISSING_VERSION, which: MERGE_BASE_COMPARISON }
+    }
+    if (!isCanonicalSemver(params.headVersion)) {
+      return { ok: false, code: INVALID_SEMVER, which: HEAD_SIDE, value: params.headVersion }
+    }
+    return { ok: true, reason: 'new-package', to: params.headVersion }
+  }
+  if (!isCanonicalSemver(params.headVersion)) {
+    return { ok: false, code: INVALID_SEMVER, which: HEAD_SIDE, value: params.headVersion }
+  }
+  if (!isCanonicalSemver(params.baseVersion)) {
+    if (params.allowBrokenBase) return { ok: true, reason: 'new-package', to: params.headVersion }
+    return {
+      ok: false,
+      code: INVALID_SEMVER,
+      which: MERGE_BASE_COMPARISON,
+      value: params.baseVersion,
+    }
+  }
+  return undefined
 }
 
 /**
- * True (skew detected — should fail CI) when `packages/extension-api/src/**` changed but
- * `package.json`'s `version` field value is identical before and after.
+ * Produces one structured verdict. The order is intentional: range, head existence, base
+ * existence, head validity, base validity, equality, then ordering.
  */
-export function detectVersionSkew(params: {
-  changedFiles: string[]
-  baseVersion: string | undefined
-  headVersion: string | undefined
-}): boolean {
-  if (!hasExtensionApiSrcChange(params.changedFiles)) return false
-  return params.baseVersion === params.headVersion
+export function detectVersionSkew(params: DetectParams): SkewVerdict {
+  if (!hasExtensionApiSrcChange(params.changedFiles))
+    return { ok: true, reason: 'no-contract-change' }
+  if (params.rangeError) return { ok: false, code: UNRESOLVABLE_RANGE, detail: params.rangeError }
+  const inputVerdict = validateVersionInputs(params)
+  if (inputVerdict) return inputVerdict
+  if (params.baseVersion === undefined || params.headVersion === undefined) {
+    throw new Error('version validation returned no verdict for an absent version')
+  }
+  if (params.baseVersion === params.headVersion) {
+    return { ok: false, code: 'no-bump', base: params.baseVersion, head: params.headVersion }
+  }
+  if (!semver.gt(params.headVersion, params.baseVersion)) {
+    return {
+      ok: false,
+      code: 'not-greater-than-merge-base',
+      base: params.baseVersion,
+      head: params.headVersion,
+    }
+  }
+  return { ok: true, reason: 'valid-increase', from: params.baseVersion, to: params.headVersion }
+}
+
+type PackageState = { exists: boolean; version: string | undefined }
+
+function packageStateAtRef(repoRoot: string, ref: string): PackageState {
+  // Verify the ref separately so an unavailable ref is not misreported as a new package.
+  git(repoRoot, ['rev-parse', '--verify', `${ref}^{commit}`])
+  try {
+    git(repoRoot, ['cat-file', '-e', `${ref}:${EXTENSION_API_PACKAGE_JSON}`])
+  } catch {
+    return { exists: false, version: undefined }
+  }
+  try {
+    const parsed = JSON.parse(git(repoRoot, ['show', `${ref}:${EXTENSION_API_PACKAGE_JSON}`])) as {
+      version?: unknown
+    }
+    return {
+      exists: true,
+      version: typeof parsed.version === 'string' ? parsed.version : undefined,
+    }
+  } catch {
+    return { exists: true, version: undefined }
+  }
+}
+
+function resolveComparisonBase(repoRoot: string, range: DiffRange): string {
+  if (range.comparison === BASE_TIP_COMPARISON) return range.base
+  return (
+    getMergeBase(repoRoot, range.base, range.head) ??
+    (() => {
+      throw new Error(`git merge-base could not resolve ${range.base} and ${range.head}`)
+    })()
+  )
+}
+
+function isBrokenBase(state: PackageState): boolean {
+  return state.exists && (state.version === undefined || !isCanonicalSemver(state.version))
+}
+
+function shortSha(value: string | undefined, fallback: string): string {
+  return (value ?? fallback).slice(0, 7)
+}
+
+function commitSha(repoRoot: string, ref: string): string {
+  return git(repoRoot, ['rev-parse', '--verify', `${ref}^{commit}`]).trim()
+}
+
+function suggestion(base: string, head: string): string | undefined {
+  if (!isCanonicalSemver(base) || !isCanonicalSemver(head)) return undefined
+  const difference = semver.diff(base, head)
+  return semver.inc(base, difference ?? 'minor') ?? undefined
 }
 
 export function runVersionSkewCheck(
   repoRoot: string,
-  range: DiffRange
-): { skew: boolean; changedSrcFiles: string[] } {
-  const changedFiles = getChangedFiles(repoRoot, range.base, range.head)
-  // Read the "before" version at the merge-base, not the live tip of `range.base` — see
-  // `getMergeBase`'s doc comment. Falls back to `range.base` itself if the merge-base can't be
-  // resolved (e.g. unrelated histories), matching this function's prior behavior in that case.
-  const baseRef = getMergeBase(repoRoot, range.base, range.head) ?? range.base
-  const baseVersion = getFileVersionAtRef(repoRoot, baseRef, EXTENSION_API_PACKAGE_JSON)
-  const headVersion = getFileVersionAtRef(repoRoot, range.head, EXTENSION_API_PACKAGE_JSON)
-  const skew = detectVersionSkew({ changedFiles, baseVersion, headVersion })
-  return {
-    skew,
-    changedSrcFiles: changedFiles.filter((file) => file.startsWith(EXTENSION_API_SRC_PREFIX)),
+  range: DiffRange,
+  env: Partial<NodeJS.ProcessEnv> = process.env
+): VersionSkewCheckResult {
+  const baseResult = {
+    changedContractFiles: [] as string[],
+    baseRef: range.base,
+    headRef: range.head,
+  }
+  let changedFiles: string[]
+  try {
+    changedFiles = getChangedFiles(repoRoot, range.base, range.head)
+  } catch (error) {
+    return {
+      ...baseResult,
+      verdict: { ok: false, code: UNRESOLVABLE_RANGE, detail: (error as Error).message },
+    }
+  }
+  const changedContractFiles = changedFiles.filter(isContractFile)
+  if (changedContractFiles.length === 0) {
+    return {
+      ...baseResult,
+      changedContractFiles,
+      verdict: { ok: true, reason: 'no-contract-change' },
+    }
+  }
+
+  let baseRef = range.base
+  try {
+    baseRef = resolveComparisonBase(repoRoot, range)
+    const baseState = packageStateAtRef(repoRoot, baseRef)
+    const headState = packageStateAtRef(repoRoot, range.head)
+    const allowBrokenBase = env.EXTENSION_API_SKEW_ALLOW_BROKEN_BASE === '1'
+    const baseBroken = isBrokenBase(baseState)
+    const verdict = detectVersionSkew({
+      changedFiles,
+      baseVersion: baseState.version,
+      headVersion: headState.version,
+      baseMissing: !baseState.exists,
+      allowBrokenBase: baseBroken && allowBrokenBase,
+    })
+    return {
+      ...baseResult,
+      baseRef,
+      changedContractFiles,
+      baseSha: commitSha(repoRoot, baseRef),
+      headSha: commitSha(repoRoot, range.head),
+      baseVersion: baseState.version,
+      headVersion: headState.version,
+      verdict,
+      ...(baseBroken && allowBrokenBase
+        ? {
+            baseWarning: `WARNING: the defect is on main (${baseRef}), not in this PR; whoever can land a correction on main must repair the malformed extension-api package.`,
+          }
+        : {}),
+    }
+  } catch (error) {
+    return {
+      ...baseResult,
+      baseRef,
+      changedContractFiles,
+      verdict: { ok: false, code: UNRESOLVABLE_RANGE, detail: (error as Error).message },
+    }
   }
 }
 
-function report(result: { skew: boolean; changedSrcFiles: string[] }): void {
-  if (!result.skew) {
-    process.stdout.write(
-      'check-extension-api-version-skew: packages/extension-api version is in sync with its src/** changes — OK\n'
-    )
+function comparedLine(result: VersionSkewCheckResult): string {
+  return `Compared base (${result.baseRef} @ ${shortSha(result.baseSha, result.baseRef)}) ${JSON.stringify(result.baseVersion)} with head (${result.headRef} @ ${shortSha(result.headSha, result.headRef)}) ${JSON.stringify(result.headVersion)}.`
+}
+
+export function report(result: VersionSkewCheckResult): void {
+  if (result.verdict.ok) {
+    if (result.baseWarning) process.stderr.write(`${result.baseWarning}\n`)
+    process.stdout.write(`check-extension-api-version-skew: ${result.verdict.reason} — OK\n`)
     return
   }
 
-  process.stderr.write(
-    'FATAL: packages/extension-api/src/** changed without a corresponding package.json ' +
-      '"version" bump (Story 14.1 AC7) — check-extension-api-version-skew:\n'
-  )
-  for (const file of result.changedSrcFiles) process.stderr.write(`  - ${file}\n`)
-  process.stderr.write(
-    `\nFix: bump the "version" field in ${EXTENSION_API_PACKAGE_JSON} (and \n` +
-      'EXTENSION_API_VERSION in packages/extension-api/src/manifest.ts) in this same commit/PR.\n'
-  )
+  const verdict = result.verdict
+  if (verdict.code === UNRESOLVABLE_RANGE) {
+    process.stderr.write(
+      `FATAL: ${comparedLine(result)}\nWhy: the diff range is unresolvable. ${verdict.detail}\n` +
+        'Fix: run this check from a non-shallow clone with a resolvable base ref (main for local runs).\n' +
+        'Reproduce locally: pnpm check-extension-api-version-skew\n'
+    )
+    process.exitCode = 1
+    return
+  }
+
+  process.stderr.write(`${comparedLine(result)}\n`)
+  if (verdict.code === 'no-bump') {
+    const next = suggestion(verdict.base, verdict.head)
+    process.stderr.write(
+      `FATAL: packages/extension-api contract files changed, but "version" is ${verdict.base} on both sides of this comparison.\n` +
+        'Either this branch never bumped the version, or it bumped to a number another PR merged to main first.\n' +
+        'Versions are allocated at MERGE, not at planning (Story 23.6).\n\n' +
+        'Fix:\n  1. git fetch origin && git rebase origin/main\n' +
+        `  2. Set "version" to ${next ?? 'a canonical version greater than the merge-base version'} in ${EXTENSION_API_PACKAGE_JSON} (the next free version as of this run; re-run after rebasing).\n` +
+        '  3. Keep EXTENSION_API_VERSION in packages/extension-api/src/manifest.ts equal to that version.\n\n'
+    )
+  } else if (verdict.code === 'not-greater-than-merge-base') {
+    const next = suggestion(verdict.base, verdict.head)
+    process.stderr.write(
+      `FATAL: the head version ${verdict.head} is not greater than the merge-base version ${verdict.base}.\n` +
+        'This is a downgrade — for example, a revert. Versions roll forward, never backward: a revert of ' +
+        `${verdict.base}'s changes ships as ${next ?? 'a greater canonical version'} (or a patch release), not as a return to an older version.\n` +
+        `Fix: set the version field to a number greater than ${verdict.base}.\n\n`
+    )
+  } else if (verdict.code === 'invalid-semver') {
+    process.stderr.write(
+      `FATAL: ${verdict.which} version ${JSON.stringify(verdict.value)} is not canonical semver.\n` +
+        'Fix: use an exact canonical version such as 1.2.0 (no v-prefix, shorthand, tag, or build-only change).\n\n'
+    )
+  } else {
+    process.stderr.write(
+      `FATAL: the ${verdict.which} extension-api package has no readable canonical "version" field.\n` +
+        `Fix: restore ${EXTENSION_API_PACKAGE_JSON} with a canonical version before running this check again.\n\n`
+    )
+  }
+  for (const file of result.changedContractFiles) process.stderr.write(`  - ${file}\n`)
+  process.stderr.write('\nReproduce locally: pnpm check-extension-api-version-skew\n')
   process.exitCode = 1
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  try {
-    report(runVersionSkewCheck(process.cwd(), resolveDiffRange()))
-  } catch (error) {
-    // Fail open on diff-range resolution errors (e.g. a shallow clone with no local `main`, or no
-    // `origin` remote reachable) — matching this repo's other static-scan guards' precedent of
-    // not blocking builds when the check's own precondition (a resolvable base ref) isn't met.
-    process.stdout.write(
-      `check-extension-api-version-skew: could not compute a diff range (${(error as Error).message}) — skipping\n`
-    )
-  }
+  report(runVersionSkewCheck(process.cwd(), resolveDiffRange()))
 }
