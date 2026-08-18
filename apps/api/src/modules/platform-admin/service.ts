@@ -656,7 +656,7 @@ export async function listOrgs(): Promise<OrgListResponse> {
  * (RLS-bypassing) connection throughout — this is the one endpoint whose entire purpose is
  * cross-org visibility for the platform operator, same justification as listOrgs()/D6.
  */
-export async function resolveResourceUsage(): Promise<ResourceUsageResponse> {
+export async function resolveResourceUsage(callerOrgId?: string): Promise<ResourceUsageResponse> {
   const admin = getAdminDb()
   const effective = await resolveEffectiveSettings()
 
@@ -704,7 +704,7 @@ export async function resolveResourceUsage(): Promise<ResourceUsageResponse> {
   const auditLogStorageLimitBytes = env.AUDIT_LOG_STORAGE_LIMIT_GB * 1024 ** 3
 
   const { auditStorageByOrg, truncated, allocation, observedPhysicalToLogicalRatio } =
-    await resolveAuditStorageByOrg(admin, orgsCurrent, auditLogStorageCurrentBytes)
+    await resolveAuditStorageByOrg(admin, orgsCurrent, auditLogStorageCurrentBytes, callerOrgId)
 
   return {
     orgs: { current: orgsCurrent, limit: effective.instancePolicy.maxOrgs },
@@ -757,11 +757,31 @@ type AuditStorageQueryRow = {
  * (AC-4/AC-7) can be computed over EVERY org, even though the returned `auditStorageByOrg` array
  * itself is capped/sorted to `PLATFORM_RESOURCE_USAGE_ORG_LIST_CAP` — capping is a display/
  * response-size concern (AC-1), not a reason to under-count the allocation sum.
+ *
+ * AC-1 also requires the CALLING operator's own org is never omitted, even at zero usage — under
+ * the utilization-descending sort a freshly-created, zero-usage org sorts last and can legitimately
+ * fall outside the cap once the instance has more orgs than the cap allows (caught by CI's full
+ * suite, which accumulates far more test orgs across ~3000 tests than any single local run ever
+ * does). Guaranteed by swapping the caller's row in for the lowest-ranked included row if the cap
+ * excluded it — the list stays exactly `cap` long, never grows. Exported (not just inlined) so this
+ * exclusion scenario is directly unit-testable without needing hundreds of real DB rows.
  */
+export function capAuditStorageRowsIncludingCaller(
+  allRows: AuditStorageOrgRow[],
+  cap: number,
+  callerOrgId: string | undefined
+): AuditStorageOrgRow[] {
+  const cappedRows = allRows.slice(0, cap)
+  if (cap <= 0 || cappedRows.some((row) => row.orgId === callerOrgId)) return cappedRows
+  const callerRow = allRows.find((row) => row.orgId === callerOrgId)
+  return callerRow ? [...cappedRows.slice(0, cap - 1), callerRow] : cappedRows
+}
+
 async function resolveAuditStorageByOrg(
   admin: ReturnType<typeof getAdminDb>,
   totalOrgCount: number,
-  auditLogStorageCurrentBytes: number
+  auditLogStorageCurrentBytes: number,
+  callerOrgId: string | undefined
 ): Promise<{
   auditStorageByOrg: AuditStorageOrgRow[]
   truncated: boolean
@@ -860,8 +880,10 @@ async function resolveAuditStorageByOrg(
     hasUnlimitedOrgs,
   })
 
+  const auditStorageByOrg = capAuditStorageRowsIncludingCaller(allRows, cap, callerOrgId)
+
   return {
-    auditStorageByOrg: allRows.slice(0, cap),
+    auditStorageByOrg,
     truncated: totalOrgCount > cap,
     allocation,
     observedPhysicalToLogicalRatio:
