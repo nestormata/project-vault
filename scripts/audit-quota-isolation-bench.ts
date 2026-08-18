@@ -298,17 +298,17 @@ export function buildCombinedReport(input: {
 
 export function renderConsoleSummary(report: CombinedReport): string {
   const lines: string[] = []
-  lines.push('')
-  lines.push('=== Story 22.4 — Audit-Quota Isolation Bench ===')
   lines.push(
+    '',
+    '=== Story 22.4 — Audit-Quota Isolation Bench ===',
     `commit=${report.fingerprint.commitHash} timestamp=${report.fingerprint.timestamp} ` +
       `orgA_concurrency=${report.fingerprint.concurrency.orgA} orgB_concurrency=${report.fingerprint.concurrency.orgB} ` +
       `repetitions=${report.fingerprint.repetitions}`
   )
   for (const arm of [report.disabled, report.enabled]) {
-    lines.push('')
-    lines.push(`--- arm: ${arm.arm} ---`)
     lines.push(
+      '',
+      `--- arm: ${arm.arm} ---`,
       `org B p50/p95/p99 (aggregate, warm-up discarded): ${arm.orgB.aggregate.p50.toFixed(2)}ms / ` +
         `${arm.orgB.aggregate.p95.toFixed(2)}ms / ${arm.orgB.aggregate.p99.toFixed(2)}ms ` +
         `(n=${arm.orgB.aggregate.count}, completed ${arm.orgB.completed}/${arm.orgB.attempted})`
@@ -319,23 +319,15 @@ export function renderConsoleSummary(report: CombinedReport): string {
       )
     })
     lines.push(
-      `org A: ${arm.orgA.completed}/${arm.orgA.attempted} writes completed across ${report.fingerprint.repetitions} reps`
-    )
-    lines.push(
+      `org A: ${arm.orgA.completed}/${arm.orgA.attempted} writes completed across ${report.fingerprint.repetitions} reps`,
       `peak pool utilization: ${arm.poolPeakConnections} simultaneous in-flight transactions ` +
-        `(harness-side counter proxy, concurrency configured: orgA=${arm.poolConcurrencyConfigured.orgA} orgB=${arm.poolConcurrencyConfigured.orgB})`
-    )
-    lines.push(
+        `(harness-side counter proxy, concurrency configured: orgA=${arm.poolConcurrencyConfigured.orgA} orgB=${arm.poolConcurrencyConfigured.orgB})`,
       `lock-hold proxy (gate-completes -> COMMIT-completes): p50=${arm.lockHoldProxyMs.p50.toFixed(3)}ms ` +
         `p95=${arm.lockHoldProxyMs.p95.toFixed(3)}ms max=${arm.lockHoldProxyMs.max.toFixed(3)}ms ` +
-        `growing=${arm.lockHoldProxyMs.growing}`
-    )
-    lines.push(
+        `growing=${arm.lockHoldProxyMs.growing}`,
       `pg_stat_user_tables delta: +${arm.pgStat.deltaDeadTup} dead tuples, ` +
         `+${arm.pgStat.deltaTupUpd} updates (${arm.pgStat.deltaTupHotUpd} HOT, ratio=${(arm.pgStat.hotUpdateRatio * 100).toFixed(1)}%), ` +
-        `last_autovacuum=${arm.pgStat.after.lastAutovacuum ?? 'null (none observed in window)'}`
-    )
-    lines.push(
+        `last_autovacuum=${arm.pgStat.after.lastAutovacuum ?? 'null (none observed in window)'}`,
       `tenant isolation self-check: ${arm.isolation.ok ? 'OK' : 'ANOMALY'} ` +
         `(orgA ${arm.isolation.orgAActual}/${arm.isolation.orgAExpected}, orgB ${arm.isolation.orgBActual}/${arm.isolation.orgBExpected})`
     )
@@ -343,15 +335,16 @@ export function renderConsoleSummary(report: CombinedReport): string {
       for (const anomaly of arm.isolation.anomalies) lines.push(`  ANOMALY: ${anomaly}`)
     }
   }
-  lines.push('')
+  const regressionByRepetition = report.regressionPercentByRepetition
+    .map((r) => `${r.toFixed(1)}%`)
+    .join(', ')
   lines.push(
+    '',
     `regression (org B p95, enabled vs disabled, aggregate): ${report.regressionPercentAggregate.toFixed(1)}% ` +
-      `(threshold ${report.thresholdPercent}%) -> ${report.pass ? 'PASS' : 'FAIL'}`
+      `(threshold ${report.thresholdPercent}%) -> ${report.pass ? 'PASS' : 'FAIL'}`,
+    `regression by repetition: ${regressionByRepetition}`,
+    ''
   )
-  lines.push(
-    `regression by repetition: ${report.regressionPercentByRepetition.map((r) => `${r.toFixed(1)}%`).join(', ')}`
-  )
-  lines.push('')
   return lines.join('\n')
 }
 
