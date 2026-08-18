@@ -32,7 +32,7 @@ import {
   PLATFORM_ADMIN_ERROR_RESPONSES,
   PLATFORM_ADMIN_TAGS,
   beginSecureMutation,
-  sendPlatformAuditWriteFailure,
+  handlePlatformMutationError,
 } from './route-common.js'
 
 const ORG_NOT_FOUND = { code: 'org_not_found', message: 'Organization not found' } as const
@@ -300,11 +300,7 @@ async function handleSetOrgAuditQuota(
         allocationIncludesUnlimitedOrgs: error.allocationIncludesUnlimitedOrgs,
       })
     }
-    if (error instanceof AppError) {
-      return reply.status(error.statusCode).send({ code: error.code, message: error.message })
-    }
-    if (sendPlatformAuditWriteFailure(error, reply)) return reply
-    throw error
+    return handlePlatformMutationError(error, reply)
   }
 }
 
