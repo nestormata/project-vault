@@ -48,6 +48,11 @@ const ORG_A_WRITES_PER_REP = 1200
 const ORG_A_CONCURRENCY = 6
 const ORG_B_WRITES_TARGET_PER_REP = 80
 const ORG_B_PACE_MS = 15
+// Org B is a single sequential paced loop (see runArm's orgBPromise) — concurrency 1, not a
+// second worker. Named here (rather than inlined at each call site) so the fingerprint block and
+// the per-arm poolConcurrencyConfigured value can never drift apart again (a prior bug had the
+// fingerprint hardcoded to 2 while the per-arm value correctly reported 1).
+const ORG_B_CONCURRENCY = 1
 
 // ---------------------------------------------------------------------------------------------
 // Pure, unit-testable helpers (no DB/process side effects) — see
@@ -275,7 +280,7 @@ export function buildCombinedReport(input: {
     fingerprint: {
       commitHash: input.commitHash,
       timestamp: input.timestamp,
-      concurrency: { orgA: ORG_A_CONCURRENCY, orgB: 2 },
+      concurrency: { orgA: ORG_A_CONCURRENCY, orgB: ORG_B_CONCURRENCY },
       repetitions: REPETITIONS,
     },
     disabled,
@@ -702,7 +707,7 @@ async function runArm(arm: 'enabled' | 'disabled'): Promise<ArmResult> {
     },
     orgA: { attempted: orgAAttempted, completed: orgACompleted },
     poolPeakConnections: poolPeak,
-    poolConcurrencyConfigured: { orgA: ORG_A_CONCURRENCY, orgB: 1 },
+    poolConcurrencyConfigured: { orgA: ORG_A_CONCURRENCY, orgB: ORG_B_CONCURRENCY },
     lockHoldProxyMs: computeLockHoldStats(lockHoldSamples),
     pgStat,
     isolation,
