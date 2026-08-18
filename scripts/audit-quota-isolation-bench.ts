@@ -744,7 +744,11 @@ async function childMain(arm: 'enabled' | 'disabled'): Promise<void> {
 
 function getGitCommitHash(): string {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim()
+    return execFileSync(
+      'git', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
+      ['rev-parse', 'HEAD'],
+      { cwd: REPO_ROOT, encoding: 'utf8' }
+    ).trim()
   } catch {
     return 'unknown'
   }
