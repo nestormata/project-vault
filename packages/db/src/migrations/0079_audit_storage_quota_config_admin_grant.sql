@@ -1,0 +1,17 @@
+-- Story 22.3 AC-1/AC-11: GET /admin/resource-usage's new per-org audit-storage query
+-- (resolveAuditStorageByOrg() in platform-admin/service.ts) joins `organizations` with
+-- `audit_org_storage_usage` (already granted to vault_admin — migration 0076) and
+-- `audit_storage_quota_config` via getAdminDb() (AC-1 explicitly requires the admin,
+-- RLS-bypassing connection for this cross-org endpoint, never per-org withOrg() in a loop).
+--
+-- vault_admin never needed SELECT on audit_storage_quota_config before this story: Story 22.1/22.2
+-- only ever read it inside an org-scoped `withOrg()` transaction as `vault_app` (which already has
+-- this grant from migration 0075). This story's read-only cross-org display path is the first
+-- caller that needs it via the admin role.
+--
+-- This is a single, narrow, read-only GRANT — no schema/column change — following the exact
+-- precedent migration 0076 set in this same epic for the identical class of gap. AC-11's "zero new
+-- migrations" expectation assumed every grant this story would need already existed; this one did
+-- not, so per AC-11's own instruction ("if implementation discovers a genuine need ... that is a
+-- scope escalation to flag explicitly") this is flagged here and in the story's Dev Agent Record.
+GRANT SELECT ON audit_storage_quota_config TO vault_admin;

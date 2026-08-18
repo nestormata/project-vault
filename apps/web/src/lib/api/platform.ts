@@ -127,6 +127,25 @@ export type CreateOrgResponse = {
   ownerUserId: string
 }
 
+// Story 22.3 AC-1: per-org audit-storage row + resource-usage additive fields.
+export type OrgAuditState = 'unlimited' | 'ok' | 'warning' | 'critical' | 'blocked' | 'stale'
+
+export type AuditStorageOrgRow = {
+  orgId: string
+  orgName: string
+  bytesUsed: number
+  preauthBytesUsed: number
+  quotaBytes: number | null
+  utilizationPct: number | null
+  refusedWriteCount: number
+  lastRefusalAt: string | null
+  lastReconciledAt: string | null
+  writeRatePerMinute: number | null
+  rateWindowCount: number
+  rateRefusedCount: number
+  state: OrgAuditState
+}
+
 // Resource usage (unwrapped — no `data` key)
 export type ResourceUsageResponse = {
   orgs: { current: number; limit: number | null }
@@ -135,6 +154,18 @@ export type ResourceUsageResponse = {
   auditLogEntries: { current: number; limit: number | null }
   storageBytes: { current: number; limit: number | null }
   auditLogStorage: { currentBytes: number; limitBytes: number; utilizationPct: number }
+  auditStorageByOrg: AuditStorageOrgRow[]
+  truncated: boolean
+  allocatedLogicalBytes: number
+  estimatedPhysicalBytes: number
+  allocationIncludesUnlimitedOrgs: boolean
+  observedPhysicalToLogicalRatio: number | null
+}
+
+export type SetOrgAuditQuotaRequest = {
+  quotaBytes?: number | null
+  writeRatePerMinute?: number | null
+  acknowledgeOvercommit?: boolean
 }
 
 // Maintenance mode status (wrapped in `data`)
@@ -284,6 +315,19 @@ export function createOrg(fetchFn: typeof fetch, request: CreateOrgRequest) {
 // Resource usage (unwrapped)
 export function getResourceUsage(fetchFn: typeof fetch) {
   return apiFetch<ResourceUsageResponse>(fetchFn, '/api/v1/admin/resource-usage')
+}
+
+// Story 22.3 AC-3: PUT /admin/orgs/:orgId/audit-quota (unwrapped — returns the fresh row).
+export function setOrgAuditQuota(
+  fetchFn: typeof fetch,
+  orgId: string,
+  body: SetOrgAuditQuotaRequest
+) {
+  return apiFetch<AuditStorageOrgRow>(
+    fetchFn,
+    `/api/v1/admin/orgs/${encodeURIComponent(orgId)}/audit-quota`,
+    { method: 'PUT', body: JSON.stringify(body) }
+  )
 }
 
 // Story 1.19 AC-5/AC-6: GET /status bearer-token settings (unwrapped, mirrors settings/orgs

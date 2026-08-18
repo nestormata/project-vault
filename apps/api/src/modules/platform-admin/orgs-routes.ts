@@ -5,7 +5,6 @@ import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { operationalLog } from '../../lib/logger.js'
-import { AppError } from '../../lib/errors.js'
 import {
   secureRoute,
   type PublicRouteContext,
@@ -16,7 +15,7 @@ import { CreateOrgRequestSchema, CreateOrgResponseSchema, OrgListResponseSchema 
 import {
   PLATFORM_ADMIN_ERROR_RESPONSES,
   beginSecureMutation,
-  sendPlatformAuditWriteFailure,
+  handlePlatformMutationError,
 } from './route-common.js'
 
 /**
@@ -54,11 +53,7 @@ async function handleCreateOrg(
     )
     return reply.status(201).send(result)
   } catch (error) {
-    if (error instanceof AppError) {
-      return reply.status(error.statusCode).send({ code: error.code, message: error.message })
-    }
-    if (sendPlatformAuditWriteFailure(error, reply)) return reply
-    throw error
+    return handlePlatformMutationError(error, reply)
   }
 }
 

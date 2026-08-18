@@ -26,7 +26,9 @@ import { normalizeEmail } from '../auth/normalize.js'
 import { generateUnusablePasswordHash } from '../auth/password.js'
 import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 import { generateRecoveryToken, hashRecoveryToken } from '../auth/recovery-tokens.js'
+import { computeAuditQuotaAllocation, resolveOrgAuditState } from '../audit/quota-config.js'
 import type {
+  AuditStorageOrgRow,
   CreateOrgRequest,
   CreateOrgResponse,
   OrgListResponse,
@@ -654,7 +656,7 @@ export async function listOrgs(): Promise<OrgListResponse> {
  * (RLS-bypassing) connection throughout — this is the one endpoint whose entire purpose is
  * cross-org visibility for the platform operator, same justification as listOrgs()/D6.
  */
-export async function resolveResourceUsage(): Promise<ResourceUsageResponse> {
+export async function resolveResourceUsage(callerOrgId?: string): Promise<ResourceUsageResponse> {
   const admin = getAdminDb()
   const effective = await resolveEffectiveSettings()
 
@@ -701,6 +703,9 @@ export async function resolveResourceUsage(): Promise<ResourceUsageResponse> {
   const auditLogStorageCurrentBytes = Number(auditBytesRow?.size ?? 0)
   const auditLogStorageLimitBytes = env.AUDIT_LOG_STORAGE_LIMIT_GB * 1024 ** 3
 
+  const { auditStorageByOrg, truncated, allocation, observedPhysicalToLogicalRatio } =
+    await resolveAuditStorageByOrg(admin, orgsCurrent, auditLogStorageCurrentBytes, callerOrgId)
+
   return {
     orgs: { current: orgsCurrent, limit: effective.instancePolicy.maxOrgs },
     usersPerOrg,
@@ -714,5 +719,174 @@ export async function resolveResourceUsage(): Promise<ResourceUsageResponse> {
         ? Math.round((auditLogStorageCurrentBytes / auditLogStorageLimitBytes) * 10000) / 100
         : 0,
     },
+    auditStorageByOrg,
+    truncated,
+    allocatedLogicalBytes: allocation.allocatedLogicalBytes,
+    estimatedPhysicalBytes: allocation.estimatedPhysicalBytes,
+    allocationIncludesUnlimitedOrgs: allocation.allocationIncludesUnlimitedOrgs,
+    observedPhysicalToLogicalRatio,
+  }
+}
+
+type AuditStorageQueryRow = {
+  org_id: string
+  org_name: string
+  bytes_used: string
+  preauth_bytes_used: string
+  effective_quota_bytes: string | null
+  refused_write_count: string
+  last_refusal_at: string | null
+  last_reconciled_at: string | null
+  effective_write_rate_per_minute: string | null
+  rate_window_count: string
+  rate_refused_count: string
+}
+
+/**
+ * Story 22.3 AC-1/AC-4/AC-7 — the single query joining `organizations` with
+ * `audit_org_storage_usage` (LEFT JOIN — an org may have no usage row yet) and
+ * `audit_storage_quota_config` (LEFT JOIN — an org may have no config row), using
+ * `getAdminDb()` (never per-org `withOrg()` in a loop — an N+1 pattern here is a latency/
+ * connection-pool risk this AC forbids). The precedence CASE expressions below mirror
+ * `resolveEffectiveOrgQuotaBytes()`/`resolveEffectiveOrgWriteRatePerMinute()` exactly (those
+ * functions themselves cannot be called per-row without reintroducing the N+1 this AC forbids —
+ * the same one-round-trip-precedence-in-SQL discipline `quota-gate.ts`'s own gate statements
+ * already establish for the identical reason).
+ *
+ * The full (uncapped) row set is fetched in this one query so the aggregate-allocation figures
+ * (AC-4/AC-7) can be computed over EVERY org, even though the returned `auditStorageByOrg` array
+ * itself is capped/sorted to `PLATFORM_RESOURCE_USAGE_ORG_LIST_CAP` — capping is a display/
+ * response-size concern (AC-1), not a reason to under-count the allocation sum.
+ *
+ * AC-1 also requires the CALLING operator's own org is never omitted, even at zero usage — under
+ * the utilization-descending sort a freshly-created, zero-usage org sorts last and can legitimately
+ * fall outside the cap once the instance has more orgs than the cap allows (caught by CI's full
+ * suite, which accumulates far more test orgs across ~3000 tests than any single local run ever
+ * does). Guaranteed by swapping the caller's row in for the lowest-ranked included row if the cap
+ * excluded it — the list stays exactly `cap` long, never grows. Exported (not just inlined) so this
+ * exclusion scenario is directly unit-testable without needing hundreds of real DB rows.
+ */
+export function capAuditStorageRowsIncludingCaller(
+  allRows: AuditStorageOrgRow[],
+  cap: number,
+  callerOrgId: string | undefined
+): AuditStorageOrgRow[] {
+  const cappedRows = allRows.slice(0, cap)
+  if (cap <= 0 || cappedRows.some((row) => row.orgId === callerOrgId)) return cappedRows
+  const callerRow = allRows.find((row) => row.orgId === callerOrgId)
+  return callerRow ? [...cappedRows.slice(0, cap - 1), callerRow] : cappedRows
+}
+
+async function resolveAuditStorageByOrg(
+  admin: ReturnType<typeof getAdminDb>,
+  totalOrgCount: number,
+  auditLogStorageCurrentBytes: number,
+  callerOrgId: string | undefined
+): Promise<{
+  auditStorageByOrg: AuditStorageOrgRow[]
+  truncated: boolean
+  allocation: ReturnType<typeof computeAuditQuotaAllocation>
+  observedPhysicalToLogicalRatio: number | null
+}> {
+  const rows = await admin.execute<AuditStorageQueryRow>(sql`
+    SELECT
+      o.id AS org_id,
+      o.name AS org_name,
+      COALESCE(u.bytes_used, 0) AS bytes_used,
+      COALESCE(u.preauth_bytes_used, 0) AS preauth_bytes_used,
+      CASE
+        WHEN q.org_id IS NOT NULL THEN q.quota_bytes
+        WHEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint > 0
+          THEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint * 1048576
+        ELSE NULL
+      END AS effective_quota_bytes,
+      COALESCE(u.refused_write_count, 0) AS refused_write_count,
+      u.last_refusal_at,
+      u.last_reconciled_at,
+      CASE
+        WHEN q.org_id IS NOT NULL AND q.write_rate_per_minute IS NOT NULL THEN q.write_rate_per_minute
+        WHEN ${env.AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN}::bigint > 0
+          THEN ${env.AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN}::bigint
+        ELSE NULL
+      END AS effective_write_rate_per_minute,
+      COALESCE(u.rate_window_count, 0) AS rate_window_count,
+      COALESCE(u.rate_refused_count, 0) AS rate_refused_count
+    FROM organizations o
+    LEFT JOIN audit_org_storage_usage u ON u.org_id = o.id
+    LEFT JOIN audit_storage_quota_config q ON q.org_id = o.id
+    ORDER BY
+      CASE
+        WHEN (CASE
+          WHEN q.org_id IS NOT NULL THEN q.quota_bytes
+          WHEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint > 0
+            THEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint * 1048576
+          ELSE NULL
+        END) IS NULL OR (CASE
+          WHEN q.org_id IS NOT NULL THEN q.quota_bytes
+          WHEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint > 0
+            THEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint * 1048576
+          ELSE NULL
+        END) = 0 THEN NULL
+        ELSE COALESCE(u.bytes_used, 0)::float8 / (CASE
+          WHEN q.org_id IS NOT NULL THEN q.quota_bytes
+          WHEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint > 0
+            THEN ${env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB}::bigint * 1048576
+          ELSE NULL
+        END)
+      END DESC NULLS LAST
+  `)
+
+  const cap = env.PLATFORM_RESOURCE_USAGE_ORG_LIST_CAP
+  let sumOfFiniteQuotaBytes = 0
+  let hasUnlimitedOrgs = false
+  let sumOfBytesUsed = 0
+
+  const allRows: AuditStorageOrgRow[] = rows.map((row) => {
+    const bytesUsed = Number(row.bytes_used)
+    const quotaBytes = row.effective_quota_bytes === null ? null : Number(row.effective_quota_bytes)
+    const lastReconciledAt = row.last_reconciled_at ? new Date(row.last_reconciled_at) : null
+
+    if (quotaBytes === null) hasUnlimitedOrgs = true
+    else sumOfFiniteQuotaBytes += quotaBytes
+    sumOfBytesUsed += bytesUsed
+
+    const utilizationPct =
+      quotaBytes === null || quotaBytes === 0 ? null : (bytesUsed / quotaBytes) * 100
+
+    return {
+      orgId: row.org_id,
+      orgName: row.org_name,
+      bytesUsed,
+      preauthBytesUsed: Number(row.preauth_bytes_used),
+      quotaBytes,
+      utilizationPct: utilizationPct === null ? null : Math.round(utilizationPct * 100) / 100,
+      refusedWriteCount: Number(row.refused_write_count),
+      lastRefusalAt: row.last_refusal_at ? new Date(row.last_refusal_at).toISOString() : null,
+      lastReconciledAt: lastReconciledAt ? lastReconciledAt.toISOString() : null,
+      writeRatePerMinute:
+        row.effective_write_rate_per_minute === null
+          ? null
+          : Number(row.effective_write_rate_per_minute),
+      rateWindowCount: Number(row.rate_window_count),
+      rateRefusedCount: Number(row.rate_refused_count),
+      state: resolveOrgAuditState({ quotaBytes, bytesUsed, lastReconciledAt }),
+    }
+  })
+
+  const allocation = computeAuditQuotaAllocation({
+    currentSumOfFiniteQuotaBytes: sumOfFiniteQuotaBytes,
+    targetOrgCurrentContributionBytes: 0,
+    requestedBytes: null,
+    hasUnlimitedOrgs,
+  })
+
+  const auditStorageByOrg = capAuditStorageRowsIncludingCaller(allRows, cap, callerOrgId)
+
+  return {
+    auditStorageByOrg,
+    truncated: totalOrgCount > cap,
+    allocation,
+    observedPhysicalToLogicalRatio:
+      sumOfBytesUsed === 0 ? null : auditLogStorageCurrentBytes / sumOfBytesUsed,
   }
 }

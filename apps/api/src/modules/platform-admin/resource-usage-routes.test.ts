@@ -107,4 +107,50 @@ describe.sequential('Story 9.2 platform-admin resource-usage route', () => {
     // AC-12: the platform operator's own registration already wrote an audit entry.
     expect(body.auditLogEntries.current).toBeGreaterThanOrEqual(1)
   })
+
+  it(
+    "Story 22.3 AC-1: auditStorageByOrg includes the operator's own org via the LEFT JOIN even " +
+      'though it has no audit_org_storage_usage/audit_storage_quota_config row yet (never-written-org case)',
+    async () => {
+      const operator = await registerPlatformOperator(suite.app, {
+        emailPrefix: 'resource-usage-audit-by-org',
+        orgNamePrefix: 'Resource Usage Audit By Org',
+        password: PASSWORD,
+      })
+      const res = await suite.app.inject({
+        method: 'GET',
+        url: RESOURCE_USAGE_URL,
+        headers: { cookie: cookieHeader(operator.cookies) },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{
+        auditStorageByOrg: {
+          orgId: string
+          bytesUsed: number
+          quotaBytes: number | null
+          state: string
+        }[]
+        truncated: boolean
+        allocatedLogicalBytes: number
+        estimatedPhysicalBytes: number
+        allocationIncludesUnlimitedOrgs: boolean
+        observedPhysicalToLogicalRatio: number | null
+      }>()
+
+      expect(Array.isArray(body.auditStorageByOrg)).toBe(true)
+      expect(typeof body.truncated).toBe('boolean')
+      expect(typeof body.allocatedLogicalBytes).toBe('number')
+      expect(typeof body.estimatedPhysicalBytes).toBe('number')
+      expect(typeof body.allocationIncludesUnlimitedOrgs).toBe('boolean')
+
+      const ownRow = body.auditStorageByOrg.find((r) => r.orgId === operator.orgId)
+      expect(ownRow).toBeDefined()
+      // LEFT JOIN correctness: an org with no audit_org_storage_usage row yet still appears,
+      // COALESCEd to zero usage rather than being dropped from the query entirely. A NULL
+      // `last_reconciled_at` (never-written) also always resolves to 'stale' per
+      // resolveOrgAuditState()'s own precedence — checked before quota/usage.
+      expect(ownRow?.bytesUsed).toBe(0)
+      expect(['ok', 'unlimited', 'stale']).toContain(ownRow?.state)
+    }
+  )
 })

@@ -2,6 +2,7 @@ import { z } from 'zod/v4'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { SameTransactionPlatformAuditWriteError } from '../../lib/audit-or-fail-closed.js'
+import { AppError } from '../../lib/errors.js'
 import { parseBody, type SafeParseSchema } from '../../lib/route-helpers.js'
 import type { SecureRouteContext } from '../../lib/secure-route.js'
 
@@ -34,6 +35,20 @@ export function sendPlatformAuditWriteFailure(error: unknown, reply: FastifyRepl
     message: 'Platform audit logging is unavailable',
   })
   return true
+}
+
+/**
+ * Story 22.3: the AppError / platform-audit-write-failure catch tail shared by every mutation
+ * handler in this module family (orgs-routes.ts, audit-quota-routes.ts, and friends) —
+ * centralized here once instead of repeated near-verbatim in each handler's `catch` block
+ * (jscpd zero-duplication gate). Rethrows anything neither branch recognizes.
+ */
+export function handlePlatformMutationError(error: unknown, reply: FastifyReply): FastifyReply {
+  if (error instanceof AppError) {
+    return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+  }
+  if (sendPlatformAuditWriteFailure(error, reply)) return reply
+  throw error
 }
 
 /**
