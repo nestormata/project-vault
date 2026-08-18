@@ -2,7 +2,10 @@ import type { Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
-import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from '../modules/audit/quota-gate.js'
+import {
+  assertOrgMayWriteAuditGates,
+  estimateAuditEntrySizeBytes,
+} from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 
 /**
@@ -24,7 +27,8 @@ export async function writeSystemAuditRow(
   // (its ~10 callers, including extensions/loader.ts's injected per-org writer for loaded module
   // packs, provide the org context via their own transaction), so the gate takes orgId explicitly
   // rather than reading current_setting('app.current_org_id').
-  await assertOrgMayWriteAudit(tx, {
+  // Story 22.1 AC-13 / 22.2 AC-4 (site 5 of 9).
+  await assertOrgMayWriteAuditGates(tx, {
     orgId: input.orgId,
     eventType: input.eventType,
     sizeBytes: estimateAuditEntrySizeBytes(input),

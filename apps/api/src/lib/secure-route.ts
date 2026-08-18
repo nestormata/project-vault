@@ -9,11 +9,13 @@ import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
 import {
-  assertOrgMayWriteAudit,
+  assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
   recordAuditQuotaRefusalBestEffort,
+  recordAuditRateRefusalBestEffort,
 } from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
+import { env } from '../config/env.js'
 import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
 import { setRlsOrgContext } from '../middleware/rls.js'
@@ -116,7 +118,7 @@ class AuditWriteError extends Error {}
 export class SameTransactionAuditWriteError extends Error {
   constructor(
     message: string,
-    public readonly code?: 'audit_quota_exhausted' | 'audit_gate_unavailable'
+    public readonly code?: 'audit_quota_exhausted' | 'audit_gate_unavailable' | 'audit_rate_limited'
   ) {
     super(message)
     this.name = 'SameTransactionAuditWriteError'
@@ -336,8 +338,11 @@ async function defaultAuditWriter({
     keyVersion,
   }
   const hmac = computeAuditHmac(fields, getAuditKey())
-  // Story 22.1 AC-13 (site 4 of 9 — the inline defaultAuditWriter insert).
-  await assertOrgMayWriteAudit(tx, {
+  // Story 22.1 AC-13 / 22.2 AC-4 (site 4 of 9 — the inline defaultAuditWriter insert). Rate gate
+  // runs first, then the storage gate, inside assertOrgMayWriteAuditGates — the documented
+  // ordering decision (a rate-refused request never has its size estimated/attributed to the
+  // storage counter).
+  await assertOrgMayWriteAuditGates(tx, {
     orgId: auth.orgId,
     eventType: config.eventType,
     sizeBytes: estimateAuditEntrySizeBytes({
@@ -602,11 +607,12 @@ async function runProtectedHandler({
         await auditWriter({ tx: typedTx, auth, request, config: auditConfig })
       } catch (error) {
         // Story 22.1 AC-9/AC-19 fix: a SameTransactionAuditWriteError (thrown by
-        // assertOrgMayWriteAudit inside defaultAuditWriter, or by a custom auditWriter) already
-        // carries the `code` sendSecureRouteFailure needs to distinguish `audit_quota_exhausted`
-        // and `audit_gate_unavailable` from a generic audit-write failure. Re-wrapping it here in
-        // a fresh AuditWriteError discarded that code and silently downgraded every quota refusal
-        // to the generic `audit_write_failed` 503 — rethrow it unchanged instead.
+        // assertOrgMayWriteAuditGates inside defaultAuditWriter, or by a custom auditWriter)
+        // already carries the `code` sendSecureRouteFailure needs to distinguish
+        // `audit_quota_exhausted`/`audit_rate_limited` and `audit_gate_unavailable` from a
+        // generic audit-write failure. Re-wrapping it here in a fresh AuditWriteError discarded
+        // that code and silently downgraded every refusal to the generic `audit_write_failed`
+        // 503 — rethrow it unchanged instead.
         if (error instanceof SameTransactionAuditWriteError) {
           throw error
         }
@@ -642,6 +648,59 @@ async function sendAuditQuotaExhaustedFailure(
   })
 }
 
+// Story 22.2 AC-7/AC-9: a per-org rate refusal, distinct 429 from the storage gate's 503. The
+// Retry-After value is computed AFTER rollback, via recordAuditRateRefusalBestEffort's best-effort
+// follow-up read (never carried on the exception itself, keeping the hot refusal path a single
+// statement). Falls back to the configured window length (rounded up, seconds) if the best-effort
+// read fails or returns no row — never omits the header or guesses a smaller number.
+async function sendAuditRateLimitedFailure(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  error: unknown,
+  orgId?: string
+): Promise<unknown> {
+  logRouteError(request, { eventType: 'secure_route.audit_rate_limited', err: error })
+  let retryAfterSeconds: number | undefined
+  if (orgId) {
+    const result = await recordAuditRateRefusalBestEffort(orgId)
+    retryAfterSeconds = result?.retryAfterSeconds
+  }
+  retryAfterSeconds ??= Math.ceil(env.AUDIT_ORG_WRITE_RATE_WINDOW_MS / 1000)
+  reply.header('Retry-After', String(retryAfterSeconds))
+  return reply.status(429).send({
+    code: 'audit_rate_limited',
+    message: 'Audit write rate limit exceeded for this organization',
+  })
+}
+
+// Story 22.2: split out of sendSecureRouteFailure to keep that function's cyclomatic complexity
+// under the lint threshold — dispatches the three SameTransactionAuditWriteError codes to their
+// own response, or returns `undefined` (not itself a valid response) when `error` isn't one of
+// these three, letting the caller fall through to its generic audit-failure handling.
+async function sendGatedAuditWriteFailure(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  error: unknown,
+  orgId?: string
+): Promise<unknown> {
+  if (!(error instanceof SameTransactionAuditWriteError)) return undefined
+  if (error.code === 'audit_quota_exhausted') {
+    return sendAuditQuotaExhaustedFailure(request, reply, error, orgId)
+  }
+  if (error.code === 'audit_rate_limited') {
+    return sendAuditRateLimitedFailure(request, reply, error, orgId)
+  }
+  if (error.code === 'audit_gate_unavailable') {
+    // Story 22.1 AC-19: the gate statement itself errored — fail closed, never a silent allow.
+    logRouteError(request, { eventType: 'secure_route.audit_gate_unavailable', err: error })
+    return reply.status(503).send({
+      code: 'audit_gate_unavailable',
+      message: 'Audit quota gate is unavailable',
+    })
+  }
+  return undefined
+}
+
 async function sendSecureRouteFailure(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -659,17 +718,8 @@ async function sendSecureRouteFailure(
       message: 'Database security context unavailable',
     })
   }
-  if (error instanceof SameTransactionAuditWriteError && error.code === 'audit_quota_exhausted') {
-    return sendAuditQuotaExhaustedFailure(request, reply, error, orgId)
-  }
-  if (error instanceof SameTransactionAuditWriteError && error.code === 'audit_gate_unavailable') {
-    // Story 22.1 AC-19: the gate statement itself errored — fail closed, never a silent allow.
-    logRouteError(request, { eventType: 'secure_route.audit_gate_unavailable', err: error })
-    return reply.status(503).send({
-      code: 'audit_gate_unavailable',
-      message: 'Audit quota gate is unavailable',
-    })
-  }
+  const gatedFailure = await sendGatedAuditWriteFailure(request, reply, error, orgId)
+  if (gatedFailure !== undefined) return gatedFailure
   if (
     error instanceof AuditWriteError ||
     error instanceof SameTransactionAuditWriteError ||

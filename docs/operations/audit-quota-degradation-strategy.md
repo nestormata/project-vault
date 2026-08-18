@@ -188,3 +188,88 @@ findings, beyond what the story file's own revision history already recorded:
 See `docs/operations/audit-log-scaling.md` for the escalation path (table partitioning) this
 story's residual risks eventually lead to, and for the AC-12 release-note entry describing the
 instance-wide breaker's deletion.
+
+## Addendum: per-org write-rate limiting (Story 22.2)
+
+This addendum records Story 22.2's own design decision — the throughput axis, a second and
+independent gate from the storage-quota mechanism documented above. It inherits every decision
+above unchanged (D1, the deleted instance-wide circuit breaker, the three exemption classes) and
+adds exactly one new decision: WHERE and HOW a rate window can be checked and incremented
+atomically without repeating the mistake below.
+
+### Why the previous (pre-transaction) placement failed
+
+Rate limiting was originally Layer 1 of this story's first two drafts, wired into
+`enforceProtectedGuards()` — which runs and gates the request BEFORE `runProtectedHandler()` ever
+opens `db.transaction(...)`. Three independently fatal problems followed:
+
+1. **No org RLS context is set yet.** `setRlsOrgContext(tx, auth.orgId)` runs *inside* the
+   transaction, immediately after it opens. A statement issued before that point cannot safely
+   touch an RLS-protected per-org row without either seeing nothing or requiring a needless new
+   `getAdminDb()` bypass call site.
+2. **The exemption model needs handler-decided information the guard cannot see.** The events that
+   must be exempt from rate refusal (`SESSION_CREATED`, `LOGIN_FAILED`, the quota-remediation
+   events) are decided by the *handler's outcome*, not by which route was called. A route-granular
+   exemption either over-exempts or under-exempts a route that can emit more than one event type.
+3. **It reopens the storage-quota deadlock Story 22.1's remediation carve-out exists to close.** An
+   organization over both its storage quota and its rate cap would be refused on exactly the two
+   remediation calls its own notification tells it to make, with no way to escape either limiter,
+   because a pre-handler rate gate cannot see which event type the handler is about to emit.
+
+### Where the gate is placed instead
+
+Inside the same `db.transaction(...)` `runProtectedHandler()` already opens, immediately after
+`setRlsOrgContext()` runs and immediately before (in the same code path as, not merged into) Story
+22.1's `assertOrgMayWriteAudit()` call, at each of the same nine insert sites. At that point org
+RLS context is set (closes problem 1), the caller already knows the concrete `eventType` about to
+be written — it is the same input already passed to `assertOrgMayWriteAudit()` (closes problem 2)
+— and the exemption classification is the exact same three-way split Story 22.1 already built,
+reused without modification via `classifyAuditWriteExemption()` (closes problem 3).
+
+### Colocated columns, not a new table
+
+`rate_window_count`, `rate_window_reset_at`, `preauth_rate_window_count`,
+`preauth_rate_window_reset_at`, `rate_refused_count`, and `last_rate_refusal_at` are added to the
+*existing* `audit_org_storage_usage` row (migration `0077_audit_org_write_rate_limit.sql`) rather
+than a new table. A new, unprotected rate-bucket table would make `rate_window_count` a live,
+readable measure of another org's audit-write volume — exactly what finding H6 rejected for
+storage. The existing row already carries RLS enforcement (`audit_org_storage_usage_isolation`,
+`FOR ALL ... USING ... WITH CHECK`, `FORCE ROW LEVEL SECURITY`), already exists once per
+organization, and is already touched once per audited write by the quota gate — adding rate
+columns costs zero new RLS surface and zero new `EXCLUDED_TABLES` justification.
+
+### Two statements, not one merged statement
+
+The rate gate and the storage gate each issue their own atomic conditional statement against the
+same row, back to back, inside the same already-open transaction — not merged into a single SQL
+statement. The two gates have independent kill switches
+(`AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED` vs. `AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED`) and
+independent effective-limit resolution; merging them would make each kill switch pay the other
+gate's DB cost, breaking the zero-statement-when-off guarantee for whichever gate stays on.
+
+### Ordering: rate gate runs first, then the storage gate
+
+Both gates run after `setRlsOrgContext()` and before the insert, with the rate gate always
+evaluated first. A request refused for throughput reasons never has its size estimated or
+attributed to the storage counter — the two axes stay genuinely independent, and a rate-refused
+request leaves `bytes_used` completely untouched. Do not "fix" this into the other order: an
+organization over both limits always observes `429 audit_rate_limited`, never
+`503 audit_quota_exhausted`, for as long as it stays over its rate cap — a deliberate,
+documented trade-off (see Story 22.2's Open Question 4), not a bug.
+
+### Exemption-class reuse (no new exemption logic)
+
+`classifyAuditWriteExemption(eventType)` is called once per write and its result is used by BOTH
+gates:
+
+| Class | Refused when over rate cap? | Counted toward the ENFORCED rate counter? |
+|---|---|---|
+| `security_critical` | never | yes (may exceed the cap) |
+| `preauth` | never | no — counted to a separate, non-enforced column |
+| `remediation` | never | yes (may exceed the cap; the remediation write itself is never refused) |
+| everything else | yes | yes |
+
+This is the same reasoning as Story 22.1's own non-influenceability invariant: an unauthenticated
+attacker who can generate `LOGIN_FAILED` volume must not be able to drive any organization's rate
+counter past its cap. Routing pre-auth-attributable volume to a separate, unenforced counter closes
+that channel for rate exactly as `preauth_bytes_used` closed it for storage.

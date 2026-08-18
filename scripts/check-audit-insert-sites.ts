@@ -76,6 +76,31 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
+/**
+ * Story 22.2 AC-4 — extends the same allowlist rather than a second script: every allowlisted
+ * insert site must call BOTH gates (assertOrgMayWriteAuditAtRate() alongside
+ * assertOrgMayWriteAudit()), so a future PR cannot add the storage gate at a new site without the
+ * rate gate. Not a proof (same grep-based caveat as the insert-site check above) — a regression
+ * tripwire, backed by each site's own behavioural test.
+ */
+export function findSitesMissingRateGate(repoRoot: string): string[] {
+  const offenders: string[] = []
+  for (const relPath of ALLOWLIST) {
+    const filePath = join(repoRoot, relPath)
+    let source: string
+    try {
+      source = readFileSync(filePath, 'utf-8')
+    } catch {
+      offenders.push(relPath)
+      continue
+    }
+    if (!/assertOrgMayWriteAuditAtRate\s*\(/.test(source)) {
+      offenders.push(relPath)
+    }
+  }
+  return offenders
+}
+
 export function findUnallowlistedInsertSites(repoRoot: string): string[] {
   const offenders: string[] = []
   for (const scanRoot of SCAN_ROOTS) {
@@ -103,20 +128,38 @@ export function findUnallowlistedInsertSites(repoRoot: string): string[] {
 
 function main(): void {
   const offenders = findUnallowlistedInsertSites(REPO_ROOT)
-  if (offenders.length === 0) {
+  const missingRateGate = findSitesMissingRateGate(REPO_ROOT)
+
+  if (offenders.length === 0 && missingRateGate.length === 0) {
     process.stdout.write(
-      `check-audit-insert-sites: ${ALLOWLIST.size} allowlisted audit_log_entries insert sites, no un-allowlisted sites found — OK\n`
+      `check-audit-insert-sites: ${ALLOWLIST.size} allowlisted audit_log_entries insert sites, ` +
+        `all calling both gates, no un-allowlisted sites found — OK\n`
     )
     return
   }
-  process.stderr.write(
-    `FATAL: audit_log_entries INSERT found outside the Story 22.1 AC-13 allowlist in ${offenders.length} file(s):\n`
-  )
-  for (const offender of offenders) {
+
+  if (offenders.length > 0) {
     process.stderr.write(
-      `  - ${offender} — must call assertOrgMayWriteAudit() before its insert and be added to scripts/check-audit-insert-sites.ts's ALLOWLIST with a one-line comment\n`
+      `FATAL: audit_log_entries INSERT found outside the Story 22.1 AC-13 allowlist in ${offenders.length} file(s):\n`
     )
+    for (const offender of offenders) {
+      process.stderr.write(
+        `  - ${offender} — must call assertOrgMayWriteAudit() before its insert and be added to scripts/check-audit-insert-sites.ts's ALLOWLIST with a one-line comment\n`
+      )
+    }
   }
+
+  if (missingRateGate.length > 0) {
+    process.stderr.write(
+      `FATAL: Story 22.2 AC-4 — allowlisted site(s) missing the assertOrgMayWriteAuditAtRate() call in ${missingRateGate.length} file(s):\n`
+    )
+    for (const offender of missingRateGate) {
+      process.stderr.write(
+        `  - ${offender} — must call assertOrgMayWriteAuditAtRate() immediately before its assertOrgMayWriteAudit() call\n`
+      )
+    }
+  }
+
   process.exitCode = 1
 }
 

@@ -22,6 +22,19 @@ export const auditOrgStorageUsage = pgTable(
     refusedWriteCount: bigint('refused_write_count', { mode: 'number' }).notNull().default(0),
     lastRefusalAt: timestamp('last_refusal_at', { withTimezone: true }),
     lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
+    // Story 22.2 AC-2 — colocated rate-window state (throughput axis), on the same RLS-protected
+    // row rather than a new table (see quota-gate.ts's assertOrgMayWriteAuditAtRate() for why).
+    // rateWindowCount is the ENFORCED, non-exempt/non-preauth authenticated-origin write count in
+    // the current fixed window; preauthRateWindowCount mirrors preauthBytesUsed — recorded, never
+    // an input to any refusal decision.
+    rateWindowCount: bigint('rate_window_count', { mode: 'number' }).notNull().default(0),
+    rateWindowResetAt: timestamp('rate_window_reset_at', { withTimezone: true }),
+    preauthRateWindowCount: bigint('preauth_rate_window_count', { mode: 'number' })
+      .notNull()
+      .default(0),
+    preauthRateWindowResetAt: timestamp('preauth_rate_window_reset_at', { withTimezone: true }),
+    rateRefusedCount: bigint('rate_refused_count', { mode: 'number' }).notNull().default(0),
+    lastRateRefusalAt: timestamp('last_rate_refusal_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -31,6 +44,14 @@ export const auditOrgStorageUsage = pgTable(
       sql`${table.preauthBytesUsed} >= 0`
     ),
     check('audit_org_storage_usage_entry_count_non_negative', sql`${table.entryCount} >= 0`),
+    check(
+      'audit_org_storage_usage_rate_window_count_non_negative',
+      sql`${table.rateWindowCount} >= 0`
+    ),
+    check(
+      'audit_org_storage_usage_preauth_rate_window_count_non_negative',
+      sql`${table.preauthRateWindowCount} >= 0`
+    ),
   ]
 )
 

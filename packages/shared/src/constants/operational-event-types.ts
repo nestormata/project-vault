@@ -323,6 +323,11 @@ export const OperationalEvent = {
   AUDIT_QUOTA_REFUSAL_RECORD_FAILED: 'audit_quota.refusal_record_failed',
   // Story 22.1 AC-19: the gate statement itself errored (fail-closed, 503 audit_gate_unavailable).
   AUDIT_QUOTA_GATE_ERROR: 'audit_quota.gate_error',
+  // Story 22.2 AC-12: a per-org audit write refused for write-RATE (throughput) reasons — the
+  // second, independent gate alongside the storage-quota gate above.
+  AUDIT_RATE_LIMIT_WRITE_REFUSED: 'audit_rate_limit.write_refused',
+  // Story 22.2 AC-9: the durable rate-refusal-counter update itself failed (best-effort, swallowed).
+  AUDIT_RATE_REFUSAL_RECORD_FAILED: 'audit_rate_limit.refusal_record_failed',
   // Story 22.1 AC-7: per-org usage reconciliation run outcome/failure/timeout.
   AUDIT_ORG_USAGE_RECONCILE_COMPLETED: 'audit_org_usage_reconcile.completed',
   AUDIT_ORG_USAGE_RECONCILE_FAILED: 'audit_org_usage_reconcile.failed',

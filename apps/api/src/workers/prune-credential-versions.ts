@@ -14,7 +14,10 @@ import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-crede
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import { computeAuditHmac } from '../modules/audit/write-entry.js'
-import { assertOrgMayWriteAudit, estimateAuditEntrySizeBytes } from '../modules/audit/quota-gate.js'
+import {
+  assertOrgMayWriteAuditGates,
+  estimateAuditEntrySizeBytes,
+} from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 
@@ -94,9 +97,9 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
 
   const payload = { credentialId: candidate.credentialId, versionNumber: candidate.versionNumber }
   const purgeEventType = 'credential.version_purged'
-  // Story 22.1 AC-13 (site 8 of 9 — this worker's own inline insert; it also calls the already-
-  // gated writeSystemAuditRow site 5 elsewhere in this file).
-  await assertOrgMayWriteAudit(tx, {
+  // Story 22.1 AC-13 / 22.2 AC-4 (site 8 of 9 — this worker's own inline insert; it also calls
+  // the already-gated writeSystemAuditRow site 5 elsewhere in this file).
+  await assertOrgMayWriteAuditGates(tx, {
     orgId,
     eventType: purgeEventType,
     sizeBytes: estimateAuditEntrySizeBytes({
@@ -230,8 +233,9 @@ type PruneOrgResult = {
   versionsWouldPurge: number
 }
 
-// Story 22.1 fix: purgeVersion() now calls assertOrgMayWriteAudit, which throws for an org that
-// is over its audit-storage quota. Without per-org isolation here, that throw would propagate out
+// Story 22.1 fix: purgeVersion() now calls assertOrgMayWriteAuditGates, which throws for an org
+// that is over its audit-storage quota (or, since 22.2, its write-rate cap). Without per-org
+// isolation here, that throw would propagate out
 // of pruneCredentialVersions's loop and abort the retention purge for every org processed after
 // the offending one in this run — one over-quota org would silently defeat the
 // security/compliance credential-retention purge for the rest of the instance. Isolate per-org
