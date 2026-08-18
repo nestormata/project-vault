@@ -50,6 +50,9 @@ describe('Story 24.5a migration 0080 static contract', () => {
       )
     }
     expect(normalizedMigration).toContain(
+      'alter default privileges revoke execute on functions from public'
+    )
+    expect(normalizedMigration).not.toContain(
       'alter default privileges in schema public revoke execute on functions from public'
     )
     const grantStatements = migration

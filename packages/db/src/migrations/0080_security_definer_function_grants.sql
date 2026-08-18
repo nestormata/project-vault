@@ -43,11 +43,12 @@ GRANT EXECUTE ON FUNCTION purge_expired_platform_audit_entries(timestamptz) TO v
 --> statement-breakpoint
 
 -- This default is keyed to the role issuing it (currently postgres), so it is a convenience and
--- not the lasting guarantee. This schema-scoped row ensures newly-created public functions are
--- denied PUBLIC EXECUTE in public. A restore can re-key the row to the restoring role; the
--- post-restore check must compare pg_default_acl.defaclrole with the migration-object owner. The
--- 24.5b sweep is the durable drift control.
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
+-- not the lasting guarantee. It must be global: PostgreSQL adds schema-scoped defaults to global
+-- defaults, so a schema-scoped REVOKE cannot remove the built-in global PUBLIC EXECUTE grant. A
+-- restore can re-key the row to the restoring role; the post-restore check must compare
+-- pg_default_acl.defaclrole with the migration-object owner. The 24.5b sweep is the durable drift
+-- control.
+ALTER DEFAULT PRIVILEGES
   REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
 -- The platform purge has no internal authorization guard. Its single production caller is
