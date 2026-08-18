@@ -83,6 +83,9 @@ jobs:
       - name: Check container publish workflow contract
         run: pnpm vitest run scripts/check-container-publish-workflow.test.ts
 
+      - name: Check extension-api version-skew guard's own test suite (Story 24.4)
+        run: pnpm vitest run scripts/check-extension-api-version-skew.test.ts
+
       - name: Check native-credential-surface guard's own test suite (Story 23.2 AC19)
         run: pnpm vitest run scripts/check-native-credential-surface.test.ts
 
@@ -111,7 +114,7 @@ jobs:
       - name: Check migration compatibility (AC-E9b)
         run: pnpm check-migration-compatibility
 
-      - name: Check extension-api version-skew (Story 14.1 AC7)
+      - name: Check extension-api version-skew (Story 14.1 AC7 / Story 24.4)
         run: pnpm check-extension-api-version-skew
 
       - name: Check extension-api LICENSE freshness (Story 23.1 AC6)
