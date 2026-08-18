@@ -373,6 +373,16 @@ export function report(result: VersionSkewCheckResult): void {
     return
   }
 
+  const brokenBase =
+    (verdict.code === INVALID_SEMVER || verdict.code === MISSING_VERSION) &&
+    verdict.which === MERGE_BASE_COMPARISON
+  if (brokenBase) {
+    const baseOwner =
+      result.baseRef === 'main' || result.baseRef.endsWith('/main') ? 'main' : result.baseRef
+    process.stderr.write(
+      `FATAL: the defect is on ${baseOwner}, not in this PR; whoever can land a correction on ${baseOwner} must repair the malformed extension-api package.\n`
+    )
+  }
   process.stderr.write(`${comparedLine(result)}\n`)
   if (verdict.code === 'no-bump') {
     const next = suggestion(verdict.base, verdict.head)

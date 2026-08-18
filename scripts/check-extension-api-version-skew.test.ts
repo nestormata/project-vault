@@ -556,6 +556,21 @@ describe('report', () => {
     expect(output).toContain('for example, a revert')
     expect(output).toContain('Reproduce locally: pnpm check-extension-api-version-skew')
   })
+
+  it('identifies a broken merge-base as a main-side defect before remediation guidance', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    report({
+      verdict: { ok: false, code: 'invalid-semver', which: 'merge-base', value: 'banana' },
+      changedContractFiles: [SRC_INDEX_PATH],
+      baseRef: 'origin/main',
+      headRef: 'HEAD',
+      baseSha: 'def5678',
+      headSha: 'abc1234',
+    })
+    const output = stderr.mock.calls.map(([value]) => String(value)).join('')
+    expect(output.startsWith('FATAL: the defect is on main, not in this PR')).toBe(true)
+    expect(output).toContain('whoever can land a correction on main')
+  })
 })
 
 describe('dependency and wiring contracts', () => {
