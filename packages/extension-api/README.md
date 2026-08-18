@@ -41,10 +41,20 @@ export default { manifest, hooksFactory }
 ```
 
 Exported types are `AuthResult`, `AuthStrategy`, `NotificationChannel`, `NotificationPayload`,
-`UIPanel`, `UIPanelContext`, `UIPanelResult`, `ExtensionCapability`, `ExtensionManifest`,
+`UIPanel`, `UIPanelContext`, `UIPanelResult`, `CapabilityDecision`, `CapabilityGate`,
+`CapabilityGateContext`, `AuditEventSourceHost`, `AuditEventSourceWriteInput`,
+`AuditEventSourceWriteResult`, `HostServices`, `ExtensionCapability`, `ExtensionManifest`,
 `ExtensionHooks`, and `ExtensionRegistrationErrorReason`. Exported runtime values are
 `EXTENSION_API_VERSION`, `HOST_SUPPORTED_EXTENSION_API_RANGE`, `defineExtension`,
 `registerExtension`, `isExtensionApiVersionSupported`, and `ExtensionRegistrationError`.
+
+Story 23.8 adds the first **inverted** hook: `AuditEventSourceHost` is implemented by the host
+(Project Vault), not the extension. `hooksFactory` therefore takes a `host: HostServices` argument
+(`hooksFactory: (host: HostServices) => ExtensionHooks`) — an existing extension whose
+`hooksFactory` declares zero parameters remains compatible unmodified (TypeScript parameter-count
+contravariance). Call `host.auditEventSource.writeAuditEvent(input)` to write a tamper-evident,
+namespaced (`ext.<your-manifest-name>.*`) audit row; the host performs HMAC signing and
+key-versioning, so no key material or transaction handle ever crosses the extension boundary.
 
 Only the package root is supported. Deep paths such as `@project-vault/extension-api/hooks/*` are
 unsupported internals and may move, be renamed, or be deleted in any release, including a patch;
@@ -94,7 +104,8 @@ qualified legal review. Publishing is not a legal clearance.
 Until Project Vault Story 23.6 publishes the full versioning and deprecation policy, the interim
 stance is strict semver: adding an export or optional field is minor; removing, renaming, or
 narrowing an export or changing registration validation semantics is major. Story 23.3's
-`CapabilityGate` addition is pre-classified as a minor bump. No deprecation-window commitment is
+`CapabilityGate` addition and Story 23.8's `AuditEventSourceHost`/`HostServices` addition are both
+pre-classified as minor bumps (additive, backward-compatible). No deprecation-window commitment is
 made here; Story 23.6 must review its policy against this publishing mechanism.
 
 Source is included in the package tarball with the compiled output and license. See the public

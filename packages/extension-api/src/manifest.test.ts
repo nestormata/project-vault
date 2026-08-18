@@ -20,7 +20,7 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.3.0')
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.4.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

@@ -25,8 +25,8 @@ export async function batchResolveActorDisplayNames(
  * AC-13's documented fallback chain:
  * - human actor with a resolvable token -> the live display name
  * - human actor with no token (should not occur in a clean DB, defensively handled) -> 'unknown'
- * - machine_user / system actor (actor_token_id is always null for these, Story 8.1 D3) ->
- *   the literal actor_type string
+ * - machine_user / system / extension actor (actor_token_id is always null for these, Story 8.1
+ *   D3 / Story 23.8 AC-2's edge case for 'extension') -> the literal actor_type string
  */
 export function actorDisplayNameFor(
   actorType: string,
@@ -34,6 +34,8 @@ export function actorDisplayNameFor(
   displayNameByTokenId: Map<string, string>
 ): string {
   if (actorTokenId) return displayNameByTokenId.get(actorTokenId) ?? 'unknown'
-  if (actorType === 'machine_user' || actorType === 'system') return actorType
+  if (actorType === 'machine_user' || actorType === 'system' || actorType === 'extension') {
+    return actorType
+  }
   return 'unknown'
 }

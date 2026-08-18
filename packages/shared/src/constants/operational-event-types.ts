@@ -334,6 +334,11 @@ export const OperationalEvent = {
   AUDIT_ORG_USAGE_RECONCILE_TIMEOUT: 'audit_org_usage_reconcile.timed_out',
   AUDIT_ORG_USAGE_RECONCILE_ORG_WRITEBACK_FAILED: 'audit_org_usage_reconcile.org_writeback_failed',
   AUDIT_ORG_USAGE_RECONCILE_DRIFT: 'audit_org_usage_reconcile.drift',
+
+  // Story 23.8 AC-23: audit-event-source extension hook write outcomes. `reason` on rejection is
+  // limited to a fixed enum — never the raw payload or exception message.
+  EXTENSION_AUDIT_EVENT_WRITE_SUCCEEDED: 'extension_audit_event.write_succeeded',
+  EXTENSION_AUDIT_EVENT_WRITE_REJECTED: 'extension_audit_event.write_rejected',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

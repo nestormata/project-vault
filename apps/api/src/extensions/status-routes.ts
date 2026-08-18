@@ -17,7 +17,13 @@ const ExtensionManifestSchema = z.object({
   name: z.string(),
   apiVersion: z.string(),
   capabilities: z.array(
-    z.enum(['auth-provider', 'notification-channel', 'ui-panel', 'capability-gate'])
+    z.enum([
+      'auth-provider',
+      'notification-channel',
+      'ui-panel',
+      'capability-gate',
+      'audit-event-source',
+    ])
   ),
   loadedAt: z.string(),
 })

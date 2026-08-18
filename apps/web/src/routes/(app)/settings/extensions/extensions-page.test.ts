@@ -230,4 +230,70 @@ describe('/settings/extensions +page.svelte', () => {
       screen.getByText(/no capability gate configured — all capabilities are available/i)
     ).toBeTruthy()
   })
+
+  it('Story 23.8 AC-26: manifest without audit-event-source shows the "not declared" line', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: SAMPLE_MANIFEST,
+          healthStatus: 'loaded',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(screen.getByText(/audit event source: not declared/i)).toBeTruthy()
+  })
+
+  it('Story 23.8 AC-26: manifest declaring audit-event-source shows the "declared" line', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: { ...SAMPLE_MANIFEST, capabilities: ['auth-provider', 'audit-event-source'] },
+          healthStatus: 'loaded',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(screen.getByText(/audit event source: declared/i)).toBeTruthy()
+    expect(screen.queryByText(/audit event source: not declared/i)).toBeNull()
+  })
+
+  it('Story 23.8 AC-26: not-configured and load-failed states also show the "not declared" line', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: null,
+          healthStatus: 'not_configured',
+          errorMessage: null,
+        },
+      },
+    })
+    expect(screen.getByText(/audit event source: not declared/i)).toBeTruthy()
+    cleanup()
+
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: null,
+          healthStatus: 'load_failed',
+          errorMessage: null,
+        },
+      },
+    })
+    expect(screen.getByText(/audit event source: not declared/i)).toBeTruthy()
+  })
 })

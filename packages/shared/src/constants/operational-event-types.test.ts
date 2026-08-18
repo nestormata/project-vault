@@ -127,6 +127,15 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 23.8 audit-event-source extension hook event types', () => {
+    expect(OperationalEvent.EXTENSION_AUDIT_EVENT_WRITE_SUCCEEDED).toBe(
+      'extension_audit_event.write_succeeded'
+    )
+    expect(OperationalEvent.EXTENSION_AUDIT_EVENT_WRITE_REJECTED).toBe(
+      'extension_audit_event.write_rejected'
+    )
+  })
+
   it('exposes the Story 16.1 theme-reload event types (AC-2, AC-7 fanout)', () => {
     expect(OperationalEvent.THEME_DIRECTORY_UNREADABLE).toBe('theme.directory_unreadable')
     expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')

@@ -6,6 +6,7 @@ import type { AuthStrategy } from './hooks/auth-strategy.js'
 import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
+import type { HostServices } from './host-services.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -19,12 +20,32 @@ const REVERSE_DNS_NAME_PATTERN = /^[a-z0-9]+(\.[a-z0-9-]+)+$/
 /**
  * The bag of hooks an extension provides, keyed by capability. All optional — an extension only
  * implements the hooks matching the capabilities it declared in its manifest.
+ *
+ * Story 23.8 Dev Notes § Why `HostServices` is a new concept, not a fifth `ExtensionHooks` field:
+ * `audit-event-source` is deliberately NOT a field here. Every field below is something the
+ * extension implements and PV calls; `audit-event-source` is the reverse (PV implements it, the
+ * extension calls it), so it lives in `HostServices` instead (`host-services.ts`). Do not "fix"
+ * this asymmetry by adding an `auditEventSource` field here.
  */
 export type ExtensionHooks = {
   authStrategy?: AuthStrategy
   notificationChannel?: NotificationChannel
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
+}
+
+/** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
+ * without a real host — `writeAuditEvent()` rejects synchronously-caused-async if ever called,
+ * since no real extension should be able to reach it without a genuine host wiring it up. */
+const DEFAULT_HOST_SERVICES: HostServices = {
+  auditEventSource: {
+    writeAuditEvent: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — auditEventSource.writeAuditEvent is unavailable'
+        )
+      ),
+  },
 }
 
 /**
@@ -156,8 +177,9 @@ function assertApiVersionSupported(
  */
 export function registerExtension(
   manifest: ExtensionManifest,
-  hooksFactory: () => ExtensionHooks,
-  options: RegisterExtensionOptions = {}
+  hooksFactory: (host: HostServices) => ExtensionHooks,
+  options: RegisterExtensionOptions = {},
+  host: HostServices = DEFAULT_HOST_SERVICES
 ): { manifest: ExtensionManifest; hooks: ExtensionHooks } {
   const logger = options.logger ?? noopLogger
   const hasCaseFoldNearMiss = checkUnknownManifestKeys(manifest, logger)
@@ -178,7 +200,7 @@ export function registerExtension(
 
   const declaredApiVersion = assertApiVersionSupported(manifest, options)
 
-  const hooks = hooksFactory()
+  const hooks = hooksFactory(host)
 
   // Story 23.2 AC-2 — a manifest declaring `replacesNativeLogin: true` whose hooksFactory()
   // yields no authStrategy would disable the only working login path with nothing to replace

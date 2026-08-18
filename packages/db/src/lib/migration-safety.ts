@@ -318,4 +318,10 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // ADD CONSTRAINT pair present is this exact rewrite, with no unrelated destructive statement.
   '0050_staged_rotation_state_machine':
     "rotations_status_check must be dropped and re-added to widen its allowed set with the new 'staged'/'promoted'/'retired' values — identical reviewed pattern to 0047's notification_preferences_channel_check widening.",
+  // Story 23.8 AC-8: audit_log_entries_actor_type_check must be dropped and re-added (same
+  // cannot-widen-in-place limitation as 0047/0050) to add 'extension' while keeping every
+  // existing value. The paired migration safety test verifies the only DROP CONSTRAINT/ADD
+  // CONSTRAINT pair present is this exact rewrite, with no unrelated destructive statement.
+  '0078_audit_log_entries_extension_actor_type':
+    "audit_log_entries_actor_type_check must be dropped and re-added to widen its allowed set with the new 'extension' value — identical reviewed pattern to 0047/0050's CHECK-constraint widenings.",
 }

@@ -7,10 +7,11 @@ import {
   isExtensionApiVersionSupported,
   registerExtension,
 } from '@project-vault/extension-api'
-import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
+import type { ExtensionHooks, ExtensionManifest, HostServices } from '@project-vault/extension-api'
 import { operationalLog } from '../lib/logger.js'
 import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeout.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
+import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 
 /**
@@ -28,7 +29,24 @@ export type ExtensionState =
   | { status: 'load_failed'; reason: ExtensionLoadFailureReason }
 
 type ExtensionModuleShape = {
-  default: { manifest: ExtensionManifest; hooksFactory: () => ExtensionHooks }
+  default: { manifest: ExtensionManifest; hooksFactory: (host: HostServices) => ExtensionHooks }
+}
+
+/**
+ * Story 23.8 AC-6 — constructs the real `HostServices` object, bound to the loading extension's
+ * own manifest, before `registerExtension()` calls `hooksFactory(host)`. Edge case: when no
+ * extension is loaded (`state.status !== 'loaded'`), nothing ever calls
+ * `writeExtensionAuditEventForManifest` — there is no global/ambient `host.auditEventSource`
+ * reachable from anywhere outside the one `hooksFactory(host)` call for the one loaded extension
+ * this process ever has (single-extension-per-process invariant, same as
+ * `registeredGate`/`registeredGateName` in `lib/capability-gate.ts`).
+ */
+function buildHostServices(manifest: ExtensionManifest): HostServices {
+  return {
+    auditEventSource: {
+      writeAuditEvent: (input) => writeExtensionAuditEventForManifest(manifest, input),
+    },
+  }
 }
 
 type ImportFn = (specifier: string) => Promise<ExtensionModuleShape>
@@ -81,6 +99,13 @@ export function getExtensionsHealthField(): ExtensionState['status'] {
 /** Test-only reset of module-level state — never called from production code. */
 export function __resetExtensionStateForTests(): void {
   state = { status: 'not_configured' }
+}
+
+/** Test-only direct state injection — never called from production code. Lets a test exercise
+ * status.ts's AC-24 auditEventSource-observability branch without driving a full loadExtension()
+ * import cycle. */
+export function __setExtensionStateForTests(newState: ExtensionState): void {
+  state = newState
 }
 
 function mapFailureReason(error: unknown): ExtensionLoadFailureReason {
@@ -159,9 +184,12 @@ async function raceWithTimeout(
 ): Promise<RaceResult> {
   const raced = await sharedRaceWithTimeout<LoadOutcome>(async () => {
     const mod = await importFn(packageName)
-    return registerExtension(mod.default.manifest, mod.default.hooksFactory, {
-      allowApiVersionAboveHost,
-    })
+    return registerExtension(
+      mod.default.manifest,
+      mod.default.hooksFactory,
+      { allowApiVersionAboveHost },
+      buildHostServices(mod.default.manifest)
+    )
   }, timeoutMs)
 
   if (raced.status === 'resolved') return { outcome: raced.value, reason: 'import_error' }

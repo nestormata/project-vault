@@ -14,6 +14,12 @@
   const declaresCapabilityGate = $derived(
     data.manifest?.capabilities.includes('capability-gate') ?? false
   )
+
+  // Story 23.8 AC-26: same honest-placeholder bar as AC-9 above — declaration-presence only, no
+  // liveness/activity claim (this page cannot reach the operational /status endpoint).
+  const declaresAuditEventSource = $derived(
+    data.manifest?.capabilities.includes('audit-event-source') ?? false
+  )
 </script>
 
 <svelte:head>
@@ -96,6 +102,16 @@
           No capability gate configured — all capabilities are available.
         {/if}
       </p>
+
+      <!-- Story 23.8 AC-26 -->
+      <p class="mt-1 text-xs text-slate-500">
+        {#if declaresAuditEventSource}
+          Audit event source: declared
+        {:else}
+          Audit event source: not declared — extension domain events are not being written to the
+          audit log.
+        {/if}
+      </p>
     </div>
   {:else if data.healthStatus === 'load_failed'}
     <!-- AC-4: honest, visually/textually distinct from AC-3's not-configured state. Never
@@ -111,6 +127,11 @@
       <p class="mt-3 text-xs text-red-700">
         No capability gate configured — all capabilities are available.
       </p>
+      <!-- Story 23.8 AC-26 -->
+      <p class="mt-1 text-xs text-red-700">
+        Audit event source: not declared — extension domain events are not being written to the
+        audit log.
+      </p>
     </div>
   {:else}
     <!-- AC-3: the expected, common, non-error default for most self-hosted installs. -->
@@ -118,6 +139,11 @@
       <p class="text-slate-600">No extension configured for this vault.</p>
       <p class="mt-3 text-xs text-slate-500">
         No capability gate configured — all capabilities are available.
+      </p>
+      <!-- Story 23.8 AC-26 -->
+      <p class="mt-1 text-xs text-slate-500">
+        Audit event source: not declared — extension domain events are not being written to the
+        audit log.
       </p>
     </div>
   {/if}

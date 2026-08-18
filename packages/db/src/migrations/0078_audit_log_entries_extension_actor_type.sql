@@ -1,0 +1,2 @@
+ALTER TABLE "audit_log_entries" DROP CONSTRAINT "audit_log_entries_actor_type_check";--> statement-breakpoint
+ALTER TABLE "audit_log_entries" ADD CONSTRAINT "audit_log_entries_actor_type_check" CHECK ("audit_log_entries"."actor_type" IN ('human','machine_user','system','extension'));

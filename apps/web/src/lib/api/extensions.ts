@@ -5,7 +5,7 @@ import { apiFetch } from './client.js'
 // the original bare manifest-or-null response shape into this envelope in the same commit as
 // the API route change and the regenerated openapi.json.
 export type ExtensionCapability =
-  'auth-provider' | 'notification-channel' | 'ui-panel' | 'capability-gate'
+  'auth-provider' | 'notification-channel' | 'ui-panel' | 'capability-gate' | 'audit-event-source'
 
 export type ExtensionStatus = {
   name: string
