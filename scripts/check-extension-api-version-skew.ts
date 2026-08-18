@@ -43,6 +43,7 @@ const HEAD_SIDE = 'head' as const
 const MISSING_VERSION = 'missing-version' as const
 const INVALID_SEMVER = 'invalid-semver' as const
 const UNRESOLVABLE_RANGE = 'unresolvable-range' as const
+const NOT_GREATER_THAN_MERGE_BASE = 'not-greater-than-merge-base' as const
 
 export type DiffRange = {
   base: string
@@ -55,7 +56,7 @@ export type SkewVerdict =
   | { ok: true; reason: 'valid-increase'; from: string; to: string }
   | { ok: true; reason: 'new-package'; to: string }
   | { ok: false; code: 'no-bump'; base: string; head: string }
-  | { ok: false; code: 'not-greater-than-merge-base'; base: string; head: string }
+  | { ok: false; code: typeof NOT_GREATER_THAN_MERGE_BASE; base: string; head: string }
   | {
       ok: false
       code: typeof INVALID_SEMVER
@@ -225,7 +226,7 @@ export function detectVersionSkew(params: DetectParams): SkewVerdict {
   if (!semver.gt(params.headVersion, params.baseVersion)) {
     return {
       ok: false,
-      code: 'not-greater-than-merge-base',
+      code: NOT_GREATER_THAN_MERGE_BASE,
       base: params.baseVersion,
       head: params.headVersion,
     }
@@ -272,6 +273,10 @@ function isBrokenBase(state: PackageState): boolean {
 
 function shortSha(value: string | undefined, fallback: string): string {
   return (value ?? fallback).slice(0, 7)
+}
+
+function baseOwnerLabel(baseRef: string): string {
+  return baseRef === 'main' || baseRef.endsWith('/main') ? 'main' : baseRef
 }
 
 function commitSha(repoRoot: string, ref: string): string {
@@ -337,7 +342,7 @@ export function runVersionSkewCheck(
       verdict,
       ...(baseBroken && allowBrokenBase
         ? {
-            baseWarning: `WARNING: the defect is on main (${baseRef}), not in this PR; whoever can land a correction on main must repair the malformed extension-api package.`,
+            baseWarning: `WARNING: the defect is on ${baseOwnerLabel(baseRef)} (${baseRef}), not in this PR; whoever can land a correction on ${baseOwnerLabel(baseRef)} must repair the malformed extension-api package.`,
           }
         : {}),
     }
@@ -355,6 +360,104 @@ function comparedLine(result: VersionSkewCheckResult): string {
   return `Compared base (${result.baseRef} @ ${shortSha(result.baseSha, result.baseRef)}) ${JSON.stringify(result.baseVersion)} with head (${result.headRef} @ ${shortSha(result.headSha, result.headRef)}) ${JSON.stringify(result.headVersion)}.`
 }
 
+function comparisonBlock(result: VersionSkewCheckResult): string {
+  const literal = (value: string | undefined): string => value ?? 'undefined'
+  const headLabel = result.headRef === HEAD_REF ? 'this branch / HEAD' : result.headRef
+  return (
+    `  base (${result.baseRef} @ ${shortSha(result.baseSha, result.baseRef)})  ${literal(result.baseVersion)}\n` +
+    `  head (${headLabel} @ ${shortSha(result.headSha, result.headRef)})  ${literal(result.headVersion)}`
+  )
+}
+
+function formatUnresolvableRange(result: VersionSkewCheckResult): string {
+  const verdict = result.verdict
+  if (verdict.code !== UNRESOLVABLE_RANGE) throw new Error('expected an unresolvable-range verdict')
+  return (
+    `FATAL: ${comparedLine(result)}\nWhy: the diff range is unresolvable. ${verdict.detail}\n` +
+    'Fix: run this check from a non-shallow clone with a resolvable base ref (main for local runs).'
+  )
+}
+
+function formatNoBump(result: VersionSkewCheckResult): string {
+  const verdict = result.verdict
+  if (verdict.code !== 'no-bump') throw new Error('expected a no-bump verdict')
+  const next = suggestion(verdict.base, verdict.head)
+  const suggested = next ?? 'a canonical version greater than the merge-base version'
+  return (
+    `FATAL: packages/extension-api contract files changed, but "version" is ${verdict.base} on both sides\n` +
+    `       of this comparison.\n\n${comparisonBlock(result)}\n\n` +
+    'Either this branch never bumped the version, or it bumped to a number another PR\n' +
+    'merged to main first. Versions are allocated at MERGE, not at planning (Story 23.6).\n\n' +
+    'Fix:\n  1. git fetch origin && git rebase origin/main\n' +
+    `  2. Set "version" to ${suggested} in ${EXTENSION_API_PACKAGE_JSON}\n` +
+    '     — the next free version as of this run; re-run after rebasing if main advances.\n' +
+    `  3. Set EXTENSION_API_VERSION to ${suggested} in packages/extension-api/src/manifest.ts\n` +
+    '     (these two must match — packages/extension-api/src/manifest.test.ts asserts it)'
+  )
+}
+
+function formatDowngrade(result: VersionSkewCheckResult): string {
+  const verdict = result.verdict
+  if (verdict.code !== NOT_GREATER_THAN_MERGE_BASE)
+    throw new Error('expected a not-greater-than-merge-base verdict')
+  const next = suggestion(verdict.base, verdict.head)
+  return (
+    `${comparedLine(result)}\n` +
+    `FATAL: the head version ${verdict.head} is not greater than the merge-base version ${verdict.base}.\n` +
+    'This is a downgrade — for example, a revert. Versions roll forward, never backward: a revert of ' +
+    `${verdict.base}'s changes ships as ${next ?? 'a greater canonical version'} (or a patch release), not as a return to an older version.\n` +
+    `Fix: set the version field to a number greater than ${verdict.base}.`
+  )
+}
+
+function formatInvalidSemver(result: VersionSkewCheckResult): string {
+  const verdict = result.verdict
+  if (verdict.code !== INVALID_SEMVER) throw new Error('expected an invalid-semver verdict')
+  return (
+    `${comparedLine(result)}\n` +
+    `FATAL: ${verdict.which} version ${JSON.stringify(verdict.value)} is not canonical semver.\n` +
+    'Fix: use an exact canonical version such as 1.2.0 (no v-prefix, shorthand, tag, or build-only change).'
+  )
+}
+
+function formatMissingVersion(result: VersionSkewCheckResult): string {
+  const verdict = result.verdict
+  if (verdict.code !== MISSING_VERSION) throw new Error('expected a missing-version verdict')
+  return (
+    `${comparedLine(result)}\n` +
+    `FATAL: the ${verdict.which} extension-api package has no readable canonical "version" field.\n` +
+    `Fix: restore ${EXTENSION_API_PACKAGE_JSON} with a canonical version before running this check again.`
+  )
+}
+
+function formatBaseDefectNotice(result: VersionSkewCheckResult): string {
+  const verdict = result.verdict
+  if (
+    (verdict.code === INVALID_SEMVER || verdict.code === MISSING_VERSION) &&
+    verdict.which === MERGE_BASE_COMPARISON
+  ) {
+    const owner = baseOwnerLabel(result.baseRef)
+    return `FATAL: the defect is on ${owner}, not in this PR; whoever can land a correction on ${owner} must repair the malformed extension-api package.`
+  }
+  return ''
+}
+
+function formatFailure(result: VersionSkewCheckResult): string {
+  const verdict = result.verdict
+  const baseNotice = formatBaseDefectNotice(result)
+  const detail =
+    verdict.code === UNRESOLVABLE_RANGE
+      ? formatUnresolvableRange(result)
+      : verdict.code === 'no-bump'
+        ? formatNoBump(result)
+        : verdict.code === NOT_GREATER_THAN_MERGE_BASE
+          ? formatDowngrade(result)
+          : verdict.code === INVALID_SEMVER
+            ? formatInvalidSemver(result)
+            : formatMissingVersion(result)
+  return baseNotice ? `${baseNotice}\n${detail}` : detail
+}
+
 export function report(result: VersionSkewCheckResult): void {
   if (result.verdict.ok) {
     if (result.baseWarning) process.stderr.write(`${result.baseWarning}\n`)
@@ -362,62 +465,19 @@ export function report(result: VersionSkewCheckResult): void {
     return
   }
 
-  const verdict = result.verdict
-  if (verdict.code === UNRESOLVABLE_RANGE) {
-    process.stderr.write(
-      `FATAL: ${comparedLine(result)}\nWhy: the diff range is unresolvable. ${verdict.detail}\n` +
-        'Fix: run this check from a non-shallow clone with a resolvable base ref (main for local runs).\n' +
-        'Reproduce locally: pnpm check-extension-api-version-skew\n'
-    )
-    process.exitCode = 1
-    return
-  }
-
-  const brokenBase =
-    (verdict.code === INVALID_SEMVER || verdict.code === MISSING_VERSION) &&
-    verdict.which === MERGE_BASE_COMPARISON
-  if (brokenBase) {
-    const baseOwner =
-      result.baseRef === 'main' || result.baseRef.endsWith('/main') ? 'main' : result.baseRef
-    process.stderr.write(
-      `FATAL: the defect is on ${baseOwner}, not in this PR; whoever can land a correction on ${baseOwner} must repair the malformed extension-api package.\n`
-    )
-  }
-  process.stderr.write(`${comparedLine(result)}\n`)
-  if (verdict.code === 'no-bump') {
-    const next = suggestion(verdict.base, verdict.head)
-    process.stderr.write(
-      `FATAL: packages/extension-api contract files changed, but "version" is ${verdict.base} on both sides of this comparison.\n` +
-        'Either this branch never bumped the version, or it bumped to a number another PR merged to main first.\n' +
-        'Versions are allocated at MERGE, not at planning (Story 23.6).\n\n' +
-        'Fix:\n  1. git fetch origin && git rebase origin/main\n' +
-        `  2. Set "version" to ${next ?? 'a canonical version greater than the merge-base version'} in ${EXTENSION_API_PACKAGE_JSON} (the next free version as of this run; re-run after rebasing).\n` +
-        '  3. Keep EXTENSION_API_VERSION in packages/extension-api/src/manifest.ts equal to that version.\n\n'
-    )
-  } else if (verdict.code === 'not-greater-than-merge-base') {
-    const next = suggestion(verdict.base, verdict.head)
-    process.stderr.write(
-      `FATAL: the head version ${verdict.head} is not greater than the merge-base version ${verdict.base}.\n` +
-        'This is a downgrade — for example, a revert. Versions roll forward, never backward: a revert of ' +
-        `${verdict.base}'s changes ships as ${next ?? 'a greater canonical version'} (or a patch release), not as a return to an older version.\n` +
-        `Fix: set the version field to a number greater than ${verdict.base}.\n\n`
-    )
-  } else if (verdict.code === 'invalid-semver') {
-    process.stderr.write(
-      `FATAL: ${verdict.which} version ${JSON.stringify(verdict.value)} is not canonical semver.\n` +
-        'Fix: use an exact canonical version such as 1.2.0 (no v-prefix, shorthand, tag, or build-only change).\n\n'
-    )
-  } else {
-    process.stderr.write(
-      `FATAL: the ${verdict.which} extension-api package has no readable canonical "version" field.\n` +
-        `Fix: restore ${EXTENSION_API_PACKAGE_JSON} with a canonical version before running this check again.\n\n`
-    )
-  }
+  process.stderr.write(`${formatFailure(result)}\n`)
   for (const file of result.changedContractFiles) process.stderr.write(`  - ${file}\n`)
   process.stderr.write('\nReproduce locally: pnpm check-extension-api-version-skew\n')
   process.exitCode = 1
 }
 
+export function main(
+  repoRoot: string = process.cwd(),
+  env: Partial<NodeJS.ProcessEnv> = process.env
+): void {
+  report(runVersionSkewCheck(repoRoot, resolveDiffRange(env), env))
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  report(runVersionSkewCheck(process.cwd(), resolveDiffRange()))
+  main()
 }

@@ -13,6 +13,7 @@ import {
   getChangedFiles,
   getFileVersionAtRef,
   hasExtensionApiSrcChange,
+  main,
   report,
   resolveDiffRange,
   runVersionSkewCheck,
@@ -50,7 +51,7 @@ function makeGitFixtureRepo(options: { withPackage?: boolean } = {}): {
   const root = mkdtempSync(join(tmpdir(), 'extension-api-version-skew-'))
   tempRoots.push(root)
   git(root, ['init', '--initial-branch=main'])
-  git(root, ['config', 'user.email', 'test@example.com'])
+  git(root, ['config', 'user.email', 'test@invalid'])
   git(root, ['config', 'user.name', 'Test'])
   if (options.withPackage !== false) writePackage(root, '1.0.0')
   writeFixture(root, SRC_INDEX_PATH, 'export const original = true\n')
@@ -389,7 +390,7 @@ describe('git-backed helpers (real temporary git repositories)', () => {
       EXTENSION_API_SKEW_ALLOW_BROKEN_BASE: '1',
     })
     expect(escaped.verdict).toEqual({ ok: true, reason: 'new-package', to: '1.0.1' })
-    expect(escaped.baseWarning).toContain('defect is on main')
+    expect(escaped.baseWarning).toContain(`defect is on ${brokenBase}`)
   })
 
   it('returns unresolvable-range with the git error instead of passing', () => {
@@ -402,6 +403,16 @@ describe('git-backed helpers (real temporary git repositories)', () => {
     expect(result.verdict.ok).toBe(false)
     expect(result.verdict).toMatchObject({ code: 'unresolvable-range' })
     expect((result.verdict as { detail: string }).detail).toMatch(/does-not-exist/)
+  })
+
+  it('sets the CLI exit code for an unresolvable range', () => {
+    const { root } = makeGitFixtureRepo()
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+    main(root, { GITHUB_BASE_REF: 'does-not-exist', GITHUB_SHA: 'HEAD' })
+
+    expect(process.exitCode).toBe(1)
+    expect(stderr.mock.calls.map(([value]) => String(value)).join('')).toContain('unresolvable')
   })
 
   it('handles a direct push to main with HEAD^1 and fails a no-bump', () => {
@@ -452,7 +463,7 @@ describe('git-backed helpers (real temporary git repositories)', () => {
     const root = mkdtempSync(join(tmpdir(), 'extension-api-version-skew-root-'))
     tempRoots.push(root)
     git(root, ['init', '--initial-branch=main'])
-    git(root, ['config', 'user.email', 'test@example.com'])
+    git(root, ['config', 'user.email', 'test@invalid'])
     git(root, ['config', 'user.name', 'Test'])
     writeFixture(root, SRC_INDEX_PATH, CHANGED_SRC_CONTENT)
     const head = commit(root, 'root')
@@ -538,6 +549,8 @@ describe('report', () => {
     const output = stderr.mock.calls.map(([value]) => String(value)).join('')
     expect(output).toContain('1.2.0')
     expect(output).toContain('as of this run')
+    expect(output).toContain('EXTENSION_API_VERSION')
+    expect(output).toContain('packages/extension-api/src/manifest.ts')
     expect(output).toContain('Reproduce locally: pnpm check-extension-api-version-skew')
   })
 
