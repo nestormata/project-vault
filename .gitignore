@@ -17,6 +17,10 @@ build/
 coverage/
 .nyc_output/
 
+# Story 22.4 — scripts/audit-quota-isolation-bench.ts's JSON artifacts (raw, per-run measurement
+# data; the human-readable summary lives in docs/operations/audit-quota-degradation-strategy.md)
+scripts/.bench-output/
+
 # Stryker
 .stryker-tmp/
 reports/
