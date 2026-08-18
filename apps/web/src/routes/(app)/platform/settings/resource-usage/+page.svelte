@@ -84,6 +84,20 @@
     const trimmedRate = String(rateValue ?? '').trim()
     const writeRatePerMinute = trimmedRate === '' ? null : Number(trimmedRate)
 
+    // Code-review finding: `Number()` on a malformed/overflow input (e.g. "1e400") yields
+    // `Infinity`/`NaN`, neither of which is caught by the below-usage check below (both
+    // comparisons are vacuously false), and `JSON.stringify(Infinity | NaN)` silently serializes
+    // to `null` on the wire — indistinguishable from an intentional "clear to unlimited" request,
+    // which would bypass AC-4's overcommit check entirely. Reject non-finite/unsafe values here,
+    // before any request is built, rather than let them silently round-trip to "unlimited".
+    if (
+      (quotaBytes !== null && !Number.isSafeInteger(quotaBytes)) ||
+      (writeRatePerMinute !== null && !Number.isSafeInteger(writeRatePerMinute))
+    ) {
+      saveError = 'Enter a valid, finite number.'
+      return
+    }
+
     // Second-Order Thinking finding (elicitation round 4): a fat-fingered low quota immediately
     // blocks the org's audit writes — confirm before submitting, client-side only (the API itself
     // must still accept the request unconditionally per AC-3's own required test).

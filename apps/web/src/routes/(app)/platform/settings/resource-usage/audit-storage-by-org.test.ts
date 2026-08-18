@@ -208,6 +208,21 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
     await waitFor(() => expect(setOrgAuditQuotaMock).toHaveBeenCalledTimes(1))
   })
 
+  it('code-review finding: a huge-but-finite quota input beyond Number.MAX_SAFE_INTEGER is rejected client-side with a clear error, instead of round-tripping to a raw 422', async () => {
+    render(ResourceUsagePage, { props: { data: allowedData(usageWith([OK_ORG])) } })
+
+    await fireEvent.click(screen.getByRole('button', { name: /edit/i }))
+    const quotaInput = screen.getAllByPlaceholderText(/unlimited/i)[0] as HTMLInputElement
+    // 9e20 GB * 1024^3 is finite (well under Number.MAX_VALUE, so a `type="number"` input
+    // accepts it) but far exceeds Number.MAX_SAFE_INTEGER — the same boundary the server's
+    // `SetOrgAuditQuotaRequestSchema` rejects with a 422 (AC-3's safe-integer edge case).
+    await fireEvent.input(quotaInput, { target: { value: '900000000000000000000' } })
+    await fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(setOrgAuditQuotaMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/valid, finite number/i)).toBeTruthy()
+  })
+
   it('AC-5: an overcommit 422 shows the confirm-and-acknowledge flow, and acknowledging resubmits with acknowledgeOvercommit: true', async () => {
     setOrgAuditQuotaMock
       .mockRejectedValueOnce(
