@@ -121,6 +121,34 @@ export type OrgListResponse = z.infer<typeof OrgListResponseSchema>
 
 // ---- GET /admin/resource-usage ----------------------------------------------------------------
 
+// Story 22.3 AC-1: per-org audit-storage visibility, additive to the existing response.
+export const OrgAuditStateSchema = z.enum([
+  'unlimited',
+  'ok',
+  'warning',
+  'critical',
+  'blocked',
+  'stale',
+])
+
+export const AuditStorageOrgRowSchema = z.object({
+  orgId: z.string(),
+  orgName: z.string(),
+  bytesUsed: z.number(),
+  preauthBytesUsed: z.number(),
+  quotaBytes: z.number().nullable(),
+  utilizationPct: z.number().nullable(),
+  refusedWriteCount: z.number().int(),
+  lastRefusalAt: z.string().nullable(),
+  lastReconciledAt: z.string().nullable(),
+  writeRatePerMinute: z.number().nullable(),
+  rateWindowCount: z.number().int(),
+  rateRefusedCount: z.number().int(),
+  state: OrgAuditStateSchema,
+})
+
+export type AuditStorageOrgRow = z.infer<typeof AuditStorageOrgRowSchema>
+
 export const ResourceUsageResponseSchema = z.object({
   orgs: z.object({ current: z.number().int(), limit: z.number().int().nullable() }),
   usersPerOrg: z.array(
@@ -144,6 +172,43 @@ export const ResourceUsageResponseSchema = z.object({
     limitBytes: z.number(),
     utilizationPct: z.number(),
   }),
+  // Story 22.3 AC-1/AC-4/AC-7: additive fields — per-org audit-storage rows, the cap/truncation
+  // indicator, and the aggregate-allocation (overcommit) figures shown on every GET (not only
+  // computed on write).
+  auditStorageByOrg: z.array(AuditStorageOrgRowSchema),
+  truncated: z.boolean(),
+  allocatedLogicalBytes: z.number(),
+  estimatedPhysicalBytes: z.number(),
+  allocationIncludesUnlimitedOrgs: z.boolean(),
+  observedPhysicalToLogicalRatio: z.number().nullable(),
 })
 
 export type ResourceUsageResponse = z.infer<typeof ResourceUsageResponseSchema>
+
+// ---- PUT /admin/orgs/:orgId/audit-quota -------------------------------------------------------
+
+export const OrgIdParamsSchema = z.object({ orgId: z.string() })
+
+const SAFE_INTEGER_MSG = 'must be a safe integer (bigint values beyond 2^53-1 are not supported)'
+
+export const SetOrgAuditQuotaRequestSchema = z.object({
+  quotaBytes: z
+    .union([z.number().int().positive().refine(Number.isSafeInteger, SAFE_INTEGER_MSG), z.null()])
+    .optional(),
+  writeRatePerMinute: z
+    .union([z.number().int().positive().refine(Number.isSafeInteger, SAFE_INTEGER_MSG), z.null()])
+    .optional(),
+  acknowledgeOvercommit: z.boolean().optional(),
+})
+
+export type SetOrgAuditQuotaRequest = z.infer<typeof SetOrgAuditQuotaRequestSchema>
+
+export const QuotaOvercommitErrorSchema = z.object({
+  code: z.literal('quota_overcommit'),
+  message: z.string(),
+  allocatedLogicalBytes: z.number(),
+  estimatedPhysicalBytes: z.number(),
+  instanceLimitBytes: z.number(),
+  requestedBytes: z.number(),
+  allocationIncludesUnlimitedOrgs: z.boolean(),
+})

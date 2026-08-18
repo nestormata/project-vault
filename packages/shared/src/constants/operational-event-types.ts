@@ -199,6 +199,14 @@ export const OperationalEvent = {
   // platform_audit_events retrofit (same D6 pattern Story 9.1 established for backup/restore).
   PLATFORM_SETTINGS_UPDATED: 'platform_admin.settings_updated',
   PLATFORM_ORG_CREATED: 'platform_admin.org_created',
+  // Story 22.3 AC-12: PUT /admin/orgs/:orgId/audit-quota's operational-visibility log — separate
+  // from (and in addition to) the compliance-grade platform_audit_events/audit_log_entries dual
+  // write `setOrgAuditQuota()` performs. Lets an SRE reconstruct "who changed what org's quota and
+  // when" without needing platform-operator audit-log access.
+  PLATFORM_AUDIT_QUOTA_UPDATED: 'platform_admin.audit_quota_updated',
+  // AC-12: a distinct event/outcome for an overcommit REJECTION (422), logged at 'warn' — lets an
+  // SRE reconstruct "who tried to overcommit this instance and when" during an incident.
+  PLATFORM_AUDIT_QUOTA_OVERCOMMIT_REJECTED: 'platform_admin.audit_quota_overcommit_rejected',
   // AC-17/D10: the audit-storage maintenance-mode circuit breaker.
   AUDIT_WRITE_SUSPENDED: 'audit.write_suspended',
   AUDIT_STORAGE_MAINTENANCE_MODE_ENTERED: 'audit_storage.maintenance_mode_entered',

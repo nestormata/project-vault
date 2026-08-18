@@ -273,3 +273,48 @@ This is the same reasoning as Story 22.1's own non-influenceability invariant: a
 attacker who can generate `LOGIN_FAILED` volume must not be able to drive any organization's rate
 counter past its cap. Routing pre-auth-attributable volume to a separate, unenforced counter closes
 that channel for rate exactly as `preauth_bytes_used` closed it for storage.
+
+## Physical-overhead estimate (Story 22.3)
+
+Story 22.1's AC-27 assigned this obligation to Story 22.3: declare, measure (or honestly disclose
+an unmeasured default for), and document `AUDIT_ORG_QUOTA_PHYSICAL_OVERHEAD_ESTIMATE` — the
+logical-to-physical multiplier the resource-usage page's aggregate-allocation (overcommit) bound
+uses to convert Σ per-org `quota_bytes` (logical, row-data-only) into an estimated physical-bytes
+figure comparable against `AUDIT_LOG_STORAGE_LIMIT_GB`.
+
+**Measurement spike attempted, no representative dataset available.** This story's implementation
+session ran the measurement query —
+
+```sql
+SELECT pg_total_relation_size('audit_log_entries')::float8 /
+       NULLIF(SUM(pg_column_size(t.*)), 0) AS ratio
+FROM audit_log_entries t
+```
+
+— against this worktree's own development database. That database had **zero** rows in
+`audit_log_entries` visible to the query's connection at the time of measurement (a fresh
+per-worktree Postgres instance, RLS-scoped, with no seeded production-like volume) — a result that
+is not just unrepresentative but computes to `NULL` (division by zero, guarded by `NULLIF`), so no
+usable ratio could be derived from it. No other realistic-volume database (staging or production)
+was reachable from this implementation environment.
+
+**Accepted fallback, per AC-8's own documented escape hatch:**
+`AUDIT_ORG_QUOTA_PHYSICAL_OVERHEAD_ESTIMATE` defaults to **`3.0`** —
+`apps/api/src/config/env.ts`'s own comment on this var states this plainly. `3.0` is **not** a
+measurement; it is Story 22.1's AC-27 illustrative figure ("an operator wanting to give an org
+~3 GB of real disk sets a 1 GB logical quota"), reused here as an honestly-disclosed placeholder
+rather than a silently-guessed number. This satisfies AC-8's actual requirement (a
+measure-or-disclose *process*, not a specific output value) but does **not** satisfy the spirit of
+having a real measurement backing the enforced bound.
+
+**Tracked follow-up (Open Question, this story's Dev Notes):** re-run the measurement query above
+against a production or production-like staging database with a realistic volume of rows (hundreds
+to thousands, spanning varied event types and payload sizes — a near-empty table's ratio is
+dominated by fixed per-relation overhead, TOAST, and index-existence and will not generalize), and
+update `AUDIT_ORG_QUOTA_PHYSICAL_OVERHEAD_ESTIMATE`'s default in `apps/api/src/config/env.ts`
+accordingly. Until that re-measurement happens, the resource-usage page's `observedPhysicalToLogicalRatio`
+diagnostic (AC-1/AC-7 — `auditLogStorage.currentBytes ÷ Σ auditStorageByOrg[].bytesUsed`, computed
+fresh on every `GET /admin/resource-usage`) is the mechanism by which a maintainer or operator on a
+real instance can see whether the static `3.0` estimate has drifted from reality and knows to
+re-run this measurement — see AC-7's Pre-mortem finding for the full rationale. This diagnostic
+value is read-only and is never fed back into the env default automatically.

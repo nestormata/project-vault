@@ -913,6 +913,10 @@ const envSchema = z
     // pg_total_relation_size('audit_log_entries') is compared against this (the real table
     // name; epics.md's literal 'audit_events' has never existed in this codebase, see D5).
     AUDIT_LOG_STORAGE_LIMIT_GB: z.coerce.number().positive().default(50),
+    // Story 22.3 AC-1: caps + sorts GET /admin/resource-usage's per-org audit-storage array so an
+    // instance with hundreds of orgs can't force the operator's own browser to render an
+    // unbounded table; `truncated` on the response tells the UI when this cap actually bit.
+    PLATFORM_RESOURCE_USAGE_ORG_LIST_CAP: z.coerce.number().int().positive().default(500),
     // Story 9.2 D8/AC-20/AC-21: weekly master-key custody-age trigger threshold.
     KEY_ROTATION_MAX_AGE_DAYS: z.coerce.number().int().positive().default(365),
     // Story 9.4 AC-17: same validation pattern as INBOX_RETENTION_DAYS — independent of Story
@@ -935,6 +939,15 @@ const envSchema = z
     AUDIT_ORG_USAGE_STALE_AFTER_HOURS: z.coerce.number().positive().default(240),
     // 0 = alert disabled.
     AUDIT_ORG_PREAUTH_ALERT_THRESHOLD_MB: z.coerce.number().min(0).default(0),
+    // Story 22.3 AC-8: display/allocation-only estimate of physical-vs-logical audit-storage
+    // overhead (indexes, TOAST, padding) — feeds ONLY the aggregate-allocation (overcommit) bound
+    // shown on the resource-usage page and enforced by PUT /admin/orgs/:orgId/audit-quota; NEVER
+    // read by quota-gate.ts's enforcement path. Default `3.0` is AC-27's own illustrative figure
+    // (Story 22.1), used here because no representative dataset was available in this
+    // implementation environment to run the measurement spike — see
+    // docs/operations/audit-quota-degradation-strategy.md's "Physical-overhead estimate (Story
+    // 22.3)" subsection for the full disclosure and the re-measurement follow-up.
+    AUDIT_ORG_QUOTA_PHYSICAL_OVERHEAD_ESTIMATE: z.coerce.number().positive().default(3.0),
 
     // Story 22.2 AC-3: per-org write-RATE (throughput) limiting — a SECOND, INDEPENDENT gate from
     // AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED above. Enabling one does NOT enable the other. Kill

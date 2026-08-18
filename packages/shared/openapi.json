@@ -34459,6 +34459,104 @@
                         "utilizationPct"
                       ],
                       "additionalProperties": false
+                    },
+                    "auditStorageByOrg": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "orgId": {
+                            "type": "string"
+                          },
+                          "orgName": {
+                            "type": "string"
+                          },
+                          "bytesUsed": {
+                            "type": "number"
+                          },
+                          "preauthBytesUsed": {
+                            "type": "number"
+                          },
+                          "quotaBytes": {
+                            "nullable": true,
+                            "type": "number"
+                          },
+                          "utilizationPct": {
+                            "nullable": true,
+                            "type": "number"
+                          },
+                          "refusedWriteCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "lastRefusalAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "lastReconciledAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "writeRatePerMinute": {
+                            "nullable": true,
+                            "type": "number"
+                          },
+                          "rateWindowCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "rateRefusedCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "unlimited",
+                              "ok",
+                              "warning",
+                              "critical",
+                              "blocked",
+                              "stale"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "orgId",
+                          "orgName",
+                          "bytesUsed",
+                          "preauthBytesUsed",
+                          "quotaBytes",
+                          "utilizationPct",
+                          "refusedWriteCount",
+                          "lastRefusalAt",
+                          "lastReconciledAt",
+                          "writeRatePerMinute",
+                          "rateWindowCount",
+                          "rateRefusedCount",
+                          "state"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "allocatedLogicalBytes": {
+                      "type": "number"
+                    },
+                    "estimatedPhysicalBytes": {
+                      "type": "number"
+                    },
+                    "allocationIncludesUnlimitedOrgs": {
+                      "type": "boolean"
+                    },
+                    "observedPhysicalToLogicalRatio": {
+                      "nullable": true,
+                      "type": "number"
                     }
                   },
                   "required": [
@@ -34467,7 +34565,13 @@
                     "secretsPerProject",
                     "auditLogEntries",
                     "storageBytes",
-                    "auditLogStorage"
+                    "auditLogStorage",
+                    "auditStorageByOrg",
+                    "truncated",
+                    "allocatedLogicalBytes",
+                    "estimatedPhysicalBytes",
+                    "allocationIncludesUnlimitedOrgs",
+                    "observedPhysicalToLogicalRatio"
                   ],
                   "additionalProperties": false
                 }
@@ -34490,6 +34594,273 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/orgs/{orgId}/audit-quota": {
+      "put": {
+        "tags": [
+          "Platform Admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "quotaBytes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          null
+                        ]
+                      }
+                    ]
+                  },
+                  "writeRatePerMinute": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          null
+                        ]
+                      }
+                    ]
+                  },
+                  "acknowledgeOvercommit": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "orgId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orgId": {
+                      "type": "string"
+                    },
+                    "orgName": {
+                      "type": "string"
+                    },
+                    "bytesUsed": {
+                      "type": "number"
+                    },
+                    "preauthBytesUsed": {
+                      "type": "number"
+                    },
+                    "quotaBytes": {
+                      "nullable": true,
+                      "type": "number"
+                    },
+                    "utilizationPct": {
+                      "nullable": true,
+                      "type": "number"
+                    },
+                    "refusedWriteCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "lastRefusalAt": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "lastReconciledAt": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "writeRatePerMinute": {
+                      "nullable": true,
+                      "type": "number"
+                    },
+                    "rateWindowCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "rateRefusedCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "unlimited",
+                        "ok",
+                        "warning",
+                        "critical",
+                        "blocked",
+                        "stale"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "orgId",
+                    "orgName",
+                    "bytesUsed",
+                    "preauthBytesUsed",
+                    "quotaBytes",
+                    "utilizationPct",
+                    "refusedWriteCount",
+                    "lastRefusalAt",
+                    "lastReconciledAt",
+                    "writeRatePerMinute",
+                    "rateWindowCount",
+                    "rateRefusedCount",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "quota_overcommit"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "allocatedLogicalBytes": {
+                          "type": "number"
+                        },
+                        "estimatedPhysicalBytes": {
+                          "type": "number"
+                        },
+                        "instanceLimitBytes": {
+                          "type": "number"
+                        },
+                        "requestedBytes": {
+                          "type": "number"
+                        },
+                        "allocationIncludesUnlimitedOrgs": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "allocatedLogicalBytes",
+                        "estimatedPhysicalBytes",
+                        "instanceLimitBytes",
+                        "requestedBytes",
+                        "allocationIncludesUnlimitedOrgs"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiError"
+                    }
+                  ]
                 }
               }
             }

@@ -18,6 +18,8 @@ const PLATFORM_ADMIN_ROUTE_FILES = [
   'modules/platform-admin/settings-routes.ts',
   'modules/platform-admin/orgs-routes.ts',
   'modules/platform-admin/resource-usage-routes.ts',
+  // Story 22.3 AC-11: the new PUT /admin/orgs/:orgId/audit-quota route file.
+  'modules/platform-admin/audit-quota-routes.ts',
 ]
 const ORG_SCOPED_ADMIN_ROUTE_FILE = 'modules/admin/routes.ts'
 

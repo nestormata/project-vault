@@ -554,6 +554,13 @@
       "when": 1787020203714,
       "tag": "0078_audit_log_entries_extension_actor_type",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1787024088104,
+      "tag": "0079_audit_storage_quota_config_admin_grant",
+      "breakpoints": true
     }
   ]
 }

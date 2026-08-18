@@ -41,6 +41,7 @@ import { backupRoutes } from './modules/backup/routes.js'
 import { settingsRoutes } from './modules/platform-admin/settings-routes.js'
 import { orgsRoutes } from './modules/platform-admin/orgs-routes.js'
 import { resourceUsageRoutes } from './modules/platform-admin/resource-usage-routes.js'
+import { auditQuotaRoutes } from './modules/platform-admin/audit-quota-routes.js'
 import { statusTokenRoutes } from './modules/platform-admin/status-token-routes.js'
 import { platformAuditRoutes } from './modules/platform-audit/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
@@ -328,6 +329,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(settingsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(orgsRoutes, { prefix: ADMIN_PREFIX })
   await fastify.register(resourceUsageRoutes, { prefix: ADMIN_PREFIX })
+  // Story 22.3 AC-3/AC-11: PUT /admin/orgs/:orgId/audit-quota — own file/registration, same
+  // route-audit.test.ts rationale as the sibling platform-admin registrations above.
+  await fastify.register(auditQuotaRoutes, { prefix: ADMIN_PREFIX })
   // Story 1.19 AC-5/AC-6: platform-operator+MFA-gated CRUD for the GET /status bearer token,
   // same route-audit.test.ts rationale as the sibling registrations above (own file, own
   // secureRoute() calls directly visible to the AST scan).
