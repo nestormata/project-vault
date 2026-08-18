@@ -27,7 +27,7 @@ export async function prunePlatformAuditEvents(logger?: WorkerLogger): Promise<v
     return Number((rows as unknown as { deleted: string }[])[0]?.deleted ?? 0)
   })
 
-  if (logger && deleted > 0) {
+  if (logger) {
     operationalLog(
       logger,
       'info',

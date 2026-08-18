@@ -561,6 +561,13 @@
       "when": 1787024088104,
       "tag": "0079_audit_storage_quota_config_admin_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1787071480868,
+      "tag": "0080_security_definer_function_grants",
+      "breakpoints": true
     }
   ]
 }

@@ -18,18 +18,18 @@ describe('Story 9.4 AC-17: prunePlatformAuditEvents worker', () => {
     expect(executeMock).toHaveBeenCalledTimes(1)
   })
 
-  it('logs a summary only when rows were actually deleted', async () => {
+  it('logs a summary when rows were deleted', async () => {
     const { prunePlatformAuditEvents } = await import('./platform-audit-retention-prune.js')
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     await prunePlatformAuditEvents(logger)
     expect(logger.info).toHaveBeenCalledTimes(1)
   })
 
-  it('does not log when zero rows were deleted', async () => {
+  it('logs a completed summary when zero rows were deleted', async () => {
     executeMock.mockResolvedValueOnce([{ deleted: '0' }])
     const { prunePlatformAuditEvents } = await import('./platform-audit-retention-prune.js')
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     await prunePlatformAuditEvents(logger)
-    expect(logger.info).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledTimes(1)
   })
 })
