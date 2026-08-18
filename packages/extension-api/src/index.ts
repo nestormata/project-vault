@@ -16,6 +16,13 @@ export type {
   CapabilityGate,
   CapabilityGateContext,
 } from './hooks/capability-gate.js'
+export type {
+  AuditEventSourceHost,
+  AuditEventSourceWriteInput,
+  AuditEventSourceWriteResult,
+} from './hooks/audit-event-source.js'
+
+export type { HostServices } from './host-services.js'
 
 export type { ExtensionCapability, ExtensionManifest } from './manifest.js'
 export {

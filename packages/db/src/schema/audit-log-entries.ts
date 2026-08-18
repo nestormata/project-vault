@@ -55,9 +55,12 @@ export const auditLogEntries = pgTable(
       t.eventType,
       t.createdAt
     ),
+    // Story 23.8 AC-8: widened to add 'extension' (an extension-authored row via
+    // writeExtensionAuditEntry()). Postgres cannot widen a CHECK constraint in place — see
+    // migration 0078's DROP CONSTRAINT/ADD CONSTRAINT pair (same reviewed pattern as 0047/0050).
     actorTypeCheck: check(
       'audit_log_entries_actor_type_check',
-      sql`${t.actorType} IN ('human','machine_user','system')`
+      sql`${t.actorType} IN ('human','machine_user','system','extension')`
     ),
   })
 )

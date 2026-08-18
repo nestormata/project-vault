@@ -26,4 +26,9 @@ describe('actorDisplayNameFor (AC-13 fallback chain)', () => {
     const map = new Map<string, string>()
     expect(actorDisplayNameFor('system', null, map)).toBe('system')
   })
+
+  it('falls back to the literal "extension" for an extension actor (null actor_token_id, Story 23.8 AC-2)', () => {
+    const map = new Map<string, string>()
+    expect(actorDisplayNameFor('extension', null, map)).toBe('extension')
+  })
 })

@@ -15,6 +15,10 @@ const MOCK_ENVELOPE_EXTENSION_PACKAGE_NAME = '@project-vault/mock-envelope-exten
 // Story 23.3 AC-28: the third reference fixture extension (capability gating) gets the same
 // guard as the two above.
 const MOCK_CAPABILITY_GATE_EXTENSION_PACKAGE_NAME = '@project-vault/mock-capability-gate-extension'
+// Story 23.8 AC-27: the fourth reference fixture extension (audit-event-source) gets the same
+// guard as the three above.
+const MOCK_AUDIT_EVENT_SOURCE_EXTENSION_PACKAGE_NAME =
+  '@project-vault/mock-audit-event-source-extension'
 const REPO_ROOT = resolve(process.cwd(), '../..')
 
 const PRODUCTION_CONFIG_FILES = [
@@ -35,6 +39,11 @@ describe.each([
     'mock-capability-gate-extension',
     MOCK_CAPABILITY_GATE_EXTENSION_PACKAGE_NAME,
     'fixtures/mock-capability-gate-extension/package.json',
+  ],
+  [
+    'mock-audit-event-source-extension',
+    MOCK_AUDIT_EVENT_SOURCE_EXTENSION_PACKAGE_NAME,
+    'fixtures/mock-audit-event-source-extension/package.json',
   ],
 ])(
   '%s is never referenced by production config (AC-12/Story 23.2 AC-15)',

@@ -547,6 +547,13 @@
       "when": 1786999370915,
       "tag": "0077_audit_org_write_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1787020203714,
+      "tag": "0078_audit_log_entries_extension_actor_type",
+      "breakpoints": true
     }
   ]
 }

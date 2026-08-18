@@ -23,6 +23,9 @@ import {
   getCapabilityGateCounters,
   getCapabilityGateName,
 } from '../lib/capability-gate.js'
+import { getExtensionStatus } from '../extensions/loader.js'
+import { getAuditEventSourceCounters } from '../lib/audit-event-source.js'
+import type { AuditEventSourceCounters } from '../lib/audit-event-source.js'
 
 // AC-1/AC-7: same reason-code vocabulary the checks in modules/status/service.ts emit — kept as
 // a plain string, not an enum, so it stays a stable public contract independent of internal
@@ -48,6 +51,17 @@ const CapabilityGateStatusSchema = z.object({
   }),
 })
 
+// Story 23.8 AC-24: audit-event-source hook counters, on this token-gated operational surface
+// only — same absent-when-not-registered rule as CapabilityGateStatusSchema above. Never keyed
+// by orgId or eventType (unbounded cardinality) — see audit-event-source.ts's counters comment.
+const AuditEventSourceStatusSchema = z.object({
+  counters: z.object({
+    writes: z.number(),
+    succeeded: z.number(),
+    rejected: z.number(),
+  }),
+})
+
 const StatusResponseSchema = z.object({
   status: z.enum(['healthy', 'degraded', 'unavailable']),
   version: z.string(),
@@ -58,6 +72,7 @@ const StatusResponseSchema = z.object({
     disk: CheckResultSchema,
   }),
   capabilityGate: CapabilityGateStatusSchema.optional(),
+  auditEventSource: AuditEventSourceStatusSchema.optional(),
 })
 
 // AC-4: every failure mode (missing token when required, malformed header, wrong token, revoked
@@ -100,6 +115,20 @@ function extractBearerToken(header: string | string[] | undefined): string | und
   if (typeof header !== 'string') return undefined
   const match = /^Bearer\s+(\S+)$/i.exec(header)
   return match?.[1]
+}
+
+// Story 23.8 AC-24: absent entirely (not present-with-zeros) unless the loaded extension's own
+// manifest declares 'audit-event-source' — mirrors CapabilityGateStatusSchema's
+// absent-when-unregistered rule. Extracted from the route handler to keep its cyclomatic
+// complexity within this repo's lint budget.
+function buildAuditEventSourceStatusField():
+  { auditEventSource: { counters: AuditEventSourceCounters } } | Record<string, never> {
+  const extensionState = getExtensionStatus()
+  const declaresAuditEventSource =
+    extensionState.status === 'loaded' &&
+    extensionState.manifest.capabilities.includes('audit-event-source')
+  if (!declaresAuditEventSource) return {}
+  return { auditEventSource: { counters: getAuditEventSourceCounters() } }
 }
 
 type AuthOutcome = { allowed: true; tokenId?: string } | { allowed: false; status: 401 | 404 }
@@ -226,6 +255,7 @@ export async function statusRoutes(
               },
             }
           : {}),
+        ...buildAuditEventSourceStatusField(),
       }
 
       if (status === 'healthy') {

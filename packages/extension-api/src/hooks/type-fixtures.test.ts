@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { nonPromiseAuthStrategyFixture } from './type-fixtures.js'
+import {
+  nonPromiseAuthStrategyFixture,
+  txShapedWriteInputFixture,
+  hmacCarryingWriteInputFixture,
+} from './type-fixtures.js'
 
 describe('AC3 — Promise-typed hook methods (compile-time negative fixture)', () => {
   it('exists purely to be typechecked by `tsc --noEmit` (pnpm turbo typecheck / make ci)', () => {
@@ -9,5 +13,12 @@ describe('AC3 — Promise-typed hook methods (compile-time negative fixture)', (
     // directive" error instead — turning a silent interface regression into a build failure.
     // This runtime test only proves the fixture module itself loads without error.
     expect(nonPromiseAuthStrategyFixture).toBeDefined()
+  })
+})
+
+describe('Story 23.8 AC-2/AC-10 — AuditEventSourceWriteInput carries serializable data only', () => {
+  it('exists purely to be typechecked — a Tx-shaped or hmac-carrying object must fail to satisfy AuditEventSourceWriteInput', () => {
+    expect(txShapedWriteInputFixture).toBeDefined()
+    expect(hmacCarryingWriteInputFixture).toBeDefined()
   })
 })

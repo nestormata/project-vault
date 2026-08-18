@@ -4,6 +4,7 @@ import {
   __resetCapabilityGateForTests,
   wireExtensionCapabilityGate,
 } from '../lib/capability-gate.js'
+import { __resetExtensionStateForTests, __setExtensionStateForTests } from '../extensions/loader.js'
 
 const TEST_GATE_MANIFEST_NAME = 'com.example.ext'
 
@@ -188,6 +189,53 @@ describe('GET /status', () => {
       expect(res.statusCode).toBe(503)
       const body = res.json<{ capabilityGate?: { gate: { name: string } | null } }>()
       expect(body.capabilityGate?.gate).toEqual({ name: TEST_GATE_MANIFEST_NAME })
+      await app.close()
+    })
+  })
+
+  describe('Story 23.8 AC-24: auditEventSource observability', () => {
+    afterEach(() => __resetExtensionStateForTests())
+
+    it('auditEventSource is ABSENT entirely when no extension declares audit-event-source', async () => {
+      const app = await createApp({ logger: false, dbPool: okDbPool })
+      const res = await app.inject({ method: 'GET', url: '/status' })
+      const body = res.json<Record<string, unknown>>()
+      expect(Object.keys(body)).not.toContain('auditEventSource')
+      await app.close()
+    })
+
+    it('auditEventSource is ABSENT when a different extension is loaded without the capability', async () => {
+      const app = await createApp({ logger: false, dbPool: okDbPool })
+      __setExtensionStateForTests({
+        status: 'loaded',
+        manifest: { name: TEST_GATE_MANIFEST_NAME, apiVersion: '1.4.0', capabilities: [] },
+        loadedAt: new Date().toISOString(),
+        hooks: {},
+      })
+      const res = await app.inject({ method: 'GET', url: '/status' })
+      const body = res.json<Record<string, unknown>>()
+      expect(Object.keys(body)).not.toContain('auditEventSource')
+      await app.close()
+    })
+
+    it('auditEventSource reports counters when the loaded extension declares audit-event-source', async () => {
+      const app = await createApp({ logger: false, dbPool: okDbPool })
+      __setExtensionStateForTests({
+        status: 'loaded',
+        manifest: {
+          name: TEST_GATE_MANIFEST_NAME,
+          apiVersion: '1.4.0',
+          capabilities: ['audit-event-source'],
+        },
+        loadedAt: new Date().toISOString(),
+        hooks: {},
+      })
+      const res = await app.inject({ method: 'GET', url: '/status' })
+      const body = res.json<{
+        auditEventSource?: { counters: Record<string, number> }
+      }>()
+      expect(body.auditEventSource).toBeDefined()
+      expect(body.auditEventSource?.counters).toEqual({ writes: 0, succeeded: 0, rejected: 0 })
       await app.close()
     })
   })

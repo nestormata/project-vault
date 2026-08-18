@@ -355,7 +355,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     expect(logger?.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         declaredApiVersion: '1.5.0',
-        hostApiVersion: '1.3.0',
+        hostApiVersion: '1.4.0',
         flag: 'VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST',
       }),
       expect.any(String)

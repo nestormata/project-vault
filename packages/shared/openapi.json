@@ -20479,6 +20479,35 @@
                         "counters"
                       ],
                       "additionalProperties": false
+                    },
+                    "auditEventSource": {
+                      "type": "object",
+                      "properties": {
+                        "counters": {
+                          "type": "object",
+                          "properties": {
+                            "writes": {
+                              "type": "number"
+                            },
+                            "succeeded": {
+                              "type": "number"
+                            },
+                            "rejected": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "writes",
+                            "succeeded",
+                            "rejected"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "counters"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -20686,6 +20715,35 @@
                       },
                       "required": [
                         "gate",
+                        "counters"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "auditEventSource": {
+                      "type": "object",
+                      "properties": {
+                        "counters": {
+                          "type": "object",
+                          "properties": {
+                            "writes": {
+                              "type": "number"
+                            },
+                            "succeeded": {
+                              "type": "number"
+                            },
+                            "rejected": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "writes",
+                            "succeeded",
+                            "rejected"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
                         "counters"
                       ],
                       "additionalProperties": false
@@ -34993,7 +35051,8 @@
                               "auth-provider",
                               "notification-channel",
                               "ui-panel",
-                              "capability-gate"
+                              "capability-gate",
+                              "audit-event-source"
                             ]
                           }
                         },

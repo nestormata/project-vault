@@ -5,6 +5,7 @@ import { EXTENSION_API_VERSION, HOST_SUPPORTED_EXTENSION_API_RANGE } from './man
 import type { ExtensionManifest } from './manifest.js'
 import { isExtensionApiVersionSupported, registerExtension } from './register-extension.js'
 import type { ExtensionHooks } from './register-extension.js'
+import type { HostServices } from './host-services.js'
 
 const VALID_NAME = 'com.acme.sso-extension'
 const INCOMPATIBLE_API_VERSION = '2.0.0'
@@ -125,6 +126,25 @@ describe('registerExtension — validation ordering (name before semver)', () =>
   })
 })
 
+describe('registerExtension — AC-4 default HostServices (no host argument supplied)', () => {
+  it('a hooksFactory that calls the default host.auditEventSource.writeAuditEvent gets a rejected promise, never a silent no-op', async () => {
+    let hostWriteAuditEvent: (() => Promise<unknown>) | undefined
+    const hooksFactory = vi.fn((host: HostServices): ExtensionHooks => {
+      hostWriteAuditEvent = () =>
+        host.auditEventSource.writeAuditEvent({
+          eventType: 'ext.com.acme.foo.bar',
+          orgId: 'org_1',
+          payload: {},
+        })
+      return {}
+    })
+
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.hooks).toEqual({})
+    await expect(hostWriteAuditEvent?.()).rejects.toThrow(/without a real HostServices/)
+  })
+})
+
 describe('registerExtension — hooksFactory laziness', () => {
   it('never constructs hooks before both validation gates pass, even for a factory with side effects', () => {
     let constructed = false
@@ -168,7 +188,7 @@ describe('registerExtension — concrete canonical version gate', () => {
 
   it.each([
     '1.5.0',
-    '1.4.0',
+    '1.6.0',
     '0.9.0',
     '2.0.0',
     '2.0.0-beta.1',
@@ -207,9 +227,9 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '1.4.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '1.5.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '1.4.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '1.5.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

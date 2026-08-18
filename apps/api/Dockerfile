@@ -47,6 +47,16 @@ COPY fixtures/mock-envelope-extension/package.json ./fixtures/mock-envelope-exte
 # directly — so this fixture's dist is built BEFORE `app-builder`'s `pnpm --filter
 # @project-vault/api build` step, not opt-in-only afterward like the other two.
 COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
+# Story 23.8 AC-27: @project-vault/mock-audit-event-source-extension is a devDependency of
+# apps/api (never a production dep — see fixtures/mock-audit-event-source-extension/README.md's
+# "Production-safety" section) but is a real pnpm-workspace member present in pnpm-lock.yaml —
+# same "frozen-lockfile install needs every member's package.json regardless of whether this
+# build ever deploys it" reasoning as mock-sso-extension above. Its types must also resolve during
+# the plain `tsc` build of apps/api itself (its own boot-integration test statically imports the
+# fixture) — same reasoning as mock-capability-gate-extension immediately above — so this
+# fixture's dist is also built BEFORE `app-builder`'s `pnpm --filter @project-vault/api build`
+# step, not opt-in-only afterward like mock-sso/mock-envelope.
+COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-audit-event-source-extension/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild argon2 esbuild
@@ -62,6 +72,7 @@ COPY packages/eslint-config ./packages/eslint-config
 COPY fixtures/mock-sso-extension ./fixtures/mock-sso-extension
 COPY fixtures/mock-envelope-extension ./fixtures/mock-envelope-extension
 COPY fixtures/mock-capability-gate-extension ./fixtures/mock-capability-gate-extension
+COPY fixtures/mock-audit-event-source-extension ./fixtures/mock-audit-event-source-extension
 
 # Split off from the final `builder` stage (Story 1.13 AC-D1) so the one-shot `migrate` service
 # (docker-compose.yml) doesn't have to build `agent`/`api` just to run a migration. `crypto` is
@@ -96,6 +107,9 @@ RUN pnpm --filter @project-vault/agent build \
  # shipped to the `runner` stage by default (see the deploy-stage grafting below, gated on
  # INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION exactly like the other two fixtures).
  && pnpm --filter @project-vault/mock-capability-gate-extension build \
+ # Story 23.8 AC-27: built unconditionally, same reasoning as mock-capability-gate-extension
+ # immediately above.
+ && pnpm --filter @project-vault/mock-audit-event-source-extension build \
  && pnpm --filter @project-vault/api build
 
 # Story 14.3 Task 10: build the mock external-IdP fixture ONLY when explicitly opted in (default
@@ -125,6 +139,7 @@ FROM app-builder AS deploy
 ARG INCLUDE_MOCK_SSO_EXTENSION=false
 ARG INCLUDE_MOCK_ENVELOPE_EXTENSION=false
 ARG INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION=false
+ARG INCLUDE_MOCK_AUDIT_EVENT_SOURCE_EXTENSION=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 # `pnpm deploy --legacy` leaves workspace links for injected packages on this pnpm version. Replace
 # the extension-api link with the exact npm pack boundary used for external consumers so the runner
@@ -184,6 +199,11 @@ RUN if [ "$INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION" = "true" ]; then \
       mkdir -p /app/deploy/node_modules/@project-vault/mock-capability-gate-extension && \
       cp -r /app/fixtures/mock-capability-gate-extension/dist /app/deploy/node_modules/@project-vault/mock-capability-gate-extension/dist && \
       cp /app/fixtures/mock-capability-gate-extension/package.json /app/deploy/node_modules/@project-vault/mock-capability-gate-extension/package.json; \
+    fi
+RUN if [ "$INCLUDE_MOCK_AUDIT_EVENT_SOURCE_EXTENSION" = "true" ]; then \
+      mkdir -p /app/deploy/node_modules/@project-vault/mock-audit-event-source-extension && \
+      cp -r /app/fixtures/mock-audit-event-source-extension/dist /app/deploy/node_modules/@project-vault/mock-audit-event-source-extension/dist && \
+      cp /app/fixtures/mock-audit-event-source-extension/package.json /app/deploy/node_modules/@project-vault/mock-audit-event-source-extension/package.json; \
     fi
 
 # node:24-alpine, pinned by digest — see builder stage comment above.

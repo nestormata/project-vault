@@ -1,5 +1,6 @@
 import type { AuthResult, AuthStrategy } from './auth-strategy.js'
 import type { CapabilityDecision, CapabilityGate } from './capability-gate.js'
+import type { AuditEventSourceWriteInput } from './audit-event-source.js'
 
 /**
  * Compile-only fixture (AC3): proves `onAuthenticate` must return `Promise<AuthResult>`, not a
@@ -27,4 +28,27 @@ export const nonPromiseAuthStrategyFixture: AuthStrategy = {
 export const nonPromiseCapabilityGateFixture: CapabilityGate = {
   // @ts-expect-error — onCheckCapability must return Promise<CapabilityDecision>, not a bare CapabilityDecision
   onCheckCapability: (): CapabilityDecision => ({ permitted: true }),
+}
+
+/**
+ * Story 23.8 AC-2/AC-10 — proves the extension boundary carries serializable data only: a
+ * `Tx`-shaped or `hmac`-carrying object must NOT satisfy `AuditEventSourceWriteInput`. If a
+ * future change widens this type to accept either, the `@ts-expect-error` directives below stop
+ * suppressing a real error and `tsc --noEmit` fails instead.
+ */
+export const txShapedWriteInputFixture: AuditEventSourceWriteInput = {
+  eventType: 'ext.com.acme.fixture.event',
+  orgId: 'fixture-org',
+  payload: {},
+  // @ts-expect-error — AuditEventSourceWriteInput must never accept a Tx/connection-shaped field
+  tx: {},
+}
+
+export const hmacCarryingWriteInputFixture: AuditEventSourceWriteInput = {
+  eventType: 'ext.com.acme.fixture.event',
+  orgId: 'fixture-org',
+  payload: {},
+  // @ts-expect-error — AuditEventSourceWriteInput must never accept a keyVersion/hmac field
+  keyVersion: 1,
+  hmac: 'deadbeef',
 }
