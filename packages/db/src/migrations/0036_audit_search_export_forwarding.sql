@@ -141,9 +141,11 @@ END;
 $$ LANGUAGE plpgsql;
 --> statement-breakpoint
 
--- vault_app is granted EXECUTE on the function ONLY — never a raw DELETE grant. The function's
--- own internal p_org_id/session-context check (above) is what keeps this broad EXECUTE grant
--- safe despite SECURITY DEFINER's RLS bypass.
+-- Story 24.5a: vault_app is granted EXECUTE on the function ONLY — never a raw table privilege.
+-- The p_org_id/app.current_org_id comparison above is a consistency check between two values
+-- supplied by the same caller, not an authorization boundary. The function EXECUTE ACL governs
+-- who may call it; the trigger escape hatch governs what the append-only trigger permits while it
+-- runs. See 0042_platform_audit_retention_purge.sql for the parallel platform decision.
 GRANT EXECUTE ON FUNCTION purge_expired_audit_log_entries(uuid, timestamptz) TO vault_app;
 
 -- Story 24.1 contract note (append-only documentation; function body and owner unchanged):

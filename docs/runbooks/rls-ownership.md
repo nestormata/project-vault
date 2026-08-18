@@ -24,7 +24,10 @@ transaction clears. No data rewrite is performed.
 
 The append-only `audit_log_entries` and `platform_audit_events` tables retain `vault_app` `SELECT,
 INSERT` only. Do not grant direct `UPDATE` or `DELETE`; historical cleanup uses the existing
-controlled `SECURITY DEFINER` purge functions.
+controlled `SECURITY DEFINER` purge functions. Story 24.5a makes their function ACL the database
+boundary: `PUBLIC` is not executable, and only `vault_app` is explicitly granted `EXECUTE`. The
+platform purge remains caller-enforced through `withPlatformOperatorContext()`; this ACL does not
+bound an in-process extension that already holds the `vault_app` pool.
 
 ## Restore and rollback
 

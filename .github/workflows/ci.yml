@@ -265,7 +265,9 @@ jobs:
           # were broken or missing.
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           # check-rls-coverage.test.ts needs superuser access to create/drop its
-          # throwaway test database and manage RLS policies directly.
+          # throwaway test database and manage RLS policies directly. The Story 24.5a
+          # function-grant denial test uses the same SUPERUSER_DATABASE_URL wiring for its
+          # randomized throwaway role lifecycle; no additional CI credential is needed.
           ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
 
       - name: Upload RLS isolation coverage (SOC2 Type II evidence)

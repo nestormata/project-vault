@@ -324,4 +324,10 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // CONSTRAINT pair present is this exact rewrite, with no unrelated destructive statement.
   '0078_audit_log_entries_extension_actor_type':
     "audit_log_entries_actor_type_check must be dropped and re-added to widen its allowed set with the new 'extension' value — identical reviewed pattern to 0047/0050's CHECK-constraint widenings.",
+  // Story 24.5a: 0080 changes only function ACLs and default privileges. Registered
+  // pre-emptively so a later privilege-pattern expansion in Story 23.5 cannot make a fresh
+  // bootstrap fail; migration-0080-function-grants.test.ts proves no function body or data
+  // operation is bundled with the ACL change.
+  '0080_security_definer_function_grants':
+    'Story 24.5a audit purge/trigger function ACL narrowing and default-privilege narrowing; paired safety test proves the migration contains no function body or data operation.',
 }

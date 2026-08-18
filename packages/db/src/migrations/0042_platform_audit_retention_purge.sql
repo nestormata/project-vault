@@ -36,9 +36,11 @@ END;
 $$ LANGUAGE plpgsql;
 --> statement-breakpoint
 
--- vault_app is granted EXECUTE on the function ONLY — never a raw DELETE grant (which remains
--- revoked, migration 0041). The function's own internal SECURITY DEFINER + session-flag-gated
--- trigger escape hatch is what keeps this broad EXECUTE grant safe.
+-- Story 24.5a: vault_app is granted EXECUTE on the function ONLY — never a raw table privilege.
+-- The session-flag-gated trigger escape hatch governs what the append-only trigger permits while
+-- this function runs. The function EXECUTE ACL governs who may call it; it was PUBLIC until
+-- Story 24.5a and is now limited to vault_app. This function has no internal authorization guard:
+-- its single production caller is caller-enforced through withPlatformOperatorContext().
 GRANT EXECUTE ON FUNCTION purge_expired_platform_audit_entries(timestamptz) TO vault_app;
 
 -- Story 24.1 contract note (append-only documentation; function body and owner unchanged):

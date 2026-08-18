@@ -594,6 +594,30 @@ validating it.
    (Vault Lifecycle § Manual unseal) before the instance is usable again.
 5. Post-restore verification: unseal, then `GET /ready` → `{"status":"ready"}`, then spot-check a
    known credential/project exists as expected.
+6. Verify the audit-purge ACL and the default-privilege grantor before serving traffic. This is
+   pasteable SQL and does not require the repository or pnpm:
+
+   ```sql
+   SELECT p.oid::regprocedure AS function_name,
+          has_function_privilege('public', p.oid, 'EXECUTE') AS public_execute,
+          has_function_privilege('vault_app', p.oid, 'EXECUTE') AS vault_app_execute
+   FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.proname IN ('purge_expired_audit_log_entries', 'purge_expired_platform_audit_entries');
+
+   SELECT n.nspname AS schema_name,
+          d.defaclrole::regrole AS grantor,
+          d.defaclacl AS default_acl
+   FROM pg_default_acl d
+   LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+   WHERE (n.nspname = 'public' OR d.defaclnamespace IS NULL)
+     AND d.defaclobjtype = 'f';
+   ```
+
+   Expected output has `public_execute = false` and `vault_app_execute = true` for both purge
+   functions. The default-function row's `grantor` must be the role that owns the migration-created
+   functions, not merely any role. Until Story 24.5b lands, the full public-executability sweep is
+   not available; treat a mismatch as an incomplete restore and re-run migrations or escalate.
 
 Other outcomes: `404 {"code":"backup_not_found", ...}` (no such file); `422
 {"code":"backup_checksum_mismatch", ...}` (refuses to restore a potentially corrupted/tampered
