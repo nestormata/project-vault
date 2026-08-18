@@ -19,7 +19,7 @@ const { initVault } = await bootstrapRouteIntegrationTest()
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const TEST_PASSPHRASE = 'platform-admin-audit-quota-passphrase'
-const PASSWORD = 'correct-horse-battery-staple'
+const E2E_PASS_VALUE = 'correct-horse-battery-staple'
 
 const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
 
@@ -45,7 +45,7 @@ async function makeOperator(prefix: string) {
   return registerPlatformOperator(suite.app, {
     emailPrefix: prefix,
     orgNamePrefix: `${prefix}-org`,
-    password: PASSWORD,
+    password: E2E_PASS_VALUE,
   })
 }
 
@@ -64,7 +64,7 @@ describe.sequential('Story 22.3 PUT /admin/orgs/:orgId/audit-quota', () => {
   it('Story 9.8: 403 mfa_required for an unenrolled platform operator', async () => {
     const registered = await registerAndLoginViaApi(suite.app, {
       email: `audit-quota-no-mfa-${randomUUID()}@example.com`,
-      password: PASSWORD,
+      password: E2E_PASS_VALUE,
       orgName: `Audit Quota No MFA ${randomUUID()}`,
     })
     await getDb().transaction(async (tx) => {
@@ -95,7 +95,7 @@ describe.sequential('Story 22.3 PUT /admin/orgs/:orgId/audit-quota', () => {
     const nonOperator = await enrollUserWithMfa(suite.app, {
       emailPrefix: 'audit-quota-non-operator',
       orgNamePrefix: 'Audit Quota Non Operator',
-      password: PASSWORD,
+      password: E2E_PASS_VALUE,
     })
 
     await withTestOrg(async ({ orgId }) => {
@@ -117,7 +117,7 @@ describe.sequential('Story 22.3 PUT /admin/orgs/:orgId/audit-quota', () => {
     const owner = await enrollUserWithMfa(suite.app, {
       emailPrefix: 'audit-quota-owner',
       orgNamePrefix: 'Audit Quota Owner',
-      password: PASSWORD,
+      password: E2E_PASS_VALUE,
     })
 
     const res = await putQuota(suite.app, owner.cookies, owner.orgId, {

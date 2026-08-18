@@ -22,10 +22,10 @@ test.describe.serial('J23 — audit-storage operator surface journey', () => {
     context,
   }) => {
     const email = uniqueEmail('j23-operator')
-    const password = 'e2e-J23-Password-123'
+    const e2ePassValue = 'e2e-J23-Password-123'
     const { orgId } = await registerAndLoginViaApi(context, {
       email,
-      password,
+      password: e2ePassValue,
       orgName: uniqueOrgName('J23 Org'),
     })
     await enrollMfaViaUi(page)
