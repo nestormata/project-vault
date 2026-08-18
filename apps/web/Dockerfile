@@ -26,6 +26,13 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/
 # also resolves transitively during deploy's workspace-graph pass — same reasoning, manifest only.
 COPY fixtures/mock-envelope-extension/package.json ./fixtures/mock-envelope-extension/
 COPY packages/extension-api/package.json ./packages/extension-api/
+# Story 22.4: @project-vault/db (workspace:*) is a root-level devDependency (used only by
+# scripts/audit-quota-isolation-bench.ts, never by apps/web) but the same deploy workspace-graph
+# resolution pass above still needs its manifest present — manifest only, same reasoning.
+# @project-vault/db itself depends on @project-vault/crypto (workspace:*), resolved transitively
+# during the same pass, so its manifest is needed too — manifest only, same reasoning.
+COPY packages/db/package.json ./packages/db/
+COPY packages/crypto/package.json ./packages/crypto/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm rebuild esbuild
