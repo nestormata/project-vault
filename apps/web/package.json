@@ -28,23 +28,23 @@
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/svelte": "^5.4.2",
-    "@testing-library/user-event": "^14.6.3",
+    "@testing-library/user-event": "^14.6.4",
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.1",
-    "eslint-plugin-svelte": "^3.22.0",
+    "eslint-plugin-svelte": "^3.23.0",
     "jsdom": "^30.0.1",
     "otpauth": "^9.5.1",
     "postgres": "^3.4.9",
-    "svelte": "^5.56.8",
-    "svelte-check": "^4.7.5",
+    "svelte": "^5.56.9",
+    "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "@inlang/paraglide-js": "^2.23.2",
+    "@inlang/paraglide-js": "^2.24.1",
     "@project-vault/shared": "workspace:*"
   }
 }
