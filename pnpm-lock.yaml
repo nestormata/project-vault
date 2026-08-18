@@ -27,6 +27,9 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^21.2.0
         version: 21.2.0
+      '@project-vault/db':
+        specifier: workspace:*
+        version: link:packages/db
       '@stryker-mutator/core':
         specifier: ^9.6.1
         version: 9.6.1(@types/node@26.2.0)(supports-color@7.2.0)
@@ -36,6 +39,9 @@ importers:
       audit-ci:
         specifier: ^7.1.0
         version: 7.1.0
+      drizzle-orm:
+        specifier: ^0.45.0
+        version: 0.45.2(@opentelemetry/api@1.9.1)(kysely@0.28.17)(pg@8.23.0)(postgres@3.4.9)
       eslint:
         specifier: ^10.8.1
         version: 10.8.1(jiti@2.7.0)(supports-color@7.2.0)

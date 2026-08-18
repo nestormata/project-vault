@@ -137,10 +137,69 @@ every write — it does not, and this section is the disclosure of that gap (cod
 
 `audit_org_storage_usage` is created with `fillfactor = 70` (see migration
 `0075_audit_org_storage_quota.sql`) to favour HOT (heap-only-tuple) updates and limit index churn
-on this row, which the gate statement rewrites on every enforced write. **The cross-tenant coupling
-this is meant to help bound — pool contention, dead-tuple churn, autovacuum load on the shared
-cluster — is measured by Story 22.4, not by this story.** 22.1 states it as an open, unmeasured
-risk; it does not claim it is bounded.
+on this row, which the gate statement rewrites on every enforced write.
+
+**(measured 2026-08-18 by Story 22.4)** — `scripts/audit-quota-isolation-bench.ts` measured the
+cross-tenant coupling this fillfactor decision is meant to help bound, on real hardware against a
+real, migrated Postgres, under real concurrency (independent `postgres` connections driving two
+distinct, real organizations concurrently — never the shared Vitest DB). Full methodology,
+threshold rationale, and edge-case handling are in the story file's Acceptance Criteria (AC-3
+through AC-6); this section states the results.
+
+**Environment fingerprint** (re-run this bench and refresh these numbers if any of this changes):
+
+- `quota-gate.ts` commit: `cd4b872419d103b95a60079db33b6ecd46c7ee26`
+- Machine: 16-core host, 62 GiB RAM, Postgres 16.10 running in a local Docker container
+  (`postgres:16-alpine`), shared with several other concurrently-running worktree stacks on the
+  same host at measurement time (a noisy-neighbor caveat on absolute latency, not on the
+  relative-regression comparison itself, since both arms ran back-to-back on the identical
+  machine state)
+- Bench config: org A burst = 1200 writes/repetition x 3 repetitions at concurrency 6; org B
+  concurrent steady stream up to 80 writes/repetition at concurrency 1; first 10% of each arm's
+  writes discarded as warm-up
+
+**Results:**
+
+| Measurement | Disabled arm (today's default) | Enabled arm (both gates on) |
+|---|---|---|
+| Org B p50 / p95 / p99 (aggregate, warm-up discarded) | 1.89ms / 2.64ms / 5.56ms (n=61) | 2.98ms / 3.71ms / 4.54ms (n=216) |
+| Org A writes completed | 3600/3600 | 3600/3600 |
+| Peak shared-pool connections in use | 7 / 10 configured max | 7 / 10 configured max |
+| Lock-hold proxy (gate-completes → COMMIT-completes) | p50=1.03ms p95=1.42ms max=9.01ms, flat across the burst | p50=0.76ms p95=0.99ms max=4.97ms, flat across the burst |
+| `pg_stat_user_tables` delta on `audit_org_storage_usage` | +0 dead tuples, +0 updates (gate never touches the row when off) | +848 dead tuples, +7266 updates, 7134 HOT (**98.2% HOT-update ratio**) |
+
+**Org B p95 regression (enabled vs. disabled, same run, same machine): 40.7% — FAILS the ≤25%
+threshold (AC-3).** Per-repetition regressions: +45.0%, +50.5%, -17.7% (high variance between
+repetitions — see "Finding" below). Raw JSON artifact:
+`scripts/.bench-output/audit-quota-bench-2026-08-18T12-49-18-130Z.json` (not committed; regenerate
+by re-running `pnpm bench:audit-quota`).
+
+**Finding — regression exceeds the AC-3 threshold.** The gate adds two extra statements
+(rate-window check + storage-quota check) to every audited write before its `INSERT`, all
+contending for row-level locks on the same `audit_org_storage_usage` row org A's burst is hammering
+concurrently. The `fillfactor = 70` schema decision IS achieving its intended effect at the storage
+layer (98.2% HOT-update ratio — dead-tuple churn is low and index bloat is being avoided), and the
+lock-hold proxy duration itself stays flat and sub-millisecond-to-low-single-digit-millisecond
+under load (no evidence of lock-hold time growing with burst volume) — so the regression is not
+explained by lock queueing growing unboundedly. The most likely explanation is the straightforward
+one: two additional round trips per write is real, measurable added latency under load, and org A's
+concurrent burst (6 simultaneous writers) is enough to make that added cost visible in org B's
+tail latency. The per-repetition variance (+45%, +50%, -17.7%) also suggests this host's shared
+Postgres container (contending with several sibling worktree stacks at measurement time — see
+environment fingerprint above) contributes real machine-noise variance on top of the gate's own
+cost; a quieter dedicated machine would likely narrow — but is not expected to eliminate — this
+regression.
+
+**Candidate next steps** (not implemented by this story — a human decision, per Task 6):
+1. Re-run this bench on a quiet, dedicated (non-shared) machine to separate the gate's true added
+   cost from this run's host contention, before deciding whether to act on the number.
+2. If the regression holds on a quiet machine, consider whether the rate gate and storage gate
+   could be combined into a single round trip (they currently run as two sequential statements in
+   the same transaction) — this is a `quota-gate.ts` design change, out of this story's scope.
+3. Do not enable `AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED` / `AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED`
+   in production based on this result without re-validating on production-like hardware first —
+   this bench's absolute numbers are local-Docker numbers, not production numbers; only the
+   relative-regression finding (not the absolute millisecond figures) should inform that decision.
 
 ## Residual risks summary
 

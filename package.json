@@ -30,6 +30,7 @@
     "check-native-credential-surface": "tsx scripts/check-native-credential-surface.ts",
     "check-audit-insert-sites": "tsx scripts/check-audit-insert-sites.ts",
     "docker:smoke": "bash scripts/docker-smoke.sh",
+    "bench:audit-quota": "tsx scripts/audit-quota-isolation-bench.ts",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -37,7 +38,9 @@
     "@commitlint/config-conventional": "^21.2.0",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@project-vault/db": "workspace:*",
     "audit-ci": "^7.1.0",
+    "drizzle-orm": "^0.45.0",
     "eslint": "^10.8.1",
     "husky": "^9.1.7",
     "jscpd": "^5.0.14",
