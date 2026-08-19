@@ -3,7 +3,7 @@ name: Fly Demo Auto-Unseal
 # Safety net between nightly resets (fly-reset.yml): the vault re-seals whenever the api
 # process restarts (decrypted key is in-memory only — apps/api/src/modules/vault/
 # key-service.ts), which can happen from a Fly host migration, a crash, or a deploy that
-# slips past fly-deploy.yml's path filter. Checks /ready hourly and re-unseals if needed,
+# slips through between release deployments. Checks /ready hourly and re-unseals if needed,
 # so a visitor is never stuck looking at a sealed demo for more than ~1 hour.
 
 on:

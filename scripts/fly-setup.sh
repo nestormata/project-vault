@@ -85,9 +85,9 @@ flyctl secrets set -a "$WEB_APP" \
 
 cat <<EOF
 
-== Next: deploy api and web ==
-  flyctl deploy -c fly.api.toml -a ${API_APP} --ha=false
-  flyctl deploy -c fly.web.toml -a ${WEB_APP} --ha=false
+== Next: deploy the selected release ==
+  Run the Fly Demo Bootstrap workflow with release_tag=vMAJOR.MINOR.PATCH.
+  It will deploy api and web from that exact release tag.
 
 Then run scripts/fly-reset.sh (or the Fly Demo Reset workflow) to migrate schema, seed
 demo data, and init/unseal vault. It needs ADMIN_PG_PASSWORD, VAULT_APP_PASSWORD, and

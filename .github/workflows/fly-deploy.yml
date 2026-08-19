@@ -1,34 +1,61 @@
 name: Fly Demo Deploy
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
-  push:
-    branches: [main]
-    # Redeploying api restarts its process, which re-seals the vault (key material is
-    # in-memory only — see apps/api/src/modules/vault/key-service.ts). Without this filter,
-    # every push to main (docs, unrelated app code, CI config) redeploys and re-seals the
-    # demo for no reason — only these paths actually change what gets deployed.
-    paths:
-      - 'apps/api/**'
-      - 'apps/web/**'
-      - 'packages/**'
-      - 'fly.api.toml'
-      - 'fly.web.toml'
-      - 'fly.db.toml'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - '.github/workflows/fly-deploy.yml'
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH release tag to deploy
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  prepare:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.release.outputs.ref }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            TAG="$RELEASE_TAG"
+          else
+            TAG="$INPUT_TAG"
+          fi
+
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected vMAJOR.MINOR.PATCH without leading zeroes, received '$TAG'" >&2
+            exit 1
+          fi
+
+          if ! git ls-remote --exit-code "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG" >/dev/null; then
+            echo "Release tag '$TAG' does not exist on origin" >&2
+            exit 1
+          fi
+
+          echo "ref=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
   deploy:
     name: Deploy self-hosted demo (db/api/web) to Fly.io
+    needs: prepare
     runs-on: ubuntu-latest
     concurrency: fly-demo-deploy
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -90,11 +117,11 @@ jobs:
           VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
 
       - name: Deploy api
-        run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only
+        run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only --build-arg RELEASE_VERSION=${{ needs.prepare.outputs.version }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Deploy web
-        run: flyctl deploy -c fly.web.toml -a project-vault-demo-web --ha=false --remote-only
+        run: flyctl deploy -c fly.web.toml -a project-vault-demo-web --ha=false --remote-only --build-arg RELEASE_VERSION=${{ needs.prepare.outputs.version }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

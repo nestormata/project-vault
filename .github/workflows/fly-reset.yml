@@ -2,6 +2,11 @@ name: Fly Demo Reset
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH release tag to reset against
+        required: true
+        type: string
   schedule:
     # 06:00 UTC daily — adjust to whenever the demo has the fewest live viewers.
     - cron: '0 6 * * *'
@@ -10,12 +15,48 @@ permissions:
   contents: read
 
 jobs:
+  prepare:
+    name: Resolve latest release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      ref: ${{ steps.release.outputs.ref }}
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"
+          else
+            TAG="$INPUT_TAG"
+          fi
+
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected vMAJOR.MINOR.PATCH without leading zeroes, received '$TAG'" >&2
+            exit 1
+          fi
+
+          if ! git ls-remote --exit-code "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG" >/dev/null; then
+            echo "Release tag '$TAG' does not exist on origin" >&2
+            exit 1
+          fi
+
+          echo "ref=$TAG" >> "$GITHUB_OUTPUT"
+
   reset:
     name: Wipe + reseed the Fly.io demo database, re-init vault
+    needs: prepare
     runs-on: ubuntu-latest
     concurrency: fly-demo-reset
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
