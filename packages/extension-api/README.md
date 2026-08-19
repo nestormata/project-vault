@@ -111,3 +111,8 @@ made here; Story 23.6 must review its policy against this publishing mechanism.
 Source is included in the package tarball with the compiled output and license. See the public
 repository's [architecture decision record](https://github.com/nestormata/project-vault/blob/main/_bmad-output/planning-artifacts/architecture.md)
 for the release comparison, risk controls, and recovery runbook.
+
+## Versioning & Deprecation
+
+The package follows strict SemVer for its public extension contract.
+Read the canonical policy at https://github.com/nestormata/project-vault/blob/main/docs/extension-api-versioning-policy.md.

@@ -45,6 +45,7 @@ DB_URL_ADMIN      ?= postgresql://vault_admin:password@$(DB_CONN_HOST):$(DB_HOST
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance \
         db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner \
+        check-extension-api-policy check-extension-api-policy-content check-extension-api-behaviour check-extension-api-markers check-extension-api-contract-changelog \
         bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-backup-permission-smoke docker-prod docker-prod-down \
         e2e \
@@ -157,7 +158,13 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-migration-compatibility
 	$(MAKE) check-form-guidance
 	pnpm check-public-safety -- --base main --strict
+	pnpm check-extension-api-policy
+	pnpm check-extension-api-policy-content
+	pnpm check-extension-api-behaviour
+	pnpm check-extension-api-markers
+	pnpm check-extension-api-contract-changelog
 	pnpm check-extension-api-version-skew
+	pnpm vitest run scripts/check-policy-doc-structure.test.ts scripts/check-policy-doc-content.test.ts scripts/check-extension-api-behaviour.test.ts scripts/check-extension-api-markers.test.ts scripts/check-extension-api-contract-changelog.test.ts
 	pnpm vitest run scripts/check-extension-api-version-skew.test.ts
 	pnpm check-native-credential-surface
 	pnpm check-audit-insert-sites

@@ -86,6 +86,23 @@ jobs:
       - name: Check extension-api version-skew guard's own test suite (Story 24.4)
         run: pnpm vitest run scripts/check-extension-api-version-skew.test.ts
 
+      - name: Check extension-api versioning policy guards (Story 23.6)
+        run: >-
+          pnpm vitest run scripts/check-policy-doc-structure.test.ts
+          scripts/check-policy-doc-content.test.ts
+          scripts/check-extension-api-behaviour.test.ts
+          scripts/check-extension-api-markers.test.ts
+          scripts/check-extension-api-contract-changelog.test.ts
+          packages/extension-api/src/api-surface.test.ts
+
+      - name: Check published extension-api policy artifacts (Story 23.6)
+        run: >-
+          pnpm check-extension-api-policy &&
+          pnpm check-extension-api-policy-content &&
+          pnpm check-extension-api-behaviour &&
+          pnpm check-extension-api-markers &&
+          pnpm check-extension-api-contract-changelog
+
       - name: Check native-credential-surface guard's own test suite (Story 23.2 AC19)
         run: pnpm vitest run scripts/check-native-credential-surface.test.ts
 

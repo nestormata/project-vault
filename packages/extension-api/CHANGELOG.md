@@ -1,5 +1,15 @@
 # Changelog
 
+The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
+
+## 1.4.0 — 2026-08-18
+
+contract-hash: sha256:0a913707d61153f7e63a88df582f92ed648066fe3af55e340273927055b552bf
+
+### Changed
+
+- Recorded the current public API and contract-behaviour snapshots as the Story 23.6 baseline.
+
 ## 1.1.0 — 2026-08-14
 
 ### Breaking manifest and gate correction — `[pre-publication-exception]`
@@ -44,3 +54,9 @@ boundary. The range bypass is closed, but provenance is still required to prove 
 built against the declared version. The manifest name remains an unbounded echoed input and is
 deliberately outside this change. See the load-time-gate section of the versioning policy owned by
 Story 23.6 for the residual-risk list and rejected alternatives.
+
+## 1.0.0 — baseline
+
+### Added
+
+- Initial public extension API contract baseline for versioning and deprecation review.

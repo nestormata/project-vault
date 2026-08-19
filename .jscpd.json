@@ -6,6 +6,7 @@
     "packages/db/src/schema/**",
     "packages/db/src/migrations/**",
     "packages/shared/openapi.json",
+    "packages/extension-api/api-surface.snapshot.md",
     "**/*test-helpers*",
     "**/*.test.ts",
     "packages/extension-api/vitest.config.ts",
