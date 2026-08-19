@@ -48,8 +48,19 @@ describe('Story 24.5b canonical function-executability contract', () => {
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(/pg_trgm/i)
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(/pg_get_function_identity_arguments/i)
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(/pg_default_acl/i)
+    expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(
+      /defaclnamespace\s*=\s*'public'::regnamespace/i
+    )
+    expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(/expected_migration_function_owner/i)
+    expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(
+      /identity text PRIMARY KEY[\s\S]*CHECK[\s\S]*position\('\(' in identity\)/i
+    )
+    expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(
+      /reason text NOT NULL[\s\S]*CHECK[\s\S]*btrim\(reason\)/i
+    )
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).not.toMatch(/proname\s+NOT\s+IN/i)
     expect(FUNCTION_EXECUTABILITY_CONTRACT.pinnedExtensionNames).toEqual(['pg_trgm'])
+    expect(FUNCTION_EXECUTABILITY_CONTRACT.expectedMigrationFunctionOwnerRole).toBe('postgres')
     expect(FUNCTION_EXECUTABILITY_CONTRACT.reviewedPublicExecutableAllowlist).toEqual([])
     expect(FUNCTION_EXECUTABILITY_CONTRACT.sql).toBe(CANONICAL_FUNCTION_EXECUTABILITY_SQL)
   })
@@ -192,6 +203,28 @@ describe('Story 24.5b real-Postgres invariant', () => {
         `ALTER DEFAULT PRIVILEGES FOR ROLE ${quoteIdentifier(ownerName)} REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
       )
       await adminSql.unsafe(`DROP ROLE IF EXISTS ${quoteIdentifier(restoringRole)}`)
+    }
+  })
+
+  it('catches a PUBLIC grant in the public-schema default ACL even when the global row is safe', async () => {
+    requireDatabaseUrls()
+    const ownerName = 'postgres'
+    try {
+      await adminSql.unsafe(
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${quoteIdentifier(ownerName)} IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO PUBLIC`
+      )
+
+      const report = await inspectFunctionExecutability(appSql)
+      expect(report.violations).toContainEqual(
+        expect.objectContaining({
+          kind: 'default_acl',
+          detail: expect.stringContaining('schema public'),
+        })
+      )
+    } finally {
+      await adminSql.unsafe(
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${quoteIdentifier(ownerName)} IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`
+      )
     }
   })
 

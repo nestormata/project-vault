@@ -22,6 +22,7 @@ export type ReviewedPublicExecutableAllowlistEntry = {
  */
 export const FUNCTION_EXECUTABILITY_CONTRACT = Object.freeze({
   sql: CANONICAL_FUNCTION_EXECUTABILITY_SQL,
+  expectedMigrationFunctionOwnerRole: 'postgres' as const,
   pinnedExtensionNames: Object.freeze(pinnedExtensionNames),
   reviewedPublicExecutableAllowlist: Object.freeze(
     [] as readonly ReviewedPublicExecutableAllowlistEntry[]
@@ -29,7 +30,7 @@ export const FUNCTION_EXECUTABILITY_CONTRACT = Object.freeze({
 })
 
 export type FunctionExecutabilityViolation = {
-  kind: 'function' | 'default_acl'
+  kind: 'function' | 'default_acl' | 'owner'
   signature: string | null
   detail: string
 }

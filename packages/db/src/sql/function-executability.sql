@@ -11,6 +11,9 @@ BEGIN
   IF to_regclass('pg_temp.function_executability_functions') IS NOT NULL THEN
     DROP TABLE function_executability_functions;
   END IF;
+  IF to_regclass('pg_temp.function_executability_expected_migration_function_owner') IS NOT NULL THEN
+    DROP TABLE function_executability_expected_migration_function_owner;
+  END IF;
   IF to_regclass('pg_temp.function_executability_allowlist') IS NOT NULL THEN
     DROP TABLE function_executability_allowlist;
   END IF;
@@ -22,13 +25,32 @@ CREATE TEMP TABLE function_executability_functions (
   signature text NOT NULL,
   identity_arguments text NOT NULL,
   owner_oid oid NOT NULL,
-  owner_name name NOT NULL,
+  owner_name name,
   is_pinned_extension_owned boolean NOT NULL
 ) ON COMMIT PRESERVE ROWS;
 
+-- Supported deployments run migrations as the stable role identity `postgres`. Compare role
+-- names, never fixed OIDs: a dump/restore may assign a different OID to postgres, but it must not
+-- silently change the migration grantor to the restore actor.
+CREATE TEMP TABLE function_executability_expected_migration_function_owner (
+  owner_oid oid NOT NULL,
+  owner_name name NOT NULL
+) ON COMMIT PRESERVE ROWS;
+
+INSERT INTO function_executability_expected_migration_function_owner(owner_oid, owner_name)
+SELECT oid, rolname
+FROM pg_roles
+WHERE rolname = 'postgres';
+
 CREATE TEMP TABLE function_executability_allowlist (
-  identity text PRIMARY KEY,
-  reason text NOT NULL
+  identity text PRIMARY KEY CHECK (
+    position('.' in identity) > 0
+    AND position('(' in identity) > 0
+    AND right(identity, 1) = ')'
+    AND position('*' in identity) = 0
+    AND position('%' in identity) = 0
+  ),
+  reason text NOT NULL CHECK (btrim(reason) <> '')
 ) ON COMMIT PRESERVE ROWS;
 
 -- Intentionally empty today. Any exception must be a full identity-signature entry with a
@@ -53,7 +75,7 @@ INSERT INTO function_executability_functions (
 )
 SELECT
   p.oid,
-  format('%I.%I(%s)', n.nspname, p.proname, oidvectortypes(p.proargtypes)),
+  format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)),
   pg_get_function_identity_arguments(p.oid),
   p.proowner,
   owner_role.rolname,
@@ -69,7 +91,7 @@ SELECT
   )
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
-JOIN pg_roles owner_role ON owner_role.oid = p.proowner
+LEFT JOIN pg_roles owner_role ON owner_role.oid = p.proowner
 WHERE n.nspname = 'public'
   AND p.prokind IN ('f', 'p');
 
@@ -78,6 +100,43 @@ CREATE TEMP TABLE function_executability_violations (
   signature text,
   detail text NOT NULL
 ) ON COMMIT PRESERVE ROWS;
+
+INSERT INTO function_executability_violations(kind, signature, detail)
+SELECT
+  'owner',
+  NULL,
+  'expected migration function owner role "postgres" is missing'
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM function_executability_expected_migration_function_owner
+);
+
+INSERT INTO function_executability_violations(kind, signature, detail)
+SELECT
+  'owner',
+  f.signature,
+  format('function owner role OID %s is missing', f.owner_oid)
+FROM function_executability_functions f
+WHERE NOT f.is_pinned_extension_owned
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_roles owner_role
+    WHERE owner_role.oid = f.owner_oid
+  );
+
+INSERT INTO function_executability_violations(kind, signature, detail)
+SELECT
+  'owner',
+  f.signature,
+  format(
+    'function owner %s does not match expected migration owner %s',
+    COALESCE(f.owner_name::text, format('OID %s', f.owner_oid)),
+    expected.owner_name
+  )
+FROM function_executability_functions f
+CROSS JOIN function_executability_expected_migration_function_owner expected
+WHERE NOT f.is_pinned_extension_owned
+  AND f.owner_oid <> expected.owner_oid;
 
 INSERT INTO function_executability_violations(kind, signature, detail)
 SELECT
@@ -100,15 +159,10 @@ SELECT
   'default_acl',
   NULL,
   format(
-    'global function default ACL for owner %s is missing or grants PUBLIC EXECUTE',
-    owner_role.rolname
+    'global function default ACL for migration owner %s is missing or grants PUBLIC EXECUTE',
+    expected.owner_name
   )
-FROM (
-  SELECT DISTINCT owner_oid
-  FROM function_executability_functions
-  WHERE NOT is_pinned_extension_owned
-) expected
-JOIN pg_roles owner_role ON owner_role.oid = expected.owner_oid
+FROM function_executability_expected_migration_function_owner expected
 LEFT JOIN pg_default_acl defaults
   ON defaults.defaclrole = expected.owner_oid
  AND defaults.defaclobjtype = 'f'
@@ -120,3 +174,24 @@ WHERE defaults.oid IS NULL
      WHERE acl.grantee = 0
        AND acl.privilege_type = 'EXECUTE'
    );
+
+-- A schema-scoped default can widen effective defaults even when the global row is safe.
+INSERT INTO function_executability_violations(kind, signature, detail)
+SELECT
+  'default_acl',
+  NULL,
+  format(
+    'schema public function default ACL for migration owner %s grants PUBLIC EXECUTE',
+    expected.owner_name
+  )
+FROM function_executability_expected_migration_function_owner expected
+JOIN pg_default_acl defaults
+  ON defaults.defaclrole = expected.owner_oid
+ AND defaults.defaclobjtype = 'f'
+ AND defaults.defaclnamespace = 'public'::regnamespace
+WHERE EXISTS (
+  SELECT 1
+  FROM aclexplode(defaults.defaclacl) acl
+  WHERE acl.grantee = 0
+    AND acl.privilege_type = 'EXECUTE'
+);

@@ -10,9 +10,11 @@ psql "$VAULT_APP_DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/sql/check-function-
 ```
 
 Success is the stable line `function-executability-check: OK`. A failure names the full function
-identity/signature or the owning role whose global function default ACL is missing or grants
-`PUBLIC EXECUTE`. The command exits non-zero and deliberately does not print a DSN, password, or
-raw PostgreSQL driver error.
+identity/signature, reports an owner/grantor mismatch, or names the migration owner whose global
+or `public`-schema function default ACL is missing or grants `PUBLIC EXECUTE`. Supported
+deployments currently run migrations as the stable role identity `postgres`; the check compares
+that role name, not a fixed OID. The command exits non-zero and deliberately does not print a DSN,
+password, or raw PostgreSQL driver error.
 
 After a restore, verify that the global `pg_default_acl` function row is keyed to the role owning
 the migration-created functions. A revoke row keyed only to the restore actor is not sufficient;
