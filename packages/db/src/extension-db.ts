@@ -6,24 +6,29 @@ export const EXTENSION_DB_PLACEHOLDER_CREDENTIAL = 'dev-only-change-in-prod'
 export type ExtensionDbOperation = 'select' | 'insert' | 'update' | 'delete'
 export type ExtensionDbUnavailableReason = 'not-configured' | 'no-approved-scope'
 
+type ExtensionQuery = <Row extends Record<string, unknown> = Record<string, unknown>>(
+  template: TemplateStringsArray,
+  ...parameters: unknown[]
+) => Promise<Row[]>
+type ExtensionTransaction = <Result>(
+  work: (scope: ExtensionDbHandle) => Promise<Result>
+) => Promise<Result>
+
 export type ExtensionDbHandle = {
-  query<T extends Record<string, unknown> = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<T[]>
-  transaction<T>(callback: (tx: ExtensionDbHandle) => Promise<T>): Promise<T>
+  query: ExtensionQuery
+  transaction: ExtensionTransaction
 }
 
 type SqlClient = ReturnType<typeof postgres>
 
 export function createExtensionDbHandle(client: SqlClient): ExtensionDbHandle {
   return {
-    query: ((strings: TemplateStringsArray, ...values: unknown[]) =>
-      client(strings, ...(values as never[]))) as ExtensionDbHandle['query'],
-    transaction: async <T>(callback: (tx: ExtensionDbHandle) => Promise<T>) =>
+    query: ((template: TemplateStringsArray, ...parameters: unknown[]) =>
+      client(template, ...(parameters as never[]))) as ExtensionQuery,
+    transaction: async <Result>(work: (scope: ExtensionDbHandle) => Promise<Result>) =>
       client.begin(async (tx) =>
-        callback(createExtensionDbHandle(tx as unknown as SqlClient))
-      ) as unknown as Promise<T>,
+        work(createExtensionDbHandle(tx as unknown as SqlClient))
+      ) as unknown as Promise<Result>,
   }
 }
 

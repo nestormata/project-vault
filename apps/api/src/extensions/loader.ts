@@ -101,6 +101,20 @@ async function readExtensionDbScopeStatus(
   return (await readExtensionDbScopeSnapshot(manifest)).status
 }
 
+function extensionDbScopeAuditDetails(snapshot: ExtensionDbScopeSnapshot): Record<string, unknown> {
+  return {
+    declaredScope: snapshot.declaredScope,
+    ...(snapshot.approvedScope !== undefined ? { approvedScope: snapshot.approvedScope } : {}),
+    ...(snapshot.overrideRationales !== undefined
+      ? { overrideRationales: snapshot.overrideRationales }
+      : {}),
+    ...(snapshot.toolOwnedGrants !== undefined
+      ? { toolOwnedGrants: snapshot.toolOwnedGrants }
+      : {}),
+    ...(snapshot.reason ? { reason: snapshot.reason } : {}),
+  }
+}
+
 function logExtensionDbScopeStatus(logger: LoaderLogger, snapshot: ExtensionDbScopeSnapshot): void {
   if (snapshot.status === 'not_configured') return
   operationalLog(
@@ -108,17 +122,7 @@ function logExtensionDbScopeStatus(logger: LoaderLogger, snapshot: ExtensionDbSc
     snapshot.status === 'approved' ? 'info' : 'warn',
     'extension.db_scope.status',
     `extension DB scope status: ${snapshot.status}`,
-    {
-      declaredScope: snapshot.declaredScope,
-      ...(snapshot.approvedScope !== undefined ? { approvedScope: snapshot.approvedScope } : {}),
-      ...(snapshot.overrideRationales !== undefined
-        ? { overrideRationales: snapshot.overrideRationales }
-        : {}),
-      ...(snapshot.toolOwnedGrants !== undefined
-        ? { toolOwnedGrants: snapshot.toolOwnedGrants }
-        : {}),
-      ...(snapshot.reason ? { reason: snapshot.reason } : {}),
-    }
+    extensionDbScopeAuditDetails(snapshot)
   )
 }
 
@@ -154,17 +158,7 @@ async function writeExtensionDbScopePlatformAudit(
         actionType: 'extension.db_scope.status',
         payload: {
           status: snapshot.status,
-          declaredScope: snapshot.declaredScope,
-          ...(snapshot.approvedScope !== undefined
-            ? { approvedScope: snapshot.approvedScope }
-            : {}),
-          ...(snapshot.overrideRationales !== undefined
-            ? { overrideRationales: snapshot.overrideRationales }
-            : {}),
-          ...(snapshot.toolOwnedGrants !== undefined
-            ? { toolOwnedGrants: snapshot.toolOwnedGrants }
-            : {}),
-          ...(snapshot.reason ? { reason: snapshot.reason } : {}),
+          ...extensionDbScopeAuditDetails(snapshot),
         },
       })
     })
