@@ -1,5 +1,9 @@
 # Changelog
 
+contract-hash: sha256:5531ee467daad8159aeb27b39ebe647af511b2a9f9e04b7a8df21e5a1e29ae04
+
+The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
+
 ## 1.1.0 — 2026-08-14
 
 ### Breaking manifest and gate correction — `[pre-publication-exception]`
