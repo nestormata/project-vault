@@ -87,8 +87,8 @@ describe('Story 24.5b real-Postgres invariant', () => {
     expect(baseline.violations).toEqual([])
     expect(baseline.inScopeFunctionSignatures).toEqual(
       expect.arrayContaining([
-        'public.purge_expired_audit_log_entries(uuid, timestamp with time zone)',
-        'public.purge_expired_platform_audit_entries(timestamp with time zone)',
+        'public.purge_expired_audit_log_entries(p_org_id uuid, p_cutoff timestamp with time zone)',
+        'public.purge_expired_platform_audit_entries(p_cutoff timestamp with time zone)',
       ])
     )
   })

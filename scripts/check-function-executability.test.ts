@@ -51,10 +51,10 @@ describe('Story 24.5b SQL-only psql twin', () => {
     expect(workflow).toContain('Check function executability invariant (Story 24.5b)')
     expect(workflow).toContain('run: pnpm check-function-executability')
     expect(workflow).toContain(
-      'pnpm vitest run packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts'
+      'pnpm vitest run --no-file-parallelism packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts'
     )
     expect(makefile).toContain(
-      'pnpm vitest run packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts'
+      'pnpm vitest run --no-file-parallelism packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts'
     )
     expect(runbook).toContain('psql')
     expect(runbook).toContain('PUBLIC EXECUTE')

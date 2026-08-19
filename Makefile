@@ -119,7 +119,7 @@ check-function-executability: ## Verify no in-scope public function is PUBLIC-ex
 	DATABASE_URL=$(DB_URL_APP) pnpm check-function-executability
 
 check-function-executability-tests: ## Run the focused Story 24.5b invariant and SQL-twin tests
-	DATABASE_URL=$(DB_URL_APP) SUPERUSER_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm vitest run packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts
+	DATABASE_URL=$(DB_URL_APP) SUPERUSER_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm vitest run --no-file-parallelism packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts
 
 check-audit-actor-token-coverage: ## Verify no human-actor audit row lacks actor_token_id (database-wide gate — must run as superuser to bypass per-org RLS, see Story 8.1 AC-14)
 	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm check-audit-actor-token-coverage

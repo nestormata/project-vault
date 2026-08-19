@@ -131,7 +131,7 @@ jobs:
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
 
       - name: Check function executability focused tests (Story 24.5b)
-        run: pnpm vitest run packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts
+        run: pnpm vitest run --no-file-parallelism packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts
         env:
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           SUPERUSER_DATABASE_URL: ${{ env.SUPERUSER_DATABASE_URL }}
