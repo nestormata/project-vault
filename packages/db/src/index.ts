@@ -119,3 +119,25 @@ export async function withAdminAccess<T>(
   }
   return getDb().transaction((tx) => fn(tx as unknown as Tx))
 }
+
+// Story 23.5: separate extension-role pool. This export does not share or alter the core pool
+// above; the implementation lives in its own module so the boundary is reviewable.
+export {
+  EXTENSION_DB_DEFAULT_MAX,
+  EXTENSION_DB_PLACEHOLDER_CREDENTIAL,
+  createExtensionDbHandle,
+  getExtensionDbHandle,
+  getExtensionDbPoolMax,
+  resetExtensionDbClientForTests,
+  validateExtensionDatabaseUrl,
+} from './extension-db.js'
+export type { ExtensionDbHandle, ExtensionDbOperation } from './extension-db.js'
+export {
+  EXTENSION_DB_SCOPE_DENYLIST,
+  buildGrantStatements,
+  canonicalizeDbScope,
+  hashExtensionDbScope,
+  quoteIdentifier,
+  validateDbScopeTable,
+} from './extension-db-scope.js'
+export type { ExtensionDbScopeEntry } from './extension-db-scope.js'

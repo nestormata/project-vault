@@ -135,7 +135,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"1.4.0"`
+- type: `"2.0.0"`
 
 ## export `ExtensionCapability`
 
@@ -143,6 +143,46 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: type
 - type: `ExtensionCapability`
 - union-members: `"auth-provider"`, `"notification-channel"`, `"ui-panel"`, `"capability-gate"`, `"audit-event-source"`
+
+## export `ExtensionDbHandle`
+
+- since: 2.0.0
+- kind: type
+- type: `ExtensionDbHandle`
+- member: `query`
+  - since: 2.0.0
+  - type: `<T extends Record<string, unknown> = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]) => Promise<T[]>`
+  - call-signature: `<T extends Record<string, unknown> = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>`
+- member: `transaction`
+  - since: 2.0.0
+  - type: `<T>(callback: (tx: ExtensionDbHandle) => Promise<T>) => Promise<T>`
+  - call-signature: `<T>(callback: (tx: ExtensionDbHandle) => Promise<T>): Promise<T>`
+
+## export `ExtensionDbOperation`
+
+- since: 2.0.0
+- kind: type
+- type: `ExtensionDbOperation`
+- union-members: `"select"`, `"insert"`, `"update"`, `"delete"`
+
+## export `ExtensionDbScopeEntry`
+
+- since: 2.0.0
+- kind: type
+- type: `ExtensionDbScopeEntry`
+- member: `operations`
+  - since: 2.0.0
+  - type: `ExtensionDbOperation[]`
+- member: `table`
+  - since: 2.0.0
+  - type: `string`
+
+## export `ExtensionDbUnavailableReason`
+
+- since: 2.0.0
+- kind: type
+- type: `ExtensionDbUnavailableReason`
+- union-members: `"not-configured"`, `"no-approved-scope"`
 
 ## export `ExtensionHooks`
 
@@ -177,6 +217,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `capabilities`
   - since: 1.0.0
   - type: `ExtensionCapability[]`
+- member: `dbScope?`
+  - since: 2.0.0
+  - type: `ExtensionDbScopeEntry[] | undefined`
+  - union-members: `undefined`, `ExtensionDbScopeEntry[]`
 - member: `name`
   - since: 1.0.0
   - type: `string`
@@ -202,7 +246,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `readonly reason`
   - since: 1.0.0
   - type: `ExtensionRegistrationErrorReason`
-  - union-members: `"invalid-name"`, `"incompatible-version"`, `"invalid-manifest-field"`
+  - union-members: `"invalid-name"`, `"incompatible-version"`, `"invalid-manifest-field"`, `"invalid-db-scope"`
 - member: `stack?`
   - since: 1.0.0
   - type: `string | undefined`
@@ -213,7 +257,17 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 1.0.0
 - kind: type
 - type: `ExtensionRegistrationErrorReason`
-- union-members: `"invalid-name"`, `"incompatible-version"`, `"invalid-manifest-field"`
+- union-members: `"invalid-name"`, `"incompatible-version"`, `"invalid-manifest-field"`, `"invalid-db-scope"`
+
+## export `ExtensionRuntimeContext`
+
+- since: 2.0.0
+- kind: type
+- type: `ExtensionRuntimeContext`
+- member: `getDbHandle`
+  - since: 2.0.0
+  - type: `() => Promise<ExtensionDbHandle | { unavailable: ExtensionDbUnavailableReason; }>`
+  - call-signature: `(): Promise<ExtensionDbHandle | { unavailable: ExtensionDbUnavailableReason; }>`
 
 ## export `HOST_SUPPORTED_EXTENSION_API_RANGE`
 
@@ -267,8 +321,8 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `(manifest: ExtensionManifest, hooksFactory: (host: HostServices) => ExtensionHooks, options?: RegisterExtensionOptions, host?: HostServices) => { manifest: ExtensionManifest; hooks: ExtensionHooks; }`
-- call-signature: `(manifest: ExtensionManifest, hooksFactory: (host: HostServices) => ExtensionHooks, options?: RegisterExtensionOptions, host?: HostServices): { manifest: ExtensionManifest; hooks: ExtensionHooks; }`
+- type: `(manifest: ExtensionManifest, hooksFactory: (context: ExtensionRuntimeContext & HostServices) => ExtensionHooks, options?: RegisterExtensionOptions, host?: ExtensionRuntimeContext & HostServices) => { manifest: ExtensionManifest; hooks: ExtensionHooks; }`
+- call-signature: `(manifest: ExtensionManifest, hooksFactory: (context: ExtensionRuntimeContext & HostServices) => ExtensionHooks, options?: RegisterExtensionOptions, host?: ExtensionRuntimeContext & HostServices): { manifest: ExtensionManifest; hooks: ExtensionHooks; }`
 
 ## export `UIPanel`
 

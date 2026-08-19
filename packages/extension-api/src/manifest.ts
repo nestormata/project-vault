@@ -1,4 +1,5 @@
 import semver from 'semver'
+import type { ExtensionDbScopeEntry } from './db-access.js'
 
 /**
  * AC1 — the manifest shape an extension author declares, per architecture.md
@@ -22,6 +23,8 @@ export type ExtensionManifest = {
    * `replacementProven` distinction) — declaring this field alone never disables anything.
    */
   replacesNativeLogin?: boolean
+  /** Optional, operator-approved request for a separate least-privilege DB handle. */
+  dbScope?: ExtensionDbScopeEntry[]
 }
 
 /**
@@ -29,7 +32,7 @@ export type ExtensionManifest = {
  * under `src/**` (enforced by `scripts/check-extension-api-version-skew.ts`, AC7) and kept equal
  * to this package's `package.json` `version` field (see `manifest.test.ts`).
  */
-export const EXTENSION_API_VERSION = '1.4.0'
+export const EXTENSION_API_VERSION = '2.0.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -13,7 +13,10 @@
  * enum, so Story 14.2's `/health` contract is unchanged.
  */
 export type ExtensionRegistrationErrorReason =
-  'invalid-name' | 'incompatible-version' | 'invalid-manifest-field'
+  'invalid-name' | 'incompatible-version' | 'invalid-manifest-field' | 'invalid-db-scope'
+
+// This union is intentionally open for future additions. Consumers should include a default
+// branch when switching on reason; adding a member is a breaking public-contract change.
 
 export class ExtensionRegistrationError extends Error {
   readonly reason: ExtensionRegistrationErrorReason

@@ -7,6 +7,7 @@ import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { HostServices } from './host-services.js'
+import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -70,7 +71,7 @@ type RegisterExtensionOptions = {
 const noopLogger: RegisterExtensionLogger = { warn: () => undefined }
 
 /** Story 23.2 AC-2 — the complete, fixed set of top-level `ExtensionManifest` keys. */
-const KNOWN_MANIFEST_KEYS = ['name', 'apiVersion', 'capabilities', 'replacesNativeLogin']
+const KNOWN_MANIFEST_KEYS = ['name', 'apiVersion', 'capabilities', 'replacesNativeLogin', 'dbScope']
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
 
@@ -119,6 +120,47 @@ function validateReplacesNativeLoginShape(manifest: ExtensionManifest): void {
       `Extension manifest declares "replacesNativeLogin: true" but does not declare "auth-provider" in capabilities[]`
     )
   }
+}
+
+const DB_SCOPE_TABLE_PATTERN = /^[a-z][a-z0-9_]*$/
+const DB_SCOPE_OPERATIONS = new Set(['select', 'insert', 'update', 'delete'])
+const INVALID_DB_SCOPE = 'invalid-db-scope' as const
+
+function invalidDbScope(message: string): never {
+  throw new ExtensionRegistrationError(INVALID_DB_SCOPE, message)
+}
+
+function validateDbScopeEntry(entry: unknown, tables: Set<string>): void {
+  if (!entry || typeof entry !== 'object') invalidDbScope('Each dbScope entry must be an object')
+  const candidate = entry as { table?: unknown; operations?: unknown }
+  if (typeof candidate.table !== 'string' || !DB_SCOPE_TABLE_PATTERN.test(candidate.table)) {
+    invalidDbScope('dbScope table must be an unqualified PostgreSQL identifier')
+  }
+  if (tables.has(candidate.table)) {
+    invalidDbScope(`dbScope contains duplicate table "${candidate.table}"`)
+  }
+  tables.add(candidate.table)
+  if (!Array.isArray(candidate.operations) || candidate.operations.length === 0) {
+    invalidDbScope(`dbScope table "${candidate.table}" must declare operations`)
+  }
+  const operations = new Set(candidate.operations)
+  if (operations.size !== candidate.operations.length) {
+    invalidDbScope(`dbScope table "${candidate.table}" contains an invalid or duplicate operation`)
+  }
+  if ([...operations].some((operation) => !DB_SCOPE_OPERATIONS.has(String(operation)))) {
+    invalidDbScope(`dbScope table "${candidate.table}" contains an invalid or duplicate operation`)
+  }
+}
+
+function validateDbScopeShape(
+  value: unknown
+): asserts value is ExtensionDbScopeEntry[] | undefined {
+  if (value === undefined) return
+  if (!Array.isArray(value)) {
+    invalidDbScope('Extension manifest dbScope must be an array')
+  }
+  const tables = new Set<string>()
+  for (const entry of value) validateDbScopeEntry(entry, tables)
 }
 
 function isAboveHostButSameMajor(declaredApiVersion: string): boolean {
@@ -177,9 +219,12 @@ function assertApiVersionSupported(
  */
 export function registerExtension(
   manifest: ExtensionManifest,
-  hooksFactory: (host: HostServices) => ExtensionHooks,
+  hooksFactory: (context: ExtensionRuntimeContext & HostServices) => ExtensionHooks,
   options: RegisterExtensionOptions = {},
-  host: HostServices = DEFAULT_HOST_SERVICES
+  host: ExtensionRuntimeContext & HostServices = {
+    ...DEFAULT_HOST_SERVICES,
+    getDbHandle: async () => ({ unavailable: 'not-configured' }),
+  }
 ): { manifest: ExtensionManifest; hooks: ExtensionHooks } {
   const logger = options.logger ?? noopLogger
   const hasCaseFoldNearMiss = checkUnknownManifestKeys(manifest, logger)
@@ -190,6 +235,7 @@ export function registerExtension(
     )
   }
   validateReplacesNativeLoginShape(manifest)
+  validateDbScopeShape(manifest.dbScope)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -220,6 +266,7 @@ export function registerExtension(
       apiVersion: declaredApiVersion,
       capabilities: manifest.capabilities,
       replacesNativeLogin: manifest.replacesNativeLogin,
+      dbScope: manifest.dbScope,
     },
     hooks,
   }

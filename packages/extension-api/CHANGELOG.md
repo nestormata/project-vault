@@ -2,6 +2,17 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 2.0.0 — 2026-08-19
+
+contract-hash: sha256:e25c0ba61d4c34fca86cc8ec965780cede2e6d33a28d26e427f89b72ecc81ff1
+
+### Breaking
+
+- Added the typed `dbScope` manifest request and `ExtensionRuntimeContext.getDbHandle()` runtime
+  boundary for explicitly approved, least-privilege extension database access.
+- The public extension API version is now `2.0.0`; extensions must rebuild against this major.
+- Added `invalid-db-scope` to the registration error reason union.
+
 ## 1.4.0 — 2026-08-18
 
 contract-hash: sha256:0a913707d61153f7e63a88df582f92ed648066fe3af55e340273927055b552bf

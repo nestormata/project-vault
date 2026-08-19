@@ -5,6 +5,7 @@ import type {
   ExtensionHooks,
   ExtensionManifest,
 } from '@project-vault/extension-api'
+import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 
 /**
  * Story 23.3 AC-27/28/29: a self-contained, in-process mock capability-gate extension. Exists so
@@ -47,7 +48,7 @@ export const GARBAGE_TRIGGER_ORG_ID = 'fixture-org-garbage'
 
 const manifest: ExtensionManifest = {
   name: MOCK_CAPABILITY_GATE_PROVIDER_NAME,
-  apiVersion: '1.3.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: ['capability-gate'],
 }
 

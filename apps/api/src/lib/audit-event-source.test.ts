@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 import type { ExtensionManifest } from '@project-vault/extension-api'
 import { SameTransactionAuditWriteError } from './secure-route.js'
 
@@ -24,12 +25,12 @@ import {
 const MANIFEST_NAME = 'com.acme.fixture'
 const MANIFEST: ExtensionManifest = {
   name: MANIFEST_NAME,
-  apiVersion: '1.4.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: ['audit-event-source'],
 }
 const NO_CAPABILITY_MANIFEST: ExtensionManifest = {
   name: MANIFEST_NAME,
-  apiVersion: '1.4.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: [],
 }
 const VALID_EVENT_TYPE = 'ext.com.acme.fixture.thing_happened'

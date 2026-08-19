@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { EXTENSION_DB_PLACEHOLDER_CREDENTIAL } from '@project-vault/db'
 import { DEV_AUTH_DUMMY_PASSWORD_HASH } from './dev-dummy-hash.js'
 
 const DEV_SESSION_SECRET = 'a'.repeat(64)
@@ -45,6 +46,8 @@ type ProductionEnv = {
   OPERATIONAL_STATUS_TOKEN_HMAC_SECRET?: string
   LOG_LEVEL: string
   VAULT_KMS_ENDPOINT?: string
+  EXTENSION_DATABASE_URL?: string
+  EXTENSION_DATABASE_POOL_MAX: number
 }
 
 function addEnvIssue(ctx: z.RefinementCtx, path: string, message: string): void {
@@ -518,6 +521,107 @@ function connectionTuple(value: string): [string, string, string, string] | null
   }
 }
 
+type ExtensionDatabaseEnv = {
+  EXTENSION_DATABASE_URL?: string
+  DATABASE_URL: string
+  ADMIN_DATABASE_URL: string
+  BACKUP_DATABASE_URL?: string
+  NODE_ENV: string
+  EXTENSION_DATABASE_POOL_MAX: number
+}
+
+function validateExtensionDatabaseRole(
+  tuple: [string, string, string, string] | null,
+  ctx: z.RefinementCtx
+): void {
+  const username = tuple?.[0]
+  if (!tuple || !username) {
+    addEnvIssue(
+      ctx,
+      'EXTENSION_DATABASE_URL',
+      'FATAL: EXTENSION_DATABASE_URL must be a parseable PostgreSQL URL'
+    )
+    return
+  }
+  if (['postgres', 'vault_app', 'vault_admin'].includes(username)) {
+    addEnvIssue(
+      ctx,
+      'EXTENSION_DATABASE_URL',
+      'FATAL: EXTENSION_DATABASE_URL must name a distinct least-privilege extension role'
+    )
+  }
+}
+
+function validateExtensionDatabaseCollision(
+  extensionTuple: [string, string, string, string] | null,
+  env: ExtensionDatabaseEnv,
+  ctx: z.RefinementCtx
+): void {
+  if (!extensionTuple) return
+  const compared = [
+    ['DATABASE_URL', connectionTuple(env.DATABASE_URL)],
+    ['ADMIN_DATABASE_URL', connectionTuple(env.ADMIN_DATABASE_URL)],
+    [
+      'BACKUP_DATABASE_URL',
+      env.BACKUP_DATABASE_URL ? connectionTuple(env.BACKUP_DATABASE_URL) : null,
+    ],
+  ] as const
+  if (compared.some(([, tuple]) => tuple?.join('\u0000') === extensionTuple.join('\u0000'))) {
+    addEnvIssue(
+      ctx,
+      'EXTENSION_DATABASE_URL',
+      'FATAL: EXTENSION_DATABASE_URL must not collide with another database pool'
+    )
+  }
+}
+
+function validateExtensionDatabasePool(max: number, ctx: z.RefinementCtx): void {
+  if (max > 1000) {
+    addEnvIssue(
+      ctx,
+      'EXTENSION_DATABASE_POOL_MAX',
+      'FATAL: EXTENSION_DATABASE_POOL_MAX is unreasonably large'
+    )
+  }
+}
+
+function validateExtensionDatabasePassword(
+  value: string,
+  nodeEnv: string,
+  ctx: z.RefinementCtx
+): void {
+  try {
+    const url = new URL(value)
+    if (nodeEnv === 'production' && url.password === EXTENSION_DB_PLACEHOLDER_CREDENTIAL) {
+      addEnvIssue(
+        ctx,
+        'EXTENSION_DATABASE_URL',
+        'FATAL: EXTENSION_DATABASE_URL uses the published development placeholder password'
+      )
+    }
+    if (nodeEnv !== 'production' && url.password === EXTENSION_DB_PLACEHOLDER_CREDENTIAL) {
+      process.stderr.write(
+        '[env] EXTENSION_DATABASE_URL uses the development-only placeholder outside production. Rotate it before deployment.\n'
+      )
+    }
+  } catch {
+    // The parseability issue above is the user-facing error.
+  }
+}
+
+function validateExtensionDatabaseConfiguration(
+  env: ExtensionDatabaseEnv,
+  ctx: z.RefinementCtx
+): void {
+  const value = env.EXTENSION_DATABASE_URL
+  if (!value) return
+  const tuple = connectionTuple(value)
+  validateExtensionDatabaseRole(tuple, ctx)
+  validateExtensionDatabaseCollision(tuple, env, ctx)
+  validateExtensionDatabasePool(env.EXTENSION_DATABASE_POOL_MAX, ctx)
+  validateExtensionDatabasePassword(value, env.NODE_ENV, ctx)
+}
+
 function addAdminDatabaseUrlCollisionIssue(
   databaseUrl: string,
   adminDatabaseUrl: string,
@@ -567,6 +671,13 @@ const envSchema = z
         const tuple = connectionTuple(value)
         return tuple !== null && tuple[0] !== 'postgres'
       }, "FATAL: ADMIN_DATABASE_URL must not use the 'postgres' superuser — use the narrowed non-superuser role. See .env.example."),
+    // Story 23.5: optional because the supported default has no extension. When configured this
+    // is a separate role/pool; it never falls back to DATABASE_URL or ADMIN_DATABASE_URL.
+    EXTENSION_DATABASE_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().url('FATAL: EXTENSION_DATABASE_URL must be a parseable PostgreSQL URL').optional()
+    ),
+    EXTENSION_DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(3),
     CORS_ALLOWED_ORIGINS: z
       .string()
       .min(1)
@@ -991,6 +1102,7 @@ const envSchema = z
     }
     validateDummyPasswordHash(env, ctx)
     addAdminDatabaseUrlCollisionIssue(env.DATABASE_URL, env.ADMIN_DATABASE_URL, ctx)
+    validateExtensionDatabaseConfiguration(env, ctx)
     if (env.SMTP_HOST) {
       if (!env.SMTP_PORT)
         addEnvIssue(ctx, 'SMTP_PORT', 'SMTP_PORT is required when SMTP_HOST is set')
