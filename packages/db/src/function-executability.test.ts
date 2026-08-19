@@ -51,7 +51,16 @@ describe('Story 24.5b canonical function-executability contract', () => {
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(/pg_get_function_identity_arguments/i)
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(/pg_default_acl/i)
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(
-      /defaclnamespace\s*=\s*'public'::regnamespace/i
+      /defaclnamespace\s*=\s*constants\.public_schema::regnamespace/i
+    )
+    expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(
+      /function_executability_constants[\s\S]*public_schema name NOT NULL/i
+    )
+    expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(
+      /function_executability_constants[\s\S]*owner_kind text NOT NULL/i
+    )
+    expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(
+      /owner_role\.oid\s+IS\s+NULL[\s\S]*a\.identity\s+IS\s+NULL/i
     )
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(/expected_migration_function_owner/i)
     expect(CANONICAL_FUNCTION_EXECUTABILITY_SQL).toMatch(

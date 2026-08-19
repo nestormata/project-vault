@@ -17,8 +17,28 @@ BEGIN
   IF to_regclass('pg_temp.function_executability_allowlist') IS NOT NULL THEN
     DROP TABLE function_executability_allowlist;
   END IF;
+  IF to_regclass('pg_temp.function_executability_constants') IS NOT NULL THEN
+    DROP TABLE function_executability_constants;
+  END IF;
 END
 $$;
+
+CREATE TEMP TABLE function_executability_constants (
+  public_schema name NOT NULL,
+  owner_kind text NOT NULL,
+  function_kind text NOT NULL,
+  default_acl_kind text NOT NULL,
+  execute_privilege text NOT NULL
+) ON COMMIT PRESERVE ROWS;
+
+INSERT INTO function_executability_constants(
+  public_schema,
+  owner_kind,
+  function_kind,
+  default_acl_kind,
+  execute_privilege
+)
+VALUES ('public', 'owner', 'function', 'default_acl', 'EXECUTE');
 
 CREATE TEMP TABLE function_executability_functions (
   function_oid oid NOT NULL,
@@ -92,7 +112,8 @@ SELECT
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
 LEFT JOIN pg_roles owner_role ON owner_role.oid = p.proowner
-WHERE n.nspname = 'public'
+CROSS JOIN function_executability_constants constants
+WHERE n.nspname = constants.public_schema
   AND p.prokind IN ('f', 'p');
 
 CREATE TEMP TABLE function_executability_violations (
@@ -103,30 +124,27 @@ CREATE TEMP TABLE function_executability_violations (
 
 INSERT INTO function_executability_violations(kind, signature, detail)
 SELECT
-  'owner',
+  constants.owner_kind,
   NULL,
   'expected migration function owner role "postgres" is missing'
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM function_executability_expected_migration_function_owner
-);
+FROM function_executability_constants constants
+LEFT JOIN function_executability_expected_migration_function_owner expected ON TRUE
+WHERE expected.owner_oid IS NULL;
 
 INSERT INTO function_executability_violations(kind, signature, detail)
 SELECT
-  'owner',
+  constants.owner_kind,
   f.signature,
   format('function owner role OID %s is missing', f.owner_oid)
 FROM function_executability_functions f
+CROSS JOIN function_executability_constants constants
+LEFT JOIN pg_roles owner_role ON owner_role.oid = f.owner_oid
 WHERE NOT f.is_pinned_extension_owned
-  AND NOT EXISTS (
-    SELECT 1
-    FROM pg_roles owner_role
-    WHERE owner_role.oid = f.owner_oid
-  );
+  AND owner_role.oid IS NULL;
 
 INSERT INTO function_executability_violations(kind, signature, detail)
 SELECT
-  'owner',
+  constants.owner_kind,
   f.signature,
   format(
     'function owner %s does not match expected migration owner %s',
@@ -135,63 +153,67 @@ SELECT
   )
 FROM function_executability_functions f
 CROSS JOIN function_executability_expected_migration_function_owner expected
+CROSS JOIN function_executability_constants constants
 WHERE NOT f.is_pinned_extension_owned
   AND f.owner_oid <> expected.owner_oid;
 
 INSERT INTO function_executability_violations(kind, signature, detail)
 SELECT
-  'function',
+  constants.function_kind,
   f.signature,
   format('PUBLIC EXECUTE is present; owner=%s', f.owner_name)
 FROM function_executability_functions f
+CROSS JOIN function_executability_constants constants
+LEFT JOIN function_executability_allowlist a ON a.identity = f.signature
 WHERE NOT f.is_pinned_extension_owned
-  AND NOT EXISTS (
-    SELECT 1
-    FROM function_executability_allowlist a
-    WHERE a.identity = f.signature
-  )
-  AND has_function_privilege('public', f.function_oid, 'EXECUTE');
+  AND a.identity IS NULL
+  AND has_function_privilege(constants.public_schema::text, f.function_oid, constants.execute_privilege);
 
 -- The migration's ALTER DEFAULT PRIVILEGES is global and is keyed by the role that owns the
 -- migration-created functions. A revoke row belonging only to a restore actor is not evidence.
 INSERT INTO function_executability_violations(kind, signature, detail)
 SELECT
-  'default_acl',
+  constants.default_acl_kind,
   NULL,
   format(
     'global function default ACL for migration owner %s is missing or grants PUBLIC EXECUTE',
     expected.owner_name
   )
 FROM function_executability_expected_migration_function_owner expected
+CROSS JOIN function_executability_constants constants
 LEFT JOIN pg_default_acl defaults
   ON defaults.defaclrole = expected.owner_oid
  AND defaults.defaclobjtype = 'f'
  AND defaults.defaclnamespace = 0
+LEFT JOIN LATERAL (
+  SELECT 1 AS has_public_execute
+  FROM aclexplode(defaults.defaclacl) acl
+  WHERE acl.grantee = 0
+    AND acl.privilege_type = constants.execute_privilege
+  LIMIT 1
+) public_execute ON TRUE
 WHERE defaults.oid IS NULL
-   OR EXISTS (
-     SELECT 1
-     FROM aclexplode(defaults.defaclacl) acl
-     WHERE acl.grantee = 0
-       AND acl.privilege_type = 'EXECUTE'
-   );
+   OR public_execute.has_public_execute IS NOT NULL;
 
 -- A schema-scoped default can widen effective defaults even when the global row is safe.
 INSERT INTO function_executability_violations(kind, signature, detail)
 SELECT
-  'default_acl',
+  constants.default_acl_kind,
   NULL,
   format(
     'schema public function default ACL for migration owner %s grants PUBLIC EXECUTE',
     expected.owner_name
   )
 FROM function_executability_expected_migration_function_owner expected
+CROSS JOIN function_executability_constants constants
 JOIN pg_default_acl defaults
   ON defaults.defaclrole = expected.owner_oid
  AND defaults.defaclobjtype = 'f'
- AND defaults.defaclnamespace = 'public'::regnamespace
-WHERE EXISTS (
-  SELECT 1
+ AND defaults.defaclnamespace = constants.public_schema::regnamespace
+JOIN LATERAL (
+  SELECT 1 AS has_public_execute
   FROM aclexplode(defaults.defaclacl) acl
   WHERE acl.grantee = 0
-    AND acl.privilege_type = 'EXECUTE'
-);
+    AND acl.privilege_type = constants.execute_privilege
+  LIMIT 1
+) public_execute ON TRUE;
