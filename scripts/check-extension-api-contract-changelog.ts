@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { latestChangelogEntry } from './lib/extension-api-changelog.js'
 
 type Overrides = { snapshotText?: string; behaviourText?: string; changelogText?: string }
 type Result = { ok: true } | { ok: false; errors: string[] }
@@ -32,14 +33,6 @@ function deprecatedChangelogErrors(changelog: string): string[] {
       if (!entry.includes(field)) errors.push(`deprecated changelog entry is missing ${field}`)
   }
   return errors
-}
-
-function latestChangelogEntry(changelog: string): string | undefined {
-  const headings = [...changelog.matchAll(/^##\s+.+$/gm)].map((match) => match.index ?? 0)
-  const start = headings[0]
-  if (start === undefined) return undefined
-  const end = headings[1] ?? changelog.length
-  return changelog.slice(start, end)
 }
 
 export function checkContractChangelog(root: string, overrides: Overrides = {}): Result {

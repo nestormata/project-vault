@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import semver from 'semver'
+import { latestChangelogEntry } from './lib/extension-api-changelog.js'
 
 type DeprecationInput = { indexSource: string; changelogSource: string; currentVersion: string }
 
@@ -67,13 +68,6 @@ function parseIsoDate(value: string): Date | undefined {
     date.getUTCDate() === day
     ? date
     : undefined
-}
-
-function latestChangelogEntry(changelog: string): string | undefined {
-  const headings = [...changelog.matchAll(/^##\s+.+$/gm)].map((match) => match.index ?? 0)
-  const start = headings[0]
-  if (start === undefined) return undefined
-  return changelog.slice(start, headings[1] ?? changelog.length)
 }
 
 function validateNotice(

@@ -34,3 +34,8 @@ await app.ready()
 const document = app.swagger()
 writeFileSync(outPath, JSON.stringify(document, null, 2) + '\n')
 await app.close()
+
+// Some Fastify plugins retain event-loop handles after a successful close under Node 24. The
+// generator has completed its synchronous write and awaited the app shutdown, so terminate the
+// one-shot process explicitly instead of leaving Turbo's generate-spec task hanging indefinitely.
+process.exit(0)
