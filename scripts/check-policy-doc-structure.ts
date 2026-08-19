@@ -58,7 +58,7 @@ function readmeErrors(readmeText: string): string[] {
       'packages/extension-api/README.md must contain the canonical absolute HTTPS policy URL'
     )
   const readmeLines = readmeText.split('\n')
-  const sectionStart = readmeLines.findIndex((line) => line === '## Versioning & Deprecation')
+  const sectionStart = readmeLines.indexOf('## Versioning & Deprecation')
   const section: string[] = []
   if (sectionStart !== -1) {
     for (const line of readmeLines.slice(sectionStart + 1)) {
