@@ -125,6 +125,11 @@ jobs:
         env:
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
 
+      - name: Check function executability invariant (Story 24.5b)
+        run: pnpm check-function-executability
+        env:
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+
       - name: Check search index safety (RS-E2a)
         run: pnpm check-search-index
 
