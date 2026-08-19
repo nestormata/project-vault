@@ -24,6 +24,9 @@ export default mergeConfig(baseVitestConfig, {
         'src/seed-fixtures.ts',
         'src/seed-demo.ts',
         'src/scripts/guarded-migrate.ts',
+        // The executable-invariant adapter is exercised by the real-Postgres contract tests;
+        // keep it in LCOV so SonarCloud measures new Story 24.5b code instead of reporting 0%.
+        'src/function-executability.ts',
       ],
       thresholds: {
         lines: 80,
