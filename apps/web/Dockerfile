@@ -60,8 +60,12 @@ RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
 # but breaks this app's SvelteKit build with a destructuring-lowering regression against our Vite
 # target (verified 0.27.7 and 0.28.2 both fail identically). Pruning removes the CVE surface
 # entirely instead of chasing each new Go stdlib disclosure through .trivyignore.
+# @lix-js/sdk (incl. its ~260MB linux-x64 native binary sidecar) arrived transitively via
+# @inlang/paraglide-js -> @inlang/sdk starting at paraglide-js 2.24.1 — it's lix's "git for
+# translations" engine, used only by paraglide's compiler/CLI, never imported by the compiled
+# runtime output. Same build-time-dead-weight pattern as vite/esbuild above.
 RUN find /app/deploy/node_modules/.pnpm \
-  -maxdepth 1 \( -name 'vite@*' -o -name 'esbuild@*' -o -name '@esbuild+*' \) \
+  -maxdepth 1 \( -name 'vite@*' -o -name 'esbuild@*' -o -name '@esbuild+*' -o -name '@lix-js+*' \) \
   -exec rm -rf {} +
 
 # node:24-alpine, pinned by digest — see builder stage comment above.
