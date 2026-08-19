@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
+import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 import type { ExtensionManifest } from '@project-vault/extension-api'
 import {
   bootstrapRouteIntegrationTest,
@@ -25,7 +26,7 @@ const STATUS_URL = '/api/v1/admin/extensions/status'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
-  apiVersion: '1.1.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: ['auth-provider'],
 }
 
