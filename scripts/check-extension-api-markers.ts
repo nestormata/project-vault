@@ -6,6 +6,10 @@ import { latestChangelogEntry } from './lib/extension-api-changelog.js'
 
 type DeprecationInput = { indexSource: string; changelogSource: string; currentVersion: string }
 
+function countCharacter(value: string, character: string): number {
+  return value.split(character).length - 1
+}
+
 // eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- bounded scanner preserves JSDoc/export association without backtracking regexes
 function exportedBlocks(source: string): Array<{ doc: string; statement: string }> {
   const blocks: Array<{ doc: string; statement: string }> = []
@@ -36,13 +40,13 @@ function exportedBlocks(source: string): Array<{ doc: string; statement: string 
     }
     if (!statement && trimmed.startsWith('export ')) {
       statement = trimmed
-      braceDepth = (trimmed.match(/\{/g)?.length ?? 0) - (trimmed.match(/\}/g)?.length ?? 0)
+      braceDepth = countCharacter(trimmed, '{') - countCharacter(trimmed, '}')
       if (braceDepth === 0) finishStatement()
       continue
     }
     if (statement) {
       statement += ` ${trimmed}`
-      braceDepth += (trimmed.match(/\{/g)?.length ?? 0) - (trimmed.match(/\}/g)?.length ?? 0)
+      braceDepth += countCharacter(trimmed, '{') - countCharacter(trimmed, '}')
       if (braceDepth <= 0) finishStatement()
     }
   }
@@ -68,7 +72,8 @@ function exportedNames(statement: string): string[] {
     ['const', 'function', 'class', 'interface', 'type'].includes(token)
   )
   const name = declarationIndex === -1 ? undefined : tokens[declarationIndex + 1]
-  return name ? [name.replace(/[^A-Za-z0-9_$].*$/, '')] : []
+  const identifier = name ? /^[A-Za-z0-9_$]*/.exec(name)?.[0] : undefined
+  return identifier ? [identifier] : []
 }
 
 export function checkExperimentalMarkers(source: string): string[] {
@@ -89,15 +94,17 @@ export function checkExperimentalMarkers(source: string): string[] {
 }
 
 function publicationDate(changelog: string, version: string): Date | undefined {
-  const match = changelog.match(
-    new RegExp(`^##\\s+${version.replaceAll('.', '\\.')}(?:\\s+|$).*?(\\d{4}-\\d{2}-\\d{2})`, 'm')
-  )
+  const escapedVersion = version.replaceAll('.', String.raw`\.`)
+  const match = new RegExp(
+    String.raw`^##\s+${escapedVersion}(?:\s+|$).*?(\d{4}-\d{2}-\d{2})`,
+    'm'
+  ).exec(changelog)
   if (!match) return undefined
   return parseIsoDate(match[1])
 }
 
 function parseIsoDate(value: string): Date | undefined {
-  const parts = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!parts) return undefined
   const year = Number(parts[1])
   const month = Number(parts[2])
@@ -129,9 +136,9 @@ function validateDeprecationEntry(
   published: Date | undefined
 ): string[] {
   const errors: string[] = []
-  const replacement = block.match(/replacement:\s*(\S.*)/)?.[1]
-  const removalText = block.match(/earliest-removal:\s*(\S+)/)?.[1]
-  const noticeText = block.match(/notice-window-ends:\s*(\S+)/)?.[1]
+  const replacement = /replacement:\s*(\S.*)/.exec(block)?.[1]
+  const removalText = /earliest-removal:\s*(\S+)/.exec(block)?.[1]
+  const noticeText = /notice-window-ends:\s*(\S+)/.exec(block)?.[1]
   if (!replacement) errors.push(`${symbol}: missing replacement field`)
   const removal = removalText ? semver.parse(removalText) : null
   if (!removalText || !removal) errors.push(`${symbol}: missing or invalid earliest-removal field`)
@@ -155,7 +162,9 @@ export function checkDeprecationMarkers(input: DeprecationInput): string[] {
   }
   if (deprecatedSymbols.length > 0) {
     const latest = latestChangelogEntry(input.changelogSource)
-    const deprecatedEntry = latest?.match(/^### Deprecated[\s\S]*?(?=^### |^## |(?![\s\S]))/m)?.[0]
+    const deprecatedEntry = latest
+      ? /^### Deprecated[\s\S]*?(?=^### |^## |(?![\s\S]))/m.exec(latest)?.[0]
+      : undefined
     for (const symbol of deprecatedSymbols)
       if (!deprecatedEntry?.includes(symbol))
         errors.push(`${symbol}: CHANGELOG's newest entry must announce this deprecated export`)

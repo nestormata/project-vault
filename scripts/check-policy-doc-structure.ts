@@ -57,8 +57,16 @@ function readmeErrors(readmeText: string): string[] {
     errors.push(
       'packages/extension-api/README.md must contain the canonical absolute HTTPS policy URL'
     )
-  const section = readmeText.match(/## Versioning & Deprecation\n([\s\S]*?)(?=\n## |$)/)?.[1] ?? ''
-  if (section.split('\n').filter(Boolean).length > 8)
+  const readmeLines = readmeText.split('\n')
+  const sectionStart = readmeLines.findIndex((line) => line === '## Versioning & Deprecation')
+  const section: string[] = []
+  if (sectionStart !== -1) {
+    for (const line of readmeLines.slice(sectionStart + 1)) {
+      if (line.startsWith('## ')) break
+      section.push(line)
+    }
+  }
+  if (section.filter(Boolean).length > 8)
     errors.push('README Versioning & Deprecation pointer must be no more than 8 non-empty lines')
   return errors
 }

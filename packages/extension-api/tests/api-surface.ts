@@ -6,6 +6,12 @@ const SNAPSHOT_NAME = 'api-surface.snapshot.md'
 
 type SinceIndex = Map<string, string>
 
+const EXPORT_PATTERN = /^## export `([^`]+)`$/
+const MEMBER_PATTERN = /^(\s*)- member: `([^`]+)`$/
+const INDEX_PATTERN = /^(\s*)- index-signature: `([^`]+)`$/
+const SINCE_PATTERN = /^\s*- since: (\d+\.\d+\.\d+)$/
+const SINCE_VALUE_PATTERN = /^- since: (\d+\.\d+\.\d+)/
+
 function popNestedMembers(members: Array<{ indent: number; name: string }>, indent: number): void {
   while (true) {
     const last = members.at(-1)
@@ -26,7 +32,7 @@ function snapshotSinceIndex(snapshot: string): SinceIndex {
   let pendingKey: string | undefined
 
   for (const line of snapshot.split('\n')) {
-    const exportMatch = line.match(/^## export `([^`]+)`$/)
+    const exportMatch = EXPORT_PATTERN.exec(line)
     if (exportMatch) {
       const name = exportMatch[1]
       if (!name) continue
@@ -36,7 +42,7 @@ function snapshotSinceIndex(snapshot: string): SinceIndex {
       continue
     }
 
-    const memberMatch = line.match(/^(\s*)- member: `([^`]+)`$/)
+    const memberMatch = MEMBER_PATTERN.exec(line)
     if (memberMatch) {
       const whitespace = memberMatch[1]
       const name = memberMatch[2]
@@ -48,7 +54,7 @@ function snapshotSinceIndex(snapshot: string): SinceIndex {
       continue
     }
 
-    const indexMatch = line.match(/^(\s*)- index-signature: `([^`]+)`$/)
+    const indexMatch = INDEX_PATTERN.exec(line)
     if (indexMatch) {
       const whitespace = indexMatch[1]
       const name = indexMatch[2]
@@ -60,7 +66,7 @@ function snapshotSinceIndex(snapshot: string): SinceIndex {
       continue
     }
 
-    const sinceMatch = line.match(/^\s*- since: (\d+\.\d+\.\d+)$/)
+    const sinceMatch = SINCE_PATTERN.exec(line)
     const since = sinceMatch?.[1]
     if (since && pendingKey) index.set(pendingKey, since)
   }
@@ -83,7 +89,7 @@ export function applySinceAnnotations(
       .split('\n')
       // eslint-disable-next-line complexity -- parser walks nested snapshot entries
       .map((line) => {
-        const exportMatch = line.match(/^## export `([^`]+)`$/)
+        const exportMatch = EXPORT_PATTERN.exec(line)
         if (exportMatch) {
           const name = exportMatch[1]
           if (!name) return line
@@ -93,7 +99,7 @@ export function applySinceAnnotations(
           return line
         }
 
-        const memberMatch = line.match(/^(\s*)- member: `([^`]+)`$/)
+        const memberMatch = MEMBER_PATTERN.exec(line)
         if (memberMatch) {
           const whitespace = memberMatch[1]
           const name = memberMatch[2]
@@ -105,7 +111,7 @@ export function applySinceAnnotations(
           return line
         }
 
-        const indexMatch = line.match(/^(\s*)- index-signature: `([^`]+)`$/)
+        const indexMatch = INDEX_PATTERN.exec(line)
         if (indexMatch) {
           const whitespace = indexMatch[1]
           const name = indexMatch[2]
@@ -178,16 +184,20 @@ function renderTypeMembers(
       (ts.getCombinedModifierFlags(declaration as ts.Declaration) & ts.ModifierFlags.Readonly) !== 0
         ? 'readonly '
         : ''
-    lines.push(`${indent}- member: \`${readonly}${property.name}${optional}\``)
-    lines.push(`${indent}  - since: 1.0.0`)
-    lines.push(...renderType(checker, propertyType, declaration, `${indent}  `, seen))
+    lines.push(
+      `${indent}- member: \`${readonly}${property.name}${optional}\``,
+      `${indent}  - since: 1.0.0`,
+      ...renderType(checker, propertyType, declaration, `${indent}  `, seen)
+    )
   }
   for (const index of checker.getIndexInfosOfType(type)) {
     const readonly = index.isReadonly ? 'readonly ' : ''
     const keyType = typeText(checker, index.keyType, source)
     const valueType = typeText(checker, index.type, source)
-    lines.push(`${indent}- index-signature: \`${readonly}[${keyType}]: ${valueType}\``)
-    lines.push(`${indent}  - since: 1.0.0`)
+    lines.push(
+      `${indent}- index-signature: \`${readonly}[${keyType}]: ${valueType}\``,
+      `${indent}  - since: 1.0.0`
+    )
   }
   return lines
 }
@@ -231,8 +241,10 @@ function renderType(
   const id = (type as ts.Type & { id?: number }).id
   if (id !== undefined && seen.has(id)) return lines
   if (id !== undefined) seen.add(id)
-  lines.push(...renderTypeMembers(checker, type, source, indent, seen))
-  lines.push(...renderSignatures(checker, type, source, indent))
+  lines.push(
+    ...renderTypeMembers(checker, type, source, indent, seen),
+    ...renderSignatures(checker, type, source, indent)
+  )
   return lines
 }
 
@@ -255,11 +267,14 @@ export function generateSurfaceSnapshot(root: string): string {
       target.flags & ts.SymbolFlags.Type
         ? checker.getDeclaredTypeOfSymbol(target)
         : checker.getTypeOfSymbolAtLocation(target, declaration)
-    lines.push(`## export \`${symbol.name}\``, '')
-    lines.push('- since: 1.0.0')
-    lines.push(`- kind: ${target.flags & ts.SymbolFlags.Type ? 'type' : 'value'}`)
-    lines.push(...renderType(checker, type, declaration, '', new Set()))
-    lines.push('')
+    lines.push(
+      `## export \`${symbol.name}\``,
+      '',
+      '- since: 1.0.0',
+      `- kind: ${target.flags & ts.SymbolFlags.Type ? 'type' : 'value'}`,
+      ...renderType(checker, type, declaration, '', new Set()),
+      ''
+    )
   }
   const generated = `${lines.join('\n').trimEnd()}\n`
   const previous = existsSync(join(root, SNAPSHOT_NAME))
@@ -277,7 +292,7 @@ function validateExportSince(
   version: number[],
   currentVersion: string
 ): string[] {
-  const since = next.match(/^- since: (\d+\.\d+\.\d+)/)?.[1]
+  const since = SINCE_VALUE_PATTERN.exec(next)?.[1]
   if (!since) return [`${line} is missing since`]
   return since
     .split('.')
@@ -288,7 +303,7 @@ function validateExportSince(
 }
 
 function validateMemberSince(line: string, next: string): string[] {
-  return /^- since: \d+\.\d+\.\d+/.test(next.trim()) ? [] : [`${line} is missing since`]
+  return SINCE_VALUE_PATTERN.exec(next.trim()) ? [] : [`${line} is missing since`]
 }
 
 export function validateSinceIndex(snapshot: string, currentVersion = '1.4.0'): string[] {
@@ -298,7 +313,7 @@ export function validateSinceIndex(snapshot: string, currentVersion = '1.4.0'): 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? ''
     const next = lines.slice(index + 1).find((candidate) => candidate.trim().length > 0) ?? ''
-    if (/^## export /.test(line))
+    if (line.startsWith('## export '))
       errors.push(...validateExportSince(line, next, version, currentVersion))
     const trimmed = line.trimStart()
     if (trimmed.startsWith('- member: ')) errors.push(...validateMemberSince(line, next))

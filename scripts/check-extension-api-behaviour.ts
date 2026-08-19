@@ -20,16 +20,17 @@ export function extractBehaviourContract(sources: {
     .split('\n')
     .find((line) => line.includes('const REVERSE_DNS_NAME_PATTERN'))
   const pattern = patternLine?.split('=', 2)[1]?.trim()
-  const prerelease = sources.registerSource.match(/includePrerelease\s*:\s*(true|false)/)?.[1]
-  const timeout = sources.loaderSource.match(/const DEFAULT_TIMEOUT_MS\s*=\s*(\d+)/)?.[1]
+  const prerelease = /includePrerelease\s*:\s*(true|false)/.exec(sources.registerSource)?.[1]
+  const timeout = /const DEFAULT_TIMEOUT_MS\s*=\s*(\d+)/.exec(sources.loaderSource)?.[1]
   const normalizedLoaderSource = sources.loaderSource
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => !line.startsWith('//'))
     .join(' ')
-  const mapping = normalizedLoaderSource.match(
-    /return error\.reason === 'invalid-name' \|\| error\.reason === 'invalid-manifest-field' \? '([^']+)' : '([^']+)'/
-  )
+  const mapping =
+    /return error\.reason === 'invalid-name' \|\| error\.reason === 'invalid-manifest-field' \? '([^']+)' : '([^']+)'/.exec(
+      normalizedLoaderSource
+    )
   if (!pattern || !prerelease || !timeout || !mapping) {
     throw new Error('could not extract one or more contract behaviour definitions')
   }
@@ -42,10 +43,10 @@ export function extractBehaviourContract(sources: {
 }
 
 function parseGolden(text: string): BehaviourContract {
-  const pattern = text.match(/^- reverse-dns-name-pattern: `([^`]+)`$/m)?.[1]
-  const prerelease = text.match(/^- include-prerelease: (true|false)$/m)?.[1]
-  const timeout = text.match(/^- loader-timeout-ms: (\d+)$/m)?.[1]
-  const mapping = text.match(/^- registration-error-to-load-failure: (.+)$/m)?.[1]
+  const pattern = /^- reverse-dns-name-pattern: `([^`]+)`$/m.exec(text)?.[1]
+  const prerelease = /^- include-prerelease: (true|false)$/m.exec(text)?.[1]
+  const timeout = /^- loader-timeout-ms: (\d+)$/m.exec(text)?.[1]
+  const mapping = /^- registration-error-to-load-failure: (.+)$/m.exec(text)?.[1]
   if (!pattern || !prerelease || !timeout || !mapping) {
     throw new Error('behaviour snapshot is missing a required field')
   }
