@@ -22,7 +22,7 @@ export function calculateContractHash(root: string, overrides: Overrides = {}): 
 
 function deprecatedChangelogErrors(changelog: string): string[] {
   const errors: string[] = []
-  for (const match of changelog.matchAll(/### Deprecated[\s\S]*?(?=^### |^## |$)/gm)) {
+  for (const match of changelog.matchAll(/### Deprecated[\s\S]*?(?=^### |^## |(?![\s\S]))/gm)) {
     const entry = match[0]
     if (!/^\s*(?:[-*]\s*)?Notified:\s*\d{4}-\d{2}-\d{2},\s*[^\n]+$/m.test(entry))
       errors.push(
@@ -34,14 +34,24 @@ function deprecatedChangelogErrors(changelog: string): string[] {
   return errors
 }
 
+function latestChangelogEntry(changelog: string): string | undefined {
+  const headings = [...changelog.matchAll(/^##\s+.+$/gm)].map((match) => match.index ?? 0)
+  const start = headings[0]
+  if (start === undefined) return undefined
+  const end = headings[1] ?? changelog.length
+  return changelog.slice(start, end)
+}
+
 export function checkContractChangelog(root: string, overrides: Overrides = {}): Result {
   const changelog =
     overrides.changelogText ??
     readFileSync(resolve(root, 'packages/extension-api/CHANGELOG.md'), 'utf8')
   const errors = deprecatedChangelogErrors(changelog)
   const actual = calculateContractHash(root, overrides)
-  const recorded = changelog.match(/^contract-hash:\s*sha256:([a-f0-9]{64})\s*$/m)?.[1]
-  if (!recorded) errors.push('CHANGELOG is missing a contract-hash: sha256:<64 hex> line')
+  const latest = latestChangelogEntry(changelog)
+  const recorded = latest?.match(/^contract-hash:\s*sha256:([a-f0-9]{64})\s*$/m)?.[1]
+  if (!recorded)
+    errors.push('most recent CHANGELOG entry is missing a contract-hash: sha256:<64 hex> line')
   else if (recorded !== actual)
     errors.push(`contract-hash mismatch: expected ${actual}, found ${recorded}`)
   return errors.length === 0 ? { ok: true } : { ok: false, errors }

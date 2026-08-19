@@ -12,6 +12,7 @@ export type BehaviourContract = {
 type SourceOverrides = { registerSource?: string; loaderSource?: string }
 type Result = { ok: true } | { ok: false; errors: string[] }
 
+// eslint-disable-next-line complexity -- fail-closed extraction validates four independent contract fields
 export function extractBehaviourContract(sources: {
   registerSource: string
   loaderSource: string
@@ -21,9 +22,13 @@ export function extractBehaviourContract(sources: {
   )?.[1]
   const prerelease = sources.registerSource.match(/includePrerelease\s*:\s*(true|false)/)?.[1]
   const timeout = sources.loaderSource.match(/const DEFAULT_TIMEOUT_MS\s*=\s*(\d+)/)?.[1]
-  const mapping =
-    sources.loaderSource.includes("'incompatible-version'") &&
-    sources.loaderSource.includes("'capability_mismatch'")
+  const mappingSource =
+    sources.loaderSource
+      .match(/function mapFailureReason[\s\S]*?\n\s*\}/)?.[0]
+      ?.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '') ?? ''
+  const mapping = mappingSource.match(
+    /return error\.reason === 'invalid-name' \|\| error\.reason === 'invalid-manifest-field'\s*\n\s*\? '([^']+)'\s*\n\s*: '([^']+)'/
+  )
   if (!pattern || !prerelease || !timeout || !mapping) {
     throw new Error('could not extract one or more contract behaviour definitions')
   }
@@ -31,7 +36,7 @@ export function extractBehaviourContract(sources: {
     reverseDnsNamePattern: pattern,
     includePrerelease: prerelease === 'true',
     loaderTimeoutMs: Number(timeout),
-    reasonToStatus: 'incompatible-version -> capability_mismatch',
+    reasonToStatus: `incompatible-version -> ${mapping[2]}; invalid-manifest-field -> ${mapping[1]}; invalid-name -> ${mapping[1]}`,
   }
 }
 
@@ -65,7 +70,7 @@ export function checkBehaviourContract(root: string, overrides: SourceOverrides 
       reverseDnsNamePattern: 'REVERSE_DNS_NAME_PATTERN',
       includePrerelease: 'includePrerelease',
       loaderTimeoutMs: 'DEFAULT_TIMEOUT_MS',
-      reasonToStatus: 'incompatible-version -> capability_mismatch',
+      reasonToStatus: 'registration-error-to-load-failure',
     }
     for (const key of Object.keys(actual) as Array<keyof BehaviourContract>) {
       if (actual[key] !== expected[key])

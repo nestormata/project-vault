@@ -9,6 +9,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `AuditEventSourceHost`
 - member: `writeAuditEvent`
   - since: 1.0.0
+  - type: `(input: AuditEventSourceWriteInput) => Promise<AuditEventSourceWriteResult>`
   - call-signature: `(input: AuditEventSourceWriteInput): Promise<AuditEventSourceWriteResult>`
 
 ## export `AuditEventSourceWriteInput`
@@ -18,18 +19,26 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `AuditEventSourceWriteInput`
 - member: `eventType`
   - since: 1.0.0
+  - type: `string`
 - member: `orgId`
   - since: 1.0.0
+  - type: `string`
 - member: `payload`
   - since: 1.0.0
+  - type: `Record<string, unknown>`
+  - index-signature: `[string]: unknown`
+    - since: 1.4.0
 - member: `projectId?`
   - since: 1.0.0
+  - type: `string | undefined`
   - union-members: `undefined`, `string`
 - member: `resourceId?`
   - since: 1.0.0
+  - type: `string | undefined`
   - union-members: `undefined`, `string`
 - member: `resourceType?`
   - since: 1.0.0
+  - type: `string | undefined`
   - union-members: `undefined`, `string`
 
 ## export `AuditEventSourceWriteResult`
@@ -39,8 +48,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `AuditEventSourceWriteResult`
 - member: `createdAt`
   - since: 1.0.0
+  - type: `string`
 - member: `id`
   - since: 1.0.0
+  - type: `string`
 
 ## export `AuthResult`
 
@@ -49,14 +60,18 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `AuthResult`
 - member: `displayName?`
   - since: 1.0.0
+  - type: `string | undefined`
   - union-members: `undefined`, `string`
 - member: `email?`
   - since: 1.0.0
+  - type: `string | undefined`
   - union-members: `undefined`, `string`
 - member: `externalSubject`
   - since: 1.0.0
+  - type: `string`
 - member: `providerName`
   - since: 1.0.0
+  - type: `string`
 
 ## export `AuthStrategy`
 
@@ -65,6 +80,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `AuthStrategy`
 - member: `onAuthenticate`
   - since: 1.0.0
+  - type: `(credential: string) => Promise<AuthResult>`
   - call-signature: `(credential: string): Promise<AuthResult>`
 
 ## export `CapabilityDecision`
@@ -81,6 +97,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `CapabilityGate`
 - member: `onCheckCapability`
   - since: 1.0.0
+  - type: `(context: CapabilityGateContext) => Promise<CapabilityDecision>`
   - call-signature: `(context: CapabilityGateContext): Promise<CapabilityDecision>`
 
 ## export `CapabilityGateContext`
@@ -90,16 +107,21 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `CapabilityGateContext`
 - member: `capability`
   - since: 1.0.0
+  - type: `string`
 - member: `gateCallId`
   - since: 1.0.0
+  - type: `string`
 - member: `orgId`
   - since: 1.0.0
+  - type: `string | null`
   - union-members: `null`, `string`
 - member: `orgRole`
   - since: 1.0.0
+  - type: `"owner" | "admin" | "member" | "viewer" | null`
   - union-members: `null`, `"owner"`, `"admin"`, `"member"`, `"viewer"`
 - member: `userId`
   - since: 1.0.0
+  - type: `string | null`
   - union-members: `null`, `string`
 
 ## export `defineExtension`
@@ -129,15 +151,19 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `ExtensionHooks`
 - member: `authStrategy?`
   - since: 1.0.0
+  - type: `AuthStrategy | undefined`
   - union-members: `undefined`, `AuthStrategy`
 - member: `capabilityGate?`
   - since: 1.0.0
+  - type: `CapabilityGate | undefined`
   - union-members: `undefined`, `CapabilityGate`
 - member: `notificationChannel?`
   - since: 1.0.0
+  - type: `NotificationChannel | undefined`
   - union-members: `undefined`, `NotificationChannel`
 - member: `uiPanel?`
   - since: 1.0.0
+  - type: `UIPanel | undefined`
   - union-members: `undefined`, `UIPanel`
 
 ## export `ExtensionManifest`
@@ -147,12 +173,16 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `ExtensionManifest`
 - member: `apiVersion`
   - since: 1.0.0
+  - type: `string`
 - member: `capabilities`
   - since: 1.0.0
+  - type: `ExtensionCapability[]`
 - member: `name`
   - since: 1.0.0
+  - type: `string`
 - member: `replacesNativeLogin?`
   - since: 1.0.0
+  - type: `boolean | undefined`
   - union-members: `undefined`, `false`, `true`
 
 ## export `ExtensionRegistrationError`
@@ -162,15 +192,20 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `ExtensionRegistrationError`
 - member: `cause?`
   - since: 1.0.0
+  - type: `unknown`
 - member: `message`
   - since: 1.0.0
+  - type: `string`
 - member: `name`
   - since: 1.0.0
-- member: `reason`
+  - type: `string`
+- member: `readonly reason`
   - since: 1.0.0
+  - type: `ExtensionRegistrationErrorReason`
   - union-members: `"invalid-name"`, `"incompatible-version"`, `"invalid-manifest-field"`
 - member: `stack?`
   - since: 1.0.0
+  - type: `string | undefined`
   - union-members: `undefined`, `string`
 
 ## export `ExtensionRegistrationErrorReason`
@@ -193,8 +228,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `HostServices`
 - member: `auditEventSource`
   - since: 1.0.0
+  - type: `AuditEventSourceHost`
   - member: `writeAuditEvent`
     - since: 1.0.0
+    - type: `(input: AuditEventSourceWriteInput) => Promise<AuditEventSourceWriteResult>`
     - call-signature: `(input: AuditEventSourceWriteInput): Promise<AuditEventSourceWriteResult>`
 
 ## export `isExtensionApiVersionSupported`
@@ -211,6 +248,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `NotificationChannel`
 - member: `onNotify`
   - since: 1.0.0
+  - type: `(payload: NotificationPayload) => Promise<void>`
   - call-signature: `(payload: NotificationPayload): Promise<void>`
 
 ## export `NotificationPayload`
@@ -220,8 +258,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `NotificationPayload`
 - member: `body`
   - since: 1.0.0
+  - type: `string`
 - member: `subject`
   - since: 1.0.0
+  - type: `string`
 
 ## export `registerExtension`
 
@@ -237,6 +277,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `UIPanel`
 - member: `onRenderPanel`
   - since: 1.0.0
+  - type: `(context: UIPanelContext) => Promise<UIPanelResult>`
   - call-signature: `(context: UIPanelContext): Promise<UIPanelResult>`
 
 ## export `UIPanelContext`
@@ -246,6 +287,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `UIPanelContext`
 - member: `slot`
   - since: 1.0.0
+  - type: `string`
 
 ## export `UIPanelResult`
 
@@ -254,3 +296,4 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `UIPanelResult`
 - member: `html`
   - since: 1.0.0
+  - type: `string`

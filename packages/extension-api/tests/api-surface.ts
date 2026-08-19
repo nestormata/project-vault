@@ -1,8 +1,132 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
 
 const SNAPSHOT_NAME = 'api-surface.snapshot.md'
+
+type SinceIndex = Map<string, string>
+
+function popNestedMembers(members: Array<{ indent: number; name: string }>, indent: number): void {
+  while (true) {
+    const last = members.at(-1)
+    if (!last || last.indent < indent) break
+    members.pop()
+  }
+}
+
+function canonicalMemberName(name: string): string {
+  return name.replace(/^readonly /, '')
+}
+
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- parser walks nested snapshot entries
+function snapshotSinceIndex(snapshot: string): SinceIndex {
+  const index: SinceIndex = new Map()
+  let exportName = ''
+  const members: Array<{ indent: number; name: string }> = []
+  let pendingKey: string | undefined
+
+  for (const line of snapshot.split('\n')) {
+    const exportMatch = line.match(/^## export `([^`]+)`$/)
+    if (exportMatch) {
+      const name = exportMatch[1]
+      if (!name) continue
+      exportName = name
+      members.length = 0
+      pendingKey = `export:${exportName}`
+      continue
+    }
+
+    const memberMatch = line.match(/^(\s*)- member: `([^`]+)`$/)
+    if (memberMatch) {
+      const whitespace = memberMatch[1]
+      const name = memberMatch[2]
+      if (whitespace === undefined || name === undefined) continue
+      const indent = whitespace.length
+      popNestedMembers(members, indent)
+      members.push({ indent, name })
+      pendingKey = `export:${exportName}|${members.map((member) => canonicalMemberName(member.name)).join('|')}`
+      continue
+    }
+
+    const indexMatch = line.match(/^(\s*)- index-signature: `([^`]+)`$/)
+    if (indexMatch) {
+      const whitespace = indexMatch[1]
+      const name = indexMatch[2]
+      if (whitespace === undefined || name === undefined) continue
+      const indent = whitespace.length
+      popNestedMembers(members, indent)
+      members.push({ indent, name: `index:${name}` })
+      pendingKey = `export:${exportName}|${members.map((member) => canonicalMemberName(member.name)).join('|')}`
+      continue
+    }
+
+    const sinceMatch = line.match(/^\s*- since: (\d+\.\d+\.\d+)$/)
+    const since = sinceMatch?.[1]
+    if (since && pendingKey) index.set(pendingKey, since)
+  }
+
+  return index
+}
+
+export function applySinceAnnotations(
+  generated: string,
+  previous: string,
+  currentVersion: string
+): string {
+  const previousIndex = snapshotSinceIndex(previous)
+  let exportName = ''
+  const members: Array<{ indent: number; name: string }> = []
+  let pendingKey: string | undefined
+
+  return (
+    generated
+      .split('\n')
+      // eslint-disable-next-line complexity -- parser walks nested snapshot entries
+      .map((line) => {
+        const exportMatch = line.match(/^## export `([^`]+)`$/)
+        if (exportMatch) {
+          const name = exportMatch[1]
+          if (!name) return line
+          exportName = name
+          members.length = 0
+          pendingKey = `export:${exportName}`
+          return line
+        }
+
+        const memberMatch = line.match(/^(\s*)- member: `([^`]+)`$/)
+        if (memberMatch) {
+          const whitespace = memberMatch[1]
+          const name = memberMatch[2]
+          if (whitespace === undefined || name === undefined) return line
+          const indent = whitespace.length
+          popNestedMembers(members, indent)
+          members.push({ indent, name })
+          pendingKey = `export:${exportName}|${members.map((member) => canonicalMemberName(member.name)).join('|')}`
+          return line
+        }
+
+        const indexMatch = line.match(/^(\s*)- index-signature: `([^`]+)`$/)
+        if (indexMatch) {
+          const whitespace = indexMatch[1]
+          const name = indexMatch[2]
+          if (whitespace === undefined || name === undefined) return line
+          const indent = whitespace.length
+          popNestedMembers(members, indent)
+          members.push({ indent, name: `index:${name}` })
+          pendingKey = `export:${exportName}|${members.map((member) => canonicalMemberName(member.name)).join('|')}`
+          return line
+        }
+
+        if (/^\s*- since: \d+\.\d+\.\d+$/.test(line) && pendingKey) {
+          const since = previousIndex.get(pendingKey) ?? currentVersion
+          return line.replace(/\d+\.\d+\.\d+/, since)
+        }
+
+        return line
+      })
+      .join('\n')
+  )
+}
 
 function compiler(root: string): {
   program: ts.Program
@@ -27,6 +151,7 @@ function typeText(checker: ts.TypeChecker, type: ts.Type, source: ts.Node): stri
   )
 }
 
+// eslint-disable-next-line complexity -- renders properties, index signatures, and nested members
 function renderTypeMembers(
   checker: ts.TypeChecker,
   type: ts.Type,
@@ -47,9 +172,20 @@ function renderTypeMembers(
     const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? source
     const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration)
     const optional = (property.flags & ts.SymbolFlags.Optional) !== 0 ? '?' : ''
-    lines.push(`${indent}- member: \`${property.name}${optional}\``)
+    const readonly =
+      (ts.getCombinedModifierFlags(declaration as ts.Declaration) & ts.ModifierFlags.Readonly) !== 0
+        ? 'readonly '
+        : ''
+    lines.push(`${indent}- member: \`${readonly}${property.name}${optional}\``)
     lines.push(`${indent}  - since: 1.0.0`)
-    lines.push(...renderType(checker, propertyType, declaration, `${indent}  `, seen).slice(1))
+    lines.push(...renderType(checker, propertyType, declaration, `${indent}  `, seen))
+  }
+  for (const index of checker.getIndexInfosOfType(type)) {
+    const readonly = index.isReadonly ? 'readonly ' : ''
+    const keyType = typeText(checker, index.keyType, source)
+    const valueType = typeText(checker, index.type, source)
+    lines.push(`${indent}- index-signature: \`${readonly}[${keyType}]: ${valueType}\``)
+    lines.push(`${indent}  - since: 1.0.0`)
   }
   return lines
 }
@@ -117,7 +253,14 @@ export function generateSurfaceSnapshot(root: string): string {
     lines.push(...renderType(checker, type, declaration, '', new Set()))
     lines.push('')
   }
-  return `${lines.join('\n').trimEnd()}\n`
+  const generated = `${lines.join('\n').trimEnd()}\n`
+  const previous = existsSync(join(root, SNAPSHOT_NAME))
+    ? readFileSync(join(root, SNAPSHOT_NAME), 'utf8')
+    : ''
+  const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+    version: string
+  }
+  return applySinceAnnotations(generated, previous, packageJson.version)
 }
 
 function validateExportSince(
@@ -150,6 +293,7 @@ export function validateSinceIndex(snapshot: string, currentVersion = '1.4.0'): 
     if (/^## export /.test(line))
       errors.push(...validateExportSince(line, next, version, currentVersion))
     if (/^- member: /.test(line)) errors.push(...validateMemberSince(line, next))
+    if (/^\s*- index-signature: /.test(line)) errors.push(...validateMemberSince(line, next))
   }
   return errors
 }

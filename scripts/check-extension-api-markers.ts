@@ -18,7 +18,13 @@ function exportedNames(statement: string): string[] {
   if (braces)
     return braces
       .split(',')
-      .map((name) => name.trim().split(/\s+as\s+/)[0])
+      .map(
+        (name) =>
+          name
+            .trim()
+            .split(/\s+as\s+/)
+            .at(-1) ?? ''
+      )
       .filter(Boolean)
   const name = statement.match(/(?:const|function|class|interface|type)\s+([A-Za-z_$][\w$]*)/)?.[1]
   return name ? [name] : []
@@ -46,8 +52,28 @@ function publicationDate(changelog: string, version: string): Date | undefined {
     new RegExp(`^##\\s+${version.replaceAll('.', '\\.')}(?:\\s+|$).*?(\\d{4}-\\d{2}-\\d{2})`, 'm')
   )
   if (!match) return undefined
-  const date = new Date(`${match[1]}T00:00:00.000Z`)
-  return Number.isNaN(date.valueOf()) ? undefined : date
+  return parseIsoDate(match[1])
+}
+
+function parseIsoDate(value: string): Date | undefined {
+  const parts = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!parts) return undefined
+  const year = Number(parts[1])
+  const month = Number(parts[2])
+  const day = Number(parts[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+    ? date
+    : undefined
+}
+
+function latestChangelogEntry(changelog: string): string | undefined {
+  const headings = [...changelog.matchAll(/^##\s+.+$/gm)].map((match) => match.index ?? 0)
+  const start = headings[0]
+  if (start === undefined) return undefined
+  return changelog.slice(start, headings[1] ?? changelog.length)
 }
 
 function validateNotice(
@@ -55,11 +81,8 @@ function validateNotice(
   noticeText: string | undefined,
   published: Date | undefined
 ): string[] {
-  if (!noticeText || !/^\d{4}-\d{2}-\d{2}$/.test(noticeText))
-    return [`${symbol}: missing or invalid notice-window-ends field`]
-  const notice = new Date(`${noticeText}T00:00:00.000Z`)
-  if (Number.isNaN(notice.valueOf()))
-    return [`${symbol}: missing or invalid notice-window-ends field`]
+  const notice = noticeText ? parseIsoDate(noticeText) : undefined
+  if (!notice) return [`${symbol}: missing or invalid notice-window-ends field`]
   return published && notice.valueOf() < published.valueOf() + 90 * 24 * 60 * 60 * 1000
     ? [`${symbol}: notice-window-ends must be at least 90 days after publication`]
     : []
@@ -88,11 +111,20 @@ export function checkDeprecationMarkers(input: DeprecationInput): string[] {
   const errors: string[] = []
   const current = semver.parse(input.currentVersion)
   const published = publicationDate(input.changelogSource, input.currentVersion)
+  const deprecatedSymbols: string[] = []
   for (const match of input.indexSource.matchAll(
     /\/\*\*[\s\S]*?@deprecated[\s\S]*?\*\/\s*(export\s+[^\n]+)/g
   )) {
     const symbol = exportedNames(match[1])[0] ?? 'unknown symbol'
+    deprecatedSymbols.push(symbol)
     errors.push(...validateDeprecationEntry(match[0], symbol, current, published))
+  }
+  if (deprecatedSymbols.length > 0) {
+    const latest = latestChangelogEntry(input.changelogSource)
+    const deprecatedEntry = latest?.match(/^### Deprecated[\s\S]*?(?=^### |^## |(?![\s\S]))/m)?.[0]
+    for (const symbol of deprecatedSymbols)
+      if (!deprecatedEntry?.includes(symbol))
+        errors.push(`${symbol}: CHANGELOG's newest entry must announce this deprecated export`)
   }
   return errors
 }

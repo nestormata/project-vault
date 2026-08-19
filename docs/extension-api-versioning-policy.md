@@ -59,7 +59,7 @@ rows 11, 1 and 6 this is **entirely non-breaking** → **minor**.
 
 If Story 23.2 adds `replacesNativeLogin` to `ExtensionManifest` as **optional**, that is row 1 →
 **minor**. As **required**, it is row 3 (`ExtensionManifest` is receive-side) → **major**, and by
-the notice window it could not ship inside Epic 23's timeline. This table is enforced by a
+AC-8's notice window it could not ship inside Epic 23's timeline at all. This table is enforced by a
 reviewer applying it to the surface-snapshot diff (AC-12); nothing infers the correct bump.
 
 ## Direction of flow
