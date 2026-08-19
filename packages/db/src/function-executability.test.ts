@@ -5,6 +5,8 @@ import postgres from 'postgres'
 import {
   CANONICAL_FUNCTION_EXECUTABILITY_SQL,
   FUNCTION_EXECUTABILITY_CONTRACT,
+  assertFunctionExecutability,
+  FunctionExecutabilityViolationError,
   inspectFunctionExecutability,
   type FunctionExecutabilityReport,
 } from './function-executability.js'
@@ -63,6 +65,33 @@ describe('Story 24.5b canonical function-executability contract', () => {
     expect(FUNCTION_EXECUTABILITY_CONTRACT.expectedMigrationFunctionOwnerRole).toBe('postgres')
     expect(FUNCTION_EXECUTABILITY_CONTRACT.reviewedPublicExecutableAllowlist).toEqual([])
     expect(FUNCTION_EXECUTABILITY_CONTRACT.sql).toBe(CANONICAL_FUNCTION_EXECUTABILITY_SQL)
+  })
+})
+
+describe('Story 24.5b violation diagnostics', () => {
+  it('formats both function and default-ACL violations without leaking connection details', () => {
+    const error = new FunctionExecutabilityViolationError([
+      {
+        kind: 'function',
+        signature: 'public.story_probe(integer)',
+        detail: 'PUBLIC has EXECUTE',
+      },
+      {
+        kind: 'default_acl',
+        signature: null,
+        detail: 'role postgres grants EXECUTE to PUBLIC',
+      },
+    ])
+
+    expect(error.name).toBe('FunctionExecutabilityViolationError')
+    expect(error.violations).toHaveLength(2)
+    expect(error.message).toBe(
+      [
+        'function executability invariant failed',
+        'public.story_probe(integer): PUBLIC has EXECUTE',
+        'default ACL: role postgres grants EXECUTE to PUBLIC',
+      ].join('\n')
+    )
   })
 })
 
@@ -130,6 +159,9 @@ describe('Story 24.5b real-Postgres invariant', () => {
           }),
         ])
       )
+      await expect(assertFunctionExecutability(appSql)).rejects.toMatchObject({
+        name: 'FunctionExecutabilityViolationError',
+      })
 
       await adminSql.unsafe(`REVOKE EXECUTE ON FUNCTION public.${quotedName}(integer) FROM PUBLIC`)
       await adminSql.unsafe(`REVOKE EXECUTE ON FUNCTION public.${quotedName}(text) FROM PUBLIC`)
@@ -137,6 +169,7 @@ describe('Story 24.5b real-Postgres invariant', () => {
       expect(recovered.violations.filter((row) => row.signature?.includes(functionName))).toEqual(
         []
       )
+      await expect(assertFunctionExecutability(appSql)).resolves.toBeUndefined()
     } finally {
       await adminSql.unsafe(`DROP FUNCTION IF EXISTS public.${quotedName}(integer)`)
       await adminSql.unsafe(`DROP FUNCTION IF EXISTS public.${quotedName}(text)`)
