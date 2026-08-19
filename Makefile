@@ -43,7 +43,7 @@ DB_URL_SUPERUSER ?= postgresql://postgres:password@$(DB_CONN_HOST):$(DB_HOST_POR
 DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 DB_URL_ADMIN      ?= postgresql://vault_admin:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
-.PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance \
+.PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance check-function-executability check-function-executability-tests \
         db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner \
         check-extension-api-policy check-extension-api-policy-content check-extension-api-behaviour check-extension-api-markers check-extension-api-contract-changelog \
         bootstrap bootstrap-docker check-ports fix-ports \
@@ -115,6 +115,12 @@ db-migrate: ## Run migrations as the postgres superuser (creates vault_app role 
 check-rls: ## Verify every table has RLS policy coverage (must run as vault_app)
 	DATABASE_URL=$(DB_URL_APP) pnpm check-rls
 
+check-function-executability: ## Verify no in-scope public function is PUBLIC-executable (Story 24.5b)
+	DATABASE_URL=$(DB_URL_APP) pnpm check-function-executability
+
+check-function-executability-tests: ## Run the focused Story 24.5b invariant and SQL-twin tests
+	DATABASE_URL=$(DB_URL_APP) SUPERUSER_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm vitest run --no-file-parallelism packages/db/src/function-executability.test.ts scripts/check-function-executability.test.ts
+
 check-audit-actor-token-coverage: ## Verify no human-actor audit row lacks actor_token_id (database-wide gate — must run as superuser to bypass per-org RLS, see Story 8.1 AC-14)
 	DATABASE_URL=$(DB_URL_SUPERUSER) pnpm check-audit-actor-token-coverage
 
@@ -153,6 +159,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm turbo lint
 	$(MAKE) db-migrate
 	$(MAKE) check-rls
+	$(MAKE) check-function-executability
+	$(MAKE) check-function-executability-tests
 	$(MAKE) check-audit-actor-token-coverage
 	pnpm check-search-index
 	pnpm check-migration-compatibility

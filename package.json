@@ -18,6 +18,7 @@
     "jscpd": "jscpd apps packages scripts",
     "db:migrate": "pnpm --filter @project-vault/db db:migrate",
     "check-rls": "tsx scripts/check-rls-coverage.ts",
+    "check-function-executability": "tsx scripts/check-function-executability.ts",
     "check-audit-actor-token-coverage": "tsx scripts/check-audit-actor-token-coverage.ts",
     "check-search-index": "tsx scripts/check-search-index.ts",
     "check-vault-action-dist": "tsx scripts/check-vault-action-dist-fresh.ts",
