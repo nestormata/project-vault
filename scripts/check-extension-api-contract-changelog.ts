@@ -21,16 +21,32 @@ export function calculateContractHash(root: string, overrides: Overrides = {}): 
   return createHash('sha256').update(contractInputs(root, overrides)).digest('hex')
 }
 
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- bounded line scanner avoids catastrophic changelog regexes
 function deprecatedChangelogErrors(changelog: string): string[] {
   const errors: string[] = []
-  for (const match of changelog.matchAll(/### Deprecated[\s\S]*?(?=^### |^## |(?![\s\S]))/gm)) {
-    const entry = match[0]
-    if (!/^\s*(?:[-*]\s*)?Notified:\s*\d{4}-\d{2}-\d{2},\s*[^\n]+$/m.test(entry))
+  const lines = changelog.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index]?.trim() !== '### Deprecated') continue
+    const entry: string[] = []
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      const line = lines[cursor] ?? ''
+      if (line.startsWith('### ') || line.startsWith('## ')) break
+      entry.push(line)
+    }
+    const notified = entry
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('Notified:') || line.startsWith('- Notified:'))
+    const notifiedValue = notified?.replace(/^- /, '').slice('Notified:'.length).trim() ?? ''
+    const comma = notifiedValue.indexOf(',')
+    const date = comma === -1 ? '' : notifiedValue.slice(0, comma).trim()
+    const recipient = comma === -1 ? '' : notifiedValue.slice(comma + 1).trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !recipient)
       errors.push(
         'deprecated changelog entry is missing a conforming Notified: date, channel, and recipient line'
       )
     for (const field of ['earliest-removal:', 'notice-window-ends:'])
-      if (!entry.includes(field)) errors.push(`deprecated changelog entry is missing ${field}`)
+      if (!entry.some((line) => line.includes(field)))
+        errors.push(`deprecated changelog entry is missing ${field}`)
   }
   return errors
 }

@@ -40,7 +40,7 @@ function readText(path: string, fallback = ''): string {
   }
 }
 
-function policyErrors(policyPath: string, policyText: string, tracked: boolean): string[] {
+function policyErrors(policyText: string, tracked: boolean): string[] {
   const errors: string[] = []
   if (!tracked) errors.push(`${POLICY_RELATIVE_PATH} is not git-tracked`)
   if (!policyText) errors.push(`${POLICY_RELATIVE_PATH} does not exist`)
@@ -48,7 +48,6 @@ function policyErrors(policyPath: string, policyText: string, tracked: boolean):
     if (!policyText.split('\n').some((line) => line.trim() === heading))
       errors.push(`policy document is missing required heading: ${heading}`)
   }
-  void policyPath
   return errors
 }
 
@@ -66,9 +65,10 @@ function readmeErrors(readmeText: string): string[] {
 
 function isTracked(root: string): boolean {
   try {
-    execFileSync('git', ['ls-files', '--error-unmatch', POLICY_RELATIVE_PATH], {
+    execFileSync('/usr/bin/git', ['ls-files', '--error-unmatch', POLICY_RELATIVE_PATH], {
       cwd: root,
       stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, PATH: '/usr/bin:/bin' },
     })
     return true
   } catch {
@@ -82,7 +82,7 @@ export function checkPolicyDocument(root: string, overrides: Overrides = {}): Po
   const policyText = overrides.policyText ?? readText(policyPath)
   const readmeText = overrides.readmeText ?? readText(readmePath)
   const errors = [
-    ...policyErrors(policyPath, policyText, overrides.tracked ?? isTracked(root)),
+    ...policyErrors(policyText, overrides.tracked ?? isTracked(root)),
     ...readmeErrors(readmeText),
   ]
   return errors.length === 0 ? { ok: true } : { ok: false, errors }

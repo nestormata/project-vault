@@ -6,29 +6,69 @@ import { latestChangelogEntry } from './lib/extension-api-changelog.js'
 
 type DeprecationInput = { indexSource: string; changelogSource: string; currentVersion: string }
 
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- bounded scanner preserves JSDoc/export association without backtracking regexes
 function exportedBlocks(source: string): Array<{ doc: string; statement: string }> {
-  return [
-    ...source.matchAll(
-      /(\/\*\*[\s\S]*?\*\/\s*)?(export\s+(?:type\s+)?(?:\{[^}]*\}|(?:const|function|class|interface|type)\s+[A-Za-z_$][\w$]*))/g
-    ),
-  ].map((match) => ({ doc: match[1] ?? '', statement: match[2] }))
+  const blocks: Array<{ doc: string; statement: string }> = []
+  const lines = source.split('\n')
+  let doc = ''
+  let statement = ''
+  let braceDepth = 0
+  let inDoc = false
+
+  const finishStatement = () => {
+    if (statement) blocks.push({ doc, statement: statement.trim() })
+    doc = ''
+    statement = ''
+    braceDepth = 0
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (inDoc) {
+      doc += `${line}\n`
+      if (trimmed.endsWith('*/')) inDoc = false
+      continue
+    }
+    if (trimmed.startsWith('/**')) {
+      doc = `${line}\n`
+      inDoc = !trimmed.endsWith('*/')
+      continue
+    }
+    if (!statement && trimmed.startsWith('export ')) {
+      statement = trimmed
+      braceDepth = (trimmed.match(/\{/g)?.length ?? 0) - (trimmed.match(/\}/g)?.length ?? 0)
+      if (braceDepth === 0) finishStatement()
+      continue
+    }
+    if (statement) {
+      statement += ` ${trimmed}`
+      braceDepth += (trimmed.match(/\{/g)?.length ?? 0) - (trimmed.match(/\}/g)?.length ?? 0)
+      if (braceDepth <= 0) finishStatement()
+    }
+  }
+  if (statement) finishStatement()
+  return blocks
 }
 
 function exportedNames(statement: string): string[] {
-  const braces = statement.match(/\{([^}]*)\}/)?.[1]
-  if (braces)
-    return braces
+  const open = statement.indexOf('{')
+  const close = statement.lastIndexOf('}')
+  if (open !== -1 && close > open)
+    return statement
+      .slice(open + 1, close)
       .split(',')
-      .map(
-        (name) =>
-          name
-            .trim()
-            .split(/\s+as\s+/)
-            .at(-1) ?? ''
-      )
+      .map((name) => {
+        const trimmed = name.trim()
+        const alias = trimmed.indexOf(' as ')
+        return alias === -1 ? trimmed : trimmed.slice(alias + 4).trim()
+      })
       .filter(Boolean)
-  const name = statement.match(/(?:const|function|class|interface|type)\s+([A-Za-z_$][\w$]*)/)?.[1]
-  return name ? [name] : []
+  const tokens = statement.split(/\s+/)
+  const declarationIndex = tokens.findIndex((token) =>
+    ['const', 'function', 'class', 'interface', 'type'].includes(token)
+  )
+  const name = declarationIndex === -1 ? undefined : tokens[declarationIndex + 1]
+  return name ? [name.replace(/[^A-Za-z0-9_$].*$/, '')] : []
 }
 
 export function checkExperimentalMarkers(source: string): string[] {

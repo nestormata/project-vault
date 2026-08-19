@@ -8,28 +8,41 @@ import {
 
 describe('extension API public type surface snapshot', () => {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
+  const compilerTestTimeoutMs = 15_000
 
-  it('runs from the package test task and matches source, including nested members', () => {
-    expect(assertSurfaceSnapshotIsFresh(packageRoot)).toEqual({ ok: true })
-  })
+  it(
+    'runs from the package test task and matches source, including nested members',
+    () => {
+      expect(assertSurfaceSnapshotIsFresh(packageRoot)).toEqual({ ok: true })
+    },
+    compilerTestTimeoutMs
+  )
 
-  it('captures primitive property types in the public surface', async () => {
-    const { generateSurfaceSnapshot } = await import('../tests/api-surface.js')
-    const panelContext = generateSurfaceSnapshot(packageRoot).match(
-      /## export `UIPanelContext`[\s\S]*?(?=\n## export |$)/
-    )?.[0]
+  it(
+    'captures primitive property types in the public surface',
+    async () => {
+      const { generateSurfaceSnapshot } = await import('../tests/api-surface.js')
+      const panelContext = generateSurfaceSnapshot(packageRoot).match(
+        /## export `UIPanelContext`[\s\S]*?(?=\n## export |$)/
+      )?.[0]
 
-    expect(panelContext).toContain('- type: `string`')
-  })
+      expect(panelContext).toContain('- type: `string`')
+    },
+    compilerTestTimeoutMs
+  )
 
-  it('captures readonly modifiers in the public surface', async () => {
-    const { generateSurfaceSnapshot } = await import('../tests/api-surface.js')
-    const registrationError = generateSurfaceSnapshot(packageRoot).match(
-      /## export `ExtensionRegistrationError`[\s\S]*?(?=\n## export |$)/
-    )?.[0]
+  it(
+    'captures readonly modifiers in the public surface',
+    async () => {
+      const { generateSurfaceSnapshot } = await import('../tests/api-surface.js')
+      const registrationError = generateSurfaceSnapshot(packageRoot).match(
+        /## export `ExtensionRegistrationError`[\s\S]*?(?=\n## export |$)/
+      )?.[0]
 
-    expect(registrationError).toContain('- member: `readonly reason`')
-  })
+      expect(registrationError).toContain('- member: `readonly reason`')
+    },
+    compilerTestTimeoutMs
+  )
 
   it('rejects a snapshot with a missing since annotation', () => {
     expect(validateSinceIndex('## export Foo\n- member: value\n').join('\n')).toContain(

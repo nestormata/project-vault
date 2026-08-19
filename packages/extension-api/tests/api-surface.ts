@@ -119,7 +119,9 @@ export function applySinceAnnotations(
 
         if (/^\s*- since: \d+\.\d+\.\d+$/.test(line) && pendingKey) {
           const since = previousIndex.get(pendingKey) ?? currentVersion
-          return line.replace(/\d+\.\d+\.\d+/, since)
+          const marker = '- since: '
+          const markerStart = line.indexOf(marker)
+          return markerStart === -1 ? line : `${line.slice(0, markerStart + marker.length)}${since}`
         }
 
         return line
@@ -212,14 +214,20 @@ function renderType(
   seen: Set<number>
 ): string[] {
   const lines = [`${indent}- type: \`${typeText(checker, type, source)}\``]
-  if (type.isUnion())
-    lines.push(
-      `${indent}- union-members: ${type.types.map((member) => `\`${typeText(checker, member, source)}\``).join(', ')}`
-    )
-  if (type.isIntersection())
-    lines.push(
-      `${indent}- intersection-members: ${type.types.map((member) => `\`${typeText(checker, member, source)}\``).join(', ')}`
-    )
+  if (type.isUnion()) {
+    const members = type.types
+      .map((member) => typeText(checker, member, source))
+      .map((member) => `\`${member}\``)
+      .join(', ')
+    lines.push(`${indent}- union-members: ${members}`)
+  }
+  if (type.isIntersection()) {
+    const members = type.types
+      .map((member) => typeText(checker, member, source))
+      .map((member) => `\`${member}\``)
+      .join(', ')
+    lines.push(`${indent}- intersection-members: ${members}`)
+  }
   const id = (type as ts.Type & { id?: number }).id
   if (id !== undefined && seen.has(id)) return lines
   if (id !== undefined) seen.add(id)
@@ -292,8 +300,9 @@ export function validateSinceIndex(snapshot: string, currentVersion = '1.4.0'): 
     const next = lines.slice(index + 1).find((candidate) => candidate.trim().length > 0) ?? ''
     if (/^## export /.test(line))
       errors.push(...validateExportSince(line, next, version, currentVersion))
-    if (/^- member: /.test(line)) errors.push(...validateMemberSince(line, next))
-    if (/^\s*- index-signature: /.test(line)) errors.push(...validateMemberSince(line, next))
+    const trimmed = line.trimStart()
+    if (trimmed.startsWith('- member: ')) errors.push(...validateMemberSince(line, next))
+    if (trimmed.startsWith('- index-signature: ')) errors.push(...validateMemberSince(line, next))
   }
   return errors
 }

@@ -12,22 +12,23 @@ export type BehaviourContract = {
 type SourceOverrides = { registerSource?: string; loaderSource?: string }
 type Result = { ok: true } | { ok: false; errors: string[] }
 
-// eslint-disable-next-line complexity -- fail-closed extraction validates four independent contract fields
 export function extractBehaviourContract(sources: {
   registerSource: string
   loaderSource: string
 }): BehaviourContract {
-  const pattern = sources.registerSource.match(
-    /const REVERSE_DNS_NAME_PATTERN\s*=\s*(\/[^\n]+\/)/
-  )?.[1]
+  const patternLine = sources.registerSource
+    .split('\n')
+    .find((line) => line.includes('const REVERSE_DNS_NAME_PATTERN'))
+  const pattern = patternLine?.split('=', 2)[1]?.trim()
   const prerelease = sources.registerSource.match(/includePrerelease\s*:\s*(true|false)/)?.[1]
   const timeout = sources.loaderSource.match(/const DEFAULT_TIMEOUT_MS\s*=\s*(\d+)/)?.[1]
-  const mappingSource =
-    sources.loaderSource
-      .match(/function mapFailureReason[\s\S]*?\n\s*\}/)?.[0]
-      ?.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '') ?? ''
-  const mapping = mappingSource.match(
-    /return error\.reason === 'invalid-name' \|\| error\.reason === 'invalid-manifest-field'\s*\n\s*\? '([^']+)'\s*\n\s*: '([^']+)'/
+  const normalizedLoaderSource = sources.loaderSource
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => !line.startsWith('//'))
+    .join(' ')
+  const mapping = normalizedLoaderSource.match(
+    /return error\.reason === 'invalid-name' \|\| error\.reason === 'invalid-manifest-field' \? '([^']+)' : '([^']+)'/
   )
   if (!pattern || !prerelease || !timeout || !mapping) {
     throw new Error('could not extract one or more contract behaviour definitions')
