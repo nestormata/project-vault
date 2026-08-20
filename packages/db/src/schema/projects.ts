@@ -26,7 +26,9 @@ export const projects = pgTable(
   },
   (t) => ({
     orgSlugUnique: uniqueIndex('idx_projects_org_slug').on(t.orgId, t.slug),
-    creationRequestUnique: uniqueIndex('idx_projects_creation_request_id').on(t.creationRequestId),
+    creationRequestUnique: uniqueIndex('idx_projects_creation_request_id')
+      .on(t.creationRequestId)
+      .where(sql`${t.creationRequestId} IS NOT NULL`),
     orgCreatedIdx: index('idx_projects_org_created').on(t.orgId, t.createdAt.desc()),
   })
 )

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { getTableConfig } from 'drizzle-orm/pg-core'
 import { projectMemberships, projects } from './index.js'
 import { EXCLUDED_TABLES } from '../check-rls-coverage.js'
 
@@ -28,5 +29,12 @@ describe('projects schema', () => {
   it('keeps project tables subject to RLS coverage', () => {
     expect(EXCLUDED_TABLES.has('projects')).toBe(false)
     expect(EXCLUDED_TABLES.has('project_memberships')).toBe(false)
+  })
+
+  it('models the idempotency index as partial, matching migration 0081', () => {
+    const index = getTableConfig(projects).indexes.find(
+      (candidate) => candidate.config.name === 'idx_projects_creation_request_id'
+    )
+    expect(index?.config.where).toBeDefined()
   })
 })

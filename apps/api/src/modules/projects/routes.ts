@@ -289,7 +289,8 @@ function serverSlugFromProjectName(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-  return (slug || 'project').slice(0, 50).replace(/-+$/g, '') || 'project'
+  const bounded = (slug || 'project').slice(0, 50).replace(/-+$/g, '') || 'project'
+  return bounded.length >= 3 ? bounded : 'project'
 }
 
 function getProjectCreatePolicy(): ProjectCreatePolicy | undefined {
@@ -320,9 +321,18 @@ async function findReplayedProject(
   if (replayed.orgId !== secureCtx.auth.orgId || replayed.createdBy !== secureCtx.auth.userId) {
     return { error: CREATION_REQUEST_CONFLICT }
   }
+  const replayedRole = await callerProjectRole(secureCtx, replayed.id)
+  if (
+    replayedRole !== 'owner' &&
+    replayedRole !== 'admin' &&
+    replayedRole !== 'member' &&
+    replayedRole !== 'viewer'
+  ) {
+    return { error: CREATION_REQUEST_CONFLICT }
+  }
   return {
     project: replayed,
-    detail: serializeProjectDetail(replayed, 'owner'),
+    detail: serializeProjectDetail(replayed, replayedRole),
     replayed: true,
   }
 }

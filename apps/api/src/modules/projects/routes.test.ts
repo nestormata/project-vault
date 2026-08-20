@@ -328,6 +328,54 @@ describe.sequential('project routes', () => {
     expect(slugs).toEqual(expect.arrayContaining(['concurrent-payments']))
   }, 60_000)
 
+  it('keeps server-derived slugs within the native three-character minimum for short names', async () => {
+    const user = await registerUser(app, 'short-derived-slug')
+    const response = await app.inject({
+      method: 'POST',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+      payload: { name: 'A', creationRequestId: randomUUID() },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json<{ data: { slug: string } }>().data.slug).toMatch(
+      /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$/
+    )
+  }, 60_000)
+
+  it('uses the caller membership role when replaying after ownership changes', async () => {
+    const user = await registerUser(app, 'replay-role')
+    const creationRequestId = randomUUID()
+    const first = await app.inject({
+      method: 'POST',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+      payload: { name: 'Replay Role', creationRequestId },
+    })
+    const projectId = first.json<{ data: { id: string } }>().data.id
+
+    await withOrg(user.orgId, (tx) =>
+      tx
+        .update(projectMemberships)
+        .set({ role: 'admin' })
+        .where(
+          and(
+            eq(projectMemberships.projectId, projectId),
+            eq(projectMemberships.userId, user.userId)
+          )
+        )
+    )
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+      payload: { name: 'Replay Role', creationRequestId },
+    })
+    expect(replay.statusCode).toBe(201)
+    expect(replay.json<{ data: { role: string } }>().data.role).toBe('admin')
+  }, 60_000)
+
   it('POST defaults omitted description to null and rejects duplicate or invalid slugs', async () => {
     const user = await registerUser(app, 'slug')
     const created = await createProject(app, user.cookies, 'slug-project')
