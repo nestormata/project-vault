@@ -134,13 +134,11 @@ async function readApproval(
 async function buildPlan(sql: postgres.Sql, approval: ExtensionScopeApproval): Promise<GrantPlan> {
   await assertScopeCatalog(sql, approval.approved_scope)
   const desired = new Set(buildGrantStatements('vault_extension', approval.approved_scope))
-  const [currentRows] = await Promise.all([
-    sql<{ table_name: string; privilege_type: string }[]>`
-      SELECT table_name, privilege_type
-        FROM information_schema.role_table_grants
-       WHERE grantee = 'vault_extension' AND table_schema = 'public'
-    `,
-  ])
+  const currentRows = await sql<{ table_name: string; privilege_type: string }[]>`
+    SELECT table_name, privilege_type
+      FROM information_schema.role_table_grants
+     WHERE grantee = 'vault_extension' AND table_schema = 'public'
+  `
   const current = new Set(
     currentRows.map(
       (row) =>
@@ -193,7 +191,7 @@ export async function reconcileExtensionGrants(options: {
   return { ...plan, revokes }
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const url = process.env['EXTENSION_GRANT_DATABASE_URL']
   if (!url) throw new Error('EXTENSION_GRANT_DATABASE_URL is required; no fallback is permitted')
   const packageName = process.env['VAULT_EXTENSIONS_PACKAGE']
@@ -219,8 +217,11 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1]?.endsWith('extension-grants.ts'))
-  void main().catch((error: unknown) => {
+if (process.argv[1]?.endsWith('extension-grants.ts')) {
+  try {
+    await main()
+  } catch (error: unknown) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1
-  })
+  }
+}

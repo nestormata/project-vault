@@ -3,6 +3,8 @@ import {
   EXTENSION_DB_SCOPE_DENYLIST,
   buildGrantStatements,
   canonicalizeDbScope,
+  hashExtensionDbScope,
+  quoteIdentifier,
   validateDbScopeTable,
 } from './extension-db-scope.js'
 
@@ -38,6 +40,13 @@ describe('extension DB scope grant planning (Story 23.5)', () => {
     ).toThrow()
   })
 
+  it('accepts valid identifiers and rejects invalid role identifiers before quoting', () => {
+    expect(quoteIdentifier('public')).toBe('"public"')
+    expect(quoteIdentifier('vault_extension')).toBe('"vault_extension"')
+    expect(() => quoteIdentifier('public.credentials')).toThrow(/identifier/i)
+    expect(() => buildGrantStatements('vault-extension', [])).toThrow(/identifier/i)
+  })
+
   it('canonicalizes scope deterministically for approval hashing', () => {
     expect(
       canonicalizeDbScope([
@@ -48,5 +57,8 @@ describe('extension DB scope grant planning (Story 23.5)', () => {
       { table: 'credentials', operations: ['insert', 'select'] },
       { table: 'service_endpoints', operations: ['select'] },
     ])
+    expect(hashExtensionDbScope([{ table: 'credentials', operations: ['select'] }])).toBe(
+      hashExtensionDbScope([{ table: 'credentials', operations: ['select', 'select'] }])
+    )
   })
 })

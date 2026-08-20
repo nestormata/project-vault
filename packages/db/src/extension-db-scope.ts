@@ -32,7 +32,9 @@ export function canonicalizeDbScope(scope: ExtensionDbScopeEntry[]): ExtensionDb
   return [...scope]
     .map((entry) => ({
       table: validateDbScopeTable(entry.table),
-      operations: [...new Set(entry.operations)].sort() as ExtensionDbOperation[],
+      operations: [...new Set(entry.operations)].sort((a, b) =>
+        a.localeCompare(b)
+      ) as ExtensionDbOperation[],
     }))
     .sort((a, b) => a.table.localeCompare(b.table))
 }

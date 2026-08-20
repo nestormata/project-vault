@@ -91,6 +91,27 @@ describe('loadExtension — valid package (AC-2)', () => {
       })
     )
   })
+
+  it('loads a declared DB scope but withholds the handle until operator approval exists', async () => {
+    let getDbHandle: (() => Promise<unknown>) | undefined
+    const importFn = vi.fn().mockResolvedValue({
+      default: {
+        manifest: {
+          ...VALID_MANIFEST,
+          dbScope: [{ table: 'credentials', operations: ['select'] }],
+        },
+        hooksFactory: (context: { getDbHandle: () => Promise<unknown> }) => {
+          getDbHandle = context.getDbHandle
+          return NOOP_HOOKS
+        },
+      },
+    })
+
+    await loadExtension(VALID_PACKAGE_NAME, baseDeps({ importFn }))
+
+    expect(getExtensionStatus().status).toBe('loaded')
+    await expect(getDbHandle?.()).resolves.toEqual({ unavailable: 'no-approved-scope' })
+  })
 })
 
 describe('loadExtension — failure reasons (AC-3a/3b/3c)', () => {

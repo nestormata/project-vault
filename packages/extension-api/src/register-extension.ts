@@ -75,6 +75,11 @@ const KNOWN_MANIFEST_KEYS = ['name', 'apiVersion', 'capabilities', 'replacesNati
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
 
+const DEFAULT_RUNTIME_HOST: ExtensionRuntimeContext & HostServices = {
+  ...DEFAULT_HOST_SERVICES,
+  getDbHandle: async () => ({ unavailable: 'not-configured' }),
+}
+
 /**
  * Story 23.2 AC-2 (finding N17) — logs every unrecognized top-level manifest key at `warn`
  * (keys only, never values), and returns `true` iff an unrecognized key is an exact
@@ -221,10 +226,7 @@ export function registerExtension(
   manifest: ExtensionManifest,
   hooksFactory: (context: ExtensionRuntimeContext & HostServices) => ExtensionHooks,
   options: RegisterExtensionOptions = {},
-  host: ExtensionRuntimeContext & HostServices = {
-    ...DEFAULT_HOST_SERVICES,
-    getDbHandle: async () => ({ unavailable: 'not-configured' }),
-  }
+  host: ExtensionRuntimeContext & HostServices = DEFAULT_RUNTIME_HOST
 ): { manifest: ExtensionManifest; hooks: ExtensionHooks } {
   const logger = options.logger ?? noopLogger
   const hasCaseFoldNearMiss = checkUnknownManifestKeys(manifest, logger)
