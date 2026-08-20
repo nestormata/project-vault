@@ -8,6 +8,7 @@ import type { UIPanel } from './hooks/ui-panel.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
+import type { ProjectCreatePolicy } from './hooks/project-lifecycle.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -33,6 +34,7 @@ export type ExtensionHooks = {
   notificationChannel?: NotificationChannel
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
+  projectLifecycle?: ProjectCreatePolicy
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -210,6 +212,17 @@ function assertApiVersionSupported(
   return declaredApiVersion
 }
 
+function hasCallableProjectLifecycleHook(
+  manifest: ExtensionManifest,
+  hooks: ExtensionHooks
+): boolean {
+  if (!manifest.capabilities.includes('project-lifecycle')) return true
+  return (
+    hooks.projectLifecycle !== undefined &&
+    typeof hooks.projectLifecycle.onBeforeCreateProject === 'function'
+  )
+}
+
 /**
  * AC4/AC5/AC6 — validates `manifest.name` (reverse-DNS style) and semver-based capability
  * negotiation, in that order, BEFORE ever invoking `hooksFactory`. Throws a typed
@@ -249,6 +262,13 @@ export function registerExtension(
   const declaredApiVersion = assertApiVersionSupported(manifest, options)
 
   const hooks = hooksFactory(host)
+
+  if (!hasCallableProjectLifecycleHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      'invalid-manifest-field',
+      'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a callable projectLifecycle hook'
+    )
+  }
 
   // Story 23.2 AC-2 — a manifest declaring `replacesNativeLogin: true` whose hooksFactory()
   // yields no authStrategy would disable the only working login path with nothing to replace

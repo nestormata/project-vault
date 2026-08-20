@@ -135,14 +135,14 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"2.0.0"`
+- type: `"2.1.0"`
 
 ## export `ExtensionCapability`
 
 - since: 1.0.0
 - kind: type
 - type: `ExtensionCapability`
-- union-members: `"auth-provider"`, `"notification-channel"`, `"ui-panel"`, `"capability-gate"`, `"audit-event-source"`
+- union-members: `"auth-provider"`, `"notification-channel"`, `"ui-panel"`, `"capability-gate"`, `"audit-event-source"`, `"project-lifecycle"`
 
 ## export `ExtensionDbHandle`
 
@@ -201,6 +201,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 1.0.0
   - type: `NotificationChannel | undefined`
   - union-members: `undefined`, `NotificationChannel`
+- member: `projectLifecycle?`
+  - since: 2.1.0
+  - type: `ProjectCreatePolicy | undefined`
+  - union-members: `undefined`, `ProjectCreatePolicy`
 - member: `uiPanel?`
   - since: 1.0.0
   - type: `UIPanel | undefined`
@@ -315,6 +319,44 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `string`
 - member: `subject`
   - since: 1.0.0
+  - type: `string`
+
+## export `ProjectCreateDecision`
+
+- since: 2.1.0
+- kind: type
+- type: `ProjectCreateDecision`
+- union-members: `{ permitted: true; }`, `{ permitted: false; reasonCode: string; message?: string; }`
+
+## export `ProjectCreatePolicy`
+
+- since: 2.1.0
+- kind: type
+- type: `ProjectCreatePolicy`
+- member: `onBeforeCreateProject`
+  - since: 2.1.0
+  - type: `(context: ProjectCreatePolicyContext) => Promise<ProjectCreateDecision>`
+  - call-signature: `(context: ProjectCreatePolicyContext): Promise<ProjectCreateDecision>`
+
+## export `ProjectCreatePolicyContext`
+
+- since: 2.1.0
+- kind: type
+- type: `ProjectCreatePolicyContext`
+- member: `actorUserId`
+  - since: 2.1.0
+  - type: `string`
+- member: `creationRequestId`
+  - since: 2.1.0
+  - type: `string`
+- member: `currentProjectCount`
+  - since: 2.1.0
+  - type: `number`
+- member: `organizationId`
+  - since: 2.1.0
+  - type: `string`
+- member: `projectName`
+  - since: 2.1.0
   - type: `string`
 
 ## export `registerExtension`

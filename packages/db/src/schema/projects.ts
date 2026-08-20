@@ -10,6 +10,9 @@ export const projects = pgTable(
     ...orgScoped({ onDelete: 'cascade' }),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
+    // Optional for legacy callers; new PV-hosted create requests use this as the durable
+    // idempotency key. Keeping it on the native project row avoids a second CM/PV ledger.
+    creationRequestId: uuid('creation_request_id'),
     description: text('description'),
     tags: jsonb('tags')
       .notNull()
@@ -23,6 +26,9 @@ export const projects = pgTable(
   },
   (t) => ({
     orgSlugUnique: uniqueIndex('idx_projects_org_slug').on(t.orgId, t.slug),
+    creationRequestUnique: uniqueIndex('idx_projects_creation_request_id')
+      .on(t.creationRequestId)
+      .where(sql`${t.creationRequestId} IS NOT NULL`),
     orgCreatedIdx: index('idx_projects_org_created').on(t.orgId, t.createdAt.desc()),
   })
 )

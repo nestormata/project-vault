@@ -1,4 +1,5 @@
 import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { randomUUID } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod/v4'
 import {
@@ -7,6 +8,7 @@ import {
   AuditEvent,
   type ProjectRole,
 } from '@project-vault/shared'
+import type { ProjectCreatePolicy } from '@project-vault/extension-api'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
@@ -59,8 +61,17 @@ import {
   rejectIfProjectArchived,
 } from './archive-guards.js'
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
+import { getExtensionStatus } from '../../extensions/loader.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
+const CREATION_REQUEST_CONFLICT = {
+  code: 'creation_request_conflict',
+  message: 'This project creation request cannot be reused',
+} as const
+const PROJECT_SLUG_TAKEN = {
+  code: 'slug_taken',
+  message: 'A project with this slug already exists in your organization',
+} as const
 
 // Shared response-schema shape for the two project-read GETs below (dashboard, overview): same
 // error surface (401/404/422), only the 200 payload differs.
@@ -265,30 +276,166 @@ function serializeProjectDetail(project: typeof projects.$inferSelect, role: Pro
   }
 }
 
-function isProjectSlugTaken(error: unknown): boolean {
+function isUniqueConstraintTaken(error: unknown, constraint: string): boolean {
   const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
   if (!cause || typeof cause !== 'object') return false
   const pg = cause as { code?: string; constraint?: string; constraint_name?: string }
-  return (
-    pg.code === '23505' &&
-    (pg.constraint === 'idx_projects_org_slug' || pg.constraint_name === 'idx_projects_org_slug')
-  )
+  return pg.code === '23505' && (pg.constraint === constraint || pg.constraint_name === constraint)
+}
+
+function trimHyphens(value: string): string {
+  let start = 0
+  while (start < value.length && value.charAt(start) === '-') start++
+  let end = value.length
+  while (end > start && value.charAt(end - 1) === '-') end--
+  return value.slice(start, end)
+}
+
+export function serverSlugFromProjectName(name: string): string {
+  const slug = name
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+  const bounded = trimHyphens(slug.slice(0, 50)) || 'project'
+  return bounded.length >= 3 ? bounded : 'project'
+}
+
+function getProjectCreatePolicy(): ProjectCreatePolicy | undefined {
+  const extensionState = getExtensionStatus()
+  if (extensionState.status !== 'loaded') return undefined
+  if (!extensionState.manifest.capabilities.includes('project-lifecycle')) return undefined
+  return extensionState.hooks.projectLifecycle
+}
+
+type ProjectCreateResult =
+  | {
+      project: typeof projects.$inferSelect
+      detail: ReturnType<typeof serializeProjectDetail>
+      replayed: boolean
+    }
+  | { error: { code: string; message: string } }
+
+async function findReplayedProject(
+  secureCtx: SecureRouteContext,
+  creationRequestId: string
+): Promise<ProjectCreateResult | undefined> {
+  const [replayed] = await secureCtx.tx
+    .select()
+    .from(projects)
+    .where(eq(projects.creationRequestId, creationRequestId))
+    .limit(1)
+  if (!replayed) return undefined
+  if (replayed.orgId !== secureCtx.auth.orgId || replayed.createdBy !== secureCtx.auth.userId) {
+    return { error: CREATION_REQUEST_CONFLICT }
+  }
+  const replayedRole = await callerProjectRole(secureCtx, replayed.id)
+  if (
+    replayedRole !== 'owner' &&
+    replayedRole !== 'admin' &&
+    replayedRole !== 'member' &&
+    replayedRole !== 'viewer'
+  ) {
+    return { error: CREATION_REQUEST_CONFLICT }
+  }
+  return {
+    project: replayed,
+    detail: serializeProjectDetail(replayed, replayedRole),
+    replayed: true,
+  }
+}
+
+async function readProjectCount(secureCtx: SecureRouteContext): Promise<number> {
+  const [countRow] = await secureCtx.tx.select({ count: sql<number>`count(*)::int` }).from(projects)
+  return Number(countRow?.count ?? 0)
+}
+
+async function evaluateProjectCreatePolicy(
+  secureCtx: SecureRouteContext,
+  body: CreateProjectBody,
+  creationRequestId: string
+): Promise<{ code: string; message: string } | undefined> {
+  const projectCreatePolicy = getProjectCreatePolicy()
+  if (!projectCreatePolicy) return undefined
+  const decision = await projectCreatePolicy.onBeforeCreateProject({
+    organizationId: secureCtx.auth.orgId,
+    actorUserId: secureCtx.auth.userId,
+    projectName: body.name,
+    currentProjectCount: await readProjectCount(secureCtx),
+    creationRequestId,
+  })
+  if (decision.permitted) return undefined
+  return {
+    code: 'project_creation_not_permitted',
+    message: 'Project creation is not available for this organization',
+  }
+}
+
+async function resolveProjectSlug(
+  secureCtx: SecureRouteContext,
+  body: CreateProjectBody
+): Promise<string> {
+  if (body.slug) return body.slug
+  const baseSlug = serverSlugFromProjectName(body.name)
+  const [existingSlug] = await secureCtx.tx
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.orgId, secureCtx.auth.orgId), eq(projects.slug, baseSlug)))
+    .limit(1)
+  return existingSlug ? `${baseSlug.slice(0, 41)}-${randomUUID().slice(0, 8)}` : baseSlug
+}
+
+async function resolveProjectInsertConflict(
+  secureCtx: SecureRouteContext,
+  body: CreateProjectBody,
+  creationRequestId: string,
+  slug: string
+): Promise<ProjectCreateResult> {
+  const conflict = await findReplayedProject(secureCtx, creationRequestId)
+  if (conflict) return conflict
+  if (body.creationRequestId) return { error: CREATION_REQUEST_CONFLICT }
+
+  const [sameOrgSlug] = await secureCtx.tx
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.orgId, secureCtx.auth.orgId), eq(projects.slug, slug)))
+    .limit(1)
+  return { error: sameOrgSlug ? PROJECT_SLUG_TAKEN : CREATION_REQUEST_CONFLICT }
 }
 
 async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {
   try {
+    const creationRequestId = body.creationRequestId ?? randomUUID()
+
+    // This lock and the count below are deliberately in the same secureRoute transaction. A
+    // project-limit extension therefore sees an authoritative count, not a caller-side TOCTOU
+    // snapshot, and concurrent creates in one organization serialize without cross-org blocking.
+    await secureCtx.tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${secureCtx.auth.orgId}), hashtext('project-create'))`
+    )
+
+    const replay = await findReplayedProject(secureCtx, creationRequestId)
+    if (replay) return replay
+    const policyError = await evaluateProjectCreatePolicy(secureCtx, body, creationRequestId)
+    if (policyError) return { error: policyError }
+    const slug = await resolveProjectSlug(secureCtx, body)
+
     const [project] = await secureCtx.tx
       .insert(projects)
       .values({
         orgId: secureCtx.auth.orgId,
         name: body.name,
-        slug: body.slug,
+        slug,
+        creationRequestId,
         description: body.description ?? null,
         createdBy: secureCtx.auth.userId,
       })
+      // A cross-organization replay is hidden by RLS, so it cannot be detected by the preflight
+      // lookup. DO NOTHING keeps that global unique-index conflict inside the live transaction;
+      // catching a plain unique-violation would leave PostgreSQL's transaction aborted.
+      .onConflictDoNothing()
       .returning()
 
-    if (!project) throw new Error('Project insert returned no row')
+    if (!project) return resolveProjectInsertConflict(secureCtx, body, creationRequestId, slug)
 
     await secureCtx.tx.insert(projectMemberships).values({
       orgId: secureCtx.auth.orgId,
@@ -297,15 +444,13 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
       role: 'owner',
     })
 
-    return { project, detail: serializeProjectDetail(project, 'owner') }
+    return { project, detail: serializeProjectDetail(project, 'owner'), replayed: false }
   } catch (error) {
-    if (isProjectSlugTaken(error)) {
-      return {
-        error: {
-          code: 'slug_taken',
-          message: 'A project with this slug already exists in your organization',
-        },
-      }
+    if (isUniqueConstraintTaken(error, 'idx_projects_creation_request_id')) {
+      return { error: CREATION_REQUEST_CONFLICT }
+    }
+    if (isUniqueConstraintTaken(error, 'idx_projects_org_slug')) {
+      return { error: PROJECT_SLUG_TAKEN }
     }
     throw error
   }
@@ -335,15 +480,17 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       const result = await createProject(secureCtx, parsed.data)
       if ('error' in result) return reply.status(409).send(result.error)
-      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
-        resourceType: 'project',
-        orgId: secureCtx.auth.orgId,
-        actorUserId: secureCtx.auth.userId,
-        eventType: 'project.created',
-        resourceId: result.project.id,
-        payload: { slug: result.project.slug },
-        request: req,
-      })
+      if (!result.replayed) {
+        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+          resourceType: 'project',
+          orgId: secureCtx.auth.orgId,
+          actorUserId: secureCtx.auth.userId,
+          eventType: 'project.created',
+          resourceId: result.project.id,
+          payload: { slug: result.project.slug },
+          request: req,
+        })
+      }
       reply.status(201)
       return { data: result.detail }
     },

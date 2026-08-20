@@ -11,6 +11,7 @@ const VALID_NAME = 'com.acme.sso-extension'
 const INCOMPATIBLE_API_VERSION = '3.0.0'
 const INCOMPATIBLE_VERSION_REASON: ExtensionRegistrationErrorReason = 'incompatible-version'
 const INVALID_NAME_REASON: ExtensionRegistrationErrorReason = 'invalid-name'
+const PROJECT_LIFECYCLE_CAPABILITY = 'project-lifecycle' as const
 
 function manifest(overrides: Partial<ExtensionManifest> = {}): ExtensionManifest {
   return {
@@ -91,6 +92,34 @@ describe('registerExtension — AC4 (compatible manifest)', () => {
       { dbScope: [{ table: 'credentials; DROP TABLE users; --', operations: ['select'] }] },
       'invalid-db-scope'
     )
+  })
+
+  it('requires the project-lifecycle hook when that capability is declared', () => {
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [PROJECT_LIFECYCLE_CAPABILITY] }),
+        makeHooksFactory()
+      )
+    ).toThrow(/project-lifecycle/)
+
+    const hooksFactory = vi.fn(() => ({
+      projectLifecycle: {
+        onBeforeCreateProject: async () => ({ permitted: true as const }),
+      },
+    }))
+    expect(
+      registerExtension(manifest({ capabilities: [PROJECT_LIFECYCLE_CAPABILITY] }), hooksFactory)
+        .hooks.projectLifecycle
+    ).toBeDefined()
+  })
+
+  it('rejects a malformed project-lifecycle hook during registration', () => {
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [PROJECT_LIFECYCLE_CAPABILITY] }),
+        () => ({ projectLifecycle: {} }) as ExtensionHooks
+      )
+    ).toThrow(/project-lifecycle/)
   })
 })
 
@@ -216,7 +245,6 @@ describe('registerExtension — concrete canonical version gate', () => {
   )
 
   it.each([
-    '2.1.0',
     '2.2.0',
     '0.9.0',
     '3.0.0',
@@ -256,9 +284,9 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '2.1.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '2.2.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '2.1.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '2.2.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

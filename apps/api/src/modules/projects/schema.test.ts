@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { EMPTY_PROJECT_DASHBOARD, ProjectSummarySchema } from '@project-vault/shared'
 import {
   CreateProjectBodySchema,
@@ -20,6 +21,19 @@ const PAYMENTS_SLUG = 'payments-api'
 describe('project API schemas', () => {
   it.each([PAYMENTS_SLUG, 'abc', 'frontend-prod-v2', 'a1b'])('accepts valid slug %s', (slug) => {
     expect(CreateProjectBodySchema.parse({ name: PROJECT_NAME, slug })).toMatchObject({ slug })
+  })
+
+  it('accepts a PV-native create request without a client-supplied slug', () => {
+    const creationRequestId = randomUUID()
+    expect(
+      CreateProjectBodySchema.parse({
+        name: PROJECT_NAME,
+        creationRequestId,
+      })
+    ).toEqual({
+      name: PROJECT_NAME,
+      creationRequestId,
+    })
   })
 
   it.each(['Payments-API', 'pa', 'payments api', '-payments', 'payments-'])(
