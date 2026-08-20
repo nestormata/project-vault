@@ -164,6 +164,12 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	$(MAKE) check-audit-actor-token-coverage
 	pnpm check-search-index
 	pnpm check-migration-compatibility
+	pnpm check-story-status-sync
+	pnpm check-sprint-status-rollup
+	pnpm check-story-references
+	pnpm check-psc-tbd-tracking
+	pnpm check-story-review-deferrals
+	pnpm check-alert-pending-epic3
 	$(MAKE) check-form-guidance
 	pnpm check-public-safety -- --base main --strict
 	pnpm check-extension-api-policy
