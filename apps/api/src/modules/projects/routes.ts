@@ -268,25 +268,11 @@ function serializeProjectDetail(project: typeof projects.$inferSelect, role: Pro
   }
 }
 
-function isProjectSlugTaken(error: unknown): boolean {
+function isUniqueConstraintTaken(error: unknown, constraint: string): boolean {
   const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
   if (!cause || typeof cause !== 'object') return false
   const pg = cause as { code?: string; constraint?: string; constraint_name?: string }
-  return (
-    pg.code === '23505' &&
-    (pg.constraint === 'idx_projects_org_slug' || pg.constraint_name === 'idx_projects_org_slug')
-  )
-}
-
-function isCreationRequestTaken(error: unknown): boolean {
-  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
-  if (!cause || typeof cause !== 'object') return false
-  const pg = cause as { code?: string; constraint?: string; constraint_name?: string }
-  return (
-    pg.code === '23505' &&
-    (pg.constraint === 'idx_projects_creation_request_id' ||
-      pg.constraint_name === 'idx_projects_creation_request_id')
-  )
+  return pg.code === '23505' && (pg.constraint === constraint || pg.constraint_name === constraint)
 }
 
 function serverSlugFromProjectName(name: string): string {
@@ -305,6 +291,79 @@ function getProjectCreatePolicy(): ProjectCreatePolicy | undefined {
   return extensionState.hooks.projectLifecycle
 }
 
+type ProjectCreateResult =
+  | {
+      project: typeof projects.$inferSelect
+      detail: ReturnType<typeof serializeProjectDetail>
+      replayed: boolean
+    }
+  | { error: { code: string; message: string } }
+
+async function findReplayedProject(
+  secureCtx: SecureRouteContext,
+  creationRequestId: string
+): Promise<ProjectCreateResult | undefined> {
+  const [replayed] = await secureCtx.tx
+    .select()
+    .from(projects)
+    .where(eq(projects.creationRequestId, creationRequestId))
+    .limit(1)
+  if (!replayed) return undefined
+  if (replayed.orgId !== secureCtx.auth.orgId || replayed.createdBy !== secureCtx.auth.userId) {
+    return {
+      error: {
+        code: 'creation_request_conflict',
+        message: 'This project creation request cannot be reused',
+      },
+    }
+  }
+  return {
+    project: replayed,
+    detail: serializeProjectDetail(replayed, 'owner'),
+    replayed: true,
+  }
+}
+
+async function readProjectCount(secureCtx: SecureRouteContext): Promise<number> {
+  const [countRow] = await secureCtx.tx.select({ count: sql<number>`count(*)::int` }).from(projects)
+  return Number(countRow?.count ?? 0)
+}
+
+async function evaluateProjectCreatePolicy(
+  secureCtx: SecureRouteContext,
+  body: CreateProjectBody,
+  creationRequestId: string
+): Promise<{ code: string; message: string } | undefined> {
+  const projectCreatePolicy = getProjectCreatePolicy()
+  if (!projectCreatePolicy) return undefined
+  const decision = await projectCreatePolicy.onBeforeCreateProject({
+    organizationId: secureCtx.auth.orgId,
+    actorUserId: secureCtx.auth.userId,
+    projectName: body.name,
+    currentProjectCount: await readProjectCount(secureCtx),
+    creationRequestId,
+  })
+  if (decision.permitted) return undefined
+  return {
+    code: 'project_creation_not_permitted',
+    message: decision.message ?? 'Project creation is not available for this organization',
+  }
+}
+
+async function resolveProjectSlug(
+  secureCtx: SecureRouteContext,
+  body: CreateProjectBody
+): Promise<string> {
+  if (body.slug) return body.slug
+  const baseSlug = serverSlugFromProjectName(body.name)
+  const [existingSlug] = await secureCtx.tx
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.orgId, secureCtx.auth.orgId), eq(projects.slug, baseSlug)))
+    .limit(1)
+  return existingSlug ? `${baseSlug.slice(0, 41)}-${randomUUID().slice(0, 8)}` : baseSlug
+}
+
 async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {
   try {
     const creationRequestId = body.creationRequestId ?? randomUUID()
@@ -316,60 +375,11 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
       sql`SELECT pg_advisory_xact_lock(hashtext(${secureCtx.auth.orgId}), hashtext('project-create'))`
     )
 
-    const [replayed] = await secureCtx.tx
-      .select()
-      .from(projects)
-      .where(eq(projects.creationRequestId, creationRequestId))
-      .limit(1)
-    if (replayed) {
-      if (replayed.orgId !== secureCtx.auth.orgId || replayed.createdBy !== secureCtx.auth.userId) {
-        return {
-          error: {
-            code: 'creation_request_conflict',
-            message: 'This project creation request cannot be reused',
-          },
-        }
-      }
-      return {
-        project: replayed,
-        detail: serializeProjectDetail(replayed, 'owner'),
-        replayed: true,
-      }
-    }
-
-    const [countRow] = await secureCtx.tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(projects)
-    const currentProjectCount = Number(countRow?.count ?? 0)
-    const projectCreatePolicy = getProjectCreatePolicy()
-    if (projectCreatePolicy) {
-      const decision = await projectCreatePolicy.onBeforeCreateProject({
-        organizationId: secureCtx.auth.orgId,
-        actorUserId: secureCtx.auth.userId,
-        projectName: body.name,
-        currentProjectCount,
-        creationRequestId,
-      })
-      if (!decision.permitted) {
-        return {
-          error: {
-            code: 'project_creation_not_permitted',
-            message: decision.message ?? 'Project creation is not available for this organization',
-          },
-        }
-      }
-    }
-
-    const requestedSlug = body.slug ?? serverSlugFromProjectName(body.name)
-    let slug = requestedSlug
-    if (!body.slug) {
-      const [existingSlug] = await secureCtx.tx
-        .select({ id: projects.id })
-        .from(projects)
-        .where(and(eq(projects.orgId, secureCtx.auth.orgId), eq(projects.slug, slug)))
-        .limit(1)
-      if (existingSlug) slug = `${slug.slice(0, 41)}-${randomUUID().slice(0, 8)}`
-    }
+    const replay = await findReplayedProject(secureCtx, creationRequestId)
+    if (replay) return replay
+    const policyError = await evaluateProjectCreatePolicy(secureCtx, body, creationRequestId)
+    if (policyError) return { error: policyError }
+    const slug = await resolveProjectSlug(secureCtx, body)
 
     const [project] = await secureCtx.tx
       .insert(projects)
@@ -394,7 +404,7 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
 
     return { project, detail: serializeProjectDetail(project, 'owner'), replayed: false }
   } catch (error) {
-    if (isCreationRequestTaken(error)) {
+    if (isUniqueConstraintTaken(error, 'idx_projects_creation_request_id')) {
       return {
         error: {
           code: 'creation_request_conflict',
@@ -402,7 +412,7 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
         },
       }
     }
-    if (isProjectSlugTaken(error)) {
+    if (isUniqueConstraintTaken(error, 'idx_projects_org_slug')) {
       return {
         error: {
           code: 'slug_taken',

@@ -27,6 +27,11 @@ import {
   PROJECT_ROUTE_TEST_VAULT_SECRET,
 } from './project-route-test-bootstrap.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
+import {
+  __resetExtensionStateForTests,
+  __setExtensionStateForTests,
+} from '../../extensions/loader.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
@@ -43,6 +48,11 @@ const TIER_0_TAG = 'tier-0'
 // (and reclassified as expired) once real time catches up to it.
 const EXPIRING_SOON = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
 const FORCED_AUDIT_FAILURE = 'forced audit failure'
+const PROJECT_POLICY_MANIFEST: ExtensionManifest = {
+  name: 'com.acme.project-policy',
+  apiVersion: '1.5.0',
+  capabilities: ['project-lifecycle'],
+}
 
 function uniqueEmail(label: string): string {
   return `projects-${label}-${randomUUID()}@example.com`
@@ -183,6 +193,119 @@ describe.sequential('project routes', () => {
       id: firstBody.data.id,
       slug: 'payments-production',
     })
+
+    const auditRows = await withOrg(user.orgId, (tx) =>
+      tx
+        .select({ resourceId: auditLogEntries.resourceId })
+        .from(auditLogEntries)
+        .where(eq(auditLogEntries.eventType, 'project.created'))
+    )
+    expect(auditRows.filter((row) => row.resourceId === firstBody.data.id)).toHaveLength(1)
+  }, 60_000)
+
+  it('rejects an idempotency-key replay from another actor or organization without revealing the project', async () => {
+    const original = await registerUser(app, 'idempotency-owner')
+    const other = await registerUser(app, 'idempotency-other')
+    const creationRequestId = randomUUID()
+    const first = await app.inject({
+      method: 'POST',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(original.cookies) },
+      payload: { name: 'Private Project', creationRequestId },
+    })
+    expect(first.statusCode).toBe(201)
+    const originalProjectId = first.json<{ data: { id: string } }>().data.id
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(other.cookies) },
+      payload: { name: 'Attacker Guess', creationRequestId },
+    })
+
+    expect(replay.statusCode).toBe(409)
+    expect(replay.json()).toEqual({
+      code: 'creation_request_conflict',
+      message: 'This project creation request cannot be reused',
+    })
+    expect(JSON.stringify(replay.json())).not.toContain(originalProjectId)
+
+    const otherProjects = await withOrg(other.orgId, (tx) =>
+      tx.select({ id: projects.id }).from(projects).where(eq(projects.createdBy, other.userId))
+    )
+    expect(otherProjects).toHaveLength(0)
+  }, 60_000)
+
+  it('calls a loaded project policy after member authorization and rolls back a denial', async () => {
+    const user = await registerUser(app, 'policy-denied')
+    const onBeforeCreateProject = vi.fn().mockResolvedValue({
+      permitted: false,
+      reasonCode: 'quota_exhausted',
+    })
+    const hooks: ExtensionHooks = { projectLifecycle: { onBeforeCreateProject } }
+    __setExtensionStateForTests({
+      status: 'loaded',
+      manifest: PROJECT_POLICY_MANIFEST,
+      loadedAt: new Date().toISOString(),
+      hooks,
+    })
+
+    try {
+      const creationRequestId = randomUUID()
+      const response = await app.inject({
+        method: 'POST',
+        url: PROJECTS_URL,
+        headers: { cookie: cookieHeader(user.cookies) },
+        payload: { name: 'Denied Project', creationRequestId },
+      })
+
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toEqual({
+        code: 'project_creation_not_permitted',
+        message: 'Project creation is not available for this organization',
+      })
+      expect(onBeforeCreateProject).toHaveBeenCalledWith({
+        organizationId: user.orgId,
+        actorUserId: user.userId,
+        projectName: 'Denied Project',
+        currentProjectCount: 0,
+        creationRequestId,
+      })
+      const projectsAfterDenial = await withOrg(user.orgId, (tx) =>
+        tx.select({ id: projects.id }).from(projects).where(eq(projects.createdBy, user.userId))
+      )
+      expect(projectsAfterDenial).toHaveLength(0)
+    } finally {
+      __resetExtensionStateForTests()
+    }
+  }, 60_000)
+
+  it('fails closed when a loaded project policy throws without committing project state', async () => {
+    const user = await registerUser(app, 'policy-throws')
+    const onBeforeCreateProject = vi.fn().mockRejectedValue(new Error('policy unavailable'))
+    __setExtensionStateForTests({
+      status: 'loaded',
+      manifest: PROJECT_POLICY_MANIFEST,
+      loadedAt: new Date().toISOString(),
+      hooks: { projectLifecycle: { onBeforeCreateProject } },
+    })
+
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: PROJECTS_URL,
+        headers: { cookie: cookieHeader(user.cookies) },
+        payload: { name: 'Throwing Policy', creationRequestId: randomUUID() },
+      })
+
+      expect(response.statusCode).toBe(500)
+      const projectsAfterThrow = await withOrg(user.orgId, (tx) =>
+        tx.select({ id: projects.id }).from(projects).where(eq(projects.createdBy, user.userId))
+      )
+      expect(projectsAfterThrow).toHaveLength(0)
+    } finally {
+      __resetExtensionStateForTests()
+    }
   }, 60_000)
 
   it('POST serializes same-organization derived-slug collisions without duplicating a slug', async () => {

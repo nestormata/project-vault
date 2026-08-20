@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { EMPTY_PROJECT_DASHBOARD, ProjectSummarySchema } from '@project-vault/shared'
 import {
   CreateProjectBodySchema,
@@ -23,14 +24,15 @@ describe('project API schemas', () => {
   })
 
   it('accepts a PV-native create request without a client-supplied slug', () => {
+    const creationRequestId = randomUUID()
     expect(
       CreateProjectBodySchema.parse({
         name: PROJECT_NAME,
-        creationRequestId: '00000000-0000-4000-8000-000000000001',
+        creationRequestId,
       })
     ).toEqual({
       name: PROJECT_NAME,
-      creationRequestId: '00000000-0000-4000-8000-000000000001',
+      creationRequestId,
     })
   })
 
