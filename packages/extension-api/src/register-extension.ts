@@ -8,6 +8,7 @@ import type { UIPanel } from './hooks/ui-panel.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
+import type { ProjectCreatePolicy } from './hooks/project-lifecycle.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -33,6 +34,7 @@ export type ExtensionHooks = {
   notificationChannel?: NotificationChannel
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
+  projectLifecycle?: ProjectCreatePolicy
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -249,6 +251,13 @@ export function registerExtension(
   const declaredApiVersion = assertApiVersionSupported(manifest, options)
 
   const hooks = hooksFactory(host)
+
+  if (manifest.capabilities.includes('project-lifecycle') && !hooks.projectLifecycle) {
+    throw new ExtensionRegistrationError(
+      'invalid-manifest-field',
+      'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a projectLifecycle hook'
+    )
+  }
 
   // Story 23.2 AC-2 — a manifest declaring `replacesNativeLogin: true` whose hooksFactory()
   // yields no authStrategy would disable the only working login path with nothing to replace

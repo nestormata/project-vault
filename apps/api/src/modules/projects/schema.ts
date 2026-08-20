@@ -18,9 +18,13 @@ const SLUG_REGEX = /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$/
 export const CreateProjectBodySchema = z
   .object({
     name: z.string().trim().min(1).max(128),
+    // Legacy clients may still send a validated slug; PV-hosted callers omit it and the
+    // transaction derives one from the name.
     slug: z
       .string()
-      .regex(SLUG_REGEX, 'Slug must be 3-50 lowercase alphanumeric characters and hyphens'),
+      .regex(SLUG_REGEX, 'Slug must be 3-50 lowercase alphanumeric characters and hyphens')
+      .optional(),
+    creationRequestId: z.uuid().optional(),
     description: z.string().max(512).trim().nullable().optional(),
   })
   .strict()

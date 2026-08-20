@@ -92,6 +92,22 @@ describe('registerExtension — AC4 (compatible manifest)', () => {
       'invalid-db-scope'
     )
   })
+
+  it('requires the project-lifecycle hook when that capability is declared', () => {
+    expect(() =>
+      registerExtension(manifest({ capabilities: ['project-lifecycle'] }), makeHooksFactory())
+    ).toThrow(/project-lifecycle/)
+
+    const hooksFactory = vi.fn(() => ({
+      projectLifecycle: {
+        onBeforeCreateProject: async () => ({ permitted: true as const }),
+      },
+    }))
+    expect(
+      registerExtension(manifest({ capabilities: ['project-lifecycle'] }), hooksFactory).hooks
+        .projectLifecycle
+    ).toBeDefined()
+  })
 })
 
 describe('registerExtension — AC5 (incompatible manifest)', () => {
@@ -216,7 +232,6 @@ describe('registerExtension — concrete canonical version gate', () => {
   )
 
   it.each([
-    '2.1.0',
     '2.2.0',
     '0.9.0',
     '3.0.0',
@@ -256,9 +271,9 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '2.1.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '2.2.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '2.1.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '2.2.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

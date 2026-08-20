@@ -2,6 +2,16 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 2.1.0 — 2026-08-19
+
+contract-hash: sha256:bc6d08f603fe27347788f45495c2d332486110eefab11ee5c5c76ba1dace640d
+
+### Added
+
+- Added the host-called `project-lifecycle` policy hook so extensions can participate in PV's
+  transaction-scoped project-create decision without receiving database access, tier internals,
+  or client-controlled tenant context.
+
 ## 2.0.0 — 2026-08-19
 
 contract-hash: sha256:e25c0ba61d4c34fca86cc8ec965780cede2e6d33a28d26e427f89b72ecc81ff1

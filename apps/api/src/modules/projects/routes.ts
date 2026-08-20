@@ -1,4 +1,5 @@
 import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { randomUUID } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod/v4'
 import {
@@ -7,6 +8,7 @@ import {
   AuditEvent,
   type ProjectRole,
 } from '@project-vault/shared'
+import type { ProjectCreatePolicy } from '@project-vault/extension-api'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { dedupeTags, tagDelta } from '../../lib/tags.js'
@@ -59,6 +61,7 @@ import {
   rejectIfProjectArchived,
 } from './archive-guards.js'
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
+import { getExtensionStatus } from '../../extensions/loader.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 
@@ -275,14 +278,106 @@ function isProjectSlugTaken(error: unknown): boolean {
   )
 }
 
+function isCreationRequestTaken(error: unknown): boolean {
+  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined
+  if (!cause || typeof cause !== 'object') return false
+  const pg = cause as { code?: string; constraint?: string; constraint_name?: string }
+  return (
+    pg.code === '23505' &&
+    (pg.constraint === 'idx_projects_creation_request_id' ||
+      pg.constraint_name === 'idx_projects_creation_request_id')
+  )
+}
+
+function serverSlugFromProjectName(name: string): string {
+  const slug = name
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return (slug || 'project').slice(0, 50).replace(/-+$/g, '') || 'project'
+}
+
+function getProjectCreatePolicy(): ProjectCreatePolicy | undefined {
+  const extensionState = getExtensionStatus()
+  if (extensionState.status !== 'loaded') return undefined
+  if (!extensionState.manifest.capabilities.includes('project-lifecycle')) return undefined
+  return extensionState.hooks.projectLifecycle
+}
+
 async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {
   try {
+    const creationRequestId = body.creationRequestId ?? randomUUID()
+
+    // This lock and the count below are deliberately in the same secureRoute transaction. A
+    // project-limit extension therefore sees an authoritative count, not a caller-side TOCTOU
+    // snapshot, and concurrent creates in one organization serialize without cross-org blocking.
+    await secureCtx.tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${secureCtx.auth.orgId}), hashtext('project-create'))`
+    )
+
+    const [replayed] = await secureCtx.tx
+      .select()
+      .from(projects)
+      .where(eq(projects.creationRequestId, creationRequestId))
+      .limit(1)
+    if (replayed) {
+      if (replayed.orgId !== secureCtx.auth.orgId || replayed.createdBy !== secureCtx.auth.userId) {
+        return {
+          error: {
+            code: 'creation_request_conflict',
+            message: 'This project creation request cannot be reused',
+          },
+        }
+      }
+      return {
+        project: replayed,
+        detail: serializeProjectDetail(replayed, 'owner'),
+        replayed: true,
+      }
+    }
+
+    const [countRow] = await secureCtx.tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(projects)
+    const currentProjectCount = Number(countRow?.count ?? 0)
+    const projectCreatePolicy = getProjectCreatePolicy()
+    if (projectCreatePolicy) {
+      const decision = await projectCreatePolicy.onBeforeCreateProject({
+        organizationId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        projectName: body.name,
+        currentProjectCount,
+        creationRequestId,
+      })
+      if (!decision.permitted) {
+        return {
+          error: {
+            code: 'project_creation_not_permitted',
+            message: decision.message ?? 'Project creation is not available for this organization',
+          },
+        }
+      }
+    }
+
+    const requestedSlug = body.slug ?? serverSlugFromProjectName(body.name)
+    let slug = requestedSlug
+    if (!body.slug) {
+      const [existingSlug] = await secureCtx.tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.orgId, secureCtx.auth.orgId), eq(projects.slug, slug)))
+        .limit(1)
+      if (existingSlug) slug = `${slug.slice(0, 41)}-${randomUUID().slice(0, 8)}`
+    }
+
     const [project] = await secureCtx.tx
       .insert(projects)
       .values({
         orgId: secureCtx.auth.orgId,
         name: body.name,
-        slug: body.slug,
+        slug,
+        creationRequestId,
         description: body.description ?? null,
         createdBy: secureCtx.auth.userId,
       })
@@ -297,8 +392,16 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
       role: 'owner',
     })
 
-    return { project, detail: serializeProjectDetail(project, 'owner') }
+    return { project, detail: serializeProjectDetail(project, 'owner'), replayed: false }
   } catch (error) {
+    if (isCreationRequestTaken(error)) {
+      return {
+        error: {
+          code: 'creation_request_conflict',
+          message: 'This project creation request cannot be reused',
+        },
+      }
+    }
     if (isProjectSlugTaken(error)) {
       return {
         error: {
@@ -335,15 +438,17 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       const result = await createProject(secureCtx, parsed.data)
       if ('error' in result) return reply.status(409).send(result.error)
-      await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
-        resourceType: 'project',
-        orgId: secureCtx.auth.orgId,
-        actorUserId: secureCtx.auth.userId,
-        eventType: 'project.created',
-        resourceId: result.project.id,
-        payload: { slug: result.project.slug },
-        request: req,
-      })
+      if (!result.replayed) {
+        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+          resourceType: 'project',
+          orgId: secureCtx.auth.orgId,
+          actorUserId: secureCtx.auth.userId,
+          eventType: 'project.created',
+          resourceId: result.project.id,
+          payload: { slug: result.project.slug },
+          request: req,
+        })
+      }
       reply.status(201)
       return { data: result.detail }
     },

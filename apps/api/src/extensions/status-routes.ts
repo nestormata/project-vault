@@ -23,6 +23,7 @@ const ExtensionManifestSchema = z.object({
       'ui-panel',
       'capability-gate',
       'audit-event-source',
+      'project-lifecycle',
     ])
   ),
   loadedAt: z.string(),

@@ -8,6 +8,7 @@ describe('projects schema', () => {
     expect(projects.orgId).toBeDefined()
     expect(projects.name).toBeDefined()
     expect(projects.slug).toBeDefined()
+    expect(projects.creationRequestId).toBeDefined()
     expect(projects.description).toBeDefined()
     expect(projects.tags).toBeDefined()
     expect(projects.createdBy).toBeDefined()

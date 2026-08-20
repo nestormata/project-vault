@@ -158,6 +158,52 @@ describe.sequential('project routes', () => {
     expect(membership[0]?.role).toBe('owner')
   }, 60_000)
 
+  it('POST derives a server slug and replays the same project for an idempotency key', async () => {
+    const user = await registerUser(app, 'idempotent')
+    const creationRequestId = randomUUID()
+    const payload = { name: 'Payments Production', creationRequestId }
+    const first = await app.inject({
+      method: 'POST',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+      payload,
+    })
+    const replay = await app.inject({
+      method: 'POST',
+      url: PROJECTS_URL,
+      headers: { cookie: cookieHeader(user.cookies) },
+      payload,
+    })
+
+    expect(first.statusCode).toBe(201)
+    expect(replay.statusCode).toBe(201)
+    const firstBody = first.json<{ data: { id: string } }>()
+    const replayBody = replay.json<{ data: { id: string; slug: string } }>()
+    expect(replayBody.data).toMatchObject({
+      id: firstBody.data.id,
+      slug: 'payments-production',
+    })
+  }, 60_000)
+
+  it('POST serializes same-organization derived-slug collisions without duplicating a slug', async () => {
+    const user = await registerUser(app, 'concurrent-derived-slug')
+    const responses = await Promise.all(
+      [randomUUID(), randomUUID()].map((creationRequestId) =>
+        app.inject({
+          method: 'POST',
+          url: PROJECTS_URL,
+          headers: { cookie: cookieHeader(user.cookies) },
+          payload: { name: 'Concurrent Payments', creationRequestId },
+        })
+      )
+    )
+
+    expect(responses.map((response) => response.statusCode)).toEqual([201, 201])
+    const slugs = responses.map((response) => response.json<{ data: { slug: string } }>().data.slug)
+    expect(new Set(slugs).size).toBe(2)
+    expect(slugs).toEqual(expect.arrayContaining(['concurrent-payments']))
+  }, 60_000)
+
   it('POST defaults omitted description to null and rejects duplicate or invalid slugs', async () => {
     const user = await registerUser(app, 'slug')
     const created = await createProject(app, user.cookies, 'slug-project')

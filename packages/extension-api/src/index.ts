@@ -21,6 +21,11 @@ export type {
   AuditEventSourceWriteInput,
   AuditEventSourceWriteResult,
 } from './hooks/audit-event-source.js'
+export type {
+  ProjectCreateDecision,
+  ProjectCreatePolicy,
+  ProjectCreatePolicyContext,
+} from './hooks/project-lifecycle.js'
 
 export type { HostServices } from './host-services.js'
 export type {

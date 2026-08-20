@@ -22,6 +22,18 @@ describe('project API schemas', () => {
     expect(CreateProjectBodySchema.parse({ name: PROJECT_NAME, slug })).toMatchObject({ slug })
   })
 
+  it('accepts a PV-native create request without a client-supplied slug', () => {
+    expect(
+      CreateProjectBodySchema.parse({
+        name: PROJECT_NAME,
+        creationRequestId: '00000000-0000-4000-8000-000000000001',
+      })
+    ).toEqual({
+      name: PROJECT_NAME,
+      creationRequestId: '00000000-0000-4000-8000-000000000001',
+    })
+  })
+
   it.each(['Payments-API', 'pa', 'payments api', '-payments', 'payments-'])(
     'rejects invalid slug %s',
     (slug) => {
