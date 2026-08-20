@@ -5274,6 +5274,11 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$"
           },
+          "creationRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
           "description": {
             "nullable": true,
             "type": "string",
@@ -5281,8 +5286,7 @@
           }
         },
         "required": [
-          "name",
-          "slug"
+          "name"
         ],
         "additionalProperties": false
       },
@@ -15346,6 +15350,11 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$"
           },
+          "creationRequestId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
           "description": {
             "nullable": true,
             "type": "string",
@@ -15353,8 +15362,7 @@
           }
         },
         "required": [
-          "name",
-          "slug"
+          "name"
         ],
         "additionalProperties": false
       },
@@ -35423,7 +35431,8 @@
                               "notification-channel",
                               "ui-panel",
                               "capability-gate",
-                              "audit-event-source"
+                              "audit-event-source",
+                              "project-lifecycle"
                             ]
                           }
                         },
