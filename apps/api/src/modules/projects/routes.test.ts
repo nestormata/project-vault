@@ -32,6 +32,7 @@ import {
   __resetExtensionStateForTests,
   __setExtensionStateForTests,
 } from '../../extensions/loader.js'
+import { serverSlugFromProjectName } from './routes.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
@@ -342,6 +343,13 @@ describe.sequential('project routes', () => {
       /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$/
     )
   }, 60_000)
+
+  it('trims separator runs from derived slugs without changing their bounded shape', () => {
+    const longName = `${'a'.repeat(49)}---`
+
+    expect(serverSlugFromProjectName(longName)).toBe('a'.repeat(49))
+    expect(serverSlugFromProjectName('---')).toBe('project')
+  })
 
   it('uses the caller membership role when replaying after ownership changes', async () => {
     const user = await registerUser(app, 'replay-role')

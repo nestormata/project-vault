@@ -283,13 +283,20 @@ function isUniqueConstraintTaken(error: unknown, constraint: string): boolean {
   return pg.code === '23505' && (pg.constraint === constraint || pg.constraint_name === constraint)
 }
 
-function serverSlugFromProjectName(name: string): string {
+function trimHyphens(value: string): string {
+  let start = 0
+  while (start < value.length && value.charAt(start) === '-') start++
+  let end = value.length
+  while (end > start && value.charAt(end - 1) === '-') end--
+  return value.slice(start, end)
+}
+
+export function serverSlugFromProjectName(name: string): string {
   const slug = name
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  const bounded = (slug || 'project').slice(0, 50).replace(/-+$/g, '') || 'project'
+  const bounded = trimHyphens(slug.slice(0, 50)) || 'project'
   return bounded.length >= 3 ? bounded : 'project'
 }
 
