@@ -360,9 +360,10 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
 
   it('warns on every load using the explicit above-host rollback escape', async () => {
     const logger = noopLogger()
+    const aboveHostApiVersion = '2.2.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
-        manifest: { ...VALID_MANIFEST, apiVersion: '2.1.0' },
+        manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },
         hooksFactory: () => NOOP_HOOKS,
       },
     })
@@ -375,8 +376,8 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     expect(getExtensionStatus().status).toBe('loaded')
     expect(logger?.warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        declaredApiVersion: '2.1.0',
-        hostApiVersion: '2.0.0',
+        declaredApiVersion: aboveHostApiVersion,
+        hostApiVersion: EXTENSION_API_VERSION,
         flag: 'VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST',
       }),
       expect.any(String)
