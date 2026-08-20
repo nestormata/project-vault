@@ -212,6 +212,17 @@ function assertApiVersionSupported(
   return declaredApiVersion
 }
 
+function hasCallableProjectLifecycleHook(
+  manifest: ExtensionManifest,
+  hooks: ExtensionHooks
+): boolean {
+  if (!manifest.capabilities.includes('project-lifecycle')) return true
+  return (
+    hooks.projectLifecycle !== undefined &&
+    typeof hooks.projectLifecycle.onBeforeCreateProject === 'function'
+  )
+}
+
 /**
  * AC4/AC5/AC6 — validates `manifest.name` (reverse-DNS style) and semver-based capability
  * negotiation, in that order, BEFORE ever invoking `hooksFactory`. Throws a typed
@@ -252,10 +263,10 @@ export function registerExtension(
 
   const hooks = hooksFactory(host)
 
-  if (manifest.capabilities.includes('project-lifecycle') && !hooks.projectLifecycle) {
+  if (!hasCallableProjectLifecycleHook(manifest, hooks)) {
     throw new ExtensionRegistrationError(
       'invalid-manifest-field',
-      'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a projectLifecycle hook'
+      'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a callable projectLifecycle hook'
     )
   }
 

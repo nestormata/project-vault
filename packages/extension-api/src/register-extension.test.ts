@@ -11,6 +11,7 @@ const VALID_NAME = 'com.acme.sso-extension'
 const INCOMPATIBLE_API_VERSION = '3.0.0'
 const INCOMPATIBLE_VERSION_REASON: ExtensionRegistrationErrorReason = 'incompatible-version'
 const INVALID_NAME_REASON: ExtensionRegistrationErrorReason = 'invalid-name'
+const PROJECT_LIFECYCLE_CAPABILITY = 'project-lifecycle' as const
 
 function manifest(overrides: Partial<ExtensionManifest> = {}): ExtensionManifest {
   return {
@@ -95,7 +96,10 @@ describe('registerExtension — AC4 (compatible manifest)', () => {
 
   it('requires the project-lifecycle hook when that capability is declared', () => {
     expect(() =>
-      registerExtension(manifest({ capabilities: ['project-lifecycle'] }), makeHooksFactory())
+      registerExtension(
+        manifest({ capabilities: [PROJECT_LIFECYCLE_CAPABILITY] }),
+        makeHooksFactory()
+      )
     ).toThrow(/project-lifecycle/)
 
     const hooksFactory = vi.fn(() => ({
@@ -104,9 +108,18 @@ describe('registerExtension — AC4 (compatible manifest)', () => {
       },
     }))
     expect(
-      registerExtension(manifest({ capabilities: ['project-lifecycle'] }), hooksFactory).hooks
-        .projectLifecycle
+      registerExtension(manifest({ capabilities: [PROJECT_LIFECYCLE_CAPABILITY] }), hooksFactory)
+        .hooks.projectLifecycle
     ).toBeDefined()
+  })
+
+  it('rejects a malformed project-lifecycle hook during registration', () => {
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [PROJECT_LIFECYCLE_CAPABILITY] }),
+        () => ({ projectLifecycle: {} }) as ExtensionHooks
+      )
+    ).toThrow(/project-lifecycle/)
   })
 })
 

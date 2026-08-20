@@ -241,6 +241,7 @@ describe.sequential('project routes', () => {
     const onBeforeCreateProject = vi.fn().mockResolvedValue({
       permitted: false,
       reasonCode: 'quota_exhausted',
+      message: 'tier=enterprise; internal quota details',
     })
     const hooks: ExtensionHooks = { projectLifecycle: { onBeforeCreateProject } }
     __setExtensionStateForTests({

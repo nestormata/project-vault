@@ -64,6 +64,14 @@ import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 import { getExtensionStatus } from '../../extensions/loader.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
+const CREATION_REQUEST_CONFLICT = {
+  code: 'creation_request_conflict',
+  message: 'This project creation request cannot be reused',
+} as const
+const PROJECT_SLUG_TAKEN = {
+  code: 'slug_taken',
+  message: 'A project with this slug already exists in your organization',
+} as const
 
 // Shared response-schema shape for the two project-read GETs below (dashboard, overview): same
 // error surface (401/404/422), only the 200 payload differs.
@@ -310,12 +318,7 @@ async function findReplayedProject(
     .limit(1)
   if (!replayed) return undefined
   if (replayed.orgId !== secureCtx.auth.orgId || replayed.createdBy !== secureCtx.auth.userId) {
-    return {
-      error: {
-        code: 'creation_request_conflict',
-        message: 'This project creation request cannot be reused',
-      },
-    }
+    return { error: CREATION_REQUEST_CONFLICT }
   }
   return {
     project: replayed,
@@ -346,7 +349,7 @@ async function evaluateProjectCreatePolicy(
   if (decision.permitted) return undefined
   return {
     code: 'project_creation_not_permitted',
-    message: decision.message ?? 'Project creation is not available for this organization',
+    message: 'Project creation is not available for this organization',
   }
 }
 
@@ -362,6 +365,24 @@ async function resolveProjectSlug(
     .where(and(eq(projects.orgId, secureCtx.auth.orgId), eq(projects.slug, baseSlug)))
     .limit(1)
   return existingSlug ? `${baseSlug.slice(0, 41)}-${randomUUID().slice(0, 8)}` : baseSlug
+}
+
+async function resolveProjectInsertConflict(
+  secureCtx: SecureRouteContext,
+  body: CreateProjectBody,
+  creationRequestId: string,
+  slug: string
+): Promise<ProjectCreateResult> {
+  const conflict = await findReplayedProject(secureCtx, creationRequestId)
+  if (conflict) return conflict
+  if (body.creationRequestId) return { error: CREATION_REQUEST_CONFLICT }
+
+  const [sameOrgSlug] = await secureCtx.tx
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.orgId, secureCtx.auth.orgId), eq(projects.slug, slug)))
+    .limit(1)
+  return { error: sameOrgSlug ? PROJECT_SLUG_TAKEN : CREATION_REQUEST_CONFLICT }
 }
 
 async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {
@@ -391,9 +412,13 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
         description: body.description ?? null,
         createdBy: secureCtx.auth.userId,
       })
+      // A cross-organization replay is hidden by RLS, so it cannot be detected by the preflight
+      // lookup. DO NOTHING keeps that global unique-index conflict inside the live transaction;
+      // catching a plain unique-violation would leave PostgreSQL's transaction aborted.
+      .onConflictDoNothing()
       .returning()
 
-    if (!project) throw new Error('Project insert returned no row')
+    if (!project) return resolveProjectInsertConflict(secureCtx, body, creationRequestId, slug)
 
     await secureCtx.tx.insert(projectMemberships).values({
       orgId: secureCtx.auth.orgId,
@@ -405,20 +430,10 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
     return { project, detail: serializeProjectDetail(project, 'owner'), replayed: false }
   } catch (error) {
     if (isUniqueConstraintTaken(error, 'idx_projects_creation_request_id')) {
-      return {
-        error: {
-          code: 'creation_request_conflict',
-          message: 'This project creation request cannot be reused',
-        },
-      }
+      return { error: CREATION_REQUEST_CONFLICT }
     }
     if (isUniqueConstraintTaken(error, 'idx_projects_org_slug')) {
-      return {
-        error: {
-          code: 'slug_taken',
-          message: 'A project with this slug already exists in your organization',
-        },
-      }
+      return { error: PROJECT_SLUG_TAKEN }
     }
     throw error
   }
