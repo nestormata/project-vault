@@ -1,5 +1,12 @@
 import type { FastifyBaseLogger } from 'fastify'
-import { withOrg } from '@project-vault/db'
+import { sql } from 'drizzle-orm'
+import {
+  getDb,
+  getExtensionDbHandle,
+  getExtensionDbPoolMax,
+  hashExtensionDbScope,
+  withOrg,
+} from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import {
   EXTENSION_API_VERSION,
@@ -7,12 +14,19 @@ import {
   isExtensionApiVersionSupported,
   registerExtension,
 } from '@project-vault/extension-api'
-import type { ExtensionHooks, ExtensionManifest, HostServices } from '@project-vault/extension-api'
+import type {
+  ExtensionHooks,
+  ExtensionManifest,
+  ExtensionRuntimeContext,
+  HostServices,
+} from '@project-vault/extension-api'
 import { operationalLog } from '../lib/logger.js'
 import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeout.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
+import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
+import type { Tx } from '@project-vault/db'
 
 /**
  * Story 14.2 AC-3: fixed, exhaustive failure-reason enum — never the raw exception
@@ -32,6 +46,166 @@ type ExtensionModuleShape = {
   default: { manifest: ExtensionManifest; hooksFactory: (host: HostServices) => ExtensionHooks }
 }
 
+type ExtensionDbScopeStatus = 'not_configured' | 'declared_unapproved' | 'approved' | 'drift'
+
+type ExtensionDbScopeSnapshot = {
+  status: ExtensionDbScopeStatus
+  declaredScope: ExtensionManifest['dbScope']
+  approvedScope?: unknown
+  overrideRationales?: unknown
+  toolOwnedGrants?: unknown
+  reason?: 'approval_read_failed' | 'missing_approval' | 'manifest_drift'
+}
+
+async function readExtensionDbScopeSnapshot(
+  manifest: ExtensionManifest
+): Promise<ExtensionDbScopeSnapshot> {
+  const declaredScope = manifest.dbScope
+  if (declaredScope === undefined || declaredScope.length === 0) {
+    return { status: 'not_configured', declaredScope }
+  }
+
+  try {
+    const rows = (await getDb().execute(sql`
+      SELECT manifest_scope_hash, approved_scope, override_rationales, tool_owned_grants
+        FROM extension_db_scope_approvals
+       WHERE extension_name = ${manifest.name}
+    `)) as unknown as Array<{
+      manifest_scope_hash: string
+      approved_scope: unknown
+      override_rationales: unknown
+      tool_owned_grants: unknown
+    }>
+    const approval = rows[0]
+    if (!approval) {
+      return { status: 'declared_unapproved', declaredScope, reason: 'missing_approval' }
+    }
+    const status =
+      approval.manifest_scope_hash === hashExtensionDbScope(declaredScope) ? 'approved' : 'drift'
+    return {
+      status,
+      declaredScope,
+      approvedScope: approval.approved_scope,
+      overrideRationales: approval.override_rationales,
+      toolOwnedGrants: approval.tool_owned_grants,
+      ...(status === 'drift' ? { reason: 'manifest_drift' as const } : {}),
+    }
+  } catch {
+    return { status: 'declared_unapproved', declaredScope, reason: 'approval_read_failed' }
+  }
+}
+
+async function readExtensionDbScopeStatus(
+  manifest: ExtensionManifest
+): Promise<ExtensionDbScopeSnapshot['status']> {
+  return (await readExtensionDbScopeSnapshot(manifest)).status
+}
+
+function extensionDbScopeAuditDetails(snapshot: ExtensionDbScopeSnapshot): Record<string, unknown> {
+  return {
+    declaredScope: snapshot.declaredScope,
+    ...(snapshot.approvedScope !== undefined ? { approvedScope: snapshot.approvedScope } : {}),
+    ...(snapshot.overrideRationales !== undefined
+      ? { overrideRationales: snapshot.overrideRationales }
+      : {}),
+    ...(snapshot.toolOwnedGrants !== undefined
+      ? { toolOwnedGrants: snapshot.toolOwnedGrants }
+      : {}),
+    ...(snapshot.reason ? { reason: snapshot.reason } : {}),
+  }
+}
+
+function logExtensionDbScopeStatus(logger: LoaderLogger, snapshot: ExtensionDbScopeSnapshot): void {
+  if (snapshot.status === 'not_configured') return
+  operationalLog(
+    logger,
+    snapshot.status === 'approved' ? 'info' : 'warn',
+    'extension.db_scope.status',
+    `extension DB scope status: ${snapshot.status}`,
+    extensionDbScopeAuditDetails(snapshot)
+  )
+}
+
+async function writeExtensionDbScopePlatformAudit(
+  logger: LoaderLogger,
+  snapshot: ExtensionDbScopeSnapshot
+): Promise<void> {
+  if (snapshot.status === 'not_configured') return
+
+  try {
+    await getDb().transaction(async (tx) => {
+      const operators = (await tx.execute(sql`
+        SELECT id
+          FROM users
+         WHERE is_platform_operator = true
+         ORDER BY created_at ASC
+         LIMIT 1
+      `)) as unknown as Array<{ id: string }>
+      const operatorId = operators[0]?.id
+      if (!operatorId) {
+        operationalLog(
+          logger,
+          'warn',
+          'extension.db_scope.audit_skipped',
+          'extension DB scope platform audit skipped because no platform operator exists',
+          { status: snapshot.status }
+        )
+        return
+      }
+
+      await writePlatformAuditEntryOrFailClosed(tx as unknown as Tx, {
+        operatorId,
+        actionType: 'extension.db_scope.status',
+        payload: {
+          status: snapshot.status,
+          ...extensionDbScopeAuditDetails(snapshot),
+        },
+      })
+    })
+  } catch {
+    operationalLog(
+      logger,
+      'warn',
+      'extension.db_scope.audit_failed',
+      'extension DB scope platform audit could not be written',
+      { status: snapshot.status, reason: 'write_failed' }
+    )
+  }
+}
+
+async function logExtensionDbPoolSizing(logger: LoaderLogger): Promise<void> {
+  try {
+    const rows = (await getDb().execute(sql`SHOW max_connections`)) as unknown as Array<{
+      max_connections: string
+    }>
+    const maxConnections = Number(rows[0]?.max_connections)
+    const extensionPoolMax = getExtensionDbPoolMax()
+    const aggregatePoolMax = extensionPoolMax + 10 + 10
+    operationalLog(
+      logger,
+      aggregatePoolMax > maxConnections ? 'warn' : 'info',
+      'extension.db_pool.sizing',
+      'extension DB pool sizing evaluated',
+      {
+        extensionPoolMax,
+        corePoolMax: 10,
+        adminPoolMax: 10,
+        aggregatePoolMax,
+        maxConnections,
+        overSubscribed: aggregatePoolMax > maxConnections,
+      }
+    )
+  } catch {
+    operationalLog(
+      logger,
+      'warn',
+      'extension.db_pool.sizing',
+      'extension DB pool sizing could not be evaluated',
+      { extensionPoolMax: getExtensionDbPoolMax(), corePoolMax: 10, adminPoolMax: 10 }
+    )
+  }
+}
+
 /**
  * Story 23.8 AC-6 — constructs the real `HostServices` object, bound to the loading extension's
  * own manifest, before `registerExtension()` calls `hooksFactory(host)`. Edge case: when no
@@ -41,10 +215,21 @@ type ExtensionModuleShape = {
  * this process ever has (single-extension-per-process invariant, same as
  * `registeredGate`/`registeredGateName` in `lib/capability-gate.ts`).
  */
-function buildHostServices(manifest: ExtensionManifest): HostServices {
+async function buildHostServices(
+  manifest: ExtensionManifest
+): Promise<ExtensionRuntimeContext & HostServices> {
+  const scopeStatus = await readExtensionDbScopeStatus(manifest)
   return {
     auditEventSource: {
       writeAuditEvent: (input) => writeExtensionAuditEventForManifest(manifest, input),
+    },
+    getDbHandle: async () => {
+      if (!manifest.dbScope || manifest.dbScope.length === 0) {
+        return { unavailable: 'no-approved-scope' }
+      }
+      if (scopeStatus !== 'approved') return { unavailable: 'no-approved-scope' }
+      const handle = getExtensionDbHandle()
+      return handle ?? { unavailable: 'not-configured' }
     },
   }
 }
@@ -188,7 +373,7 @@ async function raceWithTimeout(
       mod.default.manifest,
       mod.default.hooksFactory,
       { allowApiVersionAboveHost },
-      buildHostServices(mod.default.manifest)
+      await buildHostServices(mod.default.manifest)
     )
   }, timeoutMs)
 
@@ -226,6 +411,10 @@ async function applyOutcome(
   if (result.outcome) {
     const { manifest, hooks } = result.outcome
     state = { status: 'loaded', manifest, loadedAt: new Date().toISOString(), hooks }
+    const dbScopeSnapshot = await readExtensionDbScopeSnapshot(manifest)
+    logExtensionDbScopeStatus(logger, dbScopeSnapshot)
+    await writeExtensionDbScopePlatformAudit(logger, dbScopeSnapshot)
+    if (dbScopeSnapshot.status === 'approved') await logExtensionDbPoolSizing(logger)
     if (allowApiVersionAboveHost && !isExtensionApiVersionSupported(manifest.apiVersion)) {
       operationalLog(
         logger,

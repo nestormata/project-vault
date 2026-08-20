@@ -25,6 +25,10 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   // Keep both the schema's SCREAMING_SNAKE key and the camelCase compatibility spelling covered.
   'adminDatabaseUrl',
   'ADMIN_DATABASE_URL',
+  'extensionDatabaseUrl',
+  'EXTENSION_DATABASE_URL',
+  'extensionGrantDatabaseUrl',
+  'EXTENSION_GRANT_DATABASE_URL',
   // Epic 17 retro (2026-07-29) Finding: story 17-2's step-up body carries `totpCode` (not `totp`,
   // the pre-existing field name), so it fell outside this registry despite AC-18 requiring it be
   // redacted by name — no live leak found (no request-logging call currently dumps req.body

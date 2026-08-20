@@ -208,7 +208,7 @@ describe('GET /status', () => {
       const app = await createApp({ logger: false, dbPool: okDbPool })
       __setExtensionStateForTests({
         status: 'loaded',
-        manifest: { name: TEST_GATE_MANIFEST_NAME, apiVersion: '1.4.0', capabilities: [] },
+        manifest: { name: TEST_GATE_MANIFEST_NAME, apiVersion: '2.0.0', capabilities: [] },
         loadedAt: new Date().toISOString(),
         hooks: {},
       })
@@ -224,7 +224,7 @@ describe('GET /status', () => {
         status: 'loaded',
         manifest: {
           name: TEST_GATE_MANIFEST_NAME,
-          apiVersion: '1.4.0',
+          apiVersion: '2.0.0',
           capabilities: ['audit-event-source'],
         },
         loadedAt: new Date().toISOString(),

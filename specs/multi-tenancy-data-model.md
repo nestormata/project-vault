@@ -178,6 +178,9 @@ SELECT set_config('app.current_org_id', '<org-uuid>', true);
 ### Policy Definitions
 
 ```sql
+-- HISTORICAL ASPIRATIONAL EXAMPLE: these legacy table names and FORCE ownership assumptions do
+-- not describe the shipped schema. Current ownership/FORCE rules are defined by Story 24.1 and
+-- checked in packages/db/src/check-rls-coverage.ts; do not copy this block into a migration.
 -- Enable on all tenant-scoped tables
 ALTER TABLE projects       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE environments   ENABLE ROW LEVEL SECURITY;

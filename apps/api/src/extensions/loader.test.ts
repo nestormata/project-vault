@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { ExtensionRegistrationError } from '@project-vault/extension-api'
+import { EXTENSION_API_VERSION, ExtensionRegistrationError } from '@project-vault/extension-api'
 import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
 import {
   __resetExtensionStateForTests,
@@ -11,7 +11,7 @@ import type { LoadExtensionDeps } from './loader.js'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
-  apiVersion: '1.1.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: ['auth-provider'],
 }
 
@@ -90,6 +90,27 @@ describe('loadExtension — valid package (AC-2)', () => {
         capabilities: VALID_MANIFEST.capabilities,
       })
     )
+  })
+
+  it('loads a declared DB scope but withholds the handle until operator approval exists', async () => {
+    let getDbHandle: (() => Promise<unknown>) | undefined
+    const importFn = vi.fn().mockResolvedValue({
+      default: {
+        manifest: {
+          ...VALID_MANIFEST,
+          dbScope: [{ table: 'credentials', operations: ['select'] }],
+        },
+        hooksFactory: (context: { getDbHandle: () => Promise<unknown> }) => {
+          getDbHandle = context.getDbHandle
+          return NOOP_HOOKS
+        },
+      },
+    })
+
+    await loadExtension(VALID_PACKAGE_NAME, baseDeps({ importFn }))
+
+    expect(getExtensionStatus().status).toBe('loaded')
+    await expect(getDbHandle?.()).resolves.toEqual({ unavailable: 'no-approved-scope' })
   })
 })
 
@@ -341,7 +362,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     const logger = noopLogger()
     const importFn = vi.fn().mockResolvedValue({
       default: {
-        manifest: { ...VALID_MANIFEST, apiVersion: '1.5.0' },
+        manifest: { ...VALID_MANIFEST, apiVersion: '2.1.0' },
         hooksFactory: () => NOOP_HOOKS,
       },
     })
@@ -354,8 +375,8 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     expect(getExtensionStatus().status).toBe('loaded')
     expect(logger?.warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        declaredApiVersion: '1.5.0',
-        hostApiVersion: '1.4.0',
+        declaredApiVersion: '2.1.0',
+        hostApiVersion: '2.0.0',
         flag: 'VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST',
       }),
       expect.any(String)

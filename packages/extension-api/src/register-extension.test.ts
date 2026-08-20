@@ -8,7 +8,7 @@ import type { ExtensionHooks } from './register-extension.js'
 import type { HostServices } from './host-services.js'
 
 const VALID_NAME = 'com.acme.sso-extension'
-const INCOMPATIBLE_API_VERSION = '2.0.0'
+const INCOMPATIBLE_API_VERSION = '3.0.0'
 const INCOMPATIBLE_VERSION_REASON: ExtensionRegistrationErrorReason = 'incompatible-version'
 const INVALID_NAME_REASON: ExtensionRegistrationErrorReason = 'invalid-name'
 
@@ -62,6 +62,35 @@ describe('registerExtension — AC4 (compatible manifest)', () => {
 
   it('accepts the exact host version through the host-owned predicate', () => {
     expect(isExtensionApiVersionSupported(EXTENSION_API_VERSION)).toBe(true)
+  })
+
+  it('passes one runtime context argument and preserves an optional dbScope declaration', () => {
+    let received: unknown
+    const result = registerExtension(
+      manifest({ dbScope: [{ table: 'credentials', operations: ['select'] }] }),
+      (context) => {
+        received = context
+        return {}
+      }
+    )
+    expect(received).toEqual(expect.objectContaining({ getDbHandle: expect.any(Function) }))
+    expect(result.manifest.dbScope).toEqual([{ table: 'credentials', operations: ['select'] }])
+  })
+
+  it('rejects duplicate or malformed dbScope entries before invoking hooksFactory', () => {
+    expectRejection(
+      {
+        dbScope: [
+          { table: 'credentials', operations: ['select'] },
+          { table: 'credentials', operations: ['insert'] },
+        ],
+      },
+      'invalid-db-scope'
+    )
+    expectRejection(
+      { dbScope: [{ table: 'credentials; DROP TABLE users; --', operations: ['select'] }] },
+      'invalid-db-scope'
+    )
   })
 })
 
@@ -187,14 +216,14 @@ describe('registerExtension — concrete canonical version gate', () => {
   )
 
   it.each([
-    '1.5.0',
-    '1.6.0',
+    '2.1.0',
+    '2.2.0',
     '0.9.0',
-    '2.0.0',
-    '2.0.0-beta.1',
+    '3.0.0',
+    '3.0.0-beta.1',
     '1.1.0-beta.1',
     '1.3.0-beta.1',
-    '2.3.1',
+    '3.3.1',
   ])('rejects canonical version outside %s', (apiVersion) => {
     const hooksFactory = makeHooksFactory()
     let caught: unknown
@@ -227,9 +256,9 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '1.5.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '2.1.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '1.5.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '2.1.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -239,7 +268,7 @@ describe('registerExtension — concrete canonical version gate', () => {
       })
     ).toThrow(/not a concrete semver version/)
     expect(() =>
-      registerExtension(manifest({ apiVersion: '2.0.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.0.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).toThrow(/outside this host's supported range/)

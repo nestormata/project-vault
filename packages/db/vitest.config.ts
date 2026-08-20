@@ -27,6 +27,9 @@ export default mergeConfig(baseVitestConfig, {
         // The executable-invariant adapter is exercised by the real-Postgres contract tests;
         // keep it in LCOV so SonarCloud measures new Story 24.5b code instead of reporting 0%.
         'src/function-executability.ts',
+        'src/extension-db-scope.ts',
+        'src/extension-db.ts',
+        'src/scripts/extension-grants.ts',
       ],
       thresholds: {
         lines: 80,

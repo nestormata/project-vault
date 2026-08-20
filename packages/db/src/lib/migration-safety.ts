@@ -191,6 +191,13 @@ function splitTopLevel(text: string, separator: string): string[] {
 }
 
 const SIMPLE_PATTERNS: { label: string; regex: RegExp }[] = [
+  // Story 23.5: privilege DDL changes the security boundary and must be reviewed explicitly.
+  { label: 'CREATE ROLE', regex: /\bCREATE\s+ROLE\b/gi },
+  { label: 'ALTER ROLE', regex: /\bALTER\s+ROLE\b/gi },
+  { label: 'DROP ROLE', regex: /\bDROP\s+ROLE\b/gi },
+  { label: 'GRANT privilege', regex: /\bGRANT\b/gi },
+  { label: 'REVOKE privilege', regex: /\bREVOKE\b/gi },
+  { label: 'ALTER DEFAULT PRIVILEGES', regex: /\bALTER\s+DEFAULT\s+PRIVILEGES\b/gi },
   // Story 24.1: these statements can silently remove the ownership/FORCE boundary. Story 23.5
   // may extend this same scanner with privilege patterns; keep one scanner and one source of truth.
   { label: 'NO FORCE ROW LEVEL SECURITY', regex: /\bNO\s+FORCE\s+ROW\s+LEVEL\s+SECURITY\b/gi },
@@ -330,4 +337,42 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // operation is bundled with the ACL change.
   '0080_security_definer_function_grants':
     'Story 24.5a audit purge/trigger function ACL narrowing and default-privilege narrowing; paired safety test proves the migration contains no function body or data operation.',
+  '0081_extension_db_role':
+    'Story 23.5 reviewed role bootstrap, least-privilege schema access, and operator approval-table ACLs; paired migration safety tests assert it contains no data deletion, FORCE RLS, PUBLIC revoke, or default-privilege widening.',
+  // Historical privilege migrations predate the privilege-pattern expansion. They remain
+  // explicitly reviewed so a fresh database can replay the immutable migration history; any new
+  // privilege DDL must still be added with a deliberate review entry like 0081 above.
+  '0001_rls_and_triggers':
+    'Historical RLS bootstrap privilege DDL reviewed before the privilege scanner existed.',
+  '0002_audit_log_revoke':
+    'Historical audit ACL narrowing reviewed before the privilege scanner existed.',
+  '0003_vault_state':
+    'Historical vault-state ACL setup reviewed before the privilege scanner existed.',
+  '0004_auth_sessions_refresh':
+    'Historical auth-session ACL setup reviewed before the privilege scanner existed.',
+  '0006_platform_security_events':
+    'Historical platform-security ACL setup reviewed before the privilege scanner existed.',
+  '0007_session_revocation':
+    'Historical session-revocation ACL setup reviewed before the privilege scanner existed.',
+  '0008_mfa_foundation': 'Historical MFA ACL setup reviewed before the privilege scanner existed.',
+  '0009_auth_rate_limit_buckets':
+    'Historical auth-rate-limit ACL setup reviewed before the privilege scanner existed.',
+  '0010_failed_auth_attempts':
+    'Historical failed-auth ACL setup reviewed before the privilege scanner existed.',
+  '0011_pending_mfa_sessions':
+    'Historical pending-MFA ACL setup reviewed before the privilege scanner existed.',
+  '0041_platform_audit_events':
+    'Historical platform-audit ACL setup reviewed before the privilege scanner existed.',
+  '0070_rls_ownership_and_force':
+    'Historical RLS ownership privilege setup reviewed before the privilege scanner existed.',
+  '0071_admin_pool_role':
+    'Historical admin-pool role bootstrap reviewed before the privilege scanner existed.',
+  '0072_vault_owner_schema_usage':
+    'Historical vault-owner schema ACL setup reviewed before the privilege scanner existed.',
+  '0075_audit_org_storage_quota':
+    'Historical audit-quota ACL setup reviewed before the privilege scanner existed.',
+  '0076_audit_org_storage_usage_admin_grant':
+    'Historical audit-usage ACL setup reviewed before the privilege scanner existed.',
+  '0079_audit_storage_quota_config_admin_grant':
+    'Historical audit-quota-config ACL setup reviewed before the privilege scanner existed.',
 }

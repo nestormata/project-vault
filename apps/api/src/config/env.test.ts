@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } fr
 
 const VAULT_APP_DATABASE_URL = 'postgresql://vault_app:secret@localhost:5432/project_vault'
 const ADMIN_DATABASE_URL = 'postgresql://vault_admin:secret@localhost:5432/project_vault'
+const EXTENSION_DATABASE_URL = 'postgresql://vault_extension:secret@localhost:5432/project_vault'
 const SMTP_HOST_FIXTURE = 'smtp.example.com'
 const SMTP_FROM_FIXTURE = 'noreply@example.com'
 const VALID_KMS_ENDPOINT = 'http://localhost:4566'
@@ -143,17 +144,17 @@ describe('env', () => {
     )
   })
 
-  it.each([
-    'postgresql://vault_app:secret@localhost:5432/project_vault',
-    'postgresql://vault_app:secret@localhost:5432/project_vault?sslmode=require',
-  ])('rejects ADMIN_DATABASE_URL colliding with DATABASE_URL tuple: %s', async (value) => {
-    process.env = {
-      ...BASE_ENV,
-      DATABASE_URL: VAULT_APP_DATABASE_URL,
-      ADMIN_DATABASE_URL: value,
+  it.each([VAULT_APP_DATABASE_URL, `${VAULT_APP_DATABASE_URL}?sslmode=require`])(
+    'rejects ADMIN_DATABASE_URL colliding with DATABASE_URL tuple: %s',
+    async (value) => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        ADMIN_DATABASE_URL: value,
+      }
+      await expectInvalidEnv(exitSpy)
     }
-    await expectInvalidEnv(exitSpy)
-  })
+  )
 
   it('accepts a narrowed admin role on the same database tuple as DATABASE_URL', async () => {
     process.env = {
@@ -164,6 +165,38 @@ describe('env', () => {
     const { env } = await import('./env.js')
     expect(env.ADMIN_DATABASE_URL).toBe(ADMIN_DATABASE_URL)
     expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('accepts a distinct vault_extension URL and defaults its pool size to three', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      EXTENSION_DATABASE_URL,
+    }
+    const { env } = await import('./env.js')
+    expect(env.EXTENSION_DATABASE_URL).toContain('vault_extension:secret@localhost')
+    expect(env.EXTENSION_DATABASE_POOL_MAX).toBe(3)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects an extension URL that uses a core role', async () => {
+    process.env = {
+      ...BASE_ENV,
+      DATABASE_URL: VAULT_APP_DATABASE_URL,
+      EXTENSION_DATABASE_URL: VAULT_APP_DATABASE_URL,
+    }
+    await expectInvalidEnv(exitSpy)
+    expect((process.stderr.write as unknown as MockInstance).mock.calls.join('\n')).not.toContain(
+      'secret'
+    )
+  })
+
+  it('rejects the development placeholder password in production', async () => {
+    process.env = productionEnv({
+      EXTENSION_DATABASE_URL:
+        'postgresql://vault_extension:dev-only-change-in-prod@extension-db:5432/project_vault',
+    })
+    await expectInvalidEnv(exitSpy)
   })
 
   it('defaults VAULT_KEY_DIR to /run/secrets and VAULT_ALLOW_REMOTE_INIT to false when unset', async () => {

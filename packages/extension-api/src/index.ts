@@ -23,6 +23,13 @@ export type {
 } from './hooks/audit-event-source.js'
 
 export type { HostServices } from './host-services.js'
+export type {
+  ExtensionDbHandle,
+  ExtensionDbOperation,
+  ExtensionDbScopeEntry,
+  ExtensionDbUnavailableReason,
+  ExtensionRuntimeContext,
+} from './db-access.js'
 
 export type { ExtensionCapability, ExtensionManifest } from './manifest.js'
 export {

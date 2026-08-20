@@ -20,7 +20,7 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=1.0.0 <=1.4.0')
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=2.0.0 <=2.0.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
@@ -67,10 +67,8 @@ describe('defineExtension', () => {
 
 describe('Story 23.3 AC-30/AC-31 — the capability-gate version bump is additive-minor, backward compatible', () => {
   it('an extension pinned to the exact previous-minor version still loads under the new ceiling (AC-31)', () => {
-    // 1.2.0 was the ceiling before this story bumped EXTENSION_API_VERSION to 1.3.0. An
-    // extension built against it must still be supported by the new, additive-minor host —
-    // this is the whole point of an additive-minor bump rather than a major one.
-    expect(isExtensionApiVersionSupported('1.2.0')).toBe(true)
+    // The published package has crossed a breaking major for the new runtime context contract.
+    expect(isExtensionApiVersionSupported('1.4.0')).toBe(false)
   })
 
   it('an extension pinned above the new ceiling is rejected (unchanged, pre-existing floor/ceiling behavior)', () => {

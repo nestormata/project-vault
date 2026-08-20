@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { withTestOrg } from '@project-vault/db/test-helpers'
+import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import { ensureWorkerTestEnv, unsealWorkerTestVault } from '../workers/worker-test-helpers.js'
@@ -16,7 +17,7 @@ const TEST_PASSPHRASE = 'extension-loader-audit-passphrase'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
-  apiVersion: '1.1.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: ['auth-provider'],
 }
 

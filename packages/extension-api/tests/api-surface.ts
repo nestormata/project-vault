@@ -306,7 +306,7 @@ function validateMemberSince(line: string, next: string): string[] {
   return SINCE_VALUE_PATTERN.exec(next.trim()) ? [] : [`${line} is missing since`]
 }
 
-export function validateSinceIndex(snapshot: string, currentVersion = '1.4.0'): string[] {
+export function validateSinceIndex(snapshot: string, currentVersion = '2.0.0'): string[] {
   const version = currentVersion.split('.').map(Number)
   const lines = snapshot.split('\n')
   const errors: string[] = []

@@ -568,6 +568,13 @@
       "when": 1787071480868,
       "tag": "0080_security_definer_function_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1787160000000,
+      "tag": "0081_extension_db_role",
+      "breakpoints": true
     }
   ]
 }

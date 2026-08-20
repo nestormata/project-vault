@@ -67,8 +67,8 @@ describe('extension API public type surface snapshot', () => {
       '## export `Existing`\n\n- since: 1.0.0\n- member: `old`\n  - since: 1.0.0\n- member: `new`\n  - since: 1.0.0\n'
     const previous = '## export `Existing`\n\n- since: 1.0.0\n- member: `old`\n  - since: 1.2.0\n'
 
-    expect(applySinceAnnotations(generated, previous, '1.4.0')).toBe(
-      '## export `Existing`\n\n- since: 1.0.0\n- member: `old`\n  - since: 1.2.0\n- member: `new`\n  - since: 1.4.0\n'
+    expect(applySinceAnnotations(generated, previous, '2.0.0')).toBe(
+      '## export `Existing`\n\n- since: 1.0.0\n- member: `old`\n  - since: 1.2.0\n- member: `new`\n  - since: 2.0.0\n'
     )
   })
 })
