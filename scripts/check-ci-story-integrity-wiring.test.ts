@@ -16,10 +16,8 @@ import { describe, expect, it } from 'vitest'
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageJsonPath = resolve(repositoryRoot, 'package.json')
 const makefilePath = resolve(repositoryRoot, 'Makefile')
-const postMergeWorkflowPath = resolve(
-  repositoryRoot,
-  '.github/workflows/post-merge-status-drift.yml'
-)
+const postMergeWorkflowPath = resolve(repositoryRoot, '.github/workflows/ci.yml')
+const POST_MERGE_JOB_NAME = 'post-merge-status-drift'
 
 const GUARDS = {
   'check-story-status-sync': 'tsx scripts/check-story-status-sync.ts',
@@ -64,6 +62,29 @@ function ciInnerRecipe(makefile: string): string {
   return nextTarget < 0 ? afterStart : afterStart.slice(0, nextTarget + 1)
 }
 
+function workflowJob(workflow: string, jobName: string): string {
+  const marker = `\n  ${jobName}:\n`
+  const start = workflow.indexOf(marker)
+  if (start < 0) throw new Error(`workflow has no ${jobName} job`)
+  const afterStart = workflow.slice(start + marker.length)
+  const nextJob = afterStart.search(/\n  [a-zA-Z0-9_-]+:\s*(?:#.*)?\n/)
+  return nextJob < 0 ? afterStart : afterStart.slice(0, nextJob + 1)
+}
+
+function replaceWorkflowJob(
+  workflow: string,
+  jobName: string,
+  transform: (job: string) => string
+): string {
+  const marker = `\n  ${jobName}:\n`
+  const start = workflow.indexOf(marker)
+  if (start < 0) throw new Error(`workflow has no ${jobName} job`)
+  const job = workflowJob(workflow, jobName)
+  return `${workflow.slice(0, start)}${marker}${transform(job)}${workflow.slice(
+    start + marker.length + job.length
+  )}`
+}
+
 function assertCiInnerWiring(makefile: string): void {
   const recipe = ciInnerRecipe(makefile)
   for (const guard of PRE_MERGE_GUARDS) {
@@ -80,8 +101,10 @@ function assertCiInnerWiring(makefile: string): void {
 }
 
 function assertPostMergeWiring(workflow: string): void {
-  expect(workflow).toContain('fetch-depth: 0')
-  expect(workflow.match(/run:\s*pnpm check-post-merge-status-drift\s*$/gm)).toHaveLength(1)
+  const job = workflowJob(workflow, POST_MERGE_JOB_NAME)
+  expect(job).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/main'")
+  expect(job).toContain('fetch-depth: 0')
+  expect(job.match(/^[ \t]*run:[ \t]*pnpm check-post-merge-status-drift[ \t]*$/gm)).toHaveLength(1)
 }
 
 describe('story-integrity CI wiring', () => {
@@ -138,10 +161,10 @@ describe('story-integrity CI wiring', () => {
     }
   })
 
-  it('keeps post-merge execution in the existing full-history workflow exactly once', () => {
+  it('keeps post-merge execution in the public push-to-main full-history job exactly once', () => {
     const workflow = readFileSync(postMergeWorkflowPath, 'utf8')
     assertPostMergeWiring(workflow)
-    const executableLines = workflow
+    const executableLines = workflowJob(workflow, POST_MERGE_JOB_NAME)
       .split('\n')
       .filter((line) => !line.trim().startsWith('#'))
       .join('\n')
@@ -150,12 +173,14 @@ describe('story-integrity CI wiring', () => {
 
   it('rejects a dormant post-merge command when full history or exact invocation is removed', () => {
     const workflow = readFileSync(postMergeWorkflowPath, 'utf8')
-    const shallow = workflow.replace('fetch-depth: 0', 'fetch-depth: 1')
+    const shallow = replaceWorkflowJob(workflow, POST_MERGE_JOB_NAME, (job) =>
+      job.replace('fetch-depth: 0', 'fetch-depth: 1')
+    )
     expect(() => assertPostMergeWiring(shallow)).toThrow()
 
     const duplicate = workflow.replace(
       'run: pnpm check-post-merge-status-drift',
-      'run: pnpm check-post-merge-status-drift\n        - run: pnpm check-post-merge-status-drift'
+      'run: pnpm check-post-merge-status-drift\n        run: pnpm check-post-merge-status-drift'
     )
     expect(() => assertPostMergeWiring(duplicate)).toThrow()
   })

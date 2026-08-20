@@ -603,3 +603,29 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL,HIGH
           trivyignores: .trivyignore
+
+  post-merge-status-drift:
+    name: Post-Merge Status Drift
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run post-merge status drift check
+        run: pnpm check-post-merge-status-drift
