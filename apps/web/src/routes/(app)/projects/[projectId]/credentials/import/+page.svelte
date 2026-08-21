@@ -80,13 +80,13 @@
 </script>
 
 <svelte:head>
-  <title>Import credentials | Project Vault</title>
+  <title>Import secrets | Project Vault</title>
 </svelte:head>
 
 <section class="mx-auto max-w-3xl space-y-6">
   <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Bulk import</p>
-    <h1 class="mt-2 text-3xl font-bold text-slate-950">Import credentials</h1>
+    <h1 class="mt-2 text-3xl font-bold text-slate-950">Import secrets</h1>
     <p class="mt-2 text-slate-600">
       Upload a .env or JSON file. Values are never shown in preview.
     </p>
@@ -97,7 +97,7 @@
       title="Import not available"
       message="Bulk import requires Admin or Owner access. Ask your administrator to upgrade your role."
       backHref={`/projects/${data.projectId}/credentials`}
-      backLabel="Back to credentials"
+      backLabel="Back to secrets"
     />
   {:else if step === 'done' && summary}
     <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
@@ -111,7 +111,7 @@
         class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
         href={resolve(`/projects/${data.projectId}/credentials`)}
       >
-        View credentials
+        View secrets
       </a>
     </div>
   {:else if step === 'preview' && preview}
@@ -192,7 +192,7 @@
       class="inline-block font-medium text-slate-700 underline"
       href={resolve(`/projects/${data.projectId}/credentials`)}
     >
-      Back to credentials
+      Back to secrets
     </a>
   {/if}
 </section>

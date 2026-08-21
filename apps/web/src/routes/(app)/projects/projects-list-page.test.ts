@@ -31,7 +31,7 @@ const project = {
 }
 
 describe('projects list +page.svelte (AC-12)', () => {
-  it('the project name links to the overview page, and "View credentials" stays a separate secondary link', () => {
+  it('the project name links to the overview page, and "View secrets" stays a separate secondary link', () => {
     render(ProjectsListPage, {
       props: { data: { projects: { items: [project] }, includeArchived: false } },
     })
@@ -39,7 +39,7 @@ describe('projects list +page.svelte (AC-12)', () => {
     const nameLink = screen.getByRole('link', { name: 'Payments API' })
     expect(nameLink.getAttribute('href')).toBe('/projects/p1')
 
-    const credentialsLink = screen.getByRole('link', { name: 'View credentials' })
+    const credentialsLink = screen.getByRole('link', { name: 'View secrets' })
     expect(credentialsLink.getAttribute('href')).toBe('/projects/p1/credentials')
   })
 })

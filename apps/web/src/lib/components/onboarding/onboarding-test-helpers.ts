@@ -31,7 +31,7 @@ export const onboardingTestProject = {
 }
 
 export const GOT_IT_BUTTON = /Got it/i
-export const CREDENTIAL_VALUE_LABEL = 'Credential value'
+export const CREDENTIAL_VALUE_LABEL = 'Secret value'
 export const NAME_LABEL = /Name \(public identifier\)/i
 
 export function installFetchMock(

@@ -29,7 +29,7 @@ describe('onboarding logic', () => {
   it('validates credential form fields', () => {
     expect(validateCredentialForm({ name: '', value: '' })).toEqual({
       name: 'Name is required',
-      value: 'Credential value cannot be empty',
+      value: 'Secret value cannot be empty',
     })
     expect(validateCredentialForm({ name: 'API_KEY', value: 'secret' })).toEqual({})
   })
@@ -70,7 +70,7 @@ describe('onboarding logic', () => {
     ],
     [
       new ApiClientError(403, {}, 'Forbidden'),
-      { fieldErrors: {}, errorMessage: 'You do not have permission to create credentials.' },
+      { fieldErrors: {}, errorMessage: 'You do not have permission to create secrets.' },
     ],
     [
       new ApiClientError(401, { code: 'access_token_missing' }, 'Access token is missing'),
@@ -89,7 +89,7 @@ describe('onboarding logic', () => {
       { fieldErrors: {}, errorMessage: 'Server unavailable' },
     ],
     [new Error('network failed'), { fieldErrors: {}, errorMessage: 'network failed' }],
-    [{ reason: 'unknown' }, { fieldErrors: {}, errorMessage: 'Could not save credential.' }],
+    [{ reason: 'unknown' }, { fieldErrors: {}, errorMessage: 'Could not save secret.' }],
   ])('maps credential submission failures', (failure, expected) => {
     expect(mapCredentialSubmitError(failure)).toEqual(expected)
   })

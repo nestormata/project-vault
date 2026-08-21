@@ -341,7 +341,7 @@
     // UX gap fix: the backend rejects more than 50 explicit attributeKeys with a generic 422 —
     // catch it here with a message that actually explains why, before ever submitting.
     if (attributeKeys !== null && attributeKeys.length > SHARE_ATTRIBUTE_KEYS_MAX) {
-      shareError = `You can share at most ${SHARE_ATTRIBUTE_KEYS_MAX} fields at once. Uncheck some fields, or restore the defaults to share the whole credential.`
+      shareError = `You can share at most ${SHARE_ATTRIBUTE_KEYS_MAX} fields at once. Uncheck some fields, or restore the defaults to share the whole secret.`
       return
     }
     // Bugfix (post-implementation review): a credential whose fields are ALL sensitive — including
@@ -360,7 +360,7 @@
       fieldMeta.every((field) => field.sensitive)
     ) {
       shareError =
-        'Every field on this credential is sensitive, so the default share would include nothing. Check at least one field to share explicitly.'
+        'Every field on this secret is sensitive, so the default share would include nothing. Check at least one field to share explicitly.'
       return
     }
     shareSubmitting = true
@@ -710,9 +710,9 @@
       revealVersion = null
       if (error instanceof ApiClientError && error.code === 'insufficient_project_role') {
         revealError =
-          'Your role in this project does not permit revealing credential values — ask a project admin to change your role.'
+          'Your role in this project does not permit revealing secret values — ask a project admin to change your role.'
       } else if (error instanceof ApiClientError && error.status === 403) {
-        revealError = 'You do not have permission to reveal credential values.'
+        revealError = 'You do not have permission to reveal secret values.'
       } else {
         revealError = error instanceof Error ? error.message : 'Could not reveal value.'
       }
@@ -952,7 +952,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.credential?.name ?? 'Credential'} | Project Vault</title>
+  <title>{data.credential?.name ?? 'Secret'} | Project Vault</title>
 </svelte:head>
 
 <section class="space-y-6">
@@ -960,14 +960,14 @@
     <PageAlertBanner title="Vault sealed" message={onboardingCopy.vaultSealedMessage} />
   {:else if data.notFound || !data.credential}
     <PageAlertBanner
-      title="Credential not found"
-      message="This credential does not exist or you do not have access."
+      title="Secret not found"
+      message="This secret does not exist or you do not have access."
       backHref={`/projects/${data.projectId}/credentials`}
-      backLabel="Back to credentials"
+      backLabel="Back to secrets"
     />
   {:else}
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Credential</p>
+      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Secret</p>
       <h1 class="mt-2 text-3xl font-bold text-slate-950">{data.credential.name}</h1>
       {#if data.credential.description}
         <p class="mt-2 text-slate-600">{data.credential.description}</p>
@@ -1619,7 +1619,7 @@
                   aria-describedby="dependency-field-key-help"
                   bind:value={depFieldKey}
                 >
-                  <option value="">Whole credential</option>
+                  <option value="">Whole secret</option>
                   {#each fieldMeta as field (field.key)}
                     <option value={field.key}>{field.key}</option>
                   {/each}
@@ -1644,8 +1644,8 @@
               />
               <FormHelpText id="dependency-link-url-help" text={m.form_help_dependency_link()} />
               <p id="dependency-link-url-security-note" class="text-xs text-slate-500">
-                This link is visible to everyone with view access to this credential and is stored
-                in plaintext audit logs.
+                This link is visible to everyone with view access to this secret and is stored in
+                plaintext audit logs.
               </p>
             </div>
             {#if depError}
@@ -1730,8 +1730,8 @@
     <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold text-slate-950">Shares</h2>
       <p class="mt-1 text-sm text-slate-600">
-        Share this credential's current value with another organization member via a bounded-
-        duration link. They'll be notified in-app.
+        Share this secret's current value with another organization member via a bounded- duration
+        link. They'll be notified in-app.
       </p>
 
       {#if shareError}
@@ -1956,7 +1956,7 @@
         </label>
       </div>
       {#if shareItems.length === 0}
-        <p class="mt-3 text-sm text-slate-600">No shares yet for this credential.</p>
+        <p class="mt-3 text-sm text-slate-600">No shares yet for this secret.</p>
       {:else}
         <p class="mt-2 text-xs text-slate-500">
           Showing {shareItems.length} of {data.sharesTotal ?? shareItems.length}
@@ -2035,7 +2035,7 @@
       class="inline-block font-medium text-slate-700 underline"
       href={resolve(`/projects/${data.projectId}/credentials`)}
     >
-      Back to credentials
+      Back to secrets
     </a>
   {/if}
 </section>

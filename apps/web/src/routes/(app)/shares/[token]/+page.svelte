@@ -32,11 +32,11 @@
 </script>
 
 <svelte:head>
-  <title>Shared credential</title>
+  <title>Shared secret</title>
 </svelte:head>
 
 <section class="mx-auto max-w-lg space-y-6 p-6">
-  <h1 class="text-lg font-semibold text-slate-950">Shared credential</h1>
+  <h1 class="text-lg font-semibold text-slate-950">Shared secret</h1>
 
   {#if data.error === 'not_found'}
     <p class="text-sm text-slate-700">

@@ -145,7 +145,7 @@
           completeError = 'Cannot complete — these systems still need confirmation:'
           await refetch()
         } else if (error.status === 422 && error.code === 'acknowledgement_required') {
-          completeError = 'Please confirm the credential is updated everywhere before completing.'
+          completeError = 'Please confirm the secret is updated everywhere before completing.'
           acknowledgedNoDependencies = false
         } else if (error.status === 409 && error.code === 'concurrent_modification') {
           await handleConcurrentModification()
@@ -204,7 +204,7 @@
           promotePendingItemNames = body.pendingItems.map((item) => item.systemName)
           promoteError =
             body.totalItemCount === 0
-              ? 'Please confirm the credential is updated everywhere before promoting.'
+              ? 'Please confirm the secret is updated everywhere before promoting.'
               : 'Some systems have not confirmed yet — acknowledge to promote anyway:'
         } else if (error.status === 409 && error.code === 'concurrent_modification') {
           await handleConcurrentModification()
@@ -255,7 +255,7 @@
           retirePendingItemNames = body.pendingItems.map((item) => item.systemName)
           retireError =
             body.totalItemCount === 0
-              ? 'Please confirm the credential is updated everywhere before retiring the old value.'
+              ? 'Please confirm the secret is updated everywhere before retiring the old value.'
               : 'Some systems have not confirmed yet — acknowledge to retire anyway:'
         } else if (error.status === 409 && error.code === 'concurrent_modification') {
           await handleConcurrentModification()
@@ -343,7 +343,7 @@
       bind:checked={acknowledgedNoDependencies}
       aria-describedby="rotation-no-dependencies-help"
     />
-    I confirm this credential is updated in all consuming systems
+    I confirm this secret is updated in all consuming systems
     <FormHelpText id="rotation-no-dependencies-help" kind="checkbox" />
   </label>
 {/snippet}
@@ -383,14 +383,14 @@
       title="Vault sealed"
       message={onboardingCopy.vaultSealedMessage}
       backHref={`/projects/${data.projectId}/credentials/${data.credentialId}`}
-      backLabel="Back to credential"
+      backLabel="Back to secret"
     />
   {:else if data.notFound || !rotation}
     <PageAlertBanner
       title="Rotation not found"
       message="This rotation does not exist or you do not have access."
       backHref={`/projects/${data.projectId}/credentials/${data.credentialId}`}
-      backLabel="Back to credential"
+      backLabel="Back to secret"
     />
   {:else}
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -606,7 +606,7 @@
 
     {#if rotation.status === 'abandoned'}
       <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-        This rotation was abandoned. The credential's previous value remains current.
+        This rotation was abandoned. The secret's previous value remains current.
       </p>
     {/if}
 
@@ -614,7 +614,7 @@
       class="inline-block font-medium text-slate-700 underline"
       href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}`)}
     >
-      Back to credential
+      Back to secret
     </a>
   {/if}
 </section>

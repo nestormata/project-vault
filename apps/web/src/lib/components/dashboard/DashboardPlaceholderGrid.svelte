@@ -31,10 +31,10 @@
 <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Project coverage gaps">
   {#if !hasCredentials}
     <article class="rounded-2xl border border-slate-200 bg-white p-4">
-      <h2 class="font-semibold">Credentials</h2>
+      <h2 class="font-semibold">Secrets</h2>
       <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.noCredentials}</p>
       <p class="mt-2 text-sm text-slate-600">
-        Credentials will live inside a project with descriptions, tags, expiry dates, and dependent
+        Secrets will live inside a project with descriptions, tags, expiry dates, and dependent
         systems.
       </p>
     </article>

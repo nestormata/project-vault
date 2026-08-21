@@ -71,7 +71,7 @@
 {#if !canCreate}
   <section>
     <h2 id={headingId} class="text-2xl font-semibold text-slate-950" tabindex="-1">
-      Add your first credential
+      Add your first secret
     </h2>
     <p class="mt-4 text-slate-700">{onboardingCopy.viewerStep2Message}</p>
     <button
@@ -85,7 +85,7 @@
 {:else}
   <section>
     <h2 id={headingId} class="text-2xl font-semibold text-slate-950" tabindex="-1">
-      Add your first credential
+      Add your first secret
     </h2>
     <form
       class="mt-4 space-y-4"
@@ -126,7 +126,7 @@
             name="credential-value"
             autocomplete="new-password"
             inputmode="text"
-            aria-label="Credential value"
+            aria-label="Secret value"
             bind:value
             aria-invalid={fieldErrors.value ? 'true' : undefined}
             aria-describedby="onboarding-credential-value-help"
@@ -181,7 +181,7 @@
         <p class="text-sm text-red-700" role="alert">{apiError}</p>
       {/if}
       {#if credentialSaved}
-        <p class="text-sm text-emerald-700" role="status">✓ Credential saved securely</p>
+        <p class="text-sm text-emerald-700" role="status">✓ Secret saved securely</p>
       {/if}
 
       <div class="flex flex-wrap gap-3">
@@ -190,7 +190,7 @@
           type="submit"
           disabled={submitting || credentialSaved}
         >
-          {submitting ? 'Saving…' : 'Save Credential'}
+          {submitting ? 'Saving…' : 'Save Secret'}
         </button>
         <button
           class="min-h-11 min-w-11 rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium disabled:opacity-50"

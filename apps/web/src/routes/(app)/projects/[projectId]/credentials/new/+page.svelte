@@ -119,21 +119,21 @@
 </script>
 
 <svelte:head>
-  <title>New credential | Project Vault</title>
+  <title>New secret | Project Vault</title>
 </svelte:head>
 
 <section class="mx-auto max-w-2xl space-y-6">
   <div>
-    <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">New credential</p>
-    <h1 class="mt-2 text-3xl font-bold text-slate-950">Add credential</h1>
+    <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">New secret</p>
+    <h1 class="mt-2 text-3xl font-bold text-slate-950">Add secret</h1>
   </div>
 
   {#if !canCreate}
     <AccessNotice
       title="Create not available"
-      message="Credential creation requires Member access or higher. Ask your administrator to upgrade your role."
+      message="Secret creation requires Member access or higher. Ask your administrator to upgrade your role."
       backHref={`/projects/${data.projectId}/credentials`}
-      backLabel="Back to credentials"
+      backLabel="Back to secrets"
     />
   {:else}
     <form
@@ -245,7 +245,7 @@
       {/if}
 
       <FormSubmitRow
-        submitLabel="Create credential"
+        submitLabel="Create secret"
         pendingLabel="Creating…"
         cancelHref={`/projects/${data.projectId}/credentials`}
         {submitting}

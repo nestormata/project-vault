@@ -17,7 +17,7 @@ describe('user-generated content is never re-parsed as message syntax (AC 4 edge
       { locale: 'en' }
     )
 
-    expect(result).toBe("Credential '{count} servers' expires in 5 days")
+    expect(result).toBe("Secret '{count} servers' expires in 5 days")
   })
 
   it('renders the same literal credential name unmodified when the template is in Spanish', () => {

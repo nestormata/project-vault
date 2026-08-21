@@ -164,7 +164,7 @@ describe('BreakGlassPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Confirm break-glass rotation/i }))
 
     expect(
-      await screen.findByText(/Another rotation action is in progress for this credential/i)
+      await screen.findByText(/Another rotation action is in progress for this secret/i)
     ).toBeTruthy()
     expect(breakGlassRotationMock).toHaveBeenCalledTimes(1)
   })

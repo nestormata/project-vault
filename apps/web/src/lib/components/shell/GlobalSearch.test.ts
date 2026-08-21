@@ -69,7 +69,7 @@ describe('GlobalSearch', () => {
     installSearchFetchMock(() => searchResponse([projectResult], 'infra'))
     render(GlobalSearch, { props: { open: true } })
     await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'infra' } })
-    await vi.waitFor(() => expect(screen.getByText(/12 credentials/i)).toBeTruthy())
+    await vi.waitFor(() => expect(screen.getByText(/12 secrets/i)).toBeTruthy())
   })
 
   it('shows loading state during fetch', async () => {
@@ -148,7 +148,7 @@ describe('GlobalSearch', () => {
     installSearchFetchMock(() => searchResponse([projectResult], 'infra'))
     render(GlobalSearch, { props: { open: true } })
     await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'infra' } })
-    await vi.waitFor(() => screen.getByText(/12 credentials/i))
+    await vi.waitFor(() => screen.getByText(/12 secrets/i))
     await fireEvent.click(screen.getByRole('button', { name: /Infra Core/i }))
     expect(gotoMock).toHaveBeenCalledWith('/projects/proj-2')
   })

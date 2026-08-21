@@ -21,7 +21,7 @@ export function getVaultGateModel(readiness: VaultReadiness): VaultGateModel {
       title: 'Initialize vault',
       message: readiness.message,
       explanation:
-        'This vault has never been set up — it has no master encryption key yet. Provide an initialization method below to generate one before anyone can store or read credentials.',
+        'This vault has never been set up — it has no master encryption key yet. Provide an initialization method below to generate one before anyone can store or read secrets.',
       primaryAction: 'Initialize vault',
       showInit: true,
       showUnseal: false,

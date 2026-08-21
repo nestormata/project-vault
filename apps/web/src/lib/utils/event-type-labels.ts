@@ -34,7 +34,7 @@ const OVERRIDES: Record<string, string> = {
   'security.failed_auth_threshold': 'Failed Login Threshold',
   'security.mfa_recovery_used': 'MFA Recovery Code Used',
   'security.mfa_recovery_codes_regenerated': 'MFA Recovery Codes Regenerated',
-  'credential.expiry': 'Credential Expiry',
+  'credential.expiry': 'Secret Expiry',
   'service.down': 'Service Down',
   'service.recovery': 'Service Recovery',
   'rotation.stale': 'Stale Rotation',

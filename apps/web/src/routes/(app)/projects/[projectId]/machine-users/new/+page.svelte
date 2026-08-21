@@ -94,8 +94,8 @@
           aria-describedby="machine-user-role-help"
           bind:value={role}
         >
-          <option value="member">Member — can read/write project credentials</option>
-          <option value="viewer">Viewer — read-only project credentials</option>
+          <option value="member">Member — can read/write project secrets</option>
+          <option value="viewer">Viewer — read-only project secrets</option>
         </select>
         <FormHelpText id="machine-user-role-help" text={m.form_help_machine_user_role()} />
       </div>

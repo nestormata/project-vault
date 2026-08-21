@@ -8,7 +8,7 @@ describe('project-nav-model', () => {
     const items = getProjectNavItems(projectId, 'member')
     expect(items.map((item) => item.label)).toEqual([
       'Overview',
-      'Credentials',
+      'Secrets',
       'Members',
       'Machine Users',
       'Services',
@@ -47,7 +47,7 @@ describe('project-nav-model', () => {
 
   it('AC-9: non-overview tabs match nested detail routes via prefix (mirrors isActiveNavItem)', () => {
     const items = getProjectNavItems(projectId, 'member')
-    const credentials = items.find((item) => item.label === 'Credentials')
+    const credentials = items.find((item) => item.label === 'Secrets')
     if (!credentials) throw new Error('expected a credentials item')
     expect(isActiveProjectNavItem(credentials, `/projects/${projectId}/credentials`)).toBe(true)
     expect(isActiveProjectNavItem(credentials, `/projects/${projectId}/credentials/some-id`)).toBe(

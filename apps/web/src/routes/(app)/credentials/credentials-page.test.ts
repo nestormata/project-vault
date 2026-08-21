@@ -47,7 +47,7 @@ describe('/credentials +page.svelte', () => {
     expect(screen.getByText('5')).toBeTruthy()
     expect(screen.getByText('2')).toBeTruthy()
     expect(screen.getByText('1')).toBeTruthy()
-    const link = screen.getByRole('link', { name: /manage credentials/i })
+    const link = screen.getByRole('link', { name: /manage secrets/i })
     expect(link.getAttribute('href')).toBe('/projects/p-1/credentials')
   })
 })

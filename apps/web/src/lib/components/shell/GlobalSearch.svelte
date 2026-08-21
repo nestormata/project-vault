@@ -169,7 +169,7 @@
           bind:value={query}
           class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base"
           type="search"
-          placeholder="Search credentials, projects…"
+          placeholder="Search secrets, projects…"
           aria-label="Search"
           aria-autocomplete="list"
           aria-controls="global-search-results"
@@ -226,7 +226,7 @@
                     {@render highlighted(item.name)}
                   </div>
                   <p class="mt-1 text-sm text-slate-600">
-                    {item.credentialCount} credentials
+                    {item.credentialCount} secrets
                     {#if item.snippet}
                       · {@render highlighted(item.snippet)}
                     {/if}

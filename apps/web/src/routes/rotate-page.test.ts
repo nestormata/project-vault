@@ -82,7 +82,7 @@ describe('/rotate +page.svelte', () => {
   it('AC-3 edge: zero dependencies shows the foreshadowing empty-state copy', () => {
     render(RotatePage, { props: { data: baseData() } })
 
-    expect(screen.getByText(/No dependent systems are recorded for this credential/i)).toBeTruthy()
+    expect(screen.getByText(/No dependent systems are recorded for this secret/i)).toBeTruthy()
   })
 
   it('AC-4: submits newValue/notes and redirects to the new rotation on success', async () => {
@@ -206,7 +206,7 @@ describe('/rotate +page.svelte', () => {
     expect(screen.getByRole('alert').textContent).toContain(onboardingCopy.vaultSealedMessage)
     expect(screen.queryByText('Rotation not available')).toBeNull()
     expect(screen.queryByLabelText(/New value/i)).toBeNull()
-    const link = screen.getByRole('link', { name: /back to credential/i })
+    const link = screen.getByRole('link', { name: /back to secret/i })
     expect(link.getAttribute('href')).toBe(`/projects/${projectId}/credentials/${credentialId}`)
   })
 

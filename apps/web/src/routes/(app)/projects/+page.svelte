@@ -104,7 +104,7 @@
   async function onArchive(project: { id: string; name: string }): Promise<void> {
     if (busyProjectId) return
     const confirmed = confirm(
-      `Archive "${project.name}"? Credentials and history are preserved; the project is hidden ` +
+      `Archive "${project.name}"? Secrets and history are preserved; the project is hidden ` +
         'from active views. You can unarchive it later.'
     )
     if (!confirmed) return
@@ -168,7 +168,7 @@
       <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Projects</p>
       <h1 class="mt-2 text-3xl font-bold text-slate-950">Project dashboard</h1>
       <p class="mt-2 text-slate-600">
-        Organize credentials, services, and future alerts by team or domain.
+        Organize secrets, services, and future alerts by team or domain.
       </p>
     </div>
     <div class="flex flex-col items-stretch gap-2 sm:items-end">
@@ -232,7 +232,7 @@
           {/if}
           <dl class="mt-4 grid grid-cols-3 gap-2 text-sm">
             <div>
-              <dt class="text-slate-500">Credentials</dt>
+              <dt class="text-slate-500">Secrets</dt>
               <dd class="font-semibold">{project.credentialCount}</dd>
             </div>
             <div>
@@ -302,7 +302,7 @@
                 class="inline-block rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
                 href={resolve(`/projects/${project.id}/credentials`)}
               >
-                View credentials
+                View secrets
               </a>
             {/if}
             {#if project.role === 'owner'}

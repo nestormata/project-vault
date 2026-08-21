@@ -318,7 +318,7 @@
                   </div>
                   <ul class="space-y-1 text-xs text-slate-600">
                     <li>Checksum: {vr.checksum === 'match' ? '✓ Match' : '✗ Mismatch'}</li>
-                    <li>Credentials: {vr.assetsPresent.credentials ? '✓' : '✗ Missing'}</li>
+                    <li>Secrets: {vr.assetsPresent.credentials ? '✓' : '✗ Missing'}</li>
                     <li>Projects: {vr.assetsPresent.projects ? '✓' : '✗ Missing'}</li>
                     <li>Users: {vr.assetsPresent.users ? '✓' : '✗ Missing'}</li>
                     <li>Audit events: {vr.assetsPresent.auditEvents ? '✓' : '✗ Missing'}</li>

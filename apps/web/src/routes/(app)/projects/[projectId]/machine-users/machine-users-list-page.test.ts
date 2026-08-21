@@ -92,10 +92,10 @@ describe('machine-users list +page.svelte', () => {
     ).toBeTruthy()
   })
 
-  it('the back-to-credentials link always resolves for this project', () => {
+  it('the back-to-secrets link always resolves for this project', () => {
     render(MachineUsersListPage, { props: { data: baseData() } })
 
-    const link = screen.getByRole('link', { name: /back to credentials/i })
+    const link = screen.getByRole('link', { name: /back to secrets/i })
     expect(link.getAttribute('href')).toBe(`/projects/${projectId}/credentials`)
   })
 })

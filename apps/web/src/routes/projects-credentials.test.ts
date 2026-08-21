@@ -113,7 +113,7 @@ describe('project credential routes', () => {
     expect(screen.getByText('Stripe Secret Key')).toBeTruthy()
     expect(screen.getByText('Legacy API Token')).toBeTruthy()
     expect(screen.getByText('Internal Service Key')).toBeTruthy()
-    expect(screen.getByText(/Showing 3 of 3 credentials/i)).toBeTruthy()
+    expect(screen.getByText(/Showing 3 of 3 secrets/i)).toBeTruthy()
   })
 
   it('AC-F1: renders a Tags filter input pre-filled from data.filters.tags, with AND-semantics helper text', () => {
@@ -130,7 +130,7 @@ describe('project credential routes', () => {
 
     const tagsInput = screen.getByLabelText('Tags') as HTMLInputElement
     expect(tagsInput.value).toBe('db, prod')
-    expect(screen.getByText(/Matches credentials with ALL of these tags/i)).toBeTruthy()
+    expect(screen.getByText(/Matches secrets with ALL of these tags/i)).toBeTruthy()
   })
 
   it("AC-1/AC-2/AC-5: Search/Status/Tags labels+inputs and the Apply/Clear controls share the same structural grid row regardless of each field's help-text length", () => {
@@ -189,7 +189,7 @@ describe('project credential routes', () => {
       },
     })
 
-    expect(screen.getByText('No credentials found')).toBeTruthy()
+    expect(screen.getByText('No secrets found')).toBeTruthy()
     expect(screen.getByText('Try adjusting your filters.')).toBeTruthy()
     const clearLink = screen.getByRole('link', { name: 'Clear' })
     expect(clearLink.getAttribute('href')).toBe(`/projects/${projectId}/credentials`)
@@ -223,7 +223,7 @@ describe('project credential routes', () => {
       },
     })
 
-    expect(screen.getByText('Add your first credential to get started.')).toBeTruthy()
+    expect(screen.getByText('Add your first secret to get started.')).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Clear' })).toBeNull()
   })
 
@@ -238,7 +238,7 @@ describe('project credential routes', () => {
         },
       },
     })
-    expect(screen.getByText(/no credentials have been added/i)).toBeTruthy()
+    expect(screen.getByText(/no secrets have been added/i)).toBeTruthy()
     cleanup()
     render(CredentialsListPage, {
       props: {
@@ -280,7 +280,7 @@ describe('project credential routes', () => {
     })
     expect(screen.getByText('Yes')).toBeTruthy()
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByRole('link', { name: /add credential/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /add secret/i })).toBeTruthy()
     expect(screen.getByRole('link', { name: /^import$/i })).toBeTruthy()
   })
 
@@ -302,7 +302,7 @@ describe('project credential routes', () => {
       },
     })
 
-    expect(screen.queryByText('Add credential')).toBeNull()
+    expect(screen.queryByText('Add secret')).toBeNull()
     expect(screen.queryByText('Import')).toBeNull()
   })
 
@@ -326,7 +326,7 @@ describe('project credential routes', () => {
     })
     const valueInput = screen.getByLabelText('Value') as HTMLInputElement
     await fireEvent.input(valueInput, { target: { value: 's3cret!' } })
-    await fireEvent.click(screen.getByRole('button', { name: /Create credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Create secret/i }))
 
     await waitFor(() => expect(createCredentialMock).toHaveBeenCalled())
     expect(valueInput.value).toBe('')
@@ -418,11 +418,9 @@ describe('project credential routes', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Reveal value/i }))
 
     expect(
-      await screen.findByText(
-        /Your role in this project does not permit revealing credential values/i
-      )
+      await screen.findByText(/Your role in this project does not permit revealing secret values/i)
     ).toBeTruthy()
-    expect(screen.queryByText('You do not have permission to reveal credential values.')).toBeNull()
+    expect(screen.queryByText('You do not have permission to reveal secret values.')).toBeNull()
   })
 
   it('AC-P7 regression: a plain 403 with no specific code still shows the generic denial message', async () => {
@@ -439,7 +437,7 @@ describe('project credential routes', () => {
     await fireEvent.click(screen.getByRole('button', { name: /Reveal value/i }))
 
     expect(
-      await screen.findByText('You do not have permission to reveal credential values.')
+      await screen.findByText('You do not have permission to reveal secret values.')
     ).toBeTruthy()
   })
 
@@ -616,10 +614,10 @@ describe('project credential routes', () => {
     render(CreateCredentialPage, {
       props: { data: { projectId, orgRole: 'member' as const } },
     })
-    const createButton = screen.getByRole('button', { name: /create credential/i })
+    const createButton = screen.getByRole('button', { name: /create secret/i })
     await fireEvent.submit(createButton.closest('form') as HTMLFormElement)
     expect(await screen.findByText(/name is required/i)).toBeTruthy()
-    expect(screen.getByText(/credential value cannot be empty/i)).toBeTruthy()
+    expect(screen.getByText(/secret value cannot be empty/i)).toBeTruthy()
     expect(createCredentialMock).not.toHaveBeenCalled()
 
     await fireEvent.input(screen.getByLabelText('Name'), { target: { value: '  API Key  ' } })
@@ -1236,7 +1234,7 @@ describe('project credential routes', () => {
     })
 
     expect(screen.getByRole('alert').textContent).toContain(onboardingCopy.vaultSealedMessage)
-    expect(screen.queryByText('Credential not found')).toBeNull()
+    expect(screen.queryByText('Secret not found')).toBeNull()
   })
 
   it('import page shows forbidden message for members', () => {

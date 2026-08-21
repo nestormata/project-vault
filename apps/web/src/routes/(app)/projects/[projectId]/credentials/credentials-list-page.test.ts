@@ -29,12 +29,12 @@ const CREDENTIAL = {
 describe('project credentials list +page.svelte', () => {
   it('an owner without active filters sees an "add your first credential" empty state', () => {
     render(CredentialsListPage, { props: { data: baseData({ orgRole: 'owner' }) } })
-    expect(screen.getByText(/add your first credential/i)).toBeTruthy()
+    expect(screen.getByText(/add your first secret/i)).toBeTruthy()
   })
 
   it('a viewer without create permission sees a plain empty-project message', () => {
     render(CredentialsListPage, { props: { data: baseData({ orgRole: 'viewer' }) } })
-    expect(screen.getByText(/no credentials have been added to this project yet/i)).toBeTruthy()
+    expect(screen.getByText(/no secrets have been added to this project yet/i)).toBeTruthy()
   })
 
   it('an active filter with no results shows "try adjusting your filters" and a Clear link', () => {
@@ -62,7 +62,7 @@ describe('project credentials list +page.svelte', () => {
     expect(screen.getByText('Stripe Secret Key')).toBeTruthy()
     expect(screen.getByText('payments, prod')).toBeTruthy()
     expect(screen.getByText('Yes')).toBeTruthy()
-    expect(screen.getByText(/showing 1 of 1 credentials/i)).toBeTruthy()
+    expect(screen.getByText(/showing 1 of 1 secrets/i)).toBeTruthy()
   })
 
   it('renders a dash for credentials with no tags and no dependencies', () => {

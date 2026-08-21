@@ -134,7 +134,7 @@
         } else if (error.status === 409 && error.code === 'rotation_in_progress') {
           const body409 = error.body as RotationInProgressErrorBody
           conflictRotationId = body409.rotationId
-          errorMessage = 'A rotation is already in progress for this credential.'
+          errorMessage = 'A rotation is already in progress for this secret.'
         } else if (error.status === 400 && error.code === 'unknown_field_key') {
           // Story 13.4 AC-3 — the targeted field no longer exists on the credential (e.g. renamed
           // by another user since the form loaded).
@@ -211,14 +211,14 @@
       title="Vault sealed"
       message={onboardingCopy.vaultSealedMessage}
       backHref={`/projects/${data.projectId}/credentials/${data.credentialId}`}
-      backLabel="Back to credential"
+      backLabel="Back to secret"
     />
   {:else if !data.canManage || !data.dependencies}
     <AccessNotice
       title="Rotation not available"
       message="Starting a rotation requires Admin access or higher."
       backHref={`/projects/${data.projectId}/credentials/${data.credentialId}`}
-      backLabel="Back to credential"
+      backLabel="Back to secret"
     />
   {:else}
     {#if rotationActive}
@@ -226,7 +226,7 @@
         class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
         role="alert"
       >
-        A rotation is already in progress for this credential.
+        A rotation is already in progress for this secret.
         <a
           class="ml-1 font-medium underline"
           href={resolve(
@@ -252,9 +252,9 @@
         </ul>
       {:else}
         <p class="mt-2 text-sm text-slate-600">
-          No dependent systems are recorded for this credential. The rotation will still be created,
-          but the checklist will be empty — you'll need to explicitly acknowledge that before
-          completing it.
+          No dependent systems are recorded for this secret. The rotation will still be created, but
+          the checklist will be empty — you'll need to explicitly acknowledge that before completing
+          it.
         </p>
       {/if}
     </section>
