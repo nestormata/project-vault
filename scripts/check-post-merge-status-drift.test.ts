@@ -23,7 +23,7 @@ function git(cwd: string, args: string[]): string {
 function makeGitFixtureRepo(): { root: string } {
   const root = mkdtempSync(join(tmpdir(), 'post-merge-status-drift-'))
   git(root, ['init', '--initial-branch=main'])
-  git(root, ['config', 'user.email', 'test@example.com'])
+  git(root, ['config', 'user.email', 'test@invalid'])
   git(root, ['config', 'user.name', 'Test'])
   writeFixture(root, 'README.md', 'init\n')
   git(root, ['add', '-A'])
