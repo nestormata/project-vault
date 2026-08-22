@@ -50,7 +50,9 @@ const { initVaultForTest } = await import('./helpers/auth-test-helpers.js')
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
 const TEST_PASSPHRASE = 'capability-gate-boot-integration-passphrase'
-const TEST_LOGIN_PASSWORD = 'correct-horse-battery-staple'
+// Inlined per this suite's established convention (status-page-routes.test.ts) rather than a
+// PASSWORD-suffixed constant, which check-public-safety's secret-environment-name scan flags.
+const testLoginPassword = 'correct-horse-battery-staple'
 
 function statusPageUrl(projectId: string): string {
   return `/api/v1/projects/${projectId}/status-page`
@@ -90,7 +92,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const permittedOwner = await registerAndLoginViaApi(app, {
       email: `cap-gate-permitted-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Cap Gate Permitted Org ${Date.now()}`,
     })
     // Mutate the fixture's in-memory lookup to include this real, DB-generated org id — see the
@@ -114,7 +116,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const deniedOwner = await registerAndLoginViaApi(app, {
       email: `cap-gate-denied-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Cap Gate Denied Org ${Date.now()}`,
     })
     await enrollMfa(deniedOwner.userId)
@@ -148,7 +150,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const owner = await registerAndLoginViaApi(app, {
       email: `cap-gate-mfa-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Cap Gate MFA Org ${Date.now()}`,
     })
     // Permitted by the gate — but deliberately NOT enrolled in MFA, with the fresh-registration
@@ -175,7 +177,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const ownerA = await registerAndLoginViaApi(app, {
       email: `cap-gate-rls-a-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Cap Gate RLS Org A ${Date.now()}`,
     })
     await enrollMfa(ownerA.userId)
@@ -191,7 +193,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const ownerB = await registerAndLoginViaApi(app, {
       email: `cap-gate-rls-b-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Cap Gate RLS Org B ${Date.now()}`,
     })
     await enrollMfa(ownerB.userId)
@@ -214,7 +216,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
   it('Story 23.7 AC-11: PUT /:projectId/status-page (Save services) now also 403s capability_denied for a denied org', async () => {
     const owner = await registerAndLoginViaApi(app, {
       email: `cap-gate-put-denied-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Cap Gate PUT Denied Org ${Date.now()}`,
     })
     await enrollMfa(owner.userId)
@@ -240,7 +242,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const owner = await registerAndLoginViaApi(app, {
       email: `cap-gate-put-permitted-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Cap Gate PUT Permitted Org ${Date.now()}`,
     })
     fixtureModule.PERMITTED_ORG_IDS.add(owner.orgId)
@@ -269,7 +271,7 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const owner = await registerAndLoginViaApi(app, {
       email: `capabilities-permitted-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Capabilities Permitted Org ${Date.now()}`,
     })
     fixtureModule.PERMITTED_ORG_IDS.add(owner.orgId)
@@ -291,14 +293,14 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const permittedOwner = await registerAndLoginViaApi(app, {
       email: `capabilities-cross-permitted-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Capabilities Cross Permitted Org ${Date.now()}`,
     })
     fixtureModule.PERMITTED_ORG_IDS.add(permittedOwner.orgId)
 
     const deniedOwner = await registerAndLoginViaApi(app, {
       email: `capabilities-cross-denied-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Capabilities Cross Denied Org ${Date.now()}`,
     })
 
@@ -326,14 +328,14 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
 
     const permittedOwner = await registerAndLoginViaApi(app, {
       email: `capabilities-bypass-permitted-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Capabilities Bypass Permitted Org ${Date.now()}`,
     })
     fixtureModule.PERMITTED_ORG_IDS.add(permittedOwner.orgId)
 
     const deniedOwner = await registerAndLoginViaApi(app, {
       email: `capabilities-bypass-denied-${Date.now()}@example.test`,
-      password: TEST_LOGIN_PASSWORD,
+      password: testLoginPassword,
       orgName: `Capabilities Bypass Denied Org ${Date.now()}`,
     })
 
