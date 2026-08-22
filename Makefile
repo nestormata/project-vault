@@ -155,7 +155,7 @@ ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; s
 	$(MAKE) docker-backup-permission-smoke
 
 ci-inner: ## The actual CI steps — only meant to run inside the `ci` container (make ci), not directly
-	pnpm turbo typecheck
+	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm turbo typecheck
 	pnpm turbo lint
 	$(MAKE) db-migrate
 	$(MAKE) check-rls
