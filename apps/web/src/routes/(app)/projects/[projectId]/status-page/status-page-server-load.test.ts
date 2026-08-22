@@ -162,6 +162,26 @@ describe('project status-page +page.server.ts', () => {
       expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
     })
 
+    it('AC-9 edge case: an array response body fails open, identically to a network failure (code review fix)', async () => {
+      getCapabilityMapMock.mockResolvedValue({
+        capabilities: [true],
+      })
+
+      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+      expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
+    })
+
+    it('AC-9 edge case: a response body missing the expected capability key fails open rather than resolving the key to undefined (code review fix)', async () => {
+      getCapabilityMapMock.mockResolvedValue({
+        capabilities: {},
+      })
+
+      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+      expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
+    })
+
     it('AC-9 edge case: a 401 session_revoked on the capabilities call is NOT absorbed by the fail-open path — it propagates, same as any other load-function failure', async () => {
       getCapabilityMapMock.mockRejectedValue(
         new ApiClientError(

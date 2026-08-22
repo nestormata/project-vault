@@ -12,19 +12,32 @@ import type { PageServerLoad } from './$types.js'
 // enforcement point and denies the actual mutating request regardless of what this page shows.
 // Failing this fetch closed would hide a working feature during an unrelated capability-service
 // outage, which is a worse failure mode than briefly showing a control whose backend call will
-// still be correctly enforced. Every id defaults to permitted:true — a literal, typed default
-// keyed the same as CapabilityId, not a magic "all true" shortcut that would silently stop
-// compiling if CapabilityId gains a member.
+// still be correctly enforced. Every id defaults to permitted:true — a literal default keyed the
+// same as CapabilityId. Note: CapabilityMap is Record<string, boolean>, not
+// Record<CapabilityIdValue, boolean>, so this default is NOT compiler-enforced to stay exhaustive
+// as CapabilityId grows — isValidCapabilityMap()'s exact-key-set check below is what actually
+// guards against a stale/incomplete default at runtime.
 const DEFAULT_CAPABILITIES: CapabilityMap = {
   [CapabilityId.MONITORING_PUBLIC_STATUS_PAGE]: true,
 }
 
-/** AC-9 edge case: a 200 whose body fails schema validation (missing key, non-boolean value) is
- * treated identically to a network failure — fail open, never partially trust a malformed
- * payload. */
+/** AC-9 edge case: a 200 whose body fails schema validation (missing key, extra/unknown-only
+ * key, non-object shape, or a non-boolean value) is treated identically to a network failure —
+ * fail open, never partially trust a malformed payload. Deliberately excludes arrays (`typeof
+ * [] === 'object'` would otherwise let a boolean-valued array slip through as a "valid" map) and
+ * deliberately requires the exact `CapabilityId` key set — a response missing
+ * `monitoring.public-status-page` must not resolve that key to `undefined` (silently treated as
+ * "not denied" by the UI's `=== false` check) when the endpoint's own schema guarantees the full
+ * key set is always present; if it's ever missing, the response is malformed and the whole map
+ * must fail open, not be used partially. */
 function isValidCapabilityMap(value: unknown): value is CapabilityMap {
-  if (!value || typeof value !== 'object') return false
-  return Object.values(value as Record<string, unknown>).every((v) => typeof v === 'boolean')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  const expectedKeys = Object.values(CapabilityId)
+  const actualKeys = Object.keys(record)
+  if (actualKeys.length !== expectedKeys.length) return false
+  if (!expectedKeys.every((key) => key in record)) return false
+  return Object.values(record).every((v) => typeof v === 'boolean')
 }
 
 // AC-9 edge case: a 401 mid-load on THIS specific fetch already has its own, existing handling —
