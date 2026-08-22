@@ -1,3 +1,4 @@
+import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 import type {
   AuthResult,
   AuthStrategy,
@@ -41,7 +42,7 @@ function isFixtureCredential(value: string): value is FixtureCredential {
 
 const manifest: ExtensionManifest = {
   name: MOCK_PROVIDER_NAME,
-  apiVersion: '1.1.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: ['auth-provider'],
 }
 
