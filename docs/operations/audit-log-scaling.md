@@ -40,9 +40,10 @@ succeed and are recorded.
 - Per-org quotas bound each configured org's own growth (Story 22.1).
 - An aggregate-allocation bound, so an operator cannot hand out more quota than the instance can
   hold, ships in Story 22.3.
-- Instance-level protection for *unconfigured* orgs (the residual gap this deletion leaves open —
-  `quota IS NULL` is unbounded) is Story 22.5's, via a default per-org quota rather than an
-  instance-wide gate.
+- Instance-level protection for *unconfigured* orgs (the residual gap this deletion left open —
+  no explicit `audit_storage_quota_config` row) shipped in Story 22.5, via a default per-org quota
+  (`AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB`, now `2048` MB by default) rather than an instance-wide
+  gate. An explicit per-org `quotaBytes: null` override still means unlimited for that org.
 - The unchanged 80/90/95% instance alerts remain the operator's early warning.
 
 ## Escalation path

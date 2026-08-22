@@ -36,6 +36,23 @@ async function setQuota(orgId: string, quotaBytes: number | null): Promise<void>
   )
 }
 
+// Story 22.5: seeds bytes_used directly (bound as a proper bigint by drizzle's insert, not a bare
+// SQL-template param) so boundary tests near the new 2 GiB default never need to pass a
+// >2^31-1 `sizeBytes` value into `runGateStatement()`'s own bare (non-cast) SQL params, which
+// overflow Postgres `integer` binding — a pre-existing latent limit on the per-write size
+// estimate, orthogonal to this story's scope (see this story's Dev Agent Record).
+async function seedUsage(orgId: string, bytesUsed: number): Promise<void> {
+  await withOrg(orgId, (tx) =>
+    tx
+      .insert(auditOrgStorageUsage)
+      .values({ orgId, bytesUsed, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: auditOrgStorageUsage.orgId,
+        set: { bytesUsed, updatedAt: new Date() },
+      })
+  )
+}
+
 async function readUsage(orgId: string): Promise<
   | {
       bytesUsed: number
@@ -193,6 +210,111 @@ describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () =>
               })
             )
           ).resolves.toBeUndefined()
+        })
+      } finally {
+        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
+        vi.resetModules()
+      }
+    })
+  })
+
+  describe('Story 22.5 AC-1/AC-4: the new non-zero default fallback quota (2048 MB)', () => {
+    it('an unconfigured org (no quota-config row) resolves to the 2,147,483,648-byte default and is gated against it', async () => {
+      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      vi.resetModules()
+      try {
+        const { assertOrgMayWriteAudit: assertWithRealDefault } = await import('./quota-gate.js')
+        await withTestOrg(async ({ orgId }) => {
+          // Comfortably under the 2 GiB default: admitted.
+          await withOrg(orgId, (tx) =>
+            assertWithRealDefault(tx, { orgId, eventType: ROUTINE_EVENT, sizeBytes: 1024 })
+          )
+          const usage = await readUsage(orgId)
+          expect(usage?.bytesUsed).toBe(1024)
+
+          // Seed bytes_used right up to the boundary (a realistic accumulation of many prior
+          // writes, not one implausibly huge entry), then confirm a write that would push past
+          // the 2 GiB default is refused.
+          await seedUsage(orgId, 2_147_483_648 - 100)
+          await expect(
+            withOrg(orgId, (tx) =>
+              assertWithRealDefault(tx, {
+                orgId,
+                eventType: ROUTINE_EVENT,
+                sizeBytes: 200,
+              })
+            )
+          ).rejects.toMatchObject({ code: 'audit_quota_exhausted' })
+        })
+      } finally {
+        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
+        vi.resetModules()
+      }
+    })
+
+    it('an explicit per-org NULL quota row still wins over the REAL 2048 MB default (top precedence tier unchanged)', async () => {
+      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      vi.resetModules()
+      try {
+        const { assertOrgMayWriteAudit: assertWithRealDefault } = await import('./quota-gate.js')
+        await withTestOrg(async ({ orgId }) => {
+          await setQuota(orgId, null)
+          // Already well past the 2 GiB default (a realistic accumulation, seeded directly) —
+          // would refuse if the default applied instead of the operator's explicit unlimited
+          // override.
+          await seedUsage(orgId, 2_147_483_648 + 500)
+          await expect(
+            withOrg(orgId, (tx) =>
+              assertWithRealDefault(tx, {
+                orgId,
+                eventType: ROUTINE_EVENT,
+                sizeBytes: 200,
+              })
+            )
+          ).resolves.toBeUndefined()
+        })
+      } finally {
+        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
+        vi.resetModules()
+      }
+    })
+
+    it('AC-4: preauth volume never influences refusal, even for an org resolving to the new default (not only an explicitly-configured quota)', async () => {
+      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      vi.resetModules()
+      try {
+        const { assertOrgMayWriteAudit: assertWithRealDefault } = await import('./quota-gate.js')
+        await withTestOrg(async ({ orgId }) => {
+          // No setQuota() call: this org resolves purely via the new instance-wide default.
+          // A burst of pre-auth writes must land only in preauth_bytes_used and never influence
+          // bytes_used or the refusal decision, regardless of the new default's magnitude.
+          const preauthSizeBytes = 5_000_000 // a realistic multi-MB pre-auth burst
+          for (let i = 0; i < 5; i++) {
+            await withOrg(orgId, (tx) =>
+              assertWithRealDefault(tx, {
+                orgId,
+                eventType: AuditEvent.LOGIN_FAILED,
+                sizeBytes: preauthSizeBytes,
+              })
+            )
+          }
+          const usageAfterPreauth = await readUsage(orgId)
+          expect(usageAfterPreauth?.preauthBytesUsed).toBe(5 * preauthSizeBytes)
+          expect(usageAfterPreauth?.bytesUsed ?? 0).toBe(0)
+
+          // A subsequent real authenticated write is evaluated purely against bytes_used vs. the
+          // 2 GiB default, unaffected by how large preauth_bytes_used has grown.
+          await withOrg(orgId, (tx) =>
+            assertWithRealDefault(tx, { orgId, eventType: ROUTINE_EVENT, sizeBytes: 1024 })
+          )
+          const usageAfterRealWrite = await readUsage(orgId)
+          expect(usageAfterRealWrite?.bytesUsed).toBe(1024)
         })
       } finally {
         if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']

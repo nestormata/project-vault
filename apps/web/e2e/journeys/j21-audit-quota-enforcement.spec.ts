@@ -72,9 +72,15 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
       logLevelEnvVar: 'E2E_AUDIT_QUOTA_LOG_LEVEL',
       extraEnv: {
         AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED: 'true',
-        // A tiny non-zero default so an org with NO explicit quota row still resolves to SOME
-        // ceiling in this journey's "unconfigured org" negative case, without affecting the two
-        // orgs under test (both get an explicit row).
+        // Story 22.5 correction (Task 7 edge-case pass, 2026-08-22): this comment previously
+        // claimed "a tiny non-zero default so an org with NO explicit quota row still resolves to
+        // SOME ceiling in this journey's 'unconfigured org' negative case" — that was inaccurate.
+        // Every org this journey exercises gets an explicit `setOrgQuotaBytes()` row (10 MiB or 1
+        // byte); this journey has no "unconfigured org" case at all. `0` here means "no
+        // instance-wide fallback" — the pre-Story-22.5 default — deliberately pinned so this
+        // isolated stack's behavior stays independent of whatever env.ts's shipped default is
+        // (currently 2048 as of Story 22.5), since every org under test is explicitly configured
+        // and the fallback default is irrelevant to what this journey actually asserts.
         AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB: '0',
       },
     })

@@ -29,9 +29,16 @@ const DEFAULT_TEST_AUTH_DUMMY_PASSWORD_HASH = [
 process.env['DATABASE_URL'] ??= DEFAULT_DATABASE_URL
 process.env['ADMIN_DATABASE_URL'] ??= DEFAULT_ADMIN_DATABASE_URL
 process.env['AUTH_DUMMY_PASSWORD_HASH'] ??= DEFAULT_TEST_AUTH_DUMMY_PASSWORD_HASH
+// Story 22.5 Task 1 (regression trap): env.ts's AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED default
+// flips to true in this story. ~40+ existing test files across the suite implicitly rely on the
+// old `false` default and never set this var themselves. Pin it to `false` here so the flip is
+// never observed by a test that isn't deliberately exercising the ON state (those files set/stub
+// this var explicitly and are unaffected by this pin).
+process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] ??= 'false'
 
 beforeEach(() => {
   process.env['DATABASE_URL'] ??= DEFAULT_DATABASE_URL
   process.env['ADMIN_DATABASE_URL'] ??= DEFAULT_ADMIN_DATABASE_URL
   process.env['AUTH_DUMMY_PASSWORD_HASH'] ??= DEFAULT_TEST_AUTH_DUMMY_PASSWORD_HASH
+  process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] ??= 'false'
 })

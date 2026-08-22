@@ -1,13 +1,24 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq, and, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { auditLogEntries, platformAuditEvents } from '@project-vault/db/schema'
+import {
+  auditLogEntries,
+  platformAuditEvents,
+  auditStorageQuotaConfig,
+} from '@project-vault/db/schema'
 import { AuditEvent, PlatformAuditAction } from '@project-vault/shared'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
+// Story 22.5: this file's existing dual-write tests assert `previous`/`next` quotaBytes values for
+// orgs with NO explicit quota row, and predate this story's env.ts default flip
+// (AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB 0 -> 2048). Pin the pre-22.5 default here so those tests keep
+// asserting "no row = unlimited" exactly as before; the new non-zero-default precedence itself is
+// covered by the dedicated "Story 22.5" describe block below, which opts back into the real default
+// via vi.resetModules() + a scoped re-import.
+process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = '0'
 
 const { initVault } = await import('../vault/key-service.js')
 const { resetVaultForTest } = await import('../../__tests__/helpers/vault-test-cleanup.js')
@@ -281,6 +292,61 @@ describe.sequential('Story 22.1 AC-5: setOrgAuditQuota dual-write', () => {
           vi.resetModules()
         }
       })
+    })
+  })
+
+  // Story 22.5 AC-1/AC-4: the new non-zero default fallback quota (2048 MB), resolved against the
+  // real env.ts Zod default rather than this file's own pinned-to-0 override above. Each test here
+  // scopes its own vi.resetModules() + re-import so it never leaks the real default into the
+  // pre-22.5 dual-write tests above.
+  describe('Story 22.5 AC-1: new default fallback quota (2048 MB)', () => {
+    it('an org with no quota-config row resolves to 2,147,483,648 bytes (2048 MB) when the env var is unset (the real Zod default)', async () => {
+      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      vi.resetModules()
+      try {
+        const { resolveEffectiveOrgQuotaBytes: resolveWithRealDefault } =
+          await import('./quota-config.js')
+        await withTestOrg(async ({ orgId }) => {
+          const effective = await withOrg(orgId, (tx) => resolveWithRealDefault(tx, orgId))
+          expect(effective).toBe(2_147_483_648)
+        })
+      } finally {
+        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
+        vi.resetModules()
+      }
+    })
+
+    it("an operator's explicit quotaBytes: null (unlimited override) still wins over the new non-zero default", async () => {
+      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      vi.resetModules()
+      try {
+        // A direct row insert (not setOrgAuditQuota()) — vi.resetModules() above also resets the
+        // vault/key-service module's in-process init state, which setOrgAuditQuota()'s dual-write
+        // needs (an unsealed vault for the platform-audit half); a raw insert of the row this
+        // story's precedence chain reads is sufficient to exercise the actual behavior under test.
+        const { resolveEffectiveOrgQuotaBytes: resolveWithRealDefault } =
+          await import('./quota-config.js')
+        await withTestOrg(async ({ orgId }) => {
+          await withOrg(orgId, (tx) =>
+            tx
+              .insert(auditStorageQuotaConfig)
+              .values({ orgId, quotaBytes: null, updatedAt: new Date() })
+              .onConflictDoUpdate({
+                target: auditStorageQuotaConfig.orgId,
+                set: { quotaBytes: null, updatedAt: new Date() },
+              })
+          )
+          const effective = await withOrg(orgId, (tx) => resolveWithRealDefault(tx, orgId))
+          expect(effective).toBeNull()
+        })
+      } finally {
+        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
+        vi.resetModules()
+      }
     })
   })
 })

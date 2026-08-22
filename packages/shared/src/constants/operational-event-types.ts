@@ -342,6 +342,12 @@ export const OperationalEvent = {
   AUDIT_ORG_USAGE_RECONCILE_TIMEOUT: 'audit_org_usage_reconcile.timed_out',
   AUDIT_ORG_USAGE_RECONCILE_ORG_WRITEBACK_FAILED: 'audit_org_usage_reconcile.org_writeback_failed',
   AUDIT_ORG_USAGE_RECONCILE_DRIFT: 'audit_org_usage_reconcile.drift',
+  // Story 22.5 AC-6: an org with NO audit_storage_quota_config row (never an explicit per-org
+  // NULL override — those two states must not be conflated, see quota-gate.ts's own AC-6 note)
+  // whose current bytes_used already exceeds the new instance-wide default fallback quota, found
+  // by audit-storage-check.ts's daily early-warning step. Pure read-only alert, never a refusal.
+  AUDIT_ORG_DEFAULT_QUOTA_ALREADY_EXCEEDED:
+    'audit_org_usage_reconcile.default_quota_already_exceeded',
 
   // Story 23.8 AC-23: audit-event-source extension hook write outcomes. `reason` on rejection is
   // limited to a fixed enum — never the raw payload or exception message.

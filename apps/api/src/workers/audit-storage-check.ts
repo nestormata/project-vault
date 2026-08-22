@@ -64,6 +64,85 @@ async function computeTopContributingOrgs(currentBytes: number): Promise<TopCont
   })
 }
 
+// Story 22.5 AC-6: mirrors TOP_CONTRIBUTORS_LIMIT's existing precedent — caps the number of
+// individual per-org WARN lines this early-warning step emits per run, so a pathological instance
+// (many unconfigured orgs already over the new instance-wide default simultaneously) cannot flood
+// the log; a single summary line reports the true total separately.
+const DEFAULT_QUOTA_EXCEEDED_ORGS_LIMIT = 5
+
+type OrgOverDefaultQuota = { orgId: string; bytesUsed: number }
+
+/**
+ * Story 22.5 AC-6 — orgs with NO `audit_storage_quota_config` row (an operator's explicit
+ * per-org NULL override is a DIFFERENT state — unlimited for that org — and must never trigger
+ * this warning; the `cfg.org_id IS NULL` anti-join, not `cfg.quota_bytes IS NULL`, is what tells
+ * the two apart) whose current `bytes_used` already exceeds the new instance-wide default
+ * fallback quota. Skipped entirely (empty result, no query) when enforcement is off or the
+ * default itself resolves to 0/unlimited — this early-warning step has nothing meaningful to
+ * report in either case. Pure READ — no write, no mutation of any row.
+ */
+async function findOrgsOverDefaultQuota(): Promise<{
+  orgsToWarn: OrgOverDefaultQuota[]
+  totalCount: number
+  resolvedDefaultQuotaBytes: number
+}> {
+  if (!env.AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED || env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB <= 0) {
+    return { orgsToWarn: [], totalCount: 0, resolvedDefaultQuotaBytes: 0 }
+  }
+  const resolvedDefaultQuotaBytes = env.AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB * 1048576
+
+  const rows = await getAdminDb().execute<{ org_id: string; bytes_used: string }>(sql`
+    SELECT usage.org_id, usage.bytes_used
+    FROM audit_org_storage_usage usage
+    LEFT JOIN audit_storage_quota_config cfg ON cfg.org_id = usage.org_id
+    WHERE cfg.org_id IS NULL
+      AND usage.bytes_used > ${resolvedDefaultQuotaBytes}
+    ORDER BY usage.bytes_used DESC
+  `)
+
+  return {
+    orgsToWarn: rows.slice(0, DEFAULT_QUOTA_EXCEEDED_ORGS_LIMIT).map((row) => ({
+      orgId: row.org_id,
+      bytesUsed: Number(row.bytes_used),
+    })),
+    totalCount: rows.length,
+    resolvedDefaultQuotaBytes,
+  }
+}
+
+/**
+ * Story 22.5 AC-6 — logs one WARN per over-default org (capped, see
+ * DEFAULT_QUOTA_EXCEEDED_ORGS_LIMIT) plus a single summary line when the true total exceeds the
+ * cap. This is strictly an early-warning log — never a refusal, never a quota change; an operator
+ * who sees it decides whether to raise that org's quota (Story 22.3), lower
+ * AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED/the default temporarily, or accept the org will be refused
+ * going forward.
+ */
+async function warnOrgsOverDefaultQuota(logger?: WorkerLogger): Promise<void> {
+  if (!logger) return
+  const { orgsToWarn, totalCount, resolvedDefaultQuotaBytes } = await findOrgsOverDefaultQuota()
+  if (totalCount === 0) return
+
+  for (const org of orgsToWarn) {
+    operationalLog(
+      logger,
+      'warn',
+      OperationalEvent.AUDIT_ORG_DEFAULT_QUOTA_ALREADY_EXCEEDED,
+      'org has no explicit audit-storage quota and already exceeds the new instance-wide default fallback quota',
+      { orgId: org.orgId, bytesUsed: org.bytesUsed, resolvedDefaultQuotaBytes }
+    )
+  }
+  if (totalCount > orgsToWarn.length) {
+    operationalLog(
+      logger,
+      'warn',
+      OperationalEvent.AUDIT_ORG_DEFAULT_QUOTA_ALREADY_EXCEEDED,
+      `${totalCount} orgs exceed the instance-wide default audit-storage quota — showing the top ${orgsToWarn.length}`,
+      { totalCount, resolvedDefaultQuotaBytes }
+    )
+  }
+}
+
 type Utilization = { currentBytes: number; limitBytes: number; utilizationPct: number }
 
 /** `limitGbOverride` exists purely so tests can force a "healthy" or "critical" utilization
@@ -240,6 +319,10 @@ async function runOrgScopedAuditStorageCheck(
     } else {
       await handleElevatedUtilization(boss, utilization, wasActive, logger)
     }
+    // Story 22.5 AC-6: runs after the instance-wide check above, regardless of whether the
+    // instance-wide utilization itself is healthy or elevated — an org can be over ITS OWN new
+    // default while the instance overall is nowhere near its own limit.
+    await warnOrgsOverDefaultQuota(logger)
     return undefined
   } catch (error) {
     return logAuditStorageCheckFailure(
