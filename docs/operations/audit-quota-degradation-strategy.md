@@ -84,17 +84,35 @@ writes via `shouldSuppressAuditWrite()`. That coupling is removed entirely — t
 the write path is gone. `shouldSuppressAuditWrite()`, `isAuditStorageMaintenanceModeActive()`'s use
 as a write gate, and `logAuditWriteSuspended()` no longer exist.
 
-**Residual risk, accepted and stated:** an instance whose orgs are unquota'd (`quota IS NULL`, the
-default) and whose operator ignores the alerts can grow `audit_log_entries` until Postgres runs out
-of disk — there is no write-side protection against that after this story. This is a worse
-*failure* than a refusal, but the alternative (keeping the breaker, in either its silent-drop or
+**Residual risk as it stood before Story 22.5, and what Story 22.5 actually shipped.** An instance
+whose orgs were unquota'd (`quota IS NULL`, the pre-22.5 default) and whose operator ignored the
+alerts could grow `audit_log_entries` until Postgres ran out of disk — there was no write-side
+protection against that. The alternative (keeping the breaker, in either its silent-drop or
 converted-to-hard-refusal form) produced three defects that could not be reconciled without a
 fourth mechanism: a `false`-kill-switch path that still issued a DB read, a critically-full
 instance with no configuration path out for either tenant or operator, and an unauthenticated flood
-that could take every tenant to write-unavailable. **This is a tracked handoff, not an accepted
-permanent gap: Story 22.5 owns it**, and is expected to re-establish instance-level protection via
-a *default* per-org quota (bounding the unconfigured org) rather than reinstating an instance-wide
-gate.
+that could take every tenant to write-unavailable. **Story 22.5 closed this handoff** by flipping
+two `env.ts` defaults together — `AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED` (`false` → `true`) and
+`AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB` (`0` → `2048`, i.e. 2 GiB) — so a fresh install now bounds
+every unconfigured org at a conservative instance-wide default, live-resolved on every write via
+the SAME precedence chain and non-influenceability invariant documented above (no code change to
+`quota-gate.ts`/`quota-config.ts` was needed or made). This is deliberately a *default per-org*
+quota, not a reinstated instance-wide gate: an org's own volume can only ever affect its own
+refusal decision, a full instance still refuses only the orgs that are actually over their own
+bound, and any org can be given an explicit, larger, or unlimited quota by an operator via the
+Story 22.3 operator surface. Two things Story 22.5 explicitly did NOT do: it left write-RATE
+limiting (Story 22.2, `AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED`/`AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN`)
+untouched — this is a storage-exhaustion story, not a throughput one — and it did not reinstate any
+form of instance-wide write gate; the residual "instance can still fill even with every org inside
+quota" overcommit risk (bounded per-org, not bounded in aggregate) remains exactly as described in
+this document, with the SAME pre-existing 80/90/95% `audit_storage.warning`/`audit_storage.critical`
+alert as the intended signal an operator acts on — see the new
+`docs/operations/audit-storage-instance-exhaustion-runbook.md` for what to do when that alert fires
+even though every org is individually within quota. Story 22.5 also added a daily early-warning
+check (reusing the existing `audit-storage/check` job) that WARN-logs any already-unconfigured org
+whose `bytes_used` already exceeds the new default at the moment an instance upgrades, or drifts
+over it later — a pure read, never a refusal, so operators are not surprised by a live 503 with no
+prior signal.
 
 ## Unit of measurement (AC-27)
 

@@ -208,3 +208,140 @@ describe.sequential(
     })
   }
 )
+
+describe.sequential(
+  'Story 22.5 AC-6/AC-8: daily-job early-warning step for orgs already over the new default',
+  () => {
+    afterAll(async () => {
+      await clearAuditStorageAlerts()
+      await clearPlatformAuditStorageAlerts()
+    })
+
+    it('AC-6: an org with no quota-config row whose bytes_used already exceeds the resolved default is WARN-logged with its org id and both figures, and AC-8: the existing instance-wide critical alert still fires unaffected', async () => {
+      const { withOrg, getDb: getRealDb } = await import('@project-vault/db')
+      const { auditOrgStorageUsage } = await import('@project-vault/db/schema')
+      const { withTestOrg } = await import('@project-vault/db/test-helpers')
+
+      const previousEnforcement = process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
+      // A tiny MB default so the test does not need to seed anywhere near a realistic byte count
+      // to exceed it.
+      process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = '1'
+      vi.resetModules()
+      try {
+        const { runAuditStorageCheck: runWithNewDefault } = await import('./audit-storage-check.js')
+
+        await withTestOrg(async ({ orgId }) => {
+          // No audit_storage_quota_config row for this org — resolves purely via the new
+          // instance-wide default (1 MB = 1_048_576 bytes here). Seed bytes_used comfortably over
+          // it.
+          const bytesUsed = 1_048_576 + 500
+          await withOrg(orgId, (tx) =>
+            tx
+              .insert(auditOrgStorageUsage)
+              .values({ orgId, bytesUsed, updatedAt: new Date() })
+              .onConflictDoUpdate({
+                target: auditOrgStorageUsage.orgId,
+                set: { bytesUsed, updatedAt: new Date() },
+              })
+          )
+
+          await clearAuditStorageAlerts()
+          await clearPlatformAuditStorageAlerts()
+          const logger = fakeLogger()
+          await runWithNewDefault(fakeBoss(), logger)
+
+          // AC-6: the WARN fired, naming this org id and both figures.
+          const warnCalls = logger.warn.mock.calls
+          const matchingCall = warnCalls.find(
+            (call) => (call[0] as { orgId?: string })?.orgId === orgId
+          )
+          expect(matchingCall).toBeDefined()
+          const [payload] = matchingCall as [Record<string, unknown>, string]
+          expect(payload['eventType']).toBe(
+            'audit_org_usage_reconcile.default_quota_already_exceeded'
+          )
+          expect(payload['bytesUsed']).toBe(bytesUsed)
+          expect(payload['resolvedDefaultQuotaBytes']).toBe(1_048_576)
+
+          // AC-8 regression confirmation: the existing instance-wide critical alert (this file's
+          // tiny AUDIT_LOG_STORAGE_LIMIT_GB pin forces >=95% on the real, non-empty table) still
+          // fires exactly as before, unaffected by this story's new early-warning step running in
+          // the same job invocation.
+          const [critical] = await getRealDb()
+            .select()
+            .from(adminAlerts)
+            .where(eq(adminAlerts.alertType, CRITICAL_ALERT_TYPE))
+          expect(critical?.status).toBe('active')
+          expect(critical?.severity).toBe('critical')
+        })
+      } finally {
+        if (previousEnforcement === undefined)
+          delete process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+        else process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = previousEnforcement
+        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
+        vi.resetModules()
+      }
+    })
+
+    it('AC-6 precision trap: an explicit per-org NULL quota row (operator unlimited override) is NEVER warned, even though it is also over the numeric default', async () => {
+      const { withOrg } = await import('@project-vault/db')
+      const { auditOrgStorageUsage, auditStorageQuotaConfig } =
+        await import('@project-vault/db/schema')
+      const { withTestOrg } = await import('@project-vault/db/test-helpers')
+
+      const previousEnforcement = process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
+      process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = '1'
+      vi.resetModules()
+      try {
+        const { runAuditStorageCheck: runWithNewDefault } = await import('./audit-storage-check.js')
+
+        await withTestOrg(async ({ orgId }) => {
+          const bytesUsed = 1_048_576 + 500
+          await withOrg(orgId, (tx) =>
+            tx
+              .insert(auditOrgStorageUsage)
+              .values({ orgId, bytesUsed, updatedAt: new Date() })
+              .onConflictDoUpdate({
+                target: auditOrgStorageUsage.orgId,
+                set: { bytesUsed, updatedAt: new Date() },
+              })
+          )
+          // An explicit per-org NULL row — an operator's deliberate unlimited override, the TOP
+          // precedence tier — must never be conflated with "no row at all".
+          await withOrg(orgId, (tx) =>
+            tx
+              .insert(auditStorageQuotaConfig)
+              .values({ orgId, quotaBytes: null, updatedAt: new Date() })
+              .onConflictDoUpdate({
+                target: auditStorageQuotaConfig.orgId,
+                set: { quotaBytes: null, updatedAt: new Date() },
+              })
+          )
+
+          await clearAuditStorageAlerts()
+          await clearPlatformAuditStorageAlerts()
+          const logger = fakeLogger()
+          await runWithNewDefault(fakeBoss(), logger)
+
+          const warnCalls = logger.warn.mock.calls
+          const matchingCall = warnCalls.find(
+            (call) => (call[0] as { orgId?: string })?.orgId === orgId
+          )
+          expect(matchingCall).toBeUndefined()
+        })
+      } finally {
+        if (previousEnforcement === undefined)
+          delete process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+        else process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = previousEnforcement
+        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
+        vi.resetModules()
+      }
+    })
+  }
+)

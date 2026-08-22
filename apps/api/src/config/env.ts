@@ -1039,12 +1039,31 @@ const envSchema = z
     PLATFORM_AUDIT_STORAGE_LIMIT_GB: z.coerce.number().positive().default(5),
 
     // Story 22.1 AC-4: per-org audit-storage quota. The global kill switch — checked FIRST, in
-    // process memory, before any DB access (AC-25) — defaults to false so an upgraded instance
-    // sees zero behaviour change (AC-20).
-    AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED: booleanEnvDefault(false),
-    // 0 = unlimited (the safety default — a non-zero default would start failing writes on
-    // upgrade the moment any org exceeded it, AC-20's trap).
-    AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB: z.coerce.number().min(0).default(0),
+    // process memory, before any DB access (AC-25). Story 22.5 AC-2: now defaults to TRUE — this
+    // supersedes the AC-20-era "defaults false so an upgraded instance sees zero behaviour change"
+    // rationale, which was correct only for 22.1's own ship date (no default fallback quota
+    // existed yet, so flipping this alone would have done nothing but cost a DB round trip per
+    // write). Story 22.5 pairs this flip with a non-zero AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB below,
+    // so together they close the gap left by 22.1's deletion of the instance-wide write breaker:
+    // every unconfigured org is now bounded by default on a fresh install. An operator who needs
+    // to fully disable enforcement (e.g. mid-incident, or to buy time to raise quotas before
+    // re-enabling) still sets AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED=false explicitly and gets
+    // exactly the pre-22.5 behavior, unconditionally.
+    AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED: booleanEnvDefault(true),
+    // Story 22.5 AC-1: defaults to 2048 (2 GiB) — previously 0 ("unlimited"), which left every
+    // unconfigured org unbounded even with enforcement on. Sizing: AUDIT_LOG_STORAGE_LIMIT_GB
+    // defaults to 50 GB and is measured in PHYSICAL bytes (pg_total_relation_size);
+    // AUDIT_ORG_QUOTA_PHYSICAL_OVERHEAD_ESTIMATE defaults to 3.0; so 2 GiB LOGICAL per
+    // unconfigured org ≈ 6 GiB PHYSICAL per org, meaning the instance-wide 80% warning threshold
+    // (40 GB physical) is not reached until roughly 6–7 fully-unconfigured orgs each near their
+    // default cap simultaneously — a conservative default sized for "a handful of organizations
+    // sharing one instance," NOT a promise that it is correctly sized for every deployment's real
+    // org count. An operator with more orgs (or different sizing needs) should tune
+    // AUDIT_LOG_STORAGE_LIMIT_GB and/or use the Story 22.3 operator surface to set explicit
+    // per-org quotas. `0` remains a fully valid, still-honored value for an operator who
+    // explicitly sets AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB=0 in their own .env — this changes only
+    // the SHIPPED DEFAULT an operator gets if they set nothing, not the variable's own meaning.
+    AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB: z.coerce.number().min(0).default(2048),
     AUDIT_ORG_USAGE_RECONCILE_CRON: z.string().min(1).default('0 5 * * 0'),
     AUDIT_ORG_USAGE_RECONCILE_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
     AUDIT_ORG_USAGE_STALE_AFTER_HOURS: z.coerce.number().positive().default(240),
