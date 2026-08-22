@@ -60,6 +60,8 @@ function publicStatusPageUrl(token: string): string {
   return `/api/v1/status-pages/${token}`
 }
 
+const CAPABILITIES_URL = '/api/v1/capabilities'
+
 describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-extension', () => {
   let app: TestApp
 
@@ -204,5 +206,152 @@ describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-ex
       headers: { cookie: cookieHeader(ownerB.cookies) },
     })
     expect(crossOrgRead.statusCode).toBe(404)
+  })
+
+  // Story 23.7 Dev Notes judgment call #5 (scope extension) / AC-10 / AC-11 — "Save services" is
+  // now backed by real backend enforcement exactly like "Enable": a denied org's PUT request must
+  // 403 capability_denied too, a genuinely symmetric enforcement proof, not a documented asymmetry.
+  it('Story 23.7 AC-11: PUT /:projectId/status-page (Save services) now also 403s capability_denied for a denied org', async () => {
+    const owner = await registerAndLoginViaApi(app, {
+      email: `cap-gate-put-denied-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Cap Gate PUT Denied Org ${Date.now()}`,
+    })
+    await enrollMfa(owner.userId)
+    const projectId = await createProjectViaApi(app, owner.cookies, 'cap-gate-put-denied')
+
+    const putRes = await app.inject({
+      method: 'PUT',
+      url: statusPageUrl(projectId),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { services: [] },
+    })
+
+    expect(putRes.statusCode).toBe(403)
+    expect(putRes.json()).toMatchObject({
+      code: 'capability_denied',
+      capability: 'monitoring.public-status-page',
+      reasonCode: 'fixture_not_entitled',
+    })
+  })
+
+  it('Story 23.7 AC-11: PUT /:projectId/status-page succeeds for a permitted org (the enforcement is symmetric, not a new denial surface)', async () => {
+    const fixtureModule = await import('@project-vault/mock-capability-gate-extension')
+
+    const owner = await registerAndLoginViaApi(app, {
+      email: `cap-gate-put-permitted-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Cap Gate PUT Permitted Org ${Date.now()}`,
+    })
+    fixtureModule.PERMITTED_ORG_IDS.add(owner.orgId)
+    await enrollMfa(owner.userId)
+    const projectId = await createProjectViaApi(app, owner.cookies, 'cap-gate-put-permitted')
+
+    const enableRes = await app.inject({
+      method: 'POST',
+      url: statusPageUrl(projectId),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: {},
+    })
+    expect(enableRes.statusCode).toBe(201)
+
+    const putRes = await app.inject({
+      method: 'PUT',
+      url: statusPageUrl(projectId),
+      headers: { cookie: cookieHeader(owner.cookies) },
+      payload: { services: [] },
+    })
+    expect(putRes.statusCode).toBe(200)
+  })
+
+  it('Story 23.7: GET /api/v1/capabilities returns { capabilities: { monitoring.public-status-page: true } } for a permitted org', async () => {
+    const fixtureModule = await import('@project-vault/mock-capability-gate-extension')
+
+    const owner = await registerAndLoginViaApi(app, {
+      email: `capabilities-permitted-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Capabilities Permitted Org ${Date.now()}`,
+    })
+    fixtureModule.PERMITTED_ORG_IDS.add(owner.orgId)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: CAPABILITIES_URL,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      data: { capabilities: { 'monitoring.public-status-page': true } },
+    })
+  })
+
+  it('Story 23.7 AC-4: GET /api/v1/capabilities is cross-org isolated — two real orgs, one denied and one permitted, get different, org-correct responses in the same test run', async () => {
+    const fixtureModule = await import('@project-vault/mock-capability-gate-extension')
+
+    const permittedOwner = await registerAndLoginViaApi(app, {
+      email: `capabilities-cross-permitted-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Capabilities Cross Permitted Org ${Date.now()}`,
+    })
+    fixtureModule.PERMITTED_ORG_IDS.add(permittedOwner.orgId)
+
+    const deniedOwner = await registerAndLoginViaApi(app, {
+      email: `capabilities-cross-denied-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Capabilities Cross Denied Org ${Date.now()}`,
+    })
+
+    const permittedRes = await app.inject({
+      method: 'GET',
+      url: CAPABILITIES_URL,
+      headers: { cookie: cookieHeader(permittedOwner.cookies) },
+    })
+    const deniedRes = await app.inject({
+      method: 'GET',
+      url: CAPABILITIES_URL,
+      headers: { cookie: cookieHeader(deniedOwner.cookies) },
+    })
+
+    expect(permittedRes.json()).toEqual({
+      data: { capabilities: { 'monitoring.public-status-page': true } },
+    })
+    expect(deniedRes.json()).toEqual({
+      data: { capabilities: { 'monitoring.public-status-page': false } },
+    })
+  })
+
+  it('Story 23.7 AC-4 edge case: ?orgId=<other org>, an orgId in the body, and an X-Org-Id header are all ignored — the response always reflects the authenticated callers own org', async () => {
+    const fixtureModule = await import('@project-vault/mock-capability-gate-extension')
+
+    const permittedOwner = await registerAndLoginViaApi(app, {
+      email: `capabilities-bypass-permitted-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Capabilities Bypass Permitted Org ${Date.now()}`,
+    })
+    fixtureModule.PERMITTED_ORG_IDS.add(permittedOwner.orgId)
+
+    const deniedOwner = await registerAndLoginViaApi(app, {
+      email: `capabilities-bypass-denied-${Date.now()}@example.test`,
+      password: TEST_LOGIN_PASSWORD,
+      orgName: `Capabilities Bypass Denied Org ${Date.now()}`,
+    })
+
+    // Authenticated as the DENIED org, attempting to smuggle in the PERMITTED org's id via every
+    // request shape this AC names.
+    const res = await app.inject({
+      method: 'GET',
+      url: `${CAPABILITIES_URL}?orgId=${permittedOwner.orgId}`,
+      headers: {
+        cookie: cookieHeader(deniedOwner.cookies),
+        'x-org-id': permittedOwner.orgId,
+      },
+      payload: { orgId: permittedOwner.orgId },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      data: { capabilities: { 'monitoring.public-status-page': false } },
+    })
   })
 })

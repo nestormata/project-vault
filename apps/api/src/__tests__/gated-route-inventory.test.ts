@@ -20,10 +20,22 @@ import { describe, expect, it } from 'vitest'
 const GOLDEN_GATED_ROUTES = [
   'POST /api/v1/projects/:projectId/status-page', // AC-23, declarative
   'GET /api/v1/status-pages/:token', // AC-24, imperative (assertCapability)
+  // Story 23.7 Dev Notes judgment call #5 (scope extension): "Save services" is now
+  // backend-enforced exactly like "Enable" — closes the cosmetic-only asymmetry.
+  'PUT /api/v1/projects/:projectId/status-page', // Story 23.7, declarative
 ] as const
 
 /** AC-24's imperative call site — file path relative to `src/`. */
 const IMPERATIVE_CALL_SITE_FILE = 'modules/monitoring/public-status-page-routes.ts'
+
+/**
+ * Story 23.7 — `GET /api/v1/capabilities` is a second, legal imperative `assertCapability()`
+ * importer: a multi-capability *reader*, not a single-capability gate on one route, per Story
+ * 23.3 AC-16's explicit reservation of the fan-out question for this story. Named separately from
+ * `IMPERATIVE_CALL_SITE_FILE` above (AC-24's original single-purpose constant) rather than
+ * silently widening its meaning.
+ */
+const CAPABILITY_MAP_READER_FILE = 'modules/capabilities/capabilities-routes.ts'
 
 const SRC_ROOT = resolve(process.cwd(), 'src')
 
@@ -118,10 +130,15 @@ describe('gated-route-inventory — AC-14 blast-radius bound', () => {
     const annotated = findCapabilityAnnotatedRoutes()
     // Every current annotated route lives under the /api/v1/projects/ prefix.
     const asStrings = annotated.map((route) => `${route.method} /api/v1/projects${route.url}`)
-    expect(asStrings).toEqual(['POST /api/v1/projects/:projectId/status-page'])
+    expect(asStrings.sort()).toEqual(
+      [
+        'POST /api/v1/projects/:projectId/status-page',
+        'PUT /api/v1/projects/:projectId/status-page',
+      ].sort()
+    )
   })
 
-  it("assertCapability (the imperative form) is imported only by the golden inventory's imperative call site (AC-21)", () => {
+  it("assertCapability (the imperative form) is imported only by the golden inventory's imperative call sites (AC-21)", () => {
     const importers: string[] = []
     for (const file of walk(SRC_ROOT)) {
       const source = readFileSync(file, 'utf-8')
@@ -137,7 +154,7 @@ describe('gated-route-inventory — AC-14 blast-radius bound', () => {
         }
       }
     }
-    expect(importers).toEqual([IMPERATIVE_CALL_SITE_FILE])
+    expect(importers.sort()).toEqual([IMPERATIVE_CALL_SITE_FILE, CAPABILITY_MAP_READER_FILE].sort())
   })
 
   it('never-gate categories are absent from the golden array (review-enforced, spot-checked here)', () => {
@@ -160,7 +177,7 @@ describe('gated-route-inventory — AC-14 blast-radius bound', () => {
     }
   })
 
-  it('the golden array is exactly two entries — the AC-23/AC-24 pair this story registers', () => {
-    expect(GOLDEN_GATED_ROUTES).toHaveLength(2)
+  it('the golden array is exactly three entries — the AC-23/AC-24 pair plus Story 23.7s PUT scope extension', () => {
+    expect(GOLDEN_GATED_ROUTES).toHaveLength(3)
   })
 })

@@ -257,7 +257,11 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       response: {
         200: StatusPageServicesResponseSchema,
         401: ApiErrorSchema,
-        403: ApiErrorSchema,
+        // Story 23.7 Dev Notes judgment call #5 (scope extension): widened, same as POST above,
+        // now that this route also carries `security.capability` — a capability_denied 403's
+        // capability/reasonCode fields would otherwise be silently stripped by Fastify's
+        // schema-driven serialization. See CapabilityDeniedErrorSchema's own doc comment.
+        403: CapabilityDeniedErrorSchema,
         404: ApiErrorSchema,
         410: ApiErrorSchema,
         422: ApiErrorSchema,
@@ -268,6 +272,12 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       requireMfa: true,
       writeAuditEvent: false,
       rateLimit: { ...WRITE_RATE_LIMIT, key: 'PUT /api/v1/projects/:projectId/status-page' },
+      // Story 23.7 Dev Notes judgment call #5 — human-decided scope extension: "Save services"
+      // (and the reorder buttons, which call this same route) is now backend-enforced exactly
+      // like "Enable" (POST above), closing the cosmetic-only asymmetry AC-10/AC-11 flagged
+      // during elicitation. Golden route inventory:
+      // apps/api/src/__tests__/gated-route-inventory.test.ts.
+      capability: CapabilityId.MONITORING_PUBLIC_STATUS_PAGE,
     },
     handler: withOwnedProject(async (secureCtx, projectId, req, reply) => {
       const body = parseBody(UpdateStatusPageBodySchema, req, reply)
