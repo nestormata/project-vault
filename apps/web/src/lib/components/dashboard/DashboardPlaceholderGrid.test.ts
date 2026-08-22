@@ -8,7 +8,7 @@ describe('DashboardPlaceholderGrid (Story 18.12)', () => {
   it('AC-G2 regression: with no props (both default false), the project coverage cards render', () => {
     render(DashboardPlaceholderGrid)
 
-    expect(screen.getByText('Credentials')).toBeTruthy()
+    expect(screen.getByText('Secrets')).toBeTruthy()
     expect(screen.getByText('Certificates and domains')).toBeTruthy()
     expect(screen.getByText('Services and health')).toBeTruthy()
     expect(screen.getByText('Coverage gaps')).toBeTruthy()
@@ -25,7 +25,7 @@ describe('DashboardPlaceholderGrid (Story 18.12)', () => {
       },
     })
 
-    expect(screen.queryByText('Credentials')).toBeNull()
+    expect(screen.queryByText('Secrets')).toBeNull()
     expect(screen.queryByText('Services and health')).toBeNull()
     expect(screen.getByText('Certificates and domains')).toBeTruthy()
     expect(screen.getByText('2 certificates')).toBeTruthy()
@@ -44,7 +44,7 @@ describe('DashboardPlaceholderGrid (Story 18.12)', () => {
       },
     })
 
-    expect(screen.queryByText('Credentials')).toBeNull()
+    expect(screen.queryByText('Secrets')).toBeNull()
     expect(screen.getByText('Services and health')).toBeTruthy()
     expect(screen.getByText('Certificates and domains')).toBeTruthy()
     expect(screen.getByText('No certificate or domain records added yet.')).toBeTruthy()

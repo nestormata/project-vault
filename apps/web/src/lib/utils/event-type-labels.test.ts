@@ -20,7 +20,7 @@ describe('event-type-labels', () => {
   describe('getEventTypeLabel (AC-22/23)', () => {
     it('AC-22: maps a known monitoring alert type to a stable human label', () => {
       expect(getEventTypeLabel('backup.failure')).toBe('Backup Failure')
-      expect(getEventTypeLabel('credential.expiry')).toBe('Credential Expiry')
+      expect(getEventTypeLabel('credential.expiry')).toBe('Secret Expiry')
     })
 
     it('AC-22: maps a known AuditEvent code to a human label, not the raw code', () => {

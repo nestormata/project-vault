@@ -41,7 +41,7 @@ describe('project sub-nav hrefs resolve to real routes (AC-18, G3 navigation tru
 
       const activeLinks = links.filter((link) => link.getAttribute('aria-current') === 'page')
       expect(activeLinks).toHaveLength(1)
-      const expectedActiveLabel = ['Overview', 'Credentials', 'Members'][index]
+      const expectedActiveLabel = ['Overview', 'Secrets', 'Members'][index]
       expect(activeLinks[0]?.textContent?.trim()).toBe(expectedActiveLabel)
 
       unmount()

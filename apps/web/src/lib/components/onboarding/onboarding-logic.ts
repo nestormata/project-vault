@@ -89,7 +89,7 @@ export function parseTagsInput(raw: string): string[] {
 export function validateCredentialForm(input: { name: string; value: string }) {
   const errors: { name?: string; value?: string } = {}
   if (!input.name.trim()) errors.name = 'Name is required'
-  if (!input.value.trim()) errors.value = 'Credential value cannot be empty'
+  if (!input.value.trim()) errors.value = 'Secret value cannot be empty'
   return errors
 }
 
@@ -146,7 +146,7 @@ function mapApiClientSubmitError(error: ApiClientError): CredentialSubmitError {
   }
   if (error.status === 422) return mapValidationSubmitError(error)
   if (error.status === 403) {
-    return { fieldErrors: {}, errorMessage: 'You do not have permission to create credentials.' }
+    return { fieldErrors: {}, errorMessage: 'You do not have permission to create secrets.' }
   }
   return { fieldErrors: {}, errorMessage: error.message }
 }
@@ -155,7 +155,7 @@ export function mapCredentialSubmitError(error: unknown): CredentialSubmitError 
   if (error instanceof ApiClientError) return mapApiClientSubmitError(error)
   return {
     fieldErrors: {},
-    errorMessage: error instanceof Error ? error.message : 'Could not save credential.',
+    errorMessage: error instanceof Error ? error.message : 'Could not save secret.',
   }
 }
 
@@ -163,11 +163,11 @@ export const onboardingCopy = {
   welcomeHeading: 'Welcome to Project Vault',
   projectModel:
     'Everything in Project Vault lives inside a Project. A project is a container for all the secrets, services, and certificates that belong together — like payments-api or mobile-backend. There are no environments; instead, each environment can be its own project, or you can use tags to distinguish them within a project.',
-  step1Cta: "Got it — Let's add a credential",
+  step1Cta: "Got it — Let's add a secret",
   vaultSealedMessage:
-    'The vault is sealed — credentials cannot be saved right now. Ask your administrator to unseal the vault.',
+    'The vault is sealed — secrets cannot be saved right now. Ask your administrator to unseal the vault.',
   viewerStep2Message:
-    'Credential creation requires Member access. Ask your admin to upgrade your role, or explore the dashboard to see what your team has already secured.',
+    'Secret creation requires Member access. Ask your admin to upgrade your role, or explore the dashboard to see what your team has already secured.',
   viewerNoProjectsMessage:
     "Your admin hasn't created any projects yet. Check back when a project is set up for you, or ask your admin to invite you to an existing project.",
   globalSearchMention: 'Global search across all your projects is coming soon.',

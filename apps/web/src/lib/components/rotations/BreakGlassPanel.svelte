@@ -96,9 +96,9 @@
         error.code === 'rotation_lock_contention'
       ) {
         errorMessage =
-          'Another rotation action is in progress for this credential right now. Please wait a moment and try again.'
+          'Another rotation action is in progress for this secret right now. Please wait a moment and try again.'
       } else if (error instanceof ApiClientError && error.status === 404) {
-        errorMessage = 'This credential does not exist or you do not have access.'
+        errorMessage = 'This secret does not exist or you do not have access.'
       } else {
         errorMessage = mapRotationMutationError(
           error,
@@ -152,7 +152,7 @@
           </p>
           {#if sweepDependencies.length === 0}
             <p class="mt-1 text-sm text-red-800">
-              No dependent systems are recorded for this credential.
+              No dependent systems are recorded for this secret.
             </p>
           {:else}
             <ul class="mt-2 space-y-1 text-sm text-red-800">

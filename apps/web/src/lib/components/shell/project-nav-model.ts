@@ -25,7 +25,7 @@ type ProjectNavItemDef = {
 
 const PROJECT_NAV_ITEM_DEFS: ProjectNavItemDef[] = [
   { label: 'Overview', suffix: '' },
-  { label: 'Credentials', suffix: 'credentials' },
+  { label: 'Secrets', suffix: 'credentials' },
   { label: 'Members', suffix: 'members' },
   { label: 'Machine Users', suffix: 'machine-users' },
   { label: 'Services', suffix: 'services' },

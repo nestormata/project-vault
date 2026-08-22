@@ -30,7 +30,7 @@ describe('dashboard empty state', () => {
 
   it('labels suggested actions without story deferrals', () => {
     expect(suggestedActionLabels).toEqual({
-      add_credential: 'Add first credential',
+      add_credential: 'Add first secret',
       add_service: 'Add first service',
       import_credentials: 'Import .env or JSON',
     })
@@ -197,7 +197,7 @@ describe('/dashboard +page.svelte — upcoming rotations widget (AC-23, G3)', ()
     })
 
     expect(screen.getByText('Upcoming rotations')).toBeTruthy()
-    expect(screen.getByText('No credentials have an upcoming rotation scheduled.')).toBeTruthy()
+    expect(screen.getByText('No secrets have an upcoming rotation scheduled.')).toBeTruthy()
   })
 
   it('does not use forbidden fake-healthy dashboard copy anywhere in the widget', () => {
@@ -313,7 +313,7 @@ describe('/dashboard +page.svelte — Suggested next actions for partial coverag
     // PaymentRecord feature. monitoredServiceHealth is sourced from service_endpoints, so the
     // functionally-correct target is /service-endpoints/new (see +page.svelte comment).
     expect(link.getAttribute('href')).toBe(`/projects/${projectId}/service-endpoints/new`)
-    expect(screen.queryByText('Add first credential')).toBeNull()
+    expect(screen.queryByText('Add first secret')).toBeNull()
     expect(screen.queryByText('Import .env or JSON')).toBeNull()
   })
 
@@ -330,7 +330,7 @@ describe('/dashboard +page.svelte — Suggested next actions for partial coverag
     })
 
     expect(screen.getByText('Suggested next actions')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Add first credential' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Add first secret' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Import .env or JSON' })).toBeTruthy()
     expect(screen.queryByText('Add first service')).toBeNull()
   })
@@ -361,7 +361,7 @@ describe('/dashboard +page.svelte — Suggested next actions for partial coverag
     })
 
     expect(screen.getByText('Suggested next actions')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Add first credential' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Add first secret' }).getAttribute('href')).toBe(
       `/projects/${projectId}/credentials/new`
     )
     expect(screen.getByRole('link', { name: 'Add first service' }).getAttribute('href')).toBe(
@@ -387,7 +387,7 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
       },
     })
 
-    expect(screen.queryByText('Credentials', { selector: 'h2' })).toBeNull()
+    expect(screen.queryByText('Secrets', { selector: 'h2' })).toBeNull()
     expect(screen.queryByText('Services and health', { selector: 'h2' })).toBeNull()
     expect(screen.getByText('Certificates and domains', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Alerts', { selector: 'dt' })).toBeTruthy()
@@ -404,7 +404,7 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
       },
     })
 
-    expect(screen.queryByText('Credentials', { selector: 'h2' })).toBeNull()
+    expect(screen.queryByText('Secrets', { selector: 'h2' })).toBeNull()
     expect(screen.getByText('Services and health')).toBeTruthy()
   })
 
@@ -413,7 +413,7 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
       props: { data: baseDashboardData({ isEmpty: true }) },
     })
 
-    expect(screen.getByText('Credentials', { selector: 'h2' })).toBeTruthy()
+    expect(screen.getByText('Secrets', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Services and health', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Certificates and domains', { selector: 'h2' })).toBeTruthy()
   })
@@ -430,7 +430,7 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
       },
     })
 
-    expect(screen.getByText('Credentials', { selector: 'h2' })).toBeTruthy()
+    expect(screen.getByText('Secrets', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Services and health', { selector: 'h2' })).toBeTruthy()
     expect(screen.getByText('Certificates and domains', { selector: 'h2' })).toBeTruthy()
   })
@@ -456,7 +456,7 @@ describe('/dashboard +page.svelte — sealed vault on page load (AC-4)', () => {
     // A sealed vault means none of the dashboard's other data is trustworthy either — nothing
     // else should render, not even the empty-state grid.
     expect(screen.queryByText('Upcoming rotations')).toBeNull()
-    expect(screen.queryByText('Credential overview')).toBeNull()
+    expect(screen.queryByText('Secret overview')).toBeNull()
   })
 })
 

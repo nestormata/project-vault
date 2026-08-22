@@ -41,15 +41,15 @@ describe('OnboardingWizard', () => {
   it('advances from step 1 to step 2', async () => {
     renderWizard()
     await goToCredentialStep(screen, fireEvent)
-    expect(screen.getByText(/Add your first credential/i)).toBeTruthy()
+    expect(screen.getByText(/Add your first secret/i)).toBeTruthy()
   })
 
   it('blocks empty credential submission client-side', async () => {
     renderWizard()
     await goToCredentialStep(screen, fireEvent)
-    await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Save Secret/i }))
     expect(screen.getByText('Name is required')).toBeTruthy()
-    expect(screen.getByText('Credential value cannot be empty')).toBeTruthy()
+    expect(screen.getByText('Secret value cannot be empty')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Next' })).toHaveProperty('disabled', true)
   })
 
@@ -63,9 +63,9 @@ describe('OnboardingWizard', () => {
     renderWizard()
     await goToCredentialStep(screen, fireEvent)
     await fillCredentialForm(screen, fireEvent, { name: 'MY_API_KEY', value: 'sk_live_abc123' })
-    await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Save Secret/i }))
 
-    expect(await screen.findByText(/Credential saved securely/i)).toBeTruthy()
+    expect(await screen.findByText(/Secret saved securely/i)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Next' })).toHaveProperty('disabled', false)
     expect((screen.getByLabelText(CREDENTIAL_VALUE_LABEL) as HTMLInputElement).value).toBe('')
   })
@@ -83,14 +83,14 @@ describe('OnboardingWizard', () => {
     renderWizard()
     await goToCredentialStep(screen, fireEvent)
     await fillCredentialForm(screen, fireEvent, { name: 'MY_API_KEY', value: 'secret' })
-    await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Save Secret/i }))
     expect(await screen.findByText(/vault is sealed/i)).toBeTruthy()
   })
 
   it('shows viewer alternate path without credential form', async () => {
     renderWizard({ user: { ...onboardingTestUser, orgRole: 'viewer' } })
     await goToCredentialStep(screen, fireEvent)
-    expect(screen.getByText(/Credential creation requires Member access/i)).toBeTruthy()
+    expect(screen.getByText(/Secret creation requires Member access/i)).toBeTruthy()
     expect(screen.queryByLabelText(CREDENTIAL_VALUE_LABEL)).toBeNull()
   })
 
@@ -113,7 +113,7 @@ describe('OnboardingWizard', () => {
     renderWizard({ oncompleted })
     await goToCredentialStep(screen, fireEvent)
     await fillCredentialForm(screen, fireEvent, { name: 'MY_API_KEY', value: 'secret' })
-    await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Save Secret/i }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
     await fireEvent.click(screen.getByRole('button', { name: /Go to Dashboard/i }))
     await vi.waitFor(() => expect(oncompleted).toHaveBeenCalled())
@@ -124,7 +124,7 @@ describe('OnboardingWizard', () => {
     await goToCredentialStep(screen, fireEvent)
     await fireEvent.click(screen.getByRole('button', { name: 'Show value' }))
     expect(screen.getByRole('button', { name: 'Hide value' })).toBeTruthy()
-    expect((screen.getByLabelText('Credential value') as HTMLInputElement).type).toBe('text')
+    expect((screen.getByLabelText('Secret value') as HTMLInputElement).type).toBe('text')
   })
 
   // Story 18.4 AC-6: this is the story's own named "show password" example — the audit found it
@@ -199,8 +199,8 @@ describe('OnboardingWizard', () => {
 
       await goToCredentialStep(screen, fireEvent)
       await fillCredentialForm(screen, fireEvent, { name: 'MY_API_KEY', value: 'sk_live_abc123' })
-      await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
-      expect(await screen.findByText(/Credential saved securely/i)).toBeTruthy()
+      await fireEvent.click(screen.getByRole('button', { name: /Save Secret/i }))
+      expect(await screen.findByText(/Secret saved securely/i)).toBeTruthy()
       expect(createCredentialCalls).toHaveLength(1)
 
       await fireEvent.click(screen.getByRole('button', { name: /close/i }))

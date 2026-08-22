@@ -34,10 +34,10 @@
   {#if data.orgDashboard}
     <section class="mb-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Organization</p>
-      <h2 class="mt-2 text-2xl font-bold text-slate-950">Credential overview</h2>
+      <h2 class="mt-2 text-2xl font-bold text-slate-950">Secret overview</h2>
       <dl class="mt-4 grid gap-3 sm:grid-cols-3">
         <div class="rounded-2xl bg-slate-50 p-4">
-          <dt class="text-sm text-slate-500">Total credentials</dt>
+          <dt class="text-sm text-slate-500">Total secrets</dt>
           <dd class="text-2xl font-bold text-slate-950">{data.orgDashboard.totalCredentials}</dd>
         </div>
         <div class="rounded-2xl bg-slate-50 p-4">
@@ -90,7 +90,7 @@
         />
         <dl class="mt-5 grid gap-3 sm:grid-cols-3">
           <div class="rounded-2xl bg-slate-50 p-4">
-            <dt class="text-sm text-slate-500">Credentials</dt>
+            <dt class="text-sm text-slate-500">Secrets</dt>
             <dd class="text-2xl font-bold text-slate-950">
               {data.dashboard.credentialStats.active}
             </dd>
@@ -119,9 +119,7 @@
       <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 class="text-lg font-semibold text-slate-950">Upcoming rotations</h2>
         {#if data.dashboard.upcomingRotations.length === 0}
-          <p class="mt-3 text-sm text-slate-600">
-            No credentials have an upcoming rotation scheduled.
-          </p>
+          <p class="mt-3 text-sm text-slate-600">No secrets have an upcoming rotation scheduled.</p>
         {:else}
           <ul class="mt-4 space-y-2">
             {#each data.dashboard.upcomingRotations as rotation (rotation.credentialId)}

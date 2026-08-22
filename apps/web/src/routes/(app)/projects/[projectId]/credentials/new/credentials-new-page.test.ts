@@ -72,7 +72,7 @@ describe('new credential +page.svelte (Story 13.2)', () => {
     await selectTemplate('login')
     await fireEvent.input(screen.getByLabelText('Field 1 value'), { target: { value: 'alice' } })
     await fireEvent.input(screen.getByLabelText('Field 2 value'), { target: { value: 'pw' } })
-    await fireEvent.click(screen.getByRole('button', { name: /create credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /create secret/i }))
 
     expect(createCredentialMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -124,7 +124,7 @@ describe('new credential +page.svelte (Story 13.2)', () => {
           target: { value: field.value },
         })
       }
-      await fireEvent.click(screen.getByRole('button', { name: /create credential/i }))
+      await fireEvent.click(screen.getByRole('button', { name: /create secret/i }))
 
       expect(createCredentialMock).toHaveBeenCalledWith(
         expect.anything(),
@@ -150,7 +150,7 @@ describe('new credential +page.svelte (Story 13.2)', () => {
     await fireEvent.input(screen.getByLabelText('Field 2 value'), {
       target: { value: 'us-east-1' },
     })
-    await fireEvent.click(screen.getByRole('button', { name: /create credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /create secret/i }))
 
     expect(createCredentialMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -179,7 +179,7 @@ describe('new credential +page.svelte (Story 13.2)', () => {
     await selectTemplate('login')
     await fireEvent.input(screen.getByLabelText('Field 1 value'), { target: { value: 'a' } })
     await fireEvent.input(screen.getByLabelText('Field 2 value'), { target: { value: 'b' } })
-    await fireEvent.click(screen.getByRole('button', { name: /create credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /create secret/i }))
 
     await vi.waitFor(() => {
       expect(screen.getAllByText(/already exists/i).length).toBeGreaterThan(0)

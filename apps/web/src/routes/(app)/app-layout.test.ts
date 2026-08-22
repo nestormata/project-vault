@@ -154,7 +154,7 @@ describe('/(app) +layout.svelte', () => {
 
     await goToCredentialStep(screen, fireEvent)
     await fillCredentialForm(screen, fireEvent, { name: 'MY_API_KEY', value: 'sk_live_abc123' })
-    await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Save Secret/i }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
     await fireEvent.click(screen.getByRole('button', { name: /Go to Dashboard/i }))
 
@@ -195,7 +195,7 @@ describe('/(app) +layout.svelte', () => {
 
     await goToCredentialStep(screen, fireEvent)
     await fillCredentialForm(screen, fireEvent, { name: 'MY_API_KEY', value: 'sk_live_abc123' })
-    await fireEvent.click(screen.getByRole('button', { name: /Save Credential/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /Save Secret/i }))
     await fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
     await fireEvent.click(screen.getByRole('button', { name: /Go to Dashboard/i }))
 

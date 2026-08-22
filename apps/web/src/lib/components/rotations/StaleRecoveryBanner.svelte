@@ -98,7 +98,7 @@
 <div class="rounded-2xl border border-amber-300 bg-amber-50 p-6" role="alert">
   <p class="font-semibold text-amber-900">
     This rotation has been inactive for too long and needs a decision: resume it, or abandon it and
-    keep the previous credential value.
+    keep the previous secret value.
   </p>
 
   {#if !confirmingAbandon}
@@ -123,8 +123,8 @@
   {:else}
     <div class="mt-4 space-y-3 rounded-xl border border-amber-400 bg-amber-100 p-4">
       <p class="text-sm text-amber-900">
-        Abandoning will discard the new value from this rotation. The credential will revert to
-        showing its previous value. This cannot be undone.
+        Abandoning will discard the new value from this rotation. The secret will revert to showing
+        its previous value. This cannot be undone.
       </p>
       <div class="flex gap-3">
         <button

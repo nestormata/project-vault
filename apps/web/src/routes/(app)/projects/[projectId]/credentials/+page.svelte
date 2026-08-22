@@ -53,7 +53,7 @@
 </script>
 
 <svelte:head>
-  <title>Credentials | Project Vault</title>
+  <title>Secrets | Project Vault</title>
 </svelte:head>
 
 <section class="space-y-6">
@@ -61,8 +61,8 @@
     class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
   >
     <div>
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Credentials</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-950">Project credentials</h1>
+      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Secrets</p>
+      <h1 class="mt-2 text-3xl font-bold text-slate-950">Project secrets</h1>
       <p class="mt-2 text-slate-600">Browse and manage secrets for this project.</p>
     </div>
     <div class="flex flex-col gap-2 sm:flex-row">
@@ -71,7 +71,7 @@
           class="rounded-xl bg-slate-950 px-4 py-3 text-center font-semibold text-white"
           href={resolve(`/projects/${data.projectId}/credentials/new`)}
         >
-          Add credential
+          Add secret
         </a>
       {/if}
       {#if canImport}
@@ -147,7 +147,7 @@
       />
       <div class="space-y-1 sm:col-start-3 sm:row-start-3">
         <FormHelpText id="credential-tags-help" kind="text" />
-        <p class="text-xs text-slate-500">Matches credentials with ALL of these tags.</p>
+        <p class="text-xs text-slate-500">Matches secrets with ALL of these tags.</p>
       </div>
 
       <button
@@ -168,14 +168,14 @@
 
     {#if data.credentials.items.length === 0}
       <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
-        <h2 class="text-xl font-semibold text-slate-950">No credentials found</h2>
+        <h2 class="text-xl font-semibold text-slate-950">No secrets found</h2>
         <p class="mt-2 text-slate-600">
           {#if data.filters.q || data.filters.status || data.filters.tags}
             Try adjusting your filters.
           {:else if canCreate}
-            Add your first credential to get started.
+            Add your first secret to get started.
           {:else}
-            No credentials have been added to this project yet.
+            No secrets have been added to this project yet.
           {/if}
         </p>
       </div>
@@ -223,7 +223,7 @@
       </DataTable>
 
       <p class="text-sm text-slate-600">
-        Showing {data.credentials.items.length} of {data.credentials.total} credentials
+        Showing {data.credentials.items.length} of {data.credentials.total} secrets
       </p>
     {/if}
   {/if}

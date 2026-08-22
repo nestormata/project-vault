@@ -8,7 +8,7 @@ describe('mobile shell smoke', () => {
     expect(items.map((item) => item.label)).toEqual([
       'Dashboard',
       'Projects',
-      'Credentials',
+      'Secrets',
       'Notifications',
       'Health',
       'Settings',

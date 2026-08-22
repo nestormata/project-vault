@@ -138,7 +138,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
     expect(screen.getByRole('alert').textContent).toContain(onboardingCopy.vaultSealedMessage)
     expect(screen.queryByText(/Rotation not found/i)).toBeNull()
-    const link = screen.getByRole('link', { name: /back to credential/i })
+    const link = screen.getByRole('link', { name: /back to secret/i })
     expect(link.getAttribute('href')).toBe(`/projects/${projectId}/credentials/${credentialId}`)
   })
 
@@ -270,7 +270,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
     await fireEvent.click(
       screen.getByRole('checkbox', {
-        name: /I confirm this credential is updated in all consuming systems/i,
+        name: /I confirm this secret is updated in all consuming systems/i,
       })
     )
     expect(button).toHaveProperty('disabled', false)
@@ -305,17 +305,15 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
     await fireEvent.click(
       screen.getByRole('checkbox', {
-        name: /I confirm this credential is updated in all consuming systems/i,
+        name: /I confirm this secret is updated in all consuming systems/i,
       })
     )
     await fireEvent.click(screen.getByRole('button', { name: /complete rotation/i }))
 
-    expect(
-      await screen.findByText(/Please confirm the credential is updated everywhere/i)
-    ).toBeTruthy()
+    expect(await screen.findByText(/Please confirm the secret is updated everywhere/i)).toBeTruthy()
     expect(
       screen.getByRole('checkbox', {
-        name: /I confirm this credential is updated in all consuming systems/i,
+        name: /I confirm this secret is updated in all consuming systems/i,
       })
     ).toHaveProperty('checked', false)
   })

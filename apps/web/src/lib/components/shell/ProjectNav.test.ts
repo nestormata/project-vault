@@ -26,7 +26,7 @@ describe('ProjectNav.svelte', () => {
 
     const labels = [
       'Overview',
-      'Credentials',
+      'Secrets',
       'Members',
       'Machine Users',
       'Services',
@@ -46,9 +46,7 @@ describe('ProjectNav.svelte', () => {
     setPathname(`/projects/${projectId}/credentials`)
     render(ProjectNav, { props: { projectId, orgRole: 'member' } })
 
-    expect(screen.getByRole('link', { name: 'Credentials' }).getAttribute('aria-current')).toBe(
-      'page'
-    )
+    expect(screen.getByRole('link', { name: 'Secrets' }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBeNull()
   })
 

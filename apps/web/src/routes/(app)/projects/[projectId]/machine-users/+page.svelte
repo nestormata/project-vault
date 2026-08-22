@@ -29,9 +29,8 @@
       <h1 class="mt-2 text-3xl font-bold text-slate-950">CI/CD service identities</h1>
       <p class="mt-2 text-slate-600">Manage machine users and their API keys for this project.</p>
       <p class="mt-2 text-slate-600">
-        Machine users provide non-interactive, CI/CD-scoped credential access — issue an API key
-        here, then exchange it for a short-lived token to fetch credential values from your
-        pipeline. See the
+        Machine users provide non-interactive, CI/CD-scoped secret access — issue an API key here,
+        then exchange it for a short-lived token to fetch secret values from your pipeline. See the
         <a
           href="https://github.com/nestormata/project-vault/blob/main/docs/machine-users.md"
           target="_blank"
@@ -46,7 +45,7 @@
         class="mt-3 inline-block text-sm font-medium text-slate-700 underline"
         href={resolve(`/projects/${data.projectId}/credentials`)}
       >
-        Back to credentials
+        Back to secrets
       </a>
     </div>
     {#if canManage}

@@ -29,7 +29,7 @@ describe('credentials/import +page.svelte', () => {
   it('shows the create-a-project empty state when there are no projects', () => {
     render(CredentialsImportPage, { props: { data: baseData() } })
 
-    expect(screen.getByText(/create a project before importing credentials/i)).toBeTruthy()
+    expect(screen.getByText(/create a project before importing secrets/i)).toBeTruthy()
     const link = screen.getByRole('link', { name: /create project/i })
     expect(link.getAttribute('href')).toBe('/projects/new')
   })

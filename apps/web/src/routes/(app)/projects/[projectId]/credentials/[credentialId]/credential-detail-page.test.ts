@@ -119,9 +119,9 @@ describe('credential detail +page.svelte', () => {
 
     const cacheable = screen.getByLabelText(/cacheable by offline agents/i)
     expect(cacheable.getAttribute('aria-describedby')).toBe('lifecycle-cacheable-help')
-    expect(screen.getByText(/may cache and reuse this credential locally/i)).toBeTruthy()
+    expect(screen.getByText(/may cache and reuse this secret locally/i)).toBeTruthy()
 
-    expect(screen.getByText(/external systems that use this credential/i)).toBeTruthy()
+    expect(screen.getByText(/external systems that use this secret/i)).toBeTruthy()
 
     const shareFieldCheckbox = screen.getByRole('checkbox', { name: /username/i })
     expect(shareFieldCheckbox.getAttribute('aria-describedby')).toBe('share-attribute-keys-help')
@@ -171,7 +171,7 @@ describe('credential detail +page.svelte', () => {
     render(CredentialDetailPage, {
       props: { data: baseData({ credential: null, notFound: true }) },
     })
-    expect(screen.getByText(/credential not found/i)).toBeTruthy()
+    expect(screen.getByText(/secret not found/i)).toBeTruthy()
   })
 
   it('renders description, tags, and current version when present', () => {
@@ -276,7 +276,7 @@ describe('credential detail +page.svelte', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
 
-    expect(await screen.findByText(/does not permit revealing credential values/i)).toBeTruthy()
+    expect(await screen.findByText(/does not permit revealing secret values/i)).toBeTruthy()
   })
 
   it('reveal: a plain 403 shows the generic permission message', async () => {
@@ -286,7 +286,7 @@ describe('credential detail +page.svelte', () => {
     await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
 
     expect(
-      await screen.findByText(/^you do not have permission to reveal credential values\.$/i)
+      await screen.findByText(/^you do not have permission to reveal secret values\.$/i)
     ).toBeTruthy()
   })
 
@@ -356,7 +356,7 @@ describe('credential detail +page.svelte', () => {
     render(CredentialDetailPage, { props: { data: baseData() } })
 
     const copyButton = screen.getByRole('button', {
-      name: /copy credential value without revealing/i,
+      name: /copy secret value without revealing/i,
     })
     const guidanceId = copyButton.getAttribute('aria-describedby')
     expect(guidanceId).toBeTruthy()
@@ -424,12 +424,12 @@ describe('credential detail +page.svelte', () => {
     render(CredentialDetailPage, { props: { data: baseData() } })
 
     const copyButton = screen.getByRole('button', {
-      name: /copy credential value without revealing/i,
+      name: /copy secret value without revealing/i,
     })
     await fireEvent.click(copyButton)
 
     const status = await screen.findByRole('status')
-    expect(status.textContent).toMatch(/could not copy the credential value/i)
+    expect(status.textContent).toMatch(/could not copy the secret value/i)
     expect(status.textContent).not.toContain('secret must not escape')
     expect((copyButton as HTMLButtonElement).disabled).toBe(false)
     expect(writeText).not.toHaveBeenCalled()
@@ -446,12 +446,12 @@ describe('credential detail +page.svelte', () => {
     render(CredentialDetailPage, { props: { data: baseData() } })
 
     const copyButton = screen.getByRole('button', {
-      name: /copy credential value without revealing/i,
+      name: /copy secret value without revealing/i,
     })
     await fireEvent.click(copyButton)
 
     const status = await screen.findByRole('status')
-    expect(status.textContent).toMatch(/could not copy the credential value/i)
+    expect(status.textContent).toMatch(/could not copy the secret value/i)
     expect(status.textContent).not.toContain('clipboard_secret_only')
     expect(screen.queryByText('clipboard_secret_only')).toBeNull()
     expect((copyButton as HTMLButtonElement).disabled).toBe(false)
@@ -469,7 +469,7 @@ describe('credential detail +page.svelte', () => {
     render(CredentialDetailPage, { props: { data: baseData() } })
 
     const copyButton = screen.getByRole('button', {
-      name: /copy credential value without revealing/i,
+      name: /copy secret value without revealing/i,
     })
     await fireEvent.click(copyButton)
     expect((copyButton as HTMLButtonElement).disabled).toBe(true)
@@ -494,7 +494,7 @@ describe('credential detail +page.svelte', () => {
     render(CredentialDetailPage, { props: { data: baseData() } })
 
     await fireEvent.click(
-      screen.getByRole('button', { name: /copy credential value without revealing/i })
+      screen.getByRole('button', { name: /copy secret value without revealing/i })
     )
     cleanup()
     resolveReveal({ value: 'unmounted_copy_must_not_escape', versionNumber: 3 })
@@ -1497,7 +1497,7 @@ describe('credential detail +page.svelte', () => {
   describe('Story 17.1: Shares tab', () => {
     it('shows an honest empty state when there are no shares', () => {
       render(CredentialDetailPage, { props: { data: baseData() } })
-      expect(screen.getByText(/no shares yet for this credential/i)).toBeTruthy()
+      expect(screen.getByText(/no shares yet for this secret/i)).toBeTruthy()
     })
 
     it('creates a share and shows the one-time token banner', async () => {
@@ -1730,7 +1730,7 @@ describe('credential detail +page.svelte', () => {
       })
       await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
 
-      expect(await screen.findByText(/every field on this credential is sensitive/i)).toBeTruthy()
+      expect(await screen.findByText(/every field on this secret is sensitive/i)).toBeTruthy()
       expect(createCredentialShareMock).not.toHaveBeenCalled()
     })
 

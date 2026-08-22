@@ -108,7 +108,7 @@
         <rect x="260" y="10" width="90" height="24" rx="6" fill="#cbd5e1" />
         <rect x="260" y="42" width="90" height="24" rx="6" fill="#cbd5e1" />
         <rect x="260" y="74" width="90" height="24" rx="6" fill="#cbd5e1" />
-        <text x="305" y="26" text-anchor="middle" fill="#0f172a" font-size="10">Credentials</text>
+        <text x="305" y="26" text-anchor="middle" fill="#0f172a" font-size="10">Secrets</text>
         <text x="305" y="58" text-anchor="middle" fill="#0f172a" font-size="10">Services</text>
         <text x="305" y="90" text-anchor="middle" fill="#0f172a" font-size="10">Certificates</text>
       </svg>

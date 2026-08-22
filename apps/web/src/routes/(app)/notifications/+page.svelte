@@ -45,7 +45,7 @@
 
   const ALERT_TYPE_LABELS: Record<string, string> = {
     'security.failed_auth_threshold': 'Failed Login Threshold',
-    'credential.expiry': 'Credential Expiry',
+    'credential.expiry': 'Secret Expiry',
     'service.down': 'Service Down',
     'rotation.stale': 'Stale Rotation',
     'backup.failure': 'Backup Failure',

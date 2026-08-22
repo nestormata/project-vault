@@ -25,7 +25,7 @@ describe('/settings/notifications +page.svelte', () => {
   it('renders known preference rows with human labels', () => {
     render(NotificationsPage, { props: { data: baseData(), form: null } })
 
-    expect(screen.getByText('Credential Expiry')).toBeTruthy()
+    expect(screen.getByText('Secret Expiry')).toBeTruthy()
     expect(screen.getAllByText('Immediate').length).toBeGreaterThan(0)
   })
 
@@ -75,10 +75,10 @@ describe('/settings/notifications +page.svelte', () => {
     })
 
     expect(
-      screen.getByRole('combobox', { name: 'Frequency for Credential Expiry via email' })
+      screen.getByRole('combobox', { name: 'Frequency for Secret Expiry via email' })
     ).toBeTruthy()
     expect(
-      screen.getByRole('combobox', { name: 'Minimum severity for Credential Expiry via email' })
+      screen.getByRole('combobox', { name: 'Minimum severity for Secret Expiry via email' })
     ).toBeTruthy()
     expect(
       screen.getByRole('combobox', { name: 'Frequency for Service Down via sms' })

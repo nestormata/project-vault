@@ -44,21 +44,21 @@
     <li>
       {#if importRouteLive}
         <a class="font-medium text-slate-950 underline" href={resolve('/credentials/import')}>
-          Import credentials in bulk
+          Import secrets in bulk
         </a>
       {:else}
         <span class="cursor-not-allowed text-slate-500" aria-disabled="true" title="Coming soon">
-          Import credentials in bulk (coming soon)
+          Import secrets in bulk (coming soon)
         </span>
       {/if}
     </li>
     <li>
       {#if projectId}
         <a class="font-medium text-slate-950 underline" href={resolve('/credentials')}>
-          Add more credentials manually
+          Add more secrets manually
         </a>
       {:else}
-        <span class="text-slate-600">Add more credentials manually from the credentials page</span>
+        <span class="text-slate-600">Add more secrets manually from the secrets page</span>
       {/if}
     </li>
     <li>
