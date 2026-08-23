@@ -272,7 +272,7 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
       ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
     )
     expect(auditCalls).toHaveLength(1)
-    const [fields] = auditCalls[0]
+    const fields = auditCalls[0]?.[0]
     expect(fields).toMatchObject({
       extensionName: 'ext-audit-1',
       organizationId: ORG_ID,
@@ -296,7 +296,7 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
       ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
     )
     expect(auditCalls).toHaveLength(1)
-    const [fields] = auditCalls[0]
+    const fields = auditCalls[0]?.[0]
     expect(fields.outcome).toBe('denied')
     expect(fields).not.toHaveProperty('reasonCode')
   })
@@ -318,7 +318,7 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
       ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
     )
     expect(auditCalls).toHaveLength(1)
-    const [fields] = auditCalls[0]
+    const fields = auditCalls[0]?.[0]
     expect(fields.outcome).toBe('error')
     expect(fields).not.toHaveProperty('reasonCode')
   })
@@ -353,7 +353,7 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
       ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
     )
     expect(auditCallsBeforeRelease).toHaveLength(1)
-    const [rateLimitedFields] = auditCallsBeforeRelease[0]
+    const rateLimitedFields = auditCallsBeforeRelease[0]?.[0]
     expect(rateLimitedFields.outcome).toBe('error')
     expect(rateLimitedFields).not.toHaveProperty('reasonCode')
 
@@ -376,7 +376,7 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
       { extensionName: 'ext-audit-5', logger }
     )
 
-    const [fields] = logger.info.mock.calls[0]
+    const fields = logger.info.mock.calls[0]?.[0]
     expect(fields.outcome).toBe('denied')
     expect(Object.keys(fields).sort()).toEqual(
       [
